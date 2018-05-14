@@ -1,0 +1,81 @@
+  1     10.11000      0   A1: e-cal ord. 1                   
+  2   3038.70996      0   A2: e-cal ord. 2                   
+  3    422.03000      0   A3: e-cal ord. 3                   
+  4   -285.75000      0   A4: e-cal ord. 4                   
+  5     10.21000      0   A5: e-cal, low-E                   
+  6     -4.00000      0   res. @ E=0 (keV)                   
+  7      6.30000      0   % FWHM @ 661 keV                   
+  8      0.60000      0   resolution power                   
+  9      0.02144      0   solid angle (%)                    
+ 10      7.60000      0   det. length (cm)                   
+ 11      6.35000      1   det. width (cm)                    
+ 12      1.00000      0   height/width                       
+ 13    100.00000      0   shape factor                       
+ 14     13.00000      0   attenuator Z                       
+ 15      0.50000      0   attenuator g/cm2                   
+ 16      0.00000      0   porosity (%)                       
+ 17    122.00000      0   distance (cm)                      
+ 18      1.00000      0   eff. scalar                        
+ 19      4.00000      0   outer atten. Z                     
+ 20      0.00000      0   outer atten AD                     
+ 21     12.54000      1   scatter atomic #                   
+ 22      4.17000      1   scatter clutter                    
+ 23      0.74000      1   scat prob @ 0                      
+ 24      6.74000      1   scat prob @ 60                     
+ 25      5.57000      1   scat prob @ 120                    
+ 26      1.16000      1   scat prob @ 180                    
+ 27      0.00000      0   scat peak amount                   
+ 28      0.00000      0   scat peak angle                    
+ 29      0.00000      0   high-E skew                        
+ 30      0.00000      0   scat peak width                    
+ 31      0.00000      0   multiscatter                       
+ 32      0.00000      0   outer porosity                     
+ 33      0.70000      0   ext annihilation                   
+ 34      1.00000      0   shaping time, us                   
+ 35     34.00000      0   LLD(keV)                           
+ 36      0.00000      0   low-E noise pla.                   
+ 37    100.00000      0   height (cm)                        
+ 38      0.00000      0   Frisch grid (%)                    
+ 39      0.00000      0   local x-ray mag.                   
+ 40      0.30000      0   det setback (cm)                   
+ 41      0.00000      0   shield angle (%)                   
+ 42      0.00000      0   shield thick, cm                   
+ 43      0.00000      0   dead layer Z                       
+ 44      0.00000      0   dead layer g/cm2                   
+ 45      0.00000      0   shield LLD (keV)                   
+ 46     20.00000      0   Bremsstrahlung                     
+ 47      0.00000      0   low-E skew                         
+ 48      0.00000      0   hole mu-tau (cm)                   
+ 49      0.00000      0   % neutron shield                   
+ 50      1.00000      0   neutron reflect                    
+ 51      0.00000      0   dead layer (mm)                    
+ 52      0.00000      0   bad pole zero     / INBIN          
+ 53     93.68479      0   efficiency holder / COINC          
+ 54      0.00000      1   not used          / PILEUP         
+ 55      0.00000      0   not used          / not used       
+ 56      0.00000      0   not used          / REBIN          
+ 57      0.00000      0   not used          / not used       
+ 58      0.00000     82   not used          / x-ray source Z 
+ 59      0.00000      5   not used          / gamma detector 
+ 60      0.00000      5   not used          / anticoinc. det.
+ 61      1.00000      0   air pressure, atm / Compton imager 
+ 62      5.00000     40   template error    / min energy, keV
+ 63      1.09485   2800   not used          / max energy, keV
+ 64      0.00000    512   not used          / # of channels  
+Version 18.0.6  
+ 65      0.00000      0   side shield (%)                    
+ 66      0.00000      0   AN side shield                     
+ 67      0.00000      0   AD side shield                     
+ 68      0.00000      0   back shield (%)                    
+ 69      0.00000      0   AN back shield                     
+ 70      0.00000      0   AD back shield                     
+ 71      0.00000      0   reserved                           
+ 72      0.00000      0   reserved                           
+ 73      0.00000      0   reserved                           
+ 74      0.00000      0   reserved                           
+ 75      0.00000      0   reserved                           
+ 76      0.00000      0   reserved                           
+ 77      0.00000      0   reserved                           
+ 78      0.00000      0   reserved                           
+ 79      0.00000      0   reserved                           
+ 80      0.00000      0   reserved                           

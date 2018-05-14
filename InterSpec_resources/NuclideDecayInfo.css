@@ -1,0 +1,447 @@
+
+.Decay
+{
+  height: 100%;
+}
+
+
+.mycloseicon, .mycloseicon:hover
+{
+background: transparent url(closeicons-tab.png) no-repeat scroll right top;
+margin: 0px 4px 0px 0px;
+height: 13px;
+width: 13px;
+border: 0px;
+padding: 0px;
+margin-left: 5px;
+cursor: default;
+position: relative;
+top: -1px;
+vertical-align: middle
+}
+
+.mycloseicon:hover
+{
+background-position: right -13px;
+cursor: default;
+}
+
+
+.SrbSelectNuclide
+{
+  
+}
+
+
+.SrbActivityDiv, .SrbActivityChartDiv
+{
+  position: static;
+  border: 0px solid #888888;
+}
+
+
+.SrbActivityChart
+{
+  
+}
+
+
+.DecayLegend
+{
+  position: absolute; 
+  right: 25px;
+  top: 10px; 
+  border: solid 1px; 
+/*  width: 135px;*/
+  padding-top: 8px;
+  padding-left: 6px;
+  padding-right: 6px;
+  padding-bottom: 5px;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+  background: rgba(235,235,235,0.2);
+  overflow-y: auto;
+  overflow-x: visible;
+  /*could keep the "Total Activity" text from wrapping with the following*/
+  padding-left: 10px;
+  padding-right: 20px;
+  white-space: nowrap;
+}
+
+.ShowSeriesCb
+{
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  margin: 0;
+  position: relative;
+  top: -5px;
+  *overflow: hidden;
+}
+
+.LegendEntry
+{
+}
+
+.displayOptionsDiv
+{
+  border: 1px solid #888888;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-left: 12px;
+  padding-right: 3px;
+
+  margin-left: 3px;
+  margin-right: 3px;
+  -moz-border-radius: 8px;
+  border-radius: 8px;
+}
+
+.m_parentNuclidesDiv
+{
+  border: 1px solid #888888;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  margin-left: 2px;
+  margin-right: 2px;
+  -moz-border-radius: 8px;
+  border-radius: 8px;
+}
+
+.m_nuclidesAddedDiv
+{
+  margin: 4px;
+  padding: 4px;
+}
+
+
+.Nuclide /*this is what contains the info about nuclides added*/
+{
+  border: 1px solid #888888;
+  margin: 3px 2px 5px 2px;
+  padding: 3px 1px 3px 2px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+}
+
+
+.Nuclide:hover
+{
+  background: rgba(115,187,235,0.1);
+}
+
+.EditingNuclide, .EditingNuclide:hover
+{
+  border: 1px solid red;
+  background: blue; /*for IEs sake*/
+  background: rgba(115,187,235,0.4);
+}
+
+.ActiveDecayChainNuc
+{
+  border: 1px solid blue;
+  background: blue; /*for IEs sake*/
+  background: rgba(115,187,235,0.05);
+}
+
+
+.m_createNewNuclideButton
+{
+  margin-left: 5px;
+}
+
+
+.m_clearNuclidesButton  /*need to float right*/
+{
+  float: right;
+  margin-right: 5px;
+}
+
+
+
+.m_createNewNuclideButton:hover
+{
+  margin-left: 5px;
+}
+
+
+.m_clearNuclidesButton:hover
+{
+  margin-right: 5px;
+}
+
+
+
+.m_elementSelection
+{
+  
+}
+
+.m_displayActivityUnitsCombo
+{
+  margin-right: 15px;
+}
+
+.m_displayActivityUnitsLabel
+{
+}
+
+
+.m_massSelection
+{
+  
+}
+
+.yaxisTypeLabel
+{
+  margin-left:   6px;
+  margin-right: 2px;
+}
+
+.m_logYScale
+{
+  margin-left:   6px;
+  margin-right: 12px;
+}
+
+.m_yAxisType
+{
+  margin-right: 12px;
+}
+
+.m_showGridLines
+{
+  margin-right: 10px;
+}
+
+.m_pdfAnchor
+{
+  float: right;
+  margin-right: 15px;
+}
+
+.helpIcon,.helpIcon:hover
+{
+  float: right;  
+/*  margin-top: -6px; */
+/*  margin-right: 15px; */
+  border: 0px;
+  background: url(../InterSpec_resources/images/help.png);
+  background-repeat: no-repeat;
+  background-position: 3px center;
+  font-size: 0px;
+  width: 25px;
+  height: 25px;
+  cursor: help;
+}
+
+.csvAnchor, .csvAnchor:hover
+{
+ float: right;
+ color: blue;
+}
+
+.csvAnchor:hover
+{
+  color: rgb(0, 174, 255);
+}
+
+.ExportCsvLink
+{
+  margin:auto;
+  display:block;
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+
+.SrbDecayChainChart, .DecayChainChartIsotope
+{
+-webkit-user-select: none;
+-khtml-user-select: none;
+-moz-user-select: none;
+-ms-user-select: none;
+user-select: none;
+-webkit-touch-callout: none;
+}
+
+.displayInitialLoadPopup
+{
+  width: 150ex;
+  padding: 5px;
+}
+
+.m_fracActivityToEndAtEdit
+{
+  
+}
+
+
+.m_numTimeUnitsToDisplayEdit
+{
+  
+}
+
+
+.m_timeUnitsToDispUnitsCombo
+{
+  margin-right: 12px;
+}
+
+
+.m_nuclideActivityEdit
+{
+  
+}
+
+
+.m_massSelection
+{
+  
+}
+
+
+.m_acceptButton
+{
+  
+}
+
+
+.m_activityInputUnitsCombo
+{
+  
+}
+
+
+.m_nuclideActivityEdit
+{
+  
+}
+
+.m_nuclideAgeEdit
+{
+  
+}
+
+.DecayedNucInfoTable
+{
+  border: 1px solid black;
+}
+
+.DecayedNucInfoTable > thead > tr > th
+{
+  border-bottom: 1px solid black;
+}
+.DecayedNucInfoTable > tbody > tr > td
+{
+  padding-top: 2px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.m_chartTabWidget
+{
+/*  margin-top: 8px;*/
+  margin-bottom: 8px;
+  margin-left: 6px;
+  margin-right: 10px;
+}
+
+
+.m_decayChart, .m_decayChainChart
+{
+/*  border: solid 1px;*/
+/*  margin-right: 12px;*/
+}
+
+.decayDiv, .photopeakDiv, .decayChainDiv
+{
+  border: solid 1px;
+/*  margin-right: 12px; */
+}
+
+.sliderDiv
+{
+  text-align: center;
+  /*border: solid 1px;*/
+  padding-bottom: 5px;
+}
+
+
+.m_sliderCurrentAgeText
+{
+}
+
+.photpeakOptionsDiv
+{
+}
+
+.m_photoPeakYScaleFixed
+{
+  margin-left: 2ex;
+}
+
+
+.m_photoPeakShieldingZ
+{
+  margin-right: 1em;
+}
+
+
+.m_photoPeakShieldingAD
+{
+  
+}
+
+.photpeakShieldingDiv
+{
+  margin-left: 1.5em;
+  border: 1px inset;
+  padding: 4px;
+}
+
+
+
+.NuclideInfo
+{
+  background-color: #DDDDDD;
+  border: solid;
+  border-width:1px;
+  margin-left: 2ex;
+  margin-right: 2ex;
+
+  /* padding-right: 50pt; */
+  border-radius: 5;
+  font-size:90%;
+  font-family:"Courier New";
+  width: 120ex;
+  /*max-width: 840px;*/
+  /*  white-space: pre;*/
+  overflow: auto;
+  text-align: left;
+}
+
+.isotopesSummary
+{
+/*  max-width: 150em;*/
+  overflow: auto;
+}
+
+.nuclideInformation
+{
+  
+}
+
+
+.photopeakMoreInfoButton
+{
+  float: right;
+}
+
+
+.DecayChainChartTable td, .DecayChainChartTable th 
+{
+  border: 1px solid black;
+  padding: 4px;
+}
+

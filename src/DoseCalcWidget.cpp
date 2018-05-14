@@ -1,0 +1,1926 @@
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+#include "InterSpec_config.h"
+
+#include <string>
+#include <vector>
+#include <sstream>
+
+#include <Wt/WText>
+#include <Wt/WLabel>
+#include <Wt/WTable>
+#include <Wt/WLineEdit>
+#include <Wt/WComboBox>
+#include <Wt/WPushButton>
+#include <Wt/WGridLayout>
+#include <Wt/WButtonGroup>
+#include <Wt/WRadioButton>
+#include <Wt/WStackedWidget>
+#include <Wt/WDoubleValidator>
+#include <Wt/WSuggestionPopup>
+#include <Wt/WRegExpValidator>
+
+
+#include "Math/IFunction.h"
+#include "Minuit2/FCNBase.h"
+//Roots Minuit2 includes
+#include "Minuit2/FCNBase.h"
+#include "Minuit2/FunctionMinimum.h"
+#include "Minuit2/MnMigrad.h"
+#include "Minuit2/MnMinos.h"
+//#include "Minuit2/Minuit2Minimizer.h"
+#include "Minuit2/MnUserParameters.h"
+#include "Minuit2/MnUserParameterState.h"
+#include "Minuit2/MnPrint.h"
+#include "Minuit2/SimplexMinimizer.h"
+#include "Minuit2/MnMigrad.h"
+#include "Minuit2/MnMinimize.h"
+#include "Minuit2/CombinedMinimizer.h"
+
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/DoseCalc.h"
+#include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/GammaXsGui.h"
+#include "InterSpec/MaterialDB.h"
+#include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DoseCalcWidget.h"
+#include "InterSpec/GadrasSpecFunc.h"
+#include "SpecUtils/UtilityFunctions.h"
+#include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/IsotopeSelectionAids.h"
+#include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/IsotopeNameFilterModel.h"
+
+using namespace Wt;
+using namespace std;
+
+namespace
+{
+  bool less_than_first( const std::pair<float,float> &lhs, const float rhs )
+  {
+    return lhs.first < rhs;
+  }
+  
+}//namespace
+
+
+namespace
+{
+  
+  class FitShieldingAdChi2
+  : public ROOT::Minuit2::FCNBase
+  {
+    const vector<float> &m_energies;
+    const vector<float> &m_intensities;
+    const float m_atomic_number;
+    const double m_user_enetered_dose;
+    const double m_distance;
+    const GadrasScatterTable &m_scatter;
+
+    
+  public:
+    
+    FitShieldingAdChi2( const vector<float> &energies,
+                        const vector<float> &intensities,
+                        const float atomic_number,
+                        const double user_enetered_dose,
+                        const double distance,
+                        const GadrasScatterTable &scatter )
+      : m_energies( energies ),
+        m_intensities( intensities ),
+        m_atomic_number( atomic_number ),
+        m_user_enetered_dose( user_enetered_dose ),
+        m_distance( distance ),
+        m_scatter( scatter )
+    {
+    }
+    
+    virtual double Up() const { return 1.0; }
+    size_t nfitPars() const { return 1; }
+    
+    virtual double operator()( const std::vector<double> &params ) const
+    {
+      assert( params.size() == 1 );
+      const double ad = params[0] * PhysicalUnits::g / PhysicalUnits::cm2;
+      const double dose = DoseCalc::gamma_dose_with_shielding( m_energies, m_intensities, ad, m_atomic_number, m_distance, m_scatter );
+      
+      //return differnce in microrem per hour from the target
+      return fabs(dose - m_user_enetered_dose) * 1000000.0 * PhysicalUnits::hour / PhysicalUnits::rem;
+    }
+  };//class FitShieldingAdChi2
+
+  
+  
+  double fit_ad( const vector<float> &energies, const vector<float> &intensities,
+                const float atomic_number, const double user_enetered_dose,
+                const double distance,
+                const GadrasScatterTable &scatter )
+  {
+    const double dose_no_shielding = DoseCalc::gamma_dose_with_shielding( energies, intensities, 0.0, atomic_number, distance, scatter );
+    
+    if( dose_no_shielding < user_enetered_dose )
+      throw runtime_error( "Dose from source specified is less than"
+                          " entered dose, even with out shielding." );
+    
+    FitShieldingAdChi2 chi2Fcn( energies, intensities,
+                                atomic_number, user_enetered_dose, distance,
+                                scatter );
+    
+    ROOT::Minuit2::MnUserParameters inputPrams;
+    inputPrams.Add( "AD", 20, 5 );
+    inputPrams.SetLowerLimit( "AD", 0.0 );
+    inputPrams.SetUpperLimit( "AD", 500.0 );
+
+    ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
+    ROOT::Minuit2::MnStrategy strategy( 1 ); //0 low, 1 medium, >=2 high
+    
+    const unsigned int maxFcnCall = 1000;
+    const double tolerance = 1.0;
+    ROOT::Minuit2::CombinedMinimizer fitter;
+    ROOT::Minuit2::FunctionMinimum minimum
+    = fitter.Minimize( chi2Fcn, inputParamState,
+                      strategy, maxFcnCall, tolerance );
+    
+    //Not sure why Minuit2 doesnt like converging on the minumum verry well, but
+    //  rather than showing the user an error message, we'll give it anither try
+    if( minimum.IsAboveMaxEdm() )
+    {
+      ROOT::Minuit2::MnMigrad fitter( chi2Fcn, inputParamState, strategy );
+      minimum = fitter( maxFcnCall, tolerance );
+    }//if( minimum.IsAboveMaxEdm() )
+    
+    if( !minimum.IsValid() )
+      throw runtime_error( "Failed to converge on a amount of shielding." );
+    
+    const ROOT::Minuit2::MnUserParameters params = minimum.UserState().Parameters();
+    const vector<double> pars = params.Params();
+    cerr << "Fit " << pars[0] << " g/cm2 with EDM " << minimum.Edm() << endl;
+    
+    return pars[0] * PhysicalUnits::g / PhysicalUnits::cm2;
+  }//double fit_ad()
+}//namespace
+
+
+
+DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
+                                Wt::WSuggestionPopup *materialSuggestion,
+                                InterSpec *viewer )
+: AuxWindow( "Dose Calc" )
+{
+  setClosable( true );
+  setResizable( false );
+  disableCollapse();
+  
+//  const Material *air = materialDB->material( "air" );
+//  assert( air );
+//  const float air_an = air->massWeightedAtomicNumber();
+//  const float air_ad = air->density * PhysicalUnits::cm3 / PhysicalUnits::g;
+//  cerr << "air_an=" << air_an << ", air_ad=" << air_ad << " g/cm3\n";
+  
+  rejectWhenEscapePressed( true );
+  
+  DoseCalcWidget *w = new DoseCalcWidget( materialDB, materialSuggestion, viewer, contents() );
+  w->setHeight( WLength(100,WLength::Percentage) );
+  
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+  if( app && !app->isMobile() )
+  {
+    const int screenW = viewer->renderedWidth();
+    const int screenH = viewer->renderedHeight();
+    
+    setHeight( ((screenH < 420) ? screenH : 420) );
+    setWidth( ((screenW < 600) ? screenW : 600) );
+  }
+
+  
+  AuxWindow::addHelpInFooter(footer(), "dose-dialog", this);
+  
+  WPushButton *closeButton = addCloseButtonToFooter();
+  closeButton->clicked().connect( this, &AuxWindow::hide );
+  
+  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+  
+  show();
+
+  centerWindow();
+}//GammaXsWindow(...) constrctor
+
+
+DoseCalcWindow::~DoseCalcWindow()
+{
+}
+
+//I eventually might make this widget a general input that van be used wherever
+//  you need to specify a gamma source, so some aspects of its coding are a bit
+//  more general than they need to be.
+class GammaSourceEnter : public Wt::WContainerWidget
+{
+public:
+  GammaSourceEnter( const bool showToolTipInstantly, Wt::WContainerWidget *parent )
+   : WContainerWidget( parent ),
+     m_nuclideEdit( 0 ),
+     m_nuclideAgeEdit( 0 ),
+     m_halfLifeTxt( 0 ),
+     m_useNuclides( true ),
+     m_useXrays( false ),
+     m_useEscapes( false ),
+     m_useReactions( false ),
+     m_currentNuc( 0 ),
+     m_changed( this )
+  {
+    addStyleClass( "GammaSourceEnter" );
+    
+    WGridLayout *layout = new WGridLayout( this );
+//    layout->setHorizontalSpacing( 0 );
+//    layout->setVerticalSpacing( 0 );
+    layout->setContentsMargins( 0, 0, 0, 0 );
+    
+    WLabel *label = new WLabel( "Nuclide:" );
+    layout->addWidget( label, 0, 0, AlignMiddle );
+    label->addStyleClass( "DoseFieldLabel" );
+    m_nuclideEdit = new WLineEdit();
+    layout->addWidget( m_nuclideEdit, 0, 1 );
+    m_nuclideEdit->addStyleClass( "DoseEnterTxt" );
+    label->setBuddy( m_nuclideEdit );
+    
+    label = new WLabel( "Age:" );
+    layout->addWidget( label, 1, 0, AlignMiddle );
+    label->addStyleClass( "DoseFieldLabel" );
+    m_nuclideAgeEdit = new WLineEdit();
+    m_nuclideAgeEdit->setPlaceholderText( "NA" );
+    layout->addWidget( m_nuclideAgeEdit, 1, 1 );
+    label->setBuddy( m_nuclideAgeEdit );
+    
+    m_halfLifeTxt = new WText();
+    m_halfLifeTxt->addStyleClass( "DoseHLTxt" );
+    layout->addWidget( m_halfLifeTxt, 0, 2, AlignMiddle );
+    
+//    layout->setColumnStretch( 0, 1 );
+    layout->setColumnStretch( 1, 1 );
+    
+    string replacerJs, matcherJs;
+    PhotopeakDelegate::EditWidget::replacerJs( replacerJs );
+    PhotopeakDelegate::EditWidget::nuclideNameMatcherJs( matcherJs );
+    
+    WSuggestionPopup *suggestions = new WSuggestionPopup( matcherJs, replacerJs );
+    suggestions->setJavaScriptMember("wtNoReparent", "true");
+    
+    suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+    suggestions->forEdit( m_nuclideEdit,
+                         WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+    
+    
+    IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel( this );
+    
+    filterModel->excludeNuclides( !m_useNuclides );
+    filterModel->excludeXrays( !m_useXrays );
+    filterModel->excludeEscapes( !m_useEscapes );
+    filterModel->excludeReactions( !m_useReactions );
+    
+    filterModel->filter( "" );
+    suggestions->setFilterLength( -1 );
+    suggestions->setModel( filterModel );
+    suggestions->filterModel().connect( filterModel, &IsotopeNameFilterModel::filter );
+    
+    m_nuclideEdit->changed().connect( this, &GammaSourceEnter::handleNuclideUserInput );
+//    m_nuclideEdit->enterPressed().connect( this, &GammaSourceEnter::handleNuclideUserInput );
+//    m_nuclideEdit->blurred().connect( this, &GammaSourceEnter::handleNuclideUserInput );
+
+  
+    string tooltip = "ex. ";
+    if( m_useNuclides )
+      tooltip += "<b>U235</b>, <b>235 Uranium</b>, ";
+    if( m_useXrays )
+      tooltip += "<b>U</b> (x-rays only), <b>Uranium</b> (x-rays), ";
+    if( m_useNuclides )
+      tooltip += "<b>U-235m</b> (meta stable state), <b>Cs137</b>, ";
+//    tooltip += "<b>background</b>, ";
+    if( m_useReactions )
+      tooltip += "<b>H(n,g)</b>, ";
+    tooltip += "etc.";
+    HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTipInstantly );
+    
+    
+    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
+    validator->setFlags(Wt::MatchCaseInsensitive);
+    m_nuclideAgeEdit->setValidator(validator);
+    
+    m_nuclideAgeEdit->changed().connect( this, &GammaSourceEnter::handleAgeUserChange );
+    m_nuclideAgeEdit->blurred().connect( this, &GammaSourceEnter::handleAgeUserChange );
+    m_nuclideAgeEdit->enterPressed().connect( this, &GammaSourceEnter::handleAgeUserChange );
+    
+    tooltip =
+    "<div>"
+      "Age can be specified using a combination of time units, "
+      "similar to '<b>5.3y 8d 22m</b>' or in half lives like "
+      "'<b>2.5 HL</b>'."
+    "</div>"
+    "<div>"
+      "Acceptible time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
+      "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
+      "you can specify time period by <b>hh:mm:ss</b>. "
+    "</div>"
+    "<div>Half life units or time periods can not be mixed with other units.</div>"
+    "<div>"
+      "When multiple time periods are specified, they are summed, e.x. '1y6months 3m' is interpreted as "
+      "18 months and 3 minutes"
+    "</div>";
+    
+    HelpSystem::attachToolTipOn( m_nuclideAgeEdit, tooltip, showToolTipInstantly );
+  }//GammaSourceEnter constructor
+  
+  
+  virtual ~GammaSourceEnter()
+  {
+  }
+  
+  
+  void handleNuclideUserInput()
+  {
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    const string isotopeLabel = m_nuclideEdit->text().toUTF8();
+    const SandiaDecay::Nuclide *nuc = 0;
+    if( m_useNuclides )
+      nuc = db->nuclide( isotopeLabel );
+    
+    if( (m_useNuclides && !m_useXrays && !m_useEscapes && !m_useReactions) && (nuc == m_currentNuc) )
+      return;
+
+    m_currentNuc = nuc;
+    
+    WString hlstr;
+    if( nuc )
+      hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife,
+                                                        2, SandiaDecay::second );
+#ifndef WT_NO_STD_WSTRING
+    hlstr = L" \x03BB=" + hlstr;
+#else
+    hlstr = " &lambda;=" + hlstr;
+#endif
+    m_halfLifeTxt->setText( hlstr );
+
+    bool useCurrentAge = false;
+    const bool showPromptOnly = false; //m_promptLinesOnly
+    
+    string agestr = useCurrentAge ? m_nuclideAgeEdit->text().toUTF8() : string();
+    if( m_currentNuc && m_prevAgeTxt.count(m_currentNuc) )
+    {
+      useCurrentAge = true;
+      agestr = m_prevAgeTxt[m_currentNuc];
+      try
+      {
+        const double hl = (m_currentNuc ? m_currentNuc->halfLife : -1.0);
+        double x = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+        if( x < 0.0 )
+          throw runtime_error("");
+      }catch(...)
+      {
+        useCurrentAge = false;
+        agestr = "";
+        m_prevAgeTxt.erase( m_currentNuc );
+      }
+    }else
+    {
+      agestr = "";
+      useCurrentAge = false;
+    }
+    
+    m_nuclideAgeEdit->enable();
+    
+    if( nuc )
+    {
+      const bool prompt = (nuc->canObtainPromptEquilibrium() && showPromptOnly);
+      const bool notMuchEvolution = PeakDef::ageFitNotAllowed(nuc);
+      
+      if( (prompt || notMuchEvolution) && m_nuclideAgeEdit->isEnabled() )
+      {
+        m_nuclideAgeEdit->disable();
+        m_nuclideAgeEdit->setText( "" );
+      }
+    }//if( nuc )
+    
+    try
+    {
+      const SandiaDecay::Element *el = NULL;
+      if( m_useXrays && (isotopeLabel.find_first_of( "0123456789" ) == string::npos) )
+        el = db->element( isotopeLabel );
+      
+      if( nuc && !IsInf(nuc->halfLife) && !nuc->decaysToChildren.empty() && !useCurrentAge )
+      {
+        if( agestr.size() )
+          m_nuclideAgeEdit->setText( agestr );
+      
+        if( PeakDef::ageFitNotAllowed(nuc) )
+        {
+          m_nuclideAgeEdit->setText( "" );
+          m_nuclideAgeEdit->disable();
+        }else if( nuc->canObtainPromptEquilibrium() && showPromptOnly )
+        {
+          WString hlstr = PhysicalUnits::printToBestTimeUnits(
+                                                              5.0*nuc->promptEquilibriumHalfLife(),
+                                                              2, SandiaDecay::second );
+          m_nuclideAgeEdit->setText( hlstr );
+        }else if( agestr.empty() )
+        {
+          string agstr;
+          PeakDef::defaultDecayTime( nuc, &agstr );
+          m_nuclideAgeEdit->setText( agstr );
+        }else
+        {
+          m_nuclideAgeEdit->setText( agestr );
+        }
+      }else if( nuc && useCurrentAge )
+      {
+        const double hl = (nuc ? nuc->halfLife : -1.0);
+        double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+        if( age > 100.0*nuc->halfLife || age < 0.0 )
+          throw std::runtime_error( "" );
+        m_nuclideAgeEdit->setText( agestr );
+      }else if( nuc )
+      {
+        if( IsInf(nuc->halfLife) )
+        {
+          passMessage( isotopeLabel + " is stable",
+                      "", WarningWidget::WarningMsgHigh );
+        }else
+        {
+          passMessage( isotopeLabel + " is missing decay data",
+                      "", WarningWidget::WarningMsgHigh );
+        }
+        
+        m_nuclideEdit->setText( "" );
+        m_nuclideAgeEdit->setText( "" );
+        m_nuclideAgeEdit->disable();
+      }else if( m_useReactions && !el && !isotopeLabel.empty() )
+      {
+        std::vector<ReactionGamma::ReactionPhotopeak> reactions;
+        
+        try
+        {
+          const ReactionGamma *rctnDb = ReactionGammaServer::database();
+          if( rctnDb )
+            rctnDb->gammas( isotopeLabel, reactions );
+        }catch(...)
+        {}
+        
+        if( reactions.size() )
+        {
+          m_nuclideAgeEdit->setText( "" );
+          m_nuclideAgeEdit->disable();
+        }//
+        
+        
+        if( isotopeLabel.size() && reactions.empty()
+            && !UtilityFunctions::icontains( isotopeLabel, "background") )
+        {
+          passMessage( isotopeLabel +
+                       " is not a valid isotope, element, or reaction", "",
+                       WarningWidget::WarningMsgHigh );
+        }
+      }else if( el && !nuc )
+      {
+        m_nuclideAgeEdit->setText( "" );
+        m_nuclideAgeEdit->disable();
+      }//if( nuc && !IsInf(nuc->halfLife) ) / else
+    }catch(...)
+    {
+      if( nuc )
+      {
+        string agstr;
+        PeakDef::defaultDecayTime( nuc, &agstr );
+        passMessage( "Changed age to a more reasonable value for " + nuc->symbol,
+                    " from '" + agestr + "' to '" + agstr + "'",
+                    WarningWidget::WarningMsgLow );
+        m_nuclideAgeEdit->setText( agstr );
+      }else
+      {
+        m_nuclideAgeEdit->setText( "0y" );
+      }//if( nuc ) / else
+    }//try / catch
+    
+    m_changed.emit();
+  }//void handleNuclideUserInput()
+  
+  
+  void handleAgeUserChange()
+  {
+    if( !m_currentNuc )
+    {
+      m_nuclideAgeEdit->setText( "" );
+      m_nuclideAgeEdit->disable();
+      return;
+    }//if( !m_currentNuc )
+    
+    
+    //Validate the age is something reasonable - if not, change it.
+    if( m_nuclideAgeEdit->text().empty() )
+      m_nuclideAgeEdit->setText( "0y" );
+    
+    double age = DBL_MAX;
+    string agestr = m_nuclideAgeEdit->text().toUTF8();
+    
+    try
+    {
+      const double hl = (m_currentNuc ? m_currentNuc->halfLife : -1.0);
+      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+    }catch(...) {}
+    
+    if( age > 50.0*m_currentNuc->halfLife || age < 0.0 )
+    {
+      passMessage( agestr + "is to many half lives to decay "
+                   + m_currentNuc->symbol, "",
+                   WarningWidget::WarningMsgHigh );
+      if( m_prevAgeTxt.count(m_currentNuc) )
+        m_nuclideAgeEdit->setText( m_prevAgeTxt[m_currentNuc] );
+    }//if( age > 50.0*m_currentNuc->halfLife )
+    
+    m_prevAgeTxt[m_currentNuc] = m_nuclideAgeEdit->text().toUTF8();
+    
+    m_changed.emit();
+  }//void handleAgeUserChange()
+  
+  enum EquilibriumType
+  {
+    SecularEquilibrium, PromptEquilibrium, NoEquilibrium
+  };
+  
+  
+  static double getMaximumHalfLife( const SandiaDecay::Nuclide* nuclide )
+  {
+    double halfLife = nuclide->halfLife;
+    
+    if( nuclide->halfLife < std::numeric_limits<double>::infinity() )
+    {
+      const vector<const SandiaDecay::Nuclide *> children = nuclide->descendants();
+      for( size_t i = 1; i < children.size(); ++i )
+      {
+        const double childHalfLife = children[i]->halfLife;
+        if( childHalfLife < std::numeric_limits<double>::infinity() )
+        {
+          if( childHalfLife > halfLife )
+            halfLife = childHalfLife;
+        }
+      }
+    }
+    
+    return halfLife;
+  }
+  
+  static void getMaximumHalfLifeInDescension( const SandiaDecay::Nuclide * const nuclide, double parentHalfLife, double &halfLife )
+  {
+    if( !nuclide )
+    {
+      halfLife = 0;
+      return;
+    }
+    
+    if (nuclide->halfLife < parentHalfLife)
+    {
+      if( nuclide->halfLife > halfLife )
+        halfLife = nuclide->halfLife;
+      
+      for( size_t decN = 0; decN < nuclide->decaysToChildren.size(); ++decN )
+      {
+        const SandiaDecay::Transition * const transition = nuclide->decaysToChildren[decN];
+        if( !transition )
+          continue; // spontaneous fission
+        
+        const SandiaDecay::Nuclide * const child = transition->child;
+        if( !child )
+          continue; // not sure...
+        
+        const double childHalfLife = child->halfLife;
+        if( childHalfLife < nuclide->halfLife && child->decayConstant() > 1e-50 )
+        {
+          getMaximumHalfLifeInDescension(child, parentHalfLife, halfLife);
+        }
+      }
+    }
+  }//getMaximumHalfLifeInDescension(...)
+  
+  static bool trySecularEquilibrium( const SandiaDecay::Nuclide * const nuclide, double &age )
+  {
+    if( nuclide )
+      return false;
+    
+    double maxHalfLife = getMaximumHalfLife(nuclide);
+    
+    if( maxHalfLife < nuclide->halfLife )
+    {
+      age = log(10000.0)/log(2.0) * maxHalfLife; // 99.99% of longest-lived daughter activity reached
+      return true;
+    }
+    return false;
+  }
+  
+  static bool tryPromptEquilibrium( const SandiaDecay::Nuclide * const nuclide, double &age )
+  {
+    if( !nuclide )
+      return false;
+    
+    // find maximum half life in monotonically decreasing half lives
+    double maxHalfLife = 0.0;
+    for( size_t decN = 0; decN < nuclide->decaysToChildren.size(); ++decN )
+    {
+      const SandiaDecay::Transition * const transition = nuclide->decaysToChildren[decN];
+      if( !transition )
+        continue; // spontaneous fission
+      
+      const SandiaDecay::Nuclide * const child = transition->child;
+      if( !child )
+        continue; // not sure...
+      
+      if( child->decayConstant() > 1e-50 )
+        getMaximumHalfLifeInDescension(child, nuclide->halfLife, maxHalfLife);
+    }//for( size_t decN = 0; decN < nuclide->decaysToChildren.size(); ++decN )
+    
+    if( maxHalfLife < nuclide->halfLife )
+    {
+      age = log(10000.0) * maxHalfLife; // 99.99% of longest-lived daughter activity reached
+      return true;
+    }
+    
+    return false;
+  }
+  
+  
+  static EquilibriumType getEquilibrium( const SandiaDecay::Nuclide* nuclide, double &age, EquilibriumType eqCode )
+  {
+    switch( eqCode )
+    {
+      case SecularEquilibrium:
+        if( trySecularEquilibrium(nuclide, age) )
+          return SecularEquilibrium;
+        
+        if( tryPromptEquilibrium(nuclide, age) )
+          return PromptEquilibrium;
+        
+        age = 0.0;
+        return NoEquilibrium;
+        break;
+        
+      case PromptEquilibrium:
+        if( tryPromptEquilibrium(nuclide, age) )
+          return PromptEquilibrium;
+        
+        if( trySecularEquilibrium(nuclide, age) )
+          return SecularEquilibrium;
+        
+        age = 0.0;
+        return NoEquilibrium;
+        break;
+        
+      default:
+        return NoEquilibrium;
+    }
+  }
+  
+  
+  double nuclideAge() const
+  {
+    if( !m_currentNuc )
+      throw runtime_error( "No current nuclide" );
+    
+    string agestr = m_nuclideAgeEdit->text().toUTF8();
+    
+    //m_nuclideAgeEdit should only be disabled if the isotope returns true for
+    //  PeakDef::ageFitNotAllowed(nuc).
+    if( m_nuclideAgeEdit->isDisabled() )
+    {
+      double ageval = 5.0*m_currentNuc->halfLife;
+      if( m_currentNuc->canObtainPromptEquilibrium() )
+        ageval = log(10000.0)/log(2.0) * m_currentNuc->promptEquilibriumHalfLife();
+      agestr = PhysicalUnits::printToBestTimeUnits( ageval );
+      
+//      cerr << "Niave Agestr=" << agestr << endl;
+//      ageval = PeakDef::defaultDecayTime( m_currentNuc, &agestr );
+//      cerr << "defaultDecayTime Agestr=" << agestr << endl;
+      
+//      double gregsage = 0.0;
+//      EquilibriumType actual_type = getEquilibrium( m_currentNuc, gregsage, SecularEquilibrium );
+//      cerr << "gregsage=" << PhysicalUnits::printToBestTimeUnits(gregsage) << endl;
+      
+//      cerr << "Agestr=" << agestr << endl;
+    }//if( m_nuclideAgeEdit->isDisabled() )
+    
+    const double hl = (m_currentNuc ? m_currentNuc->halfLife : -1.0);
+    const double age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+    if( age < 0 )
+      throw runtime_error( "Invalid negative age" );
+    
+    return age;
+  }//double nuclideAge()
+  
+  /** 
+   * \returns empty results if no valid isotope, an invalid age, or negative or 
+   *          zero activity. Other wise returns <energy,gamma/sec> pairs.
+   */
+  std::vector< std::pair<float,float> > gammaEnergyAndIntensity( const double activity ) const
+  {
+    std::vector< std::pair<float,float> > answer;
+    
+    //Function not capable of anything besides gammas yet.
+    assert( m_useNuclides );
+    assert( !m_useXrays );
+    assert( !m_useEscapes );
+    assert( !m_useReactions );
+  
+    if( !m_currentNuc || activity <= 0.0 )
+      return answer;
+    
+    double age = 0.0;
+    try
+    {
+      age = nuclideAge();
+    }catch(...)
+    {
+      return answer;
+    }
+    
+    SandiaDecay::NuclideMixture mix;
+    mix.addAgedNuclideByActivity( m_currentNuc, activity, age );
+    const vector<SandiaDecay::EnergyRatePair> results
+              = mix.gammas( 0.0, SandiaDecay::NuclideMixture::OrderByEnergy, true );
+    
+    
+    for( const SandiaDecay::EnergyRatePair &aep : results )
+      answer.push_back( make_pair( static_cast<float>(aep.energy), static_cast<float>(aep.numPerSecond) ) );
+    
+    return answer;
+  }//std::vector< std::pair<float,float> > gammaEnergyAndIntensity() const
+  
+  Wt::Signal<> &changed()
+  {
+    return m_changed;
+  }
+  
+  const SandiaDecay::Nuclide *nuclide() const{ return m_currentNuc; }
+  
+  
+protected:
+  Wt::WLineEdit *m_nuclideEdit;
+  Wt::WLineEdit *m_nuclideAgeEdit;
+  Wt::WText *m_halfLifeTxt;
+  
+  bool m_useNuclides;
+  bool m_useXrays;
+  bool m_useEscapes;
+  bool m_useReactions;
+  
+  const SandiaDecay::Nuclide *m_currentNuc;
+  std::map<const SandiaDecay::Nuclide *,std::string> m_prevAgeTxt;
+  
+  Wt::Signal<> m_changed;
+};//class GammaSourceEnter
+
+
+DoseCalcWidget::DoseCalcWidget( MaterialDB *materialDB,
+                                 Wt::WSuggestionPopup *materialSuggestion,
+                                 InterSpec *specViewer,
+                                 Wt::WContainerWidget *parent )
+ : WContainerWidget( parent ),
+   m_viewer( specViewer ),
+   m_materialSuggest( materialSuggestion ),
+   m_materialDB( materialDB ),
+   m_enterShieldingSelect( NULL ),
+   m_answerShieldingSelect( NULL ),
+   m_gammaSource( NULL ),
+   m_sourceType( NULL ),
+   m_gammaSourceDiv( NULL ),
+   m_neutronSourceDiv( NULL ),
+   m_neutronSourceCombo( NULL ),
+   m_activityAnswer( NULL ),
+   m_activityEnter( NULL ),
+   m_activityEnterUnits( NULL ),
+   m_activityAnswerUnits( NULL ),
+   m_doseAnswer( NULL ),
+   m_doseEnter( NULL ),
+   m_doseEnterUnits( NULL ),
+   m_doseAnswerUnits( NULL ),
+   m_distanceEnter( NULL ),
+   m_distanceAnswer( NULL ),
+   m_issueTxt( NULL ),
+   m_layout( NULL ),
+   m_currentCalcQuantity( DoseCalcWidget::NumQuantity ),
+   m_stack( NULL )
+{
+  init();
+}//DoseCalcWidget constructor
+
+
+void DoseCalcWidget::init()
+{
+  addStyleClass( "DoseCalcWidget" );
+  m_layout = new WGridLayout( this );
+  
+  try
+  {
+    string continuumData = UtilityFunctions::append_path( InterSpec::dataDirectory(), "GadrasContinuum.lib" );
+    
+    m_scatter.reset( new GadrasScatterTable( continuumData ) );
+  }catch( std::exception &e )
+  {
+    WString msg = "<div><b>Error iniitalizing resources:</b></div><div>";
+//    msg += Wt::Utils::htmlEncode( e.what(), Wt::Utils::EncodeNewLines );
+    msg +=  Wt::WWebWidget::escapeText(	WString(e.what()), true );
+    msg += "</div>";
+    
+    m_layout->addWidget( new WText(msg), 0, 0, AlignCenter | AlignMiddle );
+    
+    return;
+  }//try / catch
+  
+  const bool isPhone = m_viewer->isPhone();
+  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  
+  WContainerWidget *buttonDiv = new WContainerWidget();
+//  WGridLayout *buttonLayout = new WGridLayout( buttonDiv );
+  buttonDiv->setList( true );
+  
+  WContainerWidget *enterDiv = new WContainerWidget();
+  WContainerWidget *answerDiv = new WContainerWidget();
+  WGridLayout *enterLayout = new WGridLayout( enterDiv );
+  WGridLayout *answerLayout = new WGridLayout( answerDiv );
+  
+  answerLayout->setContentsMargins( 9, 1, 9, 5 );
+  enterLayout->setContentsMargins( 9, 1, 9, 5 );
+  
+  
+  buttonDiv->addStyleClass( "DoseButtonDiv" );
+  enterDiv->addStyleClass( "DoseEnterDiv" );
+  answerDiv->addStyleClass( "DoseAnswerDiv" );
+  
+  WContainerWidget *workDiv = new WContainerWidget();
+  WGridLayout *workLayout = new WGridLayout( workDiv );
+
+  workLayout->addWidget( enterDiv, 0, 0 );
+  workLayout->addWidget( answerDiv, 0, 1 );
+  workLayout->setColumnStretch( 0, 1 );
+  workLayout->setColumnStretch( 1, 1 );
+  workLayout->setContentsMargins( 0, 0, 0, 0 );
+  workLayout->setVerticalSpacing( 0 );
+  workLayout->setHorizontalSpacing( 0 );
+  
+  WText *coltxt = 0;
+  if( !isPhone )
+  {
+    coltxt = new WText( "Inputs", enterDiv );
+    coltxt->addStyleClass( "DoseColLabel" );
+    coltxt->setInline( false );
+    enterLayout->addWidget( coltxt, 0, 0, AlignMiddle | AlignTop );
+  }//if( !isPhone )
+  
+  coltxt = new WText( "Answer" );
+  coltxt->addStyleClass( "DoseColLabel" );
+  coltxt->setInline( false );
+  answerLayout->addWidget( coltxt, 0, 0, AlignMiddle | AlignTop );
+  
+  
+  WContainerWidget *introDiv = new WContainerWidget();
+  introDiv->addStyleClass( "DoseIntroDiv" );
+  WGridLayout *intoTxtLayout = new WGridLayout( introDiv );
+  WText *txt = new WText( "Select quantity you would like to compute on the left" );
+  txt->addStyleClass( "DoseIntroTxtMain" );
+  
+  intoTxtLayout->addWidget( txt, 0, 0, AlignMiddle | AlignCenter );
+  
+  txt = new WText( "Dose values computed using ANSI/ANS-6.1.1-1991 most"
+                   " conservative case: Anterior-Posterior orientation."
+                   " Dose calculations are a rough guide, at best, and are"
+                   " subject to many uncertainities or errors." );
+  txt->addStyleClass( "DoseIntroTxtDetail" );
+  
+  intoTxtLayout->addWidget( txt, 1, 0, AlignCenter );
+  intoTxtLayout->setRowStretch( 0, 10 );
+  
+  m_stack = new WStackedWidget();
+//  m_stack->setTransitionAnimation( WAnimation(WAnimation::Fade, WAnimation::Linear, 500), false );
+  m_stack->addWidget( introDiv );
+  m_stack->addWidget( workDiv );
+  m_layout->addWidget( buttonDiv, 0, 0 );
+  m_layout->addWidget( m_stack, 0, 1 );
+  m_layout->setColumnStretch( 1, 1 );
+  
+  //First need to put source capability in
+  {
+    WContainerWidget *sourcDiv = new WContainerWidget();
+    sourcDiv->addStyleClass( "DoseEnterEl" );
+    
+    if( !isPhone )
+    {
+      txt = new WText( "Source:", sourcDiv );
+      txt->addStyleClass( "DoseEnterInd" );
+      txt->setInline( false );
+    }//if( !isPhone )
+    
+    m_sourceType = new WButtonGroup( sourcDiv );
+    m_sourceType->checkedChanged().connect( this, &DoseCalcWidget::handleSourceTypeChange );
+    
+    WContainerWidget *buttonDiv = new WContainerWidget( sourcDiv );
+    WRadioButton *gammaButton = new Wt::WRadioButton( "Gamma", buttonDiv );
+    gammaButton->setMargin( 7, Wt::Right );
+    m_sourceType->addButton( gammaButton, 0 );
+    
+    WRadioButton *neutronButton = new Wt::WRadioButton( "Neutron", buttonDiv );
+    m_sourceType->addButton( neutronButton, 1 );
+    neutronButton->disable();
+    neutronButton->setToolTip( "Neutron dose calc comming soon!" );
+    neutronButton->setAttributeValue( "style", "color: grey;" );
+    
+    m_sourceType->setSelectedButtonIndex( 0 );
+    
+    enterLayout->addWidget( sourcDiv, 1, 0, AlignMiddle );
+    
+    m_gammaSourceDiv = new WContainerWidget( sourcDiv );
+    m_neutronSourceDiv = new WContainerWidget( sourcDiv );
+    m_neutronSourceDiv->hide();
+    m_neutronSourceCombo = new WComboBox( m_neutronSourceDiv );
+    m_neutronSourceCombo->addStyleClass( "DoseAnswerCombo" );
+    m_neutronSourceCombo->addItem( "Ca252" );
+    m_neutronSourceCombo->addItem( "WGPu" );
+    m_neutronSourceCombo->addItem( "U238" );
+    m_neutronSourceCombo->activated().connect( this, &DoseCalcWidget::updateResult );
+    
+    m_gammaSource = new GammaSourceEnter( showToolTipInstantly, m_gammaSourceDiv );
+    m_gammaSource->changed().connect( this, &DoseCalcWidget::updateResult );
+  }
+  
+  
+  for( Quantity i = Quantity(0); i < NumQuantity; i = Quantity(i+1) )
+  {
+    WContainerWidget *w = new WContainerWidget( buttonDiv );
+    m_quantityButtons[i] = new WPushButton( w );
+//    buttonLayout->addWidget( m_quantityButtons[i], i, 0, AlignMiddle );
+    
+    m_quantityButtons[i]->addStyleClass( "DoseButton" );
+    
+    m_enterWidgets[i] = new WContainerWidget();
+    m_answerWidgets[i] = new WContainerWidget();
+    
+    enterLayout->addWidget( m_enterWidgets[i], i + 2, 0, AlignMiddle );
+    answerLayout->addWidget( m_answerWidgets[i], i + 1, 0, AlignMiddle );
+
+    
+    m_enterWidgets[i]->addStyleClass( "DoseEnterEl" );
+    m_answerWidgets[i]->addStyleClass( "DoseAnswerEl" );
+    
+    m_quantityButtons[i]->clicked().connect( boost::bind( &DoseCalcWidget::handleQuantityClick, this, i ) );
+    
+    
+    switch( i )
+    {
+      case Dose:
+      {
+        m_quantityButtons[i]->setText( "Dose" );
+       
+        txt = new WText( "Dose:", m_enterWidgets[i] );
+        txt->addStyleClass( "DoseEnterInd" );
+        if( !isPhone )
+          txt->setInline( false );
+        else
+          txt->setAttributeValue( "style", "display: inline-block; width: 45px;" );
+        
+        WContainerWidget *unitdiv = new WContainerWidget( m_answerWidgets[i] );
+        WLabel *label = new WLabel( "units: ", unitdiv );
+        m_doseAnswerUnits = new WComboBox( unitdiv );
+        label->setBuddy( m_doseAnswerUnits );
+        
+        m_doseAnswer = new WText( m_answerWidgets[i] );
+        m_doseAnswer->setInline( false );
+        m_doseAnswer->addStyleClass( "DoseAnswerTxt" );
+        
+        m_doseAnswerValue = 0.1 * PhysicalUnits::rem / PhysicalUnits::hour;
+        m_doseAnswer->setText( "100 mR/hr" );
+        m_doseAnswerUnits->addItem( "rem/hr" );
+        m_doseAnswerUnits->addItem( "sievert/hr" );
+
+        
+        m_doseEnter = new WLineEdit( m_enterWidgets[i] );
+        
+        m_doseEnter->addStyleClass( "DoseEnterTxt" );
+        m_doseEnter->setText( "100" );
+        if( isPhone )
+          m_doseEnter->setWidth( 50 );
+        
+        WDoubleValidator *val = new WDoubleValidator( m_doseEnter );
+        val->setBottom( 0.0 );
+        m_doseEnter->setValidator( val );
+        m_doseEnter->changed().connect( this, &DoseCalcWidget::updateResult );
+//        m_doseEnter->blurred().connect( this, &DoseCalcWidget::updateResult );
+//        m_doseEnter->enterPressed().connect( this, &DoseCalcWidget::updateResult );
+
+        m_doseEnterUnits = new WComboBox( m_enterWidgets[i] );
+        
+        
+        for( const auto &u : PhysicalUnits::sm_doseRateUnitHtmlNameValues )
+        {
+          string val = u.first;
+#if( IOS )
+          UtilityFunctions::ireplace_all( val, "&mu;", "u" );
+#else
+          const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
+          UtilityFunctions::ireplace_all( val, "&mu;", (char *)utf8mu /*"\u03BC"*/ );
+#endif
+          m_doseEnterUnits->addItem( val );
+        }
+        
+        m_doseEnterUnits->activated().connect( this, &DoseCalcWidget::updateResult );
+        m_doseAnswerUnits->activated().connect( this, &DoseCalcWidget::updateResult );
+        break;
+      }//case Dose:
+        
+      case Activity:
+      {
+        m_quantityButtons[i]->setText( "Activity" );
+        
+        txt = new WText( "Activity:" );
+        txt->addStyleClass( "DoseEnterInd" );
+        if( !isPhone )
+          txt->setInline( false );
+        else
+          txt->setAttributeValue( "style", "display: inline-block; width: 45px;" );
+        
+        m_enterWidgets[i]->addWidget( txt );
+        
+        WContainerWidget *unitdiv = new WContainerWidget( m_answerWidgets[i] );
+        WLabel *label = new WLabel( "units: ", unitdiv );
+        m_activityAnswerUnits = new WComboBox( unitdiv );
+        label->setBuddy( m_activityAnswerUnits );
+        
+        m_activityEnter = new WLineEdit( m_enterWidgets[i] );
+        m_activityEnter->addStyleClass( "DoseEnterTxt" );
+        
+        if( isPhone )
+          m_activityEnter->setWidth( 50 );
+        
+        WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityUnitOptionalRegex, this );
+        val->setFlags( Wt::MatchCaseInsensitive );
+//        WDoubleValidator *val = new WDoubleValidator();
+        m_activityEnter->setValidator( val );
+//        val->setBottom( 0.0 );
+        m_activityEnter->setText( "100" );  
+        m_activityEnter->blurred().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_activityEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+
+        m_activityEnterUnits = new WComboBox( m_enterWidgets[i] );
+
+        for( const auto &u : PhysicalUnits::sm_activityUnitHtmlNameValues )
+        {
+          string val = u.first;
+#if( IOS )
+          UtilityFunctions::ireplace_all( val, "&mu;", "u" );
+#else
+          const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
+          UtilityFunctions::ireplace_all( val, "&mu;", (char *)utf8mu /*"\u03BC"*/ );
+#endif
+          m_activityEnterUnits->addItem( val );
+        }
+        
+        m_activityEnterUnits->setCurrentIndex( 6 ); //uci
+        
+        m_activityAnswerUnits->addItem( "curries" );
+        m_activityAnswerUnits->addItem( "becquerels" );
+
+        m_activityAnswer = new WText( m_answerWidgets[i] );
+        m_activityAnswer->setInline( false );
+        m_activityAnswer->setText( "200 \u03BCCi" );
+        m_activityAnswer->addStyleClass( "DoseAnswerTxt" );
+        
+        m_activityEnterUnits->activated().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_activityAnswerUnits->activated().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        break;
+      }//case Activity:
+        
+      case Distance:
+      {
+        m_quantityButtons[i]->setText( "Distance" );
+        
+        txt = new WText( "Distance:" );
+        txt->addStyleClass( "DoseEnterInd" );
+        if( !isPhone )
+          txt->setInline( false );
+        else
+          txt->setAttributeValue( "style", "display: inline-block; width: 45px;" );
+        
+        m_enterWidgets[i]->addWidget( txt );
+        
+        m_distanceAnswer = new WText();
+        m_distanceAnswer->setInline( false );
+        m_distanceAnswer->addStyleClass( "DoseAnswerTxt" );
+        m_distanceAnswer->addStyleClass( "DoseDistanceAnswer" );
+        m_answerWidgets[i]->addWidget( m_distanceAnswer );
+    
+        
+        m_distanceEnter = new WLineEdit( "100 cm" );
+        m_distanceEnter->addStyleClass( "DoseEnterTxt" );
+        
+        if( isPhone )
+          m_distanceEnter->setWidth( 50 );
+        
+//        m_distanceEnter->setTextSize( 10 );
+        WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
+        validator->setFlags( Wt::MatchCaseInsensitive );
+        m_distanceEnter->setValidator( validator );
+        HelpSystem::attachToolTipOn( m_distanceEnter,
+            "Distance from center of source to face of detector. Number must be"
+            " followed by units; valid units are: meters, m, cm, mm, km, feet,"
+            " ft, ', in, inches, or \".  You may also add multiple distances,"
+            " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
+            " 40inches and 15.6cm respectively.", showToolTipInstantly );
+        
+        m_distanceEnter->changed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_distanceEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        
+        m_enterWidgets[i]->addWidget( m_distanceEnter );
+        break;
+      }//case Distance:
+        
+      case Shielding:
+      {
+        m_quantityButtons[i]->setText( "Shielding" );
+        
+        if( !isPhone )
+        {
+          txt = new WText( "Shielding:" );
+          txt->addStyleClass( "DoseEnterInd" );
+          txt->setInline( false );
+          m_enterWidgets[i]->addWidget( txt );
+        }
+        
+        m_enterShieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
+        m_answerShieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
+        m_answerShieldingSelect->thicknessEdit()->disable();
+        m_answerShieldingSelect->arealDensityEdit()->disable();
+        m_enterWidgets[i]->addWidget( m_enterShieldingSelect );
+        m_answerWidgets[i]->addWidget( m_answerShieldingSelect );
+        m_enterShieldingSelect->materialModified().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_enterShieldingSelect->materialChanged().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_answerShieldingSelect->materialModified().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_answerShieldingSelect->materialChanged().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        
+        if( isPhone )
+        {
+          m_enterShieldingSelect->materialEdit()->setEmptyText( "Shielding Material" );
+        }
+        
+        break;
+      }//case Shielding:
+        
+      case NumQuantity:
+        break;
+    }//switch( i )
+  }//for( Quantity i = Quantity(0); i < NumQuantity; ++i )
+  
+//  buttonLayout->setContentsMargins( 0, 0, 0, 0 );
+  //Add another widget bellow the menu buttons to force them all up
+//  const int spacerRow = buttonLayout->rowCount();
+//  buttonLayout->addWidget( new WContainerWidget(), spacerRow, 0 );
+//  buttonLayout->setRowStretch( spacerRow, 10 );
+  
+  
+  
+  m_stayTime = new WContainerWidget();
+  const int stayRow = answerLayout->rowCount();
+  answerLayout->addWidget( m_stayTime, stayRow, 0 );
+  
+  m_issueTxt = new WText();
+  m_issueTxt->addStyleClass( "DoseIssueTxt" );
+  answerLayout->addWidget( m_issueTxt, answerLayout->rowCount(), 0, AlignBottom );
+  
+  for( int i = 1; i < answerLayout->rowCount(); ++i )
+    answerLayout->setRowStretch( i, 1 );
+  answerLayout->setRowStretch( stayRow, 2 );
+  
+  for( int i = 1; i < enterLayout->rowCount(); ++i )
+    enterLayout->setRowStretch( i, 1 );
+  
+}//void DoseCalcWidget::init()
+
+
+DoseCalcWidget::~DoseCalcWidget()
+{
+  //nothing to do here
+}//~DoseCalcWidget()
+
+
+
+void DoseCalcWidget::handleQuantityClick( const DoseCalcWidget::Quantity q )
+{
+  const bool isDeselect = m_quantityButtons[q]->hasStyleClass( "DoseButtonActive" );
+  
+  if( isDeselect )
+  {
+    m_quantityButtons[q]->removeStyleClass( "DoseButtonActive" );
+    m_stack->setCurrentIndex( 0 );
+    m_currentCalcQuantity = NumQuantity;
+    return;
+  }//if( isDeselect )
+  
+  
+  m_currentCalcQuantity = q;
+  
+  
+  WAnimation animation;
+//  if( m_stack->currentIndex() == 1 )
+//    animation = WAnimation(WAnimation::Fade, WAnimation::Linear, 500);
+//  else
+    m_stack->setCurrentIndex( 1 );
+  
+  for( Quantity i = Quantity(0); i < NumQuantity; i = Quantity(i+1) )
+  {
+    m_quantityButtons[i]->removeStyleClass( "DoseButtonActive" );
+    m_enterWidgets[i]->setHidden( i==q, animation );
+    m_answerWidgets[i]->setHidden( i!=q, animation );
+  }
+  
+  m_quantityButtons[q]->addStyleClass( "DoseButtonActive" );
+  
+  updateResult();
+}//void handleQuantityClick( const Quantity q )
+
+
+void DoseCalcWidget::handleSourceTypeChange()
+{
+  const int checkid = m_sourceType->checkedId();
+  
+  m_gammaSourceDiv->setHidden( checkid==1 );
+  m_neutronSourceDiv->setHidden( checkid==0 );
+  
+  if( checkid == 0 )
+  {
+   
+  }else
+  {
+  
+  }//if( gamma source ) / else ( neutron source )
+  
+  updateResult();
+}//void DoseCalcWidget::handleSourceTypeChange()
+
+
+double DoseCalcWidget::enteredActivity()
+{
+  double activity = 0.0;
+  string activitystr = m_activityEnter->text().toUTF8();
+  
+  UtilityFunctions::trim( activitystr );
+  
+  const size_t pos = activitystr.find_first_not_of( "0123456789Ee.-+" );  //a regex would be better
+  
+  if( pos == string::npos )
+  {
+    if( !(stringstream(activitystr) >> activity) )
+      throw runtime_error( "Invalid number" );
+    const int unitsInd = m_activityEnterUnits->currentIndex();
+    activity *= PhysicalUnits::sm_activityUnitHtmlNameValues.at(unitsInd).second;
+  }else
+  {
+    const bool hasb = UtilityFunctions::icontains( activitystr, "b" );
+    const bool hasc = UtilityFunctions::icontains( activitystr, "c" );
+    
+    if( hasb && hasc )
+      throw runtime_error( "Invalid activity string, couldnt determine units" );
+    
+    activity = PhysicalUnits::stringToActivity( activitystr );
+    
+    const PhysicalUnits::UnitNameValuePair &bestunit
+                          = PhysicalUnits::bestActivityUnitHtml( activity, hasc );
+    
+    PhysicalUnits::UnitNameValuePairV::const_iterator pos =
+         std::find( PhysicalUnits::sm_activityUnitHtmlNameValues.begin(), PhysicalUnits::sm_activityUnitHtmlNameValues.end(), bestunit );
+    assert( pos != PhysicalUnits::sm_activityUnitHtmlNameValues.end() );
+    m_activityEnterUnits->setCurrentIndex( pos - PhysicalUnits::sm_activityUnitHtmlNameValues.begin() );
+    
+    const double txtdblval = activity / bestunit.second;
+    char txtval[32];
+    snprintf( txtval, sizeof(txtval), "%f", floor(1000*txtdblval + 0.5)/1000 );  //fix this to 3 sig figs, not 3 decimals
+    
+    //Get rid of unwanted decimals (they should be all zeros from rounding above)
+    //(this should probably be a function call somewhere)
+    string durstr = txtval;
+    const size_t decpos = durstr.find_last_of( '.' );
+    if( decpos != string::npos )
+    {
+      const string predec = durstr.substr( 0, decpos );
+      string postdec = durstr.substr( decpos + 1 );
+      size_t lastpos = postdec.find_last_not_of( "0" );
+      if( lastpos == string::npos )
+        postdec = "";
+      else
+        postdec = postdec.substr( 0, lastpos + 1 );
+      
+      durstr = predec;
+      if( postdec.size() )
+        durstr += "." + postdec;
+    }//if( decpos != string::npos )
+    
+    m_activityEnter->setText( durstr );
+  }//if( user entered only numbers ) / else user entered units to
+  
+  return activity;
+}//double enteredActivity()
+
+
+
+
+
+void DoseCalcWidget::updateResultForGammaSource()
+{
+  double activity = 0.0;
+  
+  Quantity quantity = m_currentCalcQuantity;
+  
+  if( !m_gammaSource->nuclide() )
+  {
+    m_issueTxt->setText( "Empty or invalid source nuclide" );
+    quantity = NumQuantity;
+  }
+  
+  m_activityAnswer->setText( "" );
+  m_doseAnswerValue = 0.0;
+  m_doseAnswer->setText( "" );
+  m_distanceAnswer->setText( "" );
+  if( m_answerShieldingSelect->isGenericMaterial() )
+    m_answerShieldingSelect->arealDensityEdit()->setText( "" );
+  else
+    m_answerShieldingSelect->thicknessEdit()->setText( "" );
+  m_issueTxt->setText( "" );
+  
+
+  try
+  {
+    bool doflash = false;
+    switch( quantity )
+    {
+      case Activity: case Dose: case Distance:
+        if( m_enterShieldingSelect->isGenericMaterial() )
+        {
+          doflash = (m_enterShieldingSelect->atomicNumber() > 0.0
+                      && m_enterShieldingSelect->arealDensity() > 0.0);
+        }else
+        {
+          doflash = (m_enterShieldingSelect->material()
+                     && m_enterShieldingSelect->thickness() > 0.0);
+        }
+        break;
+      
+      case Shielding: case NumQuantity:
+      break;
+    }
+    
+    if( doflash )
+      doJavaScript( "$('#" + m_enterShieldingSelect->id() + "').fadeIn(100).fadeOut(100).fadeIn(100).fadeOut(100).fadeIn(100);" );
+  }catch(...)
+  {
+    
+  }
+  
+  switch( quantity )
+  {
+    case Activity:
+      activity = 1.0*SandiaDecay::curie;
+      break;
+      
+    case Dose:
+    case Distance:
+    case Shielding:
+    {
+      try
+      {
+        activity = enteredActivity();
+      }catch( std::exception & )
+      {
+        m_issueTxt->setText( "Activity is invalid" );
+        return;
+      }
+      
+      break;
+    }//case Dose: case Distance: case Shielding:
+      
+    case NumQuantity:
+      return;
+      break;
+  }//switch( m_sourceType->checkedId() )
+  
+  vector<pair<float,float> > source_gamma
+                           = m_gammaSource->gammaEnergyAndIntensity( activity );
+  
+  const SandiaDecay::Nuclide *nuclide = m_gammaSource->nuclide();
+  
+  
+  double presum = 0.0;
+  for( size_t a = 0; a < source_gamma.size(); ++a )
+    presum += source_gamma[a].second;
+  
+  if( nuclide )  //20.34, 20.21
+  {
+    //start gettgin xrays
+    double age;
+    try
+    {
+      age = m_gammaSource->nuclideAge();
+    }catch(...)
+    {
+      m_issueTxt->setText( "Invalid age" );
+      return;
+    }
+
+    vector< pair<float,float> > xrays;
+    if( nuclide )
+    {
+      SandiaDecay::NuclideMixture mix;
+      mix.addAgedNuclideByActivity( nuclide, activity, age );
+      const vector<SandiaDecay::EnergyRatePair> xrayAbun = mix.xrays( 0 );
+      for( const SandiaDecay::EnergyRatePair &aep : xrayAbun )
+        xrays.push_back( pair<float,float>(static_cast<float>(aep.energy),static_cast<float>(aep.numPerSecond)) );
+    }//if( nuclide )
+    
+    for( size_t i = 0; i < xrays.size(); ++i )
+    {
+      pair<float,float> &xray = xrays[i];
+      
+      cerr << "{ " << xray.first << ", " << xray.second << " }\n";
+      
+//      cerr << "Using fudge factor of 5\n";
+//      xray.second *= 5.0;
+      
+      vector<pair<float,float> >::iterator pos = std::lower_bound( source_gamma.begin(), source_gamma.end(), xray.first, &less_than_first );
+      if( pos == source_gamma.end() || pos->first != xrays[i].first )
+      {
+        source_gamma.insert( pos, xray );
+      }else
+      {
+        pos->second += xray.second;
+      }
+    }//for( size_t i = 0; i < xrays.size(); ++i )
+  }//if( nuclide )
+  
+  
+  double postsum = 0.0;
+  for( size_t a = 0; a < source_gamma.size(); ++a )
+    postsum += source_gamma[a].second;
+  
+  cerr << "presum=" << presum << ", postsum=" << postsum << endl;
+  
+  //XXX - should change this from {AN,AD} to getting mu for the material specifically.
+  float shielding_an = 14.0f;
+  float shielding_ad = 0.0f;
+  
+  try
+  {
+    if( m_enterShieldingSelect->isGenericMaterial() )
+    {
+      string anstr;
+      if( !m_enterShieldingSelect->atomicNumberEdit()->text().empty()
+         && !m_enterShieldingSelect->arealDensityEdit()->text().empty() )
+      {
+        shielding_an = m_enterShieldingSelect->atomicNumber();
+        shielding_ad = m_enterShieldingSelect->arealDensity();
+      }
+    }else
+    {
+      std::shared_ptr<Material> mat = m_enterShieldingSelect->material();
+      if( mat )
+      {
+        shielding_an = mat->massWeightedAtomicNumber();
+        shielding_ad = mat->density * m_enterShieldingSelect->thickness();
+      }//if( mat )
+    }//if( m_enterShieldingSelect->isGenericMaterial() ) / else
+  }catch(...)
+  {
+    m_issueTxt->setText( "Invalid shielding" );
+    return;
+  }
+  
+  vector<float> energies, intensities;
+  for( size_t i = 0; i < source_gamma.size(); ++i )
+  {
+    energies.push_back( source_gamma[i].first );
+    intensities.push_back( source_gamma[i].second );
+  }
+  
+  //Set to zero shielding if we are goign to calculate shielding
+  //  Or if the user has explicitly requested zero shielding
+  if( (quantity == Shielding) || (shielding_an <= 1.0 && shielding_ad <= 0.0) )
+  {
+    shielding_an = 14.0;
+    shielding_ad = 0.0;
+  }else if( shielding_an <= 1.0 )
+  {
+    m_issueTxt->setText( "Error calculating dose, invalid shielding, sorry :{" );
+    return;
+  }
+  
+  double dose_from_source = 0.0, user_enetered_dose = 0.0, distance = 10.0*PhysicalUnits::cm;
+  
+  if( quantity != Distance )
+  {
+    try
+    {
+      string diststr = m_distanceEnter->text().toUTF8();
+      UtilityFunctions::trim( diststr );
+      if( diststr.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
+      {
+        diststr += " cm";
+        m_distanceEnter->setText( diststr );
+      }
+      
+      distance = PhysicalUnits::stringToDistance( diststr );
+    }catch ( std::exception &e )
+    {
+      m_issueTxt->setText( "Distance is invalid." );
+      cerr << "Error: " << e.what() << endl;
+      return;
+    }
+  }//if( quantity != Distance )
+  
+  
+  try
+  {
+    dose_from_source = DoseCalc::gamma_dose_with_shielding( energies, intensities,
+                                        shielding_ad, shielding_an, distance, *m_scatter );
+  }catch( std::exception &e )
+  {
+    m_issueTxt->setText( "Error calculating dose from source, sorry :{" );
+    cerr << "Error: " << e.what() << endl;
+    return;
+  }//try / catch
+  
+  
+  
+  if( quantity != Dose )
+  {
+    if( !(stringstream(m_doseEnter->text().toUTF8()) >> user_enetered_dose) )
+    {
+      m_issueTxt->setText( "Invalid source dose." );
+      return;
+    }
+    
+    const int doseIndex = m_doseEnterUnits->currentIndex();
+    if( doseIndex >= static_cast<int>(PhysicalUnits::sm_doseRateUnitHtmlNameValues.size()) || doseIndex < 0 )
+      throw runtime_error( "doseIndex >= PhysicalUnits::sm_doseRateUnitHtmlNameValues.size() || doseIndex < 0" );
+    
+    user_enetered_dose *= PhysicalUnits::sm_doseRateUnitHtmlNameValues[doseIndex].second;
+  }//if( quantity != Dose )
+  
+  
+  switch( quantity )
+  {
+    case Activity:
+    {
+      const double answer = activity * user_enetered_dose / dose_from_source;
+      
+      const bool useCurries = (m_activityAnswerUnits->currentIndex() == 0);
+      const string answerstr = PhysicalUnits::printToBestActivityUnits( answer, 2, useCurries );
+      m_activityAnswer->setText( answerstr );
+      
+      break;
+    }//case Activity:
+      
+    case Dose:
+    {
+      double srcactivity = 0.0;
+      
+      try
+      {
+        srcactivity = enteredActivity();
+      }catch(...)
+      {
+        m_issueTxt->setText( "Invalid source activity." );
+        return;
+      }
+      
+      const bool useRemHr = (m_doseAnswerUnits->currentIndex() == 0);
+      const string answerstr = PhysicalUnits::printToBestDoseUnits( dose_from_source, 2, useRemHr );
+      m_doseAnswerValue = dose_from_source;
+      m_doseAnswer->setText( answerstr );
+
+      break;
+    }//case Dose:
+      
+    case Distance:
+    {
+      if( user_enetered_dose <= 0.0 || IsInf(user_enetered_dose) || IsNan(user_enetered_dose) )
+      {
+        m_issueTxt->setText( "Invalid source dose." );
+        return;
+      }
+      
+      const double ratio = dose_from_source / user_enetered_dose;
+      const double dist = distance * sqrt(ratio);
+      m_distanceAnswer->setText( PhysicalUnits::printToBestLengthUnits(dist) );
+      break;
+    }//case Distance:
+      
+    case Shielding:
+    {
+      try
+      {
+        std::shared_ptr<Material> mat;
+        const bool isGeneric = m_answerShieldingSelect->isGenericMaterial();
+      
+        if( isGeneric )
+        {
+          shielding_an = m_answerShieldingSelect->atomicNumber();
+          m_answerShieldingSelect->arealDensityEdit()->setText( "" );
+        }else
+        {
+          m_answerShieldingSelect->thicknessEdit()->setText( "" );
+        
+          mat = m_answerShieldingSelect->material();
+          if( !mat )
+            throw runtime_error( "Material not valid" );
+          
+          shielding_an = mat->massWeightedAtomicNumber();
+        }//if( isGeneric ) / else
+      
+  
+        if( shielding_an < 1.0 || shielding_an > 98.0 )
+        {
+          if( isGeneric )
+            m_issueTxt->setText( "You must enter the atomic number of the shielding material." );
+          else
+            m_issueTxt->setText( "You must enter the shielding material type." );
+          return;
+        }//if( shielding_an < 1.0 )
+      
+      
+        const double adfit = fit_ad( energies, intensities, shielding_an, user_enetered_dose, distance, *m_scatter );
+        
+        if( isGeneric )
+        {
+          char buffer[128];
+          snprintf( buffer, sizeof(buffer), "%f", adfit*PhysicalUnits::cm2/PhysicalUnits::g );
+          
+          m_answerShieldingSelect->arealDensityEdit()->setText( buffer );
+        }else
+        {
+          const double thickness = adfit / mat->density;
+          m_answerShieldingSelect->thicknessEdit()->setText( PhysicalUnits::printToBestLengthUnits(thickness) );
+        }
+        
+      }catch( std::exception &e )
+      {
+        m_issueTxt->setText( e.what() );
+      }//try / catch
+  
+      break;
+    }//case Shielding:
+      
+    case NumQuantity:
+      return;
+      break;
+  }//switch( m_sourceType->checkedId() )
+  
+  checkAndWarnForBrehmSource();
+}//void updateResultForGammaSource()
+
+
+void DoseCalcWidget::checkAndWarnForBrehmSource()
+{
+  switch( m_currentCalcQuantity )
+  {
+    case Activity: case Dose:
+    case Distance: case Shielding:
+      break;
+      
+    case NumQuantity:
+      return;
+      break;
+  }//switch( m_currentCalcQuantity )
+  
+  const SandiaDecay::Nuclide *nuc = m_gammaSource->nuclide();
+  if( !nuc )
+    return;
+  
+  double age = 0.0;
+  try{ age = m_gammaSource->nuclideAge();}catch(...){ return; }
+  
+  SandiaDecay::NuclideMixture mix;
+  mix.addAgedNuclideByActivity( nuc, 0.1*PhysicalUnits::curie, age );
+  const vector<SandiaDecay::EnergyRatePair> betas = mix.betas( 0.0 );
+  const vector<SandiaDecay::EnergyRatePair> betaplus = mix.betaPlusses( 0.0 );
+  const vector<SandiaDecay::EnergyRatePair> gammas = mix.gammas( 0.0, SandiaDecay::NuclideMixture::OrderByEnergy, true );
+  
+  const double betaMaxFrac = 5.0;                        //selected arbitrarily
+  const double minBetaEnergy = 500.0*PhysicalUnits::keV;  //selected arbitrarily
+  const double minGammaEnergy = 40.0*PhysicalUnits::keV;  //selected arbitrarily
+  
+  double betaIntensity = 0.0, gammaIntensity = 0.0;
+  for( const SandiaDecay::EnergyRatePair &aep : betas )
+  {
+    if( aep.energy > minBetaEnergy )
+      betaIntensity += aep.numPerSecond;
+  }
+  for( const SandiaDecay::EnergyRatePair &aep : betaplus )
+  {
+    if( aep.energy > minBetaEnergy )
+      betaIntensity += aep.numPerSecond;
+  }
+  for( const SandiaDecay::EnergyRatePair &aep : gammas )
+  {
+    if( aep.energy > minGammaEnergy )
+      gammaIntensity += aep.numPerSecond;
+  }
+  
+  //P32, S35, Sr90, and Y90 are the main isotopes we want to catch
+  cerr << "gammaIntensity=" << gammaIntensity << ", betaIntensity=" << betaIntensity << endl;
+
+  if( betas.empty() )
+    return;
+  
+  if( (betaMaxFrac*gammaIntensity > betaIntensity) && !gammas.empty() )
+    return;
+  
+  string issuetxt = m_issueTxt->text().toUTF8();
+  if( issuetxt.size() )
+    issuetxt = "<div>" + issuetxt + "</div>";
+  issuetxt += "<div>Warning: Bremsstrahlung of beta decays not accounted for, results may not be trustworthy.</div>";
+  m_issueTxt->setText( issuetxt );
+}//void checkAndWarnForBrehmSource()
+
+
+void DoseCalcWidget::updateResultForNeutronSource()
+{
+  cerr << "Need to implement updateResultForNeutronSource()" << endl;
+}//void updateResultForNeutronSource()
+
+
+void DoseCalcWidget::updateResult()
+{
+  if( m_sourceType->id( m_sourceType->selectedButton() ) == 0 )
+    updateResultForGammaSource();
+  else
+    updateResultForNeutronSource();
+  
+  updateStayTime();
+}//void updateResult()
+
+
+double DoseCalcWidget::currentDose()
+{
+  double dose = 0;
+  
+  switch( m_currentCalcQuantity )
+  {
+    case Dose:
+      if( m_doseAnswer->text().empty() || (m_doseAnswerValue < FLT_MIN) )
+        throw runtime_error( "No numerical value entered for dose" );
+      dose = m_doseAnswerValue;
+      break;
+      
+    case Activity: case Distance: case Shielding:
+    { 
+      if( !(stringstream(m_doseEnter->text().toUTF8()) >> dose) )
+        throw runtime_error( "No numerical value entered for dose" );
+      
+      const int doseIndex = m_doseEnterUnits->currentIndex();
+      if( doseIndex >= static_cast<int>(PhysicalUnits::sm_doseRateUnitHtmlNameValues.size()) || doseIndex < 0 )
+        throw runtime_error( "doseIndex >= PhysicalUnits::sm_doseRateUnitHtmlNameValues.size() || doseIndex < 0" );
+      
+      dose *= PhysicalUnits::sm_doseRateUnitHtmlNameValues[doseIndex].second;
+      
+      break;
+    }//case Activity: case Distance: case Shielding:
+      
+    case NumQuantity:
+      throw runtime_error( "No dose quantity" );
+  }//switch( m_currentCalcQuantity )
+  
+  return dose;
+}//double currentDose()
+
+
+void DoseCalcWidget::updateStayTime()
+{
+  double dose = 0;
+  
+  try
+  {
+    dose = currentDose();
+    
+    m_stayTime->clear();
+    if( !m_stayTime->hasStyleClass( "DoseStayTime" ) )
+      m_stayTime->addStyleClass( "DoseStayTime" );
+    
+    WText *header = new WText( "Stay Time", m_stayTime );
+    header->setInline( false );
+    header->addStyleClass( "DoseStayTimeHeader" );
+    
+    WContainerWidget *tableDiv = new WContainerWidget( m_stayTime );
+    tableDiv->addStyleClass( "DoseStayTimeTable" );
+    WGridLayout *table = new WGridLayout( tableDiv );
+    table->setHorizontalSpacing( 0 );
+    table->setVerticalSpacing( 0 );
+    table->setContentsMargins( 0, 0, 0, 0 );
+    
+    map<double,pair<string,string> > ref_doses;
+    
+    using PhysicalUnits::rem;
+    //http://www.nrc.gov/about-nrc/radiation/around-us/doses-daily-lives.html
+    ref_doses[0.0015*rem] = make_pair( "1.5 mrem", "Dental X-Ray" );
+    //Flight from NY to LA 2 to 5 mrem
+    //Chest xray 10 mrem
+    ref_doses[0.620*rem]  = make_pair( "620 mrem", "Typ. Yearly Background" );
+    
+    //National Council on Radiation Protection (NCRP) dose guidlines for civilian radiation workers  (wcjohns did not verify)
+    ref_doses[5.0*rem]    = make_pair( "5 rem",    "Annual Occ. Limit" );
+    ref_doses[10.0*rem]   = make_pair( "10 rem",   "Save Valuable Property" );
+    ref_doses[25.0*rem]   = make_pair( "25 rem",   "Life Saving" );
+    ref_doses[100.0*rem]  = make_pair( "100 rem",  "Radiation Sickness" );
+    
+    
+    //https://en.wikipedia.org/wiki/Sievert#Dose_examples_2
+    
+    //1 Sv = 100 rem
+    //1 uSv = 0.1 mrem = 100 urem.
+    
+    //ref_doses[0.098*PhysicalUnits::sievert*1.0E-6] = make_pair( "9.8 urem", "banana equivalent dose" );  //0.098  μSv
+    //0.25  μSv (25 urem):  U.S. limit on effective dose from a single airport security screening[34]
+    //5 to 10  μSv (0.5 to 1 mrem):  one set of dental radiographs[35]
+    //1  mSv (100 mrem):  The U.S. 10 CFR § 20.1301(a)(1) dose limit for individual members of the public, total effective dose equivalent, per annum[38]
+    //1.5 to 1.7  mSv (150 to 170 mrem):  annual dose for flight attendants[39]
+    //10 to 30  mSv (1 to 3 rem):  single full-body CT scan[41][42]
+    //50  mSv (5 rem):  The U.S. 10 C.F.R. § 20.1201(a)(1)(i) occupational dose limit, total effective dose equivalent, per annum[43]
+    //80  mSv (8 rem):  6-month stay on the International Space Station
+    //250  mSv (25 rem):  6-month trip to Mars - radiation due to cosmic rays, which are very difficult to shield against
+    //500  mSv (50 rem):  The U.S. 10 C.F.R. § 20.1201(a)(2)(ii) occupational dose limit, shallow-dose equivalent to skin, per annum[43]
+    //1  Sv (100 rem):  Maximum allowed radiation exposure for NASA astronauts over their career[29]
+    //4 to 5  Sv (400 to 500 rem):  Dose required to kill a human with a 50% risk within 30 days (LD50/30), if the dose is received over a very short duration.[46][47]
+    
+    int nprinted = 0, ntriedprint = 0;
+    
+    for( map<double,pair<string,string> >::const_iterator iter = ref_doses.begin();
+        iter != ref_doses.end(); ++iter )
+    {
+      ++ntriedprint;
+      
+      const double refdose = iter->first;
+      const string &dosestr = iter->second.first;
+      const string &descestr = iter->second.second;
+      
+      const double time = refdose / dose;
+      
+      if( time < 1.0*PhysicalUnits::second && ntriedprint < 2 )
+        continue;
+      
+      if( nprinted > 2 && time > 2.5*PhysicalUnits::year )
+        break;
+      
+      const string timestr = PhysicalUnits::printToBestTimeUnits(time);
+      
+      //Add to the table here
+      WContainerWidget *labelDiv = new WContainerWidget();
+      labelDiv->addStyleClass( "DoseStayLabelDiv" );
+      WText *txt = new WText( dosestr, labelDiv );
+      txt->setInline( false );
+      txt->addStyleClass( "DoseStayDose" );
+      
+      txt = new WText( descestr, labelDiv );
+      txt->setInline( false );
+      txt->addStyleClass( "DoseStayDesc" );
+      
+      const int row = table->rowCount();
+      table->addWidget( labelDiv, row, 0 );
+      
+      txt = new WText( timestr );
+      txt->addStyleClass( "DoseStayTimeAnsw" );
+      table->addWidget( txt, row, 1 );
+      
+      ++nprinted;
+    }//for( loop over ref_doses )
+    
+  }catch( std::exception & )
+  {
+    //reset everything here.
+    m_stayTime->removeStyleClass( "DoseStayTime" );
+    m_stayTime->clear();
+  }
+}//void updateStayTime()
+

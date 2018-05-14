@@ -1,0 +1,289 @@
+CC = @CC@
+CFLAGS = @CFLAGS@ @DEFS@ -I$(common) -I. -I$(srcdir)
+MCFLAGS = @MCFLAGS@
+F77 = @F77@
+FFLAGS = @FFLAGS@
+LIBS = @LIBS@
+INSTALL = @INSTALL@
+INSTALL_DATA = @INSTALL_DATA@
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+RANLIB = @RANLIB@
+EXE = @EXEEXT@
+
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+srcdir = @srcdir@
+bindir = @bindir@
+libdir = @libdir@
+includedir = @includedir@
+datarootdir = @datarootdir@
+datadir = @datadir@
+
+MATH_DEFAULT = @MATH_DEFAULT@
+TOOLS_DEFAULT = @TOOLS_DEFAULT@
+DEMO_FORTRAN_DEFAULT = @DEMO_FORTRAN_DEFAULT@$(EXE)
+
+MCC = CC="$(tools)/fcc" CXX="$(tools)/fcc" REALCC="$(CC)" PATH="$(PATH):$(tools)" mcc
+
+TARDIR = @PACKAGE_NAME@-@PACKAGE_VERSION@
+TARFILE = $(TARDIR).tar.gz
+
+
+HEADERS = cuba.h
+LIB = libcuba.a
+MATH = Vegas$(EXE) Suave$(EXE) Divonne$(EXE) Cuhre$(EXE)
+TOOLS = partview$(EXE)
+
+
+all: lib demos $(MATH_DEFAULT) $(TOOLS_DEFAULT)
+
+lib: $(LIB)
+
+demos: demo-c$(EXE) $(DEMO_FORTRAN_DEFAULT)
+
+math: $(MATH)
+
+tools: $(TOOLS)
+
+
+install: lib $(TOOLS_DEFAULT)
+	$(INSTALL) -m 755 -d $(DESTDIR)$(libdir) \
+	                     $(DESTDIR)$(includedir) \
+	                     $(DESTDIR)$(bindir) \
+	                     $(DESTDIR)$(datadir)
+	$(INSTALL_DATA) $(LIB) $(DESTDIR)$(libdir)
+	for f in $(HEADERS) ; do \
+	  $(INSTALL_DATA) `test -f $$f || echo $(srcdir)/`$$f $(DESTDIR)$(includedir); \
+	done
+	for f in $(MATH) $(TOOLS) ; do \
+	  test -f $$f && $(INSTALL_PROGRAM) $$f $(DESTDIR)$(bindir) || : ; \
+	done
+	$(INSTALL_DATA) $(srcdir)/cuba.pdf $(DESTDIR)$(datadir)
+
+
+check: demo-c
+	./demo-c | grep RESULT > demo-c.out
+	@echo diff demo-c.out $(demo)/demo-c.out
+	@diff demo-c.out $(demo)/demo-c.out || \
+	echo "Note: This is serious only if the results deviate significantly."
+
+.SUFFIXES:
+.SUFFIXES: .c .f .tm
+
+common = $(srcdir)/src/common
+vegas = $(srcdir)/src/vegas
+suave = $(srcdir)/src/suave
+divonne = $(srcdir)/src/divonne
+cuhre = $(srcdir)/src/cuhre
+demo = $(srcdir)/demo
+tools = $(srcdir)/tools
+
+
+COMMON_DEPS = $(common)/stddecl.h $(common)/ChiSquare.c $(common)/Erf.c
+COMMON_CDEPS = $(COMMON_DEPS) $(common)/CSample.c $(common)/Fork.c
+COMMON_TMDEPS = $(COMMON_DEPS) $(common)/MSample.c
+
+VEGAS_C = $(vegas)/Vegas.c
+VEGAS_TM = $(vegas)/Vegas.tm
+VEGAS_DEPS = $(common)/Random.c \
+  $(vegas)/decl.h $(vegas)/common.c \
+  $(vegas)/Grid.c $(vegas)/Integrate.c
+VEGAS = $(VEGAS_C) $(VEGAS_TM) $(VEGAS_DEPS)
+
+$(LIB)(Vegas.o): config.h $(VEGAS_C) $(VEGAS_DEPS) $(COMMON_CDEPS) 
+	$(CC) $(CFLAGS) -I$(vegas) -DNOUNDERSCORE -c -o Vegas.o $(VEGAS_C)
+	$(AR) $(ARFLAGS) $(LIB) Vegas.o
+	$(RM) Vegas.o
+
+$(LIB)(llVegas.o): config.h $(VEGAS_C) $(VEGAS_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(vegas) -DLONGLONGINT -DNOUNDERSCORE -c -o llVegas.o $(VEGAS_C)
+	$(AR) $(ARFLAGS) $(LIB) llVegas.o
+	$(RM) llVegas.o
+
+$(LIB)(Vegas_.o): config.h $(VEGAS_C) $(VEGAS_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(vegas) -c -o Vegas_.o $(VEGAS_C)
+	$(AR) $(ARFLAGS) $(LIB) Vegas_.o
+	$(RM) Vegas_.o
+
+$(LIB)(llVegas_.o): config.h $(VEGAS_C) $(VEGAS_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(vegas) -DLONGLONGINT -c -o llVegas_.o $(VEGAS_C)
+	$(AR) $(ARFLAGS) $(LIB) llVegas_.o
+	$(RM) llVegas_.o
+
+Vegas$(EXE): config.h $(VEGAS_TM) $(VEGAS_DEPS) $(COMMON_TMDEPS)
+	$(MCC) $(MCFLAGS) $(CFLAGS) -I$(vegas) -o Vegas$(EXE) $(VEGAS_TM)
+	strip Vegas$(EXE)
+
+
+SUAVE_C = $(suave)/Suave.c
+SUAVE_TM = $(suave)/Suave.tm
+SUAVE_DEPS = $(common)/Random.c \
+  $(suave)/decl.h $(suave)/common.c \
+  $(suave)/Grid.c $(suave)/Fluct.c $(suave)/Sample.c \
+  $(suave)/Integrate.c
+SUAVE = $(SUAVE_C) $(SUAVE_TM) $(SUAVE_DEPS)
+
+$(LIB)(Suave.o): config.h $(SUAVE_C) $(SUAVE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(suave) -DNOUNDERSCORE -c -o Suave.o $(SUAVE_C)
+	$(AR) $(ARFLAGS) $(LIB) Suave.o
+	$(RM) Suave.o
+
+$(LIB)(llSuave.o): config.h $(SUAVE_C) $(SUAVE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(suave) -DLONGLONGINT -DNOUNDERSCORE -c -o llSuave.o $(SUAVE_C)
+	$(AR) $(ARFLAGS) $(LIB) llSuave.o
+	$(RM) llSuave.o
+
+$(LIB)(Suave_.o): config.h $(SUAVE_C) $(SUAVE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(suave) -c -o Suave_.o $(SUAVE_C)
+	$(AR) $(ARFLAGS) $(LIB) Suave_.o
+	$(RM) Suave_.o
+
+$(LIB)(llSuave_.o): config.h $(SUAVE_C) $(SUAVE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(suave) -DLONGLONGINT -c -o llSuave_.o $(SUAVE_C)
+	$(AR) $(ARFLAGS) $(LIB) llSuave_.o
+	$(RM) llSuave_.o
+
+Suave$(EXE): config.h $(SUAVE_TM) $(SUAVE_DEPS) $(COMMON_TMDEPS)
+	$(MCC) $(MCFLAGS) $(CFLAGS) -I$(suave) -o Suave$(EXE) $(SUAVE_TM)
+	strip Suave$(EXE)
+
+
+DIVONNE_C = $(divonne)/Divonne.c
+DIVONNE_TM = $(divonne)/Divonne.tm
+DIVONNE_DEPS = $(common)/Random.c \
+  $(divonne)/decl.h $(divonne)/common.c \
+  $(divonne)/KorobovCoeff.c $(divonne)/Rule.c $(divonne)/Sample.c \
+  $(divonne)/FindMinimum.c $(divonne)/Iterate.c $(divonne)/Explore.c \
+  $(divonne)/Split.c $(divonne)/Integrate.c
+DIVONNE = $(DIVONNE_C) $(DIVONNE_TM) $(DIVONNE_DEPS)
+
+$(LIB)(Divonne.o): config.h $(DIVONNE_C) $(DIVONNE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(divonne) -DNOUNDERSCORE -c -o Divonne.o $(DIVONNE_C)
+	$(AR) $(ARFLAGS) $(LIB) Divonne.o
+	$(RM) Divonne.o
+
+$(LIB)(llDivonne.o): config.h $(DIVONNE_C) $(DIVONNE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(divonne) -DLONGLONGINT -DNOUNDERSCORE -c -o llDivonne.o $(DIVONNE_C)
+	$(AR) $(ARFLAGS) $(LIB) llDivonne.o
+	$(RM) llDivonne.o
+
+$(LIB)(Divonne_.o): config.h $(DIVONNE_C) $(DIVONNE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(divonne) -c -o Divonne_.o $(DIVONNE_C)
+	$(AR) $(ARFLAGS) $(LIB) Divonne_.o
+	$(RM) Divonne_.o
+
+$(LIB)(llDivonne_.o): config.h $(DIVONNE_C) $(DIVONNE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(divonne) -DLONGLONGINT -c -o llDivonne_.o $(DIVONNE_C)
+	$(AR) $(ARFLAGS) $(LIB) llDivonne_.o
+	$(RM) llDivonne_.o
+
+Divonne$(EXE): config.h $(DIVONNE_TM) $(DIVONNE_DEPS) $(COMMON_TMDEPS)
+	$(MCC) $(MCFLAGS) $(CFLAGS) -I$(divonne) -o Divonne$(EXE) $(DIVONNE_TM)
+	strip Divonne$(EXE)
+
+
+CUHRE_C = $(cuhre)/Cuhre.c
+CUHRE_TM = $(cuhre)/Cuhre.tm
+CUHRE_DEPS = \
+  $(cuhre)/decl.h $(cuhre)/common.c \
+  $(cuhre)/Rule.c $(cuhre)/Integrate.c
+CUHRE = $(CUHRE_C) $(CUHRE_TM) $(CUHRE_DEPS)
+
+$(LIB)(Cuhre.o): config.h $(CUHRE_C) $(CUHRE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(cuhre) -DNOUNDERSCORE -c -o Cuhre.o $(CUHRE_C)
+	$(AR) $(ARFLAGS) $(LIB) Cuhre.o
+	$(RM) Cuhre.o
+
+$(LIB)(llCuhre.o): config.h $(CUHRE_C) $(CUHRE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(cuhre) -DLONGLONGINT -DNOUNDERSCORE -c -o llCuhre.o $(CUHRE_C)
+	$(AR) $(ARFLAGS) $(LIB) llCuhre.o
+	$(RM) llCuhre.o
+
+$(LIB)(Cuhre_.o): config.h $(CUHRE_C) $(CUHRE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(cuhre) -c -o Cuhre_.o $(CUHRE_C)
+	$(AR) $(ARFLAGS) $(LIB) Cuhre_.o
+	$(RM) Cuhre_.o
+
+$(LIB)(llCuhre_.o): config.h $(CUHRE_C) $(CUHRE_DEPS) $(COMMON_CDEPS)
+	$(CC) $(CFLAGS) -I$(cuhre) -DLONGLONGINT -c -o llCuhre_.o $(CUHRE_C)
+	$(AR) $(ARFLAGS) $(LIB) llCuhre_.o
+	$(RM) llCuhre_.o
+
+Cuhre$(EXE): config.h $(CUHRE_TM) $(CUHRE_DEPS) $(COMMON_TMDEPS)
+	$(MCC) $(MCFLAGS) $(CFLAGS) -I$(cuhre) -o Cuhre$(EXE) $(CUHRE_TM)
+	strip Cuhre$(EXE)
+
+
+$(LIB)(WorkerIni.o): $(common)/WorkerIni.c
+	$(CC) $(CFLAGS) -DNOUNDERSCORE -c -o WorkerIni.o $(common)/WorkerIni.c
+	$(AR) $(ARFLAGS) $(LIB) WorkerIni.o
+	$(RM) WorkerIni.o
+
+$(LIB)(WorkerIni_.o): $(common)/WorkerIni.c
+	$(CC) $(CFLAGS) -c -o WorkerIni_.o $(common)/WorkerIni.c
+	$(AR) $(ARFLAGS) $(LIB) WorkerIni_.o
+	$(RM) WorkerIni_.o
+
+
+$(LIB): $(LIB)(Vegas.o)     $(LIB)(Vegas_.o)     \
+	$(LIB)(llVegas.o)   $(LIB)(llVegas_.o)   \
+	$(LIB)(Suave.o)     $(LIB)(Suave_.o)     \
+	$(LIB)(llSuave.o)   $(LIB)(llSuave_.o)   \
+	$(LIB)(Divonne.o)   $(LIB)(Divonne_.o)   \
+	$(LIB)(llDivonne.o) $(LIB)(llDivonne_.o) \
+	$(LIB)(Cuhre.o)     $(LIB)(Cuhre_.o)     \
+	$(LIB)(llCuhre.o)   $(LIB)(llCuhre_.o)   \
+	$(LIB)(WorkerIni.o) $(LIB)(WorkerIni_.o)
+	-$(RANLIB) $(LIB)
+
+
+DEMO_F = $(demo)/demo-fortran.F
+DEMO_C = $(demo)/demo-c.c
+DEMO_TM = $(demo)/demo-math.m $(demo)/testsuite.m
+DEMO = $(DEMO_F) $(DEMO_C) $(DEMO_TM) $(demo)/demo-c.out $(demo)/cuba.F
+
+demo-fortran$(EXE): $(DEMO_F) $(LIB)
+	$(F77) $(FFLAGS) -o demo-fortran$(EXE) $(DEMO_F) $(LIB) $(LIBS)
+
+demo-c$(EXE): $(DEMO_C) $(srcdir)/cuba.h $(LIB)
+	$(CC) $(CFLAGS) -o demo-c$(EXE) $(DEMO_C) $(LIB) $(LIBS)
+
+
+PARTVIEW = $(tools)/partview.cpp $(tools)/partview.pro \
+  $(tools)/quit.xpm $(tools)/print.xpm
+
+partview$(EXE): $(PARTVIEW)
+	qmake -o makefile.partview $(tools)/partview.pro
+	$(MAKE) -f makefile.partview
+	$(RM) partview.o partview.moc makefile.partview
+	strip partview$(EXE)
+
+
+TARCONTENTS = $(srcdir)/COPYING $(srcdir)/ChangeLog \
+  $(srcdir)/configure $(srcdir)/configure.ac $(srcdir)/install-sh \
+  $(srcdir)/makefile.in $(srcdir)/config.h.in \
+  $(srcdir)/cuba.pdf $(srcdir)/cuba.h \
+  $(COMMON_CDEPS) $(COMMON_TMDEPS) $(common)/WorkerIni.c \
+  $(VEGAS) $(SUAVE) $(DIVONNE) $(CUHRE) \
+  $(DEMO) $(PARTVIEW) $(tools)/partview.m \
+  $(tools)/mcc $(tools)/fcc $(tools)/mkstatic
+
+dist:
+	ln -s . $(TARDIR)
+	tar cvfzh $(TARFILE) --owner=root --group=root \
+	  $(patsubst $(srcdir)/%,$(TARDIR)/%, $(sort $(TARCONTENTS)))
+	$(RM) $(TARDIR)
+
+pub: dist
+	mv -f $(TARFILE) web/
+	./mkwebpage
+
+clean:
+	-$(RM) $(TARFILE) $(TARDIR) demo-c.out \
+	  partview.moc partview.o makefile.partview \
+	  *.o */*.o */*.tm.c
+
+distclean: clean
+	-$(RM) $(LIB) demo-c demo-fortran $(MATH) $(TOOLS) \
+	  config.h config.log config.status makefile
+

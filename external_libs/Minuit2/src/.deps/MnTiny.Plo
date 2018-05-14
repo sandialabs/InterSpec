@@ -1,0 +1,3 @@
+MnTiny.lo MnTiny.o: MnTiny.cxx ../inc/Minuit2/MnTiny.h
+
+../inc/Minuit2/MnTiny.h:

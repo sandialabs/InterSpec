@@ -1,0 +1,53 @@
+#! /bin/sh
+# script to compile C programs that are linked 
+# against Fortran libraries
+# last modified 19 Jul 11 th
+
+args=
+objs=
+ldflags=
+fldflags=
+compileonly=
+
+cc="${REALCC:-cc}"
+cxx="${REALCXX:-c++}"
+test `basename $0` = f++ && cc="$cxx"
+
+while test $# -gt 0 ; do
+  case "$1" in
+  -arch)
+	shift
+	;;
+  -st | -b32 | -b64)
+	;; # ignore mcc-specific flags
+  -Wno-long-double)
+	;; # mcc adds this on Macs & gcc 4 doesn't like it
+  -[Ll]* | -Wl*)
+	ldflags="$ldflags '$1'"
+	;;
+  *.tm.o)
+	objs="'$1' $objs"
+	;;
+  *.a | *.o | *.so)
+	objs="$objs '$1'"
+	;;
+  *.cc)
+	args="$args '$1'"
+	cc="$cxx"
+	;;
+  -c)
+	compileonly="-c"
+	;;
+  -o)
+	args="$args -o '$2'"
+	shift
+	;;
+  *)
+	args="$args '$1'"
+	;;
+  esac
+  shift
+done
+
+eval "set -x ; exec $cc $args ${compileonly:-$objs $ldflags $fldflags}"
+

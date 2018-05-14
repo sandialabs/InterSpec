@@ -1,0 +1,615 @@
+! 
+?
+Air
+Air
+3 0 1.290E-03
+N
+75.53
+O
+23.18
+Ar
+1.29
+!
+Al2O3
+Aluminum oxide
+2 0 3.900E+00
+O
+47.06
+AL
+52.94
+!
+B
+Boron! (natural)
+1 0 2.355E+00
+B
+100
+!
+B4C
+Boron carbide (nat. boron)
+2 0 2.5
+B
+78.3
+C
+21.7
+!
+Beryllium
+Beryllium
+1 0 1.850E+00
+BE
+100
+!
+BeO
+Beryllium Oxide
+2 0 3.
+BE
+36
+O
+64
+!
+Bismuth
+Bismuth
+1 0 9.7
+BI
+100
+!
+Bi-Sn
+Bismuth / tin Alloy
+2 0 8.0
+Bi
+80
+Sn
+20
+!
+Borax
+Na2B4O7-10H2O
+4 0 1.73
+Na
+11.13
+B
+18.21
+O
+65.82
+H
+4.84
+!
+C
+Graphite
+1 0 1.6
+C
+100
+!
+CaH4(PO4)2
+Monocalcium phosphate
+4 0 2.3
+Ca
+17.13
+H
+1.71
+O
+54.70
+P
+26.46
+!
+Calcium
+Calcium
+1 0 1.55
+Ca
+100.
+!
+Cargo
+Steel & Pine
+4 0 0.4
+H
+3
+C
+23.5
+O
+23.5
+FE
+50
+!
+Cd
+Cadmium
+1 0 8.65
+CD
+100
+!
+Chlorine
+Liquid chlorine
+1 0 1.562
+CL
+100
+!
+Concrete
+Concrete
+7 0 2.3
+H
+0.5
+O
+51.3
+SI
+36.0
+AL
+3.6
+NA
+1.5
+CA
+5.8
+FE
+1.4
+!
+Copper
+Copper
+1 0 8.9 
+CU
+100
+!
+Chromium
+Chromium
+1 0 7.19
+CR
+100
+!
+Fiberglass
+Fiberglass
+5 0 2.550E+00
+B
+0.61
+O
+52.02
+AL
+11.12
+SI
+24.40
+CA
+11.85
+!
+FibEpoxy
+Fiberglass with Epoxy
+5 0 1.632E+00
+H
+3.76
+B
+0.31
+C
+34.41
+O
+38.01
+SI
+23.51
+!
+Granite
+Granite
+11 0 2.75
+O
+46.99755
+SI
+29.08374
+AL
+11.19329
+K
+4.622879
+FE
+3.3101
+NA
+2.439648
+CA
+1.076054
+TI
+0.88211
+MG
+0.248191
+P
+0.106924
+MN
+0.039517
+!
+Hydrogen
+Hydrogen
+1 0 0.071
+H
+100.
+!
+JetFuel
+Jet fuel
+2 0 7.500E-01
+H
+13.7
+C
+86.3
+!
+Iron
+Iron
+1 0 7.87
+FE
+100
+!
+KCl
+Potassium Chloride
+1 1 1.2
+Cl
+47.56
+K
+52.44
+!
+Lead
+Lead
+1 0 11.35
+PB
+100
+!
+LiPoly
+LiPoly (90%Li6, polyethylene)!Lithium-6 / polyethylene (90% 6Li)
+4 0 1.06
+H
+8.521
+C
+85.077
+LI6
+5.762
+LI7
+0.641
+!
+Lucite
+Lucite
+3 0 1.18
+H
+8.0
+C
+60.0
+O
+32.0
+!
+LTB
+Lithium tetraborate! (Li2B4O7 - 95% 6Li / natural B)
+5 0 1.4
+LI6
+7.79
+LI7
+0.41
+B10
+4.7
+B11
+20.8
+O
+66.3
+!
+Nickel
+Nickel
+1 0 8.902
+NI
+100
+!
+Nitrogen
+Liquid Nitrogen
+1 0 0.8
+N
+100.
+!
+Magnesium
+Magnesium
+1 0 1.74
+MG
+100.
+!
+Melamine
+Melamine
+3 0 1.0
+H
+4.8
+C
+28.6
+N
+66.6
+!
+Mulch
+Loose mulch
+3 0 0.266
+C
+50
+H
+6
+O
+44
+!
+Nylon66
+Nylon 6,6
+4 0 1.152
+H
+9.73
+C
+63.72
+O
+14.16
+N
+12.39
+!
+Oxygen
+Liquid oxygen
+1 0 1.141
+O
+100.
+!
+PE
+Polyethylene
+2 0 0.95
+H
+14.4
+C
+85.6
+!
+Pine
+Pine wood
+3 0 0.65
+C
+50
+H
+6
+O
+44
+!
+Plywood
+Plywood
+3 0 0.54
+C
+47
+H
+6
+O
+44
+!
+Polypropylene
+Polypropylene
+2 0 0.905
+H
+14.4
+C
+85.6
+!
+Polyurethane
+Polyurethane foam
+4 0 0.1
+H
+6.7
+C
+59.0
+N
+8.0
+O
+26.3
+!
+PVC
+Polyvinyl chloride (H3C2Cl)
+3 0 1.374
+H
+4.8
+C
+38.4
+CL
+56.7
+!
+PVT
+Polyvinyl toluene (C1H1.1)
+2 0 1.04
+H
+8.42
+C
+91.58
+!
+Salt Water
+Salt water (1.9% Cl, 1% Na)
+10 0 1.025
+O
+86.2
+H
+10.6
+CL
+1.87
+NA
+1.03
+MG
+0.133
+S
+0.087
+CA
+0.04
+K
+0.037
+BR
+0.0064
+C
+0.0026
+!
+Silicon
+Silicon
+1 0 2.33
+SI
+100.
+!
+SiO2
+Silicon dioxide
+2 0 2.2
+O
+53.3
+SI
+46.7
+!
+Soil-Dry
+Dry soil (5% H2O)
+7 0 1.6
+H
+0.6
+C
+1.1
+O
+53.8
+AL
+7.9
+SI
+32.3
+K
+1.2
+FE
+3.2
+!
+Soil
+Nominal soil (20% H2O)
+7 0 1.6
+H
+2.2
+C
+0.9
+O
+59.3
+AL
+6.6
+SI
+27.2
+K
+1.0
+FE
+2.7
+!
+Soil-Wet
+Wet Soil (35% H2O)
+7 0 1.6
+H
+3.9
+C
+0.7
+O
+64.9
+AL
+5.4
+SI
+22.1
+K
+0.8
+FE
+2.2
+!
+SS-304
+Stainless steel
+3 0 7.66E+00
+FE
+71
+CR
+19
+NI
+10
+!
+Steel 1040
+Steel - AISI 1040 Med. Carbon
+5 0 7.845
+FE
+98.81
+MN
+0.75
+C
+0.4
+P
+0.02
+S
+0.02
+!
+Ta
+Tantalum
+1 0 16.65
+TA
+100
+!
+Thorium
+Thorium
+0 1 1.172E+01
+TH232
+100
+!
+ThO2
+Thorium oxide
+1 1 0.49
+O
+12.1
+TH232
+87.9
+!
+Tin
+Tin
+1 0 7.3
+SN
+100
+!
+Titanium
+Titanium
+1 0 4.54
+TI
+100
+!
+Topaz
+Topaz
+5 0 3.55
+AL
+29.61
+SI
+15.41
+H
+0.5
+O
+43.01
+F
+11.47
+!
+Tungsten
+Tungsten
+1 0 19.35
+W
+100
+!
+TungstenAlloy
+Machinable Tungsten
+3 0 1.7E+01
+NI
+6
+CU
+4
+W
+90
+!
+Vanadium
+Vanadium
+1 0 6.11
+V
+100
+!
+Void
+Void
+0 0 0
+!
+Water
+Water
+2 0 1.000E+00
+H
+11.2
+O
+88.8
+!
+WeldingRod
+Welding rod with 2% thorium
+1 1 18.0
+W
+98.0
+Th
+2.0
+!
+Zinc
+Zinc
+1 0 7.133
+Zn
+100
+!
+Zirconium 
+Zirconium 
+1 0 6.5E+00 
+ZR 
+100 
+!
+!				Notes
