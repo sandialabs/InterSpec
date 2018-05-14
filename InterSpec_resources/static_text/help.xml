@@ -1,0 +1,1702 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+   <message id="help-info">[
+    { "id":"getting-started",
+      "title":"Getting Started",
+      "children" : [
+            {
+              "id":"setting-up",
+              "title":"Setting Up",
+			  "keywords":"Setting Up Uploading Files Format Drag Drop TXT CSV XML/N42 PCF Manager Add Foreground Secondary Background Getting Started"
+            },
+            {
+              "id":"display",
+              "title":"Display",
+			  "keywords":"Display Linear Log Gridlines Horizontal Vertical Legend Dead Real Live Time Dock Undock/Un-dock Mode Windows Notifications Options Detectors Graph"
+            },
+            {
+              "id":"navigating-on-the-graph",
+              "title":"Navigating on the Graph",
+			  "children" : [
+				{
+					"id":"zoom-in",
+					"title": "Zoom In",
+
+					"keywords":"Navigating On The Graph Zoomed In Left Right Drag"
+				},
+				{
+					"id":"er-shift",
+					"title": "Energy Range Shift",
+					"keywords":"Navigating On The Graph Zoomed In Move Moving Left Right Drag"
+				},
+				{
+					"id":"zoom-out",
+					"title": "Zoom Out",
+					"keywords":"Navigating On The Graph Zoomed Out Left Right Drag"
+				},
+				{
+					"id":"id-peaks",
+					"title": "Identify Peak(s)",
+					"keywords":"Navigating On The Graph Zoomed In Out Move Moving Left Right Drag Identify Peaks"
+				},
+				{
+					"id":"delete-peaks",
+					"title": "Delete Peak(s)",
+					"keywords":"Navigating On The Graph Zoomed In Out Move Moving Left Right Drag Delete Erase Peaks"
+				}
+				]
+				}
+				]
+			},
+    { "id":"tools",
+      "title":"Tools",
+      "children" : [
+            {
+              "id":"energy-calibration-dialog",
+              "title":"Energy Calibration",
+			  "keywords" : "Energy Calibration Tool Calibrate Adjust Offset Peaks Information Offset Linear Quadratic Normalize",
+			  "children" : [
+				{
+					"id":"graphical-recalibration-dialog",
+					"title":"Graphical Recalibration",
+					"keywords":"Energy Graphical Recalibration Tool Calibrate Adjust Offset Peaks Region of Interest ROI Drag Normalize"
+				}
+			]
+            },
+            {
+              "id":"detector-edit-dialog",
+              "title":"Detector Edit/Select",
+			  "keywords":"Detectors Edit Select Tool Camera Icon GADRAS Relative Efficiency Upload Manually Recent Reference Photopeaks Intrinsic Efficiency Full Width at Half Maximum FWHM Defined Efficiency.csv Parameters Geometric Detector.dat Akima Interpolation Cubic Spline Absolute"
+            },
+            {
+              "id":"activity-shielding-dialog",
+              "title":"Activity Shielding Fit",
+			  "keywords":"Activity Shielding Fit Tools Multiple Nuclides Materials Common Generic Density Manual Thickness Upload Distance Measurement Off Adjust Accurate Accuracy False Source XML Model"
+            },
+			            {
+            "id":"gamma-xs-dialog",
+            "title":"Gamma XS Calc",
+			"keywords":"Cross Section Gammas Efficiency Estimates Energy Material Mass Formula Mass-Formula Total Att. Cross Section Density Length Trans. Frac. Fraction Transversal Detector Detection Attenuating"
+            },
+            {
+              "id":"peak-editor",
+              "title":"Peak Editor",
+			  "keywords":"Peaks Editor Highlighted Nuclide Energetically Close Region of Interest ROI Refit Delete Add Fitting Difficult Change Continuum Specifying Select Show User Labels Algorithm Globally"
+            },
+            {
+              "id":"reference-gamma-lines-dialog",
+              "title":"Reference Gamma Lines",
+              "keywords":"Trouble Fitting Peaks For Shielding Nuclide Age Accuracy Reference Photopeaks Tools Materials Calibration Units Spectrum"
+            },
+            {
+              "id":"1/r2-calc-dialog",
+              "title":"1/r2 Calc",
+			  "keywords":"1/r2 Calculator Tool Distance Measurement Intensity Front Near Far Background Counts Millirem Source Gamma Sievert Attoparsecs Unknown Location Position"
+            },
+			{
+			"id":"decay-dialog",
+            "title":"Nuclide Decay Info",
+			"keywords":"Information Activity Chart Decay Chain Add Nuclides Aged Daughter Reference Photopeaks Gamma Beta Alpha Production Rates Graph Information Emission Emit Particles Time Span Y Axis Type Graph Log Linear Gives Off Branching Ratio"
+			},
+            {
+              "id":"file-parameters-dialog",
+              "title":"File Parameters",
+			  "keywords":"File Parameters Tool Not Calculating Activity Calculation Reload Spectrum"
+            },
+            {
+              "id":"energy-range-count",
+              "title":"Energy Range Count",
+			  "keywords":"Energy Range Count Sum Gammas Drag Select Region of Interest ROI"
+            },
+            {
+              "id":"dose-dialog",
+              "title":"Dose Calculations",
+              "keywords":"Dose Distance Shielding Source Neutron Neutrons Gamma Gammas"
+            },
+            {
+              "id":"spectrum-file-query",
+              "title":"Spectrum File Query Tool",
+              "keywords":"Spectrum File Query Tool search match parameter"
+              
+              
+            },
+            {
+              "id":"nuclide-search-dialog",
+              "title":"Nuclide Search",
+        "keywords":"Search For Peaks Nuclides Gamma XRays X-Rays Reactions Half Life HL Half-Life Branching Ratio BR Energy Constraint Table Parent"
+            },
+            {
+                "id":"terminal-dialog",
+                "title":"Math/Command terminal",
+                "keywords" : "Calculator Math Terminal Tool command line commands CLI interface",
+                "children" : [
+                {
+                    "id":"math-commands",
+                    "title":"Math Commands/Functions",
+                    "keywords":"math mathematical commands functions calculator compute"
+                },
+                {
+                "id":"interspec-commands",
+                "title":"InterSpec Commands/Functions",
+                "keywords":"InterSpec commands functions command calculator compute"
+                }
+                ]
+            }
+            ]
+    },
+    { "id":"exiting-the-app",
+      "title":"Exiting the Application",
+      "children" : [
+            {
+              "id":"saving-work",
+              "title":"Saving Work",
+			  "keywords":"Saving Work Stored Spectrum As App State Save Autosave Auto-Save"
+            },
+            {
+              "id":"sending-work",
+              "title":"Sending Work",
+			  "keywords":"Sending Work Manager TXT CSV SML/N42 Combine Combining Files Customers Clients"
+            }
+          ]
+    }
+]</message>
+   <message id="setting-up">
+ <div align="center">     
+	 <h1 id="setting-up">
+            <b>Setting Up</b>
+      </h1>
+      <hr />
+	  </div>
+
+<img src="InterSpec_resources/images/DragDrop.png" class="imageBorder" style="max-height:300px; float:left; margin-right:20px"/>
+
+      <div>
+         To begin, display a spectra by selecting the menu
+         <b>InterSpec &#8594; Import </b>, or more conveniently, by
+         <u>dragging</u> and <u>dropping</u>
+         the file of interest directly onto the graph into the corresponding box as a 
+ &#34;Foreground,&#34; &#34;Background,&#34; or &#34;2nd Foreground&#34;.
+         A foreground must be loaded before either the background or 2nd foreground will be displayed.
+      </div>
+
+	  <div style="padding-top: 10px">
+         You can display additional spectra at the same time by
+         <u>dragging</u> and <u>dropping</u> them in as background or 2nd foreground types.  You can also import files via <b>InterSpec &#8594; Manager</b> and then <u>selecting</u> <b>File</b> or <b>Saved Snapshots</b>.
+      </div>
+      <div style="padding-top: 10px">
+         The
+         <b>Manager</b>
+         window also allows you to remove any additional spectrums by
+         <u>selecting</u>
+         the file(s) listed in the window so that it is highlighted, 
+then
+         <u>selecting</u>
+         the
+         <b>Unload</b>
+         option on the bottom of the window.
+      </div>
+      <div style="padding-top: 10px">
+         You can also use the <b>Manager</b> to upload a spectrum as a &#34;Foreground,&#34; &#34;Secondary,&#34; or &#34;Background&#34; spectrum by
+         <u>clicking</u>
+         the spectrum so that it is highlighted and choosing the corresponding classification when <u>selecting</u> <b>Assign As</b>; This can also be done in the <b>Spectrum Files</b> tab in the bottom dock by using the drop down menus to select which spectrum(s) will display as &#34;Foreground,&#34; &#34;Secondary,&#34; or &#34;Background.&#34;
+      </div>
+   </message>
+   <message id="peak-editor">
+    <div align="center">
+      <h1 id="peak-editor">
+         <em>
+            <b>Peak Editor</b>
+         </em>
+      </h1>
+      <hr />
+	  </div>
+      <div>This tool allows you to have fine grained control over peak parameters
+by either directly specifying the parameters, or by specifying which parameters
+should be fit for, and then re-fitting the peak.  The <b>Peak Editor</b> also allows
+you to edit the nuclide associated with this peak, or change the continuum type
+used for the peak.</div>
+      <div style="padding-top: 10px">
+         To access the <b>Peak Editor</b> dialog,
+         <u>right-click</u>
+         within the region of
+interest (ROI) of an identified peak, and then
+         <u>select</u>
+         &#34;<b>Peak Editor</b>&#34;:
+      </div>
+      <div align="center" style="padding-top: 10px" >
+         <img src="InterSpec_resources/static_text/images/PeakEditor1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+         <img src="InterSpec_resources/static_text/images/PeakEditor2.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+      </div>
+      <div style="padding-top: 10px"> 
+If you have multiple peaks next to each other sharing a ROI, the peak
+nearest where you <u>right-clicked</u> is chosen; while the <b>Peak Editor</b> window is
+open, you can change the peak it pertains to by
+         <u>right-clicking</u>
+         a new peak and
+         <u>selecting</u>
+         the
+         <b>Peak Editor</b>
+         option once again.
+      </div>
+	  <div style="padding-top: 10px">
+	           <u>Check/Uncheck</u>
+         the &#34;Fit&#34; box located to the right of each box you wish to be incorporated in your spectrum.
+		 </div>
+      <div style="padding-top: 10px">
+            After changing a parameter value, the change isn't propagated until either
+the <b>Apply,</b> <b>Accept,</b> or <b>Refit</b> buttons are
+<u>clicked</u>.  Once one of these buttons is <u>clicked</u> the peak rendered on the chart, or
+values in the
+            <b>Peak Editor</b>
+            table will be updated with the new values.
+			 </div>
+<ul>
+<div style="padding-top: 10px">
+<u>Clicking</u> the <b>Cancel</b> button will revert the peak to the last time you
+clicked <b>Apply</b>, or if you haven't <u>clicked</u> <b>Apply</b>, it will revert the
+peak back to before you opened the dialog and close the dialog.
+</div>
+<div style="padding-top: 10px">
+Closing the dialog via the upper right
+hand &#34;&#215;&#34; button closes the dialog without applying any changes
+you may have made since the last time you clicked the apply, or refit buttons.
+</div>
+<div style="padding-top: 10px">
+The <b>Accept</b> button applies any changes you have made, and closes the dialog.
+</div>    
+</ul>    
+      <h3>Example Use Cases</h3>
+      <div style="padding-top: 10px">
+	  The following are typical reasons to refer to the <b>Peak Editor</b> tool.
+	  </div>
+	  <ul>
+         <li>Fitting difficult peaks in situations where
+the default peak fitting algorithm is not satisfactory, or statistics are too
+low to yield a valid fit.  <ul><div>For instance, you may select for the peak centroid
+and/or width to not be fit for, and instead supply the value(s) you think are
+correct, and then refit the peak, thus gaining a more accurate peak area and/or
+continuum estimate.</div></ul></li>
+         <li>
+            Add a label to the peak.
+			<div><ul>For this label to also show on the chart, <u>select</u> the
+&#34;Show User Labels&#34; option from the <b>View &#8594; Chart Options &#8594; Peak Labels</b>
+            menu. </ul></div></li>
+         <li>
+            To change the continuum type.  <ul><div>By default peaks are assigned
+            <b>Linear</b>
+            continuums, however changing this may yield better peak fits for regions where
+the continuum is more complex or a-typical.</div></ul>
+         </li>
+         <li>
+            Specifying the region of interest (ROI).  <ul><div>By default
+            <i>InterSpec</i>
+            guesses a ROI when fitting peaks, based on the width of the candidate peak
+(derived from a polynomial smoothing of the second derivative of the data), and
+a combination of features and statistical of the data - this may not result in
+the optimum selection of ROI.  Specifying the ROI manually and refitting the
+peak can often times increase the improved estimates of the peak.</div></ul>
+         </li>
+         <li>Selecting the photopeak of the nuclide responsible for creating this peak.
+<ul><div>This dialog allows selecting the gamma-line from a list, rather than
+typing it in like in other locations.</div></ul></li>
+      </ul>
+      <h3>Potential Pitfalls</h3>
+      <ul>
+         <li style="padding-top: 10px">
+            When refitting a peak, not only is the current peak the <b>Peak Editor</b> is selected for refit,
+but any peaks that share its ROI are refit as well. 
+<div><ul> To prevent this, you can either force the current peak to not share a ROI
+by <u>right-clicking</u> on the peak and <u>selecting</u> the &#34;Own Continuum&#34; option,
+or you can use the
+            <b>Peak Editor</b>
+            to disable fitting of the various
+parameters for the other peaks.</ul></div>
+         </li>
+         <li style="padding-top: 10px">Many of the fields do not have error checking beyond verifying a floating point
+number was entered.  For instance you could specify a ROI which does not contain
+the peak centroid, resulting in the peak not even showing up on the chart.</li>
+         <li style="padding-top: 10px">
+            There are currently (as of 20140506) a number of options you can select that are
+not fully supported: 
+<ul>
+<li style="padding-top: 10px">
+selecting the continuum to be a globally defined continuum,
+</li>
+<li style="padding-top: 10px">
+peak types other than Gaussian are not well supported everywhere, and we are
+</li>
+<li style="padding-top: 10px">
+expecting to change the model of the peak skew from a Landau based scheme to be
+consistent with
+            <em>GADRAS</em>
+</li>
+</ul>
+<i>
+            We have left these options in the GUI because we plan to better support them, and
+this way it will remind us to fix the issues (nobody said we were professionals!).</i>
+         </li>
+         <li style="padding-top: 10px"> There can be only one <b>Peak Editor</b> dialog open at a time; trying to open the <b>Peak Editor</b>
+for a second peak will only change which peak the current dialog corresponds to.</li>
+         <li style="padding-top: 10px">
+            The uncertainties on the parameters initially represent the errors determined
+from the fitting procedures, however, you should take them with a grain of salt.
+This is for three reasons:
+            <ol>
+               <li style="padding-top: 10px">These values are manually editable, so may not be what the fitting
+          procedure determined</li>
+               <li style="padding-top: 10px">Fixing some parameters may result in much smaller uncertainties being
+         derived for the other parameters, that may in fact be unreasonable.</li>
+               <li style="padding-top: 10px">The uncertainties are estimated from a chi squared, or likelihood,
+         function and it has not been verified that this uncertainty is what
+         is actually seen during use.</li>
+            </ol>
+         </li>
+      </ul>
+   </message>
+   <message id="display">
+    <div align="center">
+      <h1 id="display">
+            <b>Display</b>
+      </h1>
+      <hr />
+	  </div>
+      <div>
+         You can choose to view the spectrum on either a Linear or Log graph by 
+		 <u> navigating</u> to the menu <b>View &#8594; Chart Options</b>; the graph is log by default.
+      </div>
+      <div style="padding-top: 10px">
+         You can add gridlines to the graph by <u> navigating</u> to the <b>View</b> toolbar, <u>hovering</u> over <b>Chart Options</b>, and 
+         <u>selecting</u>
+         the
+         <b>Show Vertical Lines</b>
+         and
+         <b>Show Horizontal Lines</b>.
+      </div>
+      <div style="padding-top: 10px">The legend located near the top right of your graph should automatically load data corresponding to your spectrum. 
+In the legend you will see the &#34;Real Time&#34; and &#34;Live Time;&#34; the difference between the two will give you what is otherwise known as &#34;dead time.&#34; 
+The legend will also provide data on the number of counts pertaining to a certain spectrum.</div>
+      <div style="padding-top: 10px">
+         To make the graph constitute the entire window,
+         <u>select</u>
+         the
+         <b>Un-Dock Windows</b>
+         option also found under the
+         <b>View</b>
+         toolbar.  The application provides numerous routes to access tools such that you can still access all of the tools from the Tools menu while in the un-dock mode.
+</div>
+    <div style="padding-top: 10px">
+        To manually check notifications, select menu
+         <b>Help &#8594; Notifications Logs</b>. Notification preferences can be modified by
+         <u>checking/unchecking</u> the types of notifications that you desired to be disabled on the bottom right corner of the <b>Notifications Log</b>.
+      </div>
+      <div>
+         To toggle individual detectors on/off,
+         <u>check/uncheck</u>
+         the desired detector from the menu
+         <b>View &#8594; Detectors</b>; all detectors are on by default.
+      </div>
+   </message>
+   <message id="zoom-in">
+    <div align="center">
+      <h1 id="zoom-in">
+            <b>Zoom In</b>
+      </h1>
+      <hr />
+	  </div>
+	  <div >
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/Zoom1.png" class="imageBorder" style="max-width:48%; " />
+	  <img src="InterSpec_resources/static_text/images/Zoom2.png" class="imageBorder" style="max-width:48%; " />
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/Zoom3.png"  class="imageBorder" style="max-width:48%;" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         To zoom in on a specific portion of the spectrum,
+         <u>click</u>
+         on the right-most end of the desired portion and
+         <u>drag</u>
+         your cursor to the left-most end of the desired portion; 
+this can be done both along the x axis and y axis of the graph.
+      </div>
+	  </div>
+	  </message>
+   <message id="er-shift">
+    <div align="center">
+      <h1 id="er-shift">
+            <b>Energy Range Shift</b>
+      </h1>
+      <hr />
+	  </div>
+	  <div >
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/ShiftER1.png"  class="imageBorder" style="max-width:75%; max-height:300px;" /><br/>
+	  <img src="InterSpec_resources/static_text/images/ShiftER2.png"  class="imageBorder" style="max-width:75%; max-height:300px;" />
+	  </div>
+	  <div align="center">
+	  <img src="InterSpec_resources/static_text/images/ShiftER3.png"  class="imageBorder" style="max-width:75%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px; padding-bottom: 10px" align="center">
+         To move left/right or up/down on the spectrum while zoomed in,
+         <u>hold</u>
+         the
+         <kbd>ALT</kbd>
+         key on your keyboard,
+         <u>click</u>
+         on the graph, and
+         <u>drag</u>
+         opposite 
+to the direction you want to move your view to; the magnitude of your drag will determine how far you move on the graph, so release accordingly.
+      </div>
+	  </div>
+	  </message>
+   <message id="zoom-out">
+    <div align="center">
+      <h1 id="zoom-out">
+            <b>Zoom Out</b>
+      </h1>
+      <hr />
+	  </div>
+      <div >
+	   <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/ZoomOut1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  <img src="InterSpec_resources/static_text/images/ZoomOut2.png" class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px; padding-bottom: 10px" align="center">
+         To zoom back out to the full graph,
+         <u>click</u>
+         and
+         <u>drag</u>
+         left; the extent of the drag dictates the final magnification. 
+      </div>
+	  </div>
+	  </message>
+   <message id="id-peaks">
+    <div align="center">
+      <h1>
+            <b>Identify Peak(s)</b>
+      </h1>
+      <hr />
+	  </div>
+	  <div >
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 1
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks1-1.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+ 	  <img src="InterSpec_resources/static_text/images/IDPeaks1-2.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Double-click</u> anywhere on the graph above the energy level you wish to identify a peak. <u>Double-clicking</u>
+         again near an existing peak will prompt the application to fit for another peak 
+if it finds another nuclide appropriate and energetically close in vicinity.
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 2
+	  </h3>
+	  </div>
+   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks2-1.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  <img src="InterSpec_resources/static_text/images/IDPeaks2-2.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Hold</u> <b><kbd>CTRL</kbd></b> and <u>left-click drag</u> over the ROI; be sure to select the appropriate number of peaks 
+	  you want to prompt the application into identifying - it will not identify any if the selected quantity is unavailable. 
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 3
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks3-1.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div style="padding-top: 10px; padding-bottom: 10px" align="center">
+      Dock the windows and <u>select</u> &#34;<b>Search for Peaks</b>&#34; on the bottom left of the window. Note that this method will identify all possible peaks on the entire spectrum. 
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 4
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks4-1.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  <img src="InterSpec_resources/static_text/images/IDPeaks4-2.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks4-3.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  <img src="InterSpec_resources/static_text/images/IDPeaks4-4.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      Dock the windows and <u>select</u> &#34;<b>Add</b>&#34; on the bottom left of the window. Change the parameters under the <b>Peak Manager</b> tab to adjust the peak 
+	  by <u>double-clicking</u> on each parameter and <u>typing in</u> the desired quantity. 
+      </div>
+	  </div>
+	  </message>
+   <message id="delete-peaks">
+    <div align="center">
+      <h1>
+            <b>Delete Peak(s)</b>
+      </h1>
+      <hr />
+	  </div>
+	  <div >
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 1
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/DeletePeak1-1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  <img src="InterSpec_resources/static_text/images/DeletePeak1-2.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Hold</u> <b><kbd>SHIFT</kbd></b> and <u>left-click drag</u> over the ROI to erase the identified peak(s).  
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 2
+	  </h3>
+	  </div>
+   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/DeletePeak2-1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  <img src="InterSpec_resources/static_text/images/DeletePeak2-2.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Right-click</u> on a highlighted peak and <u>select</u> the &#34;<b>Peak Editor</b>&#34;. In the <b>Peak Editor</b> dialog, <u>select</u> &#34;<b>Delete</b>&#34; from the bottom right of the window. 
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 3
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/DeletePeak3-1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  <img src="InterSpec_resources/static_text/images/DeletePeak3-2.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      Dock the windows, <u>select</u> &#34;<b>Clear all Peaks</b>&#34; on the bottom left of the window, and <u>select</u> &#34;<b>Yes</b>&#34; in the small window that pops up. Note that this method will delete <i>all</i> identified peaks.
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 4
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/DeletePeak4-1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Right-click</u> the identified peak and <u>select</u> &#34;<b>Delete Peak</b>&#34; in the dialog that pops up. 
+      </div>
+	  </div>
+   </message>
+   <message id="energy-calibration-dialog">
+    <div align="center">
+      <h1 id="energy-calibration-dialog">
+            <b>Energy Calibration</b>
+      </h1>
+      <hr />
+	  </div>
+      <div>
+         One way to recalibrate is by
+         <u>navigating</u>
+         to the
+         <b>Peak Manager</b>
+         tab on the bottom dock of your window,
+         <u>selecting</u>
+         <b>ID Nuclides</b>
+         so that the application can identify 
+what it deems to be appropriate nuclides for your given spectrum,
+         <u>navigating</u>
+         to the
+         <b>Energy Calibration</b>
+         tab also on the bottom dock, and then
+         <u>checking/unchecking</u>
+         under 
+&#34;Calib. Peak&#34; the nuclides the application identified that you are in agreement with; checked boxes classify the identity of the nuclide as &#34;true,&#34; unchecked 
+boxes classify the identity as &#34;false.&#34;
+      </div>
+      <div>
+         <ul>
+            You can still manually change the calibration parameters by adjusting the &#34;Offset Term,&#34; &#34;Linear Term,&#34; and &#34;Quad. Term&#34; located on the left 
+half of the dock under the
+            <b>Calibration</b>
+            tab.
+         </ul>
+      </div>
+   </message>
+   <message id="detector-edit-dialog">
+    <div align="center">
+      <h1 id="detector-edit-dialog">
+            <b>Detector Edit/Select</b>
+      </h1>
+      <hr />
+	  </div>
+
+            <img src="InterSpec_resources/static_text/images/DetEditSelect.png"  class="imageBorder" style="float:left;display:block;margin-right:30px; max-height:300px;" />
+
+      <div style="padding-top: 10px">
+        InterSpec may attempt to automatically guess the detector response function for newly
+        loaded spectra if you have set the appropriate directories (described bellow) and a detector
+        response function (DRF) with either a name matching the model of detector is found, or a generic
+        detector with a similar efficiency to manufacturer published specifications is found.
+
+         If an appropriate DRF is not found, or an incorrectone is guessed, you can change the detector via menu
+         <b>Tools &#8594; Detector Edit/Select</b>, or by clicking on the camera icon (
+         <img src="InterSpec_resources/images/camera.png" valign="middle" style="max-height:300px;" />
+         ) found in the following locations:
+      <ul>
+            <li>
+                <b>Tools &#8594; Activity/ Shielding Fit</b> menu
+            </li>
+            <li>
+                <b>Tools &#8594; Gamma XS Calc</b> menu
+            </li>
+            <li>
+                <b>Tools &#8594; Reference Photopeaks </b> menu (if undocked) or 3rd tab <b> Reference Photopeaks </b> (if docked)
+            </li>
+      </ul>
+      Changing the DRF in any of the above locations is equivalent.
+      </div>
+      <div style="padding-top: 10px">
+         The primary component of the detector response function is the
+         <span title="The fraction of gammas incident upon the front face of the detector, that will be recorded within the full energy peak at that energy">
+            <em>intrinsic efficiency</em>
+         </span>
+         of the detector as a function of energy; the detector response can also
+optionally contain the Full Width at Half Maximum (FWHM) for peaks as a function
+of energy. Some of the peak fitting routines loosely consult the FWHM of the
+detector response, if its available, for the initial value of peak width when
+fitting a new peak; the fit for the peak is in no way constrained by the FWHM
+of the detector response. If the detector response does not contain FWHM
+information, initial values of the peak width for the fit are derived from the
+data, and are almost always sufficiently close to the true width to allow the
+fit to converge.
+      </div>
+	  <div style="padding-top: 10px">
+         The
+         <b>Detector Edit/Select</b>
+         will provide some generic detector response functions (DRFs) as well as
+         an oppritunity to use DRFs from <code>GADRAS</code>, <code>SimpleMass</code>, free from equations,
+         standard equation coefficients, or absolute efficiencies specified using a comma seperated value
+         (CSV) or tab seperated value (TSV) file.
+         The DRFs are used when fitting for shieldings and source activity, and
+         displaying refernce photopeak amplitudes..
+      </div>
+      <div style="padding-top: 10px">
+         User defined detectors (either via upload or manual equation entry) can currently only
+         contain efficiency information.
+		  </div>
+
+
+      <div>
+         <h3>Selecting Response Functions</h3>
+         Once a detector is selected from the below described source options, the 
+         various indicators such as the reference gamma lines should reflect the change
+         efficiencies.  However, if the detector select dialog is closed, or the
+         <b>Cancel</b> button <u>clicked</u>, <i>InterSpec</i> will revert back to using your previously selected
+         detector.  You must <u>click</u> the <b>Accept</b> button to continue using your
+         newly selected detector.
+         <ul>
+            <li style="padding-top:10px;">
+               <b>GADRAS:</b>
+               <div>
+                 InterSpec can use the same format DRF as used by
+                 <a target="_blank" href="https://rsicc.ornl.gov/codes/psr/psr6/psr-610.html">GADRAS-DRF</a>
+                 as long <code>GADRAS-DRF</code> has previously used with the DRF in order to create the <code>Efficiency.csv</code> file
+                 to go along with <code>Detector.dat</code>.  Using <code>GADRAS-DRF</code> detector response functions has the advantage
+                 of including both intrinsic efficiency and FWHM information (which may help peak fitting).  For further information
+                 on <code>GADRAS-DRF</code> detector response functions see:
+                 <a target="_blank" href="http://prod.sandia.gov/techlib/access-control.cgi/2014/1420625.pdf">GADRAS-DRF 18.5 User’s Manual</a>.
+                 In order to use GADRAS-DRF response functions you must point the <em>GADRAS</em> tab of the <em>Detector Edit/Select</em>
+                 to the root directory of your GADRAS-DRF detectors.  This root directory will be saved as a user preference across
+                 sessions.
+
+                 The discrete energy/efficiency pairs in the <code>Efficiency.csv</code> file are interpolated between using
+                 Akima interpolation. The <code>Detector.dat</code> file that defines the detector in
+                 <code>GADRAS-DRF</code>, is used to determine the FWHM information.
+                 Specifically parameter 6, 7, and 8 (denoted by P6, P7, and P8 respectively)
+                 are used according the following pseudo-code:
+                 <pre>
+def getFWHM( energy ):
+    //P6---&gt; resolution @ E=0 (keV)
+    //P7---&gt; % FWHM @ 661 keV
+    //P8---&gt; resolution power
+    if energy ≥ 661 or P6=0
+        return 6.61×P7×(energy/661)<sup>P8</sup>
+    if P6 &lt; 0.0
+        var p = P8<sup>1.0/log(1.0-P6)</sup>
+        return 6.61×P7×(energy/661)<sup>p</sup>
+  
+    if P6 &gt; 6.61×P7
+        return P6;
+  
+    var p = sqrt((6.61×P7)<sup>2</sup>-P6<sup>2</sup>)/6.61;
+    return sqrt(P6<sup>2</sup>+(6.61×p×(energy/661)<sup>P8</sup>)<sup>2</sup>)
+                 </pre>
+               </div>
+            </li>
+            <li style="padding-top:10px;">
+               <b>Rel. Eff:</b>
+               <div style="padding-top:10px;">
+                 The &#34;Rel. Eff.&#34; detector response functions are specified using
+                 CSV or TSV files that provide detector dimensions and relative efficiencies at a given distance.
+                 A single CSV or TSV file may contain multiple lines with each line specifying a DRF.
+                 The format of the file is:
+                 <ul>
+                   <li>Lines starting with the string "#credit:" will be displayed to the user to provide context/credit/information about the DRFs contained in the file.  XHTML may be used in the descriptions. Lines otherwise starting with a "#" character will be ignored.
+                   </li>
+                   <li>The relative efficiency is specified using an equation of the form:
+                     <div><code>exp( c0 + c1*x<sup>1</sup> + c2*x<sup>2</sup> + c3*x<sup>3</sup> + c4*x<sup>4</sup> + c5*x<sup>5</sup> + c6*x<sup>6</sup> + c7*x<sup>7</sup>)
+                     </code></div>
+                     Where <code>x</code> is the energy in MeV, and <code>c0</code>, <code>c1</code>, etc are specified in the CSV or TSV file.
+                   </li>
+                   <li>Multiple files containing DRFs may be specified, and will remembered across user sessions.</li>
+                   <li>The columns in the CSV/TSV are:
+<div style="width: 100%; overflow-x: auto">
+<table style="border: 1px solid black;">
+<tr><th style="white-space: nowrap;border: 1px solid black;padding: 2px;">1: Display Name</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">2: Eff rel. to 3x3 NaI</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">3: Name</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">4: c0</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">5: c1</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">6: c2</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">7: c3</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">8: c4</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">9: c5</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">10: c6</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">11: c7</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">12: p0 (unused)</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">13: p1 (unused)</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">14: p2 (unused)</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">15: Calib Distance (cm)</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">16: Radius (cm)</th>
+</tr></table>
+</div>
+                   </li>
+                   </ul>
+               </div>
+            </li>
+            <li style="padding-top:10px;">
+               <b>Upload:</b>
+               <div style="padding-top:10px;">
+                  You can upload a a CSV file that lists the intrinsic efficiency at multiple
+energies in order to create a detector response function in
+                  <i>InterSpec</i>
+                  .
+The first column of the CSV file should be the energy in keV, and the second
+column should be the percent efficiency (a decimal number between 0 and 100) for
+a gamma at that energy striking the detector face to be detected within the
+photopeak centered at that energy.  Subsequent columns on each line are ignored.
+Lines in the file characterized by first non-whitespace character other
+than a digit are skipped.  The file may also be delimited by commas, spaces or
+tabs; multiple contiguous delimiters are treated as a single delimiter.
+                  <div style="padding-top:10px;">An acceptable input file may look like:</div>
+                  <div style="color: green; border: 1px solid black; padding: 2px; width:14em; margin-bottom:10px;margin-left:10px;">
+                     <div>Energy (keV), Efficiency (%)</div>
+                     <div>10, 0.0</div>
+                     <div>20,10.3</div>
+                     <div>25 28.3</div>
+                     <div>30,43.6</div>
+                     <div>35  54.0</div>
+                     <div>...</div>
+                  </div>
+                  <div>
+                     The
+                     <b>Efficiency.csv</b>
+                     file produced by &#34;GADRAS&#34; inside a detector files
+folder is an acceptable input.
+                  </div>
+                  <div style="padding-top:10px;">
+                     After uploading the efficiency file, you will be prompted to either enter the
+detector diameter, or upload a
+                     <em>Detector.dat</em>
+                     file from &#34;GADRAS&#34; so that
+the geometrical efficiency can be calculated.  If a
+                     <em>Detector.dat</em>
+                     is uploaded, the detectors peak width response will also be known to
+                     <i>InterSpec</i>
+                     as well.
+                     <ul> <div style="padding-top:10px;">The detectors' name will automatically be assigned to be the same as the 
+efficiency CSV file (minus the extension) used to create the detector.</div> </ul>
+                  </div>
+               </div>
+               <div style="padding-top:10px;">
+                  When evaluating efficiencies for energies between the provided values, Akima
+Interpolation is used.  This interpolation method was chosen as it is continually
+differentiable, only uses data from next neighbor points to determine value,
+and does not suffer from the same overshoots or oscillations that polynomial
+splines (e.g. third order splines) suffer from.
+                  <div align="center">
+                     <img src="InterSpec_resources/static_text/images/akima_interpolation.png"   class="imageBorder" style="margin-left:10px" />
+                     <div>
+					 A comparison of Akima, Cubic Spline, and linear interpolation methods for a set 
+of intrinsic efficiency pairs provided by &#34;GADRAS&#34; for a hand-held detector.
+					</div>
+                     <div>
+                        <b>Note: we have to improve this chart!</b>
+                     </div>
+                  </div>
+               </div>
+            </li>
+            <li style="padding-top:10px;">
+               <b>Formula:</b>
+               <div style="padding-top:10px;">
+                  If either the
+                  <i>intrinsic</i>
+                  or
+                  <i>absolute</i>
+                  efficiency is known
+as a mathematical function of energy (represented by &#34;&#215;&#34; in the input function), 
+it may be entered here; the detector diameter must also be known.  The formula 
+entered may use energy in either keV or MeV as long as the appropriate check box 
+is selected.  The evaluated formula should yield a number between 0 and 1 for 
+the energy range it is valid in. The input formula must be a function of a 
+single variable (energy) represented as a
+                  &#34;&#215;&#34;
+                  in the formula.
+				  <ul>
+                  <div style="margin-top:10px;">
+                     <i>Intrinsic</i>
+                     efficiency formulas represent the fraction of gammas
+which strike the detector face, that will end up in the full energy photopeak
+of the gammas incident energy.
+                  </div>
+                  <div style="margin-top:10px;">
+                     <i>Absolute</i>
+                     efficiency formulas represent the fraction of gammas 
+that leave the source, which will be recorded in their full energy photopeak,
+at a specified distance; hence when this efficiency is selected you will also
+have to enter a distance the input formula corresponds to.
+                  </div>
+				  </ul>
+                  <div style="margin-top:10px;">
+                     <u>Valid Equations:</u>
+                     Equations that can be entered follow standard mathematical rules, and can make 
+use of the following functions:
+                     <div style="margin-left:10px; border:1px solid black;color:blue;padding-left:4px;padding-right:4px;">
+                        abs, sqrt, sin, cos, tan, asin, acos, atan, atan2,
+   sinh, cosh, tanh, exp, log, ln
+                        <span style="color:grey;">(synonym for log)</span>
+                        , log10
+                        <div>
+                           <span style="color:grey;">and functions that take two arguments</span>
+                           : min, max, pow
+                        </div>
+                     </div>
+                     <div style="margin-top:10px;">The following arithmetic operators may be used:</div>
+                     <span style="margin-left:10px; border:1px solid black;color:blue;padding-left:4px;padding-right:4px;">+, - , /, *, ^, **</span>
+                     <div style="margin-top:10px;">The following logical operators may be used:</div>
+                     <span style="margin-left:10px; border:1px solid black;color:blue;padding-left:4px;padding-right:4px;">==, !=, &gt;, &gt;=, &lt;, &lt;=, &amp;&amp;, ||</span>
+                     <div style="margin-top:10px;">
+                        Logical operations result in a  value of 0.0 if false, and 1.0 if true, and may 
+be chained together, ex.
+                        <div style="color:grey;margin-left:10px;">0.5*(x&lt;50||x&gt;100) + 0.75*(x&gt;=50&amp;&amp;x&lt;=100)</div>
+                        will result in a function with value of 0.75 between 50 and 100, and 0.5 
+everywhere else.
+                     </div>
+                     <div style="margin-top:10px;">
+                        An example input formula could be:
+                        <div style="color:grey;margin-left:10px;">exp(-343.63 + 269.10*log(x) -83.80*ln(x)^2 + 13.00*pow(log(x),3) -1.01*log(x)^4)</div>
+                     </div>
+                     <div style="margin-top:10px;">
+                        After a formula is entered you may <u>click</u> the <b>Set</b> button to display the
+function on the chart to ensure the function is reasonable; the y-axis
+of this chart will always be set to display form 0 to 1.
+Any syntax errors encountered during parsing of the formula will be reported in 
+the
+                        <b>Information and Warnings</b>
+                        widget, with some diagnostics.
+                     </div>
+                  </div>
+               </div>
+            </li>
+            <li style="padding-top:10px;">
+               <b>Recent:</b>
+               <div style="padding-top:10px;">
+                  This is a list of recently used detector response functions you can choose to 
+use again - currently this list just lists all used detector - in the future it 
+is planned to only hold detectors defined from uploaded, manually entered formula,
+or created from test data (a planned feature).
+                  <ul> <div style="padding-top: 10px"> It is a good idea to uniquely name your uploaded or formula defined
+detector response functions for later identification.</div> </ul>
+               </div>
+            </li>
+         </ul>
+      </div>
+   </message>
+   <message id="activity-shielding-dialog">
+    <div align="center">
+      <h1 id="activity-shielding-dialog">
+            <b>Activity Shielding Fit</b>
+      </h1>
+      <hr />
+	  </div>
+
+            <img src="InterSpec_resources/static_text/images/ActShieldFit.png"  class="imageBorder" style="max-height:300px;float:left;display:block;margin-right:20px; "/>
+
+      <div >
+         <u>Select</u>
+         <b>Tools &#8594; Activity Shielding Fit</b> to launch the tool.
+      </div>
+      <div style="padding-top: 10px">
+         In the leftmost box in the tool window,
+         <u>check/uncheck</u>
+         under the &#34;Use&#34; column the peaks you wish to use in determining the activity of the shielding; 
+checked boxes indicate a "false" peak.
+      </div>
+      <div style="padding-top: 10px">
+         <u>Check/uncheck</u>
+         the box next to &#34;Multiple nuclides contribute to peak&#34; located at the bottom left corner of the window to account for cases when two nuclides may be the cause of 
+the same gamma peak.
+      </div>
+      <div style="padding-top: 10px">
+         When peaks from your background spectrum may interfere with your foreground spectrum,
+         <u>check/uncheck</u>
+         the box next to &#34;Subtract Background Peaks&#34; located at the
+ bottom left corner of the window.
+      </div>
+      <div style="padding-top: 10px">
+         To account for more shielding, including advanced cases of shielding,
+         <u>select</u>
+         the
+         <b>Material</b>
+         icon located at the top right of the window to add a shielding source, 
+and
+         <u>select</u>
+         the appropriate material/thickness accordingly. For a material that is not provided under the
+         <b>Material</b>
+         option select the
+         <b>Generic</b>
+         icon,
+         <u>input</u>
+         the 
+&#34;Areal Dens.[ity]&#34; and atomic number.
+      </div>
+      <div>
+         <ul>
+            If accounting for shielding here, be sure to
+            <u>check/uncheck</u>
+            the &#34;Fit&#34; box located to the right of each
+            <b>Material</b>
+            or
+            <b>Generic</b>
+            box you wish to be 
+incorporated in your spectrum. This ability allows you to immediately see the effects of a small variance in the shielding source such that you can better determine 
+the accurate choice of shielding material.
+         </ul>
+      </div>
+      <div>
+         You can also "Import Source Shielding XML Model" by
+         <u>hovering</u>
+         the cursor over the
+         settings
+         icon (
+         <img src="InterSpec_resources/images/cog.png" valign="middle"/>
+         )in the top right of the window, and
+         <u>selecting</u>
+         &#34;Upload Model.&#34;
+      </div>
+      <div style="padding-top: 10px">
+         No matter what method of inputting shielding is used, be sure to
+         <u>input</u>
+         the distance the measurement was taken from the shielding source in the box next to &#34;Distance&#34; 
+on the top right of the window; it is by default set to 100 centimeters.
+      </div>
+      <div>
+         <ul>The application has the ability to identify and adjust the units you input after the numerical figures; you will not need to normalize the units you plan to input.</ul>
+      </div>
+   </message>
+
+   <message id="decay-dialog">
+    <div align="center">
+      <h1 id="decay-dialog">
+            <b>Nuclide Decay Information</b>
+      </h1>
+      <hr />
+	  </div>
+
+  <img src="InterSpec_resources/static_text/images/nuc_decay_info.png"  class="imageBorder" style="max-height:300px;float:left;display:block;margin-right:20px"/>
+
+      <div>
+         This tool allows you to obtain information about aged nuclides, such as
+activities or gamma/alpha/beta production rates, or the decay chain as well as
+further information about each of the daughter nuclides.  There are two main
+portions of this tool used to extract information: the <b>Activity Chart</b> tab and
+<b>Decay Chain</b> tabs; usage information and hints are offered in the
+similarly named subsections.
+</div>
+
+<div style="padding-top: 10px">
+For both of these tools the initially selected nuclide
+information will be displayed for whatever nuclide the
+         <b>Reference Photopeaks</b>
+         tool is currently displaying, or if it is not
+displaying any reference gamma lines for nuclides, a default nuclide.
+</div>
+
+<div>
+<h3>Activity Chart</h3>
+</div>
+<div>The <b>Activity Chart</b> display can display the activity, or emission rate of gamma,
+beta, or alpha particles as a function of time for the chosen parent and
+daughter nuclides.</div>
+<div style="padding-top: 10px"><u>Clicking</u> on the chart will bring up a text listing of nuclide activities
+and decay particle types, their energies and intensities, as well as some
+additional information, all for the time clicked.</div>
+<div style="padding-top: 10px">If the check-boxes in the legend are un-checked, then the nuclide listed next to
+it will not be displayed on the decay chart; this is useful when the activities
+of a number of daughter products overlap (hence hiding each other) and you wish
+to verify the location of the decay curve.</div>
+<div style="padding-top: 10px">
+<u>Adjusting</u> the
+<b>Time Span</b>
+changes the x-axis range displayed, and can be
+useful for zooming in on the initial decay period.
+</div>
+
+<img src="InterSpec_resources/static_text/images/nuc_decay_select.png"  class="imageBorder" style="max-height:300px;clear:both;float:left;display:block;margin-right:20px; margin-top:10px;"/>
+
+<div style="display:table-row">
+<h4>Changing Nuclide</h4>
+The selected nuclide can be changed by <u>double-clicking</u> the icon representing
+the nuclide in the upper bar listing the nuclides; in the example screen shot
+below it looks like:
+         <img src="InterSpec_resources/static_text/images/i135icon.png" valign="middle" />
+         .
+Alternatively you could remove the isotope by <u>clicking</u> the <b> <div style="width: 13px; height: 13px; overflow: hidden;display: inline-block; vertical-align: middle;"><img src="InterSpec_resources/closeicons-tab.png" valign="middle" style="width:100%"/></div> symbol</b> in the
+nuclides icon, and then add a new nuclide by <u>clicking</u> the <img src="InterSpec_resources/static_text/images/AddNucIcon.png" valign="middle" />
+icon.  You can add multiple isotopes so you can view their
+decay information together.
+</div>
+
+
+<div style="margin-top:15px; padding-top:5px">
+ <div style="padding-top: 10px">Note: The &#34;<b>nuc. search</b>&#34;
+               field will update the element and isotope selection fields with suggestions as you type. No suggestions will be
+offered before you enter text, but the element and isotope fields will still be
+populated if you wish to select your nuclide that way.  If you wish to get
+quantitative information on the activity as a function of time, you can select
+the initial activity of the nuclide.  If you wish to have a minimum age
+for the decay chart to start at, you can also fill in a minimum age here.</div>
+         </div>
+
+<img src="InterSpec_resources/static_text/images/nuc_decay_chain.png"  class="imageBorder"  style="max-height:300px;clear:both;float:left;margin-right:20px; margin-top:10px;" />
+<div style="display:table-row">
+<h3>Decay Chain</h3>
+
+    <div>
+
+               Example screen shot of the <b>Nuclide Decay Information</b> tool showing the <b>Decay Chain</b> tab.  
+
+			   <div style="padding-top: 10px">
+			   Note: You can <u>click</u> on a nuclide
+to obtain further information about its half life, parents, and decays.  
+</div>
+<div style="padding-top: 10px">
+<u>Double-click</u> on a nuclide to get information about the decay products (gamma/beta/alpha)
+from that nuclide.  If you have selected multiple nuclides in the upper source
+area, the decay chain can only be shown for one at a time.  <u>Clicking</u> on the icon
+for a different nuclide (in the example shown above, Pu239 instead of U235)
+will display the decay chain for that parent nuclide.
+</div>
+         </div>
+	  </div>
+   </message>
+
+   <message id="gamma-xs-dialog">
+    <div align="center">
+      <h1 id="gamma-xs-dialog"><b>Gamma XS Calc</b></h1>
+      <hr />
+	  </div>
+<div>
+This tool allows you to determine the cross section for gammas of arbitrary
+energy through any material in <em>InterSpec</em>'s library, or any element or
+material formula you enter.  If the density of the material is known or
+specified, as well as the length of traversal through the material, the fraction
+of gamma rays that will make it through the material without interacting with it
+is also given as the &#34;Trans. Frac.&#34;.  Further, if a detector is specified,
+along with the distance from the source to the detector (note this is from the
+source, and not from the shielding around it), then efficiency estimates for
+detection of the gamma rays inside the full energy peak will also be given.
+</div>
+
+<div style="padding-top: 10px;">Some things to note about each of the fields are:</div>
+<div style="width: 100%">
+<img align="left" src="InterSpec_resources/static_text/images/gamma_xs_dialog.png"  class="imageBorder" style="width:20%; margin-top: 20px; "/>
+
+<span style="float:right; width: 79%">
+<ul>
+<li><b>Energy</b>: Values entered must be in keV and inside the range of 10 to 10000 keV.</li>
+<li><b>Material/mass-formula</b>: Here you can enter any material or element in
+the <em>InterSpec</em> database (e.x. Polyethylene, Air, Fe, etc.) and you will be
+assisted with a suggestion popup as you type to let you know what is in the
+database.  If you choose to enter a <em>mass-formula</em> instead, you should
+enter the chemical symbol (e.x. C, Ni, Fe, etc.) followed by the mass fraction
+of that element in the material (so a number between 0 and 1), where the sum
+of mass fractions should add up to 1.0; if they dont add up to 1.0, then a scale
+will be applied internally so that the relative proportions remain the same, but
+the total mass fraction will be 1.0. Examples of <em>mass-formula</em>s include
+'C0.5H0.2Ni0.4', 'Fe0.5U0.5', 'Al0.25Be0.35H0.4'.</li>
+<li><b>Total att. cross section</b>: This is the sum of the Compton, Photoelectric
+and Pair Production cross sections; Rayleigh scattering is not included in this
+number since it does not effect the gammas energy.
+To get the <em>mean free path</em> of the gamma through the material in cm, you
+can divide this number by the density (in units of g/cm<sup>3</sup>). To get
+the probability of a gamma passing through the material without interacting with
+it you can multiple this number by density and thickness of the shielding
+then take the exponent of the negative of this number, e.g. <code>prob = exp(-xs &#215; density &#215; thickness)</code>,
+which is what the &#34;Trans. Frac&#34; field provides.</li>
+<li><b>Density</b>: this must be specified in order for the
+&#34;Trans. Frac.&#34; field to be calculated for you, and must be in units of
+g/cm<sup>3</sup></li>
+<li><b>Length</b>: This is the <em>thickness</em> of the attenuating material,
+and can be entered in any distance units <em>InterSpec</em> accepts, as long
+as they are specified.</li>
+<li><b>Trans. Frac.</b>: The fraction of gammas that will make it through the
+attenuating material at the specified energy, density and thickness, without
+interacting or down scattering in energy.  Note that this is not the total
+fraction of the incomming gammas which will exit the shielding, as some gammas
+will scatter to lower energies and still make it through the shielding, but not
+into the detected full energy peak.</li>
+<li><b>Detector</b>: This is optional and will be set to the same detector as
+the spectrum you are currently working on if it has a detector associated with
+it; otherwise you can click on the icon and select a detector to use for the
+calculation.  If a detector is selected, you will be able to input a distance
+from the source to the detector to also get the geometrical and detector
+efficiency calculation as well.</li>
+<li><b>Distance</b>: This field will only be visible if a detector is selected.
+This is the distance from the source to the detector.  Note, this is <em>not</em>
+the distance from the shielding to the detector, but from the center of the
+actual source to the detector face.</li>
+<li><b>Detection Efficiency</b>: This is the combination of the geometrical
+efficiency (the probability of a gamma from the source hitting the face of the
+detector), and the intrinsic efficincy of the detector (the probability that if
+a gamma hits the detector face, it will be detected in the full energy peak).
+Note that this field does not include the effects of attenuation.
+</li>
+</ul>
+</span>
+</div>
+
+   </message>
+   <message id="reference-gamma-lines-dialog">
+
+
+<div align="center">
+<h1 id="reference-gamma-lines-dialog">
+<b>Trouble Fitting Peaks for Shielding</b>
+</h1>
+<hr />
+</div>
+<div>
+Access and launch the <b>Reference Photopeaks</b> tool by
+<u>selecting</u>
+<b>Tools &#8594; Reference Photopeaks</b> menu (undocked) or 3rd tab.</div>
+<div style="padding-top: 10px">Inputting the &#34;Nuclide&#34; and &#34;Age&#34; will immediately alter the calibration of the spectrum.</div>
+<div style="padding-top: 10px">
+If the calibration is still not accurate, you can manually account for potential shielding by
+<u>selecting</u>
+the shielding material from the list of options, and
+<u>inputting</u>
+the appropriate thickness. Often this will alter your spectrum such that peaks will fit the isotope they reflect more accurately.
+</div>
+<div>
+<ul>
+<u>Input</u>
+the units in which the thickness of the material was measured after inputting the quantity.
+Separate the units from the number with a single space; trouble fitting will not occur otherwise.
+</ul>
+</div>
+
+   </message>
+
+
+<message id="dose-dialog">
+<div align="center">
+  <h1 id="dose-dialog"> <b>Dose Calculator</b> </h1>
+  <div>
+   Content to eventually be placed here
+  </div>
+</div>
+</message>
+
+<message id="spectrum-file-query">
+<div align="center">
+  <h1 id="spectrum-file-query"> <b>Spectrum File Query Tool</b> </h1>
+  <div>
+    Content to eventually be placed here
+  </div>
+  </div>
+</message>
+
+    <message id="terminal-dialog">
+        <div align="center">
+            <h1 id="terminal-dialog">
+                <b>Math/Command Terminal</b>
+            </h1>
+            <hr />
+            </div>
+                <div style="padding-top: 10px">The <b>Math/Command Terminal</b> is a command line tool for <b>InterSpec</b>. It can be used to compute simple to very complicated math expressions, accomplish text-based interactions with the spectra, and reference data from the user’s current activity. </div>
+                <div style="padding-top: 10px">The tool can be accessed by selecting the <b>Math/Command Terminal</b> selection from the <b>Tools</b> toolbar in un-docked mode, or selecting its corresponding tab in the bottom dock of the window.</div>
+                <div align="center" style="padding-top: 10px">
+                <img src="InterSpec_resources/static_text/images/Terminal.png"  class="imageBorder"  style="max-width:90%; max-height:300px;"/>
+            </div>
+    </message>
+
+<message id="math-commands">
+    <div align="center">
+        <h1 id="math-commands">
+            <b>Math Commands/Functions</b>
+        </h1>
+    <hr />
+    </div>
+        <div style="padding-top: 10px">The <b>Math/Command Terminal</b> tool features the ability to compute complex calculations on the fly with a simple, common syntax. Powered by <b>MuParserX</b>, the tool comes built-in with various pre-defined operators and functions, and are listed in the following. Function calls along with  combinations with different operators can be evaluated directly into the <b>Terminal</b> and outputted on the history of text. The syntax for executing functions and operations are listed as so: </div>
+        <div style="padding-top: 7px"><pre><code><i>Binary Operator</i>:	[operand 1] <span style="color:blue;">(operator)</span> [operand 2]<br></br><i>Ternary Operator</i>:	[operand 1] <span style="color:blue;">(operator 1)</span> [operand 2] <span style="color:blue;">(operator 2)</span> [operand 3]<br></br><i>Functions</i>:		<span style="color:blue;">function_name(</span> [arg 1], [arg 2], [arg 3], ... <span style="color:blue;">)</span>
+        </code></pre></div>
+        <div style="padding-top: 10px">
+            The following are functions and operators currently supported by the Math/Command Terminal:
+        </div>
+        <div style="padding-top: 10px" align="center">
+            <style> table, th {
+                        border-collapse: collapse;
+                        border-spacing: 0.5em;
+                        border: 1px solid black;
+                        font-style: normal;
+                        font-weight: normal;
+                        padding: 0.5em;
+                    }
+                    td {
+                        border-collapse: collapse;
+                        border: 1px solid black;
+                        font-weight: normal;
+                        padding: 0.5em;
+                    }
+            </style>
+            <table>
+                <tr><th><b>Operator</b></th><th><b>Description</b></th><th><b>Return value</b></th></tr>
+                <tr><td colspan="3" align="center" style="text-align:center"><b>Functions</b></td></tr>
+
+                <tr><td><span style="color:navy"><b>sin(x)</b></span></td><td>Trigonometric sine. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>sine of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>cos(x)</b></span></td><td>Trigonometric cosine. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>cosine of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>tan(x)</b></span></td><td>Trigonometric tangent. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>tangent of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>sinh(x)</b></span></td><td>Hyperbolic sine. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>hyperbolic sine of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>cosh(x)</b></span></td><td>Hyperbolic cosine. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>hyperbolic cosine of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>tanh(x)</b></span></td><td>Hyperbolic tangent. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>hyperbolic tangent of <i>x</i></td></tr>
+
+                <tr><td colspan="3"></td></tr>
+                <tr><td><span style="color:navy"><b>log10(x)</b></span></td><td>Log base 10. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>log base-10 of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>log(x)</b></span></td><td>Log base 10. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>log base-10 of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>ln(x)</b></span></td><td>Natural log (log base e). <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>natural log of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>exp(x)</b></span></td><td>e to the power of x. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>e^<i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>sqrt(x)</b></span></td><td>Square root of x. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>√<i>x</i></td></tr>
+
+                <tr><td colspan="3"></td></tr>
+                <tr><td><span style="color:navy"><b>abs(x)</b></span></td><td>Absolute value. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>|<i>x</i>|</td></tr>
+                <tr><td><span style="color:navy"><b>min(x,y,...)</b></span></td><td>Minimum value. <span style="color:green; font-size: 10px;">(Takes <u><b>at least</b></u> 1 argument)</span></td><td>Minimum value from all arguments.</td></tr>
+                <tr><td><span style="color:navy"><b>max(x,y,...)</b></span></td><td>Maximum value. <span style="color:green; font-size: 10px;">(Takes <u><b>at least</b></u> 1 argument)</span></td><td>Maximum value from all arguments.</td></tr>
+                <tr><td><span style="color:navy"><b>sum(x,y,...)</b></span></td><td>Sum function. <span style="color:green; font-size: 10px;">(Takes <u><b>at least</b></u> 1 argument)</span></td><td>Sum of all arguments.</td></tr>
+
+                <tr><td colspan="3" align="center" style="text-align:center"><b>Unary Operators</b></td></tr>
+                <tr><td>x<span style="color:navy"><b>!</b></span></td><td>Factorial operator</td><td>Factorial of <i>x</i>.</td></tr>
+
+                <tr><td colspan="3" align="center" style="text-align:center"><b>Binary Operators</b></td></tr>
+                <tr><td>x <span style="color:navy"><b>&#61;</b></span> ...</td><td>Variable assignment on x.</td><td>N/A</td></tr>
+
+                <tr><td colspan="3"></td></tr>
+                <tr><td>x <span style="color:navy"><b>&amp;&amp;</b></span> y</td><td>Logical and.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>||</b></span> y</td><td>Logical or.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&gt;&#61;</b></span> y</td><td>Less than or equal to.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&lt;&#61;</b></span> y</td><td>Greater than or equal to.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&#33;&#61;</b></span> y</td><td>Not equal to.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&#61;&#61;</b></span> y</td><td>Equal to.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&gt;</b></span> y</td><td>Greater than.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&lt;</b></span> y</td><td>Less than.</td><td>0 if false, 1 if true</td></tr>
+
+                <tr><td colspan="3"></td></tr>
+                <tr><td>x <span style="color:navy"><b>+</b></span> y</td><td>Addition.</td><td><i>x</i> + <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>-</b></span> y</td><td>Subtraction.</td><td><i>x</i> - <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>*</b></span> y</td><td>Multiplication.</td><td><i>x</i> ∙ <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>/</b></span> y</td><td>Division.</td><td><i>x</i> &divide; <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>//</b></span> y,<br></br>x <span style="color:navy"><b>div</b></span> y</td><td>Integer division.</td><td><i>x</i> div <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>%</b></span> y,<br></br>x <span style="color:navy"><b>mod</b></span> y</td><td>Modulus operator.</td><td><i>x</i> mod <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>^</b></span> y</td><td>Exponent.</td><td><i>x</i><sup><i>y</i></sup></td></tr>
+
+                <tr><td colspan="3" align="center" style="text-align:center"><b>Ternary Operators</b></td></tr>
+                <tr><td>x <span style="color:navy"><b>?</b></span> y <span style="color:navy"><b>:</b></span> z</td><td>If, then, else operator. <span style="color:green; font-size: 10px;">(C++ syntax)</span></td><td>If <i>x</i> is true, <i>y</i>, else, <i>z</i></td></tr>
+            </table>
+            <div style="padding-top: 10px; padding-bottom: 5px;" align="left">The <b>Math/Command Terminal</b> also stores constants that are available to use inside arguments of functions as well as operations. The following are currently stored constants inside the tool:
+            </div>
+            <table>
+                <tr><th><b>Constant</b></th><th><b>Value</b></th><th><b>Notes</b></th></tr>
+                <tr><td><span style="color:navy"><b>pi</b></span></td><td>3.14159</td><td>Pi <span style="font-size: 8px;">*obtained from M_PI in C++</span></td></tr>
+                <tr><td><span style="color:navy"><b>e</b></span></td><td>2.71828</td><td>Natural log base <span style="font-size: 8px;">*obtained from M_E in C++</span></td></tr>
+                <tr><td><span style="color:navy"><b>_sqrt2</b></span></td><td>1.41421</td><td>Square root of 2 <span style="font-size: 8px;">*obtained from M_SQRT2 in C++</span></td></tr>
+            </table>
+        </div>
+</message>
+
+<message id="interspec-commands">
+    <div align="center">
+        <h1 id="interspec-commands">
+            <b>InterSpec Commands/Functions</b>
+        </h1>
+    <hr />
+    </div>
+    
+    <div style="padding-top: 10px">The <b>Math/Command Terminal</b> also features the ability to reference values from displayed data as well as accomplish certain interactions with spectra and the environment. <b><i>Dynamic functions</i></b> are able to be combined with math expressions for a powerful combination of accurate calculations without the need to physically view and copy the data. <b><i>Static functions</i></b> allow the user to interact with the displayed spectrum and environment and do certain tasks such as adding peaks, deleting peaks, and changing the environment appearance. <b><i>Static functions</i></b> have no real return value and therefore are <b>NOT</b> allowed to be combined inside expressions. The <b>Terminal</b> will return an error message if <i>static functions</i> are combined within expressions. The syntax for calling these functions are similar to how math functions are called: </div>
+    
+    <div style="padding-top: 7px"><i>*note that there must not be any spaces between the function name and the parentheses for arguments! The Terminal will interpret this as an error.</i></div>
+    
+    <div style="padding-top: 5px"><pre><code><i>Static functions</i>:	<span style="color:blue;">static_function(</span> [arg 1], [arg 2], [arg 3], ... <span style="color:blue;">)</span><br></br><i>Dynamic functions</i>:	<span style="color:blue;">dynamic_function(</span> [arg 1], [arg 2], [arg 3], ... <span style="color:blue;">)</span><br></br><i>                 </i> 	[operand 1] (operator 1) <span style="color:blue;">dynamic_function(</span> [arg 1], [arg 2], [arg 3], ... <span style="color:blue;">)</span><br></br>
+    </code></pre></div>
+    
+    <div style="padding-top: 7px">Different functions may have a certain number of <b>required</b> arguments inside the parenthesis. These arguments are separated by <i>commas</i>, and can be represented as <i>constants</i>, <i>identification values</i>, <i>numeric values</i>, and <i>string values</i>. Certain functions may require a set of these arguments in a <b>FIXED</b> order, or else an error is returned. Some arguments are <b>OPTIONAL</b>, and are highlighted in <span style="color:green;"><i>YELLOW ITALICS</i></span>. The following are <b>InterSpec</b> functions that are currently available inside the <b>Math/Command Terminal</b>:</div>
+    
+    <div style="padding-top: 7px" align="center">
+        <style> table, th {
+            border-collapse: collapse;
+            border-spacing: 0.5em;
+            border: 1px solid black;
+            font-style: normal;
+            font-weight: normal;
+            padding: 0.5em;
+        }
+        td {
+            border-collapse: collapse;
+            border: 1px solid black;
+            font-weight: normal;
+            padding: 0.5em;
+        }
+        </style>
+        
+        <table>
+            <tr><th><b>Function</b></th><th><b>Description</b></th><th><b>Notes</b></th></tr>
+            <tr><td colspan="3" align="center" style="text-align:center"><b>Static Functions</b></td></tr>
+            <tr><td><span style="color:navy"><b>showDefinedVariables(</b></span> <span style="color:green"><i>variable: id </i></span><span style="color:navy"><b>)</b></span></td><td>Output information about defined variables. Can specify a single variable, if given as an argument, or output all variable values if no argument is specified.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>clearVariable(</b></span> variable: id <span style="color:navy"><b>)</b></span></td><td>Deletes a stored variable. If the variable does not exist, then a proper error message is returned.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Display Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>setRange(</b></span> lower_x: value, upper_x: value <span style="color:navy"><b>)</b></span></td><td>Sets the displayed x-axis range of the current spectrum. Automatically detects the lower-x and upper-x bounds. Outputs if action was a success or not.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Peak-Interaction Functions</i></td></tr>
+
+            <tr><td><span style="color:navy"><b>searchPeak(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Searches for and adds peak onto the spectrum at the specified energy value.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>deletePeak(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Searches for and deletes peak at the specified energy value in the spectrum.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>refitPeak(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Searches for and refits peak at the specified energy value in the spectrum.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Nuclide-Interaction Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>setNuclide(</b></span> nuclide: id, <span style="color:green"><i>age: id</i></span> <span style="color:navy"><b>)</b></span></td><td>Sets the nuclide and age inside the ‘Reference Photopeaks Tab’. If the age is not specified, then the default age is provided. If the nuclide could not be found, then nothing happens.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Terminal Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>darken()</b></span></td><td>Darkens the text areas for the Terminal and whitens the text font.</td><td><i>*Any argument passed in will not affect the function.</i></td></tr>
+            <tr><td><span style="color:navy"><b>lighten()</b></span></td><td>Whitens the text areas for the Terminal and darkens the font. Currently set to default.</td><td><i>*Any argument passed in will not affect the function.</i></td></tr>
+            
+            <tr><td colspan="3" align="center" style="text-align:center"><b>Dynamic Functions</b></td></tr>
+            <tr><td colspan="3" align="left"><i>Nuclide Functions</i></td></tr>
+<!--            <tr><td><span style="color:navy"><b>nuclideEnergy(</b></span> intensity: value <span style="color:navy"><b>)</b></span></td><td>Gets the nuclide’s energy value at a specified intensity. Returns error message if no nuclide is shown or no energy is matched with the intensity.</td><td></td></tr>-->
+            <tr><td><span style="color:navy"><b>nuclideIntensity(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Gets the nuclide’s intensity value at a specified energy. Returns error message if no energy value could be matched with user’s specification or no nuclide is shown.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>nuclideIntensityForParticle(</b></span> particle: string, energy: value <span style="color:navy"><b>)</b></span></td><td>Gets nuclide’s intensity value at specified energy and particle. Returns error message if both of these parameters could not be matched.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Live/Real Time Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>liveTimeOf(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns the live time (in seconds) of spectra, or 0 if not known.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>realTimeOf(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns the real time (in seconds) of spectra, or 0 if not known.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>liveTime()</b></span></td><td>Automatically detects single spectra and returns its live time value. Returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>realTime()</b></span></td><td>Automatically detects single spectra and returns its real time value. Returns error message if multiple or no spectra detected.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Peak Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>peakArea(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s area at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakMean(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s mean at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakSigma(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s sigma at a specified x-value. Returns 0 if no peak found.</td><td><i>*Peak must be gaussian or else error is returned.</i></td></tr>
+            <tr><td><span style="color:navy"><b>peakFwhm(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s full width at half-maximum at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakAmp(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s amplitude at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakChi2Dof(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s chi-squared degrees of freedom at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakGauss(</b></span> energy: value, x0: value, x1: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s gaussian at a specified x-value and bounds. Returns 0 if no peak found or x-boundaries are equivalent.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Statistic Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>pValueFromChiSquare(</b></span> chiScore: value, df: value <span style="color:navy"><b>)</b></span></td><td>Returns the p-value from a specific chi-score and degrees of freedom.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Gamma Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>numGammasFor(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns minimum number of channels of channel energies or gamma counts for spectrum. Returns 0 if neither is defined.</td><td>num_gamma_channels</td></tr>
+            <tr><td><span style="color:navy"><b>gammaChannelFor(</b></span> spectra: id/string, energy: value <span style="color:navy"><b>)</b></span></td><td>Returns gamma channel containing energy. If energy is below zero, then 0 is returned. If the energy is above the last channel, the last channel is returned.</td><td>find_gamma_channel</td></tr>
+            <tr><td><span style="color:navy"><b>gammaContentFor(</b></span> spectra: id/string, energy: value <span style="color:navy"><b>)</b></span></td><td>Returns gamma channel contents for a specified spectrum in a specified channel. Returns 0 if channel energies is not defined or channel is invalid (too large).</td><td>gamma_channel_content</td></tr>
+            <tr><td><span style="color:navy"><b>gammaLowerFor(</b></span> spectra: id/string, channel: value <span style="color:navy"><b>)</b></span></td><td>Returns lower energy of specified gamma channel for a specified spectrum.</td><td>gamma_channel_lower</td></tr>
+            <tr><td><span style="color:navy"><b>gammaCenterFor(</b></span> spectra: id/string, channel: value <span style="color:navy"><b>)</b></span></td><td>Returns central energy of specified gamma channel for a specified spectrum. For last channel, returns width of second-to-last channel.</td><td>gamma_channel_center</td></tr>
+            <tr><td><span style="color:navy"><b>gammaUpperFor(</b></span> spectra: id/string, channel: value <span style="color:navy"><b>)</b></span></td><td>Returns energy for a spectra just past energy range the specified channel contains. Returns error if channel is invalid.</td><td>gamma_channel_upper</td></tr>
+            <tr><td><span style="color:navy"><b>gammaWidthFor(</b></span> spectra: id/string, channel: value <span style="color:navy"><b>)</b></span></td><td>Returns energy with of a channel. If at last channel, then width of second-to-last channel is returned.</td><td>gamma_channel_width</td></tr>
+            <tr><td><span style="color:navy"><b>gammaIntegralFor(</b></span> spectra: id/string, energy_low: value, energy_high: value <span style="color:navy"><b>)</b></span></td><td>Get integral of gamma counts between energy_low and energy_high for a spectrum. Returns 0 if channel energies or gamma counts invalid.</td><td>gamma_integral</td></tr>
+            <tr><td><span style="color:navy"><b>gammaSumFor(</b></span> spectra: id/string, start_bin: value, end_bin: value <span style="color:navy"><b>)</b></span></td><td>Get the sum of gamma channel contents for all channels in between (inclusive) start_bin and end_bin for a spectrum. Returns 0 if start_bin too large or gamma counts invalid. If end_bin too large, then it will be clamped to number of channels.</td><td>gamma_channels_sum</td></tr>
+            <tr><td><span style="color:navy"><b>gammaMinFor(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns minimum gamma energy.</td><td>gamma_energy_min</td></tr>
+            <tr><td><span style="color:navy"><b>gammaMaxFor(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns maximum gamma energy.</td><td>gamma_energy_max</td></tr>
+            
+            <tr><td colspan="3"></td></tr>
+            
+            <tr><td><span style="color:navy"><b>numGammas()</b></span></td><td>Same as <i>numGammasFor( spectra: id )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaChannel(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaChannelFor( spectra: id, energy: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaContent(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaContentFor( spectra: id, energy: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaLower(</b></span> channel: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaLowerFor( spectra: id, channel: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaCenter(</b></span> channel: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaCenterFor( spectra: id, channel: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaUpper(</b></span> channel: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaUpperFor( spectra: id, channel: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaWidth(</b></span> channel: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaWidthFor( spectra: id, channel: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaIntegral(</b></span> energy_low: value, energy_high: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaIntegralFor( spectra: id, energy_low: value, energy_high: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaSum(</b></span> start_bin: value, end_bin: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaSumFor( spectra: id, start_bin: value, end_bin: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaMin()</b></span></td><td>Same as <i>gammaMinFor( spectra: id )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaMax()</b></span></td><td>Same as <i>gammaMaxFor( spectra: id )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+        </table>
+        </div>
+    
+        <div style="padding-top: 10px">The <b>Math/Command Terminal</b> for <b>InterSpec</b> also features the ability to use <i>string constants</i> that are used for arguments inside several <b>InterSpec</b> functions. These constants can be used directly as its ID’s instead of placing them inside quotes as strings <i>(eg. “hello” or “hello world!”)</i>.</div>
+        <div style="padding-top: 10px" align="center">
+            <table>
+                <tr><th><b>Constant</b></th><th><b>Value</b></th><th><b>Notes</b></th></tr>
+                <tr><td><span style="color:navy"><b>foreground, fg</b></span></td><td>“foreground”</td><td>Used for live time and real time functions, as well as numerous gamma functions.</td></tr>
+                <tr><td><span style="color:navy"><b>secondaryforeground, sfg</b></span></td><td>“secondaryforeground”</td><td>Used for live time and real time functions, as well as numerous gamma functions.</td></tr>
+                <tr><td><span style="color:navy"><b>background, bg</b></span></td><td>“background”</td><td>Used for live time and real time functions, as well as numerous gamma functions.</td></tr>
+            </table>
+        </div>
+</message>
+
+    <message id="terminal-dialog">
+    <div align="center">
+    <h1 id="terminal-dialog">
+    <b>Math/Command Terminal</b>
+    </h1>
+    <hr />
+    </div>
+    <div style="padding-top: 10px">The <b>Math/Command Terminal</b> is a command line tool for <b>InterSpec</b>. It can be used to compute simple to very complicated math expressions, accomplish text-based interactions with the spectra, and reference data from the user’s current activity. </div>
+    <div style="padding-top: 10px">The tool can be accessed by selecting the <b>Math/Command Terminal</b> selection from the <b>Tools</b> toolbar in un-docked mode, or selecting its corresponding tab in the bottom dock of the window.</div>
+    <div align="center" style="padding-top: 10px">
+    <img src="InterSpec_resources/static_text/images/Terminal.png"  class="imageBorder"  style="max-width:90%; max-height:300px;"/>
+    </div>
+    </message>
+
+   <message id="nuclide-search-dialog">
+    <div align="center">
+      <h1 id="nuclide-search-dialog">
+            <b>Nuclide Search</b>
+      </h1>
+      <hr />
+	  </div>
+       <div align="center" style="padding-top: 10px">
+            <img src="InterSpec_resources/static_text/images/NucSearch.png"  class="imageBorder"  style="max-width:90%; max-height:300px;"/>
+      </div>
+      <div style="padding-top: 10px">The <b>Nuclide Search </b>tool can be accessed either from the bottom dock of the window, or from the <b>Tools</b> toolbar when in the un-docked mode. </div>
+      <div style="padding-top: 10px">This tool allows the user to search for nuclides with specific constraints on energy, branching ratio (BR), and half life (HL). </div>
+   </message>
+   <message id="1/r2-calc-dialog">
+    <div align="center">
+      <h1 id="1/r2-calc-dialog"><sup>1</sup>/<sub>r<sup>2</sup></sub> Distance To Source Calculator</h1>
+      <hr />
+	  </div>
+            <img src="InterSpec_resources/static_text/images/1r2Calc.png"  class="imageBorder" style="max-height:300px;float:left;display:block;margin-right:20px"/>
+
+      <div >
+<div>
+This tool allows you to use two dose measurements taken at different distances
+from a source to determine the absolute distance to the source from the nearer
+measurement.
+This is useful when the source is behind a wall or in a large container and the
+position of the source can not be determined otherwise.
+</div>
+<div style="padding-top: 10px">
+For the &#34;Near&#34;, &#34;Far&#34;, and &#34;Background&#34; intensity values
+you can use an units of dose or intensity you want (e.x. rem, millirem,
+sievert/hour, gamma counts per second, etc.), but it must be the same for each
+field.  Similarly, you can use any unit of distance (ex. meters, feet,
+attoparsecs, etc.) for the distance between the measurements, as the answer will
+be provided in these same units.
+</div>
+<div style="padding-top: 5px">
+Entering a background intensity is optional, but for the case of low intensity
+sources, it will help to provide a more accurate answer by subtracting this value
+from both the near and far measurements.
+</div>
+<div style="padding-top: 5px">
+This tool assumes the source intensity falls off as <sup>1</sup>/<sub>r<sup>2</sup></sub>
+which is generally the case, however there can be circumstances where scattering
+or other effects will cause this to not be true; also, over huge distances
+attenuation in the air will cause this assumption to be invalid as well.
+You can use the <b>Gamma XS Calc</b> tool to calculate the expected attenuations
+for different energies through air to see if it is significant effect.
+<b>(TODO: insert some example effects at different distances here)</b>
+</div>
+
+<div style="padding-top: 10px">
+The formula used to calculate the distance in front of the near measurement is
+shown bellow in <i>pseudo-code</i> format, and already assumes the background has been subtracted from
+<code>FarIntensity</code> and the <code>NearIntensity</code>.
+<pre><code>
+<i>let</i> <span style="color:blue;">a</span> = FarIntensity - NearIntensity
+<i>let</i> <span style="color:blue;">b</span> = 2&#215;FarIntensity&#215;DistanceBetween
+<i>let</i> <span style="color:blue;">c</span> = FarIntensity&#215;DistanceBetween&#215;DistanceBetween
+<i>let</i> <span style="color:blue;">DistanceInFrontOfNear</span> = <sup>(-<span style="color:blue;">b</span>-sqrt(<span style="color:blue;">b</span>&sup2;-4&#215;<span style="color:blue;">a</span>&#215;<span style="color:blue;">c</span>))</sup>/<sub>2<span style="color:blue;">a</span></sub>
+</code></pre>
+</div>
+
+</div>
+   </message>
+   <message id="file-parameters-dialog">
+    <div align="center">
+      <h1 id="file-parameters-dialog">
+            <b>File Parameters</b>
+      </h1>
+      <hr />
+	  </div>
+
+<img src="InterSpec_resources/static_text/images/FileParameters.png" style="max-height:300px;clear:both;float:left;margin-right:20px; "/>
+
+      <div >
+         <u>Select</u>
+         <b>Tools  &#8594; File Parameters</b> to launch the tool.
+      </div>
+      <div style="padding-top: 10px">
+         <u>Select</u>
+         which spectrum (&#34;Foreground,&#34; &#34;Secondary,&#34; &#34;Background&#34;) you wish to view/input parameters for in the top left of the window that pops up.
+      </div>
+      <div style="padding-top: 10px">
+         <u>Enter</u>
+         the &#34;Allow Edit&#34; mode to
+         <u>input</u>
+         parameters the input file lacked, and/or
+         <u>edit</u>
+         the parameters the input file was incorrect about.
+      </div>
+      <div>
+         <ul>If ever the application is unable to run activity calculation, visit this tool; <i>InterSpec</i> will need all parameters, especially in cases when the input file did not provide them.</ul>
+      </div>
+      <div>
+         <ul>
+            The changes made will not be propagated to the rest of the application until the
+<img src="InterSpec_resources/static_text/images/ReloadIcon.png" valign="middle" />
+            icon is
+            <u>pressed</u>.
+         </ul>
+      </div>
+   </message>
+   <message id="energy-range-count">
+    <div align="center">
+      <h1 id="energy-range-count">
+            <b>Energy Range Count</b>
+      </h1>
+      <hr />
+	  </div>
+      <div>
+         The
+         <b>Energy Range Count</b> tool
+         will sum the number of gammas in a selected energy range. To
+         <u>select</u>
+         an energy range, manually
+         <u>input</u>
+         ,
+         <u>click</u>
+         the up/down arrows 
+in each box to toggle to the desired number, or
+         <u>hold</u>
+         both the
+         <b><kbd>SHIFT</kbd></b>
+         and
+         <b><kbd>ALT</kbd></b>
+         keys on your keyboard while simultaneously <u>dragging</u> the desired region for energy count.
+      </div>
+	  <div align="center" style="padding-top: 10px">
+	  <img src="InterSpec_resources/static_text/images/ERCount1.png" class="imageBorder"  style="max-width:40%; max-height:300px;"/>
+
+	  <img src="InterSpec_resources/static_text/images/ERCount2.png"  class="imageBorder" style="max-width:40%; max-height:300px;"/>
+	  </div>
+   </message>
+   <message id="saving-work">
+    <div align="center">
+      <h1 id="saving-work">
+            <b>Saving Work</b>
+      </h1>
+      <hr />
+	  </div>
+      <div>
+         In order to save the alterations you made to a spectrum file that occurred during calibration,
+         <u>navigate</u>
+         to the
+         <b>Interspec &#8594; Save As</b>;
+this will save the entire InterSpec state (includes current spectra) to the database under your specified name/description which you can restore back to at a later time.  To save any changes in the future, <u>select</u> <b>InterSpec  &#8594; Save</b> which will overwrite the save data.  This is known as the HEAD, and will always contain the latest changes.   </div>
+
+      <div style="padding-top: 10px">
+        To save a bookmark (also known as tag) of the current state, <u>select</u> <b>InterSpec  &#8594; Tag</b>.  Tags can not be overwritten.  Think of them as an archived state.
+      </div>
+      <div style="padding-top: 10px">
+        To open either the entire application state or individual spectra, navigate to <b>Interspec &#8594; Load</b> or  <b>Interspec &#8594; Manager  &#8594; Saved Snapshots</b>.
+      </div>
+      <div style="padding-top: 10px">
+         To change whether InterSpec will automatically save application state, nagivate to <b>Help &#8594; Options  &#8594; Automatically save snapshots</b>.      </div>
+   </message>
+   <message id="sending-work">
+    <div align="center">
+      <h1 id="sending-work">
+            <b>Sending Work</b>
+      </h1>
+      <hr />
+	  </div>
+      <div>
+         To prepare your new spectrum(s) in a format appropriate to send to customers,
+         <u>navigate</u> to the <b>InterSpec  &#8594; Manager</b> menu,         then <u>select</u> the spectrum(s) you wish to
+download, and, once your files of choice are highlighted,
+         <u>select</u>
+         <b>Download</b>
+         (as TXT, CSV, or XML/N42 File format) in the bottom of the tab.
+      </div>
+      <div>
+         <ul>
+            The
+            <b>Manager</b>
+            has the ability to combine numerous files.
+         </ul>
+      </div>
+   </message>
+   <message id="graphical-recalibration-dialog">
+    <div align="center">
+      <h1 id="graphical-recalibration-dialog">
+            <b>Graphical Recalibration</b>
+      </h1>
+      <hr />
+	  </div>
+
+<img src="InterSpec_resources/static_text/images/Recalib1.png"  class="imageBorder" style="float:left;display:block;max-width:40%; max-height:300px;"/>
+<img src="InterSpec_resources/static_text/images/Recalib2.png"  class="imageBorder"         style="float:left;display:block;max-width:40%; max-height:300px;margin-left:10px;margin-right:10px;"/>
+
+
+<div>
+         To graphically recalibrate a spectrum,
+         <u>right-click</u>
+         on the original energy and
+         <u>drag</u>
+         to the desired modified energy. Once complete, a small window will 
+pop up prompting you to accept the calibration changes you are attempting to incur; on this window you can manually adjust the energy quantities 
+either by 1) directly
+         <u>entering</u>
+         the values into the appropriate boxes, or 2)
+         <u>ticking</u>
+         the arrows for a 1keV perturbation at the upper energy 
+range of the spectrum; once it has been calibrated sufficiently
+         <u>select</u>
+         <b>Accept</b>
+         on the bottom of the pop up window.
+      </div>
+      <div>
+         <ul>
+            If you have multiple calibrations,
+            <u>check/uncheck</u>
+            the previous calibrations you would like to keep in effect at the bottom of the pop-up window(s).
+         </ul>
+      </div>
+
+
+   </message>
+</messages>

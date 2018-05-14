@@ -1,0 +1,61 @@
+.TerminalWidget
+{
+    margin: 2px;
+}
+
+.historytxtdiv
+{
+    border: 1px solid;
+    margin: 0px 1px;
+    font: 1em 'Andale Mono', Consolas, 'Courier New';
+    line-height: 1.3;
+    resize: none;
+    border-radius: 2px;
+}
+
+.command-button
+{
+    background: #cccccc;
+    -moz-border-radius: 25%;
+    -webkit-border-radius: 25%;
+    border-radius: 25%;
+}
+
+.command-button:hover
+{
+    background-color: #e7e7e7;
+}
+
+.command-menu
+{
+    position:relative;
+    display:inline-block;
+    border-radius: 2px;
+    overflow: auto;
+}
+
+.command-menu-content
+{
+    display: none;
+    position: absolute;
+    background-color: #f9f9f9;
+}
+
+.command-menu-content a
+{
+    color: black;
+    padding: 2px 2px;
+    text-decoration: none;
+    display: block;
+}
+
+.command-menu-content a:hover
+{
+    //background-color: #f1f1f1;
+    
+}
+    
+.command-menu:hover .command-menu-content
+{
+    display: inline-block;
+}

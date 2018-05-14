@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id='app-title'>
+<div style="font-size: large; font-weight: bold; text-align: center;">InterSpec v. ${build-version}</div>
+<div style="font-size: small; font-weight: normal; text-align: center;">build date ${build-date}</div>
+<div style="text-align: center; font-size: small; margin-top: 0.5em; margin-bottom: 0.7em;">${copyright}</div>
+  </message>
+  <message id='copyright'>
+Copyright 2018 National Technology &amp; Engineering Solutions of Sandia, LLC (NTESS).
+Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.
+  </message>
+
+  <message id='dhs-disclaimer'>
+<div style="margin-top: 1em; text-decoration: underline;">DISCLAIMER OF LIABILITY NOTICE:</div>
+<div>The United States Government shall not be liable or responsible for any maintenance,
+updating or for correction of any errors in the SOFTWARE or subsequent approved version
+releases.</div>
+<br />
+<div>
+THE INTERSPEC (SOFTWARE) AND ANY OF ITS SUBSEQUENT VERSION
+RELEASES, SOFTWARE IS PROVIDED &quot;AS IS&quot; WITHOUT ANY WARRANTY OF
+ANY KIND, EITHER EXPRESSED, IMPLIED, OR STATUTORY, INCLUDING, BUT
+NOT LIMITED TO, ANY WARRANTY THAT THE SOFTWARE WILL CONFORM TO
+SPECIFICATIONS, ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, OR FREEDOM FROM INFRINGEMENT, ANY
+WARRANTY THAT THE SOFTWARE WILL BE ERROR FREE, OR ANY WARRANTY
+THAT THE DOCUMENTATION, IF PROVIDED, WILL CONFORM TO THE
+SOFTWARE. IN NO EVENT SHALL THE UNITED STATES GOVERNMENT OR ITS
+CONTRACTORS OR SUBCONTRACTORS BE LIABLE FOR ANY DAMAGES,
+INCLUDING, BUT NOT LIMITED TO, DIRECT, INDIRECT, SPECIAL OR
+CONSEQUENTIAL DAMAGES, ARISING OUT OF, RESULTING FROM, OR IN ANY
+WAY CONNECTED WITH THE SOFTWARE OR ANY OTHER PROVIDED
+DOCUMENTATION, WHETHER OR NOT BASED UPON WARRANTY, CONTRACT,
+TORT, OR OTHERWISE, WHETHER OR NOT INJURY WAS SUSTAINED BY
+PERSONS OR PROPERTY OR OTHERWISE, AND WHETHER OR NOT LOSS WAS
+SUSTAINED FROM, OR AROSE OUT OF THE RESULT OF, OR USE OF, THE
+SOFTWARE OR ANY PROVIDED DOCUMENTATION. THE UNITED STATES
+GOVERNMENT DISCLAIMS ALL WARRANTIES AND LIABILITIES REGARDING
+THIRD PARTY SOFTWARE, IF PRESENT IN THE SOFTWARE, AND DISTRIBUTES
+IT &quot;AS IS.&quot;
+</div>
+  </message>
+
+  <message id='dhs-acknowledgement'>
+This InterSpec Software was developed with funds from the Science and Technology Directorate of the Department of Homeland Security.
+  </message>
+
+  <message id='credits'>
+<div style="text-align: center; width: 100%; margin-top: 0.5em;">
+<div style="margin: 0 auto; display: inline-block;">
+  <img src="InterSpec_resources/images/DHSLogo129.jpg" alt="DHS Logo" height="67" width="67" />
+  <img src="InterSpec_resources/images/InterSpec128.jpg" alt="InterSpec Logo" height="67" width="67" />
+  <img src="InterSpec_resources/images/snl_logo.gif" alt="Sandia National Laboratories Logo" height="67" width="150" />
+</div>
+</div>
+<div style="margin-top: 0.5em;">
+  <b>InterSpec</b> is a product of Sandia
+  National Laboratories (SNL) Technical ReachBack (TRB) team, funded by the
+  Science and Technology Directorate of the Department of Homeland Security.
+  Feedback, bug reports, testing, and suggestions for improvement have been
+  provided by many members of the TRB team, as well as the wider gamma
+  spectroscopy community.  The primary developers of
+  <b>InterSpec</b>
+  are:
+  <i>Ethan Chan</i>, <i>William Johnson</i>, and <i>Christian Morte</i>, with
+  extensive additional support provided by <i>Noel Nachtigal</i> and
+  <i>Edward Walsh</i>.
+</div>
+<br />
+<div>
+  <b>InterSpec</b> uses a number of open-source libraries and publicly available
+  resources, including:
+  <ul style="list-style-type: none; margin-left: 1em; margin-top: 0;padding: 0;">
+    <li><b><a href="http://www.webtoolkit.eu/wt" target="_blank">Wt</a></b> a C++ library for web development.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>InterSpec</b> uses <b>Wt</b> extensively to render the HTML based GUI, to
+        facilitate user interactions, and for database object-relational mapping.
+        <b>Wt</b> is available under either the
+        <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html" target="_blank">GNU GPL Version 2 license</a>,
+        or a
+        <a href="https://www.webtoolkit.eu/wt/license/Wt%20License%20Agreement.pdf" target="_blank">commercial license</a>;
+        commercial licenses were purchased for the SNL developers of <b>InterSpec</b>.
+      </div>
+    </li>
+
+    <li><b><a href="http://www.boost.org/" target="_blank">Boost</a></b> C++ libraries.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>InterSpec</b> uses <b>Boost</b> for a host of tasks, including: as a dependancy to <b>Wt</b>,
+        unit testing, mathematical constants and distributions, input parsing, working with date/times,
+        linear algebra, hashing, supplements to the c++ language, and more.
+        <b>Boost</b> is licensed under the <a href="https://www.boost.org/LICENSE_1_0.txt" target="_blank">Boost Software License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="http://rapidxml.sourceforge.net/" target="_blank">RapidXml</a></b> C++ XML Parser.
+      <div style="margin-left: 1em; font-size: small;">
+        A slightly modified version of this library, which allows parsing of some non-compliant XML files,
+        is used for all XML parsing tasks within <b>InterSpec</b>; all modifications are included and marked with the source code of <b>InterSpec</b>.
+        <b>RapidXml</b> is licensed under the <a href="https://www.boost.org/LICENSE_1_0.txt" target="_blank">Boost Software License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="https://jquery.org/" target="_blank">jQuery</a> 1.11.1:</b> javascript library.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>jQuery</b> is used to help deal with cross-browser idiosyncrasies in the client-side java script.
+        <b>jQuery</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="https://github.com/root-project/root/tree/master/math/minuit2" target="_blank">Minuit2</a>:</b> Minimization Package.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>Minuit2</b> is part <a href="https://root.cern/" target="_blank">Cern&apos;s ROOT</a> package, and is used to perform numerical optizations for peak, energy calibration, and shielding/source-activity fitting.
+        <b>Minuit2</b> is licensed under the <a href="https://www.gnu.org/licenses/lgpl-2.1.txt" target="_blank">LGPL v2.1 License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="http://qtip2.com/" target="_blank">qTip2</a> 2.2.0:</b> javascript library that provides tooltip and notification tools.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>qTip2</b> is used to help make the content-rich tooltips, as well as the notifications within <b>InterSpec</b>.
+        <b>qTip2</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="http://www.famfamfam.com/lab/icons/silk/" target="_blank">FamFamFam Silk</a> 1.3:</b> free icon set.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>Silk</b> provides many of the colorful icons used through <b>InterSpec</b>.
+        <b>Silk</b> is licensed under the <a href="https://creativecommons.org/licenses/by/2.5/" target="_blank">Creative Commons 2.5 License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="http://www.feynarts.de/cuba/" target="_blank">Cuba</a> 3.0:</b> a library for multidimensional numerical integration
+      <div style="margin-left: 1em; font-size: small;">
+        <b>Cuba</b> is used to perform the numericall integration for self-attenuation sources in the shielding/source tool.
+        <b>Cuba</b> is licensed under the <a href="https://www.gnu.org/licenses/lgpl-3.0.en.html" target="_blank">LGPL v3 License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="https://github.com/beltoforion/muparserx/" target="_blank">muparserx</a> 4.0.7:</b> c++ Math Parser Library.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>muparserx</b> is used to evaluate user entered detector efficiencies, and to help evaluate expressions for the <em>TerminalWidget</em> (not all builds of <b>InterSpec</b> contain this tool).
+        <b>muparserx</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="https://electronjs.org/" target="_blank">Electron</a>:</b> Package based on the Chromium web browser to build cross platform desktop apps with JavaScript, HTML, and CSS.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>Electron</b> is used to display app contents on standalone Windows and Linux versions of <b>InterSpec</b>.
+        <b>Electron</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>,
+        but libraries it uses may be licensed under other terms; see <b>Electron</b>s
+        <a href="https://github.com/electron/electron" target="_blank">git repository</a>
+        for more information.
+      </div>
+    </li>
+
+    <li><b><a href="https://github.com/zaphoyd/websocketpp" target="_blank">WebSocket++</a> 0.7.0:</b> C++ library that implements RFC6455 The WebSocket Protocol.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>WebSocket++</b> is used to communicate between the c++ code and the <b>Electron</b> gui for Windows and Linux stand-alone desktop builds of <b>InterSpec</b>.
+        <b>WebSocket++</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="https://d3js.org/" target="_blank">d3.js</a>:</b> a JavaScript charting library.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>d3.js</b> is potentially included when exporting spectrum files as HTML files.
+        <b>d3.js</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="https://www.sqlite.org/index.html" target="_blank">SQLite</a>:</b> SQL database engine.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>SQLite</b> is used to save user preferences and application state.
+        <b>SQLite</b> is <a href="https://en.wikipedia.org/wiki/Public_domain" target="_blank">Public Domain</a> software.
+      </div>
+    </li>
+
+    <li><b><a href="https://root.cern.ch/" target="_blank">ROOT</a>:</b> A modular scientific software framework.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>InterSpec</b> uses a small amount of code derived from <b>ROOT</b> to calculate the Landau cumulative distribution function,
+        as well some code derived from the <b>ROOT</b> <em>TSpectrum</em> class to estimate the continuum for a spectrum (a depreciated feature);
+        code used is marked and attributed within the <b>InterSpec</b> source code.
+        <b>ROOT</b> is licensed under the <a href="https://www.gnu.org/licenses/lgpl-2.1.txt" target="_blank">LGPL v2.1 License</a>.
+      </div>
+    </li>
+
+    <li>In addition to the many libraries used within <b>InterSpec</b>, many open-source, or publicly available tools
+        and resources are used to develop <b>InterSpec</b> including, but not limited to:
+        <ul style="list-style-type: none; margin-left: 1em; padding: 0; font-size: small;">
+           <li><a href="https://www.nndc.bnl.gov/ensdf/" target="_blank">Evaluated Nuclear Structure Data File (ENSDF)</a>: used to derive nuclear decay information and gamma cross sections.</li>
+           <li><a href="http://geant4.web.cern.ch/" target="_blank">Geant4</a>: Used to extract gamma cross section data from ENSDF to a custom format for InterSpec.  Also used to validate physics calculations.</li>
+           <li>A number of build tools, including: <a href="https://cmake.org/" target="_blank">CMake</a>,
+               <a href="https://gcc.gnu.org/" target="_blank">GCC</a>,
+               <a href="https://clang.llvm.org/" target="_blank">Clang/LLVM</a>,
+               <a href="https://www.visualstudio.com/" target="_blank">Microsoft Visual Studio</a>,
+               <a href="https://www.python.org/" target="_blank">Python</a>,
+               <a href="https://www.ruby-lang.org/en/" target="_blank">Ruby</a>,
+               <a href="https://subversion.apache.org/" target="_blank">SVN</a>, and many more have been used to develop, compile, link, or otherwise produce <b>InterSpec</b>.
+           </li>
+           <li><a href="http://prod.sandia.gov/techlib/access-control.cgi/2014/1420625.pdf" target="_blank">GadrasDRF</a>: used to obtain detector response functions and create simulated data to test against.</li>
+        </ul>
+    </li>
+
+  </ul>
+</div>
+  </message>
+
+  <message id='contact'>
+<div style="margin-top: 1em;">
+  Please email bug reports and feature requests to William Johnson at
+  <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>.
+  <br />
+  <br />
+  Due to funding and personnel availability, support may not be available.
+</div>
+  </message>
+</messages>

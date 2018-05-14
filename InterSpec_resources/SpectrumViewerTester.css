@@ -1,0 +1,310 @@
+.SpectrumViewerTesterWindow
+{
+}
+
+.ScoreOverview
+{
+}
+
+.ScoreOverviewStaticSummarry
+{
+}
+
+.ScoreOverviewStaticTitle
+{
+margin-top: 20px;
+width:100%;
+font-size:18px;
+font-weight:bold;
+text-align:center;
+}
+
+.StaticSummarryScore
+{
+margin-left:15px;
+font-size:16px;
+}
+
+.StaticSummarryTable
+{
+margin-top: 10px;
+border:1px solid black; 
+border-collapse:collapse;
+}
+
+.StaticSummarryTable td, .StaticSummarryTable th
+{
+border:1px solid black;
+padding-left: 5px;
+padding-right: 5px;
+}
+
+.NewTabLink 
+{
+target-name:new;
+target-new: tab ! important;
+}
+
+.StaticIndividualTestTitle
+{
+margin-top: 20px;
+width:100%;
+font-size:20px;
+font-weight:bold;
+text-align:center;
+}
+
+.StaticLinkToIndividualTestsTable
+{
+margin-top: 15px;
+border:1px solid black;
+border-collapse:collapse;
+max-width: 95%
+}
+
+.StaticLinkToIndividualTestsTable td, .StaticLinkToIndividualTestsTable th
+{
+border:1px solid black;
+padding-left: 5px;
+padding-right: 5px;
+}
+
+
+.ScoreOverviewTitle
+{
+width:100%;
+font-size:20px;
+font-weight:bold;
+text-align:center;
+}
+
+.ScoreOverviewTestsComplete
+{
+}
+
+.ToTestFromResultLink
+{
+margin-top: 10px;
+ width: 100%;
+ text-align: center;
+}
+
+.RunAllTestsButton
+{
+margin-top: 10px;
+}
+
+.TestNotDone
+{
+border:2px solid blue; 
+}
+
+.ScoreDisplay, .ScoreDisplayStatic
+{
+overflow-y: auto;
+}
+
+.ScoreDisplayStatic
+{
+margin-top:10px;
+}
+
+
+.ScoreDisplayTitle, .ScoreDisplayTitleStatic
+{
+width:100%;
+font-size:20px;
+font-weight:bold;
+text-align:center;
+}
+
+.ScoreDisplayTitleStatic
+{
+color: white;
+background-color: #909090;
+}
+
+.ScoreDisplayText
+{
+border:1px solid #e1e1e1; 
+}
+
+
+.ScoreDisplayNotes
+{
+border:1px solid #e1e1e1; 
+}
+
+.ScoreDisplayNoteItem
+{
+border:2px solid black; 
+margin-top: 10px;
+margin-bottom: 5px;
+margin-left: 4px;
+margin-right: 4px;
+}
+
+.ScoreDisplayNoteTitle
+{
+font-weight:bold;
+text-align:center;
+}
+
+.ScoreDisplayNoteText
+{
+  border:1px solid grey; 
+  margin: 3px;
+}
+
+.FailedConditionNote
+{
+color: red;
+border:1px solid red; 
+margin-right: auto;
+margin-left: auto;
+margin-top: 3px;
+margin-bottom: 1px;
+padding-left: 3px;
+padding-top: 2px;
+padding-bottom: 2px;
+width: 90%;
+}
+
+.ScoreDisplayNoteTable
+{
+width: 95%;
+border:1px solid black; 
+margin-left: auto;
+margin-right: auto;
+}
+
+.PeakSummarryTable
+{
+border:1px solid black;
+border-collapse:collapse;
+}
+
+.ScoreSummarryTable, .OverViewScoreSummarryTable
+{
+border:1px solid black;
+}
+
+
+
+.PeakSummarryTableCell
+{
+border:1px solid black;
+}
+
+.ScoreDisplayNoteTestImage
+{
+color: red;
+border:1px solid red;
+}
+
+.ScoreDisplayNoteOriginalImage
+{
+color: green;
+border:1px solid green;
+}
+
+.ScoreImageTitle
+{
+text-align: center;
+width: 100%;
+}
+
+.ScoreDisplayNoteTitle
+{
+}
+
+
+.ScoreLabel
+{
+font-weight:bold;
+}
+
+.OverallStaticScoreBox
+{
+margin-top: 20px;
+text-align: center;
+}
+
+.StaticLinkTOC
+{
+margin-top: 20px;
+margin-left: 100px;
+}
+
+.StaticLinkTOCTitle
+{
+font-weight:bold;
+}
+
+.StaticLinkToSubResultsList
+{
+/*background-image: url(arrow.gif);*/
+/*background-repeat: no-repeat;*/
+/*background-position: 0 .4em;*/
+/*padding-left: 0.6em;*/
+list-style-type: none;
+padding:0; margin:0;
+}
+
+.StaticSpectrumOverview
+{
+margin-top: 20px;	
+margin-left: auto;
+margin-right: auto;
+border:1px solid black;
+}
+
+
+.StaticSpectrumOverviewText
+{
+font-size:20px;
+font-weight:bold;
+text-align:center;
+}
+
+.StateTestStateInfoTable
+{
+border:1px solid black;
+border-collapse:collapse;
+text-align: left;
+max-width: 90%;
+}
+
+.StateTestStaticResults
+{
+margin-left: auto;
+margin-right: auto;
+}
+
+.ScoreDisplayNoteContentStatic
+{
+border:1px solid grey;
+}
+
+.ScoreDisplayNoteContentHide
+{
+height: 18px;
+width: 18px;
+border: none;
+background: none;
+background-image: url(data:image/gif;base64,R0lGODlhEAAQAKU4AAAAABRBtxVFtxVFuRZKvRdQvRZOwBhTwBhZxBlZxhpixhpiySNuzSxyzTtxzDx0zzV30j130D960EN/00OE1keE1kuI1lOO22CV3WGX3WKX4XKh33Wj326g4nSj4HSi4nWk43ek4Hmm4Hmn5nyp4X6o4Xyp6H6p6ICq44Gr4oGr44ev5ICr6ICr6oew6Iqx5JC155K36Jm76Zm76qHB7KPC7ajH7q3I7////////////////////////////////yH5BAEAAD8ALAMAAAAMABAAAAZIwJ9wSCwai6zTcdgyfZa/0c2FWXZsNVDlqKHFZJmG8TJDqV4WRZEC84RSk0QRstqQJAcjoySKFI4LHA8ESwgOA1AGAVCMjUJBADs=);
+cursor:pointer;cursor:hand;
+float: left;
+}
+
+.ScoreDisplayNoteContentShow
+{
+height: 18px;
+width: 18px;
+border: none;
+background: none;
+background-image: url(data:image/gif;base64,R0lGODlhEAAQAIQeABRBtxpiyUN/00OE1kuI1mGX3WKX4W6g4nKh33Sj4HWk43ek4Hmm4Hmn5nyp4X6p6ICq44Gr4oGr44ev5Iew6Iqx5JC155K36Jm76Zm76qHB7KPC7ajH7q3I7////////yH5BAEAAB8ALAAAAQAQAA4AAAU74CeOZGmeaKquT+u+Ldl0nJZZU6Zx3VMeFAYiAblsKIeTQeFYSDAKQ2pQiFQKg1VAQAisRADAd0wuf0IAOw==);
+cursor:pointer;cursor:hand;
+float: left;
+}
+

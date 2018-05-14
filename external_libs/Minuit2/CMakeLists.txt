@@ -1,0 +1,225 @@
+project(minuit2)
+
+
+#-----------------------------------------------------------------------------
+# CMake administrivia
+cmake_minimum_required( VERSION 2.8 )
+if ( COMMAND cmake_policy )
+  cmake_policy( SET CMP0003 NEW )
+endif( COMMAND cmake_policy )
+
+
+set( LIBRARY_OUTPUT_PATH lib CACHE PATH "Path to libraries" FORCE )
+set( UPDATE_TYPE "svn" )
+set( CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE )
+
+
+#SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBOOST_FILESYSTEM_VERSION=3")
+
+#-----------------------------------------------------------------------------
+
+#SET(CMAKE_MODULE_PATH "${InterSpec_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
+#MESSAGE( ${InterSpec_SOURCE_DIR} )
+
+
+
+INCLUDE_DIRECTORIES(
+  inc
+  .
+  ..
+)
+
+
+set ( MINUIT_SRCS
+  inc/Math/Functor.h
+  inc/Math/IFunctionfwd.h
+  inc/Math/Minimizer.h
+  inc/Math/IFunction.h
+  inc/Math/WrappedFunction.h
+  inc/Minuit2/ABObj.h
+  inc/Minuit2/FumiliStandardMaximumLikelihoodFCN.h
+  inc/Minuit2/MinuitParameter.h
+  inc/Minuit2/MnSeedGenerator.h
+  inc/Minuit2/ABProd.h
+  inc/Minuit2/FunctionGradient.h
+  inc/Minuit2/MnApplication.h
+  inc/Minuit2/MnSimplex.h
+  inc/Minuit2/ABSum.h
+  inc/Minuit2/FunctionMinimizer.h
+  inc/Minuit2/MnConfig.h
+  inc/Minuit2/MnStrategy.h
+  inc/Minuit2/ABTypes.h
+  inc/Minuit2/FunctionMinimum.h
+  inc/Minuit2/MnContours.h
+  inc/Minuit2/MnTiny.h
+  inc/Minuit2/AnalyticalGradientCalculator.h
+  inc/Minuit2/GenericFunction.h
+  inc/Minuit2/MnCovarianceSqueeze.h
+  inc/Minuit2/MnUserCovariance.h
+  inc/Minuit2/BasicFunctionGradient.h
+  inc/Minuit2/GradientCalculator.h
+  inc/Minuit2/MnCross.h
+  inc/Minuit2/MnUserFcn.h
+  inc/Minuit2/BasicFunctionMinimum.h
+  inc/Minuit2/HessianGradientCalculator.h
+  inc/Minuit2/MnEigen.h
+  inc/Minuit2/MnUserParameterState.h
+  inc/Minuit2/BasicMinimumError.h
+  inc/Minuit2/InitialGradientCalculator.h
+  inc/Minuit2/MnFcn.h
+  inc/Minuit2/MnUserParameters.h
+  inc/Minuit2/BasicMinimumParameters.h
+  inc/Minuit2/LASymMatrix.h
+  inc/Minuit2/MnFumiliMinimize.h
+  inc/Minuit2/MnUserTransformation.h
+  inc/Minuit2/BasicMinimumSeed.h
+  inc/Minuit2/LAVector.h
+  inc/Minuit2/MnFunctionCross.h
+  inc/Minuit2/MnVectorTransform.h
+  inc/Minuit2/BasicMinimumState.h
+  inc/Minuit2/LaInverse.h
+  inc/Minuit2/MnGlobalCorrelationCoeff.h
+  inc/Minuit2/ModularFunctionMinimizer.h
+  inc/Minuit2/CombinedMinimizer.h
+  inc/Minuit2/LaOuterProduct.h
+  inc/Minuit2/MnHesse.h
+  inc/Minuit2/NegativeG2LineSearch.h
+  inc/Minuit2/CombinedMinimumBuilder.h
+  inc/Minuit2/LaProd.h
+  inc/Minuit2/MnLineSearch.h
+  inc/Minuit2/Numerical2PGradientCalculator.h
+  inc/Minuit2/ContoursError.h
+  inc/Minuit2/LaSum.h
+  inc/Minuit2/MnMachinePrecision.h
+  inc/Minuit2/ParametricFunction.h
+  inc/Minuit2/DavidonErrorUpdator.h
+  inc/Minuit2/MPIProcess.h
+  inc/Minuit2/MnMatrix.h
+  inc/Minuit2/ScanBuilder.h
+  inc/Minuit2/FCNAdapter.h
+  inc/Minuit2/MnMigrad.h
+  inc/Minuit2/ScanMinimizer.h
+  inc/Minuit2/FCNBase.h
+  inc/Minuit2/MnMinimize.h
+  inc/Minuit2/SimplexBuilder.h
+  inc/Minuit2/FCNGradAdapter.h
+  inc/Minuit2/MnMinos.h
+  inc/Minuit2/SimplexMinimizer.h
+  inc/Minuit2/FCNGradientBase.h
+  inc/Minuit2/MatrixInverse.h
+  inc/Minuit2/MnParabola.h
+  inc/Minuit2/SimplexParameters.h
+  inc/Minuit2/FumiliBuilder.h
+  inc/Minuit2/MinimumBuilder.h
+  inc/Minuit2/MnParabolaFactory.h
+  inc/Minuit2/SimplexSeedGenerator.h
+  inc/Minuit2/FumiliChi2FCN.h
+  inc/Minuit2/MinimumError.h
+  inc/Minuit2/MnParabolaPoint.h
+  inc/Minuit2/SinParameterTransformation.h
+  inc/Minuit2/FumiliErrorUpdator.h
+  inc/Minuit2/MinimumErrorUpdator.h
+  inc/Minuit2/MnParameterScan.h
+  inc/Minuit2/SqrtLowParameterTransformation.h
+  inc/Minuit2/FumiliFCNAdapter.h
+  inc/Minuit2/MinimumParameters.h
+  inc/Minuit2/MnPlot.h
+  inc/Minuit2/SqrtUpParameterTransformation.h
+  inc/Minuit2/FumiliFCNBase.h
+  inc/Minuit2/MinimumSeed.h
+  inc/Minuit2/MnPosDef.h
+  inc/Minuit2/StackAllocator.h
+  inc/Minuit2/FumiliGradientCalculator.h
+  inc/Minuit2/MinimumSeedGenerator.h
+  inc/Minuit2/MnPrint.h
+  inc/Minuit2/VariableMetricBuilder.h
+  inc/Minuit2/FumiliMaximumLikelihoodFCN.h
+  inc/Minuit2/MinimumState.h
+  inc/Minuit2/MnRefCountedPointer.h
+  inc/Minuit2/VariableMetricEDMEstimator.h
+  inc/Minuit2/FumiliMinimizer.h
+  inc/Minuit2/MinosError.h
+  inc/Minuit2/MnReferenceCounter.h
+  inc/Minuit2/VariableMetricMinimizer.h
+  inc/Minuit2/FumiliStandardChi2FCN.h
+  inc/Minuit2/Minuit2Minimizer.h
+  inc/Minuit2/MnScan.h
+  inc/Minuit2/VectorOuterProduct.h
+  src/AnalyticalGradientCalculator.cxx
+  src/MPIProcess.cxx
+  src/MnPlot.cxx
+  src/SimplexSeedGenerator.cxx
+  src/BasicMinimumError.cxx
+  src/Makefile
+  src/MnPosDef.cxx
+  src/SinParameterTransformation.cxx
+  src/CombinedMinimumBuilder.cxx
+  src/MnPrint.cxx
+  src/SqrtLowParameterTransformation.cxx
+  src/DavidonErrorUpdator.cxx
+  src/MnScan.cxx
+  src/SqrtUpParameterTransformation.cxx
+  src/FumiliBuilder.cxx
+  src/MnApplication.cxx
+  src/MnSeedGenerator.cxx
+  src/VariableMetricBuilder.cxx
+  src/FumiliErrorUpdator.cxx
+  src/MnContours.cxx
+  src/MnStrategy.cxx
+  src/VariableMetricEDMEstimator.cxx
+  src/FumiliGradientCalculator.cxx
+  src/MnCovarianceSqueeze.cxx
+  src/MnTiny.cxx
+  src/mnbins.cxx
+  src/FumiliMinimizer.cxx
+  src/MnEigen.cxx
+  src/MnUserFcn.cxx
+  src/mndasum.cxx
+  src/FumiliStandardChi2FCN.cxx
+  src/MnFcn.cxx
+  src/MnUserParameterState.cxx
+  src/mndaxpy.cxx
+  src/FumiliStandardMaximumLikelihoodFCN.cxx
+  src/MnFumiliMinimize.cxx
+  src/MnUserParameters.cxx
+  src/mnddot.cxx
+  src/HessianGradientCalculator.cxx
+  src/MnFunctionCross.cxx
+  src/MnUserTransformation.cxx
+  src/mndscal.cxx
+  src/InitialGradientCalculator.cxx
+  src/MnGlobalCorrelationCoeff.cxx
+  src/ModularFunctionMinimizer.cxx
+  src/mndspmv.cxx
+  src/LaEigenValues.cxx
+  src/MnHesse.cxx
+  src/NegativeG2LineSearch.cxx
+  src/mndspr.cxx
+  src/LaInnerProduct.cxx
+  src/MnLineSearch.cxx
+  src/Numerical2PGradientCalculator.cxx
+  src/mnlsame.cxx
+  src/LaInverse.cxx
+  src/MnMachinePrecision.cxx
+  src/ParametricFunction.cxx
+  src/mnteigen.cxx
+  src/LaOuterProduct.cxx
+  src/MnMinos.cxx
+  src/ScanBuilder.cxx
+  src/mntplot.cxx
+  src/LaSumOfElements.cxx
+  src/MnParabolaFactory.cxx
+  src/SimplexBuilder.cxx
+  src/mnvert.cxx
+  src/LaVtMVSimilarity.cxx
+  src/MnParameterScan.cxx
+  src/SimplexParameters.cxx
+  src/mnxerbla.cxx
+)
+
+
+
+add_library(minuit2 STATIC ${MINUIT_SRCS})
+
+
+

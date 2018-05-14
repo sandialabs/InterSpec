@@ -1,0 +1,21 @@
+SqrtLowParameterTransformation.lo SqrtLowParameterTransformation.o:  \
+ SqrtLowParameterTransformation.cxx \
+  ../inc/Minuit2/SqrtLowParameterTransformation.h \
+  ../inc/Minuit2/MnMachinePrecision.h /usr/include/math.h \
+  /usr/include/architecture/i386/math.h /usr/include/sys/cdefs.h \
+  /usr/include/sys/_symbol_aliasing.h \
+  /usr/include/sys/_posix_availability.h
+
+../inc/Minuit2/SqrtLowParameterTransformation.h:
+
+../inc/Minuit2/MnMachinePrecision.h:
+
+/usr/include/math.h:
+
+/usr/include/architecture/i386/math.h:
+
+/usr/include/sys/cdefs.h:
+
+/usr/include/sys/_symbol_aliasing.h:
+
+/usr/include/sys/_posix_availability.h:

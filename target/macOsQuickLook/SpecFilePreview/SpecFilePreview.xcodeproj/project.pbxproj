@@ -1,0 +1,441 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 48;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		9B7594B41FF420EC000C9715 /* QLSpectrumDataModel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9B7594AC1FF420EB000C9715 /* QLSpectrumDataModel.cpp */; };
+		9B7594B51FF420EC000C9715 /* QLSpecMeas.h in Headers */ = {isa = PBXBuildFile; fileRef = 9B7594AD1FF420EB000C9715 /* QLSpecMeas.h */; };
+		9B7594B61FF420EC000C9715 /* QLPeakDef.h in Headers */ = {isa = PBXBuildFile; fileRef = 9B7594AE1FF420EB000C9715 /* QLPeakDef.h */; };
+		9B7594B71FF420EC000C9715 /* QLSpectrumDataModel.h in Headers */ = {isa = PBXBuildFile; fileRef = 9B7594AF1FF420EB000C9715 /* QLSpectrumDataModel.h */; };
+		9B7594B81FF420EC000C9715 /* QLSpectrumChart.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9B7594B01FF420EB000C9715 /* QLSpectrumChart.cpp */; };
+		9B7594B91FF420EC000C9715 /* QLSpecMeas.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9B7594B11FF420EC000C9715 /* QLSpecMeas.cpp */; };
+		9B7594BA1FF420EC000C9715 /* QLSpectrumChart.h in Headers */ = {isa = PBXBuildFile; fileRef = 9B7594B21FF420EC000C9715 /* QLSpectrumChart.h */; };
+		9B7594BB1FF420EC000C9715 /* QLPeakDef.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9B7594B31FF420EC000C9715 /* QLPeakDef.cpp */; };
+		9BC5E3A71FF1FB1700A8E154 /* GenerateThumbnailForURL.m in Sources */ = {isa = PBXBuildFile; fileRef = 9BC5E3A61FF1FB1700A8E154 /* GenerateThumbnailForURL.m */; };
+		9BC5E3AB1FF1FB1700A8E154 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = 9BC5E3AA1FF1FB1700A8E154 /* main.c */; };
+		9BC5E3B41FF2017F00A8E154 /* SpecPreviewCommon.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9BC5E3B31FF2017F00A8E154 /* SpecPreviewCommon.cpp */; };
+		9BC5E3BA1FF22A3500A8E154 /* GeneratePreviewForURL.m in Sources */ = {isa = PBXBuildFile; fileRef = 9BC5E3B91FF22A3500A8E154 /* GeneratePreviewForURL.m */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		9B7594AC1FF420EB000C9715 /* QLSpectrumDataModel.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = QLSpectrumDataModel.cpp; sourceTree = "<group>"; };
+		9B7594AD1FF420EB000C9715 /* QLSpecMeas.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = QLSpecMeas.h; sourceTree = "<group>"; };
+		9B7594AE1FF420EB000C9715 /* QLPeakDef.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = QLPeakDef.h; sourceTree = "<group>"; };
+		9B7594AF1FF420EB000C9715 /* QLSpectrumDataModel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = QLSpectrumDataModel.h; sourceTree = "<group>"; };
+		9B7594B01FF420EB000C9715 /* QLSpectrumChart.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = QLSpectrumChart.cpp; sourceTree = "<group>"; };
+		9B7594B11FF420EC000C9715 /* QLSpecMeas.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = QLSpecMeas.cpp; sourceTree = "<group>"; };
+		9B7594B21FF420EC000C9715 /* QLSpectrumChart.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = QLSpectrumChart.h; sourceTree = "<group>"; };
+		9B7594B31FF420EC000C9715 /* QLPeakDef.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = QLPeakDef.cpp; sourceTree = "<group>"; };
+		9BC5E3A31FF1FB1700A8E154 /* SpecFilePreview.qlgenerator */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SpecFilePreview.qlgenerator; sourceTree = BUILT_PRODUCTS_DIR; };
+		9BC5E3A61FF1FB1700A8E154 /* GenerateThumbnailForURL.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = GenerateThumbnailForURL.m; sourceTree = "<group>"; };
+		9BC5E3AA1FF1FB1700A8E154 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		9BC5E3AC1FF1FB1700A8E154 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9BC5E3B21FF2013900A8E154 /* SpecPreviewCommon.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SpecPreviewCommon.h; sourceTree = "<group>"; };
+		9BC5E3B31FF2017F00A8E154 /* SpecPreviewCommon.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = SpecPreviewCommon.cpp; sourceTree = "<group>"; };
+		9BC5E3B91FF22A3500A8E154 /* GeneratePreviewForURL.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = GeneratePreviewForURL.m; path = /Users/wcjohns/rad_ana/InterSpec/target/macOsQuickLook/SpecFilePreview/SpecFilePreview/GeneratePreviewForURL.m; sourceTree = "<absolute>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9BC5E39F1FF1FB1700A8E154 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		9BC5E3991FF1FB1700A8E154 = {
+			isa = PBXGroup;
+			children = (
+				9BC5E3A51FF1FB1700A8E154 /* SpecFilePreview */,
+				9BC5E3A41FF1FB1700A8E154 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9BC5E3A41FF1FB1700A8E154 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9BC5E3A31FF1FB1700A8E154 /* SpecFilePreview.qlgenerator */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9BC5E3A51FF1FB1700A8E154 /* SpecFilePreview */ = {
+			isa = PBXGroup;
+			children = (
+				9B7594B31FF420EC000C9715 /* QLPeakDef.cpp */,
+				9B7594AE1FF420EB000C9715 /* QLPeakDef.h */,
+				9B7594B11FF420EC000C9715 /* QLSpecMeas.cpp */,
+				9B7594AD1FF420EB000C9715 /* QLSpecMeas.h */,
+				9B7594B01FF420EB000C9715 /* QLSpectrumChart.cpp */,
+				9B7594B21FF420EC000C9715 /* QLSpectrumChart.h */,
+				9B7594AC1FF420EB000C9715 /* QLSpectrumDataModel.cpp */,
+				9B7594AF1FF420EB000C9715 /* QLSpectrumDataModel.h */,
+				9BC5E3A61FF1FB1700A8E154 /* GenerateThumbnailForURL.m */,
+				9BC5E3B91FF22A3500A8E154 /* GeneratePreviewForURL.m */,
+				9BC5E3AA1FF1FB1700A8E154 /* main.c */,
+				9BC5E3AC1FF1FB1700A8E154 /* Info.plist */,
+				9BC5E3B21FF2013900A8E154 /* SpecPreviewCommon.h */,
+				9BC5E3B31FF2017F00A8E154 /* SpecPreviewCommon.cpp */,
+			);
+			path = SpecFilePreview;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		9BC5E3A01FF1FB1700A8E154 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9B7594B61FF420EC000C9715 /* QLPeakDef.h in Headers */,
+				9B7594BA1FF420EC000C9715 /* QLSpectrumChart.h in Headers */,
+				9B7594B71FF420EC000C9715 /* QLSpectrumDataModel.h in Headers */,
+				9B7594B51FF420EC000C9715 /* QLSpecMeas.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		9BC5E3A21FF1FB1700A8E154 /* SpecFilePreview */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9BC5E3AF1FF1FB1700A8E154 /* Build configuration list for PBXNativeTarget "SpecFilePreview" */;
+			buildPhases = (
+				9BC5E39E1FF1FB1700A8E154 /* Sources */,
+				9BC5E39F1FF1FB1700A8E154 /* Frameworks */,
+				9BC5E3A01FF1FB1700A8E154 /* Headers */,
+				9BC5E3A11FF1FB1700A8E154 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SpecFilePreview;
+			productName = SpecFilePreview;
+			productReference = 9BC5E3A31FF1FB1700A8E154 /* SpecFilePreview.qlgenerator */;
+			productType = "com.apple.product-type.bundle";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9BC5E39A1FF1FB1700A8E154 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 0920;
+				ORGANIZATIONNAME = "Johnson, William C";
+				TargetAttributes = {
+					9BC5E3A21FF1FB1700A8E154 = {
+						CreatedOnToolsVersion = 9.2;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 9BC5E39D1FF1FB1700A8E154 /* Build configuration list for PBXProject "SpecFilePreview" */;
+			compatibilityVersion = "Xcode 8.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = 9BC5E3991FF1FB1700A8E154;
+			productRefGroup = 9BC5E3A41FF1FB1700A8E154 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9BC5E3A21FF1FB1700A8E154 /* SpecFilePreview */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9BC5E3A11FF1FB1700A8E154 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9BC5E39E1FF1FB1700A8E154 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9BC5E3B41FF2017F00A8E154 /* SpecPreviewCommon.cpp in Sources */,
+				9B7594B41FF420EC000C9715 /* QLSpectrumDataModel.cpp in Sources */,
+				9B7594B91FF420EC000C9715 /* QLSpecMeas.cpp in Sources */,
+				9B7594BB1FF420EC000C9715 /* QLPeakDef.cpp in Sources */,
+				9BC5E3A71FF1FB1700A8E154 /* GenerateThumbnailForURL.m in Sources */,
+				9BC5E3AB1FF1FB1700A8E154 /* main.c in Sources */,
+				9B7594B81FF420EC000C9715 /* QLSpectrumChart.cpp in Sources */,
+				9BC5E3BA1FF22A3500A8E154 /* GeneratePreviewForURL.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		9BC5E3AD1FF1FB1700A8E154 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Mac Developer";
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					../../../build_quick_look/lib/libLibInterSpec.a,
+					../../../build_quick_look/external_libs/SpecUtils/lib/libSpecUtils.a,
+					../../../build_quick_look/external_libs/Minuit2/lib/libminuit2.a,
+					../../../build_quick_look/external_libs/CLHEP/Evaluator/lib/libEvaluator.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwt.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbo.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbosqlite3.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwthttp.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_atomic.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_regex.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_program_options.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_chrono.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_random.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_date_time.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_exception.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_timer.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_thread.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_iostreams.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_system.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_filesystem.a,
+				);
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		9BC5E3AE1FF1FB1700A8E154 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Mac Developer";
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				OTHER_LDFLAGS = (
+					../../../build_quick_look/lib/libLibInterSpec.a,
+					../../../build_quick_look/external_libs/SpecUtils/lib/libSpecUtils.a,
+					../../../build_quick_look/external_libs/Minuit2/lib/libminuit2.a,
+					../../../build_quick_look/external_libs/CLHEP/Evaluator/lib/libEvaluator.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwt.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbo.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbosqlite3.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwthttp.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_atomic.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_regex.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_program_options.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_chrono.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_random.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_date_time.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_exception.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_timer.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_thread.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_iostreams.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_system.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_filesystem.a,
+				);
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		9BC5E3B01FF1FB1700A8E154 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = G2VV85LMR5;
+				INFOPLIST_FILE = SpecFilePreview/Info.plist;
+				INSTALL_PATH = /Library/QuickLook;
+				LIBRARY_SEARCH_PATHS = /Users/wcjohns/install/osx_wt_prefix/lib/;
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				OTHER_LDFLAGS = (
+					../../../external_libs/SpecUtils/build_quick_look/lib/libSpecUtils.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwt.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbo.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbosqlite3.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwthttp.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_atomic.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_regex.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_program_options.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_chrono.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_random.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_date_time.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_exception.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_timer.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_thread.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_iostreams.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_system.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_filesystem.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libhpdfs.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libpng.a,
+					/usr/lib/libz.dylib,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = gov.sandia.SpecFilePreview;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SYSTEM_HEADER_SEARCH_PATHS = /Users/wcjohns/install/osx_wt_prefix/include;
+				USER_HEADER_SEARCH_PATHS = "../../../external_libs/SpecUtils ../../../external_libs/SpecUtils/build_quick_look/ ../../../external_libs/";
+				WRAPPER_EXTENSION = qlgenerator;
+			};
+			name = Debug;
+		};
+		9BC5E3B11FF1FB1700A8E154 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = G2VV85LMR5;
+				INFOPLIST_FILE = SpecFilePreview/Info.plist;
+				INSTALL_PATH = /Library/QuickLook;
+				LIBRARY_SEARCH_PATHS = /Users/wcjohns/install/osx_wt_prefix/lib/;
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				OTHER_LDFLAGS = (
+					../../../external_libs/SpecUtils/build_quick_look/lib/libSpecUtils.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwt.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbo.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbosqlite3.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libwthttp.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_atomic.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_regex.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_program_options.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_chrono.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_random.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_date_time.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_exception.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_timer.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_thread.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_iostreams.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_system.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libboost_filesystem.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libhpdfs.a,
+					/Users/wcjohns/install/osx_wt_prefix/lib/libpng.a,
+					/usr/lib/libz.dylib,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = gov.sandia.SpecFilePreview;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SYSTEM_HEADER_SEARCH_PATHS = /Users/wcjohns/install/osx_wt_prefix/include;
+				USER_HEADER_SEARCH_PATHS = "../../../external_libs/SpecUtils ../../../external_libs/SpecUtils/build_quick_look/ ../../../external_libs/";
+				WRAPPER_EXTENSION = qlgenerator;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9BC5E39D1FF1FB1700A8E154 /* Build configuration list for PBXProject "SpecFilePreview" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9BC5E3AD1FF1FB1700A8E154 /* Debug */,
+				9BC5E3AE1FF1FB1700A8E154 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9BC5E3AF1FF1FB1700A8E154 /* Build configuration list for PBXNativeTarget "SpecFilePreview" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9BC5E3B01FF1FB1700A8E154 /* Debug */,
+				9BC5E3B11FF1FB1700A8E154 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 9BC5E39A1FF1FB1700A8E154 /* Project object */;
+}

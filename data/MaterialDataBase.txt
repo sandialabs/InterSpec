@@ -1,0 +1,3445 @@
+!This is a combination of GADRAS and NIST material database
+!
+Air
+Air
+3 0 0.00129
+N
+75.53
+O
+23.18
+Ar
+1.29
+!
+Spent Fuel
+60GWD_4%_5yrcooled
+11 20 4
+C
+0.0126
+N
+0.0078
+O
+9.71
+Si
+0.0276
+Cr
+0.686
+Mn
+0.0516
+Fe
+1.94
+Ni
+0.788
+Zr
+18.82
+Cd
+0.0234
+Sn
+0.3122
+Sr90
+0.055
+Y90
+1.38e-05
+Nb95
+1.49e-11
+Zr95
+1.21e-11
+Cs134
+0.0044
+Cs137
+0.135
+U232
+3.34e-06
+U234
+0.0117
+U235
+0.26
+U236
+0.39
+U238
+66.4
+Np237
+0.082
+Pu236
+8.54e-08
+Pu238
+0.045
+Pu239
+0.55
+Pu240
+0.31
+Pu241
+0.098
+Pu242
+0.07
+Am241
+0.032
+Cm244
+0.015
+!
+a-150_tissue
+a-150_tissue
+6 0 1.127
+H
+10.1327
+C
+77.55
+N
+3.5057
+O
+5.23159
+F
+1.7422
+Ca
+1.8378
+!
+Ac (actinium)
+Ac (actinium)
+1 0 10.07
+Ac
+100
+!
+acetone
+acetone
+3 0 0.7899
+H
+10.4122
+C
+62.0405
+O
+27.5473
+!
+acetylene
+acetylene
+2 0 0.0010967
+H
+7.7418
+C
+92.2582
+!
+Actinium227-Carbon13
+AlphaN-AcC
+1 1 1
+C13
+90
+Ac227
+10
+!
+Adipose (fatty) tissue
+adipose_tissue_icrp
+7 0 0.95
+H
+11.4
+C
+59.8
+N
+0.7
+O
+27.8
+Na
+0.1
+S
+0.1
+Cl
+0.1
+!
+Ag (silver)
+Ag (silver)
+1 0 10.5
+Ag
+100
+!
+Al (aluminum)
+Aluminum
+1 0 2.7
+Al
+100
+!
+alanine
+alanine
+4 0 1.42
+H
+7.91899
+C
+40.4439
+N
+15.7213
+O
+35.9159
+!
+Aluminum oxide
+Al2O3
+2 0 3.97
+O
+47.0749
+Al
+52.9251
+!
+Am (americium)
+Am (americium)
+1 0 13.67
+Am
+100
+!
+amber
+amber
+3 0 1.1
+H
+10.593
+C
+78.8974
+O
+10.5096
+!
+Americium-beryllium
+AlphaN-AmBe
+2 1 1
+Be
+99.952
+O
+0.006
+Am241
+0.042
+!
+Americium-boron
+AlphaN-AmB
+2 1 1
+B
+98.684
+O
+0.154
+Am241
+1.162
+!
+Americium-fluorine
+AlphaN-AmF
+3 1 1
+O
+0.12
+Ca
+50.82
+F
+48.17
+Am241
+0.89
+!
+Americium-lithium
+AlphaN-AmLi
+3 1 1
+H
+12.336
+Li
+86.349
+O
+0.154
+Am241
+1.162
+!
+ammonia
+ammonia
+2 0 0.000826019
+H
+17.7547
+N
+82.2453
+!
+aniline
+aniline
+3 0 1.0235
+H
+7.5759
+C
+77.3838
+N
+15.0403
+!
+anthracene
+anthracene
+2 0 1.283
+H
+5.655
+C
+94.345
+!
+Ar (argon)
+Ar (argon)
+1 0 0.00166201
+Ar
+100
+!
+As (arsenic)
+As (arsenic)
+1 0 5.73
+As
+100
+!
+At (astatine)
+At (astatine)
+1 0 9.32
+At
+100
+!
+Au (gold)
+Au (gold)
+1 0 19.32
+Au
+100
+!
+B (boron)
+B
+1 0 2.355
+B
+100
+!
+Bone
+b-100_bone
+6 0 1.45
+H
+6.54709
+C
+53.6944
+N
+2.15
+O
+3.2085
+F
+16.7411
+Ca
+17.6589
+!
+Ba (barium)
+Ba (barium)
+1 0 3.5
+Ba
+100
+!
+bakelite
+bakelite
+3 0 1.25
+H
+5.7441
+C
+77.4591
+O
+16.7968
+!
+Baratol high explosive
+HE-Baratol
+5 0 2.61
+H
+0.53
+C
+8.87
+N
+12.6
+O
+38
+Ba
+40
+!
+barium_fluoride
+barium_fluoride
+2 0 4.89
+F
+21.672
+Ba
+78.328
+!
+barium_sulfate
+barium_sulfate
+3 0 4.5
+O
+27.4212
+S
+13.7368
+Ba
+58.842
+!
+Be (beryllium)
+Beryllium
+1 0 1.85
+Be
+100
+!
+benzene
+benzene
+2 0 0.87865
+H
+7.7418
+C
+92.2582
+!
+Beryllium Oxide
+BeO
+2 0 3.01
+Be
+36.032
+O
+63.968
+!
+bgo
+bgo
+3 0 7.13
+O
+15.4126
+Ge
+17.482
+Bi
+67.1054
+!
+Bi (bismuth)
+Bismuth
+1 0 9.7
+Bi
+100
+!
+Bismuth / tin Alloy
+Bi-Sn
+2 0 8
+Bi
+80
+Sn
+20
+!
+Bk (berkelium)
+Bk (berkelium)
+1 0 14
+Bk
+100
+!
+blood
+blood_icrp
+10 0 1.06
+H
+10.2
+C
+11
+N
+3.3
+O
+74.5
+Na
+0.1
+P
+0.1
+S
+0.2
+Cl
+0.3
+K
+0.2
+Fe
+0.1
+!
+bone
+bone_compact_icru
+8 0 1.85
+H
+6.4
+C
+27.8
+N
+2.7
+O
+41
+Mg
+0.2
+P
+7
+S
+0.2
+Ca
+14.7
+!
+Boracitol high explosive
+HE-Boracitol
+5 0 1.535
+H
+3.8
+B
+10.5
+C
+14.77
+N
+7.43
+O
+63.5
+!
+Boron carbide (nat. boron)
+B4C
+2 0 2.52
+B
+78.261
+C
+21.739
+!
+boron_oxide
+boron_oxide
+2 0 1.812
+B
+31.0551
+O
+68.9449
+!
+Br (bromine)
+Br (bromine)
+1 0 0.0070721
+Br
+100
+!
+brass
+brass
+3 0 8.52
+Cu
+57.513
+Zn
+33.4122
+Pb
+9.07477
+!
+bronze
+bronze
+3 0 8.82
+Cu
+84.9368
+Zn
+8.83915
+Pb
+6.22408
+!
+butane
+butane
+2 0 0.00249343
+H
+17.3408
+C
+82.6592
+!
+C (carbon)
+C (carbon)
+1 0 2
+C
+100
+!
+c-552
+c-552
+5 0 1.76
+H
+2.468
+C
+50.1611
+O
+0.4527
+F
+46.5209
+Si
+0.3973
+!
+Ca (calcium)
+Calcium
+1 0 1.55
+Ca
+100
+!
+cadmium_telluride
+cadmium_telluride
+2 0 6.2
+Cd
+46.8355
+Te
+53.1645
+!
+cadmium_tungstate
+cadmium_tungstate
+3 0 7.9
+O
+17.7644
+Cd
+31.2027
+W
+51.0329
+!
+calcium_carbonate
+calcium_carbonate
+3 0 2.8
+C
+12.0003
+O
+47.9554
+Ca
+40.0443
+!
+calcium_fluoride
+calcium_fluoride
+2 0 3.18
+F
+48.6659
+Ca
+51.3341
+!
+calcium_oxide
+calcium_oxide
+2 0 3.3
+O
+28.5299
+Ca
+71.4701
+!
+calcium_sulfate
+calcium_sulfate
+3 0 2.96
+O
+47.0095
+S
+23.5497
+Ca
+29.4408
+!
+calcium_tungstate
+calcium_tungstate
+3 0 6.062
+O
+22.227
+Ca
+13.9202
+W
+63.8528
+!
+carbon_dioxide
+carbon_dioxide
+2 0 0.00184212
+C
+27.2916
+O
+72.7084
+!
+carbon_tetrachloride
+carbon_tetrachloride
+2 0 1.594
+C
+7.8083
+Cl
+92.1917
+!
+Cd (cadmium)
+Cd
+1 0 8.65
+Cd
+100
+!
+Ce (cerium)
+Ce (cerium)
+1 0 6.657
+Ce
+100
+!
+cellulose_butyrate
+cellulose_butyrate
+3 0 1.2
+H
+6.7125
+C
+54.5403
+O
+38.7472
+!
+cellulose_cellophane
+cellulose_cellophane
+3 0 1.42
+H
+6.2162
+C
+44.4462
+O
+49.3376
+!
+cellulose_nitrate
+cellulose_nitrate
+4 0 1.49
+H
+2.9216
+C
+27.1296
+N
+12.1276
+O
+57.8212
+!
+Celotex
+Celotex
+4 0 0.29
+H
+3.4
+C
+60.2
+N
+9
+O
+27.4
+!
+ceric_sulfate
+ceric_sulfate
+5 0 1.03
+H
+10.7596
+N
+0.08
+O
+87.4976
+S
+1.4627
+Ce
+0.2001
+!
+cesium_fluoride
+cesium_fluoride
+2 0 4.115
+F
+12.5069
+Cs
+87.4931
+!
+cesium_iodide
+cesium_iodide
+2 0 4.51
+I
+48.8451
+Cs
+51.1549
+!
+Cf (californium)
+Cf (californium)
+1 0 10
+Cf
+100
+!
+chlorobenzene
+chlorobenzene
+3 0 1.1058
+H
+4.4772
+C
+64.0254
+Cl
+31.4974
+!
+chloroform
+chloroform
+3 0 1.4832
+H
+0.8443
+C
+10.0613
+Cl
+89.0944
+!
+Cl (chlorine)
+Cl (chlorine)
+1 0 0.00299473
+Cl
+100
+!
+Cm (curium)
+Cm (curium)
+1 0 13.51
+Cm
+100
+!
+Cm2O3 (Curium-244) Carbon-13
+AlphaN-CmC
+2 2 1
+C13
+90
+O16
+0.895
+Cm243
+0.0027
+Cm244
+9.1
+!
+Co (cobalt)
+Co (cobalt)
+1 0 8.9
+Co
+100
+!
+COMPB high explosive
+HE-COMPB
+4 0 1.64
+H
+2.59
+C
+24.45
+N
+30.33
+O
+42.63
+!
+Concrete
+Concrete
+7 0 2.3
+H
+0.5
+O
+51.3
+Si
+36
+Al
+3.6
+Na
+1.5
+Ca
+5.8
+Fe
+1.4
+!
+Cr (chromium)
+Chromium
+1 0 7.19
+Cr
+100
+!
+cr39
+cr39
+3 0 1.32
+H
+6.61505
+C
+52.5505
+O
+40.8345
+!
+Cs (cesium)
+Cs (cesium)
+1 0 1.873
+Cs
+100
+!
+Cu (copper)
+Copper
+1 0 8.9
+Cu
+100
+!
+cyclohexane
+cyclohexane
+2 0 0.779
+H
+14.3711
+C
+85.6289
+!
+dacron
+dacron
+3 0 1.4
+C
+62.5011
+H
+4.19607
+O
+33.3028
+!
+dichlorodiethyl_ether
+dichlorodiethyl_ether
+4 0 1.2199
+H
+5.63811
+C
+33.5942
+O
+11.1874
+Cl
+49.5802
+!
+diethyl_ether
+diethyl_ether
+3 0 0.71378
+H
+13.5978
+C
+64.8171
+O
+21.5851
+!
+dimethyl_sulfoxide
+dimethyl_sulfoxide
+4 0 1.1014
+H
+7.7403
+C
+30.7467
+O
+20.4782
+S
+41.0348
+!
+Dry soil (5% H2O)
+Soil-Dry
+7 0 1.6
+H
+0.6
+C
+1.1
+O
+53.8
+Al
+7.9
+Si
+32.3
+K
+1.2
+Fe
+3.2
+!
+Dy (dysprosium)
+Dy (dysprosium)
+1 0 8.55
+Dy
+100
+!
+Electronic soup (SAIC)
+ESU
+6 0 0.8
+H
+0.228
+C
+2.712
+N
+3.162
+Al
+71.067
+Si
+12.668
+Pb
+10.163
+!
+Enriched uranium alloy
+Oralloy
+0 5 18.95
+U232
+1e-08
+U234
+0.5
+U235
+93.5
+U236
+0.6
+U238
+5.4
+!
+Er (erbium)
+Er (erbium)
+1 0 9.066
+Er
+100
+!
+ethane
+ethane
+2 0 0.00125324
+H
+20.1115
+C
+79.8885
+!
+ethyl_alcohol
+ethyl_alcohol
+3 0 0.7893
+H
+13.1269
+C
+52.1437
+O
+34.7294
+!
+ethyl_cellulose
+ethyl_cellulose
+3 0 1.13
+H
+9.0027
+C
+58.5182
+O
+32.4791
+!
+ethylene
+ethylene
+2 0 0.00117497
+H
+14.3711
+C
+85.6289
+!
+Eu (europium)
+Eu (europium)
+1 0 5.243
+Eu
+100
+!
+Explosive/Simulant (HE-CHON)
+HE-CHON
+4 0 1.6
+H
+2.79
+C
+31.12
+N
+29.34
+O
+36.75
+!
+F (fluorine)
+F (fluorine)
+1 0 0.00158029
+F
+100
+!
+Fe (iron)
+Iron
+1 0 7.87
+Fe
+100
+!
+ferric_oxide
+ferric_oxide
+2 0 5.2
+O
+30.0567
+Fe
+69.9433
+!
+ferroboride
+ferroboride
+2 0 7.15
+B
+16.2174
+Fe
+83.7826
+!
+ferrous_oxide
+ferrous_oxide
+2 0 5.7
+O
+22.2689
+Fe
+77.7311
+!
+ferrous_sulfate
+ferrous_sulfate
+7 0 1.024
+H
+10.8259
+N
+0.0027
+O
+87.8636
+Na
+0.0022
+S
+1.2968
+Cl
+0.0034
+Fe
+0.0054
+!
+Fiberglass
+Fiberglass
+5 0 2.55
+B
+0.61
+O
+52.02
+Al
+11.12
+Si
+24.4
+Ca
+11.85
+!
+Fiberglass with Epoxy
+FibEpoxy
+5 0 1.632
+H
+3.76
+B
+0.31
+C
+34.41
+O
+38.01
+Si
+23.51
+!
+Fr (francium)
+Fr (francium)
+1 0 1
+Fr
+100
+!
+freon-12
+freon-12
+3 0 1.12
+C
+9.9335
+F
+31.4247
+Cl
+58.6418
+!
+freon-12b2
+freon-12b2
+3 0 1.8
+C
+5.7245
+F
+18.1096
+Br
+76.1659
+!
+freon-13
+freon-13
+3 0 0.95
+C
+11.4983
+F
+54.5621
+Cl
+33.9396
+!
+freon-13b1
+freon-13b1
+3 0 1.5
+C
+8.0659
+F
+38.2749
+Br
+53.6592
+!
+freon-13i1
+freon-13i1
+3 0 1.8
+C
+6.1309
+F
+29.0924
+I
+64.7767
+!
+Ga (gallium)
+Ga (gallium)
+1 0 5.904
+Ga
+100
+!
+gadolinium_oxysulfide
+gadolinium_oxysulfide
+3 0 7.44
+O
+8.4528
+S
+8.469
+Gd
+83.0782
+!
+galactic vacuum
+galactic
+1 0 1e-25
+H
+100
+!
+gallium_arsenide
+gallium_arsenide
+2 0 5.31
+Ga
+48.2019
+As
+51.7981
+!
+Gd (gadolinium)
+Gd (gadolinium)
+1 0 7.9004
+Gd
+100
+!
+Ge (germanium)
+Ge (germanium)
+1 0 5.323
+Ge
+100
+!
+glass_lead
+glass_lead
+5 0 6.22
+O
+15.6453
+Si
+8.0866
+Ti
+0.8092
+As
+0.2651
+Pb
+75.1938
+!
+glass_plate
+glass_plate
+4 0 2.4
+O
+45.98
+Na
+9.64411
+Si
+33.6553
+Ca
+10.7205
+!
+glucose
+glucose
+3 0 1.54
+H
+7.1204
+C
+36.3652
+O
+56.5144
+!
+glutamine
+glutamine
+4 0 1.46
+H
+6.89651
+C
+41.0926
+N
+19.1681
+O
+32.8427
+!
+glycerol
+glycerol
+3 0 1.2613
+H
+8.75539
+C
+39.1262
+O
+52.1184
+!
+Granite
+Granite
+11 0 2.75
+O
+46.9976
+Si
+29.0837
+Al
+11.1933
+K
+4.62288
+Fe
+3.3101
+Na
+2.43965
+Ca
+1.07605
+Ti
+0.88211
+Mg
+0.248191
+P
+0.106924
+Mn
+0.039517
+!
+Graphite
+C
+1 0 1.6
+C
+100
+!
+graphite_porous
+graphite_porous
+1 0 1.7
+C
+100
+!
+guanine
+guanine
+4 0 1.58
+H
+3.3346
+C
+39.738
+N
+46.3407
+O
+10.5867
+!
+gypsum
+gypsum
+4 0 2.32
+H
+2.3416
+O
+55.7572
+S
+18.6215
+Ca
+23.2797
+!
+H (hydrogen)
+Hydrogen
+1 0 0.071
+H
+100
+!
+He (helium)
+He (helium)
+1 0 0.000166322
+He
+100
+!
+Hf (hafnium)
+Hf (hafnium)
+1 0 13.31
+Hf
+100
+!
+Hg (mercury)
+Hg (mercury)
+1 0 13.546
+Hg
+100
+!
+Ho (holmium)
+Ho (holmium)
+1 0 8.795
+Ho
+100
+!
+I (iodine)
+I (iodine)
+1 0 4.93
+I
+100
+!
+In (indium)
+In (indium)
+1 0 7.31
+In
+100
+!
+Ir (iridium)
+Ir (iridium)
+1 0 22.42
+Ir
+100
+!
+Jet fuel
+JetFuel
+2 0 0.75
+H
+13.7
+C
+86.3
+!
+K (potassium)
+K (potassium)
+1 0 0.862
+K
+100
+!
+kapton
+kapton
+4 0 1.42
+H
+2.6362
+C
+69.1133
+N
+7.327
+O
+20.9235
+!
+kevlar
+kevlar
+4 0 1.44
+C
+70.5796
+H
+4.23074
+O
+13.4312
+N
+11.7584
+!
+Kr (krypton)
+Kr (krypton)
+1 0 0.00347832
+Kr
+100
+!
+La (lanthanum)
+La (lanthanum)
+1 0 6.154
+La
+100
+!
+lanthanum_oxybromide
+lanthanum_oxybromide
+3 0 6.28
+O
+6.8138
+Br
+34.0294
+La
+59.1568
+!
+lanthanum_oxysulfide
+lanthanum_oxysulfide
+3 0 5.86
+O
+9.36
+S
+9.3778
+La
+81.2622
+!
+lar
+lar
+1 0 1.396
+Ar
+100
+!
+lead_oxide
+lead_oxide
+2 0 9.53
+O
+7.1682
+Pb
+92.8318
+!
+lh2
+lh2
+1 0 0.0708
+H
+100
+!
+Li (lithium)
+Li (lithium)
+1 0 0.534
+Li
+100
+!
+LiPoly (90%Li6, polyethylene)
+LiPoly
+4 0 1.06
+H
+8.521
+C
+85.077
+Li6
+5.762
+Li7
+0.641
+!
+Liquid chlorine
+Chlorine
+1 0 1.562
+Cl
+100
+!
+Liquid Nitrogen
+Nitrogen
+1 0 0.8
+N
+100
+!
+Liquid oxygen
+Oxygen
+1 0 1.141
+O
+100
+!
+Lithium deuteride (nat. Li)
+LiD
+2 0 0.82
+Li
+77.5
+H2
+22.5
+!
+Lithium hydride (nat. Li)
+LiH
+2 0 0.82
+Li
+87.3
+H1
+12.7
+!
+Lithium tetraborate
+LTB
+5 0 1.4
+O
+66.3
+Li6
+7.79
+Li7
+0.41
+B10
+4.7
+B11
+20.8
+!
+Lithium-6 deuteride (95% 6Li)
+Li6D
+3 0 0.82
+H2
+22.5
+Li6
+73.625
+Li7
+3.875
+!
+Lithium-6 hydride (95% 6Li)
+Li6H
+3 0 0.82
+H1
+12.7
+Li6
+82.935
+Li7
+4.365
+!
+lithium_amide
+lithium_amide
+3 0 1.178
+H
+8.7783
+Li
+30.2262
+N
+60.9955
+!
+lithium_carbonate
+lithium_carbonate
+3 0 2.11
+Li
+18.7871
+C
+16.255
+O
+64.9579
+!
+lithium_fluoride
+lithium_fluoride
+2 0 2.635
+Li
+26.7585
+F
+73.2415
+!
+lithium_hydride
+lithium_hydride
+2 0 0.82
+H
+12.6797
+Li
+87.3203
+!
+lithium_iodide
+lithium_iodide
+2 0 3.494
+Li
+5.1858
+I
+94.8142
+!
+lithium_oxide
+lithium_oxide
+2 0 2.013
+Li
+46.457
+O
+53.543
+!
+lithium_tetraborate
+lithium_tetraborate
+3 0 2.44
+Li
+8.2085
+B
+25.568
+O
+66.2235
+!
+lkr
+lkr
+1 0 2.418
+Kr
+100
+!
+ln2
+ln2
+1 0 0.807
+N
+100
+!
+lo2
+lo2
+1 0 1.141
+O
+100
+!
+Loose mulch
+Mulch
+3 0 0.266
+C
+50
+H
+6
+O
+44
+!
+lpropane
+lpropane
+2 0 0.43
+H
+18.2855
+C
+81.7145
+!
+Lu (lutetium)
+Lu (lutetium)
+1 0 9.84
+Lu
+100
+!
+Lucite
+Lucite
+3 0 1.18
+H
+8
+C
+60
+O
+32
+!
+lxe
+lxe
+1 0 2.953
+Xe
+100
+!
+m3_wax
+m3_wax
+5 0 1.05
+H
+11.4318
+C
+65.5824
+O
+9.21831
+Mg
+13.4792
+Ca
+0.2883
+!
+TungstenAlloy
+Machinable Tungsten
+3 0 17
+Ni
+6
+Cu
+4
+W
+90
+!
+magnesium_carbonate
+magnesium_carbonate
+3 0 2.958
+C
+14.2455
+O
+56.9278
+Mg
+28.8267
+!
+magnesium_fluoride
+magnesium_fluoride
+2 0 3
+F
+60.9883
+Mg
+39.0117
+!
+magnesium_oxide
+magnesium_oxide
+2 0 3.58
+O
+39.6964
+Mg
+60.3036
+!
+magnesium_tetraborate
+magnesium_tetraborate
+3 0 2.53
+B
+24.0837
+O
+62.379
+Mg
+13.5373
+!
+Melamine
+Melamine
+3 0 1
+H
+4.8
+C
+28.6
+N
+66.6
+!
+mercuric_iodide
+mercuric_iodide
+2 0 6.36
+I
+55.856
+Hg
+44.144
+!
+methane
+methane
+2 0 0.000667151
+H
+25.1306
+C
+74.8694
+!
+methanol
+methanol
+3 0 0.7914
+H
+12.5822
+C
+37.4852
+O
+49.9326
+!
+Mg (magnesium)
+Magnesium
+1 0 1.74
+Mg
+100
+!
+mix_d_wax
+mix_d_wax
+5 0 0.99
+H
+13.404
+C
+77.796
+O
+3.502
+Mg
+3.8594
+Ti
+1.4386
+!
+Mixed oxide
+MOX
+1 7 4
+O
+11.8
+U235
+0.17
+U238
+84
+Pu236
+4e-10
+Pu238
+0.0044
+Pu239
+3.8
+Pu240
+0.5
+Pu241
+0.044
+!
+Mn (manganese)
+Mn (manganese)
+1 0 7.44
+Mn
+100
+!
+Mo (molybdenum)
+Mo (molybdenum)
+1 0 10.22
+Mo
+100
+!
+Mock HE 905-03
+HE-PBX9404 Simulant
+6 0 1.6
+H
+3.2
+C
+28.1
+N
+41.4
+O
+25.5
+P
+0.34
+Cl
+1.46
+!
+Monocalcium phosphate
+CaH4(PO4)2
+4 0 2.3
+Ca
+17.13
+H
+1.71
+O
+54.7
+P
+26.46
+!
+ms20_tissue
+ms20_tissue
+6 0 1
+H
+8.1192
+C
+58.3442
+N
+1.7798
+O
+18.6381
+Mg
+13.0287
+Cl
+0.09
+!
+muscle (skeletal)
+muscle_skeletal_icrp
+9 0 1.05
+H
+10.2
+C
+14.3
+N
+3.4
+O
+71
+Na
+0.1
+P
+0.2
+S
+0.3
+Cl
+0.1
+K
+0.4
+!
+mylar
+mylar
+3 0 1.4
+H
+4.1959
+C
+62.5016
+O
+33.3025
+!
+N (nitrogen)
+N (nitrogen)
+1 0 0.0011652
+N
+100
+!
+n,n-dimethyl_formamide
+n,n-dimethyl_formamide
+4 0 0.9487
+H
+9.6523
+C
+49.2965
+N
+19.1625
+O
+21.8887
+!
+n-butyl_alcohol
+n-butyl_alcohol
+3 0 0.8098
+H
+13.5978
+C
+64.8171
+O
+21.5851
+!
+n-heptane
+n-heptane
+2 0 0.68376
+H
+16.0937
+C
+83.9063
+!
+n-hexane
+n-hexane
+2 0 0.6603
+H
+16.3741
+C
+83.6259
+!
+n-pentane
+n-pentane
+2 0 0.6262
+H
+16.7635
+C
+83.2365
+!
+n-propyl_alcohol
+n-propyl_alcohol
+3 0 0.8035
+H
+13.4173
+C
+59.9595
+O
+26.6232
+!
+Na (sodium)
+Na (sodium)
+1 0 0.971
+Na
+100
+!
+Borax
+Na2B4O7-10H2O
+4 0 1.73
+Na
+11.13
+B
+18.21
+O
+65.82
+H
+4.84
+!
+naphthalene
+naphthalene
+2 0 1.145
+H
+6.2909
+C
+93.7091
+!
+Nb (niobium)
+Nb (niobium)
+1 0 8.57
+Nb
+100
+!
+Nd (neodymium)
+Nd (neodymium)
+1 0 6.9
+Nd
+100
+!
+Ne (neon)
+Ne (neon)
+1 0 0.000838505
+Ne
+100
+!
+neoprene
+neoprene
+3 0 1.23
+C
+54.2642
+H
+5.69232
+Cl
+40.0435
+!
+Neptunium
+Neptunium
+0 1 20.475
+Np237
+100
+!
+Ni (nickel)
+Nickel
+1 0 8.902
+Ni
+100
+!
+nitrobenzene
+nitrobenzene
+4 0 1.19867
+H
+4.0935
+C
+58.5374
+N
+11.3773
+O
+25.9918
+!
+nitrous_oxide
+nitrous_oxide
+2 0 0.00183094
+N
+63.6483
+O
+36.3517
+!
+Soil
+Nominal soil (20% H2O)
+7 0 1.6
+H
+2.2
+C
+0.9
+O
+59.3
+Al
+6.6
+Si
+27.2
+K
+1
+Fe
+2.7
+!
+Np (neptunium)
+Np (neptunium)
+1 0 20.25
+Np
+100
+!
+Nylon 6,6
+Nylon66
+4 0 1.152
+H
+9.73
+C
+63.72
+O
+14.16
+N
+12.39
+!
+nylon-11_rilsan
+nylon-11_rilsan
+4 0 1.425
+H
+11.5476
+C
+72.0818
+N
+7.64169
+O
+8.72889
+!
+nylon-6-10
+nylon-6-10
+4 0 1.14
+H
+10.7062
+C
+68.0449
+N
+9.9189
+O
+11.33
+!
+nylon-6-6
+nylon-6-6
+4 0 1.14
+H
+9.7976
+C
+63.6856
+N
+12.3779
+O
+14.1389
+!
+nylon-8062
+nylon-8062
+4 0 1.08
+H
+10.3509
+C
+64.8416
+N
+9.95361
+O
+14.8539
+!
+O (oxygen)
+O (oxygen)
+1 0 0.00133151
+O
+100
+!
+octadecanol
+octadecanol
+3 0 0.812
+H
+14.1599
+C
+79.9252
+O
+5.91487
+!
+octane
+octane
+2 0 0.7026
+H
+15.8821
+C
+84.1179
+!
+Os (osmium)
+Os (osmium)
+1 0 22.57
+Os
+100
+!
+P (phosphorus)
+P (phosphorus)
+1 0 2.2
+P
+100
+!
+Pa (protactinium)
+Pa (protactinium)
+1 0 15.37
+Pa
+100
+!
+paraffin
+paraffin
+2 0 0.93
+H
+14.8605
+C
+85.1395
+!
+Pb (lead)
+Lead
+1 0 11.35
+Pb
+100
+!
+pbwo4
+pbwo4
+3 0 8.28
+O
+14.0637
+Pb
+45.5366
+W
+40.3998
+!
+PBX-9404 high explosive
+HE-PBX9404
+6 0 1.84
+H
+2.75
+C
+16.81
+N
+36.01
+O
+43.05
+P
+0.31
+Cl
+1.07
+!
+PBX-9501 high explosive
+HE-PBX9501
+4 0 1.83
+H
+2.86
+C
+17.64
+N
+36.43
+O
+43.07
+!
+Pd (palladium)
+Pd (palladium)
+1 0 12.02
+Pd
+100
+!
+Pine wood
+Pine
+3 0 0.65
+C
+50
+H
+6
+O
+44
+!
+plastic_sc_vinyltoluene
+plastic_sc_vinyltoluene
+2 0 1.032
+H
+8.5
+C
+91.5
+!
+plexiglass
+plexiglass
+3 0 1.19
+H
+8.0538
+C
+59.9848
+O
+31.9614
+!
+Plutonium dioxide
+PuO2
+1 1 3
+O
+11.8
+Pu239
+88.2
+!
+PuO2 - 4.5% Pu240 Plutonium dioxide
+PuO2 - 4.5% Pu240 Enriched
+1 6 3
+O
+11.8
+Pu236
+0.00000000882
+Pu238
+0.0132
+Pu239
+84.07
+Pu240
+3.97
+Pu241
+0.141
+Pu242
+0.0026
+!
+PuO2 - 6% Pu240 Plutonium dioxide
+PuO2 - 6% Pu240 Enriched
+1 6 3
+O
+11.8
+Pu236
+0.0000000132
+Pu238
+0.0132
+Pu239
+82.58
+Pu240
+5.29
+Pu241
+0.309
+Pu242
+0.0088
+!
+PuO2 - 12% Pu240 Plutonium dioxide
+PuO2 - 12% Pu240 Enriched
+1 6 3
+O
+11.8
+Pu236
+0.0000000264
+Pu238
+0.0881
+Pu239
+76.59
+Pu240
+10.58
+Pu241
+0.881
+Pu242
+0.0635
+!
+PuO2 - 18% Pu240 Plutonium dioxide, 20 MW
+PuO2 - 18% Pu240 Enriched, 20 MW
+1 6 3
+O
+11.8
+Pu236
+0.0000000879
+Pu238
+0.616
+Pu239
+61.56
+Pu240
+15.83
+Pu241
+8.79
+Pu242
+1.41
+!
+PuO2 - 24% Pu240 Plutonium dioxide, 33 MW
+PuO2 - 24% Pu240 Enriched, 33 MW
+1 6 3
+O
+11.8
+Pu236
+0.000000882
+Pu238
+1.06
+Pu239
+52.04
+Pu240
+21.17
+Pu241
+10.41
+Pu242
+3.53
+!
+PuO2 - 27% Pu240 Plutonium dioxide, 55 MW
+PuO2 - 27% Pu240 Enriched, 55 MW
+1 6 3
+O
+11.8
+Pu236
+0.000000882
+Pu238
+2.65
+Pu239
+39.69
+Pu240
+23.81
+Pu241
+13.23
+Pu242
+8.82
+!
+PuO2 - 81% Pu238 Plutonium dioxide
+PuO2 - 81% Pu238 Enriched
+1 5 3
+O
+11.8
+Pu236
+0.0000000132
+Pu238
+71.07
+Pu239
+14.06
+Pu240
+2.39
+Pu241
+0.681
+!
+AlphaN-PuC
+Plutonium Oxide-Carbon13
+2 7 1
+C13
+94.628
+O16
+1.46
+Pu236
+5.0998e-08
+Pu238
+4.207
+Pu239
+0.392
+Pu240
+0.0354
+Pu241
+0.00182
+Pu242
+0.0005146
+Am241
+0.00175
+!
+Plutonium tetrafluoride
+PuF4
+1 1 4
+F
+24.1
+Pu239
+75.9
+!
+Plutonium, alpha phase
+Pu-alpha
+0 1 19.65
+Pu239
+100
+!
+Plutonium, delta phase
+Pu-delta
+1 1 15.75
+Ga
+0.6
+Pu239
+99.4
+!
+plutonium_dioxide
+plutonium_dioxide
+2 0 11.46
+O
+11.8055
+Pu
+88.1945
+!
+Plywood
+Plywood
+3 0 0.54
+C
+47
+H
+6
+O
+44
+!
+Pm (promethium)
+Pm (promethium)
+1 0 7.22
+Pm
+100
+!
+Po (polonium)
+Po (polonium)
+1 0 9.32
+Po
+100
+!
+polyacrylonitrile
+polyacrylonitrile
+3 0 1.17
+H
+5.69829
+C
+67.9055
+N
+26.3962
+!
+polycarbonate
+polycarbonate
+3 0 1.2
+H
+5.5491
+C
+75.5751
+O
+18.8758
+!
+polychlorostyrene
+polychlorostyrene
+3 0 1.3
+H
+6.1869
+C
+69.6325
+Cl
+24.1806
+!
+Polyethylene
+PE
+2 0 0.95
+H
+14.4
+C
+85.6
+!
+Polyethylene w/ 5% nat. B
+PE (5% B)
+5 0 0.96
+H
+11.66
+C
+61.14
+O
+22.2
+B10
+0.92
+B11
+4.08
+!
+Polyethylene w/ 6% nat. B
+PE (6% B)
+5 0 0.96
+H
+11.15
+C
+56.51
+O
+26.39
+B10
+1.1
+B11
+4.85
+!
+polyoxymethylene
+polyoxymethylene
+3 0 1.425
+H
+6.7135
+C
+40.0017
+O
+53.2848
+!
+Polypropylene
+Polypropylene
+2 0 0.905
+H
+14.4
+C
+85.6
+!
+polystyrene
+polystyrene
+2 0 1.06
+H
+7.7418
+C
+92.2582
+!
+polytrifluorochloroethylene
+polytrifluorochloroethylene
+3 0 2.1
+C
+20.625
+F
+48.9354
+Cl
+30.4395
+!
+Polyurethane foam
+Polyurethane
+4 0 0.1
+H
+6.7
+C
+59
+N
+8
+O
+26.3
+!
+PVC - Polyvinyl chloride (H3C2Cl)
+PVC
+3 0 1.374
+H
+4.8
+C
+38.4
+Cl
+56.7
+!
+PVT - Polyvinyl toluene (C1H1.1)
+PVT
+2 0 1.04
+H
+8.42
+C
+91.58
+!
+polyvinyl_acetate
+polyvinyl_acetate
+3 0 1.19
+H
+7.0245
+C
+55.8066
+O
+37.1689
+!
+polyvinyl_alcohol
+polyvinyl_alcohol
+3 0 1.3
+H
+9.1517
+C
+54.5298
+O
+36.3185
+!
+polyvinyl_butyral
+polyvinyl_butyral
+3 0 1.12
+H
+9.2802
+C
+68.0561
+O
+22.6637
+!
+polyvinyl_chloride
+polyvinyl_chloride
+3 0 1.3
+H
+4.838
+C
+38.436
+Cl
+56.726
+!
+polyvinyl_pyrrolidone
+polyvinyl_pyrrolidone
+4 0 1.25
+H
+8.1616
+C
+64.8407
+N
+12.6024
+O
+14.3953
+!
+polyvinylidene_chloride
+polyvinylidene_chloride
+3 0 1.7
+H
+2.0793
+C
+24.7793
+Cl
+73.1414
+!
+polyvinylidene_fluoride
+polyvinylidene_fluoride
+3 0 1.76
+H
+3.148
+C
+37.5141
+F
+59.3379
+!
+Potassium Chloride
+KCl
+2 0 1.2
+Cl
+47.56
+K
+52.44
+!
+potassium_iodide
+potassium_iodide
+2 0 3.13
+K
+23.5528
+I
+76.4472
+!
+potassium_oxide
+potassium_oxide
+2 0 2.32
+O
+16.9852
+K
+83.0148
+!
+Pr (praseodymium)
+Pr (praseodymium)
+1 0 6.71
+Pr
+100
+!
+propane
+propane
+2 0 0.00187939
+H
+18.2855
+C
+81.7145
+!
+Pt (platinum)
+Pt (platinum)
+1 0 21.45
+Pt
+100
+!
+Pu (plutonium)
+Pu (plutonium)
+1 0 19.84
+Pu
+100
+!
+pyrex_glass
+pyrex_glass
+6 0 2.23
+B
+4.00639
+O
+53.9561
+Na
+2.81909
+Al
+1.1644
+Si
+37.7219
+K
+0.332099
+!
+pyridine
+pyridine
+3 0 0.9819
+H
+6.371
+C
+75.9217
+N
+17.7073
+!
+Ra (radium)
+Ra (radium)
+1 0 5
+Ra
+100
+!
+Rb (rubidium)
+Rb (rubidium)
+1 0 1.532
+Rb
+100
+!
+Re (rhenium)
+Re (rhenium)
+1 0 21.02
+Re
+100
+!
+Rh (rhodium)
+Rh (rhodium)
+1 0 12.41
+Rh
+100
+!
+Rn (radon)
+Rn (radon)
+1 0 0.00900662
+Rn
+100
+!
+Ru (ruthenium)
+Ru (ruthenium)
+1 0 12.41
+Ru
+100
+!
+rubber_butyl
+rubber_butyl
+2 0 0.92
+H
+14.3711
+C
+85.6289
+!
+rubber_natural
+rubber_natural
+2 0 0.92
+H
+11.8371
+C
+88.1629
+!
+rubber_neoprene
+rubber_neoprene
+3 0 1.23
+H
+5.692
+C
+54.2646
+Cl
+40.0434
+!
+S (sulfur)
+S (sulfur)
+1 0 2
+S
+100
+!
+Salt water (1.9% Cl, 1% Na)
+Salt Water
+10 0 1.025
+O
+86.2
+H
+10.6
+Cl
+1.87
+Na
+1.03
+Mg
+0.133
+S
+0.087
+Ca
+0.04
+K
+0.037
+Br
+0.0064
+C
+0.0026
+!
+Sb (antimony)
+Sb (antimony)
+1 0 6.691
+Sb
+100
+!
+Sc (scandium)
+Sc (scandium)
+1 0 2.989
+Sc
+100
+!
+Se (selenium)
+Se (selenium)
+1 0 4.5
+Se
+100
+!
+Si (silicon)
+Silicon
+1 0 2.33
+Si
+100
+!
+Silica/phenolic heat shield
+HeatShield
+8 0 1.68
+H
+2.31
+B
+1.33
+C
+27.69
+O
+34.56
+Al
+7.45
+Si
+17.8
+Ca
+8.5
+Fe
+0.36
+!
+Silicon dioxide
+SiO2
+2 0 2.2
+O
+53.3
+Si
+46.7
+!
+silicon_dioxide
+silicon_dioxide
+2 0 22.32
+O
+53.2565
+Si
+46.7435
+!
+silver_bromide
+silver_bromide
+2 0 6.473
+Br
+42.5537
+Ag
+57.4463
+!
+silver_chloride
+silver_chloride
+2 0 5.56
+Cl
+24.7368
+Ag
+75.2632
+!
+silver_halides
+silver_halides
+3 0 6.47
+Br
+42.2895
+Ag
+57.3748
+I
+0.3357
+!
+silver_iodide
+silver_iodide
+2 0 6.01
+Ag
+45.9458
+I
+54.0542
+!
+skin
+skin icrp
+9 0 1.09
+H
+10
+C
+20.4
+N
+4.2
+O
+64.5
+Na
+0.2
+P
+0.1
+S
+0.2
+Cl
+0.3
+K
+0.1
+!
+Sm (samarium)
+Sm (samarium)
+1 0 7.46
+Sm
+100
+!
+Sn (tin)
+Tin
+1 0 7.3
+Sn
+100
+!
+sodium_carbonate
+sodium_carbonate
+3 0 2.532
+C
+11.3323
+O
+45.2861
+Na
+43.3815
+!
+sodium_iodide
+sodium_iodide
+2 0 3.667
+Na
+15.3373
+I
+84.6627
+!
+sodium_monoxide
+sodium_monoxide
+2 0 2.27
+O
+25.8143
+Na
+74.1857
+!
+sodium_nitrate
+sodium_nitrate
+3 0 2.261
+N
+16.4795
+O
+56.472
+Na
+27.0485
+!
+Sr (strontium)
+Sr (strontium)
+1 0 2.54
+Sr
+100
+!
+Stainless steel SS-304
+SS-304
+3 0 7.66
+Fe
+71
+Cr
+19
+Ni
+10
+!
+stainless-steel NIST
+stainless-steel
+3 0 8
+Fe
+73.7297
+Cr
+7.42141
+Ni
+18.8489
+!
+Steel & Pine
+Cargo
+4 0 0.4
+H
+3
+C
+23.5
+O
+23.5
+Fe
+50
+!
+Steel - AISI 1040 Med. Carbon
+Steel 1040
+5 0 7.845
+Fe
+98.81
+Mn
+0.75
+C
+0.4
+P
+0.02
+S
+0.02
+!
+stilbene
+stilbene
+2 0 0.9707
+H
+6.7101
+C
+93.2899
+!
+Strontium-90 titanate
+SrTiO3
+2 1 5.12
+Ti
+26
+O
+26
+Sr90
+48
+!
+sucrose
+sucrose
+3 0 1.5805
+H
+6.4779
+C
+42.107
+O
+51.4151
+!
+Ta (tantalum)
+Ta
+1 0 16.65
+Ta
+100
+!
+Tb (terbium)
+Tb (terbium)
+1 0 8.229
+Tb
+100
+!
+Tc (technetium)
+Tc (technetium)
+1 0 11.5
+Tc
+100
+!
+Te (tellurium)
+Te (tellurium)
+1 0 6.24
+Te
+100
+!
+teflon
+teflon
+2 0 2.2
+C
+24.0183
+F
+75.9817
+!
+terphenyl
+terphenyl
+2 0 1.234
+H
+4.4543
+C
+95.5457
+!
+tetrachloroethylene
+tetrachloroethylene
+2 0 1.625
+C
+14.4856
+Cl
+85.5144
+!
+Th (thorium)
+Th (thorium)
+1 0 11.72
+Th
+100
+!
+thallium_chloride
+thallium_chloride
+2 0 7.004
+Cl
+14.7822
+Tl
+85.2178
+!
+Thorium
+Thorium
+0 1 11.72
+Th232
+100
+!
+Thorium oxide
+ThO2
+1 1 0.49
+O
+12.1
+Th232
+87.9
+!
+Ti (titanium)
+Titanium
+1 0 4.54
+Ti
+100
+!
+soft tissue (ICRP)
+tissue_soft_icrp
+9 0 1.03
+H
+10.5
+C
+25.6
+N
+2.7
+O
+60.2
+Na
+0.1
+P
+0.2
+S
+0.3
+Cl
+0.2
+K
+0.2
+!
+soft tissue (ICRU-4)
+tissue_soft_icru-4
+4 0 1
+H
+10.1
+C
+11.1
+N
+2.6
+O
+76.2
+!
+titanium_dioxide
+titanium_dioxide
+2 0 4.26
+O
+40.0592
+Ti
+59.9408
+!
+Tl (thallium)
+Tl (thallium)
+1 0 11.72
+Tl
+100
+!
+Tm (thulium)
+Tm (thulium)
+1 0 9.321
+Tm
+100
+!
+toluene
+toluene
+2 0 0.8669
+H
+8.751
+C
+91.249
+!
+Topaz
+Topaz
+5 0 3.55
+Al
+29.61
+Si
+15.41
+H
+0.5
+O
+43.01
+F
+11.47
+!
+Triacetone Tri-Peroxide HE
+TATP
+3 0 1.18
+H
+8.11
+C
+48.65
+O
+43.24
+!
+trichloroethylene
+trichloroethylene
+3 0 1.46
+H
+0.7671
+C
+18.2831
+Cl
+80.9498
+!
+triethyl_phosphate
+triethyl_phosphate
+4 0 1.07
+H
+8.2998
+C
+39.5628
+O
+35.1334
+P
+17.004
+!
+tungsten_hexafluoride
+tungsten_hexafluoride
+2 0 2.4
+F
+38.2723
+W
+61.7277
+!
+U (uranium)
+U (uranium)
+1 0 18.95
+U
+100
+!
+UO2 Uranium Dioxide
+UO2
+2 0 3
+O
+11.8
+U
+88.1973
+!
+Uranium hexafluoride
+UF6
+2 0 4
+F
+32.4
+U
+67.6
+!
+Uranium metal
+U
+1 0 18.95
+U
+100
+!
+Uranium trioxide
+U3O8
+2 0 3
+O
+15.2
+U
+84.8
+!
+Uranium-aluminum alloy
+U-Al
+2 0 12
+Al
+15.2
+U
+84.8
+!
+Uranium-molybdenum alloy
+U-2%Mo
+1 3 18
+Mo
+2
+U234
+0.001
+U235
+0.196
+U238
+97.803
+!
+Uranium-niobium alloy
+U-6%Nb
+1 3 17.4
+Nb
+6.1
+U234
+0.0014
+U235
+0.1876
+U238
+93.711
+!
+urea
+urea
+4 0 1.323
+H
+6.7131
+C
+19.9999
+N
+46.6459
+O
+26.6411
+!
+V (vanadium)
+Vanadium
+1 0 6.11
+V
+100
+!
+valine
+valine
+4 0 1.23
+H
+9.46409
+C
+51.2644
+N
+11.9565
+O
+27.315
+!
+viton
+viton
+3 0 1.8
+H
+0.9417
+C
+28.0555
+F
+71.0028
+!
+W (tungsten)
+Tungsten
+1 0 19.35
+W
+100
+!
+Water
+Water
+2 0 1
+H
+11.2
+O
+88.8
+!
+water_vapor
+water_vapor
+2 0 0.000756182
+H
+11.1894
+O
+88.8106
+!
+Welding rod with 2% thorium
+WeldingRod
+2 0 18
+W
+98
+Th
+2
+!
+Wet Soil (35% H2O)
+Soil-Wet
+7 0 1.6
+H
+3.9
+C
+0.7
+O
+64.9
+Al
+5.4
+Si
+22.1
+K
+0.8
+Fe
+2.2
+!
+Xe (xenon)
+Xe (xenon)
+1 0 0.00548536
+Xe
+100
+!
+xylene
+xylene
+2 0 0.87
+H
+9.4935
+C
+90.5065
+!
+Y (yttrium)
+Y (yttrium)
+1 0 4.469
+Y
+100
+!
+Yb (ytterbium)
+Yb (ytterbium)
+1 0 6.73
+Yb
+100
+!
+Zircaloy 
+Zircaloy
+6 0 6.5
+Zr
+98.22
+Sn
+1.45
+Fe
+0.17
+Cr
+0.1
+Ni
+0.05
+Hf
+0.01
+!
+Zn (zinc)
+Zinc
+1 0 7.133
+Zn
+100
+!
+Zr (zirconium)
+Zirconium
+1 0 6.5
+Zr
+100

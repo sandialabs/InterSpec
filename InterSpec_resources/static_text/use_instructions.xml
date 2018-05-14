@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder 
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this 
+      video to a video playing widget in the WTemplate widget.  However since we 
+      dont want to have to hard code the bind placeholder name, and which video 
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The bellow JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [ 
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"Mouse Intro"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"Gamma Lines"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"Calibration"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"Peak Identification"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"Activity Shielding"
+        }
+       ]
+  }
+  </message>
+  
+  <message id='intro-text'>
+     <h1 align="center">Welcome To <em>InterSpec</em></h1>
+     <div align="center">Click buttons on left for usage instructions.</div>
+     <br />
+     Please email William Johnson at <a href="mailto:wcjohns@sandia.gov">wcjohns@sandia.gov</a>
+     with any bug reports or smaller feature requests; contact 
+     <a href="mailto:srb@sandia.gov">srb@sandia.gov</a> for any more formal
+     requests or complaints.
+     <div align="center" style="margin-top: 1.5em; margin-bottom: 1.5em;">
+       <div>
+         <img style="display:inline-block" src="InterSpec_resources/images/DHSLogo129.jpg" width="129" alt="DHS Logo" />
+         <img src="InterSpec_resources/images/InterSpec128.jpg" width="128" alt="InterSpec Logo"/>
+       </div>
+         <img src="InterSpec_resources/images/snl_logo.gif" width="175" alt="Sandia National Laboratories Logo"/>
+     </div>
+     <div>
+       <em>InterSpec</em> is developed for the U.S. Department of Homeland Security
+       by the Sandia National Laboratories Technical ReachBack team, and is only in alpha phase of testing,
+       so please do not use for any mission critical work.
+     </div>
+  </message>
+  <message id='mobile-mouse-interactions'>
+ 	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Zoom In</div>
+	  </div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobZoomIn.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         To zoom in on a specific portion of the spectrum,
+         <u>tap</u> and <u>drag</u> two fingers away from each other. 
+      </div>
+	  </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Zoom Out</div>
+	  </div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobZoomOut.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         To zoom out,
+         <u>tap</u> and <u>drag</u> two fingers away from each other. 
+      </div>
+	  </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Energy Range Shift</div>
+	  </div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobERShift.png" style="width:70%" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobERShift2.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         To move along the x axis of the graph,
+         <u>tap</u> on an energy level and <u>drag</u> to where you want the initial energy level positioned; <u>remove</u> your finger to complete the shift. 
+      </div>
+	  </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Identify Peak(s)</div>
+	  </div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>Method 1</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobIDPeaks1-1.png" style="width:70%" />
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/MobIDPeaks1-2.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         <u>Double-tap</u> anywhere on the graph above the energy level you wish to identify a peak. <u>Double-tapping</u> again near an existing peak will prompt the application to fit for another peak if it finds another nuclide appropriate  and energetically close in vicinity. 
+      </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Method 2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobIDPeaks3.png" style="width:70%" />
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/MobIDPeaks3-2.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         <u>Double-tap</u> and <u>drag</u> two horizontally aligned fingers over the region of interest. <u>Remove</u> your fingers and <u>select</u> the quantity of peaks you wish to identify.
+      </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Method 3</b></h3></div>
+	  <div align="center">
+	  <img src="InterSpec_resources/static_text/images/MobIDPeaks4.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         <u>Tap</u> &#34;Add&#34; on the bottom left corner of the screen.
+      </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Method 4</b></h3></div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/MobIDPeaks2.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         <u>Tap</u> &#34;Search for Peaks&#34; on the bottom left corner of the screen.
+      </div>
+	  </div>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Launch Peak Editor</div>
+	  </div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobPE1.png" style="width:70%" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobPE2.png" style="width:70%" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobPE3.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         To launch the <b>Peak Editor</b> tool <u>tap</u> and <u>hold</u> on an already identified peak for 1 second until a small window of options appears; in the small window <u>select</u> <b>Peak Editor</b>. 
+      </div>
+	  </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Delete Peak(s)</div>
+	  </div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>Method 1</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobDelete1.png" style="width:70%" />
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/MobDelete1-2.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         <u>Tap</u> and <b>hold</b> an identified peak until the a small window appears. In the window, <u>tap</u> &#34;<b>Delete Peak</b>&#34;.
+      </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Method 2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobDelete2-1.png" style="width:70%" />
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/MobDelete2-2.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         <u>Tap</u> and <b>hold</b> an identified peak until the a small window appears. In the window, <u>tap</u> &#34;<b>Delete Peak</b>&#34;.
+      </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Method 2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/MobDelete1.png" style="width:70%" />
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/MobDelete1-2.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Dock the windows, <u>tap</u> &#34;<b>Clear all Peaks</b>&#34; on the bottom left corner of the screen, and <u>tap</u> &#34;<b>Yes</b>&#34; in the small window that pops up. Note that this method will delete <i>all</i> identified peaks. 
+      </div>
+	  </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "1desktop-mouse-interactions-zoomin": {
+    "title": "Zoom-In",
+    "img": "InterSpec_resources/images/ZoomIn.gif",
+    "desc_message_id": "1desktop-mouse-interactions-zoomin-desc"
+  },
+  "2desktop-mouse-interactions-zoomout": {
+    "title": "Zoom-Out",
+    "img": "InterSpec_resources/images/ZoomOut.gif",
+    "desc_message_id": "2desktop-mouse-interactions-zoomout-desc"
+  },
+  "3desktop-mouse-interactions-shiftenergyrange": {
+    "title": "Pan Energy",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "3desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "4desktop-mouse-interactions-identifypeaks": {
+    "title": "Identify Peak(s)",
+    "img": "InterSpec_resources/images/IDPeaks.gif",
+    "desc_message_id": "4desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "7desktop-mouse-interactions-deletepeaks": {
+    "title": "Delete Peak(s)",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "7desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "6desktop-mouse-interactions-visualcalibration": {
+    "title": "Visual Calibration",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "6desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "5desktop-mouse-interactions-peakeditor": {
+    "title": "Peak Editor",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "5desktop-mouse-interactions-peakeditor-desc"
+  },
+  "8desktop-mouse-interactions-countgamma": {
+    "title": "Count Gammas",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "8desktop-mouse-interactions-countgamma-desc"
+  }
+}
+</message>
+
+<message id='1desktop-mouse-interactions-zoomin-desc'>
+<center>Left-Click Drag</center>
+</message>
+
+<message id='2desktop-mouse-interactions-zoomout-desc'>
+<center>Left-Click Drag</center>
+</message>
+
+<message id='3desktop-mouse-interactions-shiftenergyrange-desc'>
+<center><b><kbd>ALT</kbd></b> + Left-Click Drag</center>
+</message>
+
+<message id='4desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px"> To Identify peaks, you may use any of the following options: </p>
+<ol>
+<li>Double-Left-Click</li>
+<li><b><kbd>CTRL</kbd></b> + Left-Click Drag &#8594; Left-Click </li>
+<li>Left-Click "<b>Add</b>" &#8594; <u>Optional</u>: Double-Left-Click "<b>Mean</b>," "<b>FWHM</b>," or "<b>Area</b>" to adjust parameters</li>
+<li>Left-Click "<b>Search for Peaks</b>"</li>
+</ol>
+</center>
+</message>
+
+<message id='7desktop-mouse-interactions-deletepeaks-desc'>
+<center>
+<ol>
+<li>Right-Click &#8594; "<b>Delete Peak</b>"</li>
+<li>Right-Click &#8594; "<b>Peak Editor</b>" &#8594; "<b>Delete</b>"</li>
+<li><b><kbd>SHIFT</kbd></b> + Left-Click Drag</li>
+<li>Left-Click "<b>Clear all Peaks</b>" &#8594; Left-Click "<b>Yes</b>"</li>
+</ol>
+</center>
+</message>
+
+<message id='6desktop-mouse-interactions-visualcalibration-desc'>
+<center>Right-Click Drag &#8594; <u>Optional</u>: Adjust Quantities &#8594; "<b>Accept</b>"</center>
+</message>
+
+<message id='5desktop-mouse-interactions-peakeditor-desc'>
+<center>Right-Click &#8594; "Peak Editor"</center>
+</message>
+
+<message id='8desktop-mouse-interactions-countgamma-desc'>
+<center>
+<ol>
+<li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Left-Click Drag &#8594; <u>Optional</u>: Adjust Quantities</li>
+<li><b>Tools</b> &#8594; <b>Energy Range Count</b></li>
+</ol>
+</center>
+</message>
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    Current known issues:
+    <ul>
+        <li><b>All:</b> (Peak Manager) "Search for Peaks" in rare cases does not work</li>
+        <li><b>All:</b> (Peak Manager) "ID Nuclide" in rare cases does not work </li>
+        <li><b>All:</b> "Save State On Exit" in rare cases does not work</li>
+        <li><b>All:</b> (Nuclide Search) "Min. BR" in rare cases does not work</li>
+        <li><b>All:</b> Restoring a Snapshot of a Linear Spectrum from Logarithmic Mode Results in Permanent Loading or Crashing</li>
+    </ul>
+  </message>
+</messages>

@@ -1,0 +1,1 @@
+mndscal.lo mndscal.o: mndscal.cxx
