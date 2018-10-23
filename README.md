@@ -12,7 +12,7 @@ InterSpec can also be built as a stand-alone (e.g., not Internet connection nece
 
 If you just care about using a pre-compiled executable, head over to 
 [releases](https://github.com/sandialabs/interspec/releases) and download the latest.
-A getting started guide will be released soon.
+A brief getting started guide can be found in [tutorials/brief_analysis_intro](https://github.com/sandialabs/InterSpec/tree/master/tutorials/brief_analysis_intro/); a more comprehsive tutorial is planned for the future.
 
 If you would like to build the app, some instructions are bellow.
 
@@ -67,7 +67,7 @@ make -j8
 
 If all goes well, InterSpec default to building an executable that when ran from the command line, starts a local web server, you can access then access from your browser.  To run InterSpec, use a command like:
 ```
-./bin/InterSpec.exe --docroot . --http-address 0.0.0.0 --http-port 8080 -c ./data/wt_config.xml
+./bin/InterSpec.exe --docroot . --http-address 0.0.0.0 --http-port 8080 -c ./data/config/wt_config_localweb.xml
 ```
 and then point your browser to [http://localhost:8080](http://localhost:8080).
 
