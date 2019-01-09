@@ -1,5 +1,5 @@
 # InterSpec
-InterSpec is a web-based application to assist in analyzing spectral nuclear radiation data, using a peak-based methodology.
+InterSpec is a native or web application to assist in analyzing spectral nuclear radiation data, using a peak-based methodology.
 Common uses include identifying nuclides present, determining source activity, shielding amounts, source age, or other nuclear reactions present.
 InterSpec also provides a number of other tools useful for analyzing radiation data including spectral file format converting,
 dose rate calculations, interactive nuclide decay and reference information, gamma cross section calculations, and more.
