@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -251,7 +251,7 @@ std::map<std::string, std::shared_ptr<const ZipFileHeader> >
   
   bool foundheader = false;
   size_t headerstart = -1;
-  for( size_t i = 0; i < read_start-3; i++)
+  for( size_t i = 0; static_cast<ios::streamoff>(i) < read_start-3; i++)
   {
     if( buf[i]==0x50 && buf[i+1]==0x4b && buf[i+2]==0x05 && buf[i+3]==0x06 )
     {

@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -37,6 +37,7 @@
 #include <Wt/WRegExpValidator>
 
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/ActivityConverter.h"
@@ -45,9 +46,12 @@ using namespace Wt;
 using namespace std;
 
 ActivityConverter::ActivityConverter()
-  : AuxWindow( "Activity Converter" ),
-    m_bq( NULL ),
-    m_ci( NULL ),
+  : AuxWindow( "Activity Converter",
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+               | AuxWindowProperties::DisableCollapse
+               | AuxWindowProperties::SetCloseable) ),
+    m_input( NULL ),
+    m_output( NULL ),
     m_message( NULL )
 {
   addStyleClass( "ActivityConverter" );
@@ -64,8 +68,8 @@ ActivityConverter::ActivityConverter()
   layout->addWidget(label,1,0);
   label->addStyleClass( "ActivityConverterLabel" );
   
-  m_bq = new WLineEdit(  );
-    layout->addWidget(m_bq,1,1);
+  m_input = new WLineEdit(  );
+    layout->addWidget(m_input,1,1);
 
   const char * const bqexp = "^(\\s*\\+?((\\d+(\\.\\d*)?)|(\\.\\d*))"
     "(?:[Ee][+\\-]?\\d+)?\\s*"
@@ -73,37 +77,37 @@ ActivityConverter::ActivityConverter()
     
   WRegExpValidator *validator = new WRegExpValidator( bqexp, this );
   validator->setFlags( Wt::MatchCaseInsensitive );
-  m_bq->setValidator(validator);
+  m_input->setValidator(validator);
   
-  m_bq->addStyleClass( "ActivityConverterInput" );
-  m_bq->setTextSize( 15 );
-  m_bq->setWidth( WLength(15.0,WLength::FontEm) );
-  m_bq->setText("5 MBq");
-  m_bq->changed().connect(  this, &ActivityConverter::doBq);
-  m_bq->blurred().connect(   this, &ActivityConverter::doBq);
-  m_bq->enterPressed().connect(    this, &ActivityConverter::doBq);
+  m_input->addStyleClass( "ActivityConverterInput" );
+  m_input->setTextSize( 15 );
+  m_input->setWidth( WLength(15.0,WLength::FontEm) );
+  m_input->setText("5 MBq");
+  m_input->changed().connect( this, &ActivityConverter::convert );
+  m_input->blurred().connect( this, &ActivityConverter::convert );
+  m_input->enterPressed().connect( this, &ActivityConverter::convert );
   
   WPushButton *convertButton = new WPushButton("Convert");
   layout->addWidget(convertButton,1,2);
-  convertButton->clicked().connect(this, &ActivityConverter::doBq);
+  convertButton->clicked().connect( this, &ActivityConverter::convert );
     
   label = new WLabel( "To: " );
   layout->addWidget(label,2,0);
   label->addStyleClass( "ActivityConverterLabel" );
   
-  m_ci = new WLineEdit( );
-  layout->addWidget(m_ci,2,1,1,2);
-  m_ci->addStyleClass( "ActivityConverterInput" );
-  m_ci->setTextSize( 15 );
-  m_ci->setWidth( WLength(15.0,WLength::FontEm) );
-  m_ci->setEnabled(false);
-  m_ci->setText("135.14 uCi");
+  m_output = new WLineEdit( );
+  layout->addWidget(m_output,2,1,1,2);
+  m_output->addStyleClass( "ActivityConverterInput" );
+  m_output->setTextSize( 15 );
+  m_output->setWidth( WLength(15.0,WLength::FontEm) );
+  m_output->setEnabled(false);
+  m_output->setText("135.14 uCi");
   
   m_message = new WText( "&nbsp", XHTMLUnsafeText );
   m_message->setHeight(WLength(50,WLength::Pixel));
   m_message->setAttributeValue( "style", "color:blue;"  );
 //  m_message->setHiddenKeepsGeometry( true );
-    m_message->hide();
+  m_message->hide();
   layout->addWidget(m_message,3,0,1,3);
   layout->setColumnStretch(1, 1);
   layout->setRowStretch(3, 1);
@@ -115,11 +119,13 @@ ActivityConverter::ActivityConverter()
   finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
   centerWindow();
-    resizeToFitOnScreen();
+  resizeToFitOnScreen();
   show();
 
-  setResizable( false );
-  
+  //Keep the keyboard form popping up
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
+  if( app && app->isMobile() )
+    closeButton->setFocus();
 }//ActivityConverter constructor
 
 
@@ -129,10 +135,10 @@ ActivityConverter::~ActivityConverter()
 }//ActivityConverter destructor
 
 
-void ActivityConverter::doBq()
+void ActivityConverter::convert()
 {
   try {
-    Wt::WString value = m_bq->text();
+    Wt::WString value = m_input->text();
     std::string val = value.toUTF8();
     UtilityFunctions::trim( val );
     double dbvalue = PhysicalUnits::stringToActivity(val);
@@ -146,7 +152,7 @@ void ActivityConverter::doBq()
       throw val;
     }
     const string ans = PhysicalUnits::printToBestActivityUnits( dbvalue, 2, curie, PhysicalUnits::becquerel );
-    m_ci->setText(Wt::WString::fromUTF8(ans));
+    m_output->setText(Wt::WString::fromUTF8(ans));
     //If weve made it this far, we have valid input
     m_message->removeStyleClass("line-above");
     m_message->setText( "&nbsp" );

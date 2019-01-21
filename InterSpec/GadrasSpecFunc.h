@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -30,8 +30,8 @@
 /** \brief Computes the scattered continuum for a given energy gamma, through
  * shielding of a given areal density and atomic number.
  *
- * Adapted from Dean Mitchells SpecFunc.f (sent to wcjohns 20150922) code.
- * Uses Continuum.lib that is included with GADRAS v18.6.1.
+ * Adapted from SpecFunc.f (sent to wcjohns 20150922) code.
+ * Uses Continuum.lib that is included with GadrasDRF v18.6.1.
  */
 class GadrasScatterTable
 {

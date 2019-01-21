@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -60,7 +60,8 @@ using namespace Wt;
 
 
 DbFileBrowser::DbFileBrowser( SpecMeasManager *manager, InterSpec *viewer , std::string uuid, SpectrumType type, std::shared_ptr<SpectraFileHeader> header)
-: AuxWindow( "Saved Snapshots" , true)
+: AuxWindow( "Saved Snapshots",
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) )
   {
     int width = 500, height = 475;
     width = std::min( width, static_cast<int>(0.95*viewer->renderedWidth()) );
@@ -68,8 +69,6 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager, InterSpec *viewer , std:
     
     resize( WLength(width), WLength(height) );
     rejectWhenEscapePressed();
-    setResizable( true );
-    disableCollapse();
       
     WGridLayout* layout = new WGridLayout();
     WContainerWidget *container = WDialog::contents();
@@ -135,7 +134,10 @@ m_header (header)
     {
         Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
         WContainerWidget* tablecontainer = new WContainerWidget();
-        
+      
+      //With m_snapshotTable being a WTree, we cant implement double clicking on
+      //  an item to open it right away.  If we use a WTreeView, then we should
+      //  be able to do that...
         m_snapshotTable = new WTree();
         WGridLayout* tablelayout = new WGridLayout();
         tablelayout->setContentsMargins(2, 2, 2, 2);
@@ -152,11 +154,11 @@ m_header (header)
         
         Wt::WTreeNode *root = new Wt::WTreeNode("Root");
         root->expand();
+      
         m_snapshotTable->setTreeRoot(root);
         m_snapshotTable->setSelectionMode(Wt::SingleSelection);
         m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
-        
-        Wt::WTreeNode *snapshotNode;
+      
         
         Dbo::Transaction transaction( *m_session->session() );
         Dbo::collection< Dbo::ptr<UserState> > query;
@@ -197,8 +199,10 @@ m_header (header)
         for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshotIterator = query.begin();
             snapshotIterator != query.end(); ++snapshotIterator )
         {
-            snapshotNode = new Wt::WTreeNode((*snapshotIterator)->name, 0 /*new Wt::WIconPair("InterSpec_resources/images/camera_small.png","InterSpec_resources/images/camera.png")*/, root);
-            
+            Wt::WTreeNode *snapshotNode = new Wt::WTreeNode((*snapshotIterator)->name, 0, root);
+          
+          //m_snapshotTable->doubleClicked
+          
             snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
             snapshotNode->setToolTip((*snapshotIterator)->serializeTime.toString() + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
             
@@ -284,7 +288,7 @@ m_header (header)
       
         //      m_deleteButton = new WPushButton( "Delete", footer() );
         //      m_deleteButton->setHidden(true); //temporary as we figure this out
-        //      m_deleteButton->setStyleClass("CrossIcon");
+        //      m_deleteButton->setIcon( "InterSpec_resources/images/minus_min.png" );
         //
         //      if (!m_viewer->isMobile())
         //      {
@@ -296,13 +300,12 @@ m_header (header)
         //      m_deleteButton->disable();
         m_loadSpectraButton = new WPushButton( "Load Spectrum Only", m_window?m_window->footer():m_footer );
         m_loadSpectraButton->clicked().connect( boost::bind( &SnapshotFactory::loadSpectraSelected, this));
-        //      m_loadSpectraButton->addStyleClass("BulletIcon");
         m_loadSpectraButton->disable();
         
         m_loadSnapshotButton = new WPushButton( "Load Application State", m_window?m_window->footer():m_footer);
         m_loadSnapshotButton->clicked().connect( boost::bind(&SnapshotFactory::loadSnapshotSelected, this));
         m_loadSnapshotButton->setDefault(true);
-        m_loadSnapshotButton->addStyleClass("TimeIcon");
+        //m_loadSnapshotButton->addStyleClass("TimeIcon");
         m_loadSnapshotButton->disable();
       
     }catch( std::exception &e )

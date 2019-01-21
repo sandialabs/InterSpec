@@ -357,7 +357,7 @@
 	     use WGLWidget, this option can be set to false. It will improve
 	     the initial loading time of the web-application.
 	-->
-	<webgl-detection>true</webgl-detection>
+	<webgl-detection>false</webgl-detection>
 
 	<!-- Redirect message shown for browsers without JavaScript support
 

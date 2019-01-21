@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -36,7 +36,7 @@
 
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -48,14 +48,6 @@ const int ReferenceLineInfo::sm_xmlSerializationVersion = 1;
 
 namespace
 {
-  const size_t ns_numColors = 13;
-  const char *ns_colors[ns_numColors]
-  = { "#0000FF",
-    "#006600", "#006666", "#0099FF",
-    "#9933FF", "#FF66FF", "#CC3333", "#FF6633",
-    "#FFFF99", "#CCFFCC", "#000CC", "#666666", "#003333"
-  };
-  
   template<class T> struct index_compare_assend
   {
     index_compare_assend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
@@ -78,33 +70,33 @@ namespace
 //  from "Practical gamma-ray spectrometry" pg 361
 const BackgroundLine BackgroundReactionLines[28] =
 {
-  BackgroundLine( 53.44f,   10.34f, "Ge(n,g)", BackgroundReaction, "Ge72(n,g), Ge74(n,2n)" ),
-  BackgroundLine( 68.75f,   0.1f,   "Ge(n,n)", BackgroundReaction, "Ge73(n,n) broad antisymetric peak" ),
-  BackgroundLine( 139.68f,  39.0f,  "Ge75m",   BackgroundReaction, "Ge74(n,g), Ge76(n,2n)" ),
-  BackgroundLine( 159.7f,   10.33f, "Ge(n,g)", BackgroundReaction, "Ge76(n,g)" ),
+  BackgroundLine( 53.44f,   0.1034f, "Ge(n,g)", BackgroundReaction, "Ge72(n,g), Ge74(n,2n)" ),
+  BackgroundLine( 68.75f,   0.001f,   "Ge(n,n)", BackgroundReaction, "Ge73(n,n) broad antisymetric peak" ),
+  BackgroundLine( 139.68f,  0.390f,  "Ge75m",   BackgroundReaction, "Ge74(n,g), Ge76(n,2n)" ),
+  BackgroundLine( 159.7f,   0.1033f, "Ge(n,g)", BackgroundReaction, "Ge76(n,g)" ),
   BackgroundLine( 174.95f,  0.0f,   "Ge(n,g)", BackgroundReaction, "Ge70(n,g) activation" ),
   BackgroundLine( 198.39f,  0.0f,   "Ge71m",   BackgroundReaction, "Sum peak Ge70(n,g)" ),
   BackgroundLine( 278.26f,  0.0f,   "Cu64",    BackgroundReaction, "Cu63(n,g), Cu65(n,2n) prompt gamma" ),
-  BackgroundLine( 336.24f,  45.9f,  "Cd115m,In115m", BackgroundReaction, "Activation of Cd (daughter of Cd115)" ),
-  BackgroundLine( 416.86f,  27.7f,  "In116m",  BackgroundReaction, "In115(n,g) activation of In metal seal" ),
-  BackgroundLine( 527.90f,  27.5f,  "Cd115",   BackgroundReaction, "Cd114(n,g) activation" ),
+  BackgroundLine( 336.24f,  0.459f,  "Cd115m,In115m", BackgroundReaction, "Activation of Cd (daughter of Cd115)" ),
+  BackgroundLine( 416.86f,  0.277f,  "In116m",  BackgroundReaction, "In115(n,g) activation of In metal seal" ),
+  BackgroundLine( 527.90f,  0.275f,  "Cd115",   BackgroundReaction, "Cd114(n,g) activation" ),
   BackgroundLine( 558.46f,  0.0f,   "Cd114",   BackgroundReaction, "Cd113(n,g) prompt gamma" ),
-  BackgroundLine( 569.7f,   97.89f, "Pb207m",  BackgroundReaction, "Pb207(n,n)" ),
+  BackgroundLine( 569.7f,   0.9789f, "Pb207m",  BackgroundReaction, "Pb207(n,n)" ),
   BackgroundLine( 579.2f,   0.0f,   "Pb207",   BackgroundReaction, "Pb207(n,n) prompt gamma" ),
   BackgroundLine( 595.85f,  0.0f,   "Ge74",    BackgroundReaction, "Ge74(n,n) broad asymmetric peak" ),
   BackgroundLine( 669.62f,  0.0f,   "Cu63",    BackgroundReaction, "Cu63(n,n) prompt gamma" ),
   BackgroundLine( 689.6f,   0.0f,   "Ge72",    BackgroundReaction, "Ge72(n,n) broad asymetric peak" ),
   BackgroundLine( 803.06f,  0.0f,   "Pb206",   BackgroundReaction, "Pb206(n,n) prompt gamma" ),
-  BackgroundLine( 843.76f,  71.8f,  "Mg27",    BackgroundReaction, "Mg26(n,g) or Al27(n,p) of encapsilation" ),
+  BackgroundLine( 843.76f,  0.718f,  "Mg27",    BackgroundReaction, "Mg26(n,g) or Al27(n,p) of encapsilation" ),
   BackgroundLine( 846.77f,  0.0f,   "Fe56",    BackgroundReaction, "Fe56(n,n)" ),
   BackgroundLine( 962.06f,  0.0f,   "Cu63",    BackgroundReaction, "Cu63(n,n) prompt gamma" ),
-  BackgroundLine( 1014.44f, 28.0f,  "Mg27",    BackgroundReaction, "Mg26(n,g) or Al27(n,p) of encapsilation" ),
-  BackgroundLine( 1063.66f, 88.5f,  "Pb207m",  BackgroundReaction, "Pb207(n,n)" ),
-  BackgroundLine( 1097.3f,  56.2f,  "In116",   BackgroundReaction, "In115(n,g) activation of In metal seal" ),
+  BackgroundLine( 1014.44f, 0.280f,  "Mg27",    BackgroundReaction, "Mg26(n,g) or Al27(n,p) of encapsilation" ),
+  BackgroundLine( 1063.66f, 0.885f,  "Pb207m",  BackgroundReaction, "Pb207(n,n)" ),
+  BackgroundLine( 1097.3f,  0.562f,  "In116",   BackgroundReaction, "In115(n,g) activation of In metal seal" ),
   BackgroundLine( 1115.56f, 0.0f,   "Cu65",    BackgroundReaction, "Cu65(n,n)" ),
-  BackgroundLine( 1173.23f, 99.85f, "Co60",    BackgroundReaction, "Activation" ),
-  BackgroundLine( 1293.54f, 84.4f,  "In116",   BackgroundReaction, "In115(n,g) activation of In metal seal" ),
-  BackgroundLine( 1332.49f, 99.98f, "Co60",    BackgroundReaction, "Activation" ),
+  BackgroundLine( 1173.23f, 0.9985f, "Co60",    BackgroundReaction, "Activation" ),
+  BackgroundLine( 1293.54f, 0.844f,  "In116",   BackgroundReaction, "In115(n,g) activation of In metal seal" ),
+  BackgroundLine( 1332.49f, 0.9998f, "Co60",    BackgroundReaction, "Activation" ),
   BackgroundLine( 2224.57f, 0.0f,   "H2",      BackgroundReaction, "H(n,g)" )
 };//BackgroundReactionLines[]
 
@@ -113,95 +105,95 @@ const BackgroundLine BackgroundReactionLines[28] =
 const BackgroundLine BackgroundLines[89] =
 {
   /*xrays bellow 46 keV not inserted*/
-  BackgroundLine( 46.54f,   4.25f,  "Pb210",   Ra226Series,        "" ),
-  BackgroundLine( 53.23f,   1.060f, "Pb214",   Ra226Series,        "" ),
-  BackgroundLine( 63.28f,   4.8f,   "Th234",   U238Series,         "" ),
-  BackgroundLine( 72.81f,   27.7f,  "Pb xray", BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  BackgroundLine( 74.82f,   27.7f,  "Bi xray", BackgroundXRay,     "Pb212, Pb214 decay" ),
-  BackgroundLine( 74.97f,   46.2f,  "Pb xray", BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  BackgroundLine( 77.11f,   46.2f,  "Bi xray", BackgroundXRay,     "Pb212, Pb214 decay" ),
-  BackgroundLine( 79.29f,   46.1f,  "Po xray", BackgroundXRay,     "Fluorescence and Bi212, Bi214 decay" ),
-  BackgroundLine( 81.23f,   0.9f,   "Th231",   U235Series,         "" ),
-  BackgroundLine( 84.94f,   10.7f,  "Pb xray", BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  BackgroundLine( 87.3f,    3.91f,  "Pb xray", BackgroundXRay,     "Flourescence and Tl208 decay" ),
-  BackgroundLine( 87.35f,   10.7f,  "Bi xray", BackgroundXRay,     "Pb212, Pb214 decay" ),
-  BackgroundLine( 89.78f,   3.93f,  "Bi xray", BackgroundXRay,     "Pb212, Pb214 decay" ),
-  BackgroundLine( 89.96f,   28.1f,  "Th xray", BackgroundXRay,     "U235 and Ac228 decay" ),
-  BackgroundLine( 92.58f,   5.58f,  "Th234",   U238Series,         " - doublet" ),
-  BackgroundLine( 93.35f,   45.4f,  "Th xray", BackgroundXRay,     "U235 and Ac228 decay" ),
-  BackgroundLine( 105.6f,   10.7f,  "Th xray", BackgroundXRay,     "U235 and Ac228 decay" ),
-  BackgroundLine( 109.16f,  1.54f,  "U235",    U235Series,         "" ),
-  BackgroundLine( 112.81f,  0.28f,  "Th234",   U238Series,         "" ),
-  BackgroundLine( 122.32f,  1.192f, "Ra223",   U235Series,         "" ),
-  BackgroundLine( 129.06f,  2.42f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 143.76f,  10.96f, "U235",    U235Series,         "" ),
-  BackgroundLine( 163.33f,  5.08f,  "U235",    U235Series,         "" ),
-  BackgroundLine( 185.72f,  57.2f,  "U235",    U235Series,         "" ),
-  BackgroundLine( 186.21f,  3.555f, "Ra226",   U238Series,         "" ),
-  BackgroundLine( 205.31f,  5.01f,  "U235",    U235Series,         "" ),
-  BackgroundLine( 209.26f,  3.89f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 238.63f,  43.6f,  "Pb212",   Th232Series,        "" ),
-  BackgroundLine( 240.89f,  4.12f,  "Ra224",   Th232Series,        "" ),
-  BackgroundLine( 242.0f,   7.268f, "Pb214",   Ra226Series,        "" ),
-  BackgroundLine( 269.49f,  13.7f,  "Ra223",   U235Series,         "" ),
-  BackgroundLine( 270.24f,  3.46f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 277.37f,  2.37f,  "Tl208",   Th232Series,        "" ),
-  BackgroundLine( 295.22f,  18.5f,  "Pb214",   Ra226Series,        "" ),
-  BackgroundLine( 299.98f,  2.16f,  "Th227",   U235Series,         "" ),
-  BackgroundLine( 300.07f,  2.47f,  "Pa231",   U235Series,         "" ),
-  BackgroundLine( 300.09f,  3.18f,  "Pb212",   Th232Series,        "" ),
-  BackgroundLine( 328.0f,   2.95f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 338.28f,  2.79f,  "Ra223",   U235Series,         "" ),
-  BackgroundLine( 338.32f,  11.27f, "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 351.06f,  12.91f, "Bi211",   U235Series,         "" ),
-  BackgroundLine( 351.93f,  35.60f, "Pb214",   Ra226Series,        "" ),
-  BackgroundLine( 409.46f,  1.92f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 447.6f,   10.44f, "Be7",     OtherBackground,    "Cosmic" ),
-  BackgroundLine( 462.0f,   0.213f, "Pb214",   Ra226Series,        "" ),
-  BackgroundLine( 463.0f,   4.40f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 510.7f,   6.29f,  "Tl208",   Th232Series,        "" ),
-  BackgroundLine( 511.0f,   1.0f,   "",        OtherBackground,    "Annihilation radiation (beta+)" ),
-  BackgroundLine( 570.82f,  0.182f, "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 583.19f,  30.6f,  "Tl208",   Th232Series,        "" ),
-  BackgroundLine( 609.31f,  45.49f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 661.66f,  40.0f, "Cs137",   OtherBackground,    "Fission" ),
-  BackgroundLine( 726.86f,  0.62f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 727.33f,  6.74f,  "Bi212",   Th232Series,        "" ),
-  BackgroundLine( 755.31f,  1.0f,   "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 768.36f,  4.891f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 794.95f,  4.25f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 806.17f,  1.262f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 832.01f,  3.52f,  "Pb211",   U235Series,         "" ),
-  BackgroundLine( 835.71f,  1.61f,  "AC228",   Th232Series,        "" ),
-  BackgroundLine( 839.04f,  0.587f, "Pb214",   Ra226Series,        "" ),
-  BackgroundLine( 860.56f,  4.48f,  "Tl208",   Th232Series,        "" ),
-  BackgroundLine( 911.20f,  25.8f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 934.06f,  3.096f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 964.77f,  4.99f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 968.97f,  15.8f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 1001.03f, 1.021f, "Pa234m",  U238Series,         "..." ),
-  BackgroundLine( 1120.29f, 14.91f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 1155.19f, 1.635f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 1238.11f, 5.827f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 1377.67f, 3.967f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 1407.98f, 2.389f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 1459.14f, 0.83f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 1460.82f, 10.66f, "K40",     K40Background,      "" ),
-  BackgroundLine( 1588.2f,  3.22f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 1592.51f, 1.0f,   "",        OtherBackground,    "Double Escape, 2614 keV" ),
-  BackgroundLine( 1620.74f, 1.51f,  "Bi212",   Th232Series,        "" ),
-  BackgroundLine( 1630.63f, 1.51f,  "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 1686.09f, 0.095f, "Ac228",   Th232Series,        "" ),
-  BackgroundLine( 1661.28f,  1.12f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 1729.6f,  2.843f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 1764.49f, 15.28f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 1838.36f, 0.346f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 1847.42f, 2.023f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 2103.51f, 2.0f,   "",        OtherBackground,    "Single Escape, 2614 keV" ),
-  BackgroundLine( 2118.55f, 0.454f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 2204.21f, 4.913f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 2447.86f, 1.518f, "Bi214",   Ra226Series,        "" ),
-  BackgroundLine( 2614.51f, 35.85f, "Tl208",   Th232Series,        "Th232 series; Pb208(n,p)" ),
+  BackgroundLine( 46.54f,   0.0425f,  "Pb210",   Ra226Series,        "" ),
+  BackgroundLine( 53.23f,   0.01060f, "Pb214",   Ra226Series,        "" ),
+  BackgroundLine( 63.28f,   0.048f,   "Th234",   U238Series,         "" ),
+  BackgroundLine( 72.81f,   0.277f,   "Pb xray", BackgroundXRay,     "Flourescence and Tl208 decay" ),
+  BackgroundLine( 74.82f,   0.277f,   "Bi xray", BackgroundXRay,     "Pb212, Pb214 decay" ),
+  BackgroundLine( 74.97f,   0.462f,   "Pb xray", BackgroundXRay,     "Flourescence and Tl208 decay" ),
+  BackgroundLine( 77.11f,   0.462f,   "Bi xray", BackgroundXRay,     "Pb212, Pb214 decay" ),
+  BackgroundLine( 79.29f,   0.461f,   "Po xray", BackgroundXRay,     "Fluorescence and Bi212, Bi214 decay" ),
+  BackgroundLine( 81.23f,   0.009f,   "Th231",   U235Series,         "" ),
+  BackgroundLine( 84.94f,   0.107f,   "Pb xray", BackgroundXRay,     "Flourescence and Tl208 decay" ),
+  BackgroundLine( 87.3f,    0.0391f,  "Pb xray", BackgroundXRay,     "Flourescence and Tl208 decay" ),
+  BackgroundLine( 87.35f,   0.107f,   "Bi xray", BackgroundXRay,     "Pb212, Pb214 decay" ),
+  BackgroundLine( 89.78f,   0.0393f,  "Bi xray", BackgroundXRay,     "Pb212, Pb214 decay" ),
+  BackgroundLine( 89.96f,   0.281f,   "Th xray", BackgroundXRay,     "U235 and Ac228 decay" ),
+  BackgroundLine( 92.58f,   0.0558f,  "Th234",   U238Series,         " - doublet" ),
+  BackgroundLine( 93.35f,   0.454f,   "Th xray", BackgroundXRay,     "U235 and Ac228 decay" ),
+  BackgroundLine( 105.6f,   0.107f,   "Th xray", BackgroundXRay,     "U235 and Ac228 decay" ),
+  BackgroundLine( 109.16f,  0.0154f,  "U235",    U235Series,         "" ),
+  BackgroundLine( 112.81f,  0.0028f,  "Th234",   U238Series,         "" ),
+  BackgroundLine( 122.32f,  0.01192f, "Ra223",   U235Series,         "" ),
+  BackgroundLine( 129.06f,  0.0242f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 143.76f,  0.1096f,  "U235",    U235Series,         "" ),
+  BackgroundLine( 163.33f,  0.0508f,  "U235",    U235Series,         "" ),
+  BackgroundLine( 185.72f,  0.572f,   "U235",    U235Series,         "" ),
+  BackgroundLine( 186.21f,  0.03555f, "Ra226",   U238Series,         "" ),
+  BackgroundLine( 205.31f,  0.0501f,  "U235",    U235Series,         "" ),
+  BackgroundLine( 209.26f,  0.0389f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 238.63f,  0.436f,   "Pb212",   Th232Series,        "" ),
+  BackgroundLine( 240.89f,  0.0412f,  "Ra224",   Th232Series,        "" ),
+  BackgroundLine( 242.0f,   0.07268f, "Pb214",   Ra226Series,        "" ),
+  BackgroundLine( 269.49f,  0.137f,   "Ra223",   U235Series,         "" ),
+  BackgroundLine( 270.24f,  0.0346f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 277.37f,  0.0237f,  "Tl208",   Th232Series,        "" ),
+  BackgroundLine( 295.22f,  0.185f,   "Pb214",   Ra226Series,        "" ),
+  BackgroundLine( 299.98f,  0.0216f,  "Th227",   U235Series,         "" ),
+  BackgroundLine( 300.07f,  0.0247f,  "Pa231",   U235Series,         "" ),
+  BackgroundLine( 300.09f,  0.0318f,  "Pb212",   Th232Series,        "" ),
+  BackgroundLine( 328.0f,   0.0295f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 338.28f,  0.0279f,  "Ra223",   U235Series,         "" ),
+  BackgroundLine( 338.32f,  0.1127f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 351.06f,  0.1291f,  "Bi211",   U235Series,         "" ),
+  BackgroundLine( 351.93f,  0.3560f,  "Pb214",   Ra226Series,        "" ),
+  BackgroundLine( 409.46f,  0.0192f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 447.6f,   0.1044f,  "Be7",     OtherBackground,    "Cosmic" ),
+  BackgroundLine( 462.0f,   0.00213f, "Pb214",   Ra226Series,        "" ),
+  BackgroundLine( 463.0f,   0.0440f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 510.7f,   0.0629f,  "Tl208",   Th232Series,        "" ),
+  BackgroundLine( 511.0f,   0.010f,   "",        OtherBackground,    "Annihilation radiation (beta+)" ),
+  BackgroundLine( 570.82f,  0.00182f, "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 583.19f,  0.306f,   "Tl208",   Th232Series,        "" ),
+  BackgroundLine( 609.31f,  0.4549f,  "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 661.66f,  0.400f,   "Cs137",   OtherBackground,    "Fission" ),
+  BackgroundLine( 726.86f,  0.0062f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 727.33f,  0.0674f,  "Bi212",   Th232Series,        "" ),
+  BackgroundLine( 755.31f,  0.010f,   "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 768.36f,  0.04891f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 794.95f,  0.0425f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 806.17f,  0.01262f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 832.01f,  0.0352f,  "Pb211",   U235Series,         "" ),
+  BackgroundLine( 835.71f,  0.0161f,  "AC228",   Th232Series,        "" ),
+  BackgroundLine( 839.04f,  0.00587f, "Pb214",   Ra226Series,        "" ),
+  BackgroundLine( 860.56f,  0.0448f,  "Tl208",   Th232Series,        "" ),
+  BackgroundLine( 911.20f,  0.258f,   "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 934.06f,  0.03096f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 964.77f,  0.0499f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 968.97f,  0.158f,   "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 1001.03f, 0.01021f, "Pa234m",  U238Series,         "..." ),
+  BackgroundLine( 1120.29f, 0.1491f,  "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 1155.19f, 0.01635f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 1238.11f, 0.05827f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 1377.67f, 0.03967f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 1407.98f, 0.02389f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 1459.14f, 0.0083f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 1460.82f, 0.1066f,  "K40",     K40Background,      "" ),
+  BackgroundLine( 1588.2f,  0.0322f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 1592.51f, 0.010f,   "Th232 D.E. 2614 keV",        OtherBackground,    "" ),
+  BackgroundLine( 1620.74f, 0.0151f,  "Bi212",   Th232Series,        "" ),
+  BackgroundLine( 1630.63f, 0.0151f,  "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 1686.09f, 0.00095f, "Ac228",   Th232Series,        "" ),
+  BackgroundLine( 1661.28f, 0.0112f,  "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 1729.6f,  0.02843f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 1764.49f, 0.1528f,  "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 1838.36f, 0.00346f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 1847.42f, 0.02023f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 2103.51f, 0.020f,   "Th232 S.E. 2614 keV",        OtherBackground,    "" ),
+  BackgroundLine( 2118.55f, 0.00454f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 2204.21f, 0.04913f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 2447.86f, 0.01518f, "Bi214",   Ra226Series,        "" ),
+  BackgroundLine( 2614.51f, 0.3585f,  "Tl208",   Th232Series,        "Th232 series; Pb208(n,p)" ),
 };//BackgroundLines
 
 
@@ -224,6 +216,7 @@ void ReferenceLineInfo::reset()
   backgroundLines.clear();
   labelTxt.clear();
   reactionsTxt.clear();
+  lineColor = Wt::WColor();
   showGammas = showXrays = showAlphas = showBetas = false;
   promptLinesOnly = showLines = isBackground = displayLines = false;
   lowerBrCuttoff = age = 0.0;
@@ -245,12 +238,13 @@ bool ReferenceLineInfo::operator==( const ReferenceLineInfo &rhs ) const
 }//ReferenceLineInfo::operator==
 
 
-void ReferenceLineInfo::toJson( string &json, size_t num ) const
+void ReferenceLineInfo::toJson( string &json ) const
 {
-  const size_t color_index = (num % ns_numColors);
+  //const size_t color_index = (num % ns_numColors);
   
   std::stringstream jsonstrm;
-  jsonstrm << "{color:'" << ns_colors[color_index] << "',"
+  
+  jsonstrm << "{color:'" << (lineColor.isDefault() ? "#0000FF" : lineColor.cssText(false) ) << "',"
   << "parent:'" << parentLabel() << "',";
   
   if( promptLinesOnly )
@@ -352,7 +346,7 @@ void ReferenceLineInfo::sortByEnergy()
     }
   }//for( size_t i = 0; i < len; ++i )
 #endif
-}//void PhotopeakLineDisplay::sortByEnergy()
+}//void sortByEnergy()
 
 
 std::string ReferenceLineInfo::parentLabel() const
@@ -397,64 +391,77 @@ void ReferenceLineInfo::deSerialize( const rapidxml::xml_node<char> *base_node )
   if( element_node && element_node->value() )
     element = db->element( element_node->value() );
   
+  node = base_node->first_node( "LineColor", 9 );
+  if( node && node->value_size() )
+  {
+    try{
+      lineColor = Wt::WColor( node->value() );
+    }catch(...){
+      lineColor = Wt::WColor();
+    }
+  }else
+  {
+    lineColor = Wt::WColor();
+  }
+  
   node = base_node->first_node( "DisplayLines", 12 );
-  if( node && node->value() && strlen(node->value()))
+  if( node && node->value_size() )
     displayLines = (node->value()[0] == '1');
   
   node = base_node->first_node( "ShowGammas", 10 );
-  if( node && node->value() && strlen(node->value()))
+  if( node && node->value_size() )
     showGammas = (node->value()[0] == '1');
   
   node = base_node->first_node( "ShowXrays", 9 );
-  if( node && node->value() && strlen(node->value()))
+  if( node && node->value_size() )
     showXrays = (node->value()[0] == '1');
   
   node = base_node->first_node( "ShowAlphas", 10 );
-  if( node && node->value() && strlen(node->value()))
+  if( node && node->value_size() )
     showAlphas = (node->value()[0] == '1');
   
   node = base_node->first_node( "ShowBetas", 9 );
-  if( node && node->value() && strlen(node->value()))
+  if( node && node->value_size() )
     showBetas = (node->value()[0] == '1');
   
   node = base_node->first_node( "ShowLines", 9 );
-  if( node && node->value() && strlen(node->value()))
+  if( node && node->value_size() )
     showLines = (node->value()[0] == '1');
   
   node = base_node->first_node( "PromptLinesOnly", 15 );
-  if( node && node->value() && strlen(node->value()))
+  if( node && node->value_size() )
     promptLinesOnly = (node->value()[0] == '1');
   
   node = base_node->first_node( "IsBackground", 12 );
-  if( node && node->value() && strlen(node->value()))
+  if( node && node->value_size() )
     isBackground = (node->value()[0] == '1');
   
   node = base_node->first_node( "IsReaction", 10 );
-  if( node && node->value() && strlen(node->value()))
+  if( node && node->value_size() )
     isReaction = (node->value()[0] == '1');
   
   node = base_node->first_node( "Age", 3 );
-  if( node && node->value() && !(stringstream(node->value()) >> age) )
+  if( node && node->value_size() && !(stringstream(node->value()) >> age) )
     throw runtime_error( "Ivalid age parameter" );
   
   node = base_node->first_node( "LowestBranchRatio", 17 );
-  if( node && node->value() && !(stringstream(node->value())>> lowerBrCuttoff) )
+  if( node && node->value_size() && !(stringstream(node->value())>> lowerBrCuttoff) )
     throw runtime_error( "Ivalid LowerBrCuttoff parameter" );
   
   node = base_node->first_node( "ShieldingName", 13 );
-  if( node && node->value() && node->value_size() )
+  if( node && node->value_size() && node->value_size() )
     shieldingName = node->value();
 
   node = base_node->first_node( "ShieldingThickness", 18 );
-  if( node && node->value() && !(stringstream(node->value())>> shieldingThickness) )
+  if( node && node->value_size() && !(stringstream(node->value())>> shieldingThickness) )
     throw runtime_error( "Ivalid ShieldingThickness parameter" );
 
   node = base_node->first_node( "DetectorName", 12 );
-  if( node && node->value() && node->value_size() )
+  if( node && node->value_size() )
     detectorName = node->value();
   
   node = base_node->first_node( "Nuclide", 7 );
-  if( node && node->value() )
+  if( node && node->value_size() )
     labelTxt = node->value();
   
   if( isBackground )
@@ -614,9 +621,17 @@ void ReferenceLineInfo::serialize( rapidxml::xml_node<char> *parent_node ) const
   //  }//if( backgroundLines.size() )
   
   name = "Nuclide";
-  value = labelTxt.c_str();
+  value = doc->allocate_string( labelTxt.c_str() );
   node = doc->allocate_node( rapidxml::node_element, name, value );
   base_node->append_node( node );
+  
+  if( !lineColor.isDefault() )
+  {
+    name = "LineColor";
+    value = doc->allocate_string( lineColor.cssText(false).c_str() );
+    node = doc->allocate_node( rapidxml::node_element, name, value );
+    base_node->append_node( node );
+  }
   
   if( age >= 0.0 )
   {

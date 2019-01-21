@@ -1,0 +1,13 @@
+.line-below
+{
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 7px;
+    margin-bottom: 5px;
+}
+
+.line-above
+{
+    border-top: 1px solid #ddd;
+    padding-top: 7px;
+    margin-top: 5px;
+}

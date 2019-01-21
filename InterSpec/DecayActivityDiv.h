@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -67,15 +67,16 @@ namespace SandiaDecay
 class InterSpec;
 class CsvDownloadGui;
 class PeakCsvResource;
-class SrbActivityChart;
-class SrbActivityModel;
 class DecayChainChart;
+class DecayActivityChart;
+class DecayActivityModel;
 class DecaySelectNuclide;
 class ChartToImageResource;
 struct NuclideSelectedInfo;
 class DateLengthCalculator;
 
-#define ADD_DECAY_CHAIN_CHART 1
+//Showing photopeak chart currently not tested (used to be, but became vestigual)
+#define ADD_PHOTOPEAK_CHART 0
 
 class DecayActivityDiv : public Wt::WContainerWidget
 {
@@ -96,14 +97,7 @@ public:
   };//struct Nuclide
 
   std::vector<Nuclide>         m_nuclides;
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-  Wt::WDatePicker             *m_initialTimePicker;
-#endif
-#if( DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
-  Wt::WDoubleSpinBox          *m_fracActivityToEndAtEdit;
-#else
   Wt::WLineEdit               *m_displayTimeLength;
-#endif
   Wt::WComboBox               *m_displayActivityUnitsCombo;
   Wt::WLabel                  *m_displayActivityUnitsLabel;
   Wt::WCheckBox               *m_logYScale;
@@ -128,13 +122,12 @@ public:
 
   //Objects to actually display the chart of activities
   Wt::WTabWidget              *m_chartTabWidget;
-  SrbActivityChart            *m_decayChart;
-  SrbActivityModel            *m_decayModel;
+  DecayActivityChart          *m_decayChart;
+  DecayActivityModel          *m_decayModel;
   
-#if( ADD_DECAY_CHAIN_CHART )
   DecayChainChart             *m_decayChainChart;
-#endif
   
+#if( ADD_PHOTOPEAK_CHART )
   Wt::Chart::WCartesianChart  *m_photoPeakChart;
   Wt::WStandardItemModel      *m_photoPeakModel;
   Wt::WSlider                 *m_photopeakAgeSlider;
@@ -144,7 +137,8 @@ public:
 
   Wt::WDoubleSpinBox          *m_photoPeakShieldingZ;
   Wt::WDoubleSpinBox          *m_photoPeakShieldingAD;
-
+#endif
+  
   AuxWindow                   *m_moreInfoDialog;
 
   Wt::WContainerWidget        *m_decayLegend;
@@ -167,7 +161,6 @@ public:
 
   int m_width, m_height;
   
-  const SandiaDecay::SandiaDecayDataBase *m_nuclideDB;
   SandiaDecay::NuclideMixture            *m_currentMixture;
 
 
@@ -182,7 +175,9 @@ public:
   void checkTimeRangeValid();
   
   void updateYScale();
+#if( ADD_PHOTOPEAK_CHART )
   void setPhotoPeakChartLogY( bool logy );
+#endif 
   void refreshDecayDisplay();
   void addDecaySeries();
   void userSetShowSeries( int series, bool show );
@@ -191,11 +186,13 @@ public:
   void deleteCsvDownloadGui();
   void deleteCsvDownloadGuiTriggerUpdate();
   
+#if( ADD_PHOTOPEAK_CHART )
   //TODO: call refreshPhotopeakDisplay() sepereatel from refreshDecayDisplay()
   void refreshPhotopeakDisplay();
   double photopeakSliderTime();
   void setPhopeakSliderTime( double time );
-
+#endif  //#if( ADD_PHOTOPEAK_CHART )
+  
   void updateMouseOver( const Wt::WMouseEvent &event );
   void removeNuclide( Wt::WContainerWidget *frame );
 
@@ -218,27 +215,30 @@ public:
 
   double timeToDisplayTill();
 
-  double attentuationCoeff( const double energy );
-
   void displayMoreInfoPopup( const double time );
   void decayChartClicked( const Wt::WMouseEvent& event );
+#if( ADD_PHOTOPEAK_CHART )
+  double attentuationCoeff( const double energy );
   void photopeakDisplayMoreInfo();
-
+#endif
+  
   Wt::WContainerWidget *nuclideInformation(
                                     const SandiaDecay::Nuclide *nuclide ) const;
   Wt::WContainerWidget *isotopesSummary( const double time ) const;
 
 
-#if( !DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
   void setTimeLimitToDisplay();
+#if( ADD_PHOTOPEAK_CHART )
   void updatePhotopeakSliderEndDateText();
 #endif
 
   void setDecayChartTimeRange( double dt );
   
+#if( ADD_PHOTOPEAK_CHART )
   void setPhotopeakXScaleRange();
   void setPhotopeakYScaleRange();
-
+#endif
+  
   void updateInitialMixture() const;
   virtual void layoutSizeChanged( int width, int height );
   
@@ -263,8 +263,6 @@ public:
 public:
   DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *parent = NULL );
   virtual ~DecayActivityDiv();
-
-  static bool dirExists( const std::string &dir );
 };//DecayActivityDiv
 
 

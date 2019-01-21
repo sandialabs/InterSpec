@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -41,6 +41,14 @@ namespace MassAttenuation
       cross-sections, or else exception will be thrown.
    */
   void set_data_directory( const std::string &dir );
+  
+  /** Tests if the directory pointed to by 'dir' has a sub-directory
+      'em_xs_data' with valid data files (used for allowing upgrades,
+       see ResourceUpdate.cpp).
+   
+       Throws exception if directory is invalid.
+   */
+  void test_data_directory_validity( const std::string &dir );
   
   static const int sm_min_xs_atomic_number = 1;
   

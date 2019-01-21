@@ -293,8 +293,6 @@
 	  -->
 	<web-sockets>true</web-sockets>
 
-  <webgl-detection>true</webgl-detection>
-
 	<!-- Redirect message shown for browsers without JavaScript support
 
 	   By default, Wt will use an automatic redirect to start the

@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -47,7 +47,7 @@
 #include <Wt/WDoubleValidator>
 
 #include "InterSpec/PhysicalUnits.h"
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -59,11 +59,9 @@ using namespace std;
 // See also: http://www.webtoolkit.eu/wt/blog/2010/03/02/javascript_that_is_c__
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
-DecaySelectNuclide::DecaySelectNuclide(
-              const SandiaDecay::SandiaDecayDataBase *decayDatabase,
-              Wt::WContainerWidget *parent, AuxWindow *auxWindow )
+DecaySelectNuclide::DecaySelectNuclide( const bool phone, Wt::WContainerWidget *parent, AuxWindow *auxWindow )
   : WContainerWidget( parent ),
-    m_nuclideDB( decayDatabase ),
+    m_phone( phone ),
     m_footer(auxWindow->footer()),
     m_auxWindow(auxWindow),
     m_elementSelection( NULL ),
@@ -108,15 +106,13 @@ void DecaySelectNuclide::setNuclideSearchToFocus()
 void DecaySelectNuclide::setAddButtonToAdd()
 {
   m_acceptButton->setText( "Add" );
-  m_acceptButton->removeStyleClass( "AcceptIcon" );
-  m_acceptButton->addStyleClass( "AddIcon" );
+  m_acceptButton->setIcon( "InterSpec_resources/images/plus_min_white.png" );
 }
 
 void DecaySelectNuclide::setAddButtonToAccept()
 {
   m_acceptButton->setText( "Accept" );
-  m_acceptButton->removeStyleClass( "AddIcon" );
-  m_acceptButton->addStyleClass( "AcceptIcon" );
+  m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
 }
 
 
@@ -130,7 +126,9 @@ void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
   using PhysicalUnits::sm_activityUnitNameValues;
   using PhysicalUnits::sm_timeUnitHtmlNameValues;
 
-  const SandiaDecay::Element *el = m_nuclideDB->element( z );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
+  const SandiaDecay::Element *el = db->element( z );
   if( !el )
     return;
 
@@ -168,7 +166,7 @@ void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
   {
     const string masstxt = m_massSelection->itemText(i).toUTF8();
     const string nucsymbol = el->symbol + masstxt;
-    const SandiaDecay::Nuclide *nuc = m_nuclideDB->nuclide( nucsymbol );
+    const SandiaDecay::Nuclide *nuc = db->nuclide( nucsymbol );
     
     if( !nuc ) //shouldnt ever happen
     {
@@ -192,6 +190,8 @@ void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
 
 void DecaySelectNuclide::init()
 {
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
   WContainerWidget::clear();
   
   WLabel *label = 0;
@@ -244,11 +244,20 @@ void DecaySelectNuclide::init()
   m_nuclideAgeEdit
       ->changed().connect( this, &DecaySelectNuclide::enableAcceptButton );
 
-  m_massSelection->setVerticalSize( 20 );
-  m_elementSelection->setVerticalSize( 20 );
+  
+  if( m_phone )
+  {
+    m_massSelection->setVerticalSize( 10 );
+    m_elementSelection->setVerticalSize( 10 );
+  }else
+  {
+    m_massSelection->setVerticalSize( 20 );
+    m_elementSelection->setVerticalSize( 20 );
+  }//if( !m_phone )
+  
   m_massSelection->setSelectionMode( SingleSelection );
   m_elementSelection->setSelectionMode( SingleSelection );
-
+  
   
   
   m_acceptButton = new WPushButton( "Add" ,m_footer);
@@ -269,10 +278,10 @@ void DecaySelectNuclide::init()
 
   for( int z = 1; z < 119; ++z )
   {
-    const SandiaDecay::Element *el = m_nuclideDB->element( z );
+    const SandiaDecay::Element *el = db->element( z );
     if( !el )
       continue;
-    if( m_nuclideDB->nuclides( el ).empty() )
+    if( db->nuclides( el ).empty() )
       continue;
     m_elementSelection->addItem( el->name );
   }//for each( const NameToZMap::value_type &name_z, m_nameToZMap )
@@ -380,6 +389,8 @@ void DecaySelectNuclide::currentlySelectedIsotope( int &a, int &z, int &meta )
 
 void DecaySelectNuclide::emitAccepted()
 {
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
   try
   {
     int a, z, meta;
@@ -400,7 +411,7 @@ void DecaySelectNuclide::emitAccepted()
     try
     {
       double hl = 0.0;
-      const SandiaDecay::Nuclide *nuc = m_nuclideDB->nuclide( z, a, meta );
+      const SandiaDecay::Nuclide *nuc = db->nuclide( z, a, meta );
       if( nuc )
         hl = nuc->halfLife;
       
@@ -470,7 +481,8 @@ void DecaySelectNuclide::enableAcceptButton()
 
 int DecaySelectNuclide::getZ( const std::string &symbol ) const
 {
-  const SandiaDecay::Element *el = m_nuclideDB->element( symbol );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Element *el = db->element( symbol );
   
   if( !el )
   {
@@ -516,6 +528,8 @@ void DecaySelectNuclide::updateNuclideSuggestBox()
 
 void DecaySelectNuclide::updateSelectedHalfLife()
 {
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
   m_selectedIsotopeHalfLife->setText( "&lambda;<sub>&frac12;</sub>=" );
 
   int a, z, meta;
@@ -524,7 +538,7 @@ void DecaySelectNuclide::updateSelectedHalfLife()
   if( (a<=0) || (z<=0) )
     return;
 
-  const SandiaDecay::Nuclide *nuclide = m_nuclideDB->nuclide( z, a, meta );
+  const SandiaDecay::Nuclide *nuclide = db->nuclide( z, a, meta );
 
   if( !nuclide )
   {
@@ -533,22 +547,17 @@ void DecaySelectNuclide::updateSelectedHalfLife()
     return;
   }//if( !nuclide )
 
-
-  using namespace PhysicalUnits;
-
-  const double halfLife = nuclide->halfLife;
-  const UnitNameValuePair units = bestTimeUnit( halfLife );
-
-  stringstream text;
-  text << "&lambda;<sub>&frac12;</sub>=" << fixed << setprecision(3)
-       << halfLife / units.second << " " << units.first;
-  m_selectedIsotopeHalfLife->setText( text.str() );
+  const string text = "&lambda;<sub>&frac12;</sub>="
+                       + PhysicalUnits::printToBestTimeUnits(nuclide->halfLife,2);
+  m_selectedIsotopeHalfLife->setText( text );
 }//void updateSelectedHalfLife()
 
 
 
 void DecaySelectNuclide::makeMassList()
 {
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
   const int index = m_elementSelection->currentIndex();
 
   m_massSelection->clear();
@@ -558,7 +567,7 @@ void DecaySelectNuclide::makeMassList()
 
   const WString selectedWStr = m_elementSelection->itemText( index );
   const string selectedStr = selectedWStr.toUTF8();
-  const SandiaDecay::Element *el = m_nuclideDB->element( selectedStr );
+  const SandiaDecay::Element *el = db->element( selectedStr );
   
   if( !el )
   {
@@ -566,7 +575,7 @@ void DecaySelectNuclide::makeMassList()
     return;
   }
   
-  const vector<const SandiaDecay::Nuclide *> nucs = m_nuclideDB->nuclides( el );  
+  const vector<const SandiaDecay::Nuclide *> nucs = db->nuclides( el );  
   for( const SandiaDecay::Nuclide *nuc : nucs )
   {
     if( (nuc->halfLife<=0.0) || IsInf(nuc->halfLife) )

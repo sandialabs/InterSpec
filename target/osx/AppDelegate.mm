@@ -1,24 +1,36 @@
-//
-//  AppDelegate.m
-//  InterSpec OSX
-//
-//  Created by Johnson, William C on 7/3/13.
-//  Copyright (c) 2013 Johnson, William C. All rights reserved.
-//
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
 
 #import "AppDelegate.h"
-#import <WebKit/WebView.h>
-#import <WebKit/WebFrame.h>
+#import <AppKit/NSView.h>
 #import <AppKit/NSSavePanel.h>
-
-//A hack to speed up canvas rendering for smooth zoom out and pans
-#include "target/osx/WebKit/WebPreferencesPrivate.h"
 
 #include <set>
 #include <string>
+#include <thread>
+#include <chrono>
 #include <stdlib.h>
-#include <boost/thread.hpp>
-#include <boost/filesystem.hpp>
+#include <boost/filesystem.hpp>  //toso: get rid of using boost in this file
 
 //We gotta fix some wierd errors...
 #ifdef check
@@ -31,182 +43,16 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/ResourceUpdate.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
-//#include "target/DesktopWithNativeBrowser/DesktopWithNativeBrowser.h"
 
-#define SHOW_WEBVIEW_INSPECTOR 0
-
-//#if( !BUILD_DESKTOP_STYLE_SERVER )
-//#error You must enable the BUILD_DESKTOP_STYLE_SERVER preproccessor switch to make the OSX InterSpec app
-//#endif
-/*
-//http://stackoverflow.com/questions/3344157/setting-default-application-for-given-file-extension-on-mac-os-x-from-code
- 
-#import <Foundation/Foundation.h>
-
-@interface LaunchServicesWrapper : NSObject
-
-+ (BOOL)setMyselfAsDefaultApplicationForFileExtension:
-(NSString *)fileExtension;
-
-@end
-
-
-#import <ApplicationServices/ApplicationServices.h>
-#import "LaunchServicesWrapper.h"
-
-@implementation LaunchServicesWrapper
-
-+ (NSString *)UTIforFileExtension:(NSString *)extension
-{
-  return (NSString *)CFBridgingRelease(
-              UTTypeCreatePreferredIdentifierForTag( kUTTagClassFilenameExtension, (__bridge CFStringRef)extension, NULL ) );
-}
-
-+ (BOOL)setMyselfAsDefaultApplicationForFileExtension: (NSString *)fileExtension
-{
-  return LSSetDefaultRoleHandlerForContentType(
-                                               (__bridge CFStringRef) [LaunchServicesWrapper
-                                                                       UTIforFileExtension:fileExtension], kLSRolesAll,
-                                               (__bridge CFStringRef) [[NSBundle mainBundle]
-                                                                       bundleIdentifier]
-                                               );
-}
-
-@end
-*/
-
-
-@implementation MyDownloadDelegate
-- (void)download:(NSURLDownload *)download decideDestinationWithSuggestedFilename:(NSString *)filename
-{
-  NSSavePanel *panel = [NSSavePanel savePanel];
-  [panel setNameFieldStringValue:filename];
-  
-  NSInteger result = [panel runModal];
-  if( result == NSFileHandlingPanelOKButton)
-  {
-    NSURL *path = [panel URL];
-    NSLog(@"Saving to %@", [path path]);
-    [download setDestination:[path path] allowOverwrite:NO];
-  }else
-  {
-    [download cancel];
-  }
-}
-
-- (void)download:(NSURLDownload *)download didFailWithError:(NSError *)error
-{
-  NSLog(@"- (void)download:(NSURLDownload *)download didFailWithError:(NSError *)error");
-  NSLog(@"Download failed! Error - %@ %@",
-        [error localizedDescription],
-        [[error userInfo] objectForKey:NSURLErrorFailingURLStringErrorKey]);
-}
-
-- (void)downloadDidFinish:(NSURLDownload *)download
-{
-  NSData *data = [[download request] HTTPBody];
-  NSUInteger length = [data length];
-//  long long expectedLength = [[download request] expectedContentLength];
-  std::cout << "length=" << length << std::endl;
-  NSLog(@"- (void)downloadDidFinish:(NSURLDownload *)download: ");
-}
-
-- (void)startDownloadingURL:sender
-{
-  NSLog(@"- (void)startDownloadingURL:sender");
-}
-
-- (void)downloadDidBegin:(NSURLDownload *)download
-{
-  NSLog(@"downloadDidBegin");
-
-}
-
-
--(void)download:(NSURLDownload *)download didCreateDestination:(NSString *)path
-{
-  // path now contains the destination path
-  // of the download, taking into account any
-  // unique naming caused by -setDestination:allowOverwrite:
-  NSLog(@"Final file destination: %@",path);
-}
-@end
-
-
-@implementation InterSpecWebPolicyDecisionListener
-
-- (NSArray *)webView:(WebView *)sender contextMenuItemsForElement:(NSDictionary *)element defaultMenuItems:(NSArray *)defaultMenuItems
-{
-#if( PERFORM_DEVELOPER_CHECKS )
-  return defaultMenuItems;
-#else
-  //disable the right-click context menu
-  return nil;
+#if( USE_SPECRUM_FILE_QUERY_WIDGET )
+#include "InterSpec/SpecFileQueryWidget.h"
 #endif
-}
 
-//Open dialog
-- (void)webView:(WebView *)sender runOpenPanelForFileButtonWithResultListener:(id < WebOpenPanelResultListener >)resultListener
-{
-    // Create the File Open Dialog class.
-    NSOpenPanel* openDlg = [NSOpenPanel openPanel];
-    
-    // Enable the selection of files in the dialog.
-    [openDlg setCanChooseFiles:YES];
-    
-    // Enable the selection of directories in the dialog.
-    [openDlg setCanChooseDirectories:NO];
-    
-    if ( [openDlg runModal] == NSOKButton )
-    {
-        NSArray* files = [[openDlg URLs]valueForKey:@"relativePath"];
-        [resultListener chooseFilenames:files];
-    }
-    
-}
 
-// Probably won't call this function because everything should load in new window, so go to decidePolicyForNewWindowAction
--  (void)webView:(WebView *)webView decidePolicyForNavigationAction:(NSDictionary *)actionInformation
-         request:(NSURLRequest *)request
-           frame:(WebFrame *)frame
-decisionListener:(id<WebPolicyDecisionListener>)listener
-{
-  [listener use];
-}
-
-//If link was clicked and opening in new window (URL/mailto links)
--  (void)webView:(WebView *)webView decidePolicyForNewWindowAction:(NSDictionary *)actionInformation
-         request:(NSURLRequest *)request
-    newFrameName:(NSString *)frameName
-decisionListener:(id <WebPolicyDecisionListener>)listener
-{
-    if (WebNavigationTypeLinkClicked == [[actionInformation objectForKey:WebActionNavigationTypeKey] intValue])
-    {
-        // link was clicked and webview want to open it in new window do something with it...
-        NSString *host = [[request URL] host];
-        NSString *absurl = [[request URL] absoluteString];
-        if ([absurl rangeOfString:@"request=redirect&url=http"].location != NSNotFound || [[[request URL] scheme] isEqual:@"mailto"]) {
-            //external url or email
-            [[NSWorkspace sharedWorkspace] openURL:[request URL]];
-        } else if ([host isEqualToString:@"127.0.0.1"]) {
-            //Email or URL open in native OSX client
-            [listener download];
-        }
-        else {
-            //Should not get here...
-            [listener use];
-        }
-    }
-    else
-    {
-        //Should not get here
-        [listener ignore];
-    }
-}
-@end
 
 @implementation AppDelegate
 
@@ -217,11 +63,7 @@ decisionListener:(id <WebPolicyDecisionListener>)listener
 
 + (void)initialize
 {
-#if( SHOW_WEBVIEW_INSPECTOR )
-  [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"WebKitDeveloperExtras": @YES,
-                                                            @"WebKitScriptDebuggerEnabled": @YES,
-                                                            @"WebKitScriptProfilerEnabled": @YES}];
-#endif
+  
 }
 
 
@@ -368,18 +210,12 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     NSLog( @"Datadir=%s", datadir.c_str() );
   }else
     NSLog( @"Failed to creade directory %s", datadir.c_str() );
-  
 }//- (void)setDbDirectory:(void);
 
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
 {
   NSLog(@"Finished Launching");
-
-#if( PERFORM_DEVELOPER_CHECKS )
-  [[NSUserDefaults standardUserDefaults] setBool:TRUE forKey:@"WebKitDeveloperExtras"];
-  [[NSUserDefaults standardUserDefaults] synchronize];
-#endif
   
   //Lets adjust the size and position of the main window to be reasonable
   const int width = [[NSScreen mainScreen] frame].size.width;
@@ -390,25 +226,88 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   [_window setContentSize: mySize];
   [[self window] setFrameTopLeftPoint:NSMakePoint(0.025*width, 0.95*height)];
   
+  
+  WKWebViewConfiguration *webConfig = [[WKWebViewConfiguration alloc] init];
+  //Setting the config like bellow seems to slow down the rendering.
+  webConfig.applicationNameForUserAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
+  //webConfig.ignoresViewportScaleLimits = ;  //Not sure what this is for.
+  webConfig.suppressesIncrementalRendering = YES;
+  
+  WKPreferences *prefs = [webConfig preferences];
+  prefs.javaEnabled = NO;
+  prefs.plugInsEnabled = NO;
+  prefs.javaScriptCanOpenWindowsAutomatically = YES;
+  prefs.javaScriptEnabled = YES;
+  //prefs.minimumFontSize = 6.0;
+  prefs.tabFocusesLinks = NO;
+  
+  //Some additional settings we may want to set:
+  //  see more at http://jonathanblog2000.blogspot.com/2016/11/understanding-ios-wkwebview.html
+  //[prefs setValue:@YES forKey:@"allowFileAccessFromFileURLs"];
+  //[prefs setValue:@YES forKey:@"acceleratedDrawingEnabled"];
+  //[prefs setValue:@YES forKey:@"displayListDrawingEnabled"];
+  //[prefs setValue:@YES forKey:@"visualViewportEnabled"];
+  //[prefs setValue:@NO forKey:@"standalone"];
+  //[prefs setValue:@YES forKey:@"fullScreenEnabled"];
+  //[prefs setValue:@YES forKey:@"developerExtrasEnabled"];
+  //[prefs setValue:@YES forKey:@"resourceUsageOverlayVisible"];
+  //[prefs setValue:@NO forKey:@"peerConnectionEnabled"]; //WebRTC
+  //[prefs setValue:@NO forKey:@"mediaDevicesEnabled"]; //cameras, microphones, etc
+  //[prefs setValue:@NO forKey:@"screenCaptureEnabled"];
+  //[prefs setValue:@NO forKey:@"javaScriptCanAccessClipboard"];
+  //hiddenPageDOMTimerThrottlingEnabled
+  //hiddenPageDOMTimerThrottlingAutoIncreases
+  //pageVisibilityBasedProcessSuppressionEnabled
+  
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  [prefs setValue:@YES forKey:@"developerExtrasEnabled"];
+  
+  //Note: currently I disable right click in InterSpecApp using javascript if
+  //      no PERFORM_DEVELOPER_CHECKS.  However, could also do:
+  //https://stackoverflow.com/questions/28801032/how-can-the-context-menu-in-wkwebview-on-the-mac-be-modified-or-overridden#28981319
+  //[_InterSpecWebView willOpenMenu:<#(nonnull NSMenu *)#> withEvent:<#(nonnull NSEvent *)#>];
+#endif
+
+  //To allow deep integration, could
+  //[_webConfig setURLSchemeHandler:<#(nullable id<WKURLSchemeHandler>)#> forURLScheme: @"helloworld://"];
+  
+  //Create WKWebView manually, rather than in XIB to support macOS 10.10 and 10.11...
+  self.InterSpecWebView = [[WKWebView alloc] initWithFrame: _window.contentView.frame configuration: webConfig];
+  [_window.contentView addSubview:self.InterSpecWebView];
+  
+  //Make sure the WKWebView resizes.
+  self.InterSpecWebView.autoresizingMask = (NSViewWidthSizable | NSViewHeightSizable);
+  [_window.contentView setAutoresizesSubviews: YES];
+  
+  //Set the user agent string so
+  NSString *userAgentStr = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
+  [_InterSpecWebView setCustomUserAgent: userAgentStr];
+  _InterSpecWebView.allowsLinkPreview = NO;
+  _InterSpecWebView.allowsBackForwardNavigationGestures = NO;
+  
+  
   [self setDbDirectory];
   DataBaseVersionUpgrade::checkAndUpgradeVersion();
   
+#if( ENABLE_RESOURCE_UPDATES )
+  ResourceUpdate::setupGlobalPrefsFromDb();
+#endif
   
   static const std::string basedir = std::string("--basedir=")
                             + [[[NSBundle mainBundle] resourcePath] UTF8String];
   static const std::string argv0 = [[[NSBundle mainBundle] executablePath] UTF8String];
   
+  NSString *tempDir = NSTemporaryDirectory();
+  if( tempDir == nil ) //shouldnt ever fail, right
+    tempDir = @"/tmp";
+  static const std::string tmpdr = [tempDir UTF8String];  //static since I'm not sure how long the location pointed to by setenv has to last
   
-  const char *argv[] = { argv0.c_str(), "--forceserve", "--nobrowsertab", basedir.c_str(), "-c", "data/config/wt_config_osx.xml" };
+  const char *argv[] = { argv0.c_str(), "--forceserve", "--nobrowsertab", basedir.c_str(), "-c", "data/config/wt_config_osx.xml", "--tempdir", tmpdr.c_str() };
   int argc = sizeof(argv) / sizeof(argv[0]);
   
   InterSpecServer::startServer( argc, (char **)argv, &createApplication );
-  
-//  boost::function<void(void)> worker =
-//          boost::bind( DesktopWithNativeBrowser::DesktopRunInDefaultBrowser,
-//                      argc, (char **)argv, &createApplication );
-//  boost::thread slave( worker );
-//  slave.detach();
   
   //now well wait for the server to start
   std::string url;
@@ -418,7 +317,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   {
     url = InterSpecServer::urlBeingServedOn(); //will be empty if not serving
     if( url.empty() )
-      boost::this_thread::sleep( boost::posix_time::milliseconds(10) );
+      std::this_thread::sleep_for( std::chrono::milliseconds(10) );
   }//while( numtries < 11 )
   
   if( url.empty() )
@@ -429,7 +328,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   {
     _isServing = YES;
     _UrlServingOn = [NSString stringWithUTF8String:url.c_str()];
-    [_window setTitle: [NSString stringWithFormat:@"TRB InterSpec - %@", _UrlServingOn]];
+    //[_window setTitle: [NSString stringWithFormat:@"TRB InterSpec - %@", _UrlServingOn]];
+    [_window setTitle: @"InterSpec"];
     
     const int randint = arc4random();
     _UrlUniqueId = [NSString stringWithFormat:@"%i", randint]; //@"123456789";
@@ -441,69 +341,304 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       _fileNeedsOpening = -1;
     }//if( fileNeedsOpening.size() )
     
-    //A hack to speed up canvas rendering for smooth zoom out and pans
-    //  (Note, this is playing with private prefernces Apple doesnt want us to,
-    //   so there is a user option way to do the bellow that should be good,
-    //   but is untested)
-    WebPreferences * prefs = [_InterSpecWebView preferences];
+    //Note: this bit of code does not seem to work from the themeChanged notification.
+    if( @available(macOS 10.14, *) )
+    {
+      NSAppearanceName basicAppearance
+        = [NSApp.mainWindow.effectiveAppearance
+           bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua,
+                                               NSAppearanceNameDarkAqua ]];
+      if( [basicAppearance isEqualToString:NSAppearanceNameDarkAqua] )
+      {
+        NSLog( @"requesting initial theme to dark" );
+        actualURL = [NSString stringWithFormat:@"%@&colortheme=dark", actualURL];
+        //The initial window is still white-ish untill the page loads - below
+        // causes an even worse flash of white->black->white->theme color
+        //NSString *js = @"document.body.style.background = \"black\"";
+        //[_InterSpecWebView evaluateJavaScript:js completionHandler:nil];
+      }
+    }//if( >= macOS 10.14 )
     
-    //this is the only setting actually needed to speed things up
-    if ([prefs respondsToSelector:@selector(setCanvasUsesAcceleratedDrawing:)]) {
-      [prefs setCanvasUsesAcceleratedDrawing:YES];
-    }
+    //if( [_InterSpecWebView respondsToSelector:@selector(mainFrame)])
+    //[[_InterSpecWebView mainFrame] loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];
+    [_InterSpecWebView loadRequest: [NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]] ];
     
-    if ([prefs respondsToSelector:@selector(setAcceleratedDrawingEnabled:)]) {
-      [prefs setAcceleratedDrawingEnabled:YES];
-    }
-    
-    if ([prefs respondsToSelector:@selector(setAcceleratedCompositingEnabled:)]) {
-      [prefs setAcceleratedCompositingEnabled:YES];
-    }
-    
-    if ([prefs respondsToSelector:@selector(setAccelerated2dCanvasEnabled:)]) {
-      [prefs setAccelerated2dCanvasEnabled:YES];
-    }
-    
-    if ([prefs respondsToSelector:@selector(setWebGLEnabled:)]) {
-      [prefs setWebGLEnabled:YES];
-    }
-     
     
     /*
-    //The bellow should work instead of the above
-    [[NSUserDefaults standardUserDefaults] setObject:@YES
-                                              forKey:@"WebKitWebGLEnabled"];
-    [[NSUserDefaults standardUserDefaults] setObject:@YES
-                                              forKey:@"WebKitAccelerated2dCanvasEnabled"];
-    [[NSUserDefaults standardUserDefaults] setObject:@YES
-                                              forKey:@"WebKitAcceleratedCompositingEnabled"];
-    [[NSUserDefaults standardUserDefaults] setObject:@YES
-                                              forKey:@"WebKitAcceleratedDrawingEnabled"];
-    [[NSUserDefaults standardUserDefaults] setObject:@YES
-                                              forKey:@"WebKitCanvasUsesAcceleratedDrawing"];
+     //Right now drag-n-drop from Outlook does not work - should investigate this:
+     //https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/DragandDrop/Tasks/acceptingdrags.html#//apple_ref/doc/uid/20000993-BABHHIHC
+    [_InterSpecWebView registerForDraggedTypes:[NSArray arrayWithObjects:
+                      NSStringPboardType, NSFilenamesPboardType, NSTIFFPboardType,
+                      NSRTFPboardType, NSTabularTextPboardType, NSFontPboardType,
+                      NSRulerPboardType, NSColorPboardType, NSRTFDPboardType,
+                      NSHTMLPboardType, NSURLPboardType, NSPDFPboardType,
+                      NSMultipleTextSelectionPboardType, NSPostScriptPboardType,
+                      NSVCardPboardType, NSInkTextPboardType, NSFilesPromisePboardType,
+                      NSPasteboardTypeFindPanelSearchOptions, nil]];
+
+    - (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender {
+      NSPasteboard *pboard;
+      NSDragOperation sourceDragMask;
+      NSLog( @"In draggingEntered!" );
+      sourceDragMask = [sender draggingSourceOperationMask];
+      pboard = [sender draggingPasteboard];
+      
+      if ( [[pboard types] containsObject:NSColorPboardType] ) {
+        if (sourceDragMask & NSDragOperationGeneric) {
+          return NSDragOperationGeneric;
+        }
+      }
+      if ( [[pboard types] containsObject:NSFilenamesPboardType] ) {
+        if (sourceDragMask & NSDragOperationLink) {
+          return NSDragOperationLink;
+        } else if (sourceDragMask & NSDragOperationCopy) {
+          return NSDragOperationCopy;
+        }
+      }
+      return NSDragOperationNone;
+    }
     */
     
-    //Set the user agent string so
-    NSString *userAgentStr = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
-    [_InterSpecWebView setCustomUserAgent: userAgentStr];
     
+    [_InterSpecWebView setNavigationDelegate: self];
+    [_InterSpecWebView setUIDelegate: self];
     
-    [[_InterSpecWebView mainFrame] loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];
-    
-    _UrlDownload = [[MyDownloadDelegate alloc] init];
-    InterSpecWebPolicyDecisionListener* listener = [[InterSpecWebPolicyDecisionListener alloc] init];
+    if (@available(macOS 10.14, *)) {
+      [NSDistributedNotificationCenter.defaultCenter addObserver:self selector:@selector(themeChanged:) name:@"AppleInterfaceThemeChangedNotification" object: nil];
+    }
+  }
+}//applicationDidFinishLaunching:(NSNotification *)aNotification
 
-#if( SHOW_WEBVIEW_INSPECTOR )
-    [[_InterSpecWebView inspector] show:nil];
+
+-(void)themeChanged:(NSNotification *) notification
+{
+  NSString *appearance = [[NSUserDefaults standardUserDefaults] stringForKey:@"AppleInterfaceStyle"];
+  
+  if( !appearance )
+  {
+    InterSpecApp::osThemeChange( "default" );
+  }else if( [appearance rangeOfString:@"Dark" options:NSCaseInsensitiveSearch].location != NSNotFound )
+  {
+    InterSpecApp::osThemeChange( "dark" );
+  }
+}//themeChanged
+
+//WKUIDelegate
+//webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:
+//webViewDidClose:
+- (void)webView:(WKWebView *)webView
+        runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
+        initiatedByFrame:(WKFrameInfo *)frame
+        completionHandler:(void (^)(NSArray<NSURL *> *URLs))completionHandler
+{
+  // Create the File Open Dialog class.
+  NSOpenPanel *openDlg = [NSOpenPanel openPanel];
+  
+  bool chooseDirectory = false;
+  
+#if( USE_SPECRUM_FILE_QUERY_WIDGET )
+  chooseDirectory = SpecFileQuery::isSelectingDirectory();
+#endif
+  
+  if( chooseDirectory )
+  {
+    [openDlg setCanChooseFiles:NO];
+    [openDlg setCanChooseDirectories:YES];
+  }else
+  {
+    [openDlg setCanChooseFiles:YES];
+    [openDlg setCanChooseDirectories:NO];
+  }
+  
+  if( [openDlg runModal] == NSModalResponseOK )
+  {
+    NSArray* files = [[openDlg URLs]valueForKey:@"relativePath"];
+    
+#if( USE_SPECRUM_FILE_QUERY_WIDGET )
+    if( chooseDirectory && [files count] )
+    {
+      NSURL *u = [files objectAtIndex:0];
+      if( u && [u respondsToSelector:@selector(UTF8String)]) {
+        SpecFileQuery::setSearchDirectory( [u UTF8String] );
+      }
+    }
 #endif
     
-    //Download delegate
-    [_InterSpecWebView setDownloadDelegate:_UrlDownload];
-    //Link delegate
-    [_InterSpecWebView setPolicyDelegate:listener];
-    //Open dialog delegate
-    [_InterSpecWebView setUIDelegate:listener];
+    completionHandler( files );
+  }else
+  {
+    completionHandler( nil );
   }
+}
+
+
+//Implement WKNavigationDelegate
+- (void)webView:(WKWebView *)webView
+                decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
+                decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler
+{
+  switch( [navigationAction navigationType] )
+  {
+    case WKNavigationTypeLinkActivated:  //external URL, or CSV, or spectrum file download.
+    {
+      NSLog(@"WKNavigationTypeLinkActivated" );
+      NSURLRequest *request = [navigationAction request];
+      //NSEventModifierFlags modifierFlags = [navigationAction modifierFlags];
+      //NSInteger buttonNumber = [navigationAction buttonNumber];
+      
+      if( request )
+      {
+        NSString *host = [[request URL] host];
+        NSString *absurl = [[request URL] absoluteString];
+        
+        //NSLog(@"host=%@, absurl=%@", host, absurl );
+        
+        if ([absurl rangeOfString:@"request=redirect&url=http"].location != NSNotFound || [[[request URL] scheme] isEqual:@"mailto"])
+        {
+          //external url or email
+          [[NSWorkspace sharedWorkspace] openURL:[request URL]];
+        }else if( (host && [host isEqualToString:@"127.0.0.1"])
+                 || (!host && absurl && [absurl hasPrefix: @"data:application/octet-stream"]) )
+        {
+          //CSV, spectrum file, JSON file, etc
+          NSLog(@"Will attempt to download spectrum, CSV, JSON, PNG, etc. file");
+         
+          NSURLRequest *theRequest = [NSURLRequest requestWithURL:[[request URL] absoluteURL]];
+          NSURLDownload  *theDownload = [[NSURLDownload alloc] initWithRequest:theRequest delegate:self];
+          
+          if( !theDownload )
+            NSLog(@"The download failed");  // Inform the user that the download failed.
+        }
+      }//if( request )
+      
+      decisionHandler(WKNavigationActionPolicyCancel);
+      break;
+    }//case WKNavigationTypeLinkActivated:
+      
+    case WKNavigationTypeBackForward:
+      NSLog(@"WKNavigationTypeBackForward" );
+      decisionHandler(WKNavigationActionPolicyCancel);
+      break;
+    
+    case WKNavigationTypeFormSubmitted:
+      NSLog(@"WKNavigationTypeFormSubmitted" );
+      decisionHandler(WKNavigationActionPolicyAllow);  //file uploads
+      break;
+      
+    case WKNavigationTypeReload:
+    case WKNavigationTypeFormResubmitted:
+      NSLog(@"WKNavigationTypeFormSubmitted, WKNavigationTypeReload, or WKNavigationTypeFormResubmitted recieved - canceling navigation" );
+      decisionHandler(WKNavigationActionPolicyCancel);
+      break;
+      
+    case WKNavigationTypeOther:
+      //Initial page load comes to here
+      decisionHandler(WKNavigationActionPolicyAllow);
+      break;
+      
+    default:
+      NSLog(@"Unknown WKNavigationType" );
+      decisionHandler(WKNavigationActionPolicyAllow);
+      break;
+  }
+}
+
+
+/*
+//For WKUIDelegate, if we want to open a new window...
+- (WKWebView *)webView:(WKWebView *)webView
+createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
+   forNavigationAction:(WKNavigationAction *)navigationAction
+        windowFeatures:(WKWindowFeatures *)windowFeatures
+{
+  
+}
+*/
+
+
+//Implement NSURLDownloadDelegate
+- (void)download:(NSURLDownload *)download decideDestinationWithSuggestedFilename:(NSString *)filename
+{
+  //NSLog(@"decideDestinationWithSuggestedFilename: %@", filename );
+  
+  //The PNG screenshot has a data encoded URI that the obj-c doesnt seem to grab
+  //  the filename from, so lets do that manually.  I'm sure there is a much
+  //  more elegant way to do this... but it seems to work.
+  if( !filename || [filename isEqualToString: @"Unknown"] )
+  {
+    NSURLRequest *request = [download request];
+    NSURL *url = request ? [request URL] : (NSURL *)nil;
+    NSString *absurl = url ? [url absoluteString] : @"";
+    NSRange pos = [absurl rangeOfString:@"filename="];
+    if( pos.location != NSNotFound )
+    {
+      NSRange fnamerange;
+      fnamerange.location = pos.location + pos.length;
+      fnamerange.length = [absurl length] - fnamerange.location;
+      
+      NSRange semipos = [absurl rangeOfString: @";" options: 0 range: fnamerange locale: nil];
+      
+      if( semipos.location != NSNotFound )
+      {
+        fnamerange.length = semipos.location - fnamerange.location;
+        filename = [absurl substringWithRange: fnamerange];
+      }
+    }
+  }//if( filename is unknown )
+  
+  NSSavePanel *panel = [NSSavePanel savePanel];
+  [panel setNameFieldStringValue:filename];
+  
+  NSInteger result = [panel runModal];
+  if( result == NSFileHandlingPanelOKButton)
+  {
+    NSURL *path = [panel URL];
+    NSLog(@"Saving to %@", [path path]);
+    [download setDestination:[path path] allowOverwrite:NO];
+  }else
+  {
+    [download cancel];
+  }
+}
+
+//Implement NSURLDownloadDelegate
+- (void)download:(NSURLDownload *)download didFailWithError:(NSError *)error
+{
+  NSLog(@"- (void)download:(NSURLDownload *)download didFailWithError:(NSError *)error");
+  NSLog(@"Download failed! Error - %@ %@",
+        [error localizedDescription],
+        [[error userInfo] objectForKey:NSURLErrorFailingURLStringErrorKey]);
+}
+
+//Implement NSURLDownloadDelegate
+- (void)downloadDidFinish:(NSURLDownload *)download
+{
+  //NSData *data = [[download request] HTTPBody];
+  //NSUInteger length = [data length];
+  //  long long expectedLength = [[download request] expectedContentLength];
+  //std::cout << "length=" << length << std::endl;
+  NSLog(@"- (void)downloadDidFinish:(NSURLDownload *)download: ");
+}
+
+//Implement NSURLDownloadDelegate
+- (void)startDownloadingURL:sender
+{
+  NSLog(@"- (void)startDownloadingURL:sender");
+}
+
+//Implement NSURLDownloadDelegate
+- (void)downloadDidBegin:(NSURLDownload *)download
+{
+  NSLog(@"downloadDidBegin");
+}
+
+//Implement NSURLDownloadDelegate
+-(void)download:(NSURLDownload *)download didCreateDestination:(NSString *)path
+{
+  // path now contains the destination path
+  // of the download, taking into account any
+  // unique naming caused by -setDestination:allowOverwrite:
+  NSLog(@"Final file destination: %@",path);
 }
 
 
@@ -608,17 +743,6 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   return [[self managedObjectContext] undoManager];
 }
 
-// Performs the save action for the application, which is to send the save: message to the application's managed object context. Any encountered errors are presented to the user.
-- (IBAction)saveAction:(id)sender
-{
-  NSError *error = nil;
-    
-  if (![[self managedObjectContext] commitEditing])
-    NSLog(@"%@:%@ unable to commit editing before saving", [self class], NSStringFromSelector(_cmd));
-    
-  if( ![[self managedObjectContext] save:&error] )
-    [[NSApplication sharedApplication] presentError:error];
-}
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
 {
@@ -663,36 +787,13 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
     NSInteger answer = [alert runModal];
         
-    if( answer == NSAlertAlternateReturn )
+    if( answer == NSAlertFirstButtonReturn )
       return NSTerminateCancel;
   }
 
   InterSpecServer::killServer();
   return NSTerminateNow;
 }
-
-- (IBAction)ShowInBrowserClicked:(id)sender
-{
-  std::string url = ([_UrlServingOn UTF8String]);
-  system( ("open "+ url).c_str() );
-  //DesktopWithNativeBrowser::openUrl( [_UrlServingOn UTF8String] );
-}
-
-
-
-- (void)webView:(WebView *)webView
-  decidePolicyForNewWindowAction:(NSDictionary *)actionInformation
-                         request:(NSURLRequest *)request
-                    newFrameName:(NSString *)frameName
-                decisionListener:(id < WebPolicyDecisionListener >)listener
-{
-  //This function gets called when the user "Downloads" a spectrum, or a CSV
-  //  file (e.g. when a new window is tried to be openend).
-  
-  //The next line causes MyDownloadDelegate decideDestinationWithSuggestedFilename
-  //  to be called
-  [listener download];
-}//decidePolicyForNewWindowAction
 
 
 @end

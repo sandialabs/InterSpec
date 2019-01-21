@@ -1,0 +1,24 @@
+.SpecFileQueryConditions {
+  border: 1px solid black;
+  border-radius: 2px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+  
+.SpecFileQueryResults {
+  border: 1px solid black;
+  border-radius: 2px;
+}
+  
+
+.SpecFileQueryErrorTxt {
+    font-weight: bold;
+    color: red;
+}
+
+.SpecFileQueryOptionsBtn, .SpecFileQueryOptionsBtn:hover{
+    background-image: url('../InterSpec_resources/images/bullet_arrow_down.png');
+    background-position: right center;
+    background-repeat: no-repeat, no-repeat;
+    padding-right: 21px;  /* width of the image plus a little extra padding */
+}

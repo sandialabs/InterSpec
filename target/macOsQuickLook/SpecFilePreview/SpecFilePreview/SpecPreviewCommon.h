@@ -31,13 +31,13 @@
 #include <stdint.h>
 /*
  Instructions for compiling:
-   git clone https://github.com/sandialabs/interspec ./InterSpec
-   cd InterSpec/external_libs/SpecUtils/
+   cd InterSpec
    mkdir build_quick_look
    cd build_quick_look
-   cmake -DCMAKE_BUILD_TYPE="Release" ..
-   make -j4
-   open ../../../target/macOsQuickLook/SpecFilePreview/SpecFilePreview.xcodeproj
+   cmake -DBUILD_AS_QUICK_LOOK_LIBRARY=ON ..
+   make -j8
+   cd ../target/macOsQuickLook/SpecFilePreview
+   open SpecFilePreview.xcodeproj
    and then build
  
  TODO:

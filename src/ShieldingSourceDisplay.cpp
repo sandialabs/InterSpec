@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -81,6 +81,7 @@
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpecApp.h"
@@ -89,7 +90,7 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -282,8 +283,11 @@ void ShieldingSelect::setClosableAndAddable( bool closeable , WGridLayout* layou
     
     m_closeIcon = new WPushButton(); //WText();
     m_addIcon = new WPushButton();
-    m_closeIcon->setStyleClass( "ShieldingDelete" );
-    m_addIcon->setStyleClass( "ShieldingAdd" );
+    m_closeIcon->setStyleClass( "ShieldingDelete Wt-icon" );
+    m_closeIcon->setIcon("InterSpec_resources/images/minus_min.png");
+    m_addIcon->setStyleClass( "ShieldingAdd Wt-icon" );
+    m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.png");
+    
 
 //    m_closeIcon->setToolTip( "Remove this shielding" );
 //    m_addIcon->setToolTip( "Add a shielding" );
@@ -418,6 +422,7 @@ Wt::WLineEdit *ShieldingSelect::atomicNumberEdit()
 
 void ShieldingSelect::init()
 {
+  wApp->useStyleSheet( "InterSpec_resources/ShieldingSourceDisplay.css" );
   
   //TODO/NOTE: had to hard code this as false because there is no way
   //to easily get the preference via InterSpec because
@@ -425,11 +430,7 @@ void ShieldingSelect::init()
   const bool showToolTipInstantly = false;
   
   addStyleClass( "ShieldingSelect" );
-
-  const WColor black(255,255,255,255);
-  const WBorder border( WBorder::Inset, WBorder::Medium, black );
-  this->decorationStyle().setBorder( border, Wt::All );
-
+  
   if( m_materialSuggest )
   {
     if( m_materialSuggest->objectName().empty() )
@@ -448,6 +449,7 @@ void ShieldingSelect::init()
   m_toggleImage = new Wt::WImage(Wt::WLink("InterSpec_resources/images/shield.png"));
   m_toggleImage->clicked().connect( this,&ShieldingSelect::handleToggleGeneric );
   m_toggleImage->decorationStyle().setCursor(PointingHandCursor);
+  m_toggleImage->addStyleClass( "Wt-icon" );
  
   HelpSystem::attachToolTipOn( m_toggleImage,
     "Toggle between material and generic shielding",
@@ -809,6 +811,9 @@ double ShieldingSelect::atomicNumber() const
   double answer = 0;
   const string text = m_atomicNumberEdit->text().toUTF8();
   
+  if( text.empty() )
+    return 26.0;
+  
   if( !(stringstream(text) >> answer) )
     throw std::runtime_error( "Error converting '" + text + "' to a atomic number");
   return answer;
@@ -820,6 +825,9 @@ double ShieldingSelect::arealDensity() const
   const WString &text = m_arealDensityEdit->text();
   string txtstr = text.toUTF8();
   UtilityFunctions::trim( txtstr );
+  
+  if( txtstr.empty() )
+    return 0.0;
 
   double answer = 0;
   if( !(stringstream(txtstr) >> answer) )
@@ -1742,10 +1750,14 @@ void ShieldingSelect::handleToggleGeneric()
     m_materialSummarry->setText( "" );
     m_materialEdit->setText( "Generic" );
     m_materialEdit->disable();
-    m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/shape_square.png") );
+    m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
     
-    const Material *mat = 0;
-    try{ mat = m_materialDB->material( oldmaterial ); }catch(std::exception &){}
+    const Material *mat = nullptr;
+    try
+    {
+      mat = m_materialDB->material( oldmaterial );
+    }catch(std::exception &)
+    {}
     
     double ad = -1.0;
     if( mat )
@@ -1754,7 +1766,7 @@ void ShieldingSelect::handleToggleGeneric()
       try{ ad = mat->density * PhysicalUnits::stringToDistance(thick); }catch( std::exception & ){}
     }//if( mat )
     
-    if( ad >= 0.0 )
+    if( ad >= 0.0 && mat )
     {
       char an_buffer[32], ad_buffer[32];
       snprintf( an_buffer, sizeof(an_buffer), "%.2f", mat->massWeightedAtomicNumber() );
@@ -1764,8 +1776,8 @@ void ShieldingSelect::handleToggleGeneric()
       m_arealDensityEdit->setText( ad_buffer );
     }else
     {
-      m_atomicNumberEdit->setText( "" );
-      m_arealDensityEdit->setText( "" );
+      m_atomicNumberEdit->setText( "26" );
+      m_arealDensityEdit->setText( "0.0" );
     }
   }else
   {
@@ -1820,7 +1832,7 @@ void ShieldingSelect::handleToggleGeneric()
       }
     }else
     {
-      m_materialEdit->setText( "" );
+      m_materialEdit->setText( "Fe (iron)" );
       m_thicknessEdit->setText( "0 cm" );
     }
   }//if( m_isGenericMaterial ) / else
@@ -1847,7 +1859,7 @@ void ShieldingSelect::handleMaterialChange()
     m_materialSummarry->setText( "" );
     m_materialEdit->setText( "Generic" );
     m_materialEdit->disable();
-    m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/shape_square.png") );
+    m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
   }else
   {
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/shield.png") );
@@ -3284,7 +3296,8 @@ void SourceFitModel::sort( int column, Wt::SortOrder order )
 ShieldingSourceDisplay::Chi2Graphic::Chi2Graphic( Wt::WContainerWidget *parent )
   : Wt::Chart::WCartesianChart( parent ),
     m_nFitForPar( 0 ),
-    m_showChi( true )
+    m_showChi( true ),
+    m_textPenColor( Wt::black )
 {
   setPreferredMethod( WPaintedWidget::HtmlCanvas );
   LOAD_JAVASCRIPT( wApp, "shieldingSourceDisplay.cpp", "Chi2Graphic", wtjsShowChi2Info);
@@ -3299,6 +3312,10 @@ void ShieldingSourceDisplay::Chi2Graphic::setNumFitForParams( unsigned int npar 
   m_nFitForPar = static_cast<int>( npar );
 }
 
+void ShieldingSourceDisplay::Chi2Graphic::setTextPenColor( const Wt::WColor &color )
+{
+  m_textPenColor = color;
+}
 
 void ShieldingSourceDisplay::Chi2Graphic::setShowChiOnChart( const bool show_chi )
 {
@@ -3453,7 +3470,7 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
       
       const double yval = m_showChi ? thischi : thisscale;
       const WPointF pos = mapToDevice( energy, yval );
-
+      
       index = chi2Model->index(row,3);
       const string nucname = Wt::asString( chi2Model->data(index) ).toUTF8();
       energy = ((100.0*energy+0.5)/100.0);
@@ -3527,8 +3544,11 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
     const double y = plotAreaPadding(Top) + 5;
     const double twidth = charwidth*msglen;
     const double theight = charheight + 2;
-
+    
+    WPen oldPen = painter.pen();
+    painter.setPen( WPen(m_textPenColor) );
     painter.drawText( x, y, twidth, theight, AlignRight, TextSingleLine, text );
+    painter.setPen( oldPen );
   }//if( nrow > 0 && !IsNan(sqrt(chi2)) )
   
   if( !m_showChi && axis(Chart::YAxis).minimum() < 1.0 && axis(Chart::YAxis).maximum() > 1.0 )
@@ -3562,8 +3582,12 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
   
   const char * const yaxistooltip = m_showChi ? chi2tooltip : scaletooltip;
   
+  WPen oldPen = painter.pen();
+  painter.setPen( WPen(m_textPenColor) );
   painter.drawText( -0.45*painter.viewPort().height(), 0.0, 0.2, 0.1,
                      AlignCenter, yaxistitle );
+  painter.setPen( oldPen );
+  
   const double yAxisWiddth = plotAreaPadding(Wt::Left);
   const double chartHeight = painter.viewPort().height();
   
@@ -3616,6 +3640,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_fitProgressTxt( nullptr ),
     m_cancelfitModelButton( nullptr )
 {
+  wApp->useStyleSheet( "InterSpec_resources/ShieldingSourceDisplay.css" );
+  
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   setLayoutSizeAware( true );
@@ -3778,7 +3804,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   HelpSystem::attachToolTipOn( m_addMaterialShielding,
               "Choose from a library of predefined common shielding materials.",
               showToolTipInstantly, HelpSystem::Top  );
-  m_addMaterialShielding->setStyleClass("ShieldAddIcon");
+  //m_addMaterialShielding->setStyleClass("ShieldAddIcon");
+  m_addMaterialShielding->setIcon( "InterSpec_resources/images/shield_white.png" );
   m_addMaterialShielding->clicked().connect( this,
                                       &ShieldingSourceDisplay::doAddShielding );
   
@@ -3786,14 +3813,14 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   HelpSystem::attachToolTipOn( m_addGenericShielding,
               "Allows you to define and fit for atomic number and areal density.",
              showToolTipInstantly , HelpSystem::Top );
-  m_addGenericShielding->setStyleClass("ShapeSquareAddIcon");
+  //m_addGenericShielding->setStyleClass("ShapeSquareAddIcon");
+  m_addGenericShielding->setIcon( "InterSpec_resources/images/atom_white.png" );
   m_addGenericShielding->clicked().connect( this,
                                      &ShieldingSourceDisplay::addGenericShielding );
 #endif
   
   
   m_fitModelButton = new WPushButton( "Perform Model Fit" );
-  m_fitModelButton->setStyleClass("BulletGoIcon");
   m_fitModelButton->clicked().connect( this, &ShieldingSourceDisplay::startModelFit );
 
   m_fitProgressTxt = new WText();
@@ -3875,6 +3902,45 @@ if (m_specViewer->isSupportFile())
 
   m_chi2Graphic->setType( Chart::ScatterPlot );
 //  m_chi2Graphic->setMinimumSize( WLength(200), WLength(175) );
+  
+  
+  //We should check the color theme for colors
+  auto theme = m_specViewer->getColorTheme();
+  if( theme )
+  {
+    //if( !theme->foregroundLine.isDefault() )
+    //  m_chartEnergyLineColor = theme->foregroundLine;
+    
+    if( !theme->spectrumChartText.isDefault() )
+    {
+      WPen txtpen(theme->spectrumChartText);
+      m_chi2Graphic->setTextPen( txtpen );
+      m_chi2Graphic->axis(Chart::XAxis).setTextPen( txtpen );
+      m_chi2Graphic->axis(Chart::YAxis).setTextPen( txtpen );
+      m_chi2Graphic->setTextPenColor( theme->spectrumChartText );
+    }
+    
+    if( theme->spectrumChartBackground.isDefault() )
+      m_chi2Graphic->setBackground( Wt::NoBrush );
+    else
+      m_chi2Graphic->setBackground( WBrush(theme->spectrumChartBackground) );
+    
+    if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
+    {
+      //theme->spectrumChartBackground
+    }else if( !theme->spectrumChartMargins.isDefault() )
+    {
+      //theme->spectrumChartMargins
+    }
+    
+    if( !theme->spectrumAxisLines.isDefault() )
+    {
+      WPen defpen = m_chi2Graphic->axis(Chart::XAxis).pen();
+      defpen.setColor( theme->spectrumAxisLines );
+      m_chi2Graphic->axis(Chart::XAxis).setPen( defpen );
+      m_chi2Graphic->axis(Chart::YAxis).setPen( defpen );
+    }
+  }//if( theme )
   
   
   //The next line is kinda ineffiecient because if all that changed was
@@ -4070,7 +4136,7 @@ if (m_specViewer->isSupportFile())
     //regular layout
     detectorLayout->addWidget( m_detectorDisplay,          0, 0 );
     detectorLayout->addWidget( addItemMenubutton,          0, 1 );
-    detectorLayout->addWidget( m_fitModelButton,           3, 0, 1, 2 );
+    detectorLayout->addWidget( m_fitModelButton,           3, 0, 1, 2, AlignCenter );
     detectorLayout->addWidget( m_fitProgressTxt,           4, 0, 1, 2 );
     detectorLayout->addWidget( m_cancelfitModelButton,     5, 0, 1, 2 );
     
@@ -4550,7 +4616,9 @@ void ShieldingSourceDisplay::modelUploadError( const ::int64_t size_tried,
 
 void ShieldingSourceDisplay::startModelUpload()
 {
-  AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model" ,true);
+  AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model",
+                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                        | AuxWindowProperties::TabletModal) );
   
   WContainerWidget *contents = window->contents();
   WFileUpload *upload = new WFileUpload( contents );
@@ -4678,10 +4746,12 @@ void ShieldingSourceDisplay::removeModelFromDb( WSelectionBox *selec1,
   }
   
   
-  querymodel = dynamic_cast<QueryModel_t *>( selec1->model() );
+  if( selec1 )
+    querymodel = dynamic_cast<QueryModel_t *>( selec1->model() );
   if( querymodel )
     querymodel->reload();
-  querymodel = dynamic_cast<QueryModel_t *>( selec2->model() );
+  if( selec2 )
+    querymodel = dynamic_cast<QueryModel_t *>( selec2->model() );
   if( querymodel )
     querymodel->reload();
 }//void ShieldingSourceDisplay::removeModelFromDb( WSelectionBox *selec )
@@ -4767,7 +4837,8 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
   
   WTextArea *summary = NULL;
   WPushButton *accept = NULL, *cancel = NULL, *del = NULL;
-  AuxWindow *window = new AuxWindow( "Previously Saved Models", true );
+  AuxWindow *window = new AuxWindow( "Previously Saved Models",
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
   
   try
   {
@@ -4785,7 +4856,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     cancel->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
     del = new WPushButton( "Delete" );
-    del->setStyleClass("CrossIcon");
+    del->setIcon( "InterSpec_resources/images/minus_min_white.png" );
     del->disable();
 
     Dbo::ptr<UserFileInDb> dbmeas;
@@ -5008,10 +5079,12 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
     return;
   }//if( m_modelInDb && !prompt )
   
-  AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model", true );
+  AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model",
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                   | AuxWindowProperties::TabletModal
+                   | AuxWindowProperties::DisableCollapse) );
   WContainerWidget *contents = window->contents();
   window->centerWindow();
-  window->disableCollapse();
   
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
@@ -5047,7 +5120,8 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
  
 
   WPushButton *button = new WPushButton( "Save", window->footer() );
-  button->addStyleClass("DiskIcon");
+  //button->addStyleClass("DiskIcon");
+  button->setIcon( "InterSpec_resources/images/disk2.png" );
   
   button->clicked().connect(
               boost::bind( &ShieldingSourceDisplay::finishSaveModelToDatabase,
@@ -5765,7 +5839,8 @@ void ShieldingSourceDisplay::deSerialize(
     throw runtime_error( "No ShieldingSourceFit node" );
   
   if( !rapidxml::internal::compare( base_node->name(), base_node->name_size(), "ShieldingSourceFit", 18, true) )
-    throw runtime_error( "ShieldingSourceDisplay::deSerialize: invalid node name passed in" );
+    throw runtime_error( "ShieldingSourceDisplay::deSerialize: invalid node name passed in: '"
+                        + std::string(base_node->name(),base_node->name()+base_node->name_size()) + "'" );
   
   muti_iso_node   = base_node->first_node( "MultipleIsotopesPerPeak", 23 );
   back_sub_node   = base_node->first_node( "BackgroundPeakSubtraction", 25 );
@@ -5968,7 +6043,6 @@ void ShieldingSourceDisplay::deSerialize(
     value = doc->allocate_string( std::to_string(activityUncert).c_str() );
     node = doc->allocate_node( rapidxml::node_element, "Uncertainty", value );
     activity_node->append_node( node );
-
     
     age_node = doc->allocate_node( rapidxml::node_element, "Age" );
     nuclide_node->append_node( age_node );
@@ -5993,6 +6067,90 @@ void ShieldingSourceDisplay::deSerialize(
     age_node->append_node( node );
   }//for( int nuc = 0; nuc < m_sourceModel->rowCount(); ++nuc )
 
+  
+  
+  try
+  {
+    vector<ShieldingSelect *> shieldings;
+    ROOT::Minuit2::MnUserParameters inputPrams;
+    Chi2FcnShrdPtr chi2Fcn = shieldingFitnessFcn( shieldings, inputPrams );
+    const unsigned int ndof = inputPrams.VariableParameters();
+    const vector<double> params = inputPrams.Params();
+    const vector<double> errors = inputPrams.Errors();
+    GammaInteractionCalc::PointSourceShieldingChi2Fcn::NucMixtureCache mixcache;
+    const bool multy_iso = m_multiIsoPerPeak->isChecked();
+    const vector< tuple<double,double,double> > chis
+     = chi2Fcn->energy_chi_contributions( params, mixcache, multy_iso, nullptr );
+    
+    if( chis.size() )
+    {
+      char buffer[64] = { 0 };
+      
+      //We will write this information - for the record, JIC, but we will not
+      //  read it back in later, as we will re-calculate it from the actual
+      //  data present when this model gets deserialized.
+      rapidxml::xml_node<> *chi2_node = doc->allocate_node( rapidxml::node_element, "Chi2Elements" );
+      base_node->append_node( chi2_node );
+      
+      double chi2 = 0.0;
+      rapidxml::xml_node<> *node = nullptr;
+      rapidxml::xml_node<> *eval_node = doc->allocate_node( rapidxml::node_element, "EvaluatedEnergies" );
+      
+      for( const auto &p : chis )
+      {
+        rapidxml::xml_node<> *point_node = doc->allocate_node( rapidxml::node_element, "EvalPoint" );
+        eval_node->append_node( point_node );
+        
+        const double energy = get<0>(p);
+        const double chi = get<1>(p);
+        const double scale = get<2>(p);
+        
+        if( !IsInf(chi) && !IsNan(chi) )
+          chi2 += chi*chi;
+        
+        node = doc->allocate_node( rapidxml::node_element, "Energy" );
+        snprintf( buffer, sizeof(buffer), "%f", energy );
+        value = doc->allocate_string( buffer );
+        node->value( value );
+        point_node->append_node( node );
+        
+        node = doc->allocate_node( rapidxml::node_element, "Chi" );
+        snprintf( buffer, sizeof(buffer), "%f", chi );
+        value = doc->allocate_string( buffer );
+        node->value( value );
+        point_node->append_node( node );
+        
+        node = doc->allocate_node( rapidxml::node_element, "Scale" );
+        snprintf( buffer, sizeof(buffer), "%f", scale );
+        value = doc->allocate_string( buffer );
+        node->value( value );
+        point_node->append_node( node );
+      }//for( const auto &p : chis )
+      
+      node = doc->allocate_node( rapidxml::node_element, "Chi2" );
+      snprintf( buffer, sizeof(buffer), "%f", chi2 );
+      value = doc->allocate_string( buffer );
+      node->value( value );
+      chi2_node->append_node( node );
+      
+      node = doc->allocate_node( rapidxml::node_element, "NumParamFit" );
+      snprintf( buffer, sizeof(buffer), "%u", ndof );
+      value = doc->allocate_string( buffer );
+      node->value( value );
+      chi2_node->append_node( node );
+      
+      chi2_node->append_node( eval_node );
+    }//if( chis.size() )
+  }catch( std::exception &e )
+  {
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( BOOST_CURRENT_FUNCTION, ("Failed to get chi2 info during serialization - caught exception: " + string(e.what())).c_str() );
+#endif
+  }
+  
+  
+  
+  
   return parent_node;
 }//::rapidxml::xml_node<char> * serialize()
 

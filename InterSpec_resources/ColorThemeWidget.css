@@ -1,0 +1,80 @@
+.ColorThemeWidget{
+  
+}
+
+.ColorThemeSelectTable{
+  
+}
+
+.ColorThemeSelectTable > tbody > tr {
+}
+
+.ColorThemeSelectTable > tbody > tr > td{
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.ThemeColorsTitle{
+  padding-top: 30px;
+  font-weight: bold;
+}
+
+.CTRowLabel{
+  
+}
+
+.CTSelect{
+  min-width: 8ex; /* So the checkboxes wont line-wrap*/
+}
+
+.CTRowDesc{
+  
+}
+
+.RefLinesArea{
+  
+}
+
+.ColorRefLineTitle{
+  margin-top: 15px;
+  font-weight: bold;
+  text-align: center:
+}
+
+.ColorRefLineDesc{
+  font-size: smaller;
+  font-weight: lighter;
+  text-align: center:
+}
+
+.ReferenceLinColorTable{
+  
+}
+
+.GenericRefLineNumber{
+  width: 2em;
+}
+
+.GenericRefLineColors{
+  border-top: solid 1px #e1e1e1;
+  border-right: solid 1px #e1e1e1;
+  padding-right: 8px;
+}
+
+.SpecificRefLineColors{
+  border-top: solid 1px #e1e1e1;
+}
+
+
+.SpecificRefLineColorTable{
+  
+}
+
+.SpecificRefLineInput{
+  
+}
+
+.SpecificRefLineColorCell{
+  
+}
+

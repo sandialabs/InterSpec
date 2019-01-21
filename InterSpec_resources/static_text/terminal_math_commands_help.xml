@@ -1,0 +1,89 @@
+  <div align="center">
+        <h1 id="math-commands">
+            <b>Math Commands/Functions</b>
+        </h1>
+    <hr />
+    </div>
+        <div style="padding-top: 10px">The <b>Math/Command Terminal</b> tool features the ability to compute complex calculations on the fly with a simple, common syntax. Powered by <b>MuParserX</b>, the tool comes built-in with various pre-defined operators and functions, and are listed in the following. Function calls along with  combinations with different operators can be evaluated directly into the <b>Terminal</b> and outputted on the history of text. The syntax for executing functions and operations are listed as so: </div>
+        <div style="padding-top: 7px"><pre><code><i>Binary Operator</i>:	[operand 1] <span style="color:blue;">(operator)</span> [operand 2]<br></br><i>Ternary Operator</i>:	[operand 1] <span style="color:blue;">(operator 1)</span> [operand 2] <span style="color:blue;">(operator 2)</span> [operand 3]<br></br><i>Functions</i>:		<span style="color:blue;">function_name(</span> [arg 1], [arg 2], [arg 3], ... <span style="color:blue;">)</span>
+        </code></pre></div>
+        <div style="padding-top: 10px">
+            The following are functions and operators currently supported by the Math/Command Terminal:
+        </div>
+        <div style="padding-top: 10px" align="center">
+            <style> table, th {
+                        border-collapse: collapse;
+                        border-spacing: 0.5em;
+                        border: 1px solid black;
+                        font-style: normal;
+                        font-weight: normal;
+                        padding: 0.5em;
+                    }
+                    td {
+                        border-collapse: collapse;
+                        border: 1px solid black;
+                        font-weight: normal;
+                        padding: 0.5em;
+                    }
+            </style>
+            <table>
+                <tr><th><b>Operator</b></th><th><b>Description</b></th><th><b>Return value</b></th></tr>
+                <tr><td colspan="3" align="center" style="text-align:center"><b>Functions</b></td></tr>
+
+                <tr><td><span style="color:navy"><b>sin(x)</b></span></td><td>Trigonometric sine. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>sine of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>cos(x)</b></span></td><td>Trigonometric cosine. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>cosine of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>tan(x)</b></span></td><td>Trigonometric tangent. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>tangent of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>sinh(x)</b></span></td><td>Hyperbolic sine. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>hyperbolic sine of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>cosh(x)</b></span></td><td>Hyperbolic cosine. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>hyperbolic cosine of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>tanh(x)</b></span></td><td>Hyperbolic tangent. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>hyperbolic tangent of <i>x</i></td></tr>
+
+                <tr><td colspan="3"></td></tr>
+                <tr><td><span style="color:navy"><b>log10(x)</b></span></td><td>Log base 10. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>log base-10 of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>log(x)</b></span></td><td>Log base 10. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>log base-10 of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>ln(x)</b></span></td><td>Natural log (log base e). <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>natural log of <i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>exp(x)</b></span></td><td>e to the power of x. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>e^<i>x</i></td></tr>
+                <tr><td><span style="color:navy"><b>sqrt(x)</b></span></td><td>Square root of x. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>√<i>x</i></td></tr>
+
+                <tr><td colspan="3"></td></tr>
+                <tr><td><span style="color:navy"><b>abs(x)</b></span></td><td>Absolute value. <span style="color:green; font-size: 10px;">(Takes 1 argument)</span></td><td>|<i>x</i>|</td></tr>
+                <tr><td><span style="color:navy"><b>min(x,y,...)</b></span></td><td>Minimum value. <span style="color:green; font-size: 10px;">(Takes <u><b>at least</b></u> 1 argument)</span></td><td>Minimum value from all arguments.</td></tr>
+                <tr><td><span style="color:navy"><b>max(x,y,...)</b></span></td><td>Maximum value. <span style="color:green; font-size: 10px;">(Takes <u><b>at least</b></u> 1 argument)</span></td><td>Maximum value from all arguments.</td></tr>
+                <tr><td><span style="color:navy"><b>sum(x,y,...)</b></span></td><td>Sum function. <span style="color:green; font-size: 10px;">(Takes <u><b>at least</b></u> 1 argument)</span></td><td>Sum of all arguments.</td></tr>
+
+                <tr><td colspan="3" align="center" style="text-align:center"><b>Unary Operators</b></td></tr>
+                <tr><td>x<span style="color:navy"><b>!</b></span></td><td>Factorial operator</td><td>Factorial of <i>x</i>.</td></tr>
+
+                <tr><td colspan="3" align="center" style="text-align:center"><b>Binary Operators</b></td></tr>
+                <tr><td>x <span style="color:navy"><b>&#61;</b></span> ...</td><td>Variable assignment on x.</td><td>N/A</td></tr>
+
+                <tr><td colspan="3"></td></tr>
+                <tr><td>x <span style="color:navy"><b>&amp;&amp;</b></span> y</td><td>Logical and.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>||</b></span> y</td><td>Logical or.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&gt;&#61;</b></span> y</td><td>Less than or equal to.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&lt;&#61;</b></span> y</td><td>Greater than or equal to.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&#33;&#61;</b></span> y</td><td>Not equal to.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&#61;&#61;</b></span> y</td><td>Equal to.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&gt;</b></span> y</td><td>Greater than.</td><td>0 if false, 1 if true</td></tr>
+                <tr><td>x <span style="color:navy"><b>&lt;</b></span> y</td><td>Less than.</td><td>0 if false, 1 if true</td></tr>
+
+                <tr><td colspan="3"></td></tr>
+                <tr><td>x <span style="color:navy"><b>+</b></span> y</td><td>Addition.</td><td><i>x</i> + <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>-</b></span> y</td><td>Subtraction.</td><td><i>x</i> - <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>*</b></span> y</td><td>Multiplication.</td><td><i>x</i> ∙ <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>/</b></span> y</td><td>Division.</td><td><i>x</i> &divide; <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>//</b></span> y,<br></br>x <span style="color:navy"><b>div</b></span> y</td><td>Integer division.</td><td><i>x</i> div <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>%</b></span> y,<br></br>x <span style="color:navy"><b>mod</b></span> y</td><td>Modulus operator.</td><td><i>x</i> mod <i>y</i></td></tr>
+                <tr><td>x <span style="color:navy"><b>^</b></span> y</td><td>Exponent.</td><td><i>x</i><sup><i>y</i></sup></td></tr>
+
+                <tr><td colspan="3" align="center" style="text-align:center"><b>Ternary Operators</b></td></tr>
+                <tr><td>x <span style="color:navy"><b>?</b></span> y <span style="color:navy"><b>:</b></span> z</td><td>If, then, else operator. <span style="color:green; font-size: 10px;">(C++ syntax)</span></td><td>If <i>x</i> is true, <i>y</i>, else, <i>z</i></td></tr>
+            </table>
+            <div style="padding-top: 10px; padding-bottom: 5px;" align="left">The <b>Math/Command Terminal</b> also stores constants that are available to use inside arguments of functions as well as operations. The following are currently stored constants inside the tool:
+            </div>
+            <table>
+                <tr><th><b>Constant</b></th><th><b>Value</b></th><th><b>Notes</b></th></tr>
+                <tr><td><span style="color:navy"><b>pi</b></span></td><td>3.14159</td><td>Pi <span style="font-size: 8px;">*obtained from M_PI in C++</span></td></tr>
+                <tr><td><span style="color:navy"><b>e</b></span></td><td>2.71828</td><td>Natural log base <span style="font-size: 8px;">*obtained from M_E in C++</span></td></tr>
+                <tr><td><span style="color:navy"><b>_sqrt2</b></span></td><td>1.41421</td><td>Square root of 2 <span style="font-size: 8px;">*obtained from M_SQRT2 in C++</span></td></tr>
+            </table>
+        </div>

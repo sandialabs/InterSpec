@@ -1,0 +1,191 @@
+
+.DoseCalcWidget {
+}
+
+.DoseButtonDiv {
+  border: 1px solid #d1d1d1;
+  min-height: 255px;
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+  text-align: center;
+}
+
+.DoseButton, .DoseButton:hover {
+  background-color: #B8B8B8;
+  opacity: 0.8;
+  filter: alpha(opacity=80);
+  margin-top: 8px;
+  margin-left: 6px;
+  margin-right: 6px;
+  width: 5.5em;
+}
+
+.DoseButtonActive, .DoseButtonActive:hover {
+  background: #888888;
+  color: #FFFFFF;
+  opacity: 1.0;
+  filter: alpha(opacity=100);
+}
+
+.DoseButton:hover, .DoseButtonActive:hover {
+  color: #e6e6e6;
+}
+
+
+
+.DoseEnterDiv {
+  border: 1px solid #d1d1d1;
+  min-height: 255px;
+}
+
+.DoseEnterEl {
+  /* border: 1px solid #d1d1d1; */
+  width: 250px;
+}
+
+.DoseEnterInd {
+  font-size: 80%;
+}
+
+.DoseDistanceAnswer {
+  
+}
+
+.DoseAnswerDiv {
+  border: 1px solid #d1d1d1;
+  overflow-y: auto;
+}
+
+.DoseEnterTxt {
+  margin-top: 3px;
+  margin-left: 10px;
+}
+
+.GammaSourceEnter {
+  margin-top: 3px;
+}
+
+.DoseFieldLabel {
+  margin-left: 10px;
+}
+
+.DoseAnswerCombo {
+  margin-top: 4px;
+  margin-left: 10px;
+}
+
+
+.DoseAnswerEl {
+  /* border: 1px solid #d1d1d1; */
+  width: 250px;
+}
+
+.DoseIntroDiv {
+}
+
+.DoseIntroTxtMain {
+  font-size: 120%
+}
+
+.DoseIntroTxtDetail {
+  color: gray;
+  font-size:75%
+}
+
+.DoseAnswerTxt {
+  margin: 10px;
+  padding-top: 11px;
+  height: 41px;
+  text-align: center;
+  font-size: 25px;
+  font-weight: bold;
+  background: white;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  border-radius: 3px;
+}
+
+.DoseIssueTxt {
+  color: red;
+  text-align: center;
+}
+
+.DoseHLTxt {
+  font-size: 75%;
+  width: 5em;
+  overflow: hidden;
+  margin-left: 2px;
+}
+
+.DoseColLabel {
+  text-align: center;
+  font-size: 100%;
+  color: dark-grey;
+  border-bottom: 1px solid #d1d1d1;
+}
+
+
+.DoseStayTime {
+}
+
+.DoseStayTimeHeader {
+  text-align: center;
+  border: 1px solid black;
+}
+
+.DoseStayLabelDiv {
+  border: 1px solid black;
+  border-top: none;
+}
+
+.DoseStayDose {
+  text-align: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.DoseStayDesc {
+  text-align: center;
+  font-size: 8px;
+}
+
+.DoseStayTimeAnsw {
+  text-align: center;
+  border: 1px solid black;
+  border-top: none;
+  border-left: none;
+}
+
+
+.DoseCalcRuntimeCheckFailMsg {
+  background: white;
+  border: 1px solid red;
+  border-radius: 5px;
+  padding: 5px;
+}
+
+.DoseCalcRuntimeCheckFailHdr {
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.DoseCalcRuntimeCheckMsgTxt {
+  font-size: 14px;
+  margin: 5px;
+}
+
+.DoseCalcRuntimeCheckFailBanner {
+  color: red;
+  font-size: 24px;
+  font-weight: bold;
+  padding: 5px;
+}
+
+.DoseCalcRuntimeCheckInstuct {
+  color: orange;
+  font-size: 14px;
+  padding: 5px;
+  padding-top: 0px;
+}

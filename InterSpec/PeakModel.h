@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -72,6 +72,7 @@ public:
     kDifference,  //calculate the difference
     kUseForShieldingSourceFit,
     kCandidateIsotopes,
+    kPeakLineColor,
     kUserLabel,
     kHasSkew, kSkewAmount,
     kType, kLowerX, kUpperX, kContinuumArea, kContinuumType,
@@ -99,7 +100,7 @@ public:
   //  should be used for activity/shielding fit.
   static bool recomendUseForFit( const SandiaDecay::Nuclide *n,
                                  const float energy );
-  
+
   //Functions add/delete/access peaks from - from these functions peaks will
   //  always be sorted by mean, in an increasing fashion
   size_t npeaks() const;
@@ -123,10 +124,7 @@ public:
   //  of peaks that have a polynomial continum defined, and have not already had
   //  the lower and upper energy values defined.  Chi2 is always computed. This
   //  function is called for all peaks in addPeaks, addPeak, and setPeaks.
-#define CACHE_PEAK_ENERGY_RANGE 1
-#if( CACHE_PEAK_ENERGY_RANGE )
   void definePeakXRange( PeakDef &peak );
-#endif
   
   //addNewPeak(...): adds peak to the model, and returns index of added peak.
   //  Note that if you want the added peak to be assigned to be from the

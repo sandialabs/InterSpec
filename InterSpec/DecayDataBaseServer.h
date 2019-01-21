@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -28,7 +28,7 @@
 #include <mutex>
 #include <string>
 
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 
 //Since all operations on the database are const, with the exception of
 //  initialization, there is no reason to not share a single copy between all
@@ -47,11 +47,11 @@ public:
   //  if called afterwards with a different location, will throw an exception
   static void setDecayXmlFile( const std::string &path_and_file );
   
-  static void setXmlFileDirectory( const std::string &dir );  //assumes files named sandia.decay.xray.xml
+  static void setXmlFileDirectory( const std::string &dir );  //assumes files named sandia.decay.xml
 
 private:
   
-  static std::string sm_decayXrayXmlLocation; //defaults to ./data/sandia.decay.xray.xml
+  static std::string sm_decayXrayXmlLocation; //defaults to ./data/sandia.decay.xml
   
   static std::mutex sm_dataBaseMutex;
   static SandiaDecay::SandiaDecayDataBase sm_dataBase;

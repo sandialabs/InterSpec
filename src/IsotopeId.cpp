@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -30,7 +30,7 @@
 
 #include <Wt/WServer>
 
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
@@ -512,22 +512,28 @@ void findCandidates( vector<string> &suggestednucs,
                                   = std::make_shared<DetectorPeakResponse>();
       detector = detPtr;
       
-      const string basename = UtilityFunctions::append_path( dataDirectory(), "detector_responses" );
+      const string basename = UtilityFunctions::append_path( dataDirectory(), "GenericGadrasDetectors" );
       
-      string csvfilename = UtilityFunctions::append_path( basename, "Ortec IDM PortalEfficiency.csv" );
-      string datFilename = UtilityFunctions::append_path( basename, "Ortec IDM PortalDetector.dat" );
+      string csvfilename = UtilityFunctions::append_path( basename, "HPGe 40%/Efficiency.csv" );
+      string datFilename = UtilityFunctions::append_path( basename, "HPGe 40%/Detector.dat" );
       
       if( data->GetNbinsX() <= 2050 )
       {
-        csvfilename = UtilityFunctions::append_path( basename, "GR135PlusEfficiency.csv" );
-        datFilename = UtilityFunctions::append_path( basename, "GR135PlusDetector.dat" );
+        csvfilename = UtilityFunctions::append_path( basename, "NaI 3x3/Efficiency.csv" );
+        datFilename = UtilityFunctions::append_path( basename, "NaI 3x3/Detector.dat" );
       }//if( this is a NaI or other low resolution detector )
       
       ifstream csv( csvfilename.c_str(), ios_base::binary|ios_base::in );
       ifstream datFile( datFilename.c_str(), ios_base::binary|ios_base::in );
-      if( !csv.good() )
-        throw runtime_error( "guessIsotopesForPeaks(...): error opening default detector file" );
-      detPtr->fromGadrasDefinition( csv, datFile );
+      if( csv.good() && datFile.good() )
+      {
+        detPtr->fromGadrasDefinition( csv, datFile );
+      }else
+      {
+        cerr << "guessIsotopesForPeaks(...): error opening default detector file" << endl;
+        //ToDo: get approximate intrinsic efficiency formula for a HPGe and NaI detector here, and just use those for this function.
+        detPtr->setIntrinsicEfficiencyFormula( "1.0", 3.0*PhysicalUnits::cm, PhysicalUnits::keV );
+      }
       //      try{ detPtr->fitResolution( allpeaks, DetectorPeakResponse::kGadrasResolutionFcn ); }catch(...){}
     }//if( !detector || !detector->isValid() )
     
@@ -942,11 +948,73 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
 }//void findCharacteristics(...)
 
 
+void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const std::vector<ReferenceLineInfo> &showingRefLines,
+                                       std::shared_ptr< vector<string> > candidates )
+{
+  if( !peak || !candidates )
+    return;
+  
+  char buffer[128];
+  
+  const auto initialsize = candidates->size();
+  const double mean = peak->mean();
+  const double sigma = peak->sigma();
+  
+  for( const ReferenceLineInfo &ref : showingRefLines )
+  {
+    //Right now just look for nuclides
+    if( !ref.nuclide )
+      continue;
+    
+    SandiaDecay::NuclideMixture mix;
+    mix.addNuclideByActivity( ref.nuclide, 1.0E6*SandiaDecay::becquerel );
+    const double age = ((ref.age >= 0.0) ? ref.age : PeakDef::defaultDecayTime(ref.nuclide) );
+    
+    const vector<SandiaDecay::EnergyRatePair> gammas = mix.gammas( age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
+    const vector<SandiaDecay::EnergyRatePair> xrays = (ref.showXrays ? mix.xrays( age ) : vector<SandiaDecay::EnergyRatePair>{});
+    
+    vector<pair<string,double>> trials;
+    
+    //We will take the simeple approach and assume transmision and detection efficiency
+    //  are about the same for all lines we care about, and create a simple
+    //  weight of sf/(0.25*sigma + distance)
+    for( const auto &gamma : gammas )
+    {
+      const double distance = fabs( gamma.energy - mean );
+      
+      if( distance > 4.0*sigma )
+        continue;
+      
+      const double amp = gamma.numPerSecond;
+      const double weight = amp / (0.25*sigma + distance);
+      
+      snprintf( buffer, sizeof(buffer), "%s %.2f keV",
+                ref.nuclide->symbol.c_str(), gamma.energy );
+      
+      trials.emplace_back( buffer, weight );
+    }//for( const auto &gammas : gammas )
+    
+    std::sort( begin(trials), end(trials),
+               []( const pair<string,double> &lhs, const pair<string,double> &rhs ){
+                 return lhs.second > rhs.second;
+    } );
+    
+    //Add a maximum of three trial RefLines
+    for( size_t i = 0; i < 3 && i < trials.size(); ++i )
+      candidates->push_back( trials[i].first );
+  }//for( const ReferenceLineInfo &ref : showingRefLines )
+  
+  
+  if( initialsize != candidates->size() )
+    candidates->push_back( "" );  //create the spacer
+}//void peakCandidateSourceFromRefLines(...)
+  
 
 void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
                                std::shared_ptr<const PeakDef> peak,
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > hintpeaks,
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > userpeaks,
+                               const std::vector<ReferenceLineInfo> showingRefLines,
                                std::shared_ptr<const DetectorPeakResponse> detector,
                                const std::string sessionid,
                                std::shared_ptr< vector<string> > candidates,
@@ -1033,12 +1101,12 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
 //    scaleDeltaE = delta_e;
   //characteristicnucs have the most entries.  Should sort result be energy, or closeness or something
   
-  for( const std::string &nuc : suggestednucs )
-    cerr << "suggestednucs: " << nuc << endl;
-  for( const std::string &nuc : characteristicnucs )
-    cerr << "characteristicnucs: " << nuc << endl;
-  for( const std::string &nuc : otherpeaksnucs )
-    cerr << "otherpeaksnucs: " << nuc << endl;
+  //for( const std::string &nuc : suggestednucs )
+  //  cerr << "suggestednucs: " << nuc << endl;
+  //for( const std::string &nuc : characteristicnucs )
+  //  cerr << "characteristicnucs: " << nuc << endl;
+  //for( const std::string &nuc : otherpeaksnucs )
+  //  cerr << "otherpeaksnucs: " << nuc << endl;
   
   
   //Go through and add found sources from each source to 'candidates', but
@@ -1054,8 +1122,8 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
     nsources[nuc] = nsources.count(nuc) ? nsources[nuc] : 1;
   
   //Aritifically bump up the rating for background and common sources; note that
-  //  this is put in just to play around with, we may not want to keep it
-  //  (20141120)
+  //  this is put in just to play around with, we may not want to keep it, I
+  //  really dont like hard coding any nuclides anywhere in InterSpec (20141120)
   for( map<string,int>::iterator i = nsources.begin(); i != nsources.end(); ++i )
   {
     //Not a complete list...
@@ -1178,6 +1246,8 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
     candidates->push_back( "" );
   }//if( escapes.size() )
   
+  //Look at the currently showing reference lines, and add those in
+  peakCandidateSourceFromRefLines( peak, showingRefLines, candidates );
   
   //These nested loops make me cringe at the inefficiency
   for( ; occurance > 0; --occurance )

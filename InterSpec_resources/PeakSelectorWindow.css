@@ -1,0 +1,56 @@
+table.PeakSelectorTable
+{
+  border-collapse:collapse;
+  margin-left:auto;
+  margin-right:auto;
+  margin-top: 10px;
+}
+
+table.PeakSelectorTable td, table.PeakSelectorTable th
+{
+  border:1px solid black;
+  padding: 2px;
+}
+
+table.PeakSelectorTable th
+{
+  font-weight: bold;
+  margin-left: 3px;
+  margin-right: 3px;
+}
+
+.KeepPeakCell{
+  width: 9.5em;
+  vertical-align: middle;
+  padding-left: 5px;
+}
+
+.PeakEnergyCell{
+  vertical-align: middle;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.OrigNucCell{
+  vertical-align: middle;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+.NewNucCell{
+  vertical-align: middle;
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
+.PeakPreviewCell{
+}
+
+.ShowAllPeaksCb{
+}
+
+.KeepRefLinPeaksOnlyCb{
+}
+
+
+

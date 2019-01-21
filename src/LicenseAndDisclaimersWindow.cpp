@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -40,6 +40,7 @@
 #include <Wt/WCssDecorationStyle>
 
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
@@ -49,13 +50,12 @@ using namespace std;
 
 
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int screen_width, int screen_height )
-: AuxWindow("Disclaimers, Licenses, Credit, and Contact",true),
+: AuxWindow("Disclaimers, Licenses, Credit, and Contact",
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+               | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
   m_menu( nullptr )
 {
-  setModal( true );
-  disableCollapse();
   setClosable( !is_awk );
-  setResizable( true );
   if( !is_awk )
     rejectWhenEscapePressed();
   
@@ -87,6 +87,12 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   m_menu->addStyleClass( "SideMenu" );
   
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
+  
+  //If on phone, need to make text much smaller!
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  const bool phone = (app && app->isPhone());
+  if( phone )
+    WDialog::contents()->addStyleClass( "PhoneCopywriteContent" );
   
   WContainerWidget *topDiv = new WContainerWidget();
   WContainerWidget *bottomDiv = new WContainerWidget();
@@ -122,12 +128,11 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   title->bindString("build-date", std::to_string(COMPILE_DATE_AS_INT) );
   title->bindString("copyright", copyright );
   
-  
   //Populate bottomDiv
   string dhsack;
   m_resourceBundle.resolveKey( "dhs-acknowledgement", dhsack );
   new WText( dhsack, Wt::XHTMLText, bottomDiv );
-  bottomDiv->setAttributeValue( "style", "text-align: center; font-size: small; padding-top: 0.6em;" );
+  bottomDiv->setAttributeValue( "style", "text-align: center; font-size: smaller; padding-top: 0.6em;" );
   
   //Add items to the left menu; the contents wont be loaded until shown.
   makeItem( "Disclaimer", "dhs-disclaimer" );

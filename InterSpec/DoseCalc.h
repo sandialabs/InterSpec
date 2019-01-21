@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -97,7 +97,7 @@ namespace DoseCalc
    interval is taken to be the fluence-to-dose value of the average energy of 
    the interval.
    
-   Adapted from GADRAS code iGetDose.f, routine IGETDOSE. (from Dean Mitchell)
+   Adapted from GADRAS code iGetDose.f, routine IGETDOSE.
    
    \param energies Energies of incomming gammas in keV.
    \param intensity Intensities of cooresponding gammas. A weight of 1 equals

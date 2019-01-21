@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -38,6 +38,7 @@
 #include <Wt/WMenuItem>
 #include <Wt/Json/Array>
 #include <Wt/WAnimation>
+#include <Wt/WFileUpload>
 #include <Wt/WTabWidget>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
@@ -65,18 +66,20 @@ using namespace std;
 
 UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
                               InterSpec* viewer ):
-  AuxWindow("Welcome",true),
+  AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                         | AuxWindowProperties::EnableResize
+                         | AuxWindowProperties::DisableCollapse) ),
   m_session(),
-  m_tableSample(NULL),
-  m_loadSampleButton(NULL),
-  m_messageModelSample(NULL),
-  m_viewer(viewer),
-  m_menu(NULL)
+  m_tableSample( nullptr ),
+  m_loadSampleButton( nullptr ),
+  m_messageModelSample( nullptr ),
+  m_viewer( viewer ),
+  m_menu( nullptr )
+  //, m_videoTab( nullptr )
 {
   rejectWhenEscapePressed();
   
   double width = 0.0, height = 0.0;
-  bool hideStateTab = false, hideSpecTab = false;
   
   if( viewer )
   {
@@ -87,7 +90,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     height = std::min( height, 1024.0 );  //1024 not actually tested, could maybye bee 800
   }//if( viewer )
 
-  if( width < 7150.0 || height < 512.0 )
+  if( width < 715.0 || height < 512.0 )
   {
     setMinimumSize(715,512);
     resize( WLength(50, WLength::FontEm), WLength(80,WLength::Percentage));
@@ -97,24 +100,23 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   }
   
   centerWindow();
-  setResizable( true );
-  disableCollapse();
   
   WStackedWidget *stack = new WStackedWidget();
   stack->addStyleClass( "UseInfoStack" );
-  stack->setOverflow( WContainerWidget::OverflowAuto);
+  stack->setOverflow( WContainerWidget::OverflowAuto );
   
   WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
   stack->setTransitionAnimation( animation, true );
   
   m_menu = new WMenu( stack, Wt::Vertical );
-  m_menu->addStyleClass( (m_viewer->isMobile() ? "SideMenuPhone" : "SideMenu") );
+  m_menu->addStyleClass( (m_viewer->isPhone() ? "SideMenuPhone" : "SideMenu") );
   
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
   
   WGridLayout *layout = stretcher();
   layout->addWidget( m_menu, 0, 0, AlignLeft );
-  layout->addWidget( stack, 0, 1, 2, 1 );
+  const int nstack_rows = m_viewer->isMobile() ? 1 : 3;  //"License and Terms" and "More in depth information" links for non-mombile users
+  layout->addWidget( stack, 0, 1, nstack_rows, 1 );
   layout->setRowStretch( 0, 1 );
   
   m_resourceBundle.use("InterSpec_resources/static_text/use_instructions",false);
@@ -124,41 +126,43 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   welcomeContainer->setOverflow(WContainerWidget::OverflowAuto);
   welcomeContainer->setOffsets(WLength(0,WLength::Pixel));
   welcomeContainer->setMargin(WLength(0,WLength::Pixel));
-  WGridLayout* rightLayout = new WGridLayout();
-  welcomeContainer->setLayout(rightLayout);
   
   Wt::WTabWidget *tabW = new Wt::WTabWidget();
-  const WBorder border( WBorder::Solid, WBorder::Thin, Wt::gray);
-    tabW->contentsStack()->decorationStyle().setBorder( border,  Wt::Bottom | Wt::Right | Wt::Left );
-    tabW->setMargin(2);
-    tabW->setOffsets(2);
-  rightLayout->addWidget(tabW,1,0);
+  tabW->addStyleClass( "UseInfoTabsWidget" );
+  tabW->contentsStack()->addStyleClass( "UseInfoTabsStack" );
   
-  WContainerWidget* spectrumContainer = new WContainerWidget();
-  WGridLayout* spectrumLayout = new WGridLayout();
+  WContainerWidget *spectrumContainer = new WContainerWidget();
+  WGridLayout *spectrumLayout = new WGridLayout();
   spectrumLayout->setContentsMargins( 3, 5, 4, 5);
   spectrumContainer->setLayout(spectrumLayout);
-  spectrumContainer->setOverflow(WContainerWidget::OverflowHidden);
-  spectrumContainer->setMargin(0);
-  spectrumContainer->setOffsets(0);
+  spectrumContainer->setOverflow( WContainerWidget::OverflowHidden );
   
   WContainerWidget* samplesContainer = new WContainerWidget();
-  WGridLayout* samplesLayout = new WGridLayout();
-  samplesLayout->setContentsMargins( 3, 5, 4, 0 );
-  samplesContainer->setLayout(samplesLayout);
-  samplesContainer->setOverflow(WContainerWidget::OverflowAuto);
-
-
+  WGridLayout *samplesLayout = new WGridLayout();
+  samplesLayout->setContentsMargins( 0, 0, 0, 0 );
+  samplesContainer->setLayout( samplesLayout );
+  samplesContainer->setOverflow( WContainerWidget::OverflowAuto );
+  
+  WContainerWidget *importContainer = nullptr;
+  WGridLayout *importLayout = nullptr;
   
   //The bellow tabs must use WTabWidget::PreLoading, or else we will get a
   //  JavaScript exception when showLoadingIndicator() is called (in the JS).
   //  This is super confusing, and I dont understand it.  This manifests
   //  particularly on Android native version of app, but I think it might
   //  elsewhere as well.  (wcjohns 20150124)
-  WMenuItem *spectraItem = tabW->addTab(spectrumContainer, "Saved Snapshots", WTabWidget::PreLoading);
-  spectraItem->setIcon("InterSpec_resources/images/book.png");
-  WMenuItem *samplesItem = tabW->addTab(samplesContainer, "Samples", WTabWidget::PreLoading);
-  samplesItem->setIcon("InterSpec_resources/images/images.png");
+  tabW->addTab( spectrumContainer, "Saved Snapshots", WTabWidget::PreLoading );
+  tabW->addTab( samplesContainer, "Example Spectra", WTabWidget::PreLoading ); 
+  
+  if( m_viewer->isMobile() )
+  {
+    importContainer = new WContainerWidget();
+    importLayout = new WGridLayout();
+    importContainer->setLayout( importLayout );
+    
+    tabW->addTab( importContainer, "Import Spectra", WTabWidget::PreLoading );
+  }//if( m_viewer->isMobile() )
+  
   
   //----------Add workspace tab --------
   
@@ -182,15 +186,15 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     ///-----Sample -----
     m_messageModelSample = new Wt::WStandardItemModel(0,3, this);
     
-    WStandardItem* parserType = new WStandardItem();
+    WStandardItem *parserType = new WStandardItem();
     parserType->setData(k2006Icd1Parser); //kIaeaParser
-    vector<WStandardItem*> message(3);
+    vector<WStandardItem *> message( 3 );
     message[0] = new Wt::WStandardItem("Ba-133 (16k bin N42)");
     message[1] = new Wt::WStandardItem("example_spectra/ba133_source_640s_20100317.n42");
     message[2] = parserType;
     m_messageModelSample->appendRow(message);
     
-    if( viewer->isMobile() )
+    if( viewer && viewer->isMobile() )
     {
       parserType = new WStandardItem();
       parserType->setData(k2006Icd1Parser); //kIaeaParser
@@ -246,11 +250,11 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       m_messageModelSample->appendRow(message);
     } // if( viewer->isMobile() )
     
-    m_messageModelSample->setHeaderData(  0, Horizontal, WString("Spectra"), DisplayRole );
+    m_messageModelSample->setHeaderData(  0, Horizontal, WString("Example Spectra"), DisplayRole );
     m_tableSample = new RowStretchTreeView();
-    m_tableSample->setRootIsDecorated	(	false); //makes the tree look like a table! :)
+    m_tableSample->setRootIsDecorated( false ); //makes the tree look like a table! :)
     m_tableSample->addStyleClass( "DbSpecFileSelectTable" );
-    m_tableSample->setModel(m_messageModelSample);
+    m_tableSample->setModel( m_messageModelSample );
     m_tableSample->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
     m_tableSample->setColumnResizeEnabled(true);
     m_tableSample->setColumnAlignment(0, Wt::AlignLeft);
@@ -262,6 +266,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     m_tableSample->setAlternatingRowColors(true);
     m_tableSample->setSelectionMode(Wt::SingleSelection);
     m_tableSample->setEditTriggers(Wt::WAbstractItemView::NoEditTrigger);
+    m_tableSample->doubleClicked().connect( boost::bind( &UseInfoWindow::handleSampleDoubleClicked, this, _1, _2 ) );
     
     samplesLayout->addWidget(m_tableSample,0,0);
     samplesLayout->setRowStretch(0,1);
@@ -269,7 +274,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     WContainerWidget* buttons = new WContainerWidget();
     m_loadSampleButton = new WPushButton( "Load", buttons );
-    m_loadSampleButton->setStyleClass("DatabaseGoIcon");
+    //m_loadSampleButton->setStyleClass("DatabaseGoIcon");
     m_loadSampleButton->setFloatSide(Right);
     m_loadSampleButton->clicked().connect( this, &UseInfoWindow::loadSampleSelected );
     
@@ -278,7 +283,42 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     m_tableSample->doubleClicked().connect( boost::bind(&UseInfoWindow::loadSample, this, _1 ) );
     
     samplesLayout->addWidget( buttons, samplesLayout->rowCount()+1 , 0, AlignRight );
+    
+    
+    //Import tab
+    if( importContainer )
+    {
+      string msg = "<p>Tap <em>Choose File</em> to browse for the file you want to open.</p>";
+      WText *desc = new WText( msg );
+      desc->setTextAlignment( Wt::AlignmentFlag::AlignCenter );
+      importLayout->addWidget( desc, 0, 0, AlignCenter );
       
+      WFileUpload *upload = new WFileUpload();
+      importLayout->addWidget( upload, 1, 0, AlignCenter | AlignMiddle );
+      
+      upload->fileTooLarge().connect( std::bind( [this,desc,upload](){
+        upload->hide();
+        desc->setText( "<span style=\"color: red;\">Too Large of file.</span>" );
+      }) );
+      
+      upload->uploaded().connect( std::bind( [this,upload](){
+        const string filename = upload->spoolFileName();
+        const string displayFileName = upload->clientFileName().narrow();
+        m_viewer->userOpenFileFromFilesystem( filename, displayFileName );
+      } ) );
+                                            
+      upload->changed().connect( upload, &WFileUpload::upload );
+      
+      
+      
+      msg = "<p>You can also open spectra files by selecting <em>Open File</em> in the <em>InterSpec</em> sub menu after exiting thie screen.<br />"
+      "For email attachments, or files in apps like <em>Files</em>, <em>Dropbox</em>, <em>Google Drive</em>, etc., you can open"
+      " spectra files in <em>InterSpec</em> by selecting &quot;Copy To InterSpec&quot;"
+      "</p>";
+      desc = new WText( msg );
+      importLayout->addWidget( desc, 2, 0, AlignBottom );
+    }//if( importContainer )
+    
       
     const int sampleIndex = tabW->indexOf(samplesContainer);
     
@@ -297,15 +337,19 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   
   //----------Add left menu --------
   
-  SideMenuItem *item = new SideMenuItem( m_viewer->isMobile()?"":"Welcome", welcomeContainer );
+  SideMenuItem *item = new SideMenuItem( (m_viewer->isPhone() ? "" : "Welcome"), welcomeContainer );
+  if( m_viewer->isMobile() )
+    item->setIcon( "InterSpec_resources/images/home_small.png" );
   item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
   item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
-  item->setIcon("InterSpec_resources/images/user.png");
   m_menu->addItem( item );
   
   
   // ---- Videos
-//QT5 does not play back videos correctly
+  /*
+   //Dont put the videos in for now - they arent that good - but leaving code
+   //  commented out because the mechanism still works for in the future if
+   //  I do improve the videos.
   {
     WContainerWidget* controlContainer = new WContainerWidget();
     controlContainer->setOverflow(WContainerWidget::OverflowHidden);
@@ -367,24 +411,24 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       cerr << "getVideoInfoMap() caught: " << e.what() << endl
       << "you may want to check use_instructions.xml" << endl;
     }//try / catch
-    
-/*
+   
     item = new SideMenuItem( m_viewer->isMobile()?"":"Tutorial videos", controlContainer );
     item->setId("TutorialVideos");
     item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     item->setIcon("InterSpec_resources/images/film.png");
     m_menu->addItem( item );
-*/
   } //videos
-    
+*/
+  
+  
   //----------Create Controls window--------
   
   //Select either mobile or desktop mouse/keyboard/gesture page
   if( m_viewer->isMobile() )
   {
-    item = makeItem( "", "mobile-mouse-interactions" );
-    item->setIcon("InterSpec_resources/images/iphone.png");
+    item = makeItem( m_viewer->isPhone() ? "" : "Use Info", "mobile-mouse-interactions" );
+    item->setIcon("InterSpec_resources/images/phone_tips.png");
   }else if( m_viewer->isDesktop() )
   {
     WContainerWidget* controlContainer = new WContainerWidget();
@@ -464,7 +508,6 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     item = new SideMenuItem( "Controls", controlContainer );
     item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
-    item->setIcon("InterSpec_resources/images/mouse.png");
     m_menu->addItem( item );
   } //isDesktop()
 
@@ -482,129 +525,147 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     controlContainer->setLayout(controlLayout);
     WAnchor* anchor = new WAnchor();
     anchor->setLink(WLink("InterSpec_resources/static_text/InteractionCheatSheet.pdf"));
-    anchor->setImage(new WImage("InterSpec_resources/images/page_white_acrobat.png"));
+    //anchor->setImage(new WImage("InterSpec_resources/images/pdf_page.png"));
     anchor->setTarget( Wt::TargetNewWindow );
     anchor->setText("Cheat Sheet (PDF)");
 
-    controlLayout->addWidget(new WText("Export and print out this cheat sheet (Adobe Acrobat PDF format) to quickly reference actions, shortcut keys and troubleshooting."),0,0);
+    auto cheatTxt = new WText("Print out this cheat sheet (PDF format) to quickly reference actions, shortcut keys and troubleshooting.");
+    controlLayout->addWidget(cheatTxt,0,0);
     controlLayout->addWidget(anchor,1,0);
     controlLayout->setRowStretch(1, 1);
     
-    item = new SideMenuItem( m_viewer->isMobile()?"":"Cheat Sheet", controlContainer );
+    item = new SideMenuItem( (m_viewer->isPhone()?"":"Cheat Sheet"), controlContainer );
     item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
-    item->setIcon("InterSpec_resources/images/page_white_acrobat.png");
+    if( m_viewer->isMobile() )
+      item->setIcon("InterSpec_resources/images/pdf_page.png");
     m_menu->addItem( item );
   } //Cheat sheet PDF
   
-  char msg[512];
-  size_t pos = 0;
-  const char firstline[] = "<h1 align=\"center\">Welcome To <em>InterSpec</em>"
+  string msg;
+  msg += "<h1 align=\"center\">Welcome To <em>InterSpec</em>"
                            "</h1><div align=\"left\">";
-  
-  memcpy( msg+pos, firstline, sizeof(firstline)-1 );
-  pos += sizeof(firstline)-1;
-  
+
   if( m_viewer->isMobile() )
   {
-    const char line[] = "Tutorials are on the left, while sample and previously"
-                        " opened spectra and snapshots are bellow.";
-    memcpy( msg+pos, line, sizeof(line)-1 );
-    pos += sizeof(line)-1;
-  }else if( hideStateTab && hideSpecTab )
-  {
-    const char line[] = "You can learn the basics of using <em>InterSpec</em> "
-                        "by clicking through the tutorials, controls, and cheat"
-                        " sheet on the left.";
-    memcpy( msg+pos, line, sizeof(line)-1 );
-    pos += sizeof(line)-1;
+#if( USE_DB_TO_STORE_SPECTRA )
+    if( m_snapshotModel && m_snapshotModel->size()==0 )
+      msg += "<p>You can start by opening an example spectra below, or you can use the <em>Import Spectra</em> tab to load external files.<br />"
+      "</p>";
+    else
+      msg += "<p>Your previously saved spectra are shown below.  You can use the other tabs to open example spectra, or to import external spectral files.<br />You can also open spectra attached to email from your mail app.</p>";
+#else
+    msg += "<p>You can select an example spectrum file below, or use the import tab to open one from your iCloud, Dropbox, Google Drive, etc.<br />You can also open spectrum files attached to eamils.</p>";
+#endif
+   
   }else
   {
-    const char line[] = "You can use the references on the left to become "
+    msg += "<p>You can use the references on the left to become "
                         "more familiar with <em>InterSpec</em>, or you can "
                         "pick up from a previous session or spectrum bellow.";
-    memcpy( msg+pos, line, sizeof(line)-1 );
-    pos += sizeof(line)-1;
+    msg += " Alternatively, you can also drag and drop your "
+    "own spectrum file onto <em>InterSpec</em>.</p>";
   }
 
-  if( !m_viewer->isMobile() )
+  msg += "</div>";
+  
+  WText *text = new WText( msg );
+  
+  const char *mobilePostcriptText = "<p>If you are new to <em>InterSpec</em>, tap on the "
+  "<img src=\"InterSpec_resources/images/phone_tips.png\" width=16 height=16 alt=\"information icon\" /> "
+  "icon to the left for the basics of interacting with the chart and fitting for peaks; the "
+  "<img src=\"InterSpec_resources/images/pdf_page.png\" width=16 height=16 alt=\"PDF icon\" /> "
+  "section contains a PDF reference sheet that may be useful.  Tap the "
+  "<img src=\"InterSpec_resources/images/qmark.png\" width=16 height=16 alt=\"help icon\" /> "
+  "icon in the upper-right corner for detailed information about <em>InterSpec</em>s tools and features."
+  "</p>";
+  
+  if( m_viewer->isPhone() )
   {
-    const char lastline[] = " Alternatively, you can also drag and drop your "
-                            "own spectrum file onto <em>InterSpec</em>.";
-    memcpy( msg+pos, lastline, sizeof(lastline) );
-    pos += sizeof(lastline)-1;
+    text->setInline( false );
+    text->addStyleClass( "MobileWelcomeText" );
+    tabW->addStyleClass( "UseInfoTabsMobile" );
+    welcomeContainer->addWidget( text );
+    welcomeContainer->addWidget( tabW );
+    
+    text = new WText( mobilePostcriptText, Wt::XHTMLUnsafeText );
+    text->setInline( false );
+    text->addStyleClass( "MobileWelcomePoscriptText" );
+    welcomeContainer->addWidget( text );
+    
+    /*
+     //"Spectra attached to emails can be copied into <em>InterSpec</em> from within your mail app.<br />"
+     //"Once you have analyzed a spectrum, you can save a snapshot of your work, and it will show up in the <em>Saved Snapshots</em> tab."
+     */
+  }else
+  {
+    WGridLayout* rightLayout = new WGridLayout();
+    welcomeContainer->setLayout(rightLayout);
+    
+    rightLayout->addWidget( text, 0, 0 );
+    rightLayout->addWidget( tabW, 1, 0 );
+    rightLayout->setRowStretch( 1, 1 );
+    rightLayout->setContentsMargins( 9, 1, 9, 1 );
+    
+     if( m_viewer->isMobile() )
+     {
+       text = new WText( mobilePostcriptText, Wt::XHTMLUnsafeText );
+       text->addStyleClass( "MobileWelcomePoscriptText" );
+       rightLayout->addWidget( text, 2, 0 );
+     }//if( m_viewer->isMobile() )
   }
-  
-  const char divend[] = "</div>";
-  memcpy( msg+pos, divend, sizeof(divend) );  //copies '\0' as well
-  pos += sizeof(divend)-1;
-  
-  assert( pos < 512 );  //strlen(msg) is either 294 or 318 currently
-  
-  WText *text = new WText( msg, XHTMLUnsafeText );
-  rightLayout->addWidget( text, 0, 0 );
-  rightLayout->setRowStretch( 1, 1 );
-  rightLayout->setContentsMargins( 9, 1, 9, 1 );
 
 
   m_menu->select( 0 );
   
-  if (!m_viewer->isMobile())
-      layout->setRowStretch( 0, 1 );
+  if( !m_viewer->isMobile() )
+    layout->setRowStretch( 0, 1 );
   layout->setColumnStretch( 1, 1 );
+
   
   WContainerWidget *bottom = footer();
 
-//  footer()->resize( WLength::Auto, WLength(50) );
-  
+  if( m_viewer->isMobile() )
+  {
+    AuxWindow::addHelpInFooter(bottom, "");
+  }else
+  {
+    //Add link for license and terms
+    WAnchor *more = new WAnchor( WLink(), "License and Terms" );
+    more->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+    more->clicked().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, m_viewer, false, std::function<void()>() ) );
+    more->addStyleClass("InfoLink");
+    layout->addWidget( more, 1, 0 );
     
-   
-    if (m_viewer->isMobile())
-    {
-        //phone position
-        AuxWindow::addHelpInFooter(bottom, "");
-    }
-    else
-    {
-        //regular locations
-        WAnchor *more = new WAnchor( WLink(), "More in depth information" );
-        
-        more->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-        more->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, string("setting-up") ) );
-        more->addStyleClass("InfoLink");
-        layout->addWidget( more, 1, 0 );
-    }
-    layout->setContentsMargins( 0, 9, 9, 0 );
+    //regular locations
+    more = new WAnchor( WLink(), "More in depth information" );
+    more->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+    more->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, string("setting-up") ) );
+    more->addStyleClass("InfoLink");
+    layout->addWidget( more, 2, 0 );
+  }
+  
+  
+  layout->setContentsMargins( 0, 9, 9, 0 );
     
     
   if( showAgainCallback )
   {
-    WCheckBox *cb = new WCheckBox( "Always show at startup", bottom );
+    WCheckBox *cb = new WCheckBox( "show at start when no spectra", bottom );
     cb->setFloatSide( Left );
     cb->setChecked(viewer->m_user->preferenceValue<bool>( "ShowSplashScreen" ));
 
     cb->checked().connect( boost::bind( showAgainCallback, true ) );
     cb->unChecked().connect( boost::bind( showAgainCallback, false ) );
-    if (m_viewer->isMobile())
+    if( m_viewer->isMobile() )
     {
-        cb->setFloatSide(Right);
-        cb->setMargin(10,Right);
-//        cb->setMargin(WLength(20,WLength::Pixel),Wt::Left);
-    } //isPhone
+      cb->setFloatSide(Right);
+      cb->setMargin(10,Right);
+      cb->setMargin(3,Top);
+    }//isPhone
   }//if( !force )
-
   
-        
-//  {
-//    WContainerWidget *dummy = new WContainerWidget();
-//    SideMenuItem *item = new SideMenuItem( "More In Depth Info", dummy );
-// //    item->setIcon("InterSpec_resources/images/page_white_acrobat.png");
-//    item->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-//    item->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, string("setting-up") ) );
-//    m_menu->addItem( item );
-//  }
-  
-  WPushButton *ok = addCloseButtonToFooter();
+  WPushButton *ok = addCloseButtonToFooter( "Close" );
   ok->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
 }//UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,InterSpec* viewer ):
 
@@ -739,12 +800,14 @@ void UseInfoWindow::tab_select_item( WMenuItem *item )
     
     string tab = item->text().toUTF8(); //which tab we clicked
     
+    /*
     if (item->id().compare("TutorialVideos")==0)
     {
       //if we clicked on Tutorial videos side button, then we should check which
       //video tab was previously selected
       tab = m_videoTab->tabText(m_videoTab->currentIndex()).toUTF8();
     } //if (item->text().toUTF8().compare("Tutorial videos")==0)
+    */
     
     //Either match clicked tab, or just check which is selected
     if (iter->first.compare( tab)==0)
@@ -788,6 +851,20 @@ void UseInfoWindow::handleSampleSelectionChanged()
   else
     m_loadSampleButton->disable();
 }//void handleSampleSelectionChanged()
+
+
+
+
+void UseInfoWindow::handleSampleDoubleClicked( WModelIndex index, WMouseEvent event )
+{
+  if( event.button() != WMouseEvent::LeftButton || !index.isValid() )
+    return;
+  WModelIndexSet selected;
+  selected.insert( index );
+  m_tableSample->setSelectedIndexes( selected );
+  loadSampleSelected();
+}
+
 
 void UseInfoWindow::loadSample( const Wt::WModelIndex index )
 {

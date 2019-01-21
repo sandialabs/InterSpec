@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -305,6 +305,10 @@ namespace DataBaseVersionUpgrade
  //  we have to create a new table, and copy over the old one to the
  //  new one.
 
+ //Update 20181106: Foreign key constraints would need to be temporarily turned off
+ //  for the bellow "proper" method to work.  I.e., "PRAGMA foreign_keys = ON;"
+ //  see https://www.sqlite.org/foreignkeys.html#fk_enable
+ 
           sql = "ALTER TABLE InterSpecUser RENAME TO preV4_InterSpecUser;";
           executeSQL( sql, sqlSession );
           
@@ -358,7 +362,12 @@ namespace DataBaseVersionUpgrade
         std::cerr << "DB_SCHEMA_VERSION 4 : Failed to convert InterSpecUser: " << e.what() << std::endl;
       }//try / catch
     }//  if( version<4 && version<DB_VERSION )
-      
+    
+    
+    /* I *believe* there to be NO InterSpec instalations with a version less
+       than 5, so we could safely delete everything above here, but I guess I'll
+       leave in as template code for future upgrades.
+     */
     if( version<5 && version<DB_SCHEMA_VERSION )
     {
       try
@@ -392,12 +401,82 @@ namespace DataBaseVersionUpgrade
         }//if( the error message indicated column was already in schema )
       }//try / catch( add SnapshotTagParent_id column )
     }//if (version<5 && version<DB_SCHEMA_VERSION)
+    
+    
+    /* Version 6 created 20181018.  Adds table "InterSpecGlobalSetting" to hold
+       options that should be globally applied on application startup, like
+       the mapping from serial number to detector version, or update to
+       sandia.decay.xml.
+     */
+    if( version<6 && version<DB_SCHEMA_VERSION )
+    {
+      try
+      {
+        std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+        executeSQL("DROP TABLE IF EXISTS InterSpecGlobalSetting;",sqlSession);
+      }catch( std::exception & )
+      {
+        //We *should* probably get here, as the table shouldnt exist.
+      }
       
-    /// ******************************************************************
-    /// DB_SCHEMA_VERSION is at 5.  Add Version 6 here.  Update SRBUser.h!
-    /// ******************************************************************
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+      sqlSession->mapClass<InterSpecGlobalSetting>( "InterSpecGlobalSetting" );
+      sqlSession->createTables();
       
+      version = 7;  //This should have been 6, so 
+      setDBVersion( version, sqlSession );
+    }//if( version<6 && version<DB_SCHEMA_VERSION )
+    
+    //Skipping version 7, due to accidentally marging version 6 as 7 into DB
+    //  (although version 6 was never distributed so it would have been fine,
+    //   but just to be thorough)
+    
+    if( version<8 && version<DB_SCHEMA_VERSION )
+    {
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+        
+      executeSQL("DROP TABLE IF EXISTS ColorThemeInfo;",sqlSession);
+        
+      //The following has only been checked for SQLite3
+      const char *sql_statement = R"sql(create table "ColorThemeInfo" (
+      "id" integer primary key autoincrement,
+      "version" integer not null,
+      "InterSpecUser_id" bigint,
+      "ThemeName" text not null,
+      "ThemeDescription" text not null,
+      "CreationTime" text,
+      "ModifiedTime" text,
+      "JsonData" text not null,
+      constraint "fk_ColorThemeInfo_InterSpecUser" foreign key ("InterSpecUser_id") references "InterSpecUser" ("id") on delete cascade deferrable initially deferred
+      ))sql";
+        
+      executeSQL( sql_statement, sqlSession );
+      
+      version = 8;
+      setDBVersion( version, sqlSession );
+    }//if( version<6 && version<DB_SCHEMA_VERSION )
+    
+    
+    if( version<9 && version<DB_SCHEMA_VERSION )
+    {
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+      
+      //The following has only been checked for SQLite3.  Positions 'ColorThemeJson'
+      //  after the previous last column, witch I think Dbo needs.
+      const char *sql_statement = "ALTER TABLE UserState ADD COLUMN ColorThemeJson text;";
+      executeSQL( sql_statement, sqlSession );
+      
+      version = 9;
+      setDBVersion( version, sqlSession );
+    }//if( version<6 && version<DB_SCHEMA_VERSION )
+    
+    
+    
+    /// ******************************************************************
+    /// DB_SCHEMA_VERSION is at 9.  Add Version 10 here.  Update InterSpecUser.h!
+    /// ******************************************************************
   }//void checkAndUpgradeVersion()
+  
   
   std::shared_ptr<Wt::Dbo::Session> getSession( std::unique_ptr<Wt::Dbo::SqlConnection> &database )
   {

@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -54,7 +54,6 @@
 #include <Wt/Dbo/backend/Sqlite3>
 #include <Wt/Test/WTestEnvironment>
 
-#include "InterSpec/Decay.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PopupDiv.h"
@@ -64,6 +63,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/DecayWindow.h"
 #include "InterSpec/Recalibrator.h"
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/InterSpecUser.h"
@@ -84,18 +84,18 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/CanvasForDragging.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "SpecUtils/SpectrumDataStructs.h"
-#include "InterSpec/PhotopeakLineDisplay.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #if( !ANDROID && !IOS )
 #include "InterSpec/FileDragUploadResource.h"
 #endif
 #include "InterSpec/ShieldingSourceDisplay.h"
-
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/GammaXsGui.h"
 
 //#include <Wt/Dbo/WtSqlTraits>
@@ -1352,7 +1352,8 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
 
   peakModel->setPeaks( std::vector<PeakDef>() );
   
-  m_viewer->searchForPeaks( false );
+  PeakSearchGuiUtils::automated_search_for_peaks( m_viewer, false );
+  
   
   for( const PeakModel::PeakShrdPtr &peak : *peakModel->peaks() )
     testpeaks.push_back( *peak );

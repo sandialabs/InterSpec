@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <message id='app-title'>
-<div style="font-size: large; font-weight: bold; text-align: center;">InterSpec v. ${build-version}</div>
-<div style="font-size: small; font-weight: normal; text-align: center;">build date ${build-date}</div>
-<div style="text-align: center; font-size: small; margin-top: 0.5em; margin-bottom: 0.7em;">${copyright}</div>
+<div style="font-size: larger; font-weight: bold; text-align: center;">InterSpec v. ${build-version}</div>
+<div style="font-size: smaller; font-weight: normal; text-align: center;">build date ${build-date}</div>
+<div style="text-align: center; font-size: smaller; margin-top: 0.5em; margin-bottom: 0.7em;">${copyright}</div>
   </message>
   <message id='copyright'>
 Copyright 2018 National Technology &amp; Engineering Solutions of Sandia, LLC (NTESS).
@@ -49,7 +49,7 @@ This InterSpec Software was developed with funds from the Science and Technology
 <div style="text-align: center; width: 100%; margin-top: 0.5em;">
 <div style="margin: 0 auto; display: inline-block;">
   <img src="InterSpec_resources/images/DHSLogo129.jpg" alt="DHS Logo" height="67" width="67" />
-  <img src="InterSpec_resources/images/InterSpec128.jpg" alt="InterSpec Logo" height="67" width="67" />
+  <img src="InterSpec_resources/images/InterSpec128.png" alt="InterSpec Logo" height="67" width="67" />
   <img src="InterSpec_resources/images/snl_logo.gif" alt="Sandia National Laboratories Logo" height="67" width="150" />
 </div>
 </div>
@@ -100,31 +100,18 @@ This InterSpec Software was developed with funds from the Science and Technology
       </div>
     </li>
 
-    <li><b><a href="https://jquery.org/" target="_blank">jQuery</a> 1.11.1:</b> javascript library.
+    <li><b><a href="https://pugixml.org/" target="_blank">pugixml</a></b> Light-weight, simple and fast XML parser for C++ with XPath support.
       <div style="margin-left: 1em; font-size: small;">
-        <b>jQuery</b> is used to help deal with cross-browser idiosyncrasies in the client-side java script.
-        <b>jQuery</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>.
+        <b>pugixml</b> is used by the <em>spectrum file query tool</em> to parse an XPath query event XML files.
+        <b>pugixml</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>. (Windows, Linux, macOS builds only)
       </div>
     </li>
+
 
     <li><b><a href="https://github.com/root-project/root/tree/master/math/minuit2" target="_blank">Minuit2</a>:</b> Minimization Package.
       <div style="margin-left: 1em; font-size: small;">
         <b>Minuit2</b> is part <a href="https://root.cern/" target="_blank">Cern&apos;s ROOT</a> package, and is used to perform numerical optizations for peak, energy calibration, and shielding/source-activity fitting.
         <b>Minuit2</b> is licensed under the <a href="https://www.gnu.org/licenses/lgpl-2.1.txt" target="_blank">LGPL v2.1 License</a>.
-      </div>
-    </li>
-
-    <li><b><a href="http://qtip2.com/" target="_blank">qTip2</a> 2.2.0:</b> javascript library that provides tooltip and notification tools.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>qTip2</b> is used to help make the content-rich tooltips, as well as the notifications within <b>InterSpec</b>.
-        <b>qTip2</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>.
-      </div>
-    </li>
-
-    <li><b><a href="http://www.famfamfam.com/lab/icons/silk/" target="_blank">FamFamFam Silk</a> 1.3:</b> free icon set.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>Silk</b> provides many of the colorful icons used through <b>InterSpec</b>.
-        <b>Silk</b> is licensed under the <a href="https://creativecommons.org/licenses/by/2.5/" target="_blank">Creative Commons 2.5 License</a>.
       </div>
     </li>
 
@@ -152,20 +139,6 @@ This InterSpec Software was developed with funds from the Science and Technology
       </div>
     </li>
 
-    <li><b><a href="https://github.com/zaphoyd/websocketpp" target="_blank">WebSocket++</a> 0.7.0:</b> C++ library that implements RFC6455 The WebSocket Protocol.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>WebSocket++</b> is used to communicate between the c++ code and the <b>Electron</b> gui for Windows and Linux stand-alone desktop builds of <b>InterSpec</b>.
-        <b>WebSocket++</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
-      </div>
-    </li>
-
-    <li><b><a href="https://d3js.org/" target="_blank">d3.js</a>:</b> a JavaScript charting library.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>d3.js</b> is potentially included when exporting spectrum files as HTML files.
-        <b>d3.js</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
-      </div>
-    </li>
-
     <li><b><a href="https://www.sqlite.org/index.html" target="_blank">SQLite</a>:</b> SQL database engine.
       <div style="margin-left: 1em; font-size: small;">
         <b>SQLite</b> is used to save user preferences and application state.
@@ -181,6 +154,65 @@ This InterSpec Software was developed with funds from the Science and Technology
         <b>ROOT</b> is licensed under the <a href="https://www.gnu.org/licenses/lgpl-2.1.txt" target="_blank">LGPL v2.1 License</a>.
       </div>
     </li>
+
+    <li><b><a href="https://github.com/zaphoyd/websocketpp" target="_blank">WebSocket++</a> 0.7.0:</b> C++ library that implements RFC6455 The WebSocket Protocol.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>WebSocket++</b> is used to communicate between the c++ code and the <b>Electron</b> gui for Windows and Linux stand-alone desktop builds of <b>InterSpec</b>.
+        <b>WebSocket++</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
+        (Windows and Linux Electron builds only)
+      </div>
+    </li>
+
+    <li><b><a href="https://jquery.org/" target="_blank">jQuery</a> 1.11.1:</b> javascript library.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>jQuery</b> is used to help deal with cross-browser idiosyncrasies in the client-side java script.
+        <b>jQuery</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>.
+      </div>
+    </li>
+    <li><b><a href="http://qtip2.com/" target="_blank">qTip2</a> 2.2.0:</b> javascript library that provides tooltip and notification tools.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>qTip2</b> is used to help make the content-rich tooltips, as well as the notifications within <b>InterSpec</b>.
+        <b>qTip2</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="http://www.famfamfam.com/lab/icons/silk/" target="_blank">FamFamFam Silk</a> 1.3:</b> free icon set.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>Silk</b> provides many of the colorful icons used through <b>InterSpec</b>.
+        <b>Silk</b> is licensed under the <a href="https://creativecommons.org/licenses/by/2.5/" target="_blank">Creative Commons 2.5 License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="https://d3js.org/" target="_blank">d3.js</a>:</b> a JavaScript charting library.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>d3.js</b> is potentially included when exporting spectrum files as HTML files.
+        <b>d3.js</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
+      </div>
+    </li>
+
+    <li><b><a href="https://querybuilder.js.org/" target="_blank">jQuery QueryBuilder</a>:</b> jQuery plugin for user friendly query/filter creator.
+      <div style="margin-left: 1em; font-size: small;">
+       <b>QueryBuilder</b> is used to construct spectrum file queries.
+       <b>QueryBuilder</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
+       (Windows, Linux, macOS builds only)
+      </div>
+    </li>
+
+    <li><b><a href="https://bgrins.github.io/spectrum/" target="_blank">spectrum.js</a>:</b> The No Hassle jQuery Colorpicker.
+      <div style="margin-left: 1em; font-size: small;">
+      <b>spectrum.js</b> is select colors throughout InterSpec when a native <code>HTML5</code> is not used.
+      <b>spectrum.js</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
+      </div>
+    </li>
+
+    <li><b><a href="https://momentjs.com/" target="_blank">Moment.js</a>:</b> Parse, validate, manipulate, and display dates and times in JavaScript.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>Moment.js</b> is used to validate date/time input for the <em>spectrum file query tool</em>.
+        <b>Moment.js</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
+        (Windows, Linux, macOS builds only)
+      </div>
+    </li>
+
 
     <li>In addition to the many libraries used within <b>InterSpec</b>, many open-source, or publicly available tools
         and resources are used to develop <b>InterSpec</b> including, but not limited to:
@@ -205,8 +237,8 @@ This InterSpec Software was developed with funds from the Science and Technology
 
   <message id='contact'>
 <div style="margin-top: 1em;">
-  Please email bug reports and feature requests to William Johnson at
-  <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>.
+  Please email bug reports and feature requests
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>.
   <br />
   <br />
   Due to funding and personnel availability, support may not be available.

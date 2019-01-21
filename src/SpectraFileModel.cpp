@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -70,6 +70,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WAbstractItemModel>
 
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
@@ -84,7 +85,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "SpecUtils/UtilityFunctions.h"
 
-#if( ENABLE_D3_CHART_EXPORTING )
+#if( SpecUtils_ENABLE_D3_CHART )
 #include "SpecUtils/D3SpectrumExport.h"
 #endif
 
@@ -1357,7 +1358,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
   }catch(...)
   {
     stringstream msg;
-    msg << "SpectraFileHeader::setFile(): could not access the file '"
+    msg << "Could not access the file '"
         << displayFileName << "', located at '" << filename << "'" << endl;
     throw runtime_error( msg.str() );
   }//try / catch
@@ -1376,7 +1377,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
   if( !info )
   {
     stringstream msg;
-    msg << "I couldn't open '" << displayFileName
+    msg << "Could not open '" << displayFileName
         << "' with any of the available decoders, sorry.";
     throw std::runtime_error( msg.str() );
   }//if( !success )
@@ -1413,7 +1414,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::parseFile() const
   cerr << "In parseFile() and not using weak ptr" << endl;
 
   bool success = false;
-  std::shared_ptr<SpecMeas> info( new SpecMeas() );
+  auto info = std::make_shared<SpecMeas>();
 
   success = info->load_N42_file( filesystemlocation );
 
@@ -2237,6 +2238,9 @@ void DownloadCurrentSpectrumResource::handleRequest(
                              const Wt::Http::Request& request,
                              Wt::Http::Response& response )
 {
+  if( m_format == k2012N42SpectrumFile || m_format == kXmlSpectrumFile )
+    m_viewer->saveShieldingSourceModelToForegroundSpecMeas();
+
   std::shared_ptr<const SpecMeas> measurement
                                            = m_viewer->measurment( m_spectrum );
   if( !measurement )
@@ -2269,7 +2273,7 @@ void DownloadCurrentSpectrumResource::handleRequest(
     case k2012N42SpectrumFile: filename += ".n42"; break;
     case kChnSpectrumFile:     filename += ".chn"; break;
     case kIaeaSpeSpectrumFile: filename += ".spe"; break;
-#if( ENABLE_D3_CHART_EXPORTING )
+#if( SpecUtils_ENABLE_D3_CHART )
     case kD3HtmlSpectrumFile:  filename += ".html"; break;
 #endif //#if( USE_D3_EXPORTING )
     case kBinaryIntSpcSpectrumFile:
@@ -2414,7 +2418,7 @@ void DownloadSpectrumResource::handle_resource_request(
       response.setMimeType( "application/octet-stream" );
     break;
       
-#if( ENABLE_D3_CHART_EXPORTING )
+#if( SpecUtils_ENABLE_D3_CHART )
     case kD3HtmlSpectrumFile:
       response.setMimeType( "text/html" );
     break;
@@ -2481,7 +2485,7 @@ void DownloadSpectrumResource::handle_resource_request(
       measurement->write_iaea_spe( response.out(), samplenums, detectornums );
       break;
       
-#if( ENABLE_D3_CHART_EXPORTING )
+#if( SpecUtils_ENABLE_D3_CHART )
     case kD3HtmlSpectrumFile:
     {
       //For purposes of development, lets cheat and export everything as it is now
@@ -2518,7 +2522,7 @@ void DownloadSpectrumResource::handle_resource_request(
           if( peaks )
           {
             vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-            options.peaks_json = InterSpec::peak_json( inpeaks );
+            options.peaks_json = PeakDef::peak_json( inpeaks );
           }
           
           measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );
@@ -2592,7 +2596,7 @@ void SpecificSpectrumResource::setSpectrum( std::shared_ptr<const SpecMeas> spec
     case kExploraniumGr130v0SpectrumFile:
     case kExploraniumGr135v2SpectrumFile: name += ".dat";  break;
     case kIaeaSpeSpectrumFile:            name += ".spe";  break;
-#if( ENABLE_D3_CHART_EXPORTING )
+#if( SpecUtils_ENABLE_D3_CHART )
     case kD3HtmlSpectrumFile:             name += ".html"; break;
 #endif //#if( USE_D3_EXPORTING )
     case kNumSaveSpectrumAsType:          break;

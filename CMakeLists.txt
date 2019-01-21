@@ -8,7 +8,7 @@ endif( COMMAND cmake_policy )
 
 set( CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE )
 
-set( CMAKE_CXX_STANDARD 11 )
+set( CMAKE_CXX_STANDARD 14 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
 
 IF(WIN32)
@@ -17,20 +17,16 @@ IF(WIN32)
   include( cmake/ConfigureMsvc.txt )
 	configure_msvc_runtime() 
 
-  set( BOOST_PREFIX "C:/install/msvs2017r3/include/boost-1_65_1" )
-  set( ZLIB_PREFIX "C:/install/boost_1_61_0_msvs2015" )
-  list( APPEND PATH_SUFFIXES "C:/Program\ Files/WT" )
-  list( APPEND PATH_SUFFIXES "C:/install/msvs2017r3" )
-  list( APPEND PATH_SUFFIXES "C:/install/msvs2017r3/include" )
-  list( APPEND PATH_SUFFIXES "C:/install/msvs2017r3/lib" )
-  list( APPEND PATH_SUFFIXES "C:/install/msvs2017r3/include/boost-1_65_1" )
-
+  set( BOOST_PREFIX "C:/install/msvc2017/x64/boost_1_65_1" )
+  set( ZLIB_PREFIX "C:/install/msvc2017/x64/zlib" )
+  list( APPEND PATH_SUFFIXES "C:/install/msvc2017/x64/wt-3.3.4" )
+  
   set( EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE )
   set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj -D_SCL_SECURE_NO_WARNINGS /MP /wd4996 /wd4267 /DWINVER=0x0601 /D_WIN32_WINNT=0x0601" )
     #0x0601==Win7, 0x0501==WinXP
 ELSE(WIN32)
     set( EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE )
-    set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ftemplate-depth=512" )
+#    set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ftemplate-depth=512" )
 ENDIF(WIN32)
 
 SET( InterSpec_VERSION Development CACHE STRING "InterSpec Version" )
@@ -52,46 +48,28 @@ option( USE_OSX_NATIVE_MENU "Mirrors WMenus with OSX native NSMenu (not fully im
 option( USE_ELECTRON_NATIVE_MENU "Mirrors WMenus with Electrons native Menu (not fully implemented)" on )
 option( USE_HIGH_BANDWIDTH_INTERACTIONS "Allow more interactiveness with the charts" ON )
 option( SUPPORT_ZIPPED_SPECTRUM_FILES "(Work in progress) Allows opening zipped spectrum files" ON )
+option( ENABLE_RESOURCE_UPDATES "Enables user uploads of resource (nuc decay info, DRFs, etc) upgrades" ON )
 option( TRY_TO_STATIC_LINK "Try to link to static libs whenever possible" OFF )
-option( USE_SRB_HEADER_FOOTER "Include the SRB header and footer in the webpage" OFF )
 option( DRAW_GAMMA_LINES_LOG_AND_LIN "Have gamma lines indicators be drawn in log mode when y-axis is log" OFF )
-option( USE_SRB_DHS_BRANDING "Brands the app for SRB/DHS/SNL" on )
 option( ALLOW_URL_TO_FILESYSTEM_MAP "Allows a file ID to be specified in the URL to open a file from the filesystem" ON )
 option( USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON )
 option( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE "(experimental) Render photopeaks server-side rather than client side" ON )
 option( USE_SPECRUM_FILE_QUERY_WIDGET "Enables compilation of the spectrum file query tool (not for web deployment)" OFF )
 option( USE_SEARCH_MODE_3D_CHART "Enable 3D chart or searchmode/passthrough data.  Requires Wt >=3.3.4 compiled with WebGL/OpenGL support" OFF )
 option( USE_TERMINAL_WIDGET "Enables use of terminal widget" OFF )
-set( ENABLE_D3_CHART_EXPORTING OFF CACHE BOOL "Enables use of exporting D3 HTML files" )
-option( USE_SPECTRUM_CHART_D3 "Replaces Wt SpectrumChart with D3.js chart"  OFF )
+set( SpecUtils_ENABLE_D3_CHART ON CACHE BOOL "Enables use of exporting D3 HTML files" )
+option( USE_SPECTRUM_CHART_D3 "Replaces Wt SpectrumChart with D3.js chart"  ON )
 option( USE_SIMPLE_NUCLIDE_ASSIST "Enable using of Mike E. gamma rays of interest to help with nuclide ID" OFF )
 
 option( USE_SQLITE3_DB "Use SQLITE3 database to store user preferences and spectra" ON )
 option( USE_MYSQL_DB "Use MySQL database to store user preferences and spectra" OFF )
 option( USE_GOOGLE_MAP "Use google maps widget" ON )
-option( REBIN_FILES_TO_SINGLE_BINNING "Rebins all spectra in spectrum file to the same energy calibration" ON )
+option( SpecUtils_REBIN_FILES_TO_SINGLE_BINNING "Rebins all spectra in spectrum file to the same energy calibration" ON )
 option( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK "Include support for downloading images of the displayed page" OFF )
-
-#I like limit the X-axis by the amplitude of total activity, however it was
-#  requested to be able to limit the time by specifying days/months, etc.
-#  Since I am unsure of which way we will go on this, I'll leave it switchable
-#  at compile time with below flag
-option( DECAY_CHART_LIMIT_TIME_BY_ACTIVITY "Default to limiting X-Axis by days/months, etc." OFF )
-
-#We have a problem in that it would be nice to have the x-axis be dates after
-#  some initial date (like today), but WDateTime is only valid for a few
-#  thousand years after now.  To be able to properly visualize these longer
-#  halflikfe nuclides, we'll just use a time after T0.  However
-#  if you would like to use dates after today, just set DECAY_CHART_USE_X_AXIS_DATES to 1
-#  and re-compile.
-option( DECAY_CHART_USE_X_AXIS_DATES "Use dates for the X-Axis - note dates are only valid for a few thousand years, so this causes issues with long lived isotopes" OFF )
 
 set( MAX_SPECTRUM_MEMMORY_SIZE_MB 256 CACHE STRING "Amount of memory to allow spectra to take up before trying to offload them onto disk when not in use" )
 
-set( EXCLUSIVE_USER_NAME "" CACHE STRING "Name of person/organization who may use this app" )
-
 set( GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key." )
-
 
 set( GUI_TYPE "" )
 
@@ -151,59 +129,69 @@ else( BUILD_AS_OSX_APP )
     else(WIN32)
         SET(EXECUTABLE_NAME InterSpec.exe)
     endif(WIN32)
+    if(ANDROID)
+      SET( LIBRARYNAME "InterSpec" )
+    endif()
 endif( BUILD_AS_OSX_APP )
 
-if(ANDROID OR IOS)
+if(ANDROID OR IOS OR BUILD_AS_UNIT_TEST_SUITE )
   SET( LINK_TO_OBJECT ${LIBRARYNAME})
-else(ANDROID OR IOS)
+else(ANDROID OR IOS OR BUILD_AS_UNIT_TEST_SUITE )
   SET( LINK_TO_OBJECT ${EXECUTABLE_NAME})
-endif(ANDROID OR IOS)
+endif(ANDROID OR IOS OR BUILD_AS_UNIT_TEST_SUITE )
 
 
 IF(ANDROID)
   set(BUILD_AS_LOCAL_SERVER OFF)
   set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
   set(TRY_TO_STATIC_LINK ON)
-  set(USE_SRB_HEADER_FOOTER OFF)
   set(MAX_SPECTRUM_MEMMORY_SIZE_MB 32)
-  set(USE_SRB_DHS_BRANDING ON)
   set(USE_DB_TO_STORE_SPECTRA ON)
   set(USE_HIGH_BANDWIDTH_INTERACTION ON)
-  set(USE_SPECRUM_Fsrc/DigiBaseClientApp.cppILE_QUERY_WIDGET OFF)
+  set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
   set(USE_TERMINAL_WIDGET OFF)
-  set(ENABLE_D3_CHART_EXPORTING OFF)
+  set(SpecUtils_ENABLE_D3_CHART OFF)
   set(USE_SPECTRUM_CHART_D3 OFF)
-
-  IF(NOT DEFINED ANDROID_SDK_DIR)
-    MESSAGE(FATAL_ERROR
-    "Your configuration is missing the ANDROID_SDK_DIR variable. ")
-  ENDIF(NOT DEFINED ANDROID_SDK_DIR)
-  IF(NOT DEFINED ANDROID_NDK_TOOLS_DIR)
-    MESSAGE(FATAL_ERROR
-    "Your configuration is missing the ANDROID_NDK_TOOLS_DIR variable. ")
-  ENDIF(NOT DEFINED ANDROID_NDK_TOOLS_DIR)
-  IF(NOT DEFINED ANDROID_STAGING_DIR)
-    MESSAGE(FATAL_ERROR
-    "Your configuration is missing the ANDROID_STAGING_DIR variable. ")
-  ENDIF(NOT DEFINED ANDROID_STAGING_DIR)
-  IF(NOT DEFINED ANDROID_SDK_TARGET_ID)
-    MESSAGE(FATAL_ERROR
-    "Your configuration is missing the ANDROID_SDK_TARGET_ID variable. ")
-  ENDIF(NOT DEFINED ANDROID_SDK_TARGET_ID)
-
+  set(USE_SEARCH_MODE_3D_CHART ON)
+  set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
   set(SHARED_LIBS OFF)
   add_definitions(-DANDROID -DWT_NO_STD_WSTRING=ON -DWT_NO_STD_LOCALE=ON )
-#  add_definitions(-DANDROID -DWT_NO_STD_LOCALE=ON)
 
-  set(Boost_COMPILER "-gcc")
-  set(BOOST_PREFIX "${ANDROID_STAGING_DIR}")
-  set(Boost_DIR "${ANDROID_STAGING_DIR}" )
-  set(Boost_INCLUDE_DIR "${ANDROID_STAGING_DIR}/include" )
-  set(Boost_LIBRARY_DIR "${ANDROID_STAGING_DIR}/lib" )
-  set(BOOST_LIBRARYDIR "${ANDROID_STAGING_DIR}/lib" )
-  set(BOOST_ROOT "${Boost_DIR}" )
-  set(CMAKE_MODULE_PATH ${Boost_DIR} ${CMAKE_MODULE_PATH} )
-  set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
+
+#This is just painful.  I cant get the find_* macros to work with the CMake
+# included as part of Android Studio... After wasting what seems like an entire
+# day, its time for the brute force solution
+  if( NOT BOOST_WT_PREFIX_BASE )
+   message( fatal "You must define BOOST_WT_PREFIX_BASE when building Android build" )
+  endif( NOT BOOST_WT_PREFIX_BASE )
+  set( USRPREFIX "${BOOST_WT_PREFIX_BASE}/${ANDROID_ABI}" )
+  set( BOOST_LIB_START "${USRPREFIX}/lib/libboost_" )
+  set( BOOST_LIB_END "-clang-darwin-mt-1_65_1.a" )
+
+  list( APPEND CMAKE_FIND_ROOT_PATH "${USRPREFIX}" )
+
+  set( BOOST_PREFIX "${USRPREFIX}" )
+  set( Boost_LIBRARY_DIR "${USRPREFIX}/lib" )
+  set( Boost_INCLUDE_DIR "${USRPREFIX}/include" )
+  set( Boost_ATOMIC_LIBRARY_RELEASE ${BOOST_LIB_START}atomic${BOOST_LIB_END} )
+  set( Boost_CHRONO_LIBRARY_RELEASE ${BOOST_LIB_START}chrono${BOOST_LIB_END} )
+  set( Boost_DATE_TIME_LIBRARY_RELEASE ${BOOST_LIB_START}date_time${BOOST_LIB_END} )
+  set( Boost_FILESYSTEM_LIBRARY_RELEASE ${BOOST_LIB_START}filesystem${BOOST_LIB_END} )
+  set( Boost_IOSTREAMS_LIBRARY_RELEASE ${BOOST_LIB_START}iostreams${BOOST_LIB_END} )
+  set( Boost_PROGRAM_OPTIONS_LIBRARY_RELEASE ${BOOST_LIB_START}program_options${BOOST_LIB_END} )
+  set( Boost_RANDOM_LIBRARY_RELEASE ${BOOST_LIB_START}random${BOOST_LIB_END} )
+  set( Boost_REGEX_LIBRARY_RELEASE ${BOOST_LIB_START}regex${BOOST_LIB_END} )
+  set( Boost_SYSTEM_LIBRARY_RELEASE ${BOOST_LIB_START}system${BOOST_LIB_END} )
+  set( Boost_THREAD_LIBRARY_RELEASE ${BOOST_LIB_START}thread${BOOST_LIB_END} )
+  set( Boost_UNIT_TEST_FRAMEWORK_LIBRARY_RELEASE ${BOOST_LIB_START}unit_test_framework${BOOST_LIB_END} )
+  set( Boost_SIGNALS_LIBRARY_RELEASE ${BOOST_LIB_START}signals${BOOST_LIB_END} )
+  set( Boost_SERIALIZATION_LIBRARY_RELEASE ${BOOST_LIB_START}serialization${BOOST_LIB_END} )
+  set( Wt_INCLUDE_DIR=${USRPREFIX}/include )
+  set( Wt_LIBRARY=${USRPREFIX}/lib/libwt.a )
+  set( Wt_TEST_LIBRARY=${USRPREFIX}/lib/libwttest.a )
+  set( Wt_HTTP_LIBRARY=${USRPREFIX}/lib/libwthttp.a )
+  set( Wt_DBO_LIBRARY=${USRPREFIX}/lib/libwtdbo.a )
+  set( Wt_DBOSQLITE3_LIBRARY=${USRPREFIX}/lib/libwtdbosqlite3.a )
 ENDIF(ANDROID)
 
 
@@ -222,7 +210,6 @@ IF(IOS)
   set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
   set(PERFORM_DEVELOPER_CHECKS OFF)
   set(TRY_TO_STATIC_LINK ON)
-  set(USE_SRB_HEADER_FOOTER OFF)
   set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
   set(MAX_SPECTRUM_MEMMORY_SIZE_MB "32" )
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -DBOOST_AC_USE_PTHREADS -DBOOST_SP_USE_PTHREADS -DIOS=1 ")
@@ -243,7 +230,7 @@ IF(IOS)
   set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
   set(SUPPORT_ZIPPED_SPECTRUM_FILES ON)
   set(USE_TERMINAL_WIDGET OFF)
-  set(ENABLE_D3_CHART_EXPORTING OFF)
+  set(SpecUtils_ENABLE_D3_CHART OFF)
   set(USE_SPECTRUM_CHART_D3 OFF)
 
   #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
@@ -260,11 +247,9 @@ ENDIF(IOS)
 IF( BUILD_AS_OSX_APP )
   set( ALLOW_URL_TO_FILESYSTEM_MAP ON )
   set( USE_OSX_NATIVE_MENU ON )
-  set( USE_SRB_HEADER_FOOTER OFF )
-  set( USE_SRB_DHS_BRANDING ON )
   set( USE_SPECRUM_FILE_QUERY_WIDGET ON )
   set( USE_TERMINAL_WIDGET OFF )
-  set( ENABLE_D3_CHART_EXPORTING OFF )
+  set( SpecUtils_ENABLE_D3_CHART OFF )
   set( USE_SPECTRUM_CHART_D3 OFF )
 ENDIF( BUILD_AS_OSX_APP )
 
@@ -273,8 +258,6 @@ IF( BUILD_AS_ELECTRON_APP )
   set( BUILD_AS_LOCAL_SERVER OFF )
   set( ALLOW_URL_TO_FILESYSTEM_MAP ON )
   set( USE_OSX_NATIVE_MENU OFF )
-  set( USE_SRB_HEADER_FOOTER OFF )
-  set( USE_SRB_DHS_BRANDING ON )
   set( USE_SPECRUM_FILE_QUERY_WIDGET ON )
   set( USE_TERMINAL_WIDGET OFF )
 ENDIF( BUILD_AS_ELECTRON_APP )
@@ -283,29 +266,25 @@ ENDIF( BUILD_AS_ELECTRON_APP )
 IF( BUILD_AS_UNIT_TEST_SUITE )
     set( BUILD_AS_LOCAL_SERVER OFF )
     set( USE_ENERGY_VS_TIME_PLOTS OFF )
-    set( USE_SRB_HEADER_FOOTER OFF )
     set( USE_DB_TO_STORE_SPECTRA ON )
-    set( USE_SRB_DHS_BRANDING ON )
     set( ALLOW_URL_TO_FILESYSTEM_MAP ON )
     set( INCLUDE_ANALYSIS_TEST_SUITE ON )
-    set( TRY_TO_STATIC_LINK OFF )
+    set( TRY_TO_STATIC_LINK ON )
     set( PERFORM_DEVELOPER_CHECKS ON )
     set( USE_SPECRUM_FILE_QUERY_WIDGET ON )
     set( USE_TERMINAL_WIDGET ON )
-    set( ENABLE_D3_CHART_EXPORTING ON )
+    set( SpecUtils_ENABLE_D3_CHART ON )
     set( USE_SPECTRUM_CHART_D3 OFF )
 ENDIF( BUILD_AS_UNIT_TEST_SUITE )
 
 IF( BUILD_FOR_WEB_DEPLOYMENT )
     set( TRY_TO_STATIC_LINK ON )
-    set( USE_SRB_HEADER_FOOTER ON )
     set( CMAKE_BUILD_TYPE:STRING "Release" )
-    set( USE_SRB_DHS_BRANDING ON )
     set( ALLOW_URL_TO_FILESYSTEM_MAP OFF )
     set( USE_DB_TO_STORE_SPECTRA ON )
     set( USE_SQLITE3_DB OFF )
     set( USE_MYSQL_DB ON )
-    set( DATABASE_PASSWORD_FILE "/home/srb/passwords/databases.xml" )
+    set( DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml" )
     set( USE_GOOGLE_MAP OFF )
     set( INCLUDE_ANALYSIS_TEST_SUITE OFF )
     set( Boost_LIBRARY_DIR "/home/srb/users/wcjohns/wtchroot/lib" )
@@ -314,8 +293,11 @@ IF( BUILD_FOR_WEB_DEPLOYMENT )
     set( SUPPORT_ZIPPED_SPECTRUM_FILES ON )
     set( USE_SPECRUM_FILE_QUERY_WIDGET OFF )
     set( USE_TERMINAL_WIDGET ON )
-    set( ENABLE_D3_CHART_EXPORTING ON )
-    set( USE_SPECTRUM_CHART_D3 OFF )
+    set( SpecUtils_ENABLE_D3_CHART ON )
+    set( USE_SPECTRUM_CHART_D3 ON )
+    if( ENABLE_RESOURCE_UPDATES )
+      MESSAGE( FATAL_ERROR "ENABLE_RESOURCE_UPDATES must not be enabled if you are building for web deployment" )
+    endif( ENABLE_RESOURCE_UPDATES )
 ENDIF( BUILD_FOR_WEB_DEPLOYMENT )
 
 
@@ -371,12 +353,10 @@ endif(TRY_TO_STATIC_LINK)
 
 
 INCLUDE(cmake/FindWt.cmake)
-INCLUDE(cmake/WtFindZlib.txt)
+INCLUDE(cmake/WtFindZlib.txt)  #ToDo: switch to using CMake privided FindZLIB.cmake, e.g. use find_package( ZLIB REQUIRED )
 
-
-SET( Boost_ADDITIONAL_VERSIONS "1.41" "1.42" "1.43" "1.44.0" "1.44" "1.45" "1.46" "1.47" "1.48" "1.49" "1.55" "1.57" "1.65" "1.65_1" )
-#boost timer and chrono libs are only needed for development purposes
-#FIND_PACKAGE( Boost 1.41.0 COMPONENTS thread date_time system filesystem serialization program_options regex random chrono )
+SET( Boost_ADDITIONAL_VERSIONS "1.55" "1.57" "1.65" "1.65_1" )
+#find_package( Boost 1.41.0 COMPONENTS thread date_time system filesystem program_options regex random chrono atomic )
 
 INCLUDE(cmake/WtFindBoost-cmake.txt)
 IF(NOT BOOST_WT_FOUND)
@@ -386,15 +366,11 @@ IF(NOT BOOST_WT_FOUND)
   MESSAGE(FATAL_ERROR ${ERR})
 ENDIF(NOT BOOST_WT_FOUND)
 
-FIND_PATH( SANDIA_DECAY_DIR SandiaDecay.h REQUIRED
-           HINTS "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/sandia_decay/" )
-include_directories( ${SANDIA_DECAY_DIR} )
 
 set( sources
     src/DecayDataBaseServer.cpp
     src/IsotopeSelectionAids.cpp
     src/IsotopeId.cpp
-    ${SANDIA_DECAY_DIR}/SandiaDecay.cpp
     src/MaterialDB.cpp
     src/PhysicalUnits.cpp
     src/MassAttenuationTool.cpp
@@ -403,10 +379,11 @@ set( sources
     src/ShieldingSourceDisplay.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
-    src/PhotopeakLineDisplay.cpp
+    src/ReferencePhotopeakDisplay.cpp
     src/IsotopeNameFilterModel.cpp
     src/ReactionGamma.cpp
     src/IsotopeSearchByEnergy.cpp
+    src/IsotopeSearchByEnergyModel.cpp
     src/SpectrumChart.cpp
     src/SpectrumDataModel.cpp
     src/SpectrumDisplayDiv.cpp
@@ -430,7 +407,7 @@ set( sources
     src/DetectorEdit.cpp
     src/OneOverR2Calc.cpp
     src/ActivityConverter.cpp
-    src/Decay.cpp
+    src/DecayWindow.cpp
     src/DecayActivityDiv.cpp
     src/DecayChainChart.cpp
     src/DecaySelectNuclideDiv.cpp
@@ -443,12 +420,16 @@ set( sources
     src/RowStretchTreeView.cpp
     src/DataBaseVersionUpgrade.cpp
     src/DataBaseUtils.cpp
-    src/FitNuclidesPeaks.cpp
     src/Integrate.cpp
     src/GadrasSpecFunc.cpp
     src/DoseCalc.cpp
     src/DoseCalcWidget.cpp
     src/GadrasGamFileParser.cpp
+    src/ColorSelect.cpp
+    src/ColorTheme.cpp
+    src/ColorThemeWidget.cpp
+    src/ColorThemeWindow.cpp
+    src/PeakSearchGuiUtils.cpp
     js/CanvasForDragging.js
     js/SpectrumChart.js
     js/InterSpec.js
@@ -460,7 +441,6 @@ set( headers
     InterSpec/DecayDataBaseServer.h
     InterSpec/IsotopeSelectionAids.h
     InterSpec/IsotopeId.h
-    ${SANDIA_DECAY_DIR}/SandiaDecay.h
     InterSpec/MaterialDB.h
     InterSpec/PhysicalUnits.h
     InterSpec/MassAttenuationTool.h
@@ -469,10 +449,11 @@ set( headers
     InterSpec/ShieldingSourceDisplay.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
-    InterSpec/PhotopeakLineDisplay.h
+    InterSpec/ReferencePhotopeakDisplay.h
     InterSpec/IsotopeNameFilterModel.h
     InterSpec/ReactionGamma.h
     InterSpec/IsotopeSearchByEnergy.h
+    InterSpec/IsotopeSearchByEnergyModel.h
     InterSpec/SpectrumChart.h
     InterSpec/SpectrumDataModel.h
     InterSpec/SpectrumDisplayDiv.h
@@ -496,7 +477,7 @@ set( headers
     InterSpec/DetectorEdit.h
     InterSpec/OneOverR2Calc.h
     InterSpec/ActivityConverter.h
-    InterSpec/Decay.h
+    InterSpec/DecayWindow.h
     InterSpec/DecayActivityDiv.h
     InterSpec/DecayChainChart.h
     InterSpec/DecaySelectNuclideDiv.h
@@ -509,12 +490,16 @@ set( headers
     InterSpec/RowStretchTreeView.h
     InterSpec/DataBaseVersionUpgrade.h
     InterSpec/DataBaseUtils.h
-    InterSpec/FitNuclidesPeaks.h
     InterSpec/Integrate.h
     InterSpec/GadrasSpecFunc.h
     InterSpec/DoseCalc.h
     InterSpec/DoseCalcWidget.h
     InterSpec/GadrasGamFileParser.h
+    InterSpec/ColorSelect.h
+    InterSpec/ColorTheme.h
+    InterSpec/ColorThemeWidget.h
+    InterSpec/ColorThemeWindow.h
+    InterSpec/PeakSearchGuiUtils.h
 )
 
 if( USE_DB_TO_STORE_SPECTRA )
@@ -583,7 +568,7 @@ endif( USE_SEARCH_MODE_3D_CHART )
 
 if( USE_TERMINAL_WIDGET )
     set( sources ${sources} src/TerminalModel.cpp    src/TerminalWidget.cpp   js/TerminalWidget.js )
-    set( headers ${headers} InterSpec/TerminalHelper.h   InterSpec/TerminalModel.h   InterSpec/TerminalWidget.h )
+    set( headers ${headers} InterSpec/TerminalModel.h   InterSpec/TerminalWidget.h )
 endif( USE_TERMINAL_WIDGET )
 
 
@@ -592,6 +577,11 @@ if( SUPPORT_ZIPPED_SPECTRUM_FILES )
     set( headers ${headers} InterSpec/ZipArchive.h )
 endif( SUPPORT_ZIPPED_SPECTRUM_FILES )
 
+
+if( ENABLE_RESOURCE_UPDATES )
+    set( sources ${sources} src/ResourceUpdate.cpp src/ResourceUpdateTool.cpp )
+    set( headers ${headers} InterSpec/ResourceUpdate.h InterSpec/ResourceUpdateTool.h )
+endif( ENABLE_RESOURCE_UPDATES )
 
 if( USE_SIMPLE_NUCLIDE_ASSIST )
     set( sources ${sources} src/SimpleNuclideAssist.cpp )
@@ -604,18 +594,22 @@ IF( USE_SPECRUM_FILE_QUERY_WIDGET AND ("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT
 ENDIF( USE_SPECRUM_FILE_QUERY_WIDGET AND ("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID) )
 
 
-IF( USE_SPECRUM_FILE_QUERY_WIDGET AND (BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP OR BUILD_AS_LOCAL_SERVER OR BUILD_AS_UNIT_TEST_SUITE) )
-  set( sources ${sources} src/SpecFileQueryWidget.cpp )
-  set( headers ${headers} InterSpec/SpecFileQueryWidget.h )
-ENDIF( USE_SPECRUM_FILE_QUERY_WIDGET AND (BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP OR BUILD_AS_LOCAL_SERVER OR BUILD_AS_UNIT_TEST_SUITE) )
+IF( USE_SPECRUM_FILE_QUERY_WIDGET )
+  IF( BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP OR BUILD_AS_LOCAL_SERVER OR BUILD_AS_UNIT_TEST_SUITE )
+    set( sources ${sources} src/SpecFileQuery.cpp src/SpecFileQueryWidget.cpp src/SpecFileQueryDbCache.cpp )
+    set( headers ${headers} InterSpec/SpecFileQuery.h InterSpec/SpecFileQueryWidget.h InterSpec/SpecFileQueryDbCache.h )
+    list( APPEND sources js/SpecFileQueryWidget.js )
+
+    add_subdirectory( external_libs/pugixml-1.9 )
+    list( APPEND LIBRARIES_TO_LINK_TO pugixml )
+  ENDIF( BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP OR BUILD_AS_LOCAL_SERVER OR BUILD_AS_UNIT_TEST_SUITE )
+ENDIF( USE_SPECRUM_FILE_QUERY_WIDGET )
 
 if( USE_SPECTRUM_CHART_D3 )
-    set( sources ${sources}
+   list( APPEND sources
       src/D3SpectrumDisplayDiv.cpp
       external_libs/SpecUtils/d3_resources/d3.v3.min.js
       external_libs/SpecUtils/d3_resources/c.min.js
-      external_libs/SpecUtils/d3_resources/numeric-1.2.6.min.js
-      external_libs/SpecUtils/d3_resources/PeakFit.js
       external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
       external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
       )
@@ -626,8 +620,8 @@ endif( USE_SPECTRUM_CHART_D3 )
 FIND_PATH( WT_RESOURCES_DIRECTORY form.css
            ${Wt_INCLUDE_DIR}/../share/Wt/resources )
 
-set( REBIN_FILES_TO_SINGLE_BINNING ON CACHE BOOL "Set Rebin spectrum to single energy cal" )
-set( SPECTRUM_DATA_STRUCTS_NO_BOOST_LIB OFF CACHE BOOL "Use boost for threading primitives in SpecUtils" )
+set( SpecUtils_REBIN_FILES_TO_SINGLE_BINNING ON CACHE BOOL "Set Rebin spectrum to single energy cal" )
+set( SpecUtils_NO_BOOST_LIB OFF CACHE BOOL "Use boost for threading primitives in SpecUtils" )
 set( SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "" )
 set( SpecUtils_EXTERNALLY_DEFINED_LOG_MESSAGE ON CACHE BOOL "" )
 set( SpecUtils_BUILD_TEST OFF CACHE BOOL "" )
@@ -635,10 +629,16 @@ set( SpecUtils_PYTHON_BINDINGS OFF CACHE BOOL "" )
 set( SpecUtils_JAVA_SWIG OFF CACHE BOOL "" )
 set( SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "" )
 include_directories( "${Wt_INCLUDE_DIR}" )
-add_subdirectory( external_libs/SpecUtils )
-list( APPEND LIBRARIES_TO_LINK_TO ${SpecUtils_LIBS} )
-INCLUDE_DIRECTORIES( ${SpecUtils_INC_DIRS} )
 
+add_subdirectory( external_libs/SpecUtils )
+list( APPEND LIBRARIES_TO_LINK_TO SpecUtils )
+
+add_subdirectory( external_libs/SandiaDecay )
+list( APPEND LIBRARIES_TO_LINK_TO SandiaDecay )
+
+set( RAPID_XML_INC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdparty )
+#find_path( RAPID_XML_INC_DIR rapidxml/rapidxml.hpp ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdparty )
+INCLUDE_DIRECTORIES( ${RAPID_XML_INC_DIR} )
 
 #We should have figured out all the header and source files we need by here, so
 #  lets add the executable to the build
@@ -680,7 +680,7 @@ else( ANDROID OR IOS )
     FIND_LIBRARY(FOUNDATION_LIBRARY Foundation)
 
     MARK_AS_ADVANCED( WEBKIT_LIBRARY COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
-    SET( LIBRARIES_TO_LINK_TO ${LIBRARIES_TO_LINK_TO}
+    list( APPEND LIBRARIES_TO_LINK_TO
           ${WEBKIT_LIBRARY} ${COCOA_LIBRARY} ${APPKIT_LIBRARY}
           ${COREDATA_LIBRARY} ${FOUNDATION_LIBRARY} )
 
@@ -700,7 +700,7 @@ else( ANDROID OR IOS )
     SET( EN_LOCALIZATION_FILES InfoPlist.strings Credits.rtf )
 
     #set( LINK_TO_OBJECT "${EXECUTABLE_NAME}" )
-    #target_link_libraries( ${EXECUTABLE_NAME} ${LIBRARIES_TO_LINK_TO} )
+    #target_link_libraries( ${EXECUTABLE_NAME} PRIVATE ${LIBRARIES_TO_LINK_TO} )
     #set_property(TARGET ${EXECUTABLE_NAME} PROPERTY CXX_STANDARD 11)
     #set_property(TARGET prog PROPERTY CXX_STANDARD_REQUIRED ON)
 
@@ -745,9 +745,8 @@ else( ANDROID OR IOS )
 
     if( BUILD_AS_UNIT_TEST_SUITE )
       add_library( ${LIBRARYNAME} STATIC ${sources} ${headers} )
-      set( LIBRARIES_TO_LINK_TO ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
+      #list( APPEND LIBRARIES_TO_LINK_TO ${LIBRARYNAME} )
       add_executable( ${EXECUTABLE_NAME} ${GUI_TYPE} main.cpp )
-      list( APPEND LIBRARIES_TO_LINK_TO ${LIBRARYNAME} )
     else( BUILD_AS_UNIT_TEST_SUITE )
       add_executable( ${EXECUTABLE_NAME} ${GUI_TYPE} main.cpp ${sources} ${headers} )
     endif( BUILD_AS_UNIT_TEST_SUITE )
@@ -758,102 +757,13 @@ endif( ANDROID OR IOS )
 
 
 if(ANDROID)
-    #Uhg, this all should be upgraded to work with something like:
-    #  https://github.com/taka-no-me/android-cmake
-    #  as well as all the names cleaned up and stuff
     INCLUDE_DIRECTORIES( target )
     set( headers ${headers} target/android/AndroidUtils.hpp )
-
-#this section adapted from wt-3.2.1/examples/CMakeLists.txt
-    set( BUILD_SHARED_LIBS ON )
-
-    set(WT_ANDROID plaforms/android/wt-android)
-    make_directory(${CMAKE_CURRENT_BINARY_DIR}/wt-android)
-    make_directory(${CMAKE_CURRENT_BINARY_DIR}/wt-android/libs/armeabi)
-
-
-    set_target_properties(${LIBRARYNAME} PROPERTIES
-      LIBRARY_OUTPUT_DIRECTORY
-      "${CMAKE_CURRENT_BINARY_DIR}/wt-android/libs/armeabi"
-      OUTPUT_NAME
-      ${LIBRARYNAME})
-
-    make_directory(${CMAKE_CURRENT_BINARY_DIR}/wt-android/assets)
-    set(WT_ANDROID target/android/wt-android)
-
-    make_directory(${CMAKE_CURRENT_BINARY_DIR}/wt-android/src/eu/webtoolkit/android/InterSpec)
-    make_directory(${CMAKE_CURRENT_BINARY_DIR}/wt-android/src/eu/webtoolkit/android/InterSpec/InterSpec)
-    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-      "${CMAKE_CURRENT_SOURCE_DIR}/${WT_ANDROID}/src/eu/webtoolkit/android/InterSpec.java"
-      "${CMAKE_CURRENT_BINARY_DIR}/wt-android/src/eu/webtoolkit/android/InterSpec/InterSpec.java" )
-
-
-    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-          "${CMAKE_CURRENT_SOURCE_DIR}/${WT_ANDROID}/src/eu/webtoolkit/android/WtAndroid.java"
-          "${CMAKE_CURRENT_BINARY_DIR}/wt-android/src/eu/webtoolkit/android/InterSpec/WtAndroid.java" )
-
-    make_directory(${CMAKE_CURRENT_BINARY_DIR}/wt-android/res)
-    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-      "${CMAKE_CURRENT_SOURCE_DIR}/${WT_ANDROID}/utils.xml"
-      "${CMAKE_CURRENT_BINARY_DIR}/wt-android/utils.xml" )
-
-    FILE(COPY ${CMAKE_CURRENT_SOURCE_DIR}/${WT_ANDROID}/libs/wmp.jar
-      DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/wt-android/libs/)
-
-    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-      "${CMAKE_CURRENT_SOURCE_DIR}/${WT_ANDROID}/AndroidManifest.xml"
-      "${CMAKE_CURRENT_BINARY_DIR}/wt-android/AndroidManifest.xml" )
-
-#    add_custom_command(TARGET ${LIBRARYNAME}
-#      POST_BUILD
-#      COMMAND ant -f ${CMAKE_CURRENT_BINARY_DIR}/wt-android/utils.xml
-#      -Dwt.dir=${JAVA_SOURCE_DIR} -Dexample.dir=${CMAKE_CURRENT_SOURCE_DIR}
-#      -Dwt-android.dir=${CMAKE_CURRENT_BINARY_DIR}/wt-android/)
-
-
-#We will force cmake to always re-go through the java build and android
-#  packaging ish, since I cant figure out how to have cmake do it inteligently.
-    add_custom_target( AndroidBuild ALL
-      DEPENDS ${LIBRARYNAME}
-              ${CMAKE_CURRENT_SOURCE_DIR}/${WT_ANDROID}/utils.xml
-              ${CMAKE_CURRENT_SOURCE_DIR}/${WT_ANDROID}/AndroidManifest.xml
-              ${CMAKE_CURRENT_SOURCE_DIR}/${WT_ANDROID}/src/eu/webtoolkit/android/InterSpec.java
-              ${CMAKE_CURRENT_SOURCE_DIR}/${WT_ANDROID}/src/eu/webtoolkit/android/WtAndroid.java )
-
-    add_custom_command(TARGET AndroidBuild
-      POST_BUILD
-      COMMAND ant -f ${CMAKE_CURRENT_BINARY_DIR}/wt-android/utils.xml
-      -Dsource.dir=${CMAKE_CURRENT_SOURCE_DIR}
-      -Dwt-android.dir=${CMAKE_CURRENT_BINARY_DIR}/wt-android/ )
-
-    IF(NOT DEFINED ANDROID_STRIP)
-      MESSAGE(" Warning!!! ANDROID_STRIP is not defined!")
-      MESSAGE(" Warning!!! The so file will not be stripped and your android")
-      MESSAGE("            package might be too large to fit on the target")
-      MESSAGE("            device!")
-    ELSE(NOT DEFINED ANDROID_STRIP)
-      add_custom_command(TARGET ${LIBRARYNAME}
-      POST_BUILD
-      COMMAND ${ANDROID_STRIP}
-      "${CMAKE_CURRENT_BINARY_DIR}/wt-android/libs/armeabi/*.so")
-    ENDIF(NOT DEFINED ANDROID_STRIP)
-
-    add_custom_command(TARGET AndroidBuild
-      POST_BUILD
-      COMMAND ${ANDROID_SDK_DIR}/tools/android update project
-      --name wt-android --target ${ANDROID_SDK_TARGET_ID}
-      --path ${CMAKE_CURRENT_BINARY_DIR}/wt-android/ )
-
-    add_custom_command(TARGET AndroidBuild
-      POST_BUILD
-      COMMAND ant -f ${CMAKE_CURRENT_BINARY_DIR}/wt-android/build.xml debug )
 ENDIF(ANDROID)
 
 
-  add_subdirectory( external_libs/Minuit2 )
-  set( LIBRARIES_TO_LINK_TO ${LIBRARIES_TO_LINK_TO} minuit2 )
-
-  INCLUDE_DIRECTORIES( external_libs/Minuit2/inc )
+add_subdirectory( external_libs/Minuit2 )
+list( APPEND LIBRARIES_TO_LINK_TO minuit2 )
 
 
 if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
@@ -864,15 +774,6 @@ endif( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD
 IF( IOS )
   #kludge for Xcode linker error
   set( HAS_WTDBOMYSQL OFF )
-
-  MESSAGE("#####################################################")
-  MESSAGE("# USE_MYSQL_DB IS " ${USE_MYSQL_DB})
-  MESSAGE("# HAS_WTDBOMYSQL IS " ${HAS_WTDBOMYSQL})
-  MESSAGE("# USE_SQLITE3_DB IS " ${USE_SQLITE3_DB})
-  MESSAGE("# HAS_WTDBOSQLITE3 IS " ${HAS_WTDBOSQLITE3})
-  MESSAGE("# Wt_INCLUDE_DIR IS '${Wt_INCLUDE_DIR}'")
-  MESSAGE("#####################################################")
-  execute_process(COMMAND sleep 4)
 ENDIF( IOS )
 
 IF( USE_MYSQL_DB AND USE_SQLITE3_DB )
@@ -903,10 +804,6 @@ IF(WIN32)
   endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
   link_directories( ${Boost_LIBRARY_DIR} )
 
-  IF( Boost_TIMER_FOUND )
-    list( APPEND LIBRARIES_TO_LINK_TO ${Boost_TIMER_LIBRARY} )
-  ENDIF( Boost_TIMER_FOUND )
-
   IF( Boost_CHRONO_FOUND )
     list( APPEND LIBRARIES_TO_LINK_TO ${Boost_CHRONO_LIBRARY} )
   ENDIF( Boost_CHRONO_FOUND )
@@ -924,12 +821,10 @@ ENDIF(WIN32)
       ${Boost_RANDOM_LIBRARY}
       ${Boost_PROGRAM_OPTIONS_LIBRARY}
       ${Boost_DATE_TIME_LIBRARY}
-      ${Boost_SERIALIZATION_LIBRARY}
   )
 
   find_package( Threads REQUIRED )
-message( "LINK_TO_OBJECT=${LINK_TO_OBJECT}")
-  target_link_libraries( ${LINK_TO_OBJECT} Threads::Threads )
+  target_link_libraries( ${LINK_TO_OBJECT} PUBLIC Threads::Threads )
 
 endif( NOT IOS )
 #ENDIF(WIN32)
@@ -1032,27 +927,30 @@ if( Wt_FIREBIRD_LIBRARY )
 endif( Wt_FIREBIRD_LIBRARY )
 
 INCLUDE( CheckIncludeFiles )
+
 if( ZLIB_FOUND AND Boost_IOSTREAMS_FOUND )
-  CHECK_INCLUDE_FILES( "zlib.h" HAS_ZLIB_SUPPORT )
+  #CHECK_INCLUDE_FILES( "zlib.h" HAS_ZLIB_SUPPORT )
   list( APPEND LIBRARIES_TO_LINK_TO ${ZLIB_LIBRARIES} ${Boost_IOSTREAMS_LIBRARY} )
 endif( ZLIB_FOUND AND Boost_IOSTREAMS_FOUND )
 
-if( SUPPORT_ZIPPED_SPECTRUM_FILES )
-  if( NOT IOS )
+if( SUPPORT_ZIPPED_SPECTRUM_FILES OR ENABLE_RESOURCE_UPDATES )
+#CMake seems to fail to find zlib on ios/android (even using find_package(ZLIB REQUIRED)), but we know it will be in
+#  the systems path anyway, so just blindly link to zlib
+  if( NOT (IOS OR ANDROID) )
     if( NOT ZLIB_FOUND )
-      MESSAGE(FATAL_ERROR "ZLIB required to enable SUPPORT_ZIPPED_SPECTRUM_FILES, but it wasnt found" )
+      MESSAGE(FATAL_ERROR "ZLIB required to enable SUPPORT_ZIPPED_SPECTRUM_FILES or ENABLE_RESOURCE_UPDATES, but it wasnt found" )
     else( NOT ZLIB_FOUND )
       include_directories( ${ZLIB_INCLUDE_DIRS} )
       list( APPEND LIBRARIES_TO_LINK_TO ${ZLIB_LIBRARIES} )
     endif( NOT ZLIB_FOUND )
-  else( NOT IOS )
+  else( NOT (IOS OR ANDROID) )
     list( APPEND LIBRARIES_TO_LINK_TO z )
-  endif( NOT IOS )
-endif( SUPPORT_ZIPPED_SPECTRUM_FILES )
+  endif( NOT (IOS OR ANDROID) )
+endif( SUPPORT_ZIPPED_SPECTRUM_FILES OR ENABLE_RESOURCE_UPDATES )
 
 
 IF( Wt_MYSQL_LIBRARY AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB )
-  set( DATABASE_PASSWORD_FILE "/home/srb/passwords/databases.xml" CACHE STRING
+  set( DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml" CACHE STRING
          "Location of the XML passwords file for connecting to MySQL database" )
 ENDIF( Wt_MYSQL_LIBRARY AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB )
 
@@ -1071,7 +969,6 @@ configure_file(
     ${CMAKE_BINARY_DIR}/InterSpec_config.h
 )
 
-
 add_subdirectory( external_libs/Cuba-3.0 )
 list( APPEND LIBRARIES_TO_LINK_TO Cuba-3.0 )
 
@@ -1085,12 +982,14 @@ ENDIF(ANDROID)
 
 
 message( "Linking ${LINK_TO_OBJECT} to ${LIBRARIES_TO_LINK_TO}" )
-target_link_libraries( ${LINK_TO_OBJECT} ${LIBRARIES_TO_LINK_TO} )
+target_link_libraries( ${LINK_TO_OBJECT} PUBLIC ${LIBRARIES_TO_LINK_TO} )
 
 
 IF( BUILD_AS_UNIT_TEST_SUITE )
+  target_link_libraries( ${EXECUTABLE_NAME} PUBLIC ${LIBRARYNAME} )
+
   add_executable( testCalibration.exe testing/testCalibration.cpp )
-  target_link_libraries( testCalibration.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( testCalibration.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
   add_test( "\"Test Calibration\""
                  ${EXECUTABLE_OUTPUT_PATH}/testCalibration.exe
                  "--indir=${testdir}" --log_level=test_suite --run_test=testCalibration --catch_system_error=yes ) 
@@ -1099,7 +998,7 @@ IF( BUILD_AS_UNIT_TEST_SUITE )
                  "--indir=${testdir}" --log_level=test_suite --run_test=testFindEnergy --catch_system_error=yes )
 
   add_executable( testFileOpen.exe testing/testFileOpen.cpp )
-  target_link_libraries( testFileOpen.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( testFileOpen.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 
 
   SET( curdir ${PROJECT_SOURCE_DIR}/testing/interspec_test_spectra )
@@ -1119,44 +1018,44 @@ IF( BUILD_AS_UNIT_TEST_SUITE )
 
 
 add_executable( testIsoTimeString.exe testing/testIsoTimeString.cpp )
-  target_link_libraries( testIsoTimeString.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( testIsoTimeString.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 add_test( TestIsoTimeString ${EXECUTABLE_OUTPUT_PATH}/testIsoTimeString.exe "--indir=${testdir}" --log_level=test_suite --run_test=testIsoTimeString --catch_system_error=yes )
 
 add_executable( testSafeGetLine.exe testing/testSafeGetLine.cpp )
-  target_link_libraries( testSafeGetLine.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( testSafeGetLine.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 add_test( TestSafeGetLine ${EXECUTABLE_OUTPUT_PATH}/testSafeGetLine.exe "--indir=${testdir}" --log_level=test_suite --run_test=testSafeGetLine --catch_system_error=yes )
 
 add_executable( testTimeFromString.exe testing/testTimeFromString.cpp )
-  target_link_libraries( testTimeFromString.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( testTimeFromString.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 add_test( TestTimeFromString ${EXECUTABLE_OUTPUT_PATH}/testTimeFromString.exe "--indir=${testdir}" --log_level=test_suite --run_test=testTimeFromString --catch_system_error=yes )
 
 
 add_executable( testUtilityStringFunctions.exe testing/testUtilityStringFunctions.cpp )
-  target_link_libraries( testUtilityStringFunctions.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( testUtilityStringFunctions.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 add_test( "\"Test Utility String Functions\"" ${EXECUTABLE_OUTPUT_PATH}/testUtilityStringFunctions.exe "--indir=${testdir}" --log_level=test_suite --run_test=testUtilityStringFunctions --catch_system_error=yes )
 
 add_test( "\"Test Utility String Functions\"" ${EXECUTABLE_OUTPUT_PATH}/testUtilityStringFunctions.exe "--indir=${testdir}" --log_level=test_suite --run_test=testUtilityStringFunctions --catch_system_error=yes ) 
 
 
 add_executable( testPhysicalUnits.exe testing/testPhysicalUnits.cpp )
-target_link_libraries( testPhysicalUnits.exe ${LIBRARIES_TO_LINK_TO} )
+target_link_libraries( testPhysicalUnits.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 add_test( "\"Test PhysicalUnits Functions\"" ${EXECUTABLE_OUTPUT_PATH}/testPhysicalUnits.exe "--indir=${testdir}" --log_level=test_suite --run_test=testPhysicalUnits_suite --catch_system_error=yes )
 
 add_test( "\"Test Utility String Functions\"" ${EXECUTABLE_OUTPUT_PATH}/testUtilityStringFunctions.exe "--indir=${testdir}" --log_level=test_suite --run_test=testUtilityStringFunctions --catch_system_error=yes )
 
   
 add_executable( test_split_to_floats_and_ints.exe testing/test_split_to_floats_and_ints.cpp )
-  target_link_libraries( test_split_to_floats_and_ints.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( test_split_to_floats_and_ints.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 
 
 add_executable( test_utf8_str_size_limit.exe testing/test_utf8_str_size_limit.cpp )
-  target_link_libraries( test_utf8_str_size_limit.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( test_utf8_str_size_limit.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 
 add_executable( test_utf8_limit_str_size.exe testing/test_utf8_limit_str_size.cpp )
-  target_link_libraries( test_utf8_limit_str_size.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( test_utf8_limit_str_size.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 
 add_executable( test_utf8_str_len.exe testing/test_utf8_str_len.cpp )
-  target_link_libraries( test_utf8_str_len.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( test_utf8_str_len.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
  
 
  add_test( TestSplittoFloats ${EXECUTABLE_OUTPUT_PATH}/test_split_to_floats_and_ints.exe "--indir=${testdir}" --log_level=test_suite --run_test=split_to_floats_and_ints_suite --catch_system_error=yes )
@@ -1168,9 +1067,9 @@ add_test( TestUtf8StrSizeLimit ${EXECUTABLE_OUTPUT_PATH}/test_utf8_str_size_limi
 add_test( TestUtf8StrLen ${EXECUTABLE_OUTPUT_PATH}/test_utf8_str_len.exe "--indir=${testdir}" --log_level=test_suite --run_test=test_utf8_str_len --catch_system_error=yes )
 
   add_executable( testDetectorResponseOpen.exe testing/testDetectorResponseOpen.cpp )
-  target_link_libraries( testDetectorResponseOpen.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( testDetectorResponseOpen.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 
-  SET( curdir ${PROJECT_SOURCE_DIR}/data/GadrasDetectors )
+  SET( curdir ${PROJECT_SOURCE_DIR}/data/OUO_GadrasDetectors )
   FILE(GLOB children RELATIVE ${curdir} ${curdir}/*/Detector.dat)
   FOREACH(child ${children})
     SET( curfile "${curdir}/${child}" )
@@ -1182,7 +1081,7 @@ add_test( TestUtf8StrLen ${EXECUTABLE_OUTPUT_PATH}/test_utf8_str_len.exe "--indi
   
   
   add_executable( testDetectorResponseDoesntOpen.exe testing/testDetectorResponseDoesntOpen.cpp )
-  target_link_libraries( testDetectorResponseDoesntOpen.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( testDetectorResponseDoesntOpen.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 
   SET( curdir ${PROJECT_SOURCE_DIR}/testing/detector_response_files/shouldnt_be_valid )
   FILE(GLOB children RELATIVE ${curdir} ${curdir}/*)
@@ -1196,11 +1095,11 @@ add_test( TestUtf8StrLen ${EXECUTABLE_OUTPUT_PATH}/test_utf8_str_len.exe "--indi
   ENDFOREACH()
 
   add_executable( testUtilityFilesystemFunctions.exe testing/testUtilityFilesystemFunctions.cpp )
-  target_link_libraries( testUtilityFilesystemFunctions.exe ${LIBRARIES_TO_LINK_TO} )
+  target_link_libraries( testUtilityFilesystemFunctions.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
   add_test( testUtilityFilesystemFunctions ${EXECUTABLE_OUTPUT_PATH}/testUtilityFilesystemFunctions.exe  --log_level=test_suite --run_test=testUtilityFilesystemFunctions --catch_system_error=yes )
 
 #  add_executable( peakFitCompare.exe testing/peakFitCompare.cpp )
-#  target_link_libraries( peakFitCompare.exe ${LIBRARIES_TO_LINK_TO} )
+#  target_link_libraries( peakFitCompare.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
 #  add_test( "\"Test peak fitting\""
 #              "${EXECUTABLE_OUTPUT_PATH}/peakFitCompare.exe"
 #              ARGS --log_level=test_suite --run_test=peakFitCompare --catch_system_error=yes )
@@ -1210,14 +1109,28 @@ ENDIF( BUILD_AS_UNIT_TEST_SUITE )
 
 
 set( OTHER_SUPPORT_FILES
-     ${CMAKE_CURRENT_SOURCE_DIR}/README.md
+     ${CMAKE_CURRENT_SOURCE_DIR}/README.txt
      ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/InterSpec.css
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/TerminalWidget.css
-     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.xml
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
   )
+
+  FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
+  list( APPEND OTHER_SUPPORT_FILES ${CSS_FILES} )
+
+  FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml )
+  list( APPEND OTHER_SUPPORT_FILES ${HELP_FILES} )
+
+if( USE_SIMPLE_NUCLIDE_ASSIST )
+  list( APPEND OTHER_SUPPORT_FILES "InterSpec_resources/SimpleNuclideAssist.css" )
+endif( USE_SIMPLE_NUCLIDE_ASSIST )
+
+
+if( USE_SEARCH_MODE_3D_CHART )
+  list( APPEND OTHER_SUPPORT_FILES "InterSpec_resources/SearchMode3DChart.css" )
+endif( USE_SEARCH_MODE_3D_CHART )
+
 
 add_custom_target( interspec_resources SOURCES ${OTHER_SUPPORT_FILES} )
 
@@ -1246,9 +1159,9 @@ IF( BUILD_AS_ELECTRON_APP )
 #  (It would be nice to use $<TARGET_FILE:${EXECUTABLE_NAME}>)
 #See the script : target/electron/app/copy_resources.in.js for use of this variabel
   IF(WIN32)
-      set( INTERSPEC_EXE_LOCATION "${PROJECT_BINARY_DIR}/Release/InterSpec.exe")
+      set( INTERSPEC_EXE_LOCATION "${PROJECT_BINARY_DIR}/MinSizeRel/InterSpec.exe.exe")
   ELSE(WIN32)
-       set( INTERSPEC_EXE_LOCATION "${PROJECT_BINARY_DIR}/bin/Release/InterSpec.exe")
+       set( INTERSPEC_EXE_LOCATION "${PROJECT_BINARY_DIR}/bin/InterSpec.exe")
   ENDIF(WIN32)
 
   configure_file(
@@ -1259,11 +1172,14 @@ IF( BUILD_AS_ELECTRON_APP )
 ENDIF( BUILD_AS_ELECTRON_APP )
 
 #Copy files to the install directory
-set( OTHER_FILES README.md runLocalOn8080.sh )
+set( OTHER_FILES README.txt runLocalOn8080.sh )
 
 foreach(_file ${OTHER_FILES})
   configure_file( ${PROJECT_SOURCE_DIR}/${_file} ${PROJECT_BINARY_DIR}/${_file} COPYONLY )
 endforeach()
+
+configure_file( ${PROJECT_SOURCE_DIR}//external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml ${PROJECT_BINARY_DIR}/data/sandia.decay.xml COPYONLY )
+
 
 IF( IOS )
   MESSAGE("CMAKE_CURRENT_SOURCE_DIR is ${CMAKE_CURRENT_SOURCE_DIR}")
@@ -1281,6 +1197,7 @@ IF( IOS )
   set_xcode_property( ${LINK_TO_OBJECT} IPHONEOS_DEPLOYMENT_TARGET "7.0" )
 ENDIF( IOS )
 
+
 IF(NOT WT_RESOURCES_DIRECTORY)
   MESSAGE("Could not find the Wt resources path to copy into current directory")
 ELSE(NOT WT_RESOURCES_DIRECTORY)
@@ -1290,8 +1207,9 @@ ELSE(NOT WT_RESOURCES_DIRECTORY)
       )
 ENDIF(NOT WT_RESOURCES_DIRECTORY)
 
-
-#SET( SUPPORT_DIRECTORIES InterSpec_resources data example_spectra external_libs/SpecUtils/d3_resources )
+IF( NOT ANDROID )
+  SET( SUPPORT_DIRECTORIES InterSpec_resources data example_spectra external_libs/SpecUtils/d3_resources )
+endif( NOT ANDROID )
 
 foreach(_dir ${SUPPORT_DIRECTORIES})
     IF(WIN32)

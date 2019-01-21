@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -43,9 +43,13 @@ namespace Wt
   class WWidget;
   class WMenuItem;
   class WTabWidget;
-  class WBorderLayout;
+  class WGridLayout;
 }//namespace Wt
 
+
+//There is a `ColorDelegate` coded that starts to let the user select color in
+//  the "Peak Manager", but it isnt fully working yet
+#define ALLOW_PEAK_COLOR_DELEGATE 0
 
 class PeakInfoDisplay : public Wt::WContainerWidget
 {
@@ -85,10 +89,9 @@ protected:
 #else
   SpectrumDisplayDiv *m_spectrumDisplayDiv;
 #endif
-  WContainerWidget *buttonDiv;
 
   //variables which will be populated by createInfoTab();
-  Wt::WBorderLayout *m_infoLayout;
+  Wt::WGridLayout *m_infoLayout;
   RowStretchTreeView *m_infoView;
 
   Wt::WPushButton *m_deletePeak;

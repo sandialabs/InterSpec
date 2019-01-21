@@ -1,0 +1,241 @@
+.Wt-domRoot, .dialog-layout { 
+  background: rgb(44,45,48); 
+  color: white;
+}
+
+h1 {
+  color: white;
+}
+
+select, .displaySampleSelect {
+  color: white !important;
+  background: rgb(86,88,90) !important;
+}
+
+.Wt-btn { 
+  background-color: rgb(86,88,90); 
+  border-color: rgb(106,107,109); 
+  color: rgb(230,230,230); 
+}
+
+button[disabled] {
+  color: rgb(160,160,160); 
+  background-color: rgb(110,110,110);
+  opacity: 1.0;
+  -webkit-filter: grayscale(0%);
+  filter: grayscale(0%);
+}
+
+input[type="text"], textarea {
+  background-color: rgb(59,60,63) !important; 
+  border-top: solid 1px rgb(61,62,64) !important; 
+  border-left: none !important; 
+  border-right: none !important; 
+  border-bottom: solid 1px rgb(75,76,78) !important; 
+  color: white;
+}
+
+
+.titlebar {
+  background: rgb(107,106,111) !important; 
+  color: white;
+}
+
+.titlebar:hover {
+  background: rgb(133,133,133) !important; 
+  color: white;
+}
+
+a, .InfoLink {
+  color: rgb(18,101,200);
+}
+a:hover, .InfoLink:hover {
+  color: rgb(99, 161, 236);
+}
+
+.Wt-icon {
+  filter: invert(100%);
+}
+
+/* button > img { filter: invert(100%); }  */
+
+
+.UpperMenuDivWithLogos, .PopupMenuParentButton {
+  background-color: rgb(65,65,65) !important; 
+  color: rgb(230,230,230) !important;
+}
+
+.PopupMenuParentButton:hover, .PopupMenuParentButton.active {
+  background-color: rgb(18,101,200) !important;
+}
+
+.Wt-popup.Wt-outset {
+  background-color: rgb(59,59,66) !important;
+}
+
+.PopupDivMenu {
+  border: solid 1px rgb(80,80,85);
+}
+
+ul.Wt-popupmenu > li > a > span > span {
+  color: white !important;
+}
+
+ul.Wt-popupmenu > li > label > span {
+  color: white !important;
+}
+
+ul.Wt-popupmenu > li.Wt-disabled > a > span > span {
+  color: rgb(105,105,112) !important;
+}
+
+.Wt-popupmenu .active {
+  background-color: rgb(18,101,200) !important;
+}
+
+.Wt-separator {
+  border-top: 1px solid rgb(80,80,87) !important;
+  border-bottom: 1px solid rgb(100,100,107) !important;
+}
+
+.Wt-vsh2 {
+/* The chart resize indicator thing... */
+}
+
+
+
+/* Still need work to make the lines of the tabs work out*/
+.Wt-tabs {
+  border-bottom: 1px solid rgb(136, 136, 136);
+}
+
+.Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
+  border-color: rgb(136, 136, 136) rgb(136, 136, 136) rgb(44,45,48) rgb(136, 136, 136);
+}
+
+.Wt-popup .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
+  /* Fix for the white-line when in a AuxWindow */
+  border-color: rgb(136, 136, 136) rgb(136, 136, 136) rgb(44,45,48) rgb(136, 136, 136);
+}
+
+.Wt-tabs a {
+  color: rgb(197,198,201); 
+}
+
+
+
+
+ul.Wt-tv-root > li {
+  color: white;
+  background: rgb(41,42,44) !important; 
+}
+
+ul.Wt-tv-root > li:nth-child(odd) { 
+  background: rgb(30,32,34) !important; 
+}
+
+
+.Wt-item.Wt-selected{
+  background-color: blue;
+  color: white;
+}
+
+.Wt-label{
+  color: rgb(197,198,201);
+}
+
+.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th {
+  background-color: rgb( 80, 81, 94 );
+}
+
+
+.Wt-suggest a {
+  color: white;
+}
+
+
+.Wt-dialogcover {
+  background: rgba(110, 110, 110, 0.5) !important;
+}
+
+ul.SideMenu > li.itemselected  {
+  background: rgb(175,175,175) !important;
+}
+
+ul.SideMenu > li.itemselected > a {
+  color: rgb(115, 115, 255) !important;
+}
+
+
+ul.SideMenu > li.item {
+  background: rgb(124,124,124) !important;
+}
+
+ul.SideMenu > li.item:hover  {
+  background: rgb(135,135,135) !important;
+}
+
+
+
+
+.DevPairTitle {
+  background-color: rgb( 80, 81, 94 );
+}
+
+.DetectorDisplay{
+  background: rgb(70,70,77); 
+  border-color: rgb(136, 136, 136);
+}
+
+.ShieldingSelect {
+  border-width: 1px;
+  border-style: solid;
+  border-color: rgb(136, 136, 136);
+}
+
+.ParticleViewTable, .RecalIsotopeView, .IsotopeSearchResultTable, .DeviationPairDisplayWide {
+  border-color: rgb(136, 136, 136);
+}
+
+.DevPairTitle, .DevPairEnergyHeader, .DevPairOffsetHeader {
+  color: rgb(197,198,201);
+}
+
+.CsvLinkBtn {
+  color: black;
+  filter: invert(100%);
+}
+
+.DoseAnswerTxt {
+  color: black;
+}
+
+.helpButton {
+  background-image: radial-gradient(white 50%, rgb(44,45,48));
+}
+
+
+.PhoneAuxWindowHeader {
+  background-color: rgb(65,65,65) !important; 
+}
+
+.PhoneAuxWindowFooter {
+  padding-right: 2px;
+}
+
+.PhoneAuxWindowFooter > button {
+  margin-right: 5px;
+}
+
+.PhoneMenuBack, .PhoneMenuClose {
+  background-color: rgb(133,133,133) !important;
+}
+
+.peakinfo {
+/* The box that pops-up when you hover over a peak, and gives info about it */
+  background-color: rgb(133,133,133) !important;
+  color: white;
+}
+
+
+/* .AuxWindow-content.Decay { background: rgb(230,230,230) !important; } */

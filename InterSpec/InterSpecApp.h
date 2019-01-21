@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -45,11 +45,6 @@ namespace Wt
 
 class PopupDivMenuItem;
 
-#if(USE_SRB_HEADER_FOOTER)
-class SrbHeader;
-class SrbFooter;
-#endif
-
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 class SpectrumViewerTester;
 #endif
@@ -70,11 +65,6 @@ class InterSpecApp : public Wt::WApplication
 public:
   InterSpecApp( const Wt::WEnvironment& env );
   virtual ~InterSpecApp();
-
-#if(USE_SRB_HEADER_FOOTER)
-  void showHeaderFooter( bool setUserOption );
-  void hideHeaderFooter( bool setUserOption );
-#endif //USE_SRB_HEADER_FOOTER
 
   //isMobile(): Tests to see if a tablet or a phone platform
   bool isMobile() const;
@@ -126,15 +116,6 @@ public:
   static std::string tempDirectory();
 
   
-  static std::string getSrbComonResourceUrl(); //use for served things like css sheet, does not have trailing '/'
-  static std::string getSrbComonResourcePath(); //use for executing things in shells, does not have trailing '/'
-#if( USE_SRB_HEADER_FOOTER )
-  static int exectutePhpScript( std::string &results,
-                                const std::string &path_to_script,
-                                const std::string &script_name,
-                                const std::string &path_to_srb_common );
-#endif  //#if( USE_SRB_HEADER_FOOTER )
-  
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   std::string sessionUrlId();
   
@@ -163,6 +144,10 @@ public:
   static bool isElectronInstance();
 #endif
 
+#if( BUILD_AS_OSX_APP )
+  static void osThemeChange( std::string name );
+#endif
+  
 protected: 
 
   //notify(): over-riding WApplication::notify inorder to catch any exceptions
@@ -200,14 +185,6 @@ protected:
   InterSpec *m_viewer;
   Wt::WGridLayout *m_layout;
 
-#if(USE_SRB_HEADER_FOOTER)
-  SrbHeader *m_header;
-  SrbFooter *m_footer;
-  PopupDivMenuItem *m_showHeaderFooterButton;
-  PopupDivMenuItem *m_hideHeaderFooterButton;
-#endif //USE_SRB_HEADER_FOOTER
-
-    
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   Wt::Signal<const InterSpecApp *> m_destructing;
 #endif

@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -28,18 +28,15 @@
 #include <cstddef>
 
 /** Historical note: before hekili SVN revision 14173 this header/source file
-    implemented a re-write (or at least a decent way along a re-write) of the
-    Cuba-3.0 Cuhre integration to allow distributing the executable and not
-    violate Cubas license - however, now that InterSpec is LGPL I (wcjohns)
-    believe it is fair game to just (statically-)link in Cuba.  If this isnt
-    the case you can recover my implementation from SVN history.
+    implemented a independant implementation (or at least a decent way towards
+    one) of the Cuba-3.0 Cuhre integration to allow distributing the executable
+    and not violate Cubas license - however, now that InterSpec is LGPL I
+    (wcjohns) believe it is fair game to just (statically-)link in Cuba.  If
+    this isnt the case you can recover my implementation from SVN history.
  */
 namespace Integrate
 {
   //Right now this header/src code simple wraps the Cuba Cuhre library.
-  //  Its intended that this will be the place we implement our own Cuhre
-  //  integration, as well as add a hook in for when PERFORM_DEVELOPER_CHECKS
-  //  is enabled, it will check our implementation againse Cubas
   
   typedef int (*Integrand)( const int *ndim, const double *xx, const int *ncomp, double *ff, void *userdata );
   

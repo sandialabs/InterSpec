@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 
+#include "InterSpec/ReferenceLineInfo.h"
 
 //Forward Declarations
 class PeakDef;
@@ -111,6 +112,7 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
                                std::shared_ptr<const PeakDef> peak,
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > hintpeaks,
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > userpeaks,
+                               const std::vector<ReferenceLineInfo> showingRefLines,
                                std::shared_ptr<const DetectorPeakResponse> detector,
                                const std::string sessionid,
                                std::shared_ptr< std::vector<std::string> > candidates,

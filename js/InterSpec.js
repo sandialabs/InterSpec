@@ -26,7 +26,8 @@ function()
 
       if( !files || !files.length )
       {
-        console.log("uploadFcn: no files for some reason.");
+        console.log( evt );
+        console.log( "uploadFcn: no files for some reason." );
         return;
       }
       
@@ -147,12 +148,12 @@ function()
             if( event.target.id==="Uploader" )
                 infodiv.html("Defaulting to upload as Foreground");
             else
-                infodiv.html("Will upload as " + updiv.find(".UpDivTxt").html() );
+                infodiv.html("Will open as " + updiv.find(".UpDivTxt").html() );
           
             /*Could add some text such as "Multiple files may be uploaded if the names contina information such as i-/item/fore/b-/back/bkg/k-/known/cal/check" */
         }else
         {
-            infodiv.html("Will upload as the foreground spectrum since there is currenly not one loaded");
+            infodiv.html("Will open as the foreground spectrum since there is currenly not one loaded");
         }
       
         return;

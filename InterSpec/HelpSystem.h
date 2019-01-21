@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -48,7 +48,7 @@ namespace HelpSystem
   class HelpWindow: public AuxWindow
   {
   protected:
-    Wt::WMessageResourceBundle* m_resourceBundle;
+    Wt::WMessageResourceBundle m_resourceBundle;
     std::map <std::string, Wt::WTreeNode*> m_treeLookup;
     Wt::WContainerWidget* m_helpWindowContent;
     Wt::WTree* m_tree;

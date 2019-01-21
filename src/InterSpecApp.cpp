@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -63,10 +63,6 @@
 #include <Wt/Chart/WCartesianChart>
 #include <Wt/WMessageResourceBundle>
 
-#if( USE_SRB_HEADER_FOOTER )
-#include <boost/filesystem.hpp>
-#endif
-
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
@@ -93,21 +89,6 @@ namespace
   //      sessionIds.
 #endif
   
-  /*
-#if( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
-  void convert_datetime()
-  {
-    //A dummy function for windows to cause time_from_string_boost(...)
-    //  to initialize locales, to avoid the ~1 second delay it takes to do this.
-    try
-    {
-      UtilityFunctions::time_from_string_boost( "2012-11-23T09:28:36Z" );
-    }catch( std::exception & )
-    {
-    }
-  }
-#endif
-  */
   
 #if( ALLOW_URL_TO_FILESYSTEM_MAP && (INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS) )
   std::string uri_decode( const std::string &sSrc )
@@ -117,25 +98,25 @@ namespace
     const char HEX2DEC[256] =
     {
       /*       0  1  2  3   4  5  6  7   8  9  A  B   C  D  E  F */
-      /* 0 */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* 1 */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* 2 */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* 3 */  0, 1, 2, 3,  4, 5, 6, 7,  8, 9,-1,-1, -1,-1,-1,-1,
+      /* 0 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* 1 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* 2 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* 3 */  0, 1, 2, 3,  4, 5, 6, 7,  8, 9,static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
       
-      /* 4 */ -1,10,11,12, 13,14,15,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* 5 */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* 6 */ -1,10,11,12, 13,14,15,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* 7 */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
+      /* 4 */ static_cast<char>(-1),10,11,12, 13,14,15,static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* 5 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* 6 */ static_cast<char>(-1),10,11,12, 13,14,15,static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* 7 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
       
-      /* 8 */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* 9 */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* A */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* B */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
+      /* 8 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* 9 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* A */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* B */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
       
-      /* C */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* D */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* E */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      /* F */ -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1
+      /* C */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* D */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* E */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
+      /* F */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1)
     };
     
     const unsigned char *pSrc = (const unsigned char *)sSrc.c_str();
@@ -171,166 +152,17 @@ namespace
     return std::string( &newchars[0], pEnd);
   }
 #endif  //#if( ALLOW_URL_TO_FILESYSTEM_MAP )
-  
-#if( USE_SRB_HEADER_FOOTER )
-  /** Class meant to show a PHP based site-header for when deployed on the TRB
-      WebPage.
-   */
-  class SrbHeader: public Wt::WContainerWidget
-  {
-  public:
-    SrbHeader::SrbHeader( const std::string &appTitle, const std::string &baseurl,
-                         WContainerWidget *parentParam )
-    : WContainerWidget(parentParam),
-      m_headerText( NULL ),
-      m_applicationTitle( NULL )
-    {
-      static_assert( !(defined(WIN32) || defined(_WIN32)), "PHP header/footers not supported on Windows." );
-      
-      setId( "SrbHeader" );
-      //  setAttributeValue( "style", "" );
-      //  setInline(true); //set to <span>
-      
-      string content = "";
-      
-      const string srb_common_dir = InterSpecApp::getSrbComonResourcePath();
-      
-      const string php_command = "php " + srb_common_dir + "/assets/includes/global-nav.php";
-      FILE *phpheader = popen( php_command.c_str(), "r" );
-      
-      if( phpheader != NULL )
-      {
-        int character;
-        while( (character = getc(phpheader)) != EOF ) content += (char)character;
-        
-        const int close_status = pclose( phpheader );
-        
-        if( close_status != EXIT_SUCCESS )
-        {
-          string errmsg = "The php--->c++ srb header status gave a exit status of "
-          + std::to_string(close_status)
-          + ", you should probably fix this - the php command was '"
-          + php_command + "'";
-          
-          cerr << errmsg << endl; //so it will show up in apaches log
-        }//if( close_status != EXIT_SUCCESS )
-      } else {
-        cerr << SRC_LOCATION << "\n\tFailed to execute '" << php_command << "'\n";
-      }//if( opened FILE output ) / else
-      
-      if( content == "" ) //if for some reason the php command failed, lets default to something
-      {
-        string errmsg = "InterSpec is NOT using the php-header for some reason; this should be checked into";
-        cerr << errmsg << endl;
-        
-        content =
-        "\n  <ul>\n"\
-        "    <li><a href=\"https://" + baseurl + "/srb/\" title=\"DHS TRB Webtools Homepage\" id=\"webtools-logo\"><div><span>DHS TRB Webtools Homepage</span></div></a></li> \n"\
-        "    <li id=\"select-another-tool\">\n"\
-        "      <div id=\"select-header\"><a id=\"select-header-link\">Select another tool</a></div>\n"\
-        "      <ul id=\"select-list\" style=\"display:none;\">\n"\
-        "        <li><a href=\"https://" + baseurl + "/srb/reports/cbp/\">Automated Reports</a></li>\n"\
-        "        <li><a href=\"https://" + baseurl + "/Cambio/\">Cambio</a></li>\n"\
-        "        <li><a href=\"https://" + baseurl + "/srb/dhs-server/\">DHS Data Management</a></li>\n"\
-        "        <li><a href=\"https://" + baseurl + "/GADRAS\">GADRAS</a></li>\n"\
-        "        <li><a href=\"https://" + baseurl + "/srb/viz/lsslogs/\">LSS logs: Google Earth Viz</a></li>\n"\
-        "        <li><a href=\"https://" + baseurl + "/wiki/srb/siteinfo/\">POE Wiki</a></li>\n"\
-        "      </ul>\n"\
-        "    </li>\n"\
-        "  </ul>\n\n";
-      }//if( content == "" )
-      
-      m_headerText = new WText( content, Wt::XHTMLUnsafeText, this );
-      m_headerText->setId( "global-nav" );
-      m_headerText->setInline(false); //set to div
-      
-      if( appTitle != "" )
-      {
-        content =
-        "\n  <span id=\"site-logo\"></span>\n"\
-        "  <h1><a href=\"#\">" + appTitle + "</a></h1>\n\n";
-        m_applicationTitle = new WText( content, Wt::XHTMLUnsafeText, this );
-        m_applicationTitle->setId( "site-title" );
-        m_applicationTitle->setInline(false); //set to div
-      } // if( appTitle != "" )
-    } // SrbHeader constructor
-  protected:
-    Wt::WText *m_headerText;
-    Wt::WText *m_applicationTitle;
-  };//class SrbHeader
-  
-  /** Class meant to show a PHP based site-footer for when deployed on the TRB
-   WebPage.
-   */
-  class SrbFooter: public Wt::WContainerWidget
-  {
-  public:
-    SrbFooter::SrbFooter( WContainerWidget *parentParam )
-    : WContainerWidget(parentParam),
-      m_logoText( NULL ),
-      m_footerText( NULL ),
-      m_footerCloseText( NULL )
-    {
-      //  setId( "SrbFooter" );
-      setId( "footer" );
-      setInline(false);
-      
-      // sponsors
-      const string srb_common_url = InterSpecApp::getSrbComonResourceUrl();
-      const string srb_common_dir = InterSpecApp::getSrbComonResourcePath();
-      string php_dir = srb_common_dir + "/assets/includes/";
-      
-      string sponsors_html = "";
-      string global_sponsors_html = "";
-      InterSpecApp::exectutePhpScript( global_sponsors_html, php_dir, "global-sponsors.php", srb_common_url );
-      sponsors_html += global_sponsors_html;
-      WText *sponsors = new WText( sponsors_html, Wt::XHTMLUnsafeText, this );
-      sponsors->setInline( false );
-      sponsors->setId( "sponsors" );
-      
-      // footer
-      string global_footer_html = "";
-      const int rcode = InterSpecApp::exectutePhpScript( global_footer_html, php_dir, "global-footer.php", srb_common_url );
-      if( rcode == EXIT_SUCCESS )
-      {
-        m_footerText = new WText( global_footer_html, Wt::XHTMLUnsafeText, this );
-        m_footerText->setId( "footer-content" );
-        m_footerText->setInline(false); //set to div
-      }//if( rcode == EXIT_SUCCESS )
-      
-    }//SrbFooter( constructor )
-  protected:
-    Wt::WText *m_logoText;
-    Wt::WText *m_footerText;
-    Wt::WText *m_footerCloseText;
-  };//class SrbHeader
-#endif //USE_SRB_HEADER_FOOTER
 }//namespace
 
 
 InterSpecApp::InterSpecApp( const WEnvironment &env )
-  :  WApplication( env )
-    , m_viewer( 0 )
-    , m_layout( NULL )
-#if(USE_SRB_HEADER_FOOTER)
-    , m_header( NULL )
-    , m_footer( NULL )
-    , m_showHeaderFooterButton( NULL )
-    , m_hideHeaderFooterButton( NULL )
-#endif //USE_SRB_HEADER_FOOTER
-    , m_lastAccessTime( boost::posix_time::microsec_clock::local_time() )
-    , m_activeTimeInSession( 0, 0, 0 )
+  :  WApplication( env ),
+     m_viewer( 0 ),
+     m_layout( nullptr ),
+     m_lastAccessTime( boost::posix_time::microsec_clock::local_time() ),
+     m_activeTimeInSession( 0, 0, 0 )
 {
   enableUpdates( true );
-  
-#if( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
-  //UtilityFunctions::time_from_string_boost(...) takes an extra second or two
-  //  to initialize the first time its called, so we'll do this in the
-  //  background. time_from_string_boost() is only used on Windows.
-//  if( !loadedSpecFile )
-    //WServer::instance()->ioService().post( &convert_datetime );
-#endif
-  
 
   //Might as well initialize the DecayDataBaseServer, but in the background
   WServer::instance()->ioService().post( &DecayDataBaseServer::initialize );
@@ -348,7 +180,6 @@ InterSpecApp::~InterSpecApp()
     AppInstances.erase( this );
   }
 #endif
-
 }//~InterSpecApp()
 
 
@@ -366,7 +197,7 @@ void InterSpecApp::setupDomEnvironment()
   
 #endif
   
-  setTitle( "TRB InterSpec" );
+  setTitle( "InterSpec" );
   
   //Call tempDirectory() to set global variable holding path to the temp file
   //  directory, to ensure this will be avaialble at all points in the future;
@@ -382,39 +213,18 @@ void InterSpecApp::setupDomEnvironment()
   setTwoPhaseRenderingThreshold( threshold_bytes );
 #endif
   
-  //XXX - it appears Firefox/Opera doesnt always load the wt.css file, lets force it
-  //  if( env.agentIsGecko() || env.agentIsOpera() )
-  //const string theme = "default"; //cssTheme();
-  //useStyleSheet( WApplication::resourcesUrl() + "/themes/" + theme + "/wt.css");
-  setCssTheme( "default" );
-  
-  //Ethan added this to test bootstrap looks
-  //  WBootstrapTheme *theme = new WBootstrapTheme(this);
-  //  theme->setVersion(  Wt::WBootstrapTheme(3) );
-  //  setTheme( theme );
-  
-#if(USE_SRB_HEADER_FOOTER)
-  const string srb_common_url = getSrbComonResourceUrl();
-  useStyleSheet( srb_common_url + "/assets/css/styles.css" );
-#endif
+  setCssTheme( "default" );  //"polished" is the other option
   
   //Adding css/js files for pNotify popup notifications
-  //TODO: remove pNotify if we use qTip2
   requireJQuery("InterSpec_resources/assets/js/jquery-1.11.1.min.js");
-  //  require("InterSpec_resources/assets/js/pnotify.custom.min.js");
-  //  useStyleSheet( "InterSpec_resources/assets/css/pnotify.custom.min.css" );
-  //  useStyleSheet( "InterSpec_resources/assets/css/bootstrap.css" );
-  //  doJavaScript("PNotify.prototype.options.styling = \"bootstrap3\";");
   
   //for qTip2
   useStyleSheet( "InterSpec_resources/assets/css/jquery.qtip.min.css" );
   require("InterSpec_resources/assets/js/jquery.qtip.min.js");
   require("InterSpec_resources/assets/js/imagesloaded.pkg.min.js");
   
-  
   useStyleSheet( "InterSpec_resources/InterSpec.css" );
   doJavaScript( "if(typeof console==='undefined'){console={log:function(){}};}" );
-  
   
   styleSheet().addRule( "input[type=\"text\"]", "font-size:0.95em;" );
   styleSheet().addRule( "button[type=\"button\"]", "font-size:0.9em;" );
@@ -434,6 +244,10 @@ void InterSpecApp::setupDomEnvironment()
   doJavaScript( fix_ios_js );
 #endif
   
+#if( BUILD_AS_OSX_APP && !PERFORM_DEVELOPER_CHECKS )
+  root()->setAttributeValue( "oncontextmenu", "return false;" );
+#endif
+
   if( isMobile() )
   {
     //Prevent mobile from showing spinner
@@ -446,7 +260,7 @@ void InterSpecApp::setupDomEnvironment()
                   .appendTo("head");
     );
     
-    cerr << "prevent_spinner_js='" << prevent_spinner_js << "'" << endl;
+    //cerr << "prevent_spinner_js='" << prevent_spinner_js << "'" << endl;
     
     //Prevent mobile from hovering white
     const char *prevent_hovering_white = INLINE_JAVASCRIPT(
@@ -458,6 +272,7 @@ void InterSpecApp::setupDomEnvironment()
     doJavaScript( prevent_spinner_js );
     doJavaScript( prevent_hovering_white );
   }//if( isMobile() )
+
   
 #if( BUILD_AS_ELECTRON_APP )
   doJavaScript( "if (window.module) module = window.module;", false );
@@ -472,22 +287,13 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //for some reason calling 'delete m_layout' doesnt cause m_viewer to
     //  destruct?
     delete m_viewer;
-    m_viewer = 0;
-  }
-  
-#if(USE_SRB_HEADER_FOOTER)
-  if( m_header )
-  {
-    delete m_header;
-    m_header = 0;
-  }
-  
-  if( m_footer )
-  {
-    delete m_footer;
-    m_footer = 0;
-  }
+    m_viewer = nullptr;
+    
+#if( (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+    //ToDo: need to clear out all the native menus...
+#elif( USE_OSX_NATIVE_MENU )
 #endif
+  }
   
   if( m_layout )
   {
@@ -524,7 +330,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     
     new WBreak( root() );
     
-    msg = "Please contact wcjohns@sandia.gov and/or srb@sandia.gov to fix this error.";
+    msg = "Please contact wcjohns@sandia.gov and/or interspec@sandia.gov to fix this error.";
     errorText = new WText( msg, root() );
     errorText->setAttributeValue( "style", "font-family:Courier New; color: blue;" );
     WApplication::quit();
@@ -540,35 +346,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   m_layout->setVerticalSpacing( 0 );
   
   
-#if(!USE_SRB_HEADER_FOOTER)
   m_layout->addWidget( m_viewer, 0, 0, 1, 1 );
   m_layout->setRowStretch( 0, 10 );
-#else
-  PopupDivMenu *displayOptions = m_viewer->displayOptionsPopupDiv();
-  
-  displayOptions->addSeparator();
-  m_showHeaderFooterButton = displayOptions->addMenuItem( "Show TRB Header and Footer" );
-  m_hideHeaderFooterButton = displayOptions->addMenuItem( "Hide TRB Header and Footer" );
-  m_showHeaderFooterButton->triggered().connect( boost::bind( &InterSpecApp::showHeaderFooter, this, true ) );
-  m_hideHeaderFooterButton->triggered().connect( boost::bind( &InterSpecApp::hideHeaderFooter, this, true ) );
-  m_hideHeaderFooterButton->hide();
-  
-  string urlLocal = "hekili.ca.sandia.gov";  //url(); ?? wApp->url(); ??
-  m_header = new SrbHeader( "", urlLocal );
-  m_footer = new SrbFooter();
-  m_layout->addWidget( m_header, 0, 0, 1, 1 );
-  m_layout->addWidget( m_viewer, 1, 0, 1, 1 );
-  m_layout->addWidget( m_footer, 2, 0, 1, 1 );
-  m_layout->setRowStretch( 0, 0 );
-  m_layout->setRowStretch( 1, 10 );
-  m_layout->setRowStretch( 2, 0 );
-  
-  if( m_viewer->m_user->preferenceValue<bool>( "ShowHeaderFooter" ) )
-    showHeaderFooter( false );
-  else
-    hideHeaderFooter( false );
-#endif //USE_SRB_HEADER_FOOTER
-  
   
   m_clearSession.reset( new JSignal<>(this, "clearSession", false) );
   m_clearSession->connect( this, &InterSpecApp::clearSession );
@@ -604,8 +383,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       std::cerr << "SpecViewerApp: Will try to open file with ID="
       << id << " (" << speciter->second[0] << ")" << std::endl;
       loadedSpecFile = m_viewer->loadFileFromDbFilesystemLink( id, false );
-    } catch( std::exception & )
+    } catch( std::exception &e )
     {
+      SpecMeasManager::displayInvalidFileMsg( "", e.what() );
       cerr << "Invalid specfile" << endl;
     }//try / catch
   }//if( speciter != parmap.end() )
@@ -673,7 +453,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         if( promptLoad )
         {
           //Create a dialog asking if the user wants to pick up
-          AuxWindow *loadStateDialog = new AuxWindow( "Load previous state?" ,true);
+          AuxWindow *loadStateDialog = new AuxWindow( "Load previous state?", (AuxWindowProperties::IsAlwaysModal | AuxWindowProperties::TabletModal) );
         
           WContainerWidget *dialogDiv = loadStateDialog->contents();
           
@@ -829,15 +609,27 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     }// if( not in IE ) / else
   };//auto showWelcomeCallback
   
+  
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  //  Check if user has awknowledged to terms, if not, show terms window
+  //
   //Need to check if this is the latest version of InterSpec this user has used;
   //  if not, need to set "HasAgreedToUseTerms" to false.
-  
-  //  Check if user has agreed to terms, if not, show terms window
+  //
+  //However: https://developer.apple.com/app-store/review/guidelines/#hardware-compatibility
+  // states: "(vi) They may not present a license screen at launch, require license keys, or implement their own copy protection."
+  // so for macOS we wont show this window, but instead put a link to it in UseInfoWindow.
+  // So I guess it doesnt make sense to do it for the other native builds (I dont
+  // believe there is anythng requiring us to force us to show this splash screen
+  // its just what other similar apps do, but I guess not required...)
   const int previousAgreedVersion = InterSpecUser::preferenceValue<int>( "VersionAgreedToUseTerms" , m_viewer );
+  
   if( previousAgreedVersion != COMPILE_DATE_AS_INT )
   {
     m_viewer->showLicenseAndDisclaimersWindow( true, showWelcomeCallback );
-  }else if( !loadedSpecFile )
+  }else
+#endif
+  if( !loadedSpecFile )
   {
     showWelcomeCallback();
   }//if( specfile.empty() )
@@ -874,6 +666,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
 #endif
   
+#if( BUILD_AS_OSX_APP )
+  auto themeiter = parmap.find( "colortheme" );
+  if( themeiter != parmap.end() && themeiter->second.size() )
+    m_viewer->osThemeChange( themeiter->second[0] );
+#endif
+
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   {
     std::lock_guard<std::mutex> lock( AppInstancesMutex );
@@ -895,71 +693,6 @@ std::string InterSpecApp::getUserNameFromEnvironment() const
   UtilityFunctions::to_lower( remoteUser );
   return remoteUser;
 }//std::string getUserNameFromEnvironment() const
-
-
-std::string InterSpecApp::getSrbComonResourceUrl()
-{
-#if( !(defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64)) )
-  char hostname[256];
-  const int namestatus = gethostname( hostname, 255 );
-  if( namestatus != 0 )
-    hostname[0] = '\0';
-  
-  if( strstr(hostname, "outrage") || strstr(hostname, "hekili") )
-  {
-    const string url = wApp->url();
-    
-    //get the leading directory deployment
-    string userDir = "";
-    vector< string > splitVec;
-    UtilityFunctions::split( splitVec, url, "/" );
-    
-    if( splitVec.size() ) userDir = splitVec[0];
-    //if url started with a '/', then splitVec[0]==""
-    if( userDir.empty() && (splitVec.size() > 1) ) userDir = splitVec[1];
-    
-    return wApp->makeAbsoluteUrl( "/" + userDir + "/common" );
-  }//if( on outrage )
-#endif
-  return "srb_common_for_not_on_outrage";
-}//std::string getSrbComonResourceUrl()
-
-
-std::string InterSpecApp::getSrbComonResourcePath()
-{
-#if( !(defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64)) )
-  char hostname[256];
-  const int namestatus = gethostname( hostname, 255 );
-  if( namestatus != 0 )
-    hostname[0] = '\0';
-  
-  if( strstr(hostname, "outrage") || strstr(hostname, "hekili") )
-  {
-    //ex. '/~srb/fastcgi/wcjohns/app.fcgi?wtd=...'
-    const string url = wApp->url();
-    
-    if( UtilityFunctions::starts_with(url, "/srb/" )     )
-      return "/home/srb-prod/public_html/common";
-    if( UtilityFunctions::starts_with(url, "/~srb/" )    )
-      return "/home/srb/public_html/common";
-    if( UtilityFunctions::starts_with(url, "/srb-dev/" )
-       || UtilityFunctions::starts_with(url, "/~srb-dev/" ) )
-      return "/home/srb-dev/public_html/common";
-    if( UtilityFunctions::starts_with(url, "/srb-qc/" )
-       || UtilityFunctions::starts_with(url, "/~srb-qc/" ) )
-      return "/home/srb-qc/public_html/common";
-    if( UtilityFunctions::starts_with(url, "/srb-prod/" )
-       || UtilityFunctions::starts_with(url, "/~srb-prod/" ) )
-      return "/home/srb-prod/public_html/common";
-    
-    string errmsg = "The InterSpecApp gui is being executed at an unknown url='"
-    + wApp->url()
-    + "'; this should be checked into";
-    cerr << errmsg << endl; //so it makes it into the apache log files
-  }//if( on outrage )
-#endif
-  return "srb_common_for_not_on_outrage";
-}//std::string getSrbComonResourcePath()
 
 
 std::string InterSpecApp::tempDirectory()
@@ -1024,103 +757,6 @@ std::string InterSpecApp::userNameFromOS()
   return "";
 }//std::string userNameFromOS()
 
-
-#if USE_SRB_HEADER_FOOTER
-int InterSpecApp::exectutePhpScript( std::string &results,
-                      const std::string &path_to_script,
-                      const std::string &script_name,
-                      const string &path_to_srb_common )
-{
-  results = "";
-  
-  boost::filesystem::path script = script_name;
-  boost::filesystem::path script_location = path_to_script;
-  
-  if( path_to_script.empty() )
-    script_location = ".";
-  
-  boost::system::error_code ec;
-  script = boost::filesystem::path(script_location) / script;
-  script = boost::filesystem::absolute( script );
-  
-
-  if( !boost::filesystem::is_regular_file( script, ec ) )
-  {
-    string errmsg = "Couln't access the file '" + script.generic_string()  + "'";
-    cerr << errmsg << endl; //so it will show up in apaches log
-    return EXIT_FAILURE;
-  }//if( we can touch the file ).
-  
-  const string host = wApp->environment().hostName();
-  const string user = static_cast<InterSpecApp *>(wApp)->getUserNameFromEnvironment();
-  string uri = host;
-  const size_t ind = uri.find_first_of( "/" );
-  if( ind != string::npos ) uri = uri.substr( ind );
-  else                      uri = "";
-  
-  //TODO: It doesnt appear the below is actually working!
-  const string file_contents = "<?php $PATH_TO_COMMON=\""
-  + path_to_srb_common +
-  "/\"; "
-  "$HTTP_HOST=\""     + host + "\"; "  //Contents of the Host: header from the current request, if there is one.
-  "$PHP_AUTH_USER=\"" + user + "\"; "  //When doing HTTP authentication this variable is set to the username provided by the user.
-  "$REQUEST_URI=\""   + uri  + "\"; "  //The URI which was given in order to access this page; for instance, '/index.html'.
-  "$_SERVER['" + host + "']=\"" + host + "\"; "
-  "$_SERVER['" + user + "']=\"" + user + "\"; "
-  "$_SERVER['" + uri + "']=\"" + uri + "\"; "
-  " include_once( '"
-  + script.generic_string()
-  + "' ); \?>";
-  
-  
-  string tempFileName = UtilityFunctions::temp_file_name( "IntersSpecPhpScript", InterSpecApp::tempDirectory() );
-  FILE *tempFile = fopen( tempFileName.c_str(), "w+" );
-  
-  if( tempFile == NULL )
-  {
-    string errmsg = "exectutePhpScript(...): couldnt open temp file";
-    cerr << errmsg << endl;
-    return EXIT_FAILURE;
-  }//if( tempFile == NULL )
-  
-  fprintf( tempFile, "%s", file_contents.c_str() );
-  
-  fflush( tempFile );
-  //  ::pclose( tempFile );
-  fclose( tempFile );
-  
-  string php_command = "php " + tempFileName;
-  
-  FILE *phpheader = popen( php_command.c_str(), "r" );
-  
-  int close_status = EXIT_FAILURE;
-  
-  if( phpheader != NULL )
-  {
-    int character;
-    while( (character = getc(phpheader)) != EOF ) results += (char)character;
-    
-    close_status = pclose( phpheader );
-    
-    if( close_status != EXIT_SUCCESS )
-    {
-      string errmsg = "The php--->c++/tex status gave a exit status of "
-      + std::to_string(close_status)
-      + ", you should probably fix this '"
-      + php_command + "'";
-      cerr << errmsg << endl; //so it will show up in apaches log
-    }//if( close_status != EXIT_SUCCESS )
-  }else
-  {
-    string errmsg = "The InterSpecApp failed to execute '" + php_command + "'";
-    cerr << errmsg << endl;
-  }//if( opened FILE output ) / else
-  
-  UtilityFunctions::remove_file( tempFileName );
-  
-  return close_status;
-}//int exectutePhpScript( const std::string &command, std::string &result )
-#endif // USE_SRB_HEADER_FOOTER
 
 InterSpec *InterSpecApp::viewer()
 {
@@ -1214,6 +850,24 @@ bool InterSpecApp::isElectronInstance()
 
   return !externalid.empty();
 }
+#endif
+
+
+#if( BUILD_AS_OSX_APP )
+void InterSpecApp::osThemeChange( std::string name )
+{
+  auto server = WServer::instance();
+  if( !server )
+    return;
+  
+  server->postAll( [name](){
+    auto app = dynamic_cast<InterSpecApp *>(wApp);
+    if( !app )
+      return;  //probably shouldnt ever happen
+    app->m_viewer->osThemeChange(name);
+    app->triggerUpdate();
+  } );
+}//osThemeChange(...)
 #endif
 
 void InterSpecApp::notify( const Wt::WEvent& event )
@@ -1427,35 +1081,6 @@ void InterSpecApp::finalize()
     cerr << "Have finalized session " << sessionId() << " for user "
          << m_viewer->m_user->userName() << endl;
 }//void InterSpecApp::finalize()
-
-
-#if(USE_SRB_HEADER_FOOTER)
-void InterSpecApp::showHeaderFooter( bool setUserOption )
-{
-  if( setUserOption )
-    InterSpecUser::setPreferenceValue( m_viewer->m_user, "ShowHeaderFooter", true, m_viewer );
-  
-  m_header->show();
-  m_footer->show();
-
-  m_showHeaderFooterButton->setHidden( true, WAnimation() );
-  m_hideHeaderFooterButton->setHidden( false, WAnimation() );
-}//void showHeaderFooter()
-
-
-void InterSpecApp::hideHeaderFooter( bool setUserOption )
-{
-  if( setUserOption )
-    InterSpecUser::setPreferenceValue( m_viewer->m_user, "ShowHeaderFooter", false, m_viewer );
-
-  m_header->hide();
-  m_footer->hide();
-
-  // Toggle the visibility of the show/hide buttons
-  m_showHeaderFooterButton->setHidden( false, WAnimation() );
-  m_hideHeaderFooterButton->setHidden( true, WAnimation() );
-}//void hideHeaderFooter()
-#endif
 
 
 void InterSpecApp::svlog( const WString& message, const WString& source, int priority )

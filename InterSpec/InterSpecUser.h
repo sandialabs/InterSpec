@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -49,6 +49,7 @@ class SpecMeas;
 struct UserState;
 class UserFileInDb;
 class InterSpec;
+class ColorThemeInfo;
 class UserFileInDbData;
 struct ShieldingSourceModel;
 
@@ -68,7 +69,7 @@ namespace rapidxml
 //The database this Interspec is using
 //if higher than database registry, will automatically
 //update tables
-#define DB_SCHEMA_VERSION 5
+#define DB_SCHEMA_VERSION 9
 
 
 namespace Wt
@@ -327,13 +328,14 @@ public:
     Wt::Dbo::hasMany( a, m_userFiles, Wt::Dbo::ManyToOne, "InterSpecUser" );
     Wt::Dbo::hasMany( a, m_dbPreferences, Wt::Dbo::ManyToOne, "InterSpecUser" );
     Wt::Dbo::hasMany( a, m_shieldSrcModels, Wt::Dbo::ManyToOne,"InterSpecUser");
+    Wt::Dbo::hasMany( a, m_colorThemes, Wt::Dbo::ManyToOne,"InterSpecUser");
   }//void persist( Action &a )
   
   inline const boost::posix_time::ptime &currentAccessStartUTC() const;
   
   const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &shieldSrcModels() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &userStates() const;
-
+  const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> >   &colorThemes() const;
 protected:
   void incrementAccessCount();
   void setCurrentAccessTime( const boost::posix_time::ptime &utcTime );
@@ -375,6 +377,7 @@ protected:
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> >         m_userFiles;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> >           m_dbPreferences;
   Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > m_shieldSrcModels;
+  Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> >       m_colorThemes;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserState> >            m_userStates;
 
 //  Wt::Dbo::collection< Wt::Dbo::ptr<DbUserState::Spectrum> > m_spectrums;
@@ -615,6 +618,51 @@ public:
 };//class UserFileInDbData
 
 
+class ColorThemeInfo
+{
+  /** The current user color theme is determined by a (int) user preference,
+      "ColorThemeIndex", which holds the index of of the of the entry in this
+      table to use.  The 'InterSpecUser_id' must also match current user.
+   */
+public:
+  Wt::Dbo::ptr<InterSpecUser> user;
+  
+  Wt::WString theme_name;
+  Wt::WString theme_description;
+  
+  Wt::WDateTime creation_time;
+  Wt::WDateTime modified_time;
+  
+  /** The JSON representation of the ColorTheme class. */
+  std::string json_data;
+  
+  template<class Action>
+  void persist( Action &a )
+  {
+    Wt::Dbo::belongsTo( a, user, "InterSpecUser", Wt::Dbo::OnDeleteCascade );
+    Wt::Dbo::field( a, theme_name, "ThemeName" );
+    Wt::Dbo::field( a, theme_description, "ThemeDescription" );
+    
+    //For some reason on Anddroid I've gotten an exception before - I guess the
+    //  timestamps arent that important so we'll just live with it.
+    try{
+      Wt::Dbo::field( a, creation_time, "CreationTime" );
+    }catch(...){
+      std::cerr << "Caught exception getting ColorThemeInfo creation time from database" << std::endl;
+    }
+    try{
+      Wt::Dbo::field( a, modified_time, "ModifiedTime" );
+    }catch(...){
+      std::cerr << "Caught exception getting ColorThemeInfo modified time from database" << std::endl;
+    }
+    
+    Wt::Dbo::field( a, json_data, "JsonData" );
+  }//void persist( Action &a )
+
+  
+};//class ColorThemeInfo
+
+
 struct ShieldingSourceModel
 {
   ShieldingSourceModel()
@@ -726,7 +774,8 @@ struct UserState
     kVerticalGridLines   = 0x4,
     kHorizontalGridLines = 0x8,
     kSpectrumLegend      = 0x10,
-    kTimeSeriesLegend    = 0x20
+    kTimeSeriesLegend    = 0x20,
+    kShowingShieldSourceFit    = 0x40,
   };//enum ShownDisplayFeatures
   
   //UserState(): default constructor, initializes values to reasonable defaults
@@ -792,6 +841,8 @@ struct UserState
   
   std::string userOptionsJson;
   
+  std::string colorThemeJson;
+  
   template<class Action>
   void persist( Action &a )
   {
@@ -838,6 +889,7 @@ struct UserState
     Wt::Dbo::field( a, showingPeakLabels, "ShowingPeakLabels" );
     Wt::Dbo::field( a, showingWindows, "ShowingWindows" );
     Wt::Dbo::field( a, userOptionsJson, "UserOptions" );
+    Wt::Dbo::field( a, colorThemeJson, "ColorThemeJson" );
   }//void persist( Action &a )
 
 private:
@@ -851,6 +903,48 @@ private:
                                   Wt::Dbo::Session *session,
                                   bool protect );
 };//struct UserState
+
+
+struct InterSpecGlobalSetting
+{
+  enum ValidityStatus
+  {
+    GlobalSettingActive = 0,
+    GlobalSettingInActive = 1, //not being used
+    GlobalSettingInvalid = 2,   //Found to no longer be valid
+    GlobalSettingUserRemoved = 3  //User deleted this setting, but we're leaving in DB
+  };//enum ValidityStatus
+  
+  ValidityStatus status;
+  
+  /** Time originally added to database */
+  Wt::WDateTime creationTime;
+  
+  /** Time this setting has most recently been updated. */
+  Wt::WDateTime lastModifiedTime;
+  
+  /** Basically a 'key' value to determine how to interpret #data.
+      ex. "DetectorResponseFunctionDirectory", "DetectorSerialNumberMapping"
+   */
+  std::string settingCatagory;
+  
+  /** Interpreted according to settingCatagory specified.
+      Usually a file path; if so either absolute, or relative to user-data
+      directory (not the default InterSpec data directory).
+   */
+  std::string data;
+  
+  
+  template<class Action>
+  void persist( Action &a )
+  {
+    Wt::Dbo::field( a, status, "Status" );
+    Wt::Dbo::field( a, creationTime, "CreationTime" );
+    Wt::Dbo::field( a, lastModifiedTime, "LastModifiedTime" );
+    Wt::Dbo::field( a, settingCatagory, "SettingCatagory" );
+    Wt::Dbo::field( a, data, "Data" );
+  }
+};//struct GlobalSetting
 
 
 //Implementation of inline and templated functions
@@ -990,7 +1084,8 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
     else if( typeid(value) == typeid(double) || typeid(value) == typeid(float) )
       newoption->m_type = UserOption::Decimal;
     else if( typeid(value) == typeid(int)
-            || typeid(value) == typeid(unsigned int) )
+            || typeid(value) == typeid(unsigned int)
+            || typeid(value) == typeid(long long) )
       newoption->m_type = UserOption::Integer;
     else if( typeid(value) == typeid(bool) )
       newoption->m_type = UserOption::Boolean;

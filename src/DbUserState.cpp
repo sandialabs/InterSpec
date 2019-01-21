@@ -278,7 +278,7 @@ void SpectrumFile::setInformation( const MeasurementInfo &spectrumFile,
   m_fileFormat = format;
   m_compression = NoCompression;
   
-  std::shared_ptr< ::rapidxml::xml_document<char> > xml = spectrumFile.MeasurementInfo::create_2011_N42_xml();
+  std::shared_ptr< ::rapidxml::xml_document<char> > xml = spectrumFile.MeasurementInfo::create_2012_N42_xml();
   
   std::stringstream data;
   data << (*xml) << '\0';

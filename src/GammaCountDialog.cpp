@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -55,7 +55,10 @@ using namespace Wt;
 
 
 GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
-  : AuxWindow( "Energy Range Count" ),
+: AuxWindow( "Energy Range Count",
+             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+              | AuxWindowProperties::SetCloseable
+              | AuxWindowProperties::DisableCollapse) ),
     m_specViewer( specViewer ),
     m_highlightRegionId( 0 ),
     m_lowerEnergy( NULL ),
@@ -72,7 +75,7 @@ GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
   
   centerWindow();
   rejectWhenEscapePressed();
-  setResizable( false );
+  
   show();
 }//GammaCountDialog constructor
 
@@ -89,6 +92,8 @@ GammaCountDialog::~GammaCountDialog()
 
 void GammaCountDialog::init()
 {
+  wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
+  
   if( !m_specViewer )
     throw runtime_error( "GammaCountDialog: you must pass in valid"
                          " InterSpec pointer" );
@@ -204,6 +209,11 @@ void GammaCountDialog::init()
  
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &GammaCountDialog::emitFinished );
+  
+  //Keep the keyboard form popping up
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
+  if( app && app->isMobile() )
+    closeButton->setFocus();
 }//GammaCountDialog::init()
 
 

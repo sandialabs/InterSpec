@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -40,7 +40,6 @@
 #include <Wt/WTabWidget>
 #include <Wt/WTreeView>
 #include <Wt/WPushButton>
-#include <Wt/WBorderLayout>
 #include <Wt/WGridLayout>
 #include <Wt/WBorderLayout>
 #include <Wt/WApplication>
@@ -51,12 +50,14 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/ColorSelect.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "SpecUtils/UtilityFunctions.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/RowStretchTreeView.h"
-#if ( USE_SPECTRUM_CHART_D3 )
+#include "InterSpec/PeakSearchGuiUtils.h"
+#if( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #else
 #include "InterSpec/SpectrumDisplayDiv.h"
@@ -68,6 +69,211 @@
 using namespace Wt;
 using namespace std;
 
+namespace
+{
+#if( ALLOW_PEAK_COLOR_DELEGATE )
+  class ColorDelegate : public Wt::WAbstractItemDelegate
+  {
+  public:
+    class EditWidget : public Wt::WContainerWidget
+    {
+    public:
+      EditWidget( const Wt::WModelIndex& index,
+                 const Wt::WFlags<Wt::ViewItemRenderFlag> flags,
+                 ColorDelegate *parent )
+      {
+        m_color = nullptr;
+        m_parent = parent;
+        
+        auto model = dynamic_cast<const PeakModel *>( index.model() );
+        m_peakModel = const_cast<PeakModel *>(model);
+        
+        if( model )
+        {
+          try
+          {
+            m_origPeak = model->peak( index );
+            if( m_origPeak )
+              m_origColor = m_origPeak->lineColor();
+          }catch(...){}
+        }
+        updateRender( index, flags );
+      }//EditWidget constructor
+      
+      virtual ~EditWidget(){}
+      
+      WString cssColor()
+      {
+        if( m_color && !m_color->valueText().empty() )
+          return m_color->valueText();
+        else
+          return "none";
+      }//cssColor()
+      
+      void setCssCollor( const WString &s )
+      {
+        cout << "setCssCollor: " << s.toUTF8() << endl;
+        const string ss = s.toUTF8();
+        if( m_color )
+          m_color->setValueText( (ss.empty() || ss=="none") ? "" : s );
+        else
+        {
+          if( ss.empty() || ss=="none" )
+            setAttributeValue( "style", "margin: 5px; background-color: null; border: 1px #e1e1e1" );
+          else
+            setAttributeValue( "style", "margin: 5px; border: 1px #e1e1e1; background-color: " + ss );
+        }
+      }//void setCssCollor( WString &s )
+      
+      void closeEditor( bool save )
+      {
+        auto index = m_peakModel->indexOfPeak(m_origPeak);
+        
+        WString color = m_origColor;
+        if( index.isValid() && save && m_color && m_color->valueText().toUTF8()!="#ebebeb" )
+          color = m_color->valueText();
+        
+        m_peakModel->setData( index, color );
+        if( m_color )
+          delete m_color;
+        m_color = nullptr;
+        updateRender(index,0);
+      }
+      
+      void colorSelected( const std::string &color )
+      {
+        closeEditor( color!=m_origColor.toUTF8() );
+      }
+      
+      void updateRender( const Wt::WModelIndex &index,
+                        const Wt::WFlags<Wt::ViewItemRenderFlag> flags )
+      {
+        cout << "updateRender: flags=" << flags.value() << endl;
+        
+        auto model = dynamic_cast<const PeakModel *>( index.model() );
+        
+        if( model && (flags & RenderEditing) ) //RenderSelected, RenderEditing, RenderFocused, RenderInvalid
+        {
+          if( !m_color )
+          {
+            m_color = new ColorSelect(ColorSelect::PrefferNative,this);
+            setAttributeValue( "style", "margin: 0px; background-color: null;" );
+            m_color->setAttributeValue("style", "height: 15px;" );
+            m_color->cssColorChanged().connect( boost::bind( &EditWidget::colorSelected, this, _1 ) );
+          }
+          try
+          {
+            const auto &p = model->peak(index);
+            m_color->setValueText( p->lineColor().empty() ? "#ebebeb" : p->lineColor().c_str() );
+          }catch(...)
+          {
+          }
+        }else
+        {
+          try
+          {
+            if( !model )
+              throw runtime_error("");
+            
+            const auto &p = model->peak( index );
+            if( p->lineColor().empty() )
+              setAttributeValue( "style", "margin: 5px; background-color: null; border: 1px #e1e1e1" );
+            else
+              setAttributeValue( "style", "margin: 5px; border: 1px #e1e1e1; background-color: " + p->lineColor() );
+          }catch(...)
+          {
+            setAttributeValue( "style", "margin: 5px; border: 1px #e1e1e1; background-color: grey" );
+          }
+        }
+      }//void updateRender(...)
+      
+    protected:
+      Wt::WString m_origColor;
+      PeakModel::PeakShrdPtr m_origPeak;
+      PeakModel *m_peakModel;
+      ColorSelect *m_color;
+      ColorDelegate *m_parent;
+    };//class EditWidget
+    
+  public:
+    ColorDelegate( Wt::WObject *parent = NULL )
+      : WAbstractItemDelegate(parent)
+    {
+      closeEditor().connect( boost::bind( &ColorDelegate::doCloseEditor, this, _1, _2 ) );
+    }
+    
+    virtual ~ColorDelegate(){}
+    
+    virtual Wt::WWidget *update( Wt::WWidget *widget,
+                                const Wt::WModelIndex &index,
+                                Wt::WFlags< Wt::ViewItemRenderFlag > flags )
+    {
+      EditWidget *edit = dynamic_cast<EditWidget *>(widget);
+      if( !edit )
+        edit = new EditWidget( index, flags, this );
+      else
+        edit->updateRender( index, flags );
+      
+      return edit;
+    }//WWidget *update(...)
+    
+    
+    void doCloseEditor( WWidget *editor, bool save )
+    {
+      EditWidget *edit = dynamic_cast<EditWidget *>(editor);
+      if( edit )
+        edit->closeEditor(save);
+    }//void doCloseEditor( WWidget *editor, bool save )
+    
+  protected:
+    
+ 
+    boost::any editState( Wt::WWidget *editor ) const
+    {
+      EditWidget *w = dynamic_cast<EditWidget *>(editor);
+      if( !w )
+      {
+        cerr << SRC_LOCATION << "\n\tLogic error - fix me!" << endl;
+        return boost::any();
+      }//if( !w )
+      
+      WString csscolor = "none";
+      if( w )
+        csscolor = w->cssColor();
+      
+      return boost::any( csscolor );
+    }//boost::any editState( WWidget *editor ) const
+
+    
+    void setEditState( Wt::WWidget *editor, const boost::any &value ) const
+    {
+      EditWidget *w = dynamic_cast<EditWidget *>(editor);
+      if( !w )
+      {
+        cerr << SRC_LOCATION << "\n\tLogic error - fix me!" << endl;
+        return;
+      }
+      
+      try
+      {
+        w->setCssCollor( boost::any_cast<WString>(value) );
+      }catch(...)
+      {
+        cerr << SRC_LOCATION << "\n\tPossible Logic error - fix me!" << endl;
+      }//try / catch
+    }//void setEditState( WWidget *editor, const boost::any& value ) const
+
+    
+    void setModelData( const boost::any &editState,
+                      Wt::WAbstractItemModel *model,
+                      const Wt::WModelIndex &index ) const
+    {
+      if( model )
+        model->setData( index, editState, EditRole );
+    }//void setModelData(...)
+  };//class ColorDelegate
+#endif //ALLOW_PEAK_COLOR_DELEGATE
+}//namespace
 
 
 PeakInfoDisplay::PeakInfoDisplay( InterSpec *viewer,
@@ -104,8 +310,8 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   if( m_model->rowCount() <= 0 )
     return;
   
-  AuxWindow *window = new AuxWindow( "Confirmation", true );
-  window->disableCollapse();
+  AuxWindow *window = new AuxWindow( "Confirmation",
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   WText * text = new WText("Erase All Peaks?");
   window->stretcher()->addWidget(text,0,0);
@@ -131,7 +337,7 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
 
 void PeakInfoDisplay::assignNuclidesFromRefLines()
 {
-  m_viewer->assignCurrentPeakNuclideFromReferenceLines();
+  PeakSearchGuiUtils::assign_peak_nuclides_from_reference_lines( m_viewer );
 }//void assignNuclidesFromRefLines()
 
 
@@ -258,25 +464,26 @@ void PeakInfoDisplay::disablePeakDelete()
 
 void PeakInfoDisplay::init()
 {
+  if( !m_model )
+    throw runtime_error( "PeakInfoDisplay must be passed a valid PeakModel" );
+  
   assert( !m_infoView );
   assert( !m_infoLayout );
 
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
-  m_infoLayout = new WBorderLayout();
-  setLayout(m_infoLayout);
+  m_infoLayout = new WGridLayout();
+  setLayout( m_infoLayout );
   
-  m_infoLayout->setContentsMargins( 1, 1, 1, 1 );
+  m_infoLayout->setContentsMargins( 0, 0, 0, 0 );
+  m_infoLayout->setVerticalSpacing( 0 );
+  m_infoLayout->setHorizontalSpacing( 0 );
   
   m_infoView = new RowStretchTreeView();
-  m_infoView->setRootIsDecorated	(	false); //makes the tree look like a table! :)
+  m_infoView->addStyleClass( "PeakInfoDisplayTable" );
+  m_infoView->setRootIsDecorated(	false); //makes the tree look like a table! :)
   
-  if( m_model )
-    m_infoView->setModel( m_model );
-  else
-    cerr << SRC_LOCATION
-         << "\n\tPeakInfoDisplay::createInfoTab(): Invalid peak model--"
-            "GUI will not function correctly." << endl<< endl;
+  m_infoView->setModel( m_model );
 
 //  m_infoView->setRowHeight(28);
 //  m_infoView->setHeaderHeight(28);
@@ -284,7 +491,6 @@ void PeakInfoDisplay::init()
   m_infoView->setAlternatingRowColors( true );
   m_infoView->setSelectable( true );
   m_infoView->setSelectionMode( SingleSelection );
-  setLayout( m_infoLayout );
   
   m_infoView->setColumnHidden( PeakModel::kCandidateIsotopes, true );
   m_infoView->setColumnHidden( PeakModel::kUseForCalibration, true );
@@ -324,6 +530,14 @@ void PeakInfoDisplay::init()
 
   m_infoView->setColumnWidth( PeakModel::kUserLabel,  WLength(9, WLength::FontEx) );
   
+#if( ALLOW_PEAK_COLOR_DELEGATE )
+  m_infoView->setColumnWidth( PeakModel::kPeakLineColor, WLength(6,WLength::FontEx) );
+  ColorDelegate *colorDelegate = new ColorDelegate( m_infoView );
+  m_infoView->setItemDelegateForColumn( PeakModel::kPeakLineColor, colorDelegate );
+#else
+  m_infoView->setColumnHidden( PeakModel::kPeakLineColor, true );
+#endif
+  
   m_infoView->setColumnHidden( PeakModel::kHasSkew, true );
 //  m_infoView->setColumnWidth( PeakModel::kHasSkew,    WLength(9, WLength::FontEx) );
   
@@ -348,42 +562,59 @@ void PeakInfoDisplay::init()
   m_infoView->clicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this, _1 ) );
   m_infoView->doubleClicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this, _1 ) );
 
-  m_infoLayout->addWidget( m_infoView, Wt::WBorderLayout::Center);
+  m_infoLayout->addWidget( m_infoView, 0, 0 );
+  m_infoLayout->setRowStretch( 0, 1 );
   
 
   //Now add buttons to search/clear peaks
-  buttonDiv = new WContainerWidget();
-  m_infoLayout->addWidget( buttonDiv, Wt::WBorderLayout::South);
+  WContainerWidget *buttonDiv = new WContainerWidget();
+  buttonDiv->addStyleClass( "PeakInfoDisplayButtonDiv" );
+  m_infoLayout->addWidget( buttonDiv, 1, 0 );
 
   m_searchForPeaks = new WPushButton( "Search for Peaks", buttonDiv );
   m_searchForPeaks->addStyleClass("FindIcon");
-  m_searchForPeaks->setMargin(WLength(7),Wt::Left);
-  m_searchForPeaks->setMargin(WLength(3),Wt::Bottom);
+  //m_searchForPeaks->setMargin(WLength(7),Wt::Left);
+  //m_searchForPeaks->setMargin(WLength(3),Wt::Bottom);
   HelpSystem::attachToolTipOn( m_searchForPeaks, "Search for peaks using the automated peak finding "
                               "algorithm.", showToolTipInstantly, HelpSystem::Top  );
-  m_searchForPeaks->clicked().connect( boost::bind( &InterSpec::searchForPeaks, m_viewer, true ) );
+  m_searchForPeaks->clicked().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, m_viewer, true ) );
 
   
-  WPushButton *button = new WPushButton( "Clear all Peaks", buttonDiv );
-  HelpSystem::attachToolTipOn( button,"Removes <b>all</b> existing peaks.", showToolTipInstantly, HelpSystem::Top  );
-  button->addStyleClass("BinIcon");
-        button->setMargin(WLength(2),Wt::Left);
-  button->clicked().connect( this, &PeakInfoDisplay::confirmRemoveAllPeaks );
+  WPushButton *clearPeaksButton = new WPushButton( "Clear all Peaks", buttonDiv );
+  HelpSystem::attachToolTipOn( clearPeaksButton, "Removes <b>all</b> existing peaks.", showToolTipInstantly, HelpSystem::Top  );
+  clearPeaksButton->addStyleClass("BinIcon");
+  //clearPeaksButton->setMargin(WLength(2),Wt::Left);
+  clearPeaksButton->clicked().connect( this, &PeakInfoDisplay::confirmRemoveAllPeaks );
+  clearPeaksButton->disable();
 
   //"Nuc. from Ref."
-  button = new WPushButton( "Nuc. from Ref.", buttonDiv );
-  button->addStyleClass("WandIcon");
-  button->setMargin(WLength(2),Wt::Left|Wt::Right);
-  HelpSystem::attachToolTipOn( button,
+  WPushButton *nucFromRefButton = new WPushButton( "Nuc. from Ref.", buttonDiv );
+  nucFromRefButton->setIcon( "InterSpec_resources/images/assign_white.png" );
+  
+  //button->setMargin(WLength(2),Wt::Left|Wt::Right);
+  HelpSystem::attachToolTipOn( nucFromRefButton,
                               "Assign peak nuclides from reference lines showing. Only applies to "
                               "peaks which do not already have a nuclide associated "
                               "with them." ,
                               showToolTipInstantly , HelpSystem::Top );
-  button->clicked().connect( boost::bind( &PeakInfoDisplay::assignNuclidesFromRefLines, this ) );
+  nucFromRefButton->clicked().connect( boost::bind( &PeakInfoDisplay::assignNuclidesFromRefLines, this ) );
+  nucFromRefButton->disable();
+  
+  auto enableDisableNucRef = [this,nucFromRefButton,clearPeaksButton](){
+    const bool enable = (m_model->rowCount() > 0);
+    clearPeaksButton->setEnabled( enable );
+    nucFromRefButton->setEnabled( enable );
+    //Should check if any reference lines are showing for nucFromRefButton as well...
+  };
+  
+  m_model->dataChanged().connect( std::bind(enableDisableNucRef) );
+  m_model->rowsRemoved().connect( std::bind(enableDisableNucRef) );
+  m_model->rowsInserted().connect( std::bind(enableDisableNucRef) );
+  m_model->layoutChanged().connect( std::bind(enableDisableNucRef) );
   
 /*
-  button = new WPushButton( "ID Nuclides", buttonDiv );
-  button->addStyleClass("WandIcon");
+  WPushButton *button = new WPushButton( "ID Nuclides", buttonDiv );
+  button->setIcon( "InterSpec_resources/images/assign_white.png" );
   button->setMargin(WLength(2),Wt::Left|Wt::Right);
   HelpSystem::attachToolTipOn( button,
                               "Guess nuclides responsible for peaks. Only applies to "
@@ -408,15 +639,17 @@ void PeakInfoDisplay::init()
                               "have initial energy near left side of plot. Peak parameters can be editted by double-clicking on the quantity in the <b>Peak Manager</b> tab.", showToolTipInstantly , HelpSystem::Top );
   
   addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
-  addPeak->addStyleClass( "AddIcon" );
-
+  //addPeak->addStyleClass( "PlusIconWhiteBtn" );
+  addPeak->setIcon( "InterSpec_resources/images/plus_min_white.png" );
+  
   m_deletePeak = new WPushButton( "Delete", buttonDiv );
-  m_deletePeak->setMargin(WLength(2),Wt::Left|Wt::Right);
+  //m_deletePeak->setMargin(WLength(2),Wt::Left|Wt::Right);
   HelpSystem::attachToolTipOn( m_deletePeak,"Deletes peak currently being edited.", showToolTipInstantly, HelpSystem::Top  );
   m_deletePeak->clicked().connect( this, &PeakInfoDisplay::deleteSelectedPeak );
   m_deletePeak->setHiddenKeepsGeometry( true );
   m_deletePeak->disable();
-   m_deletePeak->addStyleClass( "DeleteIcon" );
+  //m_deletePeak->addStyleClass( "MinusIconWhiteBtn" );
+  m_deletePeak->setIcon( "InterSpec_resources/images/minus_min_white.png" );
 
   //Whenver a delegate gets closed, lets disable the peak delete button
   set<WAbstractItemDelegate *> uniqueDelegates;
@@ -440,14 +673,26 @@ void PeakInfoDisplay::init()
   mouseWentOver().connect( "function(object, event){try{$('#" + txt->id() + "').show();}catch(e){}}" );
   mouseWentOut().connect( "function(object, event){try{$('#" + txt->id() + "').hide();}catch(e){}}" );
   
+  
   WResource *csv = m_model->peakCsvResource();
-  WAnchor *csvAnchor = new WAnchor ( WLink(csv), "CSV", buttonDiv );
-//  csvAnchor->setPadding( Wt::Right );
-  csvAnchor->addStyleClass("DiskIcon");
-  csvAnchor->setTarget( Wt::TargetNewWindow );
-  csvAnchor->setFloatSide( Wt::Right );
+  WPushButton *csvButton = new WPushButton( buttonDiv );
+  csvButton->setIcon( "InterSpec_resources/images/download_small.png" );
+  csvButton->setLink( WLink(csv) );
+  csvButton->setLinkTarget( Wt::TargetNewWindow );
+  csvButton->setText( "CSV" );
+  csvButton->setStyleClass( "CsvLinkBtn" );
+  csvButton->disable();
 
-  HelpSystem::attachToolTipOn( csvAnchor,"Export information about the identified peaks to a "
+  auto enableDisableCsv = [this,csvButton](){
+    csvButton->setEnabled( m_model->rowCount() > 0 );
+  };
+  
+  m_model->dataChanged().connect( std::bind(enableDisableCsv) );
+  m_model->rowsRemoved().connect( std::bind(enableDisableCsv) );
+  m_model->rowsInserted().connect( std::bind(enableDisableCsv) );
+  m_model->layoutChanged().connect( std::bind(enableDisableCsv) );
+  
+  HelpSystem::attachToolTipOn( csvButton,"Export information about the identified peaks to a "
                               "comma seperated format.", showToolTipInstantly );
 #endif
   

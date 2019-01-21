@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -80,7 +80,7 @@
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/HelpSystem.h"
 
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 
 using namespace Wt;
 using namespace std;
@@ -105,8 +105,8 @@ Recalibrator::Recalibrator(
     m_acceptText( 0 ),
     m_acceptButtonDiv( 0 ),
     m_coeffEquationType( Measurement::UnknownEquationType ),
-    m_devPairs( NULL ),
-    m_layout(NULL)
+    m_devPairs( nullptr ),
+    m_layout( nullptr )
 {
   m_uncertainties[0] = m_uncertainties[1] = m_uncertainties[2] = -1.0;
   
@@ -214,7 +214,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   }//for( int i = 0; i < 3; ++i )
 
   m_fitCoefButton = new WPushButton( "Fit Coeffs" );
-  m_fitCoefButton->setStyleClass("CurveIcon");
+  m_fitCoefButton->setIcon( "InterSpec_resources/images/ruler_small.png" );
   HelpSystem::attachToolTipOn( m_fitCoefButton,"Will use the expected energy of photopeaks "
                               "associated with the observed peak, in order to "
                               "fit calibration coefficients", showToolTipInstantly );
@@ -306,15 +306,11 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   if( style == kWide )
   {
     multFiles = new WPushButton("Mult. Files...", m_acceptButtonDiv );
-    multFiles->setMargin(WLength(5),Wt::Bottom);
-    multFiles->setMargin(WLength(1),Wt::Left);
-    multFiles->setMargin(WLength(3),Wt::Right);
-
-  } //kWide
-  else
+  }else
   {
     multFiles = new WPushButton("Mult. Files...");
   } //kTall
+  
   if (style==kTall && parent)
   {
       //add close button if it is in a wide state (AuxWindow)
@@ -330,7 +326,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   
   m_revert = new WPushButton( "Revert", m_acceptButtonDiv );
   m_revert->setStyleClass( "RecalCancelbtn" );
-  m_revert->addStyleClass( "UndoIcon" );
+  m_revert->setIcon( "InterSpec_resources/images/arrow_undo.png" );
 
   // And disable all the buttons
   m_revert->disable();
@@ -357,12 +353,12 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   m_layout->addWidget( m_fitFor[2],             row, 3, AlignCenter );
   
   
-  m_devPairs = new DeviationPairDisplay( (WContainerWidget *)0 );
+  m_devPairs = new DeviationPairDisplay( nullptr );
   m_devPairs->changed().connect( boost::bind( &Recalibrator::engageRecalibration, this, ApplyRecal ) );
   
   
   WPushButton *addButton = new WPushButton( "Add Pair" );
-  addButton->addStyleClass( "AddIcon" );
+  addButton->setIcon( "InterSpec_resources/images/plus_min_white.png" );
   addButton->clicked().connect( boost::bind(&DeviationPairDisplay::newDevPair, m_devPairs, true) );
   
   if( style == kTall )
@@ -399,8 +395,10 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
 
   row++; //tall=8, wide=4
   m_layout->addWidget( m_applyTo[kBackground], row, 1 );
+  multFiles->setIcon( "InterSpec_resources/images/page_white_stack.png" );
+  if( style == kWide )
+    multFiles->addStyleClass( "MultCalBtnWide" );
   
-  multFiles->addStyleClass( "PageStackIcon" );
   HelpSystem::attachToolTipOn( multFiles,"Tool to use peaks from multiple files to fit for calibration", showToolTipInstantly, HelpSystem::Top );
   multFiles->clicked().connect( this, &Recalibrator::createMultifileFitter );
   
@@ -1141,9 +1139,9 @@ void Recalibrator::recalibrateByPeaks()
 
 void Recalibrator::refreshRecalibrator()
 {
-  //Needed to check, because Recalibrator always exists in docked or
-  //undocked mode.  refreshRecalibrator() will be called again
-  //when it is visible
+  //Needed to check, because Recalibrator always exists whether tool tabs are
+  //  shown or not.  refreshRecalibrator() will be called again when it is
+  //  visible
   //wcjohns 20140802: I'm not sure this is a great practice... should at least
   //  overide setHidden() to call refreshRecalibrator() to be sure.
   if( isHidden() )
@@ -1371,9 +1369,9 @@ void Recalibrator::refreshRecalibrator()
 
 DevPair::DevPair( Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
-m_energy( new WDoubleSpinBox() ), m_offset( new WDoubleSpinBox() ),
-m_delete( new WText() )
-
+    m_energy( new WDoubleSpinBox() ),
+    m_offset( new WDoubleSpinBox() ),
+    m_delete( new WContainerWidget() )
 {
   WGridLayout* layout = new WGridLayout();
   layout->setContentsMargins(0, 0, 0, 0);
@@ -1394,8 +1392,7 @@ m_delete( new WText() )
   m_energy->setMaximum( 1000000.0 );
   m_offset->setMinimum( -10000.0 );
   m_offset->setMaximum( 1000000.0 );
-  m_delete->setStyleClass( "DeleteIcon" );
-  m_delete->setFloatSide(Right);
+  m_delete->addStyleClass( "Wt-icon DeleteDevPair" );
 }//DevPair constructor
 
 
@@ -1631,18 +1628,18 @@ Recalibrator::GraphicalRecalConfirm::GraphicalRecalConfirm( double lowe,
                                     GraphicalRecalConfirm::RecalTypes lastType,
                                                             float lastEnergy
                                                             )
-: AuxWindow( "Confirm Recalibration", true ),
+: AuxWindow( "Confirm Recalibration",
+             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+               | AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse) ),
   m_calibrator( cal ), m_typeButtons( NULL), m_foregroundOnly( NULL ),
   m_startE( NULL ), m_finalE( NULL ),
   m_preserveLastCal( NULL ),
   m_lastType( lastType ),
   m_lastEnergy( lastEnergy )
 {
-  setClosable( true );
   setResizable( false );
   rejectWhenEscapePressed();
   centerWindow();
-  disableCollapse();
   show();
 
   finished().connect( cal, &Recalibrator::deleteGraphicalRecalConfirmWindow );
@@ -1749,7 +1746,7 @@ Recalibrator::GraphicalRecalConfirm::GraphicalRecalConfirm( double lowe,
   button->clicked().connect( this, &AuxWindow::hide );
   
   button = new WPushButton( "Accept", footer()  );
-  button->setStyleClass( "AcceptIcon" );
+  button->setIcon( "InterSpec_resources/images/accept.png" );
   button->clicked().connect( this, &GraphicalRecalConfirm::apply );
   
   //Could place dialog near where the mouse is
@@ -2012,7 +2009,9 @@ PreserveCalibWindow::PreserveCalibWindow(
                              std::shared_ptr<SpecMeas> oldmeas,
                              const SpectrumType oldtype,
                              Recalibrator *calibrator )
-: AuxWindow( "Keep Calibration?", true ),
+: AuxWindow( "Keep Calibration?",
+             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+               | AuxWindowProperties::PhoneModal) ),
   m_calibrator( calibrator ),
   m_newmeas( newmeas ),
   m_newtype( newtype ),

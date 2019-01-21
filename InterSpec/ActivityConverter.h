@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -40,10 +40,12 @@ class ActivityConverter : public AuxWindow
 public:
   ActivityConverter();
   virtual ~ActivityConverter();
-  void doBq();
+  
 protected:
-  Wt::WLineEdit *m_bq;
-  Wt::WLineEdit *m_ci;
+  void convert();
+  
+  Wt::WLineEdit *m_input;
+  Wt::WLineEdit *m_output;
   Wt::WText *m_message;
 };//class ActivityConverter
 

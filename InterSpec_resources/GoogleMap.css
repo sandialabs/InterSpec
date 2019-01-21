@@ -1,0 +1,36 @@
+.PointInfo
+{
+  position: absolute;
+  display: inline-block;
+  top: 2px;
+  right: 11px;
+  border: 1px solid black;
+  padding: 2px;
+  padding-left: 3px;
+  padding-right: 3px;
+  padding-bottom: 0px;
+  background-color: #fff;
+  background-color: rgba(255,255,255,0.9);
+}
+
+.PointInfo > sub
+{
+  font-size:50%;
+}
+
+
+.GoogleMapDiv
+{
+}
+
+.MapMeasPoint
+{
+}
+
+.GpsCoordsTxt
+{
+}
+
+.GpsTimeTxt
+{
+}

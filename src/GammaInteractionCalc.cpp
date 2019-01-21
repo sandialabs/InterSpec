@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -63,7 +63,7 @@
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -444,7 +444,6 @@ void SelfAttCalc::eval( const double xx[], const int *ndimptr,
                             ? m_sphereRadAndTransLenCoef[m_sourceIndex-1].first
                             : 0.0);
   const double surce_outer_rad = m_sphereRadAndTransLenCoef[m_sourceIndex].first;
-  const double srcTransLenCoef = m_sphereRadAndTransLenCoef[m_sourceIndex].second;
 
   //cuba goes from 0 to one, so we have to scale the variables
   //r:     goes from zero to sphere_rad
@@ -460,6 +459,7 @@ void SelfAttCalc::eval( const double xx[], const int *ndimptr,
   //Lets not waste time integrating over area in the source which wont
   //  contribute to radiation making it outside the ball
   const double MAX_ATT_LEN = 7.5;
+  const double srcTransLenCoef = m_sphereRadAndTransLenCoef[m_sourceIndex].second;
   if( (MAX_ATT_LEN*srcTransLenCoef) < surce_outer_rad )
   {
     source_inner_rad = std::max( source_inner_rad,

@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -100,6 +100,12 @@ protected:
   enum Quantity{ Dose, Activity, Distance, Shielding, NumQuantity };
   
   void init();
+  
+  /** Performs some very basic runtime checks to make sure calculations are
+    half-way reasonable.
+    Throws exception with a descriptive message if there is an issue.
+   */
+  void runtime_sanity_checks();
   
   void handleQuantityClick( const Quantity q );
   void handleSourceTypeChange();

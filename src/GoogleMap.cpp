@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -437,7 +437,7 @@ public:
 
 
 
-GoogleMap:: GoogleMap( const bool trackMapExtent, Wt::WContainerWidget *parent )
+GoogleMap::GoogleMap( const bool trackMapExtent, Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_map( 0 ),
     m_trackMapExtent( trackMapExtent ),
@@ -454,6 +454,8 @@ GoogleMap::~GoogleMap()
 
 void GoogleMap::init()
 {
+  wApp->useStyleSheet( "InterSpec_resources/GoogleMap.css" );
+  
   addStyleClass( "GoogleMapDiv" );
   m_map = new SrbGoogleMap( m_trackMapExtent );
   

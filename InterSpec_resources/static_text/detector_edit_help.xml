@@ -1,0 +1,298 @@
+    <div align="center">
+      <h1 id="detector-edit-dialog">
+            <b>Detector Edit/Select</b>
+      </h1>
+      <hr />
+	  </div>
+
+            <img src="InterSpec_resources/static_text/images/DetEditSelect.png"  class="imageBorder" style="float:left;display:block;margin-right:30px; max-height:300px;" />
+
+      <div style="padding-top: 10px">
+        InterSpec may attempt to automatically guess the detector response function for newly
+        loaded spectra if you have set the appropriate directories (described bellow) and a detector
+        response function (DRF) with either a name matching the model of detector is found, or a generic
+        detector with a similar efficiency to manufacturer published specifications is found.
+
+         If an appropriate DRF is not found, or an incorrect one is guessed, you can change the detector via menu
+         <b>Tools &#8594; Detector Edit/Select</b>, or by clicking on the detector widget (
+         <img src="InterSpec_resources/static_text/images/detector_widget.png" valign="middle" style="max-height:30px;" />
+         ) found in the following locations:
+      <ul>
+            <li>
+                <b>Tools &#8594; Activity/ Shielding Fit</b> menu
+            </li>
+            <li>
+                <b>Tools &#8594; Gamma XS Calc</b> menu
+            </li>
+            <li>
+                <b>Tools &#8594; Reference Photopeaks </b> menu (if tool tabs hidden) or 3rd tab <b> Reference Photopeaks </b> (if tool tabs shown)
+            </li>
+      </ul>
+      Changing the DRF in any of the above locations is equivalent.
+      </div>
+      <div style="padding-top: 10px">
+         The primary component of the detector response function is the
+         <span title="The fraction of gammas incident upon the front face of the detector, that will be recorded within the full energy peak at that energy">
+            <em>intrinsic efficiency</em>
+         </span>
+         of the detector as a function of energy; the detector response can also
+optionally contain the Full Width at Half Maximum (FWHM) for peaks as a function
+of energy. Some of the peak fitting routines loosely consult the FWHM of the
+detector response, if its available, for the initial value of peak width when
+fitting a new peak; the fit for the peak is in no way constrained by the FWHM
+of the detector response. If the detector response does not contain FWHM
+information, initial values of the peak width for the fit are derived from the
+data, and are almost always sufficiently close to the true width to allow the
+fit to converge.
+      </div>
+	  <div style="padding-top: 10px">
+         The
+         <b>Detector Edit/Select</b>
+         will provide some generic detector response functions (DRFs) as well as
+         an oppritunity to use DRFs from <code>GADRAS</code>, <code>SimpleMass</code>, free from equations,
+         standard equation coefficients, or absolute efficiencies specified using a comma seperated value
+         (CSV) or tab seperated value (TSV) file.
+         The DRFs are used when fitting for shieldings and source activity, and
+         displaying refernce photopeak amplitudes..
+      </div>
+      <div style="padding-top: 10px">
+         User defined detectors (either via upload or manual equation entry) can currently only
+         contain efficiency information.
+		  </div>
+
+
+      <div>
+         <h3>Selecting Response Functions</h3>
+         Once a detector is selected from the below described source options, the 
+         various indicators such as the reference gamma lines should reflect the change
+         efficiencies.  However, if the detector select dialog is closed, or the
+         <b>Cancel</b> button <u>clicked</u>, <i>InterSpec</i> will revert back to using your previously selected
+         detector.  You must <u>click</u> the <b>Accept</b> button to continue using your
+         newly selected detector.
+         <ul>
+            <li style="padding-top:10px;">
+               <b>GADRAS:</b>
+               <div>
+                 InterSpec can use the same format DRF as used by
+                 <a target="_blank" href="https://rsicc.ornl.gov/codes/psr/psr6/psr-610.html">GADRAS-DRF</a>
+                 as long <code>GADRAS-DRF</code> has previously used with the DRF in order to create the <code>Efficiency.csv</code> file
+                 to go along with <code>Detector.dat</code>.  Using <code>GADRAS-DRF</code> detector response functions has the advantage
+                 of including both intrinsic efficiency and FWHM information (which may help peak fitting).  For further information
+                 on <code>GADRAS-DRF</code> detector response functions see:
+                 <a target="_blank" href="http://prod.sandia.gov/techlib/access-control.cgi/2014/1420625.pdf">GADRAS-DRF 18.5 User’s Manual</a>.
+                 In order to use GADRAS-DRF response functions you must point the <em>GADRAS</em> tab of the <em>Detector Edit/Select</em>
+                 to the root directory of your GADRAS-DRF detectors.  This root directory will be saved as a user preference across
+                 sessions.
+
+                 The discrete energy/efficiency pairs in the <code>Efficiency.csv</code> file are interpolated between using
+                 Akima interpolation. The <code>Detector.dat</code> file that defines the detector in
+                 <code>GADRAS-DRF</code>, is used to determine the FWHM information.
+                 Specifically parameter 6, 7, and 8 (denoted by P6, P7, and P8 respectively)
+                 are used according the following pseudo-code:
+                 <pre>
+def getFWHM( energy ):
+    //P6---&gt; resolution @ E=0 (keV)
+    //P7---&gt; % FWHM @ 661 keV
+    //P8---&gt; resolution power
+    if energy ≥ 661 or P6=0
+        return 6.61×P7×(energy/661)<sup>P8</sup>
+    if P6 &lt; 0.0
+        var p = P8<sup>1.0/log(1.0-P6)</sup>
+        return 6.61×P7×(energy/661)<sup>p</sup>
+  
+    if P6 &gt; 6.61×P7
+        return P6;
+  
+    var p = sqrt((6.61×P7)<sup>2</sup>-P6<sup>2</sup>)/6.61;
+    return sqrt(P6<sup>2</sup>+(6.61×p×(energy/661)<sup>P8</sup>)<sup>2</sup>)
+                 </pre>
+               </div>
+            </li>
+            <li style="padding-top:10px;">
+               <b>Rel. Eff:</b>
+               <div style="padding-top:10px;">
+                 The &#34;Rel. Eff.&#34; detector response functions are specified using
+                 CSV or TSV files that provide detector dimensions and relative efficiencies at a given distance.
+                 A single CSV or TSV file may contain multiple lines with each line specifying a DRF.
+                 The format of the file is:
+                 <ul>
+                   <li>Lines starting with the string "#credit:" will be displayed to the user to provide context/credit/information about the DRFs contained in the file.  XHTML may be used in the descriptions. Lines otherwise starting with a "#" character will be ignored.
+                   </li>
+                   <li>The relative efficiency is specified using an equation of the form:
+                     <div><code>exp( c0 + c1*x<sup>1</sup> + c2*x<sup>2</sup> + c3*x<sup>3</sup> + c4*x<sup>4</sup> + c5*x<sup>5</sup> + c6*x<sup>6</sup> + c7*x<sup>7</sup>)
+                     </code></div>
+                     Where <code>x</code> is the energy in MeV, and <code>c0</code>, <code>c1</code>, etc are specified in the CSV or TSV file.
+                   </li>
+                   <li>Multiple files containing DRFs may be specified, and will remembered across user sessions.</li>
+                   <li>The columns in the CSV/TSV are:
+<div style="width: 100%; overflow-x: auto">
+<table style="border: 1px solid black;">
+<tr><th style="white-space: nowrap;border: 1px solid black;padding: 2px;">1: Display Name</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">2: Eff rel. to 3x3 NaI</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">3: Name</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">4: c0</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">5: c1</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">6: c2</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">7: c3</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">8: c4</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">9: c5</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">10: c6</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">11: c7</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">12: p0 (unused)</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">13: p1 (unused)</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">14: p2 (unused)</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">15: Calib Distance (cm)</th>
+<th style="white-space: nowrap;border: 1px solid black;padding: 2px;">16: Radius (cm)</th>
+</tr></table>
+</div>
+                   </li>
+                   </ul>
+               </div>
+            </li>
+            <li style="padding-top:10px;">
+               <b>Upload:</b>
+               <div style="padding-top:10px;">
+                  You can upload a a CSV file that lists the intrinsic efficiency at multiple
+energies in order to create a detector response function in
+                  <i>InterSpec</i>
+                  .
+The first column of the CSV file should be the energy in keV, and the second
+column should be the percent efficiency (a decimal number between 0 and 100) for
+a gamma at that energy striking the detector face to be detected within the
+photopeak centered at that energy.  Subsequent columns on each line are ignored.
+Lines in the file characterized by first non-whitespace character other
+than a digit are skipped.  The file may also be delimited by commas, spaces or
+tabs; multiple contiguous delimiters are treated as a single delimiter.
+                  <div style="padding-top:10px;">An acceptable input file may look like:</div>
+                  <div style="color: green; border: 1px solid black; padding: 2px; width:14em; margin-bottom:10px;margin-left:10px;">
+                     <div>Energy (keV), Efficiency (%)</div>
+                     <div>10, 0.0</div>
+                     <div>20,10.3</div>
+                     <div>25 28.3</div>
+                     <div>30,43.6</div>
+                     <div>35  54.0</div>
+                     <div>...</div>
+                  </div>
+                  <div>
+                     The
+                     <b>Efficiency.csv</b>
+                     file produced by &#34;GADRAS&#34; inside a detector files
+folder is an acceptable input.
+                  </div>
+                  <div style="padding-top:10px;">
+                     After uploading the efficiency file, you will be prompted to either enter the
+detector diameter, or upload a
+                     <em>Detector.dat</em>
+                     file from &#34;GADRAS&#34; so that
+the geometrical efficiency can be calculated.  If a
+                     <em>Detector.dat</em>
+                     is uploaded, the detectors peak width response will also be known to
+                     <i>InterSpec</i>
+                     as well.
+                     <ul> <div style="padding-top:10px;">The detectors' name will automatically be assigned to be the same as the 
+efficiency CSV file (minus the extension) used to create the detector.</div> </ul>
+                  </div>
+               </div>
+               <div style="padding-top:10px;">
+                  When evaluating efficiencies for energies between the provided values, Akima
+Interpolation is used.  This interpolation method was chosen as it is continually
+differentiable, only uses data from next neighbor points to determine value,
+and does not suffer from the same overshoots or oscillations that polynomial
+splines (e.g. third order splines) suffer from.
+                  <div align="center">
+                     <img src="InterSpec_resources/static_text/images/akima_interpolation.png"   class="imageBorder" style="margin-left:10px" />
+                     <div>
+					 A comparison of Akima, Cubic Spline, and linear interpolation methods for a set 
+of intrinsic efficiency pairs provided by &#34;GADRAS&#34; for a hand-held detector.
+					</div>
+                     <div>
+                        <b>Note: we have to improve this chart!</b>
+                     </div>
+                  </div>
+               </div>
+            </li>
+            <li style="padding-top:10px;">
+               <b>Formula:</b>
+               <div style="padding-top:10px;">
+                  If either the
+                  <i>intrinsic</i>
+                  or
+                  <i>absolute</i>
+                  efficiency is known
+as a mathematical function of energy (represented by &#34;&#215;&#34; in the input function), 
+it may be entered here; the detector diameter must also be known.  The formula 
+entered may use energy in either keV or MeV as long as the appropriate check box 
+is selected.  The evaluated formula should yield a number between 0 and 1 for 
+the energy range it is valid in. The input formula must be a function of a 
+single variable (energy) represented as a
+                  &#34;&#215;&#34;
+                  in the formula.
+				  <ul>
+                  <div style="margin-top:10px;">
+                     <i>Intrinsic</i>
+                     efficiency formulas represent the fraction of gammas
+which strike the detector face, that will end up in the full energy photopeak
+of the gammas incident energy.
+                  </div>
+                  <div style="margin-top:10px;">
+                     <i>Absolute</i>
+                     efficiency formulas represent the fraction of gammas 
+that leave the source, which will be recorded in their full energy photopeak,
+at a specified distance; hence when this efficiency is selected you will also
+have to enter a distance the input formula corresponds to.
+                  </div>
+				  </ul>
+                  <div style="margin-top:10px;">
+                     <u>Valid Equations:</u>
+                     Equations that can be entered follow standard mathematical rules, and can make 
+use of the following functions:
+                     <div style="margin-left:10px; border:1px solid black;color:blue;padding-left:4px;padding-right:4px;">
+                        abs, sqrt, sin, cos, tan, asin, acos, atan, atan2,
+   sinh, cosh, tanh, exp, log, ln
+                        <span style="color:grey;">(synonym for log)</span>
+                        , log10
+                        <div>
+                           <span style="color:grey;">and functions that take two arguments</span>
+                           : min, max, pow
+                        </div>
+                     </div>
+                     <div style="margin-top:10px;">The following arithmetic operators may be used:</div>
+                     <span style="margin-left:10px; border:1px solid black;color:blue;padding-left:4px;padding-right:4px;">+, - , /, *, ^, **</span>
+                     <div style="margin-top:10px;">The following logical operators may be used:</div>
+                     <span style="margin-left:10px; border:1px solid black;color:blue;padding-left:4px;padding-right:4px;">==, !=, &gt;, &gt;=, &lt;, &lt;=, &amp;&amp;, ||</span>
+                     <div style="margin-top:10px;">
+                        Logical operations result in a  value of 0.0 if false, and 1.0 if true, and may 
+be chained together, ex.
+                        <div style="color:grey;margin-left:10px;">0.5*(x&lt;50||x&gt;100) + 0.75*(x&gt;=50&amp;&amp;x&lt;=100)</div>
+                        will result in a function with value of 0.75 between 50 and 100, and 0.5 
+everywhere else.
+                     </div>
+                     <div style="margin-top:10px;">
+                        An example input formula could be:
+                        <div style="color:grey;margin-left:10px;">exp(-343.63 + 269.10*log(x) -83.80*ln(x)^2 + 13.00*pow(log(x),3) -1.01*log(x)^4)</div>
+                     </div>
+                     <div style="margin-top:10px;">
+                        After a formula is entered you may <u>click</u> the <b>Set</b> button to display the
+function on the chart to ensure the function is reasonable; the y-axis
+of this chart will always be set to display form 0 to 1.
+Any syntax errors encountered during parsing of the formula will be reported in 
+the
+                        <b>Information and Warnings</b>
+                        widget, with some diagnostics.
+                     </div>
+                  </div>
+               </div>
+            </li>
+            <li style="padding-top:10px;">
+               <b>Recent:</b>
+               <div style="padding-top:10px;">
+                  This is a list of recently used detector response functions you can choose to 
+use again - currently this list just lists all used detector - in the future it 
+is planned to only hold detectors defined from uploaded, manually entered formula,
+or created from test data (a planned feature).
+                  <ul> <div style="padding-top: 10px"> It is a good idea to uniquely name your uploaded or formula defined
+detector response functions for later identification.</div> </ul>
+               </div>
+            </li>
+         </ul>
+      </div>

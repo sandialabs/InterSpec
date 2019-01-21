@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -80,32 +80,31 @@ public:
     void loadSample( const Wt::WModelIndex index );
     void loadSampleSelected( );
     void handleSampleSelectionChanged();
-    void loadSavedSpectrum( const Wt::WModelIndex index );
-
+    void handleSampleDoubleClicked( Wt::WModelIndex index, Wt::WMouseEvent event );
+    
 protected:
   
-  std::shared_ptr<DataBaseUtils::DbSession> m_session;
+  std::shared_ptr<DataBaseUtils::DbSession>            m_session;
   
 #if( USE_DB_TO_STORE_SPECTRA )
-  //Snapshot/spectra
-  SnapshotFactory* m_snapshotModel;
+  SnapshotFactory                                     *m_snapshotModel;
 #endif
   
   //Sample
-  RowStretchTreeView                                * m_tableSample;
-  Wt::WPushButton                                   * m_loadSampleButton;
-  Wt::WStandardItemModel                            * m_messageModelSample;
+  RowStretchTreeView                                  *m_tableSample;
+  Wt::WPushButton                                     *m_loadSampleButton;
+  Wt::WStandardItemModel                              *m_messageModelSample;
   
-  InterSpec                                    * m_viewer;
+  InterSpec                                           *m_viewer;
 
-  std::map<std::string, Wt::WMediaPlayer *>         m_players;
-  Wt::WMessageResourceBundle                        m_resourceBundle;
-  Wt::WMenu                                         * m_menu;
+  std::map<std::string, Wt::WMediaPlayer *>            m_players;
+  Wt::WMessageResourceBundle                           m_resourceBundle;
+  Wt::WMenu                                           *m_menu;
   std::map<std::string,std::vector<VideoInformation> > m_videoInfos;
   
-  //videos
-  Wt::WTabWidget *m_videoTab;
-    
+  //m_videoTab isnt currently being but its use is left commented out everywhere
+  //  incase I ever get around to making videos that would be useful...
+  //Wt::WTabWidget                                      *m_videoTab;
 }; //class UseInfoWindow : public AuxWindow
 
 

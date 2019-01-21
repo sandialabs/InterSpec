@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -76,9 +76,6 @@ typedef Wt::Chart::WCartesianChart ChartRenderHelper_t;
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "SpecUtils/SpectrumDataStructs.h"
-#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
-#include "InterSpec/PhotopeakLineDisplay.h"
-#endif
 #include "js/SpectrumChart.js"
 
 using namespace std;
@@ -86,6 +83,10 @@ using namespace Wt;
 
 namespace
 {
+  const WColor ns_defaultTimeHighlightColors[3] = { {255,255,0,155}, {0,255,255,75}, {0,128,0,75} };
+  const WColor ns_default_peakFillColor( 0, 51, 255, 155 );
+  const WColor ns_default_occupiedTimeColor( 128, 128, 128, 75 );
+  
 struct MyTickLabel
 {
   enum TickLength { Zero, Short, Long };
@@ -764,7 +765,6 @@ void SpectrumChart::calcRenderRectangle( const Wt::WRectF &rectangle ) const
   const int padTop = plotAreaPadding(Top);
   const int padBottom = plotAreaPadding(Bottom);
   
-  WRectF area;
   if( orientation() == Vertical )
     m_renderRectangle = WRectF( padLeft, padTop,
                   std::max(10, w - padLeft - padRight),
@@ -960,7 +960,7 @@ void SpectrumChart::render(	Wt::WPainter &painter, const Wt::WRectF &rectangle )
   if( initLayout(rectangle) )
 #endif
   {
-    renderBackground(painter);
+    renderChartBackground(painter, rectangle);
     renderGridLines(painter, Chart::XAxis);
     renderGridLines(painter, Chart::Y1Axis);
     renderGridLines(painter, Chart::Y2Axis);
@@ -981,14 +981,37 @@ const Wt::WRectF &SpectrumChart::chartArea() const
 }//WRectF chartArea() const
 
 
-void SpectrumChart::renderBackground( Wt::WPainter &painter ) const
+void SpectrumChart::renderChartBackground( Wt::WPainter &painter, const Wt::WRectF &rectangle ) const
 {
   const WFont oldFont = painter.font();
   
-  if( background().style() != NoBrush )
-    painter.fillRect( hv(chartArea()), background() );
+  auto paintMargins = [&](){
+    const double rx = m_renderRectangle.x();
+    const double ry = m_renderRectangle.y();
+    const double rw = m_renderRectangle.width();
+    const double rh = m_renderRectangle.height();
+    if( ry > 0 )  //Top strip
+      painter.fillRect( hv(WRectF(rx,0,rw,ry)), m_chartMarginBrush );
+    if( (ry+rh) < rectangle.height() ) //Bottom strip
+      painter.fillRect( hv(WRectF(rx,ry+rh,rw,rectangle.height()-ry)), m_chartMarginBrush );
+    if( rx > 0 )
+      painter.fillRect( hv(WRectF(0,0,rx,rectangle.height())), m_chartMarginBrush );
+    if( (rx+rw) < rectangle.width() )
+      painter.fillRect( hv(WRectF(rx+rw,0,rectangle.width()-rw-rx,rectangle.height())), m_chartMarginBrush );
+  };
   
-#if( USE_SRB_DHS_BRANDING )
+  if( background().style() != NoBrush && m_chartMarginBrush.style() != NoBrush )
+  {
+    paintMargins();
+    painter.fillRect( hv(chartArea()), background() );
+  }else if( background().style() != NoBrush )
+  {
+    painter.fillRect( hv(rectangle), background() );
+  }else if( m_chartMarginBrush.style() != NoBrush )
+  {
+    paintMargins();
+  }
+  
   SpectrumDataModel *specModel = dynamic_cast<SpectrumDataModel *>( model() );
   if( textInMiddleOfChart().empty()
      && specModel && !specModel->histUsedForXAxis() )
@@ -1007,68 +1030,37 @@ void SpectrumChart::renderBackground( Wt::WPainter &painter ) const
     const double xrange = maxxpx - minxpx;
     const double yrange = maxypx - minypx;
     
-    //dhslogosize will be 129 for iPhone, and 160-205 for typical browser sizes
-    //  on my mac
-    const int dhslogosize = std::min( int(floor(0.5*yrange+0.5)),
-                                     std::min(500,int(xrange)) );
-    int imagesize = 500;
-    string dhsfile = "InterSpec_resources/images/DHSLogo500";
-    if( dhslogosize < 130 )
-    {
-      imagesize = 129;
-      dhsfile = "InterSpec_resources/images/DHSLogo129";
-    }else if( dhslogosize <= 250 )
-    {
-      imagesize = 250;
-      dhsfile = "InterSpec_resources/images/DHSLogo250";
-    }//if( dhslogosize < 130 ) / else
+    //ToDo: Get SVG version of logo
+    WPainter::Image snllogo( "InterSpec_resources/images/SNL_Stacked_Black_Blue.png", 688, 265 );  //17 kb
     
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-    //Use a sligtly higher quality, but larger (49K, vs 18K) when not being served
-    //  over the internet
-    WPainter::Image dhslogo( dhsfile + ".jpg", imagesize, imagesize );
-#else
-    WPainter::Image dhslogo( dhsfile + ".png", imagesize, imagesize );
-#endif
+    //Lets draw the Sandia logo to take up about 1/4th the height of the screen
+    const double logo_scale = 0.25 * yrange / snllogo.height();
+    const double logo_width = logo_scale * snllogo.width();
+    const double logo_height = logo_scale * snllogo.height();
     
-    WPainter::Image snllogo( "InterSpec_resources/images/snl_logo.gif", 150, 67 );
+    const double middle_px_x = 0.5*(minxpx + maxxpx);
+    const double middle_px_y = 0.5*(minypx + maxypx);
     
-    WRectF dhsrect( 0.5*(minxpx+maxxpx)-0.5*dhslogosize,
-                   minypx, dhslogosize, dhslogosize );
-    painter.drawImage( dhsrect, dhslogo );
-    painter.save();
-    WFont font( WFont::Monospace );
-    font.setSize( 32 );
-    font.setWeight( WFont::Bolder );
-    font.setVariant( WFont::SmallCaps );
-    painter.setFont( font );
-    int texth = 20;
-    int texty = minypx + dhslogosize;
-    painter.drawText( minxpx, texty, xrange, texth, AlignCenter, "Technical Reachback" );
-    painter.restore();
-    WRectF snlrect( 0.5*(minxpx+maxxpx)-0.5*snllogo.width(),
-                   minypx + dhslogosize + 20 + 2*10,
-                   snllogo.width(), snllogo.height() );
+    //Try to Make "InterSpec" be about the same width as the SNL logo
+    const int font_size = static_cast<int>( logo_width / 4 );
+    
+    WRectF snlrect( middle_px_x - 0.5*logo_width, middle_px_y - 0.5*logo_height - font_size, logo_width, logo_height );
     painter.drawImage( snlrect, snllogo );
     
-#ifdef EXCLUSIVE_USER_NAME
-    if( strlen(EXCLUSIVE_USER_NAME) > 0 )
-    {
-      painter.save();
-      WFont font( WFont::Monospace );
-      font.setSize( 12 );
-      font.setWeight( WFont::Bolder );
-      painter.setFont( font );
-      painter.drawText( minxpx, maxypx - 15, xrange, 20, AlignCenter,
-                         "For exclusive use by " EXCLUSIVE_USER_NAME );
-      painter.restore();
-    }//if( strlen(EXCLUSIVE_USER_NAME) )
-#endif
+    painter.save();
+    WFont font( WFont::Monospace );
+    font.setSize( font_size );
+    font.setWeight( WFont::Weight::NormalWeight );
+    font.setVariant( WFont::SmallCaps );
+    painter.setFont( font );
+    painter.setPen( m_textPen );
+    double texty = middle_px_y + 0.5*logo_height - 1.05*font_size;
+    painter.drawText( minxpx, texty, xrange, 1.05*font_size, AlignCenter, "InterSpec" );
+    painter.restore();
   }//if( specModel && !specModel->histUsedForXAxis() )
-#endif //USE_SRB_DHS_BRANDING
   
   painter.setFont( oldFont );
-}//void renderBackground( Wt::WPainter &painter ) const;
+}//void renderChartBackground( Wt::WPainter &painter ) const;
 
 
 void SpectrumChart::renderGridLines( Wt::WPainter &painter,
@@ -1289,7 +1281,7 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
     
     painter.save();
     painter.rotate( -90 );
-    painter.setPen( WPen() ); //axis(Chart::YAxis).titleFont()
+    painter.setPen( m_textPen ); //axis(Chart::YAxis).titleFont()
     painter.setBrush( WBrush() );
     painter.setFont( yaxis.titleFont() );
 
@@ -1324,6 +1316,8 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
   WPainterPath ticksPath;
   
   const WFont oldFont = painter.font();
+  const WPen oldPen = painter.pen();
+  
   painter.setFont( yaxis.labelFont() );
   
   for( size_t i = 0; i < nticks; ++i )
@@ -1366,13 +1360,17 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
       break;
     }//switch( location )
     
-    if( (properties & Chart::Labels) && !ticks[i].label.empty() )
+    if( (properties & Chart::Labels) && !ticks[i].label.empty()
+       && (!m_avoidMobileMenu || labelypx > 42) ) //Check that we dont overlap with the hamburger menu.
+    {   
+      painter.setPen( m_textPen );
       painter.drawText( WRectF(labelxpx, labelypx, txtwidth, txtheight),
                         labelAlignFlags, ticks[i].label);
+      painter.setPen( oldPen );
+    }
   }//for( size_t i = 0; i < nticks; ++i )
   
   painter.setFont( oldFont );
-  
   
   if ((properties & Chart::Line) && !ticksPath.isEmpty() )
     painter.strokePath( ticksPath, yaxis.pen() );
@@ -1534,8 +1532,8 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
       {
         const WPen oldpen = painter.pen();
         const WBrush oldbrush = painter.brush();
-        painter.setBrush( background() );
-        painter.setPen( WPen(background().color()) );
+        painter.setBrush( m_chartMarginBrush );
+        painter.setPen( WPen(m_chartMarginBrush.color()) );
         const double fontheight = titleFont.sizeLength().toPixels();
         const WString &title = axis.title();
         const WPointF pos(chartArea().right() - titlewidthpx, lineypx + TICK_LENGTH );
@@ -1545,17 +1543,17 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
         painter.setPen( oldpen );
         painter.setBrush( oldbrush );
         
-        labelRender( painter, title, pos, black, AlignTop | AlignLeft, 0, -2 );
+        labelRender( painter, title, pos, m_textPen.color(), AlignTop | AlignLeft, 0, -2 );
       }else
       {
         if( vertical )
           labelRender( painter, axis.title(),
                       WPointF(chartArea().center().x(), lineypx + 22),
-                      black, AlignTop | AlignCenter, 0, 0 );
+                      m_textPen.color(), AlignTop | AlignCenter, 0, 0 );
         else
           labelRender( painter, axis.title(),
                       WPointF(chartArea().right(), lineypx),
-                      black, AlignTop | AlignLeft, 0, 8 );
+                      m_textPen.color(), AlignTop | AlignLeft, 0, 8 );
       }
       
       painter.setFont(oldFont2);
@@ -1745,7 +1743,6 @@ void SpectrumChart::iterateSpectrum( SpectrumRenderIterator *iterator,
  */
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
-
 SpectrumChart::SpectrumChart( Wt::WContainerWidget *parent )
 : Wt::Chart::WCartesianChart( parent ),
   m_widthInPixels( 0 ),
@@ -1755,8 +1752,9 @@ SpectrumChart::SpectrumChart( Wt::WContainerWidget *parent )
   m_allowMultipleHighlightRegions( true ),
   m_allowSingleClickHighlight( false ),
   m_peakModel( NULL ),
-  m_peakFillColor( 0, 51, 255, 155 ),
-  m_multiPeakOutlineColor( 10, 10, 255, 255 ),
+  m_defaultPeakColor( ns_default_peakFillColor ),
+  m_occupiedMarkerColor( ns_default_occupiedTimeColor ),
+  m_timeHighlightColors{ ns_defaultTimeHighlightColors[0], ns_defaultTimeHighlightColors[1], ns_defaultTimeHighlightColors[2] },
   m_legend( NULL ),
   m_legendType( SpectrumChart::NoLegend ),
   m_legendNeedsRender( true ),
@@ -1764,7 +1762,11 @@ SpectrumChart::SpectrumChart( Wt::WContainerWidget *parent )
   m_overlayCanvas( NULL ),
   m_scrollY( 0 ),
   m_xAxisUnits( SpectrumChart::kUndefinedUnits ),
-  m_compactAxis( false )
+  m_compactAxis( false ),
+  m_textInMiddleOfChart(),
+  m_verticalLinesShowing( false ),
+  m_horizontalLinesShowing( false ),
+  m_avoidMobileMenu( false )
 #if( USE_HIGH_BANDWIDTH_INTERACTIONS )
   , m_mouseDownX( -999 ),
   m_mouseDownY( -999 ),
@@ -2355,9 +2357,9 @@ void SpectrumChart::setTimeHighLightRegions( const vector< pair<double,double> >
   WColor color;
   switch( type )
   {
-    case ForegroundHighlight:       color = WColor( 255, 255, 0, 155 ); break;
-    case BackgroundHighlight:       color = WColor( 0, 255, 255, 75 );  break;
-    case SecondForegroundHighlight: color = WColor( 0, 128, 0, 75 );    break;
+    case ForegroundHighlight:       color = m_timeHighlightColors[0]; break;
+    case BackgroundHighlight:       color = m_timeHighlightColors[1];  break;
+    case SecondForegroundHighlight: color = m_timeHighlightColors[2];    break;
   }//switch( type )
   
   vector< HighlightRegion > tokeep;
@@ -2387,7 +2389,6 @@ void SpectrumChart::clearOccupancyRegions()
 
 void SpectrumChart::setOccupancyRegions( const std::vector< std::pair<double,double> > &p )
 {
-  //WColor color( 128, 128, 128, 75 );
   m_occupancy_regions.clear();
   
   for( const auto &pe : p )
@@ -2395,7 +2396,7 @@ void SpectrumChart::setOccupancyRegions( const std::vector< std::pair<double,dou
     HighlightRegion region;
     region.lowerx = static_cast<float>( pe.first );
     region.upperx = static_cast<float>( pe.second );
-    region.color = m_peakFillColor;
+    region.color = m_occupiedMarkerColor;
     region.hash = 0;//size_t(type);
     m_occupancy_regions.push_back( region );
   }
@@ -3794,6 +3795,8 @@ void SpectrumChart::loadXAndYRangeEquationToClient() const
 }//void loadXAndYRangeEquationToClient() const
 
 
+
+
 void SpectrumChart::setShowRefLineInfoForMouseOver( const bool show )
 {
   if( m_overlayCanvas )
@@ -3847,7 +3850,8 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
   const int upperrow = th1Model->findRow( upperx );
   
   //First, draw the continuum
-  WPen pen( m_peakFillColor );
+  
+  WPen pen( peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor() );
   pen.setWidth( 2 );
   painter.setPen( pen );
   switch( continuum->type() )
@@ -3944,7 +3948,10 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
           drawpath->lineTo( *iter );
         
         drawpath->lineTo( startpoint );
-        painter.fillPath( *drawpath, WBrush(m_peakFillColor) );
+        
+        painter.fillPath( *drawpath, WBrush( (peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor()) ) );
+        //painter.fillPath( *drawpath, WBrush(m_defaultPeakColor) );
+        
         drawpath.reset();
         continuumvalues.clear();
       }//if( !!drawpath )
@@ -4193,20 +4200,38 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
   if( !visible )
     return;
   
+  //Decide if we should draw peaks to the center of the bins on either end of the ROI, or
+  //  if we should explicitly go to the min/max of the left/right-most bins.
+  //  Drawing to the extremes is probably more correct, but for some reason it
+  //  still has some very minor artifacts
+#define DRAW_PEAKS_TO_BIN_EXTREMES 0
+  
   
   WPointF start_point(0.0, 0.0), peakMaxInPx( 999999.9, 999999.9 );
+
   try
   {
-    double xstart, ystart;
-    gausPeakBinValue( xstart, ystart, peak, minrow, th1Model,
+    double bin_center, y;
+    gausPeakBinValue( bin_center, y, peak, minrow, th1Model,
                      axisMinX, axisMaxX, axisMinY, axisMaxY,
                      prevPeak, nextPeak );
-    xstart = max( th1Model->rowLowEdge( minrow ), axisMinX );
-    start_point = mapToDevice( xstart, ystart );
+#if( DRAW_PEAKS_TO_BIN_EXTREMES )
+    double lower_y = y;
+    if( minrow > 1 )
+      gausPeakBinValue( bin_center, lower_y, peak, minrow-1, th1Model,
+                       axisMinX, axisMaxX, axisMinY, axisMaxY,
+                       prevPeak, nextPeak );
+    const double lowx = std::max( axisMinX, std::min(axisMaxX,th1Model->rowLowEdge(minrow)) );
+    lower_y = std::max( axisMinY, std::min(axisMaxY,0.5*(y+lower_y)) );
+    start_point = mapToDevice( lowx, lower_y );
+#else
+    start_point = mapToDevice( bin_center, y );
+#endif
   }catch( std::exception &e )
   {
     cerr << "Caught exception: " << SRC_LOCATION << "\n\t" << e.what() << endl;
   }
+  
   
   
   WPainterPath path( start_point );
@@ -4223,13 +4248,30 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
       const WPointF pointInPx = mapToDevice( bin_center, y );
       path.lineTo( pointInPx );
       
+#if( DRAW_PEAKS_TO_BIN_EXTREMES )
+      //For right-most point, draw a line to the very right edge of bin
+      if( row == maxrow )
+      {
+        double upper_y = y;
+        if( (row+1) < th1Model->rowCount() )
+          gausPeakBinValue( bin_center, upper_y, peak, row+1, th1Model,
+                            axisMinX, axisMaxX, axisMinY, axisMaxY,
+                             prevPeak, nextPeak );
+        const double bin_x_min = th1Model->rowLowEdge( row );
+        const double bin_width = th1Model->rowWidth( row );
+        const double bin_x_max = bin_x_min + bin_width;
+        const double upperx = std::max( axisMinX, std::min(axisMaxX,bin_x_max) );
+        upper_y = std::max( axisMinY, std::min(axisMaxY,0.5*(y+upper_y)) );
+        
+        path.lineTo( mapToDevice(upperx, upper_y) );
+      }//if( left most bin ) else if (right most bin )
+#endif
+      
       if( pointInPx.y() < peakMaxInPx.y() )
         peakMaxInPx = pointInPx;
     }catch(...){}
   }//for( int row = minrow; row <= maxrow; ++row )
   
-  
-  bool hasDrawnOne = false;
   
   for( int row = maxrow; row >= minrow; --row )
   {
@@ -4237,49 +4279,77 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
     {
       const double bin_x_min = th1Model->rowLowEdge( row );
       const double bin_width = th1Model->rowWidth( row );
-      const double bin_x_max = bin_x_min + bin_width;
-      
-      double bin_center = th1Model->rowCenter( row );
-      
-      if( !hasDrawnOne )
-      {
-        hasDrawnOne = true;
-        bin_center = bin_x_max;
-      }//if( hasDrawnOne )
-      
-      if( row == minrow )
-        bin_center = bin_x_min;
-      
-      bin_center = std::min( bin_center, axisMaxX );
-      bin_center = std::max( bin_center, axisMinX );
+      const double bin_center = std::max(axisMinX, std::min(axisMaxX, bin_x_min+0.5*bin_width) );
       
       double val = peakBackgroundVal( row, peak, th1Model, prevPeak, nextPeak );
-      val = std::max( val, axisMinY );
-      val = std::min( val, axisMaxY );
+      val = std::min( axisMaxY, std::max(axisMinY, val) );
+      
+#if( DRAW_PEAKS_TO_BIN_EXTREMES )
+      //For right most bin, need to extend to right side of bin
+      if( row == maxrow )
+      {
+        try
+        {
+          double upper_y = val;
+          if( (row+1) < th1Model->rowCount() )
+            upper_y = peakBackgroundVal( row+1, peak, th1Model, prevPeak, nextPeak );
+          const double upperx = std::max( axisMinX, std::min(axisMaxX,bin_x_min + bin_width) );
+          upper_y = std::max( axisMinY, std::min(axisMaxY,0.5*(val+upper_y)) );
+          path.lineTo( mapToDevice(upperx, upper_y) );
+        }catch(...){}
+      }//if( right most bin )
+#endif
       
       const WPointF pointInPx = mapToDevice( bin_center, val );
       path.lineTo( pointInPx );
       
       if( pointInPx.y() < peakMaxInPx.y() )
         peakMaxInPx = pointInPx;
+    
+#if( DRAW_PEAKS_TO_BIN_EXTREMES )
+      //For left-most bins,  we actually need to start at very left edge of bin,
+      //  to match what we did in the loop above
+      if( row == minrow )
+      {
+        try
+        {
+          double lower_y = val;
+          if( row > 1 )
+            lower_y = peakBackgroundVal( row-1, peak, th1Model, prevPeak, nextPeak );
+          const double lowx = std::max( axisMinX, std::min(axisMaxX,bin_x_min) );
+          lower_y = std::max( axisMinY, std::min(axisMaxY,0.5*(val+lower_y)) );
+          path.lineTo( mapToDevice(lowx, lower_y) );
+        }catch(...){}
+      }//if( left most bin )
+#endif
     }catch(...){}
   }//for( int row = maxrow; row >= minrow; --row )
   
   path.lineTo( start_point );
   
+  const WPen oldPen = painter.pen();
+  const WBrush oldBrush = painter.brush();
+  
+  WColor color = peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor();
+  
   if( doFill )
   {
-    painter.fillPath( path, WBrush(m_peakFillColor) );
+    color.setRgb( color.red(), color.green(), color.blue(), 155 );
+    painter.setBrush( WBrush(color) );
+    painter.setPen( WPen(WColor(color.red(),color.green(),color.blue())) );
+    painter.drawPath( path );
+    //painter.fillPath( path, WBrush(color) );
   }else
   {
-    const WPen oldPen = painter.pen();
-    painter.setPen( WPen(m_multiPeakOutlineColor) );
+    painter.setPen( WPen(color) );
     painter.drawPath( path );
-    painter.setPen( oldPen );
   }
   
+  painter.setPen( oldPen );
+  painter.setBrush( oldBrush );
+  
   drawPeakText( peak, painter, peakMaxInPx );
-}//void SpectrumChart::drawIndependantGausPeak(...)
+}//void drawIndependantGausPeak(...)
 
 
 void SpectrumChart::drawPeakText( const PeakDef &peak, Wt::WPainter &painter,
@@ -4393,10 +4463,7 @@ void SpectrumChart::drawPeakText( const PeakDef &peak, Wt::WPainter &painter,
 void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> > &inpeaks,
                                    Wt::WPainter& painter ) const
 {
-  //XXX - this function is a mess!  Probably because I dont know what I want,
-  //  it can probably combined with drawGausPeakOutline(...), or something.
-  //I think what should be done is only sum peaks when they both are using the
-  //  globally defined continuum, and otherwise, draw each peak sepereately.
+  //XXX - this function is a mess!  Probably because I dont know what I want.
   const bool outline = (inpeaks.size() > 1);
 
   //When the user control drags to simultaneously fit multiple peaks, they
@@ -4413,18 +4480,184 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
 
   double axisMinX, axisMaxX, axisMinY, axisMaxY;
   visibleRange( axisMinX, axisMaxX, axisMinY, axisMaxY );
-
+  
   const SpectrumDataModel *th1Model
                            = dynamic_cast<const SpectrumDataModel *>( model() );
   assert( th1Model );
   
   bool hadGlobalCont = false;
   
-  for( const ContinuumToPeakMap_t::value_type &vt : continuumToPeaks )
+  for( ContinuumToPeakMap_t::value_type &vt : continuumToPeaks )
   {
-    const vector<std::shared_ptr<const PeakDef> > &peaks = vt.second;
+    vector<std::shared_ptr<const PeakDef> > &peaks = vt.second;
+    std::sort( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr );
     
     const bool sharedContinuum = (peaks.size()>1);
+    
+    ////////////////////////////////////////////////////////////////////////////
+    //(Begin experimental code for multicolored peaks)
+    //  If peaks are all the same color, this code results in something that
+    //  looks about the same as the old way of doing things, but probably
+    //  slightly larger JS since there are more paths to draw
+    std::set<string> lineColors;
+    for( const auto &p : peaks )
+      lineColors.insert( p->lineColor().cssText(false) );
+    
+    if( lineColors.size() > 1 )
+    {
+      //Find bin limits we are workging with
+      int minrow = std::numeric_limits<int>::max(), maxrow = -std::numeric_limits<int>::max();
+      vector<pair<int,int>> peak_bin_ranges;
+      //Looping throw all the peaks may be a bit overkill; most of the time just
+      //  looking at the left and right most peaks would be sufficient
+      for( const auto &p : peaks )
+      {
+        int minrowlocal, maxrowlocal;
+        if( gausPeakDrawRange(minrowlocal, maxrowlocal, *p, axisMinX, axisMaxX) )
+        {
+          minrow = std::min(minrow,minrowlocal);
+          maxrow = std::max(maxrow,maxrowlocal);
+          peak_bin_ranges.push_back( {minrowlocal,maxrowlocal} );
+        }else
+        {
+          peak_bin_ranges.push_back( {-999,-999} );
+        }
+      }//for( const auto &p : peaks )
+      
+      //Sanity check
+      if( maxrow < 0 || maxrow < minrow || ((maxrow-minrow) > 16384) )
+        continue;
+      
+      const int nrows = 1 + maxrow - minrow;
+      
+      vector<double> xvalues(nrows, 0.0);
+      //peak_yval: Zeroeth entry is continuum_y
+      //  Each entry, j, after that is the sum of the continuum, and all peaks
+      //  up to j.  The idea is that to draw the peaks left to right stacking on
+      //  top of eachother, we can walk through j, and have peak_yval[j]
+      //  give the height of all peaks, up to and including j, and then j-1
+      //  will give the lower level of that peak.
+      vector<vector<double>> peak_yval( 1 + peaks.size(), vector<double>(nrows,0.0) ); //zeroth entry is continuum_y
+      
+      //Go through and get xvalues and continuum y values.
+      std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
+      assert( continuum );  //should always be true
+      for( int row = minrow; row <= maxrow; ++row )
+      {
+        const double bin_x_min = th1Model->rowLowEdge( row );
+        const double bin_width = th1Model->rowWidth( row );
+        const double bin_x_max = bin_x_min + bin_width;
+        const double bin_center = bin_x_min + 0.5*bin_width;
+        
+        double cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max );
+        
+        if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
+          cont_y -= th1Model->data( row, th1Model->backgroundColumn() );
+        cont_y = std::min( std::max(cont_y, axisMinY), axisMaxY );
+
+        for( size_t i = 0; i < peak_yval.size(); ++i )
+          peak_yval[i][row-minrow] = cont_y;
+        
+        xvalues[row-minrow] = std::max( std::min(bin_center, axisMaxX), axisMinX );
+        
+        assert( peak_bin_ranges.size() == peaks.size() );
+        
+        for( size_t i = 0; i < peaks.size(); ++i )
+        {
+          const PeakDef &peak = *(peaks[i]);
+          const auto &peak_bin_range = peak_bin_ranges[i];
+          if( row < peak_bin_range.first || row > peak_bin_range.second )
+            continue;
+          try
+          {
+            double y = peak.gauss_integral( bin_x_min, bin_x_max );
+            for( size_t j = i+1; j < peak_yval.size(); ++j )
+              peak_yval[j][row-minrow] += y;
+          }catch(...)
+          {
+            cerr << "Caught exception: " << SRC_LOCATION << endl;  //I dont think this will happen, but JIC
+          }
+        }//for( size_t i = 0; i < peaks.size(); ++i )
+      }//for( int row = minrow; row <= maxrow; ++row )
+      
+      for( size_t j = 1; j < peak_yval.size(); ++j )
+      {
+        const auto &peak = peaks[j-1];
+        int firstbin = peak_bin_ranges[j-1].first;
+        int lastbin = peak_bin_ranges[j-1].second;
+        if( lastbin == -999 )
+          continue;
+        
+        //Try to constrain how much will need to get drawn, by requiring at
+        //  least half a pixel height from the peak fill area before drawing
+        //  (for example set of peaks in Ba133 spectrum at 80keV: go from 53->18
+        //   bins, and 53->21 bins)
+        const double px_threshold = 0.5;
+        double diff = 0.0;
+        do
+        {
+          const auto l = mapToDevice( xvalues[firstbin-minrow], peak_yval[j-1][firstbin-minrow] );
+          const auto u = mapToDevice( xvalues[firstbin-minrow], peak_yval[j][firstbin-minrow] );
+          diff = (l.y() - u.y());
+          if( diff < px_threshold )
+            ++firstbin;
+        }while( (diff < px_threshold) && (firstbin < lastbin) );
+        
+        do
+        {
+          const auto l = mapToDevice( xvalues[lastbin-minrow], peak_yval[j-1][lastbin-minrow] );
+          const auto u = mapToDevice( xvalues[lastbin-minrow], peak_yval[j][lastbin-minrow] );
+          diff = (l.y() - u.y());
+          if( diff < px_threshold )
+            --lastbin;
+        }while( (diff < px_threshold) && (firstbin < lastbin) );
+
+        //Note: we are going to bin center here, and not the left/right side
+        //      of bins on the left and right side of drawing range; this is
+        //      inconsistent with how drawIndependantGausPeak(...) does it,
+        //      if the DRAW_PEAKS_TO_BIN_EXTREMES preprocessor variable is set
+        //      to true.
+        
+        const double y_start = std::min(std::max( peak_yval[j][firstbin-minrow],axisMinY), axisMaxY);
+        WPointF start_point( mapToDevice( xvalues[firstbin-minrow], y_start ) );
+        
+        WPainterPath path( start_point );
+        for( int bin = firstbin+1; bin <= lastbin; ++bin )
+        {
+          const double y = std::min(std::max( peak_yval[j][bin-minrow],axisMinY), axisMaxY);
+          try{ path.lineTo( mapToDevice( xvalues[bin-minrow], y ) ); }catch(...){}
+        }
+        
+        for( int bin = lastbin; bin >= firstbin; --bin )
+        {
+          const double y = std::min(std::max( peak_yval[j-1][bin-minrow],axisMinY), axisMaxY);
+          try{ path.lineTo( mapToDevice( xvalues[bin-minrow], y ) ); }catch(...){}
+        }
+        
+        path.lineTo( start_point );
+        
+        WColor color = peak->lineColor().isDefault() ? m_defaultPeakColor : peak->lineColor();
+        color.setRgb( color.red(), color.green(), color.blue(), 155 );
+    
+        //We
+        //painter.setBrush( WBrush(color) );
+        //painter.setPen( WPen(WColor(color.red(),color.green(),color.blue())) );
+        //painter.drawPath( path );
+        
+        painter.fillPath( path, WBrush(color) );
+      }//for( size_t j = 1; j < peak_yval.size(); ++j )
+      
+      //Now draw the outlines for the peaks.
+      //  Right now this results in the continuum being colored by the peak
+      //  farthest to the right - eh, should implement a custom solution here.
+      for( const auto &p : peaks  )
+        drawIndependantGausPeak( *p, painter, false );
+      
+      continue;
+    }//if( lineColors.size() > 1 )
+    //(End experimental code for multicolored peaks)
+    ////////////////////////////////////////////////////////////////////////////
+    
     
     for( size_t i = 0; i < peaks.size(); ++i )
     {
@@ -4442,12 +4675,13 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
 //      if( independantContinuum && continuum->isPolynomial() )
       if( !sharedContinuum && continuum->isPolynomial() )
       {
-        drawIndependantGausPeak( peak, painter, false );
+        //drawIndependantGausPeak( peak, painter, false );
         drawIndependantGausPeak( peak, painter, true );
         continue;
       }//if( independantContinuum && peak.continuum().isPolynomial() )
     
-    
+      
+      //If we are here, we are drawing multiple peaks that share a continuum
       int minrow, maxrow;
       bool visible = gausPeakDrawRange(minrow, maxrow, peak, axisMinX,axisMaxX);
     
@@ -4455,7 +4689,6 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
         continue;
     
       //now limit minrow and maxrow for visible region.
-      
       
       if( outline )
         drawIndependantGausPeak( peak, painter, false );
@@ -4474,7 +4707,6 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
         cerr << "Caught exception: " << SRC_LOCATION << endl;
       }
 
-    
       WPainterPath path( start_point );
 
       for( int row = minrow; row <= maxrow; ++row )
@@ -4560,13 +4792,29 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
       }//for( int row = maxrow; row >= minrow; --row )
 
       path.lineTo( start_point );
+      
       if( !outline )
       {
-        painter.fillPath( path, WBrush(m_peakFillColor) );
+        //painter.fillPath( path, WBrush(m_defaultPeakColor) );
+        WColor color = peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor();
+        color.setRgb( color.red(), color.green(), color.blue(), 155 );
+        
+        //if( lineColors.size() > 1 )
+        //{
+        //
+        //}else
+        //{
+        //
+        //}//if( lineColors.size() > 1 ) / else
+        
+        
+        WBrush brush( color );
+        painter.fillPath( path, brush );
       }else
       {
         const WPen oldPen = painter.pen();
-        painter.setPen( WPen(m_multiPeakOutlineColor) );
+        WColor color( peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor() );
+        painter.setPen( WPen(color) );
         painter.drawPath( path );
         painter.setPen( oldPen );
       }//if( outline )
@@ -4609,7 +4857,15 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
     for( auto iter = continuumVals.rbegin(); iter != continuumVals.rend(); ++iter )
       path->lineTo( mapToDevice( iter->second.first, iter->second.second ) );
     
-    painter.fillPath( *path, WBrush(m_peakFillColor) );
+    //Check if all the peaks are the same color, and if so go on no problem.
+    //  If not, maybe "stack" the peaks from left to right
+    //  Also, it looks like when we refit ROI the colors dont stick with the peaks
+    //painter.fillPath( *path, WBrush(m_defaultPeakColor) );
+    
+    WColor color = inpeaks.at(0)->lineColor().isDefault() ? m_defaultPeakColor : inpeaks.at(0)->lineColor();
+    color.setRgb( color.red(), color.green(), color.blue(), 155 );
+    
+    painter.fillPath( *path, WBrush(color) );
   }else if( hadGlobalCont && continuumVals.size()>2 )
   {
     WPainterPath path;
@@ -4619,7 +4875,9 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
     for( vt++; vt != continuumVals.end(); ++vt )
       path.lineTo( mapToDevice( vt->second.first, vt->second.second ) );
 
-    WPen pen( m_peakFillColor );
+    WPen pen( m_defaultPeakColor );
+    //WPen pen( peak.lineColor().empty() ? m_defaultPeakColor : WColor(WString(peak.lineColor())) );
+    
     pen.setWidth( 2 );
     painter.strokePath( path, pen );
   }//if( outline ) / else if( draw global continuum )
@@ -5033,7 +5291,7 @@ void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
 //      ystart += rowheight;
     }//if( nhists > 1 )
     
-    painter.setPen( WPen() );
+    painter.setPen( m_textPen );
     painter.setFont( font );
     
     bool wroteText = false;
@@ -5113,7 +5371,7 @@ void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
         else if( currentSamples.size() )
             currentSample = *(currentSamples.begin());
         
-        snprintf( buffer, sizeof(buffer), "Sample: %d/%lu", currentSample , total_sample_nums.size());
+        snprintf( buffer, sizeof(buffer), "Sample: %d/%zu", currentSample , total_sample_nums.size());
         textArea = WRectF( xstart, ystart, width, rowheight );
         painter.drawText( textArea, AlignLeft|AlignTop, buffer );
         ystart += rowheight;
@@ -5408,7 +5666,8 @@ void SpectrumChart::enableLegend( const bool forceMobileStyle )
   if( m_legendType != NoLegend )
     return;
 
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+  auto wtapp = wApp;
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wtapp );
   if( forceMobileStyle || (app && app->isMobile()) || (BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT) )
   {
     m_legendType = OnChartLegend;
@@ -5418,8 +5677,11 @@ void SpectrumChart::enableLegend( const bool forceMobileStyle )
     return;
   }
   
-  LOAD_JAVASCRIPT(app, "js/SpectrumChart.js", "SpectrumChart", wtjsAlignLegend);
-  LOAD_JAVASCRIPT(app, "js/SpectrumChart.js", "SpectrumChart", wtjsLegendMoved);
+  if( wtapp )
+  {
+    LOAD_JAVASCRIPT(wtapp, "js/SpectrumChart.js", "SpectrumChart", wtjsAlignLegend);
+    LOAD_JAVASCRIPT(wtapp, "js/SpectrumChart.js", "SpectrumChart", wtjsLegendMoved);
+  }
   
   m_legendType = FloatingLegend;
   renderFloatingLegend();
@@ -5554,6 +5816,85 @@ void SpectrumChart::setOverlayCanvasVisible( bool visible )
 }//void setOverlayCanvasVisible( bool visible )
 
 
+void SpectrumChart::setDefaultPeakColor( const Wt::WColor &color )
+{
+  m_defaultPeakColor = color.isDefault() ? ns_default_peakFillColor : color;
+}
+
+void SpectrumChart::setOccupiedTimeSamplesColor( const Wt::WColor &color )
+{
+  m_occupiedMarkerColor = color.isDefault() ? ns_default_occupiedTimeColor : color;
+  m_occupiedMarkerColor.setRgb( m_occupiedMarkerColor.red(), m_occupiedMarkerColor.green(), m_occupiedMarkerColor.blue(), 75 );
+}
+
+void SpectrumChart::setForegroundHighlightColor( const Wt::WColor &color )
+{
+  auto &c = m_timeHighlightColors[0];
+  c = color.isDefault() ? ns_defaultTimeHighlightColors[0] : color;
+  c.setRgb( c.red(), c.green(), c.blue(), 155 );
+}
+
+void SpectrumChart::setBackgroundHighlightColor( const Wt::WColor &color )
+{
+  auto &c = m_timeHighlightColors[1];
+  c = color.isDefault() ? ns_defaultTimeHighlightColors[1] : color;
+  c.setRgb( c.red(), c.green(), c.blue(), 75 );
+}
+
+void SpectrumChart::setSecondaryHighlightColor( const Wt::WColor &color )
+{
+  auto &c = m_timeHighlightColors[2];
+  c = color.isDefault() ? ns_defaultTimeHighlightColors[2] : color;
+  c.setRgb( c.red(), c.green(), c.blue(), 75 );
+}//void setSecondaryHighlightColor( const Wt::WColor &color )
+
+void SpectrumChart::setAxisLineColor( const Wt::WColor &color )
+{
+  WPen pen( color );
+  axis(Chart::XAxis).setPen( pen );
+  axis(Chart::YAxis).setPen( pen );
+}//void setAxisLineColor( const Wt::WColor &color )
+
+void SpectrumChart::setChartMarginColor( const Wt::WColor &color )
+{
+  if( color.isDefault() )
+    m_chartMarginBrush = WBrush();
+  else
+    m_chartMarginBrush = WBrush( color );
+}//void setChartMarginColor( const Wt::WColor &color )
+
+void SpectrumChart::setChartBackgroundColor( const Wt::WColor &color )
+{
+  if( color.isDefault() )
+    setBackground( WBrush() );
+  else
+    setBackground( WBrush(color) );
+}//void setChartBackgroundColor( const Wt::WColor &color )
+
+void SpectrumChart::setTextColor( const Wt::WColor &color )
+{
+  if( color.isDefault() )
+    m_textPen = WPen( WColor(GlobalColor::black) );
+  else
+    m_textPen = WPen( color );
+  setTextPen( m_textPen );
+}//void setTextColor( const Wt::WColor &color )
+
+
+void SpectrumChart::saveChartToPng( const std::string &filename )
+{
+  LOAD_JAVASCRIPT(wApp, "js/SpectrumChart.js", "SpectrumChart", wtjsCanvasToPngDownload);
+  
+  doJavaScript( "Wt.WT.CanvasToPngDownload('" + id() + "','" + filename +"');" );
+}//void saveChartToPng( const std::string &name )
+
+
+void SpectrumChart::setAvoidMobileMenu( const bool avoid )
+{
+  m_avoidMobileMenu = avoid;
+}//void setAvoidMobileMenu( const bool avoid )
+
+
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 void SpectrumChart::setReferncePhotoPeakLines( const ReferenceLineInfo &nuc )
 {
@@ -5592,19 +5933,8 @@ void SpectrumChart::clearAllReferncePhotoPeakLines()
 
 
 void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter,
-                            const size_t num,
                             const ReferenceLineInfo &nuc ) const
 {
-  const size_t ns_numColors = 13;
-  //colors[][] is same value as ns_colors[] in ReferenceLineInfo.cpp, just
-  //  converted to RGB
-  const int colors[ns_numColors][3]
-  = { {0,0,255},{0,102,0}, {0,102,102}, {0,153,255},
-    {153,51,255}, {255,102,255}, {204,51,51}, {255,102,51},
-    {255,255,153}, {204,255,204}, {0,12,12}, {102,102,102}, {0,51,51}
-  };
-  const size_t cindex = (num % ns_numColors);
-  
   painter.save();
   
   const double minx = axis(Chart::XAxis).minimum();
@@ -5639,7 +5969,8 @@ void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter,
   if( max_amp <= 0.0 )
     return;
   
-  const WColor color(colors[cindex][0], colors[cindex][1], colors[cindex][2]);
+  const bool isValidColor = !nuc.lineColor.isDefault();
+  const WColor color( isValidColor ? nuc.lineColor : WColor("#0000FF") );
   
   for( size_t i = startindex; i < endindex; ++i )
   {
@@ -5680,12 +6011,11 @@ void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter,
 
 void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter ) const
 {
-  size_t index = 0;
   for( auto iter = m_persistedPhotoPeakLines.rbegin(); iter != m_persistedPhotoPeakLines.rend(); ++iter )
-    renderReferncePhotoPeakLines( painter, ++index, *iter );
+    renderReferncePhotoPeakLines( painter, *iter );
   
   if( m_referencePhotoPeakLines.energies.size() )
-    renderReferncePhotoPeakLines( painter, 0, m_referencePhotoPeakLines );
+    renderReferncePhotoPeakLines( painter, m_referencePhotoPeakLines );
 }//void renderReferncePhotoPeakLines( Wt::WPainter &painter );
 
 #endif

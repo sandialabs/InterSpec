@@ -1,0 +1,45 @@
+<project name="wt-android" default="all" basedir=".">
+  <target name="all" depends="create-assets-zip">
+  </target>
+  
+  <target name="create-assets-zip" depends="copy-res">
+    <mkdir dir="${wt-android.dir}/assets/zip"/>
+    <delete file="${wt-android.dir}/assets/interspec-assets.zip"/>
+    
+    <mkdir dir="${wt-android.dir}/assets/zip/resources"/>
+    <copy todir="${wt-android.dir}/assets/zip/resources">
+      <fileset dir="${source.dir}/resources/"/>
+    </copy>
+
+    <mkdir dir="${wt-android.dir}/assets/zip/InterSpec_resources"/>
+    <copy todir="${wt-android.dir}assets/zip/InterSpec_resources">
+      <fileset dir="${source.dir}/InterSpec_resources/">
+      </fileset>
+    </copy>
+	
+    
+    <mkdir dir="${wt-android.dir}/assets/zip/example_spectra"/>
+    <copy todir="${wt-android.dir}assets/zip/example_spectra">
+      <fileset dir="${source.dir}/example_spectra/">
+      </fileset>
+    </copy>
+        
+    <mkdir dir="${wt-android.dir}/assets/zip/data"/>
+    <copy todir="${wt-android.dir}assets/zip/data/">
+      <fileset dir="${source.dir}/data/">
+      </fileset>
+    </copy>
+      
+    <zip destfile="${wt-android.dir}/assets/interspec-assets.zip" >
+      <zipfileset dir="${wt-android.dir}/assets/zip" prefix="/"/>
+    </zip>
+
+   <delete dir="${wt-android.dir}/assets/zip"/>
+  </target>
+
+  <target name="copy-res">
+    <copy todir="${wt-android.dir}/res">
+      <fileset dir="${source.dir}/target/android/wt-android/res"/>
+    </copy>
+  </target>
+</project>

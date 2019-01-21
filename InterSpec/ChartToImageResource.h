@@ -7,14 +7,22 @@
 
 #include <sstream>
 
+#include <Wt/WConfig.h>
 #include <Wt/WResource>
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
 
-//By Default ChartToImageResource will generate a PDF of the report, if however
+//By Default ChartToImageResource will generate a PDF or SVG (SVG if Wt not 
+//  compiled with PDF support) of the chart; if however
 //  You would like to generate a PNG (require WRasterImage), then set switch
 //  below
+#if( defined(WT_HAS_WPDFIMAGE) )
+#define MAKE_PNG_RESOURCE 0
+#elif( defined(WT_HAS_WRASTERIMAGE) )
 #define MAKE_PNG_RESOURCE 1
+#elif
+#define MAKE_PNG_RESOURCE 0
+#endif
 
 
 //Some forward declarations

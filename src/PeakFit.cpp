@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -6837,9 +6837,9 @@ bool chi2_significance_test( PeakDef peak,
             const vector<double> errors = params.Errors();
             
             std::vector<PeakDef> resultpeaks;
-            const double fitchi2 = chi2fcn.pars_to_peaks( resultpeaks, pars, errors );
             
 #if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 1 )
+            const double fitchi2 = chi2fcn.pars_to_peaks( resultpeaks, pars, errors );
             cerr << "Fit " << resultpeaks.size() << " peaks w/ chi2=" << fitchi2 << endl;
             for( size_t i = 0; i < resultpeaks.size(); ++i )
               cerr << "\tunfiltered: mean=" << resultpeaks[i].mean() << ", area=" << resultpeaks[i].amplitude() << endl;
@@ -7086,7 +7086,7 @@ bool chi2_significance_test( PeakDef peak,
                   peak.continuum()->setParameters( energy, &continuum_coeffs[0], &continuum_coeffs_uncerts[0] );
                   double testChi2DOF, testGrosCountsSigma;
                   vector<PeakDef> neighbors;
-                  const bool sig = chi2fcn.significance_test( peak, neighbors,
+                  /*const bool sig = */chi2fcn.significance_test( peak, neighbors,
                                                              &testChi2DOF, &testGrosCountsSigma );
                   
                   
@@ -7170,7 +7170,7 @@ bool chi2_significance_test( PeakDef peak,
                       fakex[i] -= fakeenergyoffset;
                     
                     std::vector<double> fakepoly_coeffs, fakecoeff_uncerts;
-                    const double nomiddlefit = fit_to_polynomial( &fakex[0], &fakedata[0], fakex.size(), 1,
+                    /*const double nomiddlefit = */ fit_to_polynomial( &fakex[0], &fakedata[0], fakex.size(), 1,
                                                                  fakepoly_coeffs,
                                                                  fakecoeff_uncerts );
                     
@@ -7213,7 +7213,7 @@ bool chi2_significance_test( PeakDef peak,
                     
                     const double sig = midpeakarea / uncert;
                     
-                    double sigmamidarea = std::max(middataarea-midcontinuumarea,0.0) / std::max( sqrt(middataarea), 1.0);
+                    //double sigmamidarea = std::max(middataarea-midcontinuumarea,0.0) / std::max( sqrt(middataarea), 1.0);
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
                     areaabovelinefile << energy << "," << sig << endl;
 #endif
@@ -7249,7 +7249,7 @@ bool chi2_significance_test( PeakDef peak,
                   break;
                 
                 const size_t index = maxeleiter - chi2aboveline.begin();
-                const double maxval = *maxeleiter;
+                //const double maxval = *maxeleiter;
                 
                 const double energy = chi2abovelineEnergies[index];
                 const double area = chi2aboveline[index];

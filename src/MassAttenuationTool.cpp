@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -31,6 +31,8 @@
 #include <utility>
 #include <fstream>
 #include <stdexcept>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include <boost/fusion/adapted.hpp>
 #include <boost/spirit/include/qi.hpp>
@@ -82,6 +84,18 @@ namespace
 #endif
   }//std::string append_path( const std::string &base, const std::string &name )
   
+#if defined(WIN32) || defined(WIN64)
+   // Copied from linux libc sys/stat.h:
+#define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
+#endif
+
+  bool is_directory( const std::string &name )
+  {
+    struct stat statbuf;
+    stat( name.c_str(), &statbuf);
+    return S_ISDIR(statbuf.st_mode);
+  }//bool is_directory( const std::string &name )
   
   struct AttCoeffData
   {
@@ -233,6 +247,32 @@ namespace MassAttenuation
     sm_data_directory = dir;
     sm_xs_tool.set_data_dir( append_path( dir, "em_xs_data") );
   }
+  
+  void test_data_directory_validity( const std::string &dir )
+  {
+    if( !is_directory(dir) )
+      throw runtime_error( "Directory '" + dir + "' does not exist or is not accessible" );
+    
+    const string datadir = append_path( dir, "em_xs_data");
+    if( !is_directory(dir) )
+      throw runtime_error( "EM Cross Section directory specified must have a subdirectory 'em_xs_data' containing the actual data files" );
+    
+    MassAttenuationTool xstool;
+    xstool.set_data_dir( append_path( dir, datadir) );
+    
+    try
+    {
+      for( int i = 1; i < 98; ++i )
+      {
+        xstool.massAttenuationCoeficient( i, 30.0 );
+        xstool.massAttenuationCoeficient( i, 3000.0 );
+      }
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "Error using cross-section data: " + string(e.what()) );
+    }//
+  }//void test_data_directory_validity( const std::string &dir )
+  
   
   float AttCoef( const float energy, const int atomic_number,
                 float &scatter_mu, float &photoelectric_mu, float &pair_prod_mu )

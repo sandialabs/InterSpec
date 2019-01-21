@@ -1,0 +1,124 @@
+    <div align="center">
+        <h1 id="interspec-commands">
+            <b>InterSpec Commands/Functions</b>
+        </h1>
+    <hr />
+    </div>
+    
+    <div style="padding-top: 10px">The <b>Math/Command Terminal</b> also features the ability to reference values from displayed data as well as accomplish certain interactions with spectra and the environment. <b><i>Dynamic functions</i></b> are able to be combined with math expressions for a powerful combination of accurate calculations without the need to physically view and copy the data. <b><i>Static functions</i></b> allow the user to interact with the displayed spectrum and environment and do certain tasks such as adding peaks, deleting peaks, and changing the environment appearance. <b><i>Static functions</i></b> have no real return value and therefore are <b>NOT</b> allowed to be combined inside expressions. The <b>Terminal</b> will return an error message if <i>static functions</i> are combined within expressions. The syntax for calling these functions are similar to how math functions are called: </div>
+    
+    <div style="padding-top: 7px"><i>*note that there must not be any spaces between the function name and the parentheses for arguments! The Terminal will interpret this as an error.</i></div>
+    
+    <div style="padding-top: 5px"><pre><code><i>Static functions</i>:	<span style="color:blue;">static_function(</span> [arg 1], [arg 2], [arg 3], ... <span style="color:blue;">)</span><br></br><i>Dynamic functions</i>:	<span style="color:blue;">dynamic_function(</span> [arg 1], [arg 2], [arg 3], ... <span style="color:blue;">)</span><br></br><i>                 </i> 	[operand 1] (operator 1) <span style="color:blue;">dynamic_function(</span> [arg 1], [arg 2], [arg 3], ... <span style="color:blue;">)</span><br></br>
+    </code></pre></div>
+    
+    <div style="padding-top: 7px">Different functions may have a certain number of <b>required</b> arguments inside the parenthesis. These arguments are separated by <i>commas</i>, and can be represented as <i>constants</i>, <i>identification values</i>, <i>numeric values</i>, and <i>string values</i>. Certain functions may require a set of these arguments in a <b>FIXED</b> order, or else an error is returned. Some arguments are <b>OPTIONAL</b>, and are highlighted in <span style="color:green;"><i>YELLOW ITALICS</i></span>. The following are <b>InterSpec</b> functions that are currently available inside the <b>Math/Command Terminal</b>:</div>
+    
+    <div style="padding-top: 7px" align="center">
+        <style> table, th {
+            border-collapse: collapse;
+            border-spacing: 0.5em;
+            border: 1px solid black;
+            font-style: normal;
+            font-weight: normal;
+            padding: 0.5em;
+        }
+        td {
+            border-collapse: collapse;
+            border: 1px solid black;
+            font-weight: normal;
+            padding: 0.5em;
+        }
+        </style>
+        
+        <table>
+            <tr><th><b>Function</b></th><th><b>Description</b></th><th><b>Notes</b></th></tr>
+            <tr><td colspan="3" align="center" style="text-align:center"><b>Static Functions</b></td></tr>
+            <tr><td><span style="color:navy"><b>showDefinedVariables(</b></span> <span style="color:green"><i>variable: id </i></span><span style="color:navy"><b>)</b></span></td><td>Output information about defined variables. Can specify a single variable, if given as an argument, or output all variable values if no argument is specified.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>clearVariable(</b></span> variable: id <span style="color:navy"><b>)</b></span></td><td>Deletes a stored variable. If the variable does not exist, then a proper error message is returned.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Display Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>setRange(</b></span> lower_x: value, upper_x: value <span style="color:navy"><b>)</b></span></td><td>Sets the displayed x-axis range of the current spectrum. Automatically detects the lower-x and upper-x bounds. Outputs if action was a success or not.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Peak-Interaction Functions</i></td></tr>
+
+            <tr><td><span style="color:navy"><b>searchPeak(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Searches for and adds peak onto the spectrum at the specified energy value.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>deletePeak(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Searches for and deletes peak at the specified energy value in the spectrum.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>refitPeak(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Searches for and refits peak at the specified energy value in the spectrum.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Nuclide-Interaction Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>setNuclide(</b></span> nuclide: id, <span style="color:green"><i>age: id</i></span> <span style="color:navy"><b>)</b></span></td><td>Sets the nuclide and age inside the ‘Reference Photopeaks Tab’. If the age is not specified, then the default age is provided. If the nuclide could not be found, then nothing happens.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Terminal Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>darken()</b></span></td><td>Darkens the text areas for the Terminal and whitens the text font.</td><td><i>*Any argument passed in will not affect the function.</i></td></tr>
+            <tr><td><span style="color:navy"><b>lighten()</b></span></td><td>Whitens the text areas for the Terminal and darkens the font. Currently set to default.</td><td><i>*Any argument passed in will not affect the function.</i></td></tr>
+            
+            <tr><td colspan="3" align="center" style="text-align:center"><b>Dynamic Functions</b></td></tr>
+            <tr><td colspan="3" align="left"><i>Nuclide Functions</i></td></tr>
+<!--            <tr><td><span style="color:navy"><b>nuclideEnergy(</b></span> intensity: value <span style="color:navy"><b>)</b></span></td><td>Gets the nuclide’s energy value at a specified intensity. Returns error message if no nuclide is shown or no energy is matched with the intensity.</td><td></td></tr>-->
+            <tr><td><span style="color:navy"><b>nuclideIntensity(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Gets the nuclide’s intensity value at a specified energy. Returns error message if no energy value could be matched with user’s specification or no nuclide is shown.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>nuclideIntensityForParticle(</b></span> particle: string, energy: value <span style="color:navy"><b>)</b></span></td><td>Gets nuclide’s intensity value at specified energy and particle. Returns error message if both of these parameters could not be matched.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Live/Real Time Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>liveTimeOf(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns the live time (in seconds) of spectra, or 0 if not known.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>realTimeOf(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns the real time (in seconds) of spectra, or 0 if not known.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>liveTime()</b></span></td><td>Automatically detects single spectra and returns its live time value. Returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>realTime()</b></span></td><td>Automatically detects single spectra and returns its real time value. Returns error message if multiple or no spectra detected.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Peak Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>peakArea(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s area at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakMean(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s mean at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakSigma(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s sigma at a specified x-value. Returns 0 if no peak found.</td><td><i>*Peak must be gaussian or else error is returned.</i></td></tr>
+            <tr><td><span style="color:navy"><b>peakFwhm(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s full width at half-maximum at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakAmp(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s amplitude at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakChi2Dof(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s chi-squared degrees of freedom at a specified x-value. Returns 0 if no peak found.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>peakGauss(</b></span> energy: value, x0: value, x1: value <span style="color:navy"><b>)</b></span></td><td>Returns a peak’s gaussian at a specified x-value and bounds. Returns 0 if no peak found or x-boundaries are equivalent.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Statistic Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>pValueFromChiSquare(</b></span> chiScore: value, df: value <span style="color:navy"><b>)</b></span></td><td>Returns the p-value from a specific chi-score and degrees of freedom.</td><td></td></tr>
+            
+            <tr><td colspan="3" align="left"><i>Gamma Functions</i></td></tr>
+            
+            <tr><td><span style="color:navy"><b>numGammasFor(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns minimum number of channels of channel energies or gamma counts for spectrum. Returns 0 if neither is defined.</td><td>num_gamma_channels</td></tr>
+            <tr><td><span style="color:navy"><b>gammaChannelFor(</b></span> spectra: id/string, energy: value <span style="color:navy"><b>)</b></span></td><td>Returns gamma channel containing energy. If energy is below zero, then 0 is returned. If the energy is above the last channel, the last channel is returned.</td><td>find_gamma_channel</td></tr>
+            <tr><td><span style="color:navy"><b>gammaContentFor(</b></span> spectra: id/string, energy: value <span style="color:navy"><b>)</b></span></td><td>Returns gamma channel contents for a specified spectrum in a specified channel. Returns 0 if channel energies is not defined or channel is invalid (too large).</td><td>gamma_channel_content</td></tr>
+            <tr><td><span style="color:navy"><b>gammaLowerFor(</b></span> spectra: id/string, channel: value <span style="color:navy"><b>)</b></span></td><td>Returns lower energy of specified gamma channel for a specified spectrum.</td><td>gamma_channel_lower</td></tr>
+            <tr><td><span style="color:navy"><b>gammaCenterFor(</b></span> spectra: id/string, channel: value <span style="color:navy"><b>)</b></span></td><td>Returns central energy of specified gamma channel for a specified spectrum. For last channel, returns width of second-to-last channel.</td><td>gamma_channel_center</td></tr>
+            <tr><td><span style="color:navy"><b>gammaUpperFor(</b></span> spectra: id/string, channel: value <span style="color:navy"><b>)</b></span></td><td>Returns energy for a spectra just past energy range the specified channel contains. Returns error if channel is invalid.</td><td>gamma_channel_upper</td></tr>
+            <tr><td><span style="color:navy"><b>gammaWidthFor(</b></span> spectra: id/string, channel: value <span style="color:navy"><b>)</b></span></td><td>Returns energy with of a channel. If at last channel, then width of second-to-last channel is returned.</td><td>gamma_channel_width</td></tr>
+            <tr><td><span style="color:navy"><b>gammaIntegralFor(</b></span> spectra: id/string, energy_low: value, energy_high: value <span style="color:navy"><b>)</b></span></td><td>Get integral of gamma counts between energy_low and energy_high for a spectrum. Returns 0 if channel energies or gamma counts invalid.</td><td>gamma_integral</td></tr>
+            <tr><td><span style="color:navy"><b>gammaSumFor(</b></span> spectra: id/string, start_bin: value, end_bin: value <span style="color:navy"><b>)</b></span></td><td>Get the sum of gamma channel contents for all channels in between (inclusive) start_bin and end_bin for a spectrum. Returns 0 if start_bin too large or gamma counts invalid. If end_bin too large, then it will be clamped to number of channels.</td><td>gamma_channels_sum</td></tr>
+            <tr><td><span style="color:navy"><b>gammaMinFor(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns minimum gamma energy.</td><td>gamma_energy_min</td></tr>
+            <tr><td><span style="color:navy"><b>gammaMaxFor(</b></span> spectra: id/string <span style="color:navy"><b>)</b></span></td><td>Returns maximum gamma energy.</td><td>gamma_energy_max</td></tr>
+            
+            <tr><td colspan="3"></td></tr>
+            
+            <tr><td><span style="color:navy"><b>numGammas()</b></span></td><td>Same as <i>numGammasFor( spectra: id )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaChannel(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaChannelFor( spectra: id, energy: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaContent(</b></span> energy: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaContentFor( spectra: id, energy: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaLower(</b></span> channel: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaLowerFor( spectra: id, channel: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaCenter(</b></span> channel: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaCenterFor( spectra: id, channel: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaUpper(</b></span> channel: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaUpperFor( spectra: id, channel: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaWidth(</b></span> channel: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaWidthFor( spectra: id, channel: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaIntegral(</b></span> energy_low: value, energy_high: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaIntegralFor( spectra: id, energy_low: value, energy_high: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaSum(</b></span> start_bin: value, end_bin: value <span style="color:navy"><b>)</b></span></td><td>Same as <i>gammaSumFor( spectra: id, start_bin: value, end_bin: value )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaMin()</b></span></td><td>Same as <i>gammaMinFor( spectra: id )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+            <tr><td><span style="color:navy"><b>gammaMax()</b></span></td><td>Same as <i>gammaMaxFor( spectra: id )</i>. Automatically detects displayed spectrum, returns error message if multiple or no spectra detected.</td><td></td></tr>
+        </table>
+        </div>
+    
+        <div style="padding-top: 10px">The <b>Math/Command Terminal</b> for <b>InterSpec</b> also features the ability to use <i>string constants</i> that are used for arguments inside several <b>InterSpec</b> functions. These constants can be used directly as its ID’s instead of placing them inside quotes as strings <i>(eg. “hello” or “hello world!”)</i>.</div>
+        <div style="padding-top: 10px" align="center">
+            <table>
+                <tr><th><b>Constant</b></th><th><b>Value</b></th><th><b>Notes</b></th></tr>
+                <tr><td><span style="color:navy"><b>foreground, fg</b></span></td><td>“foreground”</td><td>Used for live time and real time functions, as well as numerous gamma functions.</td></tr>
+                <tr><td><span style="color:navy"><b>secondaryforeground, sfg</b></span></td><td>“secondaryforeground”</td><td>Used for live time and real time functions, as well as numerous gamma functions.</td></tr>
+                <tr><td><span style="color:navy"><b>background, bg</b></span></td><td>“background”</td><td>Used for live time and real time functions, as well as numerous gamma functions.</td></tr>
+            </table>
+        </div>

@@ -7,9 +7,6 @@
  <pref name="StartDocked_phone" type="Boolean">false</pref>
  <pref name="StartDocked_tablet" type="Boolean">true</pref>
  <pref name="ShowSplashScreen" type="Boolean">true</pref>
- <pref name="ShowHeaderFooter" type="Boolean">true</pref>
- <pref name="ShowHeaderFooter_phone" type="Boolean">false</pref>
- <pref name="ShowHeaderFooter_tablet" type="Boolean">false</pref>
  <pref name="PopupBlockNotificationInfo" type="Boolean">false</pref>
  <pref name="PopupBlockNotificationLow" type="Boolean">false</pref>
  <pref name="PopupBlockNotificationMedium" type="Boolean">false</pref>
@@ -33,8 +30,11 @@
  <pref name="SpecFileQueryPath" type="String">None</pref>
  <pref name="SpecFileQueryRecursive" type="Boolean">true</pref>
  <pref name="SpecFileQueryFilter" type="Boolean">true</pref>
+ <pref name="SpecFileQueryCacheParse" type="Boolean">true</pref>
  <pref name="SpecFileQueryMaxSize" type="Integer">32</pref>
  <pref name="SpecFileQueryUnique" type="Boolean">true</pref>
- <pref name="GadrasDRFPath" type="String">data/GadrasDetectors;data/GenericGadrasDetectors;C:\GADRAS\Detector</pref>
- <pref name="RelativeEffDRFPaths" type="String">data/lanl_simplemass_detectors.tsv</pref>
+ <pref name="GadrasDRFPath" type="String">data/OUO_GadrasDetectors;data/GenericGadrasDetectors;C:\GADRAS\Detector</pref>
+ <pref name="RelativeEffDRFPaths" type="String">data/OUO_lanl_simplemass_detectors.tsv</pref>
+ <pref name="ColorThemeIndex" type="Integer">-1</pref>
+ <pref name="FileQueryEventQmlyFieldsFile" type="String">data/file_query_event_xml_fields.json</pref>
 </preferences>

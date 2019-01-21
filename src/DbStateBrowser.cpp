@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -44,7 +44,7 @@ using namespace std;
 using namespace Wt;
 
 DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
-  : AuxWindow( "Restore Previously Saved Snapshot", true ),
+  : AuxWindow( "Restore Previously Saved Snapshot", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
     m_viewer( viewer ),
     m_model( 0 ),
     m_table( 0 ),
@@ -56,8 +56,6 @@ DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
     
     resize( WLength(width), WLength(height) );
     
-    setResizable( true );
-    disableCollapse();
     //We have to create a independant Dbo::Session for this class since the
     //  m_viewer->m_user.session() could be used in other threads, messing
     //  things up (Dbo::Session is not thread safe).

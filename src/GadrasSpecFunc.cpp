@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -46,8 +46,6 @@ namespace
  atomic number and areal density of the attenuator.
  Account for hydrogen, which exhibits twice the scatter cross-section per mass.
  
- Translated from Dean Mitchel's fortran TransmissionH (20150922).
- 
  \param E energy of gamma ray in keV
  \param AN atomic number of shield
  \param AD total areal density (g/cm^2) of shield
@@ -66,7 +64,7 @@ float TransmissionH( const float E, const float AN, const float AD, const float 
   //excess hydrogen AD above 1 g/cm^2 ?
   const float FR = max( 0.0f, min( 1.0f, AHIN*AD-1.0f) );
   float AH = FR * AHIN;
-  const float gcm2 = PhysicalUnits::g / PhysicalUnits::cm2;
+  const float gcm2 = static_cast<float>( PhysicalUnits::g / PhysicalUnits::cm2 );
   
   //only apply at high hydrogen content and shielding
   if( AH > 0.0f )

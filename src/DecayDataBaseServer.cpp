@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -27,13 +27,13 @@
 #include <iostream>
 #include <boost/filesystem.hpp>
 
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 using namespace std;
 
-string DecayDataBaseServer::sm_decayXrayXmlLocation = "data/sandia.decay.xray.xml";
+string DecayDataBaseServer::sm_decayXrayXmlLocation = "data/sandia.decay.xml";
 
 std::mutex DecayDataBaseServer::sm_dataBaseMutex;
 SandiaDecay::SandiaDecayDataBase DecayDataBaseServer::sm_dataBase;
@@ -104,7 +104,7 @@ void DecayDataBaseServer::setXmlFileDirectory( const std::string &dir )  //assum
 {
   std::lock_guard<std::mutex> lock( sm_dataBaseMutex );
 
-  const string file = UtilityFunctions::append_path( dir, "sandia.decay.xray.xml" );
+  const string file = UtilityFunctions::append_path( dir, "sandia.decay.xml" );
 
   if( sm_dataBase.initialized() )
   {

@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -217,6 +217,8 @@ void mapDbClasses( Wt::Dbo::Session *session )
   session->mapClass<ShieldingSourceModel>( "ShieldingSourceModel" );
   session->mapClass<UserState>( "UserState" );
   session->mapClass<DetectorPeakResponse>( "DetectorPeakResponse");
+  session->mapClass<InterSpecGlobalSetting>( "InterSpecGlobalSetting");
+  session->mapClass<ColorThemeInfo>( "ColorThemeInfo");
 }//void mapDbClasses( Wt::Dbo::Session *session )
 
 
@@ -710,59 +712,7 @@ void UserFileInDbData::setFileData( std::shared_ptr<const SpecMeas> spectrumFile
          << e.what() << endl;
     throw runtime_error( "Failed to serialize spectrum to the database" );
   }//try / catch to serialize spectrumFile
-    
-/*
-  {
-    string name = "";
-    switch( format )
-    {
-      case UserFileInDbData::kNativeBinary: name = "datatodb.bin"; break;
-      case UserFileInDbData::kNativeText: name = "datatodb.txt"; break;
-    }//switch( format )
-      
-    if( gzipCompressed )
-      name += ".tgz";
-      
-//    ofstream datafromdb( name.c_str() );
-//    datafromdb.write( (char *)&fileData[0], fileData.size() );
-//    cerr << "Writing contents to DB to file: " << name << endl;
-    
-    ofstream resulttxt( "serializationresults.txt" );
-    
-    try
-    {
-      {
-        ofstream datafromdb( name.c_str(), ios_base::out | ios_base::binary );
-        boost::archive::text_oarchive oa( datafromdb );
-        oa << (*spectrumFile);
-      }
-      
-      resulttxt << "Serialized spectrumFile to file '" << name << "' successfully" << endl;
-    }catch( std::exception &e )
-    {
-      resulttxt << "Failed to serialized spectrumFile to file '" << name << "': " << e.what() << endl;
-    }
-    
-    try
-    {
-      std::shared_ptr<SpecMeas> deserialed( new SpecMeas() );
-       
-      {
-        ifstream file( name.c_str(), ios_base::in | ios_base::binary );
-        boost::archive::text_iarchive ia( file );
-        ia >> (*deserialed);
-      }
-      
-      resulttxt << "Successfulle de-serialized from file '" << name
-                << "'.  The sum gamma is " << deserialed->gamma_count_sum() <<  endl;
-    }catch( std::exception &e )
-    {
-      resulttxt << "Failed to de-serialized from file '" << name
-      << "': " << e.what() << endl;
-    }
-  }
- */
-  
+
   const size_t actual = fileData.size();
   if( actual > UserFileInDb::sm_maxFileSizeBytes )
   {
@@ -784,24 +734,6 @@ std::shared_ptr<SpecMeas> UserFileInDbData::decodeSpectrum() const
     
     const char *start = (const char *)&fileData[0];
     const char *end = start + fileData.size();
-    
-/*
-    string name = "";
-    {//begin codeblock to write database contents to file
-      switch( fileFormat )
-      {
-        case UserFileInDbData::kNativeBinary: name = "datafromdb.svb"; break;
-        case UserFileInDbData::kNativeText: name = "datafromdb.txt"; break;
-      }//switch( format )
-      
-      if( gzipCompressed )
-        name += ".tgz";
-      
-      ofstream datafromdb( name.c_str(), ios_base::binary | ios_base::out );
-      datafromdb.write( start, fileData.size() );
-      cerr << "Writing contents from DB to file: " << name << endl;
-    }//end codeblock to write database contents to file
-*/
     
     std::unique_ptr<std::istream> instrm;
     
@@ -1322,6 +1254,11 @@ const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &InterSpecUser::
 const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &InterSpecUser::userStates() const
 {
   return m_userStates;
+}
+
+const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> > &InterSpecUser::colorThemes() const
+{
+  return m_colorThemes;
 }
 
 void InterSpecUser::incrementAccessCount()

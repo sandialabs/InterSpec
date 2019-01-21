@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -47,6 +47,14 @@
 using namespace std;
 using namespace Wt;
 
+namespace
+{
+  const Wt::WColor ns_default_foreground_color( black );
+  const Wt::WColor ns_default_background_color( cyan );
+  const Wt::WColor ns_default_secondary_color( darkGreen );
+}
+
+
 SpectrumDataModel::SpectrumDataModel( Wt::WObject *parent )
   : Wt::WAbstractItemModel( parent ),
     m_rebinFactor( 1 ),
@@ -64,10 +72,10 @@ SpectrumDataModel::SpectrumDataModel( Wt::WObject *parent )
     m_secondDataOwnAxis(  true ),
     m_backgroundSubtract( false ),
     m_addHistIntegralToLegend( true ),
-    m_dataSet( this )
+    m_dataSet( this ),
+    m_seriesColors{ ns_default_foreground_color, ns_default_background_color, ns_default_secondary_color }
 {
 } // SpectrumDataModel constructor
-
 
 SpectrumDataModel::~SpectrumDataModel()
 {
@@ -836,6 +844,19 @@ bool SpectrumDataModel::secondDataOwnAxis() const
 } // bool SpectrumDataModel::secondDataOwnAxis() const
 
 
+void SpectrumDataModel::setForegroundSpectrumColor( const Wt::WColor &color )
+{
+  m_seriesColors[0] = color.isDefault() ? ns_default_foreground_color : color;
+}
+void SpectrumDataModel::setBackgroundSpectrumColor( const Wt::WColor &color )
+{
+  m_seriesColors[1] = color.isDefault() ? ns_default_background_color : color;
+}
+void SpectrumDataModel::setSecondarySpectrumColor( const Wt::WColor &color )
+{
+  m_seriesColors[2] = color.isDefault() ? ns_default_secondary_color : color;
+}
+
 vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
 {
   const int binwidth = 1;
@@ -847,9 +868,9 @@ vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
   {
     Chart::WDataSeries series( BACKGROUND_COLUMN, Chart::LineSeries );
     series.setStacked( false );
-
+    
     // Force a black line and other line-based variables
-    WPen dataPen( cyan );
+    WPen dataPen( m_seriesColors[1] );
     dataPen.setWidth( WLength( binwidth ) );
     series.setPen( dataPen );
     series.setXSeriesColumn( 0 );
@@ -860,9 +881,9 @@ vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
   {
     Chart::WDataSeries series( SECOND_DATA_COLUMN, Chart::LineSeries );
     series.setStacked( false );
-
+    
     // Force a darkGreen line and other line-based variables
-    WPen dataPen( darkGreen );
+    WPen dataPen( m_seriesColors[2] );
     dataPen.setWidth( WLength( binwidth ) );
     series.setPen( dataPen );
     series.setXSeriesColumn( 0 );
@@ -877,9 +898,9 @@ vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
   {
     Chart::WDataSeries series( DATA_COLUMN, Chart::LineSeries );
     series.setStacked( false );
-
+    
     // Force a black line and other line-based variables
-    WPen dataPen( black );
+    WPen dataPen( m_seriesColors[0] );
     dataPen.setWidth( WLength( binwidth ) );
     series.setPen( dataPen );
     series.setXSeriesColumn( 0 );

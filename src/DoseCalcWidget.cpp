@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -191,35 +191,17 @@ namespace
 DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
                                 Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
-: AuxWindow( "Dose Calc" )
+: AuxWindow( "Dose Calc",
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+             | AuxWindowProperties::SetCloseable
+             | AuxWindowProperties::DisableCollapse) )
 {
-  setClosable( true );
-  setResizable( false );
-  disableCollapse();
-  
-//  const Material *air = materialDB->material( "air" );
-//  assert( air );
-//  const float air_an = air->massWeightedAtomicNumber();
-//  const float air_ad = air->density * PhysicalUnits::cm3 / PhysicalUnits::g;
-//  cerr << "air_an=" << air_an << ", air_ad=" << air_ad << " g/cm3\n";
-  
   rejectWhenEscapePressed( true );
   
   DoseCalcWidget *w = new DoseCalcWidget( materialDB, materialSuggestion, viewer, contents() );
   w->setHeight( WLength(100,WLength::Percentage) );
   
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-  if( app && !app->isMobile() )
-  {
-    const int screenW = viewer->renderedWidth();
-    const int screenH = viewer->renderedHeight();
-    
-    setHeight( ((screenH < 420) ? screenH : 420) );
-    setWidth( ((screenW < 600) ? screenW : 600) );
-  }
-
-  
-  AuxWindow::addHelpInFooter(footer(), "dose-dialog", this);
+  AuxWindow::addHelpInFooter( footer(), "dose-dialog", this);
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
@@ -227,7 +209,13 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
   show();
-
+  
+  const int screenW = viewer->renderedWidth();
+  const int screenH = viewer->renderedHeight();
+  const int width = ((screenW < 600) ? screenW : 600);
+  const int height = ((screenH < 420) ? screenH : 420);
+  resizeWindow( width, height );
+  
   centerWindow();
 }//GammaXsWindow(...) constrctor
 
@@ -236,9 +224,7 @@ DoseCalcWindow::~DoseCalcWindow()
 {
 }
 
-//I eventually might make this widget a general input that van be used wherever
-//  you need to specify a gamma source, so some aspects of its coding are a bit
-//  more general than they need to be.
+
 class GammaSourceEnter : public Wt::WContainerWidget
 {
 public:
@@ -247,10 +233,6 @@ public:
      m_nuclideEdit( 0 ),
      m_nuclideAgeEdit( 0 ),
      m_halfLifeTxt( 0 ),
-     m_useNuclides( true ),
-     m_useXrays( false ),
-     m_useEscapes( false ),
-     m_useReactions( false ),
      m_currentNuc( 0 ),
      m_changed( this )
   {
@@ -298,10 +280,10 @@ public:
     
     IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel( this );
     
-    filterModel->excludeNuclides( !m_useNuclides );
-    filterModel->excludeXrays( !m_useXrays );
-    filterModel->excludeEscapes( !m_useEscapes );
-    filterModel->excludeReactions( !m_useReactions );
+    filterModel->excludeNuclides( false );
+    filterModel->excludeXrays( true );
+    filterModel->excludeEscapes( true );
+    filterModel->excludeReactions( true );
     
     filterModel->filter( "" );
     suggestions->setFilterLength( -1 );
@@ -313,17 +295,8 @@ public:
 //    m_nuclideEdit->blurred().connect( this, &GammaSourceEnter::handleNuclideUserInput );
 
   
-    string tooltip = "ex. ";
-    if( m_useNuclides )
-      tooltip += "<b>U235</b>, <b>235 Uranium</b>, ";
-    if( m_useXrays )
-      tooltip += "<b>U</b> (x-rays only), <b>Uranium</b> (x-rays), ";
-    if( m_useNuclides )
-      tooltip += "<b>U-235m</b> (meta stable state), <b>Cs137</b>, ";
-//    tooltip += "<b>background</b>, ";
-    if( m_useReactions )
-      tooltip += "<b>H(n,g)</b>, ";
-    tooltip += "etc.";
+    string tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, "
+                     "<b>U-235m</b> (meta stable state), <b>Cs137</b>, etc.";
     HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTipInstantly );
     
     
@@ -365,11 +338,9 @@ public:
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     const string isotopeLabel = m_nuclideEdit->text().toUTF8();
-    const SandiaDecay::Nuclide *nuc = 0;
-    if( m_useNuclides )
-      nuc = db->nuclide( isotopeLabel );
+    const SandiaDecay::Nuclide *nuc = db->nuclide( isotopeLabel );
     
-    if( (m_useNuclides && !m_useXrays && !m_useEscapes && !m_useReactions) && (nuc == m_currentNuc) )
+    if( nuc == m_currentNuc )
       return;
 
     m_currentNuc = nuc;
@@ -427,10 +398,6 @@ public:
     
     try
     {
-      const SandiaDecay::Element *el = NULL;
-      if( m_useXrays && (isotopeLabel.find_first_of( "0123456789" ) == string::npos) )
-        el = db->element( isotopeLabel );
-      
       if( nuc && !IsInf(nuc->halfLife) && !nuc->decaysToChildren.empty() && !useCurrentAge )
       {
         if( agestr.size() )
@@ -477,33 +444,7 @@ public:
         m_nuclideEdit->setText( "" );
         m_nuclideAgeEdit->setText( "" );
         m_nuclideAgeEdit->disable();
-      }else if( m_useReactions && !el && !isotopeLabel.empty() )
-      {
-        std::vector<ReactionGamma::ReactionPhotopeak> reactions;
-        
-        try
-        {
-          const ReactionGamma *rctnDb = ReactionGammaServer::database();
-          if( rctnDb )
-            rctnDb->gammas( isotopeLabel, reactions );
-        }catch(...)
-        {}
-        
-        if( reactions.size() )
-        {
-          m_nuclideAgeEdit->setText( "" );
-          m_nuclideAgeEdit->disable();
-        }//
-        
-        
-        if( isotopeLabel.size() && reactions.empty()
-            && !UtilityFunctions::icontains( isotopeLabel, "background") )
-        {
-          passMessage( isotopeLabel +
-                       " is not a valid isotope, element, or reaction", "",
-                       WarningWidget::WarningMsgHigh );
-        }
-      }else if( el && !nuc )
+      }else if( !nuc )
       {
         m_nuclideAgeEdit->setText( "" );
         m_nuclideAgeEdit->disable();
@@ -626,7 +567,7 @@ public:
   
   static bool trySecularEquilibrium( const SandiaDecay::Nuclide * const nuclide, double &age )
   {
-    if( nuclide )
+    if( !nuclide )
       return false;
     
     double maxHalfLife = getMaximumHalfLife(nuclide);
@@ -741,16 +682,10 @@ public:
    * \returns empty results if no valid isotope, an invalid age, or negative or 
    *          zero activity. Other wise returns <energy,gamma/sec> pairs.
    */
-  std::vector< std::pair<float,float> > gammaEnergyAndIntensity( const double activity ) const
+  std::vector< std::pair<float,float> > photonEnergyAndIntensity( const double activity ) const
   {
     std::vector< std::pair<float,float> > answer;
     
-    //Function not capable of anything besides gammas yet.
-    assert( m_useNuclides );
-    assert( !m_useXrays );
-    assert( !m_useEscapes );
-    assert( !m_useReactions );
-  
     if( !m_currentNuc || activity <= 0.0 )
       return answer;
     
@@ -765,15 +700,14 @@ public:
     
     SandiaDecay::NuclideMixture mix;
     mix.addAgedNuclideByActivity( m_currentNuc, activity, age );
-    const vector<SandiaDecay::EnergyRatePair> results
-              = mix.gammas( 0.0, SandiaDecay::NuclideMixture::OrderByEnergy, true );
     
+    const auto results = mix.photons(0.0, SandiaDecay::NuclideMixture::OrderByEnergy);
     
     for( const SandiaDecay::EnergyRatePair &aep : results )
       answer.push_back( make_pair( static_cast<float>(aep.energy), static_cast<float>(aep.numPerSecond) ) );
     
     return answer;
-  }//std::vector< std::pair<float,float> > gammaEnergyAndIntensity() const
+  }//std::vector< std::pair<float,float> > photonEnergyAndIntensity() const
   
   Wt::Signal<> &changed()
   {
@@ -787,11 +721,6 @@ protected:
   Wt::WLineEdit *m_nuclideEdit;
   Wt::WLineEdit *m_nuclideAgeEdit;
   Wt::WText *m_halfLifeTxt;
-  
-  bool m_useNuclides;
-  bool m_useXrays;
-  bool m_useEscapes;
-  bool m_useReactions;
   
   const SandiaDecay::Nuclide *m_currentNuc;
   std::map<const SandiaDecay::Nuclide *,std::string> m_prevAgeTxt;
@@ -836,6 +765,8 @@ DoseCalcWidget::DoseCalcWidget( MaterialDB *materialDB,
 
 void DoseCalcWidget::init()
 {
+  wApp->useStyleSheet( "InterSpec_resources/DoseCalcWidget.css" );
+  
   addStyleClass( "DoseCalcWidget" );
   m_layout = new WGridLayout( this );
   
@@ -855,6 +786,9 @@ void DoseCalcWidget::init()
     
     return;
   }//try / catch
+  
+  
+  
   
   const bool isPhone = m_viewer->isPhone();
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
@@ -1109,7 +1043,14 @@ void DoseCalcWidget::init()
 
         m_activityAnswer = new WText( m_answerWidgets[i] );
         m_activityAnswer->setInline( false );
-        m_activityAnswer->setText( "200 \u03BCCi" );
+
+		string actstr = "200 uCi";
+#if( !IOS )
+		const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
+		UtilityFunctions::ireplace_all(actstr, "&mu;", (char *)utf8mu /*"\u03BC"*/);
+#endif
+
+        m_activityAnswer->setText( actstr.c_str() );
         m_activityAnswer->addStyleClass( "DoseAnswerTxt" );
         
         m_activityEnterUnits->activated().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
@@ -1220,6 +1161,37 @@ void DoseCalcWidget::init()
   for( int i = 1; i < enterLayout->rowCount(); ++i )
     enterLayout->setRowStretch( i, 1 );
   
+  try
+  {
+    runtime_sanity_checks();
+  }catch( std::exception &e )
+  {
+    introDiv->clear();
+    introDiv->setStyleClass( "DoseCalcRuntimeCheckFailMsg" );
+    
+    auto errorintro = new WText( "Runtime sanity checks have failed!", introDiv );
+    errorintro->setInline( false );
+    errorintro->setStyleClass( "DoseCalcRuntimeCheckFailHdr" );
+    
+    auto errortxt = new WText( e.what(), introDiv );
+    errortxt->setInline( false );
+    errortxt->setStyleClass( "DoseCalcRuntimeCheckMsgTxt" );
+    
+    auto furthermsg = new WText( "<div>Do not trust results of this calculator utility</div>"
+                                 "Please email <a href=\"mailto:interspec@sandia.gov\">interspec@sandia.gov</a>"
+                                 " this error message and include your device type and model (e.g., iPad pro,"
+                                 " Windows 10 Dell laptop, etc.)", introDiv );
+    furthermsg->setStyleClass( "DoseCalcRuntimeCheckInstuct" );
+    furthermsg->setInline( false );
+    
+    
+    
+    auto *errordiv = new WText( "Results Suspect - Do Not Trust" );
+    errordiv->setStyleClass( "DoseCalcRuntimeCheckFailBanner" );
+    const int row = m_layout->rowCount();
+    m_layout->addWidget( errordiv, row, 0, 1, m_layout->columnCount(), AlignCenter );
+  }//try / caltch runtime sanity check
+  
 }//void DoseCalcWidget::init()
 
 
@@ -1228,6 +1200,121 @@ DoseCalcWidget::~DoseCalcWidget()
   //nothing to do here
 }//~DoseCalcWidget()
 
+
+void DoseCalcWidget::runtime_sanity_checks()
+{
+  if( !m_scatter )
+    throw runtime_error( "Full spectrum transport source matrix not initiated." );
+  
+
+  auto check_nuc = [=]( const string nuclabel, const double age, const float distance,
+                        const float areal_density, const float atomic_number, const double expected ) {
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    if( !db )
+      throw runtime_error( "Nuclide database not initiated" );
+    
+    auto nuc = db->nuclide( nuclabel );
+    if( !nuc )
+      throw runtime_error( "Error retrieving '" + nuclabel + "' from nuclide database." );
+    
+    SandiaDecay::NuclideMixture mix;
+    mix.addAgedNuclideByActivity( nuc, 100.0E-6*SandiaDecay::curie, age );
+    
+    vector<float> energies, intensities;
+    for( const auto &i : mix.photons(0) )
+    {
+      energies.push_back( i.energy );
+      intensities.push_back( i.numPerSecond );
+    }
+
+    const double computed = DoseCalc::gamma_dose_with_shielding( energies, intensities,
+                                            areal_density, atomic_number,
+                                                  distance, *m_scatter );
+    
+    //Check within 1% of expected (1% is arbitrary)
+    if( fabs(computed - expected) > 0.02*std::max(computed,expected) )
+      throw runtime_error( "Failed " + nuclabel + " with shielding {AN="
+                           + std::to_string(atomic_number) + ", AD="
+                           + std::to_string(areal_density * PhysicalUnits::cm2 / PhysicalUnits::gram)
+                           + "g/cm2}, age=" + PhysicalUnits::printToBestTimeUnits(age)
+                           + " and distance=" + PhysicalUnits::printToBestLengthUnits(distance)
+                           + ", the sanity check computed "
+                           + PhysicalUnits::printToBestDoseUnits(computed,4)
+                           + " but expected "
+                           + PhysicalUnits::printToBestDoseUnits(expected,4)
+                           + ".  Not performing further tests.");
+  };//check_nuc lambda
+  
+  string nuclide = "Co60";
+  double age = 0.5*PhysicalUnits::year;
+  float distance = 100.0*PhysicalUnits::cm;
+  float areal_density = 0.0f;
+  float atomic_number = 26.0f;
+  double expected = 115.42E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 115.4
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  
+  nuclide = "Cs137";
+  age = 0.5*PhysicalUnits::year;
+  distance = 100.0*PhysicalUnits::cm;
+  areal_density = 0.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  atomic_number = 26.0f;
+  expected = 29.70E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 29.7 uRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  areal_density = 5.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  expected = 25.19E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 23.9 uRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  areal_density = 50.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  expected = 2.59E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 0.842 uRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  
+  nuclide = "U238";
+  age = 20*PhysicalUnits::year;
+  distance = 100.0*PhysicalUnits::cm;
+  areal_density = 0.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  atomic_number = 60.0f;
+  expected = 1.86E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 1.8 uRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  areal_density = 2.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  expected = 2.34E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 0.78 uRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  
+  nuclide = "Na22";
+  age = 0.0*PhysicalUnits::year;
+  distance = 10.0*PhysicalUnits::cm;
+  areal_density = 13.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  atomic_number = 5.0f;
+  expected = 7.66E-3 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 6.1 uRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  
+  nuclide = "F18";
+  age = 0.0*PhysicalUnits::year;
+  distance = 200.0*PhysicalUnits::cm;
+  areal_density = 0.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  atomic_number = 5.0f;
+  expected = 13.29E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 13.3 uRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  
+  
+  nuclide = "Ba133";
+  age = 7*24*3600*PhysicalUnits::second;
+  distance = 10.0*PhysicalUnits::cm;
+  areal_density = 0.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  atomic_number = 82.0f;
+  expected = 2.44E-3 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 2.4 mRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  areal_density = 10.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  expected = 134.09E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 111 uRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+}//void runtime_sanity_checks()
 
 
 void DoseCalcWidget::handleQuantityClick( const DoseCalcWidget::Quantity q )
@@ -1428,65 +1515,14 @@ void DoseCalcWidget::updateResultForGammaSource()
       break;
   }//switch( m_sourceType->checkedId() )
   
-  vector<pair<float,float> > source_gamma
-                           = m_gammaSource->gammaEnergyAndIntensity( activity );
-  
-  const SandiaDecay::Nuclide *nuclide = m_gammaSource->nuclide();
-  
-  
-  double presum = 0.0;
-  for( size_t a = 0; a < source_gamma.size(); ++a )
-    presum += source_gamma[a].second;
-  
-  if( nuclide )  //20.34, 20.21
-  {
-    //start gettgin xrays
-    double age;
-    try
-    {
-      age = m_gammaSource->nuclideAge();
-    }catch(...)
-    {
-      m_issueTxt->setText( "Invalid age" );
-      return;
-    }
+  const vector<pair<float,float> > source_gamma
+                           = m_gammaSource->photonEnergyAndIntensity( activity );
 
-    vector< pair<float,float> > xrays;
-    if( nuclide )
-    {
-      SandiaDecay::NuclideMixture mix;
-      mix.addAgedNuclideByActivity( nuclide, activity, age );
-      const vector<SandiaDecay::EnergyRatePair> xrayAbun = mix.xrays( 0 );
-      for( const SandiaDecay::EnergyRatePair &aep : xrayAbun )
-        xrays.push_back( pair<float,float>(static_cast<float>(aep.energy),static_cast<float>(aep.numPerSecond)) );
-    }//if( nuclide )
-    
-    for( size_t i = 0; i < xrays.size(); ++i )
-    {
-      pair<float,float> &xray = xrays[i];
-      
-      cerr << "{ " << xray.first << ", " << xray.second << " }\n";
-      
-//      cerr << "Using fudge factor of 5\n";
-//      xray.second *= 5.0;
-      
-      vector<pair<float,float> >::iterator pos = std::lower_bound( source_gamma.begin(), source_gamma.end(), xray.first, &less_than_first );
-      if( pos == source_gamma.end() || pos->first != xrays[i].first )
-      {
-        source_gamma.insert( pos, xray );
-      }else
-      {
-        pos->second += xray.second;
-      }
-    }//for( size_t i = 0; i < xrays.size(); ++i )
-  }//if( nuclide )
-  
-  
-  double postsum = 0.0;
-  for( size_t a = 0; a < source_gamma.size(); ++a )
-    postsum += source_gamma[a].second;
-  
-  cerr << "presum=" << presum << ", postsum=" << postsum << endl;
+  if( source_gamma.empty() )
+  {
+    m_issueTxt->setText( "Error determining source gammas" );
+    return;
+  }
   
   //XXX - should change this from {AN,AD} to getting mu for the material specifically.
   float shielding_an = 14.0f;
@@ -1571,8 +1607,6 @@ void DoseCalcWidget::updateResultForGammaSource()
     cerr << "Error: " << e.what() << endl;
     return;
   }//try / catch
-  
-  
   
   if( quantity != Dose )
   {

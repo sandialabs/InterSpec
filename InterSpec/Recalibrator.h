@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -69,7 +69,7 @@ protected:
   void setDevPair( const std::pair<float,float> &d );
   std::pair<float,float> devPair() const;
   Wt::WDoubleSpinBox *m_energy, *m_offset;
-  Wt::WText *m_delete;
+  Wt::WContainerWidget *m_delete;
   friend class DeviationPairDisplay;
 };//class DevPair
   
@@ -120,8 +120,8 @@ protected:
 
 class Recalibrator : public Wt::WContainerWidget
 {
-#if( !REBIN_FILES_TO_SINGLE_BINNING )
-#error Recalibrator is currently only setup to work properly when REBIN_FILES_TO_SINGLE_BINNING is defined
+#if( !SpecUtils_REBIN_FILES_TO_SINGLE_BINNING )
+#error Recalibrator is currently only setup to work properly when SpecUtils_REBIN_FILES_TO_SINGLE_BINNING is defined
 #endif
 
 public:

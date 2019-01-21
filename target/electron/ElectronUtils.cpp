@@ -53,6 +53,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/ResourceUpdate.h"
 #include "InterSpec/InterSpecServer.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DbToFilesystemLink.h"
@@ -242,9 +243,12 @@ int run_app( int argc, char *argv[] )
   cout << "Will set user preferences file to: '" << preffile << "'" << endl;
   DataBaseUtils::setPreferenceDatabaseFile( preffile );
   DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( userdatadir );
+  ResourceUpdate::setUserDataDirectory( userdatadir );
   
   cout << "Will make sure preferences database is up to date" << endl;
   DataBaseVersionUpgrade::checkAndUpgradeVersion();
+  
+  ResourceUpdate::setupGlobalPrefsFromDb();
   
   cout << "Using port " << ipc_port << " for interprocess communication" << endl;
   

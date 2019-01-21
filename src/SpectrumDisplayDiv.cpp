@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -166,6 +166,11 @@ bool SpectrumDisplayDiv::isAxisCompacted() const
   return m_chart->isAxisCompacted();
 }
 
+void SpectrumDisplayDiv::setAvoidMobileMenu( const bool avoid )
+{
+  m_chart->setAvoidMobileMenu( avoid );
+}
+
 void SpectrumDisplayDiv::setPeakModel( PeakModel *model )
 {
   if( !model )
@@ -210,6 +215,13 @@ void SpectrumDisplayDiv::setIsTimeDisplay()
 {
   m_chart->setXAxisUnits( SpectrumChart::kSeconds );
 }
+
+
+void SpectrumDisplayDiv::saveChartToPng( const std::string &name )
+{
+  m_chart->saveChartToPng( name );
+}
+
 
 bool SpectrumDisplayDiv::isEnergyDisplay() const
 {
@@ -1056,11 +1068,76 @@ void SpectrumDisplayDiv::setY2AxisTitle( const std::string &title )
   m_chart->axis(Chart::Y2Axis).setTitle( title );
 }//void setY2AxisTitle( const std::string &title )
 
-
 float SpectrumDisplayDiv::xUnitsPerPixel() const
 {
   return m_chart->xUnitsPerPixel();
 }
+
+void SpectrumDisplayDiv::setForegroundSpectrumColor( const Wt::WColor &color )
+{
+  m_model->setForegroundSpectrumColor( color );
+  m_chart->setSeries( m_model->suggestDataSeries() );
+}
+
+void SpectrumDisplayDiv::setBackgroundSpectrumColor( const Wt::WColor &color )
+{
+  m_model->setBackgroundSpectrumColor( color );
+  m_chart->setSeries( m_model->suggestDataSeries() );
+}
+
+void SpectrumDisplayDiv::setSecondarySpectrumColor( const Wt::WColor &color )
+{
+  m_model->setSecondarySpectrumColor( color );
+  m_chart->setSeries( m_model->suggestDataSeries() );
+}
+
+void SpectrumDisplayDiv::setDefaultPeakColor( const Wt::WColor &color )
+{
+  m_chart->setDefaultPeakColor( color );
+}
+
+void SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
+{
+  m_chart->setAxisLineColor(color);
+}
+
+void SpectrumDisplayDiv::setChartMarginColor( const Wt::WColor &color )
+{
+  m_chart->setChartMarginColor(color);
+}
+
+void SpectrumDisplayDiv::setChartBackgroundColor( const Wt::WColor &color )
+{
+  m_chart->setChartBackgroundColor(color);
+}
+
+void SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
+{
+  m_chart->setTextColor(color);
+}
+
+void SpectrumDisplayDiv::setOccupiedTimeSamplesColor( const Wt::WColor &color )
+{
+  m_chart->setOccupiedTimeSamplesColor( color );
+}
+
+void SpectrumDisplayDiv::setForegroundHighlightColor( const Wt::WColor &color )
+{
+  m_chart->setForegroundHighlightColor( color );
+}
+
+
+void SpectrumDisplayDiv::setBackgroundHighlightColor( const Wt::WColor &color )
+{
+  m_chart->setBackgroundHighlightColor( color );
+}
+
+
+void SpectrumDisplayDiv::setSecondaryHighlightColor( const Wt::WColor &color )
+{
+  m_chart->setSecondaryHighlightColor( color );
+}
+
 
 void SpectrumDisplayDiv::setMouseDragZooms()
 {

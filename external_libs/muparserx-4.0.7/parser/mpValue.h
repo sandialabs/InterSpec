@@ -35,6 +35,8 @@
 #ifndef MUP_VALUE_H
 #define MUP_VALUE_H
 
+//20181012: wcjohns added overide to a lot of the member variables to silence a bunch of warngings
+
 //--- Standard includes ------------------------------------------------------------
 #include <complex>
 #include <list>
@@ -76,19 +78,19 @@ MUP_NAMESPACE_START
 
     virtual ~Value();
  
-    virtual IValue& At(int nRow, int nCol = 0);
-    virtual IValue& At(const IValue &row, const IValue &col);
+    virtual IValue& At(int nRow, int nCol = 0) override;
+    virtual IValue& At(const IValue &row, const IValue &col) override;
 
-    virtual IValue& operator=(int_type a_iVal);
-    virtual IValue& operator=(float_type a_fVal);
-    virtual IValue& operator=(string_type a_sVal);
-    virtual IValue& operator=(bool val);
-    virtual IValue& operator=(const matrix_type &a_vVal);
-    virtual IValue& operator=(const cmplx_type &val);
+    virtual IValue& operator=(int_type a_iVal) override;
+    virtual IValue& operator=(float_type a_fVal) override;
+    virtual IValue& operator=(string_type a_sVal) override;
+    virtual IValue& operator=(bool val) override;
+    virtual IValue& operator=(const matrix_type &a_vVal) override;
+    virtual IValue& operator=(const cmplx_type &val) override;
     virtual IValue& operator=(const char_type *a_szVal);
-    virtual IValue& operator+=(const IValue &val);
-    virtual IValue& operator-=(const IValue &val);
-    virtual IValue& operator*=(const IValue &val);
+    virtual IValue& operator+=(const IValue &val) override;
+    virtual IValue& operator-=(const IValue &val) override;
+    virtual IValue& operator*=(const IValue &val) override;
 
     virtual char_type GetType() const override;
     virtual int_type GetInteger() const override;
@@ -101,12 +103,12 @@ MUP_NAMESPACE_START
     virtual int GetRows() const override;
     virtual int GetCols() const override;
 
-    virtual bool IsVariable() const;
+    virtual bool IsVariable() const override;
 
-    virtual IToken* Clone() const;
+    virtual IToken* Clone() const override;
     virtual Value* AsValue() override;
 
-    virtual string_type AsciiDump() const;
+    virtual string_type AsciiDump() const override;
     void BindToCache(ValueCache *pCache);
 	
     // Conversion operators
@@ -129,7 +131,7 @@ MUP_NAMESPACE_START
     void Assign(const Value &a_Val);
     void Reset();
 
-    virtual void Release();
+    virtual void Release() override;
   }; // class Value
 
 

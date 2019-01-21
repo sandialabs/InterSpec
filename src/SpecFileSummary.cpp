@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -448,6 +448,8 @@ void addField( WText *&edit, WGridLayout *table, const WString &labelstr,
 
 void SpecFileSummary::init()
 {
+  wApp->useStyleSheet( "InterSpec_resources/SpecFileSummary.css" );
+  
   WContainerWidget *holder = new WContainerWidget( contents() );
   
   WGridLayout *overallLayout = new WGridLayout();
@@ -625,7 +627,7 @@ void SpecFileSummary::init()
   
   m_displaySampleDiv = new WContainerWidget();
   m_displaySampleDiv->addStyleClass( "displaySampleDiv" );
-  m_prevSampleNumButton = new WImage( "InterSpec_resources/previous_arrow.png", m_displaySampleDiv );
+  m_prevSampleNumButton = new WImage( "InterSpec_resources/images/previous_arrow.png", m_displaySampleDiv );
   m_prevSampleNumButton->clicked().connect( boost::bind( &SpecFileSummary::handleUserIncrementSampleNum, this, false) );
   m_displayedPreText = new WText( m_displaySampleDiv );
   m_displaySampleNumEdit = new WLineEdit( m_displaySampleDiv );
@@ -634,7 +636,7 @@ void SpecFileSummary::init()
   m_displaySampleNumEdit->addStyleClass( "numberValidator"); //used to detect mobile keyboard
   m_displaySampleNumEdit->setTextSize( 3 );
   m_displayedPostText = new WText( m_displaySampleDiv );
-  m_nextSampleNumButton = new WImage( "InterSpec_resources/next_arrow.png", m_displaySampleDiv );
+  m_nextSampleNumButton = new WImage( "InterSpec_resources/images/next_arrow.png", m_displaySampleDiv );
   m_nextSampleNumButton->clicked().connect( boost::bind( &SpecFileSummary::handleUserIncrementSampleNum, this, true) );
   m_displaySampleNumEdit->enterPressed().connect( boost::bind( &SpecFileSummary::handleUserChangeSampleNum, this ) );
   m_displaySampleNumEdit->blurred().connect( boost::bind( &SpecFileSummary::handleUserChangeSampleNum, this ) );
@@ -1038,7 +1040,7 @@ void SpecFileSummary::updateDisplayFromMemory()
       remark += remarks[i];
     }//for( size_t i = 0; i < remarks.size(); ++i )
 
-    m_fileRemarks->setText( remark );
+    m_fileRemarks->setText( WString::fromUTF8(remark) );
   }else
   {
     m_sizeInMemmory->setText( "" );

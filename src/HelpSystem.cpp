@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <fstream>
 
 #include <Wt/WText>
 #include <Wt/WTree>
@@ -170,17 +171,20 @@ namespace HelpSystem
   }
   
   HelpWindow::HelpWindow(std::string preselect)
-   : AuxWindow( "InterSpec Help", true, true ),
-     m_resourceBundle( new Wt::WMessageResourceBundle() ),
+   : AuxWindow( "InterSpec Help",
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::IsHelpWIndow) ),
+     m_resourceBundle(),
      m_tree ( new Wt::WTree() ),
      m_searchText( new Wt::WLineEdit() )
   {
+    wApp->useStyleSheet( "InterSpec_resources/HelpWindow.css" );
+    
      m_tree->setSelectionMode(Wt::SingleSelection);
     
-    if (m_resourceBundle->keys(Wt::WMessageResourceBundle::Default).size()==0) //see if already read in
-      m_resourceBundle->use("InterSpec_resources/static_text/help",false);
+    if (m_resourceBundle.keys(Wt::WMessageResourceBundle::Default).size()==0) //see if already read in
+      m_resourceBundle.use("InterSpec_resources/static_text/help",false);
     
-    m_resourceBundle->resolveKey("help-info",m_helpLookupTable);
+    m_resourceBundle.resolveKey("help-info",m_helpLookupTable);
     
     initialize();
     
@@ -238,11 +242,13 @@ namespace HelpSystem
     InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
     if( app && app->viewer() )
     {
-      if (app->viewer()->isMobile())
+      if( app->viewer()->isMobile() )
       {
-          Wt::WImage *image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/user.png"), bottom);
-          image->setFloatSide( Wt::Right );
-          image->clicked().connect( boost::bind( &InterSpec::showWelcomeDialog, app->viewer(), true ) );
+        WPushButton *ancor = new WPushButton( bottom );
+        ancor->setText( "Welcome..." );
+        ancor->setStyleClass( "CsvLinkBtn" );
+        ancor->setFloatSide( Wt::Right );
+        ancor->clicked().connect( boost::bind( &InterSpec::showWelcomeDialog, app->viewer(), true ) );
       }
       else
       {
@@ -270,7 +276,6 @@ namespace HelpSystem
   
   HelpWindow::~HelpWindow()
   {
-    delete m_resourceBundle;
   }
   
   WTreeNode *first_child( WTreeNode *node )
@@ -379,6 +384,11 @@ namespace HelpSystem
       case Wt::Key_Left: case Wt::Key_Up: case Wt::Key_Right: case Wt::Key_Down:
         handleArrowPress( e );
         break;
+      
+      case Wt::Key_Home: case Wt::Key_Alt: case Wt::Key_Control:
+      case Wt::Key_Shift: case Wt::Key_Tab: case Wt::Key_unknown:
+      case Wt::Key_PageUp: case Wt::Key_PageDown:
+        return;
         
       default:
         initialize();
@@ -437,15 +447,49 @@ namespace HelpSystem
     {
       if (((iter->second))==(node))
       {
-        std::string helpStr="";
-        m_resourceBundle->resolveKey(iter->first,helpStr);
-       
-        WTemplate *t = new WTemplate(  m_helpWindowContent);
-        t->setTemplateText(WString(helpStr, UTF8),XHTMLUnsafeText);
-        t->setInternalPathEncoding(true);
-
+        std::string helpStr = "";
+        m_resourceBundle.resolveKey( iter->first, helpStr );
+        UtilityFunctions::trim( helpStr );
         
-//        
+        const string searchstr = "contents_in_file:";
+        if( UtilityFunctions::istarts_with(helpStr, searchstr) )
+        {
+          //We have to grab the contents of this file, and place in helpStr...
+          //All paths relative to the curent help.xml file, which is in
+          // "InterSpec_resources/static_text"
+          string filepath = helpStr.substr( searchstr.size() );
+          UtilityFunctions::trim( filepath );
+          
+          //ToDoL: should remove leading and trailing quotes I guess...
+          
+          filepath = UtilityFunctions::append_path( "InterSpec_resources/static_text", filepath );
+          ifstream infile( filepath.c_str() );
+          if( !infile.is_open() )
+          {
+            helpStr = "Could not open expected file: " + filepath + "";
+          }else
+          {
+            infile.seekg(0, std::ios::end);
+            const size_t size = infile.tellg();
+            infile.seekg(0);
+            
+            if( size < 128*1024 )
+            {
+              helpStr = std::string( size, ' ' );
+              infile.read( &(helpStr[0]), size );
+            }else
+            {
+              helpStr = filepath + " is too large a file - not loading contents.";
+            }
+          }//if( !infile.is_open() ) / else.
+        }//if( UtilityFunctions::istarts_with( helpStr, "contents_in_file:" ) )
+        
+        
+        WTemplate *t = new WTemplate( m_helpWindowContent );
+        t->setTemplateText( WString(helpStr, UTF8), XHTMLUnsafeText );
+        t->setInternalPathEncoding( true );
+
+
 //        WAnchor *x =new WAnchor("","Jump to bottom",m_helpWindowContent);
 //        x->setRefInternalPath("bottom");
 //        x->setId("top");
@@ -456,21 +500,20 @@ namespace HelpSystem
 //        t->bindWidget( "bottom",x  );
 //        
         
-        found=true;
+        found = true;
         break;
       } //((iter->second))==(node)
     } //for (iter = treeLookup.begin(); iter != treeLookup.end(); ++iter)
     
     if (!found)
     { //return a page not found!
-      std::string helpStr="";
-      m_resourceBundle->resolveKey("page-not-found",helpStr);
+      std::string helpStr = "";
+      m_resourceBundle.resolveKey("page-not-found",helpStr);
       new WTemplate( WString(helpStr), m_helpWindowContent);
     }//if (!found)
     
     //Note: this keeps the new pages scrolled to the top.
     doJavaScript("document.body.scrollTop = document.documentElement.scrollTop = 0;");
-    
   } // void HelpSystem::selectHelpToShow(WTree* tree, WContainerWidget* m_helpWindowContent)
   
   

@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -50,6 +50,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/WarningWidget.h"
+#include "SpecUtils/UtilityFunctions.h"
 #if ( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #else
@@ -313,6 +314,9 @@ void WarningWidget::clearMessages()
 
 void WarningWidget::addMessage( const Wt::WString &msg, const Wt::WString &src, int level )
 {
+  if( level < 0 || level > WarningMsgSave )
+    level = WarningMsgHigh;
+
   string prefix;
   if( level <= WarningMsgInfo )
     prefix = "InterSpec_resources/images/information.png";
@@ -323,7 +327,8 @@ void WarningWidget::addMessage( const Wt::WString &msg, const Wt::WString &src, 
   else if( level <= WarningMsgHigh )
     prefix = "InterSpec_resources/images/exclamation.png";
   else if( level <= WarningMsgSave )
-      prefix = "InterSpec_resources/images/disk.png";
+    prefix = "InterSpec_resources/images/disk.png";
+    
   
   if( m_active[ level ] )
   {
@@ -366,8 +371,17 @@ void WarningWidget::addMessage( const Wt::WString &msg, const Wt::WString &src, 
     //----------------------------------------------------------------------------
     //need to escape the ' in the text message
     string val = msg.toUTF8();
+    
+    //Replace all single backslashes with a double backslash 
+    //  -Assumes user has not already escaped the string
+    UtilityFunctions::ireplace_all( val, "\\\\", "[%%%%%%%%]" );
+    UtilityFunctions::ireplace_all( val, "\\", "\\\\" );
+    UtilityFunctions::ireplace_all( val, "[%%%%%%%%]", "\\\\\\\\" );
+
+    //Replace single quotes within the string - double should be fine to leave
     boost::replace_all(val, "'", "\\'");
-    boost::replace_all(val, "\n", "<br>");
+    boost::replace_all(val, "\n", "<br />");
+
     string header;
     string style;
     

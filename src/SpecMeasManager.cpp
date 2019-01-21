@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -45,6 +45,7 @@
 
 #include <Wt/WLink>
 #include <Wt/WText>
+#include <Wt/Utils>
 #include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WAnchor>
@@ -239,37 +240,95 @@ namespace
     SpectrumType m_type;
     
   public:
-    FileUploadDialog( const SpectrumType type, InterSpec *viewer,
-                     SpecMeasManager *manager )
-    : AuxWindow( "", true ),
+    FileUploadDialog( InterSpec *viewer,
+                      SpecMeasManager *manager )
+    : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                       | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal ) ),
       m_fileUpload( 0 ),
       m_manager( manager ),
-      m_type( type )
+      m_type( kForeground )
     {
-      const char *title = "";
-      switch( type )
+      setWindowTitle( "Select File To Open" );
+      
+      const bool noForeground = !viewer->measurment( kForeground );
+      
+      string instructions;
+      if( noForeground )
       {
-        case kForeground:       title = "Foreground File Upload";        break;
-        case kSecondForeground: title = "Second Foreground File Upload"; break;
-        case kBackground:       title = "Background File Upload";        break;
-      }// switch( type )
+        instructions = string(viewer->isMobile() ?"Tap" : "Click")
+                       + " bellow to choost a foreground spectrum file to open.";
+      }else
+      {
+        instructions = "Select how you would like to open the spectrum file, and then ";
+        instructions += (viewer->isMobile() ? "tap" : "click");
+        instructions += " bellow to browse for the file.";
+      }//if( noForeground )
       
-      setWindowTitle( title );
+      auto layout = stretcher();
+      WText *txt = new WText( instructions );
       
-      WContainerWidget *holder = contents();
-      m_fileUpload = new WFileUpload( holder );
+      layout->addWidget( txt, layout->rowCount(), 0 );
+      
+      
+      if( !noForeground )
+      {
+        WGroupBox *buttons = new WGroupBox( "Open file as:" );
+      
+        layout->addWidget( buttons, layout->rowCount(), 0 );
+        
+        WButtonGroup *group = new WButtonGroup( buttons );
+        
+        WRadioButton *foreground = new WRadioButton( "Forground", buttons );
+        foreground->setInline( false );
+        foreground->setChecked( true );
+        group->addButton( foreground, 0 );
+        
+        WRadioButton *background = new WRadioButton( "Background", buttons );
+        background->setInline( false );
+        group->addButton( background, 1 );
+        
+        WRadioButton *secondary = new WRadioButton( "Secondary", buttons );
+        secondary->setInline( false );
+        group->addButton( secondary, 2 );
+        
+        group->checkedChanged().connect( std::bind( [this,group](){
+          switch( group->checkedId() ) {
+            case 0: m_type = kForeground; break;
+            case 1: m_type = kBackground; break;
+            case 2: m_type = kSecondForeground; break;
+            default:  //shouldnt ever happen
+              break;
+          }
+        } ) );
+      }//if( !noForeground )
+
+    
+      m_fileUpload = new WFileUpload();
+#if( BUILD_FOR_WEB_DEPLOYMENT )
       m_fileUpload->setProgressBar( new WProgressBar() );
+#endif
+    
+      layout->addWidget( m_fileUpload, layout->rowCount(), 0, AlignMiddle | AlignCenter );
+      layout->setRowStretch( layout->rowCount()-1, 1 );
       
-      
-      const char *msg
-        = "You can also drag and drop the file directly into the <br />"
-          "application window as a quicker alternative.<br />"
-          "<br />For more advanced file opening and<br />"
-          "manipulation use the <b>File Manager</b>";
-      
-      WText *friendlyMsg = new WText( msg, XHTMLUnsafeText, holder );
-      friendlyMsg->setInline( false );
+      const char *msg = "";
+      if( !viewer->isMobile() )
+      {
+        msg = "You can also drag and drop the file directly into the <br />"
+              "application window as a quicker alternative.<br />"
+              "<br />For more advanced file opening and<br />"
+              "manipulation use the <b>File Manager</b>";
+      }else
+      {
+        msg = "You can also directly open spectrum files in <em>InterSpec</em><br />"
+              "from your email or file apps.";
+      }
+
+      WText *friendlyMsg = new WText( msg );
       friendlyMsg->setStyleClass( "startQuickUploadMsg" );
+      
+      layout->addWidget( friendlyMsg, layout->rowCount(), 0, AlignMiddle | AlignBottom );
+      
       
       WPushButton *cancel = new WPushButton( "Cancel", footer() );
       
@@ -282,9 +341,9 @@ namespace
       finished().connect( this, &FileUploadDialog::userCanceled );
       
       rejectWhenEscapePressed();
-      disableCollapse();
       
       show();
+      resizeToFitOnScreen();
       centerWindow();
     }//FileUploadDialog constructor
     
@@ -330,11 +389,14 @@ class UploadBrowser : public AuxWindow
 {
 public:
   UploadBrowser( SpecMeasManager *manager )
-  : AuxWindow( "Import Spectrum Files",true ),
+  : AuxWindow( "Import Spectrum Files",
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                | AuxWindowProperties::DisableCollapse
+                | AuxWindowProperties::EnableResize) ),
   m_manager( manager )
   {
     setResizable( true );
-    disableCollapse();
+  
     
     WGridLayout *layout = new Wt::WGridLayout();
     contents()->setLayout(layout);
@@ -666,6 +728,8 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     , m_destructMutex( new std::mutex() ),
     m_destructed( new bool(false) )
 {
+  wApp->useStyleSheet( "InterSpec_resources/SpecMeasManager.css" );
+  
   for( SaveSpectrumAsType type = SaveSpectrumAsType(0);
       type < kNumSaveSpectrumAsType;
       type = SaveSpectrumAsType(type+1) )
@@ -703,7 +767,9 @@ void  SpecMeasManager::startSpectrumManager()
 {
     const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
-    m_spectrumManagerWindow =  new AuxWindow( "Spectrum Manager", true );
+    m_spectrumManagerWindow = new AuxWindow( "Spectrum Manager",
+                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                     | AuxWindowProperties::TabletModal) );
     m_spectrumManagerWindow->addStyleClass( "SpecMeasManager" );
     
     WContainerWidget *title = m_spectrumManagerWindow->titleBar();
@@ -716,8 +782,9 @@ void  SpecMeasManager::startSpectrumManager()
     WContainerWidget *uploadDiv = new WContainerWidget( );
     uploadDiv->setStyleClass( "uploadDiv" );
     
-    WText* spec = new WText("Load spectrum from: ", uploadDiv);
-    spec->addStyleClass("AddIcon");
+    //WText* spec =
+    new WText("Load spectrum from: ", uploadDiv);
+    //spec->setIcon( "InterSpec_resources/images/plus_min_white.png" );
 if (m_viewer->isSupportFile())
 {
     Wt::WPushButton* uploadButton = new Wt::WPushButton("File...",uploadDiv);
@@ -960,7 +1027,8 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       group->setCheckedButton( group->button(kForeground) );
     }
     
-    AuxWindow *window = new AuxWindow( "Uploaded ZIP File Contents", true, false );
+    AuxWindow *window = new AuxWindow( "Uploaded ZIP File Contents",
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
     window->stretcher()->addWidget( t, 0, 0 );
     //window->stretcher()->addWidget( selection, 1, 0 );
     window->stretcher()->addWidget( table, 1, 0 );
@@ -1117,10 +1185,12 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }
   
-  AuxWindow *w = new AuxWindow( "Not a spectrum file", true );
+  AuxWindow *w = new AuxWindow( "Not a spectrum file",
+                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                 | AuxWindowProperties::TabletModal
+                 | AuxWindowProperties::SetCloseable
+                 | AuxWindowProperties::DisableCollapse) );
   w->centerWindow();
-  w->setClosable( true );
-  w->disableCollapse();
   w->rejectWhenEscapePressed( true );
   WPushButton *b = w->addCloseButtonToFooter();
   b->clicked().connect( w, &AuxWindow::hide );
@@ -1150,7 +1220,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
        || UtilityFunctions::icontains( datastr, "DNDOARSchema" ) )
     {
       WText *t = new WText( "This looks to be an N42 ICD2 file that contains analysis results rather than raw spectra.<br />"
-                            "If you believe this to be a legitimate spectrum file, please email it to <a href=\"mailto:wcjohns@sandia.gov\" target=\"_blank\">wcjohns@sandia.gov</a> to support this file type." );
+                            "If you believe this to be a legitimate spectrum file, please email it to <a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a> to support this file type." );
       w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
       t->setTextAlignment( Wt::AlignCenter );
       w->show();
@@ -1271,8 +1341,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       else if( ispng ) mimetype = "image/png";
       else if( isbmp ) mimetype = "image/bmp";
     
-      WImage *image = new WImage();
-      WMemoryResource *resource = new WMemoryResource( mimetype, image );
+      std::unique_ptr<WImage> image( new WImage() );
+      WMemoryResource *resource = new WMemoryResource( mimetype, image.get() );
       vector<uint8_t> totaldata( filesize );
       const bool success = infile.read( (char *)&(totaldata[0]), filesize ).good();
       
@@ -1286,10 +1356,9 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       {
         resource->setData( totaldata );
         image->setImageLink( WLink(resource) );
-        w->stretcher()->addWidget( image, 1, 0, AlignCenter | AlignMiddle );
+        w->stretcher()->addWidget( image.release(), 1, 0, AlignCenter | AlignMiddle );
       }else
       {
-        delete image;
         WText *errort = new WText( "Couldnt read uplaoded file." );
         errort->setTextAlignment( Wt::AlignCenter );
         w->stretcher()->addWidget( errort, 1, 0 );
@@ -1302,6 +1371,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     }//if( filesize < max_disp_size ) / else
     
     w->show();
+    w->resizeToFitOnScreen();
+    w->centerWindowHeavyHanded();
     
     return true;
   }//if( isgif || isjpg || ispng || isbmp )
@@ -1350,13 +1421,39 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   }catch( exception &e )
   {
     if( !handleNonSpectrumFile( name, spoolName ) )
-      passMessage( e.what(), "", 2 );
+    {
+      displayInvalidFileMsg(name,e.what());
+    }
   }
   
   if( app )
     app->triggerUpdate();
 }//handleFileDrop(...)
 
+void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string errormsg )
+{
+  //make sure we dont display the whole path
+  string lastpart = UtilityFunctions::filename(filename);
+  if( lastpart.empty() )
+    lastpart = filename;
+  if( lastpart.size() > 12 )
+    lastpart = lastpart.substr(0,9) + "...";
+  
+  if( errormsg.empty() )
+    errormsg = "Unspecified";
+  
+  lastpart = Wt::Utils::htmlEncode(lastpart);
+  errormsg = Wt::Utils::htmlEncode(errormsg);
+  
+  stringstream msg;
+  msg << "<p>Sorry, I couldnt parse the file " << lastpart << ":</p>"
+  << "<p>Error: <em>" << errormsg << "</em></p>"
+  << "<p>If you think this is a valid spectrum file, please send it to "
+  << "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>, and"
+  << " we'll try to fix this issue.</p>";
+  
+  passMessage( msg.str(), "", 2 );
+}//void displayInvalidFileMsg( std::string filename, std::string errormsg )
 
 std::set<int> SpecMeasManager::selectedSampleNumbers() const
 {
@@ -1536,9 +1633,9 @@ void SpecMeasManager::loadSelected( const SpectrumType type,
 } // void SpecMeasManager::loadSelected(...)
 
 
-void SpecMeasManager::startQuickUpload( SpectrumType type )
+void SpecMeasManager::startQuickUpload()
 {
-  new FileUploadDialog( type, m_viewer, this );
+  new FileUploadDialog( m_viewer, this );
 }//void startQuickUpload( SpectrumType type )
 
 
@@ -1600,8 +1697,10 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     return false;
   
   
-  AuxWindow *dialog = new AuxWindow( "Select Binning", true, false );
-  dialog->disableCollapse();
+  AuxWindow *dialog = new AuxWindow( "Select Binning",
+                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                       | AuxWindowProperties::TabletModal
+                       | AuxWindowProperties::DisableCollapse) );
   dialog->rejectWhenEscapePressed( false );
   dialog->setClosable( false );
   dialog->centerWindow();
@@ -1829,7 +1928,7 @@ void SpecMeasManager::displayFile( int row,
           else
             warningmsg << "Sample " << header->m_samples[childrow].sample_number << " is being shown.<br>";
           
-          if( m_viewer->isDocked() )
+          if( m_viewer->toolTabsVisible() )
             warningmsg << "Use the <b>Spectrum Files</b> tab, or the "
                           "<b>File Manager</b> to select other records";
           else
@@ -1986,8 +2085,10 @@ void SpecMeasManager::setDisplayedToSelected()
 
 void SpecMeasManager::displayQuickSaveAsDialog()
 {
-  AuxWindow *dialog = new AuxWindow( "Save As...", true );
-  dialog->disableCollapse();
+  AuxWindow *dialog = new AuxWindow( "Save As...",
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+               | AuxWindowProperties::TabletModal
+               | AuxWindowProperties::DisableCollapse) );
   
   dialog->centerWindow();
   dialog->addStyleClass( "QuickSaveAsDialog" );
@@ -2890,8 +2991,7 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   WContainerWidget *m_newDiv = new WContainerWidget( );
   buttonAlignment->addWidget( m_newDiv, 1, 0 );
   m_newDiv->setStyleClass( "LoadSpectrumUploadDiv" );
-  WText* txt =  new WText( "Selected Spectrum: " , m_newDiv);
-  txt->setStyleClass("CursorIcon");
+  WText *txt =  new WText( "Selected Spectrum: " , m_newDiv );
   
   m_setButton = new Wt::WPushButton("Assign As",m_newDiv);
   m_setButton->setStyleClass("AddAndDownloadIcon");
@@ -2936,7 +3036,7 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   }//isSupportFile
   
   m_deleteButton =  new Wt::WPushButton("Unload",m_newDiv);
-  m_deleteButton->addStyleClass("CrossIcon");
+  m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
   m_deleteButton ->clicked().connect( boost::bind( &SpecMeasManager::removeSelected, this ) );
   m_deleteButton->setHidden( true, WAnimation() );
   
@@ -2945,23 +3045,23 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   buttonAlignment->addWidget( m_newDiv2, 2, 0);
   m_newDiv2->setStyleClass( "LoadSpectrumUploadDiv" );
   
-  WText *text = new WText( "Unassign: " ,m_newDiv2);
-  text->setStyleClass("BinIcon");
+  //WText *text =
+  new WText( "Unassign: ", m_newDiv2 );
   
   m_removeForeButton = new Wt::WPushButton("Foreground",m_newDiv2);
-//      m_removeForeButton->setStyleClass("CrossIcon");
+//      m_removeForeButton->setIcon( "InterSpec_resources/images/minus_min.png" );
   m_removeForeButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, kForeground) );
   m_removeForeButton  ->setHidden( true, WAnimation() );
 //  m_removeForeButton->setHiddenKeepsGeometry( true );
   
   m_removeBackButton = new Wt::WPushButton("Background",m_newDiv2);
-//          m_removeBackButton->setStyleClass("CrossIcon");
+//          m_removeBackButton->setIcon( "InterSpec_resources/images/minus_min.png" );
   m_removeBackButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, kBackground ) );
   m_removeBackButton  ->setHidden( true, WAnimation() );
 //  m_removeBackButton->setHiddenKeepsGeometry( true );
   
   m_removeFore2Button = new Wt::WPushButton("Secondary Foreground",m_newDiv2);
-//              m_removeFore2Button->setStyleClass("CrossIcon");
+//              m_removeFore2Button->setIcon( "InterSpec_resources/images/minus_min.png" );
   m_removeFore2Button->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, kSecondForeground ) );
   m_removeFore2Button  ->setHidden( true, WAnimation() );
 //  m_removeFore2Button->setHiddenKeepsGeometry( true );
@@ -3090,9 +3190,11 @@ void SpecMeasManager::createPreviousSpectraDialog( const std::string sessionID,
                                                   const std::vector< Wt::Dbo::ptr<UserFileInDb> > modifiedFiles,
                                                   const std::vector< Wt::Dbo::ptr<UserFileInDb> > unModifiedFiles )
 {
-  AuxWindow *message = new AuxWindow( "File Viewed Before", true );
+  AuxWindow *message = new AuxWindow( "File Viewed Before",
+                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                           | AuxWindowProperties::TabletModal
+                           | AuxWindowProperties::DisableCollapse) );
   message->setResizable( false );
-  message->disableCollapse();
   message->rejectWhenEscapePressed();
   //      message->setMaximumSize( WLength::Auto,
   //                               WLength( 85.0, WLength::Percentage ) );
@@ -3402,14 +3504,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpectrumType type,
     
     if( !handleNonSpectrumFile( origName, name ) )
     {
-      stringstream msg;
-      msg << "Sorry, I couldnt parse the file " << origName
-          << " - due to:<br>&nbsp;&nbsp;&nbsp;&nbsp;<tt>"
-          << e.what() << "</tt><br>If you think this is an error, please send"
-          << " the spectrum to "
-          << "<a href=\"mailto:wcjohns@sandia.gov\" target=\"_blank\">wcjohns@sandia.gov</a>, and"
-          << " we'll try to fix this issue.";
-      passMessage( msg.str(), "", 2 );
+      displayInvalidFileMsg(origName,e.what());
     }
     return false;
   }// try/catch
@@ -3434,23 +3529,15 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload,
     selected.insert( index );
     m_treeView->setSelectedIndexes( WModelIndexSet() );
 
-    passMessage( "Successfully uploaded file.", "dataUploaded", 0 );
+    passMessage( "Successfully opened file.", "dataUploaded", 0 );
 
     return result;
   }catch( const std::exception &e )
   {
-    stringstream msg;
-    msg << "Sorry, I couldnt parse the file " << origName
-        << " - due to:<br>&nbsp;&nbsp;&nbsp;&nbsp;<tt>"
-        << e.what() << "</tt><br>If you think this is an error, please send"
-        << " the spectrum to "
-        << "<a href=\"mailto:wcjohns@sandia.gov\" target=\"_blank\">wcjohns@sandia.gov</a>, and"
-        << " we'll try to fix this issue.";
-    passMessage( msg.str(), "", 2 );
+    displayInvalidFileMsg(origName,e.what());
   }// try/catch
 
   return -1;
-//  upload->setProgressBar( new WProgressBar() );
 } // int SpecMeasManager::dataUploaded()
 
 
@@ -3733,9 +3820,11 @@ void SpecMeasManager::startStoreSpectraAsInDb()
       continue;
     
     const string typestr = descriptionText(type);
-    AuxWindow *window = new AuxWindow( "Save " + typestr + " Spectrum As" , true);
+    AuxWindow *window = new AuxWindow( "Save " + typestr + " Spectrum As" ,
+                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                                      | AuxWindowProperties::TabletModal
+                                      | AuxWindowProperties::SetCloseable) );
     window->rejectWhenEscapePressed();
-    window->setClosable( true );
     window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
     WGridLayout *layout = window->stretcher();
@@ -3771,7 +3860,8 @@ void SpecMeasManager::startStoreSpectraAsInDb()
 
     WPushButton *save = new WPushButton( "Save",window->footer() );
     save->setFloatSide(Right);
-    save->addStyleClass("DiskIcon");
+    //save->addStyleClass("DiskIcon");
+    save->setIcon( "InterSpec_resources/images/disk2.png" );
     
     WPushButton *cancel = new WPushButton( "Cancel" , window->footer());
     cancel->setFloatSide(Right);
@@ -3783,7 +3873,7 @@ void SpecMeasManager::startStoreSpectraAsInDb()
                             this, edit, summary, meas, window ) );
 
     
-//    if( m_viewer->isDocked() )
+//    if( m_viewer->toolTabsVisible() )
 //    {
 //      window->resize( 450, 250 );
 //    }else
@@ -3791,7 +3881,7 @@ void SpecMeasManager::startStoreSpectraAsInDb()
 //      const int maxHeight = static_cast<int>(0.95*m_viewer->paintedHeight());
 //      const int maxWidth = static_cast<int>(0.95*m_viewer->paintedWidth());
 //      window->resize( std::min(450,maxWidth), std::min(250,maxHeight) );
-//    }//if( m_viewer->isDocked() )
+//    }//if( m_viewer->toolTabsVisible() )
     
     window->centerWindow();
     window->show();
@@ -3914,7 +4004,9 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
   if (tagname.length()==0)
   {
       
-      AuxWindow *window = new AuxWindow( "Save Spectrum Version", true );
+      AuxWindow *window = new AuxWindow( "Save Spectrum Version",
+                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+                           | AuxWindowProperties::IsAlwaysModal) );
       window->setWidth( 250 );
       
       WGridLayout *layout = window->stretcher();
@@ -3940,7 +4032,8 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
       layout->setColumnStretch( 1, 1 );
       
       WPushButton *store = new WPushButton( "Save" , window->footer());
-      store->addStyleClass("DiskIcon");
+      //store->addStyleClass("DiskIcon");
+      store->setIcon( "InterSpec_resources/images/disk2.png" );
       store->setFloatSide(Right);
       store->clicked().connect( boost::bind( &SpecMeasManager::finishSaveSnapshotInDb,
                                             this, specs, dbs, edits, cbs, window ) );

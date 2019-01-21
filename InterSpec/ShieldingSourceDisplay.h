@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -30,6 +30,7 @@
 #include <utility>
 
 #include <Wt/WRectF>
+#include <Wt/WColor>
 #include <Wt/WPainter>
 #include <Wt/WModelIndex>
 #include <Wt/WGridLayout>
@@ -155,13 +156,13 @@ public:
 
   //atomicNumber(): returns values of 1.0 through 100.0
   //  throws std::runtime_error if not a GenericMaterial or unable to convert
-  //  text into a number
+  //  text into a number.  If text is blank returns 26.0.
   double atomicNumber() const;
 
   //arealDensity(): retuns dimension of [Mass/Length^2] in
   //  SandiaDecay/PhysicalUnits units
   //  throws std::runtime_error if not a GenericMaterial or unable to convert
-  //  text into a number
+  //  text into a number.  If text is blank, returns 0.
   double arealDensity() const;
 
   //fitThickness():
@@ -941,12 +942,14 @@ protected:
     void setNumFitForParams( unsigned int npar );
     
     void setShowChiOnChart( const bool show_chi );
+    void setTextPenColor( const Wt::WColor &color );
     
   protected:
     void calcAndSetAxisPadding( double yHeightPx );
     
     int m_nFitForPar;
     bool m_showChi;
+    Wt::WColor m_textPenColor;
   };//class WCartesianChart
 
   static const int sm_xmlSerializationVersion;

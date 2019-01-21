@@ -78,7 +78,7 @@ void hand_spectrum_to_other_app( std::shared_ptr<SpecMeas> spec )
 
   {
     std::ofstream outfile( cfilestr );
-    spec->write_2011_N42( outfile );
+    spec->write_2012_N42( outfile );
   }
 
   dispatch_async(dispatch_get_main_queue(),^{

@@ -7,7 +7,7 @@
 
 .mycloseicon, .mycloseicon:hover
 {
-background: transparent url(closeicons-tab.png) no-repeat scroll right top;
+background: transparent url(../resources/themes/default/closeicons-tab.png) no-repeat scroll right top;
 margin: 0px 4px 0px 0px;
 height: 13px;
 width: 13px;
@@ -33,14 +33,14 @@ cursor: default;
 }
 
 
-.SrbActivityDiv, .SrbActivityChartDiv
+.DecayActivityChartDiv, .DecayActivityChartDiv
 {
   position: static;
-  border: 0px solid #888888;
+  border: none;
 }
 
 
-.SrbActivityChart
+.DecayActivityChart
 {
   
 }
@@ -119,7 +119,9 @@ cursor: default;
 .Nuclide /*this is what contains the info about nuclides added*/
 {
   border: 1px solid #888888;
-  margin: 3px 2px 5px 2px;
+  margin-top: 6px;
+  margin-left: 2px;
+  margin-right: 2px;
   padding: 3px 1px 3px 2px;
   -moz-border-radius: 5px;
   border-radius: 5px;
@@ -178,44 +180,53 @@ cursor: default;
   
 }
 
-.m_displayActivityUnitsCombo
+.DisplayActivityUnitsCombo
 {
   margin-right: 15px;
 }
-
-.m_displayActivityUnitsLabel
+.DisplayActivityUnitsComboPhone
 {
+  margin-right: 5px;
 }
-
 
 .m_massSelection
 {
   
 }
 
-.yaxisTypeLabel
+.DecayChartYaxisTypeLabel
 {
   margin-left:   6px;
   margin-right: 2px;
 }
 
-.m_logYScale
+.DecayChartTimeSpanLabel
+{
+  margin-right: 2px;
+}
+
+.DisplayActivityUnitsLabel
+{
+  margin-right: 2px;
+}
+
+.DecayChartLogYScale
 {
   margin-left:   6px;
   margin-right: 12px;
 }
 
-.m_yAxisType
+.DecayChartYaxisType
 {
   margin-right: 12px;
 }
 
-.m_showGridLines
+.DecayChartShowGridLines
 {
   margin-right: 10px;
 }
 
-.m_pdfAnchor
+.DecayChartImgDownload
 {
   float: right;
   margin-right: 15px;
@@ -236,16 +247,6 @@ cursor: default;
   cursor: help;
 }
 
-.csvAnchor, .csvAnchor:hover
-{
- float: right;
- color: blue;
-}
-
-.csvAnchor:hover
-{
-  color: rgb(0, 174, 255);
-}
 
 .ExportCsvLink
 {
@@ -339,25 +340,34 @@ user-select: none;
   padding-right: 4px;
 }
 
-.m_chartTabWidget
+.DecayChartTabWidget
 {
-/*  margin-top: 8px;*/
-  margin-bottom: 8px;
-  margin-left: 6px;
-  margin-right: 10px;
+  margin: 2px;
 }
 
+.ChartTabWidgetStack {
+  border: solid 1px grey;
+  border-top: none;
+}
 
-.m_decayChart, .m_decayChainChart
+.DecayChart, .m_decayChainChart
 {
 /*  border: solid 1px;*/
 /*  margin-right: 12px;*/
 }
 
-.decayDiv, .photopeakDiv, .decayChainDiv
+.decayDiv
 {
-  border: solid 1px;
+  
+}
+
+.photopeakDiv, .decayChainDiv
+{
 /*  margin-right: 12px; */
+
+ /* ToDo: this style class hacked to avoid implementing color theme for this widget */
+ background: rgb(238,238,238);
+ color: black;
 }
 
 .sliderDiv

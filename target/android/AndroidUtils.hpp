@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+
 #include <set>
 #include <string>
 #include <stdio.h>
@@ -34,7 +35,6 @@
 
 #include <boost/filesystem.hpp>
 
-#include <android/log.h>
 
 #if(ALLOW_URL_TO_FILESYSTEM_MAP)
 #include "InterSpec/DbToFilesystemLink.h"
@@ -46,6 +46,8 @@
 
 
 #ifdef ANDROID
+
+#include <android/log.h>
 #include <jni.h>
 
 extern "C" 
@@ -53,7 +55,7 @@ extern "C"
   JNIEXPORT
   jint
   JNICALL
-  Java_eu_webtoolkit_android_WtAndroid_addopenfiletodb
+  Java_gov_sandia_interspec_InterSpec_addopenfiletodb
   (JNIEnv* env, jobject thiz, jstring path )
   {
      std::string filepath = std::string(env->GetStringUTFChars(path, 0));
@@ -62,57 +64,66 @@ extern "C"
     DbToFilesystemLink::FileIdToLocation requestinfo;
 //    requestinfo.m_userName = "wcjohns";
     requestinfo.m_foregroundFilePath = filepath;
-    std::cout << "\n\nAdding filepath='" << filepath << "' to database" << std::endl;
+    
 //    requestinfo.m_backgroundFilePath = "/path/to/background";
     const int entrynum = DbToFilesystemLink::addFileToOpenToDatabase( requestinfo );
-    std::cout << "\tAs entrynum=" << entrynum << std::endl << std::endl;
+    
+    __android_log_write( ANDROID_LOG_DEBUG, "addopenfiletodb",
+                         (std::string("Added filepath='") + filepath + "' to database as entrynum=" + std::to_string(entrynum)).c_str()  );
     
     return entrynum;
-  }//Java_eu_webtoolkit_android_WtAndroid_addopenfiletodb
+  }//Java_gov_sandia_InterSpec_InterSpec_addopenfiletodb
   
   
   JNIEXPORT
   jint
   JNICALL
-  Java_eu_webtoolkit_android_WtAndroid_openfileininterppec
+  Java_gov_sandia_interspec_InterSpec_openfileininterppec
   (JNIEnv* env, jobject thiz, jstring path, jint type, jstring sessionid )
   {
     const std::string filepath = std::string(env->GetStringUTFChars(path, 0));
     const std::string id = std::string(env->GetStringUTFChars(sessionid, 0));
 //   env->ReleaseStringUTFChars(...)
-	 
-	std::cerr << "Will try to open following file in InterSpec '" << filepath << "'" << std::endl;
+    __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
+                         (std::string("Will try to open following file in InterSpec '") + filepath + "' in session " + id).c_str());
+    
 	 //
     InterSpecApp *app = InterSpecApp::instanceFromExtenalIdString( id );
     if( !app )
     {
-      std::cerr << "Couldnt get app instance from id '" << id << "'" << std::endl;
+      __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
+                          (std::string("Couldnt get app instance from id '") + id + "'").c_str() );
+      
       std::set<InterSpecApp *> instances = InterSpecApp::runningInstances();
       if( instances.empty() )
         return 1;
       app = *instances.begin();
     }
 	
-	Wt::WApplication::UpdateLock lock( app );
+	  Wt::WApplication::UpdateLock lock( app );
     const bool opened = app->userOpenFromFileSystem( filepath );
-	app->triggerUpdate();
+	  app->triggerUpdate();
 
-	if( !opened )
-	{
-	  std::cerr << "InterSpec couldnt open file " << filepath << std::endl;
-	  return 2;
+	  if( !opened )
+	  {
+      __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
+                           (std::string("InterSpec couldnt open file '") + filepath + "'").c_str() );
+	    return 2;
     }
 	
-	std::cerr << "InterSpec opened file " << filepath << std::endl;
+    __android_log_write( ANDROID_LOG_INFO, "openfileininterppec",
+                         (std::string("InterSpec opened file '") + filepath + "'").c_str() );
+
     return 0;
-  }//Java_eu_webtoolkit_android_WtAndroid_openfileininterppec
+  }//Java_gov_sandia_InterSpec_openfileininterppec
   
   
-void Java_eu_webtoolkit_android_WtAndroid_settmpdir( JNIEnv* env, jobject thiz, jstring tmpPath )
+void Java_gov_sandia_interspec_InterSpec_settmpdir( JNIEnv* env, jobject thiz, jstring tmpPath )
 {
   const char *path = env->GetStringUTFChars( tmpPath, 0 );
   setenv("TMPDIR", path, 1);
-  std::cerr << "Set TMPDIR='" << path << "'" << std::endl;
+  __android_log_write( ANDROID_LOG_DEBUG, "settmpdir",
+                       (std::string("Set TMPDIR='") + path + "'").c_str() );
 }
 
 }  //extern "C"
@@ -193,12 +204,14 @@ void print_cwd_info()
   using namespace boost::filesystem;
 
   path cwd = current_path();
-  cout << "Current path: " << cwd << " and contains:" << endl;
+  __android_log_write( ANDROID_LOG_DEBUG, "print_cwd_info",
+                       (std::string("Current path: '") + cwd.string<std::string>() + "' and contains:").c_str() );
+  
   for( directory_iterator iter(cwd); iter != directory_iterator(); iter++ )
   {
-    cout << "\t" << iter->path()
-         << (is_directory(iter->path()) ? " dir " : " file ")
-         << endl;
+    __android_log_write( ANDROID_LOG_DEBUG, "print_cwd_info",
+                        (std::string("\t '") + iter->path().string<std::string>()
+                        + (is_directory(iter->path()) ? "' dir " : "' file ")).c_str() );
   }//for( loop over files in current working directory  )
 }//void print_cwd_info()
 

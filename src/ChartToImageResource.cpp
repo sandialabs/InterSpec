@@ -11,8 +11,10 @@
 
 #if( MAKE_PNG_RESOURCE )
 #include <Wt/WRasterImage>
-#else
+#elif( defined(WT_HAS_WPDFIMAGE) )
 #include <Wt/WPdfImage>
+#else
+#include <Wt/WSvgImage>
 #endif
 
 
@@ -35,10 +37,13 @@ const char *ChartToImageResource::imageType() const
 {
 #if( MAKE_PNG_RESOURCE )
   return "Png";
-#else
+#elif( defined(WT_HAS_WPDFIMAGE) )
   return "Pdf";
+#else
+  return "Svg";
 #endif
 }//const char *imageType() const
+
 
 void ChartToImageResource::handleRequest( const Http::Request& request,
                                         Http::Response& response)
@@ -53,7 +58,7 @@ void ChartToImageResource::handleRequest( const Http::Request& request,
 
   response.setMimeType( "image/png" );
   pngImage.write( response.out() );
-#else
+#elif( defined(WT_HAS_WPDFIMAGE) )
 
   WPdfImage pdfImage( width, height );
 
@@ -64,6 +69,14 @@ void ChartToImageResource::handleRequest( const Http::Request& request,
 
   response.setMimeType( "application/pdf" );
   pdfImage.write( response.out() );
-#endif
+#else
+  WSvgImage img( width, height );
+  {
+    Wt::WPainter p( &img );
+    m_chart->paint( p );
+  }
 
+  response.setMimeType( "image/svg+xml" );
+  img.write( response.out() );
+#endif
 }//void handleRequest( const Http::Request &, Http::Response & )

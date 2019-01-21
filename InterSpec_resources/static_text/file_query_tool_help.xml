@@ -1,0 +1,198 @@
+<div align="center">
+  <h1 id="spectrum-file-query"> <b>Spectrum File Query Tool</b> </h1>
+  <div align="left">
+    <p>
+      The <em>Spectrum File Query Tool</em> can be used to search through directories with many spectra, or many sub-directories with many spectra, 
+      for files that match given criteria. For example, you can use the tool to find all spectra taken by an <em>Detective-EX100</em> detector that 
+      had a RIID identification of Cs-137 or has an energy scale greater than 5 MeV, as shown below.
+    </p>
+    
+    <div style="text-align: center;">
+      <img src="InterSpec_resources/static_text/images/SpecFileQueryOverview.png"  class="imageBorder" style="max-width:80%; max-height:400px;margin-left:auto; margin-right: auto;" />
+      <div>Example view of the spectrum query tool.  Filenames, path, and serial numbers have been blurred.</div>
+    </div>
+    <!-- <img src="images/" class="imageBorder" style="max-height:250px; float:left; margin-right:20px"/> -->
+    <p>
+      To use you the tool:
+      <ol> 
+        <li>Select the directory to search.</li>
+        <li>Select the appropriate options (defaults are usually fine).</li>
+        <li>Build a query of search terms.  </li>
+        <li>Click the &quot;<strong>Update</strong>&quot; button.</li>
+        <li>Use the results by clicking on a result row and displaying the spectrum, or showing the file in the operating systems file manager, or export all results as a <em>CSV</em> file.
+      </ol>
+      The first step and fourth steps are straight forward, but details of the other steps are below.
+    </p>
+
+    <h3>Building a Query</h3>
+    <p>
+      Queries are built using using <strong>rule</strong>s and <strong>group</strong>s.  A <strong>rule</strong> is a single 
+      test condition, like &quot;did the RIID identify Cs137&quot;.  A <strong>group</strong> acts like a set of parentheses containing
+      one or more <strong>rule</strong>.  The <strong>rule</strong>s within a <strong>group</strong> can either be &quot;<b>AND</b>&quot;ed 
+      (all <strong>rule</strong>s must be true for the <strong>group</strong> to evealuate to true)
+      or &quot;<b>OR</b>&quot;ed (if any <strong>rule</strong> is true, then the <strong>group</strong> is evaluated to true) together, and 
+      similarly <strong>group</strong>s can be can either be &quot;<b>AND</b>&quot;ed or &quot;<b>OR</b>&quot;ed together.
+    </p>
+    <p>
+      The query shown in the example view of the tool above could be described as:
+    </p>
+    <div style="text-align: center;">
+      <code>
+        <b style="color: blue">(</b>Detector&nbsp;System&nbsp;is&nbsp;a&nbsp;Detective-EX100<b style="color: blue">)</b> <b style="color: blue">AND</b>&nbsp;<b style="color: blue">(</b>The&nbsp;RIID&nbsp;identified&nbsp;Cs137&nbsp;<b style="color: blue">OR</b>&nbsp;Energy&nbsp;range&nbsp;is&nbsp;&gt;5000keV<b style="color: blue">)</b>
+      </code>
+    </div>
+    <p>
+      So then all spectrum files shown in the results will be from a Detective-EX100 detector, and either have identified Cs137 or have a gamma energy range of &gt;5MeV.
+    </p>
+    
+    <h4>Queryable Quantities</h4>
+    <p>Quantities that can be tested on are all information that can be extracted from the spectrum files, the filename, 
+       or an &quot;Event XML&quot; file discussed below.  With the wide range of differening information and formatting 
+       provided by different file formats, as well as incompleteness of the file parsing code (ex. GPS info not extracted 
+       from some formats that may have it) query results should not be considered definitive; if you run into any particular 
+       shortcomings please email <a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>. 
+    </p>
+
+    <div style="text-align: center;"><strong>Spectrum File Quantities</strong></div>
+    <table class="BorderedHelpTable" style="width: 80%; margin-left: auto; margin-right: auto;">
+      <tr><th>Quantity</th><th>Description</th></tr>
+        <tr><th>Filename</th><td>The filename, including the absolute to the file.</td></tr>
+        <tr><th>Detector name</th><td>The name of the detector within the detection system, for example &quot;Aa1&quot;, &quot;Ba2&quot;, &quot;GM&quot;, etc.</td></tr>
+        <tr><th>Serial number</th><td>The serial number provided in the spectrum files.  Usually a single serial number is provided, but some systems will give a serial number for each detector within the system, in which the test will be against a concatination of the serial numbers.</td></tr>
+        <tr><th>Manufacturer</th><td>Typically the manufacturer as explicitly given within the file, but for some file formats that dont list a manufacturer an infered value may be filled in by the parsing code.</td></tr>
+        <tr><th>Model</th><td>The detection system model as specified or infered by the spectrum file.</td></tr>
+        <tr><th>Detector system</th><td>The detection system (ex. GR-135, IdentiFINDER-LaBr3, Detective-EX100, etc.) the data came from if it can unambigiously be determined.  Potential values for this quantity are provided in a drop-down menu and coorespond to systems the spectrum file parsing code can identify with a high degree of confidence (more to be added in the future).</td></tr>
+        <tr><th>Energy Cal Type</th><td>The type of energy calibration usied in the file (polynomial, full range fraction, lower channel edge, unknown).  Note that often times files that do not provide a energy calibration (or the provided one cant be read by the parsing code) will be assigned a polynomial calibration (with range from 0 to 3 MeV) instead of unknown.</td></tr>
+        <tr><th>UUID</th><td>A unique identifier for that particular spectrum file.  Some formats provide this, while for the rest the file parsing code will generate a UUID.  This quantity may be useful for finding duplicate spectrum files that might have a different name.</td></tr>
+        <tr><th>Remark</th><td>How remarks are provided, or what information may be in them, differ for each file format, but for this test all remarks are concatonated together and then tested against the test criteria.</td></tr>
+        <tr><th>Location name</th><td>This is the location name either entered by a detectors operator, or assigned to fixed detection systmes.  Ex. &quot;Lane 1&quot;, &quot;Washington DC&quot;, &quot;East Entrance&quot;, etc.</td></tr>
+        <tr><th>Has RIID Analysis</th><td>This is a boolean field indicating if the file had a RIID analysis result section that could be read by the file parsing code, including even if no results were listed.</td></tr>
+        <tr><th>RIID Ana result</th><td>This is a string representation of the analysis results provided in the file.  Formats and information content of this field vary from file format to file format.</td></tr>
+        <tr><th>RIID IDed nuclide</th><td>Nuclides identified by the detection system.  For nuclides the format of the nuclide you enter does not need to match the format of the nuclide given by the RIID, for example &quot;Co-60&quot; would matche &quot;60Co&quot;.  For non-standardized sources (ex. &quot;neutron&quot;, &quot;n&quot;, &quot;nuclear&quot;, &quot;SNM&quot;, etc) a case-independant text search is used.</td></tr>
+        <tr><th>Aquisition mode</th><td>Whether the system was operating in dwell mode (ex. a 300 spectrum), or portal/search mode (ex. spectra every tenth of a second).</td></tr>
+        <tr><th>Has Neutron</th><td>If the system reported neutron data that could be read from the spectrum file, even if no neutrons were reported.</td></tr>
+        <tr><th>Neutron CPS</th><td>The neutron counts per second.  If more than one neutron detector is reported, each of the detectors data is tested until one passes the criteria, or they all fail.</td></tr>
+        <tr><th>Gamma CPS</th><td>The gamma counts per second.  If more than one gamma detector is reported, each of the detectors data is tested until one passes the criteria, or they all fail.</td></tr>
+        <tr><th>Has Dev. Pairs</th><td>Tests if any energy calibrations used non-linear deviation pairs.</td></tr>
+        <tr><th>Has GPS Info</th><td>Tests if GPS data could be extracted from the spectrum file.</td></tr>
+        <tr><th>Sum live time</th><td>The summed live time for all gamma spectra in the file.  The test duration can be entered in flexible formats, for example "300s", "1h 5 min 8 sec", "01:14:16", etc. A tolerance of 0.001 seconds is used if when the test criteria is specified as an exact match.</td></tr>
+        <tr><th>Sum real time</th><td>The summed real time for all gamma spectra in the file.  The test duration can be entered in flexible formats, for example "300s", "1h 5 min 8 sec", "01:14:16", etc. A tolerance of 0.001 seconds is used if when the test criteria is specified as an exact match.</td></tr>
+        <tr><th>Spectrum live time</th><td>The live time for individual spectra within the file.  Spectra are tested against the test criteria until one passes or they all fail. A tolerance of 0.001 seconds is used if when the test criteria is specified as an exact match.</td></tr>
+        <tr><th>Spectrum real time</th><td>The real time for individual spectra within the file.  Spectra are tested against the test criteria until one passes or they all fail. A tolerance of 0.001 seconds is used if when the test criteria is specified as an exact match.</td></tr>
+        <tr><th>Start Time</th><td>Start time of the measurement, entered in the &quot;YYYY/MM/DD HH:mm:ss&quot; format.  Each measurement within the file is tested until one passes, or all fail.  If the user selects for an exact match, a tolerance of one minute is used.</td></tr>
+        <tr><th>Num. Time Samples</th><td>The number of time-segments contained within the file.  Each time segment may have data from multiple detectors.</td></tr>
+        <tr><th>Num. Records</th><td>Number of total records extracted from the file. This is often times something like the number of time samples multiplied by the number of individual detectors.</td></tr>
+        <tr><th>Num Gamma Channels</th><td>Number of data channels reported for the gamma data.  If there are multiple binnings, each binning is tested until one passes, or they all fail the test.</td></tr>
+        <tr><th>Max Gamma Energy</th><td>The maximum gamma energy reported, in keV.  Useful for finding data from detectors with extended energy ranges (ex. 5, 8 or 12 MeV instead of the more common 3 MeV). </td></tr>
+        <tr><th>Latitude</th><td>Latitude reported in the file.  If more that one GPS location is given, each of them is tested until one passes the test, or they all fail.  You may need to test against two <strong>rule</strong>s, one giving a lower bound, and the other an upper bound on latitude.</td></tr>
+        <tr><th>Longitude</th><td>Longitude reported in the file.  If more that one GPS location is given, each of them is tested until one passes the test, or they all fail.  You may need to test against two <strong>rule</strong>s, one giving a lower bound, and the other an upper bound on longitude.</td></tr>
+    </table>
+
+    <div style="text-align: center; padding-top: 3em;"><strong>Event XML Quantities</strong></div>
+      For testing campaigns, organization measurement databases, lab measurements, etc. it can be convienient to include extra information 
+      about the spectrum files in an additional file.  This spectrum file query tool can be made to look for an XML file in the same directory
+      as each spectrum file in order to make searching richer so that you can search on both information in the spectrum file, and information
+      in this additional <code>XML</code> file.  The idea is that it is common to store related spectra (ex. spectra from
+      a given room, or spectra of a given source, or spectra of a experiment, etc) in a single directory, and then add a <code>XML</code>
+      file that gives additional information such as who made the measurements, comments, distances, source strengths, etc.  Then to search
+      spectra files, using this additional information as well, you create a <code>JSON</code> file that instructs <em>InterSpec</em> how
+      to search these <code>XML</code> files.  An example <code>JSON</code> file is given at the bottom of this page.
+      
+
+    <h3>Search Options</h3>  
+    <p>
+    Because parsing potentially thousands of spectrum files can be a time-consuming process, there are a number of options to 
+    help speed up the search.  The options can be accessed via the &quot;<strong>Options</strong>&quot;  menu as shown to the left.
+    <img src="InterSpec_resources/static_text/images/FileQueryOptions.png" align="left" class="imageBorder" style="width:265px; height: 228px; margin: 10px; margin-right: 25px;" />
+    <ul>
+      <li><strong>recursive</strong>: Indicates if the tool should not only search the files in the directory the tool is pointed to, but
+          also all of its subdirectories, and their subdirectories, etc.
+      </li>
+      <li><strong>Max File Size</strong>: The maximum size of files to try and parse.  Can be used to avoid reading large 
+           (many many MB) XML or other files that are not spectrum files.  A value of zero indicates no limit on size.
+      </li>
+      <li><strong>pre-filter by extension</strong>: Indicates to skip files with extensions known to not be spectrum files (.avi, 
+          .docx, .mp3, etc.), otherwise all files encountered will attempt to be parsed.
+      </li>
+      <li><strong>filter duplicate files</strong>: This option helps when there may be multiple copies of the same spectra, just with different names, 
+           but you only want a single result.  If this option is selected, a hash based on the spectral data is used to only consider new unique 
+           spectrum files.
+      </li>
+      <li><strong>cache parse result</strong>: If this option is selected, performing a subsequent query of same directory will be 
+          greatly sped up, by caching information parsed from each spectrum file into a database, so that after the first search 
+          of the directory the spectrum files will not need to be re-parsed, but instead the database can be queried directly. <br />
+          For one large collection of spectrum files from a wide variety of sources, with many of them many megabytes, out of 
+          60k initial files (about 50% of them were valid spectrum files), the initial search took 4 minutes, but subsequent 
+          searches using the cached parse results only took 15 seconds.
+      </li>
+      <li><strong>persist cache result</strong>: If this option <strong>is not checked</strong> then parsing results will be 
+          cached (if &quot;cache parse result&quot; is selected) in a database file in a temporary directory, and deleted
+          as soon as the query tool is closed.  If this option <strong>is checked</strong>, the database cache file will
+          be saved in the directory you are searching and will remain there for subsequent uses until manually deleted, 
+          or this option is unchecked for the current directory.  When a directory is selected for searching, <em>InterSpec</em>
+          checks for this cache database, and if it exists, parsing the spectrum files can be avoided.  If this option is used
+          but the directory contents change between searches with the query tool, <em>InterSpec</em> will automatically 
+          detect the changes and update the database appropriately.  In order to use this option you must have permissions 
+          to write to the directory being searched.  If the search is recursive, only one database cache file will be created
+          in the base directory to search.  This option is not checked by default, and must be re-checked for each directory
+          you wish to use this search for.
+      </li>
+    </ul>
+    </p>
+
+    <h3>Search Results</h3>  
+    <p>
+      While the search is in progress the results table will be updated every second or two, with some status text as well,
+      but selecting results or downloading a CSV result of query is disabled until the search completes. An example result
+      table is with a row selected is:
+      </p>
+      <div style="text-align: center;">
+        <img src="InterSpec_resources/static_text/images/FileQueryResults.png"  class="imageBorder" style="max-width:80%; max-height:400px;margin-left:auto; margin-right: auto;" />
+        <div style="max-width:70%;margin-left:auto; margin-right: auto;">Example view of query results.  The table contains a column for every potentially queryable quantity (about 30 
+        fields based on spectrum file, plus how ever many are defined in the event XML json file), and can be seen by scrolling 
+        to the right.  Note, filenames, path, and serial numbers have been blurred in this example.</div>
+      </div>
+      <p>
+      The result table can be sorted by any column by clicking on the table header for that column.<br />
+      When an individual row is clicked on, it will become highlighted in yellow to indicate it is selected; you can
+      then either click the &quot;Load Selected&quot; button to display the file in <em>InterSpec</em>, or the 
+      &quot;Show in Finder&quot; button to show the actual file in your operating systems file browser.<br />
+      Clicking on the <strong>CSV</strong> link will save the query results to a CSV file for use in an external 
+      application.
+    </p>
+
+<h3>Defining Event XML Quantities To Search On</h3>
+The fields of Event XML files that can be queried are defined using a JSON file that defines 
+a <a target="_blank" href="https://en.wikipedia.org/wiki/XPath">XPath</a> to the field, as well as 
+how the user can enter a value to test against.
+<em>InterSpec</em> comes with a generic JSON file, <code>data/file_query_event_xml_fields.json</code>, that 
+can be used as an example for how to define a new field to search.  
+The first bit of this file is shown below (note: all comments are added for display, actual
+      <code>JSON</code> does not allow comments):
+<pre>
+  <span style="color: green;">/* File must contain an array of objects */</span>
+  [{ <span style="color: green;">/* First object gives general info, all others give search quantities. */</span>
+      "author": "Will Johnson",  
+      "comments": "Example Event XML Search Criteria",
+      "last_modified": "20181218",
+      "base_node_test": "event"  <span style="color: green;">/* This requires first XML node in the file must be &lt;event&gt;.  
+                                 Leave blank to skip this, but highly recomended */</span>
+    },{
+      "label": "Event Type",      <span style="color: green;">/* This is the text the user sees to select this field */</span>
+      "show_result_in_gui": true, <span style="color: green;">/* Determines if result table shows this column */</span>
+      "xpath": "//event/type",    <span style="color: green;">/* xpath to use to search in XML file */</span>
+      "operators": ["equal"],     <span style="color: green;">/* possible test operators. */</span>
+      "type": "select",           <span style="color: green;">/* Specify to use a drop-down select to choose value to test against */</span>
+      "discreet_options": ["TEST","DRILL","ACTUAL"] <span style="color: green;">/* The values to show in drop-down */</span>
+    },{
+      "label": "Event Name",
+      "show_result_in_gui": true,
+      "type": "text",             <span style="color: green;">/* User inputs text to test against */</span>
+      "xpath": "//event/name",
+      "placeholder": "(event name, e.x. EVENT-XX-XXXX)",  <span style="color: green;">/* Placeholder txt in input */</span>
+      "operators": ["contains", "equal", "not equal", "does not contain", "begins with", 
+                    "does not begin with", "ends with", "does not end with", "regex"]
+    },...]
+      </pre>
+  </div>
+</div>

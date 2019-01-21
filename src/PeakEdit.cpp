@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -44,6 +44,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/ColorSelect.h"
 #include "InterSpec/WarningWidget.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
@@ -82,8 +83,9 @@ PeakEditWindow::PeakEditWindow( const double energy,
                                 InterSpec *viewer )
   : AuxWindow( "Peak Editor" )
 {
-  addStyleClass( "PeakEditWindow" );
+  wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   
+  addStyleClass( "PeakEditWindow" );
   
   AuxWindow::addHelpInFooter(footer(), "peak-editor", this);
   
@@ -124,6 +126,8 @@ PeakEdit::PeakEdit( const double energy,
     m_filterModel( NULL ),
     m_photoPeakEnergy( NULL ),
     m_userLabel( NULL ),
+    m_color( nullptr ),
+    m_applyColorForAllNuc( nullptr ),
     m_peakType( NULL ),
     m_continuumType( NULL ),
     m_skewType( NULL ),
@@ -161,6 +165,7 @@ const char *PeakEdit::rowLabel( const PeakPars t )
     case PeakEdit::RangeStartEnergy:  return "ROI Start (keV)";
     case PeakEdit::RangeEndEnergy:    return "ROI End (keV)";
     case PeakEdit::Chi2DOF:           return "&chi;2/DOF";
+    case PeakEdit::PeakColor:         return "Peak Color";
     case PeakEdit::NumPeakPars:       return "";
       break;
   }//case( t )
@@ -201,9 +206,10 @@ void PeakEdit::init()
       case PeakEdit::OffsetPolynomial3: case PeakEdit::OffsetPolynomial4:
         m_fitFors[t] = new WCheckBox( m_valueTable->elementAt(t+1,3) );
       break;
-        
+      
       case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
-      case PeakEdit::Chi2DOF: case PeakEdit::NumPeakPars:
+      case PeakEdit::Chi2DOF: case PeakEdit::PeakColor:
+      case PeakEdit::NumPeakPars:
         m_fitFors[t] = NULL;
       break;
     }//case( t )
@@ -233,6 +239,7 @@ void PeakEdit::init()
       case PeakEdit::OffsetPolynomial0: case PeakEdit::OffsetPolynomial1:
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
       case PeakEdit::OffsetPolynomial4:
+ case PeakEdit::PeakColor:
       case PeakEdit::RangeStartEnergy:  case PeakEdit::RangeEndEnergy:
       case PeakEdit::Chi2DOF: case PeakEdit::NumPeakPars:
         break;
@@ -266,6 +273,7 @@ void PeakEdit::init()
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
       case PeakEdit::OffsetPolynomial4:
       case PeakEdit::Chi2DOF:
+      case PeakEdit::PeakColor:
       case PeakEdit::NumPeakPars:
         m_uncertainties[t]->disable();
       break;
@@ -344,6 +352,19 @@ void PeakEdit::init()
               .connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+4 );
+  label = new WLabel( "Peak Color", row->elementAt(0) );
+  row->elementAt(1)->setColumnSpan(1);
+  m_color = new ColorSelect( ColorSelect::AllowNoColor, row->elementAt(1) );
+  m_color->cssColorChanged().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
+  row->elementAt(2)->setColumnSpan(2);
+  m_applyColorForAllNuc = new WCheckBox( "dummy", row->elementAt(2) ); //"dummy" is needed or else later custom labels wont render; Wt bug?
+  m_applyColorForAllNuc->setHidden( true );
+  m_applyColorForAllNuc->setUnChecked();
+  m_applyColorForAllNuc->checked().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
+  m_applyColorForAllNuc->unChecked().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
+  
+  
+  row = m_valueTable->rowAt( PeakEdit::NumPeakPars+5 );
   label = new WLabel( "Peak Type", row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   
@@ -353,7 +374,7 @@ void PeakEdit::init()
   m_peakType->activated().connect( this, &PeakEdit::peakTypeChanged );
 //
 
-  row = m_valueTable->rowAt( PeakEdit::NumPeakPars+5 );
+  row = m_valueTable->rowAt( PeakEdit::NumPeakPars+6 );
   label = new WLabel( "Continuum", row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_continuumType = new WComboBox( row->elementAt(1) );
@@ -373,7 +394,7 @@ void PeakEdit::init()
     }//switch ( t )
   }//for( loop over PeakContinuum::OffsetType )
 
-  row = m_valueTable->rowAt( PeakEdit::NumPeakPars+6 );
+  row = m_valueTable->rowAt( PeakEdit::NumPeakPars+7 );
   label = new WLabel( "Skew Type", row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_skewType = new WComboBox( row->elementAt(1) );
@@ -390,7 +411,7 @@ void PeakEdit::init()
   }//for( loop over PeakDef::OffsetType )
   
   
-  row = m_valueTable->rowAt( PeakEdit::NumPeakPars+7 );
+  row = m_valueTable->rowAt( PeakEdit::NumPeakPars+8 );
   row->elementAt(0)->setColumnSpan(4);
   m_otherPeaksDiv = new WContainerWidget( row->elementAt(0) );
   m_otherPeaksDiv->addStyleClass( "PeakEditOtherPeaks" );
@@ -414,7 +435,7 @@ void PeakEdit::init()
   m_apply  = new WPushButton( "Apply",  m_footer );
 
   m_accept = new WPushButton( "Accept", m_footer );
-  m_accept->addStyleClass( "AcceptIcon" );
+  m_accept->setIcon( "InterSpec_resources/images/accept.png" );
   WPushButton *deleteButton = new WPushButton( "Delete", m_footer );
 //  deleteButton->setFloatSide( Wt::Right );
   
@@ -779,6 +800,18 @@ void PeakEdit::refreshPeakInfo()
         val = uncert = 0.0;
       break;
         
+      case PeakEdit::PeakColor:
+      {
+        const WColor &c = m_currentPeak.lineColor();
+        m_color->setColor( c );
+        
+        const bool couldPropogate = checkNuclideForDiffColors();
+        m_applyColorForAllNuc->setChecked( false );
+        m_applyColorForAllNuc->setHidden( !couldPropogate );
+        break;
+      }//case PeakEdit::PeakColor:
+        
+        
       case PeakEdit::RangeStartEnergy:
       case PeakEdit::RangeEndEnergy:
         uncert = 0.0;
@@ -871,7 +904,7 @@ void PeakEdit::refreshPeakInfo()
   m_continuumType->setCurrentIndex( continuum->type() );
   m_skewType->setCurrentIndex( m_currentPeak.skewType() );
   
-  m_valueTable->rowAt( PeakEdit::NumPeakPars+6 )->setHidden( m_currentPeak.type()==PeakDef::DataDefined );
+  m_valueTable->rowAt( PeakEdit::NumPeakPars+7 )->setHidden( m_currentPeak.type()==PeakDef::DataDefined );
   
   
   size_t thispeak = 0;
@@ -1127,6 +1160,67 @@ void PeakEdit::checkIfDirty( PeakPars t, bool uncert )
 }//void checkIfDirty( PeakPars type, bool uncert )
 
 
+bool PeakEdit::checkNuclideForDiffColors()
+{
+  const Wt::WColor c = m_color->color();
+  
+  //Only offer to apply this color to all peaks of a given source if there
+  //  is more than one color for that source.  The logic to decide this
+  //  isnt quite right yet.
+  int nsamesrc = 0;
+  auto allpeaks = m_peakModel->peaks();
+  if( !allpeaks )
+    return false;
+  
+  if( auto nuc = m_currentPeak.parentNuclide() )
+  {
+    m_applyColorForAllNuc->setText( "All " + nuc->symbol + " peaks" );
+    for( const auto &p : *allpeaks )
+      nsamesrc += (p->parentNuclide()==nuc && p->lineColor()!=c);
+  }else if( auto el = m_currentPeak.xrayElement() )
+  {
+    m_applyColorForAllNuc->setText( "All " + el->symbol + " peaks" );
+    for( const auto & p : *allpeaks )
+      nsamesrc += (p->xrayElement()==el && p->lineColor()!=c);
+  }else if( auto rctn = m_currentPeak.reaction() )
+  {
+    m_applyColorForAllNuc->setText( "All " + rctn->name() + " peaks" );
+    for( const auto & p : *allpeaks )
+      nsamesrc += (p->reaction()==rctn && p->lineColor()!=c);
+  }else
+  {
+    m_applyColorForAllNuc->setText( "All no src peaks" );
+    for( const auto & p : *allpeaks )
+      nsamesrc += (!p->parentNuclide() && !p->xrayElement() && !p->reaction()
+                   && p->lineColor()!=c);
+  }
+  
+  if( m_originalPeak.lineColor()!=c )
+    nsamesrc -= 1;
+  
+  return nsamesrc>=1;
+}//bool checkNuclideForDiffColors()
+
+
+void PeakEdit::checkIfColorDirty()
+{
+  const Wt::WColor &origColor = m_originalPeak.lineColor();
+  const Wt::WColor selectedColor = m_color->color();
+  
+  m_valIsDirty[PeakColor] = (m_applyColorForAllNuc->isChecked()
+                             || (origColor!=selectedColor));
+  
+  const bool couldPropogate = checkNuclideForDiffColors();
+  m_applyColorForAllNuc->setHidden( !couldPropogate );
+  
+  if( m_valIsDirty[PeakColor] )
+  {
+    m_apply->enable();
+    m_accept->enable();
+  }
+}//void checkIfColorDirty()
+
+
 void PeakEdit::checkIfUserLabelDirty()
 {
   const string val = m_userLabel->text().toUTF8();
@@ -1172,8 +1266,9 @@ void PeakEdit::fitTypeChanged( PeakPars t )
       continuum->setPolynomialCoefFitFor( num, isChecked );
       break;
     }
-      
-    case RangeStartEnergy: case RangeEndEnergy: case NumPeakPars:
+    
+    case RangeStartEnergy: case RangeEndEnergy:
+    case PeakColor: case NumPeakPars:
     break;
   };//switch( t )
   
@@ -1227,6 +1322,8 @@ void PeakEdit::peakTypeChanged()
           case PeakEdit::Chi2DOF:
             row->setHidden( m_currentPeak.chi2Defined() );
           break;
+            
+          case PeakEdit::PeakColor:         row->setHidden( false ); break;
           case PeakEdit::NumPeakPars: break;
         }//switch ( t )
       }//for( PeakDef::CoefficientType t )
@@ -1259,6 +1356,7 @@ void PeakEdit::peakTypeChanged()
           case PeakEdit::Chi2DOF:
             row->setHidden( m_currentPeak.chi2Defined() );
           break;
+          case PeakEdit::PeakColor:         row->setHidden( false ); break;
           case PeakEdit::NumPeakPars: break;
         }//switch ( t )
       }//for( PeakPars t )    break;
@@ -1459,6 +1557,8 @@ bool PeakEdit::isDirty() const
   if( nuclideInfoIsDirty() )
     return true;
 
+  
+  
   return (m_userLabel->text().toUTF8() != m_originalPeak.userLabel());
 }//bool isDirty() const
 
@@ -1849,7 +1949,40 @@ void PeakEdit::apply()
           
           break;
         }//case RangeStartEnergy/RangeEndEnergy
-        
+          
+        case PeakEdit::PeakColor:
+        {
+          const WColor newColor = m_color->color();
+          m_currentPeak.setLineColor( newColor );
+          
+          if( m_applyColorForAllNuc->isVisible() && m_applyColorForAllNuc->isChecked() )
+          {
+            m_applyColorForAllNuc->setUnChecked();
+            
+            std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
+            if( peaks )
+            {
+              for( const auto &p : *peaks )
+              {
+                if( p->parentNuclide()==m_currentPeak.parentNuclide()
+                    && p->xrayElement()==m_currentPeak.xrayElement()
+                    && p->reaction()==m_currentPeak.reaction()
+                    && p->lineColor()!=newColor )
+                {
+                  Wt::WModelIndex peakindex = m_peakModel->indexOfPeak( p );
+                  if( peakindex.isValid() )
+                  {
+                    Wt::WModelIndex index = m_peakModel->index( peakindex.row(), PeakModel::kPeakLineColor );
+                    m_peakModel->setData( index, WString(newColor.isDefault() ? "none" : newColor.cssText(false)) );
+                  }
+                }//if( this is the same nuclide/element/reaction )
+              }//for( const auto &p : *peaks )
+            }//if( peaks )
+          }//if( m_applyColorForAllNuc->isChecked() )
+          
+          break;
+        }//case PeakEdit::PeakColor:
+          
         case PeakEdit::Chi2DOF:
         case PeakEdit::NumPeakPars:
           break;
@@ -1904,7 +2037,8 @@ void PeakEdit::apply()
         break;
           
         case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
-        case PeakEdit::Chi2DOF:          case PeakEdit::NumPeakPars:
+        case PeakEdit::Chi2DOF:          case PeakEdit::PeakColor:
+        case PeakEdit::NumPeakPars:
         break;
       }//case( t )
     }//if( m_uncertIsDirty[t] )

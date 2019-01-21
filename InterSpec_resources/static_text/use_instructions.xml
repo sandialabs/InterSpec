@@ -62,14 +62,13 @@
      <h1 align="center">Welcome To <em>InterSpec</em></h1>
      <div align="center">Click buttons on left for usage instructions.</div>
      <br />
-     Please email William Johnson at <a href="mailto:wcjohns@sandia.gov">wcjohns@sandia.gov</a>
-     with any bug reports or smaller feature requests; contact 
-     <a href="mailto:srb@sandia.gov">srb@sandia.gov</a> for any more formal
-     requests or complaints.
+     Please email <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>
+     with any bug reports or smaller feature requests.
+
      <div align="center" style="margin-top: 1.5em; margin-bottom: 1.5em;">
        <div>
          <img style="display:inline-block" src="InterSpec_resources/images/DHSLogo129.jpg" width="129" alt="DHS Logo" />
-         <img src="InterSpec_resources/images/InterSpec128.jpg" width="128" alt="InterSpec Logo"/>
+         <img src="InterSpec_resources/images/InterSpec128.png" width="128" alt="InterSpec Logo"/>
        </div>
          <img src="InterSpec_resources/images/snl_logo.gif" width="175" alt="Sandia National Laboratories Logo"/>
      </div>
@@ -82,32 +81,31 @@
   <message id='mobile-mouse-interactions'>
  	   <div class="UseInstructionSection">
        <div class="UseInstructionHeader">Zoom In</div>
-	  </div>
 	  <div style="border:1px solid black">
 	  <div style="padding-top: 10px" align="center">
 	  <img src="InterSpec_resources/static_text/images/MobZoomIn.png" style="width:70%" />
 	  </div>
       <div align="center" style="padding-top: 10px; padding-bottom: 10px">
          To zoom in on a specific portion of the spectrum,
-         <u>tap</u> and <u>drag</u> two fingers away from each other. 
+         <u>push</u> two fingers away from each other.
       </div>
 	  </div>
+    </div>
 	  <div class="UseInstructionSection">
        <div class="UseInstructionHeader">Zoom Out</div>
-	  </div>
 	  <div style="border:1px solid black">
 	  <div style="padding-top: 10px" align="center">
 	  <img src="InterSpec_resources/static_text/images/MobZoomOut.png" style="width:70%" />
 	  </div>
       <div align="center" style="padding-top: 10px; padding-bottom: 10px">
          To zoom out,
-         <u>tap</u> and <u>drag</u> two fingers away from each other. 
+         <u>pinch</u> two fingers towards from each other.
       </div>
 	  </div>
+    </div>
 	  <div class="UseInstructionSection">
-       <div class="UseInstructionHeader">Energy Range Shift</div>
-	  </div>
-	  <div style="border:1px solid black">
+       <div class="UseInstructionHeader">Change Energy Range</div>
+    <div style="border:1px solid black">
 	  <div style="padding-top: 10px" align="center">
 	  <img src="InterSpec_resources/static_text/images/MobERShift.png" style="width:70%" />
 	  </div>
@@ -115,13 +113,13 @@
 	  <img src="InterSpec_resources/static_text/images/MobERShift2.png" style="width:70%" />
 	  </div>
       <div align="center" style="padding-top: 10px; padding-bottom: 10px">
-         To move along the x axis of the graph,
-         <u>tap</u> on an energy level and <u>drag</u> to where you want the initial energy level positioned; <u>remove</u> your finger to complete the shift. 
+         To move along the x axis (energy) of the graph,
+         place a finger on the chart and move it left or right to change the displayed energy.
       </div>
 	  </div>
+    </div>
 	  <div class="UseInstructionSection">
       <div class="UseInstructionHeader">Identify Peak(s)</div>
-	  </div>
 	  <div style="border:1px solid black">
 	  <div style="padding-top: 10px" align="center"><h3><b>Method 1</b></h3></div>
 	  <div style="padding-top: 10px" align="center">
@@ -143,24 +141,12 @@
 	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
          <u>Double-tap</u> and <u>drag</u> two horizontally aligned fingers over the region of interest. <u>Remove</u> your fingers and <u>select</u> the quantity of peaks you wish to identify.
       </div>
-	  <div style="padding-top: 10px" align="center"><h3><b>Method 3</b></h3></div>
-	  <div align="center">
-	  <img src="InterSpec_resources/static_text/images/MobIDPeaks4.png" style="width:70%" />
+	  <div style="padding-top: 10px" align="center"><h3><b>Other Methods</b></h3></div>
+     You can also use &quot;<b>Search for Peaks</b>&quot; and &quot;<b>Add</b>&quot; buttons in the <b>Peak Manager</b> under the <b>Tools</b> menu.
 	  </div>
-      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
-         <u>Tap</u> &#34;Add&#34; on the bottom left corner of the screen.
-      </div>
-	  <div style="padding-top: 10px" align="center"><h3><b>Method 4</b></h3></div>
-	   <div align="center">
-	  <img src="InterSpec_resources/static_text/images/MobIDPeaks2.png" style="width:70%" />
-	  </div>
-	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
-         <u>Tap</u> &#34;Search for Peaks&#34; on the bottom left corner of the screen.
-      </div>
-	  </div>
+    </div>
 	   <div class="UseInstructionSection">
        <div class="UseInstructionHeader">Launch Peak Editor</div>
-	  </div>
 	  <div style="border:1px solid black">
 	  <div style="padding-top: 10px" align="center">
 	  <img src="InterSpec_resources/static_text/images/MobPE1.png" style="width:70%" />
@@ -175,9 +161,9 @@
          To launch the <b>Peak Editor</b> tool <u>tap</u> and <u>hold</u> on an already identified peak for 1 second until a small window of options appears; in the small window <u>select</u> <b>Peak Editor</b>. 
       </div>
 	  </div>
+    </div>
 	  <div class="UseInstructionSection">
       <div class="UseInstructionHeader">Delete Peak(s)</div>
-	  </div>
 	  <div style="border:1px solid black">
 	  <div style="padding-top: 10px" align="center"><h3><b>Method 1</b></h3></div>
 	  <div style="padding-top: 10px" align="center">
@@ -207,9 +193,10 @@
 	  <img src="InterSpec_resources/static_text/images/MobDelete1-2.png" style="width:70%" />
 	  </div>
 	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
-         Dock the windows, <u>tap</u> &#34;<b>Clear all Peaks</b>&#34; on the bottom left corner of the screen, and <u>tap</u> &#34;<b>Yes</b>&#34; in the small window that pops up. Note that this method will delete <i>all</i> identified peaks. 
+         Show the tool tabs, <u>tap</u> &#34;<b>Clear all Peaks</b>&#34; on the bottom left corner of the screen, and <u>tap</u> &#34;<b>Yes</b>&#34; in the small window that pops up. Note that this method will delete <i>all</i> identified peaks. 
       </div>
 	  </div>
+    </div>
   </message>
 
 

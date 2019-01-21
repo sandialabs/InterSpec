@@ -1,0 +1,22 @@
+.OneOverR2Calc
+{
+}
+
+.OneOverR2CalcContents
+{
+  overflow: auto;
+}
+
+
+.OneOverR2CalcInput
+{
+  position:absolute;
+  left:16em;
+}
+
+.OneOverR2CalcRow
+{
+/*  margin-top: 5px;*/
+  margin-bottom: 12px;
+  
+}

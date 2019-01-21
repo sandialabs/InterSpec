@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -31,8 +31,10 @@
 #include <utility>
 #include <stdexcept>
 
+#include <Wt/WColor>
+
 #include "InterSpec/ReactionGamma.h"
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 
@@ -408,6 +410,15 @@ public:
   inline const std::string &userLabel() const;
   inline void setUserLabel( const std::string &utf8Label );
   
+  /** Remove any Nuclide, Reaction, or Xray associated with the peak.
+   After calling this function parentNuclide(), decayParticle(),
+   nuclearTransition(), xrayElement() and reaction() will all return nullptr.
+   */
+  void clearSources();
+  
+  /** Check if nuclide, xray, or reaction has been set. */
+  bool hasSourceGammaAssigned() const;
+  
   //setNuclearTransition(...): sets the inforation about what nuclide is
   //  responsible for this peak.  The transition and radParticle index specifies
   //  which decay is responsible for the gamma, however, if isAnnihilationGamma
@@ -531,6 +542,15 @@ public:
   inline SkewType skewType() const;
   inline void setSkewType( SkewType );
   
+  /** Returns currently assigned color of the peak. Wt::WColor::isDefault()==true
+      indicates no color set.
+   */
+  const Wt::WColor &lineColor() const;
+  
+  /** Sets the CSS style color of peak.
+   */
+  void setLineColor( const Wt::WColor &color );
+  
   //skew_integral(): gives the difference in aarea between the gaussian, and
   //  gaussian with skew applied, between x0 and x1.
   double skew_integral( const double x0, const double x1 ) const;
@@ -652,6 +672,13 @@ public:
   void fromXml( const rapidxml::xml_node<char> *node,
             const std::map<int,std::shared_ptr<PeakContinuum> > &continuums );
   
+
+#if( SpecUtils_ENABLE_D3_CHART )
+  static std::string gaus_peaks_to_json(const std::vector<std::shared_ptr<const PeakDef> > &peaks);
+  static std::string peak_json(const std::vector<std::shared_ptr<const PeakDef> > &inpeaks);
+#endif
+  
+
   friend std::ostream &operator<<( std::ostream &stream, const PeakDef &peak );
 
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -708,6 +735,13 @@ public:
   
   bool m_useForCalibration;
   bool m_useForShieldingSourceFit;
+  
+  /** Line color of the peak.  Will also (currently) be used to set the fill of
+      the peak, just with the alpha channel lowered.
+      Alpha not currently allowed, partially because of Wt bug parsing strings
+      with alpha specified.
+   */
+  Wt::WColor m_lineColor;
 };//struct PeakDef
 
 

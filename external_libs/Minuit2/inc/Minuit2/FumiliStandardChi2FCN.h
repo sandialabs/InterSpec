@@ -64,8 +64,8 @@ public:
 
   FumiliStandardChi2FCN(const ParametricFunction& modelFCN, const std::vector<double>& meas,
 	   const std::vector<double>& pos,
-	   const std::vector<double>& mvar) : 
-    fErrorDef(1.) { //this->fModelFCN = &modelFunction; 
+	   const std::vector<double>& mvar) //: fErrorDef(1.)
+  { //this->fModelFCN = &modelFunction;
     this->SetModelFunction(modelFCN); 
 
     assert(meas.size() == pos.size());
@@ -109,8 +109,8 @@ public:
 
   FumiliStandardChi2FCN(const ParametricFunction& modelFCN, const std::vector<double>& meas,
 	   const std::vector<std::vector<double> >& pos,
-	   const std::vector<double>& mvar) : 
-    fErrorDef(1.) { //this->fModelFCN = &modelFunction; 
+	   const std::vector<double>& mvar) //: fErrorDef(1.)
+  { //this->fModelFCN = &modelFunction;
     this->SetModelFunction(modelFCN); 
 
     assert(meas.size() == pos.size());
@@ -206,7 +206,7 @@ public:
   // support multi dim coordinates
   std::vector<std::vector<double> > fPositions;
   std::vector<double> fInvErrors;
-  double fErrorDef;
+  //double fErrorDef;  removed by wcjohns to silence warning
   
  
 

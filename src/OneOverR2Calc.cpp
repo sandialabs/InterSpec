@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -36,16 +36,19 @@
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/AuxWindow.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpec.h"
-#include "InterSpec/OneOverR2Calc.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/OneOverR2Calc.h"
 
 using namespace Wt;
 using namespace std;
 
 OneOverR2Calc::OneOverR2Calc()
-  : AuxWindow( "1/r<sup>2</sup> Calculator" ),
+  : AuxWindow( "1/r<sup>2</sup> Calculator",
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+               | AuxWindowProperties::SetCloseable
+               | AuxWindowProperties::DisableCollapse) ),
     m_nearMeasurement( NULL ),
     m_farMeasurement( NULL ),
     m_backgroundMeasurment( NULL ),
@@ -53,6 +56,8 @@ OneOverR2Calc::OneOverR2Calc()
     m_answer( NULL ),
     m_message( NULL )
 {
+  wApp->useStyleSheet( "InterSpec_resources/OneOverR2CalcInput.css" );
+  
 //  addStyleClass( "OneOverR2Calc" );
   
   WText *message = NULL;
@@ -165,7 +170,11 @@ OneOverR2Calc::OneOverR2Calc()
   
   show();
   centerWindow();
-  setResizable( false );
+  
+  //Keep the keyboard form popping up
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
+  if( app && app->isMobile() )
+    closeButton->setFocus();
 }//OneOverR2Calc constructor
 
 

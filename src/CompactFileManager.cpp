@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -94,10 +94,9 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     case LeftToRight:
       layout = new WGridLayout();
       setLayout( layout );
-      layout->setContentsMargins(5, 5, 5, 5);
-      layout->setHorizontalSpacing(5);
-      layout->setVerticalSpacing(0);
-      setWidth( WLength(100, WLength::Percentage) );
+      layout->setContentsMargins( 0, 0, 0, 0 );
+      layout->setHorizontalSpacing( 0 );
+      layout->setVerticalSpacing( 0 );
     break;
       
     case Tabbed:
@@ -105,8 +104,8 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     break;
   }//switch( m_displayMode )
   
-  const char *prevArrow = "InterSpec_resources/previous_arrow.png";
-  const char *nextArrow = "InterSpec_resources/next_arrow.png";
+  const char *prevArrow = "InterSpec_resources/images/previous_arrow.png";
+  const char *nextArrow = "InterSpec_resources/images/next_arrow.png";
   const char *val_regex = "(\\-?\\d+\\s*((\\-|to|through)\\s*\\d+)?,*\\s*)+";
   
 //  WPopupWidget *sampleToolTip = 0, *scaleToolTip = 0;
@@ -143,22 +142,12 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     
     WContainerWidget *wrapper = new WContainerWidget();
     WGridLayout *wrapperLayout = new WGridLayout(wrapper);
-    wrapperLayout->setContentsMargins(5, 5, 5, 0);
+    wrapperLayout->setVerticalSpacing( 0 );
+    wrapperLayout->setHorizontalSpacing( 0 );
+    wrapperLayout->setContentsMargins(0, 0, 0, 0);
     wrapper->addStyleClass( "CompactSampleWrapper" );
     wrapper->setOverflow(Wt::WContainerWidget::OverflowHidden);
-      
-    switch( j )
-    {
-        case 0:
-            wrapper->setMargin(WLength(5),Wt::Bottom);
-            break;
-        case 1:
-            break;
-        case 2:
-            wrapper->setMargin(WLength(5),Wt::Right);
-            break;
-    }//switch( i )
-      
+    
     label->setInline( false );
     wrapperLayout->addWidget( label,0,0 );
 
@@ -202,7 +191,6 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       slidelayout->setHorizontalSpacing(10);
       slidelayout->setVerticalSpacing(10);
         //      m_scaleSlider[type] = new WSlider();
-//      m_scaleSlider[type]->addStyleClass( "SpecNormSlider" );
 //      m_scaleSlider[type]->setRange( 0, 100 );
 //      m_scaleSlider[type]->setValue( 50 );
 //      m_scaleSlider[type]->setNativeControl( false );
@@ -304,19 +292,19 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
             
         if (j==0)
         {
-            //Foreground, add in Manager and Library buttons for quick access
-            WContainerWidget* temp = new WContainerWidget();
+          //Foreground, add in Manager and Library buttons for quick access
+          WContainerWidget* temp = new WContainerWidget();
+          temp->addStyleClass( "CompactManagerButtons" );
 
             WGridLayout* layout2 = new WGridLayout();
             layout2->setContentsMargins(0,0,0,0);
             temp->setLayout(layout2);
-            WPushButton *button = new WPushButton( "Manager...");
-            button->setIcon(Wt::WLink("InterSpec_resources/images/computer.png" ));
+            WPushButton *button = new WPushButton(  "Spectrum Manager...");
+            //button->setIcon(Wt::WLink("InterSpec_resources/images/computer.png" ));
             button->clicked().connect( m_hostViewer->fileManager(), &SpecMeasManager::startSpectrumManager );
             layout2->addWidget(button,0,0);
 #if( USE_DB_TO_STORE_SPECTRA )
             WPushButton *button2 = new WPushButton( "Saved Snapshots...");
-            button2->setIcon(Wt::WLink("InterSpec_resources/images/book.png"  ));
             button2->clicked().connect(  boost::bind(
                                       &SpecMeasManager::browseDatabaseSpectrumFiles, m_hostViewer->fileManager(), "", (SpectrumType)0, std::shared_ptr<SpectraFileHeader>() ) );
             layout2->addWidget(button2,0,1);

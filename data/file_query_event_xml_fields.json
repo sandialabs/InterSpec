@@ -1,0 +1,118 @@
+[{
+  "author": "Will Johnson",
+  "comments": "",
+  "last_modified": "2018-1205",
+  "base_node_test": "event"
+},{
+  "label": "Event Type",
+  "show_result_in_gui": true,
+  "type": "select",
+  "xpath": "//event/type",
+  "operators": ["equal"],
+  "discreet_options": ["COM_TEST","DRILL","ACTUAL"]
+},{
+  "label": "Event Name",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/name",
+  "placeholder": "(event name, e.x. TE-XX-XXXX)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event Urgency",
+  "show_result_in_gui": true,
+  "type": "select",
+  "xpath": "//urgency",
+  "operators": ["equal"],
+  "discreet_options": ["IMMEDIATE","TWENTYFOUR_HOURS","NONE"]
+  },{
+  "label": "Event Submitter Name",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//submitterName",
+  "placeholder": "(Event or addenda submitter)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event Submitter Email",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/submitterEmail",
+  "placeholder": "(event submitter email)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Any Event XML field",
+  "show_result_in_gui": false,
+  "type": "text",
+  "xpath": "//text()",
+  "placeholder": "(text in any field of Event XML)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event Final Resolution",
+  "show_result_in_gui": true,
+  "type": "select",
+  "xpath": "//finalResolutionStatus",
+  "operators": ["equal"],
+  "discreet_options": ["THREAT","NOT_APPLICABLE","NO_CALL_IN","NORM","MEDICAL","INDUSTRIAL","CHECK_SOURCE","BACKGROUND"]
+},{
+  "label": "Event Description",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/description",
+  "placeholder": "(event description text)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event Date",
+  "show_result_in_gui": true,
+  "type": "date",
+  "xpath": "//event/initiationTime",
+  "operators": ["greater","less","equal","not_equal"]
+},{
+  "label": "Event Organization",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/organization",
+  "placeholder": "(event submitting organizaition)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event POC Name",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/pocs/name",
+  "placeholder": "(event submitting POC name)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event Attachment Desc.",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/addenda/attachments/description",
+  "placeholder": "(description for addenda attachments)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event Addenda Comments",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/addenda/comments",
+  "placeholder": "(comments of addenda)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event Addenda Detector",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/addenda/attachments/detector",
+  "placeholder": "(claimed detector type of data)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event Addenda Submitter Name",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/addenda/submitterName",
+  "placeholder": "(Addenda submitter name)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+},{
+  "label": "Event Addenda Submitter Email",
+  "show_result_in_gui": true,
+  "type": "text",
+  "xpath": "//event/addenda/submitterEmail",
+  "placeholder": "(Addenda submitter email)",
+  "operators": ["contains", "equal", "not equal", "does not contain", "begins with", "does not begin with", "ends with", "does not end with", "regex"]
+}
+]

@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -31,14 +31,7 @@
 #include <boost/any.hpp>
 
 #include <Wt/WString>
-#include <Wt/WModelIndex>
 #include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
-#include <Wt/WAbstractItemDelegate>
-
-#include "InterSpec/AuxWindow.h"
-#include "sandia_decay/SandiaDecay.h"
-#include "InterSpec/ReactionGamma.h"
 
 #if ( USE_SPECTRUM_CHART_D3 )
 class D3SpectrumDisplayDiv;
@@ -46,198 +39,36 @@ class D3SpectrumDisplayDiv;
 class SpectrumDisplayDiv;
 #endif
 
-namespace SandiaDecay
-{
-  struct Element;
-  struct Nuclide;
-  struct Transition;
-  struct RadParticle;
-}//namespace SandiaDecay
 
 namespace Wt
 {
+  class WText;
   class WCheckBox;
   class WLineEdit;
+  class WTreeView;
   class WPushButton;
   class WDoubleSpinBox;
-  class WTreeView;
 }//namespace Wt
 
-namespace rapidxml
-{
-  template<class Ch> class xml_node;
-  template<class Ch> class xml_document;
-}//namespace rapidxml
-
-
 class InterSpec;
-
-class CustomAbstractItemDelegate : public Wt::WAbstractItemDelegate
-{
-  
-public:
-  CustomAbstractItemDelegate(WObject *parent = 0)
-  : WAbstractItemDelegate(parent)
-  { }
-protected:
-  Wt::WWidget* update	(	Wt::WWidget * 	widget,
-                                               const Wt::WModelIndex & 	index,
-                       Wt::WFlags< Wt::ViewItemRenderFlag > 	flags
-                                               );
-};
-
-class IsotopeSearchByEnergyModel : public Wt::WAbstractItemModel
-{
-public:
-  enum Column
-  {
-    ParentIsotope, Energy, Distance, BranchRatio,
-    SpecificIsotope, ParentHalfLife, AssumedAge, NumColumns
-  };//enum Column
-  
-  enum RadSource
-  {
-    kGamma    = 0x1,
-    kXRay     = 0x2,
-    kReaction = 0x4
-  };//enum RadSource
-  
-  struct IsotopeMatch
-  {
-    IsotopeMatch();
-    
-    double m_distance;    //sum of distance over all energies searched
-    
-    double m_age;         //age assumed for listing things
-    double m_branchRatio; //branching ratio
-    
-    //Only one of the following will be valid: m_nuclide, m_element, m_reaction
-    const SandiaDecay::Nuclide     *m_nuclide;
-    const SandiaDecay::Transition  *m_transition;
-    const SandiaDecay::RadParticle *m_particle;
-    PeakDef::SourceGammaType m_sourceGammaType;
-    
-    const SandiaDecay::Element *m_element;
-    const SandiaDecay::EnergyIntensityPair *m_xray;
-    
-    const ReactionGamma::Reaction *m_reaction;
-    ReactionGamma::EnergyAbundance m_reactionEnergy;
-    
-    Wt::WString m_displayData[NumColumns];
-  };//struct IsotopeMatch
-  
-public:
-  IsotopeSearchByEnergyModel( Wt::WObject *parent = 0 );
-  virtual ~IsotopeSearchByEnergyModel();
-  
-  void clearResults();
-  
-  
-  //SearchWorkingSpace: this is a place to store search results, and what led to
-  //  them, before changing the data of the IsotopeSearchByEnergyModel.  This
-  //  struct is necasary since the search results are computed in a background
-  //  thread, and then the results are posted to the WApplications event loop,
-  //  of which the call to (including alll input parameters) must be bound
-  //  before posting the search to the background thread (for safety against
-  //  calling updateSearchResults() after *this has been delted).
-  struct SearchWorkingSpace
-  {
-    std::vector<double> energies;
-    std::vector<double> windows;
-    std::vector< std::vector<IsotopeMatch> > matches;
-    Column sortColumn;
-    Wt::SortOrder sortOrder;
-    boost::function< void(void) > searchdoneCallback;
-  };//struct SearchWorkingSpace
-
-  void updateSearchResults( std::shared_ptr<SearchWorkingSpace> workingspace );
-  static void setSearchEnergies( std::shared_ptr<SearchWorkingSpace> workingspace,
-                          const double minbr,
-                          const double minHalfLife,
-                          Wt::WFlags<RadSource> radiation,
-                          const std::string appid,
-                          boost::function< void(void) > updatefcn );
-  
-  
-  virtual int columnCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
-  
-  virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
-  
-  virtual Wt::WModelIndex parent( const Wt::WModelIndex &index ) const;
-  virtual boost::any data( const Wt::WModelIndex &index,
-                          int role = Wt::DisplayRole) const;
-  
-  //nuclide(...): returns the nuclide IF it is a nuclide defined row, otherwise
-  //  NULL
-  const SandiaDecay::Nuclide *nuclide( const Wt::WModelIndex &index ) const;
-
-  //nuclide(...): returns the element IF it is a xray defined row, otherwise
-  //  NULL
-  const SandiaDecay::Element *xrayElement( const Wt::WModelIndex &index ) const;
-  
-  //nuclide(...): returns the reaction IF it is a reaction defined row,
-  //  otherwise NULL
-  const ReactionGamma::Reaction *reaction( const Wt::WModelIndex &index ) const;
-  
-  double assumedAge( const Wt::WModelIndex &index ) const;
-  
-  virtual boost::any headerData( int section,
-                                Wt::Orientation orientation = Wt::Horizontal,
-                                int role = Wt::DisplayRole ) const;
-  
-  virtual Wt::WModelIndex index( int row, int column,
-                                const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
-  
-  virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
-
-  virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const;
-
-  
-
-  static void sortData( std::vector< std::vector<IsotopeMatch> > &input,
-                       const std::vector<double> &energies,
-                       int column, Wt::SortOrder order );
-  
-  typedef std::map<const SandiaDecay::Nuclide *, std::set<double> > NucToEnergiesMap;
-  typedef std::vector< std::vector<IsotopeSearchByEnergyModel::IsotopeMatch> > SearchResults;
-  
-  //nuclidesWithAllEnergies(...): allows x-rays to be considered gamma rays
-  static void nuclidesWithAllEnergies( const NucToEnergiesMap &candidates,
-                                       const std::vector<double> &energies,
-                                       const std::vector<double> &windows,
-                                       const double minbr,
-                                       SearchResults &answer );
-  
-  //xraysWithAllEnergies(...): fairly inefficient
-  static void xraysWithAllEnergies( const std::vector<double> &energies,
-                                    const std::vector<double> &windows,
-                                    SearchResults &answer );
-  
-  //reactionsWithAllEnergies(...): not very well yet.  Does not take into
-  //  account the minimum branching ratio desired
-  static void reactionsWithAllEnergies( const std::vector<double> &energies,
-                                        const std::vector<double> &windows,
-                                        SearchResults &answer );
-  
-  Column sortColumn() const;
-  Wt::SortOrder sortOrder() const;
-  
-protected:
-  Column m_sortColumn;
-  Wt::SortOrder m_sortOrder;
-  std::vector<double> m_windows;
-  std::vector<double> m_energies;
-  std::vector< std::vector<IsotopeMatch> > m_matches;
-};//IsotopeSearchByEnergyModel
+class IsotopeSearchByEnergyModel;
 
 
+/** A class that displays a user input search energy, and window, as well as
+  notifies IsotopeSearchByEnergy of any changes.
+ 
+  \sa IsotopeSearchByEnergyModel
+*/
 class IsotopeSearchByEnergy : public Wt::WContainerWidget
 {
 protected:
+  /** Class that represents an energy (and its +-range) that a user wants
+      to search on.  The IsotopeSearchByEnergy widget will always have at least
+      one of these, but the user may add more, to require search results to
+      match additional energies.
+   */
   class SearchEnergy : public Wt::WContainerWidget
   {
-    //A class that displays a user input search energy, and window, as well as
-    //  notifies IsotopeSearchByEnergy of any changes.
   public:
     SearchEnergy( Wt::WContainerWidget *parent = 0 );
     virtual ~SearchEnergy(){}
@@ -266,8 +97,8 @@ protected:
     void emitGotFocus();
     void emitAddAnother();
     
-    Wt::WText *m_removeIcn;
-    Wt::WText *m_addAnotherIcn;
+    Wt::WContainerWidget *m_removeIcn;
+    Wt::WContainerWidget *m_addAnotherIcn;
     Wt::WDoubleSpinBox *m_energy;
     Wt::WDoubleSpinBox *m_window;
     Wt::Signal<> m_enter, m_changed, m_remove, m_focus, m_addAnother;

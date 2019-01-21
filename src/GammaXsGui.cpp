@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -216,8 +216,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   label = new WLabel( "g/cm3" );
 #endif
   m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
-    
-    
+
     
   m_density->changed().connect( this, &GammaXsGui::calculateCrossSections );
   m_density->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
@@ -336,7 +335,6 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
     "Transmition fraction times detection efficiency. E.g. the fraction of"
     " gammas emmitted from the source that will be detected.",
     showToolTipInstantly );
-  
   
   m_specViewer->detectorChanged().connect( this, &GammaXsGui::handleDetectorChange );
   m_specViewer->detectorModified().connect( this, &GammaXsGui::handleDetectorChange );
@@ -657,32 +655,29 @@ void GammaXsGui::calculateCrossSections()
 GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
                               Wt::WSuggestionPopup *materialSuggestion ,
                               InterSpec* viewer)
-  : AuxWindow( "Gamma XS Calc" )
+  : AuxWindow( "Gamma XS Calc",
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+               | AuxWindowProperties::SetCloseable
+               | AuxWindowProperties::DisableCollapse) )
 {
-//  setWidth( 300 );
-  setClosable( true );
-  setResizable( false );
   rejectWhenEscapePressed( true );
 
   new GammaXsGui( materialDB, materialSuggestion, viewer, contents() );
-  
- 
+  //gui->setHeight( WLength(100,WLength::Percentage) );
   
   AuxWindow::addHelpInFooter(footer(), "gamma-xs-dialog", this);
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
-
   finished().connect( boost::bind( &GammaXsWindow::deleteWindow, this ) );
   
   show();
-  //setMaximumSize( WLength(300,WLength::Pixel), viewer->renderedHeight() );
-//  if( viewer->isPhone() )
-//    resizeToFitOnScreen();
-
-  //XXX - this call to centerWindow() doesnt work, for the same reason
-  //  resizeToFitOnScreen() doesnt work...
-    cerr<<"size: "<<width().toPixels()<< " " <<height().toPixels()<<endl;
+  
+  //If mobile take focus away from text field so the keyboard doesnt
+  //  automatically show - doesnt always work
+  if( viewer->isMobile() )
+    closeButton->setFocus();
+  
   centerWindow();
 }//GammaXsWindow(...) constrctor
 

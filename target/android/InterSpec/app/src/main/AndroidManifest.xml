@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="gov.sandia.interspec">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
+    <!-- <uses-sdk android:minSdkVersion="12" android:targetSdkVersion="19"/> -->
+    <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
+    <application android:label="InterSpec">
+        <activity android:name="InterSpec"
+            android:label="InterSpec"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:hardwareAccelerated="true"
+            android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|locale|fontScale|keyboard|keyboardHidden|navigation"
+            android:screenOrientation="sensorLandscape"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.n42" />
+                <data android:pathPattern=".*\\.spc" />
+                <data android:pathPattern=".*\\.dat" />
+                <data android:pathPattern=".*\\.pcf" />
+                <data android:pathPattern=".*\\.chn" />
+                <data android:pathPattern=".*\\.iaea" />
+                <data android:pathPattern=".*\\.cnf" />
+                <data android:pathPattern=".*\\.spe" />
+                <data android:pathPattern=".*\\.N42" />
+                <data android:pathPattern=".*\\.SPC" />
+                <data android:pathPattern=".*\\.DAT" />
+                <data android:pathPattern=".*\\.PCF" />
+                <data android:pathPattern=".*\\.CHN" />
+                <data android:pathPattern=".*\\.IAEA" />
+                <data android:pathPattern=".*\\.CNF" />
+                <data android:pathPattern=".*\\.SPE" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.SELECTED_ALTERNATIVE" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.txt" />
+                <data android:pathPattern=".*\\.csv" />
+                <data android:pathPattern=".*\\.xml" />
+                <data android:pathPattern=".*\\.TXT" />
+                <data android:pathPattern=".*\\.CSV" />
+                <data android:pathPattern=".*\\.XML" />
+                <data android:pathPattern=".*\\.zip" />
+            </intent-filter>
+
+            <!-- Splash screen -->
+            <!--
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/logo"/>
+            -->
+            <!-- Splash screen -->
+        </activity>
+
+    </application>
+</manifest>
+
+

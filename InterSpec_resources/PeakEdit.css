@@ -1,0 +1,49 @@
+.PeakEdit
+{
+overflow-y: auto;
+}
+
+.PeakEditTable
+{
+}
+
+.PeakEditWindow
+{
+}
+
+.PeakEditOtherPeaks
+{
+  text-align: center;
+  padding-top: 0.5em;
+}
+
+.PeakEditPreviousPeak, .PeakEditNextPeak
+{
+  position:absolute;
+  bottom: 0;
+  height: 22px;
+  width: 22px;
+  border: 0px;
+  padding: 0px;
+  cursor: default;
+}
+
+.PeakEditPreviousPeak
+{
+  background: transparent url(images/previous_arrow.png) no-repeat scroll right top;
+  left: 10px;
+}
+
+.PeakEditNextPeak
+{
+  background: transparent url(images/next_arrow.png) no-repeat scroll right top;
+  right: 10px;
+}
+
+
+.PeakEditHint
+{
+color: gray;
+margin-left: 2em;
+font-size:66%
+}

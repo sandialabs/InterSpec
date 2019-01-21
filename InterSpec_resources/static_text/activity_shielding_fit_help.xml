@@ -1,0 +1,80 @@
+<div align="center">
+      <h1 id="activity-shielding-dialog">
+            <b>Activity Shielding Fit</b>
+      </h1>
+      <hr />
+	  </div>
+
+            <img src="InterSpec_resources/static_text/images/ActShieldFit.png"  class="imageBorder" style="max-height:300px;float:left;display:block;margin-right:20px; "/>
+
+      <div >
+         <u>Select</u>
+         <b>Tools &#8594; Activity Shielding Fit</b> to launch the tool.
+      </div>
+      <div style="padding-top: 10px">
+         In the leftmost box in the tool window,
+         <u>check/uncheck</u>
+         under the &#34;Use&#34; column the peaks you wish to use in determining the activity of the shielding; 
+checked boxes indicate a "false" peak.
+      </div>
+      <div style="padding-top: 10px">
+         <u>Check/uncheck</u>
+         the box next to &#34;Multiple nuclides contribute to peak&#34; located at the bottom left corner of the window to account for cases when two nuclides may be the cause of 
+the same gamma peak.
+      </div>
+      <div style="padding-top: 10px">
+         When peaks from your background spectrum may interfere with your foreground spectrum,
+         <u>check/uncheck</u>
+         the box next to &#34;Subtract Background Peaks&#34; located at the
+ bottom left corner of the window.
+      </div>
+      <div style="padding-top: 10px">
+         To account for more shielding, including advanced cases of shielding,
+         <u>select</u>
+         the
+         <b>Material</b>
+         icon located at the top right of the window to add a shielding source, 
+and
+         <u>select</u>
+         the appropriate material/thickness accordingly. For a material that is not provided under the
+         <b>Material</b>
+         option select the
+         <b>Generic</b>
+         icon,
+         <u>input</u>
+         the 
+&#34;Areal Dens.[ity]&#34; and atomic number.
+      </div>
+      <div>
+         <ul>
+            If accounting for shielding here, be sure to
+            <u>check/uncheck</u>
+            the &#34;Fit&#34; box located to the right of each
+            <b>Material</b>
+            or
+            <b>Generic</b>
+            box you wish to be 
+incorporated in your spectrum. This ability allows you to immediately see the effects of a small variance in the shielding source such that you can better determine 
+the accurate choice of shielding material.
+         </ul>
+      </div>
+      <div>
+         You can also "Import Source Shielding XML Model" by
+         <u>hovering</u>
+         the cursor over the
+         settings
+         icon (
+         <img src="InterSpec_resources/images/cog.png" valign="middle"/>
+         )in the top right of the window, and
+         <u>selecting</u>
+         &#34;Upload Model.&#34;
+      </div>
+      <div style="padding-top: 10px">
+         No matter what method of inputting shielding is used, be sure to
+         <u>input</u>
+         the distance the measurement was taken from the shielding source in the box next to &#34;Distance&#34; 
+on the top right of the window; it is by default set to 100 centimeters.
+      </div>
+      <div>
+         <ul>The application has the ability to identify and adjust the units you input after the numerical figures; you will not need to normalize the units you plan to input.</ul>
+      </div>

@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -44,6 +44,7 @@ class AuxWindow;
 class GoogleMap;
 class PeakModel;
 class MaterialDB;
+struct ColorTheme;
 class UserFileInDb;
 class Recalibrator;
 class SrbMySqlUtil;
@@ -66,11 +67,11 @@ class SpectrumDisplayDiv;
 class D3SpectrumDisplayDiv;
 #endif
 class PreserveCalibWindow;
-class PhotopeakLineDisplay;
 class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class SimpleNuclideAssistPopup;
+class ReferencePhotopeakDisplay;
 class LicenseAndDisclaimersWindow;
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 
@@ -154,9 +155,7 @@ public:
   //  m_excludedSamples.
   void findAndSetExcludedSamples( std::set<int> definetly_keep_samples );
 
-#if( ENABLE_D3_CHART_EXPORTING )  
-  static std::string peak_json( const std::vector<std::shared_ptr<const PeakDef> > &inpeaks );
-  
+#if( SpecUtils_ENABLE_D3_CHART )
   //print_d3_json(): Output data from current user chart data to JSON
   //  format to be used for running D3.js HTML files.
   std::string print_d3_json() const;
@@ -170,7 +169,7 @@ public:
   //  to provide the same "state" of the current user session to
   //  D3.js HTML files.
   D3SpectrumExport::D3SpectrumChartOptions getD3SpectrumOptions() const;
-#endif //#if( ENABLE_D3_CHART_EXPORTING )
+#endif //#if( SpecUtils_ENABLE_D3_CHART )
   
   
   //userOpenFileFromFilesystem(): appropriate to call if the user opens a file
@@ -179,7 +178,7 @@ public:
   //  they would like to open it; if the file probably isnt a background to
   //  the current foreground, then the files is opened as foreground.  Returns
   //  status of if the file could be parsed or not.
-  bool userOpenFileFromFilesystem( const std::string filepath );
+  bool userOpenFileFromFilesystem( const std::string filepath, std::string displayFileName = "" );
   
 #if( ALLOW_URL_TO_FILESYSTEM_MAP )
   //loadFileFromDbFilesystemLink(): load file from the DbToFilesystemLink
@@ -254,19 +253,6 @@ public:
   //  If the returned WModelIndex is not valid, then the peak was not added.
   Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn );
   
-  /** Attempts to assign a nuclide/xray/reaction from the currently displayed
-      reference gamma lines.  This is called for instance when you are showing
-      the reference lines for a nuclide and double click to create a peak.
-      This function may change assignments for neighboring peaks if it finds a
-      better match given that there is a new peak in the region.
-   */
-  void assignNuclideFromReferenceLines( PeakDef &peak );
-  
-  /** For all peaks currently fit for, that do not already have a
-      nuclide/xray/reaction assigned, it attempts to assign them a source
-      based on currently showing reference lines.
-   */
-  void assignCurrentPeakNuclideFromReferenceLines();
   
   Wt::WContainerWidget *menuDiv();
 
@@ -278,8 +264,9 @@ public:
   std::shared_ptr<SpecMeas> measurment( SpectrumType spectrum_type );
   std::shared_ptr<const SpecMeas> measurment( SpectrumType spectrum_type ) const;
 
-  //displayedHistogram(...): Returns the histogram displayed on the client side;
-  //  will return a NULL ptr if the histogram isnt displayed.
+  /** Returns the spectrum displayed on the client side; will return a nullptr
+      if the spectrum isnt displayed.
+  */
   std::shared_ptr<const Measurement> displayedHistogram( SpectrumType spectrum_type ) const;
 
 #if( IOS )
@@ -379,6 +366,11 @@ public:
   
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   
+#if ( USE_SPECTRUM_CHART_D3 )
+#else
+  void saveChartToPng( const bool spectrum );
+#endif
+  
   //displayScaleFactor(...): the live time scale factor used by to display
   //  the histogram returned by displayedHistogram( spectrum_type ).
   double displayScaleFactor( SpectrumType spectrum_type ) const;
@@ -411,17 +403,17 @@ public:
   int paintedWidth() const;  //Depreciated
   int paintedHeight() const; //Depreciated //XXX Not correct due to all padding and stuff, but close
   
+  /** Width of the apps window, in pixels. Will return a value of zero if (not yet) available. */
   int renderedWidth() const;
+  /** Height of the apps window, in pixels. Will return a value of zero if (not yet) available. */
   int renderedHeight() const;
+
+  //ToDo: add a signal that fires when the app size changes, to allow adjusting AuxWindow's and stuff.
 
   void setOverlayCanvasVisible( bool visible );
   Wt::JSlot *alignSpectrumOverlayCanvas();  //returns NULL if overlay canvas not enabled
   Wt::JSlot *alignTimeSeriesOverlayCanvas();
 
-#if( BUILD_AS_UNIT_TEST_SUITE || BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE || BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
-  SpectrumChart *spectrumChart();
-  SpectrumDataModel *spectrumModel();
-#endif
   
   //displayedSpectrumChanged(): is a singal emitted whenever a spectrum or
   //  sample numbers of a spectrum is changed.
@@ -477,9 +469,11 @@ public:
   void disableSmoothChartOperations();
 #endif
   
-  void dockWindows( bool puttingDocked );
-  bool isDocked() const;
+  void setToolTabsVisible( bool show );
+  bool toolTabsVisible() const;
 
+  void setChartSpacing();
+  
   void showDetectorEditWindow();
   void showCompactFileManagerWindow();
   
@@ -512,21 +506,24 @@ public:
   void showGammaXsTool();
   void showDoseTool();
   void showShieldingSourceFitWindow();
+  void closeShieldingSourceFitWindow();
+  void saveShieldingSourceModelToForegroundSpecMeas();
+  
 
-  //Note: I am not a big fan of how I treat m_referenceNuclideLines in this class,
+  //Note: I am not a big fan of how I treat m_referencePhotopeakLines in this class,
   //      but it is how it is due to technical difficulties that I dont want
   //      to figure out how to fix - right now I'm willing to accept the
   //      bandwidth and rendering in-efficiencies
 
-  //When showGammaLinesWindow() is called, m_referenceNuclideLines is deleted,
+  //When showGammaLinesWindow() is called, m_referencePhotopeakLines is deleted,
   //  all displayed photopeak lines cleared; an AuxWindow is the created, as
-  //  well as a new PhotopeakLineDisplay (which is assigned to
-  //  m_referenceNuclideLines).
+  //  well as a new ReferencePhotopeakDisplay (which is assigned to
+  //  m_referencePhotopeakLines).
   void showGammaLinesWindow();
 
-  //When closeGammaLinesWindow(...) is called, the current m_referenceNuclideLines
-  //  is deleted after clearing all lines, the a new m_referenceNuclideLines
-  //  is created and added to the tabs widget at bottom of docked view
+  //When closeGammaLinesWindow(...) is called, the current m_referencePhotopeakLines
+  //  is deleted after clearing all lines, the a new m_referencePhotopeakLines
+  //  is created and added to the tabs widget at bottom tool tabs.
   void closeGammaLinesWindow();
 
   //handleToolTabChanged(...): sets focus to isotope line edit
@@ -790,11 +787,22 @@ public:
   //Peak finding functions
   void searchForSinglePeak( const double x );
   
-  //searchForPeaks(): called when the user clicks the "Search for Peaks"
-  //  function.  This function launches a non-blocking thread to do the actual
-  //  search via searchForPeaksWorker(...)
-  void searchForPeaks( const bool keep_old_peaks );
+  /** Function to call when the automated search for peaks (throughout the
+      entire spectrum) begins.  Currently all this function does is disable the
+      peak search button.
+   */
+  void automatedPeakSearchStarted();
   
+  /** Function to call when the automated search for peak finishes.
+     Re-enables peak search button and forces a chart re-drawing if D3 based
+     dispay.
+   */
+  void automatedPeakSearchCompleted();
+  
+  /** Returns if the current color theme says you should make peaks the same
+     color as the reference photopeak lines assigned to the peak.
+   */
+  bool colorPeaksBasedOnReferenceLines() const;
   
   //searchForHintPeaks(): launches the job to search for peaks (single threaded)
   //  which will call setHintPeaks(...) when done.
@@ -811,33 +819,6 @@ public:
                      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existingPeaks,
                      std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks );
   
-  //searchForPeaksWorker(...): performs the actual search for peaks of the
-  //  entire spectrum.  Once search is done, results are placed into
-  //  'resultpeaks'  (which presumamble 'callback' also has a copy of) and
-  //  'callback' is posted to the WServer thread pool to be executed inside the
-  //  main event loop thread, and is done regardless of succesfulness of the
-  //  peak search.  'callback' is intended to be a bound function call to
-  //  setPeaksFromSearch(...) or setHintPeaks(...).
-  static void searchForPeaksWorker( std::weak_ptr<const Measurement> data,
-                             std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existingPeaks,
-                             std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
-                             boost::function<void(void)> callback,
-                             const std::string sessionID,
-                             const bool singleThread );
-  
-  
-  
-  //setPeaksFromSearch(): sets the peak model peaks to those passed in; should
-  //  be called from main event loop thread.  'guiupdater' is intended to be a
-  //  function that will close the waiting dialog, if it still exists.
-  //  If 'data' does not match the currently displayed histogram (by pointer
-  //  comparison), then peaks will not be updated.
-  void setPeaksFromSearch( std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > peaks,
-                           std::shared_ptr<const Measurement> data,
-                           std::vector<PeakDef> originalPeaks,
-                           boost::function<void(void)> guiupdater );
-  
-  void refitPeakAmplitudes();
   
   //findPeakFromUserRange(): Depreciated 20150204 by wcjohns in favor of calling
   // InterSpec::findPeakFromControlDrag().  Keeping around JIC for a little
@@ -877,9 +858,8 @@ public:
   void setBackgroundSub( bool sub );
   void setVerticalLines( bool show );
   void setHorizantalLines( bool show );
-  Wt::WPushButton * getMobileButton() {return m_mobileMenuButton;}
     
-  PhotopeakLineDisplay *isotopeLinesWidget();
+  ReferencePhotopeakDisplay *referenceLinesWidget();
 
 #if( defined(WIN32) && BUILD_AS_ELECTRON_APP )
   //When users drag files from Outlook on windows into the app
@@ -888,15 +868,52 @@ public:
   void dragEventWithFileContentsStarted();
   void dragEventWithFileContentsFinished();
 #endif
-
+  
   //hotkeyJsSlot(): the JS slot that can be called when a
   Wt::JSlot *hotkeyJsSlot();
+  
+
+  /** Returns the current color theme.
+   Returned ptr may not be in the database yet.
+   Will always return a valid pointer, and will not throw.
+   Will set m_colorTheme if not previously set.
+  */
+  std::shared_ptr<const ColorTheme> getColorTheme();
+
+  /** Apply the color theme passed in, to the app; if theme is nullptr then the
+      current color theme is retirieved fromm the DB and applied.
+      Does not alter the users preference, but does set m_colorTheme.
+  */
+  void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
+
+#if( BUILD_AS_OSX_APP )
+  /** Notification that the operating system changed themes (e.g., macOS went
+   into dark mode, or light mode).
+   
+   If app is currently in either default "Default" or "Dark" then this function
+   will switch between these two themes to match the OS.  If in a custom theme
+   then no action will be take.
+   
+   Currently only supports themes "dark" and "default".
+   */
+  void osThemeChange( std::string name );
+#endif
   
 protected:
   
 #if( USE_DB_TO_STORE_SPECTRA )
   void updateSaveWorkspaceMenu();
 #endif
+  
+  
+  /** Handles setting the color theme options to the nuclide reference line
+  widget.  If you pass in a nullptr, then current theme will be retrieved from
+  database, otherwise will use one passed in.
+  */
+  void setReferenceLineColors( std::shared_ptr<const ColorTheme> theme );
+  
+  /** Creates the ColorThemeWidget Window that allows users to alter themes/colors. */
+  void showColorThemeWindow();
   
   void initRecalibrator();
 #if( !ANDROID && !IOS )
@@ -935,15 +952,12 @@ protected:
   Wt::WPushButton *m_mobileMenuButton;
   Wt::WPushButton *m_mobileBackButton;
   Wt::WPushButton *m_mobileForwardButton;
-  Wt::WContainerWidget *m_mobileOverlay;
   Wt::WContainerWidget *m_notificationDiv; //has id="qtip-growl-container"
   
   void handleUserIncrementSampleNum( SpectrumType type, bool increment);
-/********\
-|
-| Widgets and docking support
-|
-\********/
+
+  
+ /* Start widgets this class keeps track of */
 
   Wt::Signal< Wt::WString, Wt::WString, int > m_messageLogged;
   
@@ -959,9 +973,9 @@ protected:
   Wt::WGridLayout        *m_toolsLayout;
   Wt::WContainerWidget   *m_menuDiv; // The top menu bar.
 
-  //m_peakInfoWindow is deleted when placed into docked mode because the layout
+  //m_peakInfoWindow is deleted when tool tabs are shown because the layout
   //  gets all messed up for some reason when m_peakInfoDisplay is removed
-  //  from placed back in it.
+  //  and placed back in it.
   PeakInfoDisplay        *m_peakInfoDisplay;
   AuxWindow              *m_peakInfoWindow;
 
@@ -969,19 +983,19 @@ protected:
   //  time.  Will be null if no peak editor is open; valid if one is open.
   PeakEditWindow *m_peakEditWindow;
   
-  //m_currentToolsTab: used to track which tab is currently showing when in
-  //  docked mode.  This variable is necessary so that handleToolTabChanged(...)
+  //m_currentToolsTab: used to track which tab is currently showing when the
+  //  tools tab is shown.  This variable is necessary so that handleToolTabChanged(...)
   //  can know what tab is being changed from, and not just what tab is being
   //  changed to.  In everyother function this variable will always be up to
-  //  date when in docked mode.
+  //  date when in tool tabs are shown.
   int m_currentToolsTab;
   
-  //m_toolsTabs: will be null when not in docked mode, and non-null in docked
-  //  mode.
+  //m_toolsTabs: will be null when not tool tabs are hidden, and non-null in
+  //  when they are visible
   Wt::WTabWidget *m_toolsTabs;
 
   Recalibrator           *m_recalibrator; // The energy (re)calibrator
-  WContainerWidget       *m_calibrateContainer; //holds the Recalibrator in docked view
+  WContainerWidget       *m_calibrateContainer; //holds the Recalibrator in when tool tabs are shown
   AuxWindow              *m_recalibratorWindow;
   GammaCountDialog       *m_gammaCountDialog;
   AuxWindow              *m_specFileQueryDialog;
@@ -991,16 +1005,17 @@ protected:
   AuxWindow              *m_shieldingSourceFitWindow;
   MaterialDB             *m_materialDB;
 
-  //m_nuclideSearchWindow: only valid when in non-docked mode, and the user
+  //m_nuclideSearchWindow: only valid when in tool tabs are hidden, and the user
   //  currently has the window nuclide search window open.
   AuxWindow              *m_nuclideSearchWindow;
   
-  //m_isotopeSearchContainer: holds the nuclide search content in tab when in
-  //  docked mode.  Will be valid when in docked mode, and null when not.
+  //m_isotopeSearchContainer: holds the nuclide search content in tab when tool
+  //  tabs are visible.  Will be valid when in tool tabs visible, and null when
+  //  not.
   WContainerWidget       *m_isotopeSearchContainer;
   
   //m_isotopeSearch: Nuclide Search widget.  Will always be a valid pointer,
-  //  although not always in the DOM (specifically when not in docked mode).
+  //  although not always in the DOM (specifically when tool tabs are hidden).
   IsotopeSearchByEnergy  *m_isotopeSearch;
   
   //DataBaseUtils::DbSession is an indirect way to holds the Wt::Dbo::Session
@@ -1070,7 +1085,7 @@ protected:
   //If I ever get the preference tracking stuff working better, I could probably
   //  eliminate the following variables
   PopupDivMenuItem *m_logYItems[2];
-  PopupDivMenuItem *m_dockItems[2];
+  PopupDivMenuItem *m_toolTabsVisibleItems[2];
   PopupDivMenuItem *m_backgroundSubItems[2];
   PopupDivMenuItem *m_verticalLinesItems[2];
   PopupDivMenuItem *m_horizantalLinesItems[2];
@@ -1084,7 +1099,11 @@ protected:
     NumItemsToHideWhenDocked
   };//enum ItemsToHideWhenDocked
   
-  Wt::WMenuItem *m_dockedHideMenuItems[NumItemsToHideWhenDocked];
+  /** When the tool tabs are hidden, these menu items will show the respective
+   tool that would normally be in a tab.  These menu items are hidden when tool
+   tabs are shown.
+   */
+  Wt::WMenuItem *m_tabToolsMenuItems[NumItemsToHideWhenDocked];
   
   //Christian (20170425): Featuer marker option helpers for D3.js preferences
   bool m_featureMarkersShown[NumFeatureMarkers];
@@ -1124,11 +1143,11 @@ protected:
   //  to know something.  Bits are set according to ClientDeviceType enum.
   unsigned int m_clientDeviceType;
 
-  //m_referenceNuclideLines: is a pointer to the widget where you can type in
+  //m_referencePhotopeakLines: is a pointer to the widget where you can type in
   //  nuclides, reactions or elements (ex "U235", "W", "Ge(n,n)") to see the
   //  reference photpeaks on the energy spectrum chart.
-  PhotopeakLineDisplay *m_referenceNuclideLines;
-  AuxWindow            *m_referenceNuclideLinesWindow;
+  ReferencePhotopeakDisplay *m_referencePhotopeakLines;
+  AuxWindow                 *m_referencePhotopeakLinesWindow;
 
   /** m_licenseWindow: pointer to window showing disclaimers, licenses, and
       other statements.  Will be nullptr if not showing.
@@ -1190,6 +1209,16 @@ protected:
 
   std::unique_ptr< Wt::JSignal<unsigned int> > m_hotkeySignal;
   std::unique_ptr< Wt::JSlot > m_hotkeySlot;
+  
+  /** Determine if peak color should be assigned based on refernce line (if
+      being shown) it gets associated with.  Controlled as part of the
+      #ColorTheme.
+   */
+  bool m_colorPeaksBasedOnReferenceLines;
+  
+  std::string m_currentColorThemeCssFile;
+  
+  std::shared_ptr<const ColorTheme> m_colorTheme;
   
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;

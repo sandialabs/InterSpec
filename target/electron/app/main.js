@@ -579,6 +579,20 @@ app.on('ready', function(){
           msg = msg.substr(13);
           interspec_url = "" + msg;
           msg += "?externalid=" + session_token
+
+//XXX - ToDo!
+//Need to make sure the address contains 127.0.0.1 or the IPv6 equivalent - not localhost (this can be spoofed).
+//  Perhaps make it so the WebSocket connection sends back the port only (and ensure only digits), not the
+//  address.
+//See: https://letsencrypt.org/docs/certificates-for-localhost/
+//  I feel like there is more that can be done to ensure security, but not totally convinced
+//  any of my hair-brained certificate or challenge based schemes are actually secure...
+//I guess the best I have so far is something similar to the  "--externalid" that is passed to the 
+//  c++ executable, but instead of having as a url argument, could have it as part of the URL path,
+//  so this way we can require all traffic, both in Electron and in InterSpec to come from, and 
+//  go to this URL (same thing with IPC WebSocket)
+
+
           console.log('Will Load ' + msg);
           mainWindow.loadURL( msg );
         }else if( msg.startsWith("ServerKilled") ) {
@@ -668,7 +682,7 @@ app.on('ready', function(){
       ];
 
       spawn_options.cwd = basedir;
-      child_process = spawn(executablePath, parameters, spawn_options);
+      child_process = spawn( '"' + executablePath + '"', parameters, spawn_options);
     }
 
     child_process.on('error', (err) => {

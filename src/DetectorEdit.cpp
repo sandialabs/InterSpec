@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -57,6 +57,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DetectorEdit.h"
@@ -126,7 +127,7 @@ class RelEffFile : public Wt::WContainerWidget
 {
   //If we are deploying on the web, we do not want to allow the user access to
   //  the filesystem(!), so we will only allow using detectors from
-  //  "data/lanl_simplemass_detectors.tsv"
+  //  "data/OUO_lanl_simplemass_detectors.tsv"
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   std::string m_file;
 #else
@@ -591,7 +592,7 @@ void RelEffDetSelect::docreate()
   m_files = new WContainerWidget( this );
   
   WPushButton *addIcon = new WPushButton();
-  addIcon->setStyleClass( "AddRelEffFile" );
+  addIcon->setStyleClass( "AddRelEffFile Wt-icon" );
   addIcon->clicked().connect( this, &RelEffDetSelect::addFile );
   WContainerWidget *holder = new WContainerWidget( this );
   holder->addWidget( addIcon );
@@ -601,13 +602,13 @@ void RelEffDetSelect::docreate()
   string pathstr;
   vector<string> paths;
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  pathstr = UtilityFunctions::append_path( InterSpec::dataDirectory(), "lanl_simplemass_detectors.tsv" );
+  pathstr = UtilityFunctions::append_path( InterSpec::dataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
 #else
   try
   {
     if( m_interspec )
       pathstr = InterSpecUser::preferenceValue<string>( "RelativeEffDRFPaths", m_interspec );
-  }catch( std::exception &e )
+  }catch( std::exception & )
   {
     passMessage( "Error retrieving 'RelativeEffDRFPaths' preference.", "", WarningWidget::WarningMsgHigh );
   }
@@ -738,7 +739,9 @@ void GadrasDetSelect::updateWidgetsFromInputPaths()
   for( string p : paths )
   {
     UtilityFunctions::trim( p );
-    if( !UtilityFunctions::is_directory(p) )
+    if( !UtilityFunctions::is_directory(p)
+       && !UtilityFunctions::icontains( p, "GadrasDetectors")
+       && !(UtilityFunctions::icontains( p, "GADRAS") && UtilityFunctions::istarts_with( p, "C:\\" ) ))
       msg += "<div style=\"color:red;\">'" + p + "' is not a valid directory.</div>";
   }
   
@@ -811,6 +814,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
 
   WText* label = new WText( "Detector: ", this );
   label->addStyleClass("CameraIcon");
+  
   m_text = new WText( sm_noDetectorTxt, XHTMLUnsafeText, this );
 
   std::shared_ptr<DetectorPeakResponse> detector;
@@ -916,7 +920,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   }//if( currentDet )
 
   m_previousEmmittedDetector = m_detector;
-
+  
   m_chart = new Wt::Chart::WCartesianChart();
   m_chart->setBackground(Wt::WColor(220, 220, 220));
   m_chart->setXSeriesColumn(0);
@@ -929,10 +933,59 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_efficiencyModel = new WStandardItemModel( m_chart );
   m_chart->setModel( m_efficiencyModel );
   
+  m_chartEnergyLineColor = WColor("#B02B2C"); //Ruby on Rails red
+  m_chartFwhmLineColor = WColor("#3F4C6B");  //Mozilla blue
+  
+  //We should check the color theme for colors
+  auto theme = specViewer->getColorTheme();
+  if( theme )
+  {
+    if( !theme->foregroundLine.isDefault() )
+      m_chartEnergyLineColor = theme->foregroundLine;
+    if( !theme->backgroundLine.isDefault() )
+      m_chartFwhmLineColor = theme->backgroundLine;
+    
+    if( !theme->spectrumChartText.isDefault() )
+    {
+      WPen txtpen(theme->spectrumChartText);
+      m_chart->setTextPen( txtpen );
+      m_chart->axis(Chart::XAxis).setTextPen( txtpen );
+      m_chart->axis(Chart::YAxis).setTextPen( txtpen );
+      m_chart->axis(Chart::Y2Axis).setTextPen( txtpen );
+    }
+    
+    if( theme->spectrumChartBackground.isDefault() )
+      m_chart->setBackground( Wt::NoBrush );
+    else
+      m_chart->setBackground( WBrush(theme->spectrumChartBackground) );
+    
+    //From what I can tell, we cant change the legend text color easily, so
+    //  we'll just cheat and back the legend background different enough from
+    //  black so we can always read the text.  Lame, but whatever.
+    m_chart->setLegendStyle( m_chart->legendFont(), m_chart->legendBorder(), WBrush(Wt::WColor(220, 220, 220, 120)) );
+    
+    if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
+    {
+      //theme->spectrumChartBackground
+    }else if( !theme->spectrumChartMargins.isDefault() )
+    {
+      //theme->spectrumChartMargins
+    }
+    
+    if( !theme->spectrumAxisLines.isDefault() )
+    {
+      WPen defpen = m_chart->axis(Chart::XAxis).pen();
+      defpen.setColor( theme->spectrumAxisLines );
+      m_chart->axis(Chart::XAxis).setPen( defpen );
+      m_chart->axis(Chart::Y1Axis).setPen( defpen );
+      m_chart->axis(Chart::Y2Axis).setPen( defpen );
+    }
+  }//if( theme )
+  
   /*
    * Provide ample space for the title, the X and Y axis and the legend.
    */
-  m_chart->setPlotAreaPadding(40, Wt::Top);
+  m_chart->setPlotAreaPadding(15, Wt::Top);
   m_chart->setPlotAreaPadding(70, Wt::Bottom);
   m_chart->setPlotAreaPadding(55, Wt::Right | Wt::Left);
 
@@ -952,9 +1005,10 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   m_chart->setLegendEnabled(true);
 
-  m_chart->setLegendLocation(Wt::Chart::LegendOutside, Wt::Bottom, Wt::AlignRight);
+  m_chart->setLegendLocation(Wt::Chart::LegendInside, Wt::Top, Wt::AlignRight);
+  //m_chart->setLegendLocation(Wt::Chart::LegendOutside, Wt::Bottom, Wt::AlignRight);
   
-  m_chart->setTitle("Detector Energy");
+  //m_chart->setTitle("Detector Energy");
   mainLayout->addWidget(m_chart,Wt::WBorderLayout::Center);
   
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
@@ -1233,7 +1287,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_DBtable->selectionChanged().connect( this, &DetectorEdit::dbTableSelectionChanged );
 
   m_deleteButton = new WPushButton( "Delete" );
-  m_deleteButton->setStyleClass("CrossIcon");
+  m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
   m_deleteButton->setDefault(true);
   m_deleteButton->disable();
   m_deleteButton->clicked().connect( this, &DetectorEdit::deleteDBTableSelected );
@@ -1261,13 +1315,14 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   AuxWindow::addHelpInFooter(m_footer, "detector-edit-dialog",auxWindow);
   m_cancelButton = auxWindow->addCloseButtonToFooter("Cancel");
+  m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
 
   HelpSystem::attachToolTipOn( m_cancelButton,"Remove all changes or selections made by this dialog, and close the dialog" , showToolTipInstantly );
   
   m_cancelButton->clicked().connect( this, &DetectorEdit::cancelAndFinish );
   m_acceptButton = new WPushButton( "Accept", m_footer );
   m_acceptButton->setFloatSide(Wt::Right);
-  m_acceptButton->addStyleClass( "AcceptIcon" );
+  m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
   HelpSystem::attachToolTipOn( m_acceptButton,"Accept all changes/selections made and close dialog" , showToolTipInstantly );
 
   m_acceptButton->clicked().connect( this, &DetectorEdit::acceptAndFinish );
@@ -1618,6 +1673,7 @@ void DetectorEdit::updateChart()
     
       m_chart->setXSeriesColumn(0);  //Not having this line after creating a new model was why the x-axis was the wrong scale
       Wt::Chart::WDataSeries s1(1, Wt::Chart::LineSeries,Wt::Chart::Y1Axis);
+      s1.setPen( WPen(m_chartEnergyLineColor) );
       m_chart->addSeries(s1);
     
       //m_chart->axis(Wt::Chart::Y1Axis).setRange( 0.0, 1.0 );
@@ -1627,6 +1683,7 @@ void DetectorEdit::updateChart()
       if( hasResloution )
       { //only if there is resolution FWHM
         Wt::Chart::WDataSeries s2(2, Wt::Chart::LineSeries,Wt::Chart::Y2Axis);
+        s2.setPen( WPen(m_chartFwhmLineColor) );
         m_chart->addSeries(s2);
         m_chart->axis(Wt::Chart::Y2Axis).setTitle("FWHM");
         m_chart->axis(Wt::Chart::Y2Axis).setVisible(true);
@@ -1782,7 +1839,7 @@ vector<pair<string,string>> DetectorEdit::avaliableGadrasDetectors() const
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   const string datadir = InterSpec::dataDirectory();
   const string drfpaths = UtilityFunctions::append_path( datadir, "GenericGadrasDetectors" )
-                          + UtilityFunctions::append_path( datadir, "GadrasDetectors" );
+                          + ";" + UtilityFunctions::append_path( datadir, "OUO_GadrasDetectors" );
 #else
   const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
 #endif
@@ -1836,7 +1893,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
     case kDetectiveDetector:         smname = "Detective";         break;
     case kDetectiveExDetector:       smname = "Detetive DX";       break;
     case kDetectiveEx100Detector:    smname = "Detective EX-100";  break;
-    case kOrtecIDMPortalDetector:    smname = "Detective EX-200";  break;  //Havent actually seen anywhere
+    case kDetectiveEx200Detector:    smname = "Detective EX-200";  break;
     case kSAIC8Detector:             smname = "";                  break;
     case kFalcon5000:                smname = "Falcon 5000";       break;
     case kUnknownDetector:           smname = "";                  break;
@@ -1848,7 +1905,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
   
   string concat_filenames;
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  concat_filenames = UtilityFunctions::append_path( InterSpec::dataDirectory(), "lanl_simplemass_detectors.tsv" );
+  concat_filenames = UtilityFunctions::append_path( InterSpec::dataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
 #else
   if( interspec )
     concat_filenames = InterSpecUser::preferenceValue<string>( "RelativeEffDRFPaths", interspec );
@@ -1899,7 +1956,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
     case kDetectiveDetector:         name = "Detective";          break;
     case kDetectiveExDetector:       name = "Detective-EX";       break;
     case kDetectiveEx100Detector:    name = "Detective-EX100";    break;
-    case kOrtecIDMPortalDetector:    name = "Ortec IDM Portal";   break;
+    case kDetectiveEx200Detector:    name = "Ortec IDM Portal";   break;
     case kSAIC8Detector:             name = "";                   break;
     case kFalcon5000:                name = "Falcon 5000";        break;
     case kUnknownDetector:           name = "";                   break;
@@ -1917,13 +1974,66 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
     //case kSam940LaBr3: name = ""; break;
     case kSam940:                     name = "SAM-945"; break;
     case kSam945:                     name = "SAM-945"; break;
+    case kSrpm210:                    name = "SRPM-210"; break;
   }//switch( type )
   
   if( name.empty() )
     throw runtime_error( "There is no GADRAS detector response function for a "
                          + detectorTypeToString( DetectorType(typeint) ) );
+
+  std::shared_ptr<DetectorPeakResponse> det;
   
-  return initAGadrasDetector( name, interspec );
+  try
+  {
+    det = initAGadrasDetector( name, interspec );
+    if( det )
+      return det;
+  }catch(...)
+  {
+  }
+  
+  //We couldnt find an exact match - lets be a little looser
+  string dettype, deteff;
+  switch( typeint )
+  {
+    case kGR135Detector:
+      break;
+    case kIdentiFinderDetector:
+      break;
+    case kIdentiFinderNGDetector:
+      break;
+    case kOrtecRadEagleNai:
+      break;
+      
+    case kIdentiFinderLaBr3Detector:
+      break;
+      
+    case kDetectiveDetector:
+    case kDetectiveExDetector:
+    case kMicroDetectiveDetector:
+      break;
+    case kDetectiveEx100Detector:
+      break;
+    case kFalcon5000:
+      break;
+  
+    default:
+      break;
+  }//switch( type )
+  
+  const string secondname = dettype + " " + deteff;
+  
+  try
+  {
+    det = initAGadrasDetector( secondname, interspec );
+    if( det )
+      return det;
+  }catch(...)
+  {
+  }
+  
+  throw runtime_error( "Could not find GADRAS detector names " + name + " or " + secondname  );
+  return det;
 }//initAGadrasDetector
 
 
@@ -1935,7 +2045,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector( const s
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   const string datadir = InterSpec::dataDirectory();
   const string drfpaths = UtilityFunctions::append_path( datadir, "GenericGadrasDetectors" )
-                          + UtilityFunctions::append_path( datadir, "GadrasDetectors" );
+                          + ";" + UtilityFunctions::append_path( datadir, "OUO_GadrasDetectors" );
 #else
   const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", interspec );
 #endif
@@ -2061,7 +2171,7 @@ DetectorEditWindow::DetectorEditWindow(
                                   std::shared_ptr<DetectorPeakResponse> det,
                                   InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
-  : AuxWindow("Detector Edit/Select", true),
+  : AuxWindow("Detector Edit/Select", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)),
     m_edit( NULL )
 {
   disableCollapse();

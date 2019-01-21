@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -57,6 +57,58 @@ namespace
     ? string(node->value(),node->value()+node->value_size())
     : string("");
   }//xml_value(...)
+  
+  
+  /** source is node to clone, and target is the node that will become
+      equivalent of source (its name/attribs/children will become equivalent
+      to source node).
+   20180616: untested
+   */
+  template <class Ch>
+  void clone_node_deep( const rapidxml::xml_node<Ch> *source, rapidxml::xml_node<Ch> *target )
+  {
+    using namespace rapidxml;
+    
+    assert( source );
+    assert( target );
+    
+    //auto doc = ((target->type() == node_document) ? static_cast<xml_document<Ch> *>(target) : target->document());
+    auto doc = target->document();
+    
+    target->remove_all_nodes();
+    target->remove_all_attributes();
+    target->type( source->type() );
+    
+    Ch *nametxt = doc->allocate_string( source->name(), source->name_size()+1 );
+    nametxt[source->name_size()] = 0;    //prob not nec, but JIC
+    
+    Ch *valuetxt = doc->allocate_string( source->value(), source->value_size()+1 );
+    valuetxt[source->value_size()] = 0;  //prob not nec, but JIC
+    
+    target->name( nametxt, source->name_size() );
+    target->value( valuetxt, source->value_size() );
+    
+    // Clone child nodes and attributes
+    for( const xml_attribute<Ch> *attr = source->first_attribute(); attr; attr = attr->next_attribute() )
+    {
+      Ch *attnametxt = doc->allocate_string( attr->name(), attr->name_size()+1 );
+      attnametxt[attr->name_size()] = 0;  //jic
+      
+      Ch *attvaluetxt = doc->allocate_string( attr->value(), attr->value_size()+1 );
+      attvaluetxt[attr->value_size()] = 0; //jic
+      
+      auto cloned_attrib = doc->allocate_attribute(attnametxt, attvaluetxt, attr->name_size(), attr->value_size());
+      target->append_attribute( cloned_attrib );
+    }//for( loop over and clone attributes )
+    
+    for( const xml_node<Ch> *child = source->first_node(); child; child = child->next_sibling() )
+    {
+      xml_node<Ch> *cloned_child = doc->allocate_node( child->type() );
+      target->append_node( cloned_child );
+      clone_node_deep( child, cloned_child );
+    }
+  }//clone_node_deep(...)
+
 }//namespace
 
 SpecMeas::SpecMeas()
@@ -67,6 +119,8 @@ SpecMeas::SpecMeas()
 //  m_detector.reset( new DetectorPeakResponse() );
   m_displayType.reset( new SpectrumType(kForeground) );
   m_displayedSampleNumbers.reset( new set<int>() );
+  
+  m_fileWasFromInterSpec = false;
 }
 
 
@@ -290,6 +344,34 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
     msg << "})";
     throw runtime_error( msg.str() );
   }
+  
+  
+  if( (!lhs.m_shieldingSourceModel) != (!rhs.m_shieldingSourceModel) )
+  {
+    stringstream msg;
+    msg << "SpecMeas: availability of shieldingSourceModel of LHS ("
+    << (lhs.m_shieldingSourceModel ? "" : "not ") << "available)"
+    << "doesnt match RHS (" << (rhs.m_shieldingSourceModel ? "" : "not ")
+    << "available)";
+    throw runtime_error( msg.str() );
+  }
+  
+  if( lhs.m_shieldingSourceModel )
+  {
+    //ToDo: make a proper comparison by traversing nodes and comparing values.
+    string lhsdata, rhsdata;
+    rapidxml::print( std::back_inserter(lhsdata), *lhs.m_shieldingSourceModel, 0 );
+    rapidxml::print( std::back_inserter(rhsdata), *rhs.m_shieldingSourceModel, 0 );
+    if( lhsdata != rhsdata )
+    {
+      stringstream msg;
+      msg << "The ShieldingSOurceModel of the LHS does not exactly match RHS;"
+      " this could be a harmless error, or an actual issue - Will has not"
+      " implemented a proper comparison yet:\n\tLHS=" << lhsdata << "\n\tRHS="
+      << rhsdata << "\n";
+      throw runtime_error( msg.str() );
+    }
+  }
 }//void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
 
@@ -352,6 +434,15 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
 
   *m_displayType = *rhs.m_displayType;
   *m_displayedSampleNumbers = *rhs.m_displayedSampleNumbers;
+  
+  
+  if( rhs.m_shieldingSourceModel && rhs.m_shieldingSourceModel->first_node())
+  {
+    m_shieldingSourceModel.reset( new rapidxml::xml_document<char>() );
+    clone_node_deep( rhs.m_shieldingSourceModel.get(), m_shieldingSourceModel.get() );
+  }else
+    m_shieldingSourceModel.reset();
+  
 }//void uniqueCopyContents( const SpecMeas &rhs )
 
 
@@ -462,6 +553,13 @@ void SpecMeas::addPeaksToXmlHelper( const SpecMeas::SampleNumsToPeakMap &inpeaks
                     std::map<std::shared_ptr<const PeakDef>,int> &peakids )
 {
   using namespace rapidxml;
+  
+  /* ToDo: use N42 MeasurementGroupReferences to match peaks up to their
+           respective sample numbers (and also for analysis results and source
+           shielding model), so we can a) be more N42 compliant, but b) use a
+           a construct that isnt as fragile as sample number (which isnt really
+           a thing in N42 files).
+   */
   
   rapidxml::xml_document<char> *doc = peaksnode->document();
   
@@ -683,6 +781,10 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
         peaks->push_back( iter->second );
       }//for( const int peakid : peakids )
       
+      //The problem here is that the sample numbers can change; what we need to
+      //  do is create a <RadMeasurementGroup> and use this to associate peaks
+      //  with measurements.  We should also do the same for analysis, and also
+      //  dispalyed sample numbers
       
       switch( source )
       {
@@ -705,6 +807,38 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
     throw runtime_error( "Invalid version attribute for the Peak element" );
   }
 }//void addPeaksFromXml( ::rapidxml::xml_node<char> *peaksnode );
+
+
+rapidxml::xml_document<char> *SpecMeas::shieldingSourceModel()
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  return m_shieldingSourceModel.get();
+}
+
+
+void SpecMeas::setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>> &&model )
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  if( !model && !m_shieldingSourceModel )
+    return;
+  
+  bool is_diff = true;
+  if( m_shieldingSourceModel && model && !modified_ )
+  {
+    //TODO: go through and compare nodes to see if they are actually different.
+    //      for now, just do a string compare
+    string lhsdata, rhsdata;
+    rapidxml::print( std::back_inserter(lhsdata), *m_shieldingSourceModel, 0 );
+    rapidxml::print( std::back_inserter(rhsdata), *model, 0 );
+    is_diff = (lhsdata != rhsdata);
+  }//
+  
+  m_shieldingSourceModel = std::move( model );
+  
+  if( is_diff )
+    modified_ = modifiedSinceDecode_ = true;
+}//void setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>> &&model )
 
 
 
@@ -914,6 +1048,16 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
     m_detector->fromXml( node );
   }else
     m_detector.reset();
+  
+  node = interspecnode->first_node( "ShieldingSourceFit", 18 );
+  if( node )
+  {
+    m_shieldingSourceModel.reset( new rapidxml::xml_document<char>() );
+    auto model_node = m_shieldingSourceModel->allocate_node(rapidxml::node_element);
+    m_shieldingSourceModel->append_node( model_node );
+    clone_node_deep( node, model_node );
+  }else
+    m_shieldingSourceModel.reset();
 }//void decodeSpecMeasStuffFromXml( ::rapidxml::xml_node<char> *parent )
 
 ::rapidxml::xml_node<char> *SpecMeas::appendSampleNumbersToXml(
@@ -939,7 +1083,6 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   
   return 0;
 }//appendSampleNumbersToXml(...)
-
 
 
 ::rapidxml::xml_node<char> *SpecMeas::appendSpecMeasStuffToXml( 
@@ -974,6 +1117,13 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
     m_detector->toXml( interspec_node, doc );
 
   //Shielding source fit - if applicable.
+  if( m_shieldingSourceModel )
+  {
+    xml_node<char> *modelnode = doc->allocate_node( node_element );
+    interspec_node->append_node( modelnode );
+    clone_node_deep( m_shieldingSourceModel->first_node(), modelnode );
+  }//if( m_shieldingSourceModel && m_shieldingSourceModel->first_node() )
+  
   
   return interspec_node;
 }//appendSpecMeasStuffToXml(...);
@@ -1007,6 +1157,7 @@ bool SpecMeas::load_from_N42( std::istream &input )
   try
   {
     ::rapidxml::file<char> input_file( input );
+    
     return SpecMeas::load_N42_from_data( input_file.data() );
   }catch( std::exception & )
   {    
@@ -1047,6 +1198,10 @@ bool SpecMeas::load_N42_from_data( char *data )
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
   reset();
+  
+  if( !is_candidate_n42_file(data) )
+    return false;
+  
   rapidxml::xml_document<char> doc;
   
   try
@@ -1054,13 +1209,16 @@ bool SpecMeas::load_N42_from_data( char *data )
     const int flags = rapidxml::parse_trim_whitespace | rapidxml::allow_sloppy_parse; //rapidxml::parse_normalize_whitespace
     doc.parse<flags>( data );
     const rapidxml::xml_node<char> *document_node = doc.first_node();
+    const rapidxml::xml_node<char> *interspecnode = document_node ? document_node->first_node( "DHS:InterSpec", 13 ) : nullptr;
+    
+    //See notes for m_fileWasFromInterSpec.
+    m_fileWasFromInterSpec = !!interspecnode;
     
     const bool parsed = load_from_N42_document( document_node );
     
     if( !parsed )
       throw runtime_error( "Couldnt Parse" );
     
-    const rapidxml::xml_node<char> *interspecnode = document_node->first_node( "DHS:InterSpec", 13 );
     if( interspecnode )
       decodeSpecMeasStuffFromXml( interspecnode );
   }catch( rapidxml::parse_error &e )
@@ -1071,6 +1229,8 @@ bool SpecMeas::load_N42_from_data( char *data )
     if( predatalen > 256 )
       predatalen = 256;
     const size_t postlen = strnlen( e.where<char>(), 256 );
+    
+    m_fileWasFromInterSpec = false;
     
     const string predata( e.where<char>() - predatalen, e.where<char>() + 1 );
     const string postdata( e.where<char>(), e.where<char>() + postlen );
@@ -1085,9 +1245,10 @@ bool SpecMeas::load_N42_from_data( char *data )
     
     reset();
     return false;
-  }catch( std::exception &e )
+  }catch( std::exception & )
   {
-    cerr << "SpecMeas::load_N42_from_data() caught: " << e.what() << endl;
+    m_fileWasFromInterSpec = false;
+    //cerr << "SpecMeas::load_N42_from_data() caught: " << e.what() << endl;
     
     reset();
     return false;
@@ -1314,7 +1475,13 @@ void SpecMeas::setModified()
 
 void SpecMeas::cleanup_after_load( const unsigned int flags )
 {
-  MeasurementInfo::cleanup_after_load( flags );
+  if( m_fileWasFromInterSpec )
+  {
+    MeasurementInfo::cleanup_after_load( (flags | MeasurementInfo::DontChangeOrReorderSamples) );
+  }else
+  {
+    MeasurementInfo::cleanup_after_load( flags );
+  }
 
   //should detect if the detector was loaded, and if not, if we know the type,
   //  we could then load it.

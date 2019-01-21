@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <deque>
+#include <string>
 #include <vector>
 #include <memory>
 #include <algorithm>
@@ -33,7 +34,6 @@
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
 #include <Wt/WStringStream>
-#include <Wt/Chart/WDataSeries>
 #include <Wt/WAbstractItemModel>
 
 
@@ -43,18 +43,19 @@
 #include <boost/any.hpp>
 #include <boost/regex.hpp>
 
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
+#include "InterSpec/PeakInfoDisplay.h"  //Only for ALLOW_PEAK_COLOR_DELEGATE
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectrumDataModel.h"
-#include "InterSpec/InterSpecApp.h"
 #include "SpecUtils/SpectrumDataStructs.h"
 
 
@@ -602,10 +603,8 @@ WModelIndex PeakModel::addNewPeak( const PeakDef &peak )
   PeakDef *new_peak_ptr = new PeakDef( peak );
   PeakShrdPtr peak_ptr( new_peak_ptr );
 
-#if( CACHE_PEAK_ENERGY_RANGE )
   definePeakXRange( *new_peak_ptr );
   //Need to go through and estimate the Chi2Dof here.
-#endif 
   
   boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
   sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder );
@@ -634,7 +633,7 @@ void PeakModel::addPeaks( const vector<PeakDef> &peaks )
     addNewPeak( peaks[i] );
 }//void addPeaks( const vector<PeakDef> &peaks )
 
-#if( CACHE_PEAK_ENERGY_RANGE )
+
 void PeakModel::definePeakXRange( PeakDef &peak )
 {
   std::shared_ptr<const Measurement> data, continuum;
@@ -658,7 +657,7 @@ void PeakModel::definePeakXRange( PeakDef &peak )
     peakcont->setRange( lowerEnengy, upperEnergy );
   }//if( we should set the peak limits to save cpu (or rather memmorry-time) later
 }//void definePeakXRange( PeakDef &peak )
-#endif
+
 
 void PeakModel::setPeaks( const std::vector<std::shared_ptr<const PeakDef> > &peaks )
 {
@@ -694,11 +693,9 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
   
   if( npeaksadd )
   {
-#if( CACHE_PEAK_ENERGY_RANGE )
     for( size_t i = 0; i < npeaksadd; ++i )
       definePeakXRange( peaks[i] );
 //    need to go through and estimate the chi2DOF here
-#endif
     
     boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
     sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder );
@@ -1041,23 +1038,34 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
 
     case kUseForShieldingSourceFit:
       return peak->useForShieldingSourceFit();
-    break;
 
     case kUseForCalibration:
       return peak->useForCalibration();
-    break;
-
+      
+    case kPeakLineColor:
+    {
+      if( peak->lineColor().isDefault() )
+        return boost::any();
+      return boost::any( WString::fromUTF8(peak->lineColor().cssText(false)) );
+    }//case kPeakLineColor:
+      
     case kUserLabel:
+    {
       if( peak->userLabel().empty() )
         return boost::any();
       return boost::any( WString::fromUTF8(peak->userLabel()) );
+    }//case kUserLabel:
       
     case kHasSkew:
+    {
       if( peak->skewType() == PeakDef::LandauSkew )
         return WString( "True" );
       else
         return WString( "False" );
+    }//case kHasSkew:
+      
     case kSkewAmount:
+    {
       if( peak->skewType() == PeakDef::LandauSkew )
       {
         char text[64];
@@ -1070,11 +1078,16 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       {
         return WString( "NA" );
       }
+    }//case kSkewAmount:
+      
     case kType:
+    {
       if( peak->gausPeak() )
         return WString( "Gaussian" );
       else
         return WString( "Region" );
+    }
+      
     case kLowerX:
     case kUpperX:
     {
@@ -1084,15 +1097,14 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       double lowx(0.0), upperx(0.0);
       findROIEnergyLimits( lowx, upperx, *peak, dataH );
       if( column == kLowerX )
-       return lowx;
+        return lowx;
       else
         return upperx;
     }//case kLowerX / case kUpperX:
     
-    {
-     return peak->upperX(); 
-    }
+      
     case kContinuumArea:
+    {
       if( peak->continuum()->defined() )
       {
         if( !m_dataModel )
@@ -1117,8 +1129,10 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         const double area = continuum->Integral( lowbin, highbin );
         return area;
       }//if( peak->continuum()->defined() ) / else
-
+    }//case kContinuumArea:
+      
     case kContinuumType:
+    {
       switch( peak->continuum()->type() )
       {
         case PeakContinuum::NoOffset:   return WString( "None" );
@@ -1130,6 +1144,8 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       }//switch( peak->offsetType() )
       
       return boost::any();
+    }//case kContinuumType:
+      
     case kNumColumns:
       return any();
   }//switch( section )
@@ -1157,9 +1173,7 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
      || label == "na" )
   {
     const bool use = peak.useForShieldingSourceFit();
-    peak.setNuclearTransition( NULL, NULL, -1, PeakDef::NormalGamma );
-    peak.setXray( NULL, 0.0 );
-    peak.setReaction( NULL, 0.0f, PeakDef::NormalGamma );
+    peak.clearSources();
     
     if( !hadSource )
       return NoSourceChange;
@@ -1204,7 +1218,8 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
     nuclide = db->nuclide( label );
   }else
   {
-    nuclide = db->nuclide( label.substr( 0, number_start ) );
+    const string nuclabel = label.substr( 0, number_start );
+    nuclide = db->nuclide( nuclabel );
     
     if( number_stop == string::npos )
       number_stop = label.size();
@@ -1271,9 +1286,7 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
     
     if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )
     {
-      peak.setNuclearTransition( NULL, NULL, -1, PeakDef::NormalGamma );
-      peak.setXray( NULL, 0.0 );
-      peak.setReaction( NULL, 0.0f, PeakDef::NormalGamma );
+      peak.clearSources();
       return (hadSource ? SourceChange : NoSourceChange);
     }else
     {
@@ -1327,9 +1340,7 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
       const SandiaDecay::Element *el = db->element( elname );
       if( !el )
       {
-        peak.setNuclearTransition( NULL, NULL, -1, PeakDef::NormalGamma );
-        peak.setXray( NULL, 0.0 );
-        peak.setReaction( NULL, 0.0f, PeakDef::NormalGamma );
+        peak.clearSources();
         return (hadSource ? SourceChange : NoSourceChange);
       }//if( !el )
       
@@ -1424,6 +1435,7 @@ bool PeakModel::setData( const WModelIndex &index,
       case kUseForCalibration:
       case kUseForShieldingSourceFit:
       case kUserLabel:
+      case kPeakLineColor:
       break;
 
       case kHasSkew: case kSkewAmount: case kType: case kLowerX: case kUpperX:
@@ -1448,7 +1460,7 @@ bool PeakModel::setData( const WModelIndex &index,
       case kMean: case kFwhm: case kAmplitude:
         try
         {
-          dbl_val = std::stod( txt_val );
+          dbl_val = std::stod( txt_val.toUTF8() );
         }catch(...)
         {
           cerr << SRC_LOCATION << "\n\tUnable to convert '" << txt_val
@@ -1699,6 +1711,20 @@ bool PeakModel::setData( const WModelIndex &index,
         break;
       }//case kUseForCalibration:
 
+      case kPeakLineColor:
+      {
+        const string css_color = txt_val.toUTF8();
+        if( UtilityFunctions::iequals(css_color, "none")
+            || UtilityFunctions::iequals(css_color, "na")
+            || css_color.empty() )
+          new_peak.setLineColor( Wt::WColor() );
+        else
+        {
+          try{ new_peak.setLineColor( Wt::WColor(css_color) ); }catch(...){ return false; }
+        }
+        break;
+      }//case kPeakLineColor:
+        
       case kUserLabel:
       {
         new_peak.setUserLabel( txt_val.toUTF8() );
@@ -1756,6 +1782,9 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
   {
     case kMean: case kFwhm: case kAmplitude: case kUserLabel:
     case kIsotope: case kPhotoPeakEnergy:
+#if( ALLOW_PEAK_COLOR_DELEGATE )
+    case kPeakLineColor:
+#endif
       return ItemIsEditable | ItemIsSelectable; //ItemIsSelectabl
 
     case kUseForShieldingSourceFit:
@@ -1765,6 +1794,9 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
     case kHasSkew: case kSkewAmount: case kType:
     case kLowerX: case kUpperX: case kContinuumArea:
     case kContinuumType:
+#if( !ALLOW_PEAK_COLOR_DELEGATE )
+    case kPeakLineColor:
+#endif
     case kNumColumns:
       return ItemIsSelectable;
   }//switch( section )
@@ -1804,6 +1836,7 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kCandidateIsotopes: return boost::any();
       case kUseForCalibration: return boost::any( WString("Calib. Peak") );
       case kUserLabel:      return boost::any( WString("Label") );
+      case kPeakLineColor:  return boost::any( WString("Color") );
       case kHasSkew:        return boost::any( WString("Skew") );
       case kSkewAmount:     return boost::any( WString("Skew Amp") );
       case kType:           return boost::any( WString("Peak Type") );
@@ -1827,6 +1860,7 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kUseForShieldingSourceFit: return boost::any();
       case kCandidateIsotopes: return boost::any();
       case kUseForCalibration: return boost::any();
+      case kPeakLineColor:     return boost::any( WString("Peak color") );
       case kUserLabel:      return boost::any( WString("User specified label") );
       case kHasSkew:
       case kSkewAmount:
@@ -1958,6 +1992,8 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       return (asscend ? lhs->peakArea()<rhs->peakArea() : lhs->peakArea()>rhs->peakArea());
     case kUserLabel:
       return (asscend ? lhs->userLabel()<rhs->userLabel() : lhs->userLabel()>rhs->userLabel());
+    case kPeakLineColor:
+      return (asscend ? lhs->lineColor().cssText()<rhs->lineColor().cssText() : lhs->lineColor().cssText()>rhs->lineColor().cssText());
     case kHasSkew:
       return (asscend ? lhs->skewType()<rhs->skewType() : lhs->skewType()>rhs->skewType());
     case kSkewAmount:

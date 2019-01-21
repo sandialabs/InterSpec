@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -90,6 +90,8 @@ SearchMode3DChart::~SearchMode3DChart()
 
 void SearchMode3DChart::init()
 {
+  wApp->useStyleSheet( "InterSpec_resources/SearchMode3DChart.css" );
+  
   addStyleClass( "SearchMode3DChart" );
   
   setLayoutSizeAware( true );
@@ -320,10 +322,6 @@ void SearchMode3DChart::setEnergyLimits()
     m_inputMinEnergy->setValue( b );
     m_inputMaxEnergy->setValue( a );
   }
-  
-  //ToDo: We could re-load the data here to potentially allow more detail in
-  //      the chart (e.g., if we're reloaded to a small energy range, we dont
-  //      need to use the rebinned data necassarily...)
 }//void setEnergyLimits()
 
 

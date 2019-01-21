@@ -1,50 +1,32 @@
-//
-//  AppDelegate.h
-//  InterSpec OSX
-//
-//  Created by Johnson, William C on 7/3/13.
-//  Copyright (c) 2013 Johnson, William C. All rights reserved.
-//
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
 
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
-#import <WebKit/WebView.h>
-#import <WebKit/WebUIDelegate.h>
-#import <WebKit/WebPolicyDelegate.h>
 
-//Need to create the ability to pick location and name of download files, so we
-//  need to implement a download delegate.
-@interface MyDownloadDelegate : NSURLDownload{
-}
-- (void)download:(NSURLDownload *)download decideDestinationWithSuggestedFilename:(NSString *)filename;
-- (void)download:(NSURLDownload *)download didFailWithError:(NSError *)error;
-- (void)downloadDidFinish:(NSURLDownload *)download;
-- (void)startDownloadingURL:sender;
-- (void)downloadDidBegin:(NSURLDownload *)download;
-- (void)download:(NSURLDownload *)download didCreateDestination:(NSString *)path;
-@end
-
-
-@interface InterSpecWebPolicyDecisionListener: NSObject {
-}
-- (void)webView:(WebView *)sender runOpenPanelForFileButtonWithResultListener:(id < WebOpenPanelResultListener >)resultListener;
-- (void)webView:(WebView *)webView decidePolicyForNavigationAction:(NSDictionary *)actionInformation
-    request:(NSURLRequest *)request
-    frame:(WebFrame *)frame
-    decisionListener:(id<WebPolicyDecisionListener>)listener;
-
-- (void)webView:(WebView *)webView decidePolicyForNewWindowAction:(NSDictionary *)actionInformation
-    request:(NSURLRequest *)request
-    newFrameName:(NSString *)frameName
-    decisionListener:(id <WebPolicyDecisionListener>)listener;
-
-  //disable the right-click context menu
-- (NSArray *)webView:(WebView *)sender contextMenuItemsForElement:(NSDictionary *)element defaultMenuItems:(NSArray *)defaultMenuItems;
-@end
-
-@interface AppDelegate : NSObject <NSApplicationDelegate>
-@property IBOutlet WebView *InterSpecWebView;
-@property (strong) MyDownloadDelegate *UrlDownload;
+@interface AppDelegate : NSObject <NSApplicationDelegate,WKNavigationDelegate,WKUIDelegate,NSURLDownloadDelegate>
+@property (nonatomic,strong) WKWebView *InterSpecWebView;
+//@property (nonatomic, strong) WKWebViewConfiguration *webConfig;
 
 @property (nonatomic) BOOL isServing;
 @property (nonatomic) int fileNeedsOpening;
@@ -57,37 +39,11 @@
 @property (readonly, strong, nonatomic) NSPersistentStoreCoordinator *persistentStoreCoordinator;
 @property (readonly, strong, nonatomic) NSManagedObjectModel *managedObjectModel;
 @property (readonly, strong, nonatomic) NSManagedObjectContext *managedObjectContext;
-@property (unsafe_unretained) IBOutlet NSTextView *textView;
 
-- (void)setDbDirectory;
-
-- (IBAction)saveAction:(id)sender;
-- (IBAction)ShowInBrowserClicked:(id)sender;
+-(void)setDbDirectory;
 
 -(void) terminated: (NSNotification *)notification;
--(BOOL)application:(NSApplication *)theApplication openFile:(NSString *)filename;
--(BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender;
-
-
-//Implement methods necassary for WebPolicyDelegate that controls how to deal
-//  with opening new windows, or downloading files.  For now we'll just
-//  modify how we open new windows since these are CSV or file downloads.
-- (void)webView:(WebView *)webView
-  decidePolicyForNewWindowAction:(NSDictionary *)actionInformation
-                         request:(NSURLRequest *)request
-                    newFrameName:(NSString *)frameName
-                decisionListener:(id < WebPolicyDecisionListener >)listener;
-/*
-- (void)webView:(WebView *)webView
-  decidePolicyForNavigationAction:(NSDictionary *)actionInformation
-                          request:(NSURLRequest *)request
-                            frame:(WebFrame *)frame
-                 decisionListener:(id < WebPolicyDecisionListener >)listener;
-
-- (void)webView:(WebView *)webView
-  decidePolicyForMIMEType:(NSString *)type
-                  request:(NSURLRequest *)request
-                    frame:(WebFrame *)frame
-         decisionListener:(id < WebPolicyDecisionListener >)listener;
- */
+-(BOOL) application:(NSApplication *)theApplication openFile:(NSString *)filename;
+-(BOOL) applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender;
+-(void)themeChanged:(NSNotification *) notification;
 @end

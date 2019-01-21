@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include <mutex>
+#include <atomic>
 #include <cerrno>
 #include <limits>
 #include <sstream>
@@ -30,6 +32,7 @@
 #include <boost/regex.hpp>
 
 #include <Wt/WText>
+#include <Wt/Utils>
 #include <Wt/WLabel>
 #include <Wt/WTheme>
 #include <Wt/WAnchor>
@@ -40,6 +43,11 @@
 #include <Wt/WResource>
 #include <Wt/WLineEdit>
 #include <Wt/WIOService>
+#include <Wt/Json/Value>
+#include <Wt/Json/Array>
+#include <Wt/Json/Parser>
+#include <Wt/Json/Object>
+#include <Wt/WFileUpload>
 #if( WT_VERSION >= 0x3030800 )
 #include <Wt/WTimeEdit>
 #endif
@@ -51,13 +59,17 @@
 #include <Wt/WApplication>
 #include <Wt/WStandardItem>
 #include <Wt/Http/Response>
+#include <Wt/Json/Serializer>
 #include <Wt/WContainerWidget>
 #include <Wt/WStandardItemModel>
 
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/SpecFileQuery.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
@@ -65,982 +77,25 @@
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/SpecFileQueryWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/SpecFileQueryDbCache.h"
+
+#include "js/SpecFileQueryWidget.js"
+
+
+#if( !BUILD_AS_ELECTRON_APP && defined(WIN32) && BUILD_AS_LOCAL_SERVER )
+#include <shellapi.h>  //for ShellExecute
+#endif
+
+#define INLINE_JAVASCRIPT(...) #__VA_ARGS__
+
 
 using namespace Wt;
 using namespace std;
 
-namespace SpecQuery
-{
-  
-  SpecTest::SpecTest()
-    : m_searchField( NumFileDataFields )
-  {
-  }
-  
-  //Will throw if field is not a string search filed
-  void SpecTest::set_test( const FileDataField field, const std::string &searchstr, const TextFieldSearchType type )
-  {
-    switch( field )
-    {
-      //String type searches
-      case Filename: case DetectorName: case SerialNumber: case Manufacturer:
-      case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
-        break;
-        
-      case DetectionSystemType:
-      case SearchMode:
-      case TotalLiveTime:
-      case TotalRealTime:
-      case IndividualSpectrumLiveTime:
-      case IndividualSpectrumRealTime:
-      case StartTime:
-      case NumFileDataFields:
-        throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a string field" );
-        break;
-    }//switch( m_searchField )
-    
-    m_searchField = field;
-    m_searchString = searchstr;
-    m_stringSearchType = type;
-  }//set_test string field )
-  
-  void SpecTest::set_discreet_test( const FileDataField field, const int val )
-  {
-    switch( field )
-    {
-      case DetectionSystemType: case SearchMode:
-        break;
-
-      case TotalLiveTime: case TotalRealTime:
-      case IndividualSpectrumLiveTime: case IndividualSpectrumRealTime:
-      case Filename: case DetectorName: case SerialNumber: case Manufacturer:
-      case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
-      case StartTime: case NumFileDataFields:
-        throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a discrete field" );
-        break;
-    }//switch( m_searchField )
-    
-    m_searchField = field;
-    m_discreteOption = val;
-  }
-  
-  void SpecTest::set_numeric_test( const FileDataField field, const double value, const NumericFieldMatchType type )
-  {
-    switch( field )
-    {
-      case TotalLiveTime: case TotalRealTime:
-      case IndividualSpectrumLiveTime: case IndividualSpectrumRealTime:
-        break;
-        
-      case DetectionSystemType: case SearchMode:
-      case Filename: case DetectorName: case SerialNumber: case Manufacturer:
-      case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
-      case StartTime: case NumFileDataFields:
-        throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a numeric field" );
-        break;
-    }//switch( m_searchField )
-    
-    m_numeric = value;
-    m_searchField = field;
-    m_compareType = type;
-  }
-  
-  
-  void SpecTest::set_time_test( const FileDataField field, boost::posix_time::ptime comptime, const NumericFieldMatchType type )
-  {
-    switch( field )
-    {
-      case StartTime:
-        break;
-        
-      case TotalLiveTime: case TotalRealTime:
-      case IndividualSpectrumLiveTime: case IndividualSpectrumRealTime:
-      case DetectionSystemType: case SearchMode:
-      case Filename: case DetectorName: case SerialNumber: case Manufacturer:
-      case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
-      case NumFileDataFields:
-        throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a time field" );
-        break;
-    }//switch( m_searchField )
-    
-
-    m_searchField = field;
-    m_compareType = type;
-    m_time = comptime;
-  }//void set_time_test(...)
-  
-  
-  bool SpecTest::test_string( const std::string &teststr, const TextFieldSearchType &t, const std::string &ss )
-  {
-    if( ss.empty() )
-      return true;
-    
-    switch( t )
-    {
-      case TextIsExact:
-        return UtilityFunctions::iequals( teststr, ss );
-      
-      case TextIsContained:
-        return UtilityFunctions::icontains( teststr, ss );
-        
-      case TextStartsWith:
-        return UtilityFunctions::istarts_with( teststr, ss );
-        
-      case TextEndsWith:
-        return UtilityFunctions::iends_with( teststr, ss );
-        
-      case TextRegex:
-      {
-        //Next line can throw, and I think is doing a lot of needless work inside
-        //  the loop, so should maybe be optimized some day
-        boost::regex expression( ss, boost::regex::icase );
-        return boost::regex_match( teststr, expression );
-      }//case TextRegex:
-      break;
-    }//switch( t )
-    
-    throw runtime_error( "SpecTest::test_string Needs updating" );
-    
-    return false;
-  }//SpecTest::test_string
-  
-  
-  bool SpecTest::test( const std::shared_ptr<const MeasurementInfo> meas ) const
-  {
-    if( !meas )
-      return false;
-
-    switch( m_searchField )
-    {
-      case Filename:
-        return test_string( meas->filename(), m_stringSearchType, m_searchString );
-        
-      case DetectorName:
-      {
-        const vector<string> &detnames = meas->detector_names();
-        bool found = false;
-        for( size_t i = 0; !found && i < detnames.size(); ++i )
-          found |= test_string( detnames[i], m_stringSearchType, m_searchString );
-        return found;
-      }
-        
-      case SerialNumber:
-        return test_string( meas->instrument_id(), m_stringSearchType, m_searchString );
-        
-      case Manufacturer:
-        return test_string( meas->manufacturer(), m_stringSearchType, m_searchString );
-        
-      case Model:
-        return test_string( meas->instrument_model(), m_stringSearchType, m_searchString );
-        
-      case Uuid:
-        return test_string( meas->uuid(), m_stringSearchType, m_searchString );
-        
-      case Remark:
-      {
-        const vector<string> &remarks = meas->remarks();
-        bool found = false;
-        for( size_t i = 0; !found && i < remarks.size(); ++i )
-          found |= test_string( remarks[i], m_stringSearchType, m_searchString );
-        
-        if( found )
-          return found;
-        
-        std::vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-        for( size_t i = 0; !found && i < meass.size(); ++i )
-        {
-          const vector<string> &measremarks = meas->remarks();
-          bool found = false;
-          for( size_t i = 0; !found && i < measremarks.size(); ++i )
-            found |= test_string( measremarks[i], m_stringSearchType, m_searchString );
-        }
-        
-        return found;
-      }
-        
-      case LocationName:
-        return test_string( meas->measurement_location_name(), m_stringSearchType, m_searchString );
-        
-      case AnalysisResultText:
-      {
-        const std::shared_ptr<const DetectorAnalysis> ana = meas->detectors_analysis();
-        
-        if( !ana )
-          return false;
-        
-        const vector<string> &remarks = ana->remarks_;
-        const vector<DetectorAnalysisResult> &res = ana->results_;
-        
-        if( test_string( ana->algorithm_version_, m_stringSearchType, m_searchString ) )
-          return true;
-        
-        if( test_string( ana->algorithm_name_, m_stringSearchType, m_searchString ) )
-          return true;
-        
-        for( size_t i = 0; i < remarks.size(); ++i )
-          if( test_string( remarks[i], m_stringSearchType, m_searchString ) )
-            return true;
-        
-        for( size_t i = 0; i < res.size(); ++i )
-        {
-          const DetectorAnalysisResult &r = res[i];
-          if( test_string( r.detector_, m_stringSearchType, m_searchString ) )
-            return true;
-          if( test_string( r.id_confidence_, m_stringSearchType, m_searchString ) )
-            return true;
-          if( test_string( r.nuclide_, m_stringSearchType, m_searchString ) )
-            return true;
-          if( test_string( r.nuclide_type_, m_stringSearchType, m_searchString ) )
-            return true;
-          if( test_string( r.remark_, m_stringSearchType, m_searchString ) )
-            return true;
-        }//for( size_t i = 0; i < res.size(); ++i )
-          
-        return false;
-      }//case AnalysisResultText:
-        
-        
-      case AnalysisResultNuclide:
-      {
-        const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-        const SandiaDecay::Nuclide * const nuc = db->nuclide( m_searchString );
-        
-        const std::shared_ptr<const DetectorAnalysis> ana = meas->detectors_analysis();
-        
-        if( !ana )
-          return false;
-        
-        //const vector<string> &remarks = ana->remarks_;
-        const vector<DetectorAnalysisResult> &res = ana->results_;
-        
-        if( nuc )
-        {
-          for( size_t i = 0; i < res.size(); ++i )
-          {
-            //Maybe there was somethign like "Am 241" that splitting them up
-            //  would mess up.
-            const SandiaDecay::Nuclide *testnuc = db->nuclide( res[i].nuclide_ );
-            if( nuc == testnuc )
-              return true;
-            
-            //Just in case nuclide has mutliple fields for some reason, we'll
-            //  split them up and try; this isnt foolproof,
-            //  ex "found Am-241, Th 232" would fail for looking for Th232, but
-            //  its better than nothing for now
-            vector<string> fields;
-            UtilityFunctions::split( fields, res[i].nuclide_, " \t\n,;" );
-            
-            for( size_t j = 0; j < fields.size(); ++j )
-            {
-              testnuc = db->nuclide( fields[j] );
-              if( nuc == testnuc )
-                return true;
-            }
-          }//for( size_t i = 0; i < res.size(); ++i )
-        }else
-        {
-          //Go through here and check if the specified text is contained within nuclide_, nuclide_type_, or remark_
-          for( size_t i = 0; i < res.size(); ++i )
-          {
-            const DetectorAnalysisResult &r = res[i];
-            if( test_string( r.nuclide_, m_stringSearchType, m_searchString ) )
-              return true;
-            if( test_string( r.nuclide_type_, m_stringSearchType, m_searchString ) )
-              return true;
-            if( test_string( r.remark_, m_stringSearchType, m_searchString ) )
-              return true;
-          }//for( size_t i = 0; i < res.size(); ++i )
-        }
-        
-        return false;
-      }//case AnalysisResultNuclide:
-        
-      case DetectionSystemType:
-      {
-        const DetectorType type = DetectorType(m_discreteOption);
-        return (meas->detector_type() == type);
-        
-        break;
-      }//case DetectionSystemType:
-        
-      case SearchMode:
-        return ((m_discreteOption==0 && !meas->passthrough()) || (m_discreteOption && meas->passthrough()));
-        
-      case TotalLiveTime:
-      {
-        switch( m_compareType )
-        {
-          case ValueIsExact:       return (meas->gamma_live_time() == m_numeric);
-          case ValueIsLessThan:    return (meas->gamma_live_time() < m_numeric);
-          case ValueIsGreaterThan: return (meas->gamma_live_time() > m_numeric);
-        }
-        
-        cerr << "SHouldnt be here m_compareType" << endl;
-        return false;
-      }
-        
-      case TotalRealTime:
-      {
-        switch( m_compareType )
-        {
-          case ValueIsExact:       return (meas->gamma_real_time() == m_numeric);
-          case ValueIsLessThan:    return (meas->gamma_real_time() < m_numeric);
-          case ValueIsGreaterThan: return (meas->gamma_real_time() > m_numeric);
-        }
-        
-        cerr << "Shouldnt be here m_compareType" << endl;
-        return false;
-      }
-        
-      case IndividualSpectrumLiveTime:
-      {
-        const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-        for( size_t i = 0; i < meass.size(); ++i )
-        {
-          switch( m_compareType )
-          {
-            case ValueIsExact:       if(meass[i]->live_time() == m_numeric) return true;
-            case ValueIsLessThan:    if(meass[i]->live_time() < m_numeric) return true;
-            case ValueIsGreaterThan: if(meass[i]->live_time() > m_numeric) return true;
-          }
-        }
-        return false;
-      }//case IndividualSpectrumLiveTime:
-        
-      case IndividualSpectrumRealTime:
-      {
-        const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-        for( size_t i = 0; i < meass.size(); ++i )
-        {
-          switch( m_compareType )
-          {
-            case ValueIsExact:       if(meass[i]->real_time() == m_numeric) return true;
-            case ValueIsLessThan:    if(meass[i]->real_time() < m_numeric) return true;
-            case ValueIsGreaterThan: if(meass[i]->real_time() > m_numeric) return true;
-          }
-        }
-        return false;
-      }//case IndividualSpectrumRealTime:
-        
-
-      case StartTime:
-      {
-        const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-        for( size_t i = 0; i < meass.size(); ++i )
-        {
-          if( meass[i]->start_time().is_special() )
-            continue;
-          
-          switch( m_compareType )
-          {
-            case ValueIsExact:
-            {
-              //We only have minute resoltion on the gui selector
-              boost::posix_time::time_duration dur = meass[i]->start_time() - m_time;
-              if( dur.is_negative() )
-                dur = -dur;
-                
-              if( dur < boost::posix_time::minutes(1) )
-                return true;
-            }
-              
-            case ValueIsLessThan:    if(meass[i]->start_time() < m_time) return true;
-            case ValueIsGreaterThan: if(meass[i]->start_time() > m_time) return true;
-          }
-        }
-        return false;
-      }//case StartTime:
-        
-      case NumFileDataFields:
-        return false;
-        break;
-    }//switch( m_searchField )
-    
-    return false;
-  }
-  
-  const char *to_string( const FileDataField field )
-  {
-    switch( field )
-    {
-      case Filename:              return "Filename";
-      case DetectorName:          return "Detector name";
-      case SerialNumber:          return "Serial number";
-      case Manufacturer:          return "Manufacturer";
-      case Model:                 return "Model";
-      case Uuid:                  return "UUID";
-      case Remark:                return "Remark";
-      case LocationName:          return "Location name";
-      case AnalysisResultText:    return "Analysis result";
-      case AnalysisResultNuclide: return "Identified nuclide";
-      case DetectionSystemType:   return "Detector system";
-      case SearchMode:            return "Aquisition mode";
-      case TotalLiveTime:         return "Sum live time";
-      case TotalRealTime:         return "Sum real time";
-      case IndividualSpectrumLiveTime: return "Spectrum live time";
-      case IndividualSpectrumRealTime: return "Spectrum real time";
-      case StartTime:             return "Start Time";
-        
-      case NumFileDataFields:
-        break;
-    }//switch( m_searchField )
-    
-    return "";
-  }//to_string( const FileDataField field )
-  
-  const char *to_string( const TextFieldSearchType type )
-  {
-    switch( type )
-    {
-      case TextIsExact:     return "exactly matches";
-      case TextIsContained: return "contains";
-      case TextStartsWith:  return "begins with";
-      case TextEndsWith:    return "ends with";
-      case TextRegex:       return "matches regular expression";
-        break;
-    }
-    
-    return "";
-  }//const char *to_string( const TextFieldSearchType type );
-  
-  
-  const char *to_string( const LogicType type )
-  {
-    switch( type )
-    {
-      case LogicalOr:         return "OR";
-      case LogicalAnd:        return "AND";
-      case LogicalNot:        return "NOT";
-      case LogicalOpenParan:  return "Open Parenthesis";
-      case LogicalCloseParan: return "close Parenthesis";
-      case NumLogicType:      break;
-    }
-    return "";
-  }
-  
-  const char *to_string( const NumericFieldMatchType type )
-  {
-    switch( type )
-    {
-      case ValueIsExact:       return "equal";
-      case ValueIsLessThan:    return "less than";
-      case ValueIsGreaterThan: return "greater than";
-    }
-	return "";
-  }
-  
-  std::string SpecTest::summary() const
-  {
-    string summary = to_string( m_searchField );
-    
-    switch( m_searchField )
-    {
-      //String type searches
-      case Filename: case DetectorName: case SerialNumber: case Manufacturer:
-      case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
-        summary += string(" ") + to_string( m_stringSearchType )
-                   + string(" \"") + m_searchString + "\"";
-        break;
-        
-      case DetectionSystemType:
-        summary += " is a " + detectorTypeToString( DetectorType(m_discreteOption) );
-        break;
-      
-      case SearchMode:
-        summary += " is " + string(m_discreteOption ? "search/passthrough" : "dwell");
-        break;
-        
-      case TotalLiveTime: case TotalRealTime:
-      case IndividualSpectrumLiveTime: case IndividualSpectrumRealTime:
-        summary += " is " + string(to_string(m_compareType)) + " " + PhysicalUnits::printToBestTimeUnits(m_numeric);
-        break;
-        
-      case StartTime:
-        summary += " is " + string(to_string(m_compareType)) + " " + UtilityFunctions::to_iso_string(m_time);
-        break;
-        
-      case NumFileDataFields:
-        break;
-    }//switch( m_searchField )
-    
-    return summary;
-  }//string summary()
-  
-  
-  void SpecTest::isvalid()
-  {
-    switch( m_searchField )
-    {
-        //String type searches
-      case Filename: case DetectorName: case SerialNumber: case Manufacturer:
-      case Model: case Uuid: case Remark: case LocationName:
-      case AnalysisResultText: case AnalysisResultNuclide:
-      {
-        switch ( m_stringSearchType)
-        {
-          case TextIsExact:
-          case TextIsContained:
-            break;
-            
-          case TextStartsWith:
-          case TextEndsWith:
-            if( m_searchString.empty() )
-              throw runtime_error( string("Search string for ") + to_string(m_stringSearchType) + " can not be empty" );
-            break;
-            
-          case TextRegex:
-            if( m_searchString.empty() )
-              throw runtime_error( string("Search string for ") + to_string(m_stringSearchType) + " can not be empty" );
-            
-            try
-            {
-              boost::regex expression( m_searchString, boost::regex::icase );
-              boost::regex_match( "Somedummystr", expression );
-            }catch( std::exception &e )
-            {
-              cout << e.what() << endl;
-              throw runtime_error( "\"" + m_searchString + "\" is an invalid regular expression" );
-            }
-            break;
-        }//switch ( m_stringSearchType)
-        
-        break;
-      }//case All string searches
-      
-      case DetectionSystemType:
-      {
-        //We could check m_discreteOption is
-        bool gotit = false;
-        switch( DetectorType(m_discreteOption) )
-        {
-          case kGR135Detector: case kIdentiFinderDetector:
-          case kIdentiFinderNGDetector: case kIdentiFinderLaBr3Detector:
-          case kDetectiveDetector: case kDetectiveExDetector:
-          case kDetectiveEx100Detector: case kOrtecIDMPortalDetector:
-          case kSAIC8Detector: case kFalcon5000: case kUnknownDetector:
-          case kMicroDetectiveDetector: case kMicroRaiderDetector:
-          case kRadHunterNaI: case kRadHunterLaBr3: case kRsi701: case kRsi705:
-          case kAvidRsi:
-          case kOrtecRadEagleNai: case kOrtecRadEagleCeBr2Inch:
-          case kOrtecRadEagleCeBr3Inch: case kOrtecRadEagleLaBr:
-          case kSam940LaBr3: case kSam940: case kSam945:
-            gotit = true;
-          break;
-        }
-        
-        if( !gotit )
-          throw runtime_error( "Invalid DetectorType (programming error)" );
-        break;
-      }//case DetectionSystemType:
-        
-      case SearchMode:
-      {
-        if( m_discreteOption!=0 && m_discreteOption!=1 )
-          throw runtime_error( "Invalid aquitision mode (programming error)" );
-        break;
-      }
-        
-      case TotalLiveTime: case TotalRealTime:
-      case IndividualSpectrumLiveTime: case IndividualSpectrumRealTime:
-      {
-        if( IsInf(m_numeric) || IsNan(m_numeric) )
-          throw runtime_error( "Invalid time duration" );
-        break;
-      }
-        
-      case StartTime:
-      {
-        if( m_time.is_special() )
-          throw runtime_error( "Invalid Time" );
-      }
-        
-      case NumFileDataFields:
-        break;
-    }//switch( m_searchField )
-  }//void isvalid()
-  
-  
-  SpecFileQuery::SpecFileQuery()
-  {
-  }
-  
-  void SpecFileQuery::addCondition( const SpecTest &test )
-  {
-    m_fields.push_back( boost::any(test) );
-  }
-  
-  void SpecFileQuery::addLogic( const LogicType test )
-  {
-    m_fields.push_back( boost::any(test) );
-  }
-  
-  
-  std::string SpecFileQuery::summary() const
-  {
-    stringstream strm;
-    print_equation( m_fields, strm );
-    return strm.str();
-  }
-  
-  std::ostream &SpecFileQuery::print_equation( vector<boost::any> fields, std::ostream &strm )
-  {
-    for( size_t i = 0; i < fields.size(); ++i )
-    {
-      try
-      {
-        const LogicType val = boost::any_cast<LogicType>( fields[i] );
-        switch( val )
-        {
-          case LogicalOr:         strm << " || "; break;
-          case LogicalAnd:        strm << " && "; break;
-          case LogicalNot:        strm << "!";    break;
-          case LogicalOpenParan:  strm << "(";    break;
-          case LogicalCloseParan: strm << ")";    break;
-          case NumLogicType: break;
-        }
-      }catch(...){}
-      
-      try
-      {
-        const bool val = boost::any_cast<bool>( fields[i] );
-        strm << (val ? "True" : "False");
-      }catch(...){}
-      
-      try
-      {
-        const SpecTest test = boost::any_cast<SpecTest>( fields[i] );
-        strm << "[" << test.summary() << "]";
-      }catch(...){}
-    }//for( size_t i = 0; i < fields.size(); ++i )
-    
-    return strm;
-  }//std::ostream &print_equation(...)
-  
-  
-  bool SpecFileQuery::evaluate( vector<boost::any> fields,
-                                const std::shared_ptr<const MeasurementInfo> &meas )
-  {
-    if( !meas )
-      return false;
-    if( fields.empty() )
-      return true;
-    
-    //cerr << "Initial test:\n\t";
-    //print_equation( fields, cerr ) << endl;
-    
-    //find open and close parenthesis, and evaluate them recursively
-    for( size_t i = 0; i < fields.size(); ++i )
-    {
-      try
-      {
-        const LogicType startlogic = boost::any_cast<LogicType>( fields[i] );
-        if( startlogic == LogicalOpenParan )
-        {
-          int nparen = 1;
-          size_t closepos = i + 1;
-          
-          for( ; closepos < fields.size(); ++closepos )
-          {
-            try
-            {
-              const LogicType closelogic = boost::any_cast<LogicType>( fields[closepos] );
-              if( closelogic == LogicalOpenParan )
-                ++nparen;
-              else if( closelogic == LogicalCloseParan )
-                --nparen;
-            }catch( ... ){}
-            
-            if( nparen == 0 )
-              break;
-          }//for( ; closepos < fields.size(); ++closepos )
-         
-          if( closepos >= fields.size() )
-            throw runtime_error( "Failed to find closing parenthesis, invalid expression" );
-          
-          vector<boost::any> inside( fields.begin() + i + 1, fields.begin() + closepos );
-          
-          //cerr << "Had " << fields.size() << " elements\n\t";
-          //print_equation( fields, cerr ) << endl;
-          //cerr << "Evaluating " << inside.size() << " elements\n\t";
-          //print_equation( inside, cerr ) << endl;
-          
-          
-          fields.erase( fields.begin() + i, fields.begin() + closepos + 1 );
-          //cerr << "Reduced down to " << fields.size() << " elements (will add one)\n\t";
-          //print_equation( fields, cerr ) << endl;
-          
-          const bool answer = SpecFileQuery::evaluate( inside, meas );
-          
-          fields.insert( fields.begin() + i, boost::any(answer) );
-          //cerr << "New eqn becomes:" << endl;
-          //print_equation( fields, cerr ) << endl;
-        }//if( startlogic == LogicalOpenParan )
-        
-        continue;
-      }catch( ... ){}
-      
-      try
-      {
-        //At some point in the future should imlement doing things a little
-        //  better so we can short-circuit some logic.  But since parsing the
-        //  file is the lions share of the time for this test, this optimization
-        //  can be put off.
-        const SpecTest test = boost::any_cast<SpecTest>( fields[i] );
-        const bool pass = test.test( meas );
-        fields[i] = boost::any( pass );
-      }catch(... ){}
-    }//for( size_t i = 0; i < fields.size(); ++i )
-    
-    
-    //cerr << "After getting rid of parenthesis and evaluating terms this eqn becomes:\n\t";
-    //print_equation( fields, cerr ) << endl;
-    
-    //go through and toggle flip NOTs
-    for( size_t i = 0; i < fields.size(); ++i )
-    {
-      try
-      {
-        const LogicType notlogic = boost::any_cast<LogicType>( fields[i] );
-        if( notlogic == LogicalNot )
-        {
-          if( i == (fields.size()-1) )
-            throw runtime_error( "! encountered at end of equation" );
-          
-          try
-          {
-            const bool nextval = boost::any_cast<bool>( fields[i+1] );
-            fields[i+1] = boost::any( !nextval );
-            fields.erase( fields.begin() + i );
-          }catch(...)
-          {
-            throw runtime_error( "Expected boolean following !" );
-          }
-        }
-      }catch(...){}
-    }//for( size_t i = 0; i < fields.size(); ++i )
-    
-//    cerr << "After getting rid of NOTS, eqn becomes:\n\t";
-//    print_equation( fields, cerr ) << endl;
-    
-    
-    if( (fields.size()%2) == 0 )
-      throw runtime_error( "Expect there to be an odd number of elements at this point" );
-    
-    for( size_t i = 0; i < fields.size(); ++i )
-    {
-      if( (i%2) == 0 )
-      {
-        try
-        {
-          boost::any_cast<bool>(fields[i]);
-        }catch(...)
-        {
-          throw runtime_error( "Expect all boost::any's to be bools in even locations at this point" );
-        }
-      }else
-      {
-        try
-        {
-          const LogicType logic = boost::any_cast<LogicType>( fields[i] );
-          if( logic != LogicalOr && logic != LogicalAnd )
-            throw runtime_error( "Expect all logic to be AND or OR only at this point" );
-        }catch(...)
-        {
-          throw runtime_error( "Expect all boost::any's to be LogicType's in odd locations at this point" );
-        }
-      }
-    }//for( size_t i = 0; i < fields.size(); ++i )
-    
-    bool answer = boost::any_cast<bool>( fields[0] );
-    
-    for( size_t i = 1; i < (fields.size()-1); i += 2 )
-    {
-      const LogicType logic = boost::any_cast<LogicType>( fields[i] );
-      const bool nextval = boost::any_cast<bool>( fields[i+1] );
-      if( logic == LogicalOr )
-        answer = (answer || nextval);
-      else if( logic == LogicalAnd )
-        answer = (answer && nextval);
-    }
-    
-    //cerr << "Eqn evaluated to " << (answer ? "True" : "False") << endl << endl << endl;
-    
-    return answer;
-  }//bool evaluate(...)
-  
-  
-  bool SpecFileQuery::test( const std::shared_ptr<const MeasurementInfo> meas ) const
-  {
-    return evaluate( m_fields, meas );
-  }
-  
-  
-  void SpecFileQuery::isvalid()
-  {
-    if( m_fields.empty() )
-      return;
-    
-    //1) Same number of ( as ), and they must match
-    //2) !, ||, and && must be followed by ( or a condition
-    //3) except for last condition, all conditions and ) must be followed by || && or )
-    //4) All regular exression matches should have valid regex
-    //5) And && followed by a condition then an || is ambiguouse, and visa versa
-    
-    {//1) Check matching parenthesis
-      int nparan = 0;
-      for( size_t i = 0; nparan >= 0 && i < m_fields.size(); ++i )
-      {
-        try
-        {
-          const LogicType t = boost::any_cast<LogicType>( m_fields[i] );
-          if( t == LogicalOpenParan )
-            ++nparan;
-          else if( t == LogicalCloseParan )
-            --nparan;
-        }catch( ... ){}
-      }//for( size_t i = 0; i < m_fields.size(); ++i )
-      
-      if( nparan < 0 )
-        throw runtime_error( "Closing parenthesis doesnt match" );
-      else if( nparan > 0 )
-        throw runtime_error( "Missing closing parenthesis" );
-    }//end 1
-    
-    
-    {//2 !, ||, or && must be followed by ( or a condition
-      for( size_t i = 0; i < m_fields.size(); ++i )
-      {
-        LogicType t;
-        try
-        {
-          t = boost::any_cast<LogicType>( m_fields[i] );
-        }catch(...)
-        {
-          continue;
-        }
-        
-        if( t == LogicalOr || t == LogicalAnd || t == LogicalNot )
-        {
-          string oper;
-          if( t == LogicalOr )
-            oper = "OR";
-          else if( t == LogicalAnd )
-            oper = "AND";
-          else if( t == LogicalNot )
-            oper = "NOT";
-          
-          if( (i+1) == m_fields.size() )
-            throw runtime_error( oper + " (last item) is dangling" );
-          
-          bool nextislogic = false;
-          LogicType nextt;
-          
-          try
-          {
-            nextt = boost::any_cast<LogicType>( m_fields[i+1] );
-            nextislogic = true;
-          }catch(...){ }
-          
-          /*
-          bool nextistest = false;
-          SpecTest nexttest;
-          try
-          {
-            nexttest = boost::any_cast<SpecTest>( m_fields[i+1] );
-            nextistest = true;
-          }catch(...){}
-          */
-          
-          if( nextislogic && nextt != LogicalOpenParan && nextt != LogicalNot )
-            throw runtime_error( oper + " must be followed by a test, open parenthesis or a NOT" );
-        }
-      }//for( size_t i = 0; i < m_fields.size(); ++i )
-    }//end 2
-    
-    
-    {//BEGIN 3) except for last condition, all conditions must be followed by || && or )
-      for( size_t i = 0; i < m_fields.size(); ++i )
-      {
-        bool istest = false;
-        SpecTest test;
-        LogicType closeparen;
-        try
-        {
-          test = boost::any_cast<SpecTest>( m_fields[i] );
-          istest = true;
-        }catch(...)
-        {
-          try
-          {
-            closeparen = boost::any_cast<LogicType>( m_fields[i] );
-            if( closeparen != LogicalCloseParan )
-              continue;
-          }catch(...)
-          {
-            continue;
-          }
-        }
-        
-        if( (i+1) < m_fields.size() )
-        {
-          try
-          {
-            const LogicType nextt = boost::any_cast<LogicType>( m_fields[i+1] );
-            
-            switch( nextt )
-            {
-              case LogicalOr: case LogicalAnd: case LogicalCloseParan:
-                break;
-              case LogicalNot: case LogicalOpenParan: case NumLogicType:
-                if( istest )
-                  throw runtime_error( test.summary() + " should not be followed " + to_string(nextt) );
-                else
-                  throw runtime_error( "Closing parenthesis should not be followed " + string(to_string(nextt)) );
-                break;
-            }//switch( nextt )
-          }catch(...)
-          {
-            if( istest )
-              throw runtime_error( test.summary() + " should be followed by an operation" );
-            else
-               throw runtime_error( "Closing parenthesis should be followed by an operation" );
-          }
-        }//if( not the last condition )
-      }//for( size_t i = 0; i < m_fields.size(); ++i )
-    }//END 3) except for last condition, all conditions must be followed by || && or )
-    
-    {//BEGIN 4) All regular exression matches should have valid regex
-      for( size_t i = 0; i < m_fields.size(); ++i )
-      {
-        SpecTest test;
-        try
-        {
-          test = boost::any_cast<SpecTest>( m_fields[i] );
-        }catch(...)
-        {
-          continue;
-        }
-        
-        test.isvalid();
-      }//for( size_t i = 0; i < m_fields.size(); ++i )
-    }//END 4) All regular exression matches should have valid regex
-    
-    {//BEGIN 5) And && followed by a condition then an || is ambiguouse, and visa versa
-      cout << "Need to enforce no ambigous order of evaluation of ORs and ANDs" << endl;
-    }//END 5) And && followed by a condition then an || is ambiguouse, and visa versa
-    
-  }//void isvalid()
-}//namespace SpecQuery
-
 
 namespace
 {
-  using namespace SpecQuery;
+  using namespace SpecFileQuery;
   
   bool file_smaller_than( const std::string &path, void *maxsizeptr )
   {
@@ -1063,567 +118,251 @@ namespace
   }
   
   
-  
-  //GUI Widgets used
-  class ConditionWidget : public WContainerWidget
+  void add_logic( SpecFileQuery::SpecLogicTest &test, const Json::Value &cond, const Json::Array &rules,
+                  const std::vector<EventXmlFilterInfo> &eventXmlTests )
   {
-  public:
-    ConditionWidget( WContainerWidget *parent = 0 )
-      : WContainerWidget( parent )
+    using namespace SpecFileQuery;
+    
+    if( cond.isNull() || rules==Json::Array::Empty )
+      throw runtime_error( "Empty condition or logic array" );
+    
+    const std::string &condstr = cond;
+    if( cond != "AND" && cond != "OR" )
+      throw runtime_error( "Found condition that is not 'AND' or 'OR;" );
+    
+    const LogicType logic = ((condstr=="AND") ? LogicType::LogicalAnd : LogicType::LogicalOr);
+    
+    if( rules.size() > 1 )
+      test.addLogic( LogicType::LogicalOpenParan );
+    
+    for( size_t i = 0; i < rules.size(); ++i )
     {
-      addStyleClass( "SpecFileQueryCond" );
+      if( i )
+        test.addLogic( logic );
       
-      WGridLayout *layout = new WGridLayout();
-      layout->setContentsMargins( 3, 2, 3, 2 );
-      layout->setVerticalSpacing( 0 );
-      layout->setHorizontalSpacing( 0 );
-      setLayout( layout );
-      
-      m_typeSelect = new WComboBox();
-      layout->addWidget( m_typeSelect, 0, 0, AlignMiddle );
-      
-      
-      for( SpecQuery::FileDataField t = SpecQuery::FileDataField(0);
-          t < SpecQuery::NumFileDataFields; t = SpecQuery::FileDataField(t+1) )
+      const Json::Object &t = rules[i];
+      if( t.contains("condition") && t.contains("rules") )
       {
-        switch( t )
-        {
-          case SpecQuery::Filename:        m_typeSelect->addItem( "Filename" );        break;
-          case DetectorName:               m_typeSelect->addItem( "Detectors Name" );  break;
-          case SerialNumber:               m_typeSelect->addItem( "Serial Number" );   break;
-          case Manufacturer:               m_typeSelect->addItem( "Manufacturer" );    break;
-          case Model:                      m_typeSelect->addItem( "Model" );           break;
-          case Uuid:                       m_typeSelect->addItem( "UUID" );            break;
-          case Remark:                     m_typeSelect->addItem( "Remarks" );         break;
-          case LocationName:               m_typeSelect->addItem( "Location Name" );   break;
-          case AnalysisResultText:         m_typeSelect->addItem( "Analysis Txt" );    break;
-          case AnalysisResultNuclide:      m_typeSelect->addItem( "Analysis Nuclide" );break;
-          case DetectionSystemType:        m_typeSelect->addItem( "Detector Type" );   break;
-          case SearchMode:                 m_typeSelect->addItem( "Aquisition Mode" ); break;
-          case TotalLiveTime:              m_typeSelect->addItem( "Sum Live Time" ); break;
-          case TotalRealTime:              m_typeSelect->addItem( "Sum Real Time" ); break;
-          case IndividualSpectrumLiveTime: m_typeSelect->addItem( "Spec Live Time" ); break;
-          case IndividualSpectrumRealTime: m_typeSelect->addItem( "Spec Real Time" ); break;
-          case StartTime:                  m_typeSelect->addItem( "Start Time" ); break;
+        const Json::Value &subCond = t.get( "condition" );
+        const Json::Array &subRules = t.get( "rules" );
         
-          case SpecQuery::NumFileDataFields: break;
-        }
-      }//for( loop over FileDataField )
-      
-      
-      for( SpecQuery::LogicType t = SpecQuery::LogicalOr;
-          t < SpecQuery::NumLogicType; t = SpecQuery::LogicType(t+1) )
+        add_logic( test, subCond, subRules, eventXmlTests );
+      }else if( t.contains("field") && t.contains("operator") && t.contains("value") )
       {
-        switch( t )
-        {
-          case SpecQuery::LogicalOr:         m_typeSelect->addItem( "Logical OR" );        break;
-          case SpecQuery::LogicalAnd:        m_typeSelect->addItem( "Logical AND" );       break;
-          case SpecQuery::LogicalNot:        m_typeSelect->addItem( "Logical NOT" );       break;
-          case SpecQuery::LogicalOpenParan:  m_typeSelect->addItem( "Open Parenthesis" );  break;
-          case SpecQuery::LogicalCloseParan: m_typeSelect->addItem( "Close Parenthesis" ); break;
-          case SpecQuery::NumLogicType: break;
-        }
-      }//for( loop over LogicType )
+        const std::string &field_str = t.get("field");
+        const std::string &operator_str = t.get("operator");
         
-      
-      m_txtContent = new WContainerWidget();
-      m_txtContent->setMargin( 2 );
-      layout->addWidget( m_txtContent, 0, 1 );
-      layout->setColumnStretch( 1, 1 );
-      
-      
-      WGridLayout *txtLayout = new WGridLayout();
-      txtLayout->setVerticalSpacing( 0 );
-      txtLayout->setContentsMargins( 0, 0, 0, 0 );
-      m_txtContent->setLayout( txtLayout );
-      
-      m_txtSearchType = new WComboBox();
-      m_txtSearchType->setMargin( 2, Wt::Top );
-      txtLayout->addWidget( m_txtSearchType, 0, 0 );
-      
-      
-      for( SpecQuery::TextFieldSearchType t = SpecQuery::TextIsExact;
-           t <= SpecQuery::TextRegex; t = SpecQuery::TextFieldSearchType(t+1) )
-      {
-        switch( t )
+        FileDataField field;
+        
+        if( !from_string(field_str, field) )
         {
-          case TextIsExact:     m_txtSearchType->addItem( "Matches" );       break;
-          case TextIsContained: m_txtSearchType->addItem( "Contains" );      break;
-          case TextStartsWith:  m_txtSearchType->addItem( "Starts with" );   break;
-          case TextEndsWith:    m_txtSearchType->addItem( "Ends with" );     break;
-          case TextRegex:       m_txtSearchType->addItem( "Regex Matches" ); break;
-        }
-      }//for( loop over TextFieldSearchType )
-      
-      m_txtSearchType->setCurrentIndex( TextIsContained );
-      m_txtSearchType->activated().connect( this, &ConditionWidget::searchTextTypeChanged );
-      
-      m_searchTxt = new WLineEdit();
-      txtLayout->addWidget( m_searchTxt, 0, 1 );
-      m_searchTxt->changed().connect( this, &ConditionWidget::searchTextChanged );
-      m_searchTxt->enterPressed().connect( this, &ConditionWidget::searchTextChanged );
-      txtLayout->setColumnStretch( 1, 1 );
-      
-      m_discreteContent = new WContainerWidget();
-      m_discreteContent->setMargin( 2 );
-      layout->addWidget( m_discreteContent, 0, 2 );
-      layout->setColumnStretch( 2, 1 );
-      m_discreteContent->hide();
-      
-      WGridLayout *discreteLayout = new WGridLayout();
-      discreteLayout->setVerticalSpacing( 0 );
-      discreteLayout->setContentsMargins( 0, 0, 0, 0 );
-      m_discreteContent->setLayout( discreteLayout );
-      
-      m_discreteTxt = new WText();
-      m_discreteTxt->setMargin( 15, Wt::Left );
-      m_discreteTxt->setMargin( 2, Wt::Top );
-      discreteLayout->addWidget( m_discreteTxt, 0, 0 );
-      
-      m_discreteCombo = new WComboBox();
-      m_discreteCombo->setMargin( 5, Wt::Left );
-      m_discreteCombo->setMargin( 2, Wt::Top );
-      discreteLayout->addWidget( m_discreteCombo, 0, 1 );
-      m_discreteCombo->activated().connect( this, &ConditionWidget::searchTextTypeChanged );
-      
-      discreteLayout->addWidget( new WContainerWidget(), 0, 2 );
-      discreteLayout->setColumnStretch( 2, 1 );
-      
-      
-      
-      m_numericContent = new WContainerWidget();
-      layout->addWidget( m_numericContent, 0, 3 );
-      layout->setColumnStretch( 3, 1 );
-      
-      WGridLayout *numericLayout = new WGridLayout();
-      numericLayout->setVerticalSpacing( 0 );
-      numericLayout->setContentsMargins( 0, 0, 0, 0 );
-      m_numericContent->setLayout( numericLayout );
-      
-      m_numericCombo = new WComboBox();
-      m_numericCombo->setMargin( 5, Wt::Left );
-      m_numericCombo->setMargin( 2, Wt::Top );
-      numericLayout->addWidget( m_numericCombo, 0, 1 );
-      m_numericCombo->addItem( "Matches" ); //ValueIsExact
-      m_numericCombo->addItem( "Less than" ); //ValueIsLessThan,
-      m_numericCombo->addItem( "Greater than" ); //ValueIsGreaterThan,
-      m_numericCombo->setCurrentIndex( 1 );
-      m_numericCombo->activated().connect( this, &ConditionWidget::searchTextTypeChanged );
-      
-      m_numericInput = new WLineEdit();
-      m_numericInput->setMargin( 5, Wt::Left );
-      numericLayout->addWidget( m_numericInput, 0, 2 );
-      m_numericInput->changed().connect( this, &ConditionWidget::searchTextChanged );
-      m_numericInput->enterPressed().connect( this, &ConditionWidget::searchTextChanged );
-      numericLayout->setColumnStretch( 2, 1 );
-      
-      m_timeContent = new WContainerWidget();
-      layout->addWidget( m_timeContent, 0, layout->columnCount() );
-      layout->setColumnStretch( layout->columnCount()-1, 1 );
-      m_timeContent->hide();
-      WGridLayout *timeLayout = new WGridLayout();
-      timeLayout->setVerticalSpacing( 0 );
-      timeLayout->setContentsMargins( 0, 0, 0, 0 );
-      m_timeContent->setLayout( timeLayout );
-
-      m_timeCombo = new WComboBox();
-      m_timeCombo->addItem( "Matches" ); //ValueIsExact
-      m_timeCombo->addItem( "Less than" ); //ValueIsLessThan,
-      m_timeCombo->addItem( "Greater than" ); //ValueIsGreaterThan,
-      m_timeCombo->setCurrentIndex( 1 );
-      m_timeCombo->activated().connect( this, &ConditionWidget::searchTextTypeChanged );
-      timeLayout->addWidget( m_timeCombo, 0, 0 );
-      
-      m_dateInput = new WDatePicker();
-      timeLayout->addWidget( m_dateInput, 0, 1 );
-      m_dateInput->changed().connect( this, &ConditionWidget::searchTextChanged );
-      
-#if( WT_VERSION >= 0x3030800 )
-      WTimeEdit *timeedit = new WTimeEdit();
-      m_timeInput = new WTimePicker( timeedit );
-      timeLayout->addWidget( m_timeInput, 0, 2 );
-#else
-      m_timeInput = new WTimePicker();
-      timeLayout->addWidget( m_timeInput, 0, 2 );
-#endif
-      
-      m_timeInput->selectionChanged().connect( this, &ConditionWidget::searchTextChanged );
-      
-      timeLayout->addWidget( new WContainerWidget(), 0, 3 );
-      timeLayout->setColumnStretch( 3, 1 );
-
-      
-      
-      //Add in some icons to add after, or delete this row
-      WText *addIcon = new WText();
-      addIcon->setStyleClass( "AddIcon" );
-      layout->addWidget( addIcon, 0, layout->columnCount() );
-      addIcon->clicked().connect( this, &ConditionWidget::addRequested );
-      
-      WText *closeIcon = new WText();
-      closeIcon->setStyleClass( "DeleteIcon" );
-      closeIcon->clicked().connect( this, &ConditionWidget::removeRequested );
-      layout->addWidget( closeIcon, 0, layout->columnCount() );
-      
-      
-      m_typeSelect->setCurrentIndex( SerialNumber );
-      m_typeSelect->activated().connect( this, &ConditionWidget::typeChanged );
-      
-      typeChanged( SerialNumber );
-    }//ConditionWidget constructor
-    
-    
-    bool isCondition()
-    {
-      return (m_typeSelect->currentIndex() < NumFileDataFields);
-    }
-    
-    bool isCloseParan()
-    {
-      return (m_typeSelect->currentIndex() == (int(NumFileDataFields) + int(LogicalCloseParan)));
-    }
-    
-    void setIsAnd()
-    {
-      const int index = int(NumFileDataFields) + LogicalAnd;
-      m_typeSelect->setCurrentIndex( index );
-      typeChanged( index );
-    }
-    
-    
-    SpecQuery::SpecTest test()
-    {
-      const int index = m_typeSelect->currentIndex();
-      if( index < 0 || (index >= NumFileDataFields) )
-        throw runtime_error( "ConditionWidget can not provide SpecTest for a logical widget" );
-      
-      const FileDataField type = FileDataField( index );
-      
-      SpecQuery::SpecTest t;
-    
-      switch( type )
-      {
-        case Filename: case DetectorName: case SerialNumber: case Manufacturer:
-        case Model: case Uuid: case Remark: case LocationName:
-        case AnalysisResultText: case AnalysisResultNuclide:
-        {
-          const string searctxt = m_searchTxt->text().toUTF8();
-          const TextFieldSearchType searchtype = TextFieldSearchType( m_txtSearchType->currentIndex() );
-          t.set_test( type, searctxt, searchtype );
-          break;
-        }
+          const EventXmlFilterInfo *info = nullptr;
           
-        case DetectionSystemType:
-        case SearchMode:
-          t.set_discreet_test( type, m_discreteCombo->currentIndex() );
-          break;
-        
-        case TotalLiveTime:
-        case TotalRealTime:
-        case IndividualSpectrumLiveTime:
-        case IndividualSpectrumRealTime:
-        {
-          double value = 0.0;
-          try
+          for( size_t i = 0; !info && i < eventXmlTests.size(); ++i )
           {
-            const string val = m_numericInput->text().toUTF8();
-            value = PhysicalUnits::stringToTimeDuration( val );
-          }catch(...)
-          {
-            value = std::numeric_limits<double>::infinity();
+            if( eventXmlTests[i].m_label == field_str )
+              info = &(eventXmlTests[i]);
           }
           
-          //const bool parsed = UtilityFunctions::parse_float( val.c_str(), val.size(), value );
-          t.set_numeric_test( type, value, NumericFieldMatchType(m_numericCombo->currentIndex()) );
-          break;
-        }
+          if( !info )
+            throw runtime_error( "Could not convert field '" + Wt::Utils::htmlEncode(field_str) + "' to a testable field." );
           
-        case StartTime:
-        {
-          const WDate wanteddate = m_dateInput->date();
-          const WTime wantedtime = m_timeInput->time();
-          const boost::gregorian::date date = wanteddate.toGregorianDate();
-          const boost::posix_time::time_duration duration = wantedtime.toTimeDuration();
+          //If we are here it is an Event XML test
+          const std::string &value_str = t.get("value");
           
-          const boost::posix_time::ptime time( date, duration );
+          EventXmlTest testitem;
           
-          t.set_time_test( type, time, NumericFieldMatchType(m_timeCombo->currentIndex()) );
-        }
+          switch( info->m_type )
+          {
+            case EventXmlFilterInfo::InputType::Text:
+            case EventXmlFilterInfo::InputType::Select:
+            {
+              TextFieldSearchType type;
+              if( !from_string(operator_str, type) )
+                throw runtime_error( "Couldnt not map '" + Wt::Utils::htmlEncode(operator_str) + "' to a TextFieldSearchType." );
+              
+              testitem.set_string_test_info( info->m_label, value_str, type );
+              break;
+            }
+              
+            case EventXmlFilterInfo::InputType::Date:
+            {
+              NumericFieldMatchType type;
+              if( !from_string(operator_str, type) )
+                throw runtime_error( "Couldnt not map '" + Wt::Utils::htmlEncode(operator_str) + "' to a NumericFieldMatchType." );
+              
+              const boost::posix_time::ptime test_time = UtilityFunctions::time_from_string( value_str.c_str() );
+              if( test_time.is_special() )
+                throw runtime_error( "Could not convert string '" + Wt::Utils::htmlEncode(value_str) + "' to a time" );
+              
+              testitem.set_date_test_info( info->m_label, test_time, type );
+              break;
+            }
+          }//switch( testinfo.m_type )
           
-        case NumFileDataFields:
-          break;
-      }//switch( type )
-      
-      return t;
-    }//SpecQuery::SpecTest test()
-    
-    LogicType logic()
-    {
-      const int index = m_typeSelect->currentIndex();
-      if( (index < NumFileDataFields) || ((index-NumFileDataFields) >= NumLogicType) )
-        throw runtime_error( "ConditionWidget can not provide LogicType for a test widget" );
-      return LogicType( index - NumFileDataFields );
-    }//logic()
-    
-    
-    Wt::Signal<> &changed(){ return m_changed; }
-    Wt::Signal<WWebWidget *> &add(){ return m_add; }
-    Wt::Signal<WWebWidget *> &remove(){ return m_remove; }
-    
-  protected:
-    
-    void typeChanged( int index )
-    {
-      setStyleClass( "SpecFileQueryCond" );
-      
-      if( index < NumFileDataFields )
-      {
-        m_searchTxt->enable();
-        m_searchTxt->setText( "" );
-        m_searchTxt->setPlaceholderText( "" );
+          test.addEventXmlTest( testitem );
+          
+          continue;
+        }//if( !from_string(field_str, field) )
         
-        m_txtSearchType->show();
-        m_searchTxt->setAttributeValue( "style", "text-align: left;" );
-        
-        m_txtContent->hide();
-        m_discreteContent->hide();
-        m_numericContent->hide();
-        m_timeContent->hide();
-        
-        const SpecQuery::FileDataField field = SpecQuery::FileDataField(index);
-        
-        const char *styleclass = "FileQueryTextSearch";
+        SpecTest testitem;
         
         switch( field )
         {
-          case Filename:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter filesystem path" );
-            break;
-            
-          case DetectorName:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter a detector name in file (ex A1, BA2, ...)" );
-            break;
-            
-          case SerialNumber:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter serial number given in file" );
-            break;
-            
-          case Manufacturer:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter manufacturer wanted (searches from file or infered)" );
-            break;
-            
-          case Model:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter model wanted (searches from file or infered)" );
-            break;
-            
-          case Uuid:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter UUID search (in file or else computed)" );
-            break;
-            
-          case Remark:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter remarks in file" );
-            break;
-            
-          case LocationName:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter location text given in file" );
-            break;
-            
-          case AnalysisResultText:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter text contained in analysis" );
-            break;
-            
-          case AnalysisResultNuclide:
-            m_txtContent->show();
-            m_searchTxt->setPlaceholderText( "Enter nuclides given by analysis in file (smart, ex \"Co60\" matches \"co 60\" and \"CO-60\", etc.)" );
-            break;
-            
-          case DetectionSystemType:
-            m_discreteContent->show();
-            m_discreteTxt->setText( "determined to be" );
-            m_discreteCombo->clear();
-            
-            for( DetectorType type = DetectorType(0); type <= kSam945; type = DetectorType(type+1) )
+          case FileDataField::SearchMode:
+          case FileDataField::DetectionSystemType:
+          case FileDataField::ContainedNuetronDetector:
+          case FileDataField::ContainedDeviationPairs:
+          case FileDataField::HasGps:
+          case HasRIIDAnalysis:
+          case FileDataField::EnergyCalibrationType:
+          {
+            int val = t.get("value");
+          
+            if( field == FileDataField::DetectionSystemType )
             {
-              switch( type )
+              //The bellow switch must match whats in JS - a little brittle, bu oh well for now
+              switch( val )
               {
-                case kGR135Detector:             m_discreteCombo->addItem( "GR135" ); break;
-                case kIdentiFinderDetector:      m_discreteCombo->addItem( "identiFINDER (first gen)" ); break;
-                case kIdentiFinderNGDetector:    m_discreteCombo->addItem( "identiFINDER NG/H" ); break;
-                case kIdentiFinderLaBr3Detector: m_discreteCombo->addItem( "identiFINDER LaBr3" ); break;
-                case kDetectiveDetector:         m_discreteCombo->addItem( "Detective (unknown model)" ); break;
-                case kDetectiveExDetector:       m_discreteCombo->addItem( "Detective EX/DX" ); break;
-                case kDetectiveEx100Detector:    m_discreteCombo->addItem( "Detective EX/DX-100" ); break;
-                case kOrtecIDMPortalDetector:    m_discreteCombo->addItem( "Ortec IDM" ); break;
-                case kSAIC8Detector:             m_discreteCombo->addItem( "SAIC8 Portal" ); break;
-                case kFalcon5000:                m_discreteCombo->addItem( "Falcon 5000" ); break;
-                case kUnknownDetector:           m_discreteCombo->addItem( "Unknown Detector" ); break;
-                case kMicroDetectiveDetector:    m_discreteCombo->addItem( "Micro Detective" ); break;
-                case kMicroRaiderDetector:       m_discreteCombo->addItem( "Micro Raider" ); break;
-                case kRadHunterNaI:              m_discreteCombo->addItem( "Rad Hunter NaI" ); break;
-                case kRadHunterLaBr3:            m_discreteCombo->addItem( "Rad Hunter LaBr3" ); break;
-                case kRsi701:                    m_discreteCombo->addItem( "RSI 701" ); break;
-                case kRsi705:                    m_discreteCombo->addItem( "RSI 705" ); break;
-                case kAvidRsi:                   m_discreteCombo->addItem( "Avid RSI" ); break;
-                case kOrtecRadEagleNai:          m_discreteCombo->addItem( "Ortec RadEagle NaI(Tl) 3x1" ); break;
-                case kOrtecRadEagleCeBr2Inch:    m_discreteCombo->addItem( "Ortec RadEagle CeBr3 2x1" ); break;
-                case kOrtecRadEagleCeBr3Inch:    m_discreteCombo->addItem( "Ortec RadEagle CeBr3 3x0.8" ); break;
-                case kOrtecRadEagleLaBr:         m_discreteCombo->addItem( "Ortec RadEagle LaBr3(Ce) 2x1" ); break;
-                case kSam940LaBr3:               m_discreteCombo->addItem( "Sam 940 LaBr3" ); break;
-                case kSam940:                    m_discreteCombo->addItem( "Sam 940" ); break;
-                case kSam945:                    m_discreteCombo->addItem( "Sam 945" ); break;
-              }//switch( type )
-              
-              m_discreteCombo->setCurrentIndex( kUnknownDetector );
-            }//for( loop over DetectorType )
+                case 0: val = static_cast<int>(DetectorType::kGR135Detector); break;
+                case 1: val = static_cast<int>(DetectorType::kIdentiFinderDetector); break;
+                case 2: val = static_cast<int>(DetectorType::kIdentiFinderNGDetector); break;
+                case 3: val = static_cast<int>(DetectorType::kIdentiFinderLaBr3Detector); break;
+                case 4: val = static_cast<int>(DetectorType::kDetectiveDetector); break;
+                case 5: val = static_cast<int>(DetectorType::kDetectiveExDetector); break;
+                case 6: val = static_cast<int>(DetectorType::kDetectiveEx100Detector); break;
+                case 7: val = static_cast<int>(DetectorType::kDetectiveEx200Detector); break;
+                case 8: val = static_cast<int>(DetectorType::kSAIC8Detector); break;
+                case 9: val = static_cast<int>(DetectorType::kFalcon5000); break;
+                case 10: val = static_cast<int>(DetectorType::kMicroDetectiveDetector); break;
+                case 11: val = static_cast<int>(DetectorType::kMicroRaiderDetector); break;
+                case 12: val = static_cast<int>(DetectorType::kSam940); break;
+                case 13: val = static_cast<int>(DetectorType::kSam940LaBr3); break;
+                case 14: val = static_cast<int>(DetectorType::kSam945); break;
+                case 15: val = static_cast<int>(DetectorType::kRsi701); break;
+                case 16: val = static_cast<int>(DetectorType::kRsi705); break;
+                case 17: val = static_cast<int>(DetectorType::kAvidRsi); break;
+                case 18: val = static_cast<int>(DetectorType::kRadHunterNaI); break;
+                case 19: val = static_cast<int>(DetectorType::kRadHunterLaBr3); break;
+                case 20: val = static_cast<int>(DetectorType::kOrtecRadEagleNai); break;
+                case 21: val = static_cast<int>(DetectorType::kOrtecRadEagleCeBr2Inch); break;
+                case 22: val = static_cast<int>(DetectorType::kOrtecRadEagleCeBr3Inch); break;
+                case 23: val = static_cast<int>(DetectorType::kOrtecRadEagleLaBr); break;
+                case 24: val = static_cast<int>(DetectorType::kSrpm210); break;
+                case 25: val = static_cast<int>(DetectorType::kUnknownDetector); break;
+                default:
+                  throw runtime_error( "Unknown DetectionSystemType value type" );
+              }//switch( val )
+            }else if( field == FileDataField::EnergyCalibrationType )
+            {
+              //The bellow switch must match whats in JS - a little brittle, bu oh well for now
+              switch( val )
+              {
+                case 0: val = static_cast<int>(Measurement::EquationType::Polynomial); break;
+                case 1: val = static_cast<int>(Measurement::EquationType::FullRangeFraction); break;
+                case 2: val = static_cast<int>(Measurement::EquationType::LowerChannelEdge); break;
+                case 3: val = static_cast<int>(Measurement::EquationType::UnknownEquationType); break;
+                default:
+                  throw runtime_error( "Unknown EnergyCalibrationType value type" );
+              }//switch( val )
+            }//if( DetectionSystemType ) / elif (EnergyCalibrationType)
+          
+            testitem.set_discreet_test( field, val );
             break;
+          }//case FileDataField::SearchMode:
             
-          case SearchMode:
-            m_discreteContent->show();
-            m_discreteTxt->setText( "Detector type is" );
-            m_discreteCombo->clear();
+          case FileDataField::TotalLiveTime:
+          case FileDataField::TotalRealTime:
+          case FileDataField::IndividualSpectrumLiveTime:
+          case FileDataField::IndividualSpectrumRealTime:
+          {
+            const std::string &value_str = t.get("value");
             
-            m_discreteCombo->addItem( "Dwell" );
-            m_discreteCombo->addItem( "Search/Passthrough" );
-            m_discreteCombo->setCurrentIndex( 0 );
+            NumericFieldMatchType matchtype;
+            
+            if( !from_string(operator_str, matchtype) ) //shouldnt ever happen!
+              throw runtime_error( "Could not map '" + operator_str + "' to a NumericFieldMatchType" );
+            
+            //if( !(stringstream(value_str) >> value) ) //Should have been valideted client-side, but lets be safe
+            //  throw runtime_error( "Could not convert '" + value_str + "' to a floating point" );
+            double value = std::numeric_limits<double>::infinity();
+            try{ value = PhysicalUnits::stringToTimeDuration( value_str ); }catch(...){}
+            
+            testitem.set_numeric_test( field, value, matchtype );
             break;
+          }//case( a float field )
             
-          case TotalLiveTime:
-            m_numericContent->show();
-            m_numericInput->setEmptyText( "Enter total live time of file (ex \"5s\" or \"3days 2h 15s\")" );
+          case FileDataField::NumberOfSamples:
+          case FileDataField::NumberOfRecords:
+          case FileDataField::NumberOfGammaChannels:
+          case FileDataField::MaximumGammaEnergy:
+          case FileDataField::Latitude:
+          case FileDataField::Longitude:
+          case FileDataField::NeutronCountRate:
+          case FileDataField::GammaCountRate:
+          {
+            NumericFieldMatchType matchtype;
+            if( !from_string(operator_str, matchtype) ) //shouldnt ever happen!
+              throw runtime_error( "Could not map '" + operator_str + "' to a NumericFieldMatchType" );
+            
+            const double value = t.get("value");
+            testitem.set_numeric_test( field, value, matchtype );
             break;
+          }
             
-          case TotalRealTime:
-            m_numericContent->show();
-            m_numericInput->setEmptyText( "Enter total wall time of file (ex \"5s\" or \"3days 2h 15s\")" );
+          case FileDataField::ParentPath:
+          case FileDataField::Filename:
+          case FileDataField::DetectorName:
+          case FileDataField::SerialNumber:
+          case FileDataField::Manufacturer:
+          case FileDataField::Model:
+          case FileDataField::Uuid:
+          case FileDataField::Remark:
+          case FileDataField::LocationName:
+          case FileDataField::AnalysisResultText:
+          case FileDataField::AnalysisResultNuclide:
+          {
+            const std::string &value_str = t.get("value");
+            
+            TextFieldSearchType type;
+            if( !from_string(operator_str, type) )
+              throw runtime_error( "Couldnt not map '" + operator_str + "' to a TextFieldSearchType." );
+            
+            testitem.set_test( field, value_str, type );
             break;
+          }//case( a string field )
             
-          case IndividualSpectrumLiveTime:
-            m_numericContent->show();
-            m_numericInput->setEmptyText( "Enter live time for any spectrum in file (ex \"5.4 seconds\")" );
+          case FileDataField::StartTime:
+          {
+            const std::string &value_str = t.get("value");
+            
+            NumericFieldMatchType matchtype;
+            if( !from_string(operator_str, matchtype) ) //shouldnt ever happen!
+              throw runtime_error( "Could not map '" + operator_str + "' to a NumericFieldMatchType for time comparison" );
+            
+            boost::posix_time::ptime comptime = UtilityFunctions::time_from_string( value_str.c_str() );
+            if( comptime.is_special() ) //Can definetly happen!
+              throw runtime_error( "The string '" + value_str + "' is not a valid date/time string." );
+            
+            testitem.set_time_test( field, comptime, matchtype );
             break;
+          }//case StartTime
             
-          case IndividualSpectrumRealTime:
-            m_numericContent->show();
-            m_numericInput->setEmptyText( "Enter wall time for any spectrum in file (ex \"5.4 seconds\")" );
-            break;
-            
-          case StartTime:
-            m_timeContent->show();
-            break;
-            
-          case NumFileDataFields:
-            throw runtime_error( "Logic error for SpecQuery::LogicType 0" );
+          case FileDataField::NumFileDataFields:
+            assert( 0 );
             break;
         }//switch( field )
         
-        addStyleClass( styleclass );
+        test.addCondition( testitem );
       }else
       {
-        const SpecQuery::LogicType type = SpecQuery::LogicType(index - NumFileDataFields);
-        if( type >= NumLogicType )
-          throw runtime_error( "Logic error for SpecQuery::LogicType" );
-        
-        m_txtContent->show();
-        m_discreteContent->hide();
-        
-        m_searchTxt->disable();
-        m_searchTxt->setPlaceholderText( "" );
-        
-        m_txtSearchType->hide();
-        m_searchTxt->setAttributeValue( "style", "text-align: center;" );
-        
-        switch( type )
-        {
-          case LogicalOr:
-            addStyleClass( "FileQueryOr" );
-            m_searchTxt->setText( "OR" );
-            break;
-            
-          case LogicalAnd:
-            addStyleClass( "FileQueryAnd" );
-            m_searchTxt->setText( "AND" );
-            break;
-            
-          case LogicalNot:
-            addStyleClass( "FileQueryNot" );
-            m_searchTxt->setText( "NOT" );
-            break;
-            
-          case LogicalOpenParan:
-            addStyleClass( "FileQueryOpenParan" );
-            m_searchTxt->setText( "Open Parenthesis" );
-            break;
-            
-          case LogicalCloseParan:
-            addStyleClass( "FileQueryCloseParan" );
-            m_searchTxt->setText( "Close Parenthesis" );
-            break;
-            
-          case NumLogicType:
-            assert( 0 );
-            break;
-        }//switch( type )
-        
-      }//if( index < NumFileDataFields ) / else
-      
-      m_changed.emit();
-    }//void typeChanged( int index )
+        throw runtime_error( "Unexpected query JSON of: " + Json::serialize(t) + "" );
+      }
+    }//for( size_t i = 0; i < rules.size(); ++i )
     
-    void searchTextTypeChanged()
-    {
-      m_changed.emit();
-    }
-    
-    void searchTextChanged()
-    {
-      m_changed.emit();
-    }
-    
-    void removeRequested()
-    {
-      m_remove.emit( this );
-    }
-    
-    void addRequested()
-    {
-      m_add.emit( this );
-    }
-    
-  protected:
-    
-    WComboBox *m_typeSelect;
-    
-    WContainerWidget *m_txtContent;
-    WLineEdit *m_searchTxt;
-    WComboBox *m_txtSearchType;
-    
-    WContainerWidget *m_discreteContent;
-    WText *m_discreteTxt;
-    WComboBox *m_discreteCombo;
-    
-    WContainerWidget *m_numericContent;
-    WComboBox *m_numericCombo;
-    WLineEdit *m_numericInput;
-    
-    WContainerWidget *m_timeContent;
-    WComboBox *m_timeCombo;
-    WDatePicker *m_dateInput;
-    WTimePicker *m_timeInput;
-    
-    
-    
-    Wt::Signal<> m_changed;
-    Wt::Signal<WWebWidget *> m_add, m_remove;
-  };//class ConditionWidget
+    if( rules.size() > 1 )
+      test.addLogic( LogicType::LogicalCloseParan );
+  }//void add_logic(...)
   
   
   void output_csv_field( std::ostream &out, std::string s)
@@ -1632,6 +371,8 @@ namespace
     //There are two escaping rules for each field in a comma-separated value row:
     //  1. Change each double quote to two double quotes.
     //  2. Surround with double quotes if the field contains a comma or double quote.
+    
+    //ToDo: see if this agrees with boost::io::quoted(...)
     
     if( s.find('"') != std::string::npos ) //Escape double-quotes
     {
@@ -1663,7 +404,7 @@ namespace
     WAbstractItemModel *m_model;
     
   public:
-    ResultCsvResource( WAbstractItemModel *model, WAnchor *parent )
+    ResultCsvResource( WAbstractItemModel *model, WPushButton *parent )
      : WResource( parent ),
        m_model( model )
     {
@@ -1702,166 +443,316 @@ namespace
       {
         for( int col = 0; col < ncol; ++col )
         {
-          const boost::any txt = m_model->data( row, col, (col==0 ? UserRole : DisplayRole) );
+          const boost::any txt = m_model->data( row, col, Wt::DisplayRole /* (col==FileDataField::Filename ? UserRole : DisplayRole)*/ );
           const WString txtstr = Wt::asString( txt );
+          const string utf8txt = txtstr.toUTF8();
+          
           response.out() << (col ? "," : "");
-          output_csv_field(	response.out(), txtstr.toUTF8() );
+          output_csv_field(	response.out(), utf8txt );
         }
         
         response.out() << "\r\n";
       }//for( int row = 0; row < nrow; ++row )
     }//handleRequest
 
-  };//class PeakCsvResource : public Wt::WResource
+  };//class ResultCsvResource : public Wt::WResource
 
   
-  
-  vector<string> get_result_fields( std::shared_ptr<MeasurementInfo> &meas )
+  vector<string> get_result_fields( const SpecFileInfoToQuery &meas, const string &base_search_dir,
+                                    const std::vector<EventXmlFilterInfo> &xmlfilters )
   {
-    vector<string> row( NumFileDataFields, "" );
-    std::shared_ptr<const DetectorAnalysis> anares = meas->detectors_analysis();
+    const size_t max_cell_size = 1024;
+    vector<string> row( NumFileDataFields + xmlfilters.size(), "" );
     
     for( FileDataField f = FileDataField(0); f < NumFileDataFields; f = FileDataField(f+1) )
     {
       switch( f )
       {
-        case Filename:
-          row[f] = meas->filename();
-          break;
-          
-        case DetectorName:
-          for( size_t i = 0; i < meas->detector_names().size(); ++i )
-            row[f] += (i ? ";" : "") + meas->detector_names()[i];
-          break;
-          
-        case SerialNumber:
-          row[f] = meas->instrument_id();
-          break;
-          
-        case Manufacturer:
-          row[f] = meas->manufacturer();
-          break;
-          
-        case Model:
-          row[f] = meas->instrument_model();
-          break;
-          
-        case Uuid:
-          row[f] = meas->uuid();
-          break;
-          
-        case Remark:
-          for( size_t i = 0; i < meas->remarks().size() && row[f].size() < 1024; ++i )
-            row[f] += (row[f].size() ? "\n" : "") + meas->remarks()[i];
-          
-          for( size_t i = 0; i < meas->num_measurements() && row[f].size() < 1024; ++i )
+        case FileDataField::ParentPath:
+          try
           {
-            std::shared_ptr<const Measurement>  m = meas->measurement(i);
-            for( size_t j = 0; j < m->remarks().size() && row[f].size() < 1024; ++j )
-              row[f] += (row[f].size() ? "\n" : "") + m->remarks()[j];
+            row[f] = UtilityFunctions::fs_relative( base_search_dir, UtilityFunctions::parent_path(meas.filename) );
+          }catch(...)
+          {
+#if( PERFORM_DEVELOPER_CHECKS )
+            log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected exception getting relative path between fi" );
+#endif
+            row[f] = UtilityFunctions::parent_path(meas.filename);
+            if( UtilityFunctions::starts_with(row[f], base_search_dir.c_str()) )
+              row[f] = row[f].substr(base_search_dir.size());
+          }
+          break;
+          
+        case FileDataField::Filename:
+          row[f] = meas.filename;
+          break;
+          
+        case FileDataField::DetectorName:
+          for( const auto &name : meas.detector_names )
+            row[f] += ((row[f].empty() || name.empty()) ? "" : ";") + name;
+          break;
+          
+        case FileDataField::SerialNumber:
+          row[f] = meas.serial_number;
+          break;
+          
+        case FileDataField::Manufacturer:
+          row[f] = meas.manufacturer;
+          break;
+          
+        case FileDataField::Model:
+          row[f] = meas.model;
+          break;
+          
+        case FileDataField::Uuid:
+          row[f] = meas.uuid;
+          break;
+          
+        case FileDataField::Remark:
+          for( const auto &remark : meas.file_remarks )
+          {
+            if( row[f].size() < max_cell_size && !remark.empty() )
+              row[f] += (row[f].size() ? "\n" : "") + remark;
           }
           
-          if( row[f].size() >= 1024 )
-            row[f] += "\n...";
-          break;
-          
-        case LocationName:
-          row[f] = meas->measurement_location_name();
-          break;
-          
-        case AnalysisResultText:
-          if( anares )
+          for( const auto &remark : meas.record_remarks )
           {
-            for( size_t i = 0; i < anares->remarks_.size() && row[f].size() < 1024; ++i )
-              row[f] += (row[f].size() ? "\n" : "") + anares->remarks_[i];
+            if( row[f].size() < max_cell_size && !remark.empty() )
+              row[f] += (row[f].size() ? "\n" : "") + remark;
+          }
+          break;
+          
+        case FileDataField::LocationName:
+          row[f] = meas.location_name;
+          break;
+          
+        case HasRIIDAnalysis:
+          row[f] = (meas.has_riid_analysis ? "Has RIID Ana" : "No RIID Ana");
+          break;
+          
+        case FileDataField::AnalysisResultText:
+        {
+          if( meas.has_riid_analysis )
+          {
+            const DetectorAnalysis &anares = meas.riid_ana;
+            for( size_t i = 0; i < anares.remarks_.size() && row[f].size() < max_cell_size; ++i )
+            {
+              if( anares.remarks_[i].size() )
+                row[f] += (row[f].size() ? "\n" : "") + anares.remarks_[i];
+            }
             
-            for( size_t i = 0; i < anares->results_.size() && row[f].size() < 1024; ++i )
+            for( size_t i = 0; i < anares.results_.size() && row[f].size() < max_cell_size; ++i )
             {
               string r;
-              if( anares->results_[i].nuclide_type_.size() )
-                r += anares->results_[i].nuclide_type_ + ";";
-              if( anares->results_[i].id_confidence_.size() )
-                r += (r.size() ? ";" : "") + anares->results_[i].id_confidence_ + ";";
-              if( anares->results_[i].remark_.size() )
-                r += (r.size() ? ";" : "") + anares->results_[i].remark_ + ";";
+              if( anares.results_[i].nuclide_type_.size() )
+                r += anares.results_[i].nuclide_type_ + ";";
+              if( anares.results_[i].id_confidence_.size() )
+                r += (r.size() ? ";" : "") + anares.results_[i].id_confidence_ + ";";
+              if( anares.results_[i].remark_.size() )
+                r += (r.size() ? ";" : "") + anares.results_[i].remark_ + ";";
               if( r.size() )
                 row[f] += (row[f].size() ? "\n" : "") + r;
             }
-            
-            if( row[f].size() >= 1024 )
-              row[f] += "\n...";
-          }//if( anares )
+          }//if( have analysis results )
           break;
+        }//case FileDataField::AnalysisResultText:
           
           
-        case AnalysisResultNuclide:
-          if( anares )
+        case FileDataField::AnalysisResultNuclide:
+        {
+          if( meas.has_riid_analysis )
           {
-            for( size_t i = 0; i < anares->results_.size(); ++i )
-              row[f] += (row[f].size() ? ";" : "") + anares->results_[i].nuclide_;
+            for( size_t i = 0; i < meas.riid_ana.results_.size() && row[f].size() < max_cell_size; ++i )
+              if( meas.riid_ana.results_[i].nuclide_.size() )
+                row[f] += (row[f].size() ? ";" : "") + meas.riid_ana.results_[i].nuclide_;
           }
           break;
+        }//case FileDataField::AnalysisResultNuclide:
           
-        case DetectionSystemType:
-          row[f] = detectorTypeToString( meas->detector_type() );
+        case FileDataField::DetectionSystemType:
+          row[f] = detectorTypeToString( meas.detector_type );
           break;
           
-        case SearchMode:
-          row[f] = (meas->passthrough() ? "Search/Passthrough" : "Dwell");
+        case FileDataField::SearchMode:
+          row[f] = (meas.passthrough ? "Search/Passthrough" : "Dwell");
           break;
           
-        case TotalLiveTime:
-          row[f] = PhysicalUnits::printToBestTimeUnits( meas->gamma_live_time() );
+        case FileDataField::ContainedNuetronDetector:
+          row[f] = (meas.contained_neutron ? "Has Neutron" : "No Neutron");
           break;
           
-        case TotalRealTime:
-          row[f] = PhysicalUnits::printToBestTimeUnits( meas->gamma_live_time() );
+        case FileDataField::ContainedDeviationPairs:
+          row[f] = (meas.contained_dev_pairs ? "Has Dev Pair" : "No Dev Pair");
           break;
           
-        case IndividualSpectrumLiveTime:
+        case FileDataField::HasGps:
+          row[f] = (meas.contained_gps ? "Has GPS" : "No GPS");
+          break;
+          
+        case FileDataField::EnergyCalibrationType:
         {
-          const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-          for( size_t i = 0; i < meass.size(); ++i )
+          for( const auto &caltype : meas.energy_cal_types )
           {
-            row[f] += (i?";":"") + PhysicalUnits::printToBestTimeUnits( meass[i]->live_time() );
-            if( row[f].size() > 1024 )
+            row[f] += (row[f].size() ? ";" : "");
+            switch( caltype )
+            {
+              case Measurement::EquationType::Polynomial:          row[f] += "polynomial"; break;
+              case Measurement::EquationType::FullRangeFraction:   row[f] += "full range fraction"; break;
+              case Measurement::EquationType::LowerChannelEdge:    row[f] += "lower channel energy"; break;
+              case Measurement::EquationType::UnknownEquationType: row[f] += "unknown"; break;
+            }//switch( m->energy_calibration_model() )
+          }//for( const auto &m : meas->measurements() )
+          break;
+        }//case FileDataField::EnergyCalibrationType:
+          
+        case FileDataField::TotalLiveTime:
+          row[f] = PhysicalUnits::printToBestTimeUnits( meas.total_livetime );
+          break;
+          
+        case FileDataField::TotalRealTime:
+          row[f] = PhysicalUnits::printToBestTimeUnits( meas.total_realtime );
+          break;
+          
+        case FileDataField::IndividualSpectrumLiveTime:
+        {
+          for( const auto lt : meas.individual_spectrum_live_time )
+          {
+            row[f] += (row[f].size()?";":"") + PhysicalUnits::printToBestTimeUnits(lt);
+            if( row[f].size() > max_cell_size )
+              break;
+          }
+          break;
+        }//case FileDataField::IndividualSpectrumLiveTime:
+          
+        case FileDataField::IndividualSpectrumRealTime:
+        {
+          for( const auto lt : meas.individual_spectrum_real_time )
+          {
+            row[f] += (row[f].size()?";":"") + PhysicalUnits::printToBestTimeUnits(lt);
+            if( row[f].size() > max_cell_size )
+              break;
+          }
+          break;
+        }//case FileDataField::IndividualSpectrumRealTime:
+          
+        case FileDataField::NumberOfSamples:
+          row[f] = std::to_string( meas.number_of_samples );
+          break;
+          
+        case FileDataField::NumberOfRecords:
+          row[f] = std::to_string( meas.number_of_records );
+          break;
+          
+        case FileDataField::NumberOfGammaChannels:
+        {
+          for( const auto nchan : meas.number_of_gamma_channels )
+          {
+            row[f] += (row[f].size()?";":"") + std::to_string(nchan);
+            if( row[f].size() > max_cell_size )
+              break;
+          }
+          break;
+        }//case FileDataField::NumberOfGammaChannels:
+          
+        case FileDataField::MaximumGammaEnergy:
+        {
+          for( const auto ene : meas.max_gamma_energy )
+          {
+            char buff[64];
+            snprintf( buff, sizeof(buff), "%.2f", ene);
+            row[f] += (row[f].empty()?"":";") + string(buff);
+            if( row[f].size() > max_cell_size )
+              break;
+          }
+          break;
+        }//case FileDataField::MaximumGammaEnergy:
+          
+        case FileDataField::Latitude:
+          if( meas.contained_gps )
+            row[f] = std::to_string( meas.mean_latitude );
+          break;
+          
+        case FileDataField::Longitude:
+          if( meas.contained_gps )
+            row[f] = std::to_string( meas.mean_longitude );
+          break;
+          
+        case FileDataField::NeutronCountRate:
+        {
+          for( const float cps : meas.neutron_count_rate )
+          {
+            char buff[64];
+            snprintf( buff, sizeof(buff), "%.2g", cps);
+            row[f] += (row[f].empty()?"":";") + string(buff);
+            if( row[f].size() > max_cell_size )
+              break;
+          }
+          break;
+        }//case FileDataField::NeutronCountRate:
+          
+        case FileDataField::GammaCountRate:
+        {
+          for( const float cps : meas.gamma_count_rate )
+          {
+            char buff[64];
+            snprintf( buff, sizeof(buff), "%.2g", cps);
+            row[f] += (row[f].empty()?"":";") + string(buff);
+            if( row[f].size() > max_cell_size )
+              break;
+          }
+          break;
+        }//case FileDataField::NeutronCountRate:
+          
+        case FileDataField::StartTime:
+        {
+          for( const auto &st : meas.start_times )
+          {
+            const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
+            row[f] += (row[f].size()?";":"") + UtilityFunctions::to_iso_string( epoch + boost::posix_time::seconds(st) );
+            if( row[f].size() > max_cell_size )
               break;
           }
           break;
         }
           
-        case IndividualSpectrumRealTime:
-        {
-          const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-          for( size_t i = 0; i < meass.size(); ++i )
-          {
-            row[f] += (i?";":"") + PhysicalUnits::printToBestTimeUnits( meass[i]->real_time() );
-            if( row[f].size() > 1024 )
-              break;
-          }
-          break;
-        }
-        
-        case StartTime:
-        {
-          const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-          for( size_t i = 0; i < meass.size(); ++i )
-          {
-            row[f] += (i?";":"") + UtilityFunctions::to_iso_string( meass[i]->start_time() );
-            if( row[f].size() > 1024 )
-              break;
-          }
-          
-          break;
-        }
-          
-        case NumFileDataFields:
+        case FileDataField::NumFileDataFields:
           break;
       }//switch( f )
     }//for( FileDataField f = FileDataField(0); f < NumFileDataFields; f = FileDataField(f+1) )
     
+    
+    for( size_t i = 0; i < xmlfilters.size(); ++i )
+    {
+      const string &label = xmlfilters[i].m_label;
+      const auto pos = meas.event_xml_filter_values.find(label);
+      if( pos == end(meas.event_xml_filter_values) )
+        continue;
+      
+      const int index = static_cast<int>(i) + NumFileDataFields;
+      
+      for( const string &res : pos->second )
+      {
+        row[index] += (row[index].size() ? "; " : "") + res;
+      }//for( size_t result = 0; result < pos->second.size(); ++result )
+    }//for( size_t i = 0; i < xmlfilters.size(); ++i )
+    
+    //ToDo: do we really need to replace commas and quotes?  I think we properly
+    //      quote things when saving to CSV.  Oh well for now.
+    for( string &col : row )
+    {
+      UtilityFunctions::ireplace_all(col,",", " ");
+      UtilityFunctions::ireplace_all(col, "\"", "&quot;");
+      
+      if( col.size() > max_cell_size )
+      {
+        UtilityFunctions::utf8_limit_str_size( col, max_cell_size-5 ); //count '\n' as twoa characters for windows
+        col += "\n...";
+      }
+    }//for( string &col : row )
+    
     return row;
-  }//vector<string> get_result_fields( std::shared_ptr<const MeasurementInfo> &meas )
+  }//vector<string> get_result_fields( const SpecFileInfoToQuery &meas )
+  
   
 
   struct HaveSeenUuid
@@ -1898,8 +789,8 @@ namespace
 /** Class made to hold results of the file query.  Had to specialized because
     WStandardItemModel requires you to add new data one row at a time, which 
     would cause a change in the RowStretchTreeView, so it would take over
-    a minute just to insert new results for the Traige Data file set that had
-    18.7k rows.  This also allows us to be a little more memorry efficient as 
+    a minute just to insert new results for the Data file set that had
+    ~20k rows.  This also allows us to be a little more memorry efficient as
     well.
  */
 class ResultTableModel : public WAbstractItemModel
@@ -1909,6 +800,7 @@ protected:
   int m_sortcolumn;
   Wt::SortOrder m_sortorder;
   boost::any m_summary;
+  std::vector<std::string> m_eventXmlColNames;
   
   
   struct row_less_than_t
@@ -1937,8 +829,17 @@ protected:
       
       bool lesthan = false;
       
+      //Take care of when it is an Event XML column
+      if( m_column >= NumFileDataFields )
+      {
+        lesthan = (lhs[m_column] < rhs[m_column]);
+        return ((m_order==Wt::AscendingOrder) ? lesthan : !lesthan);
+      }//if( m_column >= NumFileDataFields )
+      
+      
       switch( FileDataField(m_column) )
       {
+        case FileDataField::ParentPath:  //be lazy and just use full file path
         case Filename:
           lesthan = (UtilityFunctions::filename(lhs[m_column]) < UtilityFunctions::filename(rhs[m_column]));
           break;
@@ -1946,8 +847,10 @@ protected:
         case DetectorName: case SerialNumber: case Manufacturer:
         case Model: case Uuid: case Remark: case LocationName:
         case AnalysisResultText: case AnalysisResultNuclide:
-        case DetectionSystemType:
-        case SearchMode:
+        case HasRIIDAnalysis:
+        case DetectionSystemType: case SearchMode:
+        case ContainedNuetronDetector: case ContainedDeviationPairs:
+        case HasGps: case EnergyCalibrationType:
           lesthan = (lhs[m_column] < rhs[m_column]);
           break;
         
@@ -1986,6 +889,31 @@ protected:
           break;
         }
           
+        case NumberOfSamples:
+        case NumberOfRecords:
+        case NumberOfGammaChannels:
+        case MaximumGammaEnergy:
+        case Latitude:
+        case Longitude:
+        case NeutronCountRate:
+        case GammaCountRate:
+        {
+          const size_t lhssemi = lhs[m_column].find( ';' );
+          const size_t rhssemi = lhs[m_column].find( ';' );
+          const string lhsstr = ((lhssemi==string::npos) ? lhs[m_column] : lhs[m_column].substr(0,lhssemi));
+          const string rhsstr = ((rhssemi==string::npos) ? rhs[m_column] : rhs[m_column].substr(0,lhssemi));
+          
+          double lhsval, rhsval;
+          const bool pl = !!(stringstream(lhsstr) >> lhsval);
+          const bool pr = !!(stringstream(rhsstr) >> rhsval);
+          
+          if( pl && pr )
+            lesthan = (lhsval < rhsval);
+          else
+            lesthan = (pl < pr);
+          break;
+        }//
+          
         case StartTime:
         {
           const size_t lhssemi = lhs[m_column].find( ';' );
@@ -2021,6 +949,59 @@ public:
     
   }
   
+  void setEventXmlColumns( const std::vector<std::string> &collnames )
+  {
+    if( collnames == m_eventXmlColNames )
+      return;
+    
+    const int norig = static_cast<int>( m_eventXmlColNames.size() );
+    const int nafter = static_cast<int>( collnames.size() );
+    
+    if( nafter > norig )
+      beginInsertColumns( WModelIndex(), NumFileDataFields+norig, NumFileDataFields+nafter-1 );
+    else if( norig > nafter )
+      beginRemoveColumns( WModelIndex(), NumFileDataFields+nafter, NumFileDataFields+norig-1 );
+    else
+      layoutAboutToBeChanged().emit();
+      
+    m_eventXmlColNames = collnames;
+    
+    if( nafter > norig )
+      endInsertColumns();
+    else if( norig > nafter )
+      endRemoveColumns();
+    else
+      layoutChanged().emit();
+  }//void setEventXmlColumns( const std::vector<std::string> &collnames )
+  
+  
+  void appendResults( std::shared_ptr< vector< vector<string> > > result )
+  {
+    if( !result || result->empty() )
+      return;
+    
+    if( !m_result )
+      m_result = make_shared< vector<vector<string>> >();
+    
+    if( result && result->size() )
+    {
+      const int nprevrow = static_cast<int>( m_result->size() );
+      const int nrowadd = static_cast<int>( result->size() );
+      
+      beginInsertRows( WModelIndex(), nprevrow, nprevrow + nrowadd - 1 );
+      m_result->insert( end(*m_result), begin(*result), end(*result) );
+      endInsertRows();
+      
+      if( m_sortcolumn >= 0 )
+      {
+        layoutAboutToBeChanged().emit();
+        std::stable_sort( m_result->begin(), m_result->end(), row_less_than_t(m_sortcolumn,m_sortorder) );
+        layoutChanged().emit();
+      }
+    }
+  }//void appendResults( std::shared_ptr< vector< vector<string> > > result )
+  
+  
   void setResult( std::shared_ptr< vector< vector<string> > > result )
   {
     if( m_result && m_result->size() )
@@ -2032,7 +1013,6 @@ public:
     
     if( result && result->size() )
     {
-      
       if( m_sortcolumn >= 0 )
         std::stable_sort( result->begin(), result->end(), row_less_than_t(m_sortcolumn,m_sortorder) );
       
@@ -2046,7 +1026,7 @@ public:
   {
     if( parent.isValid() )
       return 0;
-    return NumFileDataFields;
+    return NumFileDataFields + static_cast<int>( m_eventXmlColNames.size() );
   }
   
   virtual int rowCount( const WModelIndex &parent = WModelIndex() ) const
@@ -2070,13 +1050,21 @@ public:
     
     const int row = index.row();
     const int col = index.column();
-    if( row < 0 || col < 0 || col >= NumFileDataFields
-       || row >= static_cast<int>(m_result->size()) )
+    if( row < 0 || col < 0 || row >= static_cast<int>(m_result->size()) )
       return boost::any();
+    
+    if( (col >= NumFileDataFields)
+       && ((col - NumFileDataFields) >= static_cast<int>(m_eventXmlColNames.size())) )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected (to large of) column requested (larger than ever expected)" );
+#endif
+      return boost::any();
+    }
     
     const vector<string> &fields = (*m_result)[row];
     
-    if( col == 0 )
+    if( col == FileDataField::Filename )
     {
       if( role == DisplayRole )
         return WString(UtilityFunctions::filename(fields[col]));
@@ -2089,7 +1077,12 @@ public:
       return boost::any();
     
     if( col >= static_cast<int>(fields.size()) )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected (to large of) column requested we dont have data for" );
+#endif
       return boost::any();
+    }
     
     return WString( fields[col] );
   }//data(...)
@@ -2105,35 +1098,64 @@ public:
   
   virtual boost::any headerData( int section, Orientation orientation = Horizontal, int role = DisplayRole ) const
   {
-    if( section < 0 || section >= NumFileDataFields || orientation != Horizontal )
+    if( section < 0 || orientation != Horizontal )
       return boost::any();
+    
     if( section == 0 && role == Wt::UserRole )
       return m_summary;
     
     if( role != DisplayRole )
       return boost::any();
     
-    switch( SpecQuery::FileDataField(section) )
+    if( section >= NumFileDataFields )
     {
-      case Filename:     return WString("Filename");
-      case DetectorName:          return WString("Detectors Name");
-      case SerialNumber:          return WString("Serial Number");
-      case Manufacturer:          return WString("Manufacturer");
-      case Model:                 return WString("Model");
-      case Uuid:                  return WString("UUID");
-      case Remark:                return WString("Remarks");
-      case LocationName:          return WString("Location Name");
-      case AnalysisResultText:    return WString("Analysis Txt");
-      case AnalysisResultNuclide: return WString("Analysis Nuclide");
-      case DetectionSystemType:   return WString("Detector Type");
-      case SearchMode:            return WString("Aquisition Mode");
-      case TotalLiveTime:         return WString("Sum Live Time");
-      case TotalRealTime:         return WString("Sum Wall Time");
+      const int index = section - NumFileDataFields;
+      if( index >= static_cast<int>(m_eventXmlColNames.size()) )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected (to large of) column requested for header data" );
+#endif
+        return boost::any();
+      }
+      return WString(m_eventXmlColNames[index]);
+    }//if( section >= NumFileDataFields )
+    
+    
+    switch( SpecFileQuery::FileDataField(section) )
+    {
+      case FileDataField::ParentPath:  return WString("Parent Path");
+      case Filename:                   return WString("Filename");
+      case DetectorName:               return WString("Detectors Name");
+      case SerialNumber:               return WString("Serial Number");
+      case Manufacturer:               return WString("Manufacturer");
+      case Model:                      return WString("Model");
+      case Uuid:                       return WString("UUID");
+      case Remark:                     return WString("Remarks");
+      case LocationName:               return WString("Location Name");
+      case AnalysisResultText:         return WString("Analysis Txt");
+      case HasRIIDAnalysis:            return WString("RIID Results");
+      case AnalysisResultNuclide:      return WString("Analysis Nuclide");
+      case DetectionSystemType:        return WString("Detector Type");
+      case SearchMode:                 return WString("Aquisition Mode");
+      case ContainedNuetronDetector:   return WString("Has Neutron");
+      case ContainedDeviationPairs:    return WString("Dev. Pairs");
+      case HasGps:                     return WString("GPS Info");
+      case EnergyCalibrationType:      return WString("Energy Cal. Type");
+      case TotalLiveTime:              return WString("Sum Live Time");
+      case TotalRealTime:              return WString("Sum Wall Time");
       case IndividualSpectrumLiveTime: return WString("Spec Live Times");
       case IndividualSpectrumRealTime: return WString("Spec Wall Times");
-      case StartTime:             return WString("Start Time");
+      case NumberOfSamples:            return WString("Num Samples");
+      case NumberOfRecords:            return WString("Num Records");
+      case NumberOfGammaChannels:      return WString("Num Gamma Channels");
+      case MaximumGammaEnergy:         return WString("Max Gamma Energy");
+      case Latitude:                   return WString("Latitude");
+      case Longitude:                  return WString("Longitude");
+      case NeutronCountRate:           return WString("Neutron CPS");
+      case GammaCountRate:             return WString("Gamma CPS");
+      case StartTime:                  return WString("Start Time");
         
-      case SpecQuery::NumFileDataFields: break;
+      case SpecFileQuery::NumFileDataFields: break;
     }
       
     return boost::any();
@@ -2167,27 +1189,42 @@ public:
 };//class ResultTableModel
 
 
+
+
+
 SpecFileQueryWidget::SpecFileQueryWidget( InterSpec *viewer, Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_stopUpdate( std::make_shared< std::atomic<bool> >(false) ),
     m_widgetDeleted( std::make_shared< std::atomic<bool> >(false) ),
     m_app( wApp ),
     m_viewer( viewer ),
-    m_conditions( 0 ),
-    m_addCondition( 0 ),
-    m_update( 0 ),
-    m_cancelUpdate( 0 ),
-    m_loadSelectedFile( 0 ),
-    m_resultmodel( 0 ),
-    m_resultview( 0 ),
-    m_baseLocation( 0 ),
-    m_recursive( 0 ),
-    m_filterByExtension( 0 ),
-    m_maxFileSize( 0 ),
-    m_filterUnique( 0 ),
-    m_numberFiles( 0 ),
-    m_numberResults( 0 ),
-    m_csv( 0 )
+    m_conditions( nullptr ),
+    m_update( nullptr ),
+    m_cancelUpdate( nullptr ),
+    m_loadSelectedFile( nullptr ),
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+    m_openSelectedDir( nullptr ),
+#endif
+    m_resultmodel( nullptr ),
+    m_resultview( nullptr ),
+#if( BUILD_AS_ELECTRON_APP )
+    m_pathSelectedSignal( nullptr ),
+#else
+    m_baseLocation( nullptr ),
+#endif
+    m_recursive( nullptr ),
+    m_filterByExtension( nullptr ),
+    m_maxFileSize( nullptr ),
+    m_filterUnique( nullptr ),
+    m_cacheParseResults( nullptr ),
+    m_persistCacheResults( nullptr ),
+    m_optionsBtn( nullptr ),
+    m_optionsMenu( nullptr ),
+    m_numberFiles( nullptr ),
+    m_numberResults( nullptr ),
+    m_csv( nullptr ),
+    m_queryChanged( this, "fileSearchQueryChanged", false ),
+    m_searchRequested( this, "fileSearchRequested", false )
 {
   init();
 }//SpecFileQueryWidget constructor
@@ -2196,11 +1233,36 @@ SpecFileQueryWidget::SpecFileQueryWidget( InterSpec *viewer, Wt::WContainerWidge
 SpecFileQueryWidget::~SpecFileQueryWidget()
 {
   m_widgetDeleted->store( true );
+  
+  for( auto &c : m_path_caches )
+  {
+    if( c.second )  //should always be true
+      c.second->stop_caching();
+  }
+  
+#if( BUILD_AS_OSX_APP )
+  SpecFileQuery::setIsSelectingDirectory( false );
+  SpecFileQuery::setSearchDirectory( "" );
+#endif
 }//~SpecFileQueryWidget()
 
 
 void SpecFileQueryWidget::init()
 {
+  wApp->useStyleSheet( "InterSpec_resources/SpecFileQueryWidget.css" );
+  
+  wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/query-builder.default.min.css" );
+  wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/QueryBuilderFakeBootstrap.css" );
+  
+  wApp->require( "InterSpec_resources/assets/js/moment-2.22.2/moment.min.js" );
+  
+  wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/js/query-builder.standalone.min.js" );
+  wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/i18n/query-builder.en.js" );
+  
+  LOAD_JAVASCRIPT(wApp, "js/SpecFileQueryWidget.js", "SpecFileQueryWidget", wtjsFileQueryInit);
+  
+  const string addfilters = prepareEventXmlFilters();
+  
   WGridLayout *layout = new WGridLayout();
   layout->setContentsMargins( 9, 9, 9, 0 );
   setLayout( layout );
@@ -2210,15 +1272,19 @@ void SpecFileQueryWidget::init()
   
   string defpath;
   int maxsize = 32;
-  bool dofilter = true, dorecursive = true;
+  bool dofilter = true, dorecursive = true, docache = true, instantToolTip = true;
   if( m_viewer )
   {
     try
     {
       dofilter = InterSpecUser::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
+      docache = InterSpecUser::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
       dorecursive = InterSpecUser::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
       maxsize = InterSpecUser::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
       defpath = InterSpecUser::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
+      instantToolTip = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+
+      
       if( defpath == "None" )
         defpath = "";
       
@@ -2237,22 +1303,64 @@ void SpecFileQueryWidget::init()
   linelayout->addWidget( label, 0, 0 );
   label->setMargin( 3, Wt::Top );
   
+#if( BUILD_AS_ELECTRON_APP )
+  //TODO: Actually test this all!
+  //Based see https://jaketrent.com/post/select-directory-in-electron/
+  //static_assert( 0, "Electron directory selector hasnt been tested at all - you need to do this" );
+  m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
+  
+  const string uploadname = id() + "PathPicker";
+  const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
+  
+  WText *uploadtext = new WText( uploadhtml, XHTMLUnsafeText );
+  linelayout->addWidget( uploadtext, 0, 1 );
+  
+  //TODO: put in error handling!
+  wApp->doJavaScript( "document.getElementById('" + uploadname + "').onchange = function(event){"
+                         "var outputDir = document.getElementById('" + uploadname + "').files[0].path;"
+                         "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
+                     "};"
+                     );
+  m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, _1 ) );
+#elif( BUILD_AS_OSX_APP )
+  SpecFileQuery::setIsSelectingDirectory( true );
+  setSearchDirectory( "" );
+  m_baseLocation = new WFileUpload();
+  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
+  linelayout->addWidget( m_baseLocation, 0, 1 );
+#else
   m_baseLocation = new WLineEdit();
   
   if( !defpath.empty() )
     m_baseLocation->setText( defpath );
-  
   linelayout->addWidget( m_baseLocation, 0, 1 );
   m_baseLocation->changed().connect( this, &SpecFileQueryWidget::basePathChanged );
   m_baseLocation->enterPressed().connect( this, &SpecFileQueryWidget::basePathChanged );
   m_baseLocation->setEmptyText( "Path to base directory to search" );
+#endif
   
-  m_recursive = new WCheckBox( "recursive" );
+  m_optionsBtn = new WPushButton( "Options" );
+  m_optionsBtn->addStyleClass( "SpecFileQueryOptionsBtn" );
+  
+  m_optionsMenu = new PopupDivMenu( m_optionsBtn, PopupDivMenu::MenuType::TransientMenu );
+  linelayout->addWidget( m_optionsBtn, 0, 2 );
+  
+  auto item = m_optionsMenu->addMenuItem( "recursive" );
+  item->setCheckable( true );
+  const char *tooltip = "Recursively searches sub-directories or the selected directory.";
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  
+  m_recursive = item->checkBox();
+  if( !m_recursive ) //This shouldnt ever happen, but JIC
+  {
+    m_recursive = new WCheckBox( "recursive" );
+    item->addWidget(m_recursive);
+  }
+  
   m_recursive->setChecked( dorecursive );
-  m_recursive->setMargin( 2, Wt::Top );
-  linelayout->addWidget( m_recursive, 0, 2 );
   m_recursive->checked().connect( this, &SpecFileQueryWidget::basePathChanged );
   m_recursive->unChecked().connect( this, &SpecFileQueryWidget::basePathChanged );
+  
   linelayout->setColumnStretch( 1, 1 );
   
   layout->addWidget( line, 0, 0 );
@@ -2267,58 +1375,101 @@ void SpecFileQueryWidget::init()
   line = new WContainerWidget();
   linelayout = new WGridLayout( line );
   
-  m_addCondition = new WText();
-  m_addCondition->setStyleClass( "AddIcon" );
-  m_addCondition->clicked().connect( this, &SpecFileQueryWidget::addCondition );
-  linelayout->addWidget( m_addCondition, 0, linelayout->columnCount() );
-  
 //  linelayout->addWidget( new WContainerWidget(), 0, linelayout->columnCount() );
 //  linelayout->setColumnStretch( linelayout->columnCount()-1, 1 );
 
-  label = new WLabel( "Max file size:" );
+  auto maxFileSizeDiv = new WContainerWidget();
+  label = new WLabel( "Max file size:", maxFileSizeDiv );
   label->setMargin( 4, Wt::Bottom );
   label->setMargin( 15, Wt::Left );
-  linelayout->addWidget( label, 0, linelayout->columnCount(), AlignBottom );
   
-  m_maxFileSize = new WSpinBox();
+  m_maxFileSize = new WSpinBox( maxFileSizeDiv );
   m_maxFileSize->setMaximum( 2*1024 );
-  m_maxFileSize->setMinimum( 1 );
+  m_maxFileSize->setMinimum( 0 );
   m_maxFileSize->setValue( maxsize );
   m_maxFileSize->setWidth( 55 );
-  linelayout->addWidget( m_maxFileSize, 0, linelayout->columnCount(), AlignCenter );
   label->setBuddy( m_maxFileSize );
-  m_maxFileSize->setToolTip( "Maximum size of file to attempt to parse as a spectrum file." );
   m_maxFileSize->valueChanged().connect( this, &SpecFileQueryWidget::basePathChanged );
   
-  
-  label = new WLabel( "MB" );
+  label = new WLabel( "MB", maxFileSizeDiv );
   label->setMargin( 6, Wt::Right );
   label->setMargin( 4, Wt::Bottom );
-  linelayout->addWidget( label, 0, linelayout->columnCount(), AlignBottom );
   label->setBuddy( m_maxFileSize );
 
-  m_filterByExtension = new WCheckBox( "pre-filter by extension" );
+  item = m_optionsMenu->addWidget( maxFileSizeDiv );
+  tooltip = "Maximum size of file to attempt to parse as a spectrum file.";
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  
+  item = m_optionsMenu->addMenuItem( "pre-filter by extension" );
+  item->setCheckable( true );
+  tooltip = "Eliminates common file types (ex. zip, doc, avi, etc) from search to speed results up.";
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  m_filterByExtension = item->checkBox();
+  if( !m_filterByExtension ) //shouldnt ever happen
+  {
+    m_filterByExtension = new WCheckBox( "pre-filter by extension" );
+    item->addWidget( m_filterByExtension );
+  }
+  
   m_filterByExtension->setChecked( dofilter );
-  m_filterByExtension->setMargin( 3, Wt::Bottom );
-  linelayout->addWidget( m_filterByExtension, 0, linelayout->columnCount(), AlignBottom );
   m_filterByExtension->checked().connect( this, &SpecFileQueryWidget::basePathChanged );
   m_filterByExtension->unChecked().connect( this, &SpecFileQueryWidget::basePathChanged );
-  m_filterByExtension->setToolTip( "Eliminates common file types (ex. zip, doc, avi, etc) from search to speed results up." );
-  m_filterByExtension->setMargin( 5, Wt::Right );
   
   
-  m_filterUnique = new WCheckBox( "filter duplicate files" );
+  item = m_optionsMenu->addMenuItem( "filter duplicate files" );
+  item->setCheckable( true );
+  tooltip = "Filters duplicate spectrum files through use of a hash of spectral and meta-information.";
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  m_filterUnique = item->checkBox();
+  if( !m_filterUnique ) //shouldnt ever happen
+  {
+    m_filterUnique = new WCheckBox( "filter duplicate files" );
+    item->addWidget( m_filterUnique );
+  }
+  
   m_filterUnique->setChecked( dofilter );
-  m_filterUnique->setMargin( 3, Wt::Bottom );
-  linelayout->addWidget( m_filterUnique, 0, linelayout->columnCount(), AlignBottom );
   m_filterUnique->checked().connect( this, &SpecFileQueryWidget::setResultsStale );
   m_filterUnique->unChecked().connect( this, &SpecFileQueryWidget::setResultsStale );
-  m_filterUnique->setToolTip( "Filters duplicate spectrum files through use of a hash of spectral and meta-information." );
-  m_filterUnique->setMargin( 5, Wt::Right );
   
   
   linelayout->addWidget( new WContainerWidget(), 0, linelayout->columnCount() );
   linelayout->setColumnStretch( linelayout->columnCount()-1, 6 );
+  
+  
+  item = m_optionsMenu->addMenuItem( "cache parse result" );
+  item->setCheckable( true );
+  tooltip = "Allows caching spectrum file parsing results for much faster subsequent searches of the same directory if you change search criteria.";
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  m_cacheParseResults = item->checkBox();
+  if( !m_cacheParseResults ) //shouldnt ever happen
+  {
+    m_cacheParseResults = new WCheckBox( "Cache parse result" );
+    item->addWidget( m_cacheParseResults );
+  }
+  
+  m_cacheParseResults->setChecked( docache );
+  m_cacheParseResults->checked().connect( this, &SpecFileQueryWidget::doCacheChanged );
+  m_cacheParseResults->unChecked().connect( this, &SpecFileQueryWidget::doCacheChanged );
+  
+  
+  
+  item = m_optionsMenu->addMenuItem( "persist cache result" );
+  item->setCheckable( true );
+  tooltip = "Saves the results of parse caching to a file in the directory selected to be searched."
+            " This allows the caching to persist across usages of this tool and InterSpec.";
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  m_persistCacheResults = item->checkBox();
+  if( !m_persistCacheResults ) //shouldnt ever happen
+  {
+    m_persistCacheResults = new WCheckBox( "Cache parse result" );
+    item->addWidget( m_persistCacheResults );
+  }
+  
+  m_persistCacheResults->setChecked( false );
+  m_persistCacheResults->checked().connect( this, &SpecFileQueryWidget::doPersistCacheChanged );
+  m_persistCacheResults->unChecked().connect( this, &SpecFileQueryWidget::doPersistCacheChanged );
+  
+  
   
   m_cancelUpdate = new WPushButton( "Cancel" );
   m_cancelUpdate->setHidden( true );
@@ -2326,7 +1477,16 @@ void SpecFileQueryWidget::init()
   m_cancelUpdate->clicked().connect( this, &SpecFileQueryWidget::cancelUpdate );
   
   m_update = new WPushButton( "Update" );
-  m_update->clicked().connect( this, &SpecFileQueryWidget::startUpdate );
+  m_update->clicked().connect(
+  "function(){"
+    "var result = $('#" + m_conditions->id() + "').queryBuilder('getRules',{ allow_invalid: true });"
+    "var resultjson = (!$.isEmptyObject(result)) ? JSON.stringify(result, null, 2) : 'empty';"
+    "Wt.emit('" + id() + "', 'fileSearchRequested', resultjson);"
+  "}" );
+  
+  m_queryChanged.connect( boost::bind( &SpecFileQueryWidget::queryChangedCallback, this, _1 ) );
+  m_searchRequested.connect( boost::bind( &SpecFileQueryWidget::searchRequestedCallback, this, _1 ) );
+  
   m_update->disable();
   linelayout->addWidget( m_update, 0, linelayout->columnCount() );
   
@@ -2339,15 +1499,27 @@ void SpecFileQueryWidget::init()
   m_resultview->setColumnWidth( 0, WLength(20,WLength::FontEx) );
   layout->addWidget( m_resultview, 3, 0 );
   layout->setRowStretch( 3, 5 );
+
+  vector<string> collnames;
+  for( const auto &filter : m_eventXmlFilters )
+    collnames.push_back( filter.m_label );
   
-  //m_resultmodel = new WStandardItemModel( 0, NumFileDataFields, this );
   m_resultmodel = new ResultTableModel( this );
+  m_resultmodel->setEventXmlColumns( collnames );
   
   m_resultview->setModel( m_resultmodel );
   m_resultview->setColumnHidden( DetectorName, true );
   m_resultview->setColumnHidden( Remark, true );
   m_resultview->setColumnHidden( LocationName, true );
   m_resultview->setColumnHidden( AnalysisResultText, true );
+  m_resultview->setColumnHidden( HasRIIDAnalysis, true );
+  
+  for( size_t i = 0; i < m_eventXmlFilters.size(); ++i )
+  {
+    m_resultview->setColumnHidden( static_cast<int>(NumFileDataFields+i),
+                                   !m_eventXmlFilters[i].show_in_gui_table );
+  }
+  
   m_resultview->selectionChanged().connect( this, &SpecFileQueryWidget::selectionChanged );
   m_resultview->setSelectionBehavior( Wt::SelectRows );
   m_resultview->setSelectionMode( Wt::SingleSelection );
@@ -2362,52 +1534,203 @@ void SpecFileQueryWidget::init()
   linelayout->addWidget( m_numberResults, 0, 1 );
   
   linelayout->setColumnStretch( 0, 1 );
-  linelayout->setColumnStretch( 1, 1 );
+  linelayout->setColumnStretch( 1, 2 );
   
-  if( m_viewer )
-  {
-    m_loadSelectedFile = new WPushButton( "Load Selected" );
-    linelayout->addWidget( m_loadSelectedFile, 0, 2, AlignRight );
-    m_loadSelectedFile->disable();
-    m_loadSelectedFile->clicked().connect( this, &SpecFileQueryWidget::loadSelected );
-  }
   
-  m_csv = new WAnchor();
+  m_csv = new WPushButton();
   ResultCsvResource *csvresource = new ResultCsvResource( m_resultmodel, m_csv );
+  m_csv->setIcon( "InterSpec_resources/images/download_small.png" );
   m_csv->setLink( WLink(csvresource) );
-  m_csv->setTarget( TargetNewWindow );
-  m_csv->setText( "csv" );
+  m_csv->setLinkTarget( Wt::TargetNewWindow );
+  m_csv->setText( "CSV" );
+  m_csv->setStyleClass( "CsvLinkBtn" );
   m_csv->disable();
   
-  linelayout->addWidget( m_csv, 0, 3, AlignBottom );
+  m_loadSelectedFile = new WPushButton( "Load Selected" );
+  linelayout->addWidget( m_loadSelectedFile, 0, linelayout->columnCount(), AlignRight );
+  m_loadSelectedFile->clicked().connect( this, &SpecFileQueryWidget::loadSelected );
+  m_loadSelectedFile->disable();
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( __APPLE__ )
+  const char *show_msg = "Show in Finder...";
+#else
+  const char *show_msg = "Show in Explorer...";
+#endif
+  m_openSelectedDir = new WPushButton( show_msg );
+  m_openSelectedDir->setToolTip( "Opens the directory containing the file in your operating systems file explorer." );
+  linelayout->addWidget( m_openSelectedDir, 0, linelayout->columnCount(), AlignRight );
+  m_openSelectedDir->clicked().connect( this, &SpecFileQueryWidget::openSelectedFilesParentDir );
+  m_openSelectedDir->disable();
+#endif
+
   
-  addCondition();
+  linelayout->addWidget( m_csv, 0, linelayout->columnCount(), AlignBottom );
   
+  const string init_js_call = "Wt.WT.FileQueryInit('" + m_conditions->id() + "','" + id() + "', " + addfilters + ");";
+  
+  doJavaScript( init_js_call );
+  
+#if( !BUILD_AS_OSX_APP )
   if( defpath.size() )
-    basePathChanged();
-}//void init()
-  
-
-SpecQuery::SpecFileQuery SpecFileQueryWidget::query()
-{
-  SpecQuery::SpecFileQuery q;
-  
-  const vector<WWidget *> kids = m_conditions->children();
-  for( size_t i = 0; i < kids.size(); ++i )
   {
-    ConditionWidget *cond = dynamic_cast<ConditionWidget *>( kids[i] );
-    if( !cond )
-      continue;
-    
-    if( cond->isCondition() )
-      q.addCondition( cond->test() );
-    else
-      q.addLogic( cond->logic() );
-  }//for( size_t i = 0; i < kids.size(); ++i )
-  
-  return q;
-}//SpecFileQuery query()
+    //TODO: Should do this basePathChanged in a non-gui thread.  Not sure if all
+    //  the protections against a non-null database is set up, or if there could
+    //  maybe be a race condition, so not niavely doing now.
+    //  The reason fo rthis is if there is a persisted database, it can take a
+    //  few seconds on the main GUI thread to do the initial sanity query.
+    basePathChanged();
+  }
+#endif
+}//void init()
 
+
+std::string SpecFileQueryWidget::prepareEventXmlFilters()
+{
+  //An example to check on unique values in event XMLs:
+  //grep -o "<urgency>.*</urgency>" ~/Desktop/spectra/Data/ExportScriptDownloaded/TE-18-*/*.xml | cut -d '>' -f2 | cut -d '<' -f1 > tmp.txt
+  //sort < tmp.txt | uniq
+  //
+  //To recursively remove a file type from set of directories:
+  //  find . -iname '*.kml' -exec rm {} \;
+  //To list all file extensions recursively in a directory
+  //  find . -type f | perl -ne 'print $1 if m/\.([^.\/]+)$/' | sort -u
+  //To find the largest directories in the current directory
+  //  du -a . | sort -n -r | head -n 20
+  //To unzip all zip files in current directory, and recursively in each subdirectory
+  //  find . -iname '*.zip' -exec sh -c 'unzip -d "${1%.*}" "$1"' _ {} \;
+  
+  
+  string filters = "[";
+  
+  vector<string> jsonfilenames;
+  try
+  {
+    const string jsonfilename = InterSpecUser::preferenceValue<string>("FileQueryEventQmlyFieldsFile", m_viewer);
+    UtilityFunctions::split( jsonfilenames, jsonfilename, ";" );
+  }catch(...)
+  {
+  }
+  
+  const string default_file = UtilityFunctions::append_path( InterSpec::dataDirectory(), "file_query_event_xml_fields.json" );
+  bool hasDefault = false;
+  for( const auto &f : jsonfilenames )
+    hasDefault = hasDefault || (UtilityFunctions::filename(f) == "file_query_event_xml_fields.json");
+  if( !hasDefault )
+    jsonfilenames.push_back( default_file );
+    
+  
+  for( const string jsonfilename : jsonfilenames )
+  {
+    ifstream inputjsonfile( jsonfilename.c_str() );
+  
+    if( !inputjsonfile.is_open() )
+    {
+      if( !jsonfilename.empty() && !UtilityFunctions::icontains(jsonfilename,"ouo") )
+        passMessage( "Unable to open JSON file '" + jsonfilename + "' defining fields to search in Event XML.",
+                   "", WarningWidget::WarningMsgHigh );
+      continue;
+    }//if( couldnt open file )
+  
+    const istream::pos_type orig_pos = inputjsonfile.tellg();
+    inputjsonfile.seekg( 0, ios::end );
+    const istream::pos_type eof_pos = inputjsonfile.tellg();
+    inputjsonfile.seekg( orig_pos, ios::beg );
+    const size_t filelen = 0 + eof_pos - orig_pos;
+  
+    if( filelen < 2 )
+    {
+      passMessage( "JSON file '" + jsonfilename + "' defining fields to search in Event XML is empty.",
+                  "", WarningWidget::WarningMsgHigh );
+      continue;
+    }
+  
+    if( filelen > 256*1024 )
+    {
+      passMessage( "JSON file '" + jsonfilename + "' defining fields to search in Event XML is larger than allowed 256 kb - not using.",
+                  "", WarningWidget::WarningMsgHigh );
+      continue;
+    }
+  
+    string jsonsourcestr( filelen, ' ' );
+    inputjsonfile.read( &jsonsourcestr[0], filelen );
+  
+    //Allow a comment section at the beggining of the file, e.g., /*....*/
+    UtilityFunctions::trim( jsonsourcestr );
+    if( jsonsourcestr.size() > 4 && jsonsourcestr[0]=='/' && jsonsourcestr[0]=='*' )
+    {
+      auto pos = jsonsourcestr.find("*/");
+      if( pos != string::npos )
+        jsonsourcestr = jsonsourcestr.substr(pos+2);
+    }
+  
+    std::vector<EventXmlFilterInfo> these_filters;
+    try
+    {
+      these_filters = EventXmlFilterInfo::parseJsonString( jsonsourcestr );
+    }catch( std::exception &e )
+    {
+      passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+      continue;
+    }
+  
+
+    for( const auto &et : these_filters )
+    {
+      m_eventXmlFilters.push_back( et );
+      
+      string thisfilter;
+      const string label = Wt::Utils::htmlEncode( et.m_label );
+    
+      thisfilter += (m_eventXmlFilters.size()>1 ? ",{" : "{");
+      thisfilter += "\n\tid: '" + label + "'"
+                  ",\n\tlabel: '" + label + "'";
+    
+      switch( et.m_type )
+      {
+        case EventXmlFilterInfo::InputType::Select:
+        {
+          thisfilter += ",\n\ttype: 'string'";
+          thisfilter += ",\n\tinput: 'select'";
+          thisfilter += ",\n\tvalues: [";
+          for( size_t i = 0; i < et.m_discreet_options.size(); ++i )
+            thisfilter += string(i?",":"") + "'" + et.m_discreet_options[i] + "'";
+          thisfilter += "]";
+          break;
+        }//case EventXmlFilterInfo::InputType::Select:
+        
+        case EventXmlFilterInfo::InputType::Text:
+        {
+          thisfilter += ",\n\ttype: 'string'";
+          if( !et.m_placeholder.empty() )
+            thisfilter += ",\n\tplaceholder: '" + et.m_placeholder + "'";
+          thisfilter += ",\n\tsize: 65";
+          break;
+        }
+    
+        case EventXmlFilterInfo::InputType::Date:
+        {
+          thisfilter += ",\n\ttype: 'date'";
+          thisfilter += ",\n\tvalidation: {format:'YYYY/MM/DD'}";
+          thisfilter += ",\n\tplaceholder: 'YYYY/MM/DD'";
+        }//
+      }//switch( et.second.m_type )
+    
+      thisfilter += ",\n\toperators: [";
+      for( size_t i = 0; i < et.m_operators.size(); ++i )
+        thisfilter += (i?",'":"'") + et.m_operators[i] + "'";
+    
+      thisfilter += "]";
+      thisfilter += "\n}";
+    
+      filters += thisfilter;
+    }//for( const auto &et : m_eventXmlFilters )
+  }//for( const string jsonfilename : jsonfilenames )
+    
+  filters += "]";
+  
+  return filters;
+}//std::string prepareEventXmlFilters()
 
 
 void SpecFileQueryWidget::setResultsStale()
@@ -2424,25 +1747,100 @@ void SpecFileQueryWidget::setResultsStale()
   m_resultview->disable();
   m_csv->disable();
   
+  m_optionsBtn->enable();
+  m_optionsMenu->enable();
+  
+  if( m_openSelectedDir )
+    m_openSelectedDir->disable();
+  
   if( m_loadSelectedFile )
     m_loadSelectedFile->disable();
   
   //Validate logic, and give hint if something wrong, or else
-  
-  SpecFileQuery q = query();
-  
+  bool queryvalid = true;
+  string errormsg;
   try
   {
-    q.isvalid();
+    queryFromJson( m_queryJson, m_eventXmlFilters );
+  }catch( std::exception &e )
+  {
+    errormsg = e.what();
+    queryvalid = false;
+  }
+  
+  if( queryvalid )
+  {
     m_numberResults->removeStyleClass( "SpecFileQueryErrorTxt" );
     m_update->enable();
     m_numberResults->setText( "Tap Update to refresh results" );
-  }catch( std::exception &e )
+  }else
   {
-    m_numberResults->setText( e.what() );
+    m_numberResults->setText( errormsg );
     m_numberResults->addStyleClass( "SpecFileQueryErrorTxt" );
   }
 }//void setResultsStale()
+
+
+
+void SpecFileQueryWidget::doCacheChanged()
+{
+  const std::string basepath = baseDirectory();
+  
+  auto map_iter = m_path_caches.find( basepath );
+  if( map_iter != end(m_path_caches) )
+  {
+    const bool docache = m_cacheParseResults->isChecked();
+    
+    m_persistCacheResults->setUnChecked();
+    m_persistCacheResults->setDisabled( !docache );
+    
+    std::shared_ptr<SpecFileQueryDbCache> database = map_iter->second;
+    if( database && (database->caching_enabled()==docache) )
+      return;//probably shouldnt ever happen, but whatever.
+    
+    m_path_caches.erase(map_iter);
+    if( !docache )
+      database->stop_caching();
+  }//if( map_iter != end(m_path_caches) )
+  
+  basePathChanged();
+}//void doCacheChanged()
+
+
+void SpecFileQueryWidget::doPersistCacheChanged()
+{
+  const bool persist = m_persistCacheResults->isChecked();
+  const std::string basepath = baseDirectory();
+  auto map_iter = m_path_caches.find( basepath );
+  if( (map_iter != end(m_path_caches)) && map_iter->second )
+  {
+    try
+    {
+      map_iter->second->set_persist( persist );
+    }catch( std::exception &e )
+    {
+      passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+      m_cacheParseResults->setChecked( false );
+      m_persistCacheResults->setChecked( false );
+      m_persistCacheResults->disable();
+    }
+  }//if( we can find the correct cache )
+}//void doPersistCacheChanged();
+
+
+#if( BUILD_AS_ELECTRON_APP )
+void SpecFileQueryWidget::newElectronPathSelected( std::string path )
+{
+  m_basePath = path;
+  basePathChanged();
+}
+#elif( BUILD_AS_OSX_APP )
+void SpecFileQueryWidget::newMacOsPathSelected()
+{
+  m_basePath = SpecFileQuery::getSearchDirectory();
+  basePathChanged();
+}//void newMacOsPathSelected()
+#endif
 
 
 void SpecFileQueryWidget::basePathChanged()
@@ -2452,51 +1850,103 @@ void SpecFileQueryWidget::basePathChanged()
   m_numberFiles->setText( "" );
   m_numberResults->setText( "" );
   m_update->enable();
-  
-  const std::string basepath = m_baseLocation->text().toUTF8();
+
+
+  const std::string basepath = baseDirectory();
+
   if( basepath.empty() || !UtilityFunctions::is_directory( basepath ) )
   {
     m_numberResults->setText( "Not a valid base directory" );
+#if( !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
     m_baseLocation->addStyleClass( "SpecFileQueryErrorTxt" );
+#endif
     m_update->disable();
     return;
   }
   
   const bool recursive = m_recursive->isChecked();
+  const bool docache = m_cacheParseResults->isChecked();
   const bool filter = m_filterByExtension->isChecked();
   const bool filterUnique = m_filterUnique->isChecked();
-  const int maxsize = m_maxFileSize->value();
+  const int maxsize = ((m_maxFileSize->value()==0) ? 2*1024 : m_maxFileSize->value());
   
   string prefpath;
   int prevmaxsize = 32;
-  bool prevrecursive = true, prevfilter = true, prevFilterUnique = true;
+  bool prevrecursive = true, prevfilter = true, prevFilterUnique = true, prevcache = true;
   try
   {
     prevmaxsize = InterSpecUser::preferenceValue<int>( "SpecFileQueryMaxSize", m_viewer );
+    prevcache = InterSpecUser::preferenceValue<bool>( "SpecFileQueryCacheParse", m_viewer );
     prevfilter = InterSpecUser::preferenceValue<bool>( "SpecFileQueryFilter", m_viewer );
     prevrecursive = InterSpecUser::preferenceValue<bool>( "SpecFileQueryRecursive", m_viewer );
     prevFilterUnique = InterSpecUser::preferenceValue<bool>( "SpecFileQueryUnique", m_viewer );
+#if( BUILD_AS_OSX_APP || BUILD_AS_ELECTRON_APP )
+    prefpath = "";
+#else
     prefpath = InterSpecUser::preferenceValue<string>( "SpecFileQueryPath", m_viewer );
     if( prefpath == "None" )
       prefpath = "";
-  }catch(...){}
+#endif
+  }catch(...)
+  {
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected error grabbing prefefence value" );
+#endif
+  }
   
   try
   {
     if( prevrecursive != recursive )
       InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryRecursive", recursive, m_viewer );
+    if( prevcache != docache )
+      InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryCacheParse", docache, m_viewer );
     if( prevfilter != filter )
       InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryFilter", filter, m_viewer );
     if( maxsize != prevmaxsize )
       InterSpecUser::setPreferenceValue<int>( m_viewer->m_user, "SpecFileQueryFilter", maxsize, m_viewer );
     if( filterUnique != prevFilterUnique )
       InterSpecUser::setPreferenceValue<bool>( m_viewer->m_user, "SpecFileQueryUnique", filterUnique, m_viewer );
+#if( !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
     if( prefpath != basepath )
       InterSpecUser::setPreferenceValue<string>( m_viewer->m_user, "SpecFileQueryPath", basepath, m_viewer );
-  }catch( ... ){}
+#endif
+  }catch( ... )
+  {
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected error setting prefefence value" );
+#endif
+  }
   
+#if( !BUILD_AS_OSX_APP  && !BUILD_AS_ELECTRON_APP )
   m_baseLocation->removeStyleClass( "SpecFileQueryErrorTxt" );
-
+#endif
+  
+  for( auto &i : m_path_caches )
+  {
+    if( i.second )
+      i.second->stop_caching();
+  }
+  
+  const bool cache_in_db = m_cacheParseResults->isChecked();
+  
+  std::shared_ptr<SpecFileQueryDbCache> database;
+  auto map_iter = m_path_caches.find( basepath );
+  if( map_iter != end(m_path_caches) )
+    database = map_iter->second;
+  if( !database )
+    database = m_path_caches[basepath] = make_shared<SpecFileQueryDbCache>( cache_in_db, basepath, m_eventXmlFilters );
+  
+  if( cache_in_db )
+  {
+    database->allow_start_caching();
+    m_persistCacheResults->enable();
+    m_persistCacheResults->setChecked( database->is_persistand() );
+  }else
+  {
+    m_persistCacheResults->disable();
+    m_persistCacheResults->setChecked( false );
+  }
+  
   WServer *server = WServer::instance();  //can this ever be NULL?
   if( server )
   {
@@ -2504,7 +1954,8 @@ void SpecFileQueryWidget::basePathChanged()
     const size_t maxsize_mb = static_cast<size_t>(maxsize*1024*1024);
     server->ioService().post( boost::bind( &SpecFileQueryWidget::updateNumberFiles,
                                            basepath, recursive, filter, maxsize_mb,
-                                           this, wApp->sessionId(), m_widgetDeleted ) );
+                                           this, wApp->sessionId(), m_widgetDeleted,
+                                           database ) );
   }else
   {
     cerr << SRC_LOCATION << "\n\tWarning: couldnt get WServer to post to - not good" << endl << endl;
@@ -2518,11 +1969,93 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
                                     const size_t maxsize,
                                     SpecFileQueryWidget *querywidget,
                                     const std::string sessionid,
-                                    std::shared_ptr< std::atomic<bool> > widgetdeleted )
+                                    std::shared_ptr< std::atomic<bool> > widgetdeleted,
+                                    std::shared_ptr<SpecFileQueryDbCache> database )
 {
+  vector<string> files;
+  
   UtilityFunctions::file_match_function_t filterfcn = extfilter ? &maybe_spec_file : &file_smaller_than;
   
-  vector<string> files;
+#if( USE_DIRECTORY_ITERATOR_METHOD )
+  double updatetime = UtilityFunctions::get_wall_time();
+  const bool docache = (database && database->caching_enabled());
+  
+  size_t nfiles = 0;
+  boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::symlink_option::recurse );
+  const boost::filesystem::recursive_directory_iterator dirend;
+  
+  while( diriter != dirend )
+  {
+    if( *widgetdeleted )
+      return;
+    
+    string filename = diriter->path().string<std::string>();
+    
+    const bool is_dir = boost::filesystem::is_directory( diriter.status() ); //folows symlinks to see if target of symlink is a directory
+    bool is_file = (diriter.status().type() == boost::filesystem::file_type::regular_file);  //folows symlinks
+    
+    if( !recursive && is_dir )
+    {
+      is_file = false; //JIC
+      diriter.no_push();  //Dont recurse down into directories if we arent doing a recursive search
+    }
+    
+    bool is_simlink_dir = false;
+    if( is_dir && recursive )
+    {
+      //If this is a directory, check if we are actually on a symlink to a
+      //  directory, because if so, we need to check for cyclical links.
+      boost::system::error_code symec;
+      const auto symstat = boost::filesystem::symlink_status( diriter->path(), symec );
+      is_simlink_dir = (!symec && (symstat.type()==boost::filesystem::file_type::symlink_file));
+    }
+    
+    if( is_simlink_dir )
+    {
+      auto resvedpath = boost::filesystem::read_symlink( diriter->path() );
+      if( resvedpath.is_relative() )
+        resvedpath = diriter->path().parent_path() / resvedpath;
+      resvedpath = boost::filesystem::canonical( resvedpath );
+      auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
+      if( UtilityFunctions::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
+        diriter.no_push();  //Dont recurse down into directories
+    }//if( is_simlink_dir && recursive )
+    
+    
+    if( is_file && filterfcn( filename, (void *)&maxsize ) )
+    {
+      if( docache && (files.size() < 100000) )
+        files.push_back( filename );
+      
+      ++nfiles;
+      if( (nfiles % 500) == 0 )
+      {
+        const double nowtime = UtilityFunctions::get_wall_time();
+        if( (nowtime - updatetime) > 1.0 )
+        {
+          updatetime = nowtime;
+          if( !(*widgetdeleted) )
+            WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateNumberFilesInGui,
+                                                              nfiles, false, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+          else
+            return;
+        }
+      }//if( (nfiles % 500) == 0 )
+    }//if( this is a potential file we should check on )
+    
+    boost::system::error_code ec;
+    diriter.increment(ec);
+    while( ec && (diriter!=dirend) )
+    {
+      std::cerr << "Error While Accessing : " << diriter->path().string() << " :: " << ec.message() << '\n';
+      diriter.increment(ec);
+    }
+  }//while( diriter != dirend )
+  
+  if( !(*widgetdeleted) )
+    WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateNumberFilesInGui,
+                                                      nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+#else
   if( recursive )
     files = UtilityFunctions::recursive_ls( srcdir, filterfcn, (void *)&maxsize );
   else
@@ -2532,11 +2065,28 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
   
   if( !(*widgetdeleted) )
     WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateNumberFilesInGui,
-                                                    nfiles, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+                                                    nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+  
+#endif
+  
+  
+  if( database && database->caching_enabled() )
+    database->cache_results( std::move(files) );
 }//updateNumberFiles
 
 
+std::string SpecFileQueryWidget::baseDirectory()
+{
+#if( BUILD_AS_OSX_APP || BUILD_AS_ELECTRON_APP )
+  return m_basePath;
+#else
+  return m_baseLocation->text().toUTF8();
+#endif
+}//std::string baseDirectory()
+
+
 void SpecFileQueryWidget::updateNumberFilesInGui( const size_t nfiles,
+                            const bool completed,
                             const std::string srcdir,
                             const bool recursive,
                             const bool extfilter,
@@ -2549,125 +2099,166 @@ void SpecFileQueryWidget::updateNumberFilesInGui( const size_t nfiles,
   if( (*widgetdeleted) )
     return;
   
-  const string newdir = querywidget->m_baseLocation->text().toUTF8();
+  const string newdir = querywidget->baseDirectory();
   
   //Check if the user has changed pre-filter chriteria since this search was
   //  launched, and if so dont update the GUI (another search has been launched
   //  and will update things)
   if( newdir != srcdir
+      || newdir.empty()
       || recursive != querywidget->m_recursive->isChecked()
       || extfilter != querywidget->m_filterByExtension->isChecked() )
       return;
-    
+  
+#if( USE_DIRECTORY_ITERATOR_METHOD )
+  if( completed )
+  {
+    querywidget->m_numberFiles->setText( (to_string(nfiles) + " initial files").c_str() );
+  }else
+  {
+    string msg = to_string(nfiles) + "+ files...";
+    querywidget->m_numberFiles->setText( msg.c_str() );
+  }
+#else
   const string nfilesstr = (nfiles<99000 ? to_string(nfiles) : string(">100k"));
   querywidget->m_numberFiles->setText( (nfilesstr + " initial files").c_str() );
-    
+#endif //USE_DIRECTORY_ITERATOR_METHOD
+  
   wApp->triggerUpdate();
 }//updateNumberFilesInGui(...)
 
 
-void SpecFileQueryWidget::setResultFieldVisibility( const SpecQuery::FileDataField field, const bool visible )
+void SpecFileQueryWidget::setResultFieldVisibility( const SpecFileQuery::FileDataField field, const bool visible )
 {
   m_resultview->setColumnHidden( field, visible );
 }//void setResultFieldVisibility(...)
 
 
-void SpecFileQueryWidget::addConditionAt( int index )
+void SpecFileQueryWidget::queryChangedCallback( const std::string &queryJson )
 {
-  const vector<WWidget *> kids = m_conditions->children();
+  //should have been checked client side that the query has actually changed,
+  //  so we'll skip doing that here.
+  m_queryJson = queryJson;
   
-  if( index < 0 )
-    index = 0;
-  if( index > static_cast<int>(kids.size()) )
-    index = static_cast<int>(kids.size());
+  setResultsStale();
+}//void queryChangedCallback( const std::string &queryJson );
+
+
+SpecFileQuery::SpecLogicTest SpecFileQueryWidget::queryFromJson( const std::string &queryJson,
+                const std::vector<EventXmlFilterInfo> &eventXml )
+{
+  SpecFileQuery::SpecLogicTest test;
   
-  ConditionWidget *lastcond = kids.size() ? dynamic_cast<ConditionWidget *>( kids.back() ) : (ConditionWidget *)0;
-  if( lastcond && (lastcond->isCondition() || lastcond->isCloseParan()) )
+  try
   {
-    ConditionWidget *cond = new ConditionWidget();
-    m_conditions->insertWidget( index, cond );
-    cond->setIsAnd();
-    cond->add().connect( this, &SpecFileQueryWidget::addConditionAfter );
-    cond->remove().connect( this, &SpecFileQueryWidget::removeCondition );
-    cond->changed().connect( this, &SpecFileQueryWidget::setResultsStale );
-    index += 1;
-  }//if( lastcond )
+    if( UtilityFunctions::istarts_with(queryJson, "empty") )
+      throw runtime_error( "<p>Unable to translate query into test logic.</p>"
+                            "<p>Please take a screenshot of query and send to "
+                            "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a></p>" );
   
-  ConditionWidget *cond = new ConditionWidget();
-  m_conditions->insertWidget( index++, cond );
-  cond->add().connect( this, &SpecFileQueryWidget::addConditionAfter );
-  cond->remove().connect( this, &SpecFileQueryWidget::removeCondition );
-  cond->changed().connect( this, &SpecFileQueryWidget::setResultsStale );
+    Json::Object q;
+    Wt::Json::parse( queryJson, q );
   
-  setResultsStale();
-}//void addConditionAt( int index )
+    const auto &valid = q.get("valid");
+  
+    if( valid.isNull() )
+      throw std::runtime_error( "Query logic is not formated as expected." );
+  
+    if( !valid )
+      throw std::runtime_error( "Query is currently not valid, please fix errors." );
+  
+    const Json::Value &baseCond = q.get( "condition" );
+    const Json::Array &baseRules = q.get( "rules" );
+  
+    if( baseCond.isNull() || baseRules==Json::Array::Empty ) //shouldnt ever happen
+      throw std::runtime_error( "Error converting query to search logic: case condition or rules not avaialble" );
+  
+    add_logic( test, baseCond, baseRules, eventXml );
+  
+    test.isvalid();  //throws exception giving description of issue
+  }catch( Wt::Json::ParseError &e )
+  {
+    throw runtime_error( "Error parsing JSON from user interface: " + string(e.what()) );
+  }catch( std::runtime_error & )
+  {
+    throw;
+  }//try /catch
+  
+  return test;
+}//SpecFileQuery::SpecLogicTest SpecFileQueryWidget::queryFromJson( const std::string &json )
 
 
-void SpecFileQueryWidget::addCondition()
+void SpecFileQueryWidget::searchRequestedCallback( const std::string &queryJson )
 {
-  addConditionAt( static_cast<int>( m_conditions->children().size() ) );
-}//void addCondition()
-
-
-void SpecFileQueryWidget::addConditionAfter( WWebWidget *ww )
-{
-  const int index = m_conditions->indexOf( ww );
-  addConditionAt( index + 1 );
-}//void addConditionAfter( WWebWidget *ww )
-
-
-void SpecFileQueryWidget::removeCondition( WWebWidget *ww )
-{
-  if( ww && (m_conditions->indexOf(ww) >= 0) )
-    delete ww;
-
-  setResultsStale();
-}//void SpecFileQueryWidget::removeCondition()
-
-
-void SpecFileQueryWidget::startUpdate()
-{
-  const std::string basepath = m_baseLocation->text().toUTF8();
-  const bool recursive = m_recursive->isChecked();
-  const bool filter = m_filterByExtension->isChecked();
-  const SpecQuery::SpecFileQuery q = query();
-  const size_t maxsize = 1024*1024*m_maxFileSize->value();
-  const bool filterUnique = m_filterUnique->isChecked();
+  //cout << "Got query string: " << queryJson << endl;
+  m_queryJson = queryJson;
   
-  m_cancelUpdate->show();
-  m_update->hide();
-  m_baseLocation->disable();
-  m_addCondition->disable();
-  m_conditions->disable();
-  m_maxFileSize->disable();
-  m_filterUnique->disable();
-  m_recursive->disable();
-  m_filterByExtension->disable();
-  m_csv->disable();
-  m_resultview->disable();
-  m_numberResults->setText( "Updating results" );
-  if( m_resultmodel->rowCount() )
-    m_resultmodel->setResult( std::shared_ptr< vector< vector<string> > >() );
-    //m_resultmodel->removeRows( 0, m_resultmodel->rowCount() );
-  
-  unsigned long options = 0x0;
-  if( recursive )
-    options |= SearchRecursive;
-  if( filter )
-    options |= FilterByFilename;
-  if( filterUnique )
-    options |= FilterDuplicates;
-  
-  m_stopUpdate->store( false );
-  WServer::instance()->ioService().post(
-        boost::bind( &SpecFileQueryWidget::doSearch, this, basepath, options,
-                     maxsize, q, wApp->sessionId(), m_stopUpdate,
-                     m_widgetDeleted ) );
-}//void startUpdate()
+  try
+  {
+    SpecFileQuery::SpecLogicTest test = queryFromJson( queryJson, m_eventXmlFilters );
+    
+    //cout << "Translated JSON to: " << test.summary() << endl;
+    
+    const std::string basepath = baseDirectory();
+    const bool recursive = m_recursive->isChecked();
+    const bool filter = m_filterByExtension->isChecked();
+    const size_t maxsize = 1024*1024*(m_maxFileSize->value() ? m_maxFileSize->value() : 2*1024);
+    const bool filterUnique = m_filterUnique->isChecked();
+    
+    m_cancelUpdate->show();
+    m_update->hide();
+#if( BUILD_AS_ELECTRON_APP )
+#else
+    m_baseLocation->disable();
+#endif
+    m_conditions->disable();
+    
+    //ToDo: need to make it so you cant modify any of the QUeryBuilder widgets until the search is ended.  Maybe something like:
+    //var rule = $('#builder').queryBuilder('getRules', { get_flags: true });
+    // Then set 'readonly' flag to true
+    //$('#builder').queryBuilder('setRules', rule);
+    //  but for right now we'll just take the heavyhanded approach and manually siable all the widget.
+    doJavaScript( "$('#" + m_conditions->id() + "').find('select, input, button, .btn').prop('disabled',true).addClass('Wt-disabled');" );
+    
+    m_csv->disable();
+    m_optionsBtn->disable();
+    m_optionsMenu->disable();
+    m_resultview->disable();
+    m_numberResults->setText( "Updating results" );
+    if( m_resultmodel->rowCount() )
+      m_resultmodel->setResult( nullptr );
+    
+    unsigned long options = 0x0;
+    if( recursive )
+      options |= SearchRecursive;
+    if( filter )
+      options |= FilterByFilename;
+    if( filterUnique )
+      options |= FilterDuplicates;
+    
+    std::shared_ptr<SpecFileQueryDbCache> database;
+    auto map_iter = m_path_caches.find( basepath );
+    if( map_iter != end(m_path_caches) )
+      database = map_iter->second;
+    
+    if( !database )
+      database = std::make_shared<SpecFileQueryDbCache>( false, basepath, m_eventXmlFilters );
+    
+    m_stopUpdate->store( false );
+    WServer::instance()->ioService().post(
+                                          boost::bind( &SpecFileQueryWidget::doSearch, this, basepath, options,
+                                                      maxsize, test, wApp->sessionId(), database, m_stopUpdate,
+                                                      m_widgetDeleted ) );
+  }catch( std::runtime_error &e )
+  {
+    passMessage( "Current query is invalid: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+  }//try /catch
+}//void searchRequestedCallback( std::string queryJson )
 
 
 void SpecFileQueryWidget::finishUpdate( std::shared_ptr< std::vector< std::vector<std::string> > > result,
                                         const std::string description,
+                                        const double clock_seconds,
                                         const bool wasCanceled,
                                         std::shared_ptr< std::atomic<bool> > widgetDeleted )
 {
@@ -2676,15 +2267,16 @@ void SpecFileQueryWidget::finishUpdate( std::shared_ptr< std::vector< std::vecto
   
   m_cancelUpdate->hide();
   m_update->show();
+#if( BUILD_AS_ELECTRON_APP )
+#else
   m_baseLocation->enable();
-  m_maxFileSize->enable();
-  m_filterUnique->enable();
+#endif
   m_conditions->enable();
-  m_addCondition->enable();
-  m_recursive->enable();
-  m_filterByExtension->enable();
   m_resultview->enable();
   m_csv->enable();
+  m_optionsBtn->enable();
+  m_optionsMenu->enable();
+  doJavaScript( "$('#" + m_conditions->id() + "').find('select, input, button, .btn').prop('disabled',false).removeClass('Wt-disabled');" );
   
   if( wasCanceled )
   {
@@ -2695,33 +2287,13 @@ void SpecFileQueryWidget::finishUpdate( std::shared_ptr< std::vector< std::vecto
   }
   
   m_resultmodel->setHeaderData( 0, Horizontal, boost::any(WString(description)), Wt::UserRole );
-  m_resultmodel->setResult( result );
+  //m_resultmodel->setResult( result );
+  m_resultmodel->appendResults( result );
   
-  /*
-  for( size_t i = 0; i < result->size(); ++i )
-  {
-    const vector<string> &row = (*result)[i];
-    
-    std::vector< WStandardItem * > rowitems( row.size() );
-    for( size_t j = 0; j < row.size(); ++j )
-    {
-      if( j == SpecQuery::Filename )
-      {
-        rowitems[j] = new WStandardItem( WString( UtilityFunctions::filename(row[j]) ) );
-        rowitems[j]->setData( WString(row[j]), Wt::UserRole );
-      }else
-      {
-        rowitems[j] = new WStandardItem( WString(row[j]) );
-      }
-    }
-    m_resultmodel->appendRow( rowitems );
-  }
-   */
-  
-  char buffer[256];
-  snprintf( buffer, sizeof(buffer), "%i matching files", static_cast<int>(result->size()) );
-  
-  m_numberResults->setText( buffer );
+  const string timestr = PhysicalUnits::printToBestTimeUnits( clock_seconds, 1, 1.0 );
+
+  const int numRows = m_resultmodel->rowCount();
+  m_numberResults->setText( std::to_string(numRows) + " matching files. Took " + timestr + "." );
   
   wApp->triggerUpdate();
 }//finishUpdate(...)
@@ -2736,18 +2308,31 @@ void SpecFileQueryWidget::cancelUpdate()
 
 void SpecFileQueryWidget::updateSearchStatus( const size_t nfilestotal,
                                               const size_t nfileschecked,
-                                              const size_t nfilesaccepted,
                                               const std::string specialmsg,
+                                              std::shared_ptr< std::vector< std::vector<std::string> > > results,
                                               std::shared_ptr< std::atomic<bool> > widgetDeleted )
 {
   if( widgetDeleted->load() )
     return;
   
+  if( results && results->size() )
+    m_resultmodel->appendResults( results );
+  
+  const int nfilesaccepted = m_resultmodel->rowCount();
+  
   char buffer[256];
-  snprintf( buffer, sizeof(buffer), "%i of %i checked with %i passing%s",
-            static_cast<int>(nfileschecked), static_cast<int>(nfilestotal),
-            static_cast<int>(nfilesaccepted), specialmsg.c_str() );
+  if( nfilestotal == 0 )
+  {
+    snprintf( buffer, sizeof(buffer), "Checked %i files with %i passing%s",
+             static_cast<int>(nfileschecked), nfilesaccepted, specialmsg.c_str() );
+  }else
+  {
+    snprintf( buffer, sizeof(buffer), "%i of %i checked with %i passing%s",
+              static_cast<int>(nfileschecked), static_cast<int>(nfilestotal),
+              nfilesaccepted, specialmsg.c_str() );
+  }
   m_numberResults->setText( buffer );
+  
   
   wApp->triggerUpdate();
 }//void updateSearchStatus(...)
@@ -2755,25 +2340,27 @@ void SpecFileQueryWidget::updateSearchStatus( const size_t nfilestotal,
 
 
 void testfile( const string &filename, vector<string> &result,
-               const SpecQuery::SpecFileQuery &query,
-               HaveSeenUuid &uniquecheck )
+               const SpecFileQuery::SpecLogicTest &query,
+               HaveSeenUuid &uniquecheck,
+               std::shared_ptr< SpecFileQueryDbCache > database,
+               const string &base_search_dir )
 {
   try
   {
     result.clear();
     
-    std::shared_ptr<MeasurementInfo> meas = std::make_shared<MeasurementInfo>();
-    if( meas->load_file( filename, kAutoParser, filename ) )
-    {
-      meas->set_filename( filename );
-      
-      if( uniquecheck.have_seen( meas->uuid() ) )
-        return;
-      
-      const bool testresult = query.test( meas );
-      if( testresult )
-        result = get_result_fields( meas );
-    }
+    std::unique_ptr<SpecFileInfoToQuery> db_test_info = database->spec_file_info( filename );
+    
+    if( !db_test_info || !db_test_info->is_spectrum_file /*&& !db_test_info.is_event_xml_file*/ )
+      return;
+    
+    if( uniquecheck.have_seen( db_test_info->uuid ) )
+      return;
+    
+    const bool testresult = query.test( *db_test_info );
+    
+    if( testresult )
+      result = get_result_fields( *db_test_info, base_search_dir, database->xml_filters() );
   }catch( ... )
   {
     cerr << "Caught exception testing file: " << filename << endl;
@@ -2781,11 +2368,13 @@ void testfile( const string &filename, vector<string> &result,
 }//testfile
 
 
+
 void SpecFileQueryWidget::doSearch( const std::string basedir,
                                     unsigned long options,
                                     const size_t maxsize,
-                                    const SpecQuery::SpecFileQuery query,
+                                    const SpecFileQuery::SpecLogicTest query,
                                     const std::string sessionid,
+                                    std::shared_ptr< SpecFileQueryDbCache > database,
                                     std::shared_ptr< std::atomic<bool> > stopUpdate,
                                     std::shared_ptr< std::atomic<bool> > widgetDeleted )
 {
@@ -2818,6 +2407,14 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
   
   HaveSeenUuid uniqueCheck( filterUnique );
   
+  //If we are currently caching files to the database, we should stop that
+  //  so we dont end up stepping on eachothers toes when parsing the same file
+  //  twice (which happens when the search catches up to the caching).
+  if( database )
+    database->stop_caching();
+  
+  size_t num_files_pass = 0;
+  
   try
   {
     if( stopUpdate->load() )
@@ -2829,6 +2426,14 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     typedef vector<string>(*ls_fcn_t)( const string &, UtilityFunctions::file_match_function_t, void * );
     UtilityFunctions::file_match_function_t filterfcn = extfilter ? &maybe_spec_file : &file_smaller_than;
     
+    
+#if( USE_DIRECTORY_ITERATOR_METHOD )
+    if( stopUpdate->load() )
+      throw std::runtime_error( "" );
+    
+    WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
+                                                      this, 0, 0, "", result, widgetDeleted ) );
+#else
     ls_fcn_t lsfcn = &UtilityFunctions::recursive_ls;
     if( !recursive )
       lsfcn = &UtilityFunctions::ls_files_in_directory;
@@ -2842,58 +2447,166 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
       throw std::runtime_error( "" );
     
     WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
-                                                      this, nfiles, 0, result->size(), "", widgetDeleted ) );
+                                                      this, nfiles, 0, "", result, widgetDeleted ) );
+#endif //USE_DIRECTORY_ITERATOR_METHOD
     
+    int nupdates_sent = 0;
     double lastupdate = UtilityFunctions::get_wall_time();
     
     //We could choose something like 100 for nfile_at_a_time with the only
     //  dowsides being N42 files would parse any faster due to not enough
     //  threads being available, and also the fact that when parsing multiple
     //  file, hard drive bandwidth is probably the main limiting factor.
+#if( defined(WIN32) )
+    //The penalty of multiple seeks is redicuolous on spinning drives - just use a single thread...
+    const int nfile_at_a_time = 1;
+#else
     const int nfile_at_a_time = SpecUtilsAsync::num_physical_cpu_cores();
+#endif
     
     SpecUtilsAsync::ThreadPool pool;
-  
-    for( int i = 0; i < nfiles; i += nfile_at_a_time )
+    
+#if( USE_DIRECTORY_ITERATOR_METHOD )
+    size_t ncheckssubmitted = 0;
+    std::mutex result_mutex;
+    
+    boost::filesystem::recursive_directory_iterator diriter( basedir, boost::filesystem::symlink_option::recurse );
+    const boost::filesystem::recursive_directory_iterator dirend;
+    
+    while( diriter != dirend )
     {
       if( stopUpdate->load() )
         throw runtime_error("");
       
-      const double now = UtilityFunctions::get_wall_time();
-      if( now > (lastupdate + 1.0) )
+      string filename = diriter->path().string<std::string>();
+      
+      const bool is_dir = boost::filesystem::is_directory( diriter.status() ); //folows symlinks to see if target of symlink is a directory
+      bool is_file = (diriter.status().type() == boost::filesystem::file_type::regular_file);  //folows symlinks
+     
+      if( !recursive && is_dir )
       {
-        WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
-                                    this, nfiles, i, result->size(), "", widgetDeleted ) );
-        lastupdate = now;
+        is_file = false; //JIC
+        diriter.no_push();  //Dont recurse down into directories if we arent doing a recursive search
       }
+      
+      bool is_simlink_dir = false;
+      if( is_dir && recursive )
+      {
+        //If this is a directory, check if we are actually on a symlink to a
+        //  directory, because if so, we need to check for cyclical links.
+        boost::system::error_code symec;
+        const auto symstat = boost::filesystem::symlink_status( diriter->path(), symec );
+        is_simlink_dir = (!symec && (symstat.type()==boost::filesystem::file_type::symlink_file));
+      }
+      
+      if( is_simlink_dir )
+      {
+        auto resvedpath = boost::filesystem::read_symlink( diriter->path() );
+        if( resvedpath.is_relative() )
+          resvedpath = diriter->path().parent_path() / resvedpath;
+        resvedpath = boost::filesystem::canonical( resvedpath );
+        auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
+        if( UtilityFunctions::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
+          diriter.no_push();  //Dont recurse down into directories
+      }//if( is_simlink_dir && recursive )
+      
+      
+      if( is_file && filterfcn( filename, (void *)&maxsize ) )
+      {
+        if( (ncheckssubmitted % nfile_at_a_time) == 0 )
+        {
+          pool.join();
+          
+          const double now = UtilityFunctions::get_wall_time();
+          if( now > (lastupdate + 1.0) || !nupdates_sent )
+          {
+            ++nupdates_sent;
+            num_files_pass += result->size();
+            
+            std::unique_lock<std::mutex> lock( result_mutex );
+            WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
+                                                              this, 0, ncheckssubmitted, "", result, widgetDeleted ) );
+            result = std::make_shared< vector<vector<string> > >();
+            lastupdate = now;
+          }
+        }
+        
+        pool.post( [filename,&query,&uniqueCheck,&database,&basedir,&result,&result_mutex](){
+          vector<string> testres;
+          testfile( filename, testres, query, uniqueCheck, database, basedir );
+          if( !testres.empty() )
+          {
+            std::unique_lock<std::mutex> lock( result_mutex );
+            result->push_back( testres );
+          }
+        } );
+        
+        ++ncheckssubmitted;
+      }//if( this is a potential file we should check on )
+      
+      boost::system::error_code ec;
+      diriter.increment(ec);
+      while( ec && (diriter!=dirend) )
+      {
+        std::cerr << "Error While Accessing : " << diriter->path().string() << " :: " << ec.message() << '\n';
+        diriter.increment(ec);
+      }
+    }//while( diriter != dirend )
+    
+    pool.join();
+    
+#else
+    
+    for( int i = 0; i < nfiles; i += nfile_at_a_time )
+    {
+      if( stopUpdate->load() )
+        throw runtime_error("");
       
       const int nfilethisone = std::min( nfiles-i, nfile_at_a_time );
       
       vector< vector<string> > testres( nfilethisone );
       
       for( int j = 0; j < nfilethisone; ++j )
-        pool.post( boost::bind( &testfile, boost::cref(files[i+j]), boost::ref(testres[j]), boost::cref(query), boost::ref(uniqueCheck) ) );
+        pool.post( boost::bind( &testfile, boost::cref(files[i+j]), boost::ref(testres[j]),
+                                boost::cref(query), boost::ref(uniqueCheck), database,
+                                boost::cref(basedir) ) );
       pool.join();
       
       for( int j = 0; j < nfilethisone; ++j )
         if( testres[j].size() )
           result->push_back( testres[j] );
       
-      if( nfilethisone > 1000 )
+      const double now = UtilityFunctions::get_wall_time();
+      if( now > (lastupdate + 2.0) || !nupdates_sent )
+      {
+        ++nupdates_sent;
+        num_files_pass += result->size();
         WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
-                                                          this, nfiles, i, result->size(), ", Updating GUI.", widgetDeleted ) );
-    }//for( size_t i = 0; i < nfiles; ++i )
+                                                          this, nfiles, i+nfilethisone, "", result, widgetDeleted ) );
+        result = std::make_shared< vector<vector<string> > >();
+        lastupdate = now;
+      }
+    }//for( size_t i = 0; i < nfiles; ++i  )
+#endif //USE_DIRECTORY_ITERATOR_METHOD
   }catch( ... )
   {
-    WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::finishUpdate, this, result, description.str(), true, widgetDeleted ) );
+    const double total_clock_time = (UtilityFunctions::get_wall_time() - starttime);
+    WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::finishUpdate, this, result, description.str(), total_clock_time, true, widgetDeleted ) );
   }
   
+  const double total_clock_time = (UtilityFunctions::get_wall_time() - starttime);
   const double finishtime = UtilityFunctions::get_wall_time();
   const double finishcpu = UtilityFunctions::get_cpu_time();
   
   description << "Search took " << (finishtime - starttime) << " wall seconds and " << (finishcpu - startcpu) << " cpu seconds \r\n";
-  description << "There were " << result->size() << " files that satisfied the test conditions\r\n";
-  WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::finishUpdate, this, result, description.str(), false, widgetDeleted ) );
+  description << "There were " << (num_files_pass+result->size()) << " files that satisfied the test conditions\r\n";
+  
+  //ToDo: I guess there is, in principle, a slight chance that the previous post
+  //      to updateSearchStatus() could happen _after_ this next post to
+  //      finishUpdate().  But I guess life will go on for now (I dont think this
+  //      will actually happen because although its not gaurnteed in the future,
+  //      the underlying boost::asio scedules jobs serially - I think).
+  WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::finishUpdate, this, result, description.str(), total_clock_time,  false, widgetDeleted ) );
 }//doSearch(...)
   
 
@@ -2904,8 +2617,62 @@ void SpecFileQueryWidget::selectionChanged()
     return;
   
   const bool sel = (m_resultview->selectedIndexes().size() == 1);
-  m_loadSelectedFile->setEnabled( sel );
+  if( m_loadSelectedFile )
+    m_loadSelectedFile->setEnabled( sel );
+  
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+  if( m_openSelectedDir )
+    m_openSelectedDir->setEnabled( sel );
+#endif
 }//selectionChanged()
+
+
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+void SpecFileQueryWidget::openSelectedFilesParentDir()
+{
+  const WModelIndexSet selected = m_resultview->selectedIndexes();
+  if(selected.size() != 1 )
+    return;
+  
+  const int row = selected.begin()->row();
+  WModelIndex findex = m_resultmodel->index( row, SpecFileQuery::Filename );
+  boost::any fnany = m_resultmodel->data( findex, Wt::UserRole );
+  std::string filenameandy = asString(fnany).toUTF8();
+  
+  const string parentdir = UtilityFunctions::parent_path(filenameandy);
+  if( !UtilityFunctions::is_directory(parentdir) )
+    return;
+  
+#if( BUILD_AS_ELECTRON_APP )
+  //Opens the directory in the operating system
+  //doJavaScript( "const {shell} = require('electron'); shell.openItem('" + parentdir + "');" );  //Works on macOS.  Need to test on WIndows.
+  
+  //Opens the directory and highlights file in oeprating system file manager
+  //For windows need to ecape '\'.
+
+#if( defined(WIN32) )
+  //UtilityFunctions::ireplace_all( filenameandy, "\\\\", "[%%%%%%%%]" );
+  UtilityFunctions::ireplace_all( filenameandy, "\\", "\\\\" );
+  //UtilityFunctions::ireplace_all( filenameandy, "[%%%%%%%%]", "\\\\\\\\" );
+  //ToDo: Check into compilation optimization 
+  //      Add time it took for a search to result text
+#endif
+
+  doJavaScript( "const {shell} = require('electron'); shell.showItemInFolder('" + filenameandy + "');" );  //Works on macOS.  Need to test on WIndows.
+#elif( BUILD_AS_LOCAL_SERVER || __APPLE__ )
+#if( __APPLE__ )
+  const string command = "open '" + parentdir + "'";
+  system( command.c_str() );  //Havent tested with macOS Sandboxing yet.
+#elif( BUILD_AS_LOCAL_SERVER && defined(WIN32) )
+  ShellExecute(NULL, NULL, parentdir.c_str(), NULL, NULL,  SW_SHOWNORMAL);
+  //static_assert( 0, "You need to implement opening a Explorer window or something" );
+#else
+  static_assert( 0, "You need to implement opening a Finder window or something" );
+#endif
+#endif
+}//void SpecFileQueryWidget::openSelectedFilesParentDir()
+#endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
 
 
 void SpecFileQueryWidget::loadSelected()
@@ -2918,23 +2685,21 @@ void SpecFileQueryWidget::loadSelected()
     return;
   
   const int row = selected.begin()->row();
-  WModelIndex findex = m_resultmodel->index( row, SpecQuery::Filename );
+  WModelIndex findex = m_resultmodel->index( row, SpecFileQuery::Filename );
   boost::any fnany = m_resultmodel->data( findex, Wt::UserRole );
-  std::string filenameandy = asString( fnany ).toUTF8();
+  const std::string filenameandy = asString(fnany).toUTF8();
   
-  const std::string filename = asString( selected.begin()->data(Wt::UserRole) ).toUTF8();
-  
-  if( !UtilityFunctions::is_file(filename) )
+  if( !UtilityFunctions::is_file(filenameandy) )
   {
-    passMessage( "Sorry, '" + filename + "' file appears to no longer be accessable", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Sorry, '" + filenameandy + "' file appears to no longer be accessable", "", WarningWidget::WarningMsgHigh );
     m_resultview->setSelectedIndexes( WModelIndexSet() );
     return;
   }
   
   
-  const bool loaded = m_viewer->fileManager()->loadFromFileSystem( filename, kForeground, kAutoParser );
+  const bool loaded = m_viewer->fileManager()->loadFromFileSystem( filenameandy, kForeground, kAutoParser );
   
   if( !loaded )
-    passMessage( "Sorry, '" + filename + "' can not be displayed", "", WarningWidget::WarningMsgHigh );
+    passMessage( "Sorry, '" + filenameandy + "' can not be displayed", "", WarningWidget::WarningMsgHigh );
 }//loadSelected()
   

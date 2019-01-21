@@ -1,0 +1,73 @@
+    <div align="center">
+      <h1 id="gamma-xs-dialog"><b>Gamma XS Calc</b></h1>
+      <hr />
+	  </div>
+<div>
+This tool allows you to determine the cross section for gammas of arbitrary
+energy through any material in <em>InterSpec</em>'s library, or any element or
+material formula you enter.  If the density of the material is known or
+specified, as well as the length of traversal through the material, the fraction
+of gamma rays that will make it through the material without interacting with it
+is also given as the &#34;Trans. Frac.&#34;.  Further, if a detector is specified,
+along with the distance from the source to the detector (note this is from the
+source, and not from the shielding around it), then efficiency estimates for
+detection of the gamma rays inside the full energy peak will also be given.
+</div>
+
+<div style="padding-top: 10px;">Some things to note about each of the fields are:</div>
+<div style="width: 100%">
+<img align="left" src="InterSpec_resources/static_text/images/gamma_xs_dialog.png"  class="imageBorder" style="width:20%; margin-top: 20px; "/>
+
+<span style="float:right; width: 79%">
+<ul>
+<li><b>Energy</b>: Values entered must be in keV and inside the range of 10 to 10000 keV.</li>
+<li><b>Material/mass-formula</b>: Here you can enter any material or element in
+the <em>InterSpec</em> database (e.x. Polyethylene, Air, Fe, etc.) and you will be
+assisted with a suggestion popup as you type to let you know what is in the
+database.  If you choose to enter a <em>mass-formula</em> instead, you should
+enter the chemical symbol (e.x. C, Ni, Fe, etc.) followed by the mass fraction
+of that element in the material (so a number between 0 and 1), where the sum
+of mass fractions should add up to 1.0; if they dont add up to 1.0, then a scale
+will be applied internally so that the relative proportions remain the same, but
+the total mass fraction will be 1.0. Examples of <em>mass-formula</em>s include
+'C0.5H0.2Ni0.4', 'Fe0.5U0.5', 'Al0.25Be0.35H0.4'.</li>
+<li><b>Total att. cross section</b>: This is the sum of the Compton, Photoelectric
+and Pair Production cross sections; Rayleigh scattering is not included in this
+number since it does not effect the gammas energy.
+To get the <em>mean free path</em> of the gamma through the material in cm, you
+can divide this number by the density (in units of g/cm<sup>3</sup>). To get
+the probability of a gamma passing through the material without interacting with
+it you can multiple this number by density and thickness of the shielding
+then take the exponent of the negative of this number, e.g. <code>prob = exp(-xs &#215; density &#215; thickness)</code>,
+which is what the &#34;Trans. Frac&#34; field provides.</li>
+<li><b>Density</b>: this must be specified in order for the
+&#34;Trans. Frac.&#34; field to be calculated for you, and must be in units of
+g/cm<sup>3</sup></li>
+<li><b>Length</b>: This is the <em>thickness</em> of the attenuating material,
+and can be entered in any distance units <em>InterSpec</em> accepts, as long
+as they are specified.</li>
+<li><b>Trans. Frac.</b>: The fraction of gammas that will make it through the
+attenuating material at the specified energy, density and thickness, without
+interacting or down scattering in energy.  Note that this is not the total
+fraction of the incomming gammas which will exit the shielding, as some gammas
+will scatter to lower energies and still make it through the shielding, but not
+into the detected full energy peak.</li>
+<li><b>Detector</b>: This is optional and will be set to the same detector as
+the spectrum you are currently working on if it has a detector associated with
+it; otherwise you can click on the icon and select a detector to use for the
+calculation.  If a detector is selected, you will be able to input a distance
+from the source to the detector to also get the geometrical and detector
+efficiency calculation as well.</li>
+<li><b>Distance</b>: This field will only be visible if a detector is selected.
+This is the distance from the source to the detector.  Note, this is <em>not</em>
+the distance from the shielding to the detector, but from the center of the
+actual source to the detector face.</li>
+<li><b>Detection Efficiency</b>: This is the combination of the geometrical
+efficiency (the probability of a gamma from the source hitting the face of the
+detector), and the intrinsic efficincy of the detector (the probability that if
+a gamma hits the detector face, it will be detected in the full energy peak).
+Note that this field does not include the effects of attenuation.
+</li>
+</ul>
+</span>
+</div>

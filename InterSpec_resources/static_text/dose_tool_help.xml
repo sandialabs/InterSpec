@@ -1,0 +1,36 @@
+<div align="center">
+  <h1 id="dose-dialog"><b>Dose Calculator</b></h1>
+  <hr />
+</div>
+<b><em>This tool has not been tested to a level appropriate for use to make any health or safety decisions.</em></b>  
+Further, only basic runtime sanity checks are performed by the code to check for obvious issues; there are no unit test, 
+integration tests, or end-to-end tests set up for this tool, so errors or regressions in development or implementation 
+could easily happen.
+</p>
+
+<p>
+Dose values computed using ANSI/ANS-6.1.1-1991 most
+conservative case: Anterior-Posterior orientation.
+Dose calculations are a rough guide, at best, and are
+subject to many uncertainities or errors.  
+When shielding is selected, an apporximate full-spectrum gamma transport methodology 
+is used to account for down-scatter.
+</p>
+
+
+<div style="width: 100%">
+  <img align="left" src="InterSpec_resources/static_text/images/dose_tool_overview.png"  class="imageBorder" style="width:30%; margin-top: 10px; "/>
+
+  <span style="float:right; width: 69%">
+    <p>This tool allows you to calculate expected gamma doses from radioactive nuclides, including effects of shielding or nulcide age.  
+       Alternatively this tool can help you calculate source activity, or shielding, or distance from a measured dose.  From the menu on the 
+       left of the window, select the quantity you would like to calculate, and then enter the information under the &quot;Inputs&quot; column. 
+       When computing expected dose, <em>make sure you enter the appropriate distance and shielding</em>, as incorrect values will lead
+       to the wrong dose values.
+    </p>
+    <p>Under the &quot;Answer&quot; column, the <em>Stay Time</em> table provides approximate equivalencies of dose to give a rough 
+    idea of equivilant dose from commonly encountered or quoted sources.  The comparisons are only approximate, and should not be 
+    relied on to make health or safety decisions on.
+    </p>
+  </span>
+</div>

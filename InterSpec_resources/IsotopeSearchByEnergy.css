@@ -1,0 +1,129 @@
+.IsotopeSearchByEnergy
+{
+  overflow-x: hidden;
+  margin-top: 5px;
+  margin-bottom: 3px;
+  margin-right: 4px;
+  margin-left: 4px;
+}
+
+.SearchEnergiesLeftDiv
+{
+  border: 2px solid #e1e1e1;
+  width: 25.7em;
+  height: 100%;
+}
+
+.IsoSearchSrcCB
+{
+  padding-right: 5px;
+  padding-top: 2px;
+}
+
+
+.SearchEnergies
+{
+  border: 1px solid #e1e1e1;
+  overflow-y: auto;
+  width: 25.2em;
+}
+
+.SearchEnergiesButtonDiv
+{
+ position:absolute;
+ bottom: 0; 
+ right: 0;
+ left: 0;
+ width: 25em;
+ padding-bottom: 5px;
+}
+
+.SearchEnergy
+{
+  border: 1px solid #e1e1e1;
+  margin: 2px;
+  margin-top: 0px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+
+/* Displayed while a search is in progress */
+.SearchingEnergiesTxt
+{
+  background: red;
+  color: white;
+  vertical-align: middle;
+}
+
+.MinBrLabel
+{
+  margin-left: 0.5em;
+  margin-right: 0.1em;
+}
+
+.IsotopeSearchResultTable
+{
+  border: 2px solid #e1e1e1;
+  margin-left: 5px;
+}
+
+
+.ActiveSearchEnergy
+{
+background: blue; /*for IEs sake*/
+background: rgba(36, 169, 211, 0.25);
+}
+
+.DeleteSearchEnergy
+{
+  margin-left: 4px;
+}
+
+.AddSearchEnergy, .DeleteSearchEnergy
+{
+  opacity: 0.8;
+  cursor:pointer;
+  background-repeat: no-repeat;
+  background-position: 3px 3px center;
+  width: 21px;  /* width of the image plus a little extra padding */
+  height: 21px;
+}
+
+.AddSearchEnergy
+{
+  background-image: url('../InterSpec_resources/images/plus_min.png');
+}
+
+.DeleteSearchEnergy
+{
+  background-image: url('../InterSpec_resources/images/minus_min.png');
+}
+
+.AddSearchEnergy:hover, .DeleteSearchEnergy:hover
+{
+  opacity: 1;
+}
+
+div.AddSearchEnergy.Wt-disabled, div.DeleteSearchEnergy.Wt-disabled
+{
+  background: none;
+}
+
+
+.SearchEnergyLabel
+{
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+.SearchEnergyWindowLabel
+{
+ padding-left: 5px;
+ padding-right: 5px;
+}
+
+.KeVLabel
+{
+  padding-left: 5px;
+}

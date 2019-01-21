@@ -1,0 +1,61 @@
+.VerticalColorThemesMenu{
+}
+
+.ColorThemeEditContainer{
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.ColorThemeWindowContents{
+  border-left: solid 1px #e1e1e1;
+  margin-left: 5px;
+  padding-left: 10px;
+}
+
+.AddRemoveThemeButtons{
+  padding-top: 3.5px;
+  
+  height: 25px;
+  
+  border-top: solid 1px #e1e1e1;
+}
+
+.AddColorTheme, .DeleteColorTheme, .DownloadColorTheme
+{
+  display: inline-block;
+  position: absolute;
+  opacity: 0.8;
+  cursor:pointer;
+  background-repeat: no-repeat;
+  background-position: 3px 3px center;
+  width: 21px;  /* width of the image plus a little extra padding */
+  height: 21px;
+}
+
+.AddColorTheme
+{
+  left: 10px;
+  background-image: url('../InterSpec_resources/images/plus_min.png');
+}
+
+.DeleteColorTheme
+{
+  left: 35px;
+  background-image: url('../InterSpec_resources/images/minus_min.png');
+}
+
+.AddColorTheme:hover, .DeleteColorTheme:hover, .DownloadColorTheme:hover
+{
+  opacity: 1;
+}
+
+div.AddColorTheme.Wt-disabled, div.DeleteColorTheme.Wt-disabled
+{
+  background: none;
+}
+
+.DownloadColorTheme{
+  right: 10px;
+  background-image: url('../InterSpec_resources/images/download_small.png');
+}
+

@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -48,6 +48,7 @@ class SpectrumDataModel;
 class CanvasForDragging;
 namespace Wt
 {
+  class WColor;
   class WGridLayout;
   class WApplication;
   class WButtonGroup;
@@ -82,6 +83,8 @@ public:
   //Currently only effects x-axis.
   void setCompactAxis( const bool compact );
   bool isAxisCompacted() const;
+  
+  void setAvoidMobileMenu( const bool avoid );
   
   Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &chartClicked();
   Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &rightClicked();
@@ -150,6 +153,26 @@ public:
 
   float xUnitsPerPixel() const;
   
+  void setForegroundSpectrumColor( const Wt::WColor &color );
+  void setBackgroundSpectrumColor( const Wt::WColor &color );
+  void setSecondarySpectrumColor( const Wt::WColor &color );
+  
+  void setTextColor( const Wt::WColor &color );
+  void setAxisLineColor( const Wt::WColor &color );
+  
+  void setChartMarginColor( const Wt::WColor &color );
+  void setChartBackgroundColor( const Wt::WColor &color );
+  
+  
+  
+  void setDefaultPeakColor( const Wt::WColor &color );
+  void setOccupiedTimeSamplesColor( const Wt::WColor &color );
+  
+  void setForegroundHighlightColor( const Wt::WColor &color );
+  void setBackgroundHighlightColor( const Wt::WColor &color );
+  void setSecondaryHighlightColor( const Wt::WColor &color );
+  
+  
   void clearTimeHighlightRegions( const SpectrumType type );
   void setTimeHighLightRegions( const std::vector< std::pair<double,double> > &p,
                             const SpectrumType type );
@@ -178,6 +201,11 @@ public:
   bool isEnergyDisplay() const;
   bool isTimeDisplay() const;
 
+  /** Executes appropriate javascript to generate and download a PNG based on
+      the currently showing spectrum.  PNG generation is done client side.
+   */
+  void saveChartToPng( const std::string &name );
+  
   //setControlDragDebouncePeriod(...): set how often the client will phone home
   //  to the server during a control-drag event.  Periods of <= 0 will result
   //  in it happening whenever the mouse is moved.

@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -98,10 +98,8 @@ class SpectrumChart : public Wt::Chart::WCartesianChart
   |      the dragged(...) and mouseUp(...) functions handle the mouseWentUp() and
   |      mouseDragged() signals. This has been tested and is current with #1.
   |
-  | A possible alternative to using Wt-based charting would be code.google.com/p/flot .
-  | The main drawback would be trying to display detectors with 16,000 channels would
-  | likely require a rebin hack to make it fast enough to be useful. Time-series
-  | measurements might also not be easily implementable.
+  | Will likely eventually be replaced by D3.js based implementation in
+  | D3SpectrumDisplayDiv.cpp.
   \****************************************************************************/
 
 //XXX
@@ -278,7 +276,7 @@ public:
 
   //drawIndependantGausPeak(...): draw a peak, not taking into account any other
   //  peaks.  If doFill==false then only the outline for the peak is drawn, or
-  //  else the fill area of the peak will be drawn.
+  //  else the fill area and outline of the peak will be drawn.
   void drawIndependantGausPeak( const PeakDef &peak,
                                 Wt::WPainter& painter,
                                 const bool doFill = false,
@@ -424,6 +422,47 @@ public:
   bool overlayCanvasEnabled() const;
   void setOverlayCanvasVisible( bool visible );
 
+  void setDefaultPeakColor( const Wt::WColor &color );
+  
+  /** Set the color of the vertical lines (and text) that mark the beggining and
+      end of an occupancy on a time chart.
+      Currently alpha is ignored and always set to 75.
+   */
+  void setOccupiedTimeSamplesColor( const Wt::WColor &color );
+  
+  /** */
+  void setForegroundHighlightColor( const Wt::WColor &color );
+  void setBackgroundHighlightColor( const Wt::WColor &color );
+  void setSecondaryHighlightColor( const Wt::WColor &color );
+
+  /** Set the color of axis label, axis title, and other text in the chart. */
+  void setTextColor( const Wt::WColor &color );
+  
+  /** Set the color of the axis lines, and ticks of the chart. */
+  void setAxisLineColor( const Wt::WColor &color );
+  
+  /** Set the color of the chart margin area (the area outside the axis lines).
+      If you set this to an uninitaialized color (default constructed WColor),
+      then the margins will be painted to the same color as the chart background
+      (if the background color is set).
+   */
+  void setChartMarginColor( const Wt::WColor &color );
+  
+  /** Set the background color of the chart area, and if the margin color isnt
+      set, then that too.
+   */
+  void setChartBackgroundColor( const Wt::WColor &color );
+  
+  /** Executes appropriate javascript to generate and download a PNG based on
+   the currently showing spectrum.  PNG generation is done client side.
+   */
+  void saveChartToPng( const std::string &name );
+  
+  /** When the mobile (hamburger) menu is showing, we shouldnt place text (the
+   y-axis labels) underneath it; it looks bad.
+   */
+  void setAvoidMobileMenu( const bool avoid );
+  
   //setScrollingParent(...): sets the scrolling frame which contains the chart
   //  from which the overlay canvas should not extend beyond.  Calling this
   //  function when the overlay canvas is not enabled has no effect. Calling
@@ -469,7 +508,6 @@ public:
   void clearAllReferncePhotoPeakLines();
   void renderReferncePhotoPeakLines( Wt::WPainter &painter ) const;
   void renderReferncePhotoPeakLines( Wt::WPainter &painter,
-                          const size_t num,
                           const ReferenceLineInfo &line ) const;
 #endif
 
@@ -517,7 +555,7 @@ protected:
   virtual void render( Wt::WPainter &painter, const Wt::WRectF &rectangle ) const;
 #endif
   
-  virtual void renderBackground( Wt::WPainter &painter ) const;
+  virtual void renderChartBackground( Wt::WPainter &painter, const Wt::WRectF &rectangle ) const;  //Take places of WCartesianChart::renderBackground(...)
   virtual void renderGridLines( Wt::WPainter &painter, const Wt::Chart::Axis axis ) const;
   virtual void renderSeries( Wt::WPainter &painter ) const;
   virtual void renderAxes( Wt::WPainter &painter, Wt::WFlags<  Wt::Chart::AxisProperty > properties ) const;
@@ -629,8 +667,30 @@ protected:
   Wt::Signal<double/*start energy*/,double /*current energy*/> m_controlMouseMoved;
   
   PeakModel *m_peakModel;
-  Wt::WColor m_peakFillColor;
-  Wt::WColor m_multiPeakOutlineColor;
+  Wt::WColor m_defaultPeakColor;
+  
+  /** The vertical lines (and text) that mark the beggining and end of an
+      occupancy on a time chart.
+   */
+  Wt::WColor m_occupiedMarkerColor;
+  
+  Wt::WColor m_timeHighlightColors[3];
+  
+  /** If a chart margin brush is not specifified but WAbstractChart::background()
+       is, then the entire graphic area (e.g. <canvas>) will be filled according
+       to WAbstractChart::background().
+      If both chart margin and background are specified, then
+       WAbstractChart::background() will be used to fill the area inside the chart
+       axis, and m_chartMarginBrush used to fill area outside the axis.
+      If only m_chartMarginBrush is specified, then only area outside axis
+       will be painted.
+   */
+  Wt::WBrush m_chartMarginBrush;
+  
+  /** Since we dont have acess to WCartesianChart::textPen_, we will track
+      text color our selves.
+   */
+  Wt::WPen m_textPen;
   
   //Potential ToDo: Right now m_highlights is mainly modified and added
   //  to by this class, however the effects of what is highlighted are also seen
@@ -709,6 +769,9 @@ protected:
   // Added by christian (20170425)
   bool m_verticalLinesShowing;
   bool m_horizontalLinesShowing;
+  
+  /** On mobil avoid writing y-axis label text where the hamburger menu is. */
+  bool m_avoidMobileMenu;
   
 #if( USE_HIGH_BANDWIDTH_INTERACTIONS )
   //Not all these variables are needed

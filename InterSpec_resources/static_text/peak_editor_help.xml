@@ -1,0 +1,150 @@
+  <div align="center">
+      <h1 id="peak-editor">
+         <em>
+            <b>Peak Editor</b>
+         </em>
+      </h1>
+      <hr />
+	  </div>
+      <div>This tool allows you to have fine grained control over peak parameters
+by either directly specifying the parameters, or by specifying which parameters
+should be fit for, and then re-fitting the peak.  The <b>Peak Editor</b> also allows
+you to edit the nuclide associated with this peak, or change the continuum type
+used for the peak.</div>
+      <div style="padding-top: 10px">
+         To access the <b>Peak Editor</b> dialog,
+         <u>right-click</u>
+         within the region of
+interest (ROI) of an identified peak, and then
+         <u>select</u>
+         &#34;<b>Peak Editor</b>&#34;:
+      </div>
+      <div align="center" style="padding-top: 10px" >
+         <img src="InterSpec_resources/static_text/images/PeakEditor1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+         <img src="InterSpec_resources/static_text/images/PeakEditor2.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+      </div>
+      <div style="padding-top: 10px"> 
+If you have multiple peaks next to each other sharing a ROI, the peak
+nearest where you <u>right-clicked</u> is chosen; while the <b>Peak Editor</b> window is
+open, you can change the peak it pertains to by
+         <u>right-clicking</u>
+         a new peak and
+         <u>selecting</u>
+         the
+         <b>Peak Editor</b>
+         option once again.
+      </div>
+	  <div style="padding-top: 10px">
+	           <u>Check/Uncheck</u>
+         the &#34;Fit&#34; box located to the right of each box you wish to be incorporated in your spectrum.
+		 </div>
+      <div style="padding-top: 10px">
+            After changing a parameter value, the change isn't propagated until either
+the <b>Apply,</b> <b>Accept,</b> or <b>Refit</b> buttons are
+<u>clicked</u>.  Once one of these buttons is <u>clicked</u> the peak rendered on the chart, or
+values in the
+            <b>Peak Editor</b>
+            table will be updated with the new values.
+			 </div>
+<ul>
+<div style="padding-top: 10px">
+<u>Clicking</u> the <b>Cancel</b> button will revert the peak to the last time you
+clicked <b>Apply</b>, or if you haven't <u>clicked</u> <b>Apply</b>, it will revert the
+peak back to before you opened the dialog and close the dialog.
+</div>
+<div style="padding-top: 10px">
+Closing the dialog via the upper right
+hand &#34;&#215;&#34; button closes the dialog without applying any changes
+you may have made since the last time you clicked the apply, or refit buttons.
+</div>
+<div style="padding-top: 10px">
+The <b>Accept</b> button applies any changes you have made, and closes the dialog.
+</div>    
+</ul>    
+      <h3>Example Use Cases</h3>
+      <div style="padding-top: 10px">
+	  The following are typical reasons to refer to the <b>Peak Editor</b> tool.
+	  </div>
+	  <ul>
+         <li>Fitting difficult peaks in situations where
+the default peak fitting algorithm is not satisfactory, or statistics are too
+low to yield a valid fit.  <ul><div>For instance, you may select for the peak centroid
+and/or width to not be fit for, and instead supply the value(s) you think are
+correct, and then refit the peak, thus gaining a more accurate peak area and/or
+continuum estimate.</div></ul></li>
+         <li>
+            Add a label to the peak.
+			<div><ul>For this label to also show on the chart, <u>select</u> the
+&#34;Show User Labels&#34; option from the <b>View &#8594; Chart Options &#8594; Peak Labels</b>
+            menu. </ul></div></li>
+         <li>
+            To change the continuum type.  <ul><div>By default peaks are assigned
+            <b>Linear</b>
+            continuums, however changing this may yield better peak fits for regions where
+the continuum is more complex or a-typical.</div></ul>
+         </li>
+         <li>
+            Specifying the region of interest (ROI).  <ul><div>By default
+            <i>InterSpec</i>
+            guesses a ROI when fitting peaks, based on the width of the candidate peak
+(derived from a polynomial smoothing of the second derivative of the data), and
+a combination of features and statistical of the data - this may not result in
+the optimum selection of ROI.  Specifying the ROI manually and refitting the
+peak can often times increase the improved estimates of the peak.</div></ul>
+         </li>
+         <li>Selecting the photopeak of the nuclide responsible for creating this peak.
+<ul><div>This dialog allows selecting the gamma-line from a list, rather than
+typing it in like in other locations.</div></ul></li>
+      </ul>
+      <h3>Potential Pitfalls</h3>
+      <ul>
+         <li style="padding-top: 10px">
+            When refitting a peak, not only is the current peak the <b>Peak Editor</b> is selected for refit,
+but any peaks that share its ROI are refit as well. 
+<div><ul> To prevent this, you can either force the current peak to not share a ROI
+by <u>right-clicking</u> on the peak and <u>selecting</u> the &#34;Own Continuum&#34; option,
+or you can use the
+            <b>Peak Editor</b>
+            to disable fitting of the various
+parameters for the other peaks.</ul></div>
+         </li>
+         <li style="padding-top: 10px">Many of the fields do not have error checking beyond verifying a floating point
+number was entered.  For instance you could specify a ROI which does not contain
+the peak centroid, resulting in the peak not even showing up on the chart.</li>
+         <li style="padding-top: 10px">
+            There are currently (as of 20140506) a number of options you can select that are
+not fully supported: 
+<ul>
+<li style="padding-top: 10px">
+selecting the continuum to be a globally defined continuum,
+</li>
+<li style="padding-top: 10px">
+peak types other than Gaussian are not well supported everywhere, and we are
+</li>
+<li style="padding-top: 10px">
+expecting to change the model of the peak skew from a Landau based scheme to be
+consistent with
+            <em>GADRAS</em>
+</li>
+</ul>
+<i>
+            We have left these options in the GUI because we plan to better support them, and
+this way it will remind us to fix the issues (nobody said we were professionals!).</i>
+         </li>
+         <li style="padding-top: 10px"> There can be only one <b>Peak Editor</b> dialog open at a time; trying to open the <b>Peak Editor</b>
+for a second peak will only change which peak the current dialog corresponds to.</li>
+         <li style="padding-top: 10px">
+            The uncertainties on the parameters initially represent the errors determined
+from the fitting procedures, however, you should take them with a grain of salt.
+This is for three reasons:
+            <ol>
+               <li style="padding-top: 10px">These values are manually editable, so may not be what the fitting
+          procedure determined</li>
+               <li style="padding-top: 10px">Fixing some parameters may result in much smaller uncertainties being
+         derived for the other parameters, that may in fact be unreasonable.</li>
+               <li style="padding-top: 10px">The uncertainties are estimated from a chi squared, or likelihood,
+         function and it has not been verified that this uncertainty is what
+         is actually seen during use.</li>
+            </ol>
+         </li>
+      </ul>

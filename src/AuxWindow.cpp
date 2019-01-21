@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -47,6 +47,44 @@ using namespace Wt;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
+namespace
+{
+  const std::string ns_resize_to_fit_on_screen_js = INLINE_JAVASCRIPT
+  (
+   function(id,cid)
+   {
+     try
+     {
+     var el = $('#'+id);
+     var cel = $('#'+cid);
+     if( !el || !cel )
+     {
+       console.log( 'Error in resizeToFitOnScreen' );
+       return;
+     }
+     
+     var ws = Wt.WT.windowSize();
+     if(el.height() > ws.y)
+     {
+       el.height(ws.y-10);
+       //       el.css('max-height',ws.y-10);
+       el.get(0).style.top = '5px';
+       el.get(0).style.bottom = "";
+       cel.get(0).style.overflowY = "auto";
+     }
+       
+     if(el.width() > ws.x)
+     {
+       el.width(ws.x-10);
+       //el.css('max-width',ws.x-10);
+       el.get(0).style.left = '5px';
+       el.get(0).style.right = "";
+       cel.get(0).style.overflowX = "auto";
+     }
+     }catch(err){ }
+   }
+   );
+}
 
 WT_DECLARE_WT_MEMBER
 (AuxWindowBringToFront, Wt::JavaScriptFunction, "AuxWindowBringToFront",
@@ -509,10 +547,10 @@ WT_DECLARE_WT_MEMBER
 #endif
 
 
-AuxWindow::AuxWindow( const Wt::WString& windowTitle , bool modal, bool helpWindow)
+AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProperties> properties  )
   : WDialog(),
     m_auxIsHidden( true ),
-    m_modalOrig(modal),
+    m_modalOrig( false ),
     m_titleText( NULL ),
     m_collapseIcon( NULL ),
     m_expandIcon( NULL ),
@@ -533,14 +571,25 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle , bool modal, bool helpWind
     m_footer(NULL)
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-  if( app && app->isMobile() )
+  
+  const bool isPhone = app ? app->isPhone() : false;
+  const bool isTablet = app ? app->isTablet() : false;
+  
+  const bool isPhoneModal = properties.testFlag(AuxWindowProperties::PhoneModal);
+  const bool isTabletModal = properties.testFlag(AuxWindowProperties::TabletModal);
+  
+  m_modalOrig = (properties.testFlag(AuxWindowProperties::IsAlwaysModal)
+                 || (isPhone && isPhoneModal)
+                 || (isTablet && (isTabletModal || isPhoneModal)) );
+  
+  if( (isPhone && !isPhoneModal)
+     || (isTablet && !isTabletModal && !isPhoneModal) )
   {
     setResizable(false);
     resizeScaledWindow( 1.0, 1.0 );
     m_isPhone = true; //disables any of future AuxWindow calls to change behavior
   }
 
-  
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowBringToFront);
@@ -566,7 +615,10 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle , bool modal, bool helpWind
   title->setPadding(WLength(0));
 
   content->clear();
+  
   setModal( m_modalOrig );
+  
+  
   content->addStyleClass( "AuxWindow-content" );
 
   string fcntcall;
@@ -574,10 +626,11 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle , bool modal, bool helpWind
   
   m_closedSignal.reset( new JSignal<void>( this, "closed", true ) );
   m_openedSignal.reset( new JSignal<void>( this, "opened", true ) );
+  
   m_collapsedSignal.reset( new JSignal<void>( this, "collapsed", true ) );
   m_expandedSignal.reset( new JSignal<void>( this, "expanded", true ) );
 
-  if( m_isPhone )
+  if( m_isPhone || properties.testFlag(AuxWindowProperties::DisableCollapse) )
   {
     m_collapseSlot.reset( new JSlot("function(){}",this) );
     m_expandSlot.reset( new JSlot("function(){}",this) );
@@ -598,10 +651,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle , bool modal, bool helpWind
   
     title->insertWidget( 0, m_collapseIcon );
     title->insertWidget( 0, m_expandIcon );
-      
-    m_titleText = new WText( windowTitle, XHTMLUnsafeText, title );
-    m_titleText->addStyleClass("titleVertMiddle");
-
+    
     const string jsthis = "$('#" + id() + "')";
     const string jscontent = "$('#" + content->id() + "')";
 
@@ -647,6 +697,9 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle , bool modal, bool helpWind
     title->doubleClicked().connect(boost::bind(&AuxWindow::refresh,this));
   }//if( m_isPhone ) ' else
   
+  m_titleText = new WText( windowTitle, XHTMLText, title );
+  m_titleText->addStyleClass("titleVertMiddle");
+
   fcntcall = "function(){"+m_closedSignal->createEventCall( id(), "null" )+"}";
   m_hideSlot.reset( new JSlot( "function(s,e){ Wt.WT.AuxWindowHide(s,e,'"+id()
                           +"'," +fcntcall + ");}", this ) );
@@ -704,7 +757,8 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle , bool modal, bool helpWind
   if( m_expandIcon )
     doJavaScript( "$('#" + m_expandIcon->id() + "').hide();" );
   
-  if (helpWindow )
+
+  if( properties.testFlag(AuxWindowProperties::IsHelpWIndow) )
   {
     if( !m_isPhone )
     {
@@ -719,8 +773,19 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle , bool modal, bool helpWind
     }//if( !m_isPhone )
     
     title->setStyleClass("helptitlebar");
-  } //helpWindow
-    
+  }//helpWindow
+  
+  
+  if( properties.testFlag(AuxWindowProperties::EnableResize) )
+    setResizable( true );
+
+  if( (isPhone && isPhoneModal)
+      || (isTablet && isTabletModal) )
+  {
+    resizeToFitOnScreen();
+    centerWindowHeavyHanded();
+  }
+
   show();
 }//AuxWindow()
 
@@ -798,6 +863,7 @@ WContainerWidget* AuxWindow::footer()
 
 AuxWindow::~AuxWindow()
 {
+  WDialog::setModal( false ); //
 //  if( m_titleText )
 //    cerr << "AuxWindow destructing for: '"
 //         << m_titleText->text().toUTF8() << "'" << endl;
@@ -812,34 +878,32 @@ void AuxWindow::emitReject()
 }
 
 
-Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override, bool floatright,  Wt::WContainerWidget * footerOverride)
+Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override_txt, bool floatright,  Wt::WContainerWidget * footerOverride)
 {
   WPushButton *close = new WPushButton();
   
   if( m_isPhone )
   {
-    close->setStyleClass("button back");
-    close->setText( "Back" );
-    close->setFloatSide(Wt::Left);
-    close->setMargin(WLength(5,WLength::Pixel),Wt::Right);
-  } //isPhone
-  else
+    if( override_txt.empty() )
+      override_txt = "Back";
+    
+    close->setStyleClass("MobileBackBtn");
+    close->setText( override_txt );
+  }else
   {
-    close->setText( override );
-    if (floatright)
-        close->addStyleClass( "DialogClose" );
-  } //!isPhone
+    if( override_txt.empty() )
+      override_txt = "Close";
+    
+    close->setText( override_txt );
+    if( floatright )
+      close->addStyleClass( "DialogClose" );
+  }//if( phone ) / else
  
   //Sometimes, the footer may not be footer(), so we allow user to override
-  if (footerOverride)
-  {
-      footerOverride->insertWidget( footerOverride->count(), close );
-  } //footerOverride
-  else
-  { //!footerOverride
-      Wt::WContainerWidget *f = footer();
-      f->insertWidget( f->count(), close );
-  } //!footerOverride
+  if( !footerOverride )
+    footerOverride = footer();
+  footerOverride->insertWidget( footerOverride->count(), close );
+
   return close;
 }//Wt::WPushButton *addCloseButtonToFooter()
 
@@ -860,7 +924,14 @@ void AuxWindow::setClosable( bool closable )
     //order of connections below matter
     m_closeIcon->clicked().connect( *m_expandSlot );
     m_closeIcon->clicked().connect( *m_hideSlot );
-    m_closeIcon->clicked().connect( this, &AuxWindow::emitReject );
+    
+    //Trial Change 20181125: The m_hideSlot, when initiated from JS, will call
+    //          back to c++ causing AuxWindow::setHidden to be called, which
+    //          will then call emitReject(), so there *should* be no reason to
+    //          explicitly call emitReject() when the closeIcon is clicked, and
+    //          in fact the next line would cause the finished() signal to be
+    //          emmitted twice.  (all this should be removed after more testing)
+    //m_closeIcon->clicked().connect( this, &AuxWindow::emitReject );
   }else
   {
     if( !m_closeIcon )
@@ -914,48 +985,24 @@ WGridLayout *AuxWindow::stretcher()
 
 void AuxWindow::resizeToFitOnScreen()
 {
-  if (m_isPhone) return; //disable running calls after AuxWindow initialized to be mobile
-  const char *js = INLINE_JAVASCRIPT
-  (
-   var fcn = function(id,cid)
-   {
-     var el = $('#'+id);
-     var cel = $('#'+cid);
-     if( !el || !cel )
-     {
-       console.log( 'Error in resizeToFitOnScreen' );
-       return;
-     }
-
-     var ws = Wt.WT.windowSize();
-     if(el.height() > ws.y)
-     {
-       el.height(ws.y-10);
-//       el.css('max-height',ws.y-10);
-       el.get(0).style.top = '5px';
-       el.get(0).style.bottom = "";
-       cel.get(0).style.overflowY = "auto";
-     }
-     if(el.width() > ws.x)
-     {
-       el.width(ws.x-10);
-       //el.css('max-width',ws.x-10);
-       el.get(0).style.left = '5px';
-       el.get(0).style.right = "";
-       cel.get(0).style.overflowX = "auto";
-     }
-   };
-  );
+  if( m_isPhone )
+    return; //disable running calls after AuxWindow initialized to be mobile
   
-  doJavaScript( js + string("fcn('") + id() + "','"
-                + WDialog::contents()->id() + "');" );
+  const string js = "var fcn = " + ns_resize_to_fit_on_screen_js + ";";
+  
+  //We will put in a setTimeout to call the resize function to first give Wts
+  //  layout a chance to shrink things into appropriate sizes.
+  //TODO: A timeout of 0 ms seems to work, but using 50 JIC - revisit.
+  doJavaScript( js + string("setTimeout( function(){fcn('") + id() + "','"
+               + WDialog::contents()->id() + "');},50);" );
 }//void AuxWindow::resizeToFitOnScreen()
 
 
 void AuxWindow::centerWindow()
 {
-  if (m_isPhone)
+  if( m_isPhone )
       return; //disable running calls after AuxWindow initialized to be mobile
+  
 #if( USE_NEW_AUXWINDOW_ISH )
   m_centerSlot->exec(id(),"null");
 #else
@@ -972,10 +1019,26 @@ void AuxWindow::centerWindow()
 #endif
 }
 
+void AuxWindow::centerWindowHeavyHanded()
+{
+  const string jsthis = "$('#" + id() + "')";
+  WStringStream moveJs;
+  moveJs << "var cntrfcn = function(){ try{ var el = " << this->jsRef() << ";"
+  << "var olddispl = el.style.display; el.style.display='';"
+  << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();"
+  //         << "if(" << jsthis << ".height() > ws.y)" << jsthis << ".height(ws.y-5);"
+  << "el.style.top = Math.max(0,Math.round( ( ws.y - " << jsthis << ".height() ) / 2 ))+'px';"
+  << "el.style.left = Math.max(0,Math.round( ( ws.x - " << jsthis << ".width() ) / 2 ))+'px';"
+  << "el.style.display = olddispl; }catch(err){}};"
+  << "var resizefcn = " + ns_resize_to_fit_on_screen_js + ";"
+  << "cntrfcn();setTimeout(cntrfcn,0); setTimeout(cntrfcn,100); setTimeout(cntrfcn,500);"
+  << "setTimeout(function(){resizefcn('" << id() << "','" << WDialog::contents()->id() << "');},500);";
+  doJavaScript( moveJs.str() );
+}
 
 void AuxWindow::repositionWindow( int x, int y )
 {
-  if (m_isPhone)
+  if( m_isPhone )
       return; //disable running calls after AuxWindow initialized to be mobile
     
 #if( USE_NEW_AUXWINDOW_ISH )
@@ -997,7 +1060,8 @@ void AuxWindow::repositionWindow( int x, int y )
 
 void AuxWindow::resizeWindow( int width, int height )
 {
-  if (m_isPhone) return; //disable running calls after AuxWindow initialized to be mobile
+  if( m_isPhone )
+    return; //disable running calls after AuxWindow initialized to be mobile
     
 #if( USE_NEW_AUXWINDOW_ISH )
   const string size = "{x:" + std::to_string(width)
@@ -1126,20 +1190,17 @@ void AuxWindow::setHidden( bool hide, const WAnimation &/*animation*/ ) //TODO: 
   if( m_destructing )
   {
     WDialog::setHidden( hide );
-    if (m_footer)
-    {
+    if( m_footer )
       m_footer->setHidden(hide);
-    }
     return;
   }//if( m_destructing )
 
   const bool changingState = (m_auxIsHidden != hide);
   
   m_auxIsHidden = hide;
-  if (m_footer)
-  {
-      m_footer->setHidden(hide);
-  }
+  
+  if( m_footer )
+    m_footer->setHidden(hide); //Is this really necassary?
 
 //  WStringStream ss;
 //	ss << WT_CLASS << ".animateDisplay('" << id()
@@ -1153,13 +1214,14 @@ void AuxWindow::setHidden( bool hide, const WAnimation &/*animation*/ ) //TODO: 
   if( hide )
   {
     m_hideSlot->exec( "null", "{quietly: true}" );
-//    accept();
     
     if( changingState && m_escapeIsReject )
     {
       m_escapeConnection1.disconnect();
       m_escapeConnection2.disconnect();
     }//if( m_escapeIsReject )
+    
+    emitReject();
   }else
   {
     m_showSlot->exec( "null", "{quietly: true}" );
@@ -1173,13 +1235,9 @@ void AuxWindow::setHidden( bool hide, const WAnimation &/*animation*/ ) //TODO: 
       
       WApplication *app = WApplication::instance();
       if( app )
-        m_escapeConnection2 = app->globalEscapePressed()
-        .connect(this, &AuxWindow::hide);
+        m_escapeConnection2 = app->globalEscapePressed().connect(this, &AuxWindow::hide);
     }//if( m_escapeIsReject )
   }//if( hide ) / else
-  
-  if( hide )
-    emitReject();
 }//void setHidden( bool hide, const Wt::WAnimation &animation )
 
 
@@ -1191,10 +1249,10 @@ void AuxWindow::disableCollapse()
     m_expandIcon->hide();
   if( !!m_collapseSlot )
     m_collapseSlot->setJavaScript("function(){}");
-  if (!m_isPhone)
+  if( !m_isPhone )
   {
-      	titleBar()->setPadding(WLength(5),Wt::Left);
-      titleBar()->setPadding(WLength(2),Wt::Top);
+    titleBar()->setPadding(WLength(5),Wt::Left);
+    titleBar()->setPadding(WLength(2),Wt::Top);
   }
 }
 
@@ -1256,7 +1314,7 @@ JSignal<> &AuxWindow::expanded()
 
 void AuxWindow::addHelpInFooter(WContainerWidget *footer, std::string page, AuxWindow *parent)
 {
-  Wt::WImage *image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help.png"), footer);
+  Wt::WImage *image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/qmark.png"), footer);
   image->setAlternateText("Help");
   image->setStyleClass("helpButton");
   image->setFloatSide(Left);

@@ -5,7 +5,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -32,6 +32,7 @@
 
 #include "InterSpec/InterSpecApp.h"
 #include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/SerialToDetectorModel.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 #if( ANDROID )
@@ -91,6 +92,10 @@ int main( int argc, char **argv )
   //  encoded, rather than the system encoding.
   Wt::WString::setDefaultEncoding( Wt::UTF8 );
 #endif
+  
+  //TODO 20181009: make the following setting an option on startup for electron/iOS/Android/macOS
+//"Have not yet implemented calling SerialToDetectorModel::set_detector_model_input_csv(...) properly"
+  SerialToDetectorModel::set_detector_model_input_csv( "data/OUO_detective_serial_to_model.csv" );
   
 #if( BUILD_AS_ELECTRON_APP )
   return ElectronUtils::run_app(argc,argv);

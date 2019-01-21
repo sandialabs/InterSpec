@@ -106,11 +106,21 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   if( _isServing )
     return NO;
   
+  //We set temp dir in +initialize, but I guise I dont really know if it can
+  //  change in iOS every once in a while, so do it here to, JIC
+  NSString *tempDir = NSTemporaryDirectory();
+  if( tempDir == nil ) //shouldnt ever fail, right
+    tempDir = @"/tmp";
+  const std::string tmpdirstr = [tempDir UTF8String];
+  
+  
   static std::string argv0 = "--docroot";
   static std::string argv1 = ".";
   static std::string argv4 = "-c";
   static std::string argv5 = "./data/config/wt_config_ios.xml";
-  static char *argv[] = { &argv0[0], &argv1[0], &argv4[0], &argv5[0] };
+  static std::string argv6 = "--tempdir";
+  static std::string argv7 = [tempDir UTF8String];
+  static char *argv[] = { &argv0[0], &argv1[0], &argv4[0], &argv5[0], &argv6[0], &argv7[0] };
   int argc = sizeof(argv) / sizeof(argv[0]);
   InterSpecServer::startServer( argc, argv, &createApplication );
   

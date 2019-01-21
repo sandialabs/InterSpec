@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -30,12 +30,14 @@
 
 #include <boost/any.hpp>
 
+#include <Wt/WColor>
 #include <Wt/WSignal>
 #include <Wt/WModelIndex>
 #include <Wt/Chart/WDataSeries>
 #include <Wt/WAbstractItemModel>
 
 class SpectrumChart;
+
 
 class SpectrumDataModel: public Wt::WAbstractItemModel
 {
@@ -150,6 +152,14 @@ public:
                                  int role = Wt::DisplayRole ) const;
   virtual void reset();
 
+  /** Changes the color of the series #suggestDataSeries() will return.
+      You will need to set the new series into the chart for changes to take
+      effect.
+   */
+  void setForegroundSpectrumColor( const Wt::WColor &color );
+  void setBackgroundSpectrumColor( const Wt::WColor &color );
+  void setSecondarySpectrumColor( const Wt::WColor &color );
+  
   std::vector< Wt::Chart::WDataSeries > suggestDataSeries() const;
   virtual bool secondDataOwnAxis() const;
 
@@ -224,6 +234,9 @@ protected:
   bool m_addHistIntegralToLegend;
   
   Wt::Signal<ColumnType> m_dataSet;
+  
+  //Foreground==0, Background==1, Secondary==2
+  Wt::WColor m_seriesColors[3];
 };//class SpectrumDataModel
 
 #endif

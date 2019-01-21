@@ -1,5 +1,5 @@
 <server>
-    <application-settings location="*">>
+    <application-settings location="*">
 	<session-management>
 	    <shared-process>
 	        <num-processes>1</num-processes>

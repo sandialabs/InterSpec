@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -234,6 +234,17 @@ public:
   static void equalEnough( const SpecMeas &lhs, const SpecMeas &rhs );
 #endif
   
+  
+  /** Returns the shielding source model associated with thsi SpecMeas
+      Be carefule, as you should take a lock on this SpecMeass mutex to
+      make sure another thread doesnt change the model on you.
+   */
+  rapidxml::xml_document<char> *shieldingSourceModel();
+  
+  /** Sets the shielding source model that was serialized by the gui. */
+  void setShieldingSourceModel( std::unique_ptr<rapidxml::xml_document<char>> &&model );
+  
+  
 private:
   //Do not call operator= or copy constructor, will (purposely) crash program.
   //  See makeUserSpaceObserver(...) and uniqueCopyContents(...).
@@ -279,9 +290,18 @@ protected:
   SampleNumsToPeakMap m_autoSearchPeaks;
 //  SampleNumsToPeakMap m_autoSearchInitialPeaks;
   
-  //std::string m_shieldingSourceModel ...;
+  std::unique_ptr<rapidxml::xml_document<char>> m_shieldingSourceModel;
   
   Wt::Signal<> m_aboutToBeDeleted;
+  
+  /** ToDo/hack: we are currently using sample numbers to match peaks fit by
+   InterSpec up to specific Measurement's.  This variable tells us if we need
+   to strickly enforce the sample numbers found in the N42 file attributes
+   (which is a non-standad thing we are doing).  The real solution is to use
+   MeasurementGroupReferences, for both InterSpec specific stuff, but also for
+   analysis results.
+   */
+  bool m_fileWasFromInterSpec;
   
   static const int sm_peakXmlSerializationVersion;
 };//class SpecMeas

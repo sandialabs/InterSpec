@@ -40,23 +40,7 @@ overflow: hidden;
 margin: 0 0 5px 0;
 }
 
-.searchBox {
-background: url(../InterSpec_resources/images/search-white.png) no-repeat 7px 2px #fcfcfc;
-border: 1px solid #d1d1d1;
-width: 150px;
-padding: 0px 15px 0px 35px;
--webkit-border-radius: 20px;
--moz-border-radius: 20px;
-border-radius: 20px;
-text-shadow: 0 2px 3px rgba(0, 0, 0, 0.1);
--webkit-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15) inset;
--moz-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15) inset;
-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15) inset;
--webkit-transition: all 0.7s ease 0s;
--moz-transition: all 0.7s ease 0s;
--o-transition: all 0.7s ease 0s;
-transition: all 0.7s ease 0s;
-}
+
 
 .imageBorder {
 padding:1px;
@@ -124,11 +108,7 @@ border:1px solid #021a40;
 
 .UpDiv.active
 {  
-background: #4A4A4A;
-/*  border: 4px solid white; */
-/*  -webkit-border-radius: 15px;*/
-/*  -moz-border-radius: 15px; */
-/*  border-radius: 15px; */
+  background: #4A4A4A;
 }
 
 .UpDiv.active > .UpCenterDiv
@@ -195,17 +175,11 @@ width:100%;
  font-size: 25px;
  font-weight: bold;
  color: white;
-/* border: 4px solid white; */
-/*  -webkit-border-radius: 10px; */
-/*  -moz-border-radius: 10px; */
-/*  border-radius: 10px; */
 }
 
 
 .SpectrumDisplayDiv
 {
-  /* This is the <div> that holds the  WtTh1Chart. This <div> is managed by a */
-  /* Wt::WBorderLayout layout inorder to maximize the chart to the <div>.     */
 }
 
 /* ------------------------- */
@@ -224,67 +198,23 @@ width:100%;
 
 }
 
-.CrossIcon,.CrossIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/cross.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
 
-.AcceptIcon:disabled, .AcceptIcon:disabled:hover {
-  opacity: 0.8;
-  filter: alpha(opacity=80);
-  cursor: not-allowed;
-  -webkit-filter: grayscale(100%);
-}
-
-.AcceptIcon, .AcceptIcon:hover {
-  background-image: url('../InterSpec_resources/images/accept.png');
-
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.AddIcon,.AddIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/add.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.DeleteIcon,.DeleteIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/delete.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
+/*
 .UndoIcon,.UndoIcon:hover
 {
   background-image: url('../InterSpec_resources/images/arrow_undo.png');
   background-position: 3px center;
   background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
+  padding-left: 21px;
 }
+*/
 
 .DiskIcon,.DiskIcon:hover
 {
-  background-image: url('../InterSpec_resources/images/disk.png');
+  background-image: url('../InterSpec_resources/images/disk2.png');
   background-position: 3px center;
   background-repeat: no-repeat;
   padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.BulletIcon,.BulletIcon:hover
-{
-    background-image: url('../InterSpec_resources/images/bullet_green.png');
-    background-position: 3px center;
-    background-repeat: no-repeat;
-    padding-left: 21px;  /* width of the image plus a little extra padding */
 }
 
 .TimeIcon,.TimeIcon:hover
@@ -295,37 +225,9 @@ width:100%;
     padding-left: 21px;  /* width of the image plus a little extra padding */
 }
 
-.CurveAddIcon,.CurveAddIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/chart_curve_add.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-
-.CurveDeleteIcon,.CurveDeleteIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/chart_curve_delete.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-
-.PageWhiteGoIcon,.PageWhiteGoIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/page_white_go.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-
-
 .LibraryIcon,.LibraryIcon:hover
 {
-  background-image: url('../InterSpec_resources/images/book.png');
+  background-image: url('../InterSpec_resources/images/db_small_white.png');
   background-position: 3px center;
   background-repeat: no-repeat;
   padding-left: 21px;  /* width of the image plus a little extra padding */
@@ -334,40 +236,11 @@ width:100%;
 
 .FolderExploreIcon,.FolderExploreIcon:hover
 {
-  background-image: url('../InterSpec_resources/images/folder_explore.png');
+  background-image: url('../InterSpec_resources/images/file_search.png');
   background-position: 3px center;
   background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
+  padding-left: 21px;
   margin-bottom:5px;
-}
-
-
-.FolderPageIcon,.FolderPageIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/folder_page.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-  margin-bottom:5px;
-}
-
-.PreviewIcon,.PreviewIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/page_white_magnify.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-  margin-bottom:5px;
-}
-
-.ChartLineIcon,.ChartLineIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/chart_line.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-    margin-bottom:5px;
-      margin-left: 5px;
 }
 
 .DatabaseGoIcon,.DatabaseGoIcon:hover
@@ -380,7 +253,7 @@ width:100%;
       margin-left: 5px;
 }
 
-.DownArrowIcon,.DownArrowIcon:hover
+.DownArrowAndDownloadIcon,.DownArrowAndDownloadIcon:hover
 {
   background-image: url('../InterSpec_resources/images/bullet_arrow_down.png');
   background-position: right center;
@@ -388,51 +261,17 @@ width:100%;
   padding-right: 21px;  /* width of the image plus a little extra padding */
 }
 
-.DownArrowAndDownloadIcon,.DownArrowAndDownloadIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/disk.png'),url('../InterSpec_resources/images/bullet_arrow_down.png');
-  background-position: 3px center, right center;
-  background-repeat: no-repeat, no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-  padding-right: 21px;  /* width of the image plus a little extra padding */
-}
-
 .AddAndDownloadIcon,.AddAndDownloadIcon:hover
 {
-  background-image: url('../InterSpec_resources/images/add.png'),url('../InterSpec_resources/images/bullet_arrow_down.png');
-  background-position: 3px center, right center;
-  background-repeat: no-repeat, no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-  padding-right: 21px;  /* width of the image plus a little extra padding */
-}
-
-.CursorIcon,.CursorIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/cursor.png');
-  background-position: 3px center;
+  background-image: url('../InterSpec_resources/images/bullet_arrow_down.png');
+  background-position: right center;
   background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
+  padding-right: 21px;  /* width of the image plus a little extra padding */
 }
 
 .FindIcon,.FindIcon:hover
 {
   background-image: url('../InterSpec_resources/images/magnifier.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.BinIcon,.BinIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/bin.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.WandIcon,.WandIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/wand.png');
   background-position: 3px center;
   background-repeat: no-repeat;
   padding-left: 21px;  /* width of the image plus a little extra padding */
@@ -449,79 +288,12 @@ width:100%;
 
 .CameraIcon,.CameraIcon:hover
 {
-  background-image: url('../InterSpec_resources/images/camera.png');
+  background-image: url('../InterSpec_resources/images/detector_small_white.png');
   background-position: 3px center;
   background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
+  padding-left: 21px;
 }
 
-.GearIcon,.GearIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/cog.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.ShieldAddIcon,.ShieldAddIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/shield_add.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.ShieldIcon,.ShieldIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/shield.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.ShieldAddIcon,.ShieldAddIcon:hover
-{
-    background-image: url('../InterSpec_resources/images/shield_add.png');
-    background-position: 3px center;
-    background-repeat: no-repeat;
-    padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.ShapeSquareIcon,.ShapeSquareIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/shape_square.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-
-.ShapeSquareAddIcon,.ShapeSquareAddIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/shape_square_add.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.BulletGoIcon,.BulletGoIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/bullet_go.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-
-
-
-.CurveIcon,.CurveIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/chart_curve.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
 
 .RefreshIcon,.RefreshIcon:hover
 {
@@ -531,61 +303,39 @@ width:100%;
   padding-left: 21px;  /* width of the image plus a little extra padding */
 }
 
-.PageStackIcon,.PageStackIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/page_white_stack.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
 
 .helpButton
 {
-  padding-top: 2px;
+  /* background: transparent url(../InterSpec_resources/images/qmark.png) no-repeat scroll right top; */
+  margin-top: 2px;
+  background: white;
   float: left;
   width: 20px;
   height: 20px;
   cursor:pointer;
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  border-radius: 4px;
 }
 
-.filemanageroverflow
+.helpButton:hover
 {
-  overflow: visible;
-}
-
-.helpTree
-{
-  overflow: auto;
-}
-
-.line-below
-{
-
-    /*  border: 2px solid green;*/
-    /*  background-color: #f5f5f5; */
-    border-bottom: 1px solid #ddd;
-    padding-bottom: 7px;
-    margin-bottom: 5px;
+  /* background-position: right -20px; */
+  background: none;
 }
 
 
-.line-above
-{
-    
-    /*  border: 2px solid green;*/
-    /*  background-color: #f5f5f5; */
-    border-top: 1px solid #ddd;
-    padding-top: 7px;
-    margin-top: 5px;
-}
 
 .modal-footer 
 {
-  padding: 10px 10px 10px;
+  padding-top: 13px;
+  padding-left: 10px;
+  padding-right: 10px;
+  
   margin-bottom: 5px;
   text-align: right;
   white-space:nowrap;
-  height: 50px;
+  /* height: 50px; */
 /*  border: 2px solid green;*/
 /*  background-color: #f5f5f5; */
   border-top: 1px solid #ddd;
@@ -603,14 +353,6 @@ width:100%;
   margin-left:2px;
 }
 
-.secondary{
-  -webkit-filter: grayscale(40%);
-}
-
-.secondary:hover{
-  -webkit-filter: grayscale(0%);
-}
-
 
 .CanvasForDragging
 {
@@ -619,13 +361,6 @@ width:100%;
   -webkit-user-select: none; 
   -o-user-select: none;
   user-select: none;
-}
-
-
-/*Fix an undesired display isue with WTabWidget*/
-br.Wt-tabs-clear
-{
-    display: none;
 }
 
 
@@ -700,28 +435,9 @@ box-shadow: 3px 3px 10px rgba(0,0,0,0.6);
 }
 
 
-/*.PhoneMenuClose > li > a : after*/
-/*{*/
-/*  content: url(images/menuclose.png)*/
-/*}*/
 
-.ShiledingSourceOptionsBtn
-{
-/*  background: grey url(images/hamburger.png); */
-/*  margin:0;*/
-/*  padding:0;*/
-/*  width: 32px;*/
-/*  height: 34px;*/
-/*  opacity: .55; */
-/*  cursor:pointer; */
-}
 
-.ShiledingSourceOptionsBtn.active
-{
-  opacity: 1.0;
-}
-
-.MobileMenuButton
+.MobileMenuButton, .MobileMenuButton:hover
 {
   background: grey url(images/hamburger.png);
   margin:0;
@@ -731,13 +447,32 @@ box-shadow: 3px 3px 10px rgba(0,0,0,0.6);
   left:5px;
   width: 32px;
   height: 34px;
-  opacity: .55;
+  opacity: 0.55;
+  -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
+  -webkit-touch-callout: none !important;
+  /* outline: none; //havent tried this, but this would be standards way to remove the tap highlight... */
   /* The z-index is set with inline styling to 8388635 */
-  /* z-index: 8388635; */ /*could use max val of 2147483638*/
 }
 
+.MobileMenuButton:hover {
+  opacity: 1;
+}
 
-.MobileBackButton
+.MobileBackBtn, .MobileBackBtn:hover
+{
+  vertical-align: middle;
+  background: grey url(images/mobile_back.png);
+  background-repeat: no-repeat;
+  background-position: 3px 5px;
+  background-size: 7px 12px;
+  color: white;
+  padding-left: 15px;
+  border: none;
+  float: left;
+  margin-right: 5px;
+}
+
+.MobilePrevSample
 {
     background: grey url(images/resultset_first.png);
     background-repeat:no-repeat;
@@ -761,7 +496,7 @@ box-shadow: 3px 3px 10px rgba(0,0,0,0.6);
     /* z-index: 8388635; */ /*could use max val of 2147483638*/
 }
 
-.MobileForwardButton
+.MobileNextSample
 {
     background: grey url(images/resultset_last.png);
     background-repeat:no-repeat;
@@ -836,49 +571,11 @@ box-shadow: 0px 0px 8px -1px black;
 padding-left:10px;
 }
 
-.tailShadow {
-background-color: transparent;
-width: 4px;
-height: 4px;
-position: absolute;
-top: 16px;
-left: -8px;
-z-index: -10;
-box-shadow: 0px 0px 8px 1px black;
--moz-box-shadow: 0px 0px 8px 1px black;
--webkit-box-shadow: 0px 0px 8px 1px black;
-}
-
-.tail1 {
-width: 0px;
-height: 0px;
-border: 10px solid;
-border-color: transparent #73a7f0 transparent transparent;
-position:absolute;
-top: 8px;
-left: -20px;
-}
-
-.tail2 {
-width: 0px;
-height: 0px;
-border: 10px solid;
-border-color: transparent rgb(253, 255, 218) transparent transparent;
-position:absolute;
-left: -18px;
-top: 8px;
-}
-
-
-/*@media (-webkit-min-device-pixel-ratio: 2), and (min-device-width : 320px) and (max-device-width : 640px){ */
-/*.MobileMenuButton{width: 50px; height: 51px; background-size:48px 48px; background: red url(images/hamburger.png); } */
-/*}*/
 
 
 .UseInfoStack
 {
   border-left: solid 1px #e1e1e1;
-
   margin-left: 5px;
   padding-left: 10px;
 }
@@ -890,6 +587,37 @@ top: 8px;
   overflow-y: auto;
 }
 
+.UseInfoTabsWidget
+{
+}
+
+.UseInfoTabsMobile
+{
+}
+
+.UseInfoTabsStack
+{
+  border: 1px solid gray;
+  border-top: none;
+}
+
+
+.MobileWelcomeText
+{
+  margin-bottom: 5px;
+  text-size: small;
+}
+
+.MobileWelcomePoscriptText
+{
+  margin-top: 5px;
+  text-size: small;
+}
+
+.PhoneCopywriteContent
+{
+  font-size: 8px;
+}
 
 .SideMenu
 {
@@ -904,33 +632,39 @@ top: 8px;
 
 .SideMenuPhone
 {
-    
     margin: 0px;
     padding-top:30px;
-    padding-left: 5px;
-    padding-right:5px;
+    padding-left: 1px;
+    padding-right:1px;
     list-style-type: none;
     overflow: auto;
     font-size: 13px;
-    width: 30px;
+    width: 45px;
 }
 
 
 
-.SideMenuPhone li
+.SideMenuPhone > li
 {
     vertical-align:middle;
     /*  font-size: small;*/
     font-weight: bold;
 
     color: #ffffff;
-    padding-top: 8px;
+    padding-top: 10px;
+    padding-left: 14px;
+    
     padding-bottom: 8px;
     margin-top: 2px;
     margin-bottom: 2px;
     -webkit-border-radius: 5px;
     -moz-border-radius: 5px;
     border-radius: 5px;
+}
+
+.SideMenuPhone > .itemselected
+{
+  background: #C6C6C6;
 }
 
 .SideMenu > li 
@@ -951,6 +685,15 @@ top: 8px;
   -webkit-border-radius: 5px;
   -moz-border-radius: 5px;
   border-radius: 5px;
+}
+
+.SideMenu > .Wt-separator {
+    height: 0.25em;
+    -webkit-border-radius: 0;
+    -moz-border-radius: 0;
+    border-radius: 0;
+    padding-top: 0px;
+    padding-bottom: 0px;
 }
 
 .SideMenu a
@@ -1015,72 +758,33 @@ background: #9B9B9B;
 
 
 
-
-   
-
-.m_peakTabs
-{
-}
-
-.PeakTabOldWt
-{
-}
-
-
 .PeakInfoDisplay
 {
+  margin-top: 5px;
+  margin-bottom: 3px;
+  margin-right: 4px;
+  margin-left: 4px;
+  overflow-y: hidden;
 }
 
-.PeakEdit
-{
-overflow-y: auto;
-}
-
-.PeakEditTable
-{
-}
-
-.PeakEditWindow
+.PeakInfoDisplayTable
 {
 }
 
-.PeakEditOtherPeaks
-{
-  text-align: center;
-  padding-top: 0.5em;
+.PeakInfoDisplayButtonDiv {
+  padding-bottom: 2px;
+  padding-left: 5px;
 }
 
-.PeakEditPreviousPeak, .PeakEditNextPeak
-{
-  position:absolute;
-  bottom: 0;
-  height: 22px;
-  width: 22px;
-  border: 0px;
-  padding: 0px;
-  cursor: default;
+.PeakInfoDisplayButtonDiv > button {
+  margin-right: 5px;
 }
 
-.PeakEditPreviousPeak
-{
-  background: transparent url(previous_arrow.png) no-repeat scroll right top;
-  left: 10px;
-}
-
-.PeakEditNextPeak
-{
-  background: transparent url(next_arrow.png) no-repeat scroll right top;
-  right: 10px;
-}
-
-
-
-
-.PeakEditHint
-{
-color: gray;
-margin-left: 2em;
-font-size:66%
+.CsvLinkBtn, .CsvLinkBtn:hover {
+  float: right;
+  background: none !important;
+  border: none !important;
+  color: blue;
 }
 
 .WarningWidget
@@ -1101,6 +805,7 @@ font-size:66%
 .RecalibratorWide
 {
   margin-top: 2px;
+  padding-bottom: 3px;
 }
 
 .RecalibratorTall
@@ -1142,7 +847,7 @@ font-size:66%
 
 .DevPairHeader
 {
-  border-bottom: 2px solid #e1e1e1;   
+  border-bottom: 1px solid #e1e1e1;   
 }
 
 .DevPairEnergyHeader, .DevPairOffsetHeader
@@ -1188,6 +893,35 @@ font-size:66%
   border: 1px solid #e1e1e1;
 }
 
+.MultCalBtnWide {
+  margin-left: 3px;
+  margin-right: 5px;
+}
+
+.PlusIconWhiteBtn, .PlusIconWhiteBtn:hover
+{
+  background-image: url('../InterSpec_resources/images/plus_min_white.png');
+  background-position: 3px center;
+  background-repeat: no-repeat;
+  padding-left: 21px;  /* width of the image plus a little extra padding */
+}
+
+.MinusIconWhiteBtn, .MinusIconWhiteBtn:hover
+{
+  background-image: url('../InterSpec_resources/images/minus_min_white.png');
+  background-position: 3px center;
+  background-repeat: no-repeat;
+  padding-left: 21px;  /* width of the image plus a little extra padding */
+}
+
+.DeleteDevPair
+{
+  background-image: url('../InterSpec_resources/images/minus_min.png');
+  background-position: 0px center;
+  background-repeat: no-repeat;
+  widthL 20px;
+  float: right;
+}
 
 
 .RecalRow
@@ -1264,14 +998,11 @@ font-size:66%
 
 .RecalFitBtn, .RecalFitBtn:hover
 {
-  /*display:block;*/
-/*  margin-left: 17em;*/
 float:right;
 }
 
 .RecalCancelbtn, .RecalCancelbtn:hover
 {
-/* margin-left: 0.5em;*/
 float:right;
 }
 
@@ -1291,196 +1022,6 @@ float:right;
 }
 
 
-.IsotopeSearchByEnergy
-{
-  /*width: 54em;*/
-  width: 98%;
-  /*display:table;*/
-  margin-left: 0px;
-}
-
-.SearchEnergiesLeftDiv
-{
-  /*display: inline-block;*/
-  /*display: table-cell;*/
-  /*float: left;*/
-  /*margin-left: 5px;*/
-  border: 2px solid #e1e1e1;   
-  /*height: 95%;*/
-  /*height: 10em;*/
-  width: 25.7em;
-  height: 100%;
-}
-
-.IsoSearchSrcCB
-{
-  padding-right: 5px;
-  padding-top: 2px;
-}
-
-.IsoSearchSrcDiv
-{
-/*  width: 23.2em;*/
-}
-
-
-.SearchEnergies
-{
-  border: 1px solid #e1e1e1;   
-  margin: 2px;
-/*  min-height: 8em;*/
-  overflow-y: auto;
-  width: 25.2em;
-  top: 5px;
-  right: 0;
-  left: 0;
-}
-
-.SearchEnergiesButtonDiv
-{
- position:absolute;
- bottom: 0; 
- right: 0;
- left: 0;
- width: 25em;
- padding-bottom: 5px;
-}
-
-.SearchingEnergiesTxt
-{
-  background: red;
-  color: white;
-  vertical-align: middle;
-}
-
-
-.MinBrLabel
-{
-  margin-left: 0.5em;
-  margin-right: 0.1em;
-}
-
-.MinHlLabel
-{
-  margin-left: 0.75em;
-  margin-right: 0.1em;
-}
-
-.IsotopeSearchResults
-{
-  /*display: inline-block;*/
-  /*float: right;*/
-  /*display: table-cell;*/
-  height: 95%;
-  /*width: auto;*/
-}
-
-.IsotopeSearchResultTable
-{
-  border: 2px solid #e1e1e1;
-}
-
-
-.SearchEnergy
-{
-  border: 1px solid #e1e1e1;   
-  margin: 2px;
-  padding: 2px;
-/*  width: 22em;*/
-}
-
-.ActiveSearchEnergy
-{
-background: blue; /*for IEs sake*/
-background: rgba(36, 169, 211, 0.25);
-}
-
-.searchEnergiesDiv
-{
-  border-top: thin #B2B2B2;
-  border-style: solid;
-}
-
-.energyAddDelete,
-{
-  vertical-align: sub;
-  cursor:pointer;
-}
-
-.ShieldingDelete, .ShieldingAdd, .ShieldingDelete:hover, .ShieldingAdd:hover
-{
-  opacity:0.5;
-  cursor:pointer;
-  color: none;
-  background: none;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  width: 16px;
-  height: 16px;
-/*  padding-left: 16px; */
-/*  padding-top: 16px; */
-  
-}
-
-.ShieldingDelete, .ShieldingDelete:hover
-{
-  background-image: url('../InterSpec_resources/images/delete.png');
-  background-position: 0px center;
-  background-repeat: no-repeat;
-}
-
-.ShieldingAdd, .ShieldingAdd:hover
-{
-  background-image: url('../InterSpec_resources/images/add.png');
-  background-position: 0px center;
-  background-repeat: no-repeat;
-}
-
-.ShieldingDelete:hover, .ShieldingAdd:hover
-{
-  opacity:1.0;
-}
-
-.SearchEnergyLabel
-{
-}
-
-.SearchEnergyWindowLabel
-{
- margin-left: 0px;
-}
-
-.SpecMeasManager
-{
-/*  border: 1px solid #e1e1e1;*/
-/*  background: #f9f9f9;*/
-/*  min-width: 175px;*/
-/*  min-height: 15em;*/
-}
-
-.SpectraFileManagerHeader
-{
-  cursor: crosshair;
-  text-align: left;
-  margin: 0;
-  background-color: #e1e1e1;
-  padding-top: 0.4em;
-  user-select: none;
-  -o-user-select: none;
-  -moz-user-select: none;
-  -khtml-user-select: none;
-  -webkit-user-select: none;
-}
-
-
-.treeDiv
-{
-  border: 1px solid #e1e1e1;
-  margin-bottom: 8px;
-/*  border: 2px solid blue;*/
-}
-
 
 .AuxWindow-content, .AuxWindow-footer
 {
@@ -1497,10 +1038,15 @@ overflow: auto;
 
 .titleVertMiddle
 {
-/*    position:relative; */
-    top:50%;
-    vertical-align:middle;
-/*    transform: translateY(-50%); */
+    /* position:relative; */
+    /* top:50%; */
+    /* vertical-align:middle; */
+    /* transform: translateY(50%); */
+    /* display: block; */
+    display: inline-block;
+    padding-top:4px;
+    padding-left: 8px;
+    vertical-align: middle;
 }
 
 .helptitlebar,.helptitlebar:hover
@@ -1519,12 +1065,9 @@ margin: 4px;
 
 .titlebar
 {
-/*border: 2px solid blue;*/
-/*border: 0px;*/
 width:auto;
 padding: 0px;
 height: 25px;
-
 }
 
 .titlebar:hover
@@ -1534,7 +1077,6 @@ background-color: #909090;
 
 .DbSpecFileSelectTable
 {
-border: 1px solid #e1e1e1;
 }
 
 table.RecalibCoefTable
@@ -1609,82 +1151,50 @@ opacity:0.4;
 }
 
 
-.ShieldingSelect
-{
-/*  border:2px solid #444422;*/
-  margin-left:   5px;
-  margin-right:  5px;
-  margin-top:    3px;
-  margin-bottom: 3px;
-}
-
-.ShieldingSelectContainer
-{
-   min-width: 19em;
-   min-height: 10em;
-   overflow-y: auto;
-}
-
-.MassFracNoFit
-{
-  background: Silver;
-  margin-left: 3ex;
-}
-
-.CalculationLog
-{
-  white-space: pre;
-  font-family: monospace;
-  display: block;
-  overflow: auto;
-}
-
-.CalcLogLink, .InfoLink
-{
-  color:grey;
-}
-
-
-.CalcLogLink:hover, .InfoLink:hover
-{
-  color:blue;
-}
-
 .InfoLink
 {
   color:grey;
   text-decoration:underline;
   cursor:pointer;
+  border:1px solid #e1e1e1;
+  -moz-border-radius: 5px;
+  -webkit-border-radius: 5px;
+  border-radius: 5px;
 }
 
 
-.ShieldingSourceDisplay_m_peakView
+button, button:hover {
+  font-weight:bold;
+  vertical-align: middle;
+  border:1px solid #e1e1e1;
+  color: #FFFFFF;
+  background-color: #888888;
+  -moz-border-radius: 5px;
+  -webkit-border-radius: 5px;
+  border-radius: 5px;
+  height: 23px;
+}
+
+button:hover, .submit:hover {
+  color: #f2f2f2;
+  border-style: solid;
+  border:1px solid #e6e6e6;
+  cursor: pointer;
+  background-color: #737373;
+}
+
+button[disabled]
 {
-   height: 100%;
-   border:2px solid #e1e1e1; 
-}
-
-.ShieldingSourceDisplay_m_sourceView
-{
-   height: 100%;
-   border:2px solid #e1e1e1; 
-}
-
-.GenericMaterialCB
-{
-white-space:nowrap;
-margin-right: 0.7em;
-}
-
-.ShieldingSourceFitDistance
-{
-/*white-space:nowrap;*/
-/*margin-right: 0.7em;*/
-/*float:right;*/
+  background-color: #999999;
+  color: #aaaaaa;
+  opacity: 0.8;
+  cursor: not-allowed;
+  -webkit-filter: grayscale(100%);
+  filter: grayscale(100%);
 }
 
 
-/*Fix some stuff that SRB common CSS messes up*/
+/*
 button
 {
   padding:4px 4px;
@@ -1700,7 +1210,6 @@ button
 }
 
 button:hover,
-.button:hover,
 .submit:hover {
 padding:4px 4px;
 margin:0 0px;
@@ -1721,33 +1230,23 @@ button[disabled]
   cursor: not-allowed;
   -webkit-filter: grayscale(100%);
 }
-
+*/
+ 
 li{ padding-top: 0; }
 table { margin-bottom:0; }
 a:hover { color:#E88400; border-bottom:none; }
 th, td { border: none; padding: 0; vertical-align: none; text-align: none; }
 
 
-.Wt-tabs > li
-{
-padding-top: 0;
-}
 
 body
 {
-/*  color: #303030;*/
-/*  background-color: #f9f9f9;*/
   background: none;
   color: none;
   background-color: none;
-/*   font-family: 'lucida grande',tahoma,verdana,arial,sans-serif;*/
-/*   font-weight: 300;*/
-/*  font-family: Times; */
   font-size: 14px;
-/*  line-height: 1.428;*/
- font-family:Helvetica, Arial, Verdana, sans-serif;
-        padding:5px;
-
+  font-family:Helvetica, Arial, Verdana, sans-serif;
+  padding:5px;
 }
 
 h1 
@@ -1791,7 +1290,7 @@ h1
 }
 
 
-div.m_menuDiv
+div.TopMenuDiv
 {
 /*  padding-bottom: 0.2em;*/
   border-bottom: 1px solid grey;
@@ -1877,48 +1376,21 @@ span.MenuLabelSelected
 }
 
 
-
-button.PopupMenuItemButton
-{
-  /*This is a button appearing somewhere inside of a PopupDiv*/
-  list-style:none;
-  border:2px solid #FAFAFA;
-  background: silver;
-  width: auto;
-  text-align: left;
-}
-
-button.PopupMenuItemButtonNoFullWidth
-{
-  /*This is a button appearing somewhere inside of a PopupDiv*/
-  list-style:none;
-  border:2px solid #FAFAFA;
-  background: silver;
-  text-align: left;
-}
-
-
 .NumPeakSelect
 {
   border:2px solid blue;
 }
 
-.searchMethodDiv
+
+.ReferencePhotopeakDisplay
 {
-  border-color: #888;
-  border-style: solid;
-  border-width: 1px;
-  margin-bottom: 0.5em;
-  margin-right: 0.5em;
+  margin-top: 5px;
+  margin-left: 4px;
+  margin-right: 4px;
+  margin-bottom: 3px;
 }
 
-.PhotopeakLineDisplay
-{
-  margin-top: 3px;
-  margin-left: 0.5em;
-}
-
-.PhotopeakLineDisplayMobile
+.ReferencePhotopeakDisplayMobile
 {
   padding-top: 0px;
 }
@@ -2028,104 +1500,32 @@ cursor: default;
 }
 
 
-#SrbHeader
-{
-  /* Used in WtTh1Application.cpp */
-  padding-top:15px;
-  width:99.9%;
-  margin-bottom:  0;
-  padding-bottom: 0;
-  height: 40px;
-  /* position: fixed;  */
-  /* right: 0px; */
-  /* top: 0px; */
-  /* clear:both; */
-  /*apparently only IE6 reads css properties starting with an underscore (a bug in IE6)*/
-  /* _min-height: 600px; */
-  /* _margin-bottom: 300px; */
-  /* _position: absolute; */
-  _z-index: 5;
-}
-
-
-#SrbFooter
-{
-  /* Used in WtTh1Application.cpp */
-
-  background:#ffffff top left url('../../../srb_common/assets/images/footer.png') repeat-x;
-  clear:left;
-  margin:0 0 0 0;
-  padding:0;
-  padding-left:2.0em;
-  width:99.9%;
-  /* position: relative; */
-  /* left: 0px;  */
-  /* top: 200px; */
-  left: 0px;
-  /* top: 0px; */
-  float: bottom;
-  height: 80px;  /*put in for the sake of IE */
-}
-
-@media screen and (max-height: 768px) 
-{ 
-#SrbHeader 
-{
-  height: 30px;
-}
-}
-
-#footer
-{
-  margin: 0px 0px 0px 0px;
-  padding: 0em;
-  padding-top: 10px;
-}
-
-#sponsors
-{
-  padding-bottom: 0.25em;
-  padding-top: 0.5em;
-  margin-bottom: 0px;
-}
-
-#sponsors img
-{
-  margin-bottom: 0px;
-  vertical-align: middle
-}
-
-#sponsors_local {
-  /* Used in SrbApplication.cpp, for the layout of the two logos in the footer*/
-  /* The 'sponsors_local' naming does not coorespond to a c++ object. */
-        float:left;
-        width:240px;
-}
-
-/*Overide some SRB default css */
-th, td
-{
-  padding:0px;
-  border: none;
-}
 
 
 .CompactFileManager
 {
-  padding: 0px;
-/*  border: solid 2px #e1e1e1; */
-  width: 250px;
+  padding-top: 5px;
+  padding-left: 5px;
+  margin-right: -1px;
+  padding-bottom: 3px;
   overflow-y: hidden;
 }
 
 
 div.CompactSampleWrapper
 {
-
   border-color: grey;
   border-style: ridge;
   border-width: 1px;
+  padding: 5px;
+  margin-right: 5px;
+}
 
+
+.CompactManagerButtons
+{
+  margin-right: 5px;
+  margin-top: 3px;
 }
 
 .img-centered
@@ -2186,27 +1586,13 @@ div.displaySampleDiv
 {
 }
 
-.SpecNormSlider
-{
-  margin-left: 15px;
-  margin-right: 15px;
-}
 
 .SpecNormTxt
 {
   width: 5em;
 }
 
-.FileParseErrorText
-{
-}
 
-button.FileParseErrorButton
-{
-  margin-left: auto;
-  margin-right: auto;
-  width: 6em;
-}
 
 /*
  This allows buttons and links to work
@@ -2228,9 +1614,15 @@ button.FileParseErrorButton
 
 .PhoneAuxWindowFooter
 {
-  margin-top: 3px;
+  padding-top: 6px;
   height: 25px;
+  padding-right: 2px;
 }
+
+.PhoneAuxWindowFooter > button {
+  margin-right: 5px;
+}
+
 
 .TransparentFooter
 {
@@ -2243,124 +1635,8 @@ button.FileParseErrorButton
     
     pointer-events:none;
     background:rgba(0,0,0,0.2);
-    
-/*    width:100%;
-    height:50px;
-    position:absolute;
-    bottom:0;
-    left:0; */
-
 }
 
-.SpectraFileManagerButtonDiv
-{
-/*  height: 5.0em;*/
-  /*border: 1px solid #e1e1e1;*/
-}
-.LoadSpectrumText
-{
-}
-
-button.LoadSpectrumButton
-{
-/*border:1px solid #ECECEC;*/
-border:1px solid #5A5A5A;
-background: none;
-/*color: #454545;*/
-color: #5A5A5A;
-}
-
-button.LoadSpectrumButton[disabled]
-{
-border:1px solid #D2D2D2;
-background: none;
-color: #D2D2D2;
-}
-
-button.LoadSpectrumButton:hover
-{
-/*color: red;*/
-}
-
-button.UnDisplayButton
-{
-border: none;
-background: none;
-color: #454545;
-}
-
-button.UnDisplayButton[disabled]
-{
-border: none;
-background: none;
-color: #ECECEC;
-}
-
-
-button.UnLoadSpectrumPopupButton
-{
-border: none;
-background: none;
-}
-
-.SpecFileSummary
-{
-}
-
-.SpecFileInfo, .MeasInfo, .SpecSummChoose, .SpecSummAllowEdit
-{
-  border: 1px solid black;
-}
-
-.SpectrumFileSummaryLabel
-{
-  font-weight:bold;
-}
-
-
-.PointInfo
-{
-  position: absolute;
-  display: inline-block;
-  top: 2px;
-  right: 11px;
-  border: 1px solid black;
-  padding: 2px;
-  padding-left: 3px;
-  padding-right: 3px;
-  padding-bottom: 0px;
-  background-color: #fff;
-  background-color: rgba(255,255,255,0.9);
-}
-
-.PointInfo > sub
-{
-  font-size:50%;
-}
-
-
-.LoadSpectrumUploadLabel
-{
-user-select: none;
--o-user-select: none;
--moz-user-select: none;
--khtml-user-select: none;
--webkit-user-select: none;
-}
-
-.LoadSpectrumLoadDiv, .LoadSpectrumUploadDiv
-{
-  -moz-border-radius: 2px;
-  border-radius: 2px;
-  border:0px solid #e1e1e1;
-  padding: 2px;
-  margin-bottom:3px;
-  user-select: none;
-  -o-user-select: none;
-  -moz-user-select: none;
-  -khtml-user-select: none;
-  -webkit-user-select: none;
-}
 
 .LoadingIndicator
 {
@@ -2376,26 +1652,6 @@ user-select: none;
 }
 
 
-.LoadSpectrumUnDisplayLabel
-{
-  padding-right: 4px;
-}
-
-
-.LoadSpectrumDeleteSaveDiv
-{
-float: right;
-}
-
-
-.LoadSpectrumUnDisplayDiv, .LoadSpectrumSaveAsPopup
-{
-  padding-left: 10px;
-  padding-right: 10px;
-  padding-bottom: 5px;
-/*  color: #454545; */
-}
-
 a.LoadSpectrumSaveAsLink
 {
 color: #454545;
@@ -2406,52 +1662,6 @@ color: blue;
 }
 
 
-
-.startQuickUploadMsg
-{
-  padding-top: 10px;
-  width: auto;
-  text-align: center;
-}
-
-
-.QuickFileUploadWarningDialog
-{
-  text-align: center;
-}
-
-.QuickSaveAsDialog
-{
-}
-
-
-.PreviousDbDialogContents
-{
-}
-
-
-.PreviousDbEntry
-{
-  padding-left: 5px;
-  padding-right: 3px;
-  padding-top: 3px;
-  margin-top: 10px;
-  width: 95%;
-  height: 1.8em;
-  border:1px solid #e1e1e1;
-}
-
-.PreviousDbEntryTxt
-{
-  font-size:100%;
-  font-family:"Times New Roman", Times, serif;
-  position:absolute; 
-}
-
-.PreviousDbEntryButton
-{
-float: right;
-}
 
 .DetectorDisplay
 {
@@ -2512,6 +1722,10 @@ float: right;
   margin: 4px;
 }
 
+.AddRelEffFile{
+  filter: invert(100%);
+}
+
 .AddRelEffFile, .AddRelEffFile:hover
 {
   opacity:0.5; 
@@ -2523,7 +1737,7 @@ float: right;
   margin: 0;
   width: 16px;
   height: 16px;
-  background-image: url('../InterSpec_resources/images/add.png');
+  background-image: url('../InterSpec_resources/images/plus_min_white.png');
   background-position: 0px center;
   background-repeat: no-repeat;
 }
@@ -2533,39 +1747,6 @@ float: right;
   opacity:1.0;
 }
 
-  
-}
-
-.ShieldingAsSourceCBDiv
-{
-/*background: #888888; color: #FFFFFF;*/
-  border-color: #E1E1E1;
-  border-style: solid;
-  border:2px solid #e1e1e1;
-}
-
-.OneOverR2Calc
-{
-}
-
-.OneOverR2CalcContents
-{
-  overflow: auto;
-}
-
-
-.OneOverR2CalcInput
-{
-  position:absolute;
-  left:16em;
-}
-
-.OneOverR2CalcRow
-{
-/*  margin-top: 5px;*/
-  margin-bottom: 12px;
-  
-}
 
 .UseInstructionHeader
 {
@@ -2582,503 +1763,149 @@ float: right;
 }
 
 
-.GoogleMapDiv
-{
-}
-
-.MapMeasPoint
-{
-}
-
-.GpsCoordsTxt
-{
-}
-
-.GpsTimeTxt
-{
-}
-
-.GpsCoordClickText
-{
-  height: 1.5em;
-}
-
-
-.SearchMode3DChart
-{
-}
-
-
-.SimpleNuclideAssistPopup
-{
-  -webkit-border-radius: 2 2 5px 5px;
-  -moz-border-radius: 2 2 5px 5px;
-  border-radius: 2 2 5px 5px;
-  padding: 0px;
-  margin: 0px;
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.SimpleNuclideAssistPopupTitle
-{
-  text-align: center;
-  color: rgb(255,255,255);
-  background: rgba(102, 102, 102, 0.9);
-  margin-left: 10px;
-  margin-right: 10px;
-  -webkit-border-radius: 3px;
-  -moz-border-radius: 3px;
-  border-radius: 3px;
-  padding-top: 2px;
-  padding-bottom: 2px;
-}
-
-.SimpleNuclideAssistItem
-{
-  padding: 0px;
-  margin: 0px;
-  background: rgba(255, 255, 255, 0);
-}
-
-.SimpleNuclideAssist
-{
-  width: 175px;
-}
-
-.SimpleNuclideAssistLegend
-{
-  color: rgb(182, 182, 182);
-  background: rgba(255, 255, 255, 0.96);
-  margin: 2px;
-  border-radius: 5px;
-  border: 2px solid rgba(182, 182, 182, 0.7);
-  font-size: 12px;
-}
-
-.SimpleNuclideAssistLegendROI
-{
-  width: 15px;
-  border: 2px solid rgba(182, 182, 182, 0.7);
-}
-
-
-.SimpleNuclide
-{
-  color: rgb(255, 255, 255);
-  background: rgba(182, 182, 182, 0.7);
-  padding: 10px;
-  padding-top: 5px;
-  padding-bottom: 5px;
-  margin: 2px;
-  border-radius: 5px;
-  border: 2px solid rgba(182, 182, 182, 0.7);
-}
-
-.ActiveSimpleNuclide
-{
-  color: rgb(182, 182, 182);
-  background: rgba(255, 255, 255, 0.96);
-}
-
-.SimpleNuclideNucName
-{
-  font-weight: 900;
-  font-size: 16px;
-}
-
-.SimpleNuclideMsg
-{
-  border-radius: 4px;
-  background-color: rgba(255, 255, 255, 0.96);
-  border: 2px solid rgba(182, 182, 182, 0.96);
-  text-align: center;
-}
-
-.SimpleNuclideMoreInfoButton
-{
-  height: 13px;
-  font-weight: 800;
-  width: 75%;
-  text-align: center;
-  
-  padding-top: 1px;
-  padding-bottom: 2px;
-  
-  margin-top: 6px;
-  margin-left: auto;
-  margin-right: auto;
-  
-  border-radius: 3px;
-  border: 1px solid rgba(182, 182, 182, 0.7);
-}
-
-.SimpleNuclideMoreInfoButton:hover
-{
-  color: rgb(102, 102, 102);
-  border: 1px solid rgb(102, 102, 102);
-}
-
-
 .qtip-grey
 {
   background-color: rgba(255, 255, 255, 0.96);
   border-color: rgba(182, 182, 182, 0.7);
   color: rgb(187, 187, 187)
-}.qtip-grey
+}
 
 .qtip-titlebar
 {
   background-color:#B0DE78
-}.qtip-grey
-
-
-.SimpleNuclideMoreInfo
-{
 }
 
-.SimpleNuclideEquivs
-{
-  font-size: 8px;
-}
-
-.SimpleNuclideShieldTxt
-{
-  
-}
-
-.SimpleNuclideShieldButHold
-{
-  padding-left: 10px;
-  margin-top: 2px;
-}
-
-.SimpleNuclideShieldBut
-{
-  color: rgb(187, 187, 187);
-  margin-left: 4px;
-  
-  padding-left: 2px;
-  padding-right: 2px;
-  border-radius: 3px;
-  border: 1px solid rgba(182, 182, 182, 0.7);
-}
-
-.SimpleNuclideShieldBut:hover
-{
-  color: rgb(140, 140, 140);
-  border: 1px solid rgba(140, 140, 140, 0.7);
-}
-
-.SimpleNuclideShieldButActive
-{
-  color: rgb(102, 102, 102);
-  margin-left: 4px;
-  font-weight: 700;
-  
-  padding-left: 2px;
-  padding-right: 2px;
-  border-radius: 3px;
-  border: 1px solid rgb(102, 102, 102);
-}
-
-.SimpleNuclideShieldDesc
-{
-  font-size: 12px;
-  margin-left: 3px;
-}
-
-.SimpleNuclideContam
-{
-  margin-top: 5px;
-}
-
-.SimpleNuclideComment
-{
-  margin-top: 5px;
-  font-size: 11px;
-}
-
-.button,.button:hover {
-
-    margin:0 0px;
-    font-weight:bold;
-    border-color: #E1E1E1;
-    border-style: solid;
-    border:1px solid #e1e1e1;
-    cursor: pointer;
-cursor:pointer;
-display : block;
-position:absolute;
-z-index : 0;
-/*left:50px;
-top:50px;*/
-height:30px;
-width:auto;
-padding: 0 10px 0 6px;
-background-repeat:repeat-x;
-background-size : 100% 30px;
-background-position :0;
-background-image : -webkit-linear-gradient(
-bottom,
-rgba(0,0,0,0) 0%,
-rgba(0,0,0,0) 50%,
-rgba(255,255,255,0.1) 50%,
-rgba(255,255,255,0.3) 100%
-);
-border-radius: 5px;
-border-bottom: 1px solid rgba(255,255,255,0.4);
-box-shadow :0 -1px 1px rgba(0,0,0,0.2)inset,
-0 1px 2px rgba(0,0,0,0.8)inset;
-/*font-family : HelveticaNeue;
-font-weight: 400;
-font-size : 12px;*/
-line-height : 30px;
-text-align:center;
-color:#FFF;
-text-shadow : 0px -1px 0px rgba(100,100,100,0.8);
-}
-.button:before{
-position:absolute;
-content : ' ';
-left:-8px;
-top:2.5px;
-height : 22px;
-width: 22px;
-z-index : 1;
-background-repeat:repeat-x;
-background-size : 20px 20px;
-background-position :-1px -0.5px;
-background-image :
--webkit-gradient(linear, left bottom, right top,
-from(rgba(0,0,0,0)),
-color-stop(0.5, rgba(0,0,0,0)),
-color-stop(0.5, rgba(255,255,255,0.1)),
-to(rgba(255,255,255,0.3)));
--webkit-transform : rotate(-45deg) skew(-10deg, -10deg);
-border-top-right-radius : 10px;
-border-top-left-radius :0px;
-border-bottom-right-radius : 0px;
-border-bottom-left-radius : 10px;
-border-left : 1.5px solid rgba(255,255,255,0.4);
-box-shadow :  1px 1px 1px rgba(0,0,0,0.4) inset,
--1px 1px 1px rgba(0,0,0,0.5) inset;
--webkit-mask-image :
--webkit-gradient(linear, left top, right bottom,
-from(#000000),
-color-stop(0.4,#000000),
-color-stop(0.6, transparent),
-to(transparent));
-}
-
-.button,
-.button:before {
-background-color: rgba(136,136,136,1);/*normalcolor*/
-}
-/*
-.button:hover,
-.button:hover:before {
-background-color: rgba(70,70,70,1);/ *hovercolor* /
-} */
 
 .mobilePopupMenuOverlay {
 position:fixed;
 top:0;
 left:0;
 background:rgba(200,200,200,0.3);
-/*z-index:5;*/
 width:100%;
 height:100%;
-/*display:none;*/
 }
 
 
-.DoseCalcWidget {
+
+
+
+/* Customize WTabWidget to look a little more modern/flat */
+br.Wt-tabs-clear
+{
+  /*Fix an undesired display isue with WTabWidget (at least Wt pre 3.3.4)*/
+  display: none;
 }
 
-.DoseButtonDiv {
-  border: 1px solid #d1d1d1;
-  min-height: 255px;
-  list-style-type: none;
-  padding: 0;
+.Wt-tabs {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -ms-flex-wrap: wrap;
+  flex-wrap: wrap;
+  zoom: 1;
+  width: 100%;
   margin: 0;
-  text-align: center;
+  padding: 0;
+  list-style: none;
+  list-style-type: none;
+  background: none;
+  border-bottom: 1px solid rgba(136, 136, 136, 1);
+  overflow: visible; /* necassary - took a few hours to figure this out. */
 }
 
-.DoseButton, .DoseButton:hover {
-  background-color: #B8B8B8;
-  opacity: 0.8;
-  filter: alpha(opacity=80);
-  margin-top: 8px;
-  margin-left: 6px;
-  margin-right: 6px;
-  width: 5.5em;
+.Wt-tabs li {
+  padding-top: 0;
+  background: none;
+  margin-right: 2px;
+  /*float:left; display:block;*/
+  display: list-item;
+  cursor:pointer;
+  cursor:hand;
+  font-size: small; font-weight: bold;
+  border: none;
 }
 
-.DoseButtonActive, .DoseButtonActive:hover {
-  background: #888888;
-  color: #FFFFFF;
-  opacity: 1.0;
-  filter: alpha(opacity=100);
+.Wt-tabs li:first-child {
+  margin-left: 5px;
 }
 
-.DoseButton:hover, .DoseButtonActive:hover {
-  color: #e6e6e6;
+.Wt-tabs li:after, .Wt-tabs li:before {
+  box-sizing: border-box;
 }
 
-
-
-.DoseEnterDiv {
-  border: 1px solid #d1d1d1;
-  min-height: 255px;
+body.Wt-rtl .Wt-tabs a {
+  float: right;
 }
 
-.DoseEnterEl {
-  /* border: 1px solid #d1d1d1; */
-  width: 250px;
-}
-
-.DoseEnterInd {
-  font-size: 80%;
-}
-
-.DoseDistanceAnswer {
-  
-}
-
-.DoseAnswerDiv {
-  border: 1px solid #d1d1d1;
-  overflow-y: auto;
-}
-
-.DoseEnterTxt {
-  margin-top: 3px;
-  margin-left: 10px;
-}
-
-.GammaSourceEnter {
-  margin-top: 3px;
-}
-
-.DoseFieldLabel {
-  margin-left: 10px;
-}
-
-.DoseAnswerCombo {
-  margin-top: 4px;
-  margin-left: 10px;
+.Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
+  background-position: 0%;
+  /* If the parent background isnt white, then the bellow will have a white line in it... TODO: fix */
+  border-color: grey grey white grey;
+  background-color: inherit;
 }
 
 
-.DoseAnswerEl {
-  /* border: 1px solid #d1d1d1; */
-  width: 250px;
+.Wt-popup .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
+  /* Fix for the white-line when in a AuxWindow */
+  border-color: grey grey #EEEEEE grey;
 }
 
-.DoseIntroDiv {
+.Wt-tabs a {
+  display: block;
+  background: none;
+  white-space: nowrap;
+  padding: 6px 9px 4px;
+  color: black;
+  border: 1px solid transparent;
+  -moz-border-top-left-radius: .25rem;
+  -webkit-border-top-left-radius: .25rem;
+  border-top-left-radius: .25rem;
+  -moz-border-top-right-radius: .25rem;
+  -webkit-border-top-right-radius: .25rem;
+  border-top-right-radius: .25rem;
+  margin-bottom: -1px;
 }
 
-.DoseIntroTxtMain {
-  font-size: 120%
-}
-
-.DoseIntroTxtDetail {
-  color: gray;
-  font-size:75%
-}
-
-.DoseAnswerTxt {
-  margin: 10px;
-  padding-top: 11px;
-  height: 41px;
-  text-align: center;
-  font-size: 25px;
-  font-weight: bold;
-  background: white;
-  -webkit-border-radius: 3px;
-  -moz-border-radius: 3px;
-  border-radius: 3px;
-}
-
-.DoseIssueTxt {
-  color: red;
-  text-align: center;
-}
-
-.DoseHLTxt {
-  font-size: 75%;
-  width: 5em;
-  overflow: hidden;
-  margin-left: 2px;
-}
-
-.DoseColLabel {
-  text-align: center;
-  font-size: 100%;
-  color: dark-grey;
-  border-bottom: 1px solid #d1d1d1;
+.Wt-tabs a:focus, .Wt-tabs a:hover {
+  text-decoration: none;
+  background: rgba(136, 136, 136, 0.08);
+  border: 1px solid rgba(136, 136, 136, 0.15);
+  /* If the parent background isnt white, then the bellow will have a white line in it... TODO: fix */
+  /*border-bottom: 1px solid white;*/
+  border-bottom: 1px solid rgba(136, 136, 136, 0.4);
 }
 
 
-.DoseStayTime {
+.Wt-tabs .itemselected a:focus, .Wt-tabs .itemselected a:hover {
+  /* Get rid of line on selected tab when you mouse over it */
+  border-bottom: 1px solid white;
 }
 
-.DoseStayTimeHeader {
-  text-align: center;
-  border: 1px solid black;
+.Wt-popup .Wt-tabs .itemselected a:focus, .Wt-popup .Wt-tabs .itemselected a:hover {
+  /* For AuxWindow, get rid of line on selected tab when you mouse over it */
+  border-bottom: 1px solid #EEEEEE;
 }
 
-.DoseStayLabelDiv {
-  border: 1px solid black;
-  border-top: none;
+.Wt-tabs .Wt-closable a {
+  padding-right: 17px;
 }
 
-.DoseStayDose {
-  text-align: center;
-  font-size: 12px;
-  font-weight: bold;
+.Wt-tabs .closeicon {
+  background: transparent url(../resources/themes/default/closeicons-tab.png) no-repeat scroll right top;
+  margin: 6px 4px 0px 0px;
+  height: 13px;
+  width: 13px;
+  border: 0px;
+  padding: 0px;
+  cursor: default;
+  float: right;
+  margin-right: 15px;
 }
 
-.DoseStayDesc {
-  text-align: center;
-  font-size: 8px;
+.Wt-tabs .closeicon:hover {
+  background-position: right -13px;
 }
 
-.DoseStayTimeAnsw {
-  text-align: center;
-  border: 1px solid black;
-  border-top: none;
-  border-left: none;
-}
-
-
-.SpecFileQueryCond {
-  border: 1px solid grey;
-  margin: 2px;
-  border-radius: 5px 5px 5px 5px;
-}
-
-.SpecFileQueryConditions {
-  border: 1px solid black;
-  border-radius: 2px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.SpecFileQueryResults {
-  border: 1px solid black;
-  border-radius: 2px;
-}
-
-.FileQueryTextSearch {
-  
-}
-
-.FileQueryOr, .FileQueryAnd, .FileQueryNot, .FileQueryOpenParan, .FileQueryCloseParan {
-  
-}
-
-.SpecFileQueryErrorTxt {
-  font-weight: bold;
-  color: red;
-}
+.Wt-tabs:after { content: ""; display: block; height: 0; clear: both; }
+.Wt-tabs { clear-after: both; }
 

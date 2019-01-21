@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -91,11 +91,11 @@ namespace DoseCalc
     
     if( energy <= 17.7)          //dose only defined to 17.7 MeV
     {
-      const float *coefs = ((energy < 0.01) ? bellow_coefs : above_coefs);
+      const float *coefs = ((energy < 0.01f) ? bellow_coefs : above_coefs);
       dose = dose_equiv(energy,coefs);
     }else                        //extrapolate beyond 17.7 MeV
     {
-      dose = 5.0966831E-10;  //Dose per neutron
+      dose = 5.0966831E-10f;  //Dose per neutron
     }
     
     return dose * PhysicalUnits::cm2 * PhysicalUnits::sievert;
@@ -139,8 +139,8 @@ namespace DoseCalc
     
     if( distance > 300.0f*PhysicalUnits::cm )
     {
-      const float air_an = 7.3737;  //Gadras uses 7.2
-      const float air_density = 0.00129 * PhysicalUnits::g / PhysicalUnits::cm3;
+      const float air_an = 7.3737f;  //Gadras uses 7.2
+      const float air_density = static_cast<float>( 0.00129 * PhysicalUnits::g / PhysicalUnits::cm3 );
       const float air_ad = air_density * distance; //0.00129*A(61)*DISTANCE
       an = (atomic_number*areal_density + air_an*air_ad) / (areal_density + air_ad);
       ad = areal_density + air_ad;

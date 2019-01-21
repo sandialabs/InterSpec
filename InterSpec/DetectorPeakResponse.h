@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -253,8 +253,7 @@ public:
   //  intrinsicEfficiency(411.02)==0.333307;
   //  intrinsicEfficiency(500)   ==0.285503;
   //  intrinsicEfficiency(700)   ==0.219004;
-  //  intrinsicEfficiency(800)   ==0.197117;
-  //  (note: this exampl fcn comes from Steve Myers Nov 2012 spectroscopy drill)
+  //  intrinsicEfficiency(800)   ==0.197117
   //
   //The 'detector_diameter' is in units of PhysicalUnits (e.g. mm).
   //
@@ -626,7 +625,7 @@ public:
       {
         std::shared_ptr<FormulaWrapper> expression = std::make_shared<FormulaWrapper>(m_efficiencyFormula);
         m_efficiencyFcn = [expression](float a) -> float { return expression->efficiency(a); };
-      }catch( std::exception &e )
+      }catch( std::exception & )
       {
         //In principle this shouldnt happen - in practice it might
         m_efficiencyFcn = std::function<float(float)>();

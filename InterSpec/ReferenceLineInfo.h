@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -28,6 +28,8 @@
 #include <tuple>
 #include <vector>
 #include <string>
+
+#include <Wt/WColor>
 
 #include "InterSpec/ReactionGamma.h"
 
@@ -128,6 +130,9 @@ struct ReferenceLineInfo
   //  with.
   std::string detectorName;
   
+  /** Color to draw the line with.  Alpha not currently supported. */
+  Wt::WColor lineColor;
+  
   ReferenceLineInfo();
   bool operator==( const ReferenceLineInfo &rhs ) const;
   void reset();
@@ -140,7 +145,7 @@ struct ReferenceLineInfo
   //  number_lines cooresponds to the which color series to draw.
   //  TODO: look into using the Wt::Json library to form the JSON instead of
   //        doing it by hand
-  void toJson( std::string &json, size_t number_lines ) const;
+  void toJson( std::string &json ) const;
   
   std::string parentLabel() const;
   

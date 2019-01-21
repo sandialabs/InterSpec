@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <string>
 #include <vector>
 #include <memory>
@@ -34,11 +35,17 @@
 #include <boost/any.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
+#if( BUILD_AS_ELECTRON_APP )
+#include <Wt/WEvent>
+#endif
 #include <Wt/WContainerWidget>
 
+#include "InterSpec/SpecFileQuery.h"
+#include "InterSpec/SpecFileQueryDbCache.h"
 
-class Measurement;
 class InterSpec;
+class Measurement;
+class PopupDivMenu;
 class MeasurementInfo;
 class SpecMeasManager;
 class ResultTableModel;
@@ -51,154 +58,22 @@ namespace Wt
   class WSpinBox;
   class WCheckBox;
   class WLineEdit;
+  class WFileUpload;
   class WPushButton;
   class WApplication;
 }
 
+class SpecFileQueryDbCache;
 
-namespace SpecQuery
-{
-  //Stuff in this namespace is intended to be seperate from the GUI and contain
-  // most of the functional/logical code so it can eventually be used to form a
-  // command line utilitiy or something independant from the GUI.
-  
-  
-  enum FileDataField
-  {
-    //String Fields to search
-    Filename,
-    DetectorName,
-    SerialNumber,
-    Manufacturer,
-    Model,
-    Uuid,
-    Remark,
-    LocationName,
-    AnalysisResultText,
-    AnalysisResultNuclide,
-  
-    //Discrete options
-    DetectionSystemType,
-    SearchMode,
-    //More discrete types: ContainedNuetronDetector, ContainedDeviationPairs, ParserType, InstrumentType, HasGps
- 
-    //Ranges of numeric values
-    TotalLiveTime,
-    TotalRealTime,
-    IndividualSpectrumLiveTime,
-    IndividualSpectrumRealTime,
-    //More numeric types: NumberOfSamples, NumberOfRecords, NumberOfGammaChannels, MaximumGammaEnergy, Latitude, Longitude,
-    
-    //Time field
-    StartTime,
-    
-    NumFileDataFields
-  };//enum FileDataField
-  
-  const char *to_string( const FileDataField field );
-  
-  enum TextFieldSearchType
-  {
-    TextIsExact,
-    TextIsContained,
-    TextStartsWith,
-    TextEndsWith,
-    TextRegex
-  };//enum TextFieldSearchType
-  
-  const char *to_string( const TextFieldSearchType type );
-  
-  enum NumericFieldMatchType
-  {
-    ValueIsExact,
-    ValueIsLessThan,
-    ValueIsGreaterThan
-  };//enum NumericFieldMatchType
-  
-  const char *to_string( const NumericFieldMatchType type );
-  
-  class SpecTest
-  {
-  public:
-    SpecTest();
-  
-    //Will throw if field is not a string search filed
-    void set_test( const FileDataField field, const std::string &searchstr, const TextFieldSearchType type );
-    
-    //Will throw if field is not a discrete field
-    void set_discreet_test( const FileDataField field, const int val );
-    
-    //Will throw if field is not a numeric field
-    void set_numeric_test( const FileDataField field, const double value, const NumericFieldMatchType type );
+/* Implimetation ideas
+ -When user "hovers" over a row for abit, show a spectrum preview using the D3.js plotting (try to re-use logic from somewhere to what samples to plot).  Or similarish thing for when row is double-clicked.  (this all would be useful other places too...)
+ -Help text! (could use this as an excuse to re-organize the help XML files).
+*/
 
-    //Will throw if not a time field
-    void set_time_test( const FileDataField field, boost::posix_time::ptime comptime, const NumericFieldMatchType type );
-    
-    bool test( const std::shared_ptr<const MeasurementInfo> meas ) const;
-    
-    std::string summary() const;
-    
-    //Throw exception with explanation if not valid
-    void isvalid();
-    
-  protected:
-    
-    static bool test_string( const std::string &teststr, const TextFieldSearchType &t, const std::string &ss );
-    
-  protected:
-    FileDataField m_searchField;
-    
-    int m_discreteOption;
-    double m_numeric;
-    NumericFieldMatchType m_compareType;
-    
-    std::string m_searchString;
-    TextFieldSearchType m_stringSearchType;
-    
-    boost::posix_time::ptime m_time;
-  };//class SpecTest
-
-  
-  enum LogicType
-  {
-    LogicalOr,
-    LogicalAnd,
-    LogicalNot,
-    LogicalOpenParan,
-    LogicalCloseParan,
-    NumLogicType
-  };//enum LogicType
-  
-  
-  const char *to_string( const LogicType type );
-  
-  
-  //Holds all the contiditions
-  class SpecFileQuery
-  {
-  public:
-    SpecFileQuery();
-    void addCondition( const SpecTest &test );
-    void addLogic( const LogicType test );
-    
-    //
-    bool test( const std::shared_ptr<const MeasurementInfo> meas ) const;
-    
-    //Throws exception if invalid
-    void isvalid();
-    
-    std::string summary() const;
-    
-  protected:
-    static bool evaluate( std::vector<boost::any> fields,
-                          const std::shared_ptr<const MeasurementInfo> &meas );
-    static std::ostream &print_equation( std::vector<boost::any> fields, std::ostream &strm );
-    
-    std::vector<boost::any> m_fields;  //Either LogicType or SpecTest
-  };
-}//namespace SpecQuery
-
-
+//Using recursive_directory_iterator saves the initial time to do the recursive_ls
+// which can be substantial (for the large test directory on my mac like ~10
+// seconds, and Windows like 30 or so)
+#define USE_DIRECTORY_ITERATOR_METHOD 1
 
 
 class SpecFileQueryWidget : public Wt::WContainerWidget
@@ -206,6 +81,10 @@ class SpecFileQueryWidget : public Wt::WContainerWidget
 public:
   SpecFileQueryWidget( InterSpec *viewer, Wt::WContainerWidget *parent = 0 );
   virtual ~SpecFileQueryWidget();
+  
+  
+  
+  
   
 protected:
   void init();
@@ -222,7 +101,8 @@ protected:
                           const bool extfilter, const size_t maxsize,
                           SpecFileQueryWidget *querywidget,
                           const std::string sessionid,
-                          std::shared_ptr< std::atomic<bool> > widgetdeleted );
+                          std::shared_ptr< std::atomic<bool> > widgetdeleted,
+                          std::shared_ptr<SpecFileQueryDbCache> database );
   
   /** Updates the GUI for the found number of candidate files, if the source
       directory, recursice and extension filter options are still all the same.
@@ -233,46 +113,69 @@ protected:
       happening.
    */
   static void updateNumberFilesInGui( const size_t nfiles,
+                                      const bool completed,
                                       const std::string srcdir,
                                       const bool recursive,
                                       const bool extfilter,
                                       SpecFileQueryWidget *querywidget,
                                std::shared_ptr< std::atomic<bool> > widgetdeleted );
   
-  void setResultFieldVisibility( const SpecQuery::FileDataField field, const bool visible );
+  void setResultFieldVisibility( const SpecFileQuery::FileDataField field, const bool visible );
 
+#if( BUILD_AS_ELECTRON_APP )
+  void newElectronPathSelected( std::string path );
+#elif( BUILD_AS_OSX_APP )
+  ///Called when the user selects a new path. \basePathChanged is called also
+  /// when filter options change.
+  void newMacOsPathSelected();
+#endif
+  
   void basePathChanged();
   void setResultsStale();
+  void doCacheChanged();
+  void doPersistCacheChanged();
+  void queryChangedCallback( const std::string &queryJson );
+  void searchRequestedCallback( const std::string &queryJson );
   
-  void addCondition();
-  void addConditionAt( int index );
-  void addConditionAfter( Wt::WWebWidget *ww );
-  void removeCondition( Wt::WWebWidget *ww );
-  
-  void startUpdate();
   void finishUpdate( std::shared_ptr< std::vector< std::vector<std::string> > > result,
                      const std::string description,
+                     const double wallSeconds,
                      const bool wasCanceled,
                      std::shared_ptr< std::atomic<bool> > widgetDeleted );
+  
   void cancelUpdate();
   void updateSearchStatus( const size_t nfilestotal, const size_t nfileschecked,
-                           const size_t nfilesaccepted,
                            const std::string specialmsg,
+                           std::shared_ptr< std::vector< std::vector<std::string> > > results,
                            std::shared_ptr< std::atomic<bool> > widgetDeleted );
   
   void doSearch( const std::string basedir, unsigned long options,
                  const size_t maxsize,
-                 const SpecQuery::SpecFileQuery query,
+                 const SpecFileQuery::SpecLogicTest query,
                  const std::string sesssionID,
+                 std::shared_ptr< SpecFileQueryDbCache > database,
                  std::shared_ptr< std::atomic<bool> > stopUpdate,
                  std::shared_ptr< std::atomic<bool> > widgetDeleted );
   
   void selectionChanged();
   void loadSelected();
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+  void openSelectedFilesParentDir();
+#endif
   
-  SpecQuery::SpecFileQuery query();
+  std::string baseDirectory();
+  
+  /** Converts the JSON from the client side to a SpecFileQuery::SpecLogicTest.
+   Throws std::exception if the query is not valid or other error encountered.
+   */
+  static SpecFileQuery::SpecLogicTest queryFromJson( const std::string &json,
+                                                    const std::vector<EventXmlFilterInfo> &eventXml );
   
 protected:
+  
+  std::string prepareEventXmlFilters();
+  std::vector<EventXmlFilterInfo> m_eventXmlFilters;
+  
   
   enum PrefilterOptions
   {
@@ -288,23 +191,46 @@ protected:
   InterSpec * const m_viewer;
   
   Wt::WContainerWidget *m_conditions;
-  Wt::WText *m_addCondition;
   Wt::WPushButton *m_update;
   Wt::WPushButton *m_cancelUpdate;
   Wt::WPushButton *m_loadSelectedFile;
+  Wt::WPushButton *m_openSelectedDir;
   
   ResultTableModel *m_resultmodel;
   RowStretchTreeView *m_resultview;
   
+#if( BUILD_AS_ELECTRON_APP )
+  std::unique_ptr<Wt::JSignal<std::string>> m_pathSelectedSignal;
+  std::string m_basePath;
+#elif( BUILD_AS_OSX_APP )
+  //TODO: currently using a WFileUpload to browse for a file - should use custom JS/html to get rid of some issues
+  std::string m_basePath;
+  Wt::WFileUpload *m_baseLocation;
+#else
   Wt::WLineEdit *m_baseLocation;
+#endif
+  
   Wt::WCheckBox *m_recursive;
   Wt::WCheckBox *m_filterByExtension;
   Wt::WSpinBox *m_maxFileSize;
   Wt::WCheckBox *m_filterUnique;
   
+  Wt::WCheckBox *m_cacheParseResults;
+  Wt::WCheckBox *m_persistCacheResults;
+  
+  Wt::WPushButton *m_optionsBtn;
+  PopupDivMenu *m_optionsMenu;
+  
   Wt::WText *m_numberFiles;
   Wt::WText *m_numberResults;
-  Wt::WAnchor *m_csv;
+  Wt::WPushButton *m_csv;
+  
+  std::string m_queryJson;
+  
+  Wt::JSignal<std::string> m_queryChanged;
+  Wt::JSignal<std::string> m_searchRequested;
+  
+  std::map<std::string,std::shared_ptr<SpecFileQueryDbCache>> m_path_caches;
 };//class SpecFileQueryWidget
 
 

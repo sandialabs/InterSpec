@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -64,6 +64,7 @@
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
 #include <Wt/WDoubleSpinBox>
+#include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
 #include <Wt/WStandardItemModel>
@@ -73,9 +74,10 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DecayChainChart.h"
@@ -101,16 +103,16 @@ namespace
 
 }//namespace
 
-class SrbActivityModel : public Wt::WStandardItemModel
+class DecayActivityModel : public Wt::WStandardItemModel
 {
   
 public:
-  SrbActivityModel( Wt::WObject *parent = 0 )
+  DecayActivityModel( Wt::WObject *parent = 0 )
     : Wt::WStandardItemModel( parent )
   {
   }
   
-  virtual ~SrbActivityModel()
+  virtual ~DecayActivityModel()
   {
   }
   
@@ -128,7 +130,7 @@ public:
         return boost::any();
     }catch( std::exception &e )
     {
-      cerr << "SrbActivityModel::data(...) unexpectedly caught: " << e.what()
+      cerr << "DecayActivityModel::data(...) unexpectedly caught: " << e.what()
            << endl << index.row() << ", " << index.column()
            << endl;
     }//try / catch
@@ -189,24 +191,95 @@ public:
       dataChanged().emit( left, right );
     }//if( rowCount() )
   }//bool setShowSeries( int colum, bool show ) const
-};//class SrbActivityModel
+};//class DecayActivityModel
 
-class SrbActivityChart : public Wt::Chart::WCartesianChart
+
+class DecayActivityChart : public Wt::Chart::WCartesianChart
 {
 protected:
   double m_widthInPixels, m_heightInPixels;
+  std::string m_xAxisTitle;
+  bool m_phone;
+  std::shared_ptr<const ColorTheme> m_colorTheme;  //TODO: actually use this information
+  WBrush m_chartMarginBrush;
+  WPen m_textPen;
   
 public:
-  SrbActivityChart(  Wt::WContainerWidget *parent = NULL  )
+  DecayActivityChart(  Wt::WContainerWidget *parent = NULL  )
   : Wt::Chart::WCartesianChart( parent ),
     m_widthInPixels(250),
-    m_heightInPixels(250)
+    m_heightInPixels(250),
+    m_phone( false )
   {
-    setStyleClass( "SrbActivityChart" );
-  }//SrbActivityChart( constructor )
+    setStyleClass( "DecayActivityChart" );
+  }//DecayActivityChart( constructor )
   
-  virtual ~SrbActivityChart()
+  virtual ~DecayActivityChart()
   {
+  }
+  
+  std::shared_ptr<const ColorTheme> colorTheme()
+  {
+    return m_colorTheme;
+  }
+  
+  void setIsPhone()
+  {
+    m_phone = true;
+  }
+  
+  void setColorTheme( std::shared_ptr<const ColorTheme> theme )
+  {
+    m_colorTheme = theme;
+    if( !m_colorTheme )
+      return;  //Should reset colors to default, but whatever for now since we only ever call this funciton once
+    
+    if( theme->theme_name.toUTF8().find("Default") != string::npos )
+    {
+    }else
+    {
+      //Need to customize 'WColor seriesColor( int i )' funciton to use theme->referenceLineColor colors
+      //theme->referenceLineColor
+      //theme->spectrumChartBackground;
+      //theme->spectrumAxisLines;
+      
+      if( theme->spectrumChartText.isDefault() )
+      {
+        m_textPen = WPen( WColor(GlobalColor::black) );
+      }else
+      {
+        m_textPen = WPen(theme->spectrumChartText);
+      }
+      setTextPen( m_textPen );
+      
+      if( theme->spectrumAxisLines.isDefault() )
+      {
+        axis(Chart::XAxis).setPen( WPen(GlobalColor::black) );
+        axis(Chart::YAxis).setPen( WPen(GlobalColor::black) );
+      }else
+      {
+        axis(Chart::XAxis).setPen( WPen(theme->spectrumAxisLines) );
+        axis(Chart::YAxis).setPen( WPen(theme->spectrumAxisLines) );
+      }
+      
+      if( theme->spectrumChartMargins.isDefault() )
+        m_chartMarginBrush = WBrush();
+      else
+        m_chartMarginBrush = WBrush(theme->spectrumChartMargins);
+      
+      if( theme->spectrumChartBackground.isDefault() )
+        setBackground( Wt::NoBrush );
+      else
+        setBackground( WBrush(theme->spectrumChartBackground) );
+    }
+  }//setColorTheme()
+  
+  
+  void setXAxisTitle( const std::string &xtitle )
+  {
+    m_xAxisTitle = xtitle;
+    if( !m_phone )
+      axis(Chart::XAxis).setTitle( xtitle );
   }
   
   int paintedWidth() const { return static_cast<int>(m_widthInPixels); }
@@ -234,7 +307,7 @@ public:
     //TODO 20110325: for chrome the below seems to have no effect, however
     //               it works on FireFox
     painter.rotate( -90 );
-    painter.setPen( WPen() );
+    painter.setPen( m_textPen );
     painter.setBrush( WBrush() );
     const std::string ytitle = axis(Chart::YAxis).title().toUTF8();
     if( ytitle != "" )
@@ -245,8 +318,84 @@ public:
     }//if( ytitle != "" )
     
     painter.restore();
+    
+    const double height = painter.window().height();
+    const double width = painter.window().width();
+    
+    if( m_phone )
+    {
+      //We will make the x-axis title "compact".  This has the downside that
+      //  since we arent manually drawing x-axis labels (Wt is doing it), we
+      //  dont know if we
+      const double w = 7*m_xAxisTitle.size();
+      const double x = width - w - 5 - plotAreaPadding(Wt::Right);
+      const double y = height-15;
+      WBrush fillbrush = background();
+      if( fillbrush.color().isDefault() )
+        fillbrush = WBrush( WColor(120,120,120) );
+      
+      painter.fillRect( x-5, y-2.5, w+12, 17, fillbrush );
+      painter.setPen( m_textPen );
+      painter.drawText( x, y, w, 12, AlignMiddle, m_xAxisTitle );
+    }//if( m_phone )
+    
+    
+     //Color theme support code not complete or tested!
+    auto plotArea = [&]() -> WRectF {
+      int w, h;
+      if( rectangle.isNull() || rectangle.isEmpty() )
+      {
+        w = static_cast<int>( width );
+        h = static_cast<int>( height );
+      }else
+      {
+        w = static_cast<int>( rectangle.width() );
+        h = static_cast<int>( rectangle.height() );
+      }
+      
+      const int padLeft = plotAreaPadding(Left);
+      const int padRight = plotAreaPadding(Right);
+      const int padTop = plotAreaPadding(Top);
+      const int padBottom = plotAreaPadding(Bottom);
+      
+      WRectF area;
+      if( orientation() == Vertical )
+        area = WRectF( padLeft, padTop, std::max(10, w - padLeft - padRight), std::max(10, h - padTop - padBottom) );
+      else
+        area = WRectF( padTop, padRight, std::max(10, w - padTop - padBottom), std::max(10, h - padRight - padLeft) );
+      
+      return area;
+    };//plotArea
+    
+    auto paintMargins = [&](){
+      auto area = plotArea();
+      const double rx = area.x();
+      const double ry = area.y();
+      const double rw = area.width();
+      const double rh = area.height();
+      if( ry > 0 )  //Top strip
+        painter.fillRect( hv(WRectF(rx,0,rw,ry)), m_chartMarginBrush );
+      if( (ry+rh) < rectangle.height() ) //Bottom strip
+        painter.fillRect( hv(WRectF(rx,ry+rh,rw,rectangle.height()-ry)), m_chartMarginBrush );
+      if( rx > 0 )
+        painter.fillRect( hv(WRectF(0,0,rx,rectangle.height())), m_chartMarginBrush );
+      if( (rx+rw) < rectangle.width() )
+        painter.fillRect( hv(WRectF(rx+rw,0,rectangle.width()-rw-rx,rectangle.height())), m_chartMarginBrush );
+    };
+    
+    if( background().style() != NoBrush && m_chartMarginBrush.style() != NoBrush )
+    {
+      paintMargins();
+      painter.fillRect( hv(plotArea()), background() );
+    }else if( background().style() != NoBrush )
+    {
+      painter.fillRect( hv(rectangle), background() );
+    }else if( m_chartMarginBrush.style() != NoBrush )
+    {
+      paintMargins();
+    }
   }//paint( ... )
-};//class SrbActivityChart
+};//class DecayActivityChart
 
 
 
@@ -340,9 +489,10 @@ class DateLengthCalculator : public WContainerWidget
   {
     double halfLife = 0.0;
     const SandiaDecay::Nuclide *nuc = NULL;
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
     const std::vector<DecayActivityDiv::Nuclide> &nucs = m_activityDiv->m_nuclides;
     if( !nucs.empty() )
-      nuc = m_activityDiv->m_nuclideDB->nuclide( nucs[0].z, nucs[0].a, nucs[0].iso );
+      nuc = db->nuclide( nucs[0].z, nucs[0].a, nucs[0].iso );
     if( nuc )
       halfLife = nuc->halfLife;
     
@@ -426,7 +576,9 @@ class DateLengthCalculator : public WContainerWidget
     const string txt = m_duration->text().narrow();
     m_activityDiv->m_displayTimeLength->setText( txt );
     m_activityDiv->refreshDecayDisplay();
+#if( ADD_PHOTOPEAK_CHART )
     m_activityDiv->updatePhotopeakSliderEndDateText();
+#endif
     m_activityDiv->m_chartTabWidget->setCurrentIndex( 0 );
   }//void pushCurrentToParent()
   
@@ -470,6 +622,7 @@ class DateLengthCalculator : public WContainerWidget
   void updateInfo()
   {
     m_info->clear();
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
     
     const double timeSpan = getValidatedTimeSpan();
     
@@ -494,7 +647,7 @@ class DateLengthCalculator : public WContainerWidget
 
     for( size_t i = 0; i < nucs.size(); ++i )
     {
-      const SandiaDecay::Nuclide *nuc = m_activityDiv->m_nuclideDB->nuclide( nucs[i].z, nucs[i].a, nucs[i].iso );
+      const SandiaDecay::Nuclide *nuc = db->nuclide( nucs[i].z, nucs[i].a, nucs[i].iso );
       if( !nuc )
         continue;
       
@@ -543,7 +696,7 @@ class DateLengthCalculator : public WContainerWidget
       for( size_t nucn = 0; nucn < nucs.size(); ++nucn )
       {
         const vector<const SandiaDecay::Nuclide *> parents = nap.nuclide->forebearers();
-        const SandiaDecay::Nuclide *nuc = m_activityDiv->m_nuclideDB->nuclide( nucs[nucn].z, nucs[nucn].a, nucs[nucn].iso );
+        const SandiaDecay::Nuclide *nuc = db->nuclide( nucs[nucn].z, nucs[nucn].a, nucs[nucn].iso );
         if( std::find(parents.begin(),parents.end(),nuc) != parents.end() )
         {
           useCurries = nucs[nucn].useCurrie;
@@ -637,7 +790,7 @@ namespace
   class ChartAndLegendHolder : public WContainerWidget
   {
   public:
-    ChartAndLegendHolder( SrbActivityChart *chart, WContainerWidget *legend,
+    ChartAndLegendHolder( DecayActivityChart *chart, WContainerWidget *legend,
                           WContainerWidget *parent = 0 )
     : WContainerWidget( parent ),
       m_chart( chart ),
@@ -666,7 +819,7 @@ namespace
     }//ChartAndLegendHolder constructor
     
     
-    SrbActivityChart *m_chart;
+    DecayActivityChart *m_chart;
     WContainerWidget *m_legend;
   };//class ChartAndLegendHolder
   
@@ -747,7 +900,7 @@ namespace
         if( timeSpan <= 0 )
           throw runtime_error( "Ivalid time range selcted" );  //shouldnt ever happed
         
-        const SandiaDecay::SandiaDecayDataBase * const db = m_display->m_nuclideDB;
+        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
       
         string name;
         bool use_curries = false;
@@ -896,15 +1049,13 @@ class CsvDownloadGui : public AuxWindow
 public:
   
   CsvDownloadGui( DecayActivityDiv *parent )
-  : AuxWindow( "CSV Export", true, false ),
+  : AuxWindow( "CSV Export", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse | AuxWindowProperties::SetCloseable) ),
   m_parent( parent ),
   m_csvResouce( nullptr ),
   m_ageEdit( nullptr )
   {
     assert( m_parent );
-    
-    disableCollapse();
-    setClosable( true );
+
     setResizable( false );
     finished().connect( m_parent, &DecayActivityDiv::deleteCsvDownloadGui );
     
@@ -925,7 +1076,8 @@ public:
     
     WTableCell *el = table->elementAt(0,0);
     table->setMargin( 8, Wt::Top | Wt::Left | Wt::Right );
-    WLabel *label = new WLabel( "Time Span", el );
+    WLabel *label = new WLabel( "Time Span:", el );
+    label->addStyleClass( "DecayChartTimeSpanLabel" );
     el->setVerticalAlignment( Wt::AlignMiddle );
     label->setMargin( 2, Wt::Right );
     
@@ -962,7 +1114,7 @@ public:
     table = new WTable( contents() );
     table->setMargin( 8 );
     el = table->elementAt(0,0);
-    label = new WLabel( "Include:", el );
+    new WLabel( "Include:", el );
     
     el = table->elementAt(0,1);
     WCheckBox *cb = new WCheckBox( "act.", el );
@@ -1027,13 +1179,15 @@ public:
   void updateTimeSpan()
   {
     double timespan = 0.0;
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    
     try
     {
       const string input = m_ageEdit->valueText().toUTF8();
       
       const SandiaDecay::Nuclide *nuc = NULL;
       if( m_parent->m_nuclides.size() > 0 )
-        nuc = m_parent->m_nuclideDB->nuclide( m_parent->m_nuclides[0].z, m_parent->m_nuclides[0].a, m_parent->m_nuclides[0].iso );
+        nuc = db->nuclide( m_parent->m_nuclides[0].z, m_parent->m_nuclides[0].a, m_parent->m_nuclides[0].iso );
       
       if( nuc )
         timespan = PhysicalUnits::stringToTimeDurationPossibleHalfLife( input, nuc->halfLife );
@@ -1054,14 +1208,7 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
 : WContainerWidget( parent ),
   m_viewer( viewer ),
   m_nuclides( 0 ),
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-  m_initialTimePicker( NULL ),
-#endif
-#if( DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
-  m_fracActivityToEndAtEdit( NULL ),
-#else
   m_displayTimeLength( NULL ),
-#endif
   m_displayActivityUnitsCombo( NULL ),
   m_displayActivityUnitsLabel( NULL ),
   m_logYScale( NULL ),
@@ -1080,6 +1227,7 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
   m_chartTabWidget( NULL ),
   m_decayChart( NULL ),
   m_decayModel( NULL ),
+#if( ADD_PHOTOPEAK_CHART )
   m_photoPeakChart( NULL ),
   m_photoPeakModel( NULL ),
   m_photopeakAgeSlider( NULL ),
@@ -1088,6 +1236,7 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
   m_photoPeakYScaleFixed( NULL ),
   m_photoPeakShieldingZ( NULL ),
   m_photoPeakShieldingAD( NULL ),
+#endif
   m_moreInfoDialog( NULL ),
   m_decayLegend( NULL ),
 #if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
@@ -1100,10 +1249,8 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
   m_currentNumXPoints( 250 ),
   m_width( -1 ),
   m_height( -1 ),
-  m_nuclideDB( DecayDataBaseServer::database() ),
   m_currentMixture( new SandiaDecay::NuclideMixture() )
 {
-  setInline( false );
   addStyleClass( "DecayActivityDiv" );
   setLayoutSizeAware( true );
   
@@ -1152,21 +1299,17 @@ void DecayActivityDiv::init()
 //  wApp->globalKeyPressed().connect( this, &DecayActivityDiv::globalKeyPressed );
   wApp->globalKeyWentDown().connect( this, &DecayActivityDiv::globalKeyPressed );
   
+  const bool isPhone = m_viewer ? m_viewer->isPhone() : false;
+  
   //Initialize all member widgets; will assign parentage later on
 //  m_nuclides( 0 ),
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-  m_initialTimePicker              = new WDatePicker();
-#endif
-#if( DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
-  m_fracActivityToEndAtEdit        = new WDoubleSpinBox();
-#else
   m_displayTimeLength      = new WLineEdit( "" );
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_displayTimeLength );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_displayTimeLength->setValidator(validator);
-#endif
+
   m_displayActivityUnitsCombo      = new WComboBox();
-  m_displayActivityUnitsLabel      = new WLabel( "Display Units" );
+  m_displayActivityUnitsLabel      = new WLabel( isPhone ? "Units:" : "Display Units:" );
   m_logYScale                      = new WCheckBox( "Log-Y Scale" );
   m_showGridLines                  = new WCheckBox( "Grid Lines" );
 #if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
@@ -1176,16 +1319,18 @@ void DecayActivityDiv::init()
   m_parentNuclidesDiv              = new WContainerWidget();
   m_nuclidesAddedDiv               = new WContainerWidget();
   m_createNewNuclideButton         = new WPushButton( "Add Nuclide..." );
-  m_clearNuclidesButton            = new WPushButton( "Remove All" );
-  m_nuclideSelectDialog            = new AuxWindow( "Select Nuclide To Add" );
+  m_clearNuclidesButton            = new WPushButton( isPhone ? "Clear" : "Remove All"  );
+  m_nuclideSelectDialog            = new AuxWindow( "Select Nuclide To Add",
+                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal) | AuxWindowProperties::DisableCollapse) );
   
-  m_nuclideSelect                  = new DecaySelectNuclide( m_nuclideDB, NULL, m_nuclideSelectDialog);
+  m_nuclideSelect                  = new DecaySelectNuclide( isPhone, nullptr, m_nuclideSelectDialog );
   m_decayLegend                    = new WContainerWidget();
 
   m_chartTabWidget                 = new WTabWidget();
-  m_decayChart                     = new SrbActivityChart();
-  m_decayModel                     = new SrbActivityModel( this );
+  m_decayChart                     = new DecayActivityChart();
+  m_decayModel                     = new DecayActivityModel( this );
 
+#if( ADD_PHOTOPEAK_CHART )
   m_photoPeakChart                 = new Chart::WCartesianChart();
   m_photoPeakModel                 = new WStandardItemModel( this );
 
@@ -1196,7 +1341,7 @@ void DecayActivityDiv::init()
 
   m_photoPeakShieldingZ            = new WDoubleSpinBox();
   m_photoPeakShieldingAD           = new WDoubleSpinBox();
-
+#endif  //ADD_PHOTOPEAK_CHART
 
 #if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
   m_pdfResource                    = new ChartToImageResource( m_decayChart );
@@ -1206,34 +1351,34 @@ void DecayActivityDiv::init()
   m_parentNuclidesDiv->addStyleClass( "m_parentNuclidesDiv" );
   m_nuclidesAddedDiv->addStyleClass( "m_nuclidesAddedDiv" );
 
-  m_createNewNuclideButton->addStyleClass( "AddIcon" );
+  m_createNewNuclideButton->setIcon( "InterSpec_resources/images/plus_min_white.png" );
   m_createNewNuclideButton->addStyleClass( "m_createNewNuclideButton" );
   
-  m_clearNuclidesButton->addStyleClass( "CrossIcon" );
+  m_clearNuclidesButton->setIcon( "InterSpec_resources/images/remove_all.png" );
   m_clearNuclidesButton->addStyleClass( "m_clearNuclidesButton" );
     
-  m_displayActivityUnitsCombo->addStyleClass( "m_displayActivityUnitsCombo" );
-  m_displayActivityUnitsLabel->addStyleClass( "m_displayActivityUnitsLabel" );
-  m_logYScale->addStyleClass( "m_logYScale" );
-  m_yAxisType->addStyleClass( "m_yAxisType" );
-  m_showGridLines->addStyleClass( "m_showGridLines" );
-  m_decayChart->addStyleClass( "m_decayChart" );
-  m_chartTabWidget->addStyleClass( "m_chartTabWidget" );
+  m_displayActivityUnitsCombo->addStyleClass( isPhone ? "DisplayActivityUnitsComboPhone" : "DisplayActivityUnitsCombo" );
+  m_displayActivityUnitsLabel->addStyleClass( "DisplayActivityUnitsLabel" );
+  m_logYScale->addStyleClass( "DecayChartLogYScale" );
+  m_yAxisType->addStyleClass( "DecayChartYaxisType" );
+  m_showGridLines->addStyleClass( "DecayChartShowGridLines" );
+  m_decayChart->addStyleClass( "DecayChart" );
+  m_chartTabWidget->addStyleClass( "DecayChartTabWidget" );
+  m_chartTabWidget->contentsStack()->addStyleClass( "ChartTabWidgetStack" );
+  
+#if( ADD_PHOTOPEAK_CHART )
   m_photoPeakYScaleFixed->addStyleClass( "m_photoPeakYScaleFixed" );
   m_sliderCurrentAgeText->addStyleClass( "m_sliderCurrentAgeText" );
   m_photoPeakShieldingZ->addStyleClass( "m_photoPeakShieldingZ" );
   m_photoPeakShieldingAD->addStyleClass( "m_photoPeakShieldingAD" );
+#endif
   m_decayLegend->addStyleClass( "DecayLegend" );
 
 #if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  m_pdfAnchor->addStyleClass( "m_pdfAnchor" );
+  m_pdfAnchor->addStyleClass( "DecayChartImgDownload" );
 #endif
 
-#if( DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
-  m_fracActivityToEndAtEdit->addStyleClass( "m_fracActivityToEndAtEdit" );
-#else
   m_displayTimeLength->addStyleClass( "m_displayTimeLength" );
-#endif
 
   WContainerWidget *displayOptionsDiv = initDisplayOptionWidgets();
 
@@ -1249,8 +1394,7 @@ void DecayActivityDiv::init()
   m_nuclidesAddedDiv->setInline( true );
   m_nuclideSelectDialog->contents()->addWidget( m_nuclideSelect );
   m_nuclideSelectDialog->rejectWhenEscapePressed();
-  m_nuclideSelectDialog->setModal( false );
-  m_nuclideSelectDialog->disableCollapse();
+
 //  m_nuclideSelectDialog->setClosable( true );
   if( m_height > 0 )
     m_nuclideSelectDialog->setMaximumSize( WLength::Auto, int(1.25*m_height) );
@@ -1280,14 +1424,12 @@ void DecayActivityDiv::init()
 
   m_decayChart->clicked().connect( this, &DecayActivityDiv::decayChartClicked );
 
-
   WGridLayout *decayLayout = new WGridLayout();
   WContainerWidget *decayDiv = new WContainerWidget();
-  decayDiv->addStyleClass( "SrbActivityChartDiv" );
+  decayDiv->addStyleClass( "DecayActivityChartDiv" ); /* TODO: Hacked to avoid dealing with color theme for the moment */
   decayDiv->addStyleClass( "decayDiv" );
   decayDiv->setLayout( decayLayout );
   
-//  decayLayout->addWidget( m_decayChart, 0, 0, 1, 1 );
   ChartAndLegendHolder *chartHolder
                      = new ChartAndLegendHolder( m_decayChart, m_decayLegend );
   
@@ -1298,34 +1440,32 @@ void DecayActivityDiv::init()
   decayLayout->addWidget( displayOptionsDiv, 1, 0, 1, 1 );
   decayLayout->setRowStretch( 0, 5 );
 
-#if( ADD_DECAY_CHAIN_CHART )
   //////////////////
   // Decay Chain
   m_decayChainChart = new DecayChainChart();
   WGridLayout *decayChainLayout = new WGridLayout();
   WContainerWidget *decayChainDiv = new WContainerWidget();
   decayChainDiv->setMinimumSize( 300, 350 );
-  decayChainDiv->addStyleClass( "decayChainDiv" );
+  decayChainDiv->addStyleClass( "decayChainDiv" ); //ToDo: Currently decayChainDiv is hacked to avoid dealing with color theme ish
   decayChainDiv->setOverflow( WContainerWidget::OverflowAuto );
   decayChainDiv->setLayout( decayChainLayout );
   
   //decayChainLayout->addWidget(elementTemplate, 0, 0, 1, 1, AlignCenter);
   decayChainLayout->addWidget( m_decayChainChart, 0, 0, 1, 1 );
   decayChainLayout->setRowStretch( 0, 1 );
-#endif //ADD_DECAY_CHAIN_CHART
 
   //////////////////
   // tab widget
   const WTabWidget::LoadPolicy loadPolicy = WTabWidget::LazyLoading; //WTabWidget::PreLoading;
   m_chartTabWidget->addTab( decayDiv, "Activity Chart", loadPolicy );
     //  m_chartTabWidget->addTab( photopeakDiv, "Photo Peaks", loadPolicy );
-#if( ADD_DECAY_CHAIN_CHART )
+
   m_chartTabWidget->addTab( decayChainDiv, "Decay Chain", loadPolicy );
   m_chartTabWidget->currentChanged().connect( m_decayChainChart,
                                     &DecayChainChart::deleteMoreInfoDialog );
   m_decayChainChart->nuclideChanged().connect( this,
                             &DecayActivityDiv::manageActiveDecayChainNucStyling );
-#endif
+
 
   m_chartTabWidget->currentChanged().connect( this,
                                         &DecayActivityDiv::deleteMoreInfoDialog );
@@ -1358,15 +1498,6 @@ void DecayActivityDiv::showPhotopeakTab()
 }//void showPhotopeakTab()
 
 
-
-bool DecayActivityDiv::dirExists( const std::string &dir )
-{
-  struct stat st;
-  const int err = stat( dir.c_str(), &st );
-  if( err < 0 ) return false;
-  return (st.st_nlink > 1);
-}//bool dirExists( std::string file )
-
 void DecayActivityDiv::setGridLineStatus()
 {
   m_decayChart->showGridLines( m_showGridLines->isChecked() );
@@ -1376,18 +1507,8 @@ void DecayActivityDiv::setGridLineStatus()
 
 Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
 {
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-  m_initialTimePicker->setDate( WDate::currentDate() );
-#endif
-
-#if( DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
-  m_fracActivityToEndAtEdit->setRange( 1.0E-12, 1.0 );
-  m_fracActivityToEndAtEdit->setSingleStep( 0.01 );
-  m_fracActivityToEndAtEdit->setText( "0.01" );
-#else
-#endif
-
-
+  const bool isPhone = m_viewer ? m_viewer->isPhone() : false;
+  
   m_showGridLines->setUnChecked();
   m_logYScale->setUnChecked();
   updateYScale();
@@ -1410,40 +1531,23 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   m_pdfAnchor->setText( anchorText );
 #endif
 
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-    WLabel *beginLabel = new WLabel( "Start Date: " );
-//  beginLabel->setBuddy( m_initialTimePicker );
-#endif
-
-
   WContainerWidget *displayOptionsDiv = new WContainerWidget();
   displayOptionsDiv->addStyleClass( "displayOptionsDiv" );
   WContainerWidget *displOptUpper = new WContainerWidget( displayOptionsDiv );
   
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-  displOptUpper->addWidget( beginLabel );
-  displOptUpper->addWidget( m_initialTimePicker );
-#endif
-
-
-#if( DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
-  WLabel *endLabel = new WLabel( "Ending fraction of initial activity:" );
-  endLabel->setBuddy( m_fracActivityToEndAtEdit );
-  displOptUpper->addWidget( endLabel );
-  displOptUpper->addWidget( m_fracActivityToEndAtEdit );
-  m_fracActivityToEndAtEdit->changed().connect( this,
-                                        &DecayActivityDiv::refreshDecayDisplay );
-#else
-  WLabel *endLabel = new WLabel( "Time Span" );
+  WLabel *endLabel = new WLabel( "Time Span:" );
   endLabel->setBuddy( m_displayTimeLength );
   displOptUpper->addWidget( endLabel );
   displOptUpper->addWidget( m_displayTimeLength );
   m_displayTimeLength->changed().connect( this,
                                         &DecayActivityDiv::refreshDecayDisplay );
+#if( ADD_PHOTOPEAK_CHART )
   m_displayTimeLength->changed().connect( this,
                             &DecayActivityDiv::updatePhotopeakSliderEndDateText );
-  m_displayTimeLength->enterPressed().connect( this, &DecayActivityDiv::refreshDecayDisplay );
   m_displayTimeLength->enterPressed().connect( this, &DecayActivityDiv::updatePhotopeakSliderEndDateText );
+#endif
+  m_displayTimeLength->enterPressed().connect( this, &DecayActivityDiv::refreshDecayDisplay );
+  
   
   const char *tooltip = "<div>Age can be specified using a combination of time units, "
   "similar to '<b>5.3y 8d 22m</b>' or in half lives like "
@@ -1466,10 +1570,9 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   const bool showToolTipInstantly = m_viewer ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
   if( m_viewer )
     HelpSystem::attachToolTipOn( m_displayTimeLength, tooltip, showToolTipInstantly );
-#endif
   
-  WLabel *yaxisTypeLabel = new WLabel( "Y-Axis Type:", displOptUpper );
-  yaxisTypeLabel->addStyleClass( "yaxisTypeLabel" );
+  WLabel *yaxisTypeLabel = new WLabel( isPhone ? "Y-Axis:" : "Y-Axis Type:", displOptUpper );
+  yaxisTypeLabel->addStyleClass( "DecayChartYaxisTypeLabel" );
   
   displOptUpper->addWidget( m_yAxisType );
   for( YAxisType y = YAxisType(0); y < NumYAxisType; y = YAxisType(int(y)+1) )
@@ -1484,39 +1587,47 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
     }//switch( y )
   }//for( Y-Axis type )
   
-  WContainerWidget *displOptLower = new WContainerWidget( displayOptionsDiv );
-  displOptLower->setMargin( 5, Wt::Top );
+  //If phone, skip creating displOptLower to make things more compact
+  WContainerWidget *displOptLower = nullptr;
+  if( m_viewer->isPhone() )
+  {
+    displOptLower = displOptUpper;
+  }else
+  {
+    displOptLower = new WContainerWidget( displayOptionsDiv );
+    displOptLower->setMargin( 5, Wt::Top );
+  }
+  
+  
   displOptLower->addWidget( m_displayActivityUnitsLabel );
   displOptLower->addWidget( m_displayActivityUnitsCombo );
   
   displOptLower->addWidget( m_logYScale );
   displOptLower->addWidget( m_showGridLines );
   
+  if( m_viewer->isPhone() )
+  {
+    m_logYScale->hide();
+    m_showGridLines->hide();
+  }
+  
   m_yAxisType->setCurrentIndex( ActivityAxis );
   m_yAxisType->activated().connect( this,&DecayActivityDiv::refreshDecayDisplay );
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-  if( app->viewer()->isSupportFile() )
+  if( app->viewer()->isSupportFile() && !m_viewer->isPhone() )
   {
-    WText *csvbutton = new WText( "csv&hellip;" );
-    csvbutton->addStyleClass( "csvAnchor" );
-    displOptLower->addWidget( csvbutton );
-  
-    csvbutton->clicked().connect( this, &DecayActivityDiv::createCsvDownloadGui );
+    WPushButton *csvButton = new WPushButton( displOptLower );
+    csvButton->setIcon( "InterSpec_resources/images/download_small.png" );
+    csvButton->setLinkTarget( Wt::TargetNewWindow );
+    csvButton->setText( "CSV..." );
+    csvButton->setStyleClass( "CsvLinkBtn" );
+    csvButton->clicked().connect( this, &DecayActivityDiv::createCsvDownloadGui );
   }
 
 #if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
   displOptLower->addWidget( m_pdfAnchor );
 #endif
-
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-  m_initialTimePicker->changed().connect( this,
-                                        &DecayActivityDiv::refreshDecayDisplay );
-  m_initialTimePicker->changed().connect(
-                                   boost::bind( &WDatePicker::setPopupVisible,
-                                                m_initialTimePicker, false ) );
-#endif
-
 
   m_displayActivityUnitsCombo->changed().connect( this,
                                         &DecayActivityDiv::refreshDecayDisplay );
@@ -1567,24 +1678,37 @@ void DecayActivityDiv::initCharts()
 
   //TODO 20110325: The either of next line doesnt seem to have any effect
   m_decayChart->axis(Chart::XAxis).setLabelFormat( "%.3g" );
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-  m_decayChart->setType( Chart::CategoryChart );
-  m_decayChart->axis(Chart::XAxis).setScale( Chart::CategoryScale );
-  m_decayChart->axis(Chart::XAxis).setLabelFormat( "MMM dd yyyy hh:mm" );
-#endif
 
-  m_decayChart->setPlotAreaPadding( 80, Left );
-  m_decayChart->setPlotAreaPadding( 50, Bottom );
-  m_decayChart->setPlotAreaPadding( 20, Right );
-  m_decayChart->setPlotAreaPadding( 5, Top );
+  //  decayLayout->addWidget( m_decayChart, 0, 0, 1, 1 );
+  if( m_viewer && m_viewer->isPhone() )
+  {
+    m_decayChart->setIsPhone();
+    m_decayChart->setPlotAreaPadding( 75, Left );
+    m_decayChart->setPlotAreaPadding( 25, Bottom );
+    m_decayChart->setPlotAreaPadding( 20, Right );
+    m_decayChart->setPlotAreaPadding( 0, Top );
+  }else
+  {
+    m_decayChart->setPlotAreaPadding( 80, Left );
+    m_decayChart->setPlotAreaPadding( 50, Bottom );
+    m_decayChart->setPlotAreaPadding( 20, Right );
+    m_decayChart->setPlotAreaPadding( 5, Top );
+  }
+  
+  if( m_viewer && m_viewer->getColorTheme() )
+    m_decayChart->setColorTheme( m_viewer->getColorTheme() );
+
   //do not display the legend to the right of the chat
   m_decayChart->setLegendEnabled( false);
+  //m_decayChart->axis(Chart::XAxis).setTitleOffset( 0.0 );
+  
 //  m_decayChart->setMargin(0);
 //  m_decayChart->initLayout();
 
   m_decayChart->setToolTip( "Click for more information" );
 //  m_decayChart->mouseMoved().connect( this, &DecayActivityDiv::updateMouseOver );
 
+#if( ADD_PHOTOPEAK_CHART )
   //Now lets init the phoptopeak chart
   m_photoPeakChart->setModel( m_photoPeakModel );
   m_photoPeakChart->setXSeriesColumn( 0 );
@@ -1601,22 +1725,20 @@ void DecayActivityDiv::initCharts()
   m_photoPeakChart->axis(Chart::XAxis).setTitle( "Photopeak Energy (keV)" );
   m_photoPeakChart->axis(Chart::XAxis).setRange( 0.0, 3000.0 );
   m_photoPeakChart->initLayout();
+#endif  //ADD_PHOTOPEAK_CHART
 }//void initCharts()
 
 
 
 double DecayActivityDiv::timeToDisplayTill()
 {
-#if( DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
-  const double dispTo = m_fracActivityToEndAtEdit->value();
-  return findTimeForActivityFrac( m_currentMixture, dispTo );
-#else
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
   std::string txt = m_displayTimeLength->text().narrow();
   
   const SandiaDecay::Nuclide *nuc = NULL;
   if( m_nuclides.size() > 0 )
-    nuc = m_nuclideDB->nuclide( m_nuclides[0].z, m_nuclides[0].a, m_nuclides[0].iso );
+    nuc = db->nuclide( m_nuclides[0].z, m_nuclides[0].a, m_nuclides[0].iso );
   
   try
   {
@@ -1633,7 +1755,6 @@ double DecayActivityDiv::timeToDisplayTill()
     m_displayTimeLength->setText( txt );
     return finalTime;
   }
-#endif
 }//double DecayActivityDiv::timeToDisplayTill()
 
 
@@ -1681,6 +1802,8 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
                                  const double age )
 {
   //See if we are actually editing a Nuclide
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
   WContainerWidget *editedNuclide = (WContainerWidget *)0;
   for( Nuclide &nuc : m_nuclides )
   {
@@ -1713,16 +1836,15 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
     removeNuclide( editedNuclide );
   }
   
-  const SandiaDecay::Element *element = m_nuclideDB->element( z );
+  const SandiaDecay::Element *element = db->element( z );
 
   string name = (element ? element->symbol : string(""));
 
-#if( ADD_DECAY_CHAIN_CHART )
-  const SandiaDecay::Nuclide *nuc = m_nuclideDB->nuclide( z, a );
+  const SandiaDecay::Nuclide *nuc = db->nuclide( z, a );
   if( nuc )
     nuclide.display->clicked().connect(
          boost::bind(&DecayChainChart::setNuclide, m_decayChainChart, nuc) );
-#endif
+
   
   nuclide.display->doubleClicked().connect(
                     boost::bind( &DecayActivityDiv::sourceNuclideDoubleClicked,
@@ -1760,14 +1882,9 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
 
   m_nuclides.push_back( nuclide );
 
-#if( !DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
   setTimeLimitToDisplay();
-#endif
 
-#if( ADD_DECAY_CHAIN_CHART )
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   m_decayChainChart->setNuclide(db->nuclide(z, a, iso));
-#endif
 
   refreshDecayDisplay();
 }//void addNuclide(..)
@@ -1790,7 +1907,6 @@ void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
     return;
   }//if( to_be_removed < 0 )
 
-#if( ADD_DECAY_CHAIN_CHART )
   if (to_be_removed == m_nuclides.size() - 1)
   {
     if (m_nuclides.size() == 1)
@@ -1802,14 +1918,11 @@ void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
       m_decayChainChart->setNuclide(db->nuclide(nuc.z, nuc.a, nuc.iso));
     }
   }
-#endif
 
   delete m_nuclides[to_be_removed].display;
   m_nuclides.erase( m_nuclides.begin() + to_be_removed );
 
-#if( !DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
   setTimeLimitToDisplay();
-#endif
 
   refreshDecayDisplay();
 }//void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
@@ -1821,20 +1934,14 @@ void DecayActivityDiv::clearAllNuclides()
     delete nuclide.display;
   m_nuclides.clear();
 
-#if( !DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
   setTimeLimitToDisplay();
-#endif
-    
-#if( ADD_DECAY_CHAIN_CHART )
+  
   m_decayChainChart->setNuclide(NULL);
-#endif
 
   deleteMoreInfoDialog();
   
-#if( ADD_DECAY_CHAIN_CHART )
   if( m_decayChainChart )
     m_decayChainChart->deleteMoreInfoDialog();
-#endif
 
   refreshDecayDisplay();
 }//void clearAllNuclides();
@@ -1847,12 +1954,13 @@ void DecayActivityDiv::updateInitialMixture() const
 {
   using SandiaDecay::NuclideActivityPair;
   using SandiaDecay::NuclideNumAtomsPair;
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
 
   m_currentMixture->clear();
 
   for( const Nuclide &nuc : m_nuclides )
   {
-    const SandiaDecay::Nuclide *dbnuclide = m_nuclideDB->nuclide( nuc.z, nuc.a,
+    const SandiaDecay::Nuclide *dbnuclide = db->nuclide( nuc.z, nuc.a,
                                                                   nuc.iso );
     const double activity = nuc.activity;
     if( nuc.age > DBL_EPSILON )
@@ -1958,6 +2066,7 @@ void DecayActivityDiv::updateYScale()
     m_decayChart->axis(Chart::YAxis).setScale( Chart::LinearScale );
 }//void updateYScale()
 
+#if( ADD_PHOTOPEAK_CHART )
 void DecayActivityDiv::setPhotoPeakChartLogY( bool logy )
 {
   if( logy )
@@ -1973,12 +2082,14 @@ void DecayActivityDiv::setPhotoPeakChartLogY( bool logy )
   if( m_photopeakLogYScale->isChecked() != logy )
     m_photopeakLogYScale->setChecked( logy );
 }//void setPhotoPeakChartLogY( bool logy )
-
+#endif //ADD_PHOTOPEAK_CHART
 
 void DecayActivityDiv::displayMoreInfoPopup( const double time )
 {
   WContainerWidget *summary = isotopesSummary( time );
 
+  summary->setMaximumSize( WLength::Auto, WLength( 0.8*m_viewer->renderedHeight() ,WLength::Pixel) );
+  
   string title = "Summary at t=";
   title += PhysicalUnits::printToBestTimeUnits( time );
 
@@ -1989,26 +2100,23 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
   }else
   {
     m_moreInfoDialog = new AuxWindow( title );
-    m_moreInfoDialog->setModal( false );
-//    m_moreInfoDialog->setResizable( true );
-//    m_moreInfoDialog->setMaximumSize( WLength(90.0,WLength::Percentage),
-//                                      WLength(90.0,WLength::Percentage) );
     m_moreInfoDialog->setClosable( true );
+    m_moreInfoDialog->disableCollapse();
     m_moreInfoDialog->rejectWhenEscapePressed();
     m_moreInfoDialog->finished().connect(
                   boost::bind( &DecayActivityDiv::deleteMoreInfoDialog, this ) );
       
     WPushButton *ok = m_moreInfoDialog->addCloseButtonToFooter();
     ok->clicked().connect(boost::bind( &DecayActivityDiv::deleteMoreInfoDialog, this ) );
-
   }//if( m_moreInfoDialog ) / else
 
-  m_moreInfoDialog->resizeToFitOnScreen();
-  WGridLayout *layout = new WGridLayout();
-  m_moreInfoDialog->contents()->setLayout( layout );
-  layout->addWidget( summary, 0, 0 );
+  m_moreInfoDialog->contents()->addWidget( summary );
   
-  layout->setRowStretch( 0, 10 );
+  //WGridLayout *layout = new WGridLayout();
+  //container->setLayout( layout );
+  //layout->addWidget( summary, 0, 0 );
+  
+  //layout->setRowStretch( 0, 10 );
 
   //I dont really care about centering the dialog, but without doing the bellow
   //  the scrolling of the contents can be buggy
@@ -2021,24 +2129,28 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
 //  doJavaScript( moveJs.str() );
   
   m_moreInfoDialog->setHidden( false );
+  m_moreInfoDialog->resizeToFitOnScreen();
+  m_moreInfoDialog->centerWindow();
 }//void displayMoreInfoPopup( const double time )
 
-
+#if( ADD_PHOTOPEAK_CHART )
 void DecayActivityDiv::photopeakDisplayMoreInfo()
 {
   const double time = photopeakSliderTime();
   displayMoreInfoPopup( time );
 }//void photopeakDisplayMoreInfo()
+#endif
 
 
-#if( !DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
 void DecayActivityDiv::checkTimeRangeValid()
 {
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
   std::string txt = m_displayTimeLength->text().narrow();
   
   const SandiaDecay::Nuclide *nuc = NULL;
   if( m_nuclides.size() > 0 )
-    nuc = m_nuclideDB->nuclide( m_nuclides[0].z, m_nuclides[0].a, m_nuclides[0].iso );
+    nuc = db->nuclide( m_nuclides[0].z, m_nuclides[0].a, m_nuclides[0].iso );
   
   double timelen = 0.0;
   
@@ -2059,7 +2171,7 @@ void DecayActivityDiv::checkTimeRangeValid()
   double minhl = DBL_MAX;
   for( const Nuclide &nuc : m_nuclides )
   {
-    const SandiaDecay::Nuclide *dbnuclide = m_nuclideDB->nuclide( nuc.z, nuc.a,
+    const SandiaDecay::Nuclide *dbnuclide = db->nuclide( nuc.z, nuc.a,
                                                                  nuc.iso );
     minhl = std::min( minhl, dbnuclide->halfLife );
   }//for( const Nuclide &nuc : m_nuclides )
@@ -2074,6 +2186,7 @@ void DecayActivityDiv::checkTimeRangeValid()
   }//if( nunits*unitpair.second < 0.001*minhl )
 }//void DecayActivityDiv::checkTimeRangeValid()
 
+#if( ADD_PHOTOPEAK_CHART )
 void DecayActivityDiv::updatePhotopeakSliderEndDateText()
 {
   using namespace PhysicalUnits;
@@ -2081,10 +2194,11 @@ void DecayActivityDiv::updatePhotopeakSliderEndDateText()
   
   m_sliderEndAgeText->setText( m_displayTimeLength->text() );
 }//void updatePhotopeakSliderEndDateText()
-#endif
+#endif //#if( ADD_PHOTOPEAK_CHART )
 
 
-#if( !DECAY_CHART_LIMIT_TIME_BY_ACTIVITY )
+
+
 void DecayActivityDiv::setTimeLimitToDisplay()
 {
   //NOTE 20110906: below TODO from 20110505 is possibly irreevant
@@ -2103,9 +2217,10 @@ void DecayActivityDiv::setTimeLimitToDisplay()
   string txt = PhysicalUnits::printToBestTimeUnits( finalTime );
   m_displayTimeLength->setText( txt );
 
+#if( ADD_PHOTOPEAK_CHART )
   updatePhotopeakSliderEndDateText();
-}//void DecayActivityDiv::setTimeLimitToDisplay()
 #endif
+}//void DecayActivityDiv::setTimeLimitToDisplay()
 
 
 void DecayActivityDiv::setDecayChartTimeRange( double finalTime )
@@ -2113,11 +2228,13 @@ void DecayActivityDiv::setDecayChartTimeRange( double finalTime )
   string txt = PhysicalUnits::printToBestTimeUnits( finalTime );
   m_displayTimeLength->setText( txt );
   
+#if( ADD_PHOTOPEAK_CHART )
   updatePhotopeakSliderEndDateText();
+#endif
 }//void setDecayChartTimeRange()
 
 
-
+#if( ADD_PHOTOPEAK_CHART )
 double DecayActivityDiv::attentuationCoeff( const double energy )
 {
   if( (m_photoPeakShieldingZ->validate() != WValidator::Valid)
@@ -2237,7 +2354,7 @@ void DecayActivityDiv::setPhotopeakYScaleRange()
   else
     m_photoPeakChart->axis(Chart::YAxis).setAutoLimits( Chart::MinimumValue );
 }//void setPhotopeakYScaleRange()
-
+#endif //ADD_PHOTOPEAK_CHART
 
 
 void DecayActivityDiv::deleteMoreInfoDialog()
@@ -2252,7 +2369,6 @@ void DecayActivityDiv::deleteMoreInfoDialog()
 
 void DecayActivityDiv::manageActiveDecayChainNucStyling()
 {
-#if( ADD_DECAY_CHAIN_CHART )
   const int tab = m_chartTabWidget->currentIndex();
   
   for( const Nuclide &nuc : m_nuclides )
@@ -2273,7 +2389,6 @@ void DecayActivityDiv::manageActiveDecayChainNucStyling()
       n.display->addStyleClass( "ActiveDecayChainNuc" );
     }//if( this is a matching nuclide )
   }//for( const Nuclide &n : m_nuclides )
-#endif
 }//void manageActiveDecayChainNucStyling()
 
 
@@ -2315,9 +2430,120 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
   if( !m_currentMixture )
     return cont;
 
-  string mixtureInfo = m_currentMixture->info( time );
-  mixtureInfo = "<pre class=\"NuclideInfo\">\n"
-                + mixtureInfo + "\n</pre>";
+  //string mixtureInfo = m_currentMixture->info(time);
+  
+  
+   //Or the equivalent, but not compiling code is:
+  string mixtureInfo = [=]() -> std::string {
+    using namespace SandiaDecay;
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    
+      if( !m_currentMixture->numInitialNuclides() )
+        return "";
+      
+      const vector<NuclideActivityPair> activities = m_currentMixture->activity( time );
+      const vector<EnergyRatePair> gammasAbundances = m_currentMixture->gammas( time, NuclideMixture::OrderByAbundance, true );
+      const vector<EnergyRatePair> alphasAbundances = m_currentMixture->alphas( time );
+      const vector<EnergyRatePair> betasAbundances = m_currentMixture->betas( time );
+      const vector<EnergyRatePair> betaPlussesAbundances = m_currentMixture->betaPlusses( time );
+      
+      stringstream infostrm;
+    
+    auto use_curry = [=]( const SandiaDecay::Nuclide * const initial_nuc ) -> bool {
+      for( const Nuclide &nuc : m_nuclides )
+      {
+        const SandiaDecay::Nuclide * const nuclide = db->nuclide( nuc.z, nuc.a, nuc.iso );
+        const vector<const SandiaDecay::Nuclide *> children = nuclide->descendants();
+        if( std::find(begin(children),end(children),initial_nuc) != end(children) )
+          return nuc.useCurrie;
+      }
+      return false;
+    };
+    
+      infostrm << "<div>Starting from:</div><div style=\"margin-left: 20px; max-width: 60ex;\">";
+    
+      {//begin codeblock to put starting nuclides information into the stream
+        for( int i = 0; i < m_currentMixture->numInitialNuclides(); ++i )
+        {
+          const SandiaDecay::Nuclide *initial_nuc = m_currentMixture->initialNuclide(i);
+          const bool useCurrie = use_curry( initial_nuc );
+          
+          const double initial_act = m_currentMixture->initialActivity(i);
+          const string initial_act_str = PhysicalUnits::printToBestActivityUnits(initial_act,2,useCurrie,SandiaDecay::becquerel);
+          infostrm << (i ? "," : "") << initial_act_str << " " << initial_nuc->symbol;
+        }//for( loop over orignal nuclides )
+      }//end codeblock to put starting nuclides information into the stream
+    
+    infostrm << "</div>";
+    
+      
+    infostrm << "<div style=\"margin-top: 10px;\">The following nuclides are present at " << time/SandiaDecay::second
+      << " seconds:</div>\n"
+    << "<div style=\"margin-left: 20px; max-width: 60ex;\">";
+    
+    int nparents = 0;
+    for( size_t i = 0; i < activities.size(); ++i )
+    {
+      const NuclideActivityPair &pair = activities[i];
+      
+      if( IsInf(pair.nuclide->halfLife) || IsNan(pair.nuclide->halfLife) )
+        continue;
+      
+      const bool useCurrie = use_curry( pair.nuclide );
+      const string act_str = PhysicalUnits::printToBestActivityUnits(pair.activity,2,useCurrie,SandiaDecay::becquerel);
+      infostrm << (nparents?", ":"") << act_str << " " << pair.nuclide->symbol;
+      ++nparents;
+    }//for( loop over activities )
+    
+    infostrm << "</div>\n";
+    
+      if( gammasAbundances.size() )
+      {
+        infostrm << "<div style=\"margin-top: 10px;\">Gammas Present:</div>\n"
+                 << "<table style=\"margin-left: 20px;\">\n";
+        for( size_t i = 0; i < gammasAbundances.size(); ++i )
+          infostrm << "<tr><td>" << gammasAbundances[i].energy/SandiaDecay::keV << " keV</td><td>&nbsp;-&nbsp;</td><td>"
+          << gammasAbundances[i].numPerSecond << " per second</td></tr>\n";
+        infostrm << "</table>\n";
+      }//if( gammasAbundances.size() )
+      
+      if( alphasAbundances.size() )
+      {
+        infostrm << "<div style=\"margin-top: 10px;\">Alphas Present:</div>\n"
+        << "<table style=\"margin-left: 20px;\">\n";
+        for( size_t i = 0; i < alphasAbundances.size(); ++i )
+          infostrm << "<tr><td>" << alphasAbundances[i].energy/SandiaDecay::keV << " keV</td><td>&nbsp;-&nbsp;</td><td>"
+          << alphasAbundances[i].numPerSecond << " per second</td></tr>\n";
+        infostrm << "</table>\n";
+      }//if( alphasAbundances.size() )
+      
+      if( betasAbundances.size() )
+      {
+        infostrm << "<div style=\"margin-top: 10px;\">Betas Present:</div>\n"
+        << "<table style=\"margin-left: 20px;\">\n";
+        for( size_t i = 0; i < betasAbundances.size(); ++i )
+          infostrm << "<tr><td>" << betasAbundances[i].energy/SandiaDecay::keV << " keV</td><td>&nbsp;-&nbsp;</td><td>"
+          << betasAbundances[i].numPerSecond << " per second</td></tr>\n";
+        infostrm << "</table>\n";
+      }//if( alphasAbundances.size() )
+      
+      
+      if( betaPlussesAbundances.size() )
+      {
+        infostrm << "<div style=\"margin-top: 10px;\">Beta+'s Present:</div>"
+        << "<table style=\"margin-left: 20px;\">\n";
+        for( size_t i = 0; i < betaPlussesAbundances.size(); ++i )
+          infostrm << "<tr><td>" << betaPlussesAbundances[i].energy/SandiaDecay::keV << " keV</td><td>&nbsp;-&nbsp;</td><td>"
+          << betaPlussesAbundances[i].numPerSecond << " per second</td></tr>\n";
+        infostrm << "</table>\n";
+      }//if( betaPlussesAbundances.size() )
+      
+      return infostrm.str();
+    }();
+  
+   
+  mixtureInfo = "<div class=\"NuclideInfo\">\n"
+                + mixtureInfo + "\n</div>";
   new WText( mixtureInfo, XHTMLUnsafeText, cont );
 
   new WText( "<br><br><H3>Further information about the nuclides:</H3>",
@@ -2343,6 +2569,10 @@ WContainerWidget *DecayActivityDiv::nuclideInformation(
   WContainerWidget *cont = new WContainerWidget();
   cont->addStyleClass( "nuclideInformation" );
 
+  if( !nuclide )
+    return cont;
+  
+  /*
   stringstream textstr;
   textstr << "<pre class=\"NuclideInfo\">\n";
 
@@ -2352,11 +2582,93 @@ WContainerWidget *DecayActivityDiv::nuclideInformation(
   textstr << "</pre>\n";
 
   new WText( textstr.str(), XHTMLUnsafeText, cont );
-
+*/
+  
+  
+  stringstream ostr;
+  ostr << "<pre class=\"NuclideInfo\">\n";
+  ostr << nuclide->symbol << " Atomic Number " << nuclide->atomicNumber <<", Atomic Mass "
+  << nuclide->massNumber << ", Isomer Number " << nuclide->isomerNumber << " "
+  << nuclide->atomicMass << " AMU, HalfLife=" << PhysicalUnits::printToBestTimeUnits(nuclide->halfLife);
+  const size_t nParents = nuclide->decaysFromParents.size();
+  if( nParents )
+    ostr << "\n  Parent";
+  if( nParents > 1 )
+    ostr << "s";
+  if( nParents )
+    ostr << ": ";
+  
+  for( size_t i = 0; i < nParents; ++i )
+  {
+    if( i )
+      ostr << ", ";
+    if( nuclide->decaysFromParents[i] && nuclide->decaysFromParents[i]->parent )
+      ostr << nuclide->decaysFromParents[i]->parent->symbol;
+  }//for( loop over parents )
+  
+  const size_t nChilds = nuclide->decaysToChildren.size();
+  
+  for( size_t i = 0; i < nChilds; ++i )
+  {
+    const auto child = nuclide->decaysToChildren[i];
+    //ostr << "\n    " << human_str_summary(*nuclide->decaysToChildren[i]);
+    ostr << "Transition ";
+    if( child->parent )
+      ostr << child->parent->symbol;
+    ostr << "&rarr;";
+    if( child->child )
+      ostr << child->child->symbol;
+    else
+      ostr << "various";
+    
+    ostr << ": mode=" << child->mode << " branchRatio=" << child->branchRatio;
+    if( child->products.size() )
+      ostr << "; Products:";
+    for( size_t i = 0; i < child->products.size(); ++i )
+    {
+      const auto &product = child->products[i];
+      ostr << "\n    ";
+      
+      switch( product.type )
+      {
+        case SandiaDecay::BetaParticle:            ostr << "beta:"; break;
+        case SandiaDecay::GammaParticle:           ostr << "gamma:"; break;
+        case SandiaDecay::AlphaParticle:           ostr << "alpha:"; break;
+        case SandiaDecay::PositronParticle:        ostr << "positron:"; break;
+        case SandiaDecay::CaptureElectronParticle: ostr << "electronCapture:"; break;
+        case SandiaDecay::XrayParticle:            ostr << "xray:"; break;
+      };//switch( obj.type )
+      
+      ostr << " energy=" << product.energy << "keV intensity=" << product.intensity;
+      switch( product.type )
+      {
+        case SandiaDecay::GammaParticle:
+          break;
+          
+        case SandiaDecay::AlphaParticle:
+          ostr << " hinderence=" << product.hindrance;
+          break;
+          
+        case SandiaDecay::BetaParticle: case SandiaDecay::PositronParticle:
+        case SandiaDecay::CaptureElectronParticle:
+          ostr << " forbiddenness=" << product.forbiddenness << " logFT=" << product.logFT;
+          break;
+          
+        case SandiaDecay::XrayParticle:
+          break;
+      };//switch( obj.type )
+    }//for( size_t i = 0; i < child->products.size(); ++i )
+    
+    ostr << "\n";
+  }//for( size_t i = 0; i < nChilds; ++i )
+  
+  ostr << "</pre>\n";
+  new WText( ostr.str(), XHTMLUnsafeText, cont );
+  
   return cont;
 }//WContainerWidget *nuclideInformation( const Nuclide &nuclide ) const;
 
-
+#if( ADD_PHOTOPEAK_CHART )
 double DecayActivityDiv::photopeakSliderTime()
 {
   const double minSlider = static_cast<double>(m_photopeakAgeSlider->minimum());
@@ -2388,7 +2700,6 @@ void DecayActivityDiv::setPhopeakSliderTime( double time )
 
   refreshPhotopeakDisplay();
 }//void setPhopeakSliderTime( double time )
-
 
 void DecayActivityDiv::refreshPhotopeakDisplay()
 {
@@ -2428,7 +2739,7 @@ void DecayActivityDiv::refreshPhotopeakDisplay()
   setPhotopeakXScaleRange();
   setPhotopeakYScaleRange();
 }//void refreshPhotopeakDisplay()
-
+#endif //ADD_PHOTOPEAK_CHART
 
 
 void DecayActivityDiv::refreshDecayDisplay()
@@ -2477,18 +2788,16 @@ void DecayActivityDiv::refreshDecayDisplay()
 
   updateInitialMixture();
 
+#if( ADD_PHOTOPEAK_CHART )
   //TODO: call refreshPhotopeakDisplay() seperately from refreshDecayDisplay()
   refreshPhotopeakDisplay();
-
+#endif
+  
   if( m_nuclides.empty() )
   {
     m_decayLegend->clear();
     return;
   }//if( m_nuclides.empty() )
-
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-  const WDateTime t0( m_initialTimePicker->date() );
-#endif
 
   const int activityIndex = m_displayActivityUnitsCombo->currentIndex();
 
@@ -2553,36 +2862,22 @@ void DecayActivityDiv::refreshDecayDisplay()
 
   const UnitNameValuePair xUnitsPair = bestTimeUnit( maxDiplayTime );
   const double tunit = xUnitsPair.second;
-  m_decayChart->axis(Chart::XAxis).setTitle( xUnitsPair.first + " after t0" );
+  //m_decayChart->axis(Chart::XAxis).setTitle( xUnitsPair.first + " after t\u2080" );
+  string xtitle = xUnitsPair.first;
+  if( xtitle.size() && islower((int)xtitle[0]) )
+    xtitle[0] = (char)toupper( (int)xtitle[0] );
+  m_decayChart->setXAxisTitle( xtitle );
   
   for( int row = 0; row < nRows; ++row )
   {
     const double row_time = (row * dt);
 
-#if( DECAY_CHART_USE_X_AXIS_DATES )
-    try
-    {
-      const int dt_seconds = floor( (row * dt)/second + 0.5 );
-      const WDateTime x = t0.addSecs( dt_seconds );
-      if( !x.isValid() )
-        throw std::runtime_error( "" );
-      m_decayModel->setData( row, 0, boost::any( x ) );
-      //m_decayModel->setData( row, 0, boost::any( x ), ToolTipRole );
-    }catch(...)
-    {
-      cerr << "refreshDecayDisplay(): Warning, couldnt add " << dt_seconds
-           << " secs to " << t0.toString() << " or issue with m_decayModel"
-           << endl;
-      continue;
-    }//try / catch
-#else
     //We will set the x-axis data as a formatted string since
     //  WAxis::setLabelFormat( "%.3g" ); doesnt seem to work
     stringstream labelText;
     labelText << fixed << setprecision(3) << (row * dt)/tunit;
     const WString label( labelText.str() );
     m_decayModel->setData( row, 0, boost::any( label ) );
-#endif
 
     for( int elN = 0; elN < nElements; ++elN )
     {
@@ -2781,10 +3076,27 @@ void DecayActivityDiv::addDecaySeries()
   {
     Chart::WDataSeries series(column, Chart::CurveSeries, Chart::YAxis);
     WPen pen;
+    
+    auto theme = m_decayChart->colorTheme();
+    if( theme && theme->theme_name.toUTF8().find("Default")!=string::npos )
+      theme.reset();
+    
     if( column != (nColumns-1) )
-      pen.setColor( seriesColor( column ) );
-    else
+    {
+      if( theme && (theme->referenceLineColor.size()>6) )
+      {
+        WColor color = theme->referenceLineColor[(column-1) % theme->referenceLineColor.size()];
+        pen.setColor( color );
+      }else
+      {
+        pen.setColor( seriesColor( column ) );
+      }
+    }else
+    {
+      if( theme && !theme->foregroundLine.isDefault() )
+        pen.setColor( theme->foregroundLine );
       pen.setStyle( DashLine );
+    }
     
     series.setPen( pen );
     

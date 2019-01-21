@@ -12,7 +12,8 @@
 
 #include <map>
 #include <string>
-
+#include <cstdlib>
+#include <stdlib.h>
 
 #if __APPLE__
 #include "TargetConditionals.h"
@@ -84,11 +85,6 @@ namespace InterSpecServer
       return (boost::filesystem::current_path() / boost::filesystem::path("data/config/wt_config_osx.xml")).string<std::string>();
 #endif
     
-#if( BUILD_AS_QT4_APP || BUILD_AS_QT5_APP )
-    if( boost::filesystem::exists( "data/config/wt_config_qt.xml" ) )
-      return (boost::filesystem::current_path() / boost::filesystem::path("data/config/wt_config_qt.xml")).string<std::string>();
-#endif
-    
 #if( ANDROID )
     if( boost::filesystem::exists( "data/config/wt_config_android.xml" ) )
       return (boost::filesystem::current_path() / boost::filesystem::path("data/config/wt_config_android.xml")).string<std::string>();
@@ -151,6 +147,8 @@ namespace InterSpecServer
   void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication )
   {
+//#warning "Need to add a (optional) number that the requestor must provide in the URL in order to be served anything - this should probably be the externalid argument"
+    
     changeToBaseDir( argc, argv );
     const string xml_config_path = getWtConfigXml( argc, argv );
     
@@ -160,6 +158,27 @@ namespace InterSpecServer
       std::cerr << "experimental_startServer: already running" << std::endl;
       return;
     }
+    
+
+    //If we are in an Apple Sandbox, we cant write to /tmp (especially done when
+    //  spooling files), so we will check if we passed in an argument of a tmp
+    //  directory we can write to.
+    for( int i = 0; i < (argc-1); ++i )
+    {
+      if( strcmp(argv[i],"--tempdir") == 0 )
+      {
+#ifdef WIN32
+		  _putenv_s("TMPDIR", argv[i + 1]);
+		  _putenv_s("WT_TMP_DIR", argv[i + 1]);
+#else
+		  setenv("TMPDIR", argv[i + 1], 1);
+		  setenv("WT_TMP_DIR", argv[i + 1], 1);
+#endif // WIN32
+        cerr << "Setting tmpdir=" << argv[i+1] << endl;
+        break;
+      }
+    }//for( int i = 0; i < argc; ++i )
+    
     
     ns_server = new Wt::WServer( argv[0], xml_config_path );
     char httpaddr_param_name[]  = "--http-addr";

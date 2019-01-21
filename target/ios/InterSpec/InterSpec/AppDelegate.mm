@@ -56,12 +56,21 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
   NSLog( @"Setting CWD=%s", apppath.string<std::string>().c_str() );
   boost::filesystem::current_path( apppath );
   
+  //Since app is run in a container, we need to set the correct temp directory
+  //  for Wt, especially for "uploading" files.
+  NSString *tempDir = NSTemporaryDirectory();
+  if( tempDir == nil ) //shouldnt ever fail, right
+    tempDir = @"/tmp";
+  static const std::string tmpdirstr = [tempDir UTF8String];
+  
   {
     static const char *argv0 = "--docroot";
     static const char *argv1 = ".";
     static const char *argv4 = "-c";
     static const char *argv5 = "./data/config/wt_config_ios.xml";
-    static const char *argv[] = { argv0, argv1, argv4, argv5 };
+    static const char *argv6 = "--tempdir";
+    static const char *argv7 = tmpdirstr.c_str();
+    static const char *argv[] = { argv0, argv1, argv4, argv5, argv6, argv7 };
     int argc = sizeof(argv) / sizeof(argv[0]);
     InterSpecServer::startServer( argc, (char **)argv, &createThisApplication );
   }

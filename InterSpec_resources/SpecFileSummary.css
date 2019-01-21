@@ -1,0 +1,14 @@
+.SpecFileSummary
+{
+}
+
+.SpecFileInfo, .MeasInfo, .SpecSummChoose, .SpecSummAllowEdit
+{
+  border: 1px solid black;
+}
+
+.SpectrumFileSummaryLabel
+{
+  font-weight:bold;
+}
+

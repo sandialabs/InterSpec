@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -36,6 +36,7 @@
 class PeakEdit;
 class PeakModel;
 class InterSpec;
+class ColorSelect;
 class SpectrumDisplayDiv;
 class IsotopeNameFilterModel;
 class PeakIsotopeNameFilterModel;
@@ -88,6 +89,7 @@ public:
     OffsetPolynomial2,
     OffsetPolynomial3,
     OffsetPolynomial4,
+    PeakColor,
     NumPeakPars
   };//enum PeakPars
   
@@ -113,6 +115,7 @@ protected:
   void init();
   void refreshPeakInfo();
   void checkIfDirty( PeakPars type, bool uncert );
+  void checkIfColorDirty();
   void checkIfUserLabelDirty();
   void peakTypeChanged();
   void contnuumTypeChanged();
@@ -139,6 +142,12 @@ protected:
                          const PeakDef::SourceGammaType sourceGammaType );
   void setNuclideFields( const SandiaDecay::Element *el, const float mean );
   void setNuclideFields( const ReactionGamma::Reaction *rctn, const float mean );
+  
+  /** Returns if there is more than one color associated with the
+      nuclide/element/reaction of the current peak.  Also sets the label
+      for #m_applyColorForAllNuc appriately.
+   */
+  bool checkNuclideForDiffColors();
   
   void refit();
   void apply();  //throws if an input is invalid
@@ -180,6 +189,8 @@ protected:
   Wt::WComboBox *m_photoPeakEnergy;
 
   Wt::WLineEdit *m_userLabel;
+  ColorSelect *m_color;
+  Wt::WCheckBox *m_applyColorForAllNuc;
   Wt::WComboBox *m_peakType;
   Wt::WComboBox *m_continuumType;
   Wt::WComboBox *m_skewType;

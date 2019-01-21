@@ -1,33 +1,6 @@
 project(minuit2)
 
-
-#-----------------------------------------------------------------------------
-# CMake administrivia
-cmake_minimum_required( VERSION 2.8 )
-if ( COMMAND cmake_policy )
-  cmake_policy( SET CMP0003 NEW )
-endif( COMMAND cmake_policy )
-
-
-set( LIBRARY_OUTPUT_PATH lib CACHE PATH "Path to libraries" FORCE )
-set( UPDATE_TYPE "svn" )
-set( CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE )
-
-
-#SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBOOST_FILESYSTEM_VERSION=3")
-
-#-----------------------------------------------------------------------------
-
-#SET(CMAKE_MODULE_PATH "${InterSpec_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
-#MESSAGE( ${InterSpec_SOURCE_DIR} )
-
-
-
-INCLUDE_DIRECTORIES(
-  inc
-  .
-  ..
-)
+cmake_minimum_required( VERSION 3.1 )
 
 
 set ( MINUIT_SRCS
@@ -219,7 +192,7 @@ set ( MINUIT_SRCS
 
 
 
-add_library(minuit2 STATIC ${MINUIT_SRCS})
-
+add_library( minuit2 STATIC ${MINUIT_SRCS} )
+target_include_directories( minuit2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}  )
 
 

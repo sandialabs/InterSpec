@@ -4,7 +4,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -44,12 +44,13 @@
 #include <Wt/WDoubleSpinBox>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
-#include <Wt/WHBoxLayout>
+
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
@@ -57,12 +58,13 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "sandia_decay/SandiaDecay.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DecayDataBaseServer.h"
-#include "InterSpec/PhotopeakLineDisplay.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
+#include "InterSpec/IsotopeSearchByEnergyModel.h"
 
 #if ( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -77,958 +79,7 @@ const int IsotopeSearchByEnergy::sm_xmlSerializationVersion = 0;
 namespace
 {
   const WString ActiveSearchEnergyClass = "ActiveSearchEnergy";
-}
-
-
-IsotopeSearchByEnergyModel::IsotopeMatch::IsotopeMatch()
-: m_distance(0.0), m_age(0.0), m_branchRatio(0.0), m_nuclide(0),
-  m_transition(0), m_particle(0), m_sourceGammaType(PeakDef::NormalGamma),
-  m_element(0), m_xray(0), m_reaction(0)
-{
-}
-
-
-IsotopeSearchByEnergyModel::IsotopeSearchByEnergyModel( Wt::WObject *parent )
-: WAbstractItemModel( parent ),
-  m_sortColumn( Distance ),
-  m_sortOrder( Wt::AscendingOrder )
-{
-  
-}//IsotopeSearchByEnergyModel( constuctor )
-
-
-IsotopeSearchByEnergyModel::~IsotopeSearchByEnergyModel()
-{
-  
-}//IsotopeSearchByEnergyModel destructor
-
-
-void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
-           const IsotopeSearchByEnergyModel::NucToEnergiesMap &filteredNuclides,
-                                              const vector<double> &energies,
-                                              const vector<double> &windows,
-                                              const double minBR,
-       std::vector< vector<IsotopeSearchByEnergyModel::IsotopeMatch> >  &answer)
-{
-  if( energies.empty() )
-    return;
-  
-  char buffer[32];
-  
-  //XXX - currently only taking 'most likely' combination of matching of
-  //      energies - should implement getting all permutations!
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  
-  for( const NucToEnergiesMap::value_type &nm : filteredNuclides )
-  {
-    //chack to see if this nuclide has gammas for each energy, not strictly
-    //  necassarry, but probably computationally faster (do we care about this
-    //  here though)
-    bool hasAll = true;
-    vector<size_t> energy_xray_is_for;
-    vector<const SandiaDecay::EnergyIntensityPair *> matching_xrays;
-    for( size_t i = 0; i < energies.size(); ++i )
-    {
-      const double energy = energies[i];
-      const double de = fabs( windows[i] );
-      set<double>::const_iterator lb, up, iter;
-      lb = nm.second.lower_bound( energy - de );
-      up = nm.second.upper_bound( energy + de );
-      bool found = false;
-      for( iter = lb; iter != up; ++iter )
-        found |= (fabs((*iter)-energy) <= de);
-      
-
-      if( !found && (energy < 115.0*PhysicalUnits::keV) )
-      {//lets look through the x-rays for this
-        double minxraydist = 999.9;
-        SandiaDecay::EnergyIntensityPair closest_xray(0.0,0.0);
-        const SandiaDecay::Element *el = db->element( nm.first->atomicNumber );
-        const vector<SandiaDecay::EnergyIntensityPair> &xrays = el->xrays;
-        for( size_t j = 0; j < xrays.size(); ++j )
-        {
-          const double dist = fabs(xrays[j].energy-energy);
-          if( dist <= minxraydist )
-          {
-            minxraydist = dist;
-            closest_xray = xrays[j];
-          }//if( dist <= minxraydist )
-          
-          if( minxraydist <= de )
-          {
-            found = true;
-            energy_xray_is_for.push_back( i );
-            matching_xrays.push_back( &(xrays[j]) );
-          }//if( minxraydist <= de )
-        }//for( loop iver x-rays )
-      }//if( !found && (energy < 115.0*PhysicalUnits::keV) )
-      
-      if( !found )
-      {
-        hasAll = false;
-        break;
-      }//if( !found )
-    }//for( size_t i = 0; i < energies.size(); ++i )
-    
-    if( !hasAll )
-      continue;
-    
-    double dist = 0.0;
-    vector<IsotopeMatch> nucmatches;
-    for( size_t i = 0; i < energies.size(); ++i )
-    {
-      vector<size_t>::const_iterator xraypos = find( energy_xray_is_for.begin(),
-                                                energy_xray_is_for.end(), i );
-      
-      if( xraypos != energy_xray_is_for.end() )
-      {
-        const size_t pos = xraypos - energy_xray_is_for.begin();
-        const double energy = energies[i];
-        const SandiaDecay::EnergyIntensityPair *xray = matching_xrays[pos];
-        
-        IsotopeMatch match;
-        match.m_distance = fabs(energy - xray->energy);    //sum of distance over all energies searched
-        dist += match.m_distance;
-        
-        match.m_age = 0.0;         //age assumed for listing things
-        match.m_branchRatio = xray->intensity;
-        
-        //Only one of the following will be valid: m_nuclide, m_element, m_reaction
-        match.m_nuclide = NULL;
-        match.m_transition = NULL;
-        match.m_particle = NULL;
-        match.m_element = db->element( nm.first->atomicNumber );
-        match.m_xray = xray;
-        match.m_reaction = NULL;
-//        match.m_reactionEnergy;
-        
-//        match.m_displayData[ParentHalfLife] = "";
-        match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
-//        match.m_displayData[SpecificIsotope] = "";
-        if( match.m_element )
-          match.m_displayData[ParentIsotope] = match.m_element->symbol;
-        
-        if( xray )
-        {
-          snprintf( buffer, sizeof(buffer), "%.2f", xray->energy );
-          match.m_displayData[Energy] = buffer;
-        }//if( xray )
-        
-        snprintf( buffer, sizeof(buffer), "%.2f", match.m_distance );
-        match.m_displayData[Distance] = buffer;
-        
-        snprintf( buffer, sizeof(buffer), "%.2g", match.m_branchRatio );
-        match.m_displayData[BranchRatio] = buffer;
-        
-        nucmatches.push_back( match );
-      }else//if( xraypos != energy_xray_is_for.end() )
-      {
-        size_t trans_index = 0;
-        const SandiaDecay::Transition *transition = NULL;
-        IsotopeMatch match;
-      
-        PeakDef::SourceGammaType sourceGammaType = PeakDef::NormalGamma;
-        
-        PeakDef::findNearestPhotopeak( nm.first, energies[i],
-                         windows[i], transition, trans_index, sourceGammaType );
-        if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )
-          continue;
-      
-        match.m_nuclide = nm.first;
-        match.m_transition = transition;
-        if( transition )
-          match.m_particle = &(transition->products[trans_index]);
-        match.m_sourceGammaType = sourceGammaType;
-        
-        match.m_distance = 99999999.9;
-        switch( sourceGammaType )
-        {
-          case PeakDef::NormalGamma:
-          case PeakDef::XrayGamma:
-            if( match.m_particle )
-              match.m_distance = fabs(energies[i] - match.m_particle->energy);
-          break;
-            
-          case PeakDef::AnnihilationGamma:
-            match.m_distance = fabs(energies[i] - 510.99891*SandiaDecay::keV );
-          break;
-            
-          case PeakDef::SingleEscapeGamma:
-            if( match.m_particle )
-              match.m_distance = fabs(energies[i] - (match.m_particle->energy - 510.99891));
-          break;
-            
-          case PeakDef::DoubleEscapeGamma:
-            if( match.m_particle )
-              match.m_distance = fabs(energies[i] - (match.m_particle->energy - 2.0*510.99891) );
-          break;
-        }//switch( sourceGammaType )
-        
-        match.m_age = PeakDef::defaultDecayTime( nm.first );
-      
-        SandiaDecay::NuclideMixture mixture;
-        mixture.addNuclide( SandiaDecay::NuclideActivityPair(nm.first,1.0) );
-        const vector<SandiaDecay::EnergyRatePair> gammas
-               = mixture.gammas( match.m_age,
-                                 SandiaDecay::NuclideMixture::OrderByAbundance, true );
-      
-        double nearestEnergy = 999999.9, nearestAbun = 0.0, maxAbund = -999.9;
-        for( const SandiaDecay::EnergyRatePair &aep : gammas )
-        {
-          double d = 999999.9;
-          
-          if( match.m_sourceGammaType == PeakDef::AnnihilationGamma )
-            d = fabs( aep.energy - 510.99891*SandiaDecay::keV );
-          else if( match.m_particle )
-            d = fabs( aep.energy - match.m_particle->energy );
-          
-          if( d < nearestEnergy )
-          {
-            nearestEnergy = d;
-            nearestAbun = aep.numPerSecond;
-          }//if( d < nearestEnergy )
-         
-          maxAbund = std::max( maxAbund, aep.numPerSecond );
-        }//for( const SandiaDecay::AbundanceEnergyPair &aep : gammas )
-      
-        match.m_branchRatio = nearestAbun / maxAbund;
-      
-        if( match.m_branchRatio < minBR )
-          continue;
-      
-        match.m_displayData[ParentIsotope] = match.m_nuclide->symbol;
-        
-        if( match.m_sourceGammaType == PeakDef::AnnihilationGamma )
-          snprintf( buffer, sizeof(buffer), "510.99" );
-        else if( match.m_particle )
-          snprintf( buffer, sizeof(buffer), "%.2f", match.m_particle->energy );
-          
-        match.m_displayData[Energy] = buffer;
-        
-        snprintf( buffer, sizeof(buffer), "%.2f", match.m_distance );
-        match.m_displayData[Distance] = buffer;
-        
-        snprintf( buffer, sizeof(buffer), "%.2f", match.m_branchRatio );
-        match.m_displayData[BranchRatio] = buffer;
-        
-        stringstream trnsitionstrm;
-        if( match.m_transition && match.m_transition->parent && match.m_transition->child )
-        {
-          trnsitionstrm << match.m_transition->parent->symbol << "&rarr;"
-                        << match.m_transition->child->symbol;
-        }else if( match.m_transition && match.m_transition->parent )
-        {
-          using namespace SandiaDecay;
-          trnsitionstrm << match.m_transition->mode
-                        << " of " << match.m_transition->parent->symbol;
-        }else if( !match.m_transition )
-        {
-          trnsitionstrm << "Annih. Gamma";
-        }//if( match.m_transition->parent... ) / else
-        
-        if( match.m_transition && match.m_particle->type == SandiaDecay::XrayParticle )
-          trnsitionstrm << " xray";
-        
-        match.m_displayData[SpecificIsotope] = trnsitionstrm.str();
-      
-        if( !i )
-        {
-          match.m_displayData[ParentHalfLife]
-                 = PhysicalUnits::printToBestTimeUnits(match.m_nuclide->halfLife);
-          match.m_displayData[AssumedAge]
-                 = PhysicalUnits::printToBestTimeUnits(match.m_age);
-        }//if( !i )
-      
-        dist += match.m_distance;
-        nucmatches.push_back( match );
-      }//if( xraypos != energy_xray_is_for.end() ) / else
-    }//for( size_t i = 0; i < energies.size(); ++i )
-    
-    if( nucmatches.size() != energies.size() )
-      continue;
-    
-    if( !nucmatches[0].m_nuclide )
-    {
-      for( IsotopeMatch &match : nucmatches )
-      {
-        if( match.m_nuclide )
-        {
-          nucmatches[0].m_nuclide = match.m_nuclide;
-          nucmatches[0].m_displayData[ParentIsotope] = match.m_nuclide->symbol;
-          nucmatches[0].m_displayData[Energy]
-                    = nucmatches[0].m_displayData[Energy].narrow() + " (xray)";
-          break;
-        }//if( match.m_nuclide )
-      }//for( IsotopeMatch &match : nucmatches )
-    }//if( !nucmatches[0].m_nuclide )
-    
-    nucmatches[0].m_distance = dist;
-    
-    snprintf( buffer, sizeof(buffer), "%.2f", dist );
-    nucmatches[0].m_displayData[Distance] = buffer;
-    answer.push_back( nucmatches );
-  }//for( const NuclideMatches::value_type &nm : filteredNuclides )
-}//void nuclidesWithAllEnergies
-
-
-void IsotopeSearchByEnergyModel::xraysWithAllEnergies(
-                                 const std::vector<double> &energies,
-                                 const std::vector<double> &windows,
-                                 SearchResults &answer )
-{
-  if( energies.empty() )
-    return;
-  
-  char buffer[32];
-  
-  for( size_t i = 0; i < energies.size(); ++i )
-    if( (energies[i]-windows[i]) > 120*PhysicalUnits::keV )
-      return;
-  
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  const vector<const SandiaDecay::Element *> &elements = db->elements();
-  
-  for( const SandiaDecay::Element *el : elements )
-  {
-    vector<IsotopeMatch> nucmatches;
-    vector<const SandiaDecay::EnergyIntensityPair *> xray_matches;
-    const vector<SandiaDecay::EnergyIntensityPair> &xrays = el->xrays;
-    if( xrays.size() < energies.size() )
-      continue;
-    
-    for( size_t i = 0; i < energies.size(); ++i )
-    {
-      const double energy = energies[i];
-      const double de = fabs( windows[i] );
-      double minEnergy = 1000.0 * de;
-      const SandiaDecay::EnergyIntensityPair *xray = NULL;
-      
-      for( const SandiaDecay::EnergyIntensityPair &e : xrays )
-      {
-        const double delta = fabs((e.energy)-energy);
-        if( delta < minEnergy )
-        {
-          minEnergy = delta;
-          xray = &e;
-        }//if( delta < minEnergy )
-      }//for( const SandiaDecay::EnergyIntensityPair &e : xrays )
-      
-      if( minEnergy < de )
-        xray_matches.push_back( xray );
-      else
-        break;
-    }//for( size_t i = 0; i < energies.size(); ++i )
-    
-    if( xray_matches.size() != energies.size() )
-      continue;
-
-    double dist = 0.0;
-    for( size_t i = 0; i < xray_matches.size(); ++i )
-    {
-      const double energy = energies[i];
-      const SandiaDecay::EnergyIntensityPair *xray = xray_matches[i];
-      
-      IsotopeMatch match;
-      match.m_distance = fabs(energy - xray->energy);    //sum of distance over all energies searched
-      dist += match.m_distance;
-      
-      match.m_age = 0.0;         //age assumed for listing things
-      match.m_branchRatio = xray->intensity;
-      
-      //Only one of the following will be valid: m_nuclide, m_element, m_reaction
-      match.m_nuclide = NULL;
-      match.m_transition = NULL;
-      match.m_particle = NULL;
-      match.m_element = el;
-      match.m_xray = xray;
-      match.m_reaction = NULL;
-      match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
-      match.m_displayData[ParentIsotope] = match.m_element->symbol;
-      
-      snprintf( buffer, sizeof(buffer), "%.2f", xray->energy );
-      match.m_displayData[Energy] = buffer;
-      
-      snprintf( buffer, sizeof(buffer), "%.2f", match.m_distance );
-      match.m_displayData[Distance] = buffer;
-      
-      snprintf( buffer, sizeof(buffer), "%.2g", match.m_branchRatio );
-      match.m_displayData[BranchRatio] = buffer;
-      
-      nucmatches.push_back( match );
-    }//for( const SandiaDecay::EnergyIntensityPair *xray : xray_matches )
-    
-    nucmatches[0].m_distance = dist;
-    
-    snprintf( buffer, sizeof(buffer), "%.2f", dist );
-    nucmatches[0].m_displayData[Distance] = buffer;
-    
-    answer.push_back( nucmatches );
-  }//for( const SandiaDecay::Element *el : elements )
-}//void xraysWithAllEnergies(...)
-
-
-
-void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
-                                            const std::vector<double> &energies,
-                                            const std::vector<double> &windows,
-                                            SearchResults &answer )
-{
-  if( energies.empty() )
-    return;
-  
-  char buffer[32];
-  
-  const ReactionGamma *db = ReactionGammaServer::database();
-  set<const ReactionGamma::Reaction *> reactions;
-  
-  for( size_t i = 0; i < energies.size(); ++i )
-  {
-    const float energy = static_cast<float>(energies[i]);
-    const float de = static_cast<float>( fabs( windows[i] ) );
-    vector<const ReactionGamma::Reaction *> thesereaction;
-    db->reactions( energy-de, energy+de, thesereaction );
-    
-    if( i == 0 )
-    {
-      reactions.insert( thesereaction.begin(), thesereaction.end() );
-    }else
-    {
-      set<const ReactionGamma::Reaction *> surviving_reactions;
-      
-      for( const ReactionGamma::Reaction *rctn : thesereaction )
-      {
-        if( reactions.count( rctn ) )
-          surviving_reactions.insert( rctn );
-      }//for( const ReactionGamma::Reaction *rctn : thesereaction )
-      
-      reactions.swap( surviving_reactions );
-      
-      if( reactions.empty() )
-        return;
-    }//if( i == 0 ) / else
-  }//for( size_t i = 0; i < energies.size(); ++i )
-  
-
-  for( const ReactionGamma::Reaction *rctn : reactions )
-  {
-    double dist = 0.0;
-    vector<IsotopeMatch> matches;
-    for( size_t i = 0; i < energies.size(); ++i )
-    {
-      const double energy = energies[i];
-      double smallestDelta = 999999999.9;
-      ReactionGamma::EnergyAbundance nearesteA;
-      
-      for( const ReactionGamma::EnergyAbundance &ea : rctn->gammas )
-      {
-        const double delta = fabs( ea.energy - energy );
-        if( delta < smallestDelta  )
-        {
-          nearesteA = ea;
-          smallestDelta = delta;
-        }//if( delta < nearestEnergy  )
-      }//for( const ReactionGamma::EnergyAbundance &ea : rctn->gammas )
-      
-      IsotopeMatch match;
-      match.m_distance = energy - nearesteA.energy;
-      dist += fabs(match.m_distance);
-      match.m_age = 0.0;
-      match.m_reaction = rctn;
-      match.m_branchRatio = nearesteA.abundance;
-      match.m_reactionEnergy = nearesteA;
-      
-      match.m_displayData[AssumedAge] = PhysicalUnits::printToBestTimeUnits( 0.0 );
-      match.m_displayData[ParentIsotope] = rctn->name();
-      
-      snprintf( buffer, sizeof(buffer), "%.2f", nearesteA.energy );
-      match.m_displayData[Energy] = buffer;
-      
-//      snprintf( buffer, sizeof(buffer), "%.2f", match.m_distance );
-//      match.m_displayData[Distance] = buffer;
-      
-      snprintf( buffer, sizeof(buffer), "%.2g", match.m_branchRatio );
-      match.m_displayData[BranchRatio] = buffer;
-      
-//      if( rctn->targetNuclide )
-//        match.m_displayData[SpecificIsotope] = rctn->targetNuclide->symbol;
-      matches.push_back( match );
-    }//for( size_t i = 0; i < energies.size(); ++i )
-    
-    matches[0].m_distance = dist;
-    
-    snprintf( buffer, sizeof(buffer), "%.2g", matches[0].m_distance );
-    matches[0].m_displayData[Distance] = buffer;
-    
-    answer.push_back( matches );
-  }//for( const ReactionGamma::Reaction *rctn : reactions )
-  
-}//void reactionsWithAllEnergies(...)
-
-
-
-void IsotopeSearchByEnergyModel::clearResults()
-{
-  beginRemoveRows( WModelIndex(), 0, rowCount()-1 );
-  m_matches.clear();
-  endRemoveRows();
-}//void clearResults();
-
-
-void IsotopeSearchByEnergyModel::updateSearchResults(
-      std::shared_ptr<IsotopeSearchByEnergyModel::SearchWorkingSpace> workingspace )
-{
-  const vector<double> &energies = workingspace->energies;
-  const vector<double> &windows = workingspace->windows;
-  
-  vector< vector<IsotopeMatch> > &matches = workingspace->matches;
-  
-  m_sortColumn = workingspace->sortColumn;
-  m_sortOrder = workingspace->sortOrder;
-  
-  if( m_matches.size() )
-  {
-    beginRemoveRows( WModelIndex(), 0, rowCount()-1 );
-    m_matches.clear();
-    endRemoveRows();
-  }//if( m_matches.size() )
-  
-  if( matches.size() )
-  {
-    const int ninsert = static_cast<int>( matches.size() * energies.size() );
-    beginInsertRows( WModelIndex(), 0, ninsert - 1 );
-    m_windows = windows;
-    m_energies = energies;
-    m_matches.swap( matches );
-    endInsertRows();
-  }//if( matches.size() )
-  
-  workingspace->searchdoneCallback();
-  
-  wApp->triggerUpdate();
-}//void updateSearchResults()
-
-
-void IsotopeSearchByEnergyModel::setSearchEnergies(
-                            std::shared_ptr<SearchWorkingSpace> workingspace,
-                                                   const double minbr,
-                                                   const double minHalfLife,
-                  Wt::WFlags<IsotopeSearchByEnergyModel::RadSource> srcs,
-                                              const std::string appid,
-                                              boost::function< void(void) > updatefcn )
-{
-  if( !workingspace )
-    throw runtime_error( "setSearchEnergies(...): invalid workingspace" );
-  
-  const vector<double> &energies = workingspace->energies;
-  const vector<double> &windows = workingspace->windows;
-  
-  vector< vector<IsotopeMatch> > &matches = workingspace->matches;
-  matches.clear();
-  
-  if( energies.size() != windows.size() )
-    throw runtime_error( "setSearchEnergies(...): input error" );
-
-  if( energies.empty() )
-  {
-    WServer::instance()->post(  appid, updatefcn );
-    return;
-  }//if( energies.empty() )
-
-  
-  using SandiaDecay::Element;
-  using SandiaDecay::Nuclide;
-  using SandiaDecay::EnergyIntensityPair;
-  
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  const vector<const SandiaDecay::Element *> &elements = db->elements();
-
-  //Get x-rays with at least one of the energies
-  map<const SandiaDecay::Element *, vector<EnergyIntensityPair> > filteredXrays;
-  for( const Element *el : elements )
-    for( const EnergyIntensityPair &xray : el->xrays )
-      filteredXrays[el].push_back( xray );
-
-  //Get reactions with at least one of the energies
-  const ReactionGamma *rctnDb = ReactionGammaServer::database();
-  vector<ReactionGamma::ReactionPhotopeak> reactions;
-  for( size_t i = 0; i < energies.size(); ++i )
-  {
-    const float minenergy = static_cast<float>(energies[i] - windows[i]);
-    const float maxenergy = static_cast<float>(energies[i] + windows[i]);
-    rctnDb->reactions( minenergy, maxenergy, reactions );
-  }//for( size_t i = 0; i < energies.size(); ++i )
-  
-  //Get isotopes with gammas in all ranges...
-  EnergyToNuclideServer::setLowerLimits( minHalfLife, minbr );
-  std::shared_ptr< const EnergyToNuclideServer::EnergyNuclidePairVec > nucnuc
-                                     = EnergyToNuclideServer::energyToNuclide();
-  if( !nucnuc )
-    throw runtime_error( "Couldnt get EnergyToNuclideServer" );
-  
-  typedef map<const Nuclide *, set<double> > NuclideMatches;
-  NuclideMatches filteredNuclides;
-  for( size_t i = 0; i < energies.size(); ++i )  
-  {
-    const float minenergy = static_cast<float>(energies[i] - windows[i]);
-    const float maxenergy = static_cast<float>(energies[i] + windows[i]);
-    
-    const bool canBeAnnih = (510.99891f>=minenergy && 510.99891f<=maxenergy);
-    
-    EnergyToNuclideServer::EnergyNuclidePair enPair( minenergy, NULL );
-    vector<EnergyToNuclideServer::EnergyNuclidePair>::const_iterator begin, end, pos;
-  
-    //nucnuc should be sorted by energy (EnergyNuclidePair::operator<)
-    begin = lower_bound( nucnuc->begin(), nucnuc->end(), enPair );
-    enPair.energy = maxenergy;
-    end = upper_bound( begin, nucnuc->end(), enPair );
-    for( pos = begin; pos != end; ++pos )
-    {
-      //nucnuc actually only contians the nuclides that they themselves give
-      //  off the requested energies, meaning we have to go through and inspect
-      //  all the nuclides that could decay to the nuclide in nucnuc to see
-      //  if they are compatible with the search criteria.  For this we
-      //  need to
-      int stop = 0;
-      double transbr = 1.0;
-      for( const SandiaDecay::Transition *t : pos->nuclide->decaysToChildren )
-      {
-        for( const SandiaDecay::RadParticle &r : t->products )
-        {
-          if( r.type==SandiaDecay::GammaParticle && fabs(r.energy - pos->energy) < 0.001 )
-          {
-            transbr = t->branchRatio * r.intensity;
-            stop = 1;
-          }else if( canBeAnnih && r.type==SandiaDecay::PositronParticle )
-          {
-            //XXX - there is a slight issue with nuclides that have positrons and gammas near 511 keV, but whatever
-            if( !stop )
-              transbr = 0.0;
-            transbr += 2.0 * t->branchRatio * r.intensity;
-            stop = 2;
-          }
-        }
-        
-        if( stop==1 )
-          break;
-      }//for( const SandiaDecay::Transition *t : pos->nuclide->decaysToChildren )
-      
-      
-      const vector<const Nuclide *> forebearers = pos->nuclide->forebearers();
-      for( const Nuclide *nuc : forebearers )
-      {
-        if( nuc->halfLife < minHalfLife )
-          continue;
-        
-        if( minbr<=0.0 || nuc->branchRatioToDecendant(pos->nuclide)*transbr>minbr )
-          filteredNuclides[nuc].insert( energies[i] );
-      }
-    }
-  }//for( size_t i = 0; i < energies.size(); ++i )
-  
-  //Time to make all the pairings
-  
-  //Nuclides that match all energies
-  if( srcs & kGamma )
-    nuclidesWithAllEnergies( filteredNuclides, energies, windows, minbr, matches );
-
-  //Get elements with x-rays which match all energies
-  if( srcs & kXRay )
-    xraysWithAllEnergies( energies, windows, matches );
-  
-  //Get elements with reactions which match all energies
-  if( srcs & kReaction )
-    reactionsWithAllEnergies( energies, windows, matches );
-  
-  //Get elements with gamma+xrays which match all energies
-  
-  //Get elements with xrays+reactions which match all energies
-  
-  //Get elements with gamma+reactions which match all energies
-  
-  //sort the data
-  sortData( matches, energies, workingspace->sortColumn, workingspace->sortOrder );
-  
-  WServer::instance()->post(  appid, updatefcn );
-}//void setSearchEnergies( const vector<double> &energies, const double window )
-
-
-int IsotopeSearchByEnergyModel::columnCount( const WModelIndex &parent ) const
-{
-  if( parent.isValid() )
-    return 0;
-  return NumColumns;
-}//int columnCount( const Wt::WModelIndex &parent ) const
-
-
-int IsotopeSearchByEnergyModel::rowCount( const WModelIndex &parent ) const
-{
-  if( parent.isValid() )
-    return 0;
-  return static_cast<int>( m_matches.size() * m_energies.size() );
-}//int rowCount( const WModelIndex &parent ) const
-
-
-WModelIndex IsotopeSearchByEnergyModel::parent( const WModelIndex & ) const
-{
-  return WModelIndex();
-}//WModelIndex parent( const Wt::WModelIndex &index ) const;
-
-
-const SandiaDecay::Nuclide *IsotopeSearchByEnergyModel::nuclide(
-                                           const Wt::WModelIndex &index ) const
-{
-  const int row = index.row();
-  const size_t matchNum = static_cast<size_t>( row / m_energies.size() );
-  
-  if( matchNum>m_matches.size() )
-    return NULL;
-
-  return m_matches[matchNum].at(0).m_nuclide;
-}//const SandiaDecay::Nuclide *nuclide( const Wt::WModelIndex &index ) const
-
-
-const SandiaDecay::Element *IsotopeSearchByEnergyModel::xrayElement(
-                                            const Wt::WModelIndex &index ) const
-{
-  const int row = index.row();
-  const size_t matchNum = static_cast<size_t>( row / m_energies.size() );
-  
-  if( matchNum>m_matches.size() )
-    return NULL;
-  
-  return m_matches[matchNum].at(0).m_element;
-}//xrayElement( const Wt::WModelIndex &index ) const
-
-
-const ReactionGamma::Reaction *IsotopeSearchByEnergyModel::reaction(
-                                            const Wt::WModelIndex &index ) const
-{
-  const int row = index.row();
-  const size_t matchNum = static_cast<size_t>( row / m_energies.size() );
-  
-  if( matchNum>m_matches.size() )
-    return NULL;
-  
-  return m_matches[matchNum].at(0).m_reaction;
-}//reaction( const Wt::WModelIndex &index ) const
-
-
-double IsotopeSearchByEnergyModel::assumedAge(
-                                            const Wt::WModelIndex &index ) const
-{
-  const int row = index.row();
-  const size_t matchNum = static_cast<size_t>( row / m_energies.size() );
-  
-  if( matchNum>m_matches.size() )
-    return -1.0;
-
-  return m_matches[matchNum].at(0).m_age;
-}//double assumedAge( const Wt::WModelIndex &index ) const;
-
-
-boost::any IsotopeSearchByEnergyModel::data( const WModelIndex &index,
-                                             int role ) const
-{
-  const int row = index.row();
-  const Column col = Column( index.column() );
-  const size_t matchNum = static_cast<size_t>( row / m_energies.size() );
-  const size_t energyNum = static_cast<size_t>( row % m_energies.size() );
-
-  
-  if( (role!=Wt::DisplayRole) || (matchNum>m_matches.size())
-      || (col>=NumColumns) )
-    return boost::any();
-  
-  const vector<IsotopeMatch> &match = m_matches[matchNum];
-  const IsotopeMatch &iso = match[energyNum];
-  
-  
-  switch( col )
-  {
-    case ParentIsotope:
-    case Distance:
-      if( energyNum )
-        return boost::any();
-    //fallthrough intentional (my first intentional use in like 5 years)
-    case Energy: case BranchRatio:
-    case SpecificIsotope: case ParentHalfLife: case AssumedAge:
-      return iso.m_displayData[col];
-    break;
-    
-    case NumColumns:
-    break;
-  }//switch( col )
-  
-  return boost::any();
-}//boost::any data(...)
-
-
-boost::any IsotopeSearchByEnergyModel::headerData( int section,
-                                                   Wt::Orientation orientation,
-                                                   int role ) const
-{
-  if( orientation==Wt::Horizontal && role==Wt::LevelRole )
-    return 0;
-  
-  if (role==Wt::DisplayRole)
-  {
-    switch( section )
-    {
-      case ParentIsotope:
-        return WString("Parent");
-      case Distance:
-        return WString("Difference");
-      case Energy:
-        return WString("Energy (keV)");
-      case BranchRatio:
-        return WString("Branch Ratio");
-      case SpecificIsotope:
-        return WString("Decay");
-      case ParentHalfLife:
-        return WString("Parent H.L.");
-      case AssumedAge:
-        return WString("Assumed Age");
-      case NumColumns:
-        break;
-    }//switch( col )
-  }//DisplayRole
-  else if (role==Wt::ToolTipRole)
-  {
-    switch( section )
-    {
-      case ParentIsotope:
-        return WString("Parent nuclide");
-      case Distance:
-        return WString("Difference between selected nuclide's energy level and searched energy level");
-      case Energy:
-        return WString("Nuclide energy");
-      case BranchRatio:
-        return WString("Branching ratio of selected nuclide");
-      case SpecificIsotope:
-        return boost::any();
-      case ParentHalfLife:
-        return WString("Parent half life");
-      case AssumedAge:
-        return WString("Assumed age of nuclide");
-      case NumColumns:
-        break;
-    }//switch( col )
-  }//ToolTipRole
- 
-  return boost::any();
-}//boost::any headerData( int section, Orientation orientation, int role ) const
-
-
-WModelIndex IsotopeSearchByEnergyModel::index( int row, int column,
-                                               const WModelIndex &parent ) const
-{
-  if( (column>=NumColumns) || (row>=rowCount()) )
-    return WModelIndex();
-  
-  void *ptr = (void *)&(m_matches[row]);  //ah, whatever
-  return createIndex( row, column, ptr );
-}//WModelIndex index( int row, int column, const WModelIndex &parent ) const
-
-
-
-void IsotopeSearchByEnergyModel::sort( int column, Wt::SortOrder order )
-{
-  layoutAboutToBeChanged().emit();
-  m_sortOrder = order;
-  m_sortColumn = Column(column);
-  sortData( m_matches, m_energies, column, order );
-  layoutChanged().emit();
-}//void sort(...)
-
-
-WFlags<ItemFlag> IsotopeSearchByEnergyModel::flags( const WModelIndex &index ) const
-{
-  const Column col = Column( index.column() );
-  const int level = (index.row() % m_energies.size());
-  
-  if( (col==ParentIsotope) && (level==0) )
-    return WFlags<ItemFlag>( ItemIsSelectable | ItemIsXHTMLText );
-  
-  return WFlags<ItemFlag>( ItemIsXHTMLText );
-}//WFlags<ItemFlag> flags( const Wt::WModelIndex &index ) const
-
-
-namespace
-{
-  struct Sorter
-  {
-    const vector<double> &m_energies;
-    IsotopeSearchByEnergyModel::Column m_column;
-    Wt::SortOrder m_order;
-    
-    Sorter( const vector<double> &energies, int column, Wt::SortOrder order )
-    : m_energies( energies ),
-      m_column( IsotopeSearchByEnergyModel::Column(column) ),
-      m_order( order )
-    {}
-    
-    bool operator()( const vector<IsotopeSearchByEnergyModel::IsotopeMatch> &lhsin,
-                    const vector<IsotopeSearchByEnergyModel::IsotopeMatch> &rhsin )
-    {
-      const bool asscending = (m_order==AscendingOrder);
-      
-      assert( lhsin.size()==rhsin.size() && lhsin.size()==m_energies.size() );
-      
-      if( m_energies.empty() )
-        return asscending;
-      
-      const vector<IsotopeSearchByEnergyModel::IsotopeMatch> &lhs = (asscending ? lhsin : rhsin);
-      const vector<IsotopeSearchByEnergyModel::IsotopeMatch> &rhs = (asscending ? rhsin : lhsin);
-      
-      switch( m_column )
-      {
-        case IsotopeSearchByEnergyModel::ParentIsotope:
-        case IsotopeSearchByEnergyModel::SpecificIsotope:
-          return (lhs[0].m_displayData[m_column] < rhs[0].m_displayData[m_column] );
-          
-        case IsotopeSearchByEnergyModel::Distance:
-          return (lhs[0].m_distance < rhs[0].m_distance);
-          
-        case IsotopeSearchByEnergyModel::Energy:
-        {
-          return (std::stod(lhs[0].m_displayData[m_column].narrow())
-                  < std::stod(rhs[0].m_displayData[m_column].narrow()));
-        }
-          
-          
-        case IsotopeSearchByEnergyModel::BranchRatio:
-        {
-          double lhsval = 0.0, rhsval = 0.0;
-          for( size_t i = 0; i < lhs.size(); ++i )
-            lhsval += std::stod(lhs[i].m_displayData[m_column].narrow());
-          for( size_t i = 0; i < rhs.size(); ++i )
-            rhsval += std::stod(rhs[i].m_displayData[m_column].narrow());
-          return lhsval < rhsval;
-        }
-          
-        case IsotopeSearchByEnergyModel::ParentHalfLife:
-          if( lhs[0].m_nuclide && rhs[0].m_nuclide )
-            return (lhs[0].m_nuclide->halfLife < rhs[0].m_nuclide->halfLife);
-          return (lhs[0].m_nuclide != NULL);
-          
-        case IsotopeSearchByEnergyModel::AssumedAge:
-          return (lhs[0].m_age < rhs[0].m_age);
-          
-        case IsotopeSearchByEnergyModel::NumColumns:
-          return false;
-      }//switch( col )
-
-	  return false;
-    }//bool operator()
-  };//struct Sorter
 }//namespace
-
-void IsotopeSearchByEnergyModel::sortData( vector< vector<IsotopeMatch> > &data,
-                                           const vector<double> &energies,
-                                           int column, Wt::SortOrder order )
-{
-  std::stable_sort( data.begin(), data.end(), Sorter(energies, column, order) );
-}//sortData(...)
 
 
 void IsotopeSearchByEnergy::SearchEnergy::emitRemove()
@@ -1065,25 +116,33 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   m_window( 0 )
 {
   addStyleClass( "SearchEnergy" );
-  WHBoxLayout* layout = new WHBoxLayout();
-
+  
+  WGridLayout *layout = new WGridLayout();
+  setLayout( layout );
+  
   layout->setContentsMargins(0, 0, 0, 0);
-  setLayout(layout);
-  WLabel *label = new WLabel( "Energy " );
-  layout->addWidget(label);
+  layout->setVerticalSpacing( 0 );
+  layout->setHorizontalSpacing( 0 );
+  
+  WLabel *label = new WLabel( "Energy" );
   label->addStyleClass( "SearchEnergyLabel" );
-  m_energy = new WDoubleSpinBox(  );
-  layout->addWidget(m_energy);
+  layout->addWidget( label, 0, 0, Wt::AlignMiddle );
+  
+  m_energy = new WDoubleSpinBox();
+  layout->addWidget( m_energy, 0, 1, Wt::AlignMiddle );
+  label->setBuddy( m_energy );
   m_energy->setMinimum( 0.0 );
   m_energy->setMaximum( 1000000.0 );
   m_energy->setTextSize( 5 );
   m_energy->enterPressed().connect( this, &SearchEnergy::emitEnter );
   
   label = new WLabel( "+/-" );
-  layout->addWidget(label);
   label->addStyleClass( "SearchEnergyWindowLabel" );
-  m_window = new WDoubleSpinBox(  );
-  layout->addWidget(m_window);
+  layout->addWidget( label, 0, 2, Wt::AlignMiddle );
+  m_window = new WDoubleSpinBox();
+  layout->addWidget( m_window, 0, 3, Wt::AlignMiddle );
+  label->setBuddy( m_window );
+  
   m_window->setMinimum( 0.0 );
   m_window->setMaximum( 1000000.0 );
   m_window->setValue( 10.0 );
@@ -1100,7 +159,8 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
 //  } //(isMobile())
   
   label = new WLabel( "keV" );
-  layout->addWidget(label);
+  label->addStyleClass( "KeVLabel" );
+  layout->addWidget( label, 0, 4, Wt::AlignMiddle );
   
   m_energy->valueChanged().connect( this, &SearchEnergy::emitChanged );
   m_window->valueChanged().connect( this, &SearchEnergy::emitChanged );
@@ -1110,47 +170,44 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   m_window->focussed().connect( this, &SearchEnergy::emitGotFocus );
   clicked().connect( this, &SearchEnergy::emitGotFocus );
     
-  WContainerWidget *adsubdiv = new WContainerWidget(   );
+  //WContainerWidget *adsubdiv = new WContainerWidget(   );
 
-  m_removeIcn = new WText( adsubdiv );
-    
-  m_removeIcn->setStyleClass( "DeleteIcon" );
-  m_removeIcn->addStyleClass( "energyAddDelete" );
-  m_removeIcn->setHiddenKeepsGeometry(true);
+  m_removeIcn = new WContainerWidget(); //needed or else button wont show up
+  m_removeIcn->setStyleClass( "DeleteSearchEnergy Wt-icon" );
   m_removeIcn->clicked().connect( this, &SearchEnergy::emitRemove );
-  m_removeIcn->clicked().preventPropagation();
-  m_addAnotherIcn = new WText( adsubdiv );
-
-  m_addAnotherIcn->setStyleClass( "AddIcon" );
-  m_addAnotherIcn->setHiddenKeepsGeometry(true);
-  m_addAnotherIcn->addStyleClass( "energyAddDelete" );
+  layout->addWidget( m_removeIcn, 0, 5, Wt::AlignMiddle );
+  
+  m_addAnotherIcn = new WContainerWidget(); //needed or else button wont show up
+  m_addAnotherIcn->setStyleClass( "AddSearchEnergy Wt-icon" );
   m_addAnotherIcn->clicked().connect( this, &SearchEnergy::emitAddAnother );
-  m_addAnotherIcn->clicked().preventPropagation();
-  layout->addWidget(adsubdiv);
+  layout->addWidget( m_addAnotherIcn, 0, 6, Wt::AlignMiddle );
+  
+  layout->setColumnStretch( 1, 1 );
+  layout->setColumnStretch( 3, 1 );
 }//SearchEnergy constructor
 
 
 void IsotopeSearchByEnergy::SearchEnergy::enableAddAnother()
 {
-  m_addAnotherIcn->show();
+  m_addAnotherIcn->enable();
 }//void enableAddAnother()
 
 
 void IsotopeSearchByEnergy::SearchEnergy::disableAddAnother()
 {
-  m_addAnotherIcn->hide();
+  m_addAnotherIcn->disable();
 }//void disableAddAnother()
 
 
 void IsotopeSearchByEnergy::SearchEnergy::enableRemove()
 {
-  m_removeIcn->show();
+  m_removeIcn->enable();
 }
 
 
 void IsotopeSearchByEnergy::SearchEnergy::disableRemove()
 {
-  m_removeIcn->hide();
+  m_removeIcn->disable();
 }
 
 
@@ -1229,7 +286,10 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_nextSearchEnergy( 0 ),
   m_minBr( 0.0 ), m_minHl( 6000.0 * PhysicalUnits::second )
 {
+  wApp->useStyleSheet( "InterSpec_resources/IsotopeSearchByEnergy.css" );
+  
   addStyleClass( "IsotopeSearchByEnergy" );
+  
   WContainerWidget *searchEnergiesDiv = new WContainerWidget();
     
   //This is needed to prevent it from collapsing!
@@ -1264,10 +324,6 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   buttonDiv->setLayout(buttonDivLayout);
   buttonDivLayout->setContentsMargins(3, 3, 3, 3);
 //  buttonDiv->addStyleClass( "SearchEnergiesButtonDiv" );
-  
-//  WContainerWidget *srcDiv = new WContainerWidget( );
-
-//  srcDiv->addStyleClass( "IsoSearchSrcDiv" );
   
   //XXX - the srcDiv and the searchEnergiesDiv can overlap in the case the
   //      window/tool-bar height isnt very much.  Since this will only happen
@@ -1316,7 +372,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   WLabel *label = new WLabel( "Min. BR" );
 //  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTipInstantly , HelpSystem::Top);
    buttonDivLayout->addWidget(label,1,0);
-//  label->addStyleClass( "MinBrLabel" );
+
   m_minBranchRatio = new WDoubleSpinBox();
   string tip = "Minimum branching ratio.";
   HelpSystem::attachToolTipOn( m_minBranchRatio, tip, showToolTipInstantly , HelpSystem::Top);
@@ -1352,7 +408,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minHalfLife->setValidator(validator);
     
     
-    buttonDivLayout->addWidget(m_minHalfLife,1,3);
+  buttonDivLayout->addWidget(m_minHalfLife,1,3);
   m_minHalfLife->setWidth( 55 );
   //XXX should set WRegExpValidator for m_minHalfLife here.
 
@@ -1379,7 +435,8 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_results->setModel( m_model );
   m_results->addStyleClass( "IsotopeSearchResultTable" );
   m_results->setAlternatingRowColors( true );
-  m_results->sortByColumn( IsotopeSearchByEnergyModel::Distance, Wt::AscendingOrder );
+  //m_results->sortByColumn( IsotopeSearchByEnergyModel::Distance, Wt::AscendingOrder );
+  m_results->sortByColumn( IsotopeSearchByEnergyModel::Column::ProfileDistance, Wt::DescendingOrder );
   
   
   for( IsotopeSearchByEnergyModel::Column col = IsotopeSearchByEnergyModel::Column(0);
@@ -1400,13 +457,16 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
       break;
         
       case IsotopeSearchByEnergyModel::Distance:
-        m_results->setColumnWidth( col, WLength(6,WLength::FontEm) );
-//        m_results->setItemDelegateForColumn(col, new CustomAbstractItemDelegate());
+        m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
       break;
         
       case IsotopeSearchByEnergyModel::BranchRatio:
-        m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+        m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
       break;
+        
+      case IsotopeSearchByEnergyModel::ProfileDistance:
+        m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+        break;
         
       case IsotopeSearchByEnergyModel::SpecificIsotope:
         m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
@@ -1448,35 +508,6 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   minBrOrHlChanged();
 }//IsotopeSearchByEnergy constuctor
 
-WWidget* CustomAbstractItemDelegate::update	(	Wt::WWidget * 	widget,
-                                                                         const Wt::WModelIndex & 	index,
-                                                 Wt::WFlags< Wt::ViewItemRenderFlag > 	flags
-                                                                         )
-{
-  WText *item;
-  
-  if (widget) {
-    item = dynamic_cast<WText *>(widget);
-  } else {
-    item = new WText();
-    widget = item;
-  }
-  
-  string text = asString(index.data(DisplayRole)).toUTF8();
-  if (text.length()!=0)
-  {
-    const double val = atof( text.c_str() );
-    if (val<0.4)
-      item->setAttributeValue("style", "background-color:#C4DF9B"); //green
-    else  if (val<1.0)
-      item->setAttributeValue("style", "background-color:#FDC68A"); //orange
-    else
-      item->setAttributeValue("style", "background-color:#F49AC2"); //red
-  }
-  item->setText(text);
-  
-  return widget;
-} //WWidget* Wt::CustomAbstractItemDelegate::update	(	WWidget * 	widget,const WModelIndex & 	index,WFlags< ViewItemRenderFlag > 	flags)
 
 void IsotopeSearchByEnergy::searchEnergyRecievedFocus( SearchEnergy *enrgy )
 {
@@ -1700,10 +731,10 @@ void IsotopeSearchByEnergy::minBrOrHlChanged()
 
 void IsotopeSearchByEnergy::resultSelectionChanged()
 {
-  if( !m_viewer || !m_viewer->isotopeLinesWidget() )
+  if( !m_viewer || !m_viewer->referenceLinesWidget() )
     return;
  
-  PhotopeakLineDisplay *display = m_viewer->isotopeLinesWidget();
+  ReferencePhotopeakDisplay *display = m_viewer->referenceLinesWidget();
   
   WModelIndexSet selected = m_results->selectedIndexes();
   if( selected.empty() )
@@ -1974,13 +1005,32 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   
   
   WApplication *app = wApp;
-  std::shared_ptr<IsotopeSearchByEnergyModel::SearchWorkingSpace>
-          workingspace( new IsotopeSearchByEnergyModel::SearchWorkingSpace() );
+  auto workingspace = make_shared<IsotopeSearchByEnergyModel::SearchWorkingSpace>();
   workingspace->energies = energies;
   workingspace->windows = windows;
   workingspace->sortColumn = m_model->sortColumn();
   workingspace->sortOrder = m_model->sortOrder();
   
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpectrumType::kForeground );
+  if( foreground )
+  {
+    const std::set<int> &samplenums = foreground->displayedSampleNumbers();
+    auto userpeaks = foreground->peaks( samplenums );
+    auto autopeaks = foreground->automatedSearchPeaks( samplenums );
+    
+    workingspace->foreground = foreground;
+    workingspace->foreground_samplenums = samplenums;
+    
+    if( userpeaks )
+      workingspace->user_peaks.insert( end(workingspace->user_peaks),
+                                       begin(*userpeaks), end(*userpeaks) );
+    if( autopeaks )
+      workingspace->automated_search_peaks.insert(
+                        end(workingspace->automated_search_peaks),
+                        begin(*autopeaks), end(*autopeaks) );
+    workingspace->detector_response_function = foreground->detector();
+    workingspace->displayed_measurement = m_viewer->displayedHistogram( SpectrumType::kForeground );
+  }//if( foreground )
   
   ++m_currentSearch;
   workingspace->searchdoneCallback = app->bind(

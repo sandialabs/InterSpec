@@ -6,7 +6,7 @@
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
- alternative emails of interspec@sandia.gov, or srb@sandia.gov.
+ alternative emails of interspec@sandia.gov.
  
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -44,6 +44,35 @@ namespace Wt
   class WContainerWidget;
 }//namespace Wt
 
+
+enum AuxWindowProperties
+{
+  /** Window can be modal on phones and tablets. Without this all AuxWindows
+      are full screen on phones.
+   */
+  PhoneModal = 0x01,
+  
+  /** Window can be modal on tablets.  Without this all AuxWindows
+   are full screen on tablets (unless PhoneModal is set).*/
+  TabletModal = 0x02,
+  
+  /** When set, this window will be modal on PCs (e.g., no interaction with
+   anything behind this window).
+   */
+  IsAlwaysModal = 0x04,
+  
+  /** Styles the window to be an InterSpec help window. */
+  IsHelpWIndow = 0x08,
+  
+  /** Dont allow the window to be collapsed.  TODO: invert this to default to not allowing collapse. */
+  DisableCollapse = 0x10,
+  
+  SetCloseable = 0x20,
+  
+  /** Enables resize. */
+  EnableResize = 0x40
+};//enum AuxWindowProperties
+
 /** AuxWindow is a resizeable, moveable, collapsable window, which is a
     specialization of a WDialog window to suit our purposes.
     AuxWindow was created due to the observation that using jQuery to make
@@ -54,15 +83,16 @@ namespace Wt
     optimizations normally employed by Wt - javascript is used to show/hide the
     window.
  
- Note: For an AuxWindow to play nicely with the docking mechanism, the following
-       must be satisfied:
+ Note: For an AuxWindow to play nicely with the tool tabs hiding/showing
+       mechanism, the following must be satisfied:
  -# place all contents in the layout returned by stretcher() OR place contents
     into the widget returned by WDialog::contents(), but not both.
  -# if you call both() then DO NOT call WDialog::contents() (or at a minimum
     add or remove widgets from it).
  -# if you add widgets to WDialog::contents(), then calling stretcher() will
     remove the widgets added through WDialog::contents()
- -# See dockWindows in InterSpec.cpp for the syntax of putting it in the dock
+ -# See setToolTabsVisible in InterSpec.cpp for the syntax of putting it in the
+    tools tabs
      -- Collapsing/expanding memory requires hooking it up properly.
  
  At this point the AuxWindow class is growing long in the tooth, and should
@@ -91,7 +121,7 @@ public:
   //By default AuxWindow will be shown, centered in the window, at 50% of
   //  browser size.  Wt will assume that the window is visible as well, for
   //  the puprposes of lazy loading of content.
-  AuxWindow( const Wt::WString& windowTitle , bool modal=false, bool helpWindow=false);
+  AuxWindow( const Wt::WString &windowTitle, Wt::WFlags<AuxWindowProperties> properties = Wt::WFlags<AuxWindowProperties>(0) );
   virtual ~AuxWindow();
 
   
@@ -141,11 +171,14 @@ public:
   //  if it is called after the window has been made visible.
   void centerWindow();
   
+  void centerWindowHeavyHanded();
+  
   //resizeToFitOnScreen(): executes some javascript that checks if width/height
   //  are larger than the screen, and if so, resizes the window, and sets the
   //  contents() overflow to auto.
   void resizeToFitOnScreen();
 
+  
   //repositionWindow(...): repositions window to coordinates <x,y> of the
   //  browsers viewport
   void repositionWindow( int x, int y );
