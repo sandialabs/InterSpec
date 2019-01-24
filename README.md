@@ -9,30 +9,40 @@ InterSpec can also be built as a stand-alone (e.g., not Internet connection nece
 
 ## Some Screen Shots
 ![W187 peak fit example](/docs/imgs/overview_W187.png?raw=true "Easy to use user interface.")
+
 Interactions with the chart are fast and natural.  Peak fiting is as easy as double clikcing where 
 you want a peak fit, or there is an automated option that is especially useful for HPGe detectors.
 
+
 ![Ho166m and Eu152 peak fit example](/docs/imgs/ho166m_eu152_ex.png?raw=true "Advanced peak fitting")
+
 Easily fit overlapping peaks.  Photopeak sources are assigned to peaks for easy activity/shielding fitting or energy calibration.
 
+
 ![Nuclear decay chart](/docs/imgs/nuc_decay_chart_example.png?raw=true "Nuclear decay calculations")
+
 Includes an extensive database of nuclides.  Nuclide aging is performed on-the-fly throughout the app to allow adjusting or fitting for ages.
+
 
 ![Nuclear decay chain](/docs/imgs/nuc_decay_chain_example.png?raw=true "Decay chain visualization/reference")
 Lots of useful tools.
 
-![Nuclide identification by energy](/docs/imgs/nuclide_id_help.png.png?raw=true "Nuclide energy searchidentification")
+
+![Nuclide identification by energy](/docs/imgs/nuclide_id_help.png?raw=true "Nuclide identification by energy")
+
 Searching for nuclides by energy, by default, takes into acount peak amplitudes and other peaks in the spectrum (even if you havent fit for them)
 to order results in an intelligent way.
 
+
 ![Dose calculation example](/docs/imgs/dose_calculator.png?raw=true "Dose calculator")
+
 You can go from source activity to dose, or from measured dose to source activity, or shielding amount.  
 
+
 ![Nuclear decay chart](/docs/imgs/th232_activity_fit.png?raw=true "Advanced fitting for nuclide activity, age, and shielding")
+
 Can fit for multiple nuclides at once, taking into account interferences, ages, etc.  A large shielding database is included, or generic shielding can be used.
 
-
-And many more tools!
 
 
 ## Getting Started

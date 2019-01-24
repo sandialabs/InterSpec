@@ -1,0 +1,4 @@
+[submodule "external_libs/SandiaDecay"]
+	path = external_libs/SandiaDecay
+	url = https://github.com/sandialabs/SandiaDecay.git
+	branch = master
