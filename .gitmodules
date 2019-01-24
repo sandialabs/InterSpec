@@ -2,3 +2,6 @@
 	path = external_libs/SandiaDecay
 	url = https://github.com/sandialabs/SandiaDecay.git
 	branch = master
+[submodule "external_libs/SpecUtils"]
+	path = external_libs/SpecUtils
+	url = https://github.com/sandialabs/SpecUtils.git
