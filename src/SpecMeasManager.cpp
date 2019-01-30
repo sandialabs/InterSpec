@@ -1874,27 +1874,30 @@ void SpecMeasManager::displayFile( int row,
       const bool passthrough = header->passthrough();
       if( !passthrough && (nsamples > 1) )
       {
-        bool hasIntrinsic = false, hasBackground = false, hasForeground = false;
+        int numbackground = 0, numForeground = 0, numIntrinsic = 0;
         int childrow = -1, backrow = -1, intrinsicrow = -1;
         for( size_t i = 0; i < header->m_samples.size(); ++i )
         {
-          switch( header->m_samples[i].spectra_type )
+          const SpectraHeader &spechead = header->m_samples[i];
+          switch( spechead.spectra_type )
           {
             case Measurement::IntrinsicActivity:
               //lets try to not show intrinsic activity by default
-              hasIntrinsic = true;
+              ++numIntrinsic;
               intrinsicrow = static_cast<int>( i );
             break;
               
             case Measurement::Foreground:
-              hasForeground = true;
+              ++numForeground;
               childrow = static_cast<int>( i );
-              i = header->m_samples.size();  //first foreground, terminate loop
+              //i = header->m_samples.size();  //first foreground, terminate loop
             break;
               
             case Measurement::Background:
-              hasBackground = true;
+              ++numbackground;
               backrow = static_cast<int>( i );
+              if( numForeground )
+                i = header->m_samples.size();  //We have foreground and background, terminate loop
             break;
             
             case Measurement::Calibration:
@@ -1908,10 +1911,10 @@ void SpecMeasManager::displayFile( int row,
           }//switch( header->m_samples[i].spectra_type )
         }//for( size_t i = 0; i < header->m_samples.size(); ++i )
         
-        if( (!hasIntrinsic && !hasForeground && !hasBackground) || (childrow < 0) )
+        if( (!numIntrinsic && !numForeground && !numbackground) || (childrow < 0) )
           childrow = 0;
         
-        if( hasIntrinsic )
+        if( numIntrinsic )
         {
           warningmsg << "The uploaded file contained an intrinsic activity"
                         " spectrum, but currently showing the other spectrum"
@@ -1921,7 +1924,7 @@ void SpecMeasManager::displayFile( int row,
           warningmsg << "The uploaded file contained " << nsamples
                      << " samples<br>";
           
-          if( hasForeground )
+          if( numForeground )
             warningmsg << "The first foreground sample is being shown.<br>";
           else if( childrow == 0 )
             warningmsg << "The first sample is being shown.<br>";
@@ -1935,6 +1938,16 @@ void SpecMeasManager::displayFile( int row,
             warningmsg << "Use the <b>File Manager</b> to select others.";
         }//if( decide how to customize the info message ) / else
 
+        //If we have an unambiguos background, and arent currently displaying a background
+        //  from this detector, lets load the unambiguos background
+        if( type==kForeground
+           && numbackground == 1 && childrow != backrow
+           && (childrow>=0) && (childrow<static_cast<int>(header->m_samples.size()))
+           && (backrow>=0) && (backrow<static_cast<int>(header->m_samples.size())) //These two conditions should always be true if first condition is true
+           && ( !old_back || !measement_ptr
+                || (measement_ptr->num_gamma_channels()!=old_back->num_gamma_channels()) || (measement_ptr->instrument_id()!=old_back->instrument_id()) )
+           )
+          background_sample_numbers.insert( header->m_samples[backrow].sample_number );
         
         selected.clear();
         selected.insert( index.child(childrow,0) );
@@ -1967,7 +1980,7 @@ void SpecMeasManager::displayFile( int row,
 
           if( back || calib )
             selected.erase( index.child(sample,0) );
-        } // for( int sample = 0; sample < nsamples; ++sample )
+        }//for( int sample = 0; sample < nsamples; ++sample )
 
         if( ncalibration > 0 )
         {
@@ -1983,7 +1996,7 @@ void SpecMeasManager::displayFile( int row,
           warningmsg  << " will not be displayed.<br>"
                       << "Use the <b>File Manager</b> to change this.";
         } // if( ncalibration > 0 )
-      } // if( passthrough )
+      }// if( passthrough )
 
       break;
     } // case kForeground: case kSecondForeground:

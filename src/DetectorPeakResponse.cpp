@@ -625,12 +625,12 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   
   if( detWidth<=0.0 || heightToWidth<=0.0 )
     throw runtime_error( "Couldnt find detector dimensions in the Detector.dat file" );
-
+  
   const float surfaceArea = detWidth * detWidth * heightToWidth;
-  const float detectorDiameter = (4.0f/3.14159265359f) * sqrt(surfaceArea)
-                                  * static_cast<float>(PhysicalUnits::cm);
-  fromEnergyEfficiencyCsv( csvFile, detectorDiameter,
-                           static_cast<float>(PhysicalUnits::keV) );
+  //const float diam = (4.0f/3.14159265359f) * sqrt(surfaceArea) * static_cast<float>(PhysicalUnits::cm);
+  const float diam = 2.0f*sqrt(surfaceArea/3.14159265359f) * static_cast<float>(PhysicalUnits::cm);
+  
+  fromEnergyEfficiencyCsv( csvFile, diam, static_cast<float>(PhysicalUnits::keV) );
   
   m_efficiencySource = kGadrasEfficiencyDefintion;
   

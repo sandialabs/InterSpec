@@ -249,7 +249,7 @@ IF( BUILD_AS_OSX_APP )
   set( USE_OSX_NATIVE_MENU ON )
   set( USE_SPECRUM_FILE_QUERY_WIDGET ON )
   set( USE_TERMINAL_WIDGET OFF )
-  set( SpecUtils_ENABLE_D3_CHART OFF )
+  set( SpecUtils_ENABLE_D3_CHART ON )
   set( USE_SPECTRUM_CHART_D3 OFF )
 ENDIF( BUILD_AS_OSX_APP )
 
@@ -589,9 +589,9 @@ if( USE_SIMPLE_NUCLIDE_ASSIST )
 endif( USE_SIMPLE_NUCLIDE_ASSIST )
 
 
-IF( USE_SPECRUM_FILE_QUERY_WIDGET AND ("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID) )
+IF( BUILD_FOR_WEB_DEPLOYMENT )
   message ( FATAL_ERROR "The spectrum file query widget can not be enabled for web deployed linux version." )
-ENDIF( USE_SPECRUM_FILE_QUERY_WIDGET AND ("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID) )
+ENDIF( BUILD_FOR_WEB_DEPLOYMENT )
 
 
 IF( USE_SPECRUM_FILE_QUERY_WIDGET )
@@ -868,29 +868,32 @@ if( TRY_TO_STATIC_LINK )
     if(USE_OSX_NATIVE_MENU)
       list( APPEND LIBRARIES_TO_LINK_TO /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit )
     endif(USE_OSX_NATIVE_MENU)
-
-#If Wt is compilled with SSL support you might also have to link to:
-#     /opt/local/lib/libssl.dylib
-#     /opt/local/lib/libcrypto.dylib
-
-    if( USE_MYSQL_DB )
-      list( APPEND LIBRARIES_TO_LINK_TO /opt/local/lib/libmysqlclient.a )
-    endif( USE_MYSQL_DB )
   endif(APPLE AND NOT IOS)
 
-  if("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
-    list( APPEND LIBRARIES_TO_LINK_TO
-         /usr/lib64/libmysqlclient.so
-         /usr/lib64/libfcgi.a
-         /usr/lib64/libfcgi++.a
-         /usr/lib64/libz.so
-         /usr/lib64/libssl.so
-         /usr/lib64/libcrypto.so
-         /usr/lib64/libdl.so
-         -lrt -ldl
-    )
+  list( APPEND LIBRARIES_TO_LINK_TO ${CMAKE_DL_LIBS} )
 
-    #as of GCC 4.5 we can statically link to the c++ runtime, so lets do it
+  if( USE_MYSQL_DB )
+    include( cmake/WtFindMysql.txt )
+    list( APPEND LIBRARIES_TO_LINK_TO ${MYSQL_LIBRARIES} )
+  endif( USE_MYSQL_DB )
+
+  if( Wt_FCGI_LIBRARY )
+    include( cmake/WtFindFcgi.txt )
+    list( APPEND LIBRARIES_TO_LINK_TO ${FCGI_LIBRARIES} )
+  endif( Wt_FCGI_LIBRARY )
+
+  include( cmake/WtFindSsl.txt )
+  if( SSL_FOUND )
+    list( APPEND LIBRARIES_TO_LINK_TO ${SSL_LIBRARIES} )
+  endif( SSL_FOUND )
+
+  #link to zlib since Wt might
+  if("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT SUPPORT_ZIPPED_SPECTRUM_FILES)
+    list( APPEND LIBRARIES_TO_LINK_TO ${ZLIB_LIBRARIES} )
+  endif("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT SUPPORT_ZIPPED_SPECTRUM_FILES)
+
+  if("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
+    list( APPEND LIBRARIES_TO_LINK_TO -lrt )
     set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++" )
   endif("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
 endif( TRY_TO_STATIC_LINK )

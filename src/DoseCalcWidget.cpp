@@ -975,13 +975,9 @@ void DoseCalcWidget::init()
         for( const auto &u : PhysicalUnits::sm_doseRateUnitHtmlNameValues )
         {
           string val = u.first;
-#if( IOS )
-          UtilityFunctions::ireplace_all( val, "&mu;", "u" );
-#else
           const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
-          UtilityFunctions::ireplace_all( val, "&mu;", (char *)utf8mu /*"\u03BC"*/ );
-#endif
-          m_doseEnterUnits->addItem( val );
+          UtilityFunctions::ireplace_all( val, "&mu;", (const char *)utf8mu /*"\u03BC"*/ );
+          m_doseEnterUnits->addItem( WString::fromUTF8(val) );
         }
         
         m_doseEnterUnits->activated().connect( this, &DoseCalcWidget::updateResult );
@@ -1027,13 +1023,9 @@ void DoseCalcWidget::init()
         for( const auto &u : PhysicalUnits::sm_activityUnitHtmlNameValues )
         {
           string val = u.first;
-#if( IOS )
-          UtilityFunctions::ireplace_all( val, "&mu;", "u" );
-#else
           const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
-          UtilityFunctions::ireplace_all( val, "&mu;", (char *)utf8mu /*"\u03BC"*/ );
-#endif
-          m_activityEnterUnits->addItem( val );
+          UtilityFunctions::ireplace_all( val, "&mu;", (const char *)utf8mu /*"\u03BC"*/ );
+          m_activityEnterUnits->addItem( WString::fromUTF8(val) );
         }
         
         m_activityEnterUnits->setCurrentIndex( 6 ); //uci
@@ -1044,13 +1036,11 @@ void DoseCalcWidget::init()
         m_activityAnswer = new WText( m_answerWidgets[i] );
         m_activityAnswer->setInline( false );
 
-		string actstr = "200 uCi";
-#if( !IOS )
-		const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
-		UtilityFunctions::ireplace_all(actstr, "&mu;", (char *)utf8mu /*"\u03BC"*/);
-#endif
+		    string actstr = "200 &mu;Ci";
+		    const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
+		    UtilityFunctions::ireplace_all(actstr, "&mu;", (char *)utf8mu /*"\u03BC"*/);
 
-        m_activityAnswer->setText( actstr.c_str() );
+        m_activityAnswer->setText( WString::fromUTF8(actstr) );
         m_activityAnswer->addStyleClass( "DoseAnswerTxt" );
         
         m_activityEnterUnits->activated().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );

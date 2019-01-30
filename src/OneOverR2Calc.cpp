@@ -132,7 +132,7 @@ OneOverR2Calc::OneOverR2Calc()
   label = new WText( "Power Law");
   powerLayout->addWidget( label, 0, 0 );
   powerLayout->addWidget( m_powerLawSelect, 0, 1 );
-  m_powerLawSelect->addItem( "Low Scatter or using Peak Area, 1/r\u00B2" );
+  m_powerLawSelect->addItem( WString::fromUTF8("Low Scatter or using Peak Area, 1/r\u00B2") );
   m_powerLawSelect->addItem( "Mid Scatter Dose Rate, 1/r^1.85" );
   m_powerLawSelect->addItem( "High Scatter Dose Rate, 1/r^1.65" );
   m_powerLawSelect->setCurrentIndex( 0 );

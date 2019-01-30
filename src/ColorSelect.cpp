@@ -88,7 +88,7 @@ namespace
     return buffer;
   }
   
-#if( defined(_MSC_VER) || ANDROID )
+#if( defined(_MSC_VER) || ANDROID || __linux__ )
   bool ishexnumber(const char c)
   {
 	  static const char hexchars[] = { '0','1','2','3','4','5','6','7','8','9','a','A','b','B','c','C','d','D','e','E','f','F' };

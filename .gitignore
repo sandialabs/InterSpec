@@ -1,2 +1,4 @@
 data/sandia.decay.xml
 target/ios/InterSpec/InterSpec.xcodeproj
+target/electron/app/node_modules
+*OUO*

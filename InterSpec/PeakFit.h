@@ -330,7 +330,7 @@ namespace ExperimentalAutomatedPeakSearch
 
 
 #define WRITE_CANDIDATE_PEAK_INFO_TO_FILE 0
-#define WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL 1
+#define WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL 0
 
 namespace ExperimentalPeakSearch
 {

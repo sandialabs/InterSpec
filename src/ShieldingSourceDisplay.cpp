@@ -812,7 +812,7 @@ double ShieldingSelect::atomicNumber() const
   const string text = m_atomicNumberEdit->text().toUTF8();
   
   if( text.empty() )
-    return 26.0;
+    return 13.0;
   
   if( !(stringstream(text) >> answer) )
     throw std::runtime_error( "Error converting '" + text + "' to a atomic number");
@@ -2659,7 +2659,8 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
         master = nuc;
       
       for( IsoFitStruct &ifs : m_nuclides )
-        setSharredAgeNuclide( ifs.nuclide, master );
+        if( ifs.nuclide->atomicNumber == nuc->atomicNumber )
+          setSharredAgeNuclide( ifs.nuclide, master );
     }//for( const SandiaDecay::Nuclide *nuc : addednucs )
   }//if( m_sameAgeForIsotopes && (preisotopes!=postisotopes) )
   
@@ -5374,8 +5375,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     }//if( m_fitArealDensityCB )
     
     name = "AtomicNumber";
-    //    value = doc->allocate_string( m_atomicNumberEdit->valueText().toUTF8().c_str() ); //never read
-    node = doc->allocate_node( rapidxml::node_element, name );
+    value = doc->allocate_string( m_atomicNumberEdit->valueText().toUTF8().c_str() );
+    node = doc->allocate_node( rapidxml::node_element, name, value );
     generic_node->append_node( node );
     if( m_forFitting )
     {
@@ -5480,8 +5481,15 @@ void ShieldingSelect::deSerialize(
       throw runtime_error( "Generic material must have ArealDensity and"
                            " AtomicNumber nodes" );
     
-    m_arealDensityEdit->setValueText( ad_node->value() );
-    m_atomicNumberEdit->setValueText( an_node->value() );
+    
+    
+    if( !m_isGenericMaterial )
+      handleToggleGeneric();
+    
+    cout << "AD=" << ad_node->value() << endl;
+    cout << "AN=" << an_node->value() << endl;
+    m_arealDensityEdit->setValueText( WString::fromUTF8(ad_node->value()) );
+    m_atomicNumberEdit->setValueText( WString::fromUTF8(an_node->value()) );
     
     if( m_forFitting && m_fitArealDensityCB && m_fitAtomicNumberCB )
     {
@@ -5507,6 +5515,9 @@ void ShieldingSelect::deSerialize(
     if( !name_node || !name_node->value()
         || !thick_node || !thick_node->value() )
       throw runtime_error( "Material node didnt have name or thickness child" );
+    
+    if( m_isGenericMaterial )
+      handleToggleGeneric();
     
     m_materialEdit->setValueText( WString::fromUTF8(name_node->value()) );
     m_thicknessEdit->setValueText( WString::fromUTF8(thick_node->value()) );

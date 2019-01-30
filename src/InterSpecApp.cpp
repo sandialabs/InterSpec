@@ -88,7 +88,7 @@ namespace
   //note: could potentially use Wt::WServer::instance()->sessions() to retrieve
   //      sessionIds.
 #endif
-  
+
   
 #if( ALLOW_URL_TO_FILESYSTEM_MAP && (INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS) )
   std::string uri_decode( const std::string &sSrc )
@@ -727,7 +727,6 @@ std::string InterSpecApp::tempDirectory()
   
   return UtilityFunctions::temp_dir();
 }//void tempDirectory()
-
 
 
 std::string InterSpecApp::userNameFromOS()

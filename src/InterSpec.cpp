@@ -473,7 +473,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   // Try to grab the username.
   string username = static_cast<InterSpecApp*>(wApp)->getUserNameFromEnvironment();
 
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !BUILD_AS_LOCAL_SERVER )
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
   if( username == "" )
     username = InterSpecApp::userNameFromOS();
 #endif
@@ -6834,13 +6834,25 @@ void InterSpec::showShieldingSourceFitWindow()
 //    double footerheight = m_shieldingSourceFitWindow->footer()->height().value();
 //    m_shieldingSourceFitWindow->setMinimumSize( WLength(200), WLength(windowHeight) );
     
-    m_shieldingSourceFitWindow->resizeWindow( windowWidth, windowHeight );
-
-    //Give the m_shieldingSourceFitWindow a hint about what size it will be
-    //  rendered at so it can decide what widgets should be rendered - acounting
-    //  for borders and stuff (roughly)
-    m_shieldingSourceFit->initialSizeHint( windowWidth - 12, windowHeight - 28 - 50 );
     
+    if( (windowHeight > 100) && (windowWidth > 100) )
+    {
+      if( !isPhone() )
+        m_shieldingSourceFitWindow->resizeWindow( windowWidth, windowHeight );
+
+      //Give the m_shieldingSourceFitWindow a hint about what size it will be
+      //  rendered at so it can decide what widgets should be rendered - acounting
+      //  for borders and stuff (roughly)
+      m_shieldingSourceFit->initialSizeHint( windowWidth - 12, windowHeight - 28 - 50 );
+    }else if( !isPhone() )
+    {
+      //When loading an application state that is showing this window, we may
+      //  not know the window size (e.g., windowWidth==windowHeight==0), so
+      //  instead skip giving the initial size hint, and instead size things
+      //  client side (maybe we should just do this always?)
+      m_shieldingSourceFitWindow->resizeScaledWindow( 0.95, 0.95 );
+    }
+      
 //    m_shieldingSourceFitWindow->contents()->  setHeight(WLength(windowHeight));
 
     m_shieldingSourceFitWindow->centerWindow();
@@ -8254,7 +8266,8 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
     
 #if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
 #if( !defined(WIN32) )
-#warning "Need to do something to get rid of previous detectors from Electrons menu"
+    //20190125: hmm, looks like detectors menu is behaving okay - I guess I fixed it somewhere else?
+    //#warning "Need to do something to get rid of previous detectors from Electrons menu"
 #endif
 //  https://github.com/electron/electron/issues/527
     m_detectorToShowMenu->clearElectronMenu();

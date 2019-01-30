@@ -1,0 +1,86 @@
+# This file defines:
+# - MYSQL_LIBRARIES
+# - MYSQL_INCLUDE_DIRS
+# - MYSQL_FOUND
+# - MYSQL_DEFINITIONS
+# Taking into account:
+# - MYSQL_PREFIX
+
+FIND_PATH(MYSQL_INCLUDE mysql.h
+    ${MYSQL_PREFIX}/mariadbclient/include
+    ${MYSQL_PREFIX}/include/mariadb
+    ${MYSQL_PREFIX}/include
+    ${MYSQL_PREFIX}/include/mysql
+    /usr/include
+    /usr/local/include
+    /usr/include/mysql
+    /opt/local/include/mysql5/mysql
+    /usr/local/include/mysql
+)
+
+SET(MYSQL_LIBRARY mariadb libmariadb mariadbclient mysqlclient libmysql CACHE STRING "Library that provides MySQL/MariaDB API (set to mysqlclient for mysql on unix; libmysql on windows)")
+FOREACH(l ${MYSQL_LIBRARY})
+  LIST(APPEND MYSQL_DEBUG_LIBRARY "${l}d")
+ENDFOREACH()
+
+FIND_LIBRARY(MYSQL_LIB
+    NAMES
+	${MYSQL_LIBRARY}
+    PATHS
+    ${MYSQL_PREFIX}/lib
+    ${MYSQL_PREFIX}/lib/opt
+    ${MYSQL_PREFIX}/lib/mysql
+    ${MYSQL_PREFIX}/lib64/mysql
+    /usr/lib
+    /usr/local/lib
+    /opt/local/lib
+    ${MYSQL_PREFIX}/lib/mariadb
+)
+
+FIND_LIBRARY(MYSQL_DEBUG_LIB
+    NAMES
+	${MYSQL_DEBUG_LIBRARY}
+    PATHS
+    ${MYSQL_PREFIX}/lib
+    ${MYSQL_PREFIX}/lib/opt
+    /usr/lib
+    /usr/local/lib
+    /opt/local/lib
+)
+
+SET(MYSQL_FOUND OFF)
+
+IF(WIN32)
+  IF (MYSQL_INCLUDE AND MYSQL_LIB)
+    SET(MYSQL_FOUND ON)
+    SET(MYSQL_INCLUDE_DIRS ${MYSQL_INCLUDE})
+    IF (MYSQL_DEBUG_LIB)
+      SET(MYSQL_LIBRARIES optimized ${MYSQL_LIB} debug ${MYSQL_DEBUG_LIB})
+    ELSE (MYSQL_DEBUG_LIB)
+      SET(MYSQL_LIBRARIES ${MYSQL_LIB})
+    ENDIF (MYSQL_DEBUG_LIB)
+  ENDIF (MYSQL_INCLUDE AND MYSQL_LIB)
+ELSE(WIN32)
+  IF (MYSQL_INCLUDE AND MYSQL_LIB)
+    SET(MYSQL_FOUND ON)
+    SET(MYSQL_LIBRARIES ${MYSQL_LIB})
+    SET(MYSQL_INCLUDE_DIRS ${MYSQL_INCLUDE})
+  ELSE (MYSQL_INCLUDE AND MYSQL_LIB)
+    SET(MYSQL_FOUND OFF)
+    SET(MYSQL_LIBRARIES)
+  ENDIF (MYSQL_INCLUDE AND MYSQL_LIB)
+ENDIF(WIN32)
+
+
+INCLUDE (CheckSymbolExists)
+# mariadb 1.0.0 does not have mysql_library_init
+IF(MYSQL_FOUND)
+  SET(CMAKE_REQUIRED_FLAGS "")
+  SET(CMAKE_REQUIRED_DEFINITIONS "")
+  SET(CMAKE_REQUIRED_LIBRARIES "")
+  SET(CMAKE_REQUIRED_INCLUDES ${MYSQL_INCLUDE})
+  CHECK_SYMBOL_EXISTS(mysql_library_init mysql.h MYSQL_HAVE_LIBRARY_INIT)
+  IF(NOT MYSQL_HAVE_LIBRARY_INIT)
+    SET(MYSQL_DEFINITIONS "-DMYSQL_NO_LIBRARY_INIT")
+  ENDIF(NOT MYSQL_HAVE_LIBRARY_INIT)
+ENDIF(MYSQL_FOUND)
