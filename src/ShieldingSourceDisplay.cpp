@@ -7359,6 +7359,9 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
           ROOT::Minuit2::MnMinimize anfitter( *chi2Fcn, anInputParam, strategy );
           
           ROOT::Minuit2::FunctionMinimum anminimum = anfitter( maxFcnCall, tolerance );
+          if( !anminimum.IsValid() )
+            anminimum = anfitter( maxFcnCall, tolerance );
+          
           const double this_chi2 = chi2Fcn->DoEval( anfitter.Params() );
           if( this_chi2 < best_chi2 )
           {
@@ -7387,7 +7390,14 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
       {
         cout << "Old minumum was better: post_best_chi2=" << post_best_chi2 << ", vs old orig_chi2=" << orig_chi2 << endl;
       }
-    }//if( !fit_generic_an.empty() )
+    }else if( !minimum.IsValid() )
+    {
+      //Try two more times to get a valid fit... a stupid hack
+      for( int i = 0; !minimum.IsValid() && i < 2; ++i )
+        minimum = fitter( maxFcnCall, tolerance );
+    }//if( !fit_generic_an.empty() ) / else
+    
+    
     
     const ROOT::Minuit2::MnUserParameters &fitParams = minimum.UserParameters();
     

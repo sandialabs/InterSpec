@@ -1,6 +1,6 @@
 {
   "name": "InterSpec",
-  "version": "1.0.1",
+  "version": "1.0.1a",
   "description": "Application for interactive gamma spectroscopy",
   "homepage": "https://hekili.ca.sandia.gov/interspec/",
   "main": "main.js",
@@ -8,7 +8,7 @@
     "prestart": "node copy_resources.js",
     "start": "electron .",
     "package-mac": "electron-packager . --overwrite --platform=darwin --arch=x64 --icon=../macOS/InterSpec.icns --prune=true --out=release-builds --binaries=InterSpec.exe --extendInfo=../macOS/Info.plist --entitlements=../macOS/entitlements.mac.plist --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
-    "package-win": "electron-packager . InterSpec --overwrite --asar=0 --platform=win32 --arch=x64 --icon=../../windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
+    "package-win": "electron-packager . InterSpec --overwrite --asar=0 --platform=win32 --arch=x64 --icon=../windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
     "package-linux": "electron-packager . InterSpec --overwrite --asar=0 --platform=linux --arch=x64 --icon=InterSpec_desktop_icon_256x256.png --prune=true --out=release-builds --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md"
   },
   "directories": {

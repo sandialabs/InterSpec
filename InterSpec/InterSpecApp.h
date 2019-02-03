@@ -89,6 +89,7 @@ public:
               int priority = 1 );
 
   InterSpec *viewer();
+
   
   //userNameFromOS(): Caution, will return 'apache' if being served, from
   //  an apache server, 'mobile' if on a iOS device, or blank upon failure.

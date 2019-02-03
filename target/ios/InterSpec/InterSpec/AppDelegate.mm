@@ -275,14 +275,19 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
 -(void)sendSpectrumFileToOtherApp: (NSString *) filename;
 {
   NSLog(@"Begining sendSpectrumFileToOtherApp" );
+
+  
   _documentController = [UIDocumentInteractionController interactionControllerWithURL:[NSURL fileURLWithPath:filename]];
   _documentController.delegate = _viewController;
 //  [_documentController retain];
   _documentController.UTI = @"sandia.InterSpec.spectrum";
-  CGRect navRect = _viewController.view.frame;  //CGRectZero
-  [_documentController presentOptionsMenuFromRect:navRect inView:_viewController.view animated:YES];
-  NSLog(@"Finishing sendSpectrumFileToOtherApp" );
   
+  //CGRect navRect = _viewController.view.frame;  //CGRectZero
+  //On the iPad the dialog doesnt show up, so lets just hack it for the moment.
+  CGRect navRect = CGRectMake(0.0, 0.0, 0.0, 0.0);
+
+  [_documentController presentOptionsMenuFromRect:navRect inView:_viewController.view animated:YES];
+ 
   //I get the message: Attempting to load the view of a view controller while it
   //                   is deallocating is not allowed and may result in
   //                   undefined behavior

@@ -4719,11 +4719,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
   } //!isSupportFile
   
-#if( IOS )
-  PopupDivMenuItem *exportFile = m_fileMenuPopup->addMenuItem( "Export Spectrum" );
-  exportFile->triggered().connect( this, &InterSpec::exportSpecFile );
-#endif
-  
+
 #if( USE_SAVEAS_FROM_MENU )
   if( isSupportFile() )
   {
@@ -4865,8 +4861,10 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     
     m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),true); //set as hidden first, will be visible when spectrum is added
   } //!isMobile
+#elif( IOS )
+  PopupDivMenuItem *exportFile = m_fileMenuPopup->addMenuItem( "Export Spectrum..." );
+  exportFile->triggered().connect( this, &InterSpec::exportSpecFile );
 #else
-
 if (isSupportFile())
 {
   item = m_fileMenuPopup->addMenuItem( "Export" );
@@ -8000,6 +7998,7 @@ void InterSpec::finishLoadUserFilesystemOpenedFile(
   
 }//finishLoadUserFilesystemOpenedFile(...)
 
+
 void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
                                              std::shared_ptr<SpectraFileHeader> header )
 {
@@ -8199,6 +8198,8 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
             if( !couldBeBackground )
             {
               finishLoadUserFilesystemOpenedFile( meas, header, type );
+              
+              
               cout << "Will load file '" << filepath
                    << "' requested to be loaded at "
                    << fileinfo.m_utcRequestTime.toString(DATE_TIME_FORMAT_STR)

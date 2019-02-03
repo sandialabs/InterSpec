@@ -33,8 +33,8 @@
  <pref name="SpecFileQueryCacheParse" type="Boolean">true</pref>
  <pref name="SpecFileQueryMaxSize" type="Integer">32</pref>
  <pref name="SpecFileQueryUnique" type="Boolean">true</pref>
- <pref name="GadrasDRFPath" type="String">data/OUO_GadrasDetectors;data/GenericGadrasDetectors;C:\GADRAS\Detector</pref>
- <pref name="RelativeEffDRFPaths" type="String">data/OUO_lanl_simplemass_detectors.tsv</pref>
+ <pref name="GadrasDRFPath" type="String">data/GenericGadrasDetectors;C:\GADRAS\Detector</pref>
+ <pref name="RelativeEffDRFPaths" type="String">data/rel_eff_drfs.tsv</pref>
  <pref name="ColorThemeIndex" type="Integer">-1</pref>
  <pref name="FileQueryEventQmlyFieldsFile" type="String">data/file_query_event_xml_fields.json</pref>
 </preferences>
