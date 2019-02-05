@@ -662,7 +662,12 @@ void ShieldingSelect::init()
   m_thicknessEdit->blurred().connect( this, &ShieldingSelect::removeUncertFromThickness );
   
   if( m_forFitting )
-    m_materialEdit->setFocus();
+  {
+    InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+    const bool isMobile = (app && app->isMobile());
+    if( !isMobile )
+      m_materialEdit->setFocus();
+  }
 }//void ShieldingSelect::init()
 
 
@@ -3505,32 +3510,12 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
   
   if( nrow > 0 && !IsNan(sqrt(chi2)) )
   {
-    WString text;
-//The chi2/dof turns out fairly bad, so well not display it!
-//    const int dof = nrow - m_nFitForPar;
-//    if( (m_nFitForPar>0) && (dof>0) )
-//    {
-//      chi2 /= dof;
-//#ifndef WT_NO_STD_WSTRING
-//      text = L"\x03C7\x00B2/dof={1}";  //χ²
-//#else
-//      text = "&chi;<sup>2</sup>/dof={1}";  //χ²
-//#endif
-//    char buffer[32];
-//  snprintf( buffer, sizeof(buffer), "%.2g", chi2 );
-//  text.arg( buffer );
-//  }else
-//  {
-#ifndef WT_NO_STD_WSTRING
-    text = L"\x003C" L"dev\x003E={1}\x03C3";  //L"\x003Cdev\x003E={1}\x03C3"
-#else
-    text = "&lt;dev&gt;={1}&sigma;";  //χ²
-#endif
-    char buffer[32];
-    snprintf( buffer, sizeof(buffer), "%.2g", (sqrt(chi2)/nrow) );
-    text.arg( buffer );
-  
-//  }
+    char buffer[64];
+    snprintf( buffer, sizeof(buffer), "&lt;dev&gt;=%.2g&sigma;", (sqrt(chi2)/nrow) ); //χ²
+    //snprintf( buffer, sizeof(buffer), "\x3c\xCF\x87\x3E=%.2g\xCF\x83", (sqrt(chi2)/nrow) ); //χ²
+    
+    
+    WString text = WString::fromUTF8(buffer);
 
 #ifndef WT_NO_STD_WSTRING
     const size_t msglen = text.value().size();

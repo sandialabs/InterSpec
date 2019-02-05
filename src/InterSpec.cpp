@@ -4315,7 +4315,8 @@ void InterSpec::stateSaveTag()
   WGridLayout *layout = window->stretcher();
     
   WLineEdit *edit = new WLineEdit();
-  edit->setFocus(true);
+  if( !isMobile() )
+    edit->setFocus(true);
   WText *label = new WText( "Name" );
   layout->addWidget( label, 2, 0 );
   layout->addWidget( edit,  2, 1 );
@@ -7037,7 +7038,7 @@ void InterSpec::handleToolTabChanged( int tab )
   const int calibtab = m_toolsTabs->indexOf(m_calibrateContainer);
   const int searchTab = m_toolsTabs->indexOf(m_isotopeSearchContainer);
   
-  if( m_referencePhotopeakLines && (tab == refTab) )
+  if( m_referencePhotopeakLines && (tab == refTab) && !isMobile() )
     m_referencePhotopeakLines->setFocusToIsotopeEdit();
     
   if( m_isotopeSearch && (m_currentToolsTab==searchTab) )
