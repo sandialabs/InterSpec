@@ -1180,8 +1180,6 @@ foreach(_file ${OTHER_FILES})
   configure_file( ${PROJECT_SOURCE_DIR}/${_file} ${PROJECT_BINARY_DIR}/${_file} COPYONLY )
 endforeach()
 
-configure_file( ${PROJECT_SOURCE_DIR}//external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml ${PROJECT_BINARY_DIR}/data/sandia.decay.xml COPYONLY )
-
 
 IF( IOS )
   MESSAGE("CMAKE_CURRENT_SOURCE_DIR is ${CMAKE_CURRENT_SOURCE_DIR}")
@@ -1232,6 +1230,8 @@ IF( INCLUDE_ANALYSIS_TEST_SUITE )
                         ${PROJECT_BINARY_DIR}/analysis_tests )
     ENDIF(WIN32)
 ENDIF()
+
+configure_file( ${PROJECT_SOURCE_DIR}//external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml ${PROJECT_BINARY_DIR}/data/sandia.decay.xml COPYONLY )
 
 IF( BUILD_AS_UNIT_TEST_SUITE )
     IF(WIN32)
