@@ -34,7 +34,7 @@ SET( MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if a
 
 option( BUILD_AS_OSX_APP "Build a OSX native app" OFF )
 option( BUILD_AS_ELECTRON_APP "Configures the executable to be ran as a Electron app" OFF )
-option( BUILD_FOR_WEB_DEPLOYMENT "Selects options appropriate for deploying on hekili as user srb; if deploying for the web in the future" OFF )
+option( BUILD_FOR_WEB_DEPLOYMENT "Selects options appropriate for the web in the future" OFF )
 option( BUILD_AS_LOCAL_SERVER "Build for use as a server for local computer (e.g. run from the command line and connect to with a browser on LOCALHOST)" ON )
 option( BUILD_AS_UNIT_TEST_SUITE "Builds unit tests as well the analysis tests (aka end-to-end tests)" OFF )
 option( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE "Compiles so executable only does offline testing of the user test states in the database (e.g. end-to-end testing)" OFF )
@@ -282,22 +282,18 @@ IF( BUILD_FOR_WEB_DEPLOYMENT )
     set( CMAKE_BUILD_TYPE:STRING "Release" )
     set( ALLOW_URL_TO_FILESYSTEM_MAP OFF )
     set( USE_DB_TO_STORE_SPECTRA ON )
-    set( USE_SQLITE3_DB OFF )
-    set( USE_MYSQL_DB ON )
+#    set( USE_SQLITE3_DB ON )
+#    set( USE_MYSQL_DB OFF )
     set( DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml" )
     set( USE_GOOGLE_MAP OFF )
     set( INCLUDE_ANALYSIS_TEST_SUITE OFF )
-    set( Boost_LIBRARY_DIR "/home/srb/users/wcjohns/wtchroot/lib" )
-    set( Boost_INCLUDE_DIR "/home/srb/users/wcjohns/wtchroot/include" )
     set( PERFORM_DEVELOPER_CHECKS OFF )
     set( SUPPORT_ZIPPED_SPECTRUM_FILES ON )
     set( USE_SPECRUM_FILE_QUERY_WIDGET OFF )
-    set( USE_TERMINAL_WIDGET ON )
+    set( USE_TERMINAL_WIDGET OFF )
     set( SpecUtils_ENABLE_D3_CHART ON )
-    set( USE_SPECTRUM_CHART_D3 ON )
-    if( ENABLE_RESOURCE_UPDATES )
-      MESSAGE( FATAL_ERROR "ENABLE_RESOURCE_UPDATES must not be enabled if you are building for web deployment" )
-    endif( ENABLE_RESOURCE_UPDATES )
+    set( USE_SPECTRUM_CHART_D3 OFF )
+    set( ENABLE_RESOURCE_UPDATES OFF )
 ENDIF( BUILD_FOR_WEB_DEPLOYMENT )
 
 
@@ -581,6 +577,10 @@ endif( SUPPORT_ZIPPED_SPECTRUM_FILES )
 if( ENABLE_RESOURCE_UPDATES )
     set( sources ${sources} src/ResourceUpdate.cpp src/ResourceUpdateTool.cpp )
     set( headers ${headers} InterSpec/ResourceUpdate.h InterSpec/ResourceUpdateTool.h )
+
+  if( BUILD_FOR_WEB_DEPLOYMENT )
+    MESSAGE( FATAL_ERROR "ENABLE_RESOURCE_UPDATES must not be enabled if you are building for web deployment" )
+  endif( BUILD_FOR_WEB_DEPLOYMENT )
 endif( ENABLE_RESOURCE_UPDATES )
 
 if( USE_SIMPLE_NUCLIDE_ASSIST )
@@ -589,12 +589,11 @@ if( USE_SIMPLE_NUCLIDE_ASSIST )
 endif( USE_SIMPLE_NUCLIDE_ASSIST )
 
 
-IF( BUILD_FOR_WEB_DEPLOYMENT )
-  message ( FATAL_ERROR "The spectrum file query widget can not be enabled for web deployed linux version." )
-ENDIF( BUILD_FOR_WEB_DEPLOYMENT )
-
-
 IF( USE_SPECRUM_FILE_QUERY_WIDGET )
+  IF( BUILD_FOR_WEB_DEPLOYMENT )
+    message ( FATAL_ERROR "The spectrum file query widget can not be enabled for web deployements." )
+  ENDIF( BUILD_FOR_WEB_DEPLOYMENT )
+
   IF( BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP OR BUILD_AS_LOCAL_SERVER OR BUILD_AS_UNIT_TEST_SUITE )
     set( sources ${sources} src/SpecFileQuery.cpp src/SpecFileQueryWidget.cpp src/SpecFileQueryDbCache.cpp )
     set( headers ${headers} InterSpec/SpecFileQuery.h InterSpec/SpecFileQueryWidget.h InterSpec/SpecFileQueryDbCache.h )
@@ -1112,7 +1111,7 @@ ENDIF( BUILD_AS_UNIT_TEST_SUITE )
 
 
 set( OTHER_SUPPORT_FILES
-     ${CMAKE_CURRENT_SOURCE_DIR}/README.txt
+     ${CMAKE_CURRENT_SOURCE_DIR}/README.md
      ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
@@ -1175,7 +1174,7 @@ IF( BUILD_AS_ELECTRON_APP )
 ENDIF( BUILD_AS_ELECTRON_APP )
 
 #Copy files to the install directory
-set( OTHER_FILES README.txt runLocalOn8080.sh )
+set( OTHER_FILES runLocalOn8080.sh )
 
 foreach(_file ${OTHER_FILES})
   configure_file( ${PROJECT_SOURCE_DIR}/${_file} ${PROJECT_BINARY_DIR}/${_file} COPYONLY )

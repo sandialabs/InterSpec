@@ -1,0 +1,11 @@
+--- CssParser.C.original	2019-02-06 17:01:53.000000000 -0800
++++ CssParser.C	2019-01-24 23:16:46.000000000 -0800
+@@ -372,7 +372,7 @@
+   on_error<qi::fail>
+   (
+     rulesetArray_,
+-    error_report(qi::_2, qi::_3, qi::_4, "styleSheetText()", fs_error_tag())
++    error_report(qi::_2, qi::_3, qi::_4, (char *)"styleSheetText()", fs_error_tag())
+   );
+ 
+ }

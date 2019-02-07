@@ -1,0 +1,10 @@
+--- RequestParser.C	2019-02-06 16:57:42.000000000 -0800
++++ RequestParser.C_orig	2019-02-06 16:55:37.000000000 -0800
+@@ -937,6 +937,7 @@
+     if (!h->value.next) {
+       char *endptr;
+       const char *cl = h->value.data;
++      if( !cl ) return Reply::bad_request; //wcjohns edit
+       req.contentLength = strtoll(cl, &endptr, 10);
+       if (*endptr != 0)
+ 	return Reply::bad_request;
