@@ -3511,17 +3511,12 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
   if( nrow > 0 && !IsNan(sqrt(chi2)) )
   {
     char buffer[64];
-    snprintf( buffer, sizeof(buffer), "&lt;dev&gt;=%.2g&sigma;", (sqrt(chi2)/nrow) ); //χ²
-    //snprintf( buffer, sizeof(buffer), "\x3c\xCF\x87\x3E=%.2g\xCF\x83", (sqrt(chi2)/nrow) ); //χ²
-    
-    
+    //snprintf( buffer, sizeof(buffer), "&lt;dev&gt;=%.2g&sigma;", (sqrt(chi2)/nrow) );  //displays as literal tesxt, and not the symbols on android
+    //snprintf( buffer, sizeof(buffer), "\x3c\xCF\x87\x3E=%.2g\xCF\x83", (sqrt(chi2)/nrow) ); //<χ>=13.2σ
+    snprintf( buffer, sizeof(buffer), "\x3c\x64\x65\x76\x3E=%.2g\xCF\x83", (sqrt(chi2)/nrow) ); //<dev>=13.2σ
+  
     WString text = WString::fromUTF8(buffer);
-
-#ifndef WT_NO_STD_WSTRING
-    const size_t msglen = text.value().size();
-#else
-    const size_t msglen = text.toUTF8().size();
-#endif
+    const size_t msglen = UtilityFunctions::utf8_str_len( buffer, strlen(buffer) );
   
     const double rightPadding = static_cast<double>( plotAreaPadding(Right) );
     const double charwidth = 16;

@@ -386,7 +386,7 @@ protected:
   
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   ReferenceLineInfo m_referencePhotoPeakLines;
-  std::vector<const ReferenceLineInfo> m_persistedPhotoPeakLines;
+  std::vector<ReferenceLineInfo> m_persistedPhotoPeakLines;
 #endif
   bool m_showRefLineInfoForMouseOver;
   

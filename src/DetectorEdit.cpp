@@ -659,12 +659,13 @@ GadrasDetSelect::GadrasDetSelect( InterSpec *interspec, DetectorEdit *detedit, W
   " absolute efficiencies, and FWHM resolutions are"
   " used.";
   
+  WLabel *label = nullptr;
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   //Need to point the GUI to the appropriate directory, and implement to an `ls` to find detctors with both Detcotr.dat and Efficy.csv.
   const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
   
   WContainerWidget *pathsDiv = new WContainerWidget( this );
-  WLabel *label = new WLabel( "Paths to recursively look for DRFs.", pathsDiv );
+  label = new WLabel( "Paths to recursively look for DRFs.", pathsDiv );
   label->setInline( false );
   label = new WLabel( "Seperate multiple paths with semicolons:", pathsDiv );
   label->setInline( false );

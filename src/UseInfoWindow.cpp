@@ -79,28 +79,6 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
 {
   rejectWhenEscapePressed();
   
-  double width = 0.0, height = 0.0;
-  
-  if( viewer )
-  {
-    width = 0.5*viewer->renderedWidth();
-    height = 0.8*viewer->renderedHeight();
-    if( height < 512.0 )
-      height = 1.0*std::min( viewer->renderedHeight(), 512 );
-    height = std::min( height, 1024.0 );  //1024 not actually tested, could maybye bee 800
-  }//if( viewer )
-
-  if( width < 715.0 || height < 512.0 )
-  {
-    setMinimumSize(715,512);
-    resize( WLength(50, WLength::FontEm), WLength(80,WLength::Percentage));
-  }else
-  {
-    resize( WLength(width), WLength(height) );
-  }
-  
-  centerWindow();
-  
   WStackedWidget *stack = new WStackedWidget();
   stack->addStyleClass( "UseInfoStack" );
   stack->setOverflow( WContainerWidget::OverflowAuto );
@@ -667,6 +645,20 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   
   WPushButton *ok = addCloseButtonToFooter( "Close" );
   ok->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+  
+
+  if( viewer
+      && (viewer->renderedWidth() > 715.0)
+      && (viewer->renderedHeight() > 512.0)
+      && !viewer->isMobile() )
+  {
+    resizeScaledWindow( 0.5, 0.8 );
+  }else
+  {
+    resizeScaledWindow( 1.0, 1.0 );
+  }//if( viewer )
+  
+  centerWindowHeavyHanded();
 }//UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,InterSpec* viewer ):
 
 

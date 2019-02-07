@@ -23,7 +23,7 @@ android {
         applicationId "gov.sandia.interspec"
         minSdkVersion 19
         targetSdkVersion 27
-        versionCode 7
+        versionCode 8
         versionName "1.0.1a"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
         externalNativeBuild {

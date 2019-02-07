@@ -411,8 +411,7 @@ void D3SpectrumDisplayDiv::persistCurrentReferncePhotoPeakLines()
   if( m_referencePhotoPeakLines.energies.empty() )
     return;
   
-  vector<const ReferenceLineInfo>::iterator pos;
-  pos = std::find( m_persistedPhotoPeakLines.begin(),
+  auto pos = std::find( m_persistedPhotoPeakLines.begin(),
                   m_persistedPhotoPeakLines.end(),
                   m_referencePhotoPeakLines );
   
@@ -441,7 +440,7 @@ void D3SpectrumDisplayDiv::updateReferncePhotoPeakLines()
   if (addComma)
     showingNuclide.toJson(result);
   
-  for (const ReferenceLineInfo ref : m_persistedPhotoPeakLines) {
+  for (const ReferenceLineInfo &ref : m_persistedPhotoPeakLines) {
     if (showingNuclide.energies.empty() || ref.parentLabel() != showingNuclide.parentLabel()) {
       if ( addComma )
         result += ",";

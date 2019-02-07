@@ -263,11 +263,16 @@ namespace HelpSystem
     
     WPushButton *ok = addCloseButtonToFooter();
     ok->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+    
+    if( !preselect.empty() || (app && app->isMobile()) )  //Keep keyboard from popping up
+      ok->setFocus();
+    
     finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
     rejectWhenEscapePressed();
     setMinimumSize(500,400);
     resizeScaledWindow(0.85, 0.85);
     centerWindow();
+    //centerWindowHeavyHanded();  //why not?
     setResizable( true );
     show();
     resizeToFitOnScreen();
