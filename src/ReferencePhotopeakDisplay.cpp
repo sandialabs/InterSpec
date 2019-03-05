@@ -412,9 +412,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_peaksGetAssignedRefLineColor( false ),
     m_lineColors{ ns_def_line_colors }
 {
-  
-  
-  const char *tooltip = NULL;
+  const char *tooltip = nullptr;
   
   m_currentlyShowingNuclide.reset();
   
@@ -434,8 +432,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   {
     addStyleClass( "ReferencePhotopeakDisplayMobile" );
     tabWidget = new WTabWidget( this );
-    setMargin( -14, Wt::Top );
-    tabWidget->setStyleClass( "IsotopePeaksMobileTabs" );
     WContainerWidget *nulcideDiv = new WContainerWidget();
     nulcideDiv->setLayout( m_layout );
     tabWidget->addTab( nulcideDiv, "Nuclide", WTabWidget::PreLoading );
@@ -996,7 +992,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
         reactions = rctnDb->gammas( isotxt, rctnGammas );
         nuc = NULL;
         el = NULL;
-        //XXX - should use regex bellow to properly escape Fe(n,n')
+        //XXX - should use regex below to properly escape Fe(n,n')
         UtilityFunctions::ireplace_all( reactions, "'", "" );
 //        UtilityFunctions::replace_all( reactions, "'", "\'" );
       }

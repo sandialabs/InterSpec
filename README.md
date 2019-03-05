@@ -51,7 +51,7 @@ If you just care about using a pre-compiled executable, head over to
 [releases](https://github.com/sandialabs/interspec/releases) and download the latest.
 A brief getting started guide can be found in [tutorials/brief_analysis_intro](https://github.com/sandialabs/InterSpec/tree/master/tutorials/brief_analysis_intro/); a more comprehsive tutorial is planned for the future.
 
-If you would like to build the app, some instructions are bellow.
+If you would like to build the app, some instructions are below.
 
 If you are developer of radiation analysis software, there is, in particular some code that 
 may be useful for you:

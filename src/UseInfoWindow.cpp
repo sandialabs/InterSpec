@@ -124,7 +124,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   WContainerWidget *importContainer = nullptr;
   WGridLayout *importLayout = nullptr;
   
-  //The bellow tabs must use WTabWidget::PreLoading, or else we will get a
+  //The below tabs must use WTabWidget::PreLoading, or else we will get a
   //  JavaScript exception when showLoadingIndicator() is called (in the JS).
   //  This is super confusing, and I dont understand it.  This manifests
   //  particularly on Android native version of app, but I think it might
@@ -491,7 +491,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
 
   
   // ---- Cheat sheet PDF
-  if( m_viewer->isSupportFile() )
+  if( m_viewer->isSupportFile() && !m_viewer->isMobile() )
   {
     WContainerWidget* controlContainer = new WContainerWidget();
     controlContainer->setOverflow(WContainerWidget::OverflowHidden);
@@ -521,26 +521,27 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   } //Cheat sheet PDF
   
   string msg;
-  msg += "<h1 align=\"center\">Welcome To <em>InterSpec</em>"
-                           "</h1><div align=\"left\">";
 
   if( m_viewer->isMobile() )
   {
+    msg += "<div align=\"left\">";
 #if( USE_DB_TO_STORE_SPECTRA )
     if( m_snapshotModel && m_snapshotModel->size()==0 )
       msg += "<p>You can start by opening an example spectra below, or you can use the <em>Import Spectra</em> tab to load external files.<br />"
       "</p>";
     else
-      msg += "<p>Your previously saved spectra are shown below.  You can use the other tabs to open example spectra, or to import external spectral files.<br />You can also open spectra attached to email from your mail app.</p>";
+      msg += "<p>Your previously saved spectra are shown below.  You can use the other tabs to open example spectra, or to import external spectral files.<br />You can also open spectra attached to email, or cloud storage apps.</p>";
 #else
     msg += "<p>You can select an example spectrum file below, or use the import tab to open one from your iCloud, Dropbox, Google Drive, etc.<br />You can also open spectrum files attached to eamils.</p>";
 #endif
    
   }else
   {
+    msg += "<h1 align=\"center\">Welcome To <em>InterSpec</em>"
+           "</h1><div align=\"left\">";
     msg += "<p>You can use the references on the left to become "
                         "more familiar with <em>InterSpec</em>, or you can "
-                        "pick up from a previous session or spectrum bellow.";
+                        "pick up from a previous session or spectrum below.";
     msg += " Alternatively, you can also drag and drop your "
     "own spectrum file onto <em>InterSpec</em>.</p>";
   }
@@ -550,11 +551,9 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   WText *text = new WText( msg );
   
   const char *mobilePostcriptText = "<p>If you are new to <em>InterSpec</em>, tap on the "
-  "<img src=\"InterSpec_resources/images/phone_tips.png\" width=16 height=16 alt=\"information icon\" /> "
-  "icon to the left for the basics of interacting with the chart and fitting for peaks; the "
-  "<img src=\"InterSpec_resources/images/pdf_page.png\" width=16 height=16 alt=\"PDF icon\" /> "
-  "section contains a PDF reference sheet that may be useful.  Tap the "
-  "<img src=\"InterSpec_resources/images/qmark.png\" width=16 height=16 alt=\"help icon\" /> "
+  "<img src=\"InterSpec_resources/images/phone_tips.png\" width=12 height=12 alt=\"information icon\" /> "
+  "icon to the left for the basics of interacting with the chart and fitting for peaks."
+  "Tap the <img src=\"InterSpec_resources/images/help_mobile.svg\" width=12 height=12 alt=\"help icon\" /> "
   "icon in the upper-right corner for detailed information about <em>InterSpec</em>s tools and features."
   "</p>";
   
@@ -646,19 +645,26 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   WPushButton *ok = addCloseButtonToFooter( "Close" );
   ok->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
   
-
   if( viewer
-      && (viewer->renderedWidth() > 715.0)
-      && (viewer->renderedHeight() > 512.0)
+     //&& (viewer->renderedWidth() > 715.0) //At initial app load we actually dont yet know client browser size; should maybe do check clientside.
+      //&& (viewer->renderedHeight() > 512.0)
       && !viewer->isMobile() )
   {
     resizeScaledWindow( 0.5, 0.8 );
+    centerWindowHeavyHanded();
   }else
   {
-    resizeScaledWindow( 1.0, 1.0 );
+    //On android, sometimes on startup the screen is a little offset and not
+    //  totally sized right, so we'll be a bit heavy handed here.
+    const string resizejs = "var res = function(){ " + resizeScaledWindowJs(1.0,1.0) + " };";
+    const string reposjs = "var repo = function(){ " + repositionWindowJs(0,0) + " };";
+    
+    const string js = resizejs + reposjs + "var fcn = function(){ try{ res(); repo(); }catch(e){} };"
+    "fcn(); setTimeout(fcn,500); setTimeout(fcn,1500); setTimeout(fcn,5000);";
+    
+    doJavaScript( js );
   }//if( viewer )
   
-  centerWindowHeavyHanded();
 }//UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,InterSpec* viewer ):
 
 

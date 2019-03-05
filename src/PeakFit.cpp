@@ -1859,7 +1859,7 @@ void find_roi_for_2nd_deriv_candidate(
   
   //   const int order = highres ? 3 : 2;
   
-  //The bellow should be same as in secondDerivativePeakCanidatesWithROI(...)
+  //The below should be same as in secondDerivativePeakCanidatesWithROI(...)
   const size_t midbin = data->num_gamma_channels() / 2;// (start_channel + end_channel) / 2;
   const float midenergy = data->gamma_channel_center( midbin );
   const float midbinwidth = data->gamma_channel_width( midbin );
@@ -1929,8 +1929,8 @@ void find_roi_for_2nd_deriv_candidate(
     throw runtime_error( "find_roi_for_2nd_deriv_candidate: invalid mean" );
   
   //In order to allow small flucations right around transitions from above or
-  //  bellow y=zero to the other side, we will enforce 'nFluxuateBin' having
-  //  to be either above or bellow zero before we've declare a transisition has
+  //  below y=zero to the other side, we will enforce 'nFluxuateBin' having
+  //  to be either above or below zero before we've declare a transisition has
   //  happened.
   //This number should probably be kept the same as in
   //  secondDerivativePeakCanidatesWithROI(...)
@@ -1957,10 +1957,10 @@ void find_roi_for_2nd_deriv_candidate(
   size_t secondnegzero = firstnegzero;
   while( secondnegzero > nFluxuateBin )
   {
-    bool bellow = true;
+    bool below = true;
     for( size_t i = 0; i < nFluxuateBin; ++i )
-      bellow &= (second_deriv[secondnegzero-i] < 0.0f);
-    if( bellow )
+      below &= (second_deriv[secondnegzero-i] < 0.0f);
+    if( below )
       break;
     --secondnegzero;
   }
@@ -1979,10 +1979,10 @@ void find_roi_for_2nd_deriv_candidate(
   size_t secondposzero = firstposzero;
   while( secondposzero < (nchannel-nFluxuateBin) )
   {
-    bool bellow = true;
+    bool below = true;
     for( size_t i = 0; i < nFluxuateBin; ++i )
-      bellow &= (second_deriv[secondposzero+i] < 0.0f);
-    if( bellow )
+      below &= (second_deriv[secondposzero+i] < 0.0f);
+    if( below )
       break;
     ++secondposzero;
   }
@@ -2007,14 +2007,14 @@ void find_roi_for_2nd_deriv_candidate(
       const float m = (y1 - y0) / (highchannel - lowchannel);
       const float b = y1 - m*highchannel;
       
-      bool bellowdata = true;
-      for( size_t i = secondnegzero; bellowdata && i <= secondposzero; ++i )
+      bool belowdata = true;
+      for( size_t i = secondnegzero; belowdata && i <= secondposzero; ++i )
       {
         if( i != lowchannel && i != highchannel )
-          bellowdata &= (smoothed[i] >= (i*m+b));
+          belowdata &= (smoothed[i] >= (i*m+b));
       }
       
-      if( bellowdata )
+      if( belowdata )
       {
         const float lintersection = data->gamma_channel_center( lowchannel );
         const float rintersection = data->gamma_channel_center( highchannel );
@@ -2050,7 +2050,7 @@ void find_roi_for_2nd_deriv_candidate(
         
         //If sum of area between continuum and data is negative (line above
         //  data), keep trying to extend the ROI
-        //If line is bellow data on average, keep going until sum of area
+        //If line is below data on average, keep going until sum of area
         //  between continuum and data, and the sum of data diaviate by
         float diffsum = 0.0f, datasum = 0.0f;
         for( size_t i = lowchannel; i >= minroibin; --i )
@@ -2093,8 +2093,8 @@ void find_roi_for_2nd_deriv_candidate(
         //  spectrum is ramping up, as efficinecy increases with energy), we
         //  need to make sure we dont try to set the ROI to lower than the part
         //  of the spectrum that meaningfully carries peak information.  We'll
-        //  do this by seeing if the ROI lower goes bellow the spectroscopic
-        //  extent (we'l aslo only check this when lowerEnergy is bellow 100
+        //  do this by seeing if the ROI lower goes below the spectroscopic
+        //  extent (we'l aslo only check this when lowerEnergy is below 100
         //  keV).
         if( lowerEnengy < 100.0 )
         {
@@ -2110,7 +2110,7 @@ void find_roi_for_2nd_deriv_candidate(
         }//if( lowerEnengy < 100.0 )
         
         return;
-      }//if( bellowdata )
+      }//if( belowdata )
     }//for( size_t highchannel = secondposzero; highchannel > firstposzero; --highchannel )
   }//for( size_t lowchannel = secondnegzero; lowchannel < firstnegzero; ++lowchannel)
   
@@ -2325,7 +2325,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
     
     if( highres )
     {
-      //numbers bellow arent based on much, as ov yet
+      //numbers below arent based on much, as ov yet
       const double highres_nsigma_apart_combine = 8.5;
       const double highres_nsigma_dont_combine = 10.0;
       const double highres_overlap_frac_to_combine = 0.35;
@@ -2560,7 +2560,7 @@ void fit_peak_for_user_click( PeakShrdVec &results,
   const bool highres = (nchannels > 3000);
   const size_t nFitPeaks = coFitPeaks.size() + 1;
   
-  //The bellow should probably go off the number of bins in the ROI
+  //The below should probably go off the number of bins in the ROI
   PeakContinuum::OffsetType offsetType;
   if( highres )
     offsetType = (nFitPeaks < 3) ? PeakContinuum::Linear : PeakContinuum::Quardratic;
@@ -3337,7 +3337,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     }
 
     //This next test is intended to elimnate peaks where the continuum is
-    //  much bellow where it visually should be, but because of the gausians
+    //  much below where it visually should be, but because of the gausians
     //  amplitude the overall chi2 is decent in the fit with the peak, but
     //  really this is due to having the incorrect continuum.
     const double lowres_badcont_upper_chi2diff = 0.75;
@@ -3400,17 +3400,17 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     const double roi_lower = peak->lowerX();
     const double roi_upper = peak->upperX();
     
-    const double bellow_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower );
+    const double below_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower );
     const double above_roi_cont_area = peak->continuum()->offset_integral( roi_upper, roi_upper + sigma );
-    const double bellow_roi_data_area = dataH->gamma_integral( roi_lower - sigma, roi_lower );
+    const double below_roi_data_area = dataH->gamma_integral( roi_lower - sigma, roi_lower );
     const double above_roi_data_area = dataH->gamma_integral( roi_upper, roi_upper + sigma );
     
-    const double bellow_extra_nsigma = (bellow_roi_data_area - bellow_roi_cont_area) / sqrt(std::max(1.0,bellow_roi_data_area));
+    const double below_extra_nsigma = (below_roi_data_area - below_roi_cont_area) / sqrt(std::max(1.0,below_roi_data_area));
     const double above_extra_nsigma = (above_roi_data_area - above_roi_cont_area) / sqrt(std::max(1.0,above_roi_data_area));
     
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     DebugLog(cout) << "above_extra_nsigma=" << above_extra_nsigma
-         << ", bellow_extra_nsigma=" << bellow_extra_nsigma
+         << ", below_extra_nsigma=" << below_extra_nsigma
          << ", contdiff/peakdiff=" << (contdiff/peakdiff) << "\n";
 #endif
     
@@ -3420,7 +3420,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     //  peak (this later condition catches compton bumbs)
     if( fabs(contdiff/peakdiff) > max_relative_continuum_slope
         && (avrguncert > minuncert_apply_cont_slope_test
-            || (above_extra_nsigma<-3.0 && bellow_extra_nsigma<-3.0)) )
+            || (above_extra_nsigma<-3.0 && below_extra_nsigma<-3.0)) )
     {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
       DebugLog(cerr) << "check_lowres_single_peak_fit: Failed to fit a peak because the"
@@ -3602,7 +3602,7 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
     const double highedgeval = continuum->offset_integral( energies[endchannel],
                                                     energies[endchannel+1] );
   
-    //THe bellow 0.5 and 10.0 are based off nearly nothing
+    //THe below 0.5 and 10.0 are based off nearly nothing
     if( minval < 0.5*lowedgeval && minval < 0.5*highedgeval
         && (lowedgeval > 10.0 && highedgeval>10.0) )
     {
@@ -4063,7 +4063,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
       if( debug_this_peak )
         DebugLog(cerr) << "check_highres_single_peak_fit: Failed to fit a because the"
-        << " mean is bellow spectroscopic extent for this spectrum"
+        << " mean is below spectroscopic extent for this spectrum"
         << " (mean=" << mean << ", channel(mean-sigma)=" << minus1Sigmachannel
         << ", lowerspecchannel=" << lower_channel <<  ")" << "\n";
 #endif
@@ -4189,7 +4189,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
            << "\n";
 #endif
     
-    //None of the bellow cuts have been validated for highres spectra
+    //None of the below cuts have been validated for highres spectra
     const double min_core_chi2dof_over_line_improvment  = automated ? 0.8 : 0.5;
     const double min_core_line_chi2dof_lower_ratio = automated ? 0.5 : 0.25;
     const double bad_continuum_fit_multiple = automated ? 0.333 : 0.0;
@@ -4248,7 +4248,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     }
     
     //This next test is intended to elimnate peaks where the continuum is
-    //  much bellow where it visually should be, but because of the gausians
+    //  much below where it visually should be, but because of the gausians
     //  amplitude the overall chi2 is decent in the fit with the peak, but
     //  really this is due to having the incorrect continuum.
     if( linechi2dof < badcont_line_chi2dof
@@ -4655,7 +4655,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       bool rangeOk = ((upperEnergy-lowerEnengy)>range_nsigma_thresh*sigma);
       
       //A problem here is if we are near another definite peak, then the ROI
-      //  for this one may be small, causing the check for this bellow to fail.
+      //  for this one may be small, causing the check for this below to fail.
       if( !rangeOk && highres && candidates.size() )
       {
         const PeakDef &last = *candidates.back();
@@ -4772,14 +4772,14 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       minbin = secondzero = firstzero = 0;
     }else
     {
-      bool bellowzero = true, goingnegative = true, abovezero = true;
+      bool belowzero = true, goingnegative = true, abovezero = true;
       for( size_t i = 0; i < nFluxuate; ++i )
       {
         if( (channel+i+1) < nchannel )
           goingnegative &= (second_deriv[channel+i+1] < 0.0f);
         if( channel >= i )
         {
-          bellowzero &= (second_deriv[channel-i] <= 0.0f);
+          belowzero &= (second_deriv[channel-i] <= 0.0f);
           abovezero &= (second_deriv[channel-i] > 0.0f);
         }
       }//for( size_t i = 0; i < nFluxuate; ++i )
@@ -6727,12 +6727,12 @@ bool chi2_significance_test( PeakDef peak,
             while( lastchannel < nbin && channel_counts[lastchannel] < 20.0 )
               ++lastchannel;
             
-            //Now find where the spectrum drops bellow X counts per channel for a number
+            //Now find where the spectrum drops below X counts per channel for a number
             //  of channels in a row
-            int numbellow = 0;
-            const int nbellowlimit = std::max( int(std::ceil(0.0015*nbin)), 3 );
-            while( lastchannel < (nbin-1) && numbellow <= nbellowlimit )
-              numbellow = (channel_counts[++lastchannel] > 0.1) ? 0 : numbellow + 1;
+            int numbelow = 0;
+            const int nbelowlimit = std::max( int(std::ceil(0.0015*nbin)), 3 );
+            while( lastchannel < (nbin-1) && numbelow <= nbelowlimit )
+              numbelow = (channel_counts[++lastchannel] > 0.1) ? 0 : numbelow + 1;
             
             upper_channel = (lastchannel == nbin) ? size_t(nbin-1) : lastchannel;
             upper_channel = std::max( upper_channel, upperlastchannel+1 );

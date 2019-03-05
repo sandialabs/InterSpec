@@ -1129,7 +1129,7 @@ void DoseCalcWidget::init()
   }//for( Quantity i = Quantity(0); i < NumQuantity; ++i )
   
 //  buttonLayout->setContentsMargins( 0, 0, 0, 0 );
-  //Add another widget bellow the menu buttons to force them all up
+  //Add another widget below the menu buttons to force them all up
 //  const int spacerRow = buttonLayout->rowCount();
 //  buttonLayout->addWidget( new WContainerWidget(), spacerRow, 0 );
 //  buttonLayout->setRowStretch( spacerRow, 10 );

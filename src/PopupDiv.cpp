@@ -1055,7 +1055,7 @@ void PopupDivMenuItem::toggleFromElectronMenu(bool checked)
   }
   //const bool wasChecked = cb->isChecked();
   
-  //For some reason the bellow doesnt seem to have an effect... not sure why yet
+  //For some reason the below doesnt seem to have an effect... not sure why yet
   cb->setChecked(checked);
   if( checked )
     cb->checked().emit();

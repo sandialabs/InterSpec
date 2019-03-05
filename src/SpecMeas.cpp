@@ -30,9 +30,9 @@
 #include <fstream>
 #include <algorithm>
 
-#include "rapidxml/rapidxml.hpp"
-#include "rapidxml/rapidxml_utils.hpp"
-#include "rapidxml/rapidxml_print.hpp"
+#include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml.hpp"
+#include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml_utils.hpp"
+#include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml_print.hpp"
 
 #include <Wt/WServer>
 #include <Wt/WIOService>
@@ -1158,7 +1158,12 @@ bool SpecMeas::load_from_N42( std::istream &input )
   {
     ::rapidxml::file<char> input_file( input );
     
+#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
+    return SpecMeas::load_N42_from_data( input_file.data(), input_file.data()+input_file.size() );
+#else
+    input_file.check_for_premature_nulls( 2048, ' ' );
     return SpecMeas::load_N42_from_data( input_file.data() );
+#endif
   }catch( std::exception & )
   {    
     reset();
@@ -1177,7 +1182,12 @@ bool SpecMeas::load_N42_file( const std::string &filename )
   {
     rapidxml::file<char> input_file( filename.c_str() );  //throws runtime_error upon failure
     
+#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
+    const bool loaded = SpecMeas::load_N42_from_data( input_file.data(), input_file.data() + input_file.size() );
+#else
+    input_file.check_for_premature_nulls( 2048, ' ' );
     const bool loaded = SpecMeas::load_N42_from_data( input_file.data() );
+#endif
     
     if( !loaded )
       throw runtime_error( "" );
@@ -1193,6 +1203,24 @@ bool SpecMeas::load_N42_file( const std::string &filename )
 }//bool load_N42_file( const std::string &filename )
 
 
+void SpecMeas::load_N42_from_doc( rapidxml::xml_document<char> &doc )
+{
+  const rapidxml::xml_node<char> *document_node = doc.first_node();
+  const rapidxml::xml_node<char> *interspecnode = document_node ? document_node->first_node( "DHS:InterSpec", 13 ) : nullptr;
+  
+  //See notes for m_fileWasFromInterSpec.
+  m_fileWasFromInterSpec = !!interspecnode;
+  
+  const bool parsed = load_from_N42_document( document_node );
+  
+  if( !parsed )
+    throw runtime_error( "Couldnt Parse" );
+  
+  if( interspecnode )
+    decodeSpecMeasStuffFromXml( interspecnode );
+}//void load_N42_from_doc( rapidxml::xml_document<char> &doc )
+
+
 bool SpecMeas::load_N42_from_data( char *data )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
@@ -1202,25 +1230,12 @@ bool SpecMeas::load_N42_from_data( char *data )
   if( !is_candidate_n42_file(data) )
     return false;
   
-  rapidxml::xml_document<char> doc;
-  
   try
   {
+    rapidxml::xml_document<char> doc;
     const int flags = rapidxml::parse_trim_whitespace | rapidxml::allow_sloppy_parse; //rapidxml::parse_normalize_whitespace
     doc.parse<flags>( data );
-    const rapidxml::xml_node<char> *document_node = doc.first_node();
-    const rapidxml::xml_node<char> *interspecnode = document_node ? document_node->first_node( "DHS:InterSpec", 13 ) : nullptr;
-    
-    //See notes for m_fileWasFromInterSpec.
-    m_fileWasFromInterSpec = !!interspecnode;
-    
-    const bool parsed = load_from_N42_document( document_node );
-    
-    if( !parsed )
-      throw runtime_error( "Couldnt Parse" );
-    
-    if( interspecnode )
-      decodeSpecMeasStuffFromXml( interspecnode );
+    load_N42_from_doc( doc );
   }catch( rapidxml::parse_error &e )
   {
     ptrdiff_t predatalen = e.where<char>() - data;
@@ -1257,6 +1272,66 @@ bool SpecMeas::load_N42_from_data( char *data )
   return true;
 }//bool load_N42_from_data( char *data )
 
+
+#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
+bool SpecMeas::load_N42_from_data( char *data, char * const data_end )
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  reset();
+  
+  if( !is_candidate_n42_file(data,data_end) )
+    return false;
+  
+  rapidxml::xml_document<char> doc;
+  try
+  {
+    
+    const int flags = rapidxml::parse_trim_whitespace | rapidxml::allow_sloppy_parse; //rapidxml::parse_normalize_whitespace
+    doc.parse<flags>( data, data_end );
+    
+    load_N42_from_doc( doc );
+  }catch( rapidxml::parse_error &e )
+  {
+    ptrdiff_t predatalen = e.where<char>() - data;
+    if( predatalen < 0 )
+      predatalen = 0;
+    if( predatalen > 256 )
+      predatalen = 256;
+    const size_t postlen = std::min( static_cast<size_t>(data_end - e.where<char>()), static_cast<size_t>(256) );
+    
+    m_fileWasFromInterSpec = false;
+    
+    const string predata( e.where<char>() - predatalen, e.where<char>() + 1 );
+    const string postdata( e.where<char>(), e.where<char>() + postlen );
+    
+    if( (e.where<char>()-data) > 0 )
+    {
+      cerr << "SpecMeas::load_N42_from_data() caught parse_error: " << e.what()
+      << " at location " << (e.where<char>()-data)
+      << ", and pre-text: " << predata<< "\n\nAnd post text: " << postdata
+      << endl << endl;
+    }//if( (e.where<char>()-data) > 0 )
+    
+    reset();
+    return false;
+  }catch( std::exception &e )
+  {
+    cerr << "Caught: " << e.what() << endl;
+    
+   rapidxml::print( cout, doc, 0 );
+    
+    cerr << "Caught: " << e.what() << endl;
+    
+    m_fileWasFromInterSpec = false;
+    
+    reset();
+    return false;
+  }//try/catch
+  
+  return true;
+}//bool load_N42_from_data( char *data )
+#endif  // RAPIDXML_USE_SIZED_INPUT_WCJOHNS
+      
 
 std::shared_ptr<DetectorPeakResponse> SpecMeas::detector()
 {
@@ -1600,15 +1675,15 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
     throw runtime_error( "translatePeakForCalibrationChange: invalid num coefs" );
   
   if( old_eqn_type==Measurement::LowerChannelEdge
-      || old_eqn_type==Measurement::UnknownEquationType
+      || old_eqn_type==Measurement::InvalidEquationType
       || new_eqn_type==Measurement::LowerChannelEdge
-      || new_eqn_type==Measurement::UnknownEquationType )
+      || new_eqn_type==Measurement::InvalidEquationType )
     throw runtime_error( "translatePeakForCalibrationChange() can only handle"
                          " Polynomial or FullRangeFraction Calibrations" );
   
-  if( old_eqn_type == Measurement::Polynomial )
+  if( old_eqn_type == Measurement::Polynomial || old_eqn_type == Measurement::UnspecifiedUsingDefaultPolynomial )
       old_pars = polynomial_coef_to_fullrangefraction( old_pars, nbins );
-  if( new_eqn_type == Measurement::Polynomial )
+  if( new_eqn_type == Measurement::Polynomial || new_eqn_type == Measurement::UnspecifiedUsingDefaultPolynomial )
       new_pars = polynomial_coef_to_fullrangefraction( new_pars, nbins );
   
   

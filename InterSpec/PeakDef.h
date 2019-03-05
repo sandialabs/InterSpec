@@ -374,7 +374,7 @@ public:
   inline double amplitude() const;
   inline bool gausPeak() const;
   
-  //The bellow should in principle take care of gaussian area and the skew area
+  //The below should in principle take care of gaussian area and the skew area
   double peakArea() const;
   double peakAreaUncert() const;
   

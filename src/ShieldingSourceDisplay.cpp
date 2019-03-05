@@ -649,7 +649,7 @@ void ShieldingSelect::init()
   m_thicknessEdit->enterPressed().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
   m_thicknessEdit->blurred().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
 
-  //From a very brief experiment, it looks like the bellow JS would remove the
+  //From a very brief experiment, it looks like the below JS would remove the
   //  uncertainty text, however it appears when the server pushes the value of
   //  the edit to the client, the 'value' tag of the element isnt updated... I
   //  have no clue.
@@ -1549,7 +1549,7 @@ void ShieldingSelect::handleIsotopicChange( double fraction,
         nonNucSrcFrac -= (elMassFrac*fraction-nfp.second);
     }//for( Material::NuclideFractionPair &nfp : nuclides )
     
-    //nonNucSrcFrac may be slightly bellow zero here - it might just be due to
+    //nonNucSrcFrac may be slightly below zero here - it might just be due to
     //  float roundoff, but I'm not entirely sure
     
     for( Material::NuclideFractionPair &nfp : nuclides )
@@ -2387,7 +2387,7 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
       const IsoFitStruct &previso = m_nuclides[thisElementIndexs[0]];
       newIso.ageMasterNuc = previso.nuclide;
       //There is a slight hickup with emitting a datachanged and then inserting
-      //  a row; if there wasnt this hickup, it would be nice to use the bellow
+      //  a row; if there wasnt this hickup, it would be nice to use the below
 //      if( newIso.age < previso.age )
 //        setSharredAgeNuclide( previso.nuclide, newIso.nuclide );
 //      else
@@ -3344,7 +3344,7 @@ void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightP
 
   double ymin = DBL_MAX, ymax = -DBL_MAX;
 
-//The bellow doesnt actually return the minimum/maximum of the axis, presumambly
+//The below doesnt actually return the minimum/maximum of the axis, presumambly
 //  since we are using auto range.
 //  initLayout();
 //  double ymin = axis(Chart::OrdinateAxis).minimum();
@@ -7008,7 +7008,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
       
       const double age = m_currentFitFcn->age( nuc, paramValues );
       //XXX - if multiple shieldings or point sources have this isotope, then
-      //      this activity bellow will be the sum of them
+      //      this activity below will be the sum of them
       const double activity = m_currentFitFcn->activity( nuc, paramValues );
       
       char actStr[64], ageStr[64];

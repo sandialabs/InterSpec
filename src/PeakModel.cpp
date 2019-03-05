@@ -1563,7 +1563,7 @@ bool PeakModel::setData( const WModelIndex &index,
           const SandiaDecay::Nuclide *nuclide = new_peak.parentNuclide();
           const SandiaDecay::Transition *transition = NULL;
         
-          //The 0.0 bellow means find the actual closest in energy, and not the
+          //The 0.0 below means find the actual closest in energy, and not the
           //  most likely
           PeakDef::SourceGammaType sourceGammaType;
           PeakDef::findNearestPhotopeak( nuclide, energy, 0.0,

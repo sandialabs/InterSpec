@@ -306,7 +306,6 @@ width:100%;
 
 .helpButton
 {
-  /* background: transparent url(../InterSpec_resources/images/qmark.png) no-repeat scroll right top; */
   margin-top: 2px;
   background: white;
   float: left;
@@ -320,10 +319,15 @@ width:100%;
 
 .helpButton:hover
 {
-  /* background-position: right -20px; */
   background: none;
 }
 
+
+.HelpButtonMblApple
+{
+  cursor:pointer;
+  margin-top: 2px;
+}
 
 
 .modal-footer 
@@ -458,19 +462,76 @@ box-shadow: 3px 3px 10px rgba(0,0,0,0.6);
   opacity: 1;
 }
 
-.MobileBackBtn, .MobileBackBtn:hover
+.PhoneAuxWindowHeader
+{
+  white-space:nowrap;
+  margin-top: 0;
+  text-align: right;
+  background-color: #FAFAFA;
+}
+
+.PhoneAuxWindowFooterDroid, .PhoneAuxWindowFooterApple
+{
+  padding-top: 6px;
+  height: 25px;
+  padding-right: 2px;
+}
+
+.PhoneAuxWindowFooterDroid > button, .PhoneAuxWindowFooterApple > button
+{
+  margin-right: 5px;
+}
+
+
+.PhoneAuxWindowFooterApple > button, .PhoneAuxWindowFooterApple > button:hover
+{
+  background: none;
+  color: rgb(0,122,255) !important;
+  text-decoration: underline;
+  border: none;
+}
+
+.PhoneAuxWindowFooterApple > button[disabled]
+{
+  background: none;
+  /* color: #aaaaaa !important; */
+  color: rgba(0,0,0,0) !important;
+  text-decoration: underline;
+  border: none;
+}
+
+.MobileBackBtnApple, .MobileBackBtnApple:hover
 {
   vertical-align: middle;
-  background: grey url(images/mobile_back.png);
-  background-repeat: no-repeat;
-  background-position: 3px 5px;
-  background-size: 7px 12px;
-  color: white;
+  background: none;
+  background: url(images/mobile_back_2.svg) !important;
+  background-repeat: no-repeat !important;
+  background-position: 2px 3.5px  !important;
+  background-size: 10px 16px  !important;
+  color: rgb(0,122,255) !important;
+  text-decoration: underline;
+  
   padding-left: 15px;
   border: none;
   float: left;
   margin-right: 5px;
 }
+
+.MobileBackBtnDroid, .MobileBackBtnDroid:hover
+{
+  vertical-align: middle;
+  background: none;
+  background: url(images/mobile_back_droid.svg) !important;
+  background-repeat: no-repeat !important;
+  background-position: 3px 5px !important;
+  background-size: 20px 16px !important;
+  padding-left: 27px;
+  color: rgba(0,0,0,0) !important; /* Dont show "Close" text on Android windows... not to sure about this*/
+  border: none;
+  float: left;
+  margin-right: 5px;
+}
+
 
 .MobilePrevSample
 {
@@ -617,6 +678,13 @@ padding-left:10px;
 .PhoneCopywriteContent
 {
   font-size: 8px;
+}
+
+.CenterBtnInPhoneAuxWindowHeader
+{
+  /* Center button in footer/header */
+  display: block !important;
+  margin: 0 auto !important;
 }
 
 .SideMenu
@@ -1403,11 +1471,6 @@ span.MenuLabelSelected
   border: 2px solid #e1e1e1;
 }
 
-
-.IsotopePeaksMobileTabs
-{
-}
-
 .IsotopePeaksMobileWindowContents
 {
 }
@@ -1602,27 +1665,6 @@ div.displaySampleDiv
     pointer-events:auto;
 
 }
-
-
-.PhoneAuxWindowHeader
-{
-  white-space:nowrap;
-  margin-top: 0;
-  text-align: right;
-  background-color: #FAFAFA;
-}
-
-.PhoneAuxWindowFooter
-{
-  padding-top: 6px;
-  height: 25px;
-  padding-right: 2px;
-}
-
-.PhoneAuxWindowFooter > button {
-  margin-right: 5px;
-}
-
 
 .TransparentFooter
 {
@@ -1839,7 +1881,7 @@ body.Wt-rtl .Wt-tabs a {
 
 .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
   background-position: 0%;
-  /* If the parent background isnt white, then the bellow will have a white line in it... TODO: fix */
+  /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
   border-color: grey grey white grey;
   background-color: inherit;
 }
@@ -1870,7 +1912,7 @@ body.Wt-rtl .Wt-tabs a {
   text-decoration: none;
   background: rgba(136, 136, 136, 0.08);
   border: 1px solid rgba(136, 136, 136, 0.15);
-  /* If the parent background isnt white, then the bellow will have a white line in it... TODO: fix */
+  /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
   /*border-bottom: 1px solid white;*/
   border-bottom: 1px solid rgba(136, 136, 136, 0.4);
 }

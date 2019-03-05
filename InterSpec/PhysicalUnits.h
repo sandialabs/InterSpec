@@ -192,7 +192,7 @@ namespace PhysicalUnits
 
 
 
-  //Functions bellow here were imported 20121014 from some other code I have
+  //Functions below here were imported 20121014 from some other code I have
   //  written, and are not yet consistent with the above functions (e.g.
   //  will have differnt available prefixes on the units and such)
   typedef std::pair<std::string,double>    UnitNameValuePair;

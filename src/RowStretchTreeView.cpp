@@ -281,7 +281,7 @@ void RowStretchTreeView::layoutSizeChanged( int width, int height )
   if( m_rowWidthPx > 0 || width < 0 )
     return;
   
-  //Bellow here is all a fallback incase the JavaScript TreeViewCheckWidth
+  //Below here is all a fallback incase the JavaScript TreeViewCheckWidth
   //  function for some reason doesnt work okay (possibly newer/oler versions of
   //  Wt, or use of Ajax, or something happening with WLayouts that I dont know
   //  about)

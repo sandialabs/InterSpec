@@ -641,7 +641,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #if( !OPTIMISTICALLY_SAVE_USER_STATE )
   setConfirmCloseMessage( "This action will terminate your current session." );
 #else
-  //The bellow solution of catching onbeforeunload catches navigating to a new
+  //The below solution of catching onbeforeunload catches navigating to a new
   //  url, or closing a tab - but for refreshes, the ThinkOfLeave signal is
   //  never transmitted back to the server...
   m_thinkingLeaveSignal.reset( new Wt::JSignal<>( this, "ThinkOfLeave" ) );
@@ -942,7 +942,7 @@ void InterSpecApp::prepareForEndOfSession()
       {
         DataBaseUtils::DbTransaction transaction( *sql );
         
-        //If the user has mutliple sessions going on, the bellow will quash
+        //If the user has mutliple sessions going on, the below will quash
         //  eachother out.  Could probably be fixed by
         //  m_viewer->m_user.reread();
         
@@ -1108,6 +1108,16 @@ bool InterSpecApp::isMobile() const
                       );
   return isMob;
 }//bool isMobile() const
+
+bool InterSpecApp::isAndroid() const
+{
+  const WEnvironment &env = environment();
+  const bool isDroid = ( env.agent()==WEnvironment::MobileWebKitAndroid
+                      || env.userAgent().find("Android") != std::string::npos
+                      || env.userAgent().find("RIM ") != std::string::npos
+                      );
+  return isDroid;
+}
 
 
 bool InterSpecApp::isPhone() const

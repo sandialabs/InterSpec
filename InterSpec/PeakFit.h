@@ -335,7 +335,7 @@ namespace ExperimentalAutomatedPeakSearch
 namespace ExperimentalPeakSearch
 {
   
-  //search_for_peaks(): a convienience function to call bellow
+  //search_for_peaks(): a convienience function to call below
   //  search_for_peaks(...) that uses the current best guess of arguments
   std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> meas,
                                          const std::vector<PeakDef> &origpeaks );

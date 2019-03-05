@@ -221,7 +221,7 @@ namespace
           
             if( field == FileDataField::DetectionSystemType )
             {
-              //The bellow switch must match whats in JS - a little brittle, bu oh well for now
+              //The below switch must match whats in JS - a little brittle, bu oh well for now
               switch( val )
               {
                 case 0: val = static_cast<int>(DetectorType::kGR135Detector); break;
@@ -255,13 +255,13 @@ namespace
               }//switch( val )
             }else if( field == FileDataField::EnergyCalibrationType )
             {
-              //The bellow switch must match whats in JS - a little brittle, bu oh well for now
+              //The below switch must match whats in JS - a little brittle, bu oh well for now
               switch( val )
               {
                 case 0: val = static_cast<int>(Measurement::EquationType::Polynomial); break;
                 case 1: val = static_cast<int>(Measurement::EquationType::FullRangeFraction); break;
                 case 2: val = static_cast<int>(Measurement::EquationType::LowerChannelEdge); break;
-                case 3: val = static_cast<int>(Measurement::EquationType::UnknownEquationType); break;
+                case 3: val = static_cast<int>(Measurement::EquationType::UnspecifiedUsingDefaultPolynomial); break;
                 default:
                   throw runtime_error( "Unknown EnergyCalibrationType value type" );
               }//switch( val )
@@ -599,7 +599,10 @@ namespace
               case Measurement::EquationType::Polynomial:          row[f] += "polynomial"; break;
               case Measurement::EquationType::FullRangeFraction:   row[f] += "full range fraction"; break;
               case Measurement::EquationType::LowerChannelEdge:    row[f] += "lower channel energy"; break;
-              case Measurement::EquationType::UnknownEquationType: row[f] += "unknown"; break;
+              case Measurement::EquationType::InvalidEquationType:
+              case Measurement::EquationType::UnspecifiedUsingDefaultPolynomial:
+                row[f] += "unknown";
+                break;
             }//switch( m->energy_calibration_model() )
           }//for( const auto &m : meas->measurements() )
           break;

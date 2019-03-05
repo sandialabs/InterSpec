@@ -671,7 +671,7 @@ for different energies through air to see if it is significant effect.
 
 <div style="padding-top: 10px">
 The formula used to calculate the distance in front of the near measurement is
-shown bellow in <i>pseudo-code</i> format, and already assumes the background has been subtracted from
+shown below in <i>pseudo-code</i> format, and already assumes the background has been subtracted from
 <code>FarIntensity</code> and the <code>NearIntensity</code>.
 <pre><code>
 <i>let</i> <span style="color:blue;">a</span> = FarIntensity - NearIntensity

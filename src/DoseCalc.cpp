@@ -84,14 +84,14 @@ namespace DoseCalc
   float neutron_dose( const float energy_kev )
   {
     float dose = 0.0f;
-    const float bellow_coefs[5] = { 3.430895f, 0.7725710f,  9.834081E-2f, 4.903466E-3f, 8.149667E-5f };
+    const float below_coefs[5] = { 3.430895f, 0.7725710f,  9.834081E-2f, 4.903466E-3f, 8.149667E-5f };
     const float above_coefs[5] = { 4.952167f, 0.6644235f, -0.1017445f,  -1.496004E-3f, 3.636748E-3f };
     
     const float energy = energy_kev / 1.0E3f; //convert from keV to MeV
     
     if( energy <= 17.7)          //dose only defined to 17.7 MeV
     {
-      const float *coefs = ((energy < 0.01f) ? bellow_coefs : above_coefs);
+      const float *coefs = ((energy < 0.01f) ? below_coefs : above_coefs);
       dose = dose_equiv(energy,coefs);
     }else                        //extrapolate beyond 17.7 MeV
     {

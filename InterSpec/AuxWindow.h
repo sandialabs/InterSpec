@@ -183,15 +183,22 @@ public:
   //  browsers viewport
   void repositionWindow( int x, int y );
 
+  /** Returns the JavaScript #repositionWindow will execute. */
+  std::string repositionWindowJs( int x, int y );
+  
   //resizeWindow(...): resizes this AuxWindow to the specified size in pixels
   void resizeWindow( int width, int height );
 
+  
   //resizeScaledWindow(...): resizes this AuxWindow as a fraction of the browser
   //  window size.
   //  If a (zerro or) negative value is specified for one of the dimensions,
   //  that dimension wont be resized.
   void resizeScaledWindow( double xRatio, double yRatio );
 
+  /** Returns the JavaScript #resizeScaledWindow will execute. */
+  std::string resizeScaledWindowJs( double xRatio, double yRatio ) const;
+  
   //contents() is actually hiding WDialog::contents(), not overiding it, so
   //  dont expect a call from a WDialog pointer to give you what you want.
   //Also, this function will generate an assert if you have already called
@@ -242,6 +249,9 @@ public:
   
   void emitReject();
   
+  /** Returns if dialog is customized for phones. */
+  bool isPhone() const;
+  
 protected:
   bool m_auxIsHidden;
   bool m_modalOrig;  //original modal value
@@ -275,7 +285,18 @@ protected:
   
   bool m_escapeIsReject;
   Wt::Signals::connection m_escapeConnection1, m_escapeConnection2;
+  
+  /** Set to true if on a phone, and contructor wasnt called with PhoneModal. */
   bool m_isPhone;
+  
+  /** Set to true if on a tablet, and contructor wasnt called with PhoneModal or
+      TabletModal.
+   */
+  bool m_isTablet;
+  
+  /** Set to true if user agent string contains "Android" */
+  bool m_isAndroid;
+  
   Wt::WContainerWidget* m_footer;
 };//class AuxWindow
 

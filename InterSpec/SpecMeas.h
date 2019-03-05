@@ -33,12 +33,20 @@
 
 #include "SpecUtils/SpectrumDataStructs.h"
 
+
+//Temporary include - only used to get RAPIDXML_USE_SIZED_INPUT_WCJOHNS macro
+#include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml.hpp"
+
 class PeakDef;
 class PeakModel;
 class Recalibrator;
 struct PeakContinuum;
 class DetectorPeakResponse;
 
+namespace rapidxml
+{
+  template<class Ch> class xml_document;
+}
 
 class SpecMeas : public MeasurementInfo
 {
@@ -87,9 +95,18 @@ public:
   //load_from_N42: loads spectrum from the raw XML data. The data must be
   //  null terminated.
   virtual bool load_from_N42( std::istream &input );
-
+  
   //load_N42_from_data(...): raw xml file data - must be 0 terminated
   virtual bool load_N42_from_data( char *data );
+  
+#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
+  /** Loads N42 file from raw XML file data specified by begin and end of data
+      (does not need to be null terminated)
+   */
+  virtual bool load_N42_from_data( char *data, char * const data_end );
+#endif
+  
+  virtual void load_N42_from_doc( rapidxml::xml_document<char> &doc );
   
   virtual bool save2012N42File( const std::string &filename );
   virtual void save2012N42File( const std::string &filename,

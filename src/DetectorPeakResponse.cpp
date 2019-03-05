@@ -1323,7 +1323,7 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
                                                 const std::vector<float> &pars )
 {
   /*
-   //The bellow is to compare for the Anthony NM detector, what FWHM we should
+   //The below is to compare for the Anthony NM detector, what FWHM we should
    //  get, verses what we actually get reading the Detector.dat from GADRAS
    std::vector<float> coeffs;
    coeffs.push_back( 0.1401463  );

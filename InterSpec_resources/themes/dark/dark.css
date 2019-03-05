@@ -53,9 +53,10 @@ a:hover, .InfoLink:hover {
   color: rgb(99, 161, 236);
 }
 
-.Wt-icon {
+.Wt-icon, .InvertInDark {
   filter: invert(100%);
 }
+
 
 /* button > img { filter: invert(100%); }  */
 
@@ -219,11 +220,11 @@ ul.SideMenu > li.item:hover  {
   background-color: rgb(65,65,65) !important; 
 }
 
-.PhoneAuxWindowFooter {
+.PhoneAuxWindowFooterDroid, .PhoneAuxWindowFooterApple {
   padding-right: 2px;
 }
 
-.PhoneAuxWindowFooter > button {
+.PhoneAuxWindowFooterDroid > button, .PhoneAuxWindowFooterApple > button {
   margin-right: 5px;
 }
 

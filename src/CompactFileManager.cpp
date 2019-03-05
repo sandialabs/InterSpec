@@ -507,7 +507,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
   //Lets replace numbers seperated by spaces, to be seperated by commas.
   //  We cant do a simple replace of spaces to commas, and using a regex would
   //  require using a lookahead or behind, and I dont think boost supports that
-  //  always.  Note that bellow while loop is a little ineficient, but whatever
+  //  always.  Note that below while loop is a little ineficient, but whatever
   boost::smatch mtch;
   boost::regex expr( ".*(\\d\\s+\\d).*" );
   while( boost::regex_match( fulltxt, mtch, expr ) )

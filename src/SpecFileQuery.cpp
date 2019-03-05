@@ -32,8 +32,6 @@
 
 #include <boost/regex.hpp>
 
-#include "pugixml.hpp"
-
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/SpecFileQuery.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -926,7 +924,9 @@ namespace SpecFileQuery
           case Measurement::EquationType::Polynomial: summary += "polynomial"; break;
           case Measurement::EquationType::FullRangeFraction: summary += "full range fraction"; break;
           case Measurement::EquationType::LowerChannelEdge: summary += "lower channel energy"; break;
-          case Measurement::EquationType::UnknownEquationType: summary += "unknown"; break;
+          case Measurement::EquationType::InvalidEquationType:
+          case Measurement::EquationType::UnspecifiedUsingDefaultPolynomial:
+            summary += "unknown";
             break;
         }
         summary += " energy calibration";
@@ -1065,7 +1065,8 @@ namespace SpecFileQuery
           case Measurement::EquationType::Polynomial:
           case Measurement::EquationType::FullRangeFraction:
           case Measurement::EquationType::LowerChannelEdge:
-          case Measurement::EquationType::UnknownEquationType:
+          case Measurement::EquationType::UnspecifiedUsingDefaultPolynomial:
+          case Measurement::EquationType::InvalidEquationType:
             break;
           default:
             throw runtime_error( "Invalid energy calibration type (programming error)" );

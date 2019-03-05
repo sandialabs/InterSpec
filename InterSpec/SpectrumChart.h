@@ -526,7 +526,7 @@ protected:
   Wt::Chart::WChart2DRenderer *createRenderer( Wt::WPainter &painter,
                                             const Wt::WRectF &rectangle ) const;
 
-  //The functions bellow here were added to WCartesianChart in newer versions
+  //The functions below here were added to WCartesianChart in newer versions
   //  of Wt, so to be able to use the same rendering code, we had reimplement.
   Wt::WRectF chartSegmentArea( Wt::Chart::WAxis yAxis, int xSegment,
                                             int ySegment) const;
@@ -652,7 +652,7 @@ protected:
   bool m_allowMultipleHighlightRegions; //only applicable when m_dragAction==HighLight
   bool m_allowSingleClickHighlight;     //only applicable when m_dragAction==HighLight
   
-  //for all the bellow, the doubles are all the <x,y> coordinated of the action
+  //for all the below, the doubles are all the <x,y> coordinated of the action
   //  where x is in energy, and y is in counts.
   Wt::Signal<double,double> m_xRangeChanged;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_controlKeyDragg;

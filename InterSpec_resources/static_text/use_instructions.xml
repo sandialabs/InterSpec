@@ -8,7 +8,7 @@
       it points to in the C++, this next videoinfo message section encodes what
       placeholder names the C++ templating code should look for, as well as
       the actual video files and titles the placeholder name cooresponds to.
-      The bellow JSON object is indexed by keys that have the same value
+      The below JSON object is indexed by keys that have the same value
       as the 'id' for the message they coorespond to; the key cooresponds to an
       array of objects that each have at least a "key" and "file" member, but
       may also have an optional "title" member.

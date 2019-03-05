@@ -291,7 +291,7 @@ float GadrasScatterTable::getContinuum( std::vector<float> &answer,
   //	Scale scatter flux if less than 60 keV (minimum for transport).
   if( sourceEnergy < 60.0f )
   {
-    cerr << "\nWarning: Continuum calculation for source energies bellow 60 keV not checked yet!\n";
+    cerr << "\nWarning: Continuum calculation for source energies below 60 keV not checked yet!\n";
     
     const float SC60 = 60.0f / 31.0f;
     for( int i = 0; i < 31; ++i )

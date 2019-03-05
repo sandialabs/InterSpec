@@ -9,7 +9,7 @@
 
       <div style="padding-top: 10px">
         InterSpec may attempt to automatically guess the detector response function for newly
-        loaded spectra if you have set the appropriate directories (described bellow) and a detector
+        loaded spectra if you have set the appropriate directories (described below) and a detector
         response function (DRF) with either a name matching the model of detector is found, or a generic
         detector with a similar efficiency to manufacturer published specifications is found.
 

@@ -540,7 +540,7 @@ void IsotopeNameFilterModel::suggestNuclides(
       suggest_elements.push_back( el );
     }else
     {
-      //Add in just the element name, and then all the isotopes bellow
+      //Add in just the element name, and then all the isotopes below
       if( numericstrs.empty() && is_exact_element )
         suggest_elements.push_back( el );
       
@@ -733,7 +733,7 @@ void IsotopeNameFilterModel::nuclideNameMatcherJs( std::string &js )
           if( !suggestion )
             return value;
           
-          //XXX - TODO - right now the bellow ignores the case of meta-stable elements
+          //XXX - TODO - right now the below ignores the case of meta-stable elements
           //             and could possibly cause results like <b><b>M</b>g13<b>m</b></b>
           //             ex. Co60m, U235m, etc
           //XXX - TODO - right now the gamma lines in parenthesis, are also

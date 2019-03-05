@@ -256,12 +256,12 @@ namespace
       if( noForeground )
       {
         instructions = string(viewer->isMobile() ?"Tap" : "Click")
-                       + " bellow to choost a foreground spectrum file to open.";
+                       + " below to choost a foreground spectrum file to open.";
       }else
       {
         instructions = "Select how you would like to open the spectrum file, and then ";
         instructions += (viewer->isMobile() ? "tap" : "click");
-        instructions += " bellow to browse for the file.";
+        instructions += " below to browse for the file.";
       }//if( noForeground )
       
       auto layout = stretcher();
@@ -343,8 +343,16 @@ namespace
       rejectWhenEscapePressed();
       
       show();
-      resizeToFitOnScreen();
-      centerWindow();
+      
+      if( m_isPhone )
+      {
+        resizeScaledWindow( 1.0, 1.0 );
+        repositionWindow( 0, 0 );
+      }else
+      {
+        resizeToFitOnScreen();
+        centerWindow();
+      }
     }//FileUploadDialog constructor
     
     void toLarge( const ::int64_t size_tried )
@@ -1752,7 +1760,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     buttonlayout->addWidget( button, row, col );
 
     button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-    //Note, using *iter instead of label bellow.
+    //Note, using *iter instead of label below.
     button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this, *iter, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
   }
   
@@ -2227,7 +2235,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
     a->setInline( false );
     a->setStyleClass( "LoadSpectrumSaveAsLink" );
 
-//Either of the two lines bellow will work to get rid of the save as dialog (at
+//Either of the two lines below will work to get rid of the save as dialog (at
 //  least it looks like it), but I think looking for the link being clicked is
 //  a little safer, since I'm not sure how the connections are managed in the
 //  case of using the downloadComplete() slot

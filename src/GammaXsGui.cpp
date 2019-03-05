@@ -451,7 +451,7 @@ vector<pair<const SandiaDecay::Element *, float> > GammaXsGui::parseMaterial()
       pair<const SandiaDecay::Element *, float> thisone( (const SandiaDecay::Element *)0, 0.0f );
       if( nf.first )
       {
-        //XXX - bellow isnt strictly okay I dont think, since it messes up the
+        //XXX - below isnt strictly okay I dont think, since it messes up the
         //      mass fractions a little converting the isotope into the element,
         //      but whatever
         thisone.first = db->element( nf.first->atomicNumber );

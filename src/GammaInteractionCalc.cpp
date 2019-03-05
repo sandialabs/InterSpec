@@ -185,7 +185,7 @@ double exit_point_of_sphere_z( const double source_point[3],
     throw runtime_error( "exit_point_of_sphere_z(...): r > sphere_rad" );
   }//if( r > sphere_rad )
 
-  //TODO: factor the math bellow to save CPU time
+  //TODO: factor the math below to save CPU time
   if( postiveSolution )
   {
     exit_point[0] =-(a*sqrt((R*R-2*c*R+c*c+b*b+a*a)*S*S+(-b*b-a*a)*R*R)-a*R*R+a*c*R)/(R*R-2*c*R+c*c+b*b+a*a);

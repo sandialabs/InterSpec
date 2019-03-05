@@ -432,7 +432,7 @@ public:
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> > snapshots;
   
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDbData> > filedata;
-//Could use bellow instead of collection with newer Wt
+//Could use below instead of collection with newer Wt
 //  Wt::Dbo::weak_ptr<UserFileInDbData> filedata;
   
   Wt::Dbo::collection<Wt::Dbo::ptr<ShieldingSourceModel> > modelsUsedWith;

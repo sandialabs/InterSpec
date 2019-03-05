@@ -1885,7 +1885,7 @@ void automated_search_for_peaks( InterSpec *viewer,
                           = wApp->bind( boost::bind( &AuxWindow::hide, msg ) );
   
   //The results of the peak search will be placed into the vector pointed to
-  // by searchresults, which is why both 'callback' and bellow and
+  // by searchresults, which is why both 'callback' and below and
   // search_for_peaks_worker(...) get a shared pointer to this vector.
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
   

@@ -84,7 +84,8 @@ int main( int argc, char **argv )
 #if( PERFORM_DEVELOPER_CHECKS )
   std::cout << "Developer tests are being performed" << std::endl;
 #endif
-  
+
+
   std::cout << std::endl;
   
 #if(WT_VERSION>=0x3030300)

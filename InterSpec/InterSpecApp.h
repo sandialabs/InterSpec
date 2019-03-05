@@ -75,6 +75,9 @@ public:
   //isTablet(): Tests to see if on a iPad or Android tablet
   bool isTablet() const;
   
+  //isAndroid(): Searches for Android in the user agent string
+  bool isAndroid() const;
+  
 #if( WT_VERSION>=0x3030400 )
   //ToDo: define a custom handler for javascript errors
 //  virtual void handleJavaScriptError(const std::string& errorText)

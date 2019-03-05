@@ -667,7 +667,7 @@ void UserFileInDbData::setFileData( std::shared_ptr<const SpecMeas> spectrumFile
   fileData.clear();
   const size_t memsize = spectrumFile->memmorysize();
     
-  //XXX - bellow guess on how much memorry to reserve is based on almost
+  //XXX - below guess on how much memorry to reserve is based on almost
   //      nothing
 #if( ALLOW_SAVE_TO_DB_COMPRESSION )
   const size_t reserved_size = memsize;
@@ -776,7 +776,11 @@ std::shared_ptr<SpecMeas> UserFileInDbData::decodeSpectrum() const
           if( end == start )
             throw runtime_error( "data from database wasnt null terminated" );
           
+#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
+          loaded = spectrumFile->SpecMeas::load_N42_from_data( (char *)start, (char *)end );
+#else
           loaded = spectrumFile->SpecMeas::load_N42_from_data( (char *)start );
+#endif
         }
         
         if( !loaded )

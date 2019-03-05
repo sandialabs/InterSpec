@@ -1315,17 +1315,27 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
  // m_footer->setStyleClass("modal-footer");
   
   AuxWindow::addHelpInFooter(m_footer, "detector-edit-dialog",auxWindow);
-  m_cancelButton = auxWindow->addCloseButtonToFooter("Cancel");
-  m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
-
-  HelpSystem::attachToolTipOn( m_cancelButton,"Remove all changes or selections made by this dialog, and close the dialog" , showToolTipInstantly );
+  m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
   
   m_cancelButton->clicked().connect( this, &DetectorEdit::cancelAndFinish );
-  m_acceptButton = new WPushButton( "Accept", m_footer );
-  m_acceptButton->setFloatSide(Wt::Right);
-  m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
-  HelpSystem::attachToolTipOn( m_acceptButton,"Accept all changes/selections made and close dialog" , showToolTipInstantly );
-
+  
+  
+  if( !auxWindow->isPhone() )
+  {
+    m_acceptButton = new WPushButton( "Accept", m_footer );
+    m_acceptButton->setFloatSide(Wt::Right);
+    
+    m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
+    HelpSystem::attachToolTipOn( m_cancelButton,"Remove all changes or selections made by this dialog, and close the dialog" , showToolTipInstantly );
+    
+    m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
+    HelpSystem::attachToolTipOn( m_acceptButton, "Accept all changes/selections made and close dialog" , showToolTipInstantly );
+  }else
+  {
+    m_acceptButton = new WPushButton( "Use Detector", m_footer );
+    m_acceptButton->addStyleClass( "CenterBtnInPhoneAuxWindowHeader" );
+  }//if( isMobile() ) / else
+  
   m_acceptButton->clicked().connect( this, &DetectorEdit::acceptAndFinish );
   if( !currentDet || !currentDet->isValid() )
     m_acceptButton->disable();

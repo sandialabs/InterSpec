@@ -157,7 +157,7 @@ protected:
 
   Wt::WButtonGroup *m_spectraGroup;
 
-  //Fields bellow here bellong to the whole file
+  //Fields below here bellong to the whole file
   Wt::WTextArea *m_fileRemarks;
   Wt::WText     *m_sizeInMemmory;
 

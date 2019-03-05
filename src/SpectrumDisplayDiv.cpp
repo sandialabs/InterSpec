@@ -467,7 +467,7 @@ void SpectrumDisplayDiv::layoutSizeChanged ( int width, int height )
   
 #if( IOS || ANDROID )
   //When the soft-keyboard disapears (on Android at a minimum), the overlays
-  //  dont resize properly (until you change tab bellow the chart, or something)
+  //  dont resize properly (until you change tab below the chart, or something)
   //  so we will force it.
   forceOverlayAlign();
 #endif

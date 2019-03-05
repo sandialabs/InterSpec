@@ -296,7 +296,7 @@ public:
   //efficiency(...): Currently just linearly interpolates between surrounding
   //  efficiency points for m_efficiencyForm=kEnergyEfficiencyPairs.  Will throw
   //  std::runtime_exception if the object has not been initialized.  Above or
-  //  bellow maximum energies of the efficiency will return upper or lower
+  //  below maximum energies of the efficiency will return upper or lower
   //  efficiencies, respectively.
   //Returns efficiency per decay measured at `distance`
   //Energy should be in units of SandiaDecay (e.g. keV=1.0).
@@ -305,7 +305,7 @@ public:
 
   //intrinsicEfficiency(...): Currently just linearly interpolates between
   //  surrounding efficiency points.  Will throw std::runtime_exception if the
-  //  object has not been initialized.  Above or bellow maximum energies of the
+  //  object has not been initialized.  Above or below maximum energies of the
   //  efficiency will return upper or lower efficiencies, respectively.
   float intrinsicEfficiency( const float energy ) const;
 

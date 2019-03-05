@@ -1170,8 +1170,8 @@ protected:
   int m_renderedWidth;
   int m_renderedHeight;
 
-  //The bellow pointers may not be valid, so make sure to check them
-//  std::shared_ptr<SpecMeas> m_measurments[kBackground+1]; - should convert the bellow to use the following
+  //The below pointers may not be valid, so make sure to check them
+//  std::shared_ptr<SpecMeas> m_measurments[kBackground+1]; - should convert the below to use the following
   std::shared_ptr<SpecMeas> m_dataMeasurement;
   std::shared_ptr<SpecMeas> m_secondDataMeasurement;
   std::shared_ptr<SpecMeas> m_backgroundMeasurement;  //If a "passthrough" spectrum is uploaded

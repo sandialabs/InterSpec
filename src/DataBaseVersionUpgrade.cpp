@@ -296,7 +296,7 @@ namespace DataBaseVersionUpgrade
           
         sqlite3_close( db );
 /*
- //The bellow is the "proper" way to upgrade the SQLite3 schema, however, it
+ //The below is the "proper" way to upgrade the SQLite3 schema, however, it
  //  then gives a constraint failed error when adding user options into the
  //  the database in the InterSpec constructor - I assume due to the 
  //  autoincrementing of the primary key causing issues.
@@ -306,7 +306,7 @@ namespace DataBaseVersionUpgrade
  //  new one.
 
  //Update 20181106: Foreign key constraints would need to be temporarily turned off
- //  for the bellow "proper" method to work.  I.e., "PRAGMA foreign_keys = ON;"
+ //  for the below "proper" method to work.  I.e., "PRAGMA foreign_keys = ON;"
  //  see https://www.sqlite.org/foreignkeys.html#fk_enable
  
           sql = "ALTER TABLE InterSpecUser RENAME TO preV4_InterSpecUser;";

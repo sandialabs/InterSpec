@@ -379,7 +379,7 @@ void suggestNuclides(
   //     1b) if 'peaks', or 'data' is empty, return simple search
   //         by energy, sorted by proximity
   //     1c) if 'response' doesnt have resolution info, approximate this and
-  //         continue on with bellow
+  //         continue on with below
   //2) get nuclides with gamma under 'peak'
   //3) find fractionDetectedWeight for each nuclide under a 'no shielding',
   //   'medium shielding', and 'heavy shielding' sceneriou, and assign best
@@ -628,7 +628,7 @@ void findCharacteristics( vector<string> &characteristicnucs,
   
   //PhotoPeak.lis actually looks to be structured such that we could speed up
   //  access to the line with the starting energy we care about, by fitting a
-  //  polynomial that gives the offset, or some offset bellow, the start of
+  //  polynomial that gives the offset, or some offset below, the start of
   //  the line for that energy.
   //This would of course also require implementing a unit test to check this,
   //  and possibly also a mechanism to account for if the user makes a change

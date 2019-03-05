@@ -146,10 +146,17 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   //Put in a footer with an Acknowledge that will accept this dialog
   WContainerWidget *bottom = footer();
   
-  WPushButton *close = new WPushButton( (is_awk ? "Acknowledge" : "Close"), bottom );
-  WString closeStyle = close->attributeValue("style");
-  close->setAttributeValue( "style", "display: block; margin: 0 auto;" + closeStyle );
-  close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+  
+  if( phone )
+  {
+    WPushButton *close = addCloseButtonToFooter();
+    close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+  }else
+  {
+    WPushButton *close = new WPushButton( (is_awk ? "Acknowledge" : "Close"), bottom );
+    close->addStyleClass( "CenterBtnInPhoneAuxWindowHeader" );
+    close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+  }
   
   resizeToFitOnScreen(); //jic
   centerWindow();

@@ -567,7 +567,9 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
     m_contentStretcher( NULL ),
     m_destructing( false ),
     m_escapeIsReject( false ),
-    m_isPhone(false),
+    m_isPhone( false ),
+    m_isTablet( false ),
+    m_isAndroid( false ),
     m_footer(NULL)
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
@@ -589,6 +591,11 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
     resizeScaledWindow( 1.0, 1.0 );
     m_isPhone = true; //disables any of future AuxWindow calls to change behavior
   }
+  
+  if( isTablet && !isTabletModal && !isPhoneModal )
+    m_isTablet = true;
+  
+  m_isAndroid = app && app->isAndroid();
 
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
@@ -804,61 +811,41 @@ void AuxWindow::setModal(bool modal)
 
 WContainerWidget* AuxWindow::footer()
 {
-    if (m_footer)
-        return m_footer;
-    
-    WContainerWidget *temp = 0;
-    if (m_isPhone)
-    {
-      WContainerWidget *bar = titleBar();
-      
-      for( size_t i = 0; i < bar->children().size(); ++i )
-      {
-        WText *caption = static_cast<WText *>(bar->children()[i]);
-        if( caption )
-          caption->setHidden(true);
-      }
-      
-      setClosable( false );
-      temp = new WContainerWidget;
-      temp->addStyleClass( "PhoneAuxWindowFooter" );
-      temp->setMargin( 12, Wt::Left );
-      temp->setMargin( 12, Wt::Right );
-      bar->insertWidget( 0, temp );
-      bar->setHeight(WLength(35,WLength::Pixel));
-      bar->setStyleClass( "PhoneAuxWindowHeader" );
-      
-        /*
-      
-        temp = new WContainerWidget();
-        if (WDialog::contents()->layout())
-        {
-            //Need to add to invisible footer, because content() has layout already
-            WContainerWidget* foot = WDialog::footer();
-            foot->setHeight(0);
-            foot->setOffsets(0);
-            foot->setPadding(0);
-            foot->addWidget(temp);
-
-        }
-        else
-        {
-            contents()->addWidget(temp);
-        }
-        temp->setStyleClass("modal-footer");
-        temp->addStyleClass("TransparentFooter");
-        temp->setPositionScheme(Wt::Fixed);
-        temp->setOffsets(WLength(0,WLength::Pixel),Wt::Bottom|Wt::Left|Wt::Right);
-         */
-    }
-    else
-    {
-        temp = WDialog::footer();
-        temp->setHeight(WLength(45,WLength::Pixel));
-        temp->setStyleClass("modal-footer");
-    }
-    m_footer=temp;
+  if( m_footer )
     return m_footer;
+  
+  if( m_isPhone )
+  {
+    WContainerWidget *bar = titleBar();
+    bar->setHeight( WLength(35,WLength::Pixel) );
+    bar->setStyleClass( "PhoneAuxWindowHeader" );
+    
+    //ToDo: for Android should show window title, but not in iOS
+    //      (currently hiding everywhere)
+    for( size_t i = 0; i < bar->children().size(); ++i )
+    {
+      WText *caption = static_cast<WText *>( bar->children()[i] );
+      if( caption )
+        caption->setHidden(true);
+    }
+    
+    m_footer = new WContainerWidget;
+    if( m_isAndroid )
+      m_footer->addStyleClass( "PhoneAuxWindowFooterDroid" );
+    else
+      m_footer->addStyleClass( "PhoneAuxWindowFooterApple" );
+    
+    m_footer->setMargin( 12, Wt::Left );
+    m_footer->setMargin( 12, Wt::Right );
+    bar->insertWidget( 0, m_footer );
+  }else
+  {
+    m_footer = WDialog::footer();
+    m_footer->setHeight(WLength(45,WLength::Pixel));
+    m_footer->setStyleClass("modal-footer");
+  }
+  
+  return m_footer;
 }
 
 AuxWindow::~AuxWindow()
@@ -877,6 +864,10 @@ void AuxWindow::emitReject()
   finished().emit(WDialog::Rejected);
 }
 
+bool AuxWindow::isPhone() const
+{
+  return m_isPhone;
+}
 
 Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override_txt, bool floatright,  Wt::WContainerWidget * footerOverride)
 {
@@ -887,7 +878,12 @@ Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override_txt, bool flo
     if( override_txt.empty() )
       override_txt = "Back";
     
-    close->setStyleClass("MobileBackBtn");
+    if( m_isAndroid )
+      close->addStyleClass( "MobileBackBtnDroid InvertInDark" );
+    else
+      close->addStyleClass( "MobileBackBtnApple" );
+    
+    
     close->setText( override_txt );
   }else
   {
@@ -1036,25 +1032,33 @@ void AuxWindow::centerWindowHeavyHanded()
   doJavaScript( moveJs.str() );
 }
 
-void AuxWindow::repositionWindow( int x, int y )
+std::string AuxWindow::repositionWindowJs( int x, int y )
 {
   if( m_isPhone )
-      return; //disable running calls after AuxWindow initialized to be mobile
-    
+    return ""; //disable running calls after AuxWindow initialized to be mobile
+  
 #if( USE_NEW_AUXWINDOW_ISH )
   const string pos = "{top:" + std::to_string(y)
   + ",left:" + std::to_string(x) + "}";
-  m_repositionSlot->exec( id(), pos );
+  return m_repositionSlot->execJs( id(), pos );
 #else
   stringstream moveJs;
   moveJs << "var el = " << this->jsRef() << ";"
-         << "var olddispl = el.style.display; el.style.display='';"
-         << "el.style.top = '"  << y << "px';"
-         << "el.style.left = '" << x << "px';"
-         << "el.style.display = olddispl;";
+  << "var olddispl = el.style.display; el.style.display='';"
+  << "el.style.top = '"  << y << "px';"
+  << "el.style.left = '" << x << "px';"
+  << "el.style.display = olddispl;";
   
-  doJavaScript( moveJs.str() );
+  return moveJs.str();
 #endif //#if( USE_NEW_AUXWINDOW_ISH )
+}//std::string repositionWindowJs( int x, int y )
+
+
+void AuxWindow::repositionWindow( int x, int y )
+{
+  const string js = repositionWindowJs( x, y );
+  if( !js.empty() )
+    doJavaScript( js );
 } // void AuxWindow::repositionWindow( int x, int y )
 
 
@@ -1082,34 +1086,45 @@ void AuxWindow::resizeWindow( int width, int height )
 } // void AuxWindow::resizeWindow( int width, int height )
 
 
-void AuxWindow::resizeScaledWindow( double xRatio, double yRatio )
+std::string AuxWindow::resizeScaledWindowJs( double xRatio, double yRatio ) const
 {
   if( m_isPhone )
-      return; //disable running calls after AuxWindow initialized to be mobile
+    return ""; //disable running calls after AuxWindow initialized to be mobile
   
   if( xRatio <= 0.0 && yRatio <= 0.0 )
-    return;
+    return "";
   
 #if( USE_NEW_AUXWINDOW_ISH )
   const string size = "{x:" + std::to_string(xRatio)
-   + ",y:" + std::to_string(yRatio) + "}";
-   m_resizeScaledSlot->exec(id(),size);
+  + ",y:" + std::to_string(yRatio) + "}";
+  return m_resizeScaledSlot->execJs(id(),size);
 #else
   const string jsthis = "$('#" + id() + "')";
   stringstream sizeJs;
   sizeJs << "var el = " << this->jsRef() << ";"
-         << "var olddispl = el.style.display; el.style.display='';"
-         << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
+  << "var olddispl = el.style.display; el.style.display='';"
+  << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
+  
+  //TODO: Currently assuming a border with of 1px always, should evaluate this
+  //TODO: would it be better to use $(window/document).width()/.height() below?
   if( xRatio > 0.0 )
-    sizeJs << jsthis << ".width( "  << xRatio << "*ws.x );";
+    sizeJs << "if(ws.x>2) " << jsthis << ".width( "  << xRatio << "*ws.x - 2 );";
   if( yRatio > 0.0 )
-    sizeJs << jsthis << ".height( " << yRatio << "*ws.y );";
+    sizeJs << "if(ws.y>2) " << jsthis << ".height( " << yRatio << "*ws.y - 2 );";
   sizeJs << jsthis << ".data('notshown',true);"
-         << "el.style.display = olddispl;";
-
-  doJavaScript( sizeJs.str() );
+  << "el.style.display = olddispl;";
+  
+  return sizeJs.str();
 #endif  //#if( USE_NEW_AUXWINDOW_ISH )
-} // void AuxWindow::resizeScaledWindow( double xRatio, double yRatio )
+}//std::string resizeScaledWindowJs( double xRatio, double yRatio ) const
+
+void AuxWindow::resizeScaledWindow( double xRatio, double yRatio )
+{
+  const string js = resizeScaledWindowJs(xRatio,yRatio);
+ 
+  if( !js.empty() )
+    doJavaScript( js );
+}//void resizeScaledWindow( double xRatio, double yRatio )
 
 
 void AuxWindow::deleteAuxWindow( AuxWindow *window )
@@ -1314,18 +1329,34 @@ JSignal<> &AuxWindow::expanded()
 
 void AuxWindow::addHelpInFooter(WContainerWidget *footer, std::string page, AuxWindow *parent)
 {
-  Wt::WImage *image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/qmark.png"), footer);
-  image->setAlternateText("Help");
-  image->setStyleClass("helpButton");
-  image->setFloatSide(Left);
-  image->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, page ) );
-    
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-    
+  
+  Wt::WImage *image = nullptr;
+  
   if( app && app->isMobile() )
   {
-      image->setFloatSide(Wt::Right);
-  } //isMobile
+    if( app->isAndroid() )
+    {
+      image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/qmark.png"), footer);
+      image->setStyleClass("helpButton");
+    }else
+    {
+      image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), footer);
+      image->setStyleClass("HelpButtonMblApple");
+      image->setWidth( 20 );
+      image->setHeight( 20 );
+    }
+    
+    image->setFloatSide( Wt::Right );
+  }else
+  {
+    image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/qmark.png"), footer);
+    image->setStyleClass("helpButton");
+    image->setFloatSide(Left);
+  }//isMobile
+  
+  image->setAlternateText("Help");
+  image->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, page ) );
 }
 //
 //void AuxWindow::openHelpWindow(std::string page,AuxWindow *parent)

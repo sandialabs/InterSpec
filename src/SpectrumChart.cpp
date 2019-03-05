@@ -291,7 +291,7 @@ void getYAxisLabelTicks( const SpectrumChart *chart,
         
     case Chart::LogScale:
     {
-      //Get the power of 10 just bellow or equal to rendermin.
+      //Get the power of 10 just below or equal to rendermin.
       int minpower = (renderymin > 0.0) ? (int)floor( log10(renderymin) ) : -1;
         
       //Get the power of 10 just above or equal to renderymax.  If renderymax
@@ -318,7 +318,7 @@ void getYAxisLabelTicks( const SpectrumChart *chart,
         
         
       //numdecades: number of decades the data covers, including the decade
-      //  above and bellow the data.
+      //  above and below the data.
       const int numdecades = maxpower - minpower + 1;
         
       //minpxdecade: minimum number of pixels we need per decade.
@@ -2863,7 +2863,7 @@ void SpectrumChart::handlePinchZoomChange( int x0_t0, int x_t0,
     return;
   }
   
-  //The bellow assumes the x-axis is a continuous, linear scale (which is
+  //The below assumes the x-axis is a continuous, linear scale (which is
   //  true for InterSpec, but not Wt::Chart::WCartesianChart in general).
   const double factor = fabs((double)(x_t0 - x_t1)) / fabs((double)(x0_t0 - x0_t1));
   
@@ -2896,7 +2896,7 @@ void SpectrumChart::handlePinchZoomChange( int x0_t0, int x_t0,
   if( factor > 1.0 )
   {
     //zooming-in - fingers are further apart then when they startet
-    //0.5 bellow is arbitrary, just to speed up the zooming
+    //0.5 below is arbitrary, just to speed up the zooming
     const double newDE = 0.5 * initialDE / factor;
     
     //origMidE should be at midPx, and the total x-range should span newDE
@@ -4030,7 +4030,7 @@ void SpectrumChart::visibleRange( double &axisMinX, double &axisMaxX,
   //  compensate for this.
   //Note that for newer versions of Wt, a function axisPadding() may be
   //  available rather than hard-coding in this 5.0
-  // XXX - bellow might not be completely working
+  // XXX - below might not be completely working
   WPointF minPoint = mapToDevice( axisMinX, axisMinY, Chart::XAxis );
   minPoint.setX( minPoint.x() - axisPadding() );
   minPoint = mapFromDevice( minPoint, Chart::XAxis );

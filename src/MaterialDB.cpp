@@ -131,7 +131,7 @@ void Material::parseChemicalFormula( string text,
   const string numbers = "0123456789.";
   string::size_type pos = 0;
 
-  //Could probably use a regex, but the bellow seems to work okay
+  //Could probably use a regex, but the below seems to work okay
   try
   {
     while( pos != string::npos && pos != text.size() )

@@ -104,7 +104,7 @@ Recalibrator::Recalibrator(
     m_revert( 0 ),
     m_acceptText( 0 ),
     m_acceptButtonDiv( 0 ),
-    m_coeffEquationType( Measurement::UnknownEquationType ),
+    m_coeffEquationType( Measurement::InvalidEquationType ),
     m_devPairs( nullptr ),
     m_layout( nullptr )
 {
@@ -696,7 +696,8 @@ void Recalibrator::engageRecalibration( RecalAction action )
     vector<float> poly = eqn;
     
     vector<float> frfcoef = eqn;
-    if( m_coeffEquationType == Measurement::Polynomial )
+    if( m_coeffEquationType == Measurement::Polynomial
+       || m_coeffEquationType == Measurement::UnspecifiedUsingDefaultPolynomial )
       frfcoef = polynomial_coef_to_fullrangefraction( frfcoef, nbin );
     
     bool valid = checkFullRangeFractionCoeffsValid( frfcoef, devpairs, nbin );
@@ -723,6 +724,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
   switch( m_coeffEquationType )
   {
     case Measurement::Polynomial:
+    case Measurement::UnspecifiedUsingDefaultPolynomial:
     case Measurement::FullRangeFraction:
     {
       //Recalibrate the foreground
@@ -807,13 +809,13 @@ void Recalibrator::engageRecalibration( RecalAction action )
 
 
     case Measurement::LowerChannelEdge:
-    case Measurement::UnknownEquationType:
+    case Measurement::InvalidEquationType:
     {
       passMessage( "Recalibration can only be done for polynomial or full range"
                    " fraction calibrated spectrums", "engageRecalibration",
                    WarningWidget::WarningMsgHigh );
       break;
-    }//case LowerChannelEdge and UnknownEquationType
+    }//case LowerChannelEdge and InvalidEquationType
   }//switch( m_coeffEquationType )
 
 
@@ -903,6 +905,7 @@ void Recalibrator::recalibrateByPeaks()
     switch( calibration_type )
     {
       case Measurement::Polynomial:
+      case Measurement::UnspecifiedUsingDefaultPolynomial:
 //        calib_coefs = polynomial_coef_to_fullrangefraction( calib_coefs, nbin );
       break;
 
@@ -911,11 +914,11 @@ void Recalibrator::recalibrateByPeaks()
       break;
 
       case Measurement::LowerChannelEdge:
-      case Measurement::UnknownEquationType:
+      case Measurement::InvalidEquationType:
       {
         passMessage( "Changing calibration to be full width fraction, "
-                     "some small amount of information may be lost",
-                     "recalibrateByPeaks", WarningWidget::WarningMsgHigh );
+                     "some information will be lost.",
+                     "", WarningWidget::WarningMsgHigh );
 
         const float lower_energy = binning->at(0);
         const float upper_energy = 2*binning->at(nbin-1) - binning->at(nbin-2);
@@ -948,7 +951,7 @@ void Recalibrator::recalibrateByPeaks()
         }//if( !!foreground )
         
         break;
-      }//case LowerChannelEdge and UnknownEquationType
+      }//case LowerChannelEdge and InvalidEquationType
     }//switch( calibration_type )
 
     //TODO: meansFitError will currently contain only values of 1.0, eventually
@@ -1169,7 +1172,7 @@ void Recalibrator::refreshRecalibrator()
   if( !foreground || !displ_foreground || !dataBinning
       || dataBinning->size() < 16 || (!!foreground
         && (displ_foreground->energy_calibration_model()==Measurement::LowerChannelEdge
-            || displ_foreground->energy_calibration_model()==Measurement::UnknownEquationType)) )
+            || displ_foreground->energy_calibration_model()==Measurement::InvalidEquationType)) )
   {
     disable();
     m_coefficientDisplay[0]->setValue(0.0);
@@ -1223,11 +1226,14 @@ void Recalibrator::refreshRecalibrator()
   
   vector< float > equationCoefficients = displ_foreground->calibration_coeffs();
   m_coeffEquationType = m_originalCal[kForeground].type;
+  if( m_coeffEquationType == Measurement::UnspecifiedUsingDefaultPolynomial )
+    m_coeffEquationType = Measurement::Polynomial;
   
   switch( m_coeffEquationType )
   {
     // Note: fall-through intentional
   case Measurement::Polynomial:
+  case Measurement::UnspecifiedUsingDefaultPolynomial:
   case Measurement::FullRangeFraction:
     break;
 
@@ -1242,7 +1248,7 @@ void Recalibrator::refreshRecalibrator()
 
     // Possibly just flash a warning (high?) for the user not to recalibrate, but also fit for the nearest
     // coefficients and deviation pairs.
-  case Measurement::UnknownEquationType:
+  case Measurement::InvalidEquationType:
     equationCoefficients.resize( 3 ); // Third degree polynomial *wonk*
     if( binning.size() != 0 )
     {
@@ -1260,7 +1266,8 @@ void Recalibrator::refreshRecalibrator()
 
   // Find how much the things should tick by as a base
   double tickLevel[3];
-  if( m_coeffEquationType == Measurement::Polynomial )
+  if( m_coeffEquationType == Measurement::Polynomial
+      || m_coeffEquationType == Measurement::UnspecifiedUsingDefaultPolynomial )
   {
     tickLevel[0] = 1.0;
     tickLevel[1] = 1.0 / nbin;
@@ -1301,7 +1308,8 @@ void Recalibrator::refreshRecalibrator()
   switch( m_coeffEquationType )
   {
     case Measurement::Polynomial:
-    case Measurement::UnknownEquationType:
+    case Measurement::UnspecifiedUsingDefaultPolynomial:
+    case Measurement::InvalidEquationType:
       offsetExp    << " keV";
       linearExp    << " <sup>keV</sup>/<sub>chnl</sub>";
       quadraticExp << " <sup>keV</sup>/<sub>chnl<sup>2</sup></sub>";
@@ -1511,10 +1519,18 @@ Recalibrator::PolyCalibCoefMinFcn::PolyCalibCoefMinFcn(
     m_peakInfo( peakInfo ),
     m_devpair( devpair )
 {
-  if( m_eqnType != Measurement::Polynomial
-      && m_eqnType != Measurement::FullRangeFraction )
-    throw runtime_error( "PolyCalibCoefMinFcn can only wotrk with Full "
-                         "Range Fraction and Polynomial binnings" );
+  switch( m_eqnType )
+  {
+    case Measurement::Polynomial:
+    case Measurement::FullRangeFraction:
+    case Measurement::UnspecifiedUsingDefaultPolynomial:
+      break;
+    case Measurement::LowerChannelEdge:
+    case Measurement::InvalidEquationType:
+      throw runtime_error( "PolyCalibCoefMinFcn can only wotrk with Full "
+                          "Range Fraction and Polynomial binnings" );
+      break;
+  }
 }//PolyCalibCoefMinFcn( constructor )
 
 
@@ -1548,7 +1564,8 @@ double Recalibrator::PolyCalibCoefMinFcn::operator()( const vector<double> &coef
 
 //  if( m_eqnType == Measurement::FullRangeFraction )
 //    float_coef = fullrangefraction_coef_to_polynomial( float_coef, m_nbin );
-  if( m_eqnType == Measurement::Polynomial )
+  if( m_eqnType == Measurement::Polynomial
+      || m_eqnType == Measurement::UnspecifiedUsingDefaultPolynomial )
     float_coef = polynomial_coef_to_fullrangefraction( float_coef, m_nbin );
 
   
@@ -1607,7 +1624,7 @@ double Recalibrator::PolyCalibCoefMinFcn::operator()( const vector<double> &coef
 
 void Recalibrator::CalibrationInformation::reset()
 {
-  type = Measurement::UnknownEquationType;
+  type = Measurement::InvalidEquationType;
   coefficients.clear();
   deviationpairs.clear();
   sample_numbers.clear();
@@ -1814,13 +1831,14 @@ void Recalibrator::GraphicalRecalConfirm::apply()
   switch( eqnType )
   {
     case Measurement::Polynomial:
+    case Measurement::UnspecifiedUsingDefaultPolynomial:
       eqnType = Measurement::FullRangeFraction;
       eqn = polynomial_coef_to_fullrangefraction( eqn, nbin );
     break;
     case Measurement::FullRangeFraction:
     break;
     case Measurement::LowerChannelEdge:
-    case Measurement::UnknownEquationType:
+    case Measurement::InvalidEquationType:
       throw runtime_error( "You cannot recalibrate spectrums with an unknown "
                            "calibration or one defined by lower bin energees" );
   }//switch( eqnType )
@@ -1839,7 +1857,7 @@ void Recalibrator::GraphicalRecalConfirm::apply()
     const float upbin = find_bin_fullrangefraction( startE, orig_eqn,
                                                   nbin, deviationPairs, 0.001f );
     
-    //From a quick empiracal test (so by no means definitive), the bellow
+    //From a quick empiracal test (so by no means definitive), the below
     //  behaves well for the case deviation pairs are defined.
     const float x1 = upbin / nbin;
     const float x2 = lowbin / nbin;
@@ -1857,7 +1875,7 @@ void Recalibrator::GraphicalRecalConfirm::apply()
       
       case kLinear:
       {
-        //From a quick empiracal test (so by no means definitive), the bellow
+        //From a quick empiracal test (so by no means definitive), the below
         //  behaves well for the case deviation pairs are defined.
         const float binnum = find_bin_fullrangefraction( startE, eqn, nbin,
                                                         deviationPairs, 0.001f );
@@ -1900,7 +1918,7 @@ void Recalibrator::GraphicalRecalConfirm::apply()
     }//switch( type )
   }//if( preserveLast ) / else
   
-//  if( eqnType == Measurement::Polynomial )
+//  if( eqnType == Measurement::Polynomial || eqnType == Measurement::UnspecifiedUsingDefaultPolynomial )
 //    eqn = fullrangefraction_coef_to_polynomial( eqn, nbin );
   
   bool valid = checkFullRangeFractionCoeffsValid( eqn, deviationPairs, nbin );
@@ -2041,10 +2059,13 @@ PreserveCalibWindow::PreserveCalibWindow(
   
   switch( m_type )
   {
-    case  Measurement::Polynomial: case Measurement::FullRangeFraction:
+    case Measurement::Polynomial:
+    case Measurement::FullRangeFraction:
+    case Measurement::UnspecifiedUsingDefaultPolynomial:
       break;
       
-    case Measurement::LowerChannelEdge: case Measurement::UnknownEquationType:
+    case Measurement::LowerChannelEdge:
+    case Measurement::InvalidEquationType:
       throw runtime_error( "PreserveCalibWindow: invalid type" );
     break;
   }//switch( m_devPairs )
@@ -2069,20 +2090,26 @@ PreserveCalibWindow::PreserveCalibWindow(
   
   switch( eqnnewmeas->energy_calibration_model() )
   {
-    case Measurement::Polynomial: msg += "Polynomial"; break;
+    case Measurement::Polynomial:
+    case Measurement::UnspecifiedUsingDefaultPolynomial:
+      msg += "Polynomial";
+      break;
     case Measurement::FullRangeFraction: msg += "FRF"; break;
     case Measurement::LowerChannelEdge:
-    case Measurement::UnknownEquationType:
+    case Measurement::InvalidEquationType:
       break;
   }//switch( newmeas->energy_calibration_model() )
   
   msg += ")</th><th>New (";
   switch( eqnoldmeas->energy_calibration_model() )
   {
-    case Measurement::Polynomial: msg += "Polynomial"; break;
+    case Measurement::Polynomial:
+    case Measurement::UnspecifiedUsingDefaultPolynomial:
+      msg += "Polynomial";
+      break;
     case Measurement::FullRangeFraction: msg += "FRF"; break;
     case Measurement::LowerChannelEdge:
-    case Measurement::UnknownEquationType:
+    case Measurement::InvalidEquationType:
       break;
   }//switch( oldmeas->energy_calibration_model() )
   msg += ")</th></tr>";
@@ -2753,16 +2780,17 @@ void Recalibrator::MultiFileCalibFit::doFit()
     {
       case Measurement::Polynomial:
       case Measurement::FullRangeFraction:
+      case Measurement::UnspecifiedUsingDefaultPolynomial:
         break;
         
       case Measurement::LowerChannelEdge:
-      case Measurement::UnknownEquationType:
+      case Measurement::InvalidEquationType:
       {
         passMessage( "Invalid starting calibration type: unknown or lower bin "
                      "edge energy not allowed", "", WarningWidget::WarningMsgHigh );
         return;
         break;
-      }//case LowerChannelEdge and UnknownEquationType
+      }//case LowerChannelEdge or InvalidEquationType
     }//switch( calibration_type )
     
     //TODO: meansFitError will currently contain only values of 1.0, eventually
@@ -2927,7 +2955,8 @@ void Recalibrator::MultiFileCalibFit::doFit()
     for( const double d : parValues )
       float_coef.push_back( static_cast<float>(d) );
     
-    if( m_calibrator->m_coeffEquationType == Measurement::Polynomial )
+    if( m_calibrator->m_coeffEquationType == Measurement::Polynomial
+       || m_calibrator->m_coeffEquationType == Measurement::UnspecifiedUsingDefaultPolynomial )
       float_coef = polynomial_coef_to_fullrangefraction( float_coef, nbin );
     
     stringstream msg;

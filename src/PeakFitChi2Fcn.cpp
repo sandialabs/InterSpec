@@ -201,7 +201,7 @@ int PeakFitChi2Fcn::continuumInfoToSharedIndex( double info )
 
   info = 10000.0 * (info - std::floor(info));
   
-  //Note, the bellow "+ 0.5" is necessary, or else the cast to the int will
+  //Note, the below "+ 0.5" is necessary, or else the cast to the int will
   //  occationally fail due to truncation due to impresise representation of
   //  the intermediate sub-integer values (e.g. when we divide by 10000.0).
   const int index = static_cast<int>( info + 0.5 );
@@ -696,7 +696,7 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
       if( method == kFixPeakParameters )
         startval = peak.coefficient(type);
       
-      //The bellow commented-out code keeps from triggering an assert in Minuit2,
+      //The below commented-out code keeps from triggering an assert in Minuit2,
       //  however it doesnt take into account the parameters/situations we will never
       //  set minval/maxval for...
       //      if( (method != kFixPeakParameters) && (minval==maxval) )
@@ -788,7 +788,7 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
       const PeakContinuum::OffsetType resultType
                                       = continuumInfoToOffsetType( contInfo );
       
-      //Bellow check probably isnt necassarry, but I'll leave in until tested
+      //Below check probably isnt necassarry, but I'll leave in until tested
       //  or all platforms/architectures (implemented 20131230)
       if( resultIndex != sharedContinuumIndex
           || resultType != continuum->type() )

@@ -479,7 +479,7 @@ public:
   int row( const SandiaDecay::Nuclide *nuclide ) const;
 
   //Accessor functions all taking row number according to currently sorted order
-  //  All of the bellow will throw std::runtime_error if invald index.
+  //  All of the below will throw std::runtime_error if invald index.
   const SandiaDecay::Nuclide *nuclide( int nuc ) const;
   double activity( int nuc ) const;
   double activityUncert( int nuc ) const;

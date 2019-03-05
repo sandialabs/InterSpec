@@ -457,7 +457,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
       
       if( val > max_allowable && (!highres || contents[channel+direction] > max_allowable) )
       {
-        //XXX - the bellow 3 is purely empircal, and meant to help avoid
+        //XXX - the below 3 is purely empircal, and meant to help avoid
         //      contamination due to the new feature
         if( channel >= 3*direction )
           lastchannel = channel - 3*direction;
@@ -2307,7 +2307,7 @@ void PeakDef::makeUniqueNewContinuum()
 }
 
 
-//The bellow should in principle take care of gaussian area and the skew area
+//The below should in principle take care of gaussian area and the skew area
 double PeakDef::peakArea() const
 {
   double amp = m_coefficients[PeakDef::GaussAmplitude];
@@ -2341,7 +2341,7 @@ double PeakDef::peakAreaUncert() const
       const double frac_uncert = m_uncertainties[PeakDef::LandauAmplitude]
                                  / m_coefficients[PeakDef::LandauAmplitude];
       const double skew_uncert = skew_area * frac_uncert;
-      //XXX - bellow assumes ampltude and skew amplitude are uncorelated,
+      //XXX - below assumes ampltude and skew amplitude are uncorelated,
       //      which they are not.
       uncert = sqrt( uncert*uncert + skew_uncert*skew_uncert );
       break;
@@ -2384,7 +2384,7 @@ void PeakDef::setPeakAreaUncert( const double uncert )
       
     case PeakDef::LandauSkew:
     {
-      //XXX - the bellow only modifies the gaus uncertainty, and not the skew
+      //XXX - the below only modifies the gaus uncertainty, and not the skew
       //  uncertainty - I was just to lazy to do it properly (should also look
       //  at how coorelated the skew amplitude error is to peak amplitude error
       //  ...)
@@ -3522,7 +3522,7 @@ void PeakContinuum::eqn_from_offsets( size_t lowchannel,
   double x1  = data->gamma_channel_lower( lowchannel ) - peakMean;
   const double dx1 = data->gamma_channel_width( lowchannel );
   
-  //XXX - hack! Bellow 'c' will be inf if the following check would fail; I
+  //XXX - hack! below 'c' will be inf if the following check would fail; I
   //      really should work out how to fix this properly with math, but for
   //      right now I'll fudge it, which will toss the answer off a bit, but
   //      whatever.

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   viewBox="0 0 10 16"
+   x="0px"
+   y="0px"
+   id="svg8"
+   width="10"
+   height="16"
+   style="fill:#007AFF">
+  <g
+     id="g6"
+     style="fill:none;fill-rule:evenodd;stroke:none;stroke-width:1"
+     transform="translate(-5.5426954,-2.746579)">
+    <g
+       id="g4"
+       style="fill:#007AFF">
+      <polygon
+         points="13.707,18.4141 15.122,17.0001 8.828,10.7081 15.122,4.4141 13.707,3.0001 6,10.7081 "
+         id="polygon2" />
+    </g>
+  </g>
+</svg>

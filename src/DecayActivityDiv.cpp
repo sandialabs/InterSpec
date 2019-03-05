@@ -2118,7 +2118,7 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
   
   //layout->setRowStretch( 0, 10 );
 
-  //I dont really care about centering the dialog, but without doing the bellow
+  //I dont really care about centering the dialog, but without doing the below
   //  the scrolling of the contents can be buggy
 //  const string jsthis = "$('#" + dialog->id() + "')";
 //  stringstream moveJs;

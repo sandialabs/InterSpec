@@ -68,6 +68,7 @@ static_assert( 0, "Serialization to database hasnt been checked (but is probably
 
 namespace
 {
+  /*
   struct xml_string_writer: pugi::xml_writer
   {
     std::string result;
@@ -77,7 +78,7 @@ namespace
       result.append(static_cast<const char*>(data), size);
     }
   };//struct xml_string_writer:
-  
+  */
   
   bool xml_files_small_enough( const std::string &filename, void *userdata )
   {
@@ -204,7 +205,7 @@ namespace Wt {
       bool result = statement->getResult( column, &bindata, size );
       result = (result && ((bindata.size() % sizeof(T))==0));
       
-      //ToDo: remove bellow assert after testing.
+      //ToDo: remove below assert after testing.
       if( result && (((bindata.size() % sizeof(T))!=0)) )
       {
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -490,7 +491,7 @@ namespace Wt {
                            SqlStatement *statement, int column, int size)
     {
 #if( USE_TEXT_FOR_BLOB )
-/*  //For some reason I couldnt figure out in 10 minutes, the bellow constructing of an XML document using pugixml was not working
+/*  //For some reason I couldnt figure out in 10 minutes, the below constructing of an XML document using pugixml was not working
  // The "value" nodes werent getting created, and instead their values was being put into the "filter" nodes - weird!
  // Also, maybe the text values were garbled.
       pugi::xml_document xmldoc;

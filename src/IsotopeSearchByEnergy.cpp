@@ -1037,7 +1037,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
                           boost::bind( &IsotopeSearchByEnergy::hideSearchingTxt,
                                        this, m_currentSearch ) );
   
-  //Verified bellow is safe if the WApplication instance is terminated before
+  //Verified below is safe if the WApplication instance is terminated before
   //  search results are completed, as well as if the WApplication isnt
   //  terminated but m_model is deleted.
   boost::function< void(void) > updatefcnt = app->bind( boost::bind(

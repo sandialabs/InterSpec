@@ -104,7 +104,7 @@ const BackgroundLine BackgroundReactionLines[28] =
 //BackgroundLines looks to be taking up ~14 kb of executable size on Win7
 const BackgroundLine BackgroundLines[89] =
 {
-  /*xrays bellow 46 keV not inserted*/
+  /*xrays below 46 keV not inserted*/
   BackgroundLine( 46.54f,   0.0425f,  "Pb210",   Ra226Series,        "" ),
   BackgroundLine( 53.23f,   0.01060f, "Pb214",   Ra226Series,        "" ),
   BackgroundLine( 63.28f,   0.048f,   "Th234",   U238Series,         "" ),

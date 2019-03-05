@@ -851,7 +851,7 @@ std::string InterSpec::dataDirectory()
 InterSpec::~InterSpec()
 {
   //The deletion of the DOM root node will destrow all the AuxWindows we
-  //  have open, but I am manually taking care of them bellow due to a crash
+  //  have open, but I am manually taking care of them below due to a crash
   //  I have been getting in the WApplication destructor for Wt 3.3.1-rc1
 
   cerr << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'" << endl;
@@ -1168,7 +1168,7 @@ void InterSpec::layoutSizeChanged( int w, int h )
   
 #if( IOS || ANDROID )
   //When the soft-keyboard disapears (on Android at a minimum), the overlays
-  //  dont resize properly (until you change tab bellow the chart, or something)
+  //  dont resize properly (until you change tab below the chart, or something)
   //  so we will force it.
   m_spectrum->forceOverlayAlign();
   if( !m_timeSeries->isHidden() )
@@ -2164,7 +2164,7 @@ void InterSpec::handleRightClick( double energy, double counts,
         const double rightlower = peak->lowerX();
         const double rightupper = peak->upperX();
         
-        //The bellow 2.0 is arbitrary
+        //The below 2.0 is arbitrary
         const bool show = ((rightlower-leftupper) < 2.0*(rightupper-rightlower));
         m_rightClickMenutItems[i]->setHidden( !show );
         break;
@@ -2198,7 +2198,7 @@ void InterSpec::handleRightClick( double energy, double counts,
         const double leftlower = peak->lowerX();
         const double leftupper = peak->upperX();
         
-        //The bellow 2.0 is arbitrary
+        //The below 2.0 is arbitrary
         const bool show = ((rightlower-leftupper) < 2.0*(leftupper-leftlower));
         m_rightClickMenutItems[i]->setHidden( !show );
         break;
@@ -3096,7 +3096,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     m_spectrum->guessAndUpdateDisplayRebinFactor();
 
     
-    //Should take care of entry->showingWindows here, so we can relie on it bellow
+    //Should take care of entry->showingWindows here, so we can relie on it below
     if( entry->gammaLinesXml.size() )
     {
       bool toolTabsHidden = false;
@@ -3210,8 +3210,8 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 //Whenever m_currentStateID changes value, we need to update the menu!
 void InterSpec::updateSaveWorkspaceMenu()
 {
-  m_saveStateAs->setDisabled(false);
-    
+  m_saveStateAs->setDisabled( !m_dataMeasurement );
+  
   //check if Save menu needs to be updated
   if( m_currentStateID >= 0 )
   {
@@ -4562,6 +4562,9 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   string menuname = "InterSpec";
 #if( !defined(__APPLE__) && BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
   menuname = "File";
+#else
+  if( isMobile )
+    menuname = "Spectra";
 #endif
   
   if( menuDiv )
@@ -4639,6 +4642,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     m_saveStateAs = m_fileMenuPopup->addMenuItem( save_as_txt );
     m_saveStateAs->triggered().connect( boost::bind( &InterSpec::stateSaveAs, this ) );
     HelpSystem::attachToolTipOn(m_saveStateAs, "Saves the current state to a new branch", showToolTipInstantly );
+    m_saveStateAs->setDisabled( true );
 
     // --- new save tag menu ---
     m_createTag = m_fileMenuPopup->addMenuItem( tag_txt , "InterSpec_resources/images/stop_time_small.png");
@@ -4657,9 +4661,9 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     
     if( isMobile )
     {
-        item = m_fileMenuPopup->addMenuItem( "Spectrum Files..." );
-        item->triggered().connect( this, &InterSpec::showCompactFileManagerWindow );
-        m_fileMenuPopup->addSeparator();
+      item = m_fileMenuPopup->addMenuItem( "Loaded Spectra..." );
+      item->triggered().connect( this, &InterSpec::showCompactFileManagerWindow );
+      m_fileMenuPopup->addSeparator();
     }//if( isMobile )
     
     m_fileMenuPopup->addSeparator();
@@ -5081,7 +5085,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amoutn of space between the menu bar and the chart
       m_spectrum->setMargin( -layoutVertSpacing, Wt::Top );
     
-    //Without using the wrapper bellow, the tabs widget will change height, even
+    //Without using the wrapper below, the tabs widget will change height, even
     //  if it is explicitly set, when different tabs are clicked (unless a
     //  manual resize is performed by the user first)
     //m_layout->addLayout( toolsLayout,   ++row, 0 );
@@ -5291,7 +5295,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   //Probably should also include an option to say whether fitted phtopeaks
   //  should adopt the color of the current refernce photopeak lines
   
-  //With the bellow, it seems the color of the widget never actually gets
+  //With the below, it seems the color of the widget never actually gets
   //  changed... also, it wouldnt be supported on native menus.
   //chartmenu->addSeparator();
   //ColorSelect *color = new ColorSelect(ColorSelect::PrefferNative);
@@ -5354,7 +5358,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     
     submenu = m_displayOptionsPopupDiv->addPopupMenuItem( "Feature Markers" );
     
-    //We have to put all the bellow checkboxes into a div, inorder to have the
+    //We have to put all the below checkboxes into a div, inorder to have the
     //  tool-tip work with the mouse anywhere over the item, otherwise only the
     //  check-box itself will have the tool-tip, not the label
     
@@ -5826,9 +5830,11 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 
   m_helpMenuPopup->addSeparator();
   
-  //item = m_helpMenuPopup->addMenuItem( "Help Contents..." ,  "InterSpec_resources/images/help.png");
-  //item = m_helpMenuPopup->addMenuItem( "Help Contents..." ,  "InterSpec_resources/images/qmark.png");
-  item = m_helpMenuPopup->addMenuItem( "Help Contents..." ,  "InterSpec_resources/images/help_small.png");
+  //if( isMobile() )
+  //  item = m_helpMenuPopup->addMenuItem( "Help Contents..." ,  "InterSpec_resources/images/help_mobile.svg");
+  //else
+    item = m_helpMenuPopup->addMenuItem( "Help Contents..." ,  "InterSpec_resources/images/help_small.png");
+  
   item->triggered().connect( boost::bind( &HelpSystem::createHelpWindow, string("setting-up") ) );
 
   Wt::WMenuItem *notifications = m_helpMenuPopup->addMenuItem( "Notification Logs..." , "InterSpec_resources/images/log_file_small.png");
@@ -7801,6 +7807,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     case kForeground:
       updateGuiForPrimarySpecChange( sample_numbers );
+#if( USE_DB_TO_STORE_SPECTRA )
+      m_saveStateAs->setDisabled( !m_dataMeasurement );
+#endif
     case kSecondForeground:
       displaySecondForegroundData();
     case kBackground:
@@ -7923,6 +7932,27 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       m_mobileForwardButton->setHidden(true);
     }
   }//if( m_mobileBackButton && m_mobileForwardButton )
+  
+  
+  //Check for warnings from parsing the file, and display to user - not
+  //  implemented well yet.
+  if( spec_type == kForeground && m_dataMeasurement && !sameSpec )
+  {
+    try
+    {
+      const vector<bool> use_gamma( m_dataMeasurement->detector_names().size(), true );
+      const size_t index = m_dataMeasurement->suggested_gamma_binning_index( sample_numbers, use_gamma );
+      auto meas = m_dataMeasurement->measurements().at(index);
+      if( meas && meas->energy_calibration_model() == Measurement::EquationType::UnspecifiedUsingDefaultPolynomial )
+      {
+        passMessage( "Warning, could not find the energy calibration, so using a default one", "", WarningWidget::WarningMsgMedium );
+      }
+    }catch( std::exception & )
+    {
+    }
+    
+    
+  }//if( spec_type == kForeground && m_dataMeasurement && !sameSpec )
   
   
   //Display a notice to the user about how they can select different portions of
@@ -9049,7 +9079,7 @@ void InterSpec::findPeakFromUserRange( double x0, double x1 )
   const double stat_threshold = 0.5;
   const double hypothesis_threshold = 0.5;
   
-  //XXX - we promised the user to use a given continuum, however the bellow only
+  //XXX - we promised the user to use a given continuum, however the below only
   //      uses this as a starting point
   peakV = fitPeaksInRange( x0+0.00001, x1-0.00001, 0,
                            stat_threshold, hypothesis_threshold,

@@ -187,7 +187,7 @@ void PhotopeakDelegate::EditWidget::nuclideNameMatcherJs( std::string &js )
         if( !suggestion )
           return value;
 
-        //XXX - TODO - right now the bellow ignores the case of meta-stable elements
+        //XXX - TODO - right now the below ignores the case of meta-stable elements
         //             and could possibly cause results like <b><b>M</b>g13<b>m</b></b>
         //             ex. Co60m, U235m, etc
         //XXX - TODO - right now the gamma lines in parenthesis, are also

@@ -624,7 +624,7 @@ void PeakInfoDisplay::init()
   button->clicked().connect( boost::bind( &InterSpec::guessIsotopesForPeaks, m_viewer, (WApplication *)0 ) );
 */
   
-  //If you want to post the bellow, so the ID isnt carried out in the main event loop, use the following
+  //If you want to post the below, so the ID isnt carried out in the main event loop, use the following
 //  boost::function<void ()> guessIsotopeWorker = boost::bind( &InterSpec::guessIsotopesForPeaks, m_viewer, wApp );
 //  button->clicked().connect( boost::bind( &WServer::post, WServer::instance(),
 //                                           wApp->sessionId(), guessIsotopeWorker,
