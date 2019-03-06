@@ -28,6 +28,7 @@
 #include <vector>
 #include <sstream>
 #include <fstream>
+#include <assert.h>
 #include <iostream>
 
 #include "InterSpec/DoseCalc.h"

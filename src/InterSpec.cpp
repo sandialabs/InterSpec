@@ -332,34 +332,6 @@ namespace
     
     return false;
   }//try_update_hint_peak(...)
-  
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
-  bool is_main_gui_app()
-  {
-    InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-    
-    //TODO: make checking the current claimed externalid against the primary
-    //      displays known externalid
-//#if( BUILD_AS_ELECTRON_APP )
-   // return (app && ElectronUtils::external_id() == app->sessionUrlId());
-//#endif
-//#if( BUILD_AS_OSX_APP )
-    //Need to implement way to recall AppDelegate::UrlUniqueId
-//#endif
-    
-    return (app && app->sessionUrlId().size());
-  }//bool is_main_gui_app()
-#elif( ANDROID )
-  bool is_main_gui_app()
-  {
-    return true;
-  }
-#else
-  bool is_main_gui_app()
-  {
-    return false;
-  }
-#endif
 }//namespace
 
 
@@ -4623,14 +4595,6 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     const char *save_txt = "Save";
     const char *save_as_txt = "Save As...";
     const char *tag_txt = "Tag...";
-    
-    
-    //if( !is_main_gui_app() )
-    //{
-    //  save_txt = "Save";
-    //  save_as_txt = "Save As...";
-      //tag_txt = "Tag...";
-    //}//
     
     // --- new save menu ---
     m_saveState = m_fileMenuPopup->addMenuItem( save_txt );
