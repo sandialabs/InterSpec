@@ -30,6 +30,7 @@
 #include <sstream>
 
 #include <boost/regex.hpp>
+#include <boost/filesystem.hpp>
 
 #include <Wt/WText>
 #include <Wt/Utils>

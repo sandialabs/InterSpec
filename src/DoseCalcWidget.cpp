@@ -82,16 +82,6 @@ using namespace std;
 
 namespace
 {
-  bool less_than_first( const std::pair<float,float> &lhs, const float rhs )
-  {
-    return lhs.first < rhs;
-  }
-  
-}//namespace
-
-
-namespace
-{
   
   class FitShieldingAdChi2
   : public ROOT::Minuit2::FCNBase
