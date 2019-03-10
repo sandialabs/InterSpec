@@ -830,10 +830,7 @@ WContainerWidget* AuxWindow::footer()
     }
     
     m_footer = new WContainerWidget;
-    if( m_isAndroid )
-      m_footer->addStyleClass( "PhoneAuxWindowFooterDroid" );
-    else
-      m_footer->addStyleClass( "PhoneAuxWindowFooterApple" );
+    m_footer->addStyleClass( "PhoneAuxWindowFooter" );
     
     m_footer->setMargin( 12, Wt::Left );
     m_footer->setMargin( 12, Wt::Right );
@@ -878,11 +875,9 @@ Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override_txt, bool flo
     if( override_txt.empty() )
       override_txt = "Back";
     
+    close->addStyleClass( "MobileBackBtn" );
     if( m_isAndroid )
-      close->addStyleClass( "MobileBackBtnDroid InvertInDark" );
-    else
-      close->addStyleClass( "MobileBackBtnApple" );
-    
+      close->addStyleClass( "InvertInDark" );
     
     close->setText( override_txt );
   }else
@@ -1342,7 +1337,7 @@ void AuxWindow::addHelpInFooter(WContainerWidget *footer, std::string page, AuxW
     }else
     {
       image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), footer);
-      image->setStyleClass("HelpButtonMblApple");
+      image->setStyleClass("HelpButtonMbl");
       image->setWidth( 20 );
       image->setHeight( 20 );
     }

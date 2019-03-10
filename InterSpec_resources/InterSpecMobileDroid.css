@@ -1,0 +1,28 @@
+.PhoneAuxWindowFooter
+{
+  padding-top: 6px;
+  height: 25px;
+  padding-right: 2px;
+}
+
+.PhoneAuxWindowFooter > button
+{
+  margin-right: 5px;
+}
+
+
+.MobileBackBtn, .MobileBackBtn:hover
+{
+  vertical-align: middle;
+  background: none;
+  background: url(images/mobile_back_droid.svg) !important;
+  background-repeat: no-repeat !important;
+  background-position: 3px 5px !important;
+  background-size: 20px 16px !important;
+  padding-left: 27px;
+  color: rgba(0,0,0,0) !important; /* Dont show "Close" text on Android windows... not to sure about this*/
+  border: none;
+  float: left;
+  margin-right: 5px;
+}
+

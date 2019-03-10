@@ -220,11 +220,11 @@ ul.SideMenu > li.item:hover  {
   background-color: rgb(65,65,65) !important; 
 }
 
-.PhoneAuxWindowFooterDroid, .PhoneAuxWindowFooterApple {
+.PhoneAuxWindowFooter
   padding-right: 2px;
 }
 
-.PhoneAuxWindowFooterDroid > button, .PhoneAuxWindowFooterApple > button {
+.PhoneAuxWindowFooter > button {
   margin-right: 5px;
 }
 

@@ -3715,12 +3715,12 @@ void InterSpec::showPeakInfoWindow()
     closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_peakInfoWindow ) );
       
     WPushButton *b = new WPushButton( CalibrationTabTitle, footer );
-    b->setIcon(WLink("InterSpec_resources/images/control_equalizer_blue.png"));
+    // b->setIcon(WLink("InterSpec_resources/images/control_equalizer_blue.png"));
     b->clicked().connect( this, &InterSpec::showRecalibratorWindow );
     b->setFloatSide(Wt::Right);
       
     b = new WPushButton( GammaLinesTabTitle, footer );
-    b->setIcon(WLink("InterSpec_resources/images/chart_curve.png"));
+    // b->setIcon(WLink("InterSpec_resources/images/chart_curve.png"));
     b->clicked().connect( this, &InterSpec::showGammaLinesWindow );
     b->setFloatSide(Wt::Right);
       

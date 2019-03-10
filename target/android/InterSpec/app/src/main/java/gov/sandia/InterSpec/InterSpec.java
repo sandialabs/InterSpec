@@ -275,7 +275,7 @@ public class InterSpec extends Activity
     boolean shouldDeleteFile = false;
     String pathname = getFilePath( result );
     
-    if( pathname == null )
+    if( true || pathname == null )
     {
       shouldDeleteFile = true;
       String displayName = getDisplayFileName( result );	
@@ -283,6 +283,7 @@ public class InterSpec extends Activity
         displayName = "unamedfile";
       pathname = copyUriToTmpDir( result, displayName );
     }//if( pathname == null )
+
 		
     if( pathname != null )
     {

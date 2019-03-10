@@ -1,0 +1,253 @@
+
+.MobileMenuButton, .MobileMenuButton:hover
+{
+  background: grey url(images/hamburger.png);
+  margin:0;
+  padding:0;
+  position:fixed;
+  top:5px;
+  left:5px;
+  width: 32px;
+  height: 34px;
+  opacity: 0.55;
+  -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
+  -webkit-touch-callout: none !important;
+  /* outline: none; //havent tried this, but this would be standards way to remove the tap highlight... */
+  /* The z-index is set with inline styling to 8388635 */
+}
+
+.MobileMenuButton:hover {
+  opacity: 1;
+}
+
+.PhoneAuxWindowHeader
+{
+  white-space:nowrap;
+  margin-top: 0;
+  text-align: right;
+  background-color: #FAFAFA;
+}
+
+
+.MobilePrevSample
+{
+  background: grey url(images/resultset_first.png);
+  background-repeat:no-repeat;
+  background-position: left;
+  background-size: 32px 32px;
+  margin:0;
+  position:fixed;
+  bottom:5px;
+  left:5px;
+  /* width: 150px;*/
+  height: 34px;
+  opacity: .75;
+  padding: 0px 15px 0px 35px  !important;
+  text-align: right;
+  filter:gray; /* IE6-9 */
+  -webkit-filter:grayscale(100%); /* Chrome 19+, Safari 6+, Safari 6+ iOS */
+  -moz-filter: grayscale(100%);
+  -o-filter: grayscale(100%);
+  
+  /* The z-index is set with inline styling to 8388635 */
+  /* z-index: 8388635; */ /*could use max val of 2147483638*/
+}
+
+.MobileNextSample
+{
+  background: grey url(images/resultset_last.png);
+  background-repeat:no-repeat;
+  background-position: right;
+  background-size:32px 32px;
+  text-align: left;
+  margin:0;
+  position:fixed;
+  bottom:5px;
+  right:5px;
+  /*width: 150px;*/
+  height: 34px;
+  opacity: .75;
+  padding: 0px 35px 0px 15px !important;
+  filter:gray; /* IE6-9 */
+  -webkit-filter:grayscale(100%); /* Chrome 19+, Safari 6+, Safari 6+ iOS */
+  -moz-filter: grayscale(100%);
+  -o-filter: grayscale(100%);
+  /* The z-index is set with inline styling to 8388635 */
+  /* z-index: 8388635; */ /*could use max val of 2147483638*/
+}
+
+.MobileMenuButton.active
+{
+  /*  background: white url(images/hamburger.png);*/
+  opacity: 1.0;
+}
+
+
+.MobileWelcomeText
+{
+  margin-bottom: 5px;
+  text-size: small;
+}
+
+.MobileWelcomePoscriptText
+{
+  margin-top: 5px;
+  text-size: small;
+}
+
+.PhoneCopywriteContent
+{
+  font-size: 8px;
+}
+
+.CenterBtnInPhoneAuxWindowHeader
+{
+  /* Center button in footer/header */
+  display: block !important;
+  margin: 0 auto !important;
+}
+
+
+.SideMenuPhone > li
+{
+  vertical-align:middle;
+  /*  font-size: small;*/
+  font-weight: bold;
+  
+  color: #ffffff;
+  padding-top: 10px;
+  padding-left: 14px;
+  
+  padding-bottom: 8px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+}
+
+
+.IsotopePeaksMobileWindowContents
+{
+}
+
+
+.SideMenuPhone > .itemselected
+{
+  background: #C6C6C6;
+}
+
+
+.UseInfoTabsMobile
+{
+}
+
+
+
+.SideMenuPhone
+{
+  margin: 0px;
+  padding-top:30px;
+  padding-left: 1px;
+  padding-right:1px;
+  list-style-type: none;
+  overflow: auto;
+  font-size: 13px;
+  width: 45px;
+}
+
+
+
+.ReferencePhotopeakDisplayMobile
+{
+  padding-top: 0px;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.mobilePopupMenuOverlay {
+  position:fixed;
+  top:0;
+  left:0;
+  background:rgba(200,200,200,0.3);
+  width:100%;
+  height:100%;
+}
+
+
+
+
+.DbSpecFileSelectTable
+{
+}
+
+
+
+table.RecalibCoefTable
+{
+  border-collapse:collapse;
+  margin-left:auto;
+  margin-right:auto;
+  margin-top: 10px;
+}
+
+table.RecalibCoefTable td, table.RecalibCoefTable th
+{
+  border:1px solid black;
+  padding: 2px;
+}
+
+
+
+
+.PopupDivMenuPhone
+{
+  border: solid 1px #e1e1e1;
+  background-color: #FAFAFA;
+  height: 100%;
+  width: 220px;
+  overflow-y: auto;
+}
+
+.PopupDivMenuPhone.Root
+{
+  box-shadow: 3px 3px 10px rgba(0,0,0,0.6);
+}
+
+.PopupDivMenuPhone > li > a
+{
+  height: 30px;
+  padding-top: 10px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+
+.PhoneMenuBack, .PhoneMenuClose
+{
+  background: #E6E6E6;
+}
+
+
+.PhoneDialogClose, .PhoneDialogClose:hover
+{
+  float: right;
+  background: transparent url(images/menuclose.png) no-repeat scroll left top;
+  background-position: 5 5;
+  
+  height: 26px;
+  width: 26px;
+  border: 0px;
+  padding: 0px;
+  cursor: default;
+  margin-right: 9px;
+  margin-top: 5px;
+}
+
+
+.PeakInfoDisplayTable
+{
+}
+
+
+

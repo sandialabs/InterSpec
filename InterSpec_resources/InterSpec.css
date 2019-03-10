@@ -323,12 +323,6 @@ width:100%;
 }
 
 
-.HelpButtonMblApple
-{
-  cursor:pointer;
-  margin-top: 2px;
-}
-
 
 .modal-footer 
 {
@@ -389,211 +383,12 @@ color: #D2D2D2;
   color: blue;
 }
 
-.PopupDivMenuPhone
-{
-  border: solid 1px #e1e1e1;
-  background-color: #FAFAFA;
-  height: 100%;
-  width: 220px;
-  overflow-y: auto;
-}
-
-.PopupDivMenuPhone.Root
-{
-box-shadow: 3px 3px 10px rgba(0,0,0,0.6);
-}
-
-.PopupDivMenuPhone > li > a
-{
-  height: 30px;
-  padding-top: 10px;
-  padding-left: 10px;
-  padding-right: 10px;
-}
-
-
-.PhoneMenuBack, .PhoneMenuClose
-{
-  background: #E6E6E6;
-}
 
 .DialogClose
 {
   float: right;
 }
 
-
-.PhoneDialogClose, .PhoneDialogClose:hover
-{
-  float: right;
-  background: transparent url(images/menuclose.png) no-repeat scroll left top;
-  background-position: 5 5;
-  
-  height: 26px;
-  width: 26px;
-  border: 0px;
-  padding: 0px;
-  cursor: default;
-  margin-right: 9px;
-  margin-top: 5px;
-}
-
-
-
-
-.MobileMenuButton, .MobileMenuButton:hover
-{
-  background: grey url(images/hamburger.png);
-  margin:0;
-  padding:0;
-  position:fixed; 
-  top:5px;
-  left:5px;
-  width: 32px;
-  height: 34px;
-  opacity: 0.55;
-  -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
-  -webkit-touch-callout: none !important;
-  /* outline: none; //havent tried this, but this would be standards way to remove the tap highlight... */
-  /* The z-index is set with inline styling to 8388635 */
-}
-
-.MobileMenuButton:hover {
-  opacity: 1;
-}
-
-.PhoneAuxWindowHeader
-{
-  white-space:nowrap;
-  margin-top: 0;
-  text-align: right;
-  background-color: #FAFAFA;
-}
-
-.PhoneAuxWindowFooterDroid, .PhoneAuxWindowFooterApple
-{
-  padding-top: 6px;
-  height: 25px;
-  padding-right: 2px;
-}
-
-.PhoneAuxWindowFooterDroid > button, .PhoneAuxWindowFooterApple > button
-{
-  margin-right: 5px;
-}
-
-
-.PhoneAuxWindowFooterApple > button, .PhoneAuxWindowFooterApple > button:hover
-{
-  background: none;
-  color: rgb(0,122,255) !important;
-  text-decoration: underline;
-  border: none;
-}
-
-.PhoneAuxWindowFooterApple > button[disabled]
-{
-  background: none;
-  /* color: #aaaaaa !important; */
-  color: rgba(0,0,0,0) !important;
-  text-decoration: underline;
-  border: none;
-}
-
-.MobileBackBtnApple, .MobileBackBtnApple:hover
-{
-  vertical-align: middle;
-  background: none;
-  background: url(images/mobile_back_2.svg) !important;
-  background-repeat: no-repeat !important;
-  background-position: 2px 3.5px  !important;
-  background-size: 10px 16px  !important;
-  color: rgb(0,122,255) !important;
-  text-decoration: underline;
-  
-  padding-left: 15px;
-  border: none;
-  float: left;
-  margin-right: 5px;
-}
-
-.MobileBackBtnDroid, .MobileBackBtnDroid:hover
-{
-  vertical-align: middle;
-  background: none;
-  background: url(images/mobile_back_droid.svg) !important;
-  background-repeat: no-repeat !important;
-  background-position: 3px 5px !important;
-  background-size: 20px 16px !important;
-  padding-left: 27px;
-  color: rgba(0,0,0,0) !important; /* Dont show "Close" text on Android windows... not to sure about this*/
-  border: none;
-  float: left;
-  margin-right: 5px;
-}
-
-
-.MobilePrevSample
-{
-    background: grey url(images/resultset_first.png);
-    background-repeat:no-repeat;
-    background-position: left;
-    background-size: 32px 32px;
-    margin:0;
-    position:fixed;
-    bottom:5px;
-    left:5px;
-   /* width: 150px;*/
-    height: 34px;
-    opacity: .75;
-    padding: 0px 15px 0px 35px  !important;
-    text-align: right;
-    filter:gray; /* IE6-9 */
-    -webkit-filter:grayscale(100%); /* Chrome 19+, Safari 6+, Safari 6+ iOS */
-    -moz-filter: grayscale(100%);
-    -o-filter: grayscale(100%);
-
-    /* The z-index is set with inline styling to 8388635 */
-    /* z-index: 8388635; */ /*could use max val of 2147483638*/
-}
-
-.MobileNextSample
-{
-    background: grey url(images/resultset_last.png);
-    background-repeat:no-repeat;
-    background-position: right;
-    background-size:32px 32px;
-    text-align: left;
-    margin:0;
-    position:fixed;
-    bottom:5px;
-    right:5px;
-    /*width: 150px;*/
-    height: 34px;
-    opacity: .75;
-    padding: 0px 35px 0px 15px !important;
-    filter:gray; /* IE6-9 */
-    -webkit-filter:grayscale(100%); /* Chrome 19+, Safari 6+, Safari 6+ iOS */
-    -moz-filter: grayscale(100%);
-    -o-filter: grayscale(100%);
-    /* The z-index is set with inline styling to 8388635 */
-    /* z-index: 8388635; */ /*could use max val of 2147483638*/
-}
-
-
-.ExclusiveUser
-{
-  float: right;
-  margin-right: 20px;
-  font-weight: bold;
-  font-size: 15px;
-}
-
-.MobileMenuButton.active
-{
-/*  background: white url(images/hamburger.png);*/
-  opacity: 1.0;
-}
 
 .helpPopupMainContainer {
   opacity:1.0;
@@ -652,9 +447,6 @@ padding-left:10px;
 {
 }
 
-.UseInfoTabsMobile
-{
-}
 
 .UseInfoTabsStack
 {
@@ -663,29 +455,6 @@ padding-left:10px;
 }
 
 
-.MobileWelcomeText
-{
-  margin-bottom: 5px;
-  text-size: small;
-}
-
-.MobileWelcomePoscriptText
-{
-  margin-top: 5px;
-  text-size: small;
-}
-
-.PhoneCopywriteContent
-{
-  font-size: 8px;
-}
-
-.CenterBtnInPhoneAuxWindowHeader
-{
-  /* Center button in footer/header */
-  display: block !important;
-  margin: 0 auto !important;
-}
 
 .SideMenu
 {
@@ -698,42 +467,7 @@ padding-left:10px;
   width: 12.5em;
 }
 
-.SideMenuPhone
-{
-    margin: 0px;
-    padding-top:30px;
-    padding-left: 1px;
-    padding-right:1px;
-    list-style-type: none;
-    overflow: auto;
-    font-size: 13px;
-    width: 45px;
-}
 
-
-
-.SideMenuPhone > li
-{
-    vertical-align:middle;
-    /*  font-size: small;*/
-    font-weight: bold;
-
-    color: #ffffff;
-    padding-top: 10px;
-    padding-left: 14px;
-    
-    padding-bottom: 8px;
-    margin-top: 2px;
-    margin-bottom: 2px;
-    -webkit-border-radius: 5px;
-    -moz-border-radius: 5px;
-    border-radius: 5px;
-}
-
-.SideMenuPhone > .itemselected
-{
-  background: #C6C6C6;
-}
 
 .SideMenu > li 
 {
@@ -825,6 +559,34 @@ background: #9B9B9B;
 }
 
 
+.SampleSpecRow
+{
+  overflow: hidden;
+}
+
+.SampleSpecText
+{
+  margin-top: auto;
+  margin-bottom: auto;
+  margin-left: 5px;
+}
+
+.SampleSpecLoadBtn
+{
+  display: none;
+}
+
+.Wt-selected > .SampleSpecRow > .SampleSpecLoadBtn
+{
+  /* display: inline-block;
+  margin: 0px auto; */
+  display: inline;
+  float: right;
+  margin-right: 5px;
+  margin-top: 4px;  /* centers vertically; not a great solution since only works for 30px height rows, but works for now */
+}
+
+
 
 .PeakInfoDisplay
 {
@@ -835,9 +597,6 @@ background: #9B9B9B;
   overflow-y: hidden;
 }
 
-.PeakInfoDisplayTable
-{
-}
 
 .PeakInfoDisplayButtonDiv {
   padding-bottom: 2px;
@@ -1019,23 +778,18 @@ background: #9B9B9B;
 
 .RecalFit
 {
-  /*display:block;*/
   display: inline-block;
   margin-left: 0.85em;
 }
 
 .RecalInput
 {
-  /*display:block;*/
   display: inline-block;
-/*  width:6em;*/
 }
 
 .RecalExp
 {
-  /*display:block;*/
   display: inline-block;
-/*  width:6.25em;*/
   white-space:nowrap;
   margin-left: 0.25em;
 }
@@ -1043,25 +797,17 @@ background: #9B9B9B;
 .RecalIsotopeView
 {  
   border: 2px solid #e1e1e1;
-/*  float: left;*/
-/*  width:28em;*/
-/*  height: 15.5em;*/
 }
 
 
 .RecalApplyToCbL
 {
-  /*display:block;*/
   display: inline-block;
-/*  margin-left: 4em;*/
-/*  width: 8em;*/
 }
 
 .RecalApplyToCbR
 {
-  /*display:block;*/
   display: inline-block;
-/*  margin-left: 4em;*/
 }
 
 .RecalFitBtn, .RecalFitBtn:hover
@@ -1106,11 +852,6 @@ overflow: auto;
 
 .titleVertMiddle
 {
-    /* position:relative; */
-    /* top:50%; */
-    /* vertical-align:middle; */
-    /* transform: translateY(50%); */
-    /* display: block; */
     display: inline-block;
     padding-top:4px;
     padding-left: 8px;
@@ -1141,24 +882,6 @@ height: 25px;
 .titlebar:hover
 {
 background-color: #909090;
-}
-
-.DbSpecFileSelectTable
-{
-}
-
-table.RecalibCoefTable
-{
-border-collapse:collapse;
-margin-left:auto;
-margin-right:auto;
-margin-top: 10px;
-}
-
-table.RecalibCoefTable td, table.RecalibCoefTable th
-{
-border:1px solid black;
-padding: 2px;
 }
 
 
@@ -1262,44 +985,6 @@ button[disabled]
 }
 
 
-/*
-button
-{
-  padding:4px 4px;
-  margin:0 0px;
-  font-weight:bold;
-  background: #888888; color: #FFFFFF;
-  border-color: #E1E1E1;
-  border-style: solid;
-  border:1px solid #e1e1e1;
-  -moz-border-radius: 5px;
-  -webkit-border-radius: 5px;
-  border-radius: 5px;
-}
-
-button:hover,
-.submit:hover {
-padding:4px 4px;
-margin:0 0px;
-font-weight:bold;
-border-color: #E1E1E1;
-border-style: solid;
-border:1px solid #e1e1e1;
-cursor: pointer;
-}
-
-button[disabled]
-{
-  background-color: #999999;
-  color: #aaaaaa;
-  
-  opacity: 0.8;
-  filter: alpha(opacity=80);
-  cursor: not-allowed;
-  -webkit-filter: grayscale(100%);
-}
-*/
- 
 li{ padding-top: 0; }
 table { margin-bottom:0; }
 a:hover { color:#E88400; border-bottom:none; }
@@ -1384,10 +1069,6 @@ span.MenuLabelSelected
 /* background: white;*/
 }
 
-/*.PopupMenuParentButtonMobile
-{
-  padding: 7px 8px 6px 8px; !important;
-}*/
 
 .URLogo
 {
@@ -1458,12 +1139,6 @@ span.MenuLabelSelected
   margin-bottom: 3px;
 }
 
-.ReferencePhotopeakDisplayMobile
-{
-  padding-top: 0px;
-}
-
-
 .ParticleViewTable, .FilesInZipTable
 {
 /*  width:37.5em; */
@@ -1471,9 +1146,7 @@ span.MenuLabelSelected
   border: 2px solid #e1e1e1;
 }
 
-.IsotopePeaksMobileWindowContents
-{
-}
+
 
 .legend
 {
@@ -1816,19 +1489,6 @@ color: blue;
 {
   background-color:#B0DE78
 }
-
-
-.mobilePopupMenuOverlay {
-position:fixed;
-top:0;
-left:0;
-background:rgba(200,200,200,0.3);
-width:100%;
-height:100%;
-}
-
-
-
 
 
 /* Customize WTabWidget to look a little more modern/flat */
