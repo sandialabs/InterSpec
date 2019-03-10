@@ -9,32 +9,32 @@ directories I could. I was unable to find an elegant way to do all this, so I
 just brute forced it.
 These instructions are for May of 2018, and macOS was used.
 
--Download and install Android Studio.
--Then use the HelloJNI example project to determine which compile flags is used
+- Download and install Android Studio.
+- Then use the HelloJNI example project to determine which compile flags is used
  by cmake/Android-Studio.
-  --First in build.gradle set options to what you want ('minSdkVersion 19',
+  - First in build.gradle set options to what you want ('minSdkVersion 19',
     'targetSdkVersion 23', 'compileSdkVersion 25', and CMake arguments
     "-DANDROID_CPP_FEATURES=rtti exceptions", "-DANDROID_TOOLCHAIN=clang",
     "-DANDROID_PIE=ON", "-DANDROID_STL=c++_static").
-  --Then build each architecture you might want, and then in like
+  - Then build each architecture you might want, and then in like
     /Users/wcjohns/AndroidStudioProjects/HelloJNI/app/.externalNativeBuild/cmake/x86_64Release/x86_64
     open android_gradle_build.json and get the actual compile flags.
--Then use https://github.com/moritz-wundke/Boost-for-Android to build boost
-  --Boost-for-Android is great, but you really need to check that it uses
+- Then use https://github.com/moritz-wundke/Boost-for-Android to build boost
+  - Boost-for-Android is great, but you really need to check that it uses
     the same build settings as CMake will.  To do this edit the
     configs/user-config-boost-1_65_1-common.jam and
     configs/user-config-boost-1_65_1-{target}.jam target files that come with
     Boost-for-Androidso to the compile flags match the ones extracted from
     HelloJNI.  You need to do this for each architecture.
-  --Also, you may need to edit build-android.sh to allow using NDK version 17
+  - Also, you may need to edit build-android.sh to allow using NDK version 17
     (using same settings as 16)
-  --run `./build-android.sh --boost=1.65.1 --toolchain=llvm --arch=armeabi-v7a,arm64-v8a,x86,x86_64 --prefix=/Users/wcjohns/install/android/ /Users/wcjohns/Library/Android/sdk/ndk-bundle`
--Then compile Wt 3.3.4.
-  --Replace a few Wt files: target/android/wt_patch/wt-3.3.4/Android.C
+  - run `./build-android.sh --boost=1.65.1 --toolchain=llvm --arch=armeabi-v7a,arm64-v8a,x86,x86_64 --prefix=/Users/wcjohns/install/android/ /Users/wcjohns/Library/Android/sdk/ndk-bundle`
+- Then compile Wt 3.3.4.
+  - Replace a few Wt files: target/android/wt_patch/wt-3.3.4/Android.C
     target/android/wt_patch/wt-3.3.4/CMakeLists.txt
     target/android/wt_patch/wt-3.3.4/base64.cpp
-  --Manually build Wt for each architecture
-    --```bash
+  - Manually build Wt for each architecture
+    - ```bash
       mkdir build_android_armeabi-v7a;cd build_android_armeabi-v7a`
       
       export MY_ANDROID_ABI="armeabi-v7a"
@@ -84,7 +84,7 @@ These instructions are for May of 2018, and macOS was used.
       cmake ...
       ```
 
-    --However at this point libwt.a is like 700 MB, and doesnt have the correct 
+    - However at this point libwt.a is like 700 MB, and doesnt have the correct 
       headers, so you have to run:
       ```bash
       ${NDK_ROOT}/toolchains/arm-linux-androideabi-4.9/prebuilt/darwin-x86_64/bin/arm-linux-androideabi-strip --strip-debug libwt.a`
@@ -96,14 +96,24 @@ These instructions are for May of 2018, and macOS was used.
       But of course you will have to do this for each Wt library, and architecture 
       (make sure to use the correct ranlib and strip for each architecture though).
       You might also have to run ranlib over the boost libraries.
-  -Open `InterSpec/target/android/InterSpec` in Android Studio, and adjust paths
+- Open `InterSpec/target/android/InterSpec` in Android Studio, and adjust paths
    in the gradle build files; I wouldnt be suprisedif you had to adjust the main 
    InterSpec CMakeLists.txt too.
-  -Update the files such as `data`, `InterSpec_resources`, `resources`, and 
+- Update the files such as `data`, `InterSpec_resources`, `resources`, and 
   `example_data` by putting them into a zip file 
   `InterSpec/target/android/InterSpec/app/src/main/assets/interspec-assets.zip`
-  -Good luck building things...
-
+  using `target/android/InterSpec/make_assets.sh`
+- Android Studio tends to be extremely slow and unresponsive (like hours to do an operation - maybe because of the amount of NDK building?), so
+   building and loading to device from the command line tends to be much quicker.
+   - ```bash
+     cd target/android/InterSpec
+     export JAVA_HOME="/path/to/jdk-10.0.2.jdk/Contents/Home/"
+     ./gradlew assembleUniversal
+     ./gradlew installUniversalRelease
+     #or to make iterating a little faster (min of1.5 minutes instead of 5 minutes), use just the ARM release
+     ./gradlew assembleArm7 && ./gradlew installArm7Release
+     ```
+- Good luck building things...
 
 
 

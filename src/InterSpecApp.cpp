@@ -250,6 +250,12 @@ void InterSpecApp::setupDomEnvironment()
 
   if( isMobile() )
   {
+    useStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
+    if( isAndroid() )
+      useStyleSheet( "InterSpec_resources/InterSpecMobileDroid.css" );
+    else
+      useStyleSheet( "InterSpec_resources/InterSpecMobileApple.css" );
+    
     //Prevent mobile from showing spinner
     const char *prevent_spinner_js = INLINE_JAVASCRIPT(
       $("<style>").prop("type", "text/css")

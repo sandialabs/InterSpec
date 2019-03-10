@@ -50,6 +50,7 @@
 #include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
 #include <Wt/WStandardItemModel>
+#include <Wt/WAbstractItemDelegate>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
@@ -64,6 +65,72 @@ using namespace Wt;
 using namespace std;
 
 
+namespace
+{
+  class SampleSpecRow : public Wt::WContainerWidget
+  {
+  public:
+    SampleSpecRow( WContainerWidget *parent = 0 )
+    : WContainerWidget( parent )
+    {
+      m_text = new WText( this );
+      m_load = new WPushButton( "Load", this );
+      
+      addStyleClass( "SampleSpecRow" );
+      m_text->addStyleClass( "SampleSpecText" );
+      m_load->addStyleClass( "SampleSpecLoadBtn" );
+    }
+    
+    virtual ~SampleSpecRow(){};
+    
+    WText *m_text;
+    WPushButton *m_load;
+  };//class SampleSpecRow
+  
+  class SampleSpectrumDelegate : public Wt::WAbstractItemDelegate
+  {
+    UseInfoWindow *m_parent;
+    
+  public:
+    SampleSpectrumDelegate( UseInfoWindow *parent )
+    : Wt::WAbstractItemDelegate( parent ),
+      m_parent( parent )
+    {
+    }
+    
+    virtual ~SampleSpectrumDelegate(){};
+    
+    virtual WWidget *update(WWidget *widget, const WModelIndex& index,
+                            WFlags<ViewItemRenderFlag> flags)
+    {
+      SampleSpecRow *w = dynamic_cast<SampleSpecRow *>(widget);
+      if( !w )
+      {
+        w = new SampleSpecRow();
+        w->m_load->clicked().connect( m_parent, &UseInfoWindow::loadSampleSelected );
+      }
+      
+      try
+      {
+        w->m_text->setText( asString(index.data()) );
+        
+        //It appears that when you select an item, this function does not get called - unexpected.
+        //w->m_load->setHidden( !flags.testFlag(Wt::ViewItemRenderFlag::RenderSelected) );
+        //if( flags.testFlag(Wt::ViewItemRenderFlag::RenderFocused) )
+        //if( flags.testFlag(Wt::ViewItemRenderFlag::RenderInvalid) )
+      }catch( std::exception &e )
+      {
+        cerr << "SampleSpectrumDelegate: caught exception converting to string: " << e.what() << endl;
+        w->m_text->setText( "" );
+      }
+      
+      return w;
+    }//virtual WWidget *update(...)
+  };//class SampleSpectrumDelegate
+  
+}//namespace
+
+
 UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
                               InterSpec* viewer ):
   AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
@@ -71,7 +138,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
                          | AuxWindowProperties::DisableCollapse) ),
   m_session(),
   m_tableSample( nullptr ),
-  m_loadSampleButton( nullptr ),
+//  m_loadSampleButton( nullptr ),
   m_messageModelSample( nullptr ),
   m_viewer( viewer ),
   m_menu( nullptr )
@@ -235,6 +302,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     m_tableSample->setModel( m_messageModelSample );
     m_tableSample->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
     m_tableSample->setColumnResizeEnabled(true);
+    m_tableSample->setRowHeight( WLength(30,WLength::Pixel) );
     m_tableSample->setColumnAlignment(0, Wt::AlignLeft);
     m_tableSample->setHeaderAlignment(0, Wt::AlignCenter);
     m_tableSample->setColumnWidth(0,340);
@@ -242,25 +310,27 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     m_tableSample->hideColumn(2);
     
     m_tableSample->setAlternatingRowColors(true);
-    m_tableSample->setSelectionMode(Wt::SingleSelection);
+    m_tableSample->setSelectionMode( Wt::SingleSelection );
     m_tableSample->setEditTriggers(Wt::WAbstractItemView::NoEditTrigger);
-    m_tableSample->doubleClicked().connect( boost::bind( &UseInfoWindow::handleSampleDoubleClicked, this, _1, _2 ) );
+    
+    auto sampleDelegate = new SampleSpectrumDelegate( this );
+    m_tableSample->setItemDelegate( sampleDelegate );
     
     samplesLayout->addWidget(m_tableSample,0,0);
     samplesLayout->setRowStretch(0,1);
     samplesLayout->setColumnStretch(0,1);
     
-    WContainerWidget* buttons = new WContainerWidget();
-    m_loadSampleButton = new WPushButton( "Load", buttons );
-    //m_loadSampleButton->setStyleClass("DatabaseGoIcon");
-    m_loadSampleButton->setFloatSide(Right);
-    m_loadSampleButton->clicked().connect( this, &UseInfoWindow::loadSampleSelected );
+    //WContainerWidget* buttons = new WContainerWidget();
+    //m_loadSampleButton = new WPushButton( "Load", buttons );
+    ////m_loadSampleButton->setStyleClass("DatabaseGoIcon");
+    //m_loadSampleButton->setFloatSide(Right);
+    //m_loadSampleButton->clicked().connect( this, &UseInfoWindow::loadSampleSelected );
+    //samplesLayout->addWidget( buttons, samplesLayout->rowCount()+1 , 0, AlignRight );
     
-    m_loadSampleButton->disable();
+    //m_loadSampleButton->disable();
     m_tableSample->selectionChanged().connect( this, &UseInfoWindow::handleSampleSelectionChanged );
-    m_tableSample->doubleClicked().connect( boost::bind(&UseInfoWindow::loadSample, this, _1 ) );
-    
-    samplesLayout->addWidget( buttons, samplesLayout->rowCount()+1 , 0, AlignRight );
+    //m_tableSample->doubleClicked().connect( boost::bind( &UseInfoWindow::loadSample, this, _1 ) );
+    m_tableSample->doubleClicked().connect( boost::bind( &UseInfoWindow::handleSampleDoubleClicked, this, _1, _2 ) );
     
     
     //Import tab
@@ -844,10 +914,10 @@ SideMenuItem * UseInfoWindow::makeItem( const WString &title, const string &reso
 
 void UseInfoWindow::handleSampleSelectionChanged()
 {
-  if( m_tableSample->selectedIndexes().size() )
-    m_loadSampleButton->enable();
-  else
-    m_loadSampleButton->disable();
+  //if( m_tableSample->selectedIndexes().size() )
+  //  m_loadSampleButton->enable();
+  //else
+  //  m_loadSampleButton->disable();
 }//void handleSampleSelectionChanged()
 
 
@@ -882,7 +952,7 @@ void UseInfoWindow::loadSampleSelected( )
   WModelIndexSet indices = m_tableSample->selectedIndexes();
   if( !indices.size() )
   {
-    m_loadSampleButton->disable();
+    //m_loadSampleButton->disable();
     return;
   }//if( !indices.size() )
   
