@@ -30,6 +30,7 @@
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
 
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/SerialToDetectorModel.h"
@@ -54,6 +55,8 @@
 
 //Forward declaration
 Wt::WApplication *createApplication( const Wt::WEnvironment &env );
+
+void processCustomArgs( int argc, char **argv );
 
 //#include "InterSpec/GammaInteractionCalc.h"
 
@@ -94,6 +97,8 @@ int main( int argc, char **argv )
   Wt::WString::setDefaultEncoding( Wt::UTF8 );
 #endif
   
+  processCustomArgs( argc, argv );
+  
   //TODO 20181009: make the following setting an option on startup for electron/iOS/Android/macOS
 //"Have not yet implemented calling SerialToDetectorModel::set_detector_model_input_csv(...) properly"
   SerialToDetectorModel::set_detector_model_input_csv( "data/OUO_detective_serial_to_model.csv" );
@@ -114,4 +119,24 @@ Wt::WApplication *createApplication( const Wt::WEnvironment &env )
   return new InterSpecApp( env );
 }// Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
+
+void processCustomArgs( int argc, char **argv )
+{
+  for( int i = 1; i < (argc-1); ++i )
+  {
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+    if( argv[i] == std::string("--userdatadir") )
+    {
+      try
+      {
+        InterSpec::setWritableDataDirectory( argv[i+1] );
+      }catch( std::exception &e )
+      {
+        std::cerr << "Invalid userdatadir ('" << argv[i+1] << "') specified"
+                  << std::endl;
+      }
+    }//if( argv[i] == std::string("--userdatadir") )
+#endif  //if( not a webapp )
+  }//for( int i = 1; i < (argc-1); ++i )
+}//void processCustomArgs( int argc, char **argv )
 

@@ -651,9 +651,9 @@ void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
     const auto &file = files[i];
     auto filename = UtilityFunctions::filename(file);
     if( UtilityFunctions::iequals( filename, "Efficiency.csv") )
-      eff_file = filename;
+      eff_file = UtilityFunctions::append_path( dir, filename );
     else if( UtilityFunctions::iequals( filename, "Detector.dat") )
-      dat_file = filename;
+      dat_file = UtilityFunctions::append_path( dir, filename );
   }
   
   if( dat_file.empty() )

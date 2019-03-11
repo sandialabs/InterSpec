@@ -196,6 +196,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   if( boost::filesystem::exists( datadir ) )
   {
+    InterSpec::setWritableDataDirectory( datadir.string<std::string>() );
+    
     datadir /= "InterSpecUserData.db";
    
     try

@@ -3012,7 +3012,7 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   WContainerWidget *m_newDiv = new WContainerWidget( );
   buttonAlignment->addWidget( m_newDiv, 1, 0 );
   m_newDiv->setStyleClass( "LoadSpectrumUploadDiv" );
-  WText *txt =  new WText( "Selected Spectrum: " , m_newDiv );
+  new WText( "Selected Spectrum: " , m_newDiv );
   
   m_setButton = new Wt::WPushButton("Assign As",m_newDiv);
   m_setButton->setStyleClass("AddAndDownloadIcon");

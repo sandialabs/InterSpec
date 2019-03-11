@@ -160,7 +160,7 @@ OneOverR2Calc::OneOverR2Calc()
   m_message->setAttributeValue( "style", "color:blue;" + styleVal );
   m_message->setHiddenKeepsGeometry( true );
   
-  AuxWindow::addHelpInFooter( footer(), "1/r2-calc-dialog", this );
+  AuxWindow::addHelpInFooter( footer(), "1/r2-calc-dialog" );
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );

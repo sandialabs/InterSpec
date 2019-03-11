@@ -665,7 +665,7 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   new GammaXsGui( materialDB, materialSuggestion, viewer, contents() );
   //gui->setHeight( WLength(100,WLength::Percentage) );
   
-  AuxWindow::addHelpInFooter(footer(), "gamma-xs-dialog", this);
+  AuxWindow::addHelpInFooter( footer(), "gamma-xs-dialog" );
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );

@@ -729,7 +729,7 @@ void SpecFileSummary::init()
   handleAllowModifyStatusChange();
   finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
-  AuxWindow::addHelpInFooter( footer(), "file-parameters-dialog", this );
+  AuxWindow::addHelpInFooter( footer(), "file-parameters-dialog" );
 
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );

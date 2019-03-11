@@ -42,6 +42,7 @@
 namespace Wt
 {
   class WText;
+  class WMenu;
   class WLabel;
   class WLineEdit;
   class WComboBox;
@@ -111,10 +112,15 @@ class DetectorEdit : public Wt::WContainerWidget
 */
   
 public:
+  /** DetectorEdit Constructor
+   @param currentDet Current DRF; will be used to help select what DRF to show.
+   @param parentWindow Used only to place the close, cancel and help buttons
+          into the footer
+   */
   DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
                 InterSpec *specViewer,
                 SpectraFileModel *fileModel,
-                AuxWindow *auxWindow = 0
+                AuxWindow *parentWindow = 0
  );
   virtual ~DetectorEdit();
 
@@ -128,7 +134,8 @@ public:
   //Action when the user clicks on the ButtonGroup to select
   //defined/upload/functional form definition for the detector
   void selectButton( Wt::WStackedWidget * stack,
-                     Wt::WButtonGroup *group, bool activateCallBack = true);
+                     Wt::WMenu *group,
+                     bool activateCallBack = true);
     
   //done(): signal emmitted when the user is done using this widget.  By the
   //  time this signal is emmtitted, all detectorChanged or detectorModified
@@ -263,8 +270,8 @@ protected:
   GadrasDetSelect *m_gadrasDetSelect;
   RelEffDetSelect *m_relEffSelect;
   
-  Wt::WButtonGroup *m_group;
-  Wt::WStackedWidget *m_stack;
+  Wt::WMenu *m_drfTypeMenu;
+  Wt::WStackedWidget *m_drfTypeStack;
   
   Wt::WPushButton* m_deleteButton;
   Wt::WTreeView* m_DBtable;

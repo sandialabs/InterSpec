@@ -216,9 +216,6 @@ protected:
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;
 #endif
-  
-  static std::mutex sm_dataDirectoryMutex;
-  static std::string sm_dataDirectory;  //defaults to "data"
 };//class InterSpecApp
 
 #endif  //InterSpecApp_h

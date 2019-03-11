@@ -191,7 +191,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   DoseCalcWidget *w = new DoseCalcWidget( materialDB, materialSuggestion, viewer, contents() );
   w->setHeight( WLength(100,WLength::Percentage) );
   
-  AuxWindow::addHelpInFooter( footer(), "dose-dialog", this);
+  AuxWindow::addHelpInFooter( footer(), "dose-dialog" );
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
@@ -762,7 +762,7 @@ void DoseCalcWidget::init()
   
   try
   {
-    string continuumData = UtilityFunctions::append_path( InterSpec::dataDirectory(), "GadrasContinuum.lib" );
+    string continuumData = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
     
     m_scatter.reset( new GadrasScatterTable( continuumData ) );
   }catch( std::exception &e )

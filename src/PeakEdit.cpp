@@ -87,7 +87,7 @@ PeakEditWindow::PeakEditWindow( const double energy,
   
   addStyleClass( "PeakEditWindow" );
   
-  AuxWindow::addHelpInFooter(footer(), "peak-editor", this);
+  AuxWindow::addHelpInFooter( footer(), "peak-editor" );
   
   m_edit = new PeakEdit( energy, peakmodel, viewer, this );
   rejectWhenEscapePressed();

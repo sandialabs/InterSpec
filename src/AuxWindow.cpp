@@ -1322,7 +1322,7 @@ JSignal<> &AuxWindow::expanded()
 }
 
 
-void AuxWindow::addHelpInFooter(WContainerWidget *footer, std::string page, AuxWindow *parent)
+void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
   

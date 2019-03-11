@@ -63,7 +63,7 @@ Decay::Decay( InterSpec *viewer )
 
   m_activityDiv->addNuclide( 53, 135, 0, 1.0*PhysicalUnits::MBq, false, 0.0 );
 
-  AuxWindow::addHelpInFooter(footer(), "decay-dialog", this);
+  AuxWindow::addHelpInFooter( footer(), "decay-dialog" );
   Wt::WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
 
