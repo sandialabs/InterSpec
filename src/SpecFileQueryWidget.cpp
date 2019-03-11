@@ -1616,7 +1616,7 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
   {
   }
   
-  const string default_file = UtilityFunctions::append_path( InterSpec::dataDirectory(), "file_query_event_xml_fields.json" );
+  const string default_file = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "file_query_event_xml_fields.json" );
   bool hasDefault = false;
   for( const auto &f : jsonfilenames )
     hasDefault = hasDefault || (UtilityFunctions::filename(f) == "file_query_event_xml_fields.json");

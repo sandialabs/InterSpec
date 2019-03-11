@@ -204,7 +204,7 @@ m_apply( nullptr )
   layout->setColumnStretch( 1, 1 );
   
   WContainerWidget *foot = footer();
-  AuxWindow::addHelpInFooter( foot, "color-theme-dialog", this );
+  AuxWindow::addHelpInFooter( foot, "color-theme-dialog" );
   
   WPushButton *upload = new WPushButton( "Upload...", foot); //needed or else button wont show up
   upload->clicked().connect( this, &ColorThemeWindow::uploadThemeCallback );

@@ -665,6 +665,10 @@ public class InterSpec extends Activity
       e.printStackTrace();
     }
 
+    //Note: as of 20190311, the getExternalFilesDir() or getFilesDir() calls have not been tested.
+    String userDataDir = activity.getExternalFilesDir();
+    if( userDataDir.isEmpty() )
+      userDataDir = activity.getFilesDir();
 
     List<String> args = new ArrayList<String>();
     args.add("app");
@@ -673,6 +677,12 @@ public class InterSpec extends Activity
     args.add(wtAssetsDir);
     args.add("--approot");
     args.add(wtAssetsDir);
+
+    if( userDataDir.isEmpty() )
+    {
+      args.add("--userdatadir");
+      args.add(userDataDir);
+    }
 
     args.add("--http-address");
     args.add("127.0.0.1");

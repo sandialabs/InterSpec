@@ -195,7 +195,7 @@ int run_app( int argc, char *argv[] )
       ns_externalid = argv[i+1];
 	}else if (argv[i] == string("--basedir"))
 	{
-    InterSpec::setDataDirectory( argv[i + 1] );
+    InterSpec::setStaticDataDirectory( argv[i + 1] );
 
 		try
 		{
@@ -244,7 +244,9 @@ int run_app( int argc, char *argv[] )
   DataBaseUtils::setPreferenceDatabaseFile( preffile );
   DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( userdatadir );
   ResourceUpdate::setUserDataDirectory( userdatadir );
-  
+  InterSpec::setWritableDataDirectory( userdatadir );
+
+
   cout << "Will make sure preferences database is up to date" << endl;
   DataBaseVersionUpgrade::checkAndUpgradeVersion();
   

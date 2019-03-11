@@ -30,8 +30,10 @@
 #include <fstream>
 
 #include <boost/tokenizer.hpp>
+#include <boost/filesystem.hpp>
 #include <boost/assign/list_of.hpp>
 
+#include <Wt/WMenu>
 #include <Wt/WText>
 #include <Wt/WBreak>
 #include <Wt/WLabel>
@@ -48,7 +50,6 @@
 #include <Wt/WRadioButton>
 #include <Wt/WButtonGroup>
 #include <Wt/WItemDelegate>
-#include <Wt/WBorderLayout>
 #include <Wt/WStackedWidget>
 #include <Wt/Dbo/QueryModel>
 #include <Wt/WRegExpValidator>
@@ -77,6 +78,15 @@ const char * const DetectorDisplay::sm_noDetectorTxt
   = "<font style=\"font-weight:100;color:#CFCFCF;\">&lt;click to select&gt;</font>";
 
 
+namespace
+{
+  void right_select_item( WMenu *menu, WMenuItem *item )
+  {
+    menu->select( item );
+    item->triggered().emit( item ); //
+  }
+}//namespace
+
 class RelEffFile;
 
 /** This class represents potaentially many CSV or TSV relative efficincy
@@ -101,11 +111,10 @@ public:
   
   void userSelectedRelEffDetSelect();
   
+  
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS))
   void addFile();
-  
   void removeFile( RelEffFile *fileWidget );
-  
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
   void saveFilePathToUserPreferences();
 #endif
   
@@ -117,7 +126,7 @@ public:
   
   //Attempts to do a defered rednering, but it looks like thisisnt actually
   //  the case
-  void load();
+  virtual void load();
 };//class RelEffDetSelect
 
 
@@ -128,7 +137,7 @@ class RelEffFile : public Wt::WContainerWidget
   //If we are deploying on the web, we do not want to allow the user access to
   //  the filesystem(!), so we will only allow using detectors from
   //  "data/OUO_lanl_simplemass_detectors.tsv"
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
   std::string m_file;
 #else
   WLineEdit *m_fileEdit;
@@ -154,12 +163,11 @@ public:
   
   void selectNone();
   
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   void filePathChanged();
 #endif  //#if( !BUILD_FOR_WEB_DEPLOYMENT )
   
   void detectorSelectCallback();
-  
   
   bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
   
@@ -170,33 +178,87 @@ public:
 };//class RelEffFile
 
 
+class GadrasDirectory : public Wt::WContainerWidget
+{
+  friend class GadrasDetSelect;
+  
+protected:
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
+  std::string m_directory;
+#else
+  WLineEdit *m_directoryEdit;
+  WPushButton *m_setDirectoryButton;
+#endif
+  GadrasDetSelect *m_parent;
+  DetectorEdit *m_detectorEdit;
+  
+  Wt::WComboBox *m_detectorSelect;
+  std::vector<std::shared_ptr<DetectorPeakResponse> > m_responses;
+
+  Wt::WText *m_msg;
+  Wt::WPushButton *m_deleteBtn;
+  
+  GadrasDirectory( std::string dorectory, GadrasDetSelect *parentSelect,
+                   DetectorEdit *detectorEdit, WContainerWidget *parent );
+  
+  
+  ~GadrasDirectory(){}
+  
+  std::string directory();
+  
+  void selectNone();
+  
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
+  void dirPathChanged();
+#endif  //#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  
+  void detectorSelectCallback();
+  
+  bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
+  
+  //parseDetector() returns null on error
+  static std::shared_ptr<DetectorPeakResponse> parseDetector( const string directory );
+  static vector<string> recursive_list_gadras_drfs( const string &sourcedir );
+  
+  void initDetectors();
+  void detectorSelected( const int index );
+};//class GadrasDirectory
+
+
+/** Handles selecting a GADRAS DRF
+ */
 class GadrasDetSelect : public Wt::WContainerWidget
 {
 protected:
   InterSpec *m_interspec;
   DetectorEdit *m_detectorEdit;
   
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-  Wt::WText *m_message;
-  Wt::WLineEdit *m_baseDir;
-#endif
-  Wt::WComboBox *m_detectorSelect;
+  WContainerWidget *m_directories; //holds the GadrasDirectory objects..
   
 public:
   GadrasDetSelect( InterSpec *interspec, DetectorEdit *detedit, WContainerWidget *parent = 0 );
   
   virtual ~GadrasDetSelect(){}
   
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-  void baseDirChanged();
-#endif
-  
-  void updateWidgetsFromInputPaths();
-  
   bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
   
   std::shared_ptr<DetectorPeakResponse> selectedDetector();
-};//class RelEffDetSelect
+  
+  void addDirectory();
+  
+  void removeDirectory( GadrasDirectory *dirWidget );
+  
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
+  void saveFilePathToUserPreferences();
+#endif
+  
+  void detectorSelected( GadrasDirectory *dir, std::shared_ptr<DetectorPeakResponse> det );
+  
+  void docreate();
+  
+  //Attempts to do a defered rednering, (not actually verified)
+  virtual void load();
+};//class GadrasDetSelect
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -207,7 +269,7 @@ RelEffFile::RelEffFile( std::string file,
                        DetectorEdit *detectorEdit,
                        WContainerWidget *parent )
 : WContainerWidget( parent ),
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
 m_file( file ),
 #else
 m_fileEdit( new WLineEdit() ),
@@ -219,7 +281,7 @@ m_credits( nullptr )
 {
   addStyleClass( "RelEffFile" );
   
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
 #else
   WContainerWidget *topdiv = new WContainerWidget( this );
   WPushButton *closeIcon = new WPushButton( topdiv );
@@ -252,7 +314,7 @@ m_credits( nullptr )
   m_detectorSelect = new WComboBox( bottomDiv );
   m_detectorSelect->activated().connect( this, &RelEffFile::detectorSelectCallback );
   
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   m_fileEdit->changed().connect( m_detectorSelect, &WPushButton::disable );
   //m_fileEdit->keyPressed().connect( m_detectorSelect, &WPushButton::disable );
 #endif
@@ -263,7 +325,7 @@ m_credits( nullptr )
 
 const std::string RelEffFile::filepath()
 {
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
   return m_file;
 #else
   return m_fileEdit->text().toUTF8();
@@ -276,7 +338,7 @@ void RelEffFile::selectNone()
     m_detectorSelect->setCurrentIndex( 0 );
 }//void selectNone()
 
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
 void RelEffFile::filePathChanged()
 {
   m_relEffDetSelect->saveFilePathToUserPreferences();
@@ -320,7 +382,7 @@ bool RelEffFile::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
   
   for( size_t i = 0; i < m_responses.size(); ++i )
   {
-    if( m_responses[i]->name() == det->name() )
+    if( m_responses[i]->hashValue() == det->hashValue() )
     {
       m_detectorSelect->setCurrentIndex( i+1 );
       return true;
@@ -493,6 +555,7 @@ RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DetectorEdit *detedit, W
 }
 
 
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
 void RelEffDetSelect::addFile()
 {
   if( m_files )
@@ -514,33 +577,10 @@ void RelEffDetSelect::removeFile( RelEffFile *fileWidget )
     }
   }//for( WWidget *w : m_files->children() )
   
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
   saveFilePathToUserPreferences();
-#endif
 }//void removeFile( RelEffFile )
 
 
-void RelEffDetSelect::detectorSelected( RelEffFile *file, std::shared_ptr<DetectorPeakResponse> det )
-{
-  if( !m_files || !file )
-    return;
-  
-  for( WWidget *w : m_files->children() )
-  {
-    auto child = dynamic_cast<RelEffFile *>(w);
-    if( child && (child != file) )
-      child->selectNone();
-  }//for( WWidget *w : m_files->children() )
-}//void detectorSelected( RelEffFile *file, std::shared_ptr<DetectorPeakResponse> det );
-
-
-void RelEffDetSelect::userSelectedRelEffDetSelect()
-{
-  
-}//void userSelectedRelEffDetSelect()
-
-
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
 void RelEffDetSelect::saveFilePathToUserPreferences()
 {
   auto children = m_files->children();
@@ -563,6 +603,26 @@ void RelEffDetSelect::saveFilePathToUserPreferences()
   }
 }//void saveFilePathToUserPreferences()
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
+
+
+void RelEffDetSelect::detectorSelected( RelEffFile *file, std::shared_ptr<DetectorPeakResponse> det )
+{
+  if( !m_files || !file )
+    return;
+  
+  for( WWidget *w : m_files->children() )
+  {
+    auto child = dynamic_cast<RelEffFile *>(w);
+    if( child && (child != file) )
+      child->selectNone();
+  }//for( WWidget *w : m_files->children() )
+}//void detectorSelected( RelEffFile *file, std::shared_ptr<DetectorPeakResponse> det );
+
+
+void RelEffDetSelect::userSelectedRelEffDetSelect()
+{
+  
+}//void userSelectedRelEffDetSelect()
 
 
 void RelEffDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
@@ -590,20 +650,23 @@ void RelEffDetSelect::docreate()
     return;
   
   m_files = new WContainerWidget( this );
+  WContainerWidget *holder = new WContainerWidget( this );
   
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   WPushButton *addIcon = new WPushButton();
   addIcon->setStyleClass( "AddRelEffFile Wt-icon" );
   addIcon->clicked().connect( this, &RelEffDetSelect::addFile );
-  WContainerWidget *holder = new WContainerWidget( this );
   holder->addWidget( addIcon );
+#endif
+  
   holder->setWidth( WLength(100,WLength::Percentage) );
   holder->setToolTip( "Click the plus button to add an additonal relative efficiency detector response function file." );
   
   string pathstr;
   vector<string> paths;
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  pathstr = UtilityFunctions::append_path( InterSpec::dataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
-#else
+  pathstr = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
+#elif( !defined(IOS) )
   try
   {
     if( m_interspec )
@@ -614,6 +677,20 @@ void RelEffDetSelect::docreate()
   }
 #endif
 
+  
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+  try
+  {
+    const string userDir = InterSpec::writableDataDirectory();
+    const vector<string> tsv_files = UtilityFunctions::recursive_ls( userDir, ".tsv");
+    for( const auto &p : tsv_files )
+      pathstr += (pathstr.empty() ? "" : ";") + p;
+  }catch( std::exception & )
+  {
+    cerr << "Couldnt call into InterSpec::writableDataDirectory()" << endl;
+  }
+#endif
+  
   UtilityFunctions::split( paths, pathstr, "\r\n;" );
   
   if( paths.empty() )
@@ -642,80 +719,264 @@ void RelEffDetSelect::load()
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////   Begin GadrasDetSelect implementation   //////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+
+
+///************************ Begin Need to implement for GADRAS **************/////
 GadrasDetSelect::GadrasDetSelect( InterSpec *interspec, DetectorEdit *detedit, WContainerWidget *parent )
   : WContainerWidget(parent),
     m_interspec( interspec ),
     m_detectorEdit( detedit ),
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-    m_message( nullptr ),
-    m_baseDir( nullptr ),
-#endif
-    m_detectorSelect( nullptr )
+    m_directories( nullptr )
 {
   //GADRAS-DRF URL: https://rsicc.ornl.gov/codes/psr/psr6/psr-610.html
+}
+
+
+void GadrasDetSelect::load()
+{
+  if( !loaded() )
+    docreate();
+  WContainerWidget::load();
+}//void load()
+
+
+void GadrasDetSelect::docreate()
+{
+  if( m_directories )
+    return;
   
-  const char *gadrasToolTip = "These are detector response functions imported"
-  " from GADRAS-DRF.  Currently only the detector dimensions, "
-  " absolute efficiencies, and FWHM resolutions are"
-  " used.";
+  m_directories = new WContainerWidget( this );
   
-  WLabel *label = nullptr;
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
   //Need to point the GUI to the appropriate directory, and implement to an `ls` to find detctors with both Detcotr.dat and Efficy.csv.
   const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
   
-  WContainerWidget *pathsDiv = new WContainerWidget( this );
-  label = new WLabel( "Paths to recursively look for DRFs.", pathsDiv );
-  label->setInline( false );
-  label = new WLabel( "Seperate multiple paths with semicolons:", pathsDiv );
-  label->setInline( false );
-  m_baseDir = new WLineEdit( pathsDiv );
-  m_baseDir->setInline( false );
-  m_baseDir->setWidth( WLength(95,WLength::Percentage) );
-  m_baseDir->setText( drfpaths );
-  m_baseDir->changed().connect( this, &GadrasDetSelect::baseDirChanged );
-  m_baseDir->enterPressed().connect( this, &GadrasDetSelect::baseDirChanged );
-  m_message = new WText( "", pathsDiv );
-  m_message->setInline( false );
+  WPushButton *addIcon = new WPushButton();
+  addIcon->setStyleClass( "AddRelEffFile Wt-icon" );
+  addIcon->clicked().connect( this, &GadrasDetSelect::addDirectory );
+  WContainerWidget *holder = new WContainerWidget( this );
+  holder->addWidget( addIcon );
+  holder->setWidth( WLength(100,WLength::Percentage) );
+  holder->setToolTip( "Click the plus button to add an additonal directory to recursively look for detector response functions in." );
   
-  pathsDiv->setMargin( 10, Wt::Top | Wt::Bottom );
-#endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  string pathstr;
+  vector<string> paths;
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  pathstr = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
+#elif( !defined(IOS) )
+  try
+  {
+    if( m_interspec )
+      pathstr = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
+  }catch( std::exception & )
+  {
+    passMessage( "Error retrieving 'RelativeEffDRFPaths' preference.", "", WarningWidget::WarningMsgHigh );
+  }
+#endif
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+  try
+  {
+    using namespace boost::filesystem;
+    
+    auto itr = directory_iterator( InterSpec::writableDataDirectory() );
+    
+    for( ; itr != directory_iterator(); ++itr )
+    {
+      const boost::filesystem::path &p = itr->path();
+      const string pstr = p.string<string>();
+      if( UtilityFunctions::is_directory( pstr ) )
+      {
+        auto subdirs = GadrasDirectory::recursive_list_gadras_drfs(pstr);
+        if( subdirs.size() )
+          pathstr += (pathstr.empty() ? "" : ";") + pstr;
+      }
+    }//for( loop over
+    
+  }catch( std::exception & )
+  {
+    cerr << "Got exception looking for GADRAS DRFs in user document dir" << endl;
+  }//try / catch
+#endif
   
-  WContainerWidget *selectDiv = new WContainerWidget( this );
-  label = new WLabel( "GADRAS detectors: ", selectDiv );
+  UtilityFunctions::split( paths, pathstr, "\r\n;" );
   
-  m_detectorSelect = new WComboBox( selectDiv );
-  label->setBuddy( m_detectorSelect );
+  if( paths.empty() )
+    new GadrasDirectory( "", this, m_detectorEdit, m_directories );
+    
+  for( const string &path : paths )
+  {
+    auto dir = new GadrasDirectory( path, this, m_detectorEdit, m_directories );
+    
+    if( path.find("data/GenericGadrasDetectors") != string::npos )
+    {
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
+      dir->m_directoryEdit->disable();
+      dir->m_setDirectoryButton->hide();
+      dir->m_deleteBtn->hide();
+#endif
+    }
+    
+#if( !defined(WIN32) )
+    if( UtilityFunctions::istarts_with( path, "C:\\" ) )
+      dir->hide();
+#endif
+  }
+
+#if( IOS )
+  const char *gadrasToolTip = "You can place detector response functions imported"
+  " from GADRAS-DRF into <b>InterSpec</b>s directory within the <b>Files</b> app.";
+#else
+  const char *gadrasToolTip = "These are detector response functions imported"
+  " from GADRAS-DRF.  Currently only the detector dimensions, "
+  " absolute efficiencies, and FWHM resolutions are used.";
+#endif
   
-  WText *useInfo = new WText( gadrasToolTip, selectDiv );
+  WText *useInfo = new WText( gadrasToolTip, this );
   useInfo->setStyleClass("DetectorLabel");
   useInfo->setMargin( 5, Wt::Top );
   useInfo->setInline( false );
-  
-  m_detectorSelect->activated().connect( m_detectorEdit, &DetectorEdit::gadrasDetectorSelectCallback );
+}//void docreate()
 
-  updateWidgetsFromInputPaths();
-}//GadrasDetSelect(...)
+
+
+bool GadrasDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+{
+  if( !m_directories )
+    return false;
+  
+  if( !det || det->name().empty() )
+  {
+    for( auto w : m_directories->children() )
+    {
+      GadrasDirectory *d = dynamic_cast<GadrasDirectory *>( w );
+      if( !d )
+        continue;  //shouldnt ever happen, but JIC
+      d->m_detectorSelect->setCurrentIndex( -1 );
+    }//for( auto w : m_directories->children() )
+    
+    return false;
+  }//if( !det || det->name().empty() )
+  
+  for( auto w : m_directories->children() )
+  {
+    GadrasDirectory *d = dynamic_cast<GadrasDirectory *>( w );
+    if( !d )
+      continue;  //shouldnt ever happen, but JIC
+    
+    for( size_t i = 0; i < d->m_responses.size(); ++i )
+    {
+      auto response = d->m_responses[i];
+      
+      if( response == det || det->hashValue()==response->hashValue() )
+      {
+        d->m_detectorSelect->setCurrentIndex( i+1 );
+        return true;
+      }
+    }//for( size_t i = 0; i < d->m_responses.size(); ++i )
+    
+    d->m_detectorSelect->setCurrentIndex( 0 );
+  }//for( auto w : m_directories->children() )
+  
+  return false;
+}//bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+
+
+std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
+{
+  if( !m_directories )
+    return nullptr;
+  
+  for( auto w : m_directories->children() )
+  {
+    GadrasDirectory *d = dynamic_cast<GadrasDirectory *>( w );
+    const int currentIndex = d ? d->m_detectorSelect->currentIndex() : -1;
+    if( currentIndex >= 1 )
+    {
+      try
+      {
+        WAbstractItemModel *m = d->m_detectorSelect->model();
+        const string p = boost::any_cast<std::string>( m->data( currentIndex, 0, Wt::UserRole ) );
+        return DetectorEdit::initAGadrasDetectorFromDirectory( p, m_interspec );
+      }catch( std::exception &e )
+      {
+        passMessage( "Failed to parse a GADRAS detector: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
+      }//try / catch
+    }//if( user has selected an index )
+  }//for( auto w : m_directories->children() )
+  
+  return nullptr;
+}//std::shared_ptr<DetectorPeakResponse> selectedDetector()
+
+
+void GadrasDetSelect::addDirectory()
+{
+  if( m_directories )
+    new GadrasDirectory( "", this, m_detectorEdit, m_directories );
+}//void addDirectory()
+
+
+void GadrasDetSelect::removeDirectory( GadrasDirectory *dirWidget )
+{
+  if( !m_directories || !dirWidget )
+    return;
+  
+  for( WWidget *w : m_directories->children() )
+  {
+    if( dynamic_cast<GadrasDirectory *>(w) == dirWidget )
+    {
+      delete w;
+      break;
+    }
+  }//for( WWidget *w : m_files->children() )
+  
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  saveFilePathToUserPreferences();
+#endif
+}//void removeDirectory( GadrasDirectory *dirWidget )
 
 
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-void GadrasDetSelect::baseDirChanged()
+void GadrasDetSelect::saveFilePathToUserPreferences()
 {
-  const string enteredPath = m_baseDir->text().toUTF8();
+  if( !m_directories )
+    return;
+  
+  string dirs;
+  for( WWidget *w : m_directories->children() )
+  {
+    auto d = dynamic_cast<GadrasDirectory *>(w);
+    if( !d )
+      continue;
+    const string p = d->m_directoryEdit->text().toUTF8();
+    dirs += ((dirs.size() && !p.empty()) ? ";" : "") + p;
+  }//for( WWidget *w : m_directories->children() )
   
   try
   {
-    InterSpecUser::setPreferenceValue( m_interspec->m_user, "GadrasDRFPath", enteredPath, m_interspec );
+    InterSpecUser::setPreferenceValue( m_interspec->m_user, "GadrasDRFPath", dirs, m_interspec );
   }catch( std::exception &e )
   {
     passMessage( "Error saving GADRAS path to user preferences: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
   }
-  
-  updateWidgetsFromInputPaths();
-}//void baseDirChanged()
+}//void saveFilePathToUserPreferences()
 #endif
 
 
+void GadrasDetSelect::detectorSelected( GadrasDirectory *dir, std::shared_ptr<DetectorPeakResponse> det )
+{
+  if( !m_directories || !dir )
+    return;
+  
+  for( WWidget *w : m_directories->children() )
+  {
+    auto child = dynamic_cast<GadrasDirectory *>(w);
+    if( child && (child != dir) )
+      child->selectNone();
+  }//for( WWidget *w : m_files->children() )
+}//void detectorSelected( GadrasDirectory *dir, std::shared_ptr<DetectorPeakResponse> det )
+
+
+/*
 void GadrasDetSelect::updateWidgetsFromInputPaths()
 {
   m_detectorSelect->clear();
@@ -749,51 +1010,253 @@ void GadrasDetSelect::updateWidgetsFromInputPaths()
   m_message->setText( msg );
 #endif
 }//void updateWidgetsFromInputPaths()
+*/
 
-  
 
-bool GadrasDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parentSelect,
+                  DetectorEdit *detectorEdit, WContainerWidget *parent )
+: WContainerWidget( parent ),
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  m_directory( directory ),
+#else
+  m_directoryEdit( new WLineEdit( Wt::WString::fromUTF8(directory) ) ),
+  m_setDirectoryButton( new WPushButton("Set") ),
+#endif
+  m_parent( parentSelect ),
+  m_detectorEdit( detectorEdit ),
+  m_detectorSelect( new WComboBox() ),
+  m_msg( new WText() ),
+  m_deleteBtn( new WPushButton() )
 {
-  if( !det || det->name().empty() )
-  {
-    m_detectorSelect->setCurrentIndex(0);
-    return false;
-  }
+  addStyleClass( "RelEffFile" );
   
-  const int index = m_detectorSelect->findText( det->name() );
-  if( index <= 0 )
-  {
-    m_detectorSelect->setCurrentIndex(0);
-    return false;
-  }
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+#else
+  WContainerWidget *topdiv = new WContainerWidget( this );
+  topdiv->addWidget( m_deleteBtn );
+  m_deleteBtn->addStyleClass( "closeicon-wtdefault" );
+  m_deleteBtn->setToolTip( "Remove directory from list of directories InterSpec will look in for detector response functions in." );
+  m_deleteBtn->clicked().connect( boost::bind( &GadrasDetSelect::removeDirectory, parentSelect, this ) );
   
-  m_detectorSelect->setCurrentIndex( index );
+  topdiv->addWidget( m_directoryEdit );
+  m_directoryEdit->setText( directory );
+  m_directoryEdit->setTextSize( 48 );
   
-  return true;
-}//void trySelectDetector( det )
+  topdiv->addWidget( m_setDirectoryButton );
+  m_setDirectoryButton->setMargin( 5, Wt::Left );
+  m_setDirectoryButton->disable();
+  m_setDirectoryButton->setToolTip( "Set entered directory to recursively look in for detector response functions." );
+  m_setDirectoryButton->clicked().connect( this, &GadrasDirectory::dirPathChanged );
+  
+  //m_fileEdit->changed().connect( m_setFileButton, &WPushButton::enable );
+  m_directoryEdit->textInput().connect( m_setDirectoryButton, &WPushButton::enable );
+  m_directoryEdit->enterPressed().connect( this, &GadrasDirectory::dirPathChanged );
+#endif
+  
+  WContainerWidget *bottomDiv = new WContainerWidget( this );
+  
+  m_detectorSelect = new WComboBox( bottomDiv );
+  m_detectorSelect->activated().connect( this, &GadrasDirectory::detectorSelectCallback );
+  
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  m_directoryEdit->changed().connect( m_detectorSelect, &WPushButton::disable );
+#endif
+  
+  m_msg->setInline( false );
+  bottomDiv->addWidget( m_msg );
+  
+  initDetectors();
+}//GadrasDirectory constructor
 
 
-std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
+std::string GadrasDirectory::directory()
 {
-  std::shared_ptr<DetectorPeakResponse> answer;
-  const int currentIndex = m_detectorSelect->currentIndex();
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  return m_directory;
+#else
+  return m_directoryEdit->text().toUTF8();
+#endif
+}
+
+
+void GadrasDirectory::selectNone()
+{
+  if( m_detectorSelect->count() )
+    m_detectorSelect->setCurrentIndex( 0 );
+}
+
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+void GadrasDirectory::dirPathChanged()
+{
+  m_parent->saveFilePathToUserPreferences();
   
-  if( currentIndex < 1 )
-    return answer;
+  initDetectors();
   
-  WAbstractItemModel *m = m_detectorSelect->model();
+  m_setDirectoryButton->disable();
+  m_detectorSelect->enable();
+}//void dirPathChanged()
+#endif  //#if( !BUILD_FOR_WEB_DEPLOYMENT )
+
+
+void GadrasDirectory::detectorSelectCallback()
+{
+  std::shared_ptr<DetectorPeakResponse> det;
   
+  const int index = m_detectorSelect->currentIndex();
+  
+  //Item at index 0 is always a non-detector.
+  if( index > 0 && (index-1) < m_responses.size() )
+    det = m_responses[index-1];
+  
+  if( m_parent )
+    m_parent->detectorSelected( this, det );
+  
+  m_detectorEdit->setDetector( det );
+  m_detectorEdit->emitChangedSignal();
+}//void detectorSelectCallback()
+
+  
+bool GadrasDirectory::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+{
+  if( !det )
+  {
+    m_detectorSelect->setCurrentIndex( 0 );
+    return false;
+  }//if( !det )
+  
+  for( size_t i = 0; i < m_responses.size(); ++i )
+  {
+    if( m_responses[i]->hashValue() == det->hashValue() )
+    {
+      m_detectorSelect->setCurrentIndex( i+1 );
+      return true;
+    }
+  }//for( size_t i = 0; i < m_responses.size(); ++i )
+  
+  m_detectorSelect->setCurrentIndex( 0 );
+  return false;
+}//bool trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
+
+
+//parseDetector() returns null on error
+std::shared_ptr<DetectorPeakResponse> GadrasDirectory::parseDetector( string path )
+{
   try
   {
-    string p = boost::any_cast<std::string>( m->data( currentIndex, 0, Wt::UserRole ) );
-    answer = DetectorEdit::initAGadrasDetectorFromDirectory( p, m_interspec );
+    const string name = UtilityFunctions::filename( path );
+    auto drf = make_shared<DetectorPeakResponse>( name, "" );
+    drf->fromGadrasDirectory( path );
+    
+    return drf;
   }catch( std::exception &e )
   {
-    passMessage( "Failed to parse a GADRAS detector: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
-  }//try / catch
+    cerr << "GadrasDirectory::parseDetector() caught: " << e.what() << endl;
+  }
+ 
+  return nullptr;
+}//shared_ptr<DetectorPeakResponse> parseDetector( const string directory )
+
+
+vector<string> GadrasDirectory::recursive_list_gadras_drfs( const string &sourcedir )
+{
+  using namespace boost::filesystem;
   
-  return answer;
-}//std::shared_ptr<DetectorPeakResponse> selectedDetector()
+  vector<string> files;
+  if( !UtilityFunctions::is_directory( sourcedir ) )
+    return files;
+  
+  const string csv_file = UtilityFunctions::append_path( sourcedir, "Efficiency.csv");
+  const string dat_file = UtilityFunctions::append_path( sourcedir, "Detector.dat");
+  
+  if( UtilityFunctions::is_file(csv_file) && UtilityFunctions::is_file(dat_file) )
+    files.push_back( sourcedir );
+  
+  directory_iterator end_itr; // default construction yields past-the-end
+  
+  directory_iterator itr;
+  try
+  {
+    itr = directory_iterator( sourcedir );
+  }catch( std::exception & )
+  {
+    //ex: boost::filesystem::filesystem_error: boost::filesystem::directory_iterator::construct: Permission denied: "..."
+    return files;
+  }
+  
+  for( ; itr != end_itr; ++itr )
+  {
+    const boost::filesystem::path &p = itr->path();
+    const string pstr = p.string<string>();
+    if( UtilityFunctions::is_directory( pstr ) )
+    {
+      auto subdirs = recursive_list_gadras_drfs(pstr);
+      files.insert( end(files), begin(subdirs), end(subdirs) );
+    }
+  }//for( loop over
+  
+  return files;
+}//vector<string> recursive_list_gadras_drfs( const string &sourcedir )
+
+
+void GadrasDirectory::initDetectors()
+{
+  m_detectorSelect->clear();
+  m_responses.clear();
+  
+  m_msg->setText( "" );
+  m_msg->hide();
+  
+  if( !UtilityFunctions::is_directory( directory() ) )
+  {
+    m_msg->setText( "<span style=\"color:red;\">Not a valid directory.</span>" );
+    m_msg->show();
+    m_detectorSelect->addItem( "<invalid directory>" );
+    m_detectorSelect->setCurrentIndex( 0 );
+    m_detectorSelect->disable();
+    return;
+  }//if( !UtilityFunctions::is_directory( directory() ) )
+  
+  const vector<string> dirs = recursive_list_gadras_drfs( directory() );
+  for( const auto &d : dirs )
+  {
+    auto drf = parseDetector( d );
+    if( drf )
+      m_responses.push_back( drf );
+  }
+  
+  if( m_responses.empty() )
+  {
+    m_detectorSelect->addItem( "<no responses in directory>" );
+    m_detectorSelect->disable();
+  }else
+  {
+    m_detectorSelect->addItem( "<select detector>" );
+    m_detectorSelect->enable();
+  }
+  
+  for( const auto drf : m_responses )
+    m_detectorSelect->addItem( drf->name() );
+  m_detectorSelect->setCurrentIndex( 0 );
+  
+  if( m_responses.empty() )
+  {
+    m_msg->setText( "<span style=\"color:red;\">No valid DRFs in directory, or its subdirectories.</span>" );
+    m_msg->show();
+  }
+}//void initDetectors()
+
+
+void GadrasDirectory::detectorSelected( const int index )
+{
+  std::shared_ptr<DetectorPeakResponse> det;
+  if( index > 0 )
+    det = m_responses.at( index - 1 );
+  
+  m_detectorEdit->setDetector( det );
+  m_detectorEdit->emitChangedSignal();
+}//void detectorSelected( const int index )
+
 
 
 
@@ -871,8 +1334,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
                 InterSpec *specViewer,
                 SpectraFileModel *fileModel,
                 AuxWindow* auxWindow )
-  : WContainerWidget( auxWindow->contents() ),
-    m_footer (auxWindow->footer()),
+  : WContainerWidget(),
+    m_footer( nullptr ),
     m_interspec( specViewer ),
     m_fileModel( fileModel ),
     m_chart( 0 ),
@@ -896,8 +1359,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_manualSetButton( nullptr ),
     m_gadrasDetSelect( nullptr ),
     m_relEffSelect( nullptr ),
-    m_group( nullptr ),
-    m_stack( nullptr ),
+    m_drfTypeMenu( nullptr ),
+    m_drfTypeStack( nullptr ),
     m_deleteButton( nullptr ),
     m_DBtable( nullptr ),
     m_model( nullptr )
@@ -905,10 +1368,13 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   setOverflow(Wt::WContainerWidget::OverflowAuto);
-  WBorderLayout * mainLayout = new WBorderLayout();
+  WGridLayout *mainLayout = new WGridLayout();
+  
   setLayout( mainLayout );
-  mainLayout->setSpacing( 0 );
   mainLayout->setContentsMargins(0, 0, 0, 0);
+  mainLayout->setVerticalSpacing( 0 );
+  mainLayout->setHorizontalSpacing( 0 );
+  
   specViewer->detectorChanged().connect( this, &DetectorEdit::setDetector );
   specViewer->detectorModified().connect( this, &DetectorEdit::setDetector );
 
@@ -986,12 +1452,11 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   /*
    * Provide ample space for the title, the X and Y axis and the legend.
    */
-  m_chart->setPlotAreaPadding(15, Wt::Top);
-  m_chart->setPlotAreaPadding(70, Wt::Bottom);
+  m_chart->setPlotAreaPadding(5, Wt::Top);
+  m_chart->setPlotAreaPadding(60, Wt::Bottom);
   m_chart->setPlotAreaPadding(55, Wt::Right | Wt::Left);
 
-  m_chart->setMinimumSize(WLength(600), WLength(300));
-  m_chart->setMargin(Wt::WLength::Auto, Wt::Left | Wt::Right);
+  m_chart->setMinimumSize(WLength(350), WLength(200));
 
   m_chart->axis(Wt::Chart::XAxis).setVisible(true);
   m_chart->axis(Wt::Chart::XAxis).setTitle("Energy (keV)");
@@ -1004,61 +1469,43 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_chart->axis(Wt::Chart::Y2Axis).setTitleOrientation( Wt::Vertical );
 #endif
 
-  m_chart->setLegendEnabled(true);
+  m_chart->setLegendEnabled( true );
 
   m_chart->setLegendLocation(Wt::Chart::LegendInside, Wt::Top, Wt::AlignRight);
   //m_chart->setLegendLocation(Wt::Chart::LegendOutside, Wt::Bottom, Wt::AlignRight);
   
   //m_chart->setTitle("Detector Energy");
-  mainLayout->addWidget(m_chart,Wt::WBorderLayout::Center);
+  mainLayout->addWidget( m_chart, 0, 0 );
   
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
   distValidator->setInvalidBlankText( "0.0 cm" );
-
   
-  Wt::WContainerWidget *southContainer = new Wt::WContainerWidget();
+  WContainerWidget *lowerContent = new WContainerWidget();
+  mainLayout->addWidget( lowerContent, 1, 0 );
   
-  mainLayout->addWidget( southContainer, Wt::WBorderLayout::South );
+  WGridLayout *lowerLayout = new WGridLayout();
+  lowerContent->setLayout( lowerLayout );
   
-  WBorderLayout * southLayout =  new WBorderLayout();
-  southContainer->setLayout(southLayout);
+  //Presize the lower content to accomidate the tallest DRF type ("Formula"),
+  //  so everything wont change size when the user selects the different types.
+  //  Although, as it stands now if you add a bunch of paths to GADRAS/Rel. Eff.
+  //  you can make its content larger than the 190 px.
+  //ToDo: improve the sizing of this layout to not have hardcoded sizes!
+  lowerContent->resize( WLength::Auto, WLength(190,WLength::Pixel) );
   
-  Wt::WContainerWidget *radioContainer = new Wt::WContainerWidget();
-  radioContainer->addStyleClass( "ManualDetectorRadio" );
-  southLayout->addWidget( radioContainer, Wt::WBorderLayout::West );
+  m_drfTypeStack = new Wt::WStackedWidget();
+  m_drfTypeStack->addStyleClass( "UseInfoStack" );
   
-  m_group = new Wt::WButtonGroup( radioContainer );
-  Wt::WRadioButton * button = new Wt::WRadioButton( "GADRAS", radioContainer );
-  button->setInline( false );
-  button->setMargin( 10, Wt::Top );
-  m_group->addButton(button);  
-  button = new Wt::WRadioButton( "Rel. Eff.", radioContainer);
-  button->setInline( false );
-  button->setMargin( 10, Wt::Top );
-  m_group->addButton(button);
-
-
-  button = new Wt::WRadioButton( "Import", radioContainer);
-  button->setInline( false );
-  button->setMargin( 10, Wt::Top );
-  m_group->addButton(button);
+  m_drfTypeMenu = new WMenu( m_drfTypeStack, Wt::Vertical );
+  m_drfTypeMenu->addStyleClass( "SideMenu DetEditMenu" );
+  WContainerWidget *menuHolder = new WContainerWidget();
+  menuHolder->addWidget( m_drfTypeMenu );
+  lowerLayout->addWidget( menuHolder, 0, 0 );
+  lowerLayout->addWidget( m_drfTypeStack, 0, 1 );
   
-  if( !m_interspec->isSupportFile() )
-    button->setHidden(true);
-
-  button = new Wt::WRadioButton( "Formula", radioContainer);
-  button->setInline( false );
-  button->setMargin( 10, Wt::Top );
-  m_group->addButton(button);
-  button = new Wt::WRadioButton( "Recent", radioContainer);
-  button->setInline( false );
-  button->setMargin( 10, Wt::Top );
-  m_group->addButton(button);
-  
-  m_stack = new Wt::WStackedWidget();
-  southLayout->addWidget( m_stack, Wt::WBorderLayout::Center);
-  m_group->checkedChanged().connect(boost::bind( &DetectorEdit::selectButton, this, m_stack, m_group,true ));
+  mainLayout->setRowStretch( 0, 1 );
+  lowerLayout->setColumnStretch( 1, 1 );
   
   //-------------------------------------
   //--- 1)  GADRAS
@@ -1175,7 +1622,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     
   Wt::WContainerWidget *energyContainer = new Wt::WContainerWidget();
   m_eqnEnergyGroup = new WButtonGroup( energyContainer );
-  button = new WRadioButton( "keV", energyContainer );
+  WRadioButton *button = new WRadioButton( "keV", energyContainer );
   m_eqnEnergyGroup->addButton( button, 0 );
   button = new WRadioButton( "MeV", energyContainer );
   m_eqnEnergyGroup->addButton( button, 1 );
@@ -1301,26 +1748,51 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   //--------------------------------------------------------------------------------
   
-  m_stack->addWidget( m_gadrasDetSelect );
-  m_stack->addWidget( m_relEffSelect );
-  m_stack->addWidget( uploadDetTab );
-  m_stack->addWidget( selfDefine );
-  m_stack->addWidget( recentDiv);
-  m_stack->setMinimumSize(WLength::Auto, WLength(185.0));
-  m_stack->setMaximumSize(WLength::Auto, WLength(185.0));
+  WMenuItem *item = m_drfTypeMenu->addItem( "GADRAS", m_gadrasDetSelect );
+  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  if( !m_footer )
-    m_footer = new WContainerWidget( southContainer );
-
- // m_footer->setStyleClass("modal-footer");
+  item = m_drfTypeMenu->addItem( "Rel. Eff.", m_relEffSelect );
+  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  AuxWindow::addHelpInFooter(m_footer, "detector-edit-dialog",auxWindow);
-  m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
+  item = m_drfTypeMenu->addItem( "Import", uploadDetTab );
+  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
+  if( !m_interspec->isSupportFile() )
+    item->setHidden(true);
+  
+  item = m_drfTypeMenu->addItem( "Formula", selfDefine );
+  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
+  
+  item = m_drfTypeMenu->addItem( "Recent", recentDiv );
+  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
+  
+  //m_drfTypeStack->setMinimumSize(WLength::Auto, WLength(185.0));
+  //m_drfTypeStack->setMaximumSize(WLength::Auto, WLength(185.0));
+  m_drfTypeStack->resize( WLength::Auto, WLength(185.0) );
+  
+  
+  if( auxWindow )
+  {
+    m_footer = auxWindow->footer();
+  }else
+  {
+    m_footer = new WContainerWidget();
+    mainLayout->addWidget( m_footer, 2, 0, 1, 2 );
+  }
+  
+  AuxWindow::addHelpInFooter( m_footer, "detector-edit-dialog" );
+  if( auxWindow )
+  {
+    m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
+  }else
+  {
+    WPushButton *close = new WPushButton( "Close" );
+    m_footer->insertWidget( m_footer->count(), close );
+  }
   
   m_cancelButton->clicked().connect( this, &DetectorEdit::cancelAndFinish );
   
   
-  if( !auxWindow->isPhone() )
+  if( specViewer && !specViewer->isPhone() )
   {
     m_acceptButton = new WPushButton( "Accept", m_footer );
     m_acceptButton->setFloatSide(Wt::Right);
@@ -1340,7 +1812,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   if( !currentDet || !currentDet->isValid() )
     m_acceptButton->disable();
   
-  m_group->setSelectedButtonIndex( 0 );
+  m_drfTypeMenu->select( 0 );
   
   init();
 }//DetectorEdit constructor
@@ -1411,7 +1883,7 @@ void DetectorEdit::init()
   
   if( !m_detector )
   {
-//    m_group->setSelectedButtonIndex(0);
+    //m_drfTypeMenu->select( 0 );
   }else
   {
     switch( m_detector->efficiencySource() )
@@ -1421,15 +1893,15 @@ void DetectorEdit::init()
         const bool selected = m_gadrasDetSelect->trySelectDetector( m_detector );
         
         if( selected )
-          m_group->setSelectedButtonIndex( 0 );
+          m_drfTypeMenu->select( 0 );
         else
-          m_group->setSelectedButtonIndex( 2 );
+          m_drfTypeMenu->select( 2 );
         break;
       }//case kGadrasEfficiencyDefintion:
         
       case DetectorPeakResponse::kRelativeEfficiencyDefintion:
       {
-        m_group->setSelectedButtonIndex( 1 );
+        m_drfTypeMenu->select( 1 );
         m_relEffSelect->trySelectDetector( m_detector );
         break;
       }//case kRelativeEfficiencyDefintion:
@@ -1437,13 +1909,13 @@ void DetectorEdit::init()
         
       case DetectorPeakResponse::kUserUploadedEfficiencyCsv:
       {
-        m_group->setSelectedButtonIndex( 2 );
+        m_drfTypeMenu->select( 2 );
         break;
       }//case kUserUploadedEfficiencyCsv:
         
       case DetectorPeakResponse::kUserEfficiencyEquationSpecified:
       {
-        m_group->setSelectedButtonIndex( 3 );
+        m_drfTypeMenu->select( 3 );
         m_detectorManualFunctionName->setText( m_detector->name() );
         m_detectorManualFunctionText->setText( m_detector->efficiencyFormula() );
         m_detectorManualDescription->setText( m_detector->description() );
@@ -1465,7 +1937,7 @@ void DetectorEdit::init()
   
   }//if( m_detector == NULL ) / else
   
-  selectButton( m_stack, m_group, false );
+  selectButton( m_drfTypeStack, m_drfTypeMenu, false );
 }// init()
 
 
@@ -1599,12 +2071,11 @@ void DetectorEdit::setDefineDetector()
 // This calls the action to initialize the charts to whatever
 // is selected.  Each stack page should have something to update
 void DetectorEdit::selectButton( WStackedWidget *stack,
-                                 WButtonGroup *group,
+                                 WMenu *menu,
                                  bool activateCallBack)
 {
-  
   //makes one of the stack visible
-  stack->setCurrentIndex(group->checkedId());
+  stack->setCurrentIndex( menu->currentIndex() );  //I think this is now not needed
   
   if( activateCallBack )
   {
@@ -1613,7 +2084,7 @@ void DetectorEdit::selectButton( WStackedWidget *stack,
     std::shared_ptr<DetectorPeakResponse> det;
     m_detector = det;
     
-    switch( group->checkedId() )
+    switch( menu->currentIndex() )
     {
       case 0:
         gadrasDetectorSelectCallback();
@@ -1848,7 +2319,7 @@ vector<pair<string,string>> DetectorEdit::avaliableGadrasDetectors() const
   //  directoires containing both a 'Detector.dat' and 'Efficiency.csv' file.
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  const string datadir = InterSpec::dataDirectory();
+  const string datadir = InterSpec::staticDataDirectory();
   const string drfpaths = UtilityFunctions::append_path( datadir, "GenericGadrasDetectors" )
                           + ";" + UtilityFunctions::append_path( datadir, "OUO_GadrasDetectors" );
 #else
@@ -1916,7 +2387,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
   
   string concat_filenames;
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  concat_filenames = UtilityFunctions::append_path( InterSpec::dataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
+  concat_filenames = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
 #else
   if( interspec )
     concat_filenames = InterSpecUser::preferenceValue<string>( "RelativeEffDRFPaths", interspec );
@@ -2054,7 +2525,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector( const s
   //  and look for sub-folders with the given name that contain Detector.data
   //  and Efficiency.csv.
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  const string datadir = InterSpec::dataDirectory();
+  const string datadir = InterSpec::staticDataDirectory();
   const string drfpaths = UtilityFunctions::append_path( datadir, "GenericGadrasDetectors" )
                           + ";" + UtilityFunctions::append_path( datadir, "OUO_GadrasDetectors" );
 #else
@@ -2187,6 +2658,7 @@ DetectorEditWindow::DetectorEditWindow(
 {
   disableCollapse();
   m_edit = new DetectorEdit( det, specViewer, fileModel, this );
+  stretcher()->addWidget( m_edit, 0, 0 );
   m_edit->done().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
   finished().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
   rejectWhenEscapePressed();

@@ -1410,9 +1410,16 @@ color: blue;
   resize: none;
 }
 
-.ManualDetectorRadio
+.DetEditMenu
 {
-  border-right: 1px solid #A7A7A7;
+  width: 6em;
+}
+
+.DetEditMenu li
+{
+  height: 1.5em;
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 
 .DetectorDiamDiv

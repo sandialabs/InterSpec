@@ -140,13 +140,28 @@ public:
       ReactionGammaServer, and MassAttenuation.  Other tools call
       InterSpec::dataDirectory() to find the appropriate directory.
    */
-  static void setDataDirectory( const std::string &dir );
+  static void setStaticDataDirectory( const std::string &dir );
  
   /** Directory where files like cross sections, materials, detector response
       function, nuclear decay information, and similar are stored.
    */
-  static std::string dataDirectory();
+  static std::string staticDataDirectory();
  
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+  /** Sets the directory were we can write write the user preference database
+   file (if using sqlite3); also the location will search for extra detector
+   response functions.
+   
+   Will throw exception if not empty string and its an invalid directory.
+   */
+  static void setWritableDataDirectory( const std::string &dir );
+  
+  /** Returns the location you can write files to, such as user preferences.
+      Will throw exception if hasnt been set (or set with empty string)
+   */
+  static std::string writableDataDirectory();
+#endif  //if( not a webapp )
+  
   /** Function called by Wt when the client reports a change in widget size. */
   virtual void layoutSizeChanged( int width, int height );
 
@@ -1223,8 +1238,14 @@ protected:
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
   
-  static std::mutex sm_dataDirectoryMutex;
-  static std::string sm_dataDirectory;
+  static std::mutex sm_staticDataDirectoryMutex;
+  static std::string sm_staticDataDirectory;
+  
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+  static std::mutex sm_writableDataDirectoryMutex;
+  static std::string sm_writableDataDirectory;
+#endif  //if( not a webapp )
+
   
   friend class Recalibrator; // Recalibrator needs to be able access whatever
 

@@ -244,7 +244,7 @@ public:
   Wt::WPushButton *addCloseButtonToFooter(std::string overide="Close", bool floatright=false, Wt::WContainerWidget * footerOverride=NULL);
   
   //Help button add to footer
-  static void addHelpInFooter(Wt::WContainerWidget *footer, std::string page, AuxWindow *parent = NULL);
+  static void addHelpInFooter(Wt::WContainerWidget *footer, std::string page );
 //  static void openHelpWindow(std::string page,AuxWindow *parent);
   
   void emitReject();

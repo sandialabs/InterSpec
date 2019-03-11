@@ -871,7 +871,7 @@ void InterSpecUser::initFromDefaultValues( Wt::Dbo::ptr<InterSpecUser> user,
                          " there is no active transaction." );
   }
   
-  const string filename = UtilityFunctions::append_path( InterSpec::dataDirectory(), sm_defaultPreferenceFile );
+  const string filename = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
   
   rapidxml::file<char> input_file( filename.c_str() );  //throws runtime_error upon failure
     
@@ -1008,7 +1008,7 @@ UserOption *InterSpecUser::getDefaultUserPreference( const std::string &name,
   const char *nameptr = name.c_str();
   const size_t namelen = name.length();
   
-  const string filename = UtilityFunctions::append_path( InterSpec::dataDirectory(), sm_defaultPreferenceFile );
+  const string filename = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
   rapidxml::file<char> input_file( filename.c_str() );  //throws runtime_error upon failure
   
   rapidxml::xml_document<char> doc;

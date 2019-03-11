@@ -211,8 +211,15 @@
 using namespace Wt;
 using namespace std;
 
-std::mutex InterSpec::sm_dataDirectoryMutex;
-std::string InterSpec::sm_dataDirectory = "data";
+std::mutex InterSpec::sm_staticDataDirectoryMutex;
+std::string InterSpec::sm_staticDataDirectory = "data";
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+std::mutex InterSpec::sm_writableDataDirectoryMutex;
+std::string InterSpec::sm_writableDataDirectory = "";
+#endif  //if( not a webapp )
+
+
 
 void log_error_message( const std::string &message, const std::string &source, const int priority )
 {
@@ -791,33 +798,59 @@ InterSpec::InterSpec( WContainerWidget *parent )
 }//InterSpec( constructor )
 
 
-void InterSpec::setDataDirectory( const std::string &dir )
+void InterSpec::setStaticDataDirectory( const std::string &dir )
 {
-  std::lock_guard<std::mutex> lock( sm_dataDirectoryMutex );
+  std::lock_guard<std::mutex> lock( sm_staticDataDirectoryMutex );
   
   if( !UtilityFunctions::is_directory(dir) )
-    throw runtime_error( "InterSpec::setDataDirectory(): " + dir + " is not a directory." );
+    throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " is not a directory." );
   
-  sm_dataDirectory = dir;
+  sm_staticDataDirectory = dir;
   
   MassAttenuation::set_data_directory( dir );
   
   const string rctn_xml_file = UtilityFunctions::append_path( dir, "sandia.reactiongamma.xml" );
   if( !UtilityFunctions::is_file(rctn_xml_file) )
-    throw runtime_error( "InterSpec::setDataDirectory(): " + dir + " does not contain a sandia.reactiongamma.xml file." );
+    throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " does not contain a sandia.reactiongamma.xml file." );
   ReactionGammaServer::set_xml_file_location( rctn_xml_file );
   
   const string decay_xml_file = UtilityFunctions::append_path( dir, "sandia.decay.xml" );
   if( !UtilityFunctions::is_file(decay_xml_file) )
-    throw runtime_error( "InterSpec::setDataDirectory(): " + dir + " does not contain a sandia.decay.xml file." );
+    throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " does not contain a sandia.decay.xml file." );
   DecayDataBaseServer::setDecayXmlFile( decay_xml_file );
-}//void setDataDirectory( const std::string &dir )
+}//void setStaticDataDirectory( const std::string &dir )
 
-std::string InterSpec::dataDirectory()
+
+std::string InterSpec::staticDataDirectory()
 {
-  std::lock_guard<std::mutex> lock( sm_dataDirectoryMutex );
-  return sm_dataDirectory;
+  std::lock_guard<std::mutex> lock( sm_staticDataDirectoryMutex );
+  return sm_staticDataDirectory;
 }
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+void InterSpec::setWritableDataDirectory( const std::string &dir )
+{
+  std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
+  
+  if( !dir.empty() && !UtilityFunctions::is_directory(dir) )
+    throw runtime_error( "InterSpec::setWritableDataDirectory(): " + dir + " is not a directory." );
+  
+  //ToDo: call: SerialToDetectorModel::set_detector_model_input_csv( const std::string &filename );
+  
+  sm_writableDataDirectory = dir;
+}//setWritableDataDirectory( const std::string &dir )
+
+std::string InterSpec::writableDataDirectory()
+{
+  std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
+  
+  if( sm_writableDataDirectory.empty() )
+    throw runtime_error( "writableDataDirectory hasnt been set." );
+  
+  return sm_writableDataDirectory;
+}//string writableDataDirectory()
+#endif  //if( not a webapp )
+
 
 
 InterSpec::~InterSpec()
@@ -3565,7 +3598,7 @@ void InterSpec::showFileQueryDialog()
     m_specFileQueryDialog->centerWindow();
   }
   
-  AuxWindow::addHelpInFooter( m_specFileQueryDialog->footer(), "spectrum-file-query", m_specFileQueryDialog );
+  AuxWindow::addHelpInFooter( m_specFileQueryDialog->footer(), "spectrum-file-query" );
 }//void showFileQueryDialog()
 
 
@@ -6723,7 +6756,7 @@ void InterSpec::showNuclideSearchWindow()
   
   closeButton->clicked().connect( boost::bind( &InterSpec::closeNuclideSearchWindow, this ) );
   
-  AuxWindow::addHelpInFooter( m_nuclideSearchWindow->footer(), "nuclide-search-dialog", m_nuclideSearchWindow );
+  AuxWindow::addHelpInFooter( m_nuclideSearchWindow->footer(), "nuclide-search-dialog" );
   
   m_nuclideSearchWindow->resize( WLength(800,WLength::Pixel), WLength(510,WLength::Pixel));
   m_nuclideSearchWindow->resizeToFitOnScreen();
@@ -6758,7 +6791,7 @@ void InterSpec::showShieldingSourceFitWindow()
     WPushButton *closeButton = m_shieldingSourceFitWindow->addCloseButtonToFooter();
     closeButton->clicked().connect(m_shieldingSourceFitWindow, &AuxWindow::hide);
     
-    AuxWindow::addHelpInFooter(m_shieldingSourceFitWindow->footer(), "activity-shielding-dialog", m_shieldingSourceFitWindow);
+    AuxWindow::addHelpInFooter( m_shieldingSourceFitWindow->footer(), "activity-shielding-dialog" );
   
     m_shieldingSourceFitWindow->rejectWhenEscapePressed();
     
@@ -6935,8 +6968,7 @@ void InterSpec::showGammaLinesWindow()
   m_referencePhotopeakLinesWindow->finished().connect( boost::bind( &InterSpec::closeGammaLinesWindow, this ) );
   
   AuxWindow::addHelpInFooter( m_referencePhotopeakLinesWindow->footer(),
-                              "reference-gamma-lines-dialog",
-                              m_referencePhotopeakLinesWindow );
+                              "reference-gamma-lines-dialog" );
   
   m_referencePhotopeakLinesWindow->resize( WLength(800,WLength::Pixel), WLength(310,WLength::Pixel));
   m_referencePhotopeakLinesWindow->setResizable(true);

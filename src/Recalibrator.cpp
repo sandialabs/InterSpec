@@ -299,7 +299,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   m_acceptButtonDiv = new WContainerWidget();
   
   if (parent)
-    AuxWindow::addHelpInFooter(m_acceptButtonDiv, "energy-calibration-dialog", parent);
+    AuxWindow::addHelpInFooter( m_acceptButtonDiv, "energy-calibration-dialog" );
   
   WPushButton *multFiles = NULL; //need to reposition depending tall or wide mode
   
@@ -1756,7 +1756,7 @@ Recalibrator::GraphicalRecalConfirm::GraphicalRecalConfirm( double lowe,
   
   
   
-  AuxWindow::addHelpInFooter(footer(), "graphical-recal-dialog", this);
+  AuxWindow::addHelpInFooter( footer(), "graphical-recal-dialog" );
   
   
   WPushButton *button = new WPushButton( "Cancel", footer() );
@@ -2665,7 +2665,7 @@ Recalibrator::MultiFileCalibFit::MultiFileCalibFit( Recalibrator *cal )
   layout->addWidget( fitFor, 2, 0 );
   layout->addWidget( m_fitSumary, 3, 0 );
   
-  AuxWindow::addHelpInFooter(footer(), "multi-file-calibration-dialog", this);
+  AuxWindow::addHelpInFooter( footer(), "multi-file-calibration-dialog" );
   
   m_cancel = new WPushButton( "Cancel", footer() );
   m_fit    = new WPushButton( "Fit", footer() );

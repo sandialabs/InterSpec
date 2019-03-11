@@ -358,6 +358,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //  SRBPreferences.db, then it doesnt work
   NSString *writableDBPath = [documentsDirectory stringByAppendingPathComponent:@"data.sqlite"];
   DataBaseUtils::setPreferenceDatabaseFile( [writableDBPath UTF8String] );
+  InterSpec::setWritableDataDirectory( [documentsDirectory UTF8String] );
+  
   NSLog( @"Writing Database to '%@'", writableDBPath );
 
 
