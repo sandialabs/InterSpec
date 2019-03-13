@@ -1,0 +1,11 @@
+<div align="center">
+    <h1 id="terminal-dialog"><b>Math/Command Terminal</b></h1>
+    <hr />
+  </div>
+  <div style="padding-top: 10px">The <b>Math/Command Terminal</b> is a command line tool for <b>InterSpec</b>. It can be used to compute simple to very complicated math expressions, accomplish text-based interactions with the spectra, and reference data from the user’s current activity.
+  </div>
+  <div style="padding-top: 10px">The tool can be accessed by selecting the <b>Math/Command Terminal</b> selection from the <b>Tools</b> toolbar in tool tabs hidden state, or selecting its corresponding tab in the bottom tool tabs of the window.
+  </div>
+  <div align="center" style="padding-top: 10px">
+    <img src="InterSpec_resources/static_text/images/Terminal.png"  class="imageBorder"  style="max-width:90%; max-height:300px;"/>
+  </div>

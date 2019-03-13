@@ -1308,9 +1308,7 @@ void SpecFileQueryWidget::init()
   label->setMargin( 3, Wt::Top );
   
 #if( BUILD_AS_ELECTRON_APP )
-  //TODO: Actually test this all!
   //Based see https://jaketrent.com/post/select-directory-in-electron/
-  //static_assert( 0, "Electron directory selector hasnt been tested at all - you need to do this" );
   m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
   
   const string uploadname = id() + "PathPicker";

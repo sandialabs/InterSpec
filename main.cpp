@@ -130,6 +130,9 @@ void processCustomArgs( int argc, char **argv )
       try
       {
         InterSpec::setWritableDataDirectory( argv[i+1] );
+        const std::vector<std::string> serial_db = UtilityFunctions::ls_files_in_directory( argv[i+1], "serial_to_model.csv" );
+        if( !serial_db.empty() )
+          SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
       }catch( std::exception &e )
       {
         std::cerr << "Invalid userdatadir ('" << argv[i+1] << "') specified"

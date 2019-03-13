@@ -835,7 +835,13 @@ void InterSpec::setWritableDataDirectory( const std::string &dir )
   if( !dir.empty() && !UtilityFunctions::is_directory(dir) )
     throw runtime_error( "InterSpec::setWritableDataDirectory(): " + dir + " is not a directory." );
   
-  //ToDo: call: SerialToDetectorModel::set_detector_model_input_csv( const std::string &filename );
+  //Set the serial to module database file, if the user has one in thier
+  //  application data directory.
+  //Currently this is being done in the target specific code; it should all be
+  //  moved here, or really in ResourceUpdate tool if that ever gets implemented.
+  //const vector<string> serial_db = UtilityFunctions::ls_files_in_directory( dir, "serial_to_model.csv" );
+  //if( !serial_db.empty() )
+  //  SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
   
   sm_writableDataDirectory = dir;
 }//setWritableDataDirectory( const std::string &dir )
@@ -1393,7 +1399,7 @@ void InterSpec::hotkeyPressed( const unsigned int value )
       case 3: expectedTxt = GammaLinesTabTitle;    break;
       case 4: expectedTxt = CalibrationTabTitle;   break;
       case 5: expectedTxt = NuclideSearchTabTitle; break;
-      case 6: HelpSystem::createHelpWindow( "setting-up" ); break;
+      case 6: HelpSystem::createHelpWindow( "getting-started" ); break;
       case 7: showWelcomeDialog( true ); break;
     }//switch( value )
   
@@ -5832,7 +5838,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   //else
     item = m_helpMenuPopup->addMenuItem( "Help Contents..." ,  "InterSpec_resources/images/help_small.png");
   
-  item->triggered().connect( boost::bind( &HelpSystem::createHelpWindow, string("setting-up") ) );
+  item->triggered().connect( boost::bind( &HelpSystem::createHelpWindow, string("getting-started") ) );
 
   Wt::WMenuItem *notifications = m_helpMenuPopup->addMenuItem( "Notification Logs..." , "InterSpec_resources/images/log_file_small.png");
   notifications->triggered().connect( this, &InterSpec::showWarningsWindow );
@@ -6477,16 +6483,10 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   
   PopupDivMenuItem *item = NULL;
 
-  item = popup->addMenuItem( "Detector Edit/Select" );
-  HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTipInstantly );
-
-  item->triggered().connect( boost::bind( &InterSpec::showDetectorEditWindow, this ) );
-
   item = popup->addMenuItem( "Activity/Shielding Fit" );
   HelpSystem::attachToolTipOn( item,"Allows advanced input of shielding material and activity around source isotopes to improve the fit." , showToolTipInstantly );
-
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
-
+  
   item = popup->addMenuItem( "Gamma XS Calc", "" );
   HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <i>InterSpec</i>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTipInstantly );
   item->triggered().connect( boost::bind( &InterSpec::showGammaXsTool, this ) );
@@ -6517,6 +6517,12 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( "Nuclide Decay Info" );
   HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTipInstantly );
   item->triggered().connect( this, &InterSpec::createDecay );
+
+  
+  item = popup->addMenuItem( "Detector Edit/Select" );
+  HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTipInstantly );
+  item->triggered().connect( boost::bind( &InterSpec::showDetectorEditWindow, this ) );
+
   
   item = popup->addMenuItem( "File Parameters" );
   HelpSystem::attachToolTipOn( item,"Allows user to view/edit the file parameters. If ever the application is unable to render activity calculation, use this tool to provide parameters the original file did not provide; <i>InterSpec</i> needs all parameters for activity calculation.", showToolTipInstantly );

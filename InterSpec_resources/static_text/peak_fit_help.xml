@@ -1,0 +1,63 @@
+  <div align="center">
+      <h1>
+            <b>Identify Peak(s)</b>
+      </h1>
+      <hr />
+	  </div>
+	  <div >
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 1
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks1-1.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+ 	  <img src="InterSpec_resources/static_text/images/IDPeaks1-2.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Double-click</u> anywhere on the graph above the energy level you wish to identify a peak. <u>Double-clicking</u>
+         again near an existing peak will prompt the application to fit for another peak 
+if it finds another nuclide appropriate and energetically close in vicinity.
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 2
+	  </h3>
+	  </div>
+   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks2-1.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  <img src="InterSpec_resources/static_text/images/IDPeaks2-2.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Hold</u> <b><kbd>CTRL</kbd></b> and <u>left-click drag</u> over the ROI; be sure to select the appropriate number of peaks 
+	  you want to prompt the application into identifying - it will not identify any if the selected quantity is unavailable. 
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 3
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks3-1.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div style="padding-top: 10px; padding-bottom: 10px" align="center">
+      Show the tools tab the windows and <u>select</u> &#34;<b>Search for Peaks</b>&#34; on the bottom left of the window. Note that this method will identify all possible peaks on the entire spectrum.
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 4
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks4-1.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  <img src="InterSpec_resources/static_text/images/IDPeaks4-2.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div align="center">
+	  <img src="InterSpec_resources/static_text/images/IDPeaks4-3.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  <img src="InterSpec_resources/static_text/images/IDPeaks4-4.png"  class="imageBorder" style="max-width:40%; max-height:500px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      Show the tools tab and <u>select</u> &#34;<b>Add</b>&#34; on the bottom left of the window. Change the parameters under the <b>Peak Manager</b> tab to adjust the peak
+	  by <u>double-clicking</u> on each parameter and <u>typing in</u> the desired quantity. 
+      </div>
+	  </div>

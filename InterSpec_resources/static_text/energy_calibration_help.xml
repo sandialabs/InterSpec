@@ -1,0 +1,33 @@
+<div align="center">
+      <h1 id="energy-calibration-dialog">
+            <b>Energy Calibration</b>
+      </h1>
+      <hr />
+	  </div>
+      <div>
+         One way to recalibrate is by
+         <u>navigating</u>
+         to the
+         <b>Peak Manager</b>
+         tab on the bottom tools tabs of the window,
+         <u>selecting</u>
+         <b>ID Nuclides</b>
+         so that the application can identify 
+what it deems to be appropriate nuclides for your given spectrum,
+         <u>navigating</u>
+         to the
+         <b>Energy Calibration</b>
+         tab also on the bottom tools tabs, and then
+         <u>checking/unchecking</u>
+         under 
+&#34;Calib. Peak&#34; the nuclides the application identified that you are in agreement with; checked boxes classify the identity of the nuclide as &#34;true,&#34; unchecked 
+boxes classify the identity as &#34;false.&#34;
+      </div>
+      <div>
+         <ul>
+            You can still manually change the calibration parameters by adjusting the &#34;Offset Term,&#34; &#34;Linear Term,&#34; and &#34;Quad. Term&#34; located on the left 
+half of the tools tab under the
+            <b>Calibration</b>
+            tab.
+         </ul>
+</div>

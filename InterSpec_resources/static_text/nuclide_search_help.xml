@@ -1,0 +1,51 @@
+    <div align="center">
+      <h1 id="nuclide-search-dialog">
+            <b>Nuclide Search</b>
+      </h1>
+      <hr />
+	  </div>
+       <div align="center" style="padding-top: 10px">
+            <img src="InterSpec_resources/static_text/images/NucSearch.png"  class="imageBorder"  style="max-width:90%; max-height:300px;"/>
+      </div>
+<div style="padding-top: 10px">This tool allows the user to search for nuclides that match specified energy ranges.  Minimum branching ratios and half-lives can also be specified.</div>
+      <div style="padding-top: 10px">The <b>Nuclide Search </b>tool can be accessed either from the bottom tool tabs, or from the <b>Tools</b> toolbar when in the tool tabs are hidden. </div>
+
+      <div style="padding-top: 15px">
+<img src="InterSpec_resources/static_text/images/NucSearchEnergies.png"  class="imageBorder"  style="max-width:25%; float: left; padding-right: 5px;"/>
+You can search on an arbitrary number of energies, where the results will be required to have a source
+gamma line in each energy range. Use the
+<img src="InterSpec_resources/images/plus_min.png" /> and
+<img src="InterSpec_resources/images/minus_min.png" />
+icons to the right of the energies to add or subrtact from the number of energies to search on.
+
+<p>While the <em>Nuclide Search</em> tool is displayed, a single-click or tap on the spectrum
+will fill in the clicked/tapped energy into the search row that is currently highlighted in blue (in the picture to the left, this is the first row); if a peak is clicked on, the peaks mean will be used, and search window will be set based on the peaks width.
+</p>
+<p>The &quot;<em>Gammas</em>&quot;, &quot;<em>X-rays</em>&quot;, and &quot;<em>Reactions</em>&quot; checkboxes determine if nuclear decay gammas, x-rays, or gammas produced by alpha or neutron reactions will be searched.
+</p>
+      </div>
+<div style="padding-top: 15px">
+<img src="InterSpec_resources/static_text/images/NucSearchResults.png"  class="imageBorder"  style="max-width:45%; float: left; padding-right: 5px;"/>
+Rows of the results table can be clicked on (in the image to the left the second result, Ra226 has been selected) to show the cooresponding reference lines on the spectrum, allowing the user to judge if a particular nuclide is a good candidate.  On the image to the left, you will note that each result nuclide takes two rows display; this is because two energies were searched for.
+<p>The table may be sorted by clicking on any of the headers.  Descriptions of the collumns are:
+<table style="text-align: left; border: 1px solid black; border-collapse: collapse;">
+<tr><th style="border: 1px solid black;"><b>Parent</b></th>
+    <td style="border: 1px solid black;">The parent isotope/reaction/element of the result; only shown on first row representing a result (when more than one energy is searched on)</td></tr>
+<tr><th style="border: 1px solid black;"><b><nobr>Energy (keV)</nobr></b></th>
+    <td style="border: 1px solid black;">The energy of the gamma/x-ray that matched to within the search window.</td></tr>
+<tr><th style="border: 1px solid black;"><b>Diff.</b></th>
+     <td style="border: 1px solid black;">The sum of all energy difference between searched energies, and the matched gamma/x-ray.  Especially for HPGe spectra, sorting by this column will allow listing sources closest to energy to what was searched for.  However, there is no lower limit on the matching branching ratio, so nuclides with many many gammas may still be listed before the desired nuclide.</td></tr>
+<tr><th style="border: 1px solid black;"><b>B.R.</b></th>
+    <td style="border: 1px solid black;">The branching ratio the gamma or x-ray matched to the search window has.  Sorting the result table by this column will often work well when searching on the energies of particularly dominant peaks in the spectrum; the sum of all searched on energies is used to perform the sorting.</td></tr>
+<tr><th style="border: 1px solid black;"><b>Profile</b></th>
+    <td style="border: 1px solid black;">This number tries to represent how well the profile of the observed spectrum matches expected peaks of a particular result.  The higher value this number is, the better candidate a particular result is.  Many (non-rigurously derived) factors go into calculating this number, but it tries to take into account if a peak due to a candidate source is seen, what other peaks should be seen in the spectrum, or do the amplitudes of the observed peaks that can be attributed to the candidate soruce, have a reasonable amplitude.  This value will work best when the user has fit the unknown peaks in a spectrum, or at least difficult peak areas of the spectrum (<em>InterSpec</em>s automated peak search is also performed, and combined with the user peaks, but often time user can do a better job fitting hard to fit peaks).  This is the default column results are sorted by.</td></tr>
+
+<tr><th style="border: 1px solid black;"><b>Decay</b></th>
+    <td style="border: 1px solid black;">The particular nuclear transition within the parents decay chain that gives rise to the candidate gamma/x-ray.  Sorting by this column is done alphabetically.</td></tr>
+<tr><th style="border: 1px solid black;"><b><nobr>Parent H.L.</nobr></b></th>
+    <td style="border: 1px solid black;">Half life of the parent nuclide, if applicable.</td></tr>
+<tr><th style="border: 1px solid black;"><b><nobr>Assumed Age</nobr></b></th>
+    <td style="border: 1px solid black;">The nuclide age used that the branching ratios are based on.  This is also the age that will be used for showing reference lines if this row is clicked on.</td></tr>
+</table>
+</p>
+</div>

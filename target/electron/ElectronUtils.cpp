@@ -243,9 +243,11 @@ int run_app( int argc, char *argv[] )
   cout << "Will set user preferences file to: '" << preffile << "'" << endl;
   DataBaseUtils::setPreferenceDatabaseFile( preffile );
   DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( userdatadir );
+  const auto serial_db = UtilityFunctions::ls_files_in_directory( userdatadir, "serial_to_model.csv" );
+  if( !serial_db.empty() )
+    SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
   ResourceUpdate::setUserDataDirectory( userdatadir );
   InterSpec::setWritableDataDirectory( userdatadir );
-
 
   cout << "Will make sure preferences database is up to date" << endl;
   DataBaseVersionUpgrade::checkAndUpgradeVersion();

@@ -1,0 +1,29 @@
+   <div align="center">
+      <h1 id="energy-range-count">
+            <b>Energy Range Count</b>
+      </h1>
+      <hr />
+	  </div>
+      <div>
+         The
+         <b>Energy Range Count</b> tool
+         will sum the number of gammas in a selected energy range. To
+         <u>select</u>
+         an energy range, manually
+         <u>input</u>
+         ,
+         <u>click</u>
+         the up/down arrows 
+in each box to toggle to the desired number, or
+         <u>hold</u>
+         both the
+         <b><kbd>SHIFT</kbd></b>
+         and
+         <b><kbd>ALT</kbd></b>
+         keys on your keyboard while simultaneously <u>dragging</u> the desired region for energy count.
+      </div>
+	  <div align="center" style="padding-top: 10px">
+	  <img src="InterSpec_resources/static_text/images/ERCount1.png" class="imageBorder"  style="max-width:40%; max-height:300px;"/>
+
+	  <img src="InterSpec_resources/static_text/images/ERCount2.png"  class="imageBorder" style="max-width:40%; max-height:300px;"/>
+	  </div>

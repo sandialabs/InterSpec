@@ -1,0 +1,50 @@
+   <div align="center">
+      <h1 id="1/r2-calc-dialog"><sup>1</sup>/<sub>r<sup>2</sup></sub> Distance To Source Calculator</h1>
+      <hr />
+	  </div>
+            <img src="InterSpec_resources/static_text/images/1r2Calc.png"  class="imageBorder" style="max-height:300px;float:left;display:block;margin-right:20px"/>
+
+      <div >
+<div>
+This tool allows you to use two dose measurements taken at different distances
+from a source to determine the absolute distance to the source from the nearer
+measurement.
+This is useful when the source is behind a wall or in a large container and the
+position of the source can not be determined otherwise.
+</div>
+<div style="padding-top: 10px">
+For the &#34;Near&#34;, &#34;Far&#34;, and &#34;Background&#34; intensity values
+you can use an units of dose or intensity you want (e.x. rem, millirem,
+sievert/hour, gamma counts per second, etc.), but it must be the same for each
+field.  Similarly, you can use any unit of distance (ex. meters, feet,
+attoparsecs, etc.) for the distance between the measurements, as the answer will
+be provided in these same units.
+</div>
+<div style="padding-top: 5px">
+Entering a background intensity is optional, but for the case of low intensity
+sources, it will help to provide a more accurate answer by subtracting this value
+from both the near and far measurements.
+</div>
+<div style="padding-top: 5px">
+This tool assumes the source intensity falls off as <sup>1</sup>/<sub>r<sup>2</sup></sub>
+which is generally the case, however there can be circumstances where scattering
+or other effects will cause this to not be true; also, over huge distances
+attenuation in the air will cause this assumption to be invalid as well.
+You can use the <b>Gamma XS Calc</b> tool to calculate the expected attenuations
+for different energies through air to see if it is significant effect.
+<b>(TODO: insert some example effects at different distances here)</b>
+</div>
+
+<div style="padding-top: 10px">
+The formula used to calculate the distance in front of the near measurement is
+shown below in <i>pseudo-code</i> format, and already assumes the background has been subtracted from
+<code>FarIntensity</code> and the <code>NearIntensity</code>.
+<pre><code>
+<i>let</i> <span style="color:blue;">a</span> = FarIntensity - NearIntensity
+<i>let</i> <span style="color:blue;">b</span> = 2&#215;FarIntensity&#215;DistanceBetween
+<i>let</i> <span style="color:blue;">c</span> = FarIntensity&#215;DistanceBetween&#215;DistanceBetween
+<i>let</i> <span style="color:blue;">DistanceInFrontOfNear</span> = <sup>(-<span style="color:blue;">b</span>-sqrt(<span style="color:blue;">b</span>&sup2;-4&#215;<span style="color:blue;">a</span>&#215;<span style="color:blue;">c</span>))</sup>/<sub>2<span style="color:blue;">a</span></sub>
+</code></pre>
+</div>
+
+</div>

@@ -687,7 +687,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     //regular locations
     more = new WAnchor( WLink(), "More in depth information" );
     more->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-    more->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, string("setting-up") ) );
+    more->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, string("getting-started") ) );
     more->addStyleClass("InfoLink");
     layout->addWidget( more, 2, 0 );
   }

@@ -1,0 +1,41 @@
+  <div align="center">
+      <h1 id="display">
+            <b>Display</b>
+      </h1>
+      <hr />
+	  </div>
+      <div>
+         You can choose to view the spectrum on either a Linear or Log graph by 
+		 <u> navigating</u> to the menu <b>View &#8594; Chart Options</b>; the graph is log by default.
+      </div>
+      <div style="padding-top: 10px">
+         You can add gridlines to the graph by <u> navigating</u> to the <b>View</b> toolbar, <u>hovering</u> over <b>Chart Options</b>, and 
+         <u>selecting</u>
+         the
+         <b>Show Vertical Lines</b>
+         and
+         <b>Show Horizontal Lines</b>.
+      </div>
+      <div style="padding-top: 10px">The legend located near the top right of your graph should automatically load data corresponding to your spectrum. 
+In the legend you will see the &#34;Real Time&#34; and &#34;Live Time;&#34; the difference between the two will give you what is otherwise known as &#34;dead time.&#34; 
+The legend will also provide data on the number of counts pertaining to a certain spectrum.</div>
+      <div style="padding-top: 10px">
+         To make the graph constitute the entire window,
+         <u>select</u>
+         the
+         <b>Hide Tool Tabs</b>
+         option found under the
+         <b>View</b>
+         toolbar.  The application provides numerous routes to access tools such that you can still access all of the tools from the Tools menu while the tool tabs are hidden.
+</div>
+    <div style="padding-top: 10px">
+        To manually check notifications, select menu
+         <b>Help &#8594; Notifications Logs</b>. Notification preferences can be modified by
+         <u>checking/unchecking</u> the types of notifications that you desired to be disabled on the bottom right corner of the <b>Notifications Log</b>.
+      </div>
+      <div>
+         To toggle individual detectors on/off,
+         <u>check/uncheck</u>
+         the desired detector from the menu
+         <b>View &#8594; Detectors</b>; all detectors are on by default.
+      </div>

@@ -173,18 +173,30 @@ namespace HelpSystem
   HelpWindow::HelpWindow(std::string preselect)
    : AuxWindow( "InterSpec Help",
                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::IsHelpWIndow) ),
-     m_resourceBundle(),
      m_tree ( new Wt::WTree() ),
      m_searchText( new Wt::WLineEdit() )
   {
     wApp->useStyleSheet( "InterSpec_resources/HelpWindow.css" );
     
-     m_tree->setSelectionMode(Wt::SingleSelection);
+    m_tree->setSelectionMode(Wt::SingleSelection);
     
-    if (m_resourceBundle.keys(Wt::WMessageResourceBundle::Default).size()==0) //see if already read in
-      m_resourceBundle.use("InterSpec_resources/static_text/help",false);
+    //To Do add in special
+    //"help-xml"
+    //"help-xml-desktop"
+    //"help-xml-mobile"
+    //"help-xml-phone"
+    //"help-xml-tablet"
     
-    m_resourceBundle.resolveKey("help-info",m_helpLookupTable);
+    const char *help_json = "InterSpec_resources/static_text/help.json";
+    ifstream helpinfo( help_json );
+    if( helpinfo.is_open() )
+    {
+      m_helpLookupTable = string( (std::istreambuf_iterator<char>(helpinfo)),
+                                 std::istreambuf_iterator<char>());
+    }else
+    {
+      passMessage( "Could not open help JSON file at '" + string(help_json) + "'", "", 2 );
+    }
     
     initialize();
     
@@ -423,7 +435,7 @@ namespace HelpSystem
     }catch( std::exception &e )
     {
       cerr << "showHelpDialog() caught: " << e.what() << endl
-      << "you may want to check help.xml" << endl;
+      << "you may want to check help.json" << endl;
     }//try / catch
     
     node->setNodeVisible( false ); //hide the root note, not necessary
@@ -452,18 +464,20 @@ namespace HelpSystem
     {
       if (((iter->second))==(node))
       {
-        std::string helpStr = "";
-        m_resourceBundle.resolveKey( iter->first, helpStr );
-        UtilityFunctions::trim( helpStr );
+        std::string helpStr, filepath;
+        auto pos = m_contentLookup.find( iter->first );
+        if( pos != end(m_contentLookup) )
+          filepath = pos->second;
+        UtilityFunctions::trim( filepath );
         
-        const string searchstr = "contents_in_file:";
-        if( UtilityFunctions::istarts_with(helpStr, searchstr) )
+        if( filepath.empty() )
+        {
+          helpStr = "No help item associated with key '" + iter->first + "'";
+        }else
         {
           //We have to grab the contents of this file, and place in helpStr...
-          //All paths relative to the curent help.xml file, which is in
+          //All paths relative to the curent help.json file, which is in
           // "InterSpec_resources/static_text"
-          string filepath = helpStr.substr( searchstr.size() );
-          UtilityFunctions::trim( filepath );
           
           //ToDoL: should remove leading and trailing quotes I guess...
           
@@ -512,9 +526,8 @@ namespace HelpSystem
     
     if (!found)
     { //return a page not found!
-      std::string helpStr = "";
-      m_resourceBundle.resolveKey("page-not-found",helpStr);
-      new WTemplate( WString(helpStr), m_helpWindowContent);
+      std::string helpStr = "Help Page Not Found";
+      new WTemplate( WString(helpStr), m_helpWindowContent );
     }//if (!found)
     
     //Note: this keeps the new pages scrolled to the top.
@@ -524,6 +537,8 @@ namespace HelpSystem
   
   void HelpWindow::populateTree(Json::Array &res, WTreeNode* parent)
   {
+    InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+    
     const string searchTxt = m_searchText->text().toUTF8();
     const bool searching = (searchTxt.length() > 0);
     
@@ -540,16 +555,16 @@ namespace HelpSystem
       if( ident.isNull() || title.isNull())
       {
         cerr << "found a null key or file string, "
-        "you may want to check help.xml" << endl;
+        "you may want to check help.json" << endl;
         continue;
       }//if( id.isNull() || title.isNull())
       
       const WString identifier = ident;
       const WString titlestr = title;
     
-      WTreeNode *insertNode=new Wt::WTreeNode(titlestr.toUTF8());
+      WTreeNode *insertNode = new Wt::WTreeNode( titlestr.toUTF8() );
       
-      if (searching)
+      if( searching )
         insertNode->setHidden(true); //by default hidden, and just show nodes that need to be visible
       
       parent->addChildNode(insertNode);
@@ -582,9 +597,47 @@ namespace HelpSystem
           setPathVisible(insertNode);
       }//if (!keywords.isNull() && searching)
 
-      m_treeLookup[identifier.toUTF8()]=insertNode; //for future matching
+      const string identstr = identifier.toUTF8();
+      m_treeLookup[identstr] = insertNode; //for future matching
       
-      if (!children.isNull())
+      if( app )
+      {
+        WString xml_file;
+        const Json::Value &xml = info.get("help-xml");
+        const Json::Value &xml_desktop = info.get("help-xml-desktop");
+        const Json::Value &xml_mobile = info.get("help-xml-mobile");
+        const Json::Value &xml_phone = info.get("help-xml-phone");
+        const Json::Value &xml_tablet = info.get("help-xml-tablet");
+        
+        if( app->isPhone() )
+        {
+          if( !xml_phone.isNull() )
+            xml_file = xml_phone;
+          else if( !xml_mobile.isNull() )
+            xml_file = xml_mobile;
+          else if( !xml.isNull() )
+            xml_file = xml;
+        }else if( app->isTablet() || app->isMobile() )
+        {
+          if( !xml_tablet.isNull() )
+            xml_file = xml_tablet;
+          else if( !xml_mobile.isNull() )
+            xml_file = xml_mobile;
+          else if( !xml.isNull() )
+            xml_file = xml;
+        }else  //desktop
+        {
+          if( !xml_desktop.isNull() )
+            xml_file = xml_desktop;
+          else if( !xml.isNull() )
+            xml_file = xml;
+        }
+        
+        m_contentLookup[identstr] = xml_file.toUTF8();
+      }//if( app )
+      
+      
+      if( !children.isNull() )
       {
         //has children
         Json::Array addNodes = children;
