@@ -1,0 +1,55 @@
+ <div align="center">
+      <h1>
+            <b>Delete Peak(s)</b>
+      </h1>
+      <hr />
+	  </div>
+	  <div >
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 1
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/DeletePeak1-1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  <img src="InterSpec_resources/static_text/images/DeletePeak1-2.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Hold</u> <b><kbd>SHIFT</kbd></b> and <u>left-click drag</u> over the ROI to erase the identified peak(s).  
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 2
+	  </h3>
+	  </div>
+   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/DeletePeak2-1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  <img src="InterSpec_resources/static_text/images/DeletePeak2-2.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Right-click</u> on a highlighted peak and <u>select</u> the &#34;<b>Peak Editor</b>&#34;. In the <b>Peak Editor</b> dialog, <u>select</u> &#34;<b>Delete</b>&#34; from the bottom right of the window. 
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 3
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/DeletePeak3-1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  <img src="InterSpec_resources/static_text/images/DeletePeak3-2.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      Show the tools tabs, <u>select</u> &#34;<b>Clear all Peaks</b>&#34; on the bottom left of the window, and <u>select</u> &#34;<b>Yes</b>&#34; in the small window that pops up. Note that this method will delete <i>all</i> identified peaks.
+      </div>
+	  <div style="padding-top: 10px" align="center">
+	  <h3>
+	  Method 4
+	  </h3>
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/DeletePeak4-1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px" align="center">
+      <u>Right-click</u> the identified peak and <u>select</u> &#34;<b>Delete Peak</b>&#34; in the dialog that pops up. 
+      </div>
+	  </div>

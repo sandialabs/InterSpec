@@ -1,0 +1,52 @@
+  <div align="center">
+      <h1 id="zoom-in">
+            <b>Zoom In</b>
+      </h1>
+      <hr />
+	  </div>
+	  <div >
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/Zoom1.png" class="imageBorder" style="max-width:48%; " />
+	  <img src="InterSpec_resources/static_text/images/Zoom2.png" class="imageBorder" style="max-width:48%; " />
+	  </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/Zoom3.png"  class="imageBorder" style="max-width:48%;" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         To zoom in on a specific portion of the spectrum,
+         <u>click</u>
+         on the right-most end of the desired portion and
+         <u>drag</u>
+         your cursor to the left-most end of the desired portion; 
+this can be done both along the x axis and y axis of the graph.
+      </div>
+	  </div>
+	  </message>
+   <message id="er-shift">
+    <div align="center">
+      <h1 id="er-shift">
+            <b>Energy Range Shift</b>
+      </h1>
+      <hr />
+	  </div>
+	  <div >
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/ShiftER1.png"  class="imageBorder" style="max-width:75%; max-height:300px;" /><br/>
+	  <img src="InterSpec_resources/static_text/images/ShiftER2.png"  class="imageBorder" style="max-width:75%; max-height:300px;" />
+	  </div>
+	  <div align="center">
+	  <img src="InterSpec_resources/static_text/images/ShiftER3.png"  class="imageBorder" style="max-width:75%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px; padding-bottom: 10px" align="center">
+         To move left/right or up/down on the spectrum while zoomed in,
+         <u>hold</u>
+         the
+         <kbd>ALT</kbd>
+         key on your keyboard,
+         <u>click</u>
+         on the graph, and
+         <u>drag</u>
+         opposite 
+to the direction you want to move your view to; the magnitude of your drag will determine how far you move on the graph, so release accordingly.
+      </div>
+	  </div>

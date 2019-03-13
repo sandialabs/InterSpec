@@ -1,0 +1,25 @@
+<div align="center">
+<h1 id="reference-gamma-lines-dialog">
+<b>Trouble Fitting Peaks for Shielding</b>
+</h1>
+<hr />
+</div>
+<div>
+Access and launch the <b>Reference Photopeaks</b> tool by
+<u>selecting</u>
+<b>Tools &#8594; Reference Photopeaks</b> menu (tool tabs hidden) or 3rd tab.</div>
+<div style="padding-top: 10px">Inputting the &#34;Nuclide&#34; and &#34;Age&#34; will immediately alter the calibration of the spectrum.</div>
+<div style="padding-top: 10px">
+If the calibration is still not accurate, you can manually account for potential shielding by
+<u>selecting</u>
+the shielding material from the list of options, and
+<u>inputting</u>
+the appropriate thickness. Often this will alter your spectrum such that peaks will fit the isotope they reflect more accurately.
+</div>
+<div>
+<ul>
+<u>Input</u>
+the units in which the thickness of the material was measured after inputting the quantity.
+Separate the units from the number with a single space; trouble fitting will not occur otherwise.
+</ul>
+</div>

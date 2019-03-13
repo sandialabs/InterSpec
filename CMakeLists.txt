@@ -1122,7 +1122,7 @@ set( OTHER_SUPPORT_FILES
   list( APPEND OTHER_SUPPORT_FILES ${CSS_FILES} )
 
   FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml )
-  list( APPEND OTHER_SUPPORT_FILES ${HELP_FILES} )
+  list( APPEND OTHER_SUPPORT_FILES ${HELP_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json )
 
 if( USE_SIMPLE_NUCLIDE_ASSIST )
   list( APPEND OTHER_SUPPORT_FILES "InterSpec_resources/SimpleNuclideAssist.css" )

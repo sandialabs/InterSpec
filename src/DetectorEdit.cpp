@@ -976,43 +976,6 @@ void GadrasDetSelect::detectorSelected( GadrasDirectory *dir, std::shared_ptr<De
 }//void detectorSelected( GadrasDirectory *dir, std::shared_ptr<DetectorPeakResponse> det )
 
 
-/*
-void GadrasDetSelect::updateWidgetsFromInputPaths()
-{
-  m_detectorSelect->clear();
-  m_detectorSelect->addItem( "<None>" );
-  
-  WAbstractItemModel *m = m_detectorSelect->model();
-  
-  for( const auto &file_display : m_detectorEdit->avaliableGadrasDetectors() )
-  {
-    const int index = m_detectorSelect->count();
-    m_detectorSelect->addItem( file_display.second );
-    m->setData( m->index(index, 0), boost::any(file_display.first), Wt::UserRole );
-  }
-  
-  m_detectorSelect->setCurrentIndex( -1 );
-  
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-  const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
-  string msg;
-  vector<string> paths;
-  UtilityFunctions::split( paths, drfpaths, "\r\n;" );
-  for( string p : paths )
-  {
-    UtilityFunctions::trim( p );
-    if( !UtilityFunctions::is_directory(p)
-       && !UtilityFunctions::icontains( p, "GadrasDetectors")
-       && !(UtilityFunctions::icontains( p, "GADRAS") && UtilityFunctions::istarts_with( p, "C:\\" ) ))
-      msg += "<div style=\"color:red;\">'" + p + "' is not a valid directory.</div>";
-  }
-  
-  m_message->setText( msg );
-#endif
-}//void updateWidgetsFromInputPaths()
-*/
-
-
 GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parentSelect,
                   DetectorEdit *detectorEdit, WContainerWidget *parent )
 : WContainerWidget( parent ),
@@ -1037,6 +1000,35 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_deleteBtn->addStyleClass( "closeicon-wtdefault" );
   m_deleteBtn->setToolTip( "Remove directory from list of directories InterSpec will look in for detector response functions in." );
   m_deleteBtn->clicked().connect( boost::bind( &GadrasDetSelect::removeDirectory, parentSelect, this ) );
+  
+  
+  
+//If we wanted to actually select directories, could do similar to firle query widget...
+//#if( BUILD_AS_ELECTRON_APP )
+//  m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
+//  const string uploadname = id() + "PathPicker";
+//  const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
+  
+//  WText *uploadtext = new WText( uploadhtml, XHTMLUnsafeText );
+//  linelayout->addWidget( uploadtext, 0, 1 );
+  
+  //TODO: put in error handling!
+//  wApp->doJavaScript( "document.getElementById('" + uploadname + "').onchange = function(event){"
+//                     "var outputDir = document.getElementById('" + uploadname + "').files[0].path;"
+//                     "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
+//                     "};"
+//                     );
+  //m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, _1 ) );
+//#elif( BUILD_AS_OSX_APP )
+//  SpecFileQuery::setIsSelectingDirectory( true );
+//  setSearchDirectory( "" );
+//  m_baseLocation = new WFileUpload();
+//  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
+//  linelayout->addWidget( m_baseLocation, 0, 1 );
+//#else
+  
+  
+  
   
   topdiv->addWidget( m_directoryEdit );
   m_directoryEdit->setText( directory );

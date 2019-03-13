@@ -1,0 +1,19 @@
+      <div align="center">
+      <h1 id="zoom-out">
+            <b>Zoom Out</b>
+      </h1>
+      <hr />
+	  </div>
+      <div >
+	   <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/ZoomOut1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  <img src="InterSpec_resources/static_text/images/ZoomOut2.png" class="imageBorder" style="max-width:40%; max-height:300px;" />
+	  </div>
+	  <div style="padding-top: 10px; padding-bottom: 10px" align="center">
+         To zoom back out to the full graph,
+         <u>click</u>
+         and
+         <u>drag</u>
+         left; the extent of the drag dictates the final magnification. 
+      </div>
+	  </div>
