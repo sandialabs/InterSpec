@@ -22,6 +22,7 @@
  */
 
 #import "AppDelegate.h"
+#import "Availability.h"
 #import <AppKit/NSView.h>
 #import <AppKit/NSSavePanel.h>
 
@@ -352,7 +353,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     }//if( fileNeedsOpening.size() )
     
     //Note: this bit of code does not seem to work from the themeChanged notification.
-    if( @available(macOS 10.14, *) )
+#if( AVAILABLE_MAC_OS_X_VERSION_10_14_AND_LATER )  //preproccessor to compile on older macOS
+    if( @available(macOS 10.14, *) )  //runtime check to run on older macOS
     {
       NSAppearanceName basicAppearance
         = [NSApp.mainWindow.effectiveAppearance
@@ -368,6 +370,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
         //[_InterSpecWebView evaluateJavaScript:js completionHandler:nil];
       }
     }//if( >= macOS 10.14 )
+#endif
     
     //if( [_InterSpecWebView respondsToSelector:@selector(mainFrame)])
     //[[_InterSpecWebView mainFrame] loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];

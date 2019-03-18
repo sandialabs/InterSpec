@@ -791,7 +791,7 @@ namespace
   {
   public:
     ChartAndLegendHolder( DecayActivityChart *chart, WContainerWidget *legend,
-                          WContainerWidget *parent = 0 )
+                          const bool isPhone, WContainerWidget *parent = 0 )
     : WContainerWidget( parent ),
       m_chart( chart ),
       m_legend( legend )
@@ -801,6 +801,8 @@ namespace
       
       addWidget( m_chart );
       addWidget( m_legend );
+      
+      const string extraheight = isPhone ? "20" : "100";
       
       const string js =
       """function(self, w, h,layout) {"
@@ -813,7 +815,7 @@ namespace
       ""  "if(child && child.wtResize){"
       ""     "child.wtResize(child,w,h,layout);"
       ""  "}else{ console.log('ChartAndLegendHolder: couldnt resize chart, please look into.'); }"
-      ""  + legref + ".css('max-height',(h-100) +'px');"
+      ""  + legref + ".css('max-height',(h-" + extraheight + ") +'px');"
       "" "}";
       setJavaScriptMember( "wtResize", js );
     }//ChartAndLegendHolder constructor
@@ -1431,7 +1433,7 @@ void DecayActivityDiv::init()
   decayDiv->setLayout( decayLayout );
   
   ChartAndLegendHolder *chartHolder
-                     = new ChartAndLegendHolder( m_decayChart, m_decayLegend );
+                     = new ChartAndLegendHolder( m_decayChart, m_decayLegend, isPhone );
   
 
   decayLayout->addWidget( chartHolder, 0, 0, 1, 1 );

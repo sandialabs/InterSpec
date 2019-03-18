@@ -213,7 +213,7 @@ void *addOsxSubMenu( void *parent, PopupDivMenu *item, const char *text )
 }//void *addOsxSubMenu( void *parent, PopupDivMenu *item )
 
 
-void *addOsxMenuItem( void *voidmenu, PopupDivMenuItem *item )
+void *insertOsxMenuItem( void *voidmenu, PopupDivMenuItem *item, int position )
 {
   NSMenu *menu;
     
@@ -248,9 +248,14 @@ void *addOsxMenuItem( void *voidmenu, PopupDivMenuItem *item )
   [itemnow setTarget:target];
   [itemnow setEnabled:YES];
   
+  item->setData( (void *)itemnow );
+
 //  dispatch_async(dispatch_get_main_queue(), ^{
     NSInteger ind = [menu indexOfItemWithTitle:@"Quit InterSpec"];
-    if( ind != -1 )
+    if( position >= 0 )
+    {
+      [menu insertItem:itemnow atIndex:(position)];
+    }else if( ind != -1 )
     {
       //Add menuitem before Quit InterSpec menuitem
       [menu insertItem:itemnow atIndex:(ind)];
@@ -268,6 +273,18 @@ void *addOsxMenuItem( void *voidmenu, PopupDivMenuItem *item )
   
   return itemnow;
 }//void *addOsxMenuItem( void *voidmenu, PopupDivMenuItem *item )
+
+
+void removeOsxSeparator( void *voidmenu, void *voiditem )
+{
+  NSMenu *menu = (NSMenu *)voidmenu;
+  NSMenuItem *item = (NSMenuItem *)voiditem;
+  
+  if( !menu || !item )
+    return;
+
+  [menu removeItem:item];
+}//void removeOsxSeparator( ( void *voidmenu, void *voiditem )
 
 
 void *addOsxCheckableMenuItem( void *voidmenu, Wt::WCheckBox *cb,
@@ -300,27 +317,47 @@ void *addOsxCheckableMenuItem( void *voidmenu, Wt::WCheckBox *cb,
   return itemnow;
 }//void *addOsxCheckableMenuItem( void *menu, Wt::WCheckBox *cb );
 
+
+void *addOsxSeparatorAt( int index, void *voidmenu )
+{
+  if( !voidmenu  )
+    return 0;
+    
+  NSMenu *menu = (NSMenu *)voidmenu;
+  NSMenuItem *item = [NSMenuItem separatorItem];
+
+  //dispatch_async(dispatch_get_main_queue(), ^{
+  if( index >= 0 )
+    [menu insertItem:item atIndex:(index)];
+  else 
+    [menu addItem:item];
+  //} );
+
+  return item;
+}//void *addOsxSeparatorAt( int index, void *voidmenu )
+
+
 void *addOsxSeparator(void *voidmenu)
 {
   if( !voidmenu  )
     return 0;
     
   NSMenu *menu = (NSMenu *)voidmenu;
-  
+  NSMenuItem *item = [NSMenuItem separatorItem];
+
 //  dispatch_async(dispatch_get_main_queue(), ^{
-    NSInteger ind = [menu indexOfItemWithTitle:@"Quit InterSpec"];
+    NSInteger ind = [menu indexOfItemWithTitle:@"Quit InterSpec"];  
     if( ind != -1 )
     {
       //Add seperator before Quit InterSpec menuitem
-      [menu insertItem:[NSMenuItem separatorItem] atIndex:(ind)];
+      [menu insertItem:item atIndex:(ind)];
     }else
     {
-      //Add seperator the normal way
-      [menu addItem:[NSMenuItem separatorItem]]; // A thin grey line
+      [menu addItem:item]; // Add seperator the normal way - a thin grey line
     }
 //  } );
   
-  return 0;
+  return item;
 } //void *addOsxSeparator(void *voidmenu)
 
 

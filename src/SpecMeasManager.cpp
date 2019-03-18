@@ -793,20 +793,20 @@ void  SpecMeasManager::startSpectrumManager()
     //WText* spec =
     new WText("Load spectrum from: ", uploadDiv);
     //spec->setIcon( "InterSpec_resources/images/plus_min_white.png" );
-if (m_viewer->isSupportFile())
-{
-    Wt::WPushButton* uploadButton = new Wt::WPushButton("File...",uploadDiv);
-    uploadButton->clicked().connect(  this, &SpecMeasManager::uploadSpectrum );
-    HelpSystem::attachToolTipOn(uploadButton, "Import spectrum from file", showToolTipInstantly, HelpSystem::Bottom );
-    uploadButton->addStyleClass("FolderExploreIcon");
-    uploadButton->setMargin(10,Wt::Left);
-} //isSupportFile()
+    if( m_viewer->isSupportFile() )
+    {
+      Wt::WPushButton* uploadButton = new Wt::WPushButton("File...",uploadDiv);
+      uploadButton->clicked().connect(  this, &SpecMeasManager::uploadSpectrum );
+      HelpSystem::attachToolTipOn(uploadButton, "Import spectrum from file", showToolTipInstantly, HelpSystem::Bottom );
+      uploadButton->setIcon( "InterSpec_resources/images/file_search.png" );
+      uploadButton->setMargin(10,Wt::Left);
+    } //isSupportFile()
     
 #if( USE_DB_TO_STORE_SPECTRA )
-    Wt::WPushButton* importButton = new Wt::WPushButton("Saved Snapshots...",uploadDiv);
+    Wt::WPushButton* importButton = new Wt::WPushButton( "Saved Snapshots...", uploadDiv );
     importButton->clicked().connect( boost::bind(  &SpecMeasManager::browseDatabaseSpectrumFiles, this, "", (SpectrumType)0, std::shared_ptr<SpectraFileHeader>()) );
     HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTipInstantly , HelpSystem::Bottom);
-    importButton->addStyleClass("LibraryIcon");
+    importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
     importButton->setMargin(2,Wt::Left);
     
 #endif
@@ -3015,8 +3015,8 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   new WText( "Selected Spectrum: " , m_newDiv );
   
   m_setButton = new Wt::WPushButton("Assign As",m_newDiv);
-  m_setButton->setStyleClass("AddAndDownloadIcon");
-
+  m_setButton->setIcon( "InterSpec_resources/images/bullet_arrow_down.png" );
+  
   Wt::WPopupMenu *setPopup = new Wt::WPopupMenu();
   m_setAsForeground = setPopup->addItem("Foreground");
   m_setAsForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, kForeground, true) );
@@ -3031,13 +3031,14 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   
   m_combineButton = new Wt::WPushButton("Combine",m_newDiv);
   m_combineButton->addStyleClass("JoinIcon");
+  m_combineButton->setIcon( "InterSpec_resources/images/arrow_join.png" );
   m_combineButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
   m_combineButton->setHidden( true, WAnimation() );
 
   if( m_viewer->isSupportFile() )
   {
     m_saveButton = new Wt::WPushButton("Export",m_newDiv);
-    m_saveButton->addStyleClass("DownArrowAndDownloadIcon");
+    m_saveButton->setIcon( "InterSpec_resources/images/bullet_arrow_down.png" );
     Wt::WPopupMenu *setPopup2 = new Wt::WPopupMenu();
         
     m_saveButton->mouseWentOver().connect( boost::bind( &SpecMeasManager::renameSaveAsFile, this ) );
@@ -3881,7 +3882,6 @@ void SpecMeasManager::startStoreSpectraAsInDb()
 
     WPushButton *save = new WPushButton( "Save",window->footer() );
     save->setFloatSide(Right);
-    //save->addStyleClass("DiskIcon");
     save->setIcon( "InterSpec_resources/images/disk2.png" );
     
     WPushButton *cancel = new WPushButton( "Cancel" , window->footer());
@@ -4053,7 +4053,6 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
       layout->setColumnStretch( 1, 1 );
       
       WPushButton *store = new WPushButton( "Save" , window->footer());
-      //store->addStyleClass("DiskIcon");
       store->setIcon( "InterSpec_resources/images/disk2.png" );
       store->setFloatSide(Right);
       store->clicked().connect( boost::bind( &SpecMeasManager::finishSaveSnapshotInDb,

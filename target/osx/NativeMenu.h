@@ -39,9 +39,10 @@ void *addOsxMenu( PopupDivMenu *menu, const char *name );
 //  'parent' is the pointer to the NSMenu to add the sub menu to.
 void *addOsxSubMenu( void *parent, PopupDivMenu *item, const char *name );
 
-//addOsxMenuItem(): returns NSMenuItem pointer of item added.
+//insertOsxMenuItem(): returns NSMenuItem pointer of item added.
 //  'menu' is the pointer to the NSMenu to add to
-void *addOsxMenuItem( void *menu, PopupDivMenuItem *item );
+//  If positionIndex is negative, then item will be appended.
+void *insertOsxMenuItem( void *menu, PopupDivMenuItem *item, int positionIndex );
 
 //addOsxCheckableMenuItem(): returns NSMenuItem pointer of item added.
 //  'menu' is the pointer to the NSMenu to add to
@@ -52,6 +53,8 @@ void *addOsxCheckableMenuItem( void *menu, Wt::WCheckBox *cb,
 
 //addOsxSeparator(): Add separator to the NSMenu 'voidmenu' passed in.
 void *addOsxSeparator( void *voidmenu );
+void *addOsxSeparatorAt( int index, void *voidmenu );
+void removeOsxSeparator( void *voidmenu, void *voiditem );
 
 //removeOsxMenu(): /* Not Implemented */
 //void removeOsxMenu( void *menu );
