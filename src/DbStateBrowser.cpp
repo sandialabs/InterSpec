@@ -67,7 +67,7 @@ DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
       Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
       
       m_table = new RowStretchTreeView();
-      m_table->setRootIsDecorated	(	false); //makes the tree look like a table! :)
+      m_table->setRootIsDecorated( false ); //makes the tree look like a table! :)
       
       m_table->addStyleClass( "DbSpecFileSelectTable" );
       m_model = new Dbo::QueryModel< Dbo::ptr<UserState> >( m_table );
@@ -122,7 +122,7 @@ DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
 //      footer()->resize( WLength::Auto, WLength(50.0) );
       
       m_loadButton = new WPushButton( "Restore", footer() );
-      m_loadButton->setStyleClass("DatabaseGoIcon");
+      m_loadButton->setIcon( "InterSpec_resources/images/database_go.png" );
       m_loadButton->clicked().connect( this, &DbStateBrowser::loadSelected );
       m_loadButton->setFloatSide(Right);
       m_loadButton->disable();

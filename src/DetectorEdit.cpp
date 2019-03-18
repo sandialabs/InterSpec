@@ -76,7 +76,8 @@ using namespace Wt;
 
 const char * const DetectorDisplay::sm_noDetectorTxt
   = "<font style=\"font-weight:100;color:#CFCFCF;\">&lt;click to select&gt;</font>";
-
+const char * const DetectorDisplay::sm_noDetectorTxtMbl
+= "<font style=\"font-weight:100;color:#CFCFCF;\">&lt;tap to select&gt;</font>";
 
 namespace
 {
@@ -1268,10 +1269,10 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   
   addStyleClass( "DetectorDisplay" );
 
-  WText* label = new WText( "Detector: ", this );
-  label->addStyleClass("CameraIcon");
-  
-  m_text = new WText( sm_noDetectorTxt, XHTMLUnsafeText, this );
+  new WImage( "InterSpec_resources/images/detector_small_white.png", this );
+  new WText( "Detector:&nbsp;", this );
+  const char *txt = (m_interspec && m_interspec->isMobile()) ? sm_noDetectorTxtMbl : sm_noDetectorTxt;
+  m_text = new WText( txt, XHTMLUnsafeText, this );
 
   std::shared_ptr<DetectorPeakResponse> detector;
   if( m_interspec->measurment(kForeground) )
@@ -1308,7 +1309,8 @@ void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
     m_text->setText( det->name() );
   }else
   {
-    m_text->setText( sm_noDetectorTxt );
+    const char *txt = (m_interspec && m_interspec->isMobile()) ? sm_noDetectorTxtMbl : sm_noDetectorTxt;
+    m_text->setText( txt );
   }
 }//void setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
@@ -1736,7 +1738,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   recentDivLayout->setRowStretch(0, 1);
   recentDivLayout->addWidget(m_deleteButton,1,0,AlignLeft);
   recentDiv->setOverflow(Wt::WContainerWidget::OverflowHidden);
-  recentDiv->setMaximumSize( WLength::Auto, 190 );
+  recentDiv->setMaximumSize( WLength::Auto, 180 );
   
   //--------------------------------------------------------------------------------
   

@@ -8,6 +8,7 @@
         "id":"getting-started",
         "title":"Getting Started",
         "help-xml" :"getting_started_help.xml",
+        "help-xml-mobile" :"getting_started_mobile_help.xml",
         "keywords":"Setting Up Uploading Files Format Drag Drop TXT CSV XML/N42 PCF Manager Add Foreground Secondary Background Getting Started"
       },
       {

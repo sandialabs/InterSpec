@@ -3754,12 +3754,12 @@ void InterSpec::showPeakInfoWindow()
     closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_peakInfoWindow ) );
       
     WPushButton *b = new WPushButton( CalibrationTabTitle, footer );
-    // b->setIcon(WLink("InterSpec_resources/images/control_equalizer_blue.png"));
+    // b->setIcon(WLink("InterSpec_resources/images/calibrate.png"));
     b->clicked().connect( this, &InterSpec::showRecalibratorWindow );
     b->setFloatSide(Wt::Right);
       
     b = new WPushButton( GammaLinesTabTitle, footer );
-    // b->setIcon(WLink("InterSpec_resources/images/chart_curve.png"));
+    // b->setIcon(WLink("InterSpec_resources/images/reflines.png"));
     b->clicked().connect( this, &InterSpec::showGammaLinesWindow );
     b->setFloatSide(Wt::Right);
       
@@ -4301,7 +4301,6 @@ void InterSpec::stateSaveAs()
   closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     
   WPushButton *save = new WPushButton( "Save" , window->footer() );
-  //save->addStyleClass("DiskIcon");
   save->setIcon( "InterSpec_resources/images/disk2.png" );
   
   save->clicked().connect( boost::bind( &InterSpec::stateSaveAsAction,
@@ -4339,7 +4338,6 @@ void InterSpec::stateSaveTag()
   closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
   WPushButton *save = new WPushButton( "Tag" , window->footer() );
-//  save->addStyleClass("DiskIcon");
   //save->setIcon( "InterSpec_resources/images/disk2.png" );
     
   save->clicked().connect( boost::bind( &InterSpec::stateSaveTagAction,
@@ -4524,7 +4522,6 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
   closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
 
   WPushButton *save = new WPushButton( "Create" , window->footer() );
-  //save->addStyleClass("DiskIcon");
   save->setIcon( "InterSpec_resources/images/disk2.png" );
   
   save->clicked().connect( boost::bind( &InterSpec::finishStoreStateInDb,
@@ -4930,6 +4927,99 @@ bool InterSpec::toolTabsVisible() const
   return m_toolsTabs;
 }
 
+void InterSpec::addToolsTabToMenuItems()
+{
+  if( !m_toolsMenuPopup )
+    return;
+  
+  if( m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::RefPhotopeaks)] )
+    return;
+  
+  bool showToolTipInstantly = false;
+  
+  try
+  {
+    showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  }catch(...)
+  {
+  }
+  
+  Wt::WMenuItem *item = nullptr;
+  const char *tooltip = nullptr, *icon = nullptr;
+  
+#if( IOS || ANDROID )
+  icon = "InterSpec_resources/images/reflines.svg";
+#else
+  icon = "InterSpec_resources/images/reflines.png";
+#endif
+  item = m_toolsMenuPopup->insertMenuItem( 0, GammaLinesTabTitle, icon , true );
+  item->triggered().connect( boost::bind( &InterSpec::showGammaLinesWindow, this ) );
+  tooltip = "Allows user to display x-rays and/or gammas from elements, isotopes, or nuclear reactions."
+            " Also provides user with a shortcut to change detector and account for shielding.";
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::RefPhotopeaks)] = item;
+  
+#if( IOS || ANDROID )
+  icon = "InterSpec_resources/images/peakmanager.svg";
+#else
+  icon = "InterSpec_resources/images/peakmanager.png";
+#endif
+  item = m_toolsMenuPopup->insertMenuItem( 1, PeakInfoTabTitle, icon, true );
+  item->triggered().connect( this, &InterSpec::showPeakInfoWindow );
+  tooltip = "Provides shortcuts to search for and identify peaks. Displays parameters of all fit peaks in a sortable table.";
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::PeakManager)] = item;
+  
+#if( IOS || ANDROID )
+  icon = "InterSpec_resources/images/calibrate.svg";
+#else
+  icon = "InterSpec_resources/images/calibrate.png";
+#endif
+  item = m_toolsMenuPopup->insertMenuItem( 2, CalibrationTabTitle, icon, true );
+  item->triggered().connect( this, &InterSpec::showRecalibratorWindow );
+  tooltip = "Allows user to modify or fit for offset, linear, or quadratic energy calibration terms,"
+            " as well as edit non-linear deviation pairs.<br />"
+            "Energy calibration can also be done graphically by right-click dragging the spectrum from original to modified energy"
+            " (e.g., drag the data peak to the appropriate reference line).";
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::EnergyCal)] = item;
+  
+#if( IOS || ANDROID )
+  icon = "InterSpec_resources/images/magnifier_black.svg";
+#else
+  //macOS (and probably Electron) need PNGs.
+  icon = "InterSpec_resources/images/magnifier_black.png";
+#endif
+  item = m_toolsMenuPopup->insertMenuItem( 3, NuclideSearchTabTitle, icon, true );
+  item->triggered().connect( this, &InterSpec::showNuclideSearchWindow);
+  tooltip = "Search for nuclides with constraints on energy, branching ratio, and half life.";
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NuclideSearch)] = item;
+  
+  item = m_toolsMenuPopup->addSeparatorAt( 4 );
+  m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::Seperator)] = item;
+}//void addToolsTabToMenuItems()
+
+
+void InterSpec::removeToolsTabToMenuItems()
+{
+  if( !m_toolsMenuPopup )
+    return;
+  
+  for( int i = 0; i < static_cast<int>(ToolTabMenuItems::NumItems); ++i )
+  {
+    if( !m_tabToolsMenuItems[i] )
+      continue;
+ 
+    if( m_tabToolsMenuItems[i]->isSeparator() )
+      m_toolsMenuPopup->removeSeperator( m_tabToolsMenuItems[i] );
+    
+    delete m_tabToolsMenuItems[i];
+    m_tabToolsMenuItems[i] = nullptr;
+  }
+  
+}//void removeToolsTabToMenuItems()
+
 
 void InterSpec::setToolTabsVisible( bool showToolTabs )
 {
@@ -4938,14 +5028,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   
   m_toolTabsVisibleItems[0]->setHidden( showToolTabs );
   m_toolTabsVisibleItems[1]->setHidden( !showToolTabs );
-  if( m_tabToolsMenuItems[kPeakManagerItem] )
-    m_tabToolsMenuItems[kPeakManagerItem]->setHidden( showToolTabs );
   
-  for( ItemsToHideWhenDocked i = ItemsToHideWhenDocked(0);
-      i < NumItemsToHideWhenDocked;
-      i = ItemsToHideWhenDocked(i+1) )
-    if( m_tabToolsMenuItems[i] )
-      m_tabToolsMenuItems[i]->setHidden( showToolTabs );
+  if( showToolTabs )
+    removeToolsTabToMenuItems();
+  else
+    addToolsTabToMenuItems();
   
   const int layoutVertSpacing = isMobile() ? 10 : 5;
   
@@ -5001,7 +5088,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
 //    const char *tooltip = "Displays parameters of all identified peaks in a sortable table.";
 //    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTipInstantly, HelpSystem::Top );
-//    peakManTab->setIcon("InterSpec_resources/images/table.png");
+//    peakManTab->setIcon("InterSpec_resources/images/peakmanager.png");
     
     if( m_referencePhotopeakLines )
     {
@@ -5033,7 +5120,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 //                            "provides user with a shortcut to change detector "
 //                            "and account for shielding.";
 //      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTipInstantly, HelpSystem::Top );
-      //refPhotoTab->setIcon("InterSpec_resources/images/chart_curve.png");
+      //refPhotoTab->setIcon("InterSpec_resources/images/reflines.png");
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
     
@@ -5047,7 +5134,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_calibrateContainer->setLayout(gridLayout);
     m_calibrateContainer->addStyleClass( "RecalibratorWide" );
     /*WMenuItem * calibTab = */ m_toolsTabs->addTab( m_calibrateContainer, CalibrationTabTitle, TabLoadPolicy );
-    //calibTab->setIcon("InterSpec_resources/images/control_equalizer_blue.png");
+    //calibTab->setIcon("InterSpec_resources/images/calibrate.png");
 //    const char *tooltip = "Allows user to fit for offset, linear, and/or "
 //                          "quadratic terms. Can also be accessed graphically by "
 //                          "right-click dragging from original to modified energy.";
@@ -6543,30 +6630,6 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   HelpSystem::attachToolTipOn( m_terminalMenuItem, "Creates a terminal that provides numeric and algebraic computations, as well as allowing text based interactions with the spectra.", showToolTipInstantly );
   m_terminalMenuItem->triggered().connect( this, &InterSpec::createTerminalWidget );
 #endif
-  
-  popup->addSeparator();
-  
-  m_tabToolsMenuItems[kPeakManagerItem] = popup->addMenuItem( PeakInfoTabTitle );
-  m_tabToolsMenuItems[kPeakManagerItem]->triggered().connect( this, &InterSpec::showPeakInfoWindow );
-  m_tabToolsMenuItems[kPeakManagerItem] ->setIcon("InterSpec_resources/images/table.png");
-  HelpSystem::attachToolTipOn( m_tabToolsMenuItems[kPeakManagerItem],"Displays parameters of all identified peaks in a sortable table.", showToolTipInstantly );
-  //NAZ updated text: "Provides shortcuts to search for and identify peaks. Displays parameters of all highlighted peaks in a sortable table." - I don't know if "highlighted" is the right term but not all peaks are identified at first.
-  
-  m_tabToolsMenuItems[kNuclidePhotopeakItem] = popup->addMenuItem( GammaLinesTabTitle );
-  m_tabToolsMenuItems[kNuclidePhotopeakItem]->triggered().connect( boost::bind( &InterSpec::showGammaLinesWindow, this ) );
-  m_tabToolsMenuItems[kNuclidePhotopeakItem] ->setIcon("InterSpec_resources/images/chart_curve.png");
-  HelpSystem::attachToolTipOn( m_tabToolsMenuItems[kNuclidePhotopeakItem],"Allows user to display x-rays and/or gammas from elements, isotopes, or nuclear reactions. Also provides user with a shortcut to change detector and account for shielding.", showToolTipInstantly );
-  
-  m_tabToolsMenuItems[kEnergyCalibItem] = popup->addMenuItem( CalibrationTabTitle );
-  m_tabToolsMenuItems[kEnergyCalibItem]->triggered().connect( this, &InterSpec::showRecalibratorWindow );
-  m_tabToolsMenuItems[kEnergyCalibItem] ->setIcon("InterSpec_resources/images/control_equalizer_blue.png");
-  HelpSystem::attachToolTipOn( m_tabToolsMenuItems[kEnergyCalibItem],"Allows user to fit for offset, linear, and/or quadratic terms. Can also be accessed graphically by right-click dragging from original to modified energy.", showToolTipInstantly );
-  
-  
-  m_tabToolsMenuItems[kNuclideSearchItem]= popup->addMenuItem( NuclideSearchTabTitle );
-  m_tabToolsMenuItems[kNuclideSearchItem]->triggered().connect( this, &InterSpec::showNuclideSearchWindow);
-  m_tabToolsMenuItems[kNuclideSearchItem] ->setIcon("InterSpec_resources/images/magnifier.png");
-  HelpSystem::attachToolTipOn( m_tabToolsMenuItems[kNuclideSearchItem],"Search for nuclides with constraints on energy, branching ratio, and half life.", showToolTipInstantly );
 }//void InterSpec::addToolsMenu( Wt::WContainerWidget *menuDiv )
 
 

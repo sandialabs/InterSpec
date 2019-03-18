@@ -276,6 +276,22 @@ function( selfid )
   Menu.setApplicationMenu(appmenu);
 });
 
+WT_DECLARE_WT_MEMBER(InsertSeperatorInElectronMenu, Wt::JavaScriptFunction, "InsertSeperatorInElectronMenu",
+                     function( selfid, pos )
+{
+  let m = $(window).data('electronMenu'+selfid);
+  
+  let appmenu = Menu.getApplicationMenu();
+  if( !m || !appmenu ) return;
+  
+  if( pos >= 0 )
+    m.submenu.insert( pos, new MenuItem({type: 'separator'}) );
+  else
+    m.submenu.append( new MenuItem({type: 'separator'}) );
+  
+  Menu.setApplicationMenu(appmenu);
+});
+
 WT_DECLARE_WT_MEMBER(HideElectronMenuItem, Wt::JavaScriptFunction, "HideElectronMenuItem",
   function( itemid, hidden )
 {
@@ -511,6 +527,7 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsFindElectronMenu);
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAddMenuItemToElectronMenu);
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAddSeperatorToElectronMenu);
+  LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsInsertSeperatorInElectronMenu);
   //LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsRemoveMenuItemFromElectronMenu);
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsClearElectronMenu);
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAddCheckBoxItemToElectronMenu);
@@ -587,21 +604,63 @@ PopupDivMenu::~PopupDivMenu()
 #endif
 }
 
-void PopupDivMenu::addSeparator(void)
+Wt::WMenuItem *PopupDivMenu::addSeparatorAt( int index )
 {
+  WMenuItem *item = WPopupMenu::addSeparator();
+  
+  if( (index >= 0) && (indexOf(item) != index) )
+  {
+    removeItem( item );
+    WMenu::insertItem( index, item );
+  }
+  
 #if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
   if( m_type==AppLevelMenu )
-    WApplication::instance()->doJavaScript( "Wt.WT.AddSeperatorToElectronMenu('" + id() + "');" );
+  {
+    Need to modify Wt.WT.AddSeperatorToElectronMenu to also take the index
+    WApplication::instance()->doJavaScript( "Wt.WT.InsertSeperatorInElectronMenu('" + id() + "'," + std::to_string(index) + ");" );
+  }
+#elif( USE_OSX_NATIVE_MENU )
+  if( m_nsmenu )
+  {
+    void *macItem = addOsxSeparatorAt( index, m_nsmenu );
+    item->setData( macItem );
+  }
+#else
 #endif
   
-#if(USE_OSX_NATIVE_MENU)
-  //Need to add separator into OSX menu
-  if( m_nsmenu )
-    addOsxSeparator( m_nsmenu );
-#else
-  //regular seperator for non-OSX 
-  WPopupMenu::addSeparator();
+  return item;
+}
+
+
+bool PopupDivMenu::removeSeperator( Wt::WMenuItem *sepertor )
+{
+  if( !sepertor )
+    return false;
+  
+  int index = indexOf( sepertor );
+  if( index < 0 )
+  {
+    cout << "PopupDivMenu::removeSeperator: !Couldnt find sepertor" << endl;
+    return false;
+  }
+  removeItem( sepertor );
+  
+#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+  //ToDo: Hack, just hide the electron menu since we cant easily remove items...
+  WApplication::instance()->doJavaScript( "Wt.WT.HideElectronMenuItem('" + sepertor->id() + "',true);" );
+#elif( USE_OSX_NATIVE_MENU )
+  removeOsxSeparator( m_nsmenu, sepertor->data() );
 #endif
+
+  return true;
+}//bool removeSeperator( Wt::WMenuItem *sepertor )
+
+
+
+Wt::WMenuItem *PopupDivMenu::addSeparator()
+{
+  return addSeparatorAt( -1 );
 }//void PopupDivMenu::addSeparator(void)
 
 
@@ -813,6 +872,16 @@ PopupDivMenuItem *PopupDivMenu::addMenuItem( const Wt::WString &text,
                                              const std::string &iconPath,
                                             const bool closeMenuOnActivation )
 {
+  return insertMenuItem( -1, text, iconPath, closeMenuOnActivation );
+}//addMenuItem(...)
+
+
+
+PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
+                                     const Wt::WString &text,
+                                     const std::string &iconPath,
+                                     const bool closeMenuOnActivation )
+{
   PopupDivMenuItem *item = new PopupDivMenuItem( text, iconPath );
   
   if( !closeMenuOnActivation )
@@ -828,7 +897,10 @@ PopupDivMenuItem *PopupDivMenu::addMenuItem( const Wt::WString &text,
     }
   }
   
-  addItem( item );
+
+  WMenu::insertItem( ((index >= 0) ? index : count()), item );
+  
+  //addItem( item );
   
   if( m_mobile && closeMenuOnActivation )
     item->triggered().connect( this, &PopupDivMenu::hideMenuAndParents );
@@ -836,28 +908,29 @@ PopupDivMenuItem *PopupDivMenu::addMenuItem( const Wt::WString &text,
 #if(USE_OSX_NATIVE_MENU)
   if( m_nsmenu )
   {
-    item->m_nsmenuitem = addOsxMenuItem( m_nsmenu, item );
+    item->m_nsmenuitem = insertOsxMenuItem( m_nsmenu, item, index );
     item->m_nsmenu = m_nsmenu;
+    item->setData( item->m_nsmenuitem );
   }
 #endif
   
 #if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
-  if( (!text.empty() || !iconPath.empty()) 
-	  && m_type == PopupDivMenu::AppLevelMenu 
-	  && InterSpecApp::isElectronInstance() )
+  if( (!text.empty() || !iconPath.empty())
+     && m_type == PopupDivMenu::AppLevelMenu
+     && InterSpecApp::isElectronInstance() )
   {
     item->m_electron_clicked.connect( item, &PopupDivMenuItem::emitClickFromElectronMenu );
+    Need to edit Wt.WT.AddMenuItemToElectronMenu to take into accoutn the index were adding it at
     WApplication::instance()->doJavaScript( "Wt.WT.AddMenuItemToElectronMenu('" + id() + "',"
                                            + "'" + text.toUTF8() + "',"
-                                          + "'" + resolve_icon_path(iconPath) + "',"
+                                           + "'" + resolve_icon_path(iconPath) + "',"
                                            + "'" + item->id() + "', null);" );
-	item->m_hasElectronItem = true;
+    item->m_hasElectronItem = true;
   }
 #endif
   
   return item;
-}//addMenuItem(...)
-
+}//
 
 Wt::WMenuItem *PopupDivMenu::parentItem()
 {

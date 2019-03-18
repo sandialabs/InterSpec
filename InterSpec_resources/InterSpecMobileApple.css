@@ -32,6 +32,13 @@ button[disabled]
 }
 
 
+.Wt-btn > img, .WhiteIcon
+{
+  /* Turn white icons to iOS blue
+     See: https://codepen.io/sosuke/pen/Pjoqqp to calculate filter
+   */
+  filter: brightness(0) saturate(100%) invert(30%) sepia(56%) saturate(3200%) hue-rotate(200deg) brightness(102%) contrast(107%);
+}
 
 .HelpButtonMbl
 {

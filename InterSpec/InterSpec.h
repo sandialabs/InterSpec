@@ -731,6 +731,24 @@ protected:
   // Cookie management~  /*should be placed into user options*.
   void setShowIEWarningDialogCookie( bool show );
 
+  /** Adds menu items to "Tools" menu for the tools that are ordinarily shown
+      as tabs.  This function is called when the "Hide Tool Tabs" menu option
+      is triggered (either manually or by user preference when InterSpec is
+      started; also, always called when started on a phone).
+   
+   \sa removeToolsTabToMenuItems
+   \sa m_tabToolsMenuItems
+   */
+  void addToolsTabToMenuItems();
+  
+  /** Remove the tool tab items from the "Tools" menu.  This is called when you
+      are showing the tool tabs.
+   
+   \sa addToolsTabToMenuItems
+   \sa m_tabToolsMenuItems
+   */
+  void removeToolsTabToMenuItems();
+  
   void showGammaCountDialog();
   void deleteGammaCountDialog();
 
@@ -1105,20 +1123,24 @@ protected:
   PopupDivMenuItem *m_verticalLinesItems[2];
   PopupDivMenuItem *m_horizantalLinesItems[2];
   
-  enum ItemsToHideWhenDocked
+  enum class ToolTabMenuItems
   {
-    kEnergyCalibItem,
-    kNuclidePhotopeakItem,
-    kPeakManagerItem,
-    kNuclideSearchItem,
-    NumItemsToHideWhenDocked
-  };//enum ItemsToHideWhenDocked
+    EnergyCal,
+    RefPhotopeaks,
+    PeakManager,
+    NuclideSearch,
+    Seperator,
+    NumItems
+  };//enum ToolTabMenuItems
   
   /** When the tool tabs are hidden, these menu items will show the respective
-   tool that would normally be in a tab.  These menu items are hidden when tool
+   tool that would normally be in a tab.  These menu items are deleted when tool
    tabs are shown.
+   
+   \sa addToolsTabToMenuItems
+   \sa removeToolsTabToMenuItems
    */
-  Wt::WMenuItem *m_tabToolsMenuItems[NumItemsToHideWhenDocked];
+  Wt::WMenuItem *m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NumItems)];
   
   //Christian (20170425): Featuer marker option helpers for D3.js preferences
   bool m_featureMarkersShown[NumFeatureMarkers];

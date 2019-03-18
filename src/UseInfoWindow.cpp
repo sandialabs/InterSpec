@@ -322,7 +322,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     //WContainerWidget* buttons = new WContainerWidget();
     //m_loadSampleButton = new WPushButton( "Load", buttons );
-    ////m_loadSampleButton->setStyleClass("DatabaseGoIcon");
+    ////m_loadSampleButton->setIcon( "InterSpec_resources/images/database_go.png" );
     //m_loadSampleButton->setFloatSide(Right);
     //m_loadSampleButton->clicked().connect( this, &UseInfoWindow::loadSampleSelected );
     //samplesLayout->addWidget( buttons, samplesLayout->rowCount()+1 , 0, AlignRight );

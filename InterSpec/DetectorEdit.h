@@ -94,6 +94,7 @@ public:
 
 protected:
   static const char * const sm_noDetectorTxt;
+  static const char * const sm_noDetectorTxtMbl;
 
   Wt::WText *m_text;
 

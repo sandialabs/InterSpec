@@ -79,8 +79,21 @@ public:
   virtual ~PopupDivMenu();
   
     
-  //Add separator
-  void addSeparator();
+  //Add separator; returns pointer to the sperator
+  Wt::WMenuItem *addSeparator();
+  
+  /** Add a sepeartor at the specified index; if less than zero than adds to the
+   end.
+   */
+  Wt::WMenuItem *addSeparatorAt( int index );
+  
+  /** For Electron and macOS native menues, we need to do some special handling
+     to remove seperators.
+   This function call does not delete the passed in seperator, just removes it
+   from the menu.
+   Returns true if the seperator was found and removed, false otherwise.
+   */
+  bool removeSeperator( Wt::WMenuItem *sepertor );
   
 #if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
   enum class MenuRole{
@@ -149,6 +162,14 @@ public:
   PopupDivMenuItem *addMenuItem( const Wt::WString &text,
                                  const std::string &iconPath = "",
                                  const bool closeMenuOnTriggered = true);
+  
+  /** Inserts a menu item at the specified index.  An index less than zero will
+      cause the item to be inserted as the last item.
+   */
+  virtual PopupDivMenuItem *insertMenuItem( const int index,
+                                        const Wt::WString &text,
+                                        const std::string &iconPath,
+                                        const bool closeMenuOnActivation );
   
   //addPopupMenuItem(...): a better name would be addSubMenu(...)
   PopupDivMenu *addPopupMenuItem( const Wt::WString &text,

@@ -209,92 +209,6 @@ width:100%;
 }
 */
 
-.DiskIcon,.DiskIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/disk2.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.TimeIcon,.TimeIcon:hover
-{
-    background-image: url('../InterSpec_resources/images/time.png');
-    background-position: 3px center;
-    background-repeat: no-repeat;
-    padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.LibraryIcon,.LibraryIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/db_small_white.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-  margin-bottom:5px;
-}
-
-.FolderExploreIcon,.FolderExploreIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/file_search.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;
-  margin-bottom:5px;
-}
-
-.DatabaseGoIcon,.DatabaseGoIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/database_go.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-    margin-bottom:5px;
-      margin-left: 5px;
-}
-
-.DownArrowAndDownloadIcon,.DownArrowAndDownloadIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/bullet_arrow_down.png');
-  background-position: right center;
-  background-repeat: no-repeat;
-  padding-right: 21px;  /* width of the image plus a little extra padding */
-}
-
-.AddAndDownloadIcon,.AddAndDownloadIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/bullet_arrow_down.png');
-  background-position: right center;
-  background-repeat: no-repeat;
-  padding-right: 21px;  /* width of the image plus a little extra padding */
-}
-
-.FindIcon,.FindIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/magnifier.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.JoinIcon,.JoinIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/arrow_join.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-
-.CameraIcon,.CameraIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/detector_small_white.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;
-}
-
-
 .RefreshIcon,.RefreshIcon:hover
 {
   background-image: url('../InterSpec_resources/images/arrow_refresh.png');
@@ -1380,17 +1294,32 @@ color: blue;
 
 .DetectorDisplay
 {
-  padding-left: 5px;
+  padding: 0px;
+  margin: 0px;
   padding-right: 3px;
-  padding-top: 3px;
-  padding-bottom: 3px;
-  margin:0 0px;
-  font-weight:bold;
+  font-weight: bold;
   background: #888888; color: #FFFFFF;
-  border-color: #E1E1E1;
-  border-style: solid;
-  border:1px solid #e1e1e1;
-  cursor:pointer;
+  border: 1px solid #e1e1e1;
+  cursor: pointer;
+  height: 24px;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 250px;
+}
+
+.DetectorDisplay > span
+{
+  display: inline-block;
+  vertical-align: middle;
+  height: 24px;
+}
+
+.DetectorDisplay > img
+{
+  /* Imge is 16px high, so 3px top margin will center image*/
+  margin-top: 3px;
+  margin-left: 5px;
+  margin-right: 5px;
 }
 
 .DetectorGammaDialogLabel

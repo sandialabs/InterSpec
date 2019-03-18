@@ -573,6 +573,8 @@ void PeakInfoDisplay::init()
 
   m_searchForPeaks = new WPushButton( "Search for Peaks", buttonDiv );
   m_searchForPeaks->addStyleClass("FindIcon");
+  m_searchForPeaks->setIcon( "InterSpec_resources/images/magnifier.png" );
+  
   //m_searchForPeaks->setMargin(WLength(7),Wt::Left);
   //m_searchForPeaks->setMargin(WLength(3),Wt::Bottom);
   HelpSystem::attachToolTipOn( m_searchForPeaks, "Search for peaks using the automated peak finding "

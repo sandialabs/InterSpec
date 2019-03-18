@@ -1,39 +1,37 @@
  <div align="center">     
-	 <h1 id="getting-started">
-            <b>Setting Up</b>
-      </h1>
-      <hr />
-	  </div>
+	 <h1 id="getting-started">Getting Started</h1>
+   <hr />
+</div>
 
-<img src="InterSpec_resources/images/DragDrop.png" class="imageBorder" style="max-height:300px; float:left; margin-right:20px"/>
+  <img src="InterSpec_resources/images/DragDrop.png" class="imageBorder" style="max-height:300px; float:left; margin-right:20px"/>
 
-      <div>
-         To begin, display a spectra by selecting the menu
-         <b>InterSpec &#8594; Import </b>, or more conveniently, by
-         <u>dragging</u> and <u>dropping</u>
-         the file of interest directly onto the graph into the corresponding box as a 
- &#34;Foreground,&#34; &#34;Background,&#34; or &#34;2nd Foreground&#34;.
-         A foreground must be loaded before either the background or 2nd foreground will be displayed.
-      </div>
+<div>
+To begin, display a spectra by selecting the menu
+<b>InterSpec &#8594; Import </b>, or more conveniently, by
+<u>dragging</u> and <u>dropping</u>
+the file of interest directly onto the graph into the corresponding box as a
+&#34;Foreground,&#34; &#34;Background,&#34; or &#34;2nd Foreground&#34;.
+A foreground must be loaded before either the background or 2nd foreground will be displayed.
+</div>
 
-	  <div style="padding-top: 10px">
-         You can display additional spectra at the same time by
-         <u>dragging</u> and <u>dropping</u> them in as background or 2nd foreground types.  You can also import files via <b>InterSpec &#8594; Manager</b> and then <u>selecting</u> <b>File</b> or <b>Saved Snapshots</b>.
-      </div>
-      <div style="padding-top: 10px">
-         The
-         <b>Manager</b>
-         window also allows you to remove any additional spectrums by
-         <u>selecting</u>
-         the file(s) listed in the window so that it is highlighted, 
+<div style="padding-top: 10px">
+You can display additional spectra at the same time by
+<u>dragging</u> and <u>dropping</u> them in as background or 2nd foreground types.  You can also import files via <b>InterSpec &#8594; Manager</b> and then <u>selecting</u> <b>File</b> or <b>Saved Snapshots</b>.
+</div>
+<div style="padding-top: 10px">
+The
+<b>Manager</b>
+window also allows you to remove any additional spectrums by
+<u>selecting</u>
+the file(s) listed in the window so that it is highlighted,
 then
-         <u>selecting</u>
-         the
-         <b>Unload</b>
-         option on the bottom of the window.
-      </div>
-      <div style="padding-top: 10px">
-         You can also use the <b>Manager</b> to upload a spectrum as a &#34;Foreground,&#34; &#34;Secondary,&#34; or &#34;Background&#34; spectrum by
-         <u>clicking</u>
-         the spectrum so that it is highlighted and choosing the corresponding classification when <u>selecting</u> <b>Assign As</b>; This can also be done in the <b>Spectrum Files</b> tab in the bottom tool tabs by using the drop down menus to select which spectrum(s) will display as &#34;Foreground,&#34; &#34;Secondary,&#34; or &#34;Background.&#34;
-      </div>
+<u>selecting</u>
+the
+<b>Unload</b>
+option on the bottom of the window.
+</div>
+<div style="padding-top: 10px">
+You can also use the <b>Manager</b> to upload a spectrum as a &#34;Foreground,&#34; &#34;Secondary,&#34; or &#34;Background&#34; spectrum by
+<u>clicking</u>
+the spectrum so that it is highlighted and choosing the corresponding classification when <u>selecting</u> <b>Assign As</b>; This can also be done in the <b>Spectrum Files</b> tab in the bottom tool tabs by using the drop down menus to select which spectrum(s) will display as &#34;Foreground,&#34; &#34;Secondary,&#34; or &#34;Background.&#34;
+</div>

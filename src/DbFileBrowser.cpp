@@ -305,7 +305,7 @@ m_header (header)
         m_loadSnapshotButton = new WPushButton( "Load Application State", m_window?m_window->footer():m_footer);
         m_loadSnapshotButton->clicked().connect( boost::bind(&SnapshotFactory::loadSnapshotSelected, this));
         m_loadSnapshotButton->setDefault(true);
-        //m_loadSnapshotButton->addStyleClass("TimeIcon");
+        //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.png" );
         m_loadSnapshotButton->disable();
       
     }catch( std::exception &e )

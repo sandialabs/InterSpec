@@ -4830,7 +4830,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     summary->setHeight( 50 );
     summary->disable();
     accept = new WPushButton( "Load" );
-    accept->setStyleClass("DatabaseGoIcon");
+    accept->setIcon( "InterSpec_resources/images/database_go.png" );
     accept->disable();
   
     cancel = new WPushButton( "Cancel" );
@@ -5101,7 +5101,6 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
  
 
   WPushButton *button = new WPushButton( "Save", window->footer() );
-  //button->addStyleClass("DiskIcon");
   button->setIcon( "InterSpec_resources/images/disk2.png" );
   
   button->clicked().connect(
