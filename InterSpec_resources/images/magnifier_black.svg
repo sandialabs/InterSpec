@@ -11,32 +11,87 @@
    height="16"
    viewBox="0 0 100 100"
    version="1.1"
-   id="svg12">
+   id="svg22"
+   sodipodi:docname="magnifier_black.svg"
+   inkscape:version="0.92.2 5c3e80d, 2017-08-06">
+  <metadata
+     id="metadata28">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
   <defs
-     id="defs16" />
+     id="defs26" />
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1371"
+     inkscape:window-height="902"
+     id="namedview24"
+     showgrid="false"
+     inkscape:zoom="59"
+     inkscape:cx="6.2249254"
+     inkscape:cy="9.455218"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg22" />
   <g
-     id="g10"
-     transform="matrix(1.6847142,0,0,1.6852039,-37.737598,-37.748567)"
-     style="stroke-width:0.59348625">
+     id="g20"
+     transform="matrix(1.4782179,0,0,1.4782179,-22.724877,-22.735826)"
+     style="stroke-width:0.67649025">
     <g
        transform="matrix(0.69,0,0,0.69,15.5,15.5)"
-       style="fill:#000000;stroke-width:0.59348625"
-       id="g8">
+       style="fill:#000000;stroke-width:0.67649025"
+       id="g18">
       <svg
+         viewBox="0 0 25 25"
          version="1.1"
          x="0px"
          y="0px"
-         viewBox="0 0 100 100"
-         style="fill:#000000;stroke-width:0.59348625"
-         xml:space="preserve"
-         id="svg6"
+         id="svg16"
          width="100%"
-         height="100%"><g
-           id="g4"
-           style="stroke-width:0.59348625"><path
-             d="m 45.5,81 c 7.3,0 14,-2.2 19.6,-5.9 L 84,93.9 c 1.4,1.4 3.2,2.1 5,2.1 1.8,0 3.6,-0.7 5,-2.1 2.7,-2.7 2.7,-7.2 0,-9.9 L 75,65.1 C 78.8,59.5 80.9,52.7 80.9,45.5 81,25.9 65.1,10 45.5,10 25.9,10 10,25.9 10,45.5 10,65.1 25.9,81 45.5,81 Z m 0,-57 C 57.3,24 67,33.6 67,45.5 67,57.3 57.3,67 45.5,67 33.6,67 24,57.3 24,45.5 24,33.6 33.6,24 45.5,24 Z"
-             id="path2"
-             inkscape:connector-curvature="0"
-             style="stroke-width:0.59348625" /></g></svg>    </g>
+         height="100%"
+         style="fill:#000000;stroke-width:0.67649025">
+        <title
+           id="title2">icon-search-disabled@1x</title>
+        <desc
+           id="desc4">Created with Sketch.</desc>
+        <g
+           id="g14"
+           style="fill:none;fill-rule:evenodd;stroke:none;stroke-width:0.67649025">
+          <g
+             transform="translate(-20,-14)"
+             id="g12"
+             style="fill:#000000;stroke-width:0.67649025">
+            <g
+               id="g10"
+               style="stroke-width:0.67649025">
+              <g
+                 transform="translate(20,14)"
+                 id="g8"
+                 style="stroke-width:0.67649025">
+                <path
+                   d="m 3.0640625,3.0640625 c -4.0854167,4.0854167 -4.0854167,10.7083335 0,14.7937505 3.8739583,3.873958 10.0260415,4.066666 14.1354165,0.59375 l 5.688542,5.688541 c 0.344792,0.344792 0.908333,0.344792 1.252083,0 0.344792,-0.34375 0.344792,-0.907291 0,-1.252083 l -5.688541,-5.688542 c 3.472916,-4.109375 3.279166,-10.2614582 -0.59375,-14.1354165 -4.085417,-4.0854167 -10.7093755,-4.0854167 -14.7937505,0 m 1.2520833,1.2520833 c 3.3885417,-3.38854163 8.9010422,-3.38854163 12.2895832,0 3.164583,3.165625 3.382292,8.3218752 0.49375,11.7406252 l -0.477083,0.565625 -0.565625,0.477083 c -3.41875,2.888542 -8.5750002,2.670833 -11.7406252,-0.49375 -3.38854163,-3.388541 -3.38854163,-8.9010415 0,-12.2895832"
+                   id="path6"
+                   inkscape:connector-curvature="0"
+                   style="stroke-width:0.67649025" />
+              </g>
+            </g>
+          </g>
+        </g>
+      </svg>
+    </g>
   </g>
 </svg>
