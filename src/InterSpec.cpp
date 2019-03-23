@@ -394,11 +394,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #endif
 #if( USE_SAVEAS_FROM_MENU )
     m_downloadMenu( 0 ),
-#if __cplusplus > 199711L
   m_downloadMenus{0},
 #endif
-#endif
-#if __cplusplus > 199711L
   m_logYItems{0},
   m_toolTabsVisibleItems{0},
   m_backgroundSubItems{0},
@@ -406,7 +403,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_horizantalLinesItems{0},
   m_tabToolsMenuItems{0},
   m_featureMarkersShown{false},
-#endif
 #if( USE_GOOGLE_MAP )
     m_mapMenuItem( 0 ),
 #endif
@@ -773,7 +769,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   PopupDivMenu::triggerElectronMenuUpdate();
 #endif
   
-  if( m_user->preferenceValue<bool>( "StartDocked" ) && !isPhone())
+  if( m_user->preferenceValue<bool>( "StartDocked" ) && !isPhone() )
   {
     setToolTabsVisible( true );
   }else
@@ -782,7 +778,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
     if( !isPhone() )
       m_toolTabsVisibleItems[0]->setHidden(false);
     m_toolTabsVisibleItems[1]->setHidden(true);
-  }
+    
+    //Add Ref photopeaks, etc. to tool menu
+    addToolsTabToMenuItems();
+  }//If( start with tool tabs showing ) / else
  
 #if( !ANDROID && !IOS )
   initDragNDrop();
@@ -4944,6 +4943,8 @@ void InterSpec::addToolsTabToMenuItems()
   {
   }
   
+  const int index_offest = isMobile() ? 1 : 0;
+  
   Wt::WMenuItem *item = nullptr;
   const char *tooltip = nullptr, *icon = nullptr;
   
@@ -4952,7 +4953,7 @@ void InterSpec::addToolsTabToMenuItems()
 #else
   icon = "InterSpec_resources/images/reflines.png";
 #endif
-  item = m_toolsMenuPopup->insertMenuItem( 0, GammaLinesTabTitle, icon , true );
+  item = m_toolsMenuPopup->insertMenuItem( index_offest + 0, GammaLinesTabTitle, icon , true );
   item->triggered().connect( boost::bind( &InterSpec::showGammaLinesWindow, this ) );
   tooltip = "Allows user to display x-rays and/or gammas from elements, isotopes, or nuclear reactions."
             " Also provides user with a shortcut to change detector and account for shielding.";
@@ -4964,7 +4965,7 @@ void InterSpec::addToolsTabToMenuItems()
 #else
   icon = "InterSpec_resources/images/peakmanager.png";
 #endif
-  item = m_toolsMenuPopup->insertMenuItem( 1, PeakInfoTabTitle, icon, true );
+  item = m_toolsMenuPopup->insertMenuItem( index_offest + 1, PeakInfoTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showPeakInfoWindow );
   tooltip = "Provides shortcuts to search for and identify peaks. Displays parameters of all fit peaks in a sortable table.";
   HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
@@ -4975,7 +4976,7 @@ void InterSpec::addToolsTabToMenuItems()
 #else
   icon = "InterSpec_resources/images/calibrate.png";
 #endif
-  item = m_toolsMenuPopup->insertMenuItem( 2, CalibrationTabTitle, icon, true );
+  item = m_toolsMenuPopup->insertMenuItem( index_offest + 2, CalibrationTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showRecalibratorWindow );
   tooltip = "Allows user to modify or fit for offset, linear, or quadratic energy calibration terms,"
             " as well as edit non-linear deviation pairs.<br />"
@@ -4990,13 +4991,13 @@ void InterSpec::addToolsTabToMenuItems()
   //macOS (and probably Electron) need PNGs.
   icon = "InterSpec_resources/images/magnifier_black.png";
 #endif
-  item = m_toolsMenuPopup->insertMenuItem( 3, NuclideSearchTabTitle, icon, true );
+  item = m_toolsMenuPopup->insertMenuItem( index_offest + 3, NuclideSearchTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showNuclideSearchWindow);
   tooltip = "Search for nuclides with constraints on energy, branching ratio, and half life.";
   HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NuclideSearch)] = item;
   
-  item = m_toolsMenuPopup->addSeparatorAt( 4 );
+  item = m_toolsMenuPopup->addSeparatorAt( index_offest + 4 );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::Seperator)] = item;
 }//void addToolsTabToMenuItems()
 

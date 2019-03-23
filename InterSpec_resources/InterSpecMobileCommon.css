@@ -10,6 +10,7 @@
   width: 32px;
   height: 34px;
   opacity: 0.55;
+  border: 1px solid #e6e6e6 !important;
   -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
   -webkit-touch-callout: none !important;
   /* outline: none; //havent tried this, but this would be standards way to remove the tap highlight... */
