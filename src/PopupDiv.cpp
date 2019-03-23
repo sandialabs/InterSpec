@@ -145,6 +145,9 @@ WT_DECLARE_WT_MEMBER(HideOverlay, Wt::JavaScriptFunction, "HideOverlay", functio
         jel.children('.active').removeClass("active");
         if( !jel.is(":visible") ) return;
         
+        //Scroll back to the top of the menu
+        jel.scrollTop(0);
+        
         //I cant actually tell the differnce in smoothness between my version
         //  and jQueries version.
         var a = -jel.width() - 10;

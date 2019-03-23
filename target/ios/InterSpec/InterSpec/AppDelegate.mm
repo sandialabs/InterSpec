@@ -28,6 +28,12 @@
 
 #import "ViewController.h"
 
+#define USE_SHOW_FINGERTIP 0
+
+#if( USE_SHOW_FINGERTIP )
+#import "MBFingerTipWindow.h"
+#endif
+
 #include <string>
 
 #include <boost/filesystem.hpp>
@@ -39,6 +45,16 @@
 
 
 @implementation AppDelegate
+
+#if( USE_SHOW_FINGERTIP )
+- (MBFingerTipWindow *)window
+{
+  static MBFingerTipWindow *visualFeedbackWindow = nil;
+  if (!visualFeedbackWindow) visualFeedbackWindow = [[MBFingerTipWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+  [visualFeedbackWindow setAlwaysShowTouches: true];
+  return visualFeedbackWindow;
+}
+#endif
 
 
 Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
