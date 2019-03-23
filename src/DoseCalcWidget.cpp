@@ -27,9 +27,11 @@
 #include <vector>
 #include <sstream>
 
+#include <Wt/WMenu>
 #include <Wt/WText>
 #include <Wt/WLabel>
 #include <Wt/WTable>
+#include <Wt/WMenuItem>
 #include <Wt/WLineEdit>
 #include <Wt/WComboBox>
 #include <Wt/WPushButton>
@@ -82,6 +84,11 @@ using namespace std;
 
 namespace
 {
+  void right_select_item( WMenu *menu, WMenuItem *item )
+  {
+    menu->select( item );
+    item->triggered().emit( item ); //
+  }
   
   class FitShieldingAdChi2
   : public ROOT::Minuit2::FCNBase
@@ -747,7 +754,8 @@ DoseCalcWidget::DoseCalcWidget( MaterialDB *materialDB,
    m_issueTxt( NULL ),
    m_layout( NULL ),
    m_currentCalcQuantity( DoseCalcWidget::NumQuantity ),
-   m_stack( NULL )
+   m_stack( NULL ),
+   m_menu( nullptr )
 {
   init();
 }//DoseCalcWidget constructor
@@ -759,6 +767,7 @@ void DoseCalcWidget::init()
   
   addStyleClass( "DoseCalcWidget" );
   m_layout = new WGridLayout( this );
+  m_layout->setContentsMargins( 0, 0, 0, 0 );
   
   try
   {
@@ -783,9 +792,6 @@ void DoseCalcWidget::init()
   const bool isPhone = m_viewer->isPhone();
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
-  WContainerWidget *buttonDiv = new WContainerWidget();
-//  WGridLayout *buttonLayout = new WGridLayout( buttonDiv );
-  buttonDiv->setList( true );
   
   WContainerWidget *enterDiv = new WContainerWidget();
   WContainerWidget *answerDiv = new WContainerWidget();
@@ -795,8 +801,6 @@ void DoseCalcWidget::init()
   answerLayout->setContentsMargins( 9, 1, 9, 5 );
   enterLayout->setContentsMargins( 9, 1, 9, 5 );
   
-  
-  buttonDiv->addStyleClass( "DoseButtonDiv" );
   enterDiv->addStyleClass( "DoseEnterDiv" );
   answerDiv->addStyleClass( "DoseAnswerDiv" );
   
@@ -843,11 +847,15 @@ void DoseCalcWidget::init()
   intoTxtLayout->addWidget( txt, 1, 0, AlignCenter );
   intoTxtLayout->setRowStretch( 0, 10 );
   
+  m_menu = new WMenu();
+  m_menu->addStyleClass( (isPhone ? "SideMenuPhone" : "SideMenu") );
+  m_menu->addStyleClass( "DoseCalcSideMenu" );
+  
   m_stack = new WStackedWidget();
 //  m_stack->setTransitionAnimation( WAnimation(WAnimation::Fade, WAnimation::Linear, 500), false );
   m_stack->addWidget( introDiv );
   m_stack->addWidget( workDiv );
-  m_layout->addWidget( buttonDiv, 0, 0 );
+  m_layout->addWidget( m_menu, 0, 0 );
   m_layout->addWidget( m_stack, 0, 1 );
   m_layout->setColumnStretch( 1, 1 );
   
@@ -898,12 +906,20 @@ void DoseCalcWidget::init()
   
   for( Quantity i = Quantity(0); i < NumQuantity; i = Quantity(i+1) )
   {
-    WContainerWidget *w = new WContainerWidget( buttonDiv );
-    m_quantityButtons[i] = new WPushButton( w );
-//    buttonLayout->addWidget( m_quantityButtons[i], i, 0, AlignMiddle );
+    const char *label = "";
+    switch( i )
+    {
+      case Activity:  label = "Activity";  break;
+      case Distance:  label = "Distance";  break;
+      case Dose:      label = "Dose";      break;
+      case Shielding: label = "Shielding"; break;
+      case NumQuantity:                    break;
+    }//switch( i )
     
-    m_quantityButtons[i]->addStyleClass( "DoseButton" );
-    
+    WMenuItem *item = m_menu->addItem( label );
+    item->clicked().connect( boost::bind(&right_select_item, m_menu, item) );
+    item->triggered().connect( boost::bind( &DoseCalcWidget::handleQuantityClick, this, i ) );
+
     m_enterWidgets[i] = new WContainerWidget();
     m_answerWidgets[i] = new WContainerWidget();
     
@@ -914,15 +930,10 @@ void DoseCalcWidget::init()
     m_enterWidgets[i]->addStyleClass( "DoseEnterEl" );
     m_answerWidgets[i]->addStyleClass( "DoseAnswerEl" );
     
-    m_quantityButtons[i]->clicked().connect( boost::bind( &DoseCalcWidget::handleQuantityClick, this, i ) );
-    
-    
     switch( i )
     {
       case Dose:
       {
-        m_quantityButtons[i]->setText( "Dose" );
-       
         txt = new WText( "Dose:", m_enterWidgets[i] );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
@@ -977,8 +988,6 @@ void DoseCalcWidget::init()
         
       case Activity:
       {
-        m_quantityButtons[i]->setText( "Activity" );
-        
         txt = new WText( "Activity:" );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
@@ -1040,8 +1049,6 @@ void DoseCalcWidget::init()
         
       case Distance:
       {
-        m_quantityButtons[i]->setText( "Distance" );
-        
         txt = new WText( "Distance:" );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
@@ -1084,8 +1091,6 @@ void DoseCalcWidget::init()
         
       case Shielding:
       {
-        m_quantityButtons[i]->setText( "Shielding" );
-        
         if( !isPhone )
         {
           txt = new WText( "Shielding:" );
@@ -1299,34 +1304,24 @@ void DoseCalcWidget::runtime_sanity_checks()
 
 void DoseCalcWidget::handleQuantityClick( const DoseCalcWidget::Quantity q )
 {
-  const bool isDeselect = m_quantityButtons[q]->hasStyleClass( "DoseButtonActive" );
-  
-  if( isDeselect )
-  {
-    m_quantityButtons[q]->removeStyleClass( "DoseButtonActive" );
-    m_stack->setCurrentIndex( 0 );
-    m_currentCalcQuantity = NumQuantity;
-    return;
-  }//if( isDeselect )
-  
+  //const bool isDeselect = (q == m_currentCalcQuantity);
+  //if( isDeselect )
+  //{
+  //  m_menu->select( nullptr );
+  //  m_stack->setCurrentIndex( 0 );
+  //  m_currentCalcQuantity = NumQuantity;
+  //  return;
+  //}//if( isDeselect )
   
   m_currentCalcQuantity = q;
   
-  
-  WAnimation animation;
-//  if( m_stack->currentIndex() == 1 )
-//    animation = WAnimation(WAnimation::Fade, WAnimation::Linear, 500);
-//  else
-    m_stack->setCurrentIndex( 1 );
+  m_stack->setCurrentIndex( 1 );
   
   for( Quantity i = Quantity(0); i < NumQuantity; i = Quantity(i+1) )
   {
-    m_quantityButtons[i]->removeStyleClass( "DoseButtonActive" );
-    m_enterWidgets[i]->setHidden( i==q, animation );
-    m_answerWidgets[i]->setHidden( i!=q, animation );
+    m_enterWidgets[i]->setHidden( i==q );
+    m_answerWidgets[i]->setHidden( i!=q );
   }
-  
-  m_quantityButtons[q]->addStyleClass( "DoseButtonActive" );
   
   updateResult();
 }//void handleQuantityClick( const Quantity q )

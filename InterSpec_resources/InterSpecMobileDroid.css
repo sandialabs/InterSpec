@@ -26,3 +26,12 @@
   margin-right: 5px;
 }
 
+.CenterBtnInMblAuxWindowHeader
+{
+  border: 1px solid #ffffff !important;
+}
+
+.CenterBtnInMblAuxWindowHeader[disabled]
+{
+   border: 1px solid rgba(0,0,0,0) !important;
+}

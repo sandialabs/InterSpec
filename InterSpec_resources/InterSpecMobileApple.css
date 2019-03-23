@@ -88,3 +88,25 @@ button[disabled]
   margin-right: 5px;
 }
 
+.CenterBtnInMblAuxWindowHeader
+{
+  border: 1px solid rgb(0,122,255) !important;
+}
+
+ul.SideMenu > li.item, ul.SideMenuPhone > li.item
+{
+  background: none;
+  border: 1px solid rgb(0,122,255);
+}
+
+ul.SideMenu > li.item > a, ul.SideMenuPhone > li.item > a
+{
+  color: rgb(0,122,255) !important;
+}
+
+ul.SideMenu > li.itemselected, ul.SideMenuPhone > li.itemselected
+{
+  color: white !important;
+  background: rgb(0,122,255);
+  border: 1px solid white;
+}
