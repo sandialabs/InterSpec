@@ -154,7 +154,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   }else
   {
     WPushButton *close = new WPushButton( (is_awk ? "Acknowledge" : "Close"), bottom );
-    close->addStyleClass( "CenterBtnInPhoneAuxWindowHeader" );
+    close->addStyleClass( "CenterBtnInMblAuxWindowHeader" );
     close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
   }
   

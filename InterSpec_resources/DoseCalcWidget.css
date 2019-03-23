@@ -2,37 +2,12 @@
 .DoseCalcWidget {
 }
 
-.DoseButtonDiv {
-  border: 1px solid #d1d1d1;
-  min-height: 255px;
-  list-style-type: none;
-  padding: 0;
-  margin: 0;
-  text-align: center;
+.DoseButtonMenu {
 }
 
-.DoseButton, .DoseButton:hover {
-  background-color: #B8B8B8;
-  opacity: 0.8;
-  filter: alpha(opacity=80);
-  margin-top: 8px;
-  margin-left: 6px;
-  margin-right: 6px;
-  width: 5.5em;
+.DoseCalcSideMenu{
+  width: 7.5em;
 }
-
-.DoseButtonActive, .DoseButtonActive:hover {
-  background: #888888;
-  color: #FFFFFF;
-  opacity: 1.0;
-  filter: alpha(opacity=100);
-}
-
-.DoseButton:hover, .DoseButtonActive:hover {
-  color: #e6e6e6;
-}
-
-
 
 .DoseEnterDiv {
   border: 1px solid #d1d1d1;

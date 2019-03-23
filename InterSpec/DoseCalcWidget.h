@@ -43,6 +43,7 @@ class GadrasScatterTable;
 
 namespace Wt
 {
+  class WMenu;
   class WText;
   class WComboBox;
   class WLineEdit;
@@ -161,8 +162,17 @@ protected:
   Wt::WGridLayout *m_layout;
   
   Quantity m_currentCalcQuantity;
-  Wt::WPushButton *m_quantityButtons[NumQuantity];
+  
+  /** Holds two items: 1) the intro div, and 2) the content of the calculation,
+   of which all quantities share the same parent div, just different elements
+   are hidden/shown for the different quantities you want to calculate.
+   */
   Wt::WStackedWidget *m_stack;
+  
+  /** The menu on the left side that lets you select which quantity you want to
+      calculate.
+   */
+  Wt::WMenu *m_menu;
   
   Wt::WContainerWidget *m_enterWidgets[NumQuantity];
   Wt::WContainerWidget *m_answerWidgets[NumQuantity];

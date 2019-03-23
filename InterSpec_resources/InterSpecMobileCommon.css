@@ -100,13 +100,17 @@
   font-size: 8px;
 }
 
-.CenterBtnInPhoneAuxWindowHeader
+.CenterBtnInMblAuxWindowHeader
 {
   /* Center button in footer/header */
   display: block !important;
   margin: 0 auto !important;
 }
 
+.CenterBtnInMblAuxWindowHeader[disabled]
+{
+  border: 1px solid rgba(0,0,0,0) !important;
+}
 
 .SideMenuPhone > li
 {
