@@ -1799,7 +1799,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_cancelButton->clicked().connect( this, &DetectorEdit::cancelAndFinish );
   
   
-  if( specViewer && !specViewer->isPhone() )
+  if( specViewer && !specViewer->isMobile() )
   {
     m_acceptButton = new WPushButton( "Accept", m_footer );
     m_acceptButton->setFloatSide(Wt::Right);
@@ -1812,7 +1812,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   }else
   {
     m_acceptButton = new WPushButton( "Use Detector", m_footer );
-    m_acceptButton->addStyleClass( "CenterBtnInPhoneAuxWindowHeader" );
+    m_acceptButton->addStyleClass( "CenterBtnInMblAuxWindowHeader" );
   }//if( isMobile() ) / else
   
   m_acceptButton->clicked().connect( this, &DetectorEdit::acceptAndFinish );
