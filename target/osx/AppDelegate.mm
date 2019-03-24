@@ -353,7 +353,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     }//if( fileNeedsOpening.size() )
     
     //Note: this bit of code does not seem to work from the themeChanged notification.
-#if( AVAILABLE_MAC_OS_X_VERSION_10_14_AND_LATER )  //preproccessor to compile on older macOS
+#ifdef AVAILABLE_MAC_OS_X_VERSION_10_14_AND_LATER   //preproccessor to compile on older macOS
     if( @available(macOS 10.14, *) )  //runtime check to run on older macOS
     {
       NSAppearanceName basicAppearance

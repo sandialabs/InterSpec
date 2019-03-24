@@ -38,11 +38,13 @@
 #include <Wt/WBreak>
 #include <Wt/WLabel>
 #include <Wt/WImage>
+#include <Wt/WTable>
 #include <Wt/WSignal>
 #include <Wt/WTextArea>
 #include <Wt/WTreeView>
 #include <Wt/WLineEdit>
 #include <Wt/WComboBox>
+#include <Wt/WTableCell>
 #include <Wt/WTabWidget>
 #include <Wt/WFileUpload>
 #include <Wt/WPushButton>
@@ -464,7 +466,7 @@ void RelEffFile::initDetectors()
   
   string pathstr;
   vector<string> credits;
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
   pathstr = m_file;
 #else
   pathstr = m_fileEdit->text().toUTF8();
@@ -510,7 +512,11 @@ void RelEffFile::initDetectors()
       m_detectorSelect->addItem( det->name() );
   }else
   {
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
+    credits.push_back( "<span style=\"color:red;\">No Rel. Eff. DRFs available.</span>" );
+#else
     credits.push_back( "<span style=\"color:red;\">Could not open DRF file.</span>" );
+#endif
     m_detectorSelect->addItem( "<no responses available>" );
     m_detectorSelect->hide();
   }//if( file_opened )
@@ -751,6 +757,7 @@ void GadrasDetSelect::docreate()
   //Need to point the GUI to the appropriate directory, and implement to an `ls` to find detctors with both Detcotr.dat and Efficy.csv.
   const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
   
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   WPushButton *addIcon = new WPushButton();
   addIcon->setStyleClass( "AddRelEffFile Wt-icon" );
   addIcon->clicked().connect( this, &GadrasDetSelect::addDirectory );
@@ -758,12 +765,11 @@ void GadrasDetSelect::docreate()
   holder->addWidget( addIcon );
   holder->setWidth( WLength(100,WLength::Percentage) );
   holder->setToolTip( "Click the plus button to add an additonal directory to recursively look for detector response functions in." );
+#endif
   
   string pathstr;
   vector<string> paths;
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-  pathstr = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
-#elif( !defined(IOS) )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   try
   {
     if( m_interspec )
@@ -801,14 +807,23 @@ void GadrasDetSelect::docreate()
   
   UtilityFunctions::split( paths, pathstr, "\r\n;" );
   
-  if( paths.empty() )
-    new GadrasDirectory( "", this, m_detectorEdit, m_directories );
+  //Make sure we always at least have the default generic detectors available.
+  bool hasGeneric = false;
+  for( size_t i = 0; !hasGeneric && (i < paths.size()); ++i )
+    hasGeneric = (paths[i].find("GenericGadrasDetectors") != string::npos);
+  
+  if( !hasGeneric )
+  {
+    const string drfpaths = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
+    paths.push_back( drfpaths );
+  }
+  
     
   for( const string &path : paths )
   {
     auto dir = new GadrasDirectory( path, this, m_detectorEdit, m_directories );
     
-    if( path.find("data/GenericGadrasDetectors") != string::npos )
+    if( path.find("GenericGadrasDetectors") != string::npos )
     {
 #if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
       dir->m_directoryEdit->disable();
@@ -930,13 +945,13 @@ void GadrasDetSelect::removeDirectory( GadrasDirectory *dirWidget )
     }
   }//for( WWidget *w : m_files->children() )
   
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   saveFilePathToUserPreferences();
 #endif
 }//void removeDirectory( GadrasDirectory *dirWidget )
 
 
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
 void GadrasDetSelect::saveFilePathToUserPreferences()
 {
   if( !m_directories )
@@ -980,7 +995,7 @@ void GadrasDetSelect::detectorSelected( GadrasDirectory *dir, std::shared_ptr<De
 GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parentSelect,
                   DetectorEdit *detectorEdit, WContainerWidget *parent )
 : WContainerWidget( parent ),
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
   m_directory( directory ),
 #else
   m_directoryEdit( new WLineEdit( Wt::WString::fromUTF8(directory) ) ),
@@ -994,7 +1009,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 {
   addStyleClass( "RelEffFile" );
   
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
 #else
   WContainerWidget *topdiv = new WContainerWidget( this );
   topdiv->addWidget( m_deleteBtn );
@@ -1003,8 +1018,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_deleteBtn->clicked().connect( boost::bind( &GadrasDetSelect::removeDirectory, parentSelect, this ) );
   
   
-  
-//If we wanted to actually select directories, could do similar to firle query widget...
+//If we wanted to actually select directories, could do similar to file query widget...
 //#if( BUILD_AS_ELECTRON_APP )
 //  m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
 //  const string uploadname = id() + "PathPicker";
@@ -1028,9 +1042,6 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 //  linelayout->addWidget( m_baseLocation, 0, 1 );
 //#else
   
-  
-  
-  
   topdiv->addWidget( m_directoryEdit );
   m_directoryEdit->setText( directory );
   m_directoryEdit->setTextSize( 48 );
@@ -1051,7 +1062,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_detectorSelect = new WComboBox( bottomDiv );
   m_detectorSelect->activated().connect( this, &GadrasDirectory::detectorSelectCallback );
   
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   m_directoryEdit->changed().connect( m_detectorSelect, &WPushButton::disable );
 #endif
   
@@ -1064,7 +1075,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 
 std::string GadrasDirectory::directory()
 {
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
   return m_directory;
 #else
   return m_directoryEdit->text().toUTF8();
@@ -1079,7 +1090,7 @@ void GadrasDirectory::selectNone()
 }
 
 
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
 void GadrasDirectory::dirPathChanged()
 {
   m_parent->saveFilePathToUserPreferences();
@@ -1585,78 +1596,85 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
                     " within 0.0~1.0 for the energy range of interest."
                     " Click the question mark icon for more info.";
     
-  WContainerWidget *selfDefine = new WContainerWidget();
-  WGridLayout *selfDefineLayout = new WGridLayout();
-  selfDefineLayout->setContentsMargins( 0, 0, 0, 0 );
-  selfDefine->setLayout(selfDefineLayout);
-
-  WText *selfDefineLabel = new WText( txt );
-  selfDefineLayout->addWidget( selfDefineLabel, 0, 0, 1, 3 );
+  WContainerWidget *formulaDiv = new WContainerWidget();
+  WText *selfDefineLabel = new WText( txt, formulaDiv );
+  selfDefineLabel->setInline( false );
   selfDefineLabel->setStyleClass("DetectorLabel");
   
-  selfDefineLayout->addWidget( new WLabel("Detector name "), 1, 0 );
-  m_detectorManualFunctionName = new Wt::WLineEdit();
-  selfDefineLayout->addWidget( m_detectorManualFunctionName, 1, 1, 1, 2 );
+  WTable *formulaTable = new WTable( formulaDiv );
+  formulaTable->addStyleClass( "FormulaDrfTbl" );
+  WTableCell *cell = formulaTable->elementAt( 0, 0 );
+  new WLabel("Detector name ", cell );
+  cell = formulaTable->elementAt( 0, 1 );
+  m_detectorManualFunctionName = new WLineEdit( cell );
   m_detectorManualFunctionName->setStyleClass("DetectorEditFunctionalFormText");
   m_detectorManualFunctionName->setText( manualdetname );
   m_detectorManualFunctionName->setEmptyText("Unique Detector Name");
   m_detectorManualFunctionName->setInline(false);
   m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
 
-  selfDefineLayout->addWidget( new WLabel("Efficiency f(x) = "), 2, 0 );
-  m_detectorManualFunctionText = new Wt::WTextArea();
-  selfDefineLayout->addWidget( m_detectorManualFunctionText, 2, 1, 1, 1 );
-  m_detectorManualFunctionText->setColumns(60);
+  cell = formulaTable->elementAt( 1, 0 );
+  new WLabel("Efficiency f(x) = ", cell );
+  cell = formulaTable->elementAt( 1, 1 );
+  cell->setRowSpan( 2 );
+  m_detectorManualFunctionText = new WTextArea( cell );
+  //m_detectorManualFunctionText->setColumns(60);
+  
   m_detectorManualFunctionText->setRows(3);
   m_detectorManualFunctionText->setStyleClass("DetectorEditFunctionalFormText");
   m_detectorManualFunctionText->setText(fcn);
   m_detectorManualFunctionText->setEmptyText(fcn);
   m_detectorManualFunctionText->setInline(false);
   m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
-    
-  Wt::WContainerWidget *energyContainer = new Wt::WContainerWidget();
+  
+  cell = formulaTable->elementAt( 2, 0 );
+  Wt::WContainerWidget *energyContainer = new Wt::WContainerWidget( cell );
+  energyContainer->setMargin( 6, Wt::Top );
   m_eqnEnergyGroup = new WButtonGroup( energyContainer );
   WRadioButton *button = new WRadioButton( "keV", energyContainer );
   m_eqnEnergyGroup->addButton( button, 0 );
   button = new WRadioButton( "MeV", energyContainer );
+  button->setMargin( 5, Wt::Left );
   m_eqnEnergyGroup->addButton( button, 1 );
   m_eqnEnergyGroup->checkedChanged().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
   m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
-  selfDefineLayout->addWidget( energyContainer, 2, 2 );
     
   HelpSystem::attachToolTipOn( energyContainer,"Energy unit for efficiency formula" , showToolTipInstantly, HelpSystem::Top );
 
-  selfDefineLayout->addWidget( new WLabel("Description"), 3, 0 );
-  m_detectorManualDescription = new WLineEdit();
-  selfDefineLayout->addWidget( m_detectorManualDescription, 3, 1, 1, 2 );
+  cell = formulaTable->elementAt( 3, 0 );
+  new WLabel("Description", cell );
+  cell = formulaTable->elementAt( 3, 1 );
+  m_detectorManualDescription = new WLineEdit( cell );
+  m_detectorManualDescription->setWidth( WLength(100,WLength::Percentage) );
   m_detectorManualDescription->setEmptyText( "Description of this detector response" );
   m_detectorManualDescription->changed().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
   
-  selfDefineLayout->addWidget( new WLabel("Detector diameter "), 4, 0 );
-  m_detectorManualDiameterText = new Wt::WLineEdit( selfDefine );
+  cell = formulaTable->elementAt( 4, 0 );
+  new WLabel("Detector diameter ", cell );
+  cell = formulaTable->elementAt( 4, 1 );
+  m_detectorManualDiameterText = new WLineEdit( cell );
   m_detectorManualDiameterText->setValidator( distValidator );
-  
-  selfDefineLayout->addWidget( m_detectorManualDiameterText, 4, 1, 1,2 );
-  m_detectorManualDiameterText->setText(diamtxt);
-  m_detectorManualDiameterText->setEmptyText(diamtxt);
+  m_detectorManualDiameterText->setText( diamtxt );
+  m_detectorManualDiameterText->setEmptyText( diamtxt );
   m_detectorManualDiameterText->setValidator( distValidator );
   m_detectorManualDiameterText->blurred().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
   m_detectorManualDiameterText->enterPressed().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
   
-  Wt::WContainerWidget *formulaTypeContainer = new Wt::WContainerWidget();
-  m_absOrIntrinsicGroup = new WButtonGroup( formulaTypeContainer );
-  button = new WRadioButton( "Intrinsic", formulaTypeContainer );
+  cell = formulaTable->elementAt( 5, 0 );
+  cell->setColumnSpan( 2 );
+  m_absOrIntrinsicGroup = new WButtonGroup( cell );
+  button = new WRadioButton( "Intrinsic", cell );
   m_absOrIntrinsicGroup->addButton( button, 0 );
-  button = new WRadioButton( "Absolute", formulaTypeContainer );
+  button = new WRadioButton( "Absolute", cell );
   button->setMargin( 5, Wt::Left );
   m_absOrIntrinsicGroup->addButton( button, 1 );
   m_absOrIntrinsicGroup->checkedChanged().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
   m_absOrIntrinsicGroup->setSelectedButtonIndex( 0 );
 
-  m_detectorManualDistLabel = new WLabel( "Dist:", formulaTypeContainer );
+  m_detectorManualDistLabel = new WLabel( "Dist:", cell );
   m_detectorManualDistLabel->setMargin( 10, Wt::Left );
   
-  m_detectorManualDistText = new Wt::WLineEdit( formulaTypeContainer );
+  m_detectorManualDistText = new Wt::WLineEdit( cell );
   m_detectorManualDistText->setValidator( distValidator );
   m_detectorManualDistText->setEmptyText("1 m");
   m_detectorManualDistText->setHiddenKeepsGeometry( true );
@@ -1664,13 +1682,10 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDistText->hide();
   m_detectorManualDistText->keyWentUp().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
   
-  selfDefineLayout->addWidget( formulaTypeContainer, 5, 0, 1, 2 );
-  
-
-  m_manualSetButton = new Wt::WPushButton("Set");
-  m_manualSetButton->setInline(false);
-  selfDefineLayout->addWidget( m_manualSetButton, 5, 2 );
-  selfDefineLayout->setColumnStretch( 1, 1 );
+  m_manualSetButton = new WPushButton( "Set", cell );
+  //m_manualSetButton->setInline(false);
+  m_manualSetButton->setFloatSide( Wt::Right );
+  //selfDefineLayout->setColumnStretch( 1, 1 );
   m_manualSetButton->clicked().connect(boost::bind(&DetectorEdit::setDefineDetector, this));
     
   //-------------------------------------
@@ -1753,15 +1768,13 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   if( !m_interspec->isSupportFile() )
     item->setHidden(true);
   
-  item = m_drfTypeMenu->addItem( "Formula", selfDefine );
+  item = m_drfTypeMenu->addItem( "Formula", formulaDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
   item = m_drfTypeMenu->addItem( "Recent", recentDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  //m_drfTypeStack->setMinimumSize(WLength::Auto, WLength(185.0));
-  //m_drfTypeStack->setMaximumSize(WLength::Auto, WLength(185.0));
-  m_drfTypeStack->resize( WLength::Auto, WLength(185.0) );
+  m_drfTypeStack->setHeight( WLength(185.0) );
   
   
   if( auxWindow )

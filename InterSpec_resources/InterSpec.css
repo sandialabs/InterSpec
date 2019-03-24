@@ -1334,9 +1334,26 @@ color: blue;
   font-style: italic;
 }
 
+.FormulaDrfTbl
+{
+  width: 100%;
+}
+
+.FormulaDrfTbl td
+{
+  white-space: nowrap;
+}
+
+
+table.FormulaDrfTbl tr td:first-child
+{
+  width: 1%;
+}
+
+
 .DetectorEditFunctionalFormText 
 {
-  resize: none;
+  width: 100%;
 }
 
 .DetEditMenu
