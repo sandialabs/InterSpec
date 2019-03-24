@@ -92,7 +92,6 @@ protected:
   
   //Sample
   RowStretchTreeView                                  *m_tableSample;
-  //Wt::WPushButton                                     *m_loadSampleButton;
   Wt::WStandardItemModel                              *m_messageModelSample;
   
   InterSpec                                           *m_viewer;

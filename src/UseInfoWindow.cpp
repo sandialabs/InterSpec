@@ -138,7 +138,6 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
                          | AuxWindowProperties::DisableCollapse) ),
   m_session(),
   m_tableSample( nullptr ),
-//  m_loadSampleButton( nullptr ),
   m_messageModelSample( nullptr ),
   m_viewer( viewer ),
   m_menu( nullptr )
@@ -311,7 +310,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     m_tableSample->setAlternatingRowColors(true);
     m_tableSample->setSelectionMode( Wt::SingleSelection );
-    m_tableSample->setEditTriggers(Wt::WAbstractItemView::NoEditTrigger);
+    m_tableSample->setEditTriggers( Wt::WAbstractItemView::NoEditTrigger );
     
     auto sampleDelegate = new SampleSpectrumDelegate( this );
     m_tableSample->setItemDelegate( sampleDelegate );
@@ -320,16 +319,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     samplesLayout->setRowStretch(0,1);
     samplesLayout->setColumnStretch(0,1);
     
-    //WContainerWidget* buttons = new WContainerWidget();
-    //m_loadSampleButton = new WPushButton( "Load", buttons );
-    ////m_loadSampleButton->setIcon( "InterSpec_resources/images/database_go.png" );
-    //m_loadSampleButton->setFloatSide(Right);
-    //m_loadSampleButton->clicked().connect( this, &UseInfoWindow::loadSampleSelected );
-    //samplesLayout->addWidget( buttons, samplesLayout->rowCount()+1 , 0, AlignRight );
-    
-    //m_loadSampleButton->disable();
     m_tableSample->selectionChanged().connect( this, &UseInfoWindow::handleSampleSelectionChanged );
-    //m_tableSample->doubleClicked().connect( boost::bind( &UseInfoWindow::loadSample, this, _1 ) );
     m_tableSample->doubleClicked().connect( boost::bind( &UseInfoWindow::handleSampleDoubleClicked, this, _1, _2 ) );
     
     
@@ -344,7 +334,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       WFileUpload *upload = new WFileUpload();
       importLayout->addWidget( upload, 1, 0, AlignCenter | AlignMiddle );
       
-      upload->fileTooLarge().connect( std::bind( [this,desc,upload](){
+      upload->fileTooLarge().connect( std::bind( [desc,upload](){
         upload->hide();
         desc->setText( "<span style=\"color: red;\">Too Large of file.</span>" );
       }) );
@@ -914,19 +904,18 @@ SideMenuItem * UseInfoWindow::makeItem( const WString &title, const string &reso
 
 void UseInfoWindow::handleSampleSelectionChanged()
 {
-  //if( m_tableSample->selectedIndexes().size() )
-  //  m_loadSampleButton->enable();
-  //else
-  //  m_loadSampleButton->disable();
 }//void handleSampleSelectionChanged()
-
-
 
 
 void UseInfoWindow::handleSampleDoubleClicked( WModelIndex index, WMouseEvent event )
 {
   if( event.button() != WMouseEvent::LeftButton || !index.isValid() )
     return;
+  
+  //[for macOS build at least] There seems to be a wierd issue that if you
+  //  double click on an item with out it being highlighted, then the spectrum
+  //  loads, but doesnt show until you try to interact with it... weird!
+  
   WModelIndexSet selected;
   selected.insert( index );
   m_tableSample->setSelectedIndexes( selected );
@@ -947,19 +936,16 @@ void UseInfoWindow::loadSample( const Wt::WModelIndex index )
   manager->loadFromFileSystem(val.toUTF8(), kForeground, parserType);
 }//void UseInfoWindow::loadSample( const Wt::WModelIndex index )
 
-void UseInfoWindow::loadSampleSelected( )
+
+void UseInfoWindow::loadSampleSelected()
 {
   WModelIndexSet indices = m_tableSample->selectedIndexes();
-  if( !indices.size() )
-  {
-    //m_loadSampleButton->disable();
+  if( indices.empty() )
     return;
-  }//if( !indices.size() )
   
   loadSample( *indices.begin() );
-//  if( manager->loadFromFileSystem(val.toUTF8(), kForeground, parserType) )
-//    AuxWindow::deleteAuxWindow(this); //closes help window
-} //void UseInfoWindow::loadSampleSelected( )
+}//void loadSampleSelected( )
+
 
 SideMenuItem::SideMenuItem( const WString &text, WWidget *contents )
 : WMenuItem( text, contents, WMenuItem::LazyLoading )
