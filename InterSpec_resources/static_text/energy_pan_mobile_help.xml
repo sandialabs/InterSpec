@@ -1,0 +1,14 @@
+<div align="center">
+  <h1 id="zoom-in"><b>Changing the Energy Range</b></h1>
+  <hr />
+</div>
+
+<p>
+To change the energy range being viewed, use a single finger, and move it horizontally either left 
+(to view higher energies) or right (to view lower energies).
+<div style="padding-top: 10px" align="center">
+  <img src="InterSpec_resources/static_text/images/touch_energy_pan.png"  class="imageBorder" style="width:50%;" />
+</div>
+Note that if the spectrums full energy range is already visible, or you have reached the lower/upper energies, 
+the spectrum will not move further in that direction.
+</p>

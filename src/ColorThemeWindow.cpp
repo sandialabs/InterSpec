@@ -62,12 +62,15 @@ namespace
                   std::unique_ptr<ColorTheme> theme,
                   const bool editable )
     : WMenuItem(text, nullptr, WMenuItem::LazyLoading),
-    m_editable(editable), m_theme( std::move(theme) )
+      m_editable(editable), m_isEditedSinceApply(false), m_theme( std::move(theme) )
     {
     }
     
     const ColorTheme *theme() { return m_theme.get(); }
     bool editable() const { return m_editable;  }
+    
+    bool isEditedSinceApply() const { return m_isEditedSinceApply; }
+    void setEditedSinceApply( const bool edited ) { m_isEditedSinceApply = edited; }
     
     void setTheme( std::unique_ptr<ColorTheme> theme )
     {
@@ -76,6 +79,7 @@ namespace
   protected:
     
     const bool m_editable;
+    bool m_isEditedSinceApply;
     std::unique_ptr<ColorTheme> m_theme;
   };//class SideMenuItem
   
@@ -206,9 +210,15 @@ m_apply( nullptr )
   WContainerWidget *foot = footer();
   AuxWindow::addHelpInFooter( foot, "color-theme-dialog" );
   
+  
+#if( IOS || ANDROID )
+  WPushButton *upload = new WPushButton( "", foot); //needed or else button wont show up
+  upload->setIcon( WLink("InterSpec_resources/images/upload_small.png") );
+#else
   WPushButton *upload = new WPushButton( "Upload...", foot); //needed or else button wont show up
+#endif
+
   upload->clicked().connect( this, &ColorThemeWindow::uploadThemeCallback );
-  //upload->setIcon( WLink("InterSpec_resources/images/upload_small.png") );
   
   m_save = new WPushButton( "Save", foot );
   m_apply = new WPushButton( "Apply", foot );
@@ -220,7 +230,6 @@ m_apply( nullptr )
   
   m_close = AuxWindow::addCloseButtonToFooter( "Close", true, foot );
   m_close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-  
   
   //To the menu add
   vector<unique_ptr<ColorTheme>> defaultThemes = ColorTheme::predefinedThemes();
@@ -257,6 +266,7 @@ m_apply( nullptr )
     {
       m_menu->select(i);
       m_edit->setTheme( m->theme(), m->editable() );
+      m_apply->hide();
       break;
     }
   }//for (auto i : m_menu->items())
@@ -295,6 +305,8 @@ void ColorThemeWindow::cloneThemeCallback()
   m_menu->addItem( newitem );
   m_menu->select( newitem );
   newitem->clicked().connect( boost::bind(&ColorThemeWindow::selectItem, this, newitem) );
+  
+  showOrHideApplyButton();
 }//void cloneThemeCallback()
 
 
@@ -342,6 +354,8 @@ void ColorThemeWindow::removeThemeCallback()
     
     delete item;
     conf->hide();
+    
+    showOrHideApplyButton();
   };//doDelete
   
   WText *text = new WText( "<span style=\"white-space: nowrap;\">Are you sure you would like to delete <em>" + name + "</em>?</span>" );
@@ -366,6 +380,8 @@ void ColorThemeWindow::removeThemeCallback()
   conf->rejectWhenEscapePressed();
   conf->resizeToFitOnScreen();
   conf->centerWindow();
+  
+  showOrHideApplyButton();
 }//void removeThemeCallback()
 
 
@@ -443,6 +459,7 @@ void ColorThemeWindow::uploadThemeCallback()
             m_menu->addItem( newitem );
             m_menu->select( newitem );
             newitem->clicked().connect( boost::bind(&ColorThemeWindow::selectItem, this, newitem) );
+            m_apply->show();
           }else
           {
              m_interspec->logMessage( "Error saving theme to database - sorry!.", "", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
@@ -705,12 +722,20 @@ void ColorThemeWindow::applyCallback()
   InterSpecUser::setPreferenceValue<int>( user, "ColorThemeIndex", theme->dbIndex, m_interspec );
   
   m_interspec->applyColorTheme( make_shared<ColorTheme>(*theme) );
+  
+  item->setEditedSinceApply( false );
+  m_apply->hide();
 }//void applyCallback()
 
 
 void ColorThemeWindow::themEditedCallback()
 {
   m_save->show();
+  m_apply->show();
+  
+  ThemeMenuItem *themeItem = dynamic_cast<ThemeMenuItem *>(m_menu->currentItem());
+  if( themeItem )
+    themeItem->setEditedSinceApply( true );  //should always be called
 }//void themEditedCallback()
 
 
@@ -738,9 +763,9 @@ std::vector<std::unique_ptr<ColorTheme>>  ColorThemeWindow::userDbThemes()
         t->setFromDataBase(*(*i));
         t->dbIndex = (*i).id();
         dbthemes.push_back( std::move(t) );
-      }catch( std::exception & )
+      }catch( std::exception &e )
       {
-        cerr << "Failed to se-serialize theme '" << (*i)->theme_name.toUTF8() << endl;
+        cerr << "Failed to se-serialize theme '" << (*i)->theme_name.toUTF8() << ": " << e.what() << endl;
       }
     }
     
@@ -770,4 +795,33 @@ void ColorThemeWindow::themeSelected( Wt::WMenuItem *item )
   m_edit->setTheme( themeItem->theme(), themeItem->editable() );
   m_removeIcn->setHidden( !themeItem->editable() );
   m_save->setHidden( true );
+  
+  showOrHideApplyButton();
 }//themeSelected(Wt::WMenuItem *item)
+
+
+void ColorThemeWindow::showOrHideApplyButton()
+{
+  Wt::WMenuItem *item = m_menu->currentItem();
+  auto themeItem = dynamic_cast<ThemeMenuItem *>(item);
+  
+  if( !themeItem )
+  {
+    cerr << "ColorThemeWindow::showOrHideApplyButton(" << item << "): is not a ThemeMenuItem" << endl;
+    return;
+  }
+  
+  std::shared_ptr<const ColorTheme> currentTheme = m_interspec->getColorTheme();
+  
+  bool showApply = false;
+  if( !currentTheme || !themeItem->theme() )
+    showApply = true;
+  else if( currentTheme->dbIndex < 0 || themeItem->theme()->dbIndex < 0 )
+    showApply = true;
+  else if( currentTheme->dbIndex != themeItem->theme()->dbIndex )
+    showApply = true;
+  else if( themeItem->editable() && themeItem->isEditedSinceApply() )
+    showApply = true;
+  
+  m_apply->setHidden( !showApply );
+}//void showOrHideApplyButton()

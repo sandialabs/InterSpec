@@ -1,0 +1,22 @@
+<div align="center">
+  <h1 id="zoom-in"><b>Zoom In</b></h1>
+  <hr />
+</div>
+
+<p>
+To zoom in on the energy (horizontal) axis, hold two fingers <em>horizontally</em>, 
+centered around the energy you want to zoom in too, and move your fingers apart.
+<div style="padding-top: 10px" align="center">
+  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png"  class="imageBorder" style="width:50%;" />
+</div>
+</p>
+
+<p>To zoom in on the counts (vertical) axis, hold two fingers <em>vertically</em>, 
+centered around the counts you want to zoom in too, and move your fingers apart; the initial seperation
+of your fingers will determine the counts range that is zoomed in to.
+<div style="padding-top: 10px" align="center">
+  <img src="InterSpec_resources/static_text/images/touch_zoom_counts_in.png"  class="imageBorder" style="width:50%;" />
+</div>
+Note that when the energy range is changed, either by zooming in or out in energy, or by using a single finger
+to change the energy range, the counts-axis range is automatically recalculated.
+</p>

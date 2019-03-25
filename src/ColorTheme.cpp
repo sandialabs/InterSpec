@@ -26,6 +26,7 @@
 #include <map>
 #include <vector>
 #include <string>
+#include <typeinfo>
 
 #include <Wt/WColor>
 #include <Wt/WString>
@@ -215,7 +216,7 @@ std::string ColorTheme::toJson( const ColorTheme &info )
   
   Json::Object &nonChartArea = base["nonChartArea"] = Json::Value(Json::ObjectType);
   if( info.nonChartAreaTheme.empty() )
-    nonChartArea["cssTheme"] = "default";
+    nonChartArea["cssTheme"] = WString("default");
   else
     nonChartArea["cssTheme"] = WString( info.nonChartAreaTheme );
   
@@ -329,11 +330,25 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   if( nonChartArea.type()==Json::ObjectType
       && static_cast<const Json::Object &>(nonChartArea).contains("cssTheme") )
   {
-    Json::Object &nonChartArea = base["nonChartArea"];
-    const WString &val = static_cast<const WString &>( nonChartArea["cssTheme"] );
-    info.nonChartAreaTheme = val.toUTF8();
-    if( UtilityFunctions::iequals( info.nonChartAreaTheme, "default") )
-      info.nonChartAreaTheme = "";
+    const Json::Object &nonChartAreaObj = nonChartArea;
+    const Json::Value &cssThemeVal = nonChartAreaObj.get("cssTheme");
+    
+    string val;
+    if( cssThemeVal.type() == Wt::Json::StringType )
+    {
+      if( cssThemeVal.hasType( typeid(Wt::WString) ) )
+       val = static_cast<const WString &>(cssThemeVal).toUTF8();
+      else if( cssThemeVal.hasType(typeid(std::string)) )
+        val = static_cast<const std::string &>(cssThemeVal);
+      else
+        cout << "Json type is not string" << endl;
+    }else
+      cout << "CssThemeVal is type " << cssThemeVal.type() << endl;
+    
+    if( UtilityFunctions::iequals(info.nonChartAreaTheme, "default") )
+      val = "";
+    
+    info.nonChartAreaTheme = val;
   }
   
   if( base.contains("spectrum") /*&& base["spectrum"].type()==Json::ObjectType*/ )
