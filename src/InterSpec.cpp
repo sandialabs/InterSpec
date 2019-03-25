@@ -3309,6 +3309,7 @@ void InterSpec::setReferenceLineColors( std::shared_ptr<const ColorTheme> theme 
 
 void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 {
+  //20190324: This function, called with a nullptr, takes 30us on my 2018 mbp.
   if( !theme )
     theme = getColorTheme();
   m_colorTheme = theme;
@@ -3414,10 +3415,13 @@ void InterSpec::osThemeChange( std::string name )
 }//void osThemeChange( std::string name )
 #endif
 
+
 void InterSpec::showColorThemeWindow()
 {
+  //Takes ~5ms (on the server) to create a ColorThemeWindow.
 	new ColorThemeWindow(this);
 }//void showColorThemeWindow()
+
 
 AuxWindow *InterSpec::showIEWarningDialog()
 {

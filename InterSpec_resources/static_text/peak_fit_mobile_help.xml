@@ -1,0 +1,21 @@
+<div align="center">
+  <h1 id="zoom-in"><b>Peak Fitting</b></h1>
+  <hr />
+</div>
+
+<p><em>Suggestion:</em> <i>Before fitting for peaks, display the reference lines responsible for the peaks if known -
+this way the peak will be associated with the appropriate nuclide at the time of fitting, rather than having to be 
+manually associated later to perform activity fitting or do energy calibration.</i>
+</p>
+
+<p>
+The simplest way to fit a nuclide is to double tap on the area the peak is located:
+<div style="padding-top: 10px" align="center">
+  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png"  class="imageBorder" style="width:75%;" />
+</div>
+</p>
+<p>If there are multiple peaks in an area, you can double tap on each peak peak, to fit additional peaks.
+<div style="padding-top: 10px" align="center">
+  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png"  class="imageBorder" style="width:75%;" />
+</div>
+</p>

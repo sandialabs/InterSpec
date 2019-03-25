@@ -2,11 +2,31 @@
 	 <h1 id="getting-started">Getting Started</h1>
    <hr />
 </div>
-You can open spectra from your email, file, other applications, by selecting the "Copy To InterSpec" option.  
-You can also open files from within InterSpec by going to the menu then <em>Spectra</em> &rarrow; <em>Open File...</em>.
 
 
+<p>You can open spectra from your email, file, other applications, by tapping on the file and selecting the &quot;Copy To InterSpec&quot; option.
 
+<div style="padding-top: 10px" align="center">
+  <img src="InterSpec_resources/static_text/images/cpy_to_interspec_ios.jpg" style="width:60%" class="imageBorder" />
+</div>
+</p
+
+<p>
+You can also open files from within InterSpec by going to the menu then <em>Spectra</em> &rarr; <em>Open File...</em> and then selecting to browse.
+
+<div style="padding-top: 10px" align="center">
+<img src="InterSpec_resources/static_text/images/file_browse_ios.jpg" style="width:50%" class="imageBorder" />
+</div>
+</p>
+
+<p>
+If you are opening a foreground and background from the same detector, using another application,
+and you would like to display both at the same time, you should open the foreground spectrum first,
+and then when you open the background spectrum from the other app, <em>InterSpec</em> will
+detect the file is from the same detector, and ask you if you want to open it as a foreground,
+background, or secondary foreground spectrum.
+</p>
+
+<p>
 InterSpec can open nearly all common gamma spectra formats, including N42, SPE, PCF, SPC, CSV, and other detector specific formats.
-
-
+</p>
