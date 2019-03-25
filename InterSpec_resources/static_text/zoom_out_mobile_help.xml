@@ -1,0 +1,16 @@
+<div align="center">
+  <h1 id="zoom-in"><b>Zoom Out</b></h1>
+  <hr />
+</div>
+
+<p>
+To zoom out on the energy (horizontal) axis, hold two fingers <em>horizontally</em> and move your fingers togethers.
+<div style="padding-top: 10px" align="center">
+  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png"  class="imageBorder" style="width:50%;" />
+</div>
+</p>
+
+<p>To zoom out on the counts (vertical) axis, hold two fingers <em>vertically</em> and move your fingers together; when
+you release your fingers from the screen, the counts axis range will be automatically calculated based on the data within 
+the visible energy range.
+</p>
