@@ -562,6 +562,20 @@ namespace HelpSystem
       const WString identifier = ident;
       const WString titlestr = title;
     
+      //This is a hack to keep help topics we arent using from showing - eh,
+      //  not to clean, but whatever for now
+      const string idstr = identifier.toUTF8();
+      if( !USE_TERMINAL_WIDGET && UtilityFunctions::icontains(idstr,"terminal-dialog") )
+      {
+        continue;
+      }else if( !USE_SPECRUM_FILE_QUERY_WIDGET && UtilityFunctions::icontains(idstr,"spectrum-file-query") )
+      {
+        continue;
+      }
+      //Other potential topics to filter (if we add help content for them):
+      //  USE_SEARCH_MODE_3D_CHART, USE_SIMPLE_NUCLIDE_ASSIST, USE_GOOGLE_MAP
+        
+
       WTreeNode *insertNode = new Wt::WTreeNode( titlestr.toUTF8() );
       
       if( searching )
@@ -570,7 +584,7 @@ namespace HelpSystem
       parent->addChildNode(insertNode);
       parent->expand();
       
-      if (!keywords.isNull() && searching)
+      if( !keywords.isNull() && searching )
       {
         const WString keywordstr = keywords;
         

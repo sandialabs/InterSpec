@@ -2,15 +2,11 @@
   {
     "id":"getting-started",
     "title":"Getting Started",
+    "help-xml" :"getting_started_help.xml",
+    "help-xml-mobile" :"getting_started_mobile_help.xml",
+    "keywords":"Setting Up Uploading Files Format Drag Drop TXT CSV XML/N42 PCF Manager Add Foreground Secondary Background Getting Started",
     "children" :
     [
-      {
-        "id":"getting-started",
-        "title":"Getting Started",
-        "help-xml" :"getting_started_help.xml",
-        "help-xml-mobile" :"getting_started_mobile_help.xml",
-        "keywords":"Setting Up Uploading Files Format Drag Drop TXT CSV XML/N42 PCF Manager Add Foreground Secondary Background Getting Started"
-      },
       {
         "id":"display",
         "title":"Display Options",
@@ -26,24 +22,28 @@
             "id":"zoom-in",
             "title": "Zoom In",
             "help-xml":"zoom_in_help.xml",
+            "help-xml-mobile" :"zoom_in_mobile_help.xml",
             "keywords":"Navigating On The Graph Zoomed In Left Right Drag"
           },
           {
             "id":"zoom-out",
             "title": "Zoom Out",
             "help-xml":"zoom_out_help.xml",
+            "help-xml-mobile" :"zoom_out_mobile_help.xml",
             "keywords":"Navigating On The Graph Zoomed In Left Right Drag"
           },
           {
             "id":"energy-pan",
-            "title": "Energy Range Shift",
-            "help-xml":"energy_pan.xml",
+            "title": "Changing Energy Range",
+            "help-xml":"energy_pan_help.xml",
+            "help-xml-mobile" :"energy_pan_mobile_help.xml",
             "keywords":"Navigating On The Graph Zoomed In Move Moving Left Right Drag"
           },
           {
             "id":"id-peaks",
-            "title": "Identify Peak(s)",
+            "title": "Fit Peak(s)",
             "help-xml":"peak_fit_help.xml",
+            "help-xml-mobile":"peak_fit_mobile_help.xml",
             "keywords":"Navigating On The Graph Zoomed In Out Move Moving Left Right Drag Identify Peaks"
           },
           {
@@ -59,6 +59,8 @@
   {
     "id":"tools",
     "title":"Tools",
+    "help-xml" : "tools_intro_help.xml",
+    "keywords" : "Tool Tools Calibrate fit decay calculate calc edit",
     "children":
     [
       {

@@ -102,6 +102,8 @@ protected:
    */
   void selectItem( Wt::WMenuItem *item );
   
+  void showOrHideApplyButton();
+  
 private:
   InterSpec        *m_interspec;
   Wt::WMenu        *m_menu;
