@@ -343,13 +343,33 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   _appHasGoneIntoBackground = NO;
   _appComminFromBackground = YES;
   
-  self.edgesForExtendedLayout = UIRectEdgeNone;
+  //self.edgesForExtendedLayout = UIRectEdgeNone;
   [super viewDidLoad];
   
-  if( IS_IPAD() )
-    _webView = _padWebView;
-  else
-    _webView = _phoneWebView;
+#define TRY_MANUAL_CONSTRAAINTS 0
+#if( TRY_MANUAL_CONSTRAAINTS )
+  _webView = [[UIWebView alloc]initWithFrame: [[UIScreen mainScreen] bounds]];
+  [self.view addSubview: _webView];
+#else
+  //For some reason we still dont fill the space on iPhoneXs... maybe we need
+  //  to do something in JavaScript... maybe try css-tricks.com/the-notch-and-css and then probably convert to WkWebView...
+  _webView = [[UIWebView alloc] init];
+  [self.view addSubview: _webView];
+  
+  //https://stackoverflow.com/questions/53515904/set-webview-in-safe-area-of-iphone-x
+  [_webView setTranslatesAutoresizingMaskIntoConstraints: NO];
+  [[[_webView leadingAnchor] constraintEqualToAnchor: self.view.leadingAnchor constant: 0.0] setActive: YES];
+  [[[_webView trailingAnchor] constraintEqualToAnchor: self.view.trailingAnchor constant: 0.0]setActive: YES];
+  //[[[_webView topAnchor] constraintEqualToAnchor: self.view.safeAreaLayoutGuide.topAnchor constant: 0.0] setActive: YES];
+  //[[[_webView bottomAnchor] constraintEqualToAnchor: self.view.safeAreaLayoutGuide.bottomAnchor constant: 0.0] setActive: YES];
+  [[[_webView topAnchor] constraintEqualToAnchor: self.view.topAnchor constant: 0.0] setActive: YES];
+  [[[_webView bottomAnchor] constraintEqualToAnchor: self.view.bottomAnchor constant: 0.0] setActive: YES];
+#endif
+  
+  //if( IS_IPAD() )
+  //  _webView = _padWebView;
+  //else
+  //  _webView = _phoneWebView;
   
   NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
   NSString *documentsDirectory = [paths objectAtIndex:0];
@@ -404,6 +424,28 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 - (void)webViewDidFinishLoad:(UIWebView *)webView
 {
   NSLog(@"WebViewDidFinishLoad" );
+  
+  UIWindow *topWindow = [[UIApplication sharedApplication] keyWindow];
+  
+  [topWindow setInsetsLayoutMarginsFromSafeArea: NO];
+  [webView setInsetsLayoutMarginsFromSafeArea: NO];
+  
+  UILayoutGuide *marginGuid = [topWindow layoutMarginsGuide];
+  CGRect marginrect = [marginGuid layoutFrame];
+  NSLog( @"marginrect = {%f, %f}", marginrect.size.width, marginrect.size.height ); //552,304
+  
+  UILayoutGuide *layoutGuid = [topWindow safeAreaLayoutGuide];
+  CGRect layoutrect = [layoutGuid layoutFrame];
+  NSLog( @"layoutrect = {%f, %f}", layoutrect.size.width, layoutrect.size.height ); //568x320
+  
+  UIEdgeInsets insets = [topWindow safeAreaInsets];
+  NSLog( @"TopInsets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
+  
+  CGRect webViewRect = [webView bounds];
+  NSLog( @"webViewRect = {%f, %f, %f, %f}", webViewRect.origin.x, webViewRect.origin.y, webViewRect.size.width, webViewRect.size.height );
+  
+  UIEdgeInsets webVieEdge = [webView layoutMargins];
+  NSLog( @"webVieEdge = {%f, %f, %f, %f}", webVieEdge.left, webVieEdge.right, webVieEdge.bottom, webVieEdge.top );
   
   //For some reason on iOS 9, there is an issue where Wt thinks the window height
   //  is the same as the window width (some talk on internet of something
@@ -491,5 +533,14 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   NSLog(@"documentInteractionControllerDidDismissOpenInMenu" );
 }
 */
+
+- (void)viewSafeAreaInsetsDidChange
+{
+  NSLog(@"viewSafeAreaInsetsDidChange" );
+  if( @available(iOS 11, *) )
+  {
+    [super viewSafeAreaInsetsDidChange];
+  }
+}
 
 @end
