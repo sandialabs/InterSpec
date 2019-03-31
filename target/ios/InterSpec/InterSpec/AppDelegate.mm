@@ -42,6 +42,45 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 
+@interface InterSpecAppView : UIWindow
+{
+}
+@end
+
+@implementation InterSpecAppView
+- (id) initWithFrame: (CGRect)frame
+{
+  self = [super initWithFrame:frame];
+  if( self )
+  {
+    NSLog( @"Created InterSpecAppView" );
+  }
+  return self;
+}
+
+- (void)safeAreaInsetsDidChange
+{
+  NSLog( @"safeAreaInsetsDidChange" );
+  
+  if( @available(iOS 11, *) )
+  {
+    [super safeAreaInsetsDidChange];
+    //blah blah blah
+    if( [self insetsLayoutMarginsFromSafeArea] )
+    {
+      NSLog( @"safeAreaInsetsDidChange" );
+    }
+    // UIEdgeInsets insets = [self safeAreaInsets];
+    
+    UIEdgeInsets insets = [self.window safeAreaInsets];
+    NSLog( @"insets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
+    
+  }
+}//safeAreaInsetsDidChange
+
+
+
+@end  //InterSpecAppView
 
 
 @implementation AppDelegate
@@ -132,18 +171,33 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
   // Override point for customization after application launch.
   NSLog(@"didFinishLaunchingWithOptions");
   [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalMinimum];
-  self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+
+  //CGRect rect = [[UIScreen mainScreen] bounds];
+  //NSLog( @"rect = {%f, %f}", rect.size.width, rect.size.height ); //568x320
   
-  if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone) {
-    self.viewController = [[ViewController alloc] initWithNibName:@"ViewController_iPhone" bundle:nil];
-  } else {
-    self.viewController = [[ViewController alloc] initWithNibName:@"ViewController_iPad" bundle:nil];
-  }
+  self.window = [[InterSpecAppView alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+  //[self.window setInsetsLayoutMarginsFromSafeArea: NO];
+  
+  //[topWindow setInsetsLayoutMarginsFromSafeArea: NO];
+  
+  //UIEdgeInsets insets = [topWindow layoutMargins];
+  //NSLog( @"insets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
+                         
+  //UIView *topview = [[topWindow subviews] lastObject];
+  //[topview setInsetsLayoutMarginsFromSafeArea: YES];
+  //UIEdgeInsets insets = [topview safeAreaInsets];
+  //NSLog( @"insets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
+  
+  //if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone) {
+  self.viewController = [[ViewController alloc] initWithNibName: nil bundle:nil];
+  //} else {
+  //  self.viewController = [[ViewController alloc] initWithNibName:@"ViewController_iPad" bundle:nil];
+  //}
+  
   self.window.rootViewController = self.viewController;
   [self.window makeKeyAndVisible];
   self.isInBackground = NO;
   self.backgroundTask = UIBackgroundTaskInvalid;
-  
   
   //Nesary for iOS 9, when keyboard hides, need to re-align the app
   NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
@@ -291,7 +345,9 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
 -(void)sendSpectrumFileToOtherApp: (NSString *) filename;
 {
   NSLog(@"Begining sendSpectrumFileToOtherApp" );
-
+  
+  UIEdgeInsets insets = [self.window safeAreaInsets];
+  NSLog( @"insets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
   
   _documentController = [UIDocumentInteractionController interactionControllerWithURL:[NSURL fileURLWithPath:filename]];
   _documentController.delegate = _viewController;

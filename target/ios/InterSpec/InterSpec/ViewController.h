@@ -27,9 +27,7 @@
 #import <UIKit/UIKit.h>
 
 @interface ViewController : UIViewController <UIWebViewDelegate,UIDocumentInteractionControllerDelegate>
-@property (weak, nonatomic) IBOutlet UIWebView *webView;
-@property (weak, nonatomic) IBOutlet UIWebView *padWebView;
-@property (weak, nonatomic) IBOutlet UIWebView *phoneWebView;
+@property (nonatomic) IBOutlet UIWebView *webView;
 
 @property (nonatomic) BOOL isServing;
 @property (nonatomic) BOOL appHasGoneIntoBackground;

@@ -234,7 +234,7 @@ void InterSpecApp::setupDomEnvironment()
   const char *fix_ios_js = INLINE_JAVASCRIPT(
     var t=document.createElement('meta');
     t.name = "viewport";
-    t.content = "initial-scale=1.0, user-scalable=no, height=device-height, width=device-width";
+    t.content = "initial-scale=1.0, user-scalable=no, height=device-height, width=device-width";  /* for iPhoneX add ", viewport-fit=cover" */
     document.getElementsByTagName('head')[0].appendChild(t);
     $(document).on('blur', 'input, textarea', function() {
       setTimeout(function(){ window.scrollTo(document.body.scrollLeft, document.body.scrollTop); }, 0);
