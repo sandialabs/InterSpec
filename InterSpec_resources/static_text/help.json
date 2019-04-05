@@ -50,6 +50,7 @@
             "id":"delete-peaks",
             "title": "Delete Peak(s)",
             "help-xml":"delete_peak_help.xml",
+            "help-xml-mobile":"delete_peak_mobile_help.xml",
             "keywords":"Navigating On The Graph Zoomed In Out Move Moving Left Right Drag Delete Erase Peaks"
           }
         ]
@@ -64,19 +65,16 @@
     "children":
     [
       {
+        "id":"reference-gamma-lines-dialog",
+        "title":"Reference Gamma Lines",
+        "help-xml":"ref_gamma_lines_help.xml",
+        "keywords":"Trouble Fitting Peaks For Shielding Nuclide Age Accuracy Reference Photopeaks Tools Materials Calibration Units Spectrum"
+      },
+      {
         "id" : "energy-calibration-dialog",
         "title" : "Energy Calibration",
         "help-xml" : "energy_calibration_help.xml",
-        "keywords" : "Energy Calibration Tool Calibrate Adjust Offset Peaks Information Offset Linear Quadratic Normalize",
-        "children" :
-        [
-          {
-            "id":"graphical-recal-dialog",
-            "title":"Graphical Recalibration",
-            "help-xml":"graphical_energy_recal_help.xml",
-            "keywords":"Energy Graphical Recalibration Tool Calibrate Adjust Offset Peaks Region of Interest ROI Drag Normalize"
-          }
-        ]
+        "keywords" : "Energy Calibration Tool Calibrate Adjust Offset Peaks Information Offset Linear Quadratic Normalize"
       },
       {
         "id":"detector-edit-dialog",
@@ -101,12 +99,6 @@
         "title":"Peak Editor",
         "help-xml":"peak_editor_help.xml",
         "keywords":"Peaks Editor Highlighted Nuclide Energetically Close Region of Interest ROI Refit Delete Add Fitting Difficult Change Continuum Specifying Select Show User Labels Algorithm Globally"
-      },
-      {
-        "id":"reference-gamma-lines-dialog",
-        "title":"Reference Gamma Lines",
-        "help-xml":"ref_gamma_lines_help.xml",
-        "keywords":"Trouble Fitting Peaks For Shielding Nuclide Age Accuracy Reference Photopeaks Tools Materials Calibration Units Spectrum"
       },
       {
         "id":"1/r2-calc-dialog",

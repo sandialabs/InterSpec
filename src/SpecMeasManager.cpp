@@ -917,7 +917,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     const string fileInZip = Wt::asString(index.data()).toUTF8();
     
     const string tmppath = UtilityFunctions::temp_dir();
-    string tmpfile = UtilityFunctions::temp_file_name( fileInZip, tmppath );
+    string tmpfile = UtilityFunctions::temp_file_name( "", tmppath );
     
     ifstream zipfilestrm( spoolName.c_str(), ios::in | ios::binary );
     

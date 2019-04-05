@@ -1,5 +1,5 @@
 <div align="center">
-  <h1 id="zoom-in"><b>Peak Fitting</b></h1>
+  <h1 id="id-peak"><b>Peak Fitting</b></h1>
   <hr />
 </div>
 
@@ -10,12 +10,37 @@ manually associated later to perform activity fitting or do energy calibration.<
 
 <p>
 The simplest way to fit a nuclide is to double tap on the area the peak is located:
-<div style="padding-top: 10px" align="center">
+<div style="padding-top: 1px" align="center">
   <img src="InterSpec_resources/static_text/images/touch_fit_peak.png"  class="imageBorder" style="width:75%;" />
 </div>
 </p>
 <p>If there are multiple peaks in an area, you can double tap on each peak peak, to fit additional peaks.
 <div style="padding-top: 10px" align="center">
   <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png"  class="imageBorder" style="width:75%;" />
+</div>
+</p>
+
+<p>If there is a region with many overlapping peaks where double-tapping doesnt work well enough, you can
+hold two fingers horizantal and close together and move both of your fingers horizantally to the right, 
+keeping them spaced about the same, to define a region to fit mltiple peaks in.  When you let your fingers
+up, you will be prompted for how many peaks you would like to fit the region you defined.
+<div style="padding-top: 1px" align="center">
+  <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg"  class="imageBorder" style="width:75%;" />
+</div>
+</p>
+
+
+
+<p>In the <em>Menu</em>&rarr;<em>Tools</em>&rarr;<em>Peak Manager</em> you can automatically fit for
+all the peaks in a spectrum using the <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" /> button.
+It is recomended to have nuclide reference lines showing before using this automated peak search so peaks will automatically
+be associated with the nuclides responsible for creating the peak.
+</p>
+
+<p>
+If you want to re-fit a peak, or access the <em>Peak Editor</em>, hold your finger down on a peak for about a second, 
+and menu will pop up to let you choose what you would like to do.
+<div style="padding-top: 1px" align="center">
+  <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
 </div>
 </p>
