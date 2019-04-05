@@ -1042,6 +1042,65 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 //  linelayout->addWidget( m_baseLocation, 0, 1 );
 //#else
   
+  //TODO: Check if 'directory' is a subdirectory of InterSpec::writableDataDirectory()
+  //and if so replace the beggingin of directory with {DataDir}/... and make it
+  //  so the edit cant be changed and set button is hidden, and then deal with
+  //  in GadrasDirectory::directory()
+/*
+  bool isInDataDir = false;
+  string dirCononical = directory;
+  string appDataDir = InterSpec::writableDataDirectory();
+  if( UtilityFunctions::make_canonical_path(appDataDir)
+     && UtilityFunctions::make_canonical_path(dirCononical)
+     && appDataDir.size()>2 && dirCononical.size()>2 )
+  {
+    while( !isInDataDir && (dirCononical.size()+1) >= appDataDir.size() )
+    {
+      if( dirCononical == appDataDir )
+      {
+        isInDataDir = true;
+        dirCononical = directory;
+        UtilityFunctions::make_canonical_path(dirCononical);
+        dirCononical = fs_relative( appDataDir, dirCononical );
+        dirCononical = UtilityFunctions::append_path( "{AppDataDir}", dirCononical );
+      }else
+      {
+        dirCononical = UtilityFunctions::parent_path(dirCononical);
+        UtilityFunctions::make_canonical_path( dirCononical ); //to make sure we get ending / or \ right
+      }
+    }
+  }
+*/
+  
+  
+/*
+ ToDo: custonize path picking for electron...
+#if( BUILD_AS_ELECTRON_APP )
+  m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
+  
+  const string uploadname = id() + "PathPicker";
+  const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
+  
+  WText *uploadtext = new WText( uploadhtml, XHTMLUnsafeText );
+  linelayout->addWidget( uploadtext, 0, 1 );
+  
+  //TODO: put in error handling!
+  wApp->doJavaScript( "document.getElementById('" + uploadname + "').onchange = function(event){"
+                     "var outputDir = document.getElementById('" + uploadname + "').files[0].path;"
+                     "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
+                     "};"
+                     );
+  m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, _1 ) );
+#elif( BUILD_AS_OSX_APP )
+ //For macOS dont saved picked directory to preferences in DB as sandboxing will mess this up.
+  SpecFileQuery::setIsSelectingDirectory( true );
+  setSearchDirectory( "" );
+  m_baseLocation = new WFileUpload();
+  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
+  linelayout->addWidget( m_baseLocation, 0, 1 );
+#else
+*/
+  
   topdiv->addWidget( m_directoryEdit );
   m_directoryEdit->setText( directory );
   m_directoryEdit->setTextSize( 48 );
