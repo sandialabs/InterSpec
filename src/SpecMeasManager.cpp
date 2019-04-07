@@ -830,8 +830,8 @@ void  SpecMeasManager::startSpectrumManager()
     
     dynamic_cast<WWebWidget *>(layout->parent())->setHiddenKeepsGeometry(true);
     
-    content->setOverflow(WContainerWidget::OverflowVisible); //necessary for menu to not be covered by footer
-    content->setStyleClass("filemanageroverflow");
+    content->setOverflow(WContainerWidget::OverflowVisible,Orientation::Vertical); //necessary for menu to not be covered by footer
+    //content->setStyleClass("filemanageroverflow");
     
     
     WPushButton *cancel = m_spectrumManagerWindow->addCloseButtonToFooter();
