@@ -574,29 +574,6 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
   
-  const bool isPhone = app ? app->isPhone() : false;
-  const bool isTablet = app ? app->isTablet() : false;
-  
-  const bool isPhoneModal = properties.testFlag(AuxWindowProperties::PhoneModal);
-  const bool isTabletModal = properties.testFlag(AuxWindowProperties::TabletModal);
-  
-  m_modalOrig = (properties.testFlag(AuxWindowProperties::IsAlwaysModal)
-                 || (isPhone && isPhoneModal)
-                 || (isTablet && (isTabletModal || isPhoneModal)) );
-  
-  if( (isPhone && !isPhoneModal)
-     || (isTablet && !isTabletModal && !isPhoneModal) )
-  {
-    setResizable(false);
-    resizeScaledWindow( 1.0, 1.0 );
-    m_isPhone = true; //disables any of future AuxWindow calls to change behavior
-  }
-  
-  if( isTablet && !isTabletModal && !isPhoneModal )
-    m_isTablet = true;
-  
-  m_isAndroid = app && app->isAndroid();
-
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowBringToFront);
@@ -605,13 +582,40 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowTitlebarTouchStart);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowShow);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowHide);
-
+  
 #if( USE_NEW_AUXWINDOW_ISH )
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowScaleResize);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowResize);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCenter);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowReposition);
 #endif
+  
+  
+  const bool isPhone = app ? app->isPhone() : false;
+  const bool isTablet = app ? app->isTablet() : false;
+  
+  const bool isPhoneModal = properties.testFlag(AuxWindowProperties::PhoneModal);
+  const bool isTabletModal = properties.testFlag(AuxWindowProperties::TabletModal);
+  
+  const bool phoneFullScreen = (isPhone && !isPhoneModal)
+                               || (isTablet && !isTabletModal && !isPhoneModal);
+  if( phoneFullScreen )
+  {
+    setResizable(false);
+    resizeScaledWindow( 1.0, 1.0 );
+    m_isPhone = true; //disables any of future AuxWindow calls to change behavior
+  }
+  
+  m_modalOrig = (properties.testFlag(AuxWindowProperties::IsAlwaysModal)
+                 || (isPhone && isPhoneModal)
+                 || (isTablet && (isTabletModal || isPhoneModal)) );
+  setModal( m_modalOrig );
+  
+  if( isTablet && !isTabletModal && !isPhoneModal )
+    m_isTablet = true;
+  
+  m_isAndroid = app && app->isAndroid();
+
   
 //  setJavaScriptMember( "wtResize", "function(ignored,w,h){console.log('In My wtResize');}" );
   
@@ -622,9 +626,6 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   title->setPadding(WLength(0));
 
   content->clear();
-  
-  setModal( m_modalOrig );
-  
   
   content->addStyleClass( "AuxWindow-content" );
 

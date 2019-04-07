@@ -3561,8 +3561,9 @@ void InterSpec::deleteWelcomeCountDialog()
 {
   if( !m_useInfoWindow )
     return;
-  delete m_useInfoWindow;
-  m_useInfoWindow = (UseInfoWindow *)0;
+  
+  AuxWindow::deleteAuxWindow( m_useInfoWindow );
+  m_useInfoWindow = nullptr;
 }//void deleteWelcomeCountDialog()
 
 
