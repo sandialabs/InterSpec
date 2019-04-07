@@ -518,9 +518,35 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_timeSeries = new SpectrumDisplayDiv();
   m_calibrateContainer = new WContainerWidget();
   
+  m_spectrum->setPlotAreaPadding( 80, 2, 10, 44 );
+  m_timeSeries->setPlotAreaPadding( 80, 0, 10, 44 );
   
-  m_spectrum->setPlotAreaPadding( 80, 2, 10, 42 );
-  m_timeSeries->setPlotAreaPadding( 80, 0, 10, 42 );
+  if( isPhone() )
+  {
+    //TODO: layoutSizeChanged(...) will trigger the compact axis anyway, but
+    //      I should check if doing it here saves a roundtrip
+    m_spectrum->setCompactAxis( true );
+    m_timeSeries->setCompactAxis( true );
+    
+    //For iPhoneX we need to:
+    //  X - adjust padding for safe area
+    //  X - Add padding to mobile menu to cover the notch area.
+    //  X - Change position of hamburger menu
+    //  - set .Wt-domRoot background color to match the charts
+    //  X - Detect orientation changes, and respond appropriately
+    //  X - Get the Wt area to fill the entire width (and height)
+    //  -Initial AuxWindow width/height correct
+    
+    LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsDoOrientationChange);
+    
+    const char *js = INLINE_JAVASCRIPT(
+      window.addEventListener("orientationchange", Wt.WT.DoOrientationChange );
+      setTimeout( Wt.WT.DoOrientationChange, 0 );
+      setTimeout( Wt.WT.DoOrientationChange, 100 );  //JIC - doesnt look necassary
+    );
+    
+    doJavaScript( js );
+  }//if( isPhone() )
   
   m_spectrum->setPeakModel( m_peakModel );
   
@@ -1175,6 +1201,13 @@ void InterSpec::layoutSizeChanged( int w, int h )
 {
   m_renderedWidth = w;
   m_renderedHeight = h;
+  
+  const bool comactX = (h <= 420); //Apple iPhone 6+, 6s+, 7+, 8+
+  if( (h > 20) && (comactX != m_spectrum->isAxisCompacted()) )
+  {
+    m_spectrum->setCompactAxis( comactX );
+    m_timeSeries->setCompactAxis( comactX );
+  }
   
 #if( IOS || ANDROID )
   //When the soft-keyboard disapears (on Android at a minimum), the overlays
@@ -4666,7 +4699,6 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     {
       item = m_fileMenuPopup->addMenuItem( "Loaded Spectra..." );
       item->triggered().connect( this, &InterSpec::showCompactFileManagerWindow );
-      m_fileMenuPopup->addSeparator();
     }//if( isMobile )
     
     m_fileMenuPopup->addSeparator();

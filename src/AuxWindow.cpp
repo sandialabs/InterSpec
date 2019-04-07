@@ -1095,10 +1095,23 @@ std::string AuxWindow::resizeScaledWindowJs( double xRatio, double yRatio ) cons
   return m_resizeScaledSlot->execJs(id(),size);
 #else
   const string jsthis = "$('#" + id() + "')";
+
   stringstream sizeJs;
   sizeJs << "var el = " << this->jsRef() << ";"
-  << "var olddispl = el.style.display; el.style.display='';"
-  << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
+         << "var olddispl = el.style.display; el.style.display='';";
+//#if( IOS )
+//  //At app startup, the first "Welcome..." screen wont be sized correctly if we
+//  //  use the Wt.windowSize() method
+//  sizeJs << "var ww = window.screen.width;"
+//         << "var wh = window.screen.height;"
+//         << "if(window.orientation==90 || window.orientation==-90) wh = [ww, ww = wh][0];";
+  
+//  if( xRatio > 0.0 )
+//    sizeJs << "if(ww>2) " << jsthis << ".width( "  << xRatio << "*ww - 2 );";
+//  if( yRatio > 0.0 )
+//    sizeJs << "if(wh>2) " << jsthis << ".height( " << yRatio << "*wh - 2 );";
+//#else
+  sizeJs << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
   
   //TODO: Currently assuming a border with of 1px always, should evaluate this
   //TODO: would it be better to use $(window/document).width()/.height() below?
@@ -1106,8 +1119,9 @@ std::string AuxWindow::resizeScaledWindowJs( double xRatio, double yRatio ) cons
     sizeJs << "if(ws.x>2) " << jsthis << ".width( "  << xRatio << "*ws.x - 2 );";
   if( yRatio > 0.0 )
     sizeJs << "if(ws.y>2) " << jsthis << ".height( " << yRatio << "*ws.y - 2 );";
+//#endif
   sizeJs << jsthis << ".data('notshown',true);"
-  << "el.style.display = olddispl;";
+         << "el.style.display = olddispl;";
   
   return sizeJs.str();
 #endif  //#if( USE_NEW_AUXWINDOW_ISH )

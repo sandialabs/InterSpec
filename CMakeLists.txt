@@ -212,7 +212,6 @@ IF(IOS)
   set(TRY_TO_STATIC_LINK ON)
   set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
   set(MAX_SPECTRUM_MEMMORY_SIZE_MB "32" )
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -DBOOST_AC_USE_PTHREADS -DBOOST_SP_USE_PTHREADS -DIOS=1 ")
   set(FRAMEWORKDIR "${CMAKE_CURRENT_SOURCE_DIR}/target/ios")
   set(CMAKE_SYSTEM_FRAMEWORK_PATH "${FRAMEWORKDIR}")
   set(USE_BOOST_FRAMEWORK OFF)
@@ -235,7 +234,7 @@ IF(IOS)
 
   #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
   # iosbuild.rb everywhere, and in the Xcode project.
-  set(ENV{IPHONEOS_DEPLOYMENT_TARGET} 7.0)
+  set(ENV{IPHONEOS_DEPLOYMENT_TARGET} 10.2)
 
   #We know where Wt is for iOS, so just force it
   IF ( NOT Wt_INCLUDE_DIR )
