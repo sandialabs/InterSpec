@@ -274,14 +274,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     NSLog(@"Will allow state restoration");
   }
   
-  
   NSLog(@"\n\nwillEnterForeground: started server at URL=%@", actualURL);
-  
-  //double delayInSeconds = 0.1;
-  //dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delayInSeconds * NSEC_PER_SEC));
-  //dispatch_after(popTime, dispatch_get_main_queue(), ^(void){
-  //  [_webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];
-  //});
   
   [_webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];
   

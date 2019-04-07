@@ -542,7 +542,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     const char *js = INLINE_JAVASCRIPT(
       window.addEventListener("orientationchange", Wt.WT.DoOrientationChange );
       setTimeout( Wt.WT.DoOrientationChange, 0 );
-      setTimeout( Wt.WT.DoOrientationChange, 100 );  //JIC - doesnt look necassary
+      setTimeout( Wt.WT.DoOrientationChange, 250 );  //JIC - doesnt look necassary
+      setTimeout( Wt.WT.DoOrientationChange, 1000 );
     );
     
     doJavaScript( js );
@@ -3775,16 +3776,17 @@ void InterSpec::showPeakInfoWindow()
   {
     m_peakInfoWindow = new AuxWindow( "Peak Manager" );
     m_peakInfoWindow->rejectWhenEscapePressed();
-    WBorderLayout* layout =    new WBorderLayout();
+    WBorderLayout *layout = new WBorderLayout();
     layout->setContentsMargins(0, 0, 15, 0);
-    m_peakInfoWindow->contents()->setLayout( layout);
-      m_peakInfoWindow->contents()->setPadding(0);
-            m_peakInfoWindow->contents()->setMargin(0);
+    m_peakInfoWindow->contents()->setLayout( layout );
+    //m_peakInfoWindow->contents()->setPadding(0);
+    //m_peakInfoWindow->contents()->setMargin(0);
+    
     layout->addWidget( m_peakInfoDisplay, Wt::WBorderLayout::Center );
     WContainerWidget *buttons = new WContainerWidget();
-    layout->addWidget( buttons,Wt::WBorderLayout::South);
+    layout->addWidget( buttons, Wt::WBorderLayout::South );
 
-    WContainerWidget* footer=  m_peakInfoWindow->footer();
+    WContainerWidget* footer = m_peakInfoWindow->footer();
       
     WPushButton* closeButton = m_peakInfoWindow->addCloseButtonToFooter("Close",true);
     closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_peakInfoWindow ) );
@@ -6844,11 +6846,11 @@ void InterSpec::showNuclideSearchWindow()
   m_nuclideSearchWindow->finished().connect( boost::bind( &InterSpec::closeNuclideSearchWindow, this ) );
   m_nuclideSearchWindow->rejectWhenEscapePressed();
   
-  if( isMobile() )
-  {
-    m_nuclideSearchWindow->contents()->setPadding( 0 );
-    m_nuclideSearchWindow->contents()->setMargin( 0 );
-  }//if( isPhone() )
+  //if( isMobile() )
+  //{
+  //  m_nuclideSearchWindow->contents()->setPadding( 0 );
+  //  m_nuclideSearchWindow->contents()->setMargin( 0 );
+  //}//if( isPhone() )
   
   m_nuclideSearchWindow->stretcher()->setContentsMargins( 0, 0, 0, 0 );
   m_nuclideSearchWindow->stretcher()->addWidget( m_isotopeSearch, 0, 0 );
@@ -7061,12 +7063,11 @@ void InterSpec::showGammaLinesWindow()
   m_referencePhotopeakLinesWindow->contents()->setLayout(layout);
   layout->addWidget( m_referencePhotopeakLines, 0, 0 );
 
-  if( isMobile() )
-  {
-    m_referencePhotopeakLinesWindow->contents()->setPadding( 0 );
-    m_referencePhotopeakLinesWindow->contents()->setMargin( 0 );
-  }//if( isPhone() )
-  
+  //if( isMobile() )
+  //{
+  //  m_referencePhotopeakLinesWindow->contents()->setPadding( 0 );
+  //  m_referencePhotopeakLinesWindow->contents()->setMargin( 0 );
+  //}//if( isPhone() )
 
   Wt::WPushButton *closeButton = m_referencePhotopeakLinesWindow->addCloseButtonToFooter("Close",true);
   
