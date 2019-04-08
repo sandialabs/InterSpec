@@ -574,29 +574,6 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
   
-  const bool isPhone = app ? app->isPhone() : false;
-  const bool isTablet = app ? app->isTablet() : false;
-  
-  const bool isPhoneModal = properties.testFlag(AuxWindowProperties::PhoneModal);
-  const bool isTabletModal = properties.testFlag(AuxWindowProperties::TabletModal);
-  
-  m_modalOrig = (properties.testFlag(AuxWindowProperties::IsAlwaysModal)
-                 || (isPhone && isPhoneModal)
-                 || (isTablet && (isTabletModal || isPhoneModal)) );
-  
-  if( (isPhone && !isPhoneModal)
-     || (isTablet && !isTabletModal && !isPhoneModal) )
-  {
-    setResizable(false);
-    resizeScaledWindow( 1.0, 1.0 );
-    m_isPhone = true; //disables any of future AuxWindow calls to change behavior
-  }
-  
-  if( isTablet && !isTabletModal && !isPhoneModal )
-    m_isTablet = true;
-  
-  m_isAndroid = app && app->isAndroid();
-
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCollapse);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowExpand);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowBringToFront);
@@ -605,13 +582,42 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowTitlebarTouchStart);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowShow);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowHide);
-
+  
 #if( USE_NEW_AUXWINDOW_ISH )
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowScaleResize);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowResize);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCenter);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowReposition);
 #endif
+  
+  
+  const bool isPhone = app ? app->isPhone() : false;
+  const bool isTablet = app ? app->isTablet() : false;
+  
+  const bool isPhoneModal = properties.testFlag(AuxWindowProperties::PhoneModal);
+  const bool isTabletModal = properties.testFlag(AuxWindowProperties::TabletModal);
+  
+  const bool phoneFullScreen = (isPhone && !isPhoneModal)
+                               || (isTablet && !isTabletModal && !isPhoneModal);
+  
+  m_modalOrig = (properties.testFlag(AuxWindowProperties::IsAlwaysModal)
+                 || (isPhone && isPhoneModal)
+                 || (isTablet && (isTabletModal || isPhoneModal)) );
+  if( phoneFullScreen )
+  {
+    m_modalOrig = false;  //Sometimes the Welcome screen modal underlay seems a bit sticky.
+    setResizable( false );
+    resizeScaledWindow( 1.0, 1.0 );
+    m_isPhone = true; //disables any of future AuxWindow calls to change behavior
+  }
+  
+  setModal( m_modalOrig );
+  
+  if( isTablet && !isTabletModal && !isPhoneModal )
+    m_isTablet = true;
+  
+  m_isAndroid = app && app->isAndroid();
+
   
 //  setJavaScriptMember( "wtResize", "function(ignored,w,h){console.log('In My wtResize');}" );
   
@@ -622,9 +628,6 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   title->setPadding(WLength(0));
 
   content->clear();
-  
-  setModal( m_modalOrig );
-  
   
   content->addStyleClass( "AuxWindow-content" );
 
@@ -1095,10 +1098,23 @@ std::string AuxWindow::resizeScaledWindowJs( double xRatio, double yRatio ) cons
   return m_resizeScaledSlot->execJs(id(),size);
 #else
   const string jsthis = "$('#" + id() + "')";
+
   stringstream sizeJs;
   sizeJs << "var el = " << this->jsRef() << ";"
-  << "var olddispl = el.style.display; el.style.display='';"
-  << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
+         << "var olddispl = el.style.display; el.style.display='';";
+//#if( IOS )
+//  //At app startup, the first "Welcome..." screen wont be sized correctly if we
+//  //  use the Wt.windowSize() method
+//  sizeJs << "var ww = window.screen.width;"
+//         << "var wh = window.screen.height;"
+//         << "if(window.orientation==90 || window.orientation==-90) wh = [ww, ww = wh][0];";
+  
+//  if( xRatio > 0.0 )
+//    sizeJs << "if(ww>2) " << jsthis << ".width( "  << xRatio << "*ww - 2 );";
+//  if( yRatio > 0.0 )
+//    sizeJs << "if(wh>2) " << jsthis << ".height( " << yRatio << "*wh - 2 );";
+//#else
+  sizeJs << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
   
   //TODO: Currently assuming a border with of 1px always, should evaluate this
   //TODO: would it be better to use $(window/document).width()/.height() below?
@@ -1106,8 +1122,9 @@ std::string AuxWindow::resizeScaledWindowJs( double xRatio, double yRatio ) cons
     sizeJs << "if(ws.x>2) " << jsthis << ".width( "  << xRatio << "*ws.x - 2 );";
   if( yRatio > 0.0 )
     sizeJs << "if(ws.y>2) " << jsthis << ".height( " << yRatio << "*ws.y - 2 );";
+//#endif
   sizeJs << jsthis << ".data('notshown',true);"
-  << "el.style.display = olddispl;";
+         << "el.style.display = olddispl;";
   
   return sizeJs.str();
 #endif  //#if( USE_NEW_AUXWINDOW_ISH )

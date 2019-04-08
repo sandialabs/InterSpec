@@ -27,16 +27,8 @@
 
 .ShieldingSelect
 {
-/*  border:2px solid #444422;*/
-  border-width: 2px;
-  border-style: inset;
-  border-color: rgb(255, 255, 255);
+  border: 1px solid #e1e1e1;
   box-sizing: border-box;
-  
-  margin-left:   5px;
-  margin-right:  5px;
-  margin-top:    3px;
-  margin-bottom: 3px;
 }
 
 .ShieldingSelectContainer
@@ -44,6 +36,19 @@
    min-width: 19em;
    min-height: 10em;
    overflow-y: auto;
+   
+   padding-left:   5px;
+   padding-right:  5px;
+}
+
+.ShieldingSelectContainer .ShieldingSelect
+{
+  border-width: 2px;
+  border-style: inset;
+  border-color: rgb(255, 255, 255);
+  
+  margin-top:    3px;
+  margin-bottom: 3px;
 }
 
 .MassFracNoFit

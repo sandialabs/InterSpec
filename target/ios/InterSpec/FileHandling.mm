@@ -60,8 +60,6 @@ void hand_spectrum_to_other_app( std::shared_ptr<SpecMeas> spec )
   if( !spec )
     return;
 
-  AppDelegate *appDelegate = (AppDelegate *)[[UIApplication sharedApplication] delegate];
-
   //NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
   //NSString *outputfile = [NSString pathWithComponents: [NSArray arrayWithObjects:docDir, @"filetotransfer.n42", nil ] ];
   //NSString *docDir = [paths objectAtIndex:0];
@@ -82,6 +80,7 @@ void hand_spectrum_to_other_app( std::shared_ptr<SpecMeas> spec )
   }
 
   dispatch_async(dispatch_get_main_queue(),^{
+    AppDelegate *appDelegate = (AppDelegate *)[[UIApplication sharedApplication] delegate];
     [appDelegate sendSpectrumFileToOtherApp: outputfile];
 
     //Deleteing the file here will cause it to not actually get transfered.

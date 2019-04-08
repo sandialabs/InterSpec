@@ -219,8 +219,9 @@ namespace HelpSystem
                   + preselect, "", 2 );
     }//!hasinfo
     
-    contents()->setMargin(0);
-    contents()->setPadding(0);
+    //contents()->setMargin(0);
+    //contents()->setPadding(0);
+    
     contents()->keyPressed().connect( this, &HelpWindow::handleArrowPress );
     WGridLayout *layout = stretcher();
     m_searchText->setStyleClass("searchBox");
