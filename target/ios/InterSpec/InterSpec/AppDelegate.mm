@@ -42,10 +42,48 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 
+@interface InterSpecAppView : UIWindow
+{
+}
+@end
+
+@implementation InterSpecAppView
+- (id) initWithFrame: (CGRect)frame
+{
+  self = [super initWithFrame:frame];
+  if( self )
+  {
+    NSLog( @"Created InterSpecAppView" );
+  }
+  return self;
+}
+
+- (void)safeAreaInsetsDidChange
+{
+  NSLog( @"safeAreaInsetsDidChange" );
+  
+  if( @available(iOS 11, *) )
+  {
+    [super safeAreaInsetsDidChange];
+    //blah blah blah
+    if( [self insetsLayoutMarginsFromSafeArea] )
+    {
+      NSLog( @"safeAreaInsetsDidChange" );
+    }
+    // UIEdgeInsets insets = [self safeAreaInsets];
+    
+    UIEdgeInsets insets = [self.window safeAreaInsets];
+    NSLog( @"insets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
+    
+  }
+}//safeAreaInsetsDidChange
+
+@end  //InterSpecAppView
+
 
 
 @implementation AppDelegate
-
+ 
 #if( USE_SHOW_FINGERTIP )
 - (MBFingerTipWindow *)window
 {
@@ -55,6 +93,7 @@
   return visualFeedbackWindow;
 }
 #endif
+
 
 
 Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
@@ -90,23 +129,6 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
     int argc = sizeof(argv) / sizeof(argv[0]);
     InterSpecServer::startServer( argc, (char **)argv, &createThisApplication );
   }
-  
-  
-  NSString *userAgentStr;
-  
-  if( [[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone )
-  {
-    userAgentStr = @"Mozilla/5.0 (iPhone; CPU iPhone OS 6_1 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10B141 Safari/8536.25";
-  }else
-  {
-    userAgentStr = @"Mozilla/5.0 (iPad; CPU OS 6_1 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10B141 Safari/8536.25";
-  }
-  
-  NSLog( @"Setting UserAgent to %@", userAgentStr );
-  
-  // Set user agent (the only problem is that we can't modify the User-Agent later in the program)
-  NSDictionary *dictionnary = [[NSDictionary alloc] initWithObjectsAndKeys:userAgentStr, @"UserAgent", nil];
-  [[NSUserDefaults standardUserDefaults] registerDefaults:dictionnary];
 }
 
 
@@ -132,24 +154,18 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
   // Override point for customization after application launch.
   NSLog(@"didFinishLaunchingWithOptions");
   [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalMinimum];
-  self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
   
-  if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone) {
-    self.viewController = [[ViewController alloc] initWithNibName:@"ViewController_iPhone" bundle:nil];
-  } else {
-    self.viewController = [[ViewController alloc] initWithNibName:@"ViewController_iPad" bundle:nil];
-  }
+  self.window = [[InterSpecAppView alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+  self.viewController = [[ViewController alloc] initWithNibName: nil bundle: nil];
   self.window.rootViewController = self.viewController;
   [self.window makeKeyAndVisible];
   self.isInBackground = NO;
   self.backgroundTask = UIBackgroundTaskInvalid;
   
-  
   //Nesary for iOS 9, when keyboard hides, need to re-align the app
   NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
   //  [center addObserver:self selector:@selector(didShowKeyboard) name:UIKeyboardDidShowNotification object:nil];
   [center addObserver:_viewController selector:@selector(onKeyboardHide) name:UIKeyboardDidHideNotification object:nil]; //UIKeyboardWillHideNotification
-  
   
   return YES;
 }
@@ -291,7 +307,9 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
 -(void)sendSpectrumFileToOtherApp: (NSString *) filename;
 {
   NSLog(@"Begining sendSpectrumFileToOtherApp" );
-
+  
+  UIEdgeInsets insets = [self.window safeAreaInsets];
+  NSLog( @"insets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
   
   _documentController = [UIDocumentInteractionController interactionControllerWithURL:[NSURL fileURLWithPath:filename]];
   _documentController.delegate = _viewController;

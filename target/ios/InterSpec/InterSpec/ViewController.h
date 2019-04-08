@@ -25,11 +25,10 @@
 //
 
 #import <UIKit/UIKit.h>
+#import <WebKit/WebKit.h>
 
-@interface ViewController : UIViewController <UIWebViewDelegate,UIDocumentInteractionControllerDelegate>
-@property (weak, nonatomic) IBOutlet UIWebView *webView;
-@property (weak, nonatomic) IBOutlet UIWebView *padWebView;
-@property (weak, nonatomic) IBOutlet UIWebView *phoneWebView;
+@interface ViewController : UIViewController <WKUIDelegate,WKNavigationDelegate,UIDocumentInteractionControllerDelegate>
+@property (nonatomic) WKWebView *webView;
 
 @property (nonatomic) BOOL isServing;
 @property (nonatomic) BOOL appHasGoneIntoBackground;
@@ -38,11 +37,42 @@
 @property (nonatomic) NSString *UrlServingOn;
 @property (nonatomic) NSString *UrlUniqueId;
 
+/*
 - (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error;
 - (void)webViewDidFinishLoad:(UIWebView *)webView;
 - (void)webViewDidStartLoad:(UIWebView *)webView;
 //- (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType;
 -(BOOL) webView:(UIWebView *)inWeb shouldStartLoadWithRequest:(NSURLRequest *)inRequest navigationType:(UIWebViewNavigationType)inType;
+*/
+
+//WKNavigationDelegate items
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
+- (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation;
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
+                 decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
+
+// WKUIDelegate items
+//- (void)webView:(WKWebView *)webView
+//                runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
+//                initiatedByFrame:(WKFrameInfo *)frame
+//                completionHandler:(void (^)(NSArray<NSURL *> *URLs))completionHandler;
+- (BOOL)webView:(WKWebView *)webView
+        shouldPreviewElement:(WKPreviewElementInfo *)elementInfo;
+- (void)webViewDidClose:(WKWebView *)webView;
+
+//- (WKWebView *)webView:(WKWebView *)webView
+//createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
+//   forNavigationAction:(WKNavigationAction *)navigationAction
+//        windowFeatures:(WKWindowFeatures *)windowFeatures;
+
+//- (void)webView:(WKWebView *)webView
+//runJavaScriptAlertPanelWithMessage:(NSString *)message
+//initiatedByFrame:(WKFrameInfo *)frame
+//completionHandler:(void (^)(void))completionHandler;
+
+
+
 -(BOOL)startServer;
 -(BOOL)openSpectrumFile:(NSURL *)url;
 -(BOOL)enteredBackground;
@@ -51,6 +81,8 @@
 -(void)onKeyboardHide;
 -(void)fixPermissions:(NSString *)path;
 
+
+- (void)viewDidLayoutSubviews;
 /*
 //implemented UIDocumentInteractionControllerDelegate methods
 //  Commented out as they dont seem to ever be called...

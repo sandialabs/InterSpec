@@ -26,6 +26,8 @@
 
 #import <Foundation/NSData.h>
 
+#import <WebKit/WebKit.h>
+
 #import "ViewController.h"
 
 #include <stdlib.h>
@@ -62,6 +64,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 {
   return new InterSpecApp( env );
 }
+
+
 
 -(void) fixPermissions:(NSString *)path
 {
@@ -270,9 +274,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     NSLog(@"Will allow state restoration");
   }
   
-  
   NSLog(@"\n\nwillEnterForeground: started server at URL=%@", actualURL);
-  [_webView setScalesPageToFit: NO];
+  
   [_webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];
   
   return YES;
@@ -343,13 +346,36 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   _appHasGoneIntoBackground = NO;
   _appComminFromBackground = YES;
   
-  self.edgesForExtendedLayout = UIRectEdgeNone;
+  //self.edgesForExtendedLayout = UIRectEdgeNone;
   [super viewDidLoad];
   
-  if( IS_IPAD() )
-    _webView = _padWebView;
-  else
-    _webView = _phoneWebView;
+  //For some reason we still dont fill the space on iPhoneXs... maybe we need
+  //  to do something in JavaScript... maybe try css-tricks.com/the-notch-and-css and then probably convert to WkWebView...
+  WKWebViewConfiguration *wvconfig = [[WKWebViewConfiguration alloc] init];
+  //[wvconfig setApplicationNameForUserAgent:<#(NSString * _Nullable)#>]
+  _webView = [[WKWebView alloc] initWithFrame: CGRectZero configuration: wvconfig];
+  [self.view addSubview: _webView];
+  
+  [_webView setTranslatesAutoresizingMaskIntoConstraints: NO];
+  [[[_webView leadingAnchor] constraintEqualToAnchor: self.view.leadingAnchor constant: 0.0] setActive: YES];
+  [[[_webView trailingAnchor] constraintEqualToAnchor: self.view.trailingAnchor constant: 0.0]setActive: YES];
+  [[[_webView topAnchor] constraintEqualToAnchor: self.view.topAnchor constant: 0.0] setActive: YES];
+  [[[_webView bottomAnchor] constraintEqualToAnchor: self.view.bottomAnchor constant: 0.0] setActive: YES];
+
+  UIScrollView *view = [_webView scrollView];
+  [view setScrollEnabled: NO];
+  
+  if (@available(iOS 11.0, *)) {
+    view.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+  }
+  
+  self.webView.UIDelegate = self;
+  [_webView setAllowsLinkPreview: NO];
+  //[_webView setAllowsMagnification: NO]; //default is not
+  [_webView setAllowsBackForwardNavigationGestures: NO];
+  //[_webView setCustomUserAgent: @""];
+  
+  [_webView setNavigationDelegate: self];
   
   NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
   NSString *documentsDirectory = [paths objectAtIndex:0];
@@ -379,31 +405,143 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   [self fixPermissions: fileNumToFilePathToDBPath];
   
-  [_webView setScalesPageToFit: NO];
-  UIScrollView *view = [_webView scrollView];
-  [view setScrollEnabled: NO];
-  self.webView.delegate = self;
-  
   NSLog( @"Done in viewDidLoad" );
 }
 
+
+- (void)onKeyboardHide
+{
+  //This function is vestigiual from debugging an issue with the keyboard hiding
+  //  NSLog(@"Triggering screen resize" );
+  //  NSString *jsstring = [NSString stringWithFormat:@"setTimeout( function(){$('.Wt-domRoot').height(window.innerHeight); window.scrollTo(0,0);}, 0 );" ];
+  //  [_webView stringByEvaluatingJavaScriptFromString: jsstring];
+}
+
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error
+{
+  NSLog(@"didFailNavigation" );
+}//didFailNavigation
+
+- (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation
+{
+  NSLog(@"didCommitNavigation" );
+}//didCommitNavigation
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation
+{
+  NSLog(@"didFinishNavigation" );
+  
+  NSLog( @"Doing horrible hack for iOS 9, to force a re-size of the contents." ) ;
+  
+  //CGRect rect = [[UIScreen mainScreen] bounds];
+  CGRect rect = [_webView bounds];
+  NSLog( @"rect after nav = {%f, %f}", rect.size.width, rect.size.height ); //568x320
+  
+  CGFloat topSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.top;
+  CGFloat bottomSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.bottom;
+  CGFloat rightSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.right;
+  CGFloat leftSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.left;
+  NSLog( @"didFinishNavigation SafeAreas = {t=%f, r=%f, b=%f, l=%f}", topSafeArea, rightSafeArea, bottomSafeArea, leftSafeArea );
+  
+  //[_webView evaluateJavaScript:@"setTimeout( function(){ $('.Wt-domRoot').get(0).wtResize(); }, 500 );" completionHandler: nil];
+  
+  
+  //[_webView evaluateJavaScript:@"document.body.style.background = \"background: red;\"" completionHandler: nil];
+  //See https://stackoverflow.com/questions/4629969/ios-return-bad-value-for-window-innerheight-width
+  //  for description of issue
+  [_webView evaluateJavaScript:@"window.innerHeight" completionHandler:
+   ^(id _Nullable result, NSError * _Nullable error) {
+     NSString *heightString = nil;
+     if (error == nil) {
+       if (result != nil) {
+         heightString = [NSString stringWithFormat:@"%@", result];
+       }
+     } else {
+       NSLog(@"evaluateJavaScript error : %@", error.localizedDescription);
+     }
+     if( heightString )
+       NSLog( @"innerHeight=%@\n", heightString ) ;  //window.innerHeight=552.000000, window.innerWidth=980
+   }];
+}//didFinishNavigation
+
+
+//Opens URL in Safari, and email links in native Mail
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
+                decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler
+{
+  NSLog( @"decidePolicyForNavigationAction" );
+  
+  if( navigationAction == nil )
+  {
+    NSLog( @"nil navigationAction" );
+    decisionHandler( WKNavigationActionPolicyCancel );
+    return;
+  }
+  
+  if( navigationAction.navigationType == WKNavigationTypeLinkActivated )
+  {
+    NSLog( @"WKNavigationTypeLinkActivated" );
+    UIApplication *application = [UIApplication sharedApplication];
+    [application openURL:navigationAction.request.URL options:@{} completionHandler:nil];
+    
+    decisionHandler( WKNavigationActionPolicyCancel );
+    return;
+  }//
+  
+  if( navigationAction.navigationType == WKNavigationTypeBackForward )
+  {
+    NSLog( @"WKNavigationTypeBackForward" );
+    decisionHandler( WKNavigationActionPolicyCancel );
+    return;
+  }
+  
+  if( navigationAction.navigationType == WKNavigationTypeReload )
+    NSLog( @"WKNavigationTypeReload" );
+  
+  if( navigationAction.navigationType == WKNavigationTypeFormResubmitted )
+    NSLog( @"WKNavigationTypeFormResubmitted" );
+  
+  if( navigationAction.navigationType == WKNavigationTypeFormResubmitted )
+    NSLog( @"WKNavigationTypeFormSubmitted" );
+  
+  if( navigationAction.navigationType == WKNavigationTypeOther )
+    NSLog( @"WKNavigationTypeOther" );  //Get here for the initial load
+  
+  decisionHandler( WKNavigationActionPolicyAllow );
+}//decidePolicyForNavigationAction
+
+
+/*
 - (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error
 {
   NSLog(@"\n\n\ndidFailLoadWithError: error => %@ ", [error userInfo] );
 }
 
-- (void)onKeyboardHide
-{
-  //This function is vestigiual from debugging an issue with the keyboard hiding
-//  NSLog(@"Triggering screen resize" );
-//  NSString *jsstring = [NSString stringWithFormat:@"setTimeout( function(){$('.Wt-domRoot').height(window.innerHeight); window.scrollTo(0,0);}, 0 );" ];
-//  [_webView stringByEvaluatingJavaScriptFromString: jsstring];
-}
-
-
 - (void)webViewDidFinishLoad:(UIWebView *)webView
 {
   NSLog(@"WebViewDidFinishLoad" );
+  
+  UIWindow *topWindow = [[UIApplication sharedApplication] keyWindow];
+  
+  [topWindow setInsetsLayoutMarginsFromSafeArea: NO];
+  [webView setInsetsLayoutMarginsFromSafeArea: NO];
+  
+  UILayoutGuide *marginGuid = [topWindow layoutMarginsGuide];
+  CGRect marginrect = [marginGuid layoutFrame];
+  NSLog( @"marginrect = {%f, %f}", marginrect.size.width, marginrect.size.height ); //552,304
+  
+  UILayoutGuide *layoutGuid = [topWindow safeAreaLayoutGuide];
+  CGRect layoutrect = [layoutGuid layoutFrame];
+  NSLog( @"layoutrect = {%f, %f}", layoutrect.size.width, layoutrect.size.height ); //568x320
+  
+  UIEdgeInsets insets = [topWindow safeAreaInsets];
+  NSLog( @"TopInsets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
+  
+  CGRect webViewRect = [webView bounds];
+  NSLog( @"webViewRect = {%f, %f, %f, %f}", webViewRect.origin.x, webViewRect.origin.y, webViewRect.size.width, webViewRect.size.height );
+  
+  UIEdgeInsets webVieEdge = [webView layoutMargins];
+  NSLog( @"webVieEdge = {%f, %f, %f, %f}", webVieEdge.left, webVieEdge.right, webVieEdge.bottom, webVieEdge.top );
   
   //For some reason on iOS 9, there is an issue where Wt thinks the window height
   //  is the same as the window width (some talk on internet of something
@@ -432,7 +570,6 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   NSLog(@"\n\n\nwebViewDidStartLoad" );
 }
 
-
 //Opens URL in Safari, and email links in native Mail
 -(BOOL) webView:(UIWebView *)inWeb shouldStartLoadWithRequest:(NSURLRequest *)inRequest navigationType:(UIWebViewNavigationType)inType {
     if ( inType == UIWebViewNavigationTypeLinkClicked ) {
@@ -442,6 +579,25 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     
     return YES;
 }
+ */
+
+//- (void)webView:(WKWebView *)webView
+//        runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
+//        initiatedByFrame:(WKFrameInfo *)frame
+//        completionHandler:(void (^)(NSArray<NSURL *> *URLs))completionHandler
+//{
+//}//
+
+- (BOOL)webView:(WKWebView *)webView shouldPreviewElement:(WKPreviewElementInfo *)elementInfo
+{
+  return NO;
+}
+
+- (void)webViewDidClose:(WKWebView *)webView
+{
+  NSLog(@"webViewDidClose!" );
+}
+
 
 - (void)didReceiveMemoryWarning
 {
@@ -491,5 +647,29 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   NSLog(@"documentInteractionControllerDidDismissOpenInMenu" );
 }
 */
+
+- (void)viewSafeAreaInsetsDidChange
+{
+  NSLog(@"viewSafeAreaInsetsDidChange" );
+  if( @available(iOS 11, *) )
+  {
+    [super viewSafeAreaInsetsDidChange];
+  }
+}
+
+
+- (void)viewDidLayoutSubviews
+{
+  [super viewDidLayoutSubviews];
+  
+  NSLog(@"viewDidLayoutSubviews" );
+  //[[UIApplication sharedApplication] keyWindow].safeAreaInsets
+  CGFloat topSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.top;
+  CGFloat bottomSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.bottom;
+  CGFloat rightSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.right;
+  CGFloat leftSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.left;
+  NSLog( @"viewDidLayoutSubviews SafeAreas = {t=%f, r=%f, b=%f, l=%f}", topSafeArea, rightSafeArea, bottomSafeArea, leftSafeArea );
+
+}
 
 @end

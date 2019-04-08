@@ -1502,14 +1502,14 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
         if( m_compactAxis )
         {
           const double titlestartpx = (chartArea().right() - titlewidthpx);
-          const double labelwidthpx = 10.0*ticks[i].label.narrow().size();
+          const double labelwidthpx = 10.0*ticks[i].label.toUTF8().size();
           const double labelendpx = labelPos.x() + 0.5*labelwidthpx;
           drawText = (labelendpx < titlestartpx);
         }//if( m_compactAxis )
         
         if( drawText )
         {
-          const int margin = m_compactAxis ? -2 : 3;
+          const int margin = m_compactAxis ? 0 : 3;
           labelRender( painter, ticks[i].label,
                       labelPos, black, labelFlags, axis.labelAngle(), margin );
         }//if( labelRender )
@@ -1533,7 +1533,7 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
         const WPen oldpen = painter.pen();
         const WBrush oldbrush = painter.brush();
         painter.setBrush( m_chartMarginBrush );
-        painter.setPen( WPen(m_chartMarginBrush.color()) );
+        painter.setPen( WPen(Wt::GlobalColor::transparent) );
         const double fontheight = titleFont.sizeLength().toPixels();
         const WString &title = axis.title();
         const WPointF pos(chartArea().right() - titlewidthpx, lineypx + TICK_LENGTH );
@@ -1543,7 +1543,7 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
         painter.setPen( oldpen );
         painter.setBrush( oldbrush );
         
-        labelRender( painter, title, pos, m_textPen.color(), AlignTop | AlignLeft, 0, -2 );
+        labelRender( painter, title, pos, m_textPen.color(), AlignTop | AlignLeft, 0, 0 );
       }else
       {
         if( vertical )
@@ -2104,7 +2104,16 @@ const Wt::WString &SpectrumChart::textInMiddleOfChart() const
 
 void SpectrumChart::setCompactAxis( const bool compact )
 {
+  if( m_compactAxis == compact )
+    return;
+  
+  const int old_pad = plotAreaPadding(Wt::Bottom);
+  const int new_pad = std::max(old_pad + (compact ? -1 : 1)*17, 0);
+  
   m_compactAxis = compact;
+  setPlotAreaPadding( new_pad, Bottom );
+  if( m_overlayCanvas )
+    m_overlayCanvas->setChartPadding();
 }
 
 bool SpectrumChart::isAxisCompacted() const

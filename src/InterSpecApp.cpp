@@ -43,6 +43,7 @@
 #endif 
 
 #include <Wt/WText>
+#include <Wt/WTimer>
 #include <Wt/WLabel>
 #include <Wt/WBreak>
 #include <Wt/WServer>
@@ -234,7 +235,7 @@ void InterSpecApp::setupDomEnvironment()
   const char *fix_ios_js = INLINE_JAVASCRIPT(
     var t=document.createElement('meta');
     t.name = "viewport";
-    t.content = "initial-scale=1.0, user-scalable=no, height=device-height, width=device-width";
+    t.content = "initial-scale=1.0, maximum-scale=1.0, user-scalable=no, height=device-height, width=device-width, viewport-fit=cover";
     document.getElementsByTagName('head')[0].appendChild(t);
     $(document).on('blur', 'input, textarea', function() {
       setTimeout(function(){ window.scrollTo(document.body.scrollLeft, document.body.scrollTop); }, 0);
@@ -604,7 +605,10 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //If client is internet explorer, show a warning before the welcome dialog
     if( !environment().agentIsIE() )
     {
-      m_viewer->showWelcomeDialog();
+      //Using WTimer as a workaround for iOS so screen size and safe-area and
+      //  such can all get setup before creating a AuxWindow; otherwise size of
+      //  window will be all messed up.
+      WTimer::singleShot( 10, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
     }else
     {
       AuxWindow *dialog = m_viewer->showIEWarningDialog();

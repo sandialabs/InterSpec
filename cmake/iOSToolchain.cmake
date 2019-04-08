@@ -99,11 +99,15 @@ set (IOS_PLATFORM ${IOS_PLATFORM} CACHE STRING "Type of iOS Platform")
 if (${IOS_PLATFORM} STREQUAL "OS")
 	set (IOS_PLATFORM_LOCATION "iPhoneOS.platform")
 
+	#Do we really need to specify BOOST_AC_USE_PTHREADS and BOOST_SP_USE_PTHREADS with reasonably new boosts
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -DBOOST_AC_USE_PTHREADS -DBOOST_SP_USE_PTHREADS -DIOS=1 ")
+
 	# This causes the installers to properly locate the output libraries
 	set (CMAKE_XCODE_EFFECTIVE_PLATFORMS "-iphoneos")
 elseif (${IOS_PLATFORM} STREQUAL "SIMULATOR")
 	set (IOS_PLATFORM_LOCATION "iPhoneSimulator.platform")
-
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -DIOS=1 ")
+	
 	# This causes the installers to properly locate the output libraries
 	set (CMAKE_XCODE_EFFECTIVE_PLATFORMS "-iphonesimulator")
 else (${IOS_PLATFORM} STREQUAL "OS")
@@ -178,8 +182,8 @@ if (${IOS_PLATFORM} STREQUAL "OS")
 	set (IOS_ARCH armv7 armv7s arm64)
 	set (CMAKE_SYSTEM_PROCESSOR arm64)
 else (${IOS_PLATFORM} STREQUAL "SIMULATOR")
-	set (IOS_ARCH i386)
-	set (CMAKE_SYSTEM_PROCESSOR i386)
+	set (IOS_ARCH x86_64)
+	set (CMAKE_SYSTEM_PROCESSOR x86_64)
 endif (${IOS_PLATFORM} STREQUAL "OS")
 
 set (CMAKE_OSX_ARCHITECTURES ${IOS_ARCH} CACHE string  "Build architecture for iOS")

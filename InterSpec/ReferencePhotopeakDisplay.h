@@ -236,6 +236,14 @@ public:
    */
   void setPeaksGetAssignedRefLineColor( const bool theydo );
   
+  /** Signal emmitted whenever the user selects a new nuclide to be shown. */
+  Wt::Signal<> &displayingNuclide();
+  
+  /** Signal emmitted whenever user clicks "Clear All" button, or goes from a
+   valid nuclide, to no cuclide (and there are none persisted).
+   */
+  Wt::Signal<> &nuclidesCleared();
+  
 protected:
   void updateDisplayChange();
   void handleIsotopeChange( const bool useCurrentAge );
@@ -263,7 +271,6 @@ protected:
   Wt::WLineEdit *m_ageEdit;
   Wt::WDoubleSpinBox *m_lowerBrCuttoff;
 
-  Wt::WCheckBox *m_showLines;
   Wt::WCheckBox *m_promptLinesOnly;
 
   Wt::WText *m_halflife;
@@ -315,6 +322,10 @@ protected:
    Will be consulted after #m_previouslyPickedSourceColors.
    */
   std::map<std::string,Wt::WColor> m_specificSourcelineColors;
+  
+  Wt::Signal<> m_displayingNuclide;
+  
+  Wt::Signal<> m_nuclidesCleared;
   
   static const int sm_xmlSerializationVersion;
 };//class ReferencePhotopeakDisplay

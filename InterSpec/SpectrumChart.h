@@ -188,12 +188,16 @@ public:
   //textInMiddleOfChart(): returns current m_textInMiddleOfChart
   const Wt::WString &textInMiddleOfChart() const;
 
-  //setCompactAxis(): whether to slim down axis for small displays (e.g. on
-  //  phone).  Note that effects wont be seen until next time chart is rendered.
-  //  You should also adjust padding axis title text appropriately; x-axis
-  //  padding of 23px seems to be a reasonable value.
-  //  Default is to not have compact axis.
-  //Currently only effects x-axis.
+  /** Set whether to slim down axis for small displays (e.g. phone).
+      If setting to compact from non-compact, 17px of bottom margin will be
+      removed, or if goign the other way 17px added.
+      It seems 42px bottom padding for non-compact, and 25px good for compact
+      is a good amount of padding to start with if you would like to customize
+      padding after calling this nuction.
+   
+      Default is to not have compact.
+      Currently only effects x-axis.
+   */
   void setCompactAxis( const bool compact );
   bool isAxisCompacted() const;
 
