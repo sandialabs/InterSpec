@@ -599,16 +599,18 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   
   const bool phoneFullScreen = (isPhone && !isPhoneModal)
                                || (isTablet && !isTabletModal && !isPhoneModal);
-  if( phoneFullScreen )
-  {
-    setResizable(false);
-    resizeScaledWindow( 1.0, 1.0 );
-    m_isPhone = true; //disables any of future AuxWindow calls to change behavior
-  }
   
   m_modalOrig = (properties.testFlag(AuxWindowProperties::IsAlwaysModal)
                  || (isPhone && isPhoneModal)
                  || (isTablet && (isTabletModal || isPhoneModal)) );
+  if( phoneFullScreen )
+  {
+    m_modalOrig = false;  //Sometimes the Welcome screen modal underlay seems a bit sticky.
+    setResizable( false );
+    resizeScaledWindow( 1.0, 1.0 );
+    m_isPhone = true; //disables any of future AuxWindow calls to change behavior
+  }
+  
   setModal( m_modalOrig );
   
   if( isTablet && !isTabletModal && !isPhoneModal )
