@@ -7058,19 +7058,18 @@ void InterSpec::showGammaLinesWindow()
   if( xml_state.size() )
     m_referencePhotopeakLines->deSerialize( xml_state );
 
-  
   Wt::WGridLayout *layout = new Wt::WGridLayout();
   layout->setContentsMargins(5,5,5,5);
   m_referencePhotopeakLinesWindow->contents()->setLayout(layout);
   layout->addWidget( m_referencePhotopeakLines, 0, 0 );
 
-  //if( isMobile() )
-  //{
-  //  m_referencePhotopeakLinesWindow->contents()->setPadding( 0 );
-  //  m_referencePhotopeakLinesWindow->contents()->setMargin( 0 );
-  //}//if( isPhone() )
-
   Wt::WPushButton *closeButton = m_referencePhotopeakLinesWindow->addCloseButtonToFooter("Close",true);
+  
+  if( isPhone() )
+  {
+    m_referencePhotopeakLines->displayingNuclide().connect( boost::bind( &WPushButton::setText, closeButton, WString("Show Lines")) );
+    m_referencePhotopeakLines->nuclidesCleared().connect( boost::bind( &WPushButton::setText, closeButton, WString("Close")) );
+  }
   
   closeButton->clicked().connect( m_referencePhotopeakLinesWindow, &AuxWindow::hide );
   m_referencePhotopeakLinesWindow->finished().connect( boost::bind( &InterSpec::closeGammaLinesWindow, this ) );
@@ -7078,7 +7077,12 @@ void InterSpec::showGammaLinesWindow()
   AuxWindow::addHelpInFooter( m_referencePhotopeakLinesWindow->footer(),
                               "reference-gamma-lines-dialog" );
   
-  m_referencePhotopeakLinesWindow->resize( WLength(800,WLength::Pixel), WLength(310,WLength::Pixel));
+  double w = renderedWidth();
+  if( w < 100.0 )
+    w = 800.0;
+  w = std::min( w, 800.0 );
+  
+  m_referencePhotopeakLinesWindow->resize( WLength(w,WLength::Pixel), WLength(310,WLength::Pixel));
   m_referencePhotopeakLinesWindow->setResizable(true);
   m_referencePhotopeakLinesWindow->resizeToFitOnScreen();
   m_referencePhotopeakLinesWindow->centerWindow();
