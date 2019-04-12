@@ -5786,7 +5786,7 @@ int SpectrumChart::setLeftYAxisPadding( double width, double height )
 //  delete img;
   
   
-  const int left = 27 + static_cast<int>(6.9*nchars);
+  const int left = 29 + static_cast<int>(6.9*nchars);
 //  cout << "Got left=" << left << ", oldleft=" << oldleft << ", nchars=" << nchars << " from " << ticks.size() << " ticks" << endl;
   
 
