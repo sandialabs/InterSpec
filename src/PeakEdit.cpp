@@ -81,7 +81,7 @@ static_assert( int(PeakEdit::Chi2DOF)         == int(PeakDef::Chi2DOF),
 PeakEditWindow::PeakEditWindow( const double energy,
                                 PeakModel *peakmodel,
                                 InterSpec *viewer )
-  : AuxWindow( "Peak Editor" )
+  : AuxWindow( "Peak Editor", WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal) | AuxWindowProperties::DisableCollapse  )
 {
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   
@@ -435,7 +435,11 @@ void PeakEdit::init()
   m_apply  = new WPushButton( "Apply",  m_footer );
 
   m_accept = new WPushButton( "Accept", m_footer );
-  m_accept->setIcon( "InterSpec_resources/images/accept.png" );
+  if( m_viewer && !m_viewer->isMobile() )
+    m_accept->setIcon( "InterSpec_resources/images/accept.png" );
+  
+  //Add class tio give padding on left side (or modify current style class)
+  
   WPushButton *deleteButton = new WPushButton( "Delete", m_footer );
 //  deleteButton->setFloatSide( Wt::Right );
   

@@ -458,6 +458,7 @@ void ShieldingSelect::init()
   materialDivLayout->addWidget( m_toggleImage, 0, 0, AlignMiddle );
   
   m_materialEdit = new WLineEdit( "" );
+  m_materialEdit->setAutoComplete( false );
   materialDivLayout->addWidget( m_materialEdit, 0, 1, AlignMiddle );
   HelpSystem::attachToolTipOn( m_materialEdit,
     "You can either enter the name of a pre-defined material or element here"
@@ -494,6 +495,7 @@ void ShieldingSelect::init()
   WLabel *label = new WLabel( "Thickness" );
   thicknessDivLayout->addWidget(label,0,0,AlignMiddle);
   m_thicknessEdit = new WLineEdit( "1.0 cm" );
+  m_thicknessEdit->setAutoComplete( false );
   
   label->setBuddy( m_thicknessEdit );
   
@@ -4119,8 +4121,7 @@ if (m_specViewer->isSupportFile())
     detectorLayout->addWidget( addItemMenubutton,          0, 1 );
     detectorLayout->addWidget( m_fitModelButton,           3, 0, 1, 2, AlignCenter );
     detectorLayout->addWidget( m_fitProgressTxt,           4, 0, 1, 2 );
-    detectorLayout->addWidget( m_cancelfitModelButton,     5, 0, 1, 2 );
-    
+    detectorLayout->addWidget( m_cancelfitModelButton,     5, 0, 1, 2, AlignCenter );
     
     detectorLayout->addWidget( smallerContainer,           1, 0, 1, 2);
     detectorLayout->addWidget( m_shieldingSelects,         2, 0, 1, 2 );
