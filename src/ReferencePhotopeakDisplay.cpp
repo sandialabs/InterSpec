@@ -442,15 +442,14 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   //added overflow to prevent scroll bars
   setOverflow( Wt::WContainerWidget::OverflowHidden );
-  WLabel *label = new WLabel( "Nuclide:" );
-  label->setMinimumSize( labelWidth, WLength::Auto );
-  m_layout->addWidget( label, 0, 0, AlignMiddle );
+  WLabel *nucInputLabel = new WLabel( "Nuclide:" );
+  nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
   m_nuclideEdit = new WLineEdit( "" );
   m_nuclideEdit->setMargin( 1 );
 //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
+  m_nuclideEdit->setAutoComplete( false );
   
-  m_layout->addWidget( m_nuclideEdit, 0, 1, 1, 1 );
 //  m_nuclideEdit->changed().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
 //  m_nuclideEdit->blurred().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
 //  m_nuclideEdit->enterPressed().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
@@ -458,6 +457,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
 //  m_nuclideEdit->selected().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
   
+  m_layout->addWidget( nucInputLabel, 0, 0, AlignMiddle );
+  m_layout->addWidget( m_nuclideEdit, 0, 1, 1, 1 );
   
   Wt::JSlot *hotKeySlot = m_spectrumViewer->hotkeyJsSlot();
   if( hotKeySlot )
@@ -511,13 +512,14 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideSuggest->forEdit( m_nuclideEdit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
 
 
-  label = new WLabel( "Age:" );
-  m_layout->addWidget( label, 1, 0, AlignMiddle );
+  WLabel *ageInputLabel = new WLabel( "Age:" );
   m_ageEdit = new WLineEdit( "" );
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_ageEdit->setValidator(validator);
+  m_ageEdit->setAutoComplete( false );
 
+  m_layout->addWidget( ageInputLabel, 1, 0, AlignMiddle );
   m_layout->addWidget( m_ageEdit, 1, 1 );
   m_ageEdit->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_ageEdit->blurred().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
@@ -543,69 +545,66 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   HelpSystem::attachToolTipOn( m_ageEdit, tooltip, showToolTipInstantly );
   
-  m_halflife = new WText();
-  m_promptLinesOnly = new WCheckBox( "Prompt" );  //ɣ
+  m_promptLinesOnly = new WCheckBox( "Prompt Only" );  //ɣ
+  m_promptLinesOnly->setMargin( 5, Wt::Left );
 
   tooltip = "Gammas from only the original nuclide, and the daughters until one"
             " of them has a longer half-life than the original nuclide; the"
             " decay chain is in equilirium till that point.";
   HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTipInstantly );
-//  m_promptLinesOnly->setHiddenKeepsGeometry( true );  //XXX - causes display to function badly; why?
+//m_promptLinesOnly->setHiddenKeepsGeometry( true );  // causes display to function badly; why?
   m_promptLinesOnly->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_promptLinesOnly->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_promptLinesOnly->hide();
   
-  m_layout->addWidget( m_halflife, 3, 2 );
+  //m_layout->addWidget( m_promptLinesOnly, 3, 2, AlignMiddle );
   
+  WContainerWidget *hlRow = new WContainerWidget();
+  m_layout->addWidget( hlRow, 3, 0, 1, 3 );
+  
+  m_halflife = new WText( hlRow );
+  //Hack to make the text roughly vertically align in middle due to increased color input size...
+  m_halflife->setAttributeValue( "style", "display: inline-block; margin-top: 5px" );
+  //m_layout->addWidget( m_halflife, 2, 0, 1, 2, AlignMiddle | AlignCenter );
+  hlRow->addWidget( m_promptLinesOnly );
   //should add a slider here
 
   //should add prompt and 'bare' only lines options
 //  label = new WLabel( "Lowest I:" );
-  label = new WLabel(   "Min Amp:" );
-  
-//  label->setMinimumSize( labelWidth, WLength::Auto );
-  tooltip = "The minimum relative gamma amplitude to display; the most intense"
-            " gamma ray will have value 1.0.  Amplitude is calculated after"
-            " the optional shielding and detector effects are applied.";
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTipInstantly );
-  m_layout->addWidget( label, 2, 0, AlignMiddle );
-  m_lowerBrCuttoff = new WDoubleSpinBox();
-  
-  //20150123: on android at least, calling setNativeControl() causes
-  //  a javascript exception (having to do with the validate) when first
-  //  loading the app.
-//  if( specViewer->isMobile() )
-//    m_lowerBrCuttoff->setNativeControl(true);
-  
-//  m_lowerBrCuttoff->addStyleClass("numberValidator");
-  HelpSystem::attachToolTipOn( m_lowerBrCuttoff, tooltip, showToolTipInstantly );
-  m_lowerBrCuttoff->setValue( 0.0 );
-  m_lowerBrCuttoff->setSingleStep( 0.01 );
-//  m_lowerBrCuttoff->setMinimumSize( fieldWidth, WLength::Auto );
-  m_layout->addWidget( m_lowerBrCuttoff, 2, 1 );
-  m_lowerBrCuttoff->setRange( 0.0, 1.0 );
-  m_lowerBrCuttoff->valueChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  //WLabel *minAmpLabel = new WLabel(   "Min Amp:" );
 
+  //tooltip = "The minimum relative gamma amplitude to display; the most intense"
+  //          " gamma ray will have value 1.0.  Amplitude is calculated after"
+  //          " the optional shielding and detector effects are applied.";
+  //HelpSystem::attachToolTipOn( minAmpLabel, tooltip, showToolTipInstantly );
+  //m_lowerBrCuttoff = new WDoubleSpinBox();
+  //HelpSystem::attachToolTipOn( m_lowerBrCuttoff, tooltip, showToolTipInstantly );
+  //m_lowerBrCuttoff->setValue( 0.0 );
+  //m_lowerBrCuttoff->setSingleStep( 0.01 );
+  //m_lowerBrCuttoff->setRange( 0.0, 1.0 );
+  //m_lowerBrCuttoff->valueChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+
+  //m_layout->addWidget( minAmpLabel, 3, 0, AlignMiddle );
+  //m_layout->addWidget( m_lowerBrCuttoff, 3, 1 );
+  
   SpectraFileModel *specFileModel = specViewer->fileManager()->model();
   m_detectorDisplay = new DetectorDisplay( specViewer, specFileModel );
   
   specViewer->detectorChanged().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
   specViewer->detectorModified().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
   
-  m_layout->addWidget( m_detectorDisplay, 3, 0,  1, 2 );
+  m_layout->addWidget( m_detectorDisplay, 4, 0,  1, 3 );
 
   m_shieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
   m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
   m_shieldingSelect->materialChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_shieldingSelect->materialModified().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_layout->addWidget( m_shieldingSelect, 4, 0, 1, 2 );
+  m_layout->addWidget( m_shieldingSelect, 5, 0, 1, 3 );
 
 
-  m_persistLines = new WPushButton( "Persist" );
-  tooltip = "Persisting the currently displayed lines allows you to both keep"
-            " displaying the current lines and also to select new lines to"
-            " display. Persisting a nuclide a second time will replace the "
-            "first instance.";
+  //m_persistLines = new WPushButton( "Persist" );
+  m_persistLines = new WPushButton( "Add Another" );
+  tooltip = "Keep the currently displayed lines and add a new nuclide/source to display.";
   HelpSystem::attachToolTipOn( m_persistLines, tooltip, showToolTipInstantly );
 
   m_persistLines->clicked().connect( this, &ReferencePhotopeakDisplay::persistCurentLines );
@@ -615,9 +614,10 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   //Well make the "Clear All" button a little bit wider for phones so that
   //  "Gammas" will be on same line as its check box, a little bit hacky
   if( specViewer->isPhone() )
-    m_clearLines = new WPushButton( "Remove All" );
+    m_clearLines = new WPushButton( "Remove" );
   else
-    m_clearLines = new WPushButton( "Clear All" );
+    m_clearLines = new WPushButton( "Clear" );
+  m_clearLines->disable();
   
   if( specViewer->isMobile() )
   {
@@ -645,50 +645,55 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     
   m_colorSelect = new ColorSelect(ColorSelect::PrefferNative);
   m_colorSelect->setColor( m_lineColors[0] );
-   
+  
   if( ColorSelect::willUseNativeColorPicker() )
   {
-    m_layout->addWidget( m_colorSelect, 2, 2 );
+    m_colorSelect->setFloatSide( Wt::Right );
+    hlRow->addWidget( m_colorSelect );
   }else
   {
     WContainerWidget *w = new WContainerWidget();
     w->addWidget( m_colorSelect );
-    m_layout->addWidget( w, 2, 2 );
+    hlRow->addWidget( w );
+    w->setFloatSide( Wt::Right );
   }
   
   m_colorSelect->cssColorChanged().connect( boost::bind( &ReferencePhotopeakDisplay::userColorSelectCallback, this, _1 ) );
   m_currentlyShowingNuclide.lineColor = m_lineColors[0];
   
   WContainerWidget *whatToShow = new WContainerWidget();
-  whatToShow->setMinimumSize( buttonWidth, WLength::Auto );
-  whatToShow->addWidget( m_promptLinesOnly );
-  //m_showGammas = new WCheckBox( "Gammas", whatToShow );
-  //m_showGammas->setInline( false );
-  //m_showXrays = new WCheckBox( "X Rays", whatToShow );
-  //m_showXrays->setInline( false );
-  m_showAlphas = new WCheckBox( "Alphas", whatToShow );
-  m_showAlphas->setInline( false );
-  m_showBetas = new WCheckBox( "Betas", whatToShow );
-  m_showBetas->setInline( false );
+  m_showGammas = new WCheckBox( "gammas", whatToShow );
+  m_showXrays = new WCheckBox( "x-rays", whatToShow );
+  m_showAlphas = new WCheckBox( "alphas", whatToShow );
+  m_showBetas = new WCheckBox( "betas", whatToShow );
   HelpSystem::attachToolTipOn( whatToShow, "If checked, selection will be shown.  Gammas and "
                           "x-rays are shown in the table and on the chart, "
                           "alphas and betas only in the table.",
                           showToolTipInstantly );
-
-  //m_showGammas->setChecked();
-  //m_showXrays->setChecked();
-
-  //m_showGammas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  //m_showGammas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  //m_showXrays->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  //m_showXrays->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  whatToShow->hide(); //(20190408): Ehh, not sure these are actually useful, btu not sure, so keeping around, just hidden for a while, and then we can delete them
+  
+  m_showGammas->setChecked();
+  m_showXrays->setChecked();
+  m_showGammas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  m_showGammas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  m_showXrays->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+  m_showXrays->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_showAlphas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_showAlphas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_showBetas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_showBetas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   
-  m_layout->addWidget( whatToShow, 4, 2, 3, 1 );
+  m_layout->addWidget( whatToShow, 6, 0, 1, 3 );
 
+  
+  m_showAlphas->checked().connect( std::bind([](){
+    passMessage( "Alphas are only be shown in the table, not on the spectrum.",
+                "", WarningWidget::WarningMsgInfo );
+  }) );
+  m_showBetas->checked().connect( std::bind([](){
+    passMessage( "Betas are only be shown in the table, not on the spectrum.",
+                "", WarningWidget::WarningMsgInfo );
+  }) );
   
   
   m_particleView = new RowStretchTreeView();
@@ -715,11 +720,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   if( !isPhone )
     setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
 
-  m_layout->addWidget( m_particleView, 0, 3, 6, 1 );
-  m_layout->addWidget( new WContainerWidget(), 5, 1, 1, 2 );
+  m_layout->addWidget( m_particleView, 0, 3, 8, 1 );
+  m_layout->addWidget( new WContainerWidget(), 7, 1, 1, 3 );
   
   m_layout->setColumnStretch( 3, 1 );
-  m_layout->setRowStretch( 5, 1 );
+  m_layout->setRowStretch( 7, 1 );
 }//ReferencePhotopeakDisplay constructor
 
 
@@ -933,7 +938,7 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
   bool show = true;
-  show = (show && (m_lowerBrCuttoff->validate()==WValidator::Valid));
+  show = (show && (!m_lowerBrCuttoff || m_lowerBrCuttoff->validate()==WValidator::Valid));
 
   const string isotxt = m_nuclideEdit->text().toUTF8();
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -1006,11 +1011,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     
     WString hlstr = PhysicalUnits::printToBestTimeUnits( nuc->halfLife,
                                                       2, SandiaDecay::second );
-#ifndef WT_NO_STD_WSTRING
-    hlstr = L" \x03BB=" + hlstr;
-#else
-    hlstr = " &lambda;=" + hlstr;
-#endif
+    //hlstr = L" \x03BB=" + hlstr;
+    hlstr = "<span style=\"font-size: small;\">&lambda;<sub>&frac12;</sub>=" + hlstr + "</span>";
     m_halflife->setText( hlstr );
   }else
   {
@@ -1163,7 +1165,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     m_currentlyShowingNuclide.isReaction      = !rctnGammas.empty();
     m_currentlyShowingNuclide.age             = age;
     m_currentlyShowingNuclide.labelTxt        = m_nuclideEdit->text().toUTF8();
-    m_currentlyShowingNuclide.lowerBrCuttoff  = m_lowerBrCuttoff->value();
+    m_currentlyShowingNuclide.lowerBrCuttoff  = (m_lowerBrCuttoff ? m_lowerBrCuttoff->value() : 0.0);
     m_currentlyShowingNuclide.showGammas      = (!m_showGammas || m_showGammas->isChecked());
     m_currentlyShowingNuclide.showXrays       = (!m_showXrays || m_showXrays->isChecked());
     m_currentlyShowingNuclide.showAlphas      = m_showAlphas->isChecked();
@@ -1224,7 +1226,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   {
     if( m_persistLines->isEnabled() )
       m_persistLines->disable();
-
+    m_clearLines->setDisabled( m_persisted.empty() );
+    
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
     ReferenceLineInfo emptylines;
     m_chart->setReferncePhotoPeakLines( emptylines );
@@ -1250,7 +1253,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
   vector<DecayParticleModel::RowData> inforows;
 
-  const double brCutoff = m_lowerBrCuttoff->value();
+  const double brCutoff = (m_lowerBrCuttoff ? m_lowerBrCuttoff->value() : 0.0);
 
 //  bool islogy = m_chart->yAxisIsLog();
 //  double chartMaxSf = (islogy ? log(2.5) : 1.0/1.1);
@@ -1731,6 +1734,14 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   {
     if( m_persistLines->isDisabled() )
       m_persistLines->enable();
+    if( m_clearLines->isDisabled() )
+      m_clearLines->enable();
+
+    if( m_spectrumViewer && m_spectrumViewer->isPhone() )
+      m_clearLines->setText( m_persisted.empty() ? "Remove" : "Remove All" );
+    else
+      m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
+    
     
     if( json.size() )
       doJavaScript( json );
@@ -1776,6 +1787,11 @@ void ReferencePhotopeakDisplay::persistCurentLines()
   
   m_nuclideEdit->setText( "" );
   m_persistLines->disable();
+  m_clearLines->enable();
+  if( m_spectrumViewer && m_spectrumViewer->isPhone() )
+    m_clearLines->setText( "Remove All" );
+  else
+    m_clearLines->setText( "Clear All" );
   
   updateDisplayChange();
 }//void persistCurentLines()
@@ -1871,7 +1887,7 @@ void ReferencePhotopeakDisplay::serialize(
     node->append_node( element );
 
     name = "LowestBranchRatio";
-    value = doc->allocate_string( m_lowerBrCuttoff->text().toUTF8().c_str() );
+    value = doc->allocate_string( (m_lowerBrCuttoff ? m_lowerBrCuttoff->text().toUTF8().c_str() : "0.0") );
     element = doc->allocate_node( rapidxml::node_element, name, value );
     node->append_node( element );
     
@@ -2048,7 +2064,7 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
         m_ageEdit->setText( "" );
       
       node = gui_node->first_node( "LowestBranchRatio", 17 );
-      if( node && node->value() )
+      if( node && node->value() && m_lowerBrCuttoff )
         m_lowerBrCuttoff->setText( node->value() );
       
       node = gui_node->first_node( "PromptLinesOnly", 15 );
@@ -2213,11 +2229,18 @@ void ReferencePhotopeakDisplay::refreshLinesDisplayedToGui( int millisecdelay )
     js << json;
     if( m_persistLines->isDisabled() )
        m_persistLines->enable();
+    if( m_clearLines->isDisabled() )
+      m_clearLines->enable();
   }else
   {
     m_persistLines->disable();
+    m_clearLines->setDisabled( m_persisted.empty() );
   }//if( m_currentlyShowingNuclide.energies.size() )
   
+  if( m_spectrumViewer && m_spectrumViewer->isPhone() )
+    m_clearLines->setText( m_persisted.empty() ? "Remove" : "Remove All" );
+  else
+    m_clearLines->setText( m_persisted.empty() ? "Clear" : "Clear All" );
   
   for( size_t i = 0; i < m_persisted.size(); ++i )
   {
@@ -2355,6 +2378,12 @@ void ReferencePhotopeakDisplay::clearAllLines()
   
   m_nuclideEdit->setText( "" );
   m_persistLines->disable();
+  m_clearLines->disable();
+  
+  if( m_spectrumViewer && m_spectrumViewer->isPhone() )
+    m_clearLines->setText( "Clear" );
+  else
+    m_clearLines->setText( "Remove" );
 
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   m_chart->clearAllReferncePhotoPeakLines();

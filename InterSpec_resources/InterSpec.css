@@ -1304,7 +1304,7 @@ color: blue;
   height: 24px;
   white-space: nowrap;
   overflow: hidden;
-  max-width: 250px;
+  max-width: 275px;
 }
 
 .DetectorDisplay > span
