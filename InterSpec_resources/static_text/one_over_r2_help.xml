@@ -32,15 +32,14 @@ or other effects will cause this to not be true; also, over huge distances
 attenuation in the air will cause this assumption to be invalid as well.
 You can use the <b>Gamma XS Calc</b> tool to calculate the expected attenuations
 for different energies through air to see if it is significant effect.
-<b>(TODO: insert some example effects at different distances here)</b>
+<!-- <b>(TODO: insert some example effects at different distances here)</b> -->
 </div>
 
-<div style="padding-top: 10px">
+<div style="padding-top: 10px; clear: both;">
 The formula used to calculate the distance in front of the near measurement is
 shown below in <i>pseudo-code</i> format, and already assumes the background has been subtracted from
-<code>FarIntensity</code> and the <code>NearIntensity</code>.
-<pre><code>
-<i>let</i> <span style="color:blue;">a</span> = FarIntensity - NearIntensity
+<code>FarIntensity</code> and the <code>NearIntensity</code>, and a low-scatter power law of 1/r<sup>2</sup> is being used.
+<pre><code><i>let</i> <span style="color:blue;">a</span> = FarIntensity - NearIntensity
 <i>let</i> <span style="color:blue;">b</span> = 2&#215;FarIntensity&#215;DistanceBetween
 <i>let</i> <span style="color:blue;">c</span> = FarIntensity&#215;DistanceBetween&#215;DistanceBetween
 <i>let</i> <span style="color:blue;">DistanceInFrontOfNear</span> = <sup>(-<span style="color:blue;">b</span>-sqrt(<span style="color:blue;">b</span>&sup2;-4&#215;<span style="color:blue;">a</span>&#215;<span style="color:blue;">c</span>))</sup>/<sub>2<span style="color:blue;">a</span></sub>

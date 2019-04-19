@@ -152,6 +152,34 @@ public:
   static void osThemeChange( std::string name );
 #endif
   
+#if( IOS )
+  /** Function called from objective-c to update the safe areas defined in iOS
+      (e.g., the area for the notch).
+      The orientation int cooresponds to UIDeviceOrientation,
+      (e.g., UIDeviceOrientationLandscapeLeft==3, UIDeviceOrientationLandscapeRight==4)
+      and the rest of the arguments is user pixels (i.e., not physical pixels).
+   
+      Initial safe are insets can be set as a command line argument "&SafeAreas=3,0,44,22,44"
+   */
+  void setSafeAreaInsets( const int orientation, const float top,
+                          const float right, const float bottom,
+                          const float left );
+  
+  enum class DeviceOrientation
+  {
+    Unknown = 0,
+    Portrait = 1,
+    PortraitUpsideDown = 2,
+    LandscapeLeft = 3,   //Notch to the left on iPhoneX
+    LandscapeRight = 4,  //Notch to the right on iPhoneX
+    FaceUp = 5,
+    FaceDown = 6
+  };
+    
+  /** Get the safe area insets. */
+  void getSafeAreaInsets( DeviceOrientation &orientation, float &top, float &right, float &bottom, float &left );
+#endif
+  
 protected: 
 
   //notify(): over-riding WApplication::notify inorder to catch any exceptions
@@ -212,6 +240,19 @@ protected:
 #endif
   
   std::unique_ptr<Wt::JSignal<> > m_clearSession;
+  
+#if( IOS )
+  /* Note that we could setup a JS based 'orientationchange' JSignal to let us know
+     when there is an orientation change from the JS, however it still isnt clear how
+     to get the 'safe-area-inset-left' type CSS values in JavaScript (not that
+     it actually matters though I dont thing) - so for now will just rely on the objective-c
+     notification (but maybe JS would be better to cover android to... - for a latter date!)
+   */
+  DeviceOrientation m_orientation;
+  
+  /** CSS px values for areas on iPhoneX's like the notch or bottom bar. */
+  float m_safeAreas[4];
+#endif
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

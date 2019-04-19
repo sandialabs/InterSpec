@@ -94,7 +94,7 @@ protected:
   Wt::WGridLayout *m_infoLayout;
   RowStretchTreeView *m_infoView;
 
-  Wt::WPushButton *m_deletePeak;
+  Wt::WInteractWidget *m_deletePeak;
   
   Wt::WPushButton *m_searchForPeaks;
 };//class PeakInfoDisplay

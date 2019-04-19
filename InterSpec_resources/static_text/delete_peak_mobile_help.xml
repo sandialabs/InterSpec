@@ -1,0 +1,25 @@
+<div align="center">
+  <h1 id="delete-peaks"><b>Delete Peak</b></h1>
+  <hr />
+</div>
+
+
+<p>
+The easiest way to delete a peaks is to hold your finger down on it for about a second, 
+and menu will pop where you can choose to delete the peak.
+<div style="padding-top: 1px" align="center">
+  <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+</div>
+</p>
+
+
+<p>
+You can also place two fingers that span the energy range of peaks you want to delete, onto the screen, and move them up.
+Any peaks with centroids between your fingers will be completely removed; you can also reduce the energy range of peaks
+using this same gesture, as long as the peaks centroid doesnt fall between your fingers.
+<div style="padding-top: 1px" align="center">
+  <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+</div>
+</p>
+
+<p>The <em>Peak Manager</em> (<b>Menu</b>&rarr;<b>Tools</b>&rarr;<b>Peak Manager</b>) and <em>Peak Editor</em> (hold finger on peak for one second, select <b>Peak Editor</b>) can also delete peaks.</p>

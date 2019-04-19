@@ -56,7 +56,7 @@ using namespace Wt;
 
 GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
 : AuxWindow( "Energy Range Count",
-             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
               | AuxWindowProperties::SetCloseable
               | AuxWindowProperties::DisableCollapse) ),
     m_specViewer( specViewer ),
@@ -73,10 +73,33 @@ GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
   init();
   handleEnergyRangeChange();
   
-  centerWindow();
+  
   rejectWhenEscapePressed();
   
   show();
+  
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+  
+  if( app && app->isPhone() )
+  {
+    if( app->viewer() )
+    {
+      titleBar()->hide();
+      
+      float safeAreas[4] = { 0.0f };
+#if( IOS )
+      InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
+      app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
+#endif
+      repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
+      setMaximumSize( WLength::Auto, app->viewer()->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
+    }
+  }else
+  {
+    resizeToFitOnScreen();
+    centerWindow();
+  }//if( isPhone ) / else
+  
 }//GammaCountDialog constructor
 
 

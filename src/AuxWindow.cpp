@@ -631,6 +631,9 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   
   content->addStyleClass( "AuxWindow-content" );
 
+  if( isPhone || isTablet )
+    content->addStyleClass( phoneFullScreen ? "MobileFullScreen" : "MobileModal" );
+  
   string fcntcall;
   std::string resources = WApplication::resourcesUrl();
   
@@ -1015,6 +1018,9 @@ void AuxWindow::centerWindow()
 
 void AuxWindow::centerWindowHeavyHanded()
 {
+  if( m_isPhone )
+    return;
+  
   const string jsthis = "$('#" + id() + "')";
   WStringStream moveJs;
   moveJs << "var cntrfcn = function(){ try{ var el = " << this->jsRef() << ";"
@@ -1040,14 +1046,11 @@ std::string AuxWindow::repositionWindowJs( int x, int y )
   + ",left:" + std::to_string(x) + "}";
   return m_repositionSlot->execJs( id(), pos );
 #else
-  stringstream moveJs;
-  moveJs << "var el = " << this->jsRef() << ";"
-  << "var olddispl = el.style.display; el.style.display='';"
-  << "el.style.top = '"  << y << "px';"
-  << "el.style.left = '" << x << "px';"
-  << "el.style.display = olddispl;";
-  
-  return moveJs.str();
+  return string("var el = ") + this->jsRef() + ";"
+  "var olddispl = el.style.display; el.style.display='';"
+  + ((y==-32768) ? string() : "el.style.top = '"  + std::to_string(y) + "px';")
+  + ((x==-32768) ? string() :  "el.style.left = '" + std::to_string(x) + "px';")
+  + "el.style.display = olddispl;";
 #endif //#if( USE_NEW_AUXWINDOW_ISH )
 }//std::string repositionWindowJs( int x, int y )
 
@@ -1074,10 +1077,12 @@ void AuxWindow::resizeWindow( int width, int height )
   WStringStream sizeJs;
   sizeJs << "var el = " << this->jsRef() << ";"
          << "var olddispl = el.style.display; el.style.display='';"
-         << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();"
-         << jsthis << ".width( Math.min("  << width << ",0.95*ws.x) );"
-         << jsthis << ".height( Math.min(" << height << ",0.95*ws.y) );"
-         << jsthis << ".data('notshown',true);"
+         << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
+  if( width > 0 )
+    sizeJs << jsthis << ".width( Math.min("  << width << ",0.95*ws.x) );";
+  if( height > 0 )
+    sizeJs << jsthis << ".height( Math.min(" << height << ",0.95*ws.y) );";
+  sizeJs << jsthis << ".data('notshown',true);"
          << "el.style.display = olddispl;";
   doJavaScript( sizeJs.str() );
 #endif//#if( USE_NEW_AUXWINDOW_ISH )
@@ -1211,6 +1216,13 @@ void AuxWindow::setWindowTitle( const Wt::WString& windowTitle )
     m_titleText->setText( windowTitle );
 }//void setWindowTitle( const Wt::WString& windowTitle )
 
+
+void AuxWindow::setMaximumSize( const Wt::WLength &width, const Wt::WLength &height )
+{
+  if( m_isPhone )
+    return;
+  WDialog::setMaximumSize( width, height );
+}
 
 void AuxWindow::setHidden( bool hide, const WAnimation &/*animation*/ ) //TODO: incorportate WAnimation
 {

@@ -243,7 +243,7 @@ namespace
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
     : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                       | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal ) ),
+                       | AuxWindowProperties::PhoneModal | AuxWindowProperties::DisableCollapse) ),
       m_fileUpload( 0 ),
       m_manager( manager ),
       m_type( kForeground )
@@ -253,22 +253,28 @@ namespace
       const bool noForeground = !viewer->measurment( kForeground );
       
       string instructions;
-      if( noForeground )
+      if( !viewer->isPhone() )
       {
-        instructions = string(viewer->isMobile() ?"Tap" : "Click")
-                       + " below to choost a foreground spectrum file to open.";
-      }else
-      {
-        instructions = "Select how you would like to open the spectrum file, and then ";
-        instructions += (viewer->isMobile() ? "tap" : "click");
-        instructions += " below to browse for the file.";
-      }//if( noForeground )
+        if( noForeground )
+        {
+          instructions = string(viewer->isMobile() ?"Tap" : "Click")
+                         + " below to choost a foreground spectrum file to open.";
+        }else
+        {
+          instructions = "Select how you would like to open the spectrum file, and then ";
+          instructions += (viewer->isMobile() ? "tap" : "click");
+          instructions += " below to browse for the file.";
+        }//if( noForeground )
+      }//if( !viewer->isPhone() )
       
       auto layout = stretcher();
-      WText *txt = new WText( instructions );
+      WText *txt = nullptr;
       
-      layout->addWidget( txt, layout->rowCount(), 0 );
-      
+      if( !instructions.empty() )
+      {
+        txt = new WText( instructions );
+        layout->addWidget( txt, layout->rowCount(), 0 );
+      }
       
       if( !noForeground )
       {
@@ -278,7 +284,7 @@ namespace
         
         WButtonGroup *group = new WButtonGroup( buttons );
         
-        WRadioButton *foreground = new WRadioButton( "Forground", buttons );
+        WRadioButton *foreground = new WRadioButton( "Foreground", buttons );
         foreground->setInline( false );
         foreground->setChecked( true );
         group->addButton( foreground, 0 );
@@ -320,8 +326,9 @@ namespace
               "manipulation use the <b>File Manager</b>";
       }else
       {
-        msg = "You can also directly open spectrum files in <em>InterSpec</em><br />"
-              "from your email or file apps.";
+        msg = "<span style=\"font-size: 10px;\">"
+                "You can also open spectrum files from email or file apps."
+              "</span>";
       }
 
       WText *friendlyMsg = new WText( msg );

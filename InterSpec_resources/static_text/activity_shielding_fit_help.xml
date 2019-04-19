@@ -1,80 +1,151 @@
 <div align="center">
-      <h1 id="activity-shielding-dialog">
-            <b>Activity Shielding Fit</b>
-      </h1>
-      <hr />
-	  </div>
+  <h1 id="activity-shielding-dialog"><b>Activity Shielding Fit</b> </h1>
+<hr />
+</div>
+The <em>Activity/Shielding Fit</em> tool allows for potentially fitting for source
+activity, age, and shielding amounts.<br />
+Before using this tool you must fit all peaks within the spectrum you want to
+use to perform the analysis, and associate nuclides with the peaks.  The easiest
+way to associate nuclides (or more to the point, a specific gamma or x-ray energy
+of the nuclide) with photopeaks is by displaying reference lines of the nuclide
+before fitting peaks so that when the peak is fit for, the association with the
+specific gamma or x-ray of the nuclide will usually be automatically made.  You
+can also use the <em>Peak Editor</em> or <em>Peak Manager</em> to create the
+associations as well.
+<img src="InterSpec_resources/static_text/images/ActShieldFit.png"  class="imageBorder" style="max-height:300px;float:left;display:block;margin-right:20px; "/>
 
-            <img src="InterSpec_resources/static_text/images/ActShieldFit.png"  class="imageBorder" style="max-height:300px;float:left;display:block;margin-right:20px; "/>
+<h2>Source Peaks</h2>
+The left-most column of the tool allows you to select which peaks you would like
+to include in the fit.  Peaks must be associated with a specific source gamma
+or x-ray in order to use it in the fit.  Although x-ray sources can be used, it
+is recomended to not use them as their predicted amplitudes are generally less
+reliable than gammas.
 
-      <div >
-         <u>Select</u>
-         <b>Tools &#8594; Activity Shielding Fit</b> to launch the tool.
-      </div>
-      <div style="padding-top: 10px">
-         In the leftmost box in the tool window,
-         <u>check/uncheck</u>
-         under the &#34;Use&#34; column the peaks you wish to use in determining the activity of the shielding; 
-checked boxes indicate a "false" peak.
-      </div>
-      <div style="padding-top: 10px">
-         <u>Check/uncheck</u>
-         the box next to &#34;Multiple nuclides contribute to peak&#34; located at the bottom left corner of the window to account for cases when two nuclides may be the cause of 
-the same gamma peak.
-      </div>
-      <div style="padding-top: 10px">
-         When peaks from your background spectrum may interfere with your foreground spectrum,
-         <u>check/uncheck</u>
-         the box next to &#34;Subtract Background Peaks&#34; located at the
- bottom left corner of the window.
-      </div>
-      <div style="padding-top: 10px">
-         To account for more shielding, including advanced cases of shielding,
-         <u>select</u>
-         the
-         <b>Material</b>
-         icon located at the top right of the window to add a shielding source, 
-and
-         <u>select</u>
-         the appropriate material/thickness accordingly. For a material that is not provided under the
-         <b>Material</b>
-         option select the
-         <b>Generic</b>
-         icon,
-         <u>input</u>
-         the 
-&#34;Areal Dens.[ity]&#34; and atomic number.
-      </div>
-      <div>
-         <ul>
-            If accounting for shielding here, be sure to
-            <u>check/uncheck</u>
-            the &#34;Fit&#34; box located to the right of each
-            <b>Material</b>
-            or
-            <b>Generic</b>
-            box you wish to be 
-incorporated in your spectrum. This ability allows you to immediately see the effects of a small variance in the shielding source such that you can better determine 
-the accurate choice of shielding material.
-         </ul>
-      </div>
-      <div>
-         You can also "Import Source Shielding XML Model" by
-         <u>hovering</u>
-         the cursor over the
-         settings
-         icon (
-         <img src="InterSpec_resources/images/cog.png" valign="middle"/>
-         )in the top right of the window, and
-         <u>selecting</u>
-         &#34;Upload Model.&#34;
-      </div>
-      <div style="padding-top: 10px">
-         No matter what method of inputting shielding is used, be sure to
-         <u>input</u>
-         the distance the measurement was taken from the shielding source in the box next to &#34;Distance&#34; 
-on the top right of the window; it is by default set to 100 centimeters.
-      </div>
-      <div>
-         <ul>The application has the ability to identify and adjust the units you input after the numerical figures; you will not need to normalize the units you plan to input.</ul>
-      </div>
+<h2>Sources to fit for</h2>
+The middle column shows all nuclides of peaks selected in the left-hand column.
+In the middle column you can select if you want to fit for activity and if
+possible for the nuclide, age.<br />
+
+Situations where you you may not want to fit for activity is if you already know
+the activity, and instead would like to fit for shielding thickness, either
+to a higher degree of accuracy, or you only have a single peak to use in the fit.
+In these cases you can edit the activity in the middle column to reflect the
+known activity (and age).<br />
+
+For nuclides where age effects the distribution in energy of their gammas, you
+may be able to fit for their age if you have multiple peaks whose relative
+amplitudes will vary in time.  However, <em>InterSpec</em> may allow you to try
+and fit for ages in cases where you dont actually have the power to do it, either
+because the peaks relative amplitudes dont actually vary enough, or they dont vary
+enough for the time regime the nuclide is in (e.x., after equilibrium), or the
+problem is degenerate due to fitting for shielding or actiivites.  It is up to
+you to determine if it is reasonable to fit for the age of specific nulcides.
+Sometimes if you try to fit for an age, but the data doesnt actually have the
+power to determine it, the age uncertainty (the last column in the table) will
+be large, but this may not always be the case, so please use caution. <br />
+
+<h2>Detector Response</h2>
+You must specify the detector resposne function (DRF) to use.  You can select the
+DRF by tapping on the &quot;<b>Detector</b>&quot; widget.
+
+<h2>Distance</h2>
+You must also specify the distance from the center of the source, to the face
+of the detector.  You can enter the distance using entries like
+&quot;3ft 4in&quot;,
+&quot;3'&quot;,
+&quot;13 cm&quot;,
+&quot;4m 100mm&quot;, where if mutliple distances are entered they are summed
+(so the last example would give 4.1m).
+
+<h2>Shielding</h2>
+You can add &quot;Material&quot; or &quot;Generic&quot; shieldings, where
+&quot;Material&quot; shieldings are common materials like plywood, stainless steel, copper,
+plexiglass, etc.  The material library is drawn from the NIST material database,
+as well as various other sources.  With material shieldings you can either specify a
+thickness, or fit for a thickness.
+Generic material allows you to specify and/or fit the effective atomic number
+and areal density (g/cm<sup>2</sup>) of the shielding.
+
+<h2>Graphic</h2>
+By default the chart shown by this tools is something like a &chi; chart where
+it visualizes how many statistical standard deviations each peak is away from the
+activity, age, and shieldings currently shown on the tool (e.g., the model).
+That is, if the fit peak has four standard deviations more counts than the model
+would predict, a red dot will be shown on the graphic at the energy of the peak,
+and y-value of 4.  Only statistical uncertainties of the fit peak are taken into
+account.<br />
+
+If instead you uncheck the <b>Show Chi Graphic</b> option, the chart shows the
+<em>multiple</em> of each peaks counts from what the model predicts.
+
+<h2>Options</h2>
+<ul>
+<li><b>Multiple nuclides contribute to peak</b>: Currently in <em>InterSpec</em>
+   a single gamma or x-ray is associated with each peak, however often times for
+   spectra with multiple nuclides, or for nuclides with many gammas, more than
+   one source gamma/x-ray may contribute to the observed peak.  Checking this
+   option (the default) allows summing the contributions from all nuclides in the
+   fit, and all gammas/x-rays of each nuclide that may contribute to the peak, so
+   that these multiple contributions can be accounted for in calculating the models
+   expected count for the peak.
+  </li>
+  <li><b>Subtract Background Peaks</b>: If your source peaks coorespond to peaks
+    that may also be found in the background, then this option will effectively
+    subtract the background peak amplitudes from the foreground peak amplitudes.
+    To use this feature, first load the background spectrum as a foreground, and
+    fit for all the relevant peaks (you do not need to associate nuclides with
+    them), then load the item of interest as the foreground spectrum and identify
+    peaks associated with nuclides as usual, but also use the <em>File Manager</em>
+    or <em>Spectrum Files</em> tool to load the background file as background to.
+    Once you do this, this option should become available.
+  </li>
+  <li><b>Isotopes of same element same age</b>: When fitting for the age of multiple
+   isotopes, that are all of the same element (e.x., U-235 and U-238), then selecting
+   this option will constrain the ages of the nuclides for the same element to all
+   have the same age in the fit.
+  </li>
+  <li><b>Show Chi Graphic</b>: Toggles the graphic to either show the standard
+   deviations the data is away from the models prediction, or to show the multiple
+   of counts the prediction is away from the model.
+  </li>
+</ul>
+
+<h2>Fitting the Model</h2>
+Once you have selected which peaks you want to use in the fit, the activities,
+ages, and shieldings you want to fit, the &quot;<b>Perform Model Fit</b>&quot;
+will perform a &chi;<sup>2</sup> based fit of the model to data.<br />
+
+The quality of the fit to data can generally be determined from the graphic.
+You want the dots on the &chi; graphic to be within &pm;10 of zero, ideally within
+&pm;2 or &pm;3 of zero.  If you are vieweing the graphic as the multiple chart,
+you want each of the peaks to be near one.  You can use these charts to eliminate
+outlying peaks (that may be due to being associated with the wrong uclide or
+gamma/x-ray, or other interfering sources), or make tweaks to what you are fitting
+for in the model.  Uncertainties are also provided for the fit quantities that
+may be useful to determine if you have the power to fit for a given quantity;
+however, sometimes this may not always be a relieable way to deterine this.
+
+
+<h2>Further Options</h2>
+The gear icon in the upper right hand corner of the tool provides access to a
+detailed calculation log that show exactly what went into calculating the final
+answer.  This menu also provides facilities to save/load/export/import model
+files.
+
+<h2>Limitations</h2>
+<ul>
+  <li>There are many ways the model may be degenerate given the input data.
+    <em>InterSpec</em> will not be able to detect most of these situations, and
+    you must vigilant about not fitting for degenerative quantities.<br />
+    An example is that you cant fit for the areal density and atomic number of
+    shielding if you only have two peaks in the spectrum.
+  </li>
+  <li>Uncertainties given in the fit may not be trustworthy.
+  </li>
+  <li>The calculation log should be consulted to ensure everything is reasonable.
+  </li>
+  <li>You must use at least as many peaks in the fit as quantities you want to fit.
+  </li>
+  <li>All answers must be sanity checked for correctness.
+  </li>
+</ul>

@@ -83,6 +83,9 @@
 
 
 - (void)viewDidLayoutSubviews;
+
+- (void)setSafeAreasToClient;
+
 /*
 //implemented UIDocumentInteractionControllerDelegate methods
 //  Commented out as they dont seem to ever be called...

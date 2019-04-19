@@ -162,6 +162,10 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
      m_layout( nullptr ),
      m_lastAccessTime( boost::posix_time::microsec_clock::local_time() ),
      m_activeTimeInSession( 0, 0, 0 )
+#if( IOS )
+    , m_orientation( InterSpecApp::DeviceOrientation::Unknown )
+    , m_safeAreas{ 0.0f }
+#endif
 {
   enableUpdates( true );
 
@@ -284,6 +288,42 @@ void InterSpecApp::setupDomEnvironment()
 #if( BUILD_AS_ELECTRON_APP )
   doJavaScript( "if (window.module) module = window.module;", false );
 #endif
+  
+  
+#if( IOS )
+  //Check if device orientation and SafeAreas are specified in the URL.
+  const Http::ParameterMap &parmap = environment().getParameterMap();
+  const Http::ParameterMap::const_iterator iter = parmap.find( "SafeAreas" );
+  if( iter != parmap.end() && iter->second.size() )
+  {
+    //Try to parse out an integer followed by four floats
+    int orientation;
+    float vals[4];
+    const int nargscanned = sscanf( iter->second[0].c_str(), "%i,%f,%f,%f,%f",
+                              &orientation, &(vals[0]), &(vals[1]), &(vals[2]), &(vals[3]) );
+    
+    if( nargscanned == 5 )
+    {
+      const DeviceOrientation orient = DeviceOrientation(orientation);
+      cout << "Recieved initial orientation: " << orientation
+           << " and SafeAreas={" << vals[0] << ", " << vals[1] << ", " << vals[2] << ", " << vals[3] << "}" << endl;
+      if( (orient!=DeviceOrientation::LandscapeLeft && orient!=DeviceOrientation::LandscapeRight)
+         || vals[0] < 0 || vals[0] > 50 || vals[1] < 0 || vals[1] > 75 || vals[2] < 0 || vals[2] > 50 || vals[3] < 0 || vals[3] > 75 )
+      {
+        cerr << "Intial device orientations invalid!" << endl;
+      }else
+      {
+        m_orientation = orient;
+        for( size_t i = 0; i < 4; ++i )
+          m_safeAreas[i] = vals[i];
+      }
+    }else
+    {
+      cerr << "Failed to parse SafeAreas='" << iter->second[0] << "'" << endl;
+    }
+  }
+#endif
+
 }//void setupDomEnvironment()
 
 
@@ -609,6 +649,15 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
       //  such can all get setup before creating a AuxWindow; otherwise size of
       //  window will be all messed up.
       WTimer::singleShot( 10, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
+      
+#if( IOS || ANDROID )
+      //For iPhoneX* devices we should trigger a resize once
+      auto fcn = boost::bind( &InterSpec::doJavaScript, m_viewer, "window.dispatchEvent(new Event('resize'));" );
+      WTimer::singleShot( 250, fcn );
+      WTimer::singleShot( 500, fcn );
+      WTimer::singleShot( 1000, fcn );
+#endif
+      
     }else
     {
       AuxWindow *dialog = m_viewer->showIEWarningDialog();
@@ -877,6 +926,37 @@ void InterSpecApp::osThemeChange( std::string name )
     app->triggerUpdate();
   } );
 }//osThemeChange(...)
+#endif
+
+
+#if( IOS )
+void InterSpecApp::setSafeAreaInsets( const int orientation, const float top,
+                       const float right, const float bottom,
+                       const float left )
+{
+  m_orientation = static_cast<DeviceOrientation>( orientation );
+  m_safeAreas[0] = top;
+  m_safeAreas[1] = right;
+  m_safeAreas[2] = bottom;
+  m_safeAreas[3] = left;
+  
+  //ToDo: see if triggering a resize event is ever necassary
+  //doJavaScript( "setTimeout(function(){window.dispatchEvent(new Event('resize'));},0);" );
+  
+  cout << "Set safe area insets: orientation=" << orientation
+       << ", safeAreas={" << top << ", " << right << ", "
+       << bottom << ", " << left << "}" << endl;
+}//setSafeAreaInsets(...)
+
+void InterSpecApp::getSafeAreaInsets( InterSpecApp::DeviceOrientation &orientation,
+                                      float &top, float &right, float &bottom, float &left )
+{
+  orientation = m_orientation;
+  top = m_safeAreas[0];
+  right = m_safeAreas[1];
+  bottom = m_safeAreas[2];
+  left = m_safeAreas[3];
+}//getSafeAreaInsets(...)
 #endif
 
 void InterSpecApp::notify( const Wt::WEvent& event )

@@ -222,6 +222,8 @@
 	   the built-in httpd).
          -->
 	<log-file></log-file>
+  
+	<log-config>-info -debug</log-config>
 
 	<!-- Maximum HTTP request size (Kb)
 

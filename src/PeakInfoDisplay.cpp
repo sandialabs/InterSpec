@@ -311,23 +311,44 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
     return;
   
   AuxWindow *window = new AuxWindow( "Confirmation",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse) );
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::PhoneModal | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   WText * text = new WText("Erase All Peaks?");
   window->stretcher()->addWidget(text,0,0);
   
-  WPushButton *button = new WPushButton("Yes");
-  button->addStyleClass("BinIcon");
-  window->footer()->addWidget(button);
-  button->clicked().connect( window, &AuxWindow::hide );
+  auto foot = window->footer();
+  
+  WPushButton *yes_button = nullptr, *no_button = nullptr;
+  
+  if( m_viewer->isMobile() )
+  {
+    window->titleBar()->hide();
+    yes_button = new WPushButton( "Yes" );
+    no_button = new WPushButton( "No" );
+    yes_button->setWidth( WLength(50,WLength::Percentage) );
+    no_button->setWidth( WLength(50,WLength::Percentage) );
+    yes_button->setStyleClass( "ModalConfirmBtn" );
+    no_button->setStyleClass( "ModalConfirmBtn" );
+    
+    foot->addWidget( yes_button );
+    foot->addWidget( no_button );
+    foot->addStyleClass( "MobileConfirmFooter" );
+  }else
+  {
+    yes_button = new WPushButton("Yes");
+    foot->addWidget( yes_button );
+    yes_button->setFloatSide(Wt::Right);
+    no_button = window->addCloseButtonToFooter("No");
+  }//if( m_viewer->isMobile() )
+  
+  no_button->clicked().connect( window, &AuxWindow::hide );
+  yes_button->clicked().connect( window, &AuxWindow::hide );
 #if ( USE_SPECTRUM_CHART_D3 )
-  button->clicked().connect( boost::bind( &D3SpectrumDisplayDiv::removeAllPeaks, m_spectrumDisplayDiv ) );
+  yes_button->clicked().connect( boost::bind( &D3SpectrumDisplayDiv::removeAllPeaks, m_spectrumDisplayDiv ) );
 #else
-  button->clicked().connect( boost::bind( &PeakModel::removeAllPeaks, m_model ) );
+  yes_button->clicked().connect( boost::bind( &PeakModel::removeAllPeaks, m_model ) );
 #endif
-  button->setFloatSide(Wt::Right);
-  button = window->addCloseButtonToFooter("No");
-  button->clicked().connect( window, &AuxWindow::hide );
+  
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->show();
   window->setMinimumSize(200, WLength::Auto);
@@ -367,21 +388,32 @@ void PeakInfoDisplay::createNewPeak()
   double xmax = m_spectrumDisplayDiv->xAxisMaximum();
 
   std::shared_ptr<const Measurement> data = m_spectrumDisplayDiv->data();
-  if( !!data )
+  if( !data )
   {
-    const size_t nbin = data->num_gamma_channels();
-    xmin = std::max( xmin, static_cast<double>(data->gamma_channel_lower(0)) );
-    xmax = std::min( xmax, static_cast<double>(data->gamma_channel_upper(nbin-1)) );
+    passMessage( "A foreground spectrum must be loaded to add a peak.",
+                 "", WarningWidget::WarningMsgHigh );
+    return;
   }
+  
+  const size_t nbin = data->num_gamma_channels();
+  xmin = std::max( xmin, static_cast<double>(data->gamma_channel_lower(0)) );
+  xmax = std::min( xmax, static_cast<double>(data->gamma_channel_upper(nbin-1)) );
 
-  const double energy = ceil( xmin + 0.01*(xmax - xmin) );
-  m_viewer->addPeak( PeakDef( energy, width, amplitude ), false );
+  try
+  {
+    const double energy = ceil( xmin + 0.01*(xmax - xmin) );
+    m_viewer->addPeak( PeakDef( energy, width, amplitude ), false );
 
-  passMessage( "Newly created peak assigned initial mean of "
-              + std::to_string(energy)
-              + " keV; please edit peak.",
-              "", WarningWidget::WarningMsgInfo );
-
+    passMessage( "Newly created peak assigned initial mean of "
+                 + std::to_string(energy)
+                 + " keV; please edit peak.",
+                "", WarningWidget::WarningMsgInfo );
+  }catch( std::exception &e )
+  {
+    passMessage( "Error adding peak", "", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
   //There is a slight issue here that this new peak will not drawn, since the
   //  chart doesnt know it needs to be repainted..., if we want to avoid this
   //  we can do something like:
@@ -433,32 +465,34 @@ void PeakInfoDisplay::enablePeakDelete( WModelIndex index )
   if( (flags & Wt::ItemIsSelectable) == Wt::ItemIsSelectable )
   {
     m_deletePeak->enable();
+    m_deletePeak->show();
   }
 }//void enablePeakDelete()
 
 
 void PeakInfoDisplay::disablePeakDelete()
 {
-    //Check if any row is selected.  If none are selected, then disable this button.
+  //Check if any row is selected.  If none are selected, then disable this button.
+  const int nrow = m_model->rowCount();
+  const int ncol = m_model->columnCount();
     
-    const int nrow = m_model->rowCount();
-    const int ncol = m_model->columnCount();
-    
-    for( int row = 0; row < nrow; ++row )
+  for( int row = 0; row < nrow; ++row )
+  {
+    for( int col = 0; col < ncol; ++col )
     {
-        for( int col = 0; col < ncol; ++col )
-        {
-            const WModelIndex index = m_model->index( row, col );
-            if(m_infoView->isSelected(index))
-            {
-                m_deletePeak->enable();
-                return;
-            }//if( we found a row selected
-        }//for( loop over columns )
-    }//for( loop over rows )
+      const WModelIndex index = m_model->index( row, col );
+      if(m_infoView->isSelected(index))
+      {
+        m_deletePeak->enable();
+        m_deletePeak->show();
+        return;
+      }//if( we found a row selected
+    }//for( loop over columns )
+  }//for( loop over rows )
     
   m_deletePeak->disable(); //default
-    
+  if( dynamic_cast<WImage *>(m_deletePeak) )
+    m_deletePeak->hide();
 }//void disablePeakDelete()
 
 
@@ -584,7 +618,7 @@ void PeakInfoDisplay::init()
   
   WPushButton *clearPeaksButton = new WPushButton( "Clear all Peaks", buttonDiv );
   HelpSystem::attachToolTipOn( clearPeaksButton, "Removes <b>all</b> existing peaks.", showToolTipInstantly, HelpSystem::Top  );
-  clearPeaksButton->addStyleClass("BinIcon");
+  
   //clearPeaksButton->setMargin(WLength(2),Wt::Left);
   clearPeaksButton->clicked().connect( this, &PeakInfoDisplay::confirmRemoveAllPeaks );
   clearPeaksButton->disable();
@@ -635,24 +669,45 @@ void PeakInfoDisplay::init()
   WLabel *label = new WLabel("Peak: ", buttonDiv);
   label->addStyleClass("buttonSeparator");
   label->setMargin(WLength(10),Wt::Left);
-  WPushButton *addPeak = new WPushButton("Add", buttonDiv );
-
-  HelpSystem::attachToolTipOn( addPeak,"Add a new peak for manual editing; peak will "
-                              "have initial energy near left side of plot. Peak parameters can be editted by double-clicking on the quantity in the <b>Peak Manager</b> tab.", showToolTipInstantly , HelpSystem::Top );
   
-  addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
-  //addPeak->addStyleClass( "PlusIconWhiteBtn" );
-  addPeak->setIcon( "InterSpec_resources/images/plus_min_white.png" );
+  if( m_viewer->isMobile() )
+  {
+    WImage *addPeak = new WImage( WLink("InterSpec_resources/images/plus_min_black.svg"), buttonDiv );
+    addPeak->setAttributeValue( "width", "16" );
+    addPeak->setAttributeValue( "height", "16" );
+    addPeak->addStyleClass( "WhiteIcon" );
+    addPeak->setMargin( 2, Wt::Left );
+    addPeak->setMargin( 8, Wt::Right );
+    addPeak->setMargin( 5, Wt::Top );
+    addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
+    
+    WImage *delPeak = new WImage( WLink("InterSpec_resources/images/minus_min_black.svg"), buttonDiv );
+    delPeak->setAttributeValue( "width", "16" );
+    delPeak->setAttributeValue( "height", "16" );
+    delPeak->addStyleClass( "WhiteIcon" );
+    delPeak->setMargin( 5, Wt::Top );
+    delPeak->clicked().connect( this, &PeakInfoDisplay::deleteSelectedPeak );
+    m_deletePeak = delPeak;
+    m_deletePeak->hide();
+  }else
+  {
+    WPushButton *addPeak = new WPushButton( "Add", buttonDiv );
+    HelpSystem::attachToolTipOn( addPeak,"Add a new peak for manual editing; peak will "
+                                 "have initial energy near left side of plot. Peak parameters can be editted by double-clicking on the quantity in the <b>Peak Manager</b> tab.", showToolTipInstantly , HelpSystem::Top );
+    addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
+    addPeak->setIcon( "InterSpec_resources/images/plus_min_white.png" );
+    
+    WPushButton *delPeak = new WPushButton( "Delete", buttonDiv );
+    HelpSystem::attachToolTipOn( delPeak, "Deletes peak currently being edited.", showToolTipInstantly, HelpSystem::Top  );
+    delPeak->setHiddenKeepsGeometry( true );
+    delPeak->clicked().connect( this, &PeakInfoDisplay::deleteSelectedPeak );
+    delPeak->setIcon( "InterSpec_resources/images/minus_min_white.png" );
+    m_deletePeak = delPeak;
+  }//if( mobile ) / else
   
-  m_deletePeak = new WPushButton( "Delete", buttonDiv );
-  //m_deletePeak->setMargin(WLength(2),Wt::Left|Wt::Right);
-  HelpSystem::attachToolTipOn( m_deletePeak,"Deletes peak currently being edited.", showToolTipInstantly, HelpSystem::Top  );
-  m_deletePeak->clicked().connect( this, &PeakInfoDisplay::deleteSelectedPeak );
-  m_deletePeak->setHiddenKeepsGeometry( true );
   m_deletePeak->disable();
-  //m_deletePeak->addStyleClass( "MinusIconWhiteBtn" );
-  m_deletePeak->setIcon( "InterSpec_resources/images/minus_min_white.png" );
-
+  
+  
   //Whenver a delegate gets closed, lets disable the peak delete button
   set<WAbstractItemDelegate *> uniqueDelegates;
   for( int col = 0; col < m_model->columnCount(); ++col )

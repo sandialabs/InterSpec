@@ -1,0 +1,46 @@
+.OneOverR2CalcWindow
+{
+  /* max-height: calc(100% - env(safe-area-inset-bottom) - env(safe-area-inset-top)); */
+}
+
+.OneOverR2Calc
+{
+  overflow-y: auto;
+  /* margin-left: 5px; */
+  /* margin-right: 5px; */
+}
+
+.OneOverR2Calc table
+{
+  margin-top: 15px;
+  margin-bottom: 10px;
+  /* Need to put in table align center or something .... */
+}
+
+.OneOverR2Calc tr
+{
+  height: 2em;
+}
+
+.OneOverR2Calc td
+{
+  vertical-align: middle;
+  position: relative;
+}
+
+/* Need to put in some padding between table columns*/
+.OneOverR2IntroTxt, .OneOverR2TextRow, .OneOverR2Message
+{
+  max-width: 27em;
+}
+
+.OneOverR2IntroTxt, .OneOverR2TextRow
+{
+  font-size: 11px;
+}
+
+.OneOverR2Message
+{
+  color: blue;
+  margin-top: 10px;
+}

@@ -450,7 +450,7 @@ namespace HelpSystem
   {
     m_tree->treeRoot()->setNodeVisible(false); //this is needed to keep the root hidden, otherwise it shows on click
     
-    if (m_tree->selectedNodes().size()==0)
+    if( m_tree->selectedNodes().empty() )
       return;
     
     WTreeNode * node = *(m_tree->selectedNodes().begin());
@@ -460,81 +460,109 @@ namespace HelpSystem
     
     m_helpWindowContent->clear();
     
-    bool found=false;
-    for (iter = m_treeLookup.begin(); iter != m_treeLookup.end(); ++iter)
+    Wt::WTemplate *content = nullptr;
+    
+    for( const auto &nameToNode : m_treeLookup )
     {
-      if (((iter->second))==(node))
+      if( nameToNode.second == node )
       {
-        std::string helpStr, filepath;
-        auto pos = m_contentLookup.find( iter->first );
-        if( pos != end(m_contentLookup) )
-          filepath = pos->second;
-        UtilityFunctions::trim( filepath );
-        
-        if( filepath.empty() )
-        {
-          helpStr = "No help item associated with key '" + iter->first + "'";
-        }else
-        {
-          //We have to grab the contents of this file, and place in helpStr...
-          //All paths relative to the curent help.json file, which is in
-          // "InterSpec_resources/static_text"
-          
-          //ToDoL: should remove leading and trailing quotes I guess...
-          
-          filepath = UtilityFunctions::append_path( "InterSpec_resources/static_text", filepath );
-          ifstream infile( filepath.c_str() );
-          if( !infile.is_open() )
-          {
-            helpStr = "Could not open expected file: " + filepath + "";
-          }else
-          {
-            infile.seekg(0, std::ios::end);
-            const size_t size = infile.tellg();
-            infile.seekg(0);
-            
-            if( size < 128*1024 )
-            {
-              helpStr = std::string( size, ' ' );
-              infile.read( &(helpStr[0]), size );
-            }else
-            {
-              helpStr = filepath + " is too large a file - not loading contents.";
-            }
-          }//if( !infile.is_open() ) / else.
-        }//if( UtilityFunctions::istarts_with( helpStr, "contents_in_file:" ) )
-        
-        
-        WTemplate *t = new WTemplate( m_helpWindowContent );
-        t->setTemplateText( WString(helpStr, UTF8), XHTMLUnsafeText );
-        t->setInternalPathEncoding( true );
-
-
-//        WAnchor *x =new WAnchor("","Jump to bottom",m_helpWindowContent);
-//        x->setRefInternalPath("bottom");
-//        x->setId("top");
-//        t->bindWidget( "top",x  );
-//        x =new WAnchor("","Jump to top",m_helpWindowContent);
-//        x->setRefInternalPath("top");
-//        x->setId("bottom");
-//        t->bindWidget( "bottom",x  );
-//        
-        
-        found = true;
+        content = getContentToDisplay( nameToNode.first );
         break;
       } //((iter->second))==(node)
     } //for (iter = treeLookup.begin(); iter != treeLookup.end(); ++iter)
     
-    if (!found)
-    { //return a page not found!
-      std::string helpStr = "Help Page Not Found";
-      new WTemplate( WString(helpStr), m_helpWindowContent );
-    }//if (!found)
+    if( !content )
+      content = new WTemplate( WString("Help Page Not Found") );
+    
+    m_helpWindowContent->addWidget( content );
     
     //Note: this keeps the new pages scrolled to the top.
     doJavaScript("document.body.scrollTop = document.documentElement.scrollTop = 0;");
-  } // void HelpSystem::selectHelpToShow(WTree* tree, WContainerWidget* m_helpWindowContent)
+  }//void selectHelpToShow()
   
+  
+  std::string HelpWindow::getHelpContents( const std::string &tag ) const
+  {
+    auto iter = m_treeLookup.find( tag );
+    if( iter == end(m_treeLookup) )
+      return "";
+    
+    WTreeNode *node = iter->second;
+    
+    std::string helpStr, filepath;
+    auto pos = m_contentLookup.find( tag );
+    if( pos != end(m_contentLookup) )
+      filepath = pos->second;
+    UtilityFunctions::trim( filepath );
+    
+    if( filepath.empty() )
+    {
+      const vector<WTreeNode *> &kids = node->childNodes();
+      for( const WTreeNode *kid : kids )
+      {
+        for( const auto &nameToNode : m_treeLookup )
+        {
+          if( nameToNode.second == kid )
+          {
+            if( helpStr.empty() )
+            {
+              helpStr = getHelpContents( nameToNode.first );
+            }else
+            {
+              helpStr += "<div style=\"margin-top: 25px;\">" + getHelpContents( nameToNode.first ) + "</div>";
+            }
+            
+            break;
+          }//if( we found the node that has appropriate key )
+        }//for( const auto &nameToNode : m_treeLookup )
+      }//for( const WTreeNode *kid : kids )
+      
+      if( helpStr.empty() )
+        helpStr = "No help item associated with key '" + tag + "'";
+    }else
+    {
+      //We have to grab the contents of this file, and place in helpStr...
+      //All paths relative to the curent help.json file, which is in
+      // "InterSpec_resources/static_text"
+      
+      //ToDoL: should remove leading and trailing quotes I guess...
+      
+      filepath = UtilityFunctions::append_path( "InterSpec_resources/static_text", filepath );
+      ifstream infile( filepath.c_str() );
+      if( !infile.is_open() )
+      {
+        helpStr = "Could not open expected file: " + filepath + "";
+      }else
+      {
+        infile.seekg(0, std::ios::end);
+        const size_t size = infile.tellg();
+        infile.seekg(0);
+        
+        if( size < 128*1024 )
+        {
+          helpStr = std::string( size, ' ' );
+          infile.read( &(helpStr[0]), size );
+        }else
+        {
+          helpStr = filepath + " is too large a file - not loading contents.";
+        }
+      }//if( !infile.is_open() ) / else.
+    }//if( filepath.empty() )
+    
+    return helpStr;
+  }//std::string getHelpContents( const std::string &tag ) const
+  
+  
+  Wt::WTemplate *HelpWindow::getContentToDisplay( const std::string &tag ) const
+  {
+    const string helpStr = getHelpContents( tag );
+    
+    WTemplate *t = new WTemplate();
+    t->setTemplateText( WString(helpStr, UTF8), XHTMLUnsafeText );
+    t->setInternalPathEncoding( true );
+    
+    return t;
+  }//WTemplate *getContent( WTreeNode *node )
   
   void HelpWindow::populateTree(Json::Array &res, WTreeNode* parent)
   {
