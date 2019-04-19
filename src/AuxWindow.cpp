@@ -643,7 +643,9 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   m_collapsedSignal.reset( new JSignal<void>( this, "collapsed", true ) );
   m_expandedSignal.reset( new JSignal<void>( this, "expanded", true ) );
 
-  if( m_isPhone || properties.testFlag(AuxWindowProperties::DisableCollapse) )
+  if( m_isPhone
+      || properties.testFlag(AuxWindowProperties::DisableCollapse)
+      || ((isPhone || isTablet) && (isTabletModal || isPhoneModal) ) )
   {
     m_collapseSlot.reset( new JSlot("function(){}",this) );
     m_expandSlot.reset( new JSlot("function(){}",this) );

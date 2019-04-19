@@ -1,7 +1,7 @@
 #Project and CMake specific files
 data/sandia.decay.xml
 InterSpec/InterSpec.entitlements
-target/ios/InterSpec/InterSpec.xcodeproj
+#target/ios/InterSpec/InterSpec.xcodeproj
 target/electron/app/node_modules
 target/electron/app/data
 target/electron/app/InterSpec_resources

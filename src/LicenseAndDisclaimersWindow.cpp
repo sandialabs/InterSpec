@@ -91,6 +91,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   //If on phone, need to make text much smaller!
   auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
   const bool phone = (app && app->isPhone());
+  const bool tablet = (app && app->isTablet());
   if( phone )
     WDialog::contents()->addStyleClass( "PhoneCopywriteContent" );
   
@@ -147,7 +148,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   WContainerWidget *bottom = footer();
   
   
-  if( phone )
+  if( phone || (tablet && !is_awk) )
   {
     WPushButton *close = addCloseButtonToFooter();
     close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );

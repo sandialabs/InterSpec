@@ -641,6 +641,12 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   "Tap the <img src=\"InterSpec_resources/images/help_mobile.svg\" width=12 height=12 alt=\"help icon\" class=\"WhiteIcon\" /> "
   "icon for detailed information about <em>InterSpec</em>s tools and features."
   "</p>";
+  if( m_viewer->isTablet() )
+    mobilePostcriptText = "<p>Tap on the <b>Use Info</b> button to the left for"
+     " the basics of interacting with the chart and fitting for peaks."
+     "Tap the <img src=\"InterSpec_resources/images/help_mobile.svg\" width=12 height=12 alt=\"help icon\" class=\"WhiteIcon\" /> "
+     "icon for detailed information about <em>InterSpec</em>s tools and features."
+     "</p>";
   
   if( m_viewer->isPhone() )
   {
