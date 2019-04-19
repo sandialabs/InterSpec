@@ -1,3 +1,4 @@
+#Project and CMake specific files
 data/sandia.decay.xml
 InterSpec/InterSpec.entitlements
 target/ios/InterSpec/InterSpec.xcodeproj
@@ -30,3 +31,29 @@ README.txt
 *.tgz
 *.bz2
 *.log
+
+# Xcode spefic (for iOS)
+build/
+DerivedData/
+
+## Various settings
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+
+## Other
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+## Obj-C/Swift specific
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM

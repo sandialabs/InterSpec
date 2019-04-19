@@ -1,0 +1,17 @@
+<div align="center">
+  <h1 id="energy-range-count">
+    <b>Energy Range Count</b>
+  </h1>
+  <hr />
+</div>
+
+This tool allows you to determine how much the foreground and/or secondary spectrum
+differs from the background for a given energy range.
+<div align="center" style="padding-top: 10px" >
+  <img src="InterSpec_resources/static_text/images/energy_range_count_mbl.png" class="imageBorder"  style="max-width:40%; max-height:300px;"/>
+</div>
+This tool can be useful to determine if there is an elevated continuum due to a
+beta source, neutron interactions, other other causes that can elevate the continuum.<br />
+If the foreground, secondary, and/or background do not have the same live times,
+the counts will be normalized by the live-time before calculating differences.
+However, the statistical uncertainties are based on the original number of counts.

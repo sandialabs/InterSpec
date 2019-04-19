@@ -150,6 +150,11 @@ public:
   //setWindowTitle
   virtual void setWindowTitle( const Wt::WString& windowTitle );
 
+  /** If a full-screen window on a mobile device, this function does nothing;
+      otherwise if just calls WDialog::setMaximumSize(width,height).
+   */
+  virtual void setMaximumSize( const Wt::WLength &width, const Wt::WLength &height );
+  
   //The show(), hide(), and setHidden() functions call the javascript versions
   //  of these functions, and do not modify Wt's view of if this window is shown
   //  or not, which can be important since Wt uses lazy loading of contents.
@@ -180,8 +185,10 @@ public:
 
   
   //repositionWindow(...): repositions window to coordinates <x,y> of the
-  //  browsers viewport
+  //  browsers viewport.
+  //If x==-32768 or y==-32768, than that dimension will bot be repositioned
   void repositionWindow( int x, int y );
+  
 
   /** Returns the JavaScript #repositionWindow will execute. */
   std::string repositionWindowJs( int x, int y );

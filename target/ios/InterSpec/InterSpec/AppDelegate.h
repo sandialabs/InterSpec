@@ -43,5 +43,7 @@
 
 -(void)sendSpectrumFileToOtherApp: (NSString *) filename;
 
+- (void)orientationChanged:(NSNotification *)note;
+
 @end
 

@@ -5035,8 +5035,20 @@ void InterSpec::addToolsTabToMenuItems()
   tooltip = "Search for nuclides with constraints on energy, branching ratio, and half life.";
   HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NuclideSearch)] = item;
+
   
-  item = m_toolsMenuPopup->addSeparatorAt( index_offest + 4 );
+#if( IOS || ANDROID )
+  icon = "InterSpec_resources/images/auto_peak_search.svg";
+#else
+  icon = "InterSpec_resources/images/auto_peak_search.png";
+#endif
+  item = m_toolsMenuPopup->insertMenuItem( index_offest + 4, "Auto Peak Search", icon, true );
+  item->triggered().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, this, true ) );
+  m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::AutoPeakSearch)] = item;
+  
+  
+  item = m_toolsMenuPopup->addSeparatorAt( index_offest + 5 );
+  
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::Seperator)] = item;
 }//void addToolsTabToMenuItems()
 

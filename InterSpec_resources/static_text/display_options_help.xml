@@ -1,41 +1,54 @@
   <div align="center">
-      <h1 id="display">
-            <b>Display</b>
-      </h1>
-      <hr />
-	  </div>
-      <div>
-         You can choose to view the spectrum on either a Linear or Log graph by 
-		 <u> navigating</u> to the menu <b>View &#8594; Chart Options</b>; the graph is log by default.
-      </div>
-      <div style="padding-top: 10px">
-         You can add gridlines to the graph by <u> navigating</u> to the <b>View</b> toolbar, <u>hovering</u> over <b>Chart Options</b>, and 
-         <u>selecting</u>
-         the
-         <b>Show Vertical Lines</b>
-         and
-         <b>Show Horizontal Lines</b>.
-      </div>
-      <div style="padding-top: 10px">The legend located near the top right of your graph should automatically load data corresponding to your spectrum. 
-In the legend you will see the &#34;Real Time&#34; and &#34;Live Time;&#34; the difference between the two will give you what is otherwise known as &#34;dead time.&#34; 
-The legend will also provide data on the number of counts pertaining to a certain spectrum.</div>
-      <div style="padding-top: 10px">
-         To make the graph constitute the entire window,
-         <u>select</u>
-         the
-         <b>Hide Tool Tabs</b>
-         option found under the
-         <b>View</b>
-         toolbar.  The application provides numerous routes to access tools such that you can still access all of the tools from the Tools menu while the tool tabs are hidden.
+    <h1 id="display"><b>Display</b></h1>
+    <hr />
+  </div>
+
+<div style="width: 100%">
+  <div>
+    The <b>Menu</b>&rarr;<b>View</b> menu lets you select:
+  </div>
+  <img align="left" src="InterSpec_resources/static_text/images/view_menu_mobile.png" class="imageBorder" style="width:20%; margin-top: 10px;" />
+  <span style="float:right; width: 79%">
+    <ul>
+      <li><b>Show/Hide Tool Tabs</b>: this lets you either have the spectrum take up 100% of the screen, or show both
+        the spectrum and tools to help work with spectra.  If the tools tabs are not shown, the tools are accessible from the <b>Tools</b> menu.
+      </li>
+      <li><b>Chart Options</b>: Detailed below, but this sub-menu lets you configure how spectra are displayed.
+      </li>
+      <li><b>Show 3D View</b>: This item is only enabled for search mode or passthrough data (e.g., files where spectra are taken at regular intervals).
+        When enabled, this item will show a 3D view of your data with axis of time, energy, and counts.
+      </li>
+      <li><b>Detectors</b>: For detectors systems with more than one detector element, typicaly radiation portal monitors, or search systems, this sub-menu
+        allows you to choose which detector elements to display.
+      </li>
+      <li><b>Feature Markers</b>: This sub-menu allows you to display expected features on the spectrum from <em>escape peaks</em>,
+        <em>Compton backscatter</em>, <em>Compton Edge</em>, or <em>sum peak</em>.  When you enable one or more of these options
+        if you tap on the spectrum, the energies where you would expect the effects will be shown on the spectrum.
+        These options can be useful to
+      </li>
+    </ul>
+  </span>
 </div>
-    <div style="padding-top: 10px">
-        To manually check notifications, select menu
-         <b>Help &#8594; Notifications Logs</b>. Notification preferences can be modified by
-         <u>checking/unchecking</u> the types of notifications that you desired to be disabled on the bottom right corner of the <b>Notifications Log</b>.
-      </div>
-      <div>
-         To toggle individual detectors on/off,
-         <u>check/uncheck</u>
-         the desired detector from the menu
-         <b>View &#8594; Detectors</b>; all detectors are on by default.
-      </div>
+
+<div style="width: 100%; clear: both;">
+  <div style="margin-top: 20px;">
+    The <b>Menu</b>&rarr;<b>View</b>&rarr;<b>Chart Options</b> menu provides:
+  </div>
+  <img align="left" src="InterSpec_resources/static_text/images/display_options_menu_mobile.png" class="imageBorder" style="width:20%; margin-top: 10px;" />
+  <span style="float:right; width: 79%">
+    <ul>
+      <li><b>Log/Linear</b>: makes the y-axis (i.e., the counts-axis) either log or linear scale.  Default is log-scale as it is generally most useful.
+      </li>
+      <li><b>Peak Labels</b>: These options allow you to display labels on the spectrum for <em>peak energies</em>, <em>nuclides assigned to peaks</em>, and/or <em>custom user labels</em> (which can be set usingthe <em>Peak Editor</em>).
+      </li>
+      <li><b>Vertical</b> and <b>Horizontal Lines</b>: light-colored rectilinear lines drawn on the spectrum to help judge energies of spectrum features.
+      </li>
+      <li><b>Background Subtract</b>: makes it so the displayed foreground and secondary spectra have the background subtracted from them.
+        This can occasionally be useful for highlighting small features above background to non-specialists.
+        However, it is highly recomended to not generally use background subtraction as it strictly reduces information available to your eyes,
+        and can often times introduce non-physical artifacts to the spectrum.
+      </li>
+    </ul>
+  </span>
+</div>
+

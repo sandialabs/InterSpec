@@ -35,6 +35,7 @@
 namespace Wt
 {
   class WTree;
+  class WTemplate;
   class WTreeNode;
   class WLineEdit;
   class WPopupWidget;
@@ -49,6 +50,7 @@ namespace HelpSystem
   {
   protected:
     /** Store a map from the ID of topic, to the tree node for that topic. */
+    //ToDo: a Boost.BiMap would be a lot better fit
     std::map<std::string, Wt::WTreeNode*> m_treeLookup;
     
     /** Store a map from the ID of topic, to the name of XML file that holds
@@ -69,6 +71,14 @@ namespace HelpSystem
     HelpWindow(std::string preselect="");
     ~HelpWindow();
     void selectHelpToShow();
+    Wt::WTemplate *getContentToDisplay( const std::string &tag ) const;
+    
+    /** If there are not XML help files associated with a tag, but there are
+        children to that tag, then the contents of all the (no-recursive)
+        children will be returned.
+     */
+    std::string getHelpContents( const std::string &tag ) const;
+    
     void populateTree(Wt::Json::Array &res, Wt::WTreeNode* parent);
     void initialize();
     void handleArrowPress( const Wt::WKeyEvent e );

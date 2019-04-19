@@ -656,7 +656,7 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
                               Wt::WSuggestionPopup *materialSuggestion ,
                               InterSpec* viewer)
   : AuxWindow( "Gamma XS Calc",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) )
 {
@@ -672,6 +672,29 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   finished().connect( boost::bind( &GammaXsWindow::deleteWindow, this ) );
   
   show();
+  
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+  
+  if( app && app->isPhone() )
+  {
+    titleBar()->hide();
+  
+    if( viewer )
+    {
+      float safeAreas[4] = { 0.0f };
+#if( IOS )
+      InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
+      app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
+#endif
+      repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
+      setMaximumSize( WLength::Auto, viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
+    }
+  }else
+  {
+    resizeToFitOnScreen();
+    centerWindowHeavyHanded();
+  }//if( isPhone ) / else
+
   
   //If mobile take focus away from text field so the keyboard doesnt
   //  automatically show - doesnt always work

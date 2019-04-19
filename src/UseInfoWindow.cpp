@@ -158,6 +158,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
   
   WGridLayout *layout = stretcher();
+  layout->setContentsMargins( 9, 0, 9, 0 );
   layout->addWidget( m_menu, 0, 0, AlignLeft );
   const int nstack_rows = m_viewer->isMobile() ? 1 : 3;  //"License and Terms" and "More in depth information" links for non-mombile users
   layout->addWidget( stack, 0, 1, nstack_rows, 1 );
@@ -181,7 +182,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   spectrumContainer->setLayout(spectrumLayout);
   spectrumContainer->setOverflow( WContainerWidget::OverflowHidden );
   
-  WContainerWidget* samplesContainer = new WContainerWidget();
+  WContainerWidget *samplesContainer = new WContainerWidget();
   WGridLayout *samplesLayout = new WGridLayout();
   samplesLayout->setContentsMargins( 0, 0, 0, 0 );
   samplesContainer->setLayout( samplesLayout );
@@ -228,7 +229,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
 #endif
     
     ///-----Sample -----
-    m_messageModelSample = new Wt::WStandardItemModel(0,3, this);
+    m_messageModelSample = new Wt::WStandardItemModel( 0, 3, this );
     
     WStandardItem *parserType = new WStandardItem();
     parserType->setData(k2006Icd1Parser); //kIaeaParser
@@ -294,19 +295,23 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       m_messageModelSample->appendRow(message);
     } // if( viewer->isMobile() )
     
-    m_messageModelSample->setHeaderData(  0, Horizontal, WString("Example Spectra"), DisplayRole );
+    //m_messageModelSample->setHeaderData(  0, Horizontal, WString("Example Spectra"), DisplayRole );
     m_tableSample = new RowStretchTreeView();
     m_tableSample->setRootIsDecorated( false ); //makes the tree look like a table! :)
+    m_tableSample->setHeaderHeight( 0 );
     m_tableSample->addStyleClass( "DbSpecFileSelectTable" );
     m_tableSample->setModel( m_messageModelSample );
     m_tableSample->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
     m_tableSample->setColumnResizeEnabled(true);
     m_tableSample->setRowHeight( WLength(30,WLength::Pixel) );
     m_tableSample->setColumnAlignment(0, Wt::AlignLeft);
-    m_tableSample->setHeaderAlignment(0, Wt::AlignCenter);
+    //m_tableSample->setHeaderAlignment(0, Wt::AlignCenter);
     m_tableSample->setColumnWidth(0,340);
     m_tableSample->hideColumn(1);
     m_tableSample->hideColumn(2);
+    
+    //if( m_viewer->isPhone() )
+    //  m_tableSample->setMaximumSize( WLength::Auto, 120 );
     
     m_tableSample->setAlternatingRowColors(true);
     m_tableSample->setSelectionMode( Wt::SingleSelection );
@@ -374,10 +379,17 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   
   
   //----------Add left menu --------
-  
   SideMenuItem *item = new SideMenuItem( (m_viewer->isPhone() ? "" : "Welcome"), welcomeContainer );
-  if( m_viewer->isMobile() )
-    item->setIcon( "InterSpec_resources/images/home_small.png" );
+  if( m_viewer->isPhone() )
+  {
+    //item->setIcon( "InterSpec_resources/images/home_small.svg" );
+    //item->addStyleClass( "WhiteIcon" );
+    WAnchor *anchor = item->anchor();
+    WImage *image = new WImage( "InterSpec_resources/images/home_small.svg" );
+    image->addStyleClass( "WhiteIcon" );
+    anchor->addWidget( image );
+  }
+  
   item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
   item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
   m_menu->addItem( item );
@@ -466,7 +478,16 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   if( m_viewer->isMobile() )
   {
     item = makeItem( m_viewer->isPhone() ? "" : "Use Info", "mobile-mouse-interactions" );
-    item->setIcon("InterSpec_resources/images/phone_tips.png");
+    //item->setIcon("InterSpec_resources/images/phone_tips.svg");
+    //item->addStyleClass( "WhiteIcon" );
+    
+    if( m_viewer->isPhone() )
+    {
+      WAnchor *anchor = item->anchor();
+      WImage *image = new WImage( "InterSpec_resources/images/phone_tips.svg" );
+      image->addStyleClass( "WhiteIcon" );
+      anchor->addWidget( image );
+    }
   }else if( m_viewer->isDesktop() )
   {
     WContainerWidget* controlContainer = new WContainerWidget();
@@ -576,7 +597,11 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     if( m_viewer->isMobile() )
-      item->setIcon("InterSpec_resources/images/pdf_page.png");
+    {
+      WImage *image = new WImage( "InterSpec_resources/images/pdf_page.png" );
+      image->addStyleClass( "WhiteIcon" );
+      item->anchor()->addWidget( image );
+    }
     m_menu->addItem( item );
   } //Cheat sheet PDF
   
@@ -587,8 +612,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     msg += "<div align=\"left\">";
 #if( USE_DB_TO_STORE_SPECTRA )
     if( m_snapshotModel && m_snapshotModel->size()==0 )
-      msg += "<p>You can start by opening an example spectra below, or you can use the <em>Import Spectra</em> tab to load external files.<br />"
-      "</p>";
+      msg += "You can start by opening an example spectra below, or you can use the <em>Import Spectra</em> tab to load external files."
+      "<br />";
     else
       msg += "<p>Your previously saved spectra are shown below.  You can use the other tabs to open example spectra, or to import external spectral files.<br />You can also open spectra attached to email, or cloud storage apps.</p>";
 #else
@@ -610,25 +635,35 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   
   WText *text = new WText( msg );
   
-  const char *mobilePostcriptText = "<p>If you are new to <em>InterSpec</em>, tap on the "
-  "<img src=\"InterSpec_resources/images/phone_tips.png\" width=12 height=12 alt=\"information icon\" /> "
+  const char *mobilePostcriptText = "<p>Tap on the "
+  "<img src=\"InterSpec_resources/images/phone_tips.png\" width=12 height=12 alt=\"information icon\" class=\"WhiteIcon\" /> "
   "icon to the left for the basics of interacting with the chart and fitting for peaks."
-  "Tap the <img src=\"InterSpec_resources/images/help_mobile.svg\" width=12 height=12 alt=\"help icon\" /> "
-  "icon in the upper-right corner for detailed information about <em>InterSpec</em>s tools and features."
+  "Tap the <img src=\"InterSpec_resources/images/help_mobile.svg\" width=12 height=12 alt=\"help icon\" class=\"WhiteIcon\" /> "
+  "icon for detailed information about <em>InterSpec</em>s tools and features."
   "</p>";
   
   if( m_viewer->isPhone() )
   {
+    WGridLayout *rightLayout = new WGridLayout();
+    rightLayout->setContentsMargins( 0, 0, 0, 0 );
+    rightLayout->setVerticalSpacing( 0 );
+    rightLayout->setHorizontalSpacing( 0 );
+    welcomeContainer->setLayout(rightLayout);
+    
     text->setInline( false );
     text->addStyleClass( "MobileWelcomeText" );
     tabW->addStyleClass( "UseInfoTabsMobile" );
-    welcomeContainer->addWidget( text );
-    welcomeContainer->addWidget( tabW );
+    //welcomeContainer->addWidget( text );
+    //welcomeContainer->addWidget( tabW );
+    rightLayout->addWidget( text, 0, 0 );
+    rightLayout->addWidget( tabW, 1, 0 );
+    rightLayout->setRowStretch( 1, 1 );
     
     text = new WText( mobilePostcriptText, Wt::XHTMLUnsafeText );
     text->setInline( false );
     text->addStyleClass( "MobileWelcomePoscriptText" );
-    welcomeContainer->addWidget( text );
+    //welcomeContainer->addWidget( text );
+    rightLayout->addWidget( text, 2, 0 );
     
     /*
      //"Spectra attached to emails can be copied into <em>InterSpec</em> from within your mail app.<br />"

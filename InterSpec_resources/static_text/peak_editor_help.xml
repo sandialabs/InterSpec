@@ -13,15 +13,15 @@ you to edit the nuclide associated with this peak, or change the continuum type
 used for the peak.</div>
       <div style="padding-top: 10px">
          To access the <b>Peak Editor</b> dialog,
-         <u>right-click</u>
+         <!-- <u>right-click</u> -->
+tap and hold for about a second,
          within the region of
 interest (ROI) of an identified peak, and then
          <u>select</u>
          &#34;<b>Peak Editor</b>&#34;:
       </div>
       <div align="center" style="padding-top: 10px" >
-         <img src="InterSpec_resources/static_text/images/PeakEditor1.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
-         <img src="InterSpec_resources/static_text/images/PeakEditor2.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
+         <img src="InterSpec_resources/static_text/images/peak_editor.png"  class="imageBorder" style="max-width:40%; max-height:300px;" />
       </div>
       <div style="padding-top: 10px"> 
 If you have multiple peaks next to each other sharing a ROI, the peak

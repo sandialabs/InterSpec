@@ -36,9 +36,14 @@
 #include <string>
 #include <fstream>
 #include <iostream>
+
+#include <Wt/WServer>
+
 #include <boost/thread.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
+
+#include "AppDelegate.h"
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
@@ -154,24 +159,40 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   NSLog( @"In enteredBackground" );
   
-  _appHasGoneIntoBackground = YES;
-  _appComminFromBackground = YES;
+  void (^killStuffBlock)(void) = ^{
+    NSLog( @"In enteredBackground ---> killStuffBlock" );
+    _appHasGoneIntoBackground = YES;
+    _appComminFromBackground = YES;
+    
+    InterSpecServer::killServer();
+    NSLog( @"Killed server" );
+    
+    _isServing = NO;
+    _UrlServingOn = @"";
+    _UrlUniqueId = @"";
+    
+    //We could actually delete the webview here and recreate when bringing to
+    //  the foreground, but whatever.  For now lets just clear the webview to
+    //  save a couple megabytes of ram.
+    [_webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"about:blank"]]];
+    
+    //The following doesnt seem to make a big difference, so lets not bother with it
+    //see: http://twobitlabs.com/2012/01/ios-ipad-iphone-nsurlcache-uiwebview-memory-utilization/
+    [[NSURLCache sharedURLCache] removeAllCachedResponses];
+  };
   
-  InterSpecServer::killServer();
-  NSLog( @"Killed server" );
+  if( [NSThread isMainThread] )
+  {
+    killStuffBlock();
+  }else
+  {
+    dispatch_group_t group = dispatch_group_create();
+    dispatch_group_async(group, dispatch_get_main_queue(), killStuffBlock );
+    dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+    NSLog(@"Syncing up after killStuffBlock" );
+  }
   
-  _isServing = NO;
-  _UrlServingOn = @"";
-  _UrlUniqueId = @"";
-
-  //We could actually delete the webview here and recreate when bringing to
-  //  the foreground, but whatever.  For now lets just clear the webview to
-  //  save a couple megabytes of ram.
-  [_webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"about:blank"]]];
-
-//The following doesnt seem to make a big difference, so lets not bother with it
-//see: http://twobitlabs.com/2012/01/ios-ipad-iphone-nsurlcache-uiwebview-memory-utilization/
-  [[NSURLCache sharedURLCache] removeAllCachedResponses];
+  NSLog( @"Done in enteredBackground" );
   
   return YES;
 }//-(BOOL)enteredBackground
@@ -206,7 +227,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
 //  NSLog( @"Setting CWD=%s", apppath.string<std::string>().c_str() );
 //  boost::filesystem::current_path( apppath );
-  
+
   
   if( !_appComminFromBackground )
   {
@@ -252,6 +273,24 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   if( _dbIndexOfFileToOpen >= 0 )
     actualURL = [NSString stringWithFormat:@"%@&specfile=%i", actualURL, _dbIndexOfFileToOpen];
   _dbIndexOfFileToOpen = -1;
+  
+  //See if we should specify orientation and safe area in the URL, so it will be
+  //  known before the html/JS gets loaded.  We could do the same thing for initial
+  //  positioning/sizing of things as well...
+  if( @available(iOS 11, *) )
+  {
+    UIEdgeInsets insets = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets;
+    UIInterfaceOrientation orientation = [[UIApplication sharedApplication] statusBarOrientation];
+    
+    NSLog( @"wakeupFromBackground Orientation=%i, SafeAreas = {t=%f, r=%f, b=%f, l=%f}",
+          int(orientation), insets.top, insets.right, insets.bottom, insets.right );
+    
+    if( insets.top > 0 || insets.right > 0 || insets.bottom > 0 || insets.left > 0 )
+    {
+      actualURL = [NSString stringWithFormat:@"%@&SafeAreas=%i,%i,%i,%i,%i", actualURL,
+                   int(orientation), int(insets.top), int(insets.right), int(insets.bottom), int(insets.left)];
+    }
+  }//if( @available(iOS 11, *) )
   
   bool restore = false;
   if( [[NSUserDefaults standardUserDefaults] boolForKey:@"ShouldRestore"] )
@@ -431,37 +470,26 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 {
   NSLog(@"didFinishNavigation" );
   
-  NSLog( @"Doing horrible hack for iOS 9, to force a re-size of the contents." ) ;
-  
-  //CGRect rect = [[UIScreen mainScreen] bounds];
-  CGRect rect = [_webView bounds];
-  NSLog( @"rect after nav = {%f, %f}", rect.size.width, rect.size.height ); //568x320
-  
-  CGFloat topSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.top;
-  CGFloat bottomSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.bottom;
-  CGFloat rightSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.right;
-  CGFloat leftSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.left;
-  NSLog( @"didFinishNavigation SafeAreas = {t=%f, r=%f, b=%f, l=%f}", topSafeArea, rightSafeArea, bottomSafeArea, leftSafeArea );
-  
+  //NSLog( @"Doing horrible hack for iOS 9, to force a re-size of the contents." ) ;
   //[_webView evaluateJavaScript:@"setTimeout( function(){ $('.Wt-domRoot').get(0).wtResize(); }, 500 );" completionHandler: nil];
   
   
   //[_webView evaluateJavaScript:@"document.body.style.background = \"background: red;\"" completionHandler: nil];
   //See https://stackoverflow.com/questions/4629969/ios-return-bad-value-for-window-innerheight-width
   //  for description of issue
-  [_webView evaluateJavaScript:@"window.innerHeight" completionHandler:
-   ^(id _Nullable result, NSError * _Nullable error) {
-     NSString *heightString = nil;
-     if (error == nil) {
-       if (result != nil) {
-         heightString = [NSString stringWithFormat:@"%@", result];
-       }
-     } else {
-       NSLog(@"evaluateJavaScript error : %@", error.localizedDescription);
-     }
-     if( heightString )
-       NSLog( @"innerHeight=%@\n", heightString ) ;  //window.innerHeight=552.000000, window.innerWidth=980
-   }];
+  //[_webView evaluateJavaScript:@"window.innerHeight" completionHandler:
+  // ^(id _Nullable result, NSError * _Nullable error) {
+  //   NSString *heightString = nil;
+  //   if (error == nil) {
+  //     if (result != nil) {
+  //       heightString = [NSString stringWithFormat:@"%@", result];
+  //     }
+  //   } else {
+  //     NSLog(@"evaluateJavaScript error : %@", error.localizedDescription);
+  //   }
+  //   if( heightString )
+  //     NSLog( @"innerHeight=%@\n", heightString ) ;  //window.innerHeight=552.000000, window.innerWidth=980
+  // }];
 }//didFinishNavigation
 
 
@@ -480,9 +508,55 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   if( navigationAction.navigationType == WKNavigationTypeLinkActivated )
   {
+    //CSVs from decay widget get here
     NSLog( @"WKNavigationTypeLinkActivated" );
-    UIApplication *application = [UIApplication sharedApplication];
-    [application openURL:navigationAction.request.URL options:@{} completionHandler:nil];
+    
+    //To open the URL in safari, you can do:
+    //UIApplication *application = [UIApplication sharedApplication];
+    //[application openURL:navigationAction.request.URL options:@{} completionHandler:nil];
+    
+    //However, to try and save data to a file, we will download the data, and
+    //  let the user save it
+    void (^completionHandlerBlock)(NSData *, NSURLResponse *, NSError *)
+    = ^(NSData *data, NSURLResponse *response, NSError *error){
+       NSLog( @"completionHandlerBlock" );
+      
+      if( error || (data==nil) )
+      {
+        NSLog( @"completionHandlerBlock Error" );
+        return;
+      }
+      
+      NSString *name = nil, *mimetype = nil;
+      if( response )
+      {
+        mimetype = [response MIMEType];
+        name = [response suggestedFilename];
+      }
+      
+      if( name == nil )
+        name = @"download.txt";
+      
+      NSString *tempDir = NSTemporaryDirectory();
+      if( tempDir == nil ) //shouldnt ever fail, right
+        tempDir = @"/tmp";
+      NSString *tmpfile = [tempDir stringByAppendingPathComponent:name];
+      if( [data writeToFile: tmpfile  atomically: YES] )
+      {
+        dispatch_async( dispatch_get_main_queue(), ^{
+          AppDelegate *appDelegate = (AppDelegate *)[[UIApplication sharedApplication] delegate];
+          [appDelegate sendSpectrumFileToOtherApp: tmpfile];
+        } );
+      }else
+      {
+        NSLog( @"Failed to write file '%@'", tmpfile );
+      }
+    };//completionHandlerBlock
+    
+    NSURLSession *session = [NSURLSession sharedSession];
+    NSURLSessionDataTask *task = [session dataTaskWithURL:navigationAction.request.URL completionHandler:completionHandlerBlock];
+    [task resume];
+  
     
     decisionHandler( WKNavigationActionPolicyCancel );
     return;
@@ -505,7 +579,11 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     NSLog( @"WKNavigationTypeFormSubmitted" );
   
   if( navigationAction.navigationType == WKNavigationTypeOther )
-    NSLog( @"WKNavigationTypeOther" );  //Get here for the initial load
+  {
+    //Get here for the initial load, or opening AuxWindow
+    NSLog( @"WKNavigationTypeOther" );
+  }
+  
   
   decisionHandler( WKNavigationActionPolicyAllow );
 }//decidePolicyForNavigationAction
@@ -613,18 +691,21 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 - (UIViewController *)documentInteractionControllerViewControllerForPreview:(UIDocumentInteractionController *)controller
 {
   //required to implement UIDocumentInteractionControllerDelegate
+  NSLog(@"documentInteractionControllerViewControllerForPreview" );
   return self;
 }
 
 - (UIView *)documentInteractionControllerViewForPreview:(UIDocumentInteractionController *)controller
 {
   //required to implement UIDocumentInteractionControllerDelegate
+  NSLog(@"documentInteractionControllerViewForPreview" );
   return self.view;
 }
 
 - (CGRect)documentInteractionControllerRectForPreview:(UIDocumentInteractionController *)controller
 {
   //required to implement UIDocumentInteractionControllerDelegate
+  NSLog(@"documentInteractionControllerRectForPreview" );
   return self.view.frame;
 }
 
@@ -651,11 +732,42 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 - (void)viewSafeAreaInsetsDidChange
 {
   NSLog(@"viewSafeAreaInsetsDidChange" );
+  
   if( @available(iOS 11, *) )
   {
     [super viewSafeAreaInsetsDidChange];
-  }
+    [self setSafeAreasToClient];
+  }//if( @available(iOS 11, *) )
 }
+
+- (void)setSafeAreasToClient
+{
+  if( @available(iOS 11.0, *) )
+  {
+    UIEdgeInsets insets = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets;
+    UIInterfaceOrientation orient = [[UIApplication sharedApplication] statusBarOrientation];
+    
+    Wt::WServer *server = Wt::WServer::instance();
+    if( !server )
+      return;
+    
+    const float top = insets.top;
+    const float right = insets.right;
+    const float bottom = insets.bottom;
+    const float left = insets.left;
+    const int orientation = orient;
+    
+    NSLog(@"setSafeAreasToClient: Orient=%i, {%f, %f, %f, %f}", orientation, top, right, bottom, left );
+    
+    server->postAll( std::bind([orientation,top,right,bottom,left](){
+      InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+      if( !app ) //Shouldnt ever happen
+        return;
+      app->setSafeAreaInsets( orientation, top, right, bottom, left );
+      app->triggerUpdate();
+    }));
+  }
+}//setSafeAreasToClient
 
 
 - (void)viewDidLayoutSubviews
@@ -663,13 +775,6 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   [super viewDidLayoutSubviews];
   
   NSLog(@"viewDidLayoutSubviews" );
-  //[[UIApplication sharedApplication] keyWindow].safeAreaInsets
-  CGFloat topSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.top;
-  CGFloat bottomSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.bottom;
-  CGFloat rightSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.right;
-  CGFloat leftSafeArea = [[[UIApplication sharedApplication] delegate] window].safeAreaInsets.left;
-  NSLog( @"viewDidLayoutSubviews SafeAreas = {t=%f, r=%f, b=%f, l=%f}", topSafeArea, rightSafeArea, bottomSafeArea, leftSafeArea );
-
 }
 
 @end

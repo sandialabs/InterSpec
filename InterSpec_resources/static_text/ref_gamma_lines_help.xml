@@ -1,25 +1,96 @@
 <div align="center">
-<h1 id="reference-gamma-lines-dialog">
-<b>Trouble Fitting Peaks for Shielding</b>
-</h1>
+<h1 id="reference-gamma-lines-dialog"><b>Reference Gamma Lines</b></h1>
 <hr />
 </div>
 <div>
-Access and launch the <b>Reference Photopeaks</b> tool by
-<u>selecting</u>
-<b>Tools &#8594; Reference Photopeaks</b> menu (tool tabs hidden) or 3rd tab.</div>
-<div style="padding-top: 10px">Inputting the &#34;Nuclide&#34; and &#34;Age&#34; will immediately alter the calibration of the spectrum.</div>
-<div style="padding-top: 10px">
-If the calibration is still not accurate, you can manually account for potential shielding by
-<u>selecting</u>
-the shielding material from the list of options, and
-<u>inputting</u>
-the appropriate thickness. Often this will alter your spectrum such that peaks will fit the isotope they reflect more accurately.
+
+<p>
+  The reference gamma lines tool shows energies of gamma and x-rays emitted
+  by an isotope, both in a table within the tool and also as lines on the spectrum.
+</p>
+
+<div style="padding-top: 1px" align="center">
+<img src="InterSpec_resources/static_text/images/ref_gamma_lines_widget.png"  class="imageBorder" style="max-width:55%;" />
+<img src="InterSpec_resources/static_text/images/ref_gamma_line_spectrum.png"  class="imageBorder" style="max-width:30%" />
 </div>
-<div>
+
+<p>
+A key part of performing an anlysis with <b>InterSpec</b> is associating peaks
+with specific energy gamma or x-rays from a nuclide - the easiest way to
+accomplish this is to display reference lines for a nuclide <em>before</em>
+fitting the peaks.  When reference lines are displayed, and a peak is fit, if
+there is a reference line reasonably near the fit peak, then that peak will be
+assigned that energy gamma or x-ray.  Once this is done, that peak can be used
+for energy calibration, or for fitting source activity, age, or shielding.
+</p>
+
+<p>
+Options for using the tool:
 <ul>
-<u>Input</u>
-the units in which the thickness of the material was measured after inputting the quantity.
-Separate the units from the number with a single space; trouble fitting will not occur otherwise.
+  <li><b>Nuclide</b> to display: All non-stable nuclides are available for display.</li>
+  <li><b>Age</b>: For isotopes where aging will have an effect on the distribution
+   of gamma and/or x-ray amplitudes, age of the nuclide can be specfied using a
+   combination of time units, similar to &quot;<b>5.3y 8d 22m</b>&quot; or in half lives like
+   &quot;<b>2.5 HL</b>&quot;.  Acceptible time units: <b>year</b>, <b>yr</b>,
+   <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+   <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>,
+   <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or you can specify time period by
+   <b>hh:mm:ss</b>. Half life units can be specified using <b>hl</b>, <b>halflife</b>,
+   <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>, <b>half lives</b>, or
+   <b>half life</b>.<br />
+   Half life units or time periods can not be mixed with other units.<br />
+   When multiple time periods are specified, they are summed,
+   e.x. &quot;1y6months 3m&quot; is interpreted as 18 months and 3 minutes.
+   <br />
+   The initial age used when a nuclide is entered is based on a heuristic that
+   generally works well, but in the case of freshly produced, or extensively aged
+   nuclides may need to be adjusted.
+   <br />
+   Adjusting the age is not allowed for nuclides whose signatures do not significantly
+   change with age.
+  </li>
+  <li><b>Prompt Only</b>: For nuclides that have decay chains where at some point a child
+    half-life is longer than its parents, selecting this option will cause only the
+    nuclides in the decay chain down to that point to be included in the reference
+    lines shown, with them all being in static equilibrium.<br />
+    This option is only shown for nuclides where it applies, like U-238, Th-232, etc.
+  </li>
+  <li><b><span style="color:red;">C</span><span style="color:green;">o</span><span style="color:blue;">l</span><span style="color:yellow;">o</span><span style="color:violet;">r</span></b>:
+    You can select the color you would like the reference lines to appear on the
+    spectrum - this will also cause peaks fit while showing the reference lines
+    that can be attributed to the nuclide, to be that color as well.  This is useful
+    to quickly identify which peaks are attributed to different nuclides.
+  </li>
+  <li><b>Detector Response Function</b>: If a detector response function (DRF) is selected
+    then the amplitude of lines drawn on the spectrum, will be convoluted with the DRF
+    so that lines your detector has a lower sensitivity to will be shown with a smaller
+    amplitude.  <br />
+    The DRF does not effect the <b>B.R.</b> shown in the tools table.
+  </li>
+  <li><b>Shielding</b>: Because shielding can drastically alter the expected
+    distribution of gammas and x-rays, you can enter a shielding type and thickness
+    to have the reference lines shown on the spectrum be modulated by the attenuation
+    of that shielding.<br />
+    Shielding does not effect the <b>B.R.</b> shown in the tools table.
+  </li>
 </ul>
+</p>
+
+<p>
+To show reference lines for multiple nuclides at once:
+<ol>
+  <li>Enter first nuclide, and adjust all options (shielding, age, DRF).</li>
+  <li>Click the &quot;<em>Add Another</em>&quot; button, at which point the nuclide
+    field will be cleared of the current nuclide; however the first nuclides lines will
+    still be showing on the spectrum</li>
+  <li>Enter the second nuclide and adjust all options.  Lines for both nuclides
+    will be showing on the spectrum, but the tools table will only show values for
+    the most recently entered spectrum.
+  </li>
+  <li>Click &quot;<em>Add Another</em>&quot;, and repeat for all wanted nuclides.</li>
+  <li>Click the &quot;<em>Clear</em>&quot; button to remove the lines for all nuclides.</li>
+</ol>
+
+</p>
+
 </div>

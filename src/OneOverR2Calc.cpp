@@ -28,7 +28,9 @@
 #include <Wt/WText>
 #include <Wt/WBreak>
 #include <Wt/WLabel>
+#include <Wt/WTable>
 #include <Wt/WComboBox>
+#include <Wt/WTableCell>
 #include <Wt/WValidator>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
@@ -46,7 +48,7 @@ using namespace std;
 
 OneOverR2Calc::OneOverR2Calc()
   : AuxWindow( "1/r<sup>2</sup> Calculator",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) ),
     m_nearMeasurement( NULL ),
@@ -56,26 +58,30 @@ OneOverR2Calc::OneOverR2Calc()
     m_answer( NULL ),
     m_message( NULL )
 {
-  wApp->useStyleSheet( "InterSpec_resources/OneOverR2CalcInput.css" );
+  wApp->useStyleSheet( "InterSpec_resources/OneOverR2Calc.css" );
   
-//  addStyleClass( "OneOverR2Calc" );
+  WContainerWidget *contentDiv = contents();
+  addStyleClass( "OneOverR2CalcWindow" );
+  contentDiv->addStyleClass( "OneOverR2Calc" );
   
   WText *message = NULL;
-  WGridLayout * layout = stretcher();
 
   const char *topMessage = "Use two measurement at different locations to find "
-                           "distance to an unknown source location. E.g. when "
+                           "distance to an unseen source. E.g. when "
                             "the source is behind a wall.";
-  message = new WText( topMessage, Wt::XHTMLUnsafeText);
-  layout->addWidget(message,0,0,1,2);
+  
+  message = new WText( topMessage, Wt::XHTMLText, contentDiv );
+  message->setInline( false );
+  message->addStyleClass( "OneOverR2IntroTxt" );
 
-  WText *label = new WText( "Near Measurement Intensity:" );
-  layout->addWidget(label,1,0);
+  WTable *layoutTable = new WTable( contentDiv );
+  WTableCell *cell = layoutTable->elementAt( 0, 0 );
+  WText *label = new WText( "Near Measurement Intensity:", cell );
   
   //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTipInstantly );
   
-  m_nearMeasurement = new WDoubleSpinBox(  );
-  layout->addWidget(m_nearMeasurement,1,1);
+  cell = layoutTable->elementAt( 0, 1 );
+  m_nearMeasurement = new WDoubleSpinBox( cell );
   m_nearMeasurement->setDecimals( 2 );
   m_nearMeasurement->setMinimum( 0.0 );
   m_nearMeasurement->setMaximum( 1.0E20 );
@@ -84,12 +90,11 @@ OneOverR2Calc::OneOverR2Calc()
   m_nearMeasurement->blurred().connect( this, &OneOverR2Calc::doCalc );
   m_nearMeasurement->enterPressed().connect( this, &OneOverR2Calc::doCalc );
 
+  cell = layoutTable->elementAt( 1, 0 );
+  label = new WText( "Far Measurement Intensity:", cell );
 
-  label = new WText( "Far Measurement Intensity:");
-  layout->addWidget(label,2,0);
-
-  m_farMeasurement = new WDoubleSpinBox(  );
-  layout->addWidget(m_farMeasurement,2,1);
+  cell = layoutTable->elementAt( 1, 1 );
+  m_farMeasurement = new WDoubleSpinBox( cell );
   m_farMeasurement->setDecimals( 2 );
   m_farMeasurement->setMinimum( 0.0 );
   m_farMeasurement->setMaximum( 1.0E20 );
@@ -98,11 +103,11 @@ OneOverR2Calc::OneOverR2Calc()
   m_farMeasurement->blurred().connect( this, &OneOverR2Calc::doCalc );
   m_farMeasurement->enterPressed().connect( this, &OneOverR2Calc::doCalc );
 
-  label = new WText( "Background Intensity (optional):" );
-  layout->addWidget(label,3,0);
+  cell = layoutTable->elementAt( 2, 0 );
+  label = new WText( "Background Intensity (optional):", cell );
 
-  m_backgroundMeasurment = new WDoubleSpinBox();
-  layout->addWidget(m_backgroundMeasurment,3,1);
+  cell = layoutTable->elementAt( 2, 1 );
+  m_backgroundMeasurment = new WDoubleSpinBox( cell );
   m_backgroundMeasurment->setDecimals( 2 );
   m_backgroundMeasurment->setMinimum( 0.0 );
   m_backgroundMeasurment->setMaximum( 1.0E20 );
@@ -110,10 +115,12 @@ OneOverR2Calc::OneOverR2Calc()
   m_backgroundMeasurment->valueChanged().connect( this, &OneOverR2Calc::doCalc );
   m_backgroundMeasurment->blurred().connect( this, &OneOverR2Calc::doCalc );
   m_backgroundMeasurment->enterPressed().connect( this, &OneOverR2Calc::doCalc );
-  label = new WText( "Distance between measurements:" );
-  layout->addWidget(label,4,0);
-  m_distance = new WDoubleSpinBox( );
-  layout->addWidget(m_distance,4,1);
+  
+  cell = layoutTable->elementAt( 3, 0 );
+  label = new WText( "Distance between measurements:", cell );
+  
+  cell = layoutTable->elementAt( 3, 1 );
+  m_distance = new WDoubleSpinBox( cell );
   m_distance->setDecimals( 2 );
   m_distance->setMinimum( 0.0 );
   m_distance->setMaximum( 9.99E6 );
@@ -124,9 +131,13 @@ OneOverR2Calc::OneOverR2Calc()
 
   
   //Power Law
-  WContainerWidget *powerLawDiv = new WContainerWidget();
-  layout->addWidget( powerLawDiv, 5, 0, 1, 2 );
+  cell = layoutTable->elementAt( 4, 0 );
+  cell->setColumnSpan( 2 );
+  WContainerWidget *powerLawDiv = new WContainerWidget( cell );
   WGridLayout *powerLayout = new WGridLayout();
+  powerLayout->setContentsMargins( 0, 0, 0, 0 );
+  powerLayout->setVerticalSpacing( 0 );
+  powerLayout->setHorizontalSpacing( 0 );
   powerLawDiv->setLayout( powerLayout );
   m_powerLawSelect = new WComboBox();
   label = new WText( "Power Law");
@@ -138,10 +149,11 @@ OneOverR2Calc::OneOverR2Calc()
   m_powerLawSelect->setCurrentIndex( 0 );
   m_powerLawSelect->activated().connect( this, &OneOverR2Calc::powerLawSelected );
   
-  label = new WText( "Distance of source in front of near measurement");
-  layout->addWidget(label,6,0);
-  m_answer  = new WLineEdit( );
-  layout->addWidget(m_answer,6,1);
+  cell = layoutTable->elementAt( 5, 0 );
+  label = new WText( "Dist. near measurement to source:", cell );
+
+  cell = layoutTable->elementAt( 5, 1 );
+  m_answer  = new WLineEdit( cell );
   m_answer->setDisabled( true );
 
   m_backgroundMeasurment->setText( "" );
@@ -149,15 +161,15 @@ OneOverR2Calc::OneOverR2Calc()
   const char *bottomMessage = "Use the same units for near, background, and far "
                               "measurements. Results are in same units used for "
                               "distance between measurements.";
-  message = new WText( bottomMessage, Wt::XHTMLUnsafeText );
-  layout->addWidget( message, 7, 0, 1, 2 );
+  message = new WText( bottomMessage, Wt::XHTMLText, contents() );
+  message->addStyleClass( "OneOverR2TextRow" );
+  message->setInline( false );
   
-  m_message = new WText( "&nbsp", XHTMLUnsafeText);
-  layout->addWidget( m_message, 8, 0, 1, 2 );
-  layout->setRowStretch( 8, 1 );
-  layout->setColumnStretch( 0, 1 );
-  string styleVal = m_message->attributeValue("style").toUTF8();
-  m_message->setAttributeValue( "style", "color:blue;" + styleVal );
+  
+  m_message = new WText( "&nbsp;", XHTMLText, contents() );
+  m_message->setInline( false );
+  m_message->addStyleClass( "OneOverR2Message" );
+
   m_message->setHiddenKeepsGeometry( true );
   
   AuxWindow::addHelpInFooter( footer(), "1/r2-calc-dialog" );
@@ -169,12 +181,43 @@ OneOverR2Calc::OneOverR2Calc()
   finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
   show();
-  centerWindow();
+  
+  
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
+  const bool isPhone = (app && app->isPhone());
+  
+  if( isPhone )
+  {
+    titleBar()->hide();
+    
+    InterSpec *viewer = app->viewer();
+    if( viewer )
+    {
+      /* For some reason CSS seems to fail resizing AuxWindows properly, so we have to do it in c++ */
+      
+      float safeAreas[4] = { 0.0f };
+#if( IOS )
+      InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
+      app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
+#endif
+      repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
+      setMaximumSize( WLength::Auto, viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
+      
+      /* ToDo: get safe offsets in c++ land, and then also convert other AuxWindows that are modal on phone to resize correctly. */
+      /* Do same for Gamma XS Calc. And Energy Range Count*/
+    }
+  }else
+  {
+    resizeToFitOnScreen();
+    centerWindowHeavyHanded();
+  }//if( isPhone ) / else
   
   //Keep the keyboard form popping up
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
   if( app && app->isMobile() )
+  {
     closeButton->setFocus();
+    closeButton->setFloatSide( Wt::Left ); //The "DialogClose" style class defaults to floating to the right, same as the help icon
+  }
 }//OneOverR2Calc constructor
 
 
@@ -226,15 +269,14 @@ void OneOverR2Calc::doCalc()
 
   if( farStrength >= nearStrength )
   {
-    m_message->setText( "Far radiation measurement must be smaller than "
-                        "near measurment" );
+    m_message->setText( "Far measurement must be less than near one" );
     m_message->show();
     return;
   }//if( near is larger than far )
 
   if( (background > 1E-6) && (farStrength <= 1E-6) )
   {
-    m_message->setText( "The background must be less than the far measurement" );
+    m_message->setText( "The background must be less than the far one" );
     m_message->show();
     return;
   }//if( background is bigger than the far measurment )
@@ -261,7 +303,7 @@ void OneOverR2Calc::doCalc()
   }//if( far strength is zero )
 
   //If weve made it this far, we have valid input
-  m_message->setText( "&nbsp" );
+  m_message->setText( "&nbsp;" );
 //  m_message->hide();
 
   /*

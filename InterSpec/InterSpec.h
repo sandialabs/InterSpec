@@ -1129,6 +1129,7 @@ protected:
     RefPhotopeaks,
     PeakManager,
     NuclideSearch,
+    AutoPeakSearch,
     Seperator,
     NumItems
   };//enum ToolTabMenuItems

@@ -229,11 +229,9 @@ public:
     m_previewChartColumn( -1 ),
     m_keepRefLinePeaksOnly( nullptr ),
     m_showAllPeaks( nullptr ),
-  
     m_chartPanel( nullptr ),
     m_chart( nullptr ),
     m_relEffModel( nullptr ),
-  
     m_nuclide_id_only( nuclide_id_only ),
     m_orig_peaks( orig_peaks ),
     m_data( data ),
@@ -245,9 +243,8 @@ public:
     
     const int appWidth = viewer->renderedWidth();
     const int appHeight = viewer->renderedHeight();
-    
-    setMaximumSize( 0.95*appWidth, 0.75*appHeight );
-    setClosable( false );
+    if( appWidth > 100 && appHeight > 100 )  //should probably always evaluate to true
+      setMaximumSize( 0.95*appWidth, 0.75*appHeight );
     
     //We need to map the initial peaks to the final peaks
     vector<bool> used_new( final_peaks.size(), false );
@@ -558,16 +555,24 @@ public:
     WPushButton *acceptButton = addCloseButtonToFooter( "Accept", true );
     acceptButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
     
-    WPushButton *cancelButton = addCloseButtonToFooter( "Cancel", true );
-    cancelButton->setFloatSide( Wt::Right );  //for mobile
+    WPushButton *cancelButton = nullptr;
+    if( viewer->isPhone() )
+    {
+      cancelButton = new WPushButton( "Cancel", footer() );
+      cancelButton->setFloatSide( Wt::Right );
+    }else
+    {
+      cancelButton = addCloseButtonToFooter( "Cancel", true );
+    }
+    
     cancelButton->clicked().connect( boost::bind( &PeakSelectorWindow::cancelOperation, this ) );
     
     finished().connect( this, &PeakSelectorWindow::doFinish );
-      
+    
     show();
+    
     resizeToFitOnScreen();
     centerWindow();
-    
     centerWindowHeavyHanded();
   }//PeakSelector constructor
   
@@ -1855,7 +1860,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   //  but also we want to give them the chance to go past this and keep using
   //  the app.
   AuxWindow *msg = new AuxWindow( "Just a few moments",
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::PhoneModal) );
   msg->setClosable( true );
   msg->setModal( true );
   msg->show();

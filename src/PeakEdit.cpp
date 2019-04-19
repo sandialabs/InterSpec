@@ -91,7 +91,16 @@ PeakEditWindow::PeakEditWindow( const double energy,
   
   m_edit = new PeakEdit( energy, peakmodel, viewer, this );
   rejectWhenEscapePressed();
-  contents()->addWidget( m_edit );
+  
+  if( viewer->isPhone() )
+  {
+    setMaximumSize( WLength::Auto, viewer->renderedHeight()-25 );
+    contents()->setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
+  }else
+  {
+    resizeToFitOnScreen();
+  }
+  
   setClosable( true );
   setResizable( false );
   centerWindow();
@@ -112,7 +121,7 @@ PeakEdit::PeakEdit( const double energy,
                     PeakModel *peakmodel,
                     InterSpec *viewer,
                     AuxWindow *aux )
-  : WContainerWidget( NULL ),
+  : WContainerWidget( aux->contents() ),
     m_energy( energy ),
     m_peakModel( peakmodel ),
     m_viewer( viewer ),
@@ -139,8 +148,8 @@ PeakEdit::PeakEdit( const double energy,
     m_otherPeakTxt( NULL ),
     m_prevPeakInRoi( NULL ),
     m_nextPeakInRoi( NULL ),
-    m_footer( aux->footer()),
-    m_aux(aux)
+    m_footer( aux->footer() ),
+    m_aux( aux )
 {
   init();
   changePeak( energy );
@@ -424,7 +433,7 @@ void PeakEdit::init()
   m_nextPeakInRoi = new WPushButton( m_otherPeaksDiv );
   m_nextPeakInRoi->setStyleClass( "PeakEditNextPeak" );
   m_nextPeakInRoi->clicked().connect( boost::bind( &PeakEdit::changeToNextPeakInRoi, this, false ) );
-
+  
   
   
   
@@ -438,7 +447,7 @@ void PeakEdit::init()
   if( m_viewer && !m_viewer->isMobile() )
     m_accept->setIcon( "InterSpec_resources/images/accept.png" );
   
-  //Add class tio give padding on left side (or modify current style class)
+  //Add class to give padding on left side (or modify current style class)
   
   WPushButton *deleteButton = new WPushButton( "Delete", m_footer );
 //  deleteButton->setFloatSide( Wt::Right );

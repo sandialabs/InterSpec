@@ -5,32 +5,10 @@
       <hr />
 	  </div>
 
+This tool allows you to view or edit the meta-data associated with the spectrum file.
 <img src="InterSpec_resources/static_text/images/FileParameters.png" style="max-height:300px;clear:both;float:left;margin-right:20px; "/>
+In order to edit the meta-data, you will have to select the &quot;Yes&quot; option
+in the <em>Allow Edit</em> box.  When you are done editing the information you will
+need to tap the <img src="InterSpec_resources/static_text/images/ReloadIcon.png" valign="middle" style="height: 12px" />
+button to save changes and propogate changes to other places within <em>InterSpec</em>.
 
-      <div >
-         <u>Select</u>
-         <b>Tools  &#8594; File Parameters</b> to launch the tool.
-      </div>
-      <div style="padding-top: 10px">
-         <u>Select</u>
-         which spectrum (&#34;Foreground,&#34; &#34;Secondary,&#34; &#34;Background&#34;) you wish to view/input parameters for in the top left of the window that pops up.
-      </div>
-      <div style="padding-top: 10px">
-         <u>Enter</u>
-         the &#34;Allow Edit&#34; mode to
-         <u>input</u>
-         parameters the input file lacked, and/or
-         <u>edit</u>
-         the parameters the input file was incorrect about.
-      </div>
-      <div>
-         <ul>If ever the application is unable to run activity calculation, visit this tool; <i>InterSpec</i> will need all parameters, especially in cases when the input file did not provide them.</ul>
-      </div>
-      <div>
-         <ul>
-            The changes made will not be propagated to the rest of the application until the
-<img src="InterSpec_resources/static_text/images/ReloadIcon.png" valign="middle" />
-            icon is
-            <u>pressed</u>.
-         </ul>
-      </div>

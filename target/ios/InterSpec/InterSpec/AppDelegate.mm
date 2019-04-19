@@ -42,6 +42,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 
+
 @interface InterSpecAppView : UIWindow
 {
 }
@@ -70,11 +71,6 @@
     {
       NSLog( @"safeAreaInsetsDidChange" );
     }
-    // UIEdgeInsets insets = [self safeAreaInsets];
-    
-    UIEdgeInsets insets = [self.window safeAreaInsets];
-    NSLog( @"insets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
-    
   }
 }//safeAreaInsetsDidChange
 
@@ -167,8 +163,20 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
   //  [center addObserver:self selector:@selector(didShowKeyboard) name:UIKeyboardDidShowNotification object:nil];
   [center addObserver:_viewController selector:@selector(onKeyboardHide) name:UIKeyboardDidHideNotification object:nil]; //UIKeyboardWillHideNotification
   
+  
+  //Register to get notified of device orientation changes
+  UIDevice *device = [UIDevice currentDevice];
+  [device beginGeneratingDeviceOrientationNotifications];
+  NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+  [nc addObserver:self
+         selector:@selector(orientationChanged:)
+             name:UIDeviceOrientationDidChangeNotification
+           object:device];
+  
+  
   return YES;
 }
+
 
 
 - (BOOL)application:(UIApplication *)application shouldSaveApplicationState:(NSCoder *)coder
@@ -230,22 +238,48 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
     }];
     
     //To make the code block asynchronous
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-      
+    //dispatch_async(dispatch_get_main_queue(), ^{
+    
+    dispatch_async( dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
       //### background task starts
       NSLog(@"Running in the background\n");
-      double timeRemain = [[UIApplication sharedApplication] backgroundTimeRemaining];
-      NSLog(@"Initial background time: %f", timeRemain);
-      while(timeRemain > 25)  //well give ourselves 25 seconds to save the current InterSpec apps states
+      
+      double (^getTimeRemainingBlock)(void) = ^{
+        __block double timeRemain = 0.0;
+      
+        void (^getTimeRemainingWorker)(void) = ^{
+          timeRemain = [[UIApplication sharedApplication] backgroundTimeRemaining];
+          //NSLog(@"From main thread time remaining: %f", timeRemain);
+        };
+      
+        if( [NSThread isMainThread] )
+        {
+          getTimeRemainingWorker();
+        }else
+        {
+          dispatch_group_t group = dispatch_group_create();
+          dispatch_group_async(group, dispatch_get_main_queue(), getTimeRemainingWorker );
+          dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+          //NSLog(@"Should be done getting time remaining: %f", timeRemain);
+        }
+        
+        //NSLog(@"Returning time remaining: %f", timeRemain);
+        return timeRemain;
+      };//getTimeRemainingBlock
+      
+      double timeleft = getTimeRemainingBlock();
+      
+      NSLog(@"Initial background time: %f", timeleft);
+      while(timeleft > 15)  //well give ourselves 15 seconds to save the current InterSpec apps states
       {
         if( !self.isInBackground )
         {
           NSLog(@"isInBackground set");
           break;
         }
-        timeRemain = [[UIApplication sharedApplication] backgroundTimeRemaining];
-        NSLog(@"Background time Remaining: %f", timeRemain);
-        [NSThread sleepForTimeInterval:5]; //wait for 5 sec
+        timeleft = getTimeRemainingBlock();
+        //NSLog(@"Background time Remaining: %f", timeleft);
+        [NSThread sleepForTimeInterval: 0.25]; //wait for 0.25 sec
       }
        
       //#### background task ends
@@ -308,9 +342,6 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
 {
   NSLog(@"Begining sendSpectrumFileToOtherApp" );
   
-  UIEdgeInsets insets = [self.window safeAreaInsets];
-  NSLog( @"insets = {%f, %f, %f, %f}", insets.right, insets.left, insets.top, insets.bottom );
-  
   _documentController = [UIDocumentInteractionController interactionControllerWithURL:[NSURL fileURLWithPath:filename]];
   _documentController.delegate = _viewController;
 //  [_documentController retain];
@@ -329,6 +360,15 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
   //see maybye: http://stackoverflow.com/questions/32282401/attempting-to-load-the-view-of-a-view-controller-while-it-is-deallocating-uis
 }
 
+
+//********** ORIENTATION CHANGED **********
+- (void)orientationChanged:(NSNotification *)note
+{
+  NSLog(@"Orientation  has changed: %ld", [[note object] orientation]);
+  
+  if( _viewController )
+    [_viewController setSafeAreasToClient];
+}//orientationChanged
 
 
 

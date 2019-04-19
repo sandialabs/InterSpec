@@ -32,10 +32,29 @@ button[disabled]
 
 .Wt-btn > img, .WhiteIcon
 {
-  /* Turn white icons to iOS blue
+  /* Turn [any color] icons to iOS blue (rgb(0,122,255) or #007AFF)
      See: https://codepen.io/sosuke/pen/Pjoqqp to calculate filter
    */
   filter: brightness(0) saturate(100%) invert(30%) sepia(56%) saturate(3200%) hue-rotate(200deg) brightness(102%) contrast(107%);
+}
+
+
+.itemselected img.WhiteIcon
+{
+  /* Turn [any color] icons to white when they are a selected item in a side menu,
+     and you add added the icon as a WImage explicitly to the anchor.  Ex.
+     WMenuItem *item = ...
+     WImage *image = new WImage( "path/to/icon" );
+     image->addStyleClass( "WhiteIcon" );
+     item->anchor()->addWidget( image );
+   */
+  filter: invert(100%) sepia(0%) saturate(7485%) hue-rotate(187deg) brightness(100%) contrast(104%);  
+}
+
+img.WhiteIcon[disabled]
+{
+  /* Try to make disabled Icon imafes to #797f8e */
+  filter: brightness(0) saturate(100%) invert(52%) sepia(5%) saturate(902%) hue-rotate(185deg) brightness(95%) contrast(89%);
 }
 
 .HelpButtonMbl
@@ -152,10 +171,16 @@ ul.SideMenu > li.itemselected, ul.SideMenuPhone > li.itemselected
   left: max( calc(0.5*env(safe-area-inset-left)), 5px );
 }
 
+
 .LandscapeLeft .PopupDivMenuPhone
 {
   /* Set width of phone menu divs to allow padding */
   width: calc(220px + env(safe-area-inset-left));
+}
+
+ul.PopupDivMenuPhone > li:last-of-type
+{
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Set padding for all mobile menu items, except the first one (e.g. all except
@@ -166,16 +191,21 @@ ul.SideMenu > li.itemselected, ul.SideMenuPhone > li.itemselected
   padding-left: env(safe-area-inset-left);
 }
 
-.LandscapeLeft .AuxWindow-content
+.LandscapeLeft .AuxWindow-content.MobileFullScreen
 {
   padding-left: env(safe-area-inset-left);
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-.LandscapeRight .AuxWindow-content
+.LandscapeRight .AuxWindow-content.MobileFullScreen
 {
   padding-right: env(safe-area-inset-right);
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+.AuxWindow-content .MobileModal
+{
+  padding: 0px 4px 4px 4px;
 }
 
 /* End styling for iPhoneX* phones with a notch */
