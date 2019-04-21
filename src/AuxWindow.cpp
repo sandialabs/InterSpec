@@ -893,6 +893,8 @@ Wt::WPushButton *AuxWindow::addCloseButtonToFooter(string override_txt, bool flo
     if( override_txt.empty() )
       override_txt = "Close";
     
+    //If not fuule
+    
     close->setText( override_txt );
     if( floatright )
       close->addStyleClass( "DialogClose" );

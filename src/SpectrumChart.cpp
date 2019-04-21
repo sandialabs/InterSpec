@@ -398,6 +398,124 @@ void getYAxisLabelTicks( const SpectrumChart *chart,
     
 }//getYAxisLabelTicks(...)
   
+  
+/** Places all peaks that share a ROI into contiguous order, where the contigous
+   peaks are sorted by the mean of their first peak, and within the ROI the
+   peaks are sorted as well.
+ */
+void prepare_gaus_peaks_for_iterating( std::vector< PeakModel::PeakShrdPtr > &gauspeaks )
+{
+  if( gauspeaks.size() < 2 )
+    return;
+  
+  std::sort( begin(gauspeaks), end(gauspeaks), &PeakDef::lessThanByMeanShrdPtr );
+  
+  //We will almost never need to re-group the peaks (only if there is a peak
+  //  in a ROI energy range, that doesnt share the ROI with the other peaks - a
+  //  very rare thing to happen), so we will do a check that is hopefully a
+  //  little faster than doing the grouping to detect this condition.
+  bool need_to_group = false;
+  set<const PeakContinuum *> roiptrsset;
+  const PeakContinuum *last_cont = nullptr;
+  for( size_t i = 0; !need_to_group && (i < gauspeaks.size()); ++i )
+  {
+    const PeakContinuum * const cont = gauspeaks[i]->continuum().get();
+    if( cont != last_cont )
+    {
+      need_to_group = roiptrsset.count( cont );
+      roiptrsset.insert( cont );
+      last_cont = cont;
+    }
+  }
+  if( !need_to_group )
+    return;
+  
+  //We need to do the grouping.
+  std::vector< std::pair<const PeakContinuum *,std::vector<uint16_t> > > roi_to_index;
+  for( size_t i = 0; i < gauspeaks.size(); ++i )
+  {
+    const uint16_t peak_index = static_cast<uint16_t>(i);
+    const PeakContinuum * const cont = gauspeaks[i]->continuum().get();
+    
+    //Find index to this PeakContinuum in the vector
+    const size_t num_index = roi_to_index.size();
+    size_t index = roi_to_index.size();
+    for( size_t i = num_index; (index==num_index) && (i > 0); --i )
+    {
+      if( roi_to_index[i-1].first == cont )
+        index = i-1;
+    }
+    
+    //If we didnt find an index, add an entry into the vector
+    if( index == num_index )
+    {
+      roi_to_index.resize(num_index + 1);
+      roi_to_index.back().first = cont;
+    }
+    
+    roi_to_index[index].second.push_back( peak_index );
+  }//for( size_t i = 0; i < gauspeaks.size(); ++i )
+  
+  /*
+   //If we hadnt already detected if we needed needed to do the grouping, we
+   //  could with this block of code (leaving in to test against a little more).
+  bool all_sequential = true;
+  for( const auto &roi_p : roi_to_index )
+  {
+    for( size_t i = 1; all_sequential && (i < roi_p.second.size()); ++i )
+      all_sequential = ((roi_p.second[i-1] + 1) == roi_p.second[i]);
+    if( !all_sequential )
+      break;
+  }//for( const auto &roi_p : roi_to_index )
+  
+  if( all_sequential )
+    return;
+   */
+  
+  std::vector< PeakModel::PeakShrdPtr > newpeaks;
+  newpeaks.reserve( gauspeaks.size() );
+  for( const auto &roi_pind : roi_to_index )
+  {
+    for( auto ind : roi_pind.second )
+      newpeaks.push_back( gauspeaks[ind] );
+  }
+  
+  assert( newpeaks.size() == gauspeaks.size() );
+  
+  newpeaks.swap( gauspeaks );
+}//void prepare_gaus_peaks_for_iterating(...)
+  
+  
+std::vector<std::shared_ptr<const PeakDef> >::const_iterator next_gaus_peaks(
+   std::vector<std::shared_ptr<const PeakDef> >::const_iterator peak_start,
+   std::vector<std::shared_ptr<const PeakDef> >::const_iterator peak_end,
+   std::vector<std::shared_ptr<const PeakDef> > &peaks,
+   std::shared_ptr<const Measurement> data )
+{
+  peaks.clear();
+  
+  if( peak_start == peak_end )
+    return peak_end;
+  
+  std::shared_ptr<const PeakDef> first_peak = *peak_start;
+
+  peaks.push_back( first_peak );
+  
+  for( auto iter = peak_start + 1; iter != peak_end; ++iter )
+  {
+    std::shared_ptr<const PeakDef> peak = *iter;
+    if( peak->continuum() == first_peak->continuum() )
+    {
+      peaks.push_back( peak );
+    }else
+    {
+      return iter;
+    }
+  }//for( iter = peak_start; iter != peak_end; ++iter )
+  
+  return peak_end;
+}//next_gaus_peaks(...)
+  
 }//namespace
 
 
@@ -4469,29 +4587,20 @@ void SpectrumChart::drawPeakText( const PeakDef &peak, Wt::WPainter &painter,
 
 
 
-void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> > &inpeaks,
+void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> > &peaks,
                                     Wt::WPainter& painter ) const
 {
   //XXX - this function is a mess!  Probably because I dont know what I want.
   
-  //ToDo 20190421: Changed it so that all `inpeaks` should have the
+  //ToDo 20190421: Changed it so that all `peaks` should have the
   //  same continuum (before this, this function was called with all peaks that
   //  had ROIs that overlapped in energy, but I think parts of this function
   //  assumed shared ROI, but other parts didnt assume this), which means we can
   //  simplify and cleanup this function a bit; notably get rid of
   //  `continuumToPeaks` and logic around it.
   
-  const bool outline = (inpeaks.size() > 1);
+  const bool outline = (peaks.size() > 1);
 
-  //When the user control drags to simultaneously fit multiple peaks, they
-  //  all share a continuum, so lets draw them this way.
-  typedef std::map< std::shared_ptr<const PeakContinuum>, vector<std::shared_ptr<const PeakDef> > > ContinuumToPeakMap_t;
-
-  ContinuumToPeakMap_t continuumToPeaks;
-  std::set< std::shared_ptr<const PeakContinuum> > continuums;
-  for( size_t i = 0; i < inpeaks.size(); ++i )
-    continuumToPeaks[inpeaks[i]->continuum()].push_back( inpeaks[i] );
-  
   typedef std::map<int,pair<double,double> > IntToDPairMap;
   std::map<int,pair<double,double> > peaksSum, continuumVals;
 
@@ -4500,182 +4609,178 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
   
   const SpectrumDataModel *th1Model
                            = dynamic_cast<const SpectrumDataModel *>( model() );
+  
   assert( th1Model );
+  assert( std::is_sorted( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr ) );
   
   bool hadGlobalCont = false;
+  const bool sharedContinuum = (peaks.size()>1);
   
-  for( ContinuumToPeakMap_t::value_type &vt : continuumToPeaks )
+  ////////////////////////////////////////////////////////////////////////////
+  //(Begin experimental code for multicolored peaks)
+  //  If peaks are all the same color, this code results in something that
+  //  looks about the same as the old way of doing things, but probably
+  //  slightly larger JS since there are more paths to draw
+  std::set<string> lineColors;
+  for( const auto &p : peaks )
+    lineColors.insert( p->lineColor().cssText(false) );
+  
+  if( lineColors.size() > 1 )
   {
-    vector<std::shared_ptr<const PeakDef> > &peaks = vt.second;
-    std::sort( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr );
-    
-    const bool sharedContinuum = (peaks.size()>1);
-    
-    ////////////////////////////////////////////////////////////////////////////
-    //(Begin experimental code for multicolored peaks)
-    //  If peaks are all the same color, this code results in something that
-    //  looks about the same as the old way of doing things, but probably
-    //  slightly larger JS since there are more paths to draw
-    std::set<string> lineColors;
+    //Find bin limits we are workging with
+    int minrow = std::numeric_limits<int>::max(), maxrow = -std::numeric_limits<int>::max();
+    vector<pair<int,int>> peak_bin_ranges;
+    //Looping throw all the peaks may be a bit overkill; most of the time just
+    //  looking at the left and right most peaks would be sufficient
     for( const auto &p : peaks )
-      lineColors.insert( p->lineColor().cssText(false) );
-    
-    if( lineColors.size() > 1 )
     {
-      //Find bin limits we are workging with
-      int minrow = std::numeric_limits<int>::max(), maxrow = -std::numeric_limits<int>::max();
-      vector<pair<int,int>> peak_bin_ranges;
-      //Looping throw all the peaks may be a bit overkill; most of the time just
-      //  looking at the left and right most peaks would be sufficient
-      for( const auto &p : peaks )
+      int minrowlocal, maxrowlocal;
+      if( gausPeakDrawRange(minrowlocal, maxrowlocal, *p, axisMinX, axisMaxX) )
       {
-        int minrowlocal, maxrowlocal;
-        if( gausPeakDrawRange(minrowlocal, maxrowlocal, *p, axisMinX, axisMaxX) )
-        {
-          minrow = std::min(minrow,minrowlocal);
-          maxrow = std::max(maxrow,maxrowlocal);
-          peak_bin_ranges.push_back( {minrowlocal,maxrowlocal} );
-        }else
-        {
-          peak_bin_ranges.push_back( {-999,-999} );
-        }
-      }//for( const auto &p : peaks )
+        minrow = std::min(minrow,minrowlocal);
+        maxrow = std::max(maxrow,maxrowlocal);
+        peak_bin_ranges.push_back( {minrowlocal,maxrowlocal} );
+      }else
+      {
+        peak_bin_ranges.push_back( {-999,-999} );
+      }
+    }//for( const auto &p : peaks )
+    
+    //Sanity check
+    if( maxrow < 0 || maxrow < minrow || ((maxrow-minrow) > 16384) )
+      return;
+    
+    const int nrows = 1 + maxrow - minrow;
+    
+    vector<double> xvalues(nrows, 0.0);
+    //peak_yval: Zeroeth entry is continuum_y
+    //  Each entry, j, after that is the sum of the continuum, and all peaks
+    //  up to j.  The idea is that to draw the peaks left to right stacking on
+    //  top of eachother, we can walk through j, and have peak_yval[j]
+    //  give the height of all peaks, up to and including j, and then j-1
+    //  will give the lower level of that peak.
+    vector<vector<double>> peak_yval( 1 + peaks.size(), vector<double>(nrows,0.0) ); //zeroth entry is continuum_y
+    
+    //Go through and get xvalues and continuum y values.
+    std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
+    
+    assert( continuum );  //should always be true
+    
+    for( int row = minrow; row <= maxrow; ++row )
+    {
+      const double bin_x_min = th1Model->rowLowEdge( row );
+      const double bin_width = th1Model->rowWidth( row );
+      const double bin_x_max = bin_x_min + bin_width;
+      const double bin_center = bin_x_min + 0.5*bin_width;
       
-      //Sanity check
-      if( maxrow < 0 || maxrow < minrow || ((maxrow-minrow) > 16384) )
+      double cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max );
+      
+      if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
+        cont_y -= th1Model->data( row, th1Model->backgroundColumn() );
+      cont_y = std::min( std::max(cont_y, axisMinY), axisMaxY );
+      
+      for( size_t i = 0; i < peak_yval.size(); ++i )
+        peak_yval[i][row-minrow] = cont_y;
+      
+      xvalues[row-minrow] = std::max( std::min(bin_center, axisMaxX), axisMinX );
+      
+      assert( peak_bin_ranges.size() == peaks.size() );
+      
+      for( size_t i = 0; i < peaks.size(); ++i )
+      {
+        const PeakDef &peak = *(peaks[i]);
+        const auto &peak_bin_range = peak_bin_ranges[i];
+        if( row < peak_bin_range.first || row > peak_bin_range.second )
+          continue;
+        try
+        {
+          double y = peak.gauss_integral( bin_x_min, bin_x_max );
+          for( size_t j = i+1; j < peak_yval.size(); ++j )
+            peak_yval[j][row-minrow] += y;
+        }catch(...)
+        {
+          cerr << "Caught exception: " << SRC_LOCATION << endl;  //I dont think this will happen, but JIC
+        }
+      }//for( size_t i = 0; i < peaks.size(); ++i )
+    }//for( int row = minrow; row <= maxrow; ++row )
+    
+    for( size_t j = 1; j < peak_yval.size(); ++j )
+    {
+      const auto &peak = peaks[j-1];
+      int firstbin = peak_bin_ranges[j-1].first;
+      int lastbin = peak_bin_ranges[j-1].second;
+      if( lastbin == -999 )
         continue;
       
-      const int nrows = 1 + maxrow - minrow;
-      
-      vector<double> xvalues(nrows, 0.0);
-      //peak_yval: Zeroeth entry is continuum_y
-      //  Each entry, j, after that is the sum of the continuum, and all peaks
-      //  up to j.  The idea is that to draw the peaks left to right stacking on
-      //  top of eachother, we can walk through j, and have peak_yval[j]
-      //  give the height of all peaks, up to and including j, and then j-1
-      //  will give the lower level of that peak.
-      vector<vector<double>> peak_yval( 1 + peaks.size(), vector<double>(nrows,0.0) ); //zeroth entry is continuum_y
-      
-      //Go through and get xvalues and continuum y values.
-      std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
-      assert( continuum );  //should always be true
-      for( int row = minrow; row <= maxrow; ++row )
+      //Try to constrain how much will need to get drawn, by requiring at
+      //  least half a pixel height from the peak fill area before drawing
+      //  (for example set of peaks in Ba133 spectrum at 80keV: go from 53->18
+      //   bins, and 53->21 bins)
+      const double px_threshold = 0.5;
+      double diff = 0.0;
+      do
       {
-        const double bin_x_min = th1Model->rowLowEdge( row );
-        const double bin_width = th1Model->rowWidth( row );
-        const double bin_x_max = bin_x_min + bin_width;
-        const double bin_center = bin_x_min + 0.5*bin_width;
-        
-        double cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max );
-        
-        if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
-          cont_y -= th1Model->data( row, th1Model->backgroundColumn() );
-        cont_y = std::min( std::max(cont_y, axisMinY), axisMaxY );
-
-        for( size_t i = 0; i < peak_yval.size(); ++i )
-          peak_yval[i][row-minrow] = cont_y;
-        
-        xvalues[row-minrow] = std::max( std::min(bin_center, axisMaxX), axisMinX );
-        
-        assert( peak_bin_ranges.size() == peaks.size() );
-        
-        for( size_t i = 0; i < peaks.size(); ++i )
-        {
-          const PeakDef &peak = *(peaks[i]);
-          const auto &peak_bin_range = peak_bin_ranges[i];
-          if( row < peak_bin_range.first || row > peak_bin_range.second )
-            continue;
-          try
-          {
-            double y = peak.gauss_integral( bin_x_min, bin_x_max );
-            for( size_t j = i+1; j < peak_yval.size(); ++j )
-              peak_yval[j][row-minrow] += y;
-          }catch(...)
-          {
-            cerr << "Caught exception: " << SRC_LOCATION << endl;  //I dont think this will happen, but JIC
-          }
-        }//for( size_t i = 0; i < peaks.size(); ++i )
-      }//for( int row = minrow; row <= maxrow; ++row )
+        const auto l = mapToDevice( xvalues[firstbin-minrow], peak_yval[j-1][firstbin-minrow] );
+        const auto u = mapToDevice( xvalues[firstbin-minrow], peak_yval[j][firstbin-minrow] );
+        diff = (l.y() - u.y());
+        if( diff < px_threshold )
+          ++firstbin;
+      }while( (diff < px_threshold) && (firstbin < lastbin) );
       
-      for( size_t j = 1; j < peak_yval.size(); ++j )
+      do
       {
-        const auto &peak = peaks[j-1];
-        int firstbin = peak_bin_ranges[j-1].first;
-        int lastbin = peak_bin_ranges[j-1].second;
-        if( lastbin == -999 )
-          continue;
-        
-        //Try to constrain how much will need to get drawn, by requiring at
-        //  least half a pixel height from the peak fill area before drawing
-        //  (for example set of peaks in Ba133 spectrum at 80keV: go from 53->18
-        //   bins, and 53->21 bins)
-        const double px_threshold = 0.5;
-        double diff = 0.0;
-        do
-        {
-          const auto l = mapToDevice( xvalues[firstbin-minrow], peak_yval[j-1][firstbin-minrow] );
-          const auto u = mapToDevice( xvalues[firstbin-minrow], peak_yval[j][firstbin-minrow] );
-          diff = (l.y() - u.y());
-          if( diff < px_threshold )
-            ++firstbin;
-        }while( (diff < px_threshold) && (firstbin < lastbin) );
-        
-        do
-        {
-          const auto l = mapToDevice( xvalues[lastbin-minrow], peak_yval[j-1][lastbin-minrow] );
-          const auto u = mapToDevice( xvalues[lastbin-minrow], peak_yval[j][lastbin-minrow] );
-          diff = (l.y() - u.y());
-          if( diff < px_threshold )
-            --lastbin;
-        }while( (diff < px_threshold) && (firstbin < lastbin) );
-
-        //Note: we are going to bin center here, and not the left/right side
-        //      of bins on the left and right side of drawing range; this is
-        //      inconsistent with how drawIndependantGausPeak(...) does it,
-        //      if the DRAW_PEAKS_TO_BIN_EXTREMES preprocessor variable is set
-        //      to true.
-        
-        const double y_start = std::min(std::max( peak_yval[j][firstbin-minrow],axisMinY), axisMaxY);
-        WPointF start_point( mapToDevice( xvalues[firstbin-minrow], y_start ) );
-        
-        WPainterPath path( start_point );
-        for( int bin = firstbin+1; bin <= lastbin; ++bin )
-        {
-          const double y = std::min(std::max( peak_yval[j][bin-minrow],axisMinY), axisMaxY);
-          try{ path.lineTo( mapToDevice( xvalues[bin-minrow], y ) ); }catch(...){}
-        }
-        
-        for( int bin = lastbin; bin >= firstbin; --bin )
-        {
-          const double y = std::min(std::max( peak_yval[j-1][bin-minrow],axisMinY), axisMaxY);
-          try{ path.lineTo( mapToDevice( xvalues[bin-minrow], y ) ); }catch(...){}
-        }
-        
-        path.lineTo( start_point );
-        
-        WColor color = peak->lineColor().isDefault() ? m_defaultPeakColor : peak->lineColor();
-        color.setRgb( color.red(), color.green(), color.blue(), 155 );
-        
-        painter.fillPath( path, WBrush(color) );
-      }//for( size_t j = 1; j < peak_yval.size(); ++j )
+        const auto l = mapToDevice( xvalues[lastbin-minrow], peak_yval[j-1][lastbin-minrow] );
+        const auto u = mapToDevice( xvalues[lastbin-minrow], peak_yval[j][lastbin-minrow] );
+        diff = (l.y() - u.y());
+        if( diff < px_threshold )
+          --lastbin;
+      }while( (diff < px_threshold) && (firstbin < lastbin) );
       
-      //Now draw the outlines for the peaks.
-      //  Right now this results in the continuum being colored by the peak
-      //  farthest to the right - eh, should implement a custom solution here.
-      for( const auto &p : peaks  )
-        drawIndependantGausPeak( *p, painter, false );
+      //Note: we are going to bin center here, and not the left/right side
+      //      of bins on the left and right side of drawing range; this is
+      //      inconsistent with how drawIndependantGausPeak(...) does it,
+      //      if the DRAW_PEAKS_TO_BIN_EXTREMES preprocessor variable is set
+      //      to true.
       
-      continue;
-    }//if( lineColors.size() > 1 )
+      const double y_start = std::min(std::max( peak_yval[j][firstbin-minrow],axisMinY), axisMaxY);
+      WPointF start_point( mapToDevice( xvalues[firstbin-minrow], y_start ) );
+      
+      WPainterPath path( start_point );
+      for( int bin = firstbin+1; bin <= lastbin; ++bin )
+      {
+        const double y = std::min(std::max( peak_yval[j][bin-minrow],axisMinY), axisMaxY);
+        try{ path.lineTo( mapToDevice( xvalues[bin-minrow], y ) ); }catch(...){}
+      }
+      
+      for( int bin = lastbin; bin >= firstbin; --bin )
+      {
+        const double y = std::min(std::max( peak_yval[j-1][bin-minrow],axisMinY), axisMaxY);
+        try{ path.lineTo( mapToDevice( xvalues[bin-minrow], y ) ); }catch(...){}
+      }
+      
+      path.lineTo( start_point );
+      
+      WColor color = peak->lineColor().isDefault() ? m_defaultPeakColor : peak->lineColor();
+      color.setRgb( color.red(), color.green(), color.blue(), 155 );
+      
+      painter.fillPath( path, WBrush(color) );
+    }//for( size_t j = 1; j < peak_yval.size(); ++j )
+    
+    //Now draw the outlines for the peaks.
+    //  Right now this results in the continuum being colored by the peak
+    //  farthest to the right - eh, should implement a custom solution here.
+    for( const auto &p : peaks  )
+      drawIndependantGausPeak( *p, painter, false );
+    
     //(End experimental code for multicolored peaks)
     ////////////////////////////////////////////////////////////////////////////
-    
-    
+  }else //if( lineColors.size() > 1 )
+  {
     for( size_t i = 0; i < peaks.size(); ++i )
     {
       const PeakDef peak = *(peaks[i]);
       std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
-    
+      
       hadGlobalCont |= (continuum->type()==PeakContinuum::External);
       
       std::shared_ptr<const PeakDef> prevPeak, nextPeak;
@@ -4683,28 +4788,28 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
         prevPeak = peaks[i-1];
       if( i < (peaks.size()-1) )
         nextPeak = peaks[i+1];
-    
-//      if( independantContinuum && continuum->isPolynomial() )
+      
+      //      if( independantContinuum && continuum->isPolynomial() )
       if( !sharedContinuum && continuum->isPolynomial() )
       {
         //drawIndependantGausPeak( peak, painter, false );
         drawIndependantGausPeak( peak, painter, true );
         continue;
       }//if( independantContinuum && peak.continuum().isPolynomial() )
-    
+      
       
       //If we are here, we are drawing multiple peaks that share a continuum
       int minrow, maxrow;
       bool visible = gausPeakDrawRange(minrow, maxrow, peak, axisMinX,axisMaxX);
-    
+      
       if( !visible )
         continue;
-    
+      
       //now limit minrow and maxrow for visible region.
       
       if( outline )
         drawIndependantGausPeak( peak, painter, false );
-
+      
       WPointF start_point(0.0, 0.0);
       try
       {
@@ -4718,26 +4823,26 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       {
         cerr << "Caught exception: " << SRC_LOCATION << endl;
       }
-
+      
       WPainterPath path( start_point );
-
+      
       for( int row = minrow; row <= maxrow; ++row )
       {
         try
         {
           double bin_center, y;
           gausPeakBinValue( bin_center, y, peak, row, th1Model,
-                            axisMinX, axisMaxX, axisMinY, axisMaxY,
-                            prevPeak, nextPeak );
+                           axisMinX, axisMaxX, axisMinY, axisMaxY,
+                           prevPeak, nextPeak );
           if( outline )
           {
             if( peaksSum.find(row) == peaksSum.end() )
               peaksSum[row] = make_pair(0.0,0.0);
-
+            
             pair<double,double> &peakval = peaksSum[row];
-
+            
             const double backHeight = peakBackgroundVal( row, peak,
-                                                  th1Model, prevPeak, nextPeak );
+                                                        th1Model, prevPeak, nextPeak );
             peakval.first = bin_center;
             peakval.second += (y - backHeight);
           }//if( outline )
@@ -4745,11 +4850,11 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
           path.lineTo( mapToDevice( bin_center, y ) );
         }catch(...){}
       }//for( int row = minrow; row <= maxrow; ++row )
-
-    
+      
+      
       bool hasDrawnOne = false;
       WPointF peakTip( 999999.9, 999999.9 );
-
+      
       for( int row = maxrow; row >= minrow; --row )
       {
         try
@@ -4757,52 +4862,52 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
           const double bin_x_min = th1Model->rowLowEdge( row );
           const double bin_width = th1Model->rowWidth( row );
           const double bin_x_max = bin_x_min + bin_width;
-
+          
           bool shouldBeLast = (row==minrow);
           if( bin_x_max < axisMinX )
             shouldBeLast = true;
-
+          
           double bin_center = th1Model->rowCenter( row );
-
+          
           if( !hasDrawnOne )
           {
             hasDrawnOne = true;
             bin_center = bin_x_max;
           }//if( hasDrawnOne )
-
+          
           if( shouldBeLast )
             bin_center = bin_x_min;
-
+          
           bin_center = std::min( bin_center, axisMaxX );
           bin_center = std::max( bin_center, axisMinX );
-
+          
           double val = peakBackgroundVal( row, peak, th1Model,
-                                          std::shared_ptr<const PeakDef>(),
-                                          std::shared_ptr<const PeakDef>() );
-
+                                         std::shared_ptr<const PeakDef>(),
+                                         std::shared_ptr<const PeakDef>() );
+          
           val = std::max( val, axisMinY );
           val = std::min( val, axisMaxY );
-
+          
           const WPointF pointInPx = mapToDevice( bin_center, val );
           path.lineTo( pointInPx );
-
+          
           if( pointInPx.y() < peakTip.y() )
             peakTip = pointInPx;
-        
-//          if( outline )
+          
+          //          if( outline )
           {
             val = peakBackgroundVal( row, peak, th1Model,
-                                         prevPeak, nextPeak );
+                                    prevPeak, nextPeak );
             val = std::max( val, axisMinY );
             val = std::min( val, axisMaxY );
             continuumVals[row] = make_pair(bin_center,val);
           }
-
+          
           if( shouldBeLast )
             row = minrow;  //same as a break;
         }catch(...){}
       }//for( int row = maxrow; row >= minrow; --row )
-
+      
       path.lineTo( start_point );
       
       if( !outline )
@@ -4826,10 +4931,12 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
         painter.drawPath( path );
         painter.setPen( oldPen );
       }//if( outline )
-    
+      
       drawPeakText( peak, painter, peakTip );
     }//for( size_t i = 0; i < peaks.size(); ++i )
-  }//for( const ContinuumToPeakMap_t::value_type &vt : continuumToPeaks )
+    
+  }//if( lineColors.size() > 1 ) / else
+    
 
   if( outline )
   {
@@ -4868,7 +4975,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       for( auto iter = continuumVals.rbegin(); iter != continuumVals.rend(); ++iter )
         path->lineTo( mapToDevice( iter->second.first, iter->second.second ) );
      
-      WColor color = inpeaks.front()->lineColor().isDefault() ? m_defaultPeakColor : inpeaks.front()->lineColor();
+      WColor color = peaks.front()->lineColor().isDefault() ? m_defaultPeakColor : peaks.front()->lineColor();
       color.setRgb( color.red(), color.green(), color.blue(), 155 );
       painter.fillPath( *path, WBrush(color) );
     }//if( path )
@@ -4890,40 +4997,6 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
 }//void paintGausPeak( const PeakDef &peak, Wt::WPainter& painter ) const
 
 
-std::vector<std::shared_ptr<const PeakDef> >::const_iterator SpectrumChart::next_peaks
-  (
-    std::vector<std::shared_ptr<const PeakDef> >::const_iterator peak_start,
-    std::vector<std::shared_ptr<const PeakDef> >::const_iterator peak_end,
-    std::vector<std::shared_ptr<const PeakDef> > &peaks,
-    std::shared_ptr<const Measurement> data 
-  )
-{
-  peaks.clear();
-
-  if( peak_start == peak_end )
-    return peak_end;
-
-  std::shared_ptr<const PeakDef> first_peak = *peak_start;
-
-  if( !first_peak )
-    throw runtime_error( "SpectrumChart::next_peaks(...): ish" );
-  
-  peaks.push_back( first_peak );
-
-  for( PeakDefPtrVecIter iter = peak_start + 1; iter != peak_end; ++iter )
-  {
-    std::shared_ptr<const PeakDef> peak = *iter;
-    if( !peak )
-      throw runtime_error( "SpectrumChart::next_peaks(...): ish" );
-
-    if( peak->continuum() == first_peak->continuum() )
-      peaks.push_back( peak );
-    else
-      return iter;
-  }//for( iter = peak_start; iter != peak_end; ++iter )
-
-  return peak_end;
-}//next_peaks(...)
 
 
 void SpectrumChart::paintPeaks( Wt::WPainter& painter ) const
@@ -4970,11 +5043,12 @@ void SpectrumChart::paintPeaks( Wt::WPainter& painter ) const
     }//for( const PeakModel::PeakShrdPtr &ptr : *peaksDeque )
   }//if( peaksDeque )
 
-  PeakDefPtrVecIter iter = gauspeaks.begin();
+  prepare_gaus_peaks_for_iterating( gauspeaks );
+  std::vector<std::shared_ptr<const PeakDef> >::const_iterator iter = gauspeaks.begin();
   while( iter != gauspeaks.end() )
   {
     vector<std::shared_ptr<const PeakDef> > peaks_to_draw;
-    iter = next_peaks( iter, gauspeaks.end(), peaks_to_draw, dataH );
+    iter = next_gaus_peaks( iter, gauspeaks.end(), peaks_to_draw, dataH );
     paintGausPeaks( peaks_to_draw, painter );
   }//while( iter != gauspeaks.end() )
 
