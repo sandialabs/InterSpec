@@ -274,8 +274,8 @@ public:
                                        PeadDefPtrVec &peaks,
                                        std::shared_ptr<const Measurement> data );
 
-  //paintGausPeak(): Paints peaks which are in a connected region.
-  virtual void paintGausPeak( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
+  //paintGausPeaks(): Paints peaks that share a ROI.
+  virtual void paintGausPeaks( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
                               Wt::WPainter &painter ) const;
 
   //drawIndependantGausPeak(...): draw a peak, not taking into account any other

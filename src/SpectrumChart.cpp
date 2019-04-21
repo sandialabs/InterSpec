@@ -4469,10 +4469,18 @@ void SpectrumChart::drawPeakText( const PeakDef &peak, Wt::WPainter &painter,
 
 
 
-void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> > &inpeaks,
-                                   Wt::WPainter& painter ) const
+void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> > &inpeaks,
+                                    Wt::WPainter& painter ) const
 {
   //XXX - this function is a mess!  Probably because I dont know what I want.
+  
+  //ToDo 20190421: Changed it so that all `inpeaks` should have the
+  //  same continuum (before this, this function was called with all peaks that
+  //  had ROIs that overlapped in energy, but I think parts of this function
+  //  assumed shared ROI, but other parts didnt assume this), which means we can
+  //  simplify and cleanup this function a bit; notably get rid of
+  //  `continuumToPeaks` and logic around it.
+  
   const bool outline = (inpeaks.size() > 1);
 
   //When the user control drags to simultaneously fit multiple peaks, they
@@ -4647,11 +4655,6 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
         
         WColor color = peak->lineColor().isDefault() ? m_defaultPeakColor : peak->lineColor();
         color.setRgb( color.red(), color.green(), color.blue(), 155 );
-    
-        //We
-        //painter.setBrush( WBrush(color) );
-        //painter.setPen( WPen(WColor(color.red(),color.green(),color.blue())) );
-        //painter.drawPath( path );
         
         painter.fillPath( path, WBrush(color) );
       }//for( size_t j = 1; j < peak_yval.size(); ++j )
@@ -4804,25 +4807,21 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
       
       if( !outline )
       {
-        //painter.fillPath( path, WBrush(m_defaultPeakColor) );
         WColor color = peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor();
         color.setRgb( color.red(), color.green(), color.blue(), 155 );
         
         //if( lineColors.size() > 1 )
         //{
-        //
         //}else
         //{
-        //
         //}//if( lineColors.size() > 1 ) / else
         
-        
-        WBrush brush( color );
-        painter.fillPath( path, brush );
+        painter.fillPath( path, WBrush(color) );
       }else
       {
         const WPen oldPen = painter.pen();
         WColor color( peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor() );
+        
         painter.setPen( WPen(color) );
         painter.drawPath( path );
         painter.setPen( oldPen );
@@ -4856,25 +4855,23 @@ void SpectrumChart::paintGausPeak( const vector<std::shared_ptr<const PeakDef> >
         path->lineTo( point );
     }//for( int bin : bins )
 
-    if( !path )
+    //assert( peaksSum.empty() == !path );
+    
+    if( path )
     {
-//      cerr << SRC_LOCATION << "\n\tSerious Logic Error Here" << endl;
-      return;
-    }
-
-    //draw the continuum, from right to left
-    for( auto iter = continuumVals.rbegin(); iter != continuumVals.rend(); ++iter )
-      path->lineTo( mapToDevice( iter->second.first, iter->second.second ) );
-    
-    //Check if all the peaks are the same color, and if so go on no problem.
-    //  If not, maybe "stack" the peaks from left to right
-    //  Also, it looks like when we refit ROI the colors dont stick with the peaks
-    //painter.fillPath( *path, WBrush(m_defaultPeakColor) );
-    
-    WColor color = inpeaks.at(0)->lineColor().isDefault() ? m_defaultPeakColor : inpeaks.at(0)->lineColor();
-    color.setRgb( color.red(), color.green(), color.blue(), 155 );
-    
-    painter.fillPath( *path, WBrush(color) );
+      //ToDo 20190421: empirically (because the mess of logic that is this
+      //  function is not straightforward to follow) it seems we only get here
+      //  if all the peaks in the ROI are the same color - should probably
+      //  verify this
+      
+      //draw the continuum, from right to left
+      for( auto iter = continuumVals.rbegin(); iter != continuumVals.rend(); ++iter )
+        path->lineTo( mapToDevice( iter->second.first, iter->second.second ) );
+     
+      WColor color = inpeaks.front()->lineColor().isDefault() ? m_defaultPeakColor : inpeaks.front()->lineColor();
+      color.setRgb( color.red(), color.green(), color.blue(), 155 );
+      painter.fillPath( *path, WBrush(color) );
+    }//if( path )
   }else if( hadGlobalCont && continuumVals.size()>2 )
   {
     WPainterPath path;
@@ -4911,9 +4908,6 @@ std::vector<std::shared_ptr<const PeakDef> >::const_iterator SpectrumChart::next
   if( !first_peak )
     throw runtime_error( "SpectrumChart::next_peaks(...): ish" );
   
-  double lower_energy(0.0), upper_energy(0.0);
-  findROIEnergyLimits( lower_energy, upper_energy, *first_peak, data );
-  
   peaks.push_back( first_peak );
 
   for( PeakDefPtrVecIter iter = peak_start + 1; iter != peak_end; ++iter )
@@ -4922,13 +4916,10 @@ std::vector<std::shared_ptr<const PeakDef> >::const_iterator SpectrumChart::next
     if( !peak )
       throw runtime_error( "SpectrumChart::next_peaks(...): ish" );
 
-    double lowx(0.0), upperx(0.0);
-    findROIEnergyLimits( lowx, upperx, *peak, data );
-
-    if( lowx > upper_energy )
+    if( peak->continuum() == first_peak->continuum() )
+      peaks.push_back( peak );
+    else
       return iter;
-    peaks.push_back( peak );
-    upper_energy = peak->upperX();
   }//for( iter = peak_start; iter != peak_end; ++iter )
 
   return peak_end;
@@ -4984,7 +4975,7 @@ void SpectrumChart::paintPeaks( Wt::WPainter& painter ) const
   {
     vector<std::shared_ptr<const PeakDef> > peaks_to_draw;
     iter = next_peaks( iter, gauspeaks.end(), peaks_to_draw, dataH );
-    paintGausPeak( peaks_to_draw, painter );
+    paintGausPeaks( peaks_to_draw, painter );
   }//while( iter != gauspeaks.end() )
 
   for( const PeakModel::PeakShrdPtr &ptr : nongauspeaks )
