@@ -2103,6 +2103,12 @@ void InterSpec::handleRightClick( double energy, double counts,
   if( !peaks || !peak )
     return;
   
+  //We actually need to make a copy of peaks since we will post to outside the
+  //  main thread where the deque is expected to remain constant, however, the
+  //  PeakModel deque may get changed by like the user deleting a peak.
+  peaks = make_shared< std::deque< PeakModel::PeakShrdPtr > >( begin(*peaks), end(*peaks) );
+  
+  
   //see how many other peaks share ROI
   size_t npeaksInRoi = 0;
   for( const PeakModel::PeakShrdPtr &p : *peaks )
@@ -2150,10 +2156,17 @@ void InterSpec::handleRightClick( double energy, double counts,
               detector = meas->detector();
         
             PeakContainer_t hintpeaks;
-            if( !!m_dataMeasurement )
+            if( m_dataMeasurement )
               hintpeaks = m_dataMeasurement->automatedSearchPeaks( m_displayedSamples );
 //            if( !hintpeaks || (!!peaks && hintpeaks->size() <= peaks->size()) )
 //              hintpeaks = peaks;
+            
+            //Make a copy of hintpeaks deque since we will be posting to outside
+            //  the main thread, where the original deque could actually get
+            //  modified by another call, but what we're posting to expected it
+            //  to remain constant.
+            if( hintpeaks )
+              hintpeaks = make_shared< std::deque< PeakModel::PeakShrdPtr > >( begin(*hintpeaks), end(*hintpeaks) );
             
             vector<ReferenceLineInfo> refLines;
             if( m_referencePhotopeakLines )
