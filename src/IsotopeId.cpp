@@ -1037,7 +1037,7 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
   
   if( !allpeaks || (!!userpeaks && userpeaks->size() >= allpeaks->size()) )
     allpeaks = userpeaks;
-  
+
   pool.post( boost::bind( &findCandidates,
                          boost::ref(suggestednucs),
                          peak, allpeaks, detector, data ) );

@@ -263,18 +263,11 @@ public:
                                    const SpectrumDataModel *th1Model,
                                    std::shared_ptr<const PeakDef> prevPeak,
                                    std::shared_ptr<const PeakDef> nextPeak );
-
   
-  typedef std::shared_ptr<const PeakDef> PeadDefPtr;
-  typedef std::vector<PeadDefPtr > PeadDefPtrVec;
-  typedef PeadDefPtrVec::const_iterator PeakDefPtrVecIter;
-  //next_peaks(...): hmmm, assumes all pointers are valid
-  static PeakDefPtrVecIter next_peaks( PeakDefPtrVecIter peak_start,
-                                       PeakDefPtrVecIter peak_end,
-                                       PeadDefPtrVec &peaks,
-                                       std::shared_ptr<const Measurement> data );
 
-  //paintGausPeaks(): Paints peaks that share a ROI.
+  //paintGausPeaks(): Paints peaks that share a ROI.  All peaks passed into
+  //  this function must share a PeakContinuum, be sorted by peak mean, and be
+  //  valid pointers in the vector (e.g., no nullptrs).
   virtual void paintGausPeaks( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
                               Wt::WPainter &painter ) const;
 
