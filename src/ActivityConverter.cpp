@@ -47,7 +47,7 @@ using namespace std;
 
 ActivityConverter::ActivityConverter()
   : AuxWindow( "Activity Converter",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
                | AuxWindowProperties::DisableCollapse
                | AuxWindowProperties::SetCloseable) ),
     m_input( NULL ),
@@ -57,7 +57,7 @@ ActivityConverter::ActivityConverter()
   addStyleClass( "ActivityConverter" );
   
   WText *message = NULL;
-  WGridLayout* layout =  stretcher();
+  WGridLayout *layout = stretcher();
   setWidth(400);
   const char *topMessage = "Convert between curie and becquerel (ie. 5 MBq, 2 nCi)";
   message = new WText( topMessage, Wt::XHTMLUnsafeText);
@@ -118,14 +118,18 @@ ActivityConverter::ActivityConverter()
   rejectWhenEscapePressed();
   finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
+  show();
   centerWindow();
   resizeToFitOnScreen();
-  show();
 
   //Keep the keyboard form popping up
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
   if( app && app->isMobile() )
+  {
     closeButton->setFocus();
+    titleBar()->hide();
+  }
+  
 }//ActivityConverter constructor
 
 
