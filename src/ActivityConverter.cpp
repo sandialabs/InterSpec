@@ -118,14 +118,17 @@ ActivityConverter::ActivityConverter()
   rejectWhenEscapePressed();
   finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
-  centerWindow();
-  resizeToFitOnScreen();
-  show();
-
   //Keep the keyboard form popping up
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
   if( app && app->isMobile() )
+  {
     closeButton->setFocus();
+    titleBar()->hide();
+  }
+  
+  show();
+  centerWindow();
+  resizeToFitOnScreen();
 }//ActivityConverter constructor
 
 

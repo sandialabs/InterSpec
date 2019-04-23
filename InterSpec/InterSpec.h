@@ -489,6 +489,7 @@ public:
 
   void setChartSpacing();
   
+  void showMakeDrfWindow();
   void showDetectorEditWindow();
   void showCompactFileManagerWindow();
   
