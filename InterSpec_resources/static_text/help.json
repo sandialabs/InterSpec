@@ -84,6 +84,12 @@
         "keywords":"Detectors Edit Select Tool Camera Icon GADRAS Relative Efficiency Upload Manually Recent Reference Photopeaks Intrinsic Efficiency Full Width at Half Maximum FWHM Defined Efficiency.csv Parameters Geometric Detector.dat Akima Interpolation Cubic Spline Absolute"
       },
       {
+        "id":"make-drf",
+        "title":"Create Detector Response Function",
+        "help-xml":"make_drf_help.xml",
+        "keywords":"Detectors Relative Efficiency Full Width at Half Maximum FWHM Absolute"
+      },
+      {
         "id":"activity-shielding-dialog",
         "title":"Activity Shielding Fit",
         "help-xml":"activity_shielding_fit_help.xml",

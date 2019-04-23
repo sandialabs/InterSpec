@@ -108,6 +108,7 @@
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 
+#include "InterSpec/MakeDrf.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakEdit.h"
@@ -6674,6 +6675,10 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( "Detector Edit/Select" );
   HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTipInstantly );
   item->triggered().connect( boost::bind( &InterSpec::showDetectorEditWindow, this ) );
+  
+  item = popup->addMenuItem( "Make Detector Response" );
+  HelpSystem::attachToolTipOn( item, "Create detector response function from characterization data.", showToolTipInstantly );
+  item->triggered().connect( boost::bind( &InterSpec::showMakeDrfWindow, this ) );
 
   
   item = popup->addMenuItem( "File Parameters" );
@@ -6784,6 +6789,12 @@ void InterSpec::showDoseTool()
 {
   new DoseCalcWindow( m_materialDB, m_shieldingSuggestion, this );
 }
+
+
+void InterSpec::showMakeDrfWindow()
+{
+  new MakeDrfWindow( this, m_materialDB, m_shieldingSuggestion );
+}//void showDetectorEditWindow()
 
 
 void InterSpec::showDetectorEditWindow()
