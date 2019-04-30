@@ -103,7 +103,7 @@ public:
   /** Loads N42 file from raw XML file data specified by begin and end of data
       (does not need to be null terminated)
    */
-  virtual bool load_N42_from_data( char *data, char * const data_end );
+  virtual bool load_N42_from_data( char *data, char *data_end );
 #endif
   
   virtual void load_N42_from_doc( rapidxml::xml_document<char> &doc );

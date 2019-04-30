@@ -46,6 +46,7 @@
 #include <Wt/WLink>
 #include <Wt/WText>
 #include <Wt/Utils>
+#include <Wt/WTable>
 #include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WAnchor>
@@ -55,6 +56,7 @@
 #include <Wt/WServer>
 #include <Wt/WTextArea>
 #include <Wt/WIconPair>
+#include <Wt/WTableCell>
 #include <Wt/WIOService>
 
 #include <Wt/WGroupBox>
@@ -1711,67 +1713,79 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   if( cals.size() < 2 )
     return false;
   
-  
   AuxWindow *dialog = new AuxWindow( "Select Binning",
                       (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                       | AuxWindowProperties::TabletModal
+                       | AuxWindowProperties::PhoneModal
                        | AuxWindowProperties::DisableCollapse) );
   dialog->rejectWhenEscapePressed( false );
   dialog->setClosable( false );
-  dialog->centerWindow();
 
+  /*
   const int ww = m_viewer->renderedWidth();
   const int wh = m_viewer->renderedHeight();
   
-  if( !m_viewer->isMobile() && ww > 420 && wh > 125 )
+  if( !m_viewer->isPhone() && ww > 420 && wh > 125 )
   {
     dialog->setWidth( 420 );
     dialog->Wt::WCompositeWidget::setMinimumSize( 420, 125 );
   }
+   */
   
   int ncolwide = static_cast<int>( cals.size() + 1 );
   if( ncolwide > 4 )
-    ncolwide = 1;
+    ncolwide = 4;
   
-  WGridLayout *layout = dialog->stretcher();
+  //WGridLayout *layout = dialog->stretcher();
+  WTable *table = new WTable( dialog->contents() );
+  dialog->contents()->setPadding( 10 );
   
-  WText *msg = new WText( "<div>Multiple energy binnings were found in the spectrum file.</div>"
-                          "<div>Please select which one you would like</div>" , XHTMLText );
-  layout->addWidget( msg, 0, 0 );
-  
-  //The buttons dont space properly if they are in the same layout as the text
-  //  for some reason.
-  WGridLayout *buttonlayout = new WGridLayout();
-  layout->addLayout( buttonlayout, 1, 0 );
+  WText *msg = new WText( "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
+                          "<div style=\"margin-bottom: 10px;\">Please select which one you would like</div>" , XHTMLText );
+  //layout->addWidget( msg, 0, 0, 1, ncolwide );
+  WTableCell *cell = table->elementAt( 0, 0 );
+  cell->addWidget( msg );
+  cell->setColumnSpan( ncolwide );
   
   WPushButton *button = new WPushButton( "Keep All" );
-  buttonlayout->addWidget( button, 0, 0 );
-  
+  //layout->addWidget( button, 1, 0 );
+  cell = table->elementAt( 1, 0 );
+  cell->addWidget( button );
+  button->setWidth( WLength(95.0,WLength::Percentage) );
   button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-  button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this, string("Keep All"), header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+  button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
+                                          string("Keep All"), header, meas, type,
+                                          checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
   
   int calnum = 1;
   for( set<string>::const_iterator iter = cals.begin(); iter != cals.end(); ++iter, ++calnum )
   {
-    const int row = (calnum / ncolwide);
+    const int row = 1 + (calnum / ncolwide);
     const int col = (calnum % ncolwide);
     
     //Make sure the calbration ID isnt too long
     string label = *iter;
-    //Not sure if utf8 utilitiities are properly tested, so will skip for now...
-    //UtilityFunctions::utf8_limit_str_size( label, 15 );
-    if( label.size() > 15 )
-      label.resize( 15 );
+    UtilityFunctions::utf8_limit_str_size( label, 15 );
     
     button = new WPushButton( label );
-    buttonlayout->addWidget( button, row, col );
+    //layout->addWidget( button, row, col );
+    cell = table->elementAt( row, col );
+    cell->addWidget( button );
+    button->setWidth( WLength(95.0,WLength::Percentage) );
 
     button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
     //Note, using *iter instead of label below.
-    button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this, *iter, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
-  }
+    button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
+                                            *iter, header, meas, type,
+                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+  }//for( loop over calibrations )
   
-  //layout->setRowStretch( 0, 1 );
+  dialog->show();
+  
+  if( m_viewer->isMobile() )
+    dialog->titleBar()->hide();
+  
+  dialog->centerWindowHeavyHanded();
+  dialog->resizeToFitOnScreen();
   
   return true;
 }//checkForAndPromptUserForDisplayOptions(...)
