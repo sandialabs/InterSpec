@@ -91,12 +91,17 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   wApp->useStyleSheet( "InterSpec_resources/MakeDrf.css" );
   
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-  const SandiaDecay::Nuclide * const nuc = db->nuclide( "Cs137" );
+  const SandiaDecay::Nuclide *nuc = db->nuclide( "Cs137" );
   
   boost::posix_time::ptime measDate = UtilityFunctions::time_from_string( "2019-01-01T00:00:00" );
   
   
-  new MakeDrfSrcDef( nuc, measDate, materialDB, materialSuggest, this );
+  MakeDrfSrcDef *srcinput = new MakeDrfSrcDef( nuc, measDate, materialDB, materialSuggest, this );
+  
+  new WText( "<br />" );
+  
+  nuc = db->nuclide( "Am241" );
+  srcinput = new MakeDrfSrcDef( nuc, measDate, materialDB, materialSuggest, this );
   
 }//MakeDrf( constructor )
 
