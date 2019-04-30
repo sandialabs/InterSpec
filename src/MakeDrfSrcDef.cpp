@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <Wt/WDate>
 #include <Wt/WTable>
 #include <Wt/WLabel>
 #include <Wt/WComboBox>
@@ -37,6 +38,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WSuggestionPopup>
 
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MakeDrfSrcDef.h"
@@ -45,7 +47,7 @@
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
-#include "InterSpec/IsotopeNameFilterModel.h"
+//#include "InterSpec/IsotopeNameFilterModel.h"
 
 using namespace std;
 using namespace Wt;
@@ -60,17 +62,15 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   m_nuclide( nuc ),
   m_materialDB( materialDB ),
   m_materialSuggest( materialSuggest ),
-  m_nuclideEdit( nullptr ),
+  m_nuclideLabel( nullptr ),
   m_distanceEdit( nullptr ),
   m_activityEdit( nullptr ),
-  m_activityUnits( nullptr ),
   m_activityUncertainty( nullptr ),
   m_useAgeInfo( nullptr ),
-  m_activityDate( nullptr ),
+  m_assayDate( nullptr ),
   m_drfMeasurementDate( nullptr ),
-  m_sourceActivityAtMeasurement( nullptr ),
-  m_sourceAgeAtMeasurement( nullptr ),
-//  m_sourceCreationDate( nullptr ),
+  m_sourceInfoAtMeasurement( nullptr ),
+  m_sourceAgeAtAssay( nullptr ),
   m_useShielding( nullptr ),
   m_shieldingSelect( nullptr )
 {
@@ -78,8 +78,7 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   
   create();
   
-  if( m_nuclide )
-    m_nuclideEdit->setText( WString::fromUTF8(m_nuclide->symbol) );
+  setNuclide( m_nuclide );
   
   if( !measDate.is_special() )
   {
@@ -94,18 +93,38 @@ MakeDrfSrcDef::~MakeDrfSrcDef()
 }
 
 
+void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
+{
+  m_nuclide = nuc;
+  const bool notMuchEvolution = (!nuc || PeakDef::ageFitNotAllowed(nuc));
+  
+  m_table->rowAt(7)->setHidden( notMuchEvolution );
+  m_sourceAgeAtAssay->setText( "0s" );
+  
+  if( nuc )
+  {
+    const string label = "<span class=\"SrcTitleNuc\">" + nuc->symbol + "</span>, <span class=\"SrcTitleHl\">&lambda;<sub>&frac12;</sub>="
+                         + PhysicalUnits::printToBestTimeUnits(nuc->halfLife) + "</span>";
+    m_nuclideLabel->setText( WString::fromUTF8(label) );
+  }else
+  {
+    m_nuclideLabel->setText( "" );
+  }
+}//setNuclide(...)
+
+
 void MakeDrfSrcDef::create()
 {
   m_table = new WTable( this );
+  m_table->addStyleClass( "SrcInputTable" );
   
   WTableCell *cell = m_table->elementAt(0,0);
-  WLabel *label = new WLabel( "Nuclide", cell );
-  cell = m_table->elementAt(0,1);
   cell->setColumnSpan( 2 );
-  m_nuclideEdit = new WLineEdit( cell );
-  m_nuclideEdit->setAutoComplete( false );
-  label->setBuddy( m_nuclideEdit );
+  cell->addStyleClass( "SrcNuclideTitle" );
+  m_nuclideLabel = new WText( cell );
   
+/*
+  //Code to put a nuclide suggestion into a WLineEdit so user could select nuclide.
   string replacerJs, matcherJs;
   PhotopeakDelegate::EditWidget::replacerJs( replacerJs );
   PhotopeakDelegate::EditWidget::nuclideNameMatcherJs( matcherJs );
@@ -128,19 +147,13 @@ void MakeDrfSrcDef::create()
   nucSuggest->setFilterLength( -1 );
   nucSuggest->setModel( filterModel );
   nucSuggest->filterModel().connect( filterModel, &IsotopeNameFilterModel::filter );
-  
-  m_nuclideEdit->changed().connect( this, &MakeDrfSrcDef::handleNuclideChanged );
-  
-  string tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, "
-                   "<b>U-235m</b> (meta stable state), <b>Cs137</b>, etc.";
-  HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, false );
+*/
   
   cell = m_table->elementAt(1,0);
-  label = new WLabel( "Distance", cell );
+  WLabel *label = new WLabel( "Distance", cell );
   cell = m_table->elementAt(1,1);
-  cell->setColumnSpan( 2 );
   m_distanceEdit = new WLineEdit( cell );
-  m_distanceEdit->setTextSize( 5 );
+  m_distanceEdit->setTextSize( 8 );
   m_distanceEdit->setAutoComplete( false );
   label->setBuddy( m_distanceEdit );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
@@ -149,8 +162,7 @@ void MakeDrfSrcDef::create()
   m_distanceEdit->setText( "50 cm" );
   
   cell = m_table->elementAt(2,1);
-  cell->setColumnSpan( 2 );
-  m_useAgeInfo = new WCheckBox( "Enter Aging Info", cell );
+  m_useAgeInfo = new WCheckBox( "Age?", cell );
   m_useAgeInfo->setChecked( false );
   m_useAgeInfo->changed().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
   
@@ -161,32 +173,21 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(3,1);
   m_activityEdit = new WLineEdit( cell );
   m_activityEdit->setAutoComplete( false );
+  m_activityEdit->setTextSize( 8 );
   label->setBuddy( m_activityEdit );
   
-  WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityUnitOptionalRegex, this );
+  WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
   val->setFlags( Wt::MatchCaseInsensitive );
   m_activityEdit->setValidator( val );
-  m_activityEdit->setText( "100" );
+  m_activityEdit->setText( "100 uCi" );
   m_activityEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
   
   cell = m_table->elementAt(3,2);
-  m_activityUnits = new WComboBox( cell );
-  
-  for( const auto &u : PhysicalUnits::sm_activityUnitHtmlNameValues )
-  {
-    string val = u.first;
-    const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
-    UtilityFunctions::ireplace_all( val, "&mu;", (const char *)utf8mu /*"\u03BC"*/ );
-    m_activityUnits->addItem( WString::fromUTF8(val) );
-  }
-  
-  m_activityUnits->setCurrentIndex( 6 ); //uci
 
   cell = m_table->elementAt(4,0);
   label = new WLabel( "Act. Uncert.", cell );
   cell = m_table->elementAt(4,1);
-  cell->setColumnSpan( 2 );
   m_activityUncertainty = new WDoubleSpinBox( cell );
   m_activityUncertainty->setText( "0" );
   m_activityUncertainty->setTextSize( 6 );
@@ -206,52 +207,54 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(5,0);
   label = new WLabel( "Assay Date", cell );
   cell = m_table->elementAt(5,1);
-  cell->setColumnSpan( 2 );
-  m_activityDate = new WDateEdit( cell );
-  label->setBuddy( m_activityDate );
+  m_assayDate = new WDateEdit( cell );
+  label->setBuddy( m_assayDate );
+  m_assayDate->changed().connect( this, &MakeDrfSrcDef::handleEnteredDatesUpdated );
   
   cell = m_table->elementAt(6,0);
-  label = new WLabel( "Spectrum Date", cell );
+  label = new WLabel( "Spec. Date", cell );
   cell = m_table->elementAt(6,1);
-  cell->setColumnSpan( 2 );
   m_drfMeasurementDate = new WDateEdit( cell );
   label->setBuddy( m_drfMeasurementDate );
-  
+  m_drfMeasurementDate->changed().connect( this, &MakeDrfSrcDef::handleEnteredDatesUpdated );
   
   cell = m_table->elementAt(7,0);
-  label = new WLabel( "At Meas. Time", cell );
+  label = new WLabel( "Age @ Assay", cell );
   cell = m_table->elementAt(7,1);
-  m_sourceActivityAtMeasurement = new WText( cell );
-  cell = m_table->elementAt(7,2);
-  m_sourceAgeAtMeasurement = new WText( cell );
+  m_sourceAgeAtAssay = new WLineEdit( cell );
+  m_sourceAgeAtAssay->setAutoComplete( false );
+  label->setBuddy( m_sourceAgeAtAssay );
+  m_sourceAgeAtAssay->changed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
+  m_sourceAgeAtAssay->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
+  
+  val = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, this );
+  val->setFlags( Wt::MatchCaseInsensitive );
+  m_sourceAgeAtAssay->setValidator( val );
+  m_sourceAgeAtAssay->setText( "0s" );
+  
+  
+  cell = m_table->elementAt(8,0);
+  label = new WLabel( "At Spec. Time", cell );
+  cell = m_table->elementAt(8,1);
+  m_sourceInfoAtMeasurement = new WText( cell );
+  
+  
   
   //Wt::WDateEdit *m_sourceCreationDate;
   
-  cell = m_table->elementAt(8,1);
-  cell->setColumnSpan( 2 );
+  cell = m_table->elementAt(9,1);
   m_useShielding = new WCheckBox( "Shielded?", cell );
   m_useShielding->setChecked( false );
-  m_useShielding->changed().connect( this, &MakeDrfSrcDef::useShiledingInfoUserToggled );
+  m_useShielding->changed().connect( this, &MakeDrfSrcDef::useShieldingInfoUserToggled );
   
   
-  cell = m_table->elementAt(9,0);
-  cell->setColumnSpan( 3 );
+  cell = m_table->elementAt(10,0);
+  cell->setColumnSpan( 2 );
   m_shieldingSelect = new ShieldingSelect( m_materialDB, nullptr, m_materialSuggest, false, cell );
   m_shieldingSelect->hide();
-
-
+  
   useAgeInfoUserToggled();
 }//void create()
-
-
-void MakeDrfSrcDef::handleNuclideChanged()
-{
-  if( m_useAgeInfo->isChecked() )
-  {
-    //update m_sourceActivityAtMeasurement
-    //update m_sourceAgeAtMeasurement
-  }
-}//void handleNuclideChanged()
 
 
 void MakeDrfSrcDef::useAgeInfoUserToggled()
@@ -261,93 +264,210 @@ void MakeDrfSrcDef::useAgeInfoUserToggled()
   
   m_table->rowAt(5)->setHidden( !useAge );
   m_table->rowAt(6)->setHidden( !useAge );
-  m_table->rowAt(7)->setHidden( !useAge );
   
-  m_activityDate->setDisabled( !useAge );
+  const bool notMuchEvolution = (!m_nuclide || PeakDef::ageFitNotAllowed(m_nuclide));
+  m_table->rowAt(7)->setHidden( !useAge || notMuchEvolution );
+  
+  m_table->rowAt(8)->setHidden( !useAge );
+  
+  m_assayDate->setDisabled( !useAge );
   m_drfMeasurementDate->setDisabled( !useAge );
-  m_sourceActivityAtMeasurement->setDisabled( !useAge );
-  m_sourceAgeAtMeasurement->setDisabled( !useAge );
-  //m_sourceCreationDate->setDisabled( !useAge );
+  m_sourceInfoAtMeasurement->setDisabled( !useAge );
+  m_sourceAgeAtAssay->setDisabled( !useAge );
 }//void useAgeInfoUserToggled()
+
+
+void MakeDrfSrcDef::updateAgedText()
+{
+  try
+  {
+    if( !m_nuclide )
+      throw runtime_error( "" );
+    
+    double activity = activityAtSpectrumTime();
+    double age = ageAtSpectrumTime();
+    const string agestr = PhysicalUnits::printToBestTimeUnits(age);
+    
+    const string enteredAct = m_activityEdit->text().toUTF8();
+    
+    const bool useCurrie = (enteredAct.find_first_of( "cC" ) != string::npos);
+    const string actstr = PhysicalUnits::printToBestActivityUnits(activity, 1, useCurrie );
+    
+    string txt = actstr;
+    if( !PeakDef::ageFitNotAllowed(m_nuclide) )
+      txt += ", " + agestr;
+
+    m_sourceInfoAtMeasurement->setText( WString::fromUTF8(txt) );
+  }catch( std::exception & )
+  {
+    m_sourceInfoAtMeasurement->setText( "" );
+  }
+}//void updateAgedText()
 
 
 void MakeDrfSrcDef::handleUserChangedActivity()
 {
-  enteredActivity();
+  try
+  {
+    enteredActivity();
+    if( m_activityEdit->hasStyleClass( "SrcInputError" ) )
+      m_activityEdit->removeStyleClass( "SrcInputError" );
+  }catch( std::exception & )
+  {
+    if( !m_activityEdit->hasStyleClass( "SrcInputError" ) )
+      m_activityEdit->addStyleClass( "SrcInputError" );
+  }
   
   if( m_useAgeInfo->isChecked() )
-  {
-    //update m_sourceActivityAtMeasurement
-  }
+    updateAgedText();
 }//void handleUserChangedActivity()
 
 
-void MakeDrfSrcDef::useShiledingInfoUserToggled()
+void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
+{
+  string agestr = m_sourceAgeAtAssay->text().toUTF8();
+  UtilityFunctions::trim( agestr );
+  
+  double age = 0.0;
+  if( agestr.empty() || (agestr.find_first_not_of("+-0.")==string::npos) )
+  {
+    m_sourceAgeAtAssay->setText( "0 uCi" );
+  }else
+  {
+    try
+    {
+      const double hl = m_nuclide ? m_nuclide->halfLife : -1.0;
+      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+      if( m_activityEdit->hasStyleClass( "SrcInputError" ) )
+        m_activityEdit->removeStyleClass( "SrcInputError" );
+    }catch( std::exception &e )
+    {
+      if( !m_activityEdit->hasStyleClass( "SrcInputError" ) )
+        m_activityEdit->addStyleClass( "SrcInputError" );
+    }
+  }//if( zero / else )
+  
+  updateAgedText();
+}//void handleUserChangedAgeAtAssay()
+
+
+void MakeDrfSrcDef::handleEnteredDatesUpdated()
+{
+  
+  if( m_drfMeasurementDate->validate() == Wt::WValidator::Valid )
+  {
+    if( m_drfMeasurementDate->hasStyleClass( "SrcInputError" ) )
+      m_drfMeasurementDate->removeStyleClass( "SrcInputError" );
+  }else
+  {
+    if( !m_drfMeasurementDate->hasStyleClass( "SrcInputError" ) )
+      m_drfMeasurementDate->addStyleClass( "SrcInputError" );
+  }
+  
+  if( m_assayDate->validate() == Wt::WValidator::Valid )
+  {
+    if( m_assayDate->hasStyleClass( "SrcInputError" ) )
+      m_assayDate->removeStyleClass( "SrcInputError" );
+  }else
+  {
+    if( !m_assayDate->hasStyleClass( "SrcInputError" ) )
+      m_assayDate->addStyleClass( "SrcInputError" );
+  }
+  
+  
+  updateAgedText();
+}//void handleEnteredDatesUpdated()
+
+
+void MakeDrfSrcDef::useShieldingInfoUserToggled()
 {
   m_shieldingSelect->setHidden( !m_useShielding->isChecked() );
-}//void useShiledingInfoUserToggled()
+}//void useShieldingInfoUserToggled()
 
 
-double MakeDrfSrcDef::enteredActivity()
+double MakeDrfSrcDef::enteredActivity() const
 {
-  double activity = 0.0;
   string activitystr = m_activityEdit->text().toUTF8();
   
   UtilityFunctions::trim( activitystr );
   
-  const size_t pos = activitystr.find_first_not_of( "0123456789Ee.-+" );  //a regex would be better
-  
-  if( pos == string::npos )
-  {
-    if( !(stringstream(activitystr) >> activity) )
-      throw runtime_error( "Invalid number" );
-    const int unitsInd = m_activityUnits->currentIndex();
-    activity *= PhysicalUnits::sm_activityUnitHtmlNameValues.at(unitsInd).second;
-  }else
-  {
-    const bool hasb = UtilityFunctions::icontains( activitystr, "b" );
-    const bool hasc = UtilityFunctions::icontains( activitystr, "c" );
-    
-    if( hasb && hasc )
-      throw runtime_error( "Invalid activity string, couldnt determine units" );
-    
-    activity = PhysicalUnits::stringToActivity( activitystr );
-    
-    const PhysicalUnits::UnitNameValuePair &bestunit
-    = PhysicalUnits::bestActivityUnitHtml( activity, hasc );
-    
-    PhysicalUnits::UnitNameValuePairV::const_iterator pos =
-    std::find( PhysicalUnits::sm_activityUnitHtmlNameValues.begin(), PhysicalUnits::sm_activityUnitHtmlNameValues.end(), bestunit );
-    assert( pos != PhysicalUnits::sm_activityUnitHtmlNameValues.end() );
-    m_activityUnits->setCurrentIndex( pos - PhysicalUnits::sm_activityUnitHtmlNameValues.begin() );
-    
-    const double txtdblval = activity / bestunit.second;
-    char txtval[32];
-    snprintf( txtval, sizeof(txtval), "%f", floor(1000*txtdblval + 0.5)/1000 );  //fix this to 3 sig figs, not 3 decimals
-    
-    //Get rid of unwanted decimals (they should be all zeros from rounding above)
-    //(this should probably be a function call somewhere)
-    string durstr = txtval;
-    const size_t decpos = durstr.find_last_of( '.' );
-    if( decpos != string::npos )
-    {
-      const string predec = durstr.substr( 0, decpos );
-      string postdec = durstr.substr( decpos + 1 );
-      size_t lastpos = postdec.find_last_not_of( "0" );
-      if( lastpos == string::npos )
-        postdec = "";
-      else
-        postdec = postdec.substr( 0, lastpos + 1 );
-      
-      durstr = predec;
-      if( postdec.size() )
-        durstr += "." + postdec;
-    }//if( decpos != string::npos )
-    
-    m_activityEdit->setText( durstr );
-  }//if( user entered only numbers ) / else user entered units to
-  
-  return activity;
+  return PhysicalUnits::stringToActivity( activitystr );
 }//double enteredActivity()
 
 
+const SandiaDecay::Nuclide *MakeDrfSrcDef::nuclide() const
+{
+  return m_nuclide;
+}
+
+
+double MakeDrfSrcDef::activityAtSpectrumTime() const
+{
+  const double userActivity = enteredActivity();
+  if( !m_useAgeInfo->isChecked() || !m_nuclide )
+    return userActivity;
+  
+  const WDate measDate = m_drfMeasurementDate->date();
+  const WDate assayDate = m_assayDate->date();
+  
+  if( !measDate.isValid() )
+    throw runtime_error( "Measurement date invalid" );
+  
+  if( !assayDate.isValid() )
+    throw runtime_error( "Assay date invalid" );
+  
+  if( assayDate > measDate )
+    throw runtime_error( "Assay date must be before measurement date" );
+  
+  const int numDays = assayDate.daysTo( measDate );
+  
+  SandiaDecay::NuclideMixture mix;
+  mix.addNuclideByActivity( m_nuclide, userActivity );
+  
+  return mix.activity( 24.0*3600.0*numDays, m_nuclide );
+}//double activityAtSpectrumTime() const
+
+
+double MakeDrfSrcDef::ageAtSpectrumTime() const
+{
+  cout << "MakeDrfSrcDef::ageAtSpectrumTime() untested!" << endl;
+  
+  if( !m_nuclide )
+    return 0.0;
+
+  if( !m_useAgeInfo->isChecked() || PeakDef::ageFitNotAllowed(m_nuclide) )
+    return PeakDef::defaultDecayTime( m_nuclide, nullptr );
+  
+  string ageAtAssaystr = m_sourceAgeAtAssay->text().toUTF8();
+  UtilityFunctions::trim( ageAtAssaystr );
+  
+  double ageAtAssay = 0.0;
+  if( !ageAtAssaystr.empty() && (ageAtAssaystr.find_first_not_of("+-0.")!=string::npos) )
+    ageAtAssay = PhysicalUnits::stringToTimeDurationPossibleHalfLife( ageAtAssaystr, m_nuclide->halfLife );
+  
+  const WDate measDate = m_drfMeasurementDate->date();
+  const WDate assayDate = m_assayDate->date();
+  
+  if( !measDate.isValid() )
+    throw runtime_error( "Measurement date invalid" );
+  
+  if( !assayDate.isValid() )
+    throw runtime_error( "Assay date invalid" );
+  
+  if( assayDate > measDate )
+    throw runtime_error( "Assay date must be before measurement date" );
+  
+  const int numDays = assayDate.daysTo( measDate );
+  
+  cout << "There are " << numDays << " days between assay and measurement" << endl;
+  
+  return ageAtAssay + 24*3600*numDays;
+}//double ageAtSpectrumTime() const
+
+
+ShieldingSelect *MakeDrfSrcDef::shielding()
+{
+  if( !m_useShielding->isChecked() )
+    return nullptr;
+  return m_shieldingSelect;
+}//ShieldingSelect *shielding()

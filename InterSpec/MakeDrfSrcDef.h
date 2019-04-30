@@ -73,18 +73,54 @@ public:
   
   virtual ~MakeDrfSrcDef();
   
+  /** Returns the nuclide this MakeDrfSrcDef is for.
+   
+   Will be nullptr if that is what was passed in.
+   */
+  const SandiaDecay::Nuclide *nuclide() const;
+  
+  /** Returns the nuclide activity, at the time the characterization measurment
+     was taken.
+   
+     Throws exception if there are errors in any of the user input fileds.
+   */
+  double activityAtSpectrumTime() const;
+  
+  /** Returns the nuclide age (in units of PhysicalUnits), at the time the
+   characterization measurment was taken.  Returns the age you should assume the
+   source is at the time of the characterization, not necassarily the actual
+   age.
+   
+   Throws exception if there are errors in any of the user input fileds.
+   */
+  double ageAtSpectrumTime() const;
+  
+  /** Returns nullptr if the user has not selected a shielding, other wise
+     returns the ShieldingSelect.
+   */
+  ShieldingSelect *shielding();
+  
   
 protected:
   /** Creates the widget, but doesnt fill out any of the information. */
   void create();
   
-  void handleNuclideChanged();
+  void setNuclide( const SandiaDecay::Nuclide *nuc );
+  
+  void updateAgedText();
   
   void useAgeInfoUserToggled();
-  void useShiledingInfoUserToggled();
+  
+  void useShieldingInfoUserToggled();
   
   void handleUserChangedActivity();
-  double enteredActivity();
+  
+  void handleUserChangedAgeAtAssay();
+  
+  void handleEnteredDatesUpdated();
+  
+  /** Returns user entered activity.  Throws exception if invalid. */
+  double enteredActivity() const;
   
   Wt::WTable *m_table;
   
@@ -101,8 +137,8 @@ protected:
    */
   Wt::WSuggestionPopup *m_materialSuggest;
   
-  /** The user input of the nuclide. */
-  Wt::WLineEdit *m_nuclideEdit;
+  /** Display of the nuclide. */
+  Wt::WText *m_nuclideLabel;
   
   Wt::WLineEdit *m_distanceEdit;
   
@@ -118,21 +154,16 @@ protected:
   Wt::WCheckBox *m_useAgeInfo;
   
   /** The date entered activity was determined. */
-  Wt::WDateEdit *m_activityDate;
+  Wt::WDateEdit *m_assayDate;
   
   /** The date the spectrum being used for creating the DRF was taken on. */
   Wt::WDateEdit *m_drfMeasurementDate;
   
-  /** The computed source activity when measurement was taken. */
-  Wt::WText *m_sourceActivityAtMeasurement;
+  /** The source age and activity at the time of the measurement. */
+  Wt::WText *m_sourceInfoAtMeasurement;
   
-  /** The source age at the time of the measurement. */
-  Wt::WText *m_sourceAgeAtMeasurement;
-  
-  /** The date the source was created on, if applicable */
-  //For the moment, to save complexity, we wont enable having sources aged
-  //  relative to their assay date.
-  //Wt::WDateEdit *m_sourceCreationDate;
+  /** The source age at assay, if applicable */
+  Wt::WLineEdit *m_sourceAgeAtAssay;
   
   /** Whether or not to have shielding for the source (default: no) */
   Wt::WCheckBox *m_useShielding;

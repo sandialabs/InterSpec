@@ -1,0 +1,20 @@
+
+
+.SrcInputTable > tbody > tr > td:nth-child(1) {
+  /* Select first colum */
+}
+
+.SrcNuclideTitle {
+  text-align: center;
+}
+
+.SrcTitleNuc {
+  font-weight: bold;
+}
+.SrcTitleHl {
+  font-size: smaller;
+}
+
+.SrcInputError {
+  color: red;
+}
