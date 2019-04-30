@@ -623,13 +623,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
     // canvas will take over and not propagate the event to close the menu down.
     doJavaScript( "$('body').append('<div class=\"mobilePopupMenuOverlay\" style=\"display: none;\"></div>');" );
     
-    m_mobileBackButton = new WPushButton( "Prev Sample ", wApp->domRoot() );
+    m_mobileBackButton = new WPushButton( "", wApp->domRoot() );
     m_mobileBackButton->addStyleClass( "MobilePrevSample btn" );
     m_mobileBackButton->setZIndex( 8388635 );
     m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, kForeground, false) );
     m_mobileBackButton->setHidden(true);
       
-    m_mobileForwardButton = new WPushButton( "Next Sample", wApp->domRoot() );
+    m_mobileForwardButton = new WPushButton( "", wApp->domRoot() );
     m_mobileForwardButton->addStyleClass( "MobileNextSample btn" );
     m_mobileForwardButton->setZIndex( 8388635 );
     m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, kForeground, true) );

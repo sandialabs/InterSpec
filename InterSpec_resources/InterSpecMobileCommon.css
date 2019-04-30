@@ -43,7 +43,7 @@
   /* width: 150px;*/
   height: 34px;
   opacity: .75;
-  padding: 0px 15px 0px 35px  !important;
+  padding: 0px 20px 0px 15px  !important;
   text-align: right;
   filter:gray; /* IE6-9 */
   -webkit-filter:grayscale(100%); /* Chrome 19+, Safari 6+, Safari 6+ iOS */
@@ -68,7 +68,7 @@
   /*width: 150px;*/
   height: 34px;
   opacity: .75;
-  padding: 0px 35px 0px 15px !important;
+  padding: 0px 15px 0px 20px !important;
   filter:gray; /* IE6-9 */
   -webkit-filter:grayscale(100%); /* Chrome 19+, Safari 6+, Safari 6+ iOS */
   -moz-filter: grayscale(100%);
