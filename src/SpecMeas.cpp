@@ -1190,11 +1190,12 @@ bool SpecMeas::load_N42_file( const std::string &filename )
 #endif
     
     if( !loaded )
-      throw runtime_error( "" );
+      throw runtime_error( "!loaded" );
     
     filename_ = filename;
-  }catch( std::exception & )
+  }catch( std::exception &e )
   {
+    cout << endl << e.what() << endl;
     reset();
     return false;
   }//try/catch
@@ -1274,18 +1275,22 @@ bool SpecMeas::load_N42_from_data( char *data )
 
 
 #if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
-bool SpecMeas::load_N42_from_data( char *data, char * const data_end )
+bool SpecMeas::load_N42_from_data( char *data, char *data_end )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   reset();
   
+  data_end = convert_n42_utf16_xml_to_utf8( data, data_end );
+  
   if( !is_candidate_n42_file(data,data_end) )
+  {
+    cout << "is_candidate_n42_file" << endl;
     return false;
+  }
   
   rapidxml::xml_document<char> doc;
   try
   {
-    
     const int flags = rapidxml::parse_trim_whitespace | rapidxml::allow_sloppy_parse; //rapidxml::parse_normalize_whitespace
     doc.parse<flags>( data, data_end );
     

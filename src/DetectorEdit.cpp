@@ -557,7 +557,7 @@ RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DetectorEdit *detedit, W
     : WContainerWidget( parent ),
       m_interspec( interspec ),
       m_detectorEdit( detedit ),
-      m_files( 0 )
+      m_files( nullptr )
 {
 }
 
@@ -590,6 +590,9 @@ void RelEffDetSelect::removeFile( RelEffFile *fileWidget )
 
 void RelEffDetSelect::saveFilePathToUserPreferences()
 {
+  if( !m_files )
+    return;
+  
   auto children = m_files->children();
   
   string concat_path;
@@ -634,6 +637,9 @@ void RelEffDetSelect::userSelectedRelEffDetSelect()
 
 void RelEffDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
+  if( !m_files )
+    return;
+  
   auto children = m_files->children();
   
   bool found = false;
