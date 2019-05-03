@@ -34,6 +34,8 @@
 
 #include <boost/asio/deadline_timer.hpp>
 
+#include <Wt/WColor>
+
 #include "Minuit2/FCNBase.h"
 
 
@@ -155,7 +157,8 @@ class PointSourceShieldingChi2Fcn
 //-Activity (in MBq) nuclide 0, (nuclides are sorted alphebaetically by name)
 //-Age of nuclide 0
 //-Activity (in MBq) nuclide 1
-//-Age of nuclide 1 (if negative, will look for isotope of same element to get age from)
+//-Age of nuclide 1 (if negative, must be negative value of one plue index of
+//                   master nuclide; e.g., a negative int.  Hacky, but whatever)
 // ...
 //if material 0 normal material (if Material* is non-NULL pointer)
 //    -Material Thinckness
@@ -313,8 +316,8 @@ public:
   //If 'info' is non-null then it will be filled with information about how much
   //  each nuclide/peak was attributed to each detected peak (currently not
   //  implemented)
-  //Each retured enry is {energy,chi,scale}.  Scale is obs/expected
-  std::vector< std::tuple<double,double,double> > energy_chi_contributions(
+  //Each retured enry is {energy,chi,scale,PeakColor,scale_uncert}.  Scale is obs/expected
+  std::vector< std::tuple<double,double,double,Wt::WColor,double> > energy_chi_contributions(
                                   const std::vector<double> &x,
                                   NucMixtureCache &mixturecache,
                                   const bool allow_multiple_iso_contri,
@@ -416,9 +419,9 @@ protected:
 
 
   //returns the chi computed from the expected verses observed counts; one
-  //  chi2 for each peak energy.  Each returned entry is {energy,chi,scale},
+  //  chi2 for each peak energy.  Each returned entry is {energy,chi,scale,PeakColor,ScaleUncert},
   //  where scale is observed/expected
-  static std::vector< std::tuple<double,double,double> > expected_observed_chis(
+  static std::vector< std::tuple<double,double,double,Wt::WColor,double> > expected_observed_chis(
                               const std::vector<PeakDef> &peaks,
                               const std::vector<PeakDef> &backgroundPeaks,
                               const std::map<double,double> &energy_count_map,

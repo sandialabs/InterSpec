@@ -74,6 +74,7 @@
 #include <Wt/WDoubleValidator>
 #include <Wt/WStandardItemModel>
 #include <Wt/WCssDecorationStyle>
+#include <Wt/Chart/WChartPalette>
 #include <Wt/Chart/WCartesianChart>
 
 #include "InterSpec/PeakDef.h"
@@ -3331,7 +3332,11 @@ void ShieldingSourceDisplay::Chi2Graphic::setShowChiOnChart( const bool show_chi
   removeSeries(1);
   removeSeries(2);
   setXSeriesColumn( 0 );
-  addSeries( Chart::WDataSeries( (show_chi ? 1 : 2), Chart::PointSeries ) );
+  
+  Chart::WDataSeries series( (show_chi ? 1 : 2), Chart::PointSeries );
+  series.setMarkerSize( 10.0 );
+  
+  addSeries( series );
 }
 
 void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightPx )
@@ -3469,12 +3474,30 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
       const double thischi = boost::any_cast<double>( chi2Model->data(index) );
       chi2 += thischi*thischi;
       
+
+      WColor color;
+      try
+      {
+        boost::any color_any = chi2Model->data(index, Wt::MarkerPenColorRole );
+        color = boost::any_cast<WColor>(color_any);
+        if( color.isDefault() )
+          throw runtime_error("");
+      }catch(...)
+      {
+        //I dont think we will ever get here, but JIC I guess.
+        Wt::Chart::WChartPalette *pal = palette();
+        if( pal )
+          color = pal->brush(0).color();
+        else
+          color = WColor( Wt::darkRed );
+      }//try / catch, get the color
+      
       index = chi2Model->index(row,2);
       const double thisscale = boost::any_cast<double>( chi2Model->data(index) );
       
-      
       index = chi2Model->index(row,0);
       double energy = boost::any_cast<double>( chi2Model->data(index) );
+      
       
       const double yval = m_showChi ? thischi : thisscale;
       const WPointF pos = mapToDevice( energy, yval );
@@ -3507,7 +3530,23 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
       //I hate doing const_casts, but the Wt source code itself does this
       //  for adding image areas in Wt 3.3.2
       const_cast<Chi2Graphic*>(this)->addArea( area );
-    }catch(...){}
+      
+      if( !m_showChi )
+      {
+        index = chi2Model->index(row,4);
+        const double scale_uncert = boost::any_cast<double>( chi2Model->data(index) );
+        
+        const WPointF upper_uncert = mapToDevice( energy, yval + scale_uncert );
+        const WPointF lower_uncert = mapToDevice( energy, yval - scale_uncert );
+        const WPen oldPen = painter.pen();
+        painter.setPen( WPen(color) );
+        painter.drawLine( upper_uncert, lower_uncert );
+        painter.setPen( oldPen );
+      }//if( !m_showChi )
+    }catch( std::exception &e )
+    {
+      cerr << "Caught exception drawing Chi2 chart: " << e.what() << endl;
+    }
   }//for( int row = 0; row < nrow; ++row )
   
   if( nrow > 0 && !IsNan(sqrt(chi2)) )
@@ -3853,7 +3892,7 @@ if (m_specViewer->isSupportFile())
   m_showChi2Text->setInline( false );
   m_showChi2Text->hide();
 
-  m_chi2Model = new WStandardItemModel( 0, 4, parent );
+  m_chi2Model = new WStandardItemModel( 0, 6, parent );
   m_chi2Graphic = new Chi2Graphic();
   m_chi2Graphic->setModel( m_chi2Model );
 
@@ -3863,7 +3902,7 @@ if (m_specViewer->isSupportFile())
   m_chi2Graphic->setPlotAreaPadding( 50, Left );
   //m_chi2Graphic->setAutoLayoutEnabled();
   
-  m_chi2Graphic->addSeries( Chart::WDataSeries( 1, Chart::PointSeries ) );
+  m_chi2Graphic->addSeries( Chart::WDataSeries(1, Chart::PointSeries) );
   m_chi2Graphic->setXSeriesColumn( 0 );
   m_chi2Graphic->axis(Chart::XAxis).setTitle( "Energy (keV)" );
   
@@ -4405,13 +4444,13 @@ void ShieldingSourceDisplay::updateChi2Chart()
       m_logDiv->hide();
     }//if( m_logDiv )
     
-    const vector< tuple<double,double,double> > chis
+    const vector< tuple<double,double,double,Wt::WColor,double> > chis
                       = chi2Fcn->energy_chi_contributions( params, mixcache,
                                                 m_multiIsoPerPeak->isChecked(),
                                                 &m_calcLog );
     m_showLog->setDisabled( m_calcLog.empty() );
 
-    typedef tuple<double,double,double> DDPair;
+    typedef tuple<double,double,double,Wt::WColor,double> DDPair;
     vector< DDPair > keeper_points;
 
     for( size_t row = 0; row < chis.size(); ++row )
@@ -4419,17 +4458,19 @@ void ShieldingSourceDisplay::updateChi2Chart()
       const double energy = std::get<0>(chis[row]);
       const double chi = std::get<1>(chis[row]);
       const double scale = std::get<2>(chis[row]);
+      const WColor &color = std::get<3>(chis[row]);
+      const double scale_uncert = std::get<4>(chis[row]);
 
       if( fabs(chi) < 1.0E5 && !IsInf(chi) && !IsNan(chi)
           && !IsInf(energy) && !IsNan(energy) )
-        keeper_points.push_back( DDPair(energy,chi,scale) );
+        keeper_points.push_back( DDPair(energy,chi,scale,color,scale_uncert) );
     }//for( size_t row = 0; row < chis.size(); ++row )
 
     //If we only have one point, then Wt cant find the y-range, and an assert
     //  statment gets triggered in WAxis.C, so we'll fix this up kinda.
     //  I should probably submit a bug report to Wt...
     if( keeper_points.size() == 1 )
-      keeper_points.insert( keeper_points.begin(), DDPair(0.0,0.0,0.0) );
+      keeper_points.insert( keeper_points.begin(), DDPair(0.0,0.0,0.0,WColor(),0.0) );
 
     m_chi2Graphic->setNumFitForParams( ndof );
     if( !m_calcLog.empty() )
@@ -4458,6 +4499,8 @@ void ShieldingSourceDisplay::updateChi2Chart()
       const double &energy = std::get<0>(p);
       const double &chi = std::get<1>(p);
       const double &scale = std::get<2>(p);
+      WColor color = std::get<3>(p);
+      const double &scale_uncert = std::get<4>(p);
       
       if( IsNan(energy) || IsInf(chi) )
       {
@@ -4471,6 +4514,15 @@ void ShieldingSourceDisplay::updateChi2Chart()
       m_chi2Model->setData( row, 0, boost::any(energy) );
       m_chi2Model->setData( row, 1, boost::any(chi) );
       m_chi2Model->setData( row, 2, boost::any(scale) );
+      
+      if( color.isDefault() )
+        color = m_specViewer->getColorTheme()->defaultPeakLine;
+      color.setRgb( color.red(), color.green(), color.blue(), 255 );
+      
+      m_chi2Model->setData( row, 1, boost::any(color), Wt::MarkerPenColorRole );
+      m_chi2Model->setData( row, 1, boost::any(color), Wt::MarkerBrushColorRole );
+      m_chi2Model->setData( row, 2, boost::any(color), Wt::MarkerPenColorRole );
+      m_chi2Model->setData( row, 2, boost::any(color), Wt::MarkerBrushColorRole );
       
       //If we wanted to include the nuclide in the model, we would have to loop
       //  over photopeaks in m_peakModel to try and match things up
@@ -4491,6 +4543,7 @@ void ShieldingSourceDisplay::updateChi2Chart()
         }//for( const PeakModel::PeakShrdPtr &p : *peaks )
         
         m_chi2Model->setData( row, 3, boost::any(nuclidename) );
+        m_chi2Model->setData( row, 4, boost::any(scale_uncert) );
       }//if( !!peaks )
     }//for( int row = 0; row < nrow; ++row  )
   }catch( std::exception &e )
@@ -6070,7 +6123,7 @@ void ShieldingSourceDisplay::deSerialize(
     const vector<double> errors = inputPrams.Errors();
     GammaInteractionCalc::PointSourceShieldingChi2Fcn::NucMixtureCache mixcache;
     const bool multy_iso = m_multiIsoPerPeak->isChecked();
-    const vector< tuple<double,double,double> > chis
+    const vector< tuple<double,double,double,WColor,double> > chis
      = chi2Fcn->energy_chi_contributions( params, mixcache, multy_iso, nullptr );
     
     if( chis.size() )
@@ -6095,6 +6148,8 @@ void ShieldingSourceDisplay::deSerialize(
         const double energy = get<0>(p);
         const double chi = get<1>(p);
         const double scale = get<2>(p);
+        const WColor &color = get<3>(p);
+        const double scale_uncert = get<4>(p);
         
         if( !IsInf(chi) && !IsNan(chi) )
           chi2 += chi*chi;
@@ -6113,6 +6168,18 @@ void ShieldingSourceDisplay::deSerialize(
         
         node = doc->allocate_node( rapidxml::node_element, "Scale" );
         snprintf( buffer, sizeof(buffer), "%f", scale );
+        value = doc->allocate_string( buffer );
+        node->value( value );
+        point_node->append_node( node );
+        
+        node = doc->allocate_node( rapidxml::node_element, "Color" );
+        snprintf( buffer, sizeof(buffer), "%s", (color.isDefault() ? "" : color.cssText().c_str()) );
+        value = doc->allocate_string( buffer );
+        node->value( value );
+        point_node->append_node( node );
+        
+        node = doc->allocate_node( rapidxml::node_element, "ScaleUncert" );
+        snprintf( buffer, sizeof(buffer), "%f", scale_uncert );
         value = doc->allocate_string( buffer );
         node->value( value );
         point_node->append_node( node );
@@ -6138,9 +6205,6 @@ void ShieldingSourceDisplay::deSerialize(
     log_developer_error( BOOST_CURRENT_FUNCTION, ("Failed to get chi2 info during serialization - caught exception: " + string(e.what())).c_str() );
 #endif
   }
-  
-  
-  
   
   return parent_node;
 }//::rapidxml::xml_node<char> * serialize()
@@ -6691,11 +6755,18 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     const double age = m_sourceModel->age( ison );
     const bool fitAge = m_sourceModel->fitAge( ison );
     
+  
     const SandiaDecay::Nuclide *ageMasterNuc
                                    = m_sourceModel->ageMasterNuclide( nuclide );
-    const bool canFitAge = (!ageMasterNuc || (ageMasterNuc == nuclide));
+    const bool hasOwnAge = (!ageMasterNuc || (ageMasterNuc == nuclide));
     
-    num_fit_params += fitAct + (fitAge && canFitAge);
+    //cout << "For nuc=" << nuclide->symbol << " age=" << PhysicalUnits::printToBestTimeUnits(age)
+    //     << ", fitage=" << PhysicalUnits::printToBestTimeUnits(fitAge)
+    //     << ", hasOwnAge=" << hasOwnAge
+    //     << ", ageMasterNuc=" << (ageMasterNuc ? ageMasterNuc->symbol : string("null"))
+    //     << endl;
+    
+    num_fit_params += fitAct + (fitAge && hasOwnAge);
 
     const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
     const double ageStep = 0.25 * nuclide->halfLife;
@@ -6717,12 +6788,18 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     //We could do a lot better on creating the age range - there must be some
     //  way to easily determine how old an isotope has to get before it
     //  essentually doesnt change any more (promtp HL, etc.).
-    if( fitAge && canFitAge )
+    if( fitAge && hasOwnAge )
+    {
       inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, 100.0*nuclide->halfLife  );
-    else if( canFitAge )
+    }else if( hasOwnAge )
+    {
       inputPrams.Add( nuclide->symbol + "Age", age );
-    else
-      inputPrams.Add( nuclide->symbol + "Age", -1.0 );
+    }else  //see if master age is fixed, if so use it, else put in negative integer of index of age...
+    {
+      assert( ageMasterNuc );
+      const int age_master_index = m_sourceModel->nuclideIndex( ageMasterNuc );
+      inputPrams.Add( nuclide->symbol + "Age", -1.0*(age_master_index + 1) );
+    }
   }//for( int ison = 0; ison < niso; ++ison )
   
   
@@ -7295,6 +7372,11 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     ROOT::Minuit2::MnUserParameterState inputParamState( *inputPrams );
     ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
     ROOT::Minuit2::MnMinimize fitter( *chi2Fcn, inputParamState, strategy );
+    
+    //cout << "Parameters are: {";
+    //for( const auto &par : inputPrams->Parameters() )
+    //  cout << par.Name() << ", ";
+    //cout << endl;
     
     const double tolerance = 2.0*inputPrams->VariableParameters();
     unsigned int maxFcnCall = 50000;  //default minuit2: 200 + 100 * npar + 5 * npar**2
