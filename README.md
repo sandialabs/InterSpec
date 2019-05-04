@@ -5,7 +5,17 @@ InterSpec also provides a number of other tools useful for analyzing radiation d
 dose rate calculations, interactive nuclide decay and reference information, gamma cross section calculations, and more.
 InterSpec can open data files from most common spectral radiation detectors (e.g., most NaI, HPGe, LaBr, 
 CLYC, CsI, etc. based systems) and assist in their analysis.
-InterSpec can also be built as a stand-alone (e.g., not Internet connection necessary) native app (using either OS provided WebView, or [Electron](https://github.com/electron/electron) for display) for Windows, Linux, macOS, iOS, or Android.
+InterSpec can also be built as a stand-alone (e.g., no Internet connection necessary) native app (using either OS provided WebView, or [Electron](https://github.com/electron/electron) for display) for Windows, Linux, macOS, iOS, or Android.
+
+# Getting Started
+For executable installation:
+- Windows, Linux, macOS: download from the [releases tab](https://github.com/sandialabs/interspec/releases)
+- iPhone/iPad: [iOS App Store](https://itunes.apple.com/us/app/interspec-radiation-analysis/id1447080767?ls=1&mt=8)
+- Android phones and tablets: [Android Google Play Store](https://play.google.com/store/apps/details?id=gov.sandia.interspec)
+- From source: see the [Building From Source](https://github.com/sandialabs/InterSpec#building-from-source).
+
+A brief getting started guide can be found in [tutorials/brief_analysis_intro](https://github.com/sandialabs/InterSpec/tree/master/tutorials/brief_analysis_intro/); a more comprehsive tutorial is planned for the future.
+
 
 ## Some Screen Shots
 ![W187 peak fit example](/docs/imgs/overview_W187.png?raw=true "Easy to use user interface.")
@@ -45,11 +55,7 @@ Can fit for multiple nuclides at once, taking into account interferences, ages, 
 
 
 
-## Getting Started
-
-If you just care about using a pre-compiled executable, head over to 
-[releases](https://github.com/sandialabs/interspec/releases) and download the latest.
-A brief getting started guide can be found in [tutorials/brief_analysis_intro](https://github.com/sandialabs/InterSpec/tree/master/tutorials/brief_analysis_intro/); a more comprehsive tutorial is planned for the future.
+## Building from source
 
 If you would like to build the app, some instructions are below.
 
