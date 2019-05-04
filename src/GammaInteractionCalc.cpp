@@ -1196,23 +1196,30 @@ double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
 
   const size_t ind = nuclideIndex( nuclide );
 
-  if( params[2*ind+1] >= 0.0 )
-    return params[2*ind+1];
+  //If parameter is zero or positive, we will use this age.
+  if( params[2*ind+1] >= -0.00001 )
+    return std::max( params[2*ind+1], 0.0 );
   
-  for( size_t i = 0; i < m_nuclides.size(); ++i )
-  {
-    if( i != ind )
-    {
-      const double thisage = params[2*i+1];
-      if( thisage >= 0.0 )
-        return thisage;
-    }//if( m_nuclides[i] != nuclide )
-  }//for( size_t i = 0; i < m_nuclides.size(); ++i )
+  //Else the parameter value indicates the "master" nuclide whose age should be
+  // specified.  To get master index add one to value, and take negative
+  const double findex = -1.0*params[2*ind+1];
+  const int nearFIndex = static_cast<int>( std::round(findex) );
   
-  throw runtime_error( "PointSourceShieldingChi2Fcn::age: encountered a"
-                       " negative age for a nuclide." );
+  if( fabs(findex - nearFIndex) > 0.01 || nearFIndex < 1 )
+    throw runtime_error( "Got a negative age value that is not indicating a"
+                         " master nuclide age: " + std::to_string(params[2*ind+1]) );
   
-  return params[2*ind+1];
+  const int master_nuclide_index = nearFIndex - 1;
+  
+  if( static_cast<size_t>(2*master_nuclide_index+1) >= params.size() )
+    throw runtime_error( "Got a negative age value that is larger than could be"
+                         " for indicating a master nuclide age: " + std::to_string(params[2*ind+1]) );
+  
+  const double master_age = params[2*master_nuclide_index+1];
+  if( master_age < -0.00001 )
+    throw runtime_error( "Master age is also less than zero (shouldnt happen)" );
+  
+  return std::max( master_age, 0.0 );
 }//double age(...)
 
 
@@ -1361,7 +1368,7 @@ double PointSourceShieldingChi2Fcn::DoEval( const std::vector<double> &x ) const
     if( m_mixtureCache.size() > sm_maxMixtureCacheSize )
       m_mixtureCache.clear();
     
-  const vector< tuple<double,double,double> > chi2s
+  const vector< tuple<double,double,double,Wt::WColor,double> > chi2s
                           = energy_chi_contributions( x, m_mixtureCache,
                                             m_allowMultipleNucsContribToPeaks );
   double chi2 = 0.0;
@@ -1395,7 +1402,11 @@ double PointSourceShieldingChi2Fcn::DoEval( const std::vector<double> &x ) const
       }
     }//if( m_guiUpdateFrequencyMs.load() && m_guiUpdateInfo )
     
-//    cout << "Returning chi2=" << chi2 << endl;
+    //cout << "Returning chi2=" << chi2 << " for {" ;
+    //for( size_t i = 0; i < x.size(); ++i )
+    //  cout << (i ? "," : "") << x[i];
+    //cout << "}" << endl;
+    
     return chi2;
   }catch(...)
   {
@@ -1575,7 +1586,7 @@ void PointSourceShieldingChi2Fcn::cluster_peak_activities( std::map<double,doubl
 }//cluster_peak_activities(...)
 
 
-vector< tuple<double,double,double> > PointSourceShieldingChi2Fcn::expected_observed_chis(
+vector< tuple<double,double,double,Wt::WColor,double> > PointSourceShieldingChi2Fcn::expected_observed_chis(
                                            const std::vector<PeakDef> &peaks,
                                            const std::vector<PeakDef> &backPeaks,
                                            const std::map<double,double> &energy_count_map,
@@ -1591,7 +1602,7 @@ vector< tuple<double,double,double> > PointSourceShieldingChi2Fcn::expected_obse
   //  of counts and get the chi2.
   //Note that matching betoween expected and observed peaks is done via energy
   //  which make me a bit queezy for some reason
-  vector< tuple<double,double,double> > answer;
+  vector< tuple<double,double,double,Wt::WColor,double> > answer;
 
   for( const PeakDef &peak : peaks )
   {
@@ -1645,7 +1656,8 @@ vector< tuple<double,double,double> > PointSourceShieldingChi2Fcn::expected_obse
     
     const double chi = (observed_counts - expected_counts) / observed_uncertainty;
     const double scale = observed_counts / expected_counts;
-    answer.emplace_back( make_tuple(energy, chi, scale) );
+    const double scale_uncert = observed_uncertainty / expected_counts;
+    answer.emplace_back( make_tuple(energy, chi, scale, peak.lineColor(), scale_uncert) );
     
     if( info )
     {
@@ -1753,7 +1765,7 @@ void PointSourceShieldingChi2Fcn::setBackgroundPeaks(
 }//void setBackgroundPeaks(...)
   
   
-vector< tuple<double,double,double> >
+vector< tuple<double,double,double,Wt::WColor,double> >
        PointSourceShieldingChi2Fcn::energy_chi_contributions(
            const std::vector<double> &x,
            PointSourceShieldingChi2Fcn::NucMixtureCache &mixturecache,
@@ -1805,8 +1817,17 @@ vector< tuple<double,double,double> >
         continue;
       
       const double act = activity( nuclide, x );
-//      cerr << "ACtivity of " << nuclide->symbol << " " << act << endl;
       const double thisage = age( nuclide, x );
+      
+      //{
+      //  static std::mutex s_debug_mutex;
+      //  std::lock_guard<std::mutex> lock( s_debug_mutex );
+      //  cout << "\tActivity of " << nuclide->symbol << " is "
+      //       << PhysicalUnits::printToBestActivityUnits(act)
+      //       << " with age " << PhysicalUnits::printToBestTimeUnits(thisage) << endl;
+      //}
+      
+      
       if( mixturecache.find(nuclide) == mixturecache.end() )
         mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
       
@@ -1828,6 +1849,7 @@ vector< tuple<double,double,double> >
       
       const double act = activity( nuclide, x );
       const double thisage = age( nuclide, x );
+      
       if( mixturecache.find(nuclide) == mixturecache.end() )
         mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
       
