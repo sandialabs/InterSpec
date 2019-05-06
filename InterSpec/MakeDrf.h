@@ -32,6 +32,7 @@
 class MakeDrf;
 class InterSpec;
 class MaterialDB;
+class MakeDrfChart;
 
 namespace Wt
 {
@@ -64,6 +65,8 @@ protected:
   InterSpec *m_interspec;
   MaterialDB *m_materialDB;
   Wt::WSuggestionPopup *m_materialSuggest;
+  
+  MakeDrfChart *m_chart;
 };//class MakeDrf
 
 #endif //MakeDrf_h

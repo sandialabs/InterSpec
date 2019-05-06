@@ -1,4 +1,7 @@
-
+.MakeDrfSrcDef {
+  border: 1px solid grey;
+  padding: 3px;
+}
 
 .SrcInputTable > tbody > tr > td:nth-child(1) {
   /* Select first colum */

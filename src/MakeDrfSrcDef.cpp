@@ -52,6 +52,20 @@
 using namespace std;
 using namespace Wt;
 
+namespace
+{
+  const int sm_distance_row        = 1;
+  const int sm_activity_row        = 2;
+  const int sm_activity_uncert_row = 3;
+  const int sm_assay_date_row      = 4;
+  const int sm_spec_date_row       = 5;
+  const int sm_age_at_assay_row    = 6;
+  const int sm_decayed_info_row    = 7;
+  const int sm_shield_material_row = 8;
+  const int sm_options_row         = 9;
+}//namespace
+
+
 MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
               const boost::posix_time::ptime &measDate,
               MaterialDB *materialDB,
@@ -76,6 +90,8 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
 {
   wApp->useStyleSheet( "InterSpec_resources/MakeDrfSrcDef.css" );
   
+  addStyleClass( "MakeDrfSrcDef" );
+  
   create();
   
   setNuclide( m_nuclide );
@@ -92,13 +108,12 @@ MakeDrfSrcDef::~MakeDrfSrcDef()
 {
 }
 
-
 void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
 {
   m_nuclide = nuc;
   const bool notMuchEvolution = (!nuc || PeakDef::ageFitNotAllowed(nuc));
   
-  m_table->rowAt(7)->setHidden( notMuchEvolution );
+  m_table->rowAt(sm_age_at_assay_row)->setHidden( notMuchEvolution );
   m_sourceAgeAtAssay->setText( "0s" );
   
   if( nuc )
@@ -110,6 +125,8 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
   {
     m_nuclideLabel->setText( "" );
   }
+  
+  useAgeInfoUserToggled();
 }//setNuclide(...)
 
 
@@ -149,11 +166,11 @@ void MakeDrfSrcDef::create()
   nucSuggest->filterModel().connect( filterModel, &IsotopeNameFilterModel::filter );
 */
   
-  cell = m_table->elementAt(1,0);
+  cell = m_table->elementAt(sm_distance_row,0);
   WLabel *label = new WLabel( "Distance", cell );
-  cell = m_table->elementAt(1,1);
+  cell = m_table->elementAt(sm_distance_row,1);
   m_distanceEdit = new WLineEdit( cell );
-  m_distanceEdit->setTextSize( 8 );
+  m_distanceEdit->setTextSize( 16 );
   m_distanceEdit->setAutoComplete( false );
   label->setBuddy( m_distanceEdit );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
@@ -161,19 +178,13 @@ void MakeDrfSrcDef::create()
   m_distanceEdit->setValidator( distValidator );
   m_distanceEdit->setText( "50 cm" );
   
-  cell = m_table->elementAt(2,1);
-  m_useAgeInfo = new WCheckBox( "Age?", cell );
-  m_useAgeInfo->setChecked( false );
-  m_useAgeInfo->changed().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
-  
-  
-  cell = m_table->elementAt(3,0);
+  cell = m_table->elementAt(sm_activity_row,0);
   label = new WLabel( "Activity", cell );
   
-  cell = m_table->elementAt(3,1);
+  cell = m_table->elementAt(sm_activity_row,1);
   m_activityEdit = new WLineEdit( cell );
   m_activityEdit->setAutoComplete( false );
-  m_activityEdit->setTextSize( 8 );
+  m_activityEdit->setTextSize( 16 );
   label->setBuddy( m_activityEdit );
   
   WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
@@ -182,15 +193,13 @@ void MakeDrfSrcDef::create()
   m_activityEdit->setText( "100 uCi" );
   m_activityEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
-  
-  cell = m_table->elementAt(3,2);
 
-  cell = m_table->elementAt(4,0);
-  label = new WLabel( "Act. Uncert.", cell );
-  cell = m_table->elementAt(4,1);
+  cell = m_table->elementAt(sm_activity_uncert_row,0);
+  label = new WLabel( "Act. Uncert.&nbsp;", cell );  //The nbsp is to make this the longest label so when acti ity or shielding is shown, the width doesnt get changed
+  cell = m_table->elementAt(sm_activity_uncert_row,1);
   m_activityUncertainty = new WDoubleSpinBox( cell );
   m_activityUncertainty->setText( "0" );
-  m_activityUncertainty->setTextSize( 6 );
+  m_activityUncertainty->setTextSize( 14 );
   m_activityUncertainty->setAutoComplete( false );
   m_activityUncertainty->setSuffix( " %" );
   label->setBuddy( m_activityUncertainty );
@@ -202,25 +211,28 @@ void MakeDrfSrcDef::create()
   //WDoubleValidator *percentVal = new WDoubleValidator( this );
   //percentVal->setRange( 0.0, 100.0 );
   //m_activityUncertainty->setValidator( percentVal );
-
   
-  cell = m_table->elementAt(5,0);
+  cell = m_table->elementAt(sm_assay_date_row,0);
   label = new WLabel( "Assay Date", cell );
-  cell = m_table->elementAt(5,1);
+  cell = m_table->elementAt(sm_assay_date_row,1);
   m_assayDate = new WDateEdit( cell );
+  //m_assayDate->setTextSize( 9 );
   label->setBuddy( m_assayDate );
   m_assayDate->changed().connect( this, &MakeDrfSrcDef::handleEnteredDatesUpdated );
   
-  cell = m_table->elementAt(6,0);
+  cell = m_table->elementAt(sm_spec_date_row,0);
   label = new WLabel( "Spec. Date", cell );
-  cell = m_table->elementAt(6,1);
+  cell = m_table->elementAt(sm_spec_date_row,1);
   m_drfMeasurementDate = new WDateEdit( cell );
+  //m_drfMeasurementDate->setTextSize( 10 );
+  //The right padding is 40px, could reduce down to 30.
   label->setBuddy( m_drfMeasurementDate );
   m_drfMeasurementDate->changed().connect( this, &MakeDrfSrcDef::handleEnteredDatesUpdated );
   
-  cell = m_table->elementAt(7,0);
-  label = new WLabel( "Age @ Assay", cell );
-  cell = m_table->elementAt(7,1);
+  
+  cell = m_table->elementAt(sm_age_at_assay_row,0);
+  label = new WLabel( "Age@Assay", cell );
+  cell = m_table->elementAt(sm_age_at_assay_row,1);
   m_sourceAgeAtAssay = new WLineEdit( cell );
   m_sourceAgeAtAssay->setAutoComplete( false );
   label->setBuddy( m_sourceAgeAtAssay );
@@ -233,22 +245,27 @@ void MakeDrfSrcDef::create()
   m_sourceAgeAtAssay->setText( "0s" );
   
   
-  cell = m_table->elementAt(8,0);
-  label = new WLabel( "At Spec. Time", cell );
-  cell = m_table->elementAt(8,1);
+  cell = m_table->elementAt(sm_decayed_info_row,0);
+  label = new WLabel( "Aging Res.", cell );
+  cell = m_table->elementAt(sm_decayed_info_row,1);
   m_sourceInfoAtMeasurement = new WText( cell );
-  
-  
   
   //Wt::WDateEdit *m_sourceCreationDate;
   
-  cell = m_table->elementAt(9,1);
+  cell = m_table->elementAt(sm_options_row,0);
+  m_useAgeInfo = new WCheckBox( "Age?", cell );
+  m_useAgeInfo->setFloatSide( Wt::Right );
+  m_useAgeInfo->setChecked( false );
+  m_useAgeInfo->changed().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
+  
+  cell = m_table->elementAt(sm_options_row,1);
   m_useShielding = new WCheckBox( "Shielded?", cell );
+  m_useShielding->setFloatSide( Wt::Right );
   m_useShielding->setChecked( false );
   m_useShielding->changed().connect( this, &MakeDrfSrcDef::useShieldingInfoUserToggled );
   
   
-  cell = m_table->elementAt(10,0);
+  cell = m_table->elementAt(sm_shield_material_row,0);
   cell->setColumnSpan( 2 );
   m_shieldingSelect = new ShieldingSelect( m_materialDB, nullptr, m_materialSuggest, false, cell );
   m_shieldingSelect->hide();
@@ -262,13 +279,13 @@ void MakeDrfSrcDef::useAgeInfoUserToggled()
   const bool useAge = m_useAgeInfo->isChecked();
   m_activityEdit->label()->setText( useAge ? "Assay Act." : "Activity" );
   
-  m_table->rowAt(5)->setHidden( !useAge );
-  m_table->rowAt(6)->setHidden( !useAge );
+  m_table->rowAt(sm_assay_date_row)->setHidden( !useAge );
+  m_table->rowAt(sm_spec_date_row)->setHidden( !useAge );
   
   const bool notMuchEvolution = (!m_nuclide || PeakDef::ageFitNotAllowed(m_nuclide));
-  m_table->rowAt(7)->setHidden( !useAge || notMuchEvolution );
+  m_table->rowAt(sm_age_at_assay_row)->setHidden( !useAge || notMuchEvolution );
   
-  m_table->rowAt(8)->setHidden( !useAge );
+  m_table->rowAt(sm_decayed_info_row)->setHidden( !useAge );
   
   m_assayDate->setDisabled( !useAge );
   m_drfMeasurementDate->setDisabled( !useAge );
@@ -430,8 +447,6 @@ double MakeDrfSrcDef::activityAtSpectrumTime() const
 
 double MakeDrfSrcDef::ageAtSpectrumTime() const
 {
-  cout << "MakeDrfSrcDef::ageAtSpectrumTime() untested!" << endl;
-  
   if( !m_nuclide )
     return 0.0;
 
@@ -457,11 +472,9 @@ double MakeDrfSrcDef::ageAtSpectrumTime() const
   if( assayDate > measDate )
     throw runtime_error( "Assay date must be before measurement date" );
   
-  const int numDays = assayDate.daysTo( measDate );
+  const double numDays = assayDate.daysTo( measDate );
   
-  cout << "There are " << numDays << " days between assay and measurement" << endl;
-  
-  return ageAtAssay + 24*3600*numDays;
+  return ageAtAssay + 24.0*3600.0*numDays;
 }//double ageAtSpectrumTime() const
 
 
