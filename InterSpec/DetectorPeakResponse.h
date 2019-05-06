@@ -356,6 +356,17 @@ public:
   void setEfficiencySource( const EfficiencyDefinitionSource src );
 
   
+  //Some temporary accessors for debugging 2019050
+  ResolutionFnctForm resolutionFcnType() const { return m_resolutionForm; }
+  const std::vector<float> &resolutionFcnCoefficients() const { return m_resolutionCoeffs; }
+  EfficiencyFnctForm efficiencyFcnType() const { return m_efficiencyForm; }
+  //std::vector<EnergyEfficiencyPair> m_energyEfficiencies;
+  //std::string m_efficiencyFormula;
+  //std::function<float(float)> m_efficiencyFcn;
+  const std::vector<float> efficiencyExpOfLogsCoeffs() const { return m_expOfLogPowerSeriesCoeffs; }
+  
+  
+  
   //Some methods to fit detector resolution from data.
   //    Only kinda tested as of 20130428
   typedef std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > PeakInput_t;
