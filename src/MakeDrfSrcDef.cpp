@@ -97,15 +97,18 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   setNuclide( m_nuclide );
   
   if( !measDate.is_special() )
-  {
-    const string timestr = UtilityFunctions::to_extended_iso_string( measDate );
-    m_drfMeasurementDate->setDate( WDate::fromString( WString::fromUTF8(timestr), "%Y-%m-%d%n%H:%M:%S") );  //Not tested yet
-  }
+    m_drfMeasurementDate->setDate( WDateTime::fromPosixTime(measDate).date() );
 }//MakeDrfSrcDef constructor
 
 
 MakeDrfSrcDef::~MakeDrfSrcDef()
 {
+}
+
+
+Wt::Signal<> &MakeDrfSrcDef::updated()
+{
+  return m_updated;
 }
 
 void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
@@ -177,6 +180,9 @@ void MakeDrfSrcDef::create()
   distValidator->setFlags( Wt::MatchCaseInsensitive );
   m_distanceEdit->setValidator( distValidator );
   m_distanceEdit->setText( "50 cm" );
+  m_distanceEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedDistance );
+  m_distanceEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedDistance );
+  
   
   cell = m_table->elementAt(sm_activity_row,0);
   label = new WLabel( "Activity", cell );
@@ -207,6 +213,9 @@ void MakeDrfSrcDef::create()
   m_activityUncertainty->setDecimals( 1 );
   m_activityUncertainty->setRange( 0.0, 100.0 );
   m_activityUncertainty->setSingleStep( 1.0 );
+  
+  m_activityUncertainty->changed().connect( this, &MakeDrfSrcDef::handleUserChangedActivityUncertainty );
+  m_activityUncertainty->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivityUncertainty );
   
   //WDoubleValidator *percentVal = new WDoubleValidator( this );
   //percentVal->setRange( 0.0, 100.0 );
@@ -291,6 +300,8 @@ void MakeDrfSrcDef::useAgeInfoUserToggled()
   m_drfMeasurementDate->setDisabled( !useAge );
   m_sourceInfoAtMeasurement->setDisabled( !useAge );
   m_sourceAgeAtAssay->setDisabled( !useAge );
+  
+  m_updated.emit();
 }//void useAgeInfoUserToggled()
 
 
@@ -322,6 +333,23 @@ void MakeDrfSrcDef::updateAgedText()
 }//void updateAgedText()
 
 
+void MakeDrfSrcDef::handleUserChangedDistance()
+{
+  try
+  {
+    distance();
+    if( m_distanceEdit->hasStyleClass( "SrcInputError" ) )
+      m_distanceEdit->removeStyleClass( "SrcInputError" );
+  }catch( std::exception & )
+  {
+    if( !m_distanceEdit->hasStyleClass( "SrcInputError" ) )
+      m_distanceEdit->addStyleClass( "SrcInputError" );
+  }
+  
+  m_updated.emit();
+}//void handleUserChangedDistance()
+
+
 void MakeDrfSrcDef::handleUserChangedActivity()
 {
   try
@@ -337,7 +365,25 @@ void MakeDrfSrcDef::handleUserChangedActivity()
   
   if( m_useAgeInfo->isChecked() )
     updateAgedText();
+  
+  m_updated.emit();
 }//void handleUserChangedActivity()
+
+
+void MakeDrfSrcDef::handleUserChangedActivityUncertainty()
+{
+  if( WValidator::State::Valid == m_activityUncertainty->validate() )
+  {
+    if( m_activityUncertainty->hasStyleClass( "SrcInputError" ) )
+      m_activityUncertainty->removeStyleClass( "SrcInputError" );
+  }else
+  {
+    if( !m_activityUncertainty->hasStyleClass( "SrcInputError" ) )
+      m_activityUncertainty->addStyleClass( "SrcInputError" );
+  }
+  
+  m_updated.emit();
+}//void handleUserChangedActivityUncertainty();
 
 
 void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
@@ -365,6 +411,8 @@ void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
   }//if( zero / else )
   
   updateAgedText();
+  
+  m_updated.emit();
 }//void handleUserChangedAgeAtAssay()
 
 
@@ -391,14 +439,16 @@ void MakeDrfSrcDef::handleEnteredDatesUpdated()
       m_assayDate->addStyleClass( "SrcInputError" );
   }
   
-  
   updateAgedText();
+  
+  m_updated.emit();
 }//void handleEnteredDatesUpdated()
 
 
 void MakeDrfSrcDef::useShieldingInfoUserToggled()
 {
   m_shieldingSelect->setHidden( !m_useShielding->isChecked() );
+  m_updated.emit();
 }//void useShieldingInfoUserToggled()
 
 
@@ -411,6 +461,12 @@ double MakeDrfSrcDef::enteredActivity() const
   return PhysicalUnits::stringToActivity( activitystr );
 }//double enteredActivity()
 
+
+double MakeDrfSrcDef::distance() const
+{
+  const string txt = m_distanceEdit->text().toUTF8();
+  return PhysicalUnits::stringToDistance(txt);
+}
 
 const SandiaDecay::Nuclide *MakeDrfSrcDef::nuclide() const
 {
@@ -484,3 +540,30 @@ ShieldingSelect *MakeDrfSrcDef::shielding()
     return nullptr;
   return m_shieldingSelect;
 }//ShieldingSelect *shielding()
+
+
+void MakeDrfSrcDef::setDistance( const double dist )
+{
+  m_distanceEdit->setText( PhysicalUnits::printToBestLengthUnits(dist) );
+}//void setDistance( const double dist );
+
+
+void MakeDrfSrcDef::setActivity( const double act )
+{
+  m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(act) );
+  updateAgedText();
+}//void MakeDrfSrcDef::setActivity( const double dist )
+
+
+void MakeDrfSrcDef::setAssayInfo( const double activity,
+                                  const boost::posix_time::ptime &assay_date )
+{
+  m_useAgeInfo->setChecked( !assay_date.is_special() );
+  useAgeInfoUserToggled();
+  m_assayDate->setDate( WDateTime::fromPosixTime(assay_date).date() );
+  
+  if( activity > 0.0 )
+    m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(activity) );
+  
+  updateAgedText();
+}//void setAssayInfo(..);

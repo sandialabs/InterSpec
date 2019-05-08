@@ -307,7 +307,29 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
   
   painter.save();
   
-  //ToDo: Paint some grey-ish rectangles over the energy we dont have peaks for
+  //Paint some grey-ish rectangles over the energy we dont have peaks for
+  if( !m_efficiencyCoefs.empty() && !m_datapoints.empty() )
+  {
+    float mindata = 9999999.9, maxdata = -9999999.9;
+    for( const auto &d : m_datapoints )
+    {
+      mindata = std::min( mindata, d.energy );
+      maxdata = std::max( maxdata, d.energy );
+    }
+  
+    const WPointF left_ll = mapToDevice( m_det_lower_energy, axis(Chart::YAxis).minimum() );
+    const WPointF left_ur = mapToDevice( mindata, axis(Chart::YAxis).maximum() );
+    
+    const WPointF right_ll = mapToDevice( maxdata, axis(Chart::YAxis).minimum() );
+    const WPointF right_ur = mapToDevice( m_det_upper_energy, axis(Chart::YAxis).maximum() );
+    
+    painter.setBrush( WBrush( WColor(123,123,123,25) ) );
+    painter.setPen( WPen(PenStyle::NoPen) );
+    painter.drawRect(left_ll.x(), left_ll.y(), left_ur.x() - left_ll.x(), left_ur.y() - left_ll.y() );
+    painter.drawRect(right_ll.x(), right_ll.y(), right_ur.x() - right_ll.x(), right_ur.y() - right_ll.y() );
+    
+    //ToDo: the above actually leaves some space on the outside edges - should fix this up
+  }//if( we have equation and data )
   
   painter.restore();
 }//Chi2Graphic::paint(
