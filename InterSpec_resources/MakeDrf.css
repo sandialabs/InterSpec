@@ -7,3 +7,15 @@
   width: 150px;
   border: 1px solid grey;
 }
+
+.DrfSpecFile {
+  border: 1px solid green;
+}
+
+.DrfSpecFileSample {
+  border: 1px solid red;
+}
+
+.DrfPeak {
+  border: 1px solid yellow;
+}

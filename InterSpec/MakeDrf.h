@@ -62,6 +62,8 @@ public:
   virtual ~MakeDrf();
   
 protected:
+  void handleSourcesUpdates();
+  
   InterSpec *m_interspec;
   MaterialDB *m_materialDB;
   Wt::WSuggestionPopup *m_materialSuggest;

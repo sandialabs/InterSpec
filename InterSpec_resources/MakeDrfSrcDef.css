@@ -1,6 +1,7 @@
 .MakeDrfSrcDef {
   border: 1px solid grey;
   padding: 3px;
+  display: inline-block;
 }
 
 .SrcInputTable > tbody > tr > td:nth-child(1) {

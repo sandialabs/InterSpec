@@ -73,6 +73,15 @@ public:
   
   virtual ~MakeDrfSrcDef();
   
+  /** Signal emitted when widget is upadated by the user. */
+  Wt::Signal<> &updated();
+  
+  /** Returns user entered distance.
+   
+     Throws exception if input field has invalid text.
+   */
+  double distance() const;
+  
   /** Returns the nuclide this MakeDrfSrcDef is for.
    
    Will be nullptr if that is what was passed in.
@@ -100,6 +109,20 @@ public:
    */
   ShieldingSelect *shielding();
   
+  /** Set the distance, maybe from a hint in the spectrum file.
+   Does not cause the updated() signal to be emitted.
+   */
+  void setDistance( const double dist );
+  
+  /** Set the activity, maybe from a hint in the spectrum file.
+   Does not cause the updated() signal to be emitted.
+   */
+  void setActivity( const double act );
+  
+  /** Sets the activity and assay date, enabling aging if it isnt already.
+   Does not cause the updated() signal to be emitted.
+   */
+  void setAssayInfo( const double activity, const boost::posix_time::ptime &assay_date );
   
 protected:
   /** Creates the widget, but doesnt fill out any of the information. */
@@ -113,7 +136,11 @@ protected:
   
   void useShieldingInfoUserToggled();
   
+  void handleUserChangedDistance();
+  
   void handleUserChangedActivity();
+  
+  void handleUserChangedActivityUncertainty();
   
   void handleUserChangedAgeAtAssay();
   
@@ -171,6 +198,7 @@ protected:
   /** The widget to allow selecting shielding, is selected to do so. */
   ShieldingSelect *m_shieldingSelect;
   
+  Wt::Signal<> m_updated;
 };//MakeDrfSrcDef
 
 #endif //MakeDrfSrcDef_h
