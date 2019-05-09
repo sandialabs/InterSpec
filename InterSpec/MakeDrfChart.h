@@ -53,7 +53,9 @@ public:
     /** Fit counts in the peak; does not include continuum area. */
     float peak_area;
     
-    /** Uncertainty in peak counts; e.g. usually ~sqrt(counts_in_peak) */
+    /** Uncertainty in peak counts; e.g. usually ~sqrt(counts_in_peak).
+        If you background subtracted, make sure to include background error to.
+     */
     float peak_area_uncertainty;
     
     /** Full width at half maximum (eg 2.35*gaus_sigma), in keV, of the peak. */
@@ -78,6 +80,14 @@ public:
     
     /** Color of the peak for this data point. */
     Wt::WColor peak_color;
+    
+    /** If zero or negative, then background subtraction was not done.
+       Otherwise the background peak area is indicated here.
+     */
+    float background_peak_area;
+    
+    /** Must be >0 for background peak subtraction to be done. */
+    float background_peak_live_time;
   };//struct DataPoint
   
 public:

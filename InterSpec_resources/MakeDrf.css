@@ -8,6 +8,13 @@
   border: 1px solid grey;
 }
 
+.MakeDrfErrTxt {
+  padding: 1em;
+  margin: 2px;
+  color: red;
+  border: 1px solid grey;
+}
+
 .DrfSpecFile {
   border: 1px solid green;
 }
@@ -18,4 +25,21 @@
 
 .DrfPeak {
   border: 1px solid yellow;
+}
+
+.DrfSpecFileSampleBackground {
+  padding-left: 2em;
+}
+
+.DrfSpecFileSampleBackgroundTxt {
+  color: red;
+}
+
+.DrfPeakInfoTxt {
+  
+}
+
+.DrfPeakBackSubTxt {
+  padding-left: 2em;
+  font-style: italic;
 }

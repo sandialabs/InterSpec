@@ -501,6 +501,15 @@ double MakeDrfSrcDef::activityAtSpectrumTime() const
 }//double activityAtSpectrumTime() const
 
 
+double MakeDrfSrcDef::fractionalActivityUncertainty() const
+{
+  if( WValidator::State::Valid != m_activityUncertainty->validate() )
+    throw runtime_error( "Activity Uncertainty Invalid" );
+  
+  return m_activityUncertainty->value() / 100.0;
+}//double fractionalActivityUncertainty() const
+
+
 double MakeDrfSrcDef::ageAtSpectrumTime() const
 {
   if( !m_nuclide )
