@@ -95,6 +95,12 @@ public:
    */
   double activityAtSpectrumTime() const;
   
+  /** Returns the fractional (so 0.0 to 1.0) uncertainty on the activity.
+   
+   Throws exception if there are errors in the user input field.
+   */
+  double fractionalActivityUncertainty() const;
+  
   /** Returns the nuclide age (in units of PhysicalUnits), at the time the
    characterization measurment was taken.  Returns the age you should assume the
    source is at the time of the characterization, not necassarily the actual

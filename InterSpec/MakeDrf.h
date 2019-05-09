@@ -36,6 +36,8 @@ class MakeDrfChart;
 
 namespace Wt
 {
+  class WText;
+  class WLineEdit;
   class WSuggestionPopup;
 }
 
@@ -69,6 +71,12 @@ protected:
   Wt::WSuggestionPopup *m_materialSuggest;
   
   MakeDrfChart *m_chart;
+  
+  Wt::WContainerWidget *m_files;
+  
+  Wt::WLineEdit *m_detDiameter;
+  
+  Wt::WText *m_errorMsg;
 };//class MakeDrf
 
 #endif //MakeDrf_h
