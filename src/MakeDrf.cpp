@@ -29,11 +29,14 @@
 
 #include <Wt/WText>
 #include <Wt/WPanel>
+#include <Wt/WLabel>
+#include <Wt/WServer>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
+#include <Wt/WDoubleSpinBox>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
 
@@ -64,6 +67,7 @@ namespace
   bool source_info_from_lib_file( string srcname, const string &filename,
                                   double &activity, boost::posix_time::ptime &activityDate, string &comments )
   {
+    cout << "Will try to find '" << srcname << "' from " << filename << endl;
     ifstream file( filename.c_str(), ios::in | ios::binary );
     if( !file )
       return false;
@@ -118,7 +122,8 @@ namespace
       char buffer[512];
       if( peak && peak->parentNuclide() && peak->nuclearTransition() )
       {
-        m_useCb->setChecked();
+        const bool use = (peak->PeakDef::sourceGammaType()==PeakDef::SourceGammaType::NormalGamma);
+        m_useCb->setChecked( use );
         snprintf( buffer, sizeof(buffer), "%s: %.2f keV peak with %.1f cps for %.2f keV gamma.",
                   peak->parentNuclide()->symbol.c_str(),
                   peak->mean(),
@@ -312,6 +317,7 @@ namespace
       //See if the file conforms to GADRAS conventions
       //if( samples.size() == 1 )
       {
+        string shielding;
         bool is_background = false;
         double distance = -1.0, activity = -1.0;
         boost::posix_time::ptime activityDate;
@@ -367,6 +373,18 @@ namespace
               
               remark = remark.substr(7);
               UtilityFunctions::trim( remark );
+              
+              const size_t openCurlyPos = remark.find( '{' );
+              if( shielding.empty() && (openCurlyPos != string::npos) )
+              {
+                const size_t closeCurlyPos = remark.find( '}', openCurlyPos );
+                if( (closeCurlyPos != string::npos) && ((openCurlyPos+4)<closeCurlyPos) )
+                {
+                  shielding = remark.substr(openCurlyPos+1, closeCurlyPos-openCurlyPos-1);
+                  remark = remark.substr(0,openCurlyPos);
+                  UtilityFunctions::trim(remark);
+                }
+              }//if( source had shielding defined )
               
               if( !nuc )
                 nuc = db->nuclide( remark );  //Probably shouldnt give to many false positives?
@@ -427,6 +445,23 @@ namespace
                 src->setActivity( activity );
               else if( activity > 0.0 )
                 src->setAssayInfo( activity, activityDate );
+              
+              if( !shielding.empty() )
+              {
+                try
+                {
+                  vector<float> an_ad;
+                  UtilityFunctions::split_to_floats( shielding, an_ad );
+                  if( an_ad.size() >= 2 && an_ad[0] >= 1.0f && an_ad[0] <= 100.0f
+                     && an_ad[1] >= 0.0f && an_ad[1] <= 500.0f )
+                  {
+                    src->setShielding( an_ad[0], an_ad[1]*PhysicalUnits::gram/PhysicalUnits::cm2 );
+                  }
+                }catch( std::exception &e )
+                {
+                  cerr << "DrfSpecFileSample: Caught exception setting shielding from '" << shielding << "': " << e.what() << endl;
+                }
+              }//if( !shielding.empty() )
             }//if( we found the source )
           }//for( auto w : m_sources->children() )
         }//if( nuc )
@@ -434,6 +469,7 @@ namespace
         if( is_background )
         {
           m_background->setChecked( true );
+          m_backgroundTxt->show();
           m_sources->hide();
         }
         
@@ -686,6 +722,9 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_chart( nullptr ),
   m_files( nullptr ),
   m_detDiameter( nullptr ),
+  m_showFwhmPoints( nullptr ),
+  m_chartLowerE( nullptr ),
+  m_chartUpperE( nullptr ),
   m_errorMsg( nullptr )
 {
   assert( m_interspec );
@@ -700,15 +739,17 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   layout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( layout );
   
-  WContainerWidget *optionsDiv = new WContainerWidget();
-  optionsDiv->addStyleClass( "MakeDrfOptions" );
-  layout->addWidget( optionsDiv, 0, 0 );
+  WContainerWidget *fitOptionsDiv = new WContainerWidget();
+  fitOptionsDiv->addStyleClass( "MakeDrfOptions" );
+  layout->addWidget( fitOptionsDiv, 0, 0, 2, 1 );
   
-  m_detDiameter = new WLineEdit( optionsDiv );
+  m_detDiameter = new WLineEdit( fitOptionsDiv );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
   m_detDiameter->setValidator( distValidator );
   m_detDiameter->setText( "2.54 cm" );
+  m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
   
   m_chart = new MakeDrfChart();
   layout->addWidget( m_chart, 0, 1 );
@@ -720,8 +761,38 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   const int chartWidth = std::min( static_cast<int>(0.75*ww - 150), 800 );
   m_chart->resize( chartWidth, chartHeight );
   
+  WContainerWidget *chartOptionsDiv = new WContainerWidget();
+  layout->addWidget( chartOptionsDiv, 1, 1 );
+  
+  m_showFwhmPoints = new WCheckBox( "Show FWHM points", chartOptionsDiv );
+  m_showFwhmPoints->setChecked( true );
+  m_showFwhmPoints->changed().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
+  
+  WLabel *label = new WLabel( "Display Energy, Lower:", chartOptionsDiv );
+  label->setMargin(15,Wt::Left);
+  m_chartLowerE = new WDoubleSpinBox( chartOptionsDiv );
+  label->setBuddy( m_chartLowerE );
+  
+  label = new WLabel( "Upper:", chartOptionsDiv );
+  label->setMargin(5,Wt::Left);
+  m_chartUpperE = new WDoubleSpinBox( chartOptionsDiv );
+  m_chartUpperE->setRange(0, 10000);
+  label->setBuddy( m_chartUpperE );
+  
+  auto updateChartRange = [this](){
+    if( m_chartLowerE->validate() != WValidator::State::Valid
+        || m_chartUpperE->validate() != WValidator::State::Valid )
+      return;
+    m_chart->setXRange(m_chartLowerE->value(), m_chartUpperE->value());
+  };
+  
+  m_chartLowerE->changed().connect( std::bind(updateChartRange) );
+  m_chartUpperE->changed().connect( std::bind(updateChartRange) );
+  m_chart->xRangeChanged().connect( this, &MakeDrf::chartEnergyRangeChangedCallback );
+  
+  
   m_files = new WContainerWidget();
-  m_files->setMaximumSize( WLength::Auto, std::max((wh - chartHeight - 100), 250) );
+  m_files->setMaximumSize( WLength::Auto, std::max((wh - chartHeight - 150), 250) );
   m_files->setOverflow( Overflow::OverflowAuto, Wt::Vertical );
   
   m_errorMsg = new WText( "" );
@@ -758,13 +829,15 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
     fileWidget->updated().connect( this, &MakeDrf::handleSourcesUpdates );
   }//for( loop over opened files )
   
-  handleSourcesUpdates();
+  //If we directly call handleSourcesUpdates() now, getting the activity
+  //  uncertainty will throw an exception because they wont validate.... whatever.
+  WServer::instance()->post( wApp->sessionId(), wApp->bind( boost::bind(&MakeDrf::handleSourcesUpdates,this) ) );
 }//MakeDrf( constructor )
 
 
 MakeDrf::~MakeDrf()
 {
-  
+
 }//~MakeDrf()
 
 
@@ -782,13 +855,14 @@ void MakeDrf::handleSourcesUpdates()
     
     for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
     {
-      if( sample->isBackground() )
+      if( !sample->isBackground() )
+        continue;
+      
+      for( auto peak : sample->peaks() )
       {
-        for( auto pp : sample->selected_peak_to_sources() )
-        {
-          pp.first->setBackgroundBeingSubtractedInfo( false, 0.0 );
-          backgroundpeaks.push_back( pp.first );
-        }
+        peak->setBackgroundBeingSubtractedInfo( false, 0.0 );
+        if( peak->m_useCb->isChecked() )
+          backgroundpeaks.push_back( peak );
       }
     }//for( DrfSpecFileSample *sample : sampleWidgets )
   }//for( auto w : m_files->children()  )
@@ -832,7 +906,8 @@ void MakeDrf::handleSourcesUpdates()
         for( auto b : backgroundpeaks )
         {
           const std::shared_ptr<const PeakDef> backpeak = b->m_peak;
-          if( fabs(backpeak->mean() - peak->mean()) < 1.5*peak->sigma() )
+          if( fabs(backpeak->mean() - peak->mean()) < 1.5*peak->sigma()
+             || (fabs(backpeak->gammaParticleEnergy() - peak->gammaParticleEnergy()) < 1.0) )
           {
             back_peak_area += backpeak->peakArea();
             //ToDo: Check (when I'm not so tired) to make sure this is the right way to handle uncert.
@@ -854,6 +929,8 @@ void MakeDrf::handleSourcesUpdates()
         {
           const double frac_back_uncert = back_peak_area_uncert / back_peak_area;
           const double scaled_back = point.livetime * back_peak_area / back_peak_lt;
+          
+          cout << "Setting backsub for " << point.energy << " keV; point.peak_area=" << point.peak_area << ", scaled_back=" << scaled_back << endl;
           
           point.peak_area -= scaled_back;
           //ToDo: check this uncertainty is actually correct.
@@ -913,7 +990,7 @@ void MakeDrf::handleSourcesUpdates()
           //  and can probably also access relevant gammas more efficiently.
           SandiaDecay::NuclideMixture mix;
           mix.addAgedNuclideByActivity( nuc, activity, age );
-          const auto rates = mix.gammas( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
+          const auto rates = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
           for( const auto &r : rates )
           {
             if( fabs(r.energy - peak->gammaParticleEnergy()) < width )
@@ -921,9 +998,11 @@ void MakeDrf::handleSourcesUpdates()
           }
           
           point.source_count_rate *= transmittion_factor;
+          //First time threw when the GUI loads, we seem to get this error...
           point.source_count_rate_uncertainty = point.source_count_rate * pp.second->fractionalActivityUncertainty();
-        }catch(...)
+        }catch( std::exception &e )
         {
+          cerr << "handleSourcesUpdates: got exception: " << e.what() << endl;
           not_all_sources_used = true;
           continue;
         }
@@ -934,7 +1013,7 @@ void MakeDrf::handleSourcesUpdates()
         
         char buffer[256] = { '\0' };
         snprintf( buffer, sizeof(buffer)-1, "%s %.1f keV, Peak %.1f counts",
-                  nuc->symbol.c_str(), peak->gammaParticleEnergy(), point.peak_area );
+                 nuc->symbol.c_str(), peak->gammaParticleEnergy(), point.peak_area );
         //ToDo: Add more/better source info.
         point.source_information = buffer;
         
@@ -960,6 +1039,8 @@ void MakeDrf::handleSourcesUpdates()
     detDiamInvalid = true;
   }
   
+  m_chartLowerE->setRange( std::min(0.0,minenergy-10.0), maxenergy );
+  m_chartUpperE->setRange( minenergy, maxenergy+10 );
   
   string msg;
   if( not_all_sources_used )
@@ -971,4 +1052,17 @@ void MakeDrf::handleSourcesUpdates()
   m_errorMsg->setHidden( msg.empty() );
   
   m_chart->setDataPoints( datapoints, diameter, minenergy, maxenergy );
-}//void MakeDrf::handleSourcesUpdates()
+}//void handleSourcesUpdates()
+
+
+void MakeDrf::handleShowFwhmPointsToggled()
+{
+  m_chart->showFwhmPoints( m_showFwhmPoints->isChecked() );
+}//void handleShowFwhmPointsToggled()
+
+
+void MakeDrf::chartEnergyRangeChangedCallback( double lower, double upper )
+{
+  m_chartLowerE->setValue( lower );
+  m_chartUpperE->setValue( upper );
+}

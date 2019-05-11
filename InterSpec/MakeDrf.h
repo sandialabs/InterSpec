@@ -38,6 +38,8 @@ namespace Wt
 {
   class WText;
   class WLineEdit;
+  class WCheckBox;
+  class WDoubleSpinBox;
   class WSuggestionPopup;
 }
 
@@ -65,6 +67,8 @@ public:
   
 protected:
   void handleSourcesUpdates();
+  void handleShowFwhmPointsToggled();
+  void chartEnergyRangeChangedCallback( double lower, double upper );
   
   InterSpec *m_interspec;
   MaterialDB *m_materialDB;
@@ -75,6 +79,14 @@ protected:
   Wt::WContainerWidget *m_files;
   
   Wt::WLineEdit *m_detDiameter;
+  
+  Wt::WCheckBox *m_showFwhmPoints;
+  
+  /** ToDo: make chart properly interactive so user doesnt need to input the
+   energy range manually.
+   */
+  Wt::WDoubleSpinBox *m_chartLowerE;
+  Wt::WDoubleSpinBox *m_chartUpperE;
   
   Wt::WText *m_errorMsg;
 };//class MakeDrf

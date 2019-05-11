@@ -130,6 +130,12 @@ public:
    */
   void setAssayInfo( const double activity, const boost::posix_time::ptime &assay_date );
   
+  /** Sets the shielding to be generic material with given atomoic number and
+     areal density.
+     Causes shielding widget to be shown.
+   */
+  void setShielding( const float atomic_number, const float areal_density );
+  
 protected:
   /** Creates the widget, but doesnt fill out any of the information. */
   void create();

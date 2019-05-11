@@ -118,7 +118,19 @@ public:
                       const float det_diameter,
                       const float det_low_energy, const float det_up_energy );
   
+  /** Sets whther the FWHM data points and equation should be shown. */
+  void showFwhmPoints( const bool show );
+  
+  /** Set the displayed x-range, in keV. */
+  void setXRange( double lower, double upper );
+  
+  /** Emitted when the x-range changes due to data; not emitted when setXRange
+     called.
+   */
+  Wt::Signal<double,double> &xRangeChanged();
+  
 protected:
+  void updateYAxisRange();
   void updateDataToModel();
   void updateEqnEnergyToModel();
   void updateEffEquationToModel();
@@ -147,6 +159,8 @@ protected:
   std::vector<float> m_efficiencyCoefs;
   
   Wt::WColor m_textPenColor;
+  
+  Wt::Signal<double,double> m_xRangeChanged;
 };//class WCartesianChart
 
 

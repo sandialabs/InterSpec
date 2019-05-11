@@ -204,7 +204,7 @@ void MakeDrfSrcDef::create()
   label = new WLabel( "Act. Uncert.&nbsp;", cell );  //The nbsp is to make this the longest label so when acti ity or shielding is shown, the width doesnt get changed
   cell = m_table->elementAt(sm_activity_uncert_row,1);
   m_activityUncertainty = new WDoubleSpinBox( cell );
-  m_activityUncertainty->setText( "0" );
+  m_activityUncertainty->setValue( 0.0 );
   m_activityUncertainty->setTextSize( 14 );
   m_activityUncertainty->setAutoComplete( false );
   m_activityUncertainty->setSuffix( " %" );
@@ -503,8 +503,17 @@ double MakeDrfSrcDef::activityAtSpectrumTime() const
 
 double MakeDrfSrcDef::fractionalActivityUncertainty() const
 {
-  if( WValidator::State::Valid != m_activityUncertainty->validate() )
-    throw runtime_error( "Activity Uncertainty Invalid" );
+  switch( m_activityUncertainty->validate() )
+  {
+    case WValidator::State::Invalid:
+      throw runtime_error( "Activity Uncertainty Invalid" );
+      
+    case WValidator::State::InvalidEmpty:
+      return 0.0;
+      
+    case WValidator::State::Valid:
+      break;
+  }//switch( m_activityUncertainty->validate() )
   
   return m_activityUncertainty->value() / 100.0;
 }//double fractionalActivityUncertainty() const
@@ -576,3 +585,11 @@ void MakeDrfSrcDef::setAssayInfo( const double activity,
   
   updateAgedText();
 }//void setAssayInfo(..);
+
+
+void MakeDrfSrcDef::setShielding( const float atomic_number, const float areal_density )
+{
+  m_useShielding->setChecked();
+  m_shieldingSelect->setHidden( false );
+  m_shieldingSelect->setAtomicNumberAndArealDensity( atomic_number, areal_density );
+}//void setShielding( const float atomic_number, const float areal_density )

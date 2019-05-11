@@ -268,6 +268,13 @@ public:
   void setMaterialNameAndThickness( const std::string &name,
                                     const std::string &thickness );
   
+  /** Toggles the widget to be a generic widget (if it wasnt already) and sets
+     the atomic number and areal density.
+     AN sould be between 1 and 100 (inclusive), and AD in PhysicalUnits g/cm2,
+     and a positive value.  If ewrrors, exception will be thrown.
+   */
+  void setAtomicNumberAndArealDensity( const double an, const double ad );
+  
   //Simple accessors
   Wt::WLineEdit *materialEdit();
   Wt::WLineEdit *thicknessEdit();
