@@ -42,7 +42,8 @@ namespace MakeDrfFit
     The provided Measurement should be same one peaks where fit for.
     Currently for kSqrtPolynomial, only the first two coefficients (A1 and A2)
     are fit for.
-    Throws exception on error with a kinda explanitory message.
+   
+    Throws exception on error with a kinda explanatory message.
   */
   void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
                              const size_t num_gamma_channels,
@@ -52,6 +53,28 @@ namespace MakeDrfFit
   
   
   double peak_width_chi2( double predicted_sigma, const PeakDef &peak );
+  
+  
+  
+  struct DetEffDataPoint{ float energy, efficiency, efficiency_uncert; };
+  
+  /** Performs fit of data efficiencies to:
+      eff(x) = exp(A + B*log(x) + C*log(x)^2 + ...)
+   
+      Only barely kinda superficially seems to be working; much work and testing
+      to be done (20190512)
+   
+      Detects if DetEffDataPoint::energy is in keV or MeV by testing if largest
+      energy is greater than 30; if so, in keV, else MeV.  Returned coefficients
+      will be in the same energy units as DetEffDataPoint::energy.
+   
+      Throws exception on error with a kinda explanatory message.
+   */
+  void performEfficiencyFit( const std::vector<DetEffDataPoint> data,
+                             const int fcnOrder,
+                             std::vector<float> &result,
+                             std::vector<float> &uncerts );
+  
 }//namespace MakeDrfFit
 
 #endif  //MakeDrfFit_h

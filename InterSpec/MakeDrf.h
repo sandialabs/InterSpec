@@ -30,6 +30,7 @@
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/MakeDrfFit.h"
 
 class MakeDrf;
 class PeakDef;
@@ -80,6 +81,9 @@ protected:
                       const int functionalForm, //see DetectorPeakResponse::ResolutionFnctForm
                       const int fitid );
   
+  void fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data );
+  void updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid );
+  
   InterSpec *m_interspec;
   MaterialDB *m_materialDB;
   Wt::WSuggestionPopup *m_materialSuggest;
@@ -93,6 +97,10 @@ protected:
   Wt::WCheckBox *m_showFwhmPoints;
   
   Wt::WComboBox *m_fwhmEqnType;
+  
+  Wt::WComboBox *m_effEqnOrder;
+  
+  Wt::WComboBox *m_effEqnUnits;
   
   /** ToDo: make chart properly interactive so user doesnt need to input the
    energy range manually.
