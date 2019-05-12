@@ -37,24 +37,10 @@
 #include <sstream>
 #include <utility>
 #include <sstream>
-#include <numeric>
 #include <stdexcept>
 #include <functional>
 
 #include <Wt/Dbo/Dbo>
-
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinos.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
 
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
@@ -160,7 +146,7 @@ public:
   enum ResolutionFnctForm
   {
     kGadrasResolutionFcn, //See peakResolutionFWHM() implementation
-    kSqrtPolynomial,  //currently implemented as A1 + A2*sqrt(energy); Implementation not finalized. //FWHM = sqrt(A1+A2*energy+A3*energy*energy+A4/energy)
+    kSqrtPolynomial,  //Implemented as A1 + A2*pow( energy/1E3 + A3*energy*energy/1E6, A4 ); Implementation not finalized.
     kNumResolutionFnctForm
   };//enum ResolutionFnctForm
 
@@ -393,20 +379,7 @@ public:
                                     const std::vector<float> &coefficients );
   
   
-  //performResolutionFit(...): if result is of thre proper size, then it will be
-  //  used as the starting parameters for the fit, otherwise some default values
-  //  will be chosen to start the fit with.
-  //  The provided Measurement should be same one peaks where fit for.
-  //  Currently for kSqrtPolynomial, only the first two coefficients (A1 and A2)
-  //  are fit for.
-  //Throws exception on error.
-  static void performResolutionFit( PeakInput_t peaks,
-                                const std::shared_ptr<const Measurement> meas,
-                                const ResolutionFnctForm fnctnlForm,
-                                std::vector<float> &result );
   
-  
-  static double peak_width_chi2( double predicted_sigma, const PeakDef &peak );
 
   
   //expOfLogPowerSeriesEfficiency(...): evalutaes absolute efficiency for
