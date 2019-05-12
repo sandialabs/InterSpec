@@ -727,6 +727,8 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter( nullptr ),
   m_showFwhmPoints( nullptr ),
   m_fwhmEqnType( nullptr ),
+  m_effEqnOrder( nullptr ),
+  m_effEqnUnits( nullptr ),
   m_chartLowerE( nullptr ),
   m_chartUpperE( nullptr ),
   m_errorMsg( nullptr ),
@@ -765,6 +767,17 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_fwhmEqnType->setCurrentIndex( 0 );
   m_fwhmEqnType->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   
+  
+  m_effEqnOrder = new WComboBox( fitOptionsDiv );
+  m_effEqnOrder->setInline( false );
+  m_effEqnOrder->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  
+  m_effEqnUnits = new WComboBox( fitOptionsDiv );
+  m_effEqnUnits->setInline( false );
+  m_effEqnUnits->addItem( "Int. Eff in keV" );
+  m_effEqnUnits->addItem( "Int. Eff in MeV" );
+  m_effEqnUnits->setCurrentIndex( 0 );
+  m_effEqnUnits->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   
   m_chart = new MakeDrfChart();
   layout->addWidget( m_chart, 0, 1 );
@@ -860,6 +873,17 @@ void MakeDrf::handleSourcesUpdates()
 {
   size_t numchan = 0;
   vector< std::shared_ptr<const PeakDef> > peaks;
+  vector<MakeDrfFit::DetEffDataPoint> effpoints;
+  
+  bool detDiamInvalid = false;
+  double diameter = 2.54*PhysicalUnits::cm;
+  try
+  {
+    diameter = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
+  }catch(...)
+  {
+    detDiamInvalid = true;
+  }
   
   //Go through and and grab background peaks
   vector<DrfPeak *> backgroundpeaks;
@@ -1036,19 +1060,24 @@ void MakeDrf::handleSourcesUpdates()
         point.source_information = buffer;
         
         
-        /*
         {
-          const double fracSolidAngle = DetectorPeakResponse::fractionalSolidAngle( m_det_diameter, data.distance );
-          const double expected = data.source_count_rate * data.livetime * fracSolidAngle;
-          const double eff = data.peak_area / expected;
+          const double fracSolidAngle = DetectorPeakResponse::fractionalSolidAngle( diameter, pp.second->distance() );
+          const double expected = point.source_count_rate * point.livetime * fracSolidAngle;
+          const double eff = point.peak_area / expected;
           
           double fracUncert2 = 0.0;
-          if( data.peak_area_uncertainty > 0.0f )
-            fracUncert2 += std::pow( data.peak_area_uncertainty / data.peak_area, 2.0f );
-          if( data.source_count_rate_uncertainty > 0.0f )
-            fracUncert2 += std::pow( data.source_count_rate_uncertainty / data.source_count_rate, 2.0f );
+          if( point.peak_area_uncertainty > 0.0f )
+            fracUncert2 += std::pow( point.peak_area_uncertainty / point.peak_area, 2.0f );
+          if( point.source_count_rate_uncertainty > 0.0f )
+            fracUncert2 += std::pow( point.source_count_rate_uncertainty / point.source_count_rate, 2.0f );
+          
+          MakeDrfFit::DetEffDataPoint effpoint;
+          effpoint.energy = point.energy;
+          effpoint.efficiency = eff;
+          effpoint.efficiency_uncert = sqrt(fracUncert2);
+          
+          effpoints.push_back( effpoint );
         }
-         */
         
         
         peaks.push_back( peak );
@@ -1064,16 +1093,6 @@ void MakeDrf::handleSourcesUpdates()
     maxenergy = 3000.0;
   }
   
-  bool detDiamInvalid = false;
-  double diameter = 2.54*PhysicalUnits::cm;
-  try
-  {
-    diameter = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
-  }catch(...)
-  {
-    detDiamInvalid = true;
-  }
-  
   m_chartLowerE->setRange( std::min(0.0,minenergy-10.0), maxenergy );
   m_chartUpperE->setRange( minenergy, maxenergy+10 );
   
@@ -1086,8 +1105,30 @@ void MakeDrf::handleSourcesUpdates()
   m_errorMsg->setText( msg );
   m_errorMsg->setHidden( msg.empty() );
   
+  
+  const int numPeaks = static_cast<int>( peaks.size() );
+  const int currentOrder = m_effEqnOrder->currentIndex();
+  const int nCurrentOrders = m_effEqnOrder->count();
+  if( nCurrentOrders == 8 && numPeaks >= 8 )
+  {
+    //Dont need to do anything
+  }else if( nCurrentOrders != numPeaks )
+  {
+    m_effEqnOrder->clear();
+    for( int order = 0; order < numPeaks && order < 8; ++order )
+      m_effEqnOrder->addItem( std::to_string(order+1) + " Fit Params"  );
+    if( currentOrder > 0 )
+      m_effEqnOrder->setCurrentIndex( currentOrder );
+    else if( numPeaks )
+      m_effEqnOrder->setCurrentIndex( std::min(numPeaks,6) ); //Default to 6
+    else
+      m_effEqnOrder->setCurrentIndex( -1 );
+  }//
+  
+  
   m_chart->setDataPoints( datapoints, diameter, minenergy, maxenergy );
   
+  fitEffEqn( effpoints );
   fitFwhmEqn( peaks, numchan );
 }//void handleSourcesUpdates()
 
@@ -1204,3 +1245,76 @@ void MakeDrf::updateFwhmEqn( std::vector<float> coefs,
 }//void updateFwhmEqn(...)
 
 
+void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
+{
+  ++m_effEqnFitId;
+  
+  const int fitid = m_effEqnFitId;
+  const string sessionId = wApp->sessionId();
+  
+  m_effEqnCoefs.clear();
+  m_effEqnCoefUncerts.clear();
+  m_chart->setEfficiencyCoefficients( m_effEqnCoefs, m_effEqnCoefUncerts, MakeDrfChart::EqnEnergyUnits::keV );
+  
+  
+  const int eqnOrderIndex = m_effEqnOrder->currentIndex();
+  if( data.empty() )
+    return;
+  
+  if( eqnOrderIndex < 0 )
+    return;
+  
+  const int nfitpars = std::min( eqnOrderIndex+1, 8 );
+  
+  
+  const bool inMeV = (m_effEqnUnits->currentIndex() == 1);
+  if( inMeV )
+  {
+    for( auto &a : data )
+      a.energy /= 1000.0f;
+  }//if( inMeV )
+  
+  //ToDo: I'm not entirely sure the next line protects against updateEffEqn()
+  //  not being called if this widget is deleted before fit is done.
+  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, _1, _2, fitid );
+  
+  auto worker = [sessionId,data,nfitpars,updater]() {
+    try
+    {
+      //Takes between 5 and 500ms for a HPGe detector
+      const double start_time = UtilityFunctions::get_wall_time();
+      vector<float> result, uncerts;
+      MakeDrfFit::performEfficiencyFit( data, nfitpars, result, uncerts );
+      
+      const double end_time = UtilityFunctions::get_wall_time();
+      
+      assert( result.size() == uncerts.size() );
+      cout << "Fit Eff: {";
+      for( size_t i = 0; i < result.size(); ++i )
+        cout << result[i] << "+-" << uncerts[i] << ", ";
+      cout << "}; took " << (end_time-start_time) << " seconds" << endl;
+      
+      WServer::instance()->post( sessionId, std::bind( [updater,result,uncerts](){
+        updater( result, uncerts );
+      } ) );
+    }catch( std::exception &e )
+    {
+      cout << "Failed to fit intrinsic eff coefs: " << e.what() << endl;
+    }//try / catch fit FWHM
+  };
+  
+  WServer::instance()->ioService().post( worker );
+}//void fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
+
+
+void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid )
+{
+  const bool isMeV = (m_effEqnUnits->currentIndex()==1);
+  const auto units = (isMeV ? MakeDrfChart::EqnEnergyUnits::MeV : MakeDrfChart::EqnEnergyUnits::keV);
+
+  m_effEqnCoefs = coefs;
+  m_effEqnCoefUncerts = uncerts;
+  m_chart->setEfficiencyCoefficients( coefs, uncerts, units );
+  
+  wApp->triggerUpdate();
+}//void updateEffEqn(...)

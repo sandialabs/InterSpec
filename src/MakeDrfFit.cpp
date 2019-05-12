@@ -69,7 +69,7 @@ namespace
     virtual double DoEval( const std::vector<double> &x ) const
     {
       for( size_t i = 0; i < x.size(); ++i )
-        if( IsInf(x[i]) || IsNan(x[i]) )
+        if( std::isinf(x[i]) || std::isnan(x[i]) )
           return 999999.9;
       
       vector<float> fx( x.size() );
@@ -81,15 +81,14 @@ namespace
       {
         if( !peak )  //probably isnt needed
           continue;
-        const float predicted = DetectorPeakResponse::peakResolutionSigma(
-                                                                          peak->mean(), m_form, fx );
-        if( predicted <= 0.0 || IsNan(predicted) || IsInf(predicted) )
+        const float predicted = DetectorPeakResponse::peakResolutionSigma( peak->mean(), m_form, fx );
+        if( predicted <= 0.0 || std::isnan(predicted) || std::isinf(predicted) )
           return 999999.9;
         
         chi2 += MakeDrfFit::peak_width_chi2( predicted, *peak );
       }//for( const EnergySigma &es : m_energies_and_sigmas )
       
-      return chi2 / x.size();
+      return chi2;
     }//DoEval();
     
     virtual double operator()( const std::vector<double> &x ) const
@@ -97,12 +96,74 @@ namespace
       return DoEval( x );
     }
     
-    DetectorResolutionFitness&  operator=( const DetectorResolutionFitness &rhs )
+    DetectorResolutionFitness &operator=( const DetectorResolutionFitness &rhs )
     {
       if( &rhs != this )
       {
         m_peaks = rhs.m_peaks;
         m_form = rhs.m_form;
+      }
+      return *this;
+    }
+    
+    virtual double Up() const{ return 1.0; }
+  };//class DetectorResolutionFitness
+  
+  
+  class DetectorEffFitness
+  : public ROOT::Minuit2::FCNBase
+  {
+  protected:
+    std::vector<MakeDrfFit::DetEffDataPoint> m_data;
+    int m_order;
+    
+  public:
+    DetectorEffFitness( const std::vector<MakeDrfFit::DetEffDataPoint> &data, const int order )
+    : m_data( data ),
+      m_order( order )
+    {
+    }
+    
+    virtual ~DetectorEffFitness(){}
+    
+    virtual double DoEval( const std::vector<double> &x ) const
+    {
+      for( const double val : x )
+        if( std::isinf(val) || std::isnan(val) )
+          return 999999.9;
+      
+      vector<float> fx( x.size() );
+      for( size_t i = 0; i < x.size(); ++i )
+        fx[i] = static_cast<float>( x[i] );
+      
+      double chi2 = 0.0;
+      for( const MakeDrfFit::DetEffDataPoint &data : m_data )
+      {
+        const float eqneff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( data.energy, fx );
+        if( eqneff <= 0.0 || std::isnan(eqneff) || std::isinf(eqneff) )
+          return 999999.9;
+        
+        const double uncert = data.efficiency_uncert <= 0.0 ? 0.05*data.efficiency : data.efficiency_uncert;
+        //cout << "data.energy=" << data.energy << ", eqneff=" << eqneff
+        //     << ", data.efficiency=" << data.efficiency << ", uncert=" << uncert
+        //     << ", data.efficiency_uncert=" << data.efficiency_uncert << endl;
+        chi2 += std::pow( (eqneff - data.efficiency)/uncert, 2 );
+      }
+      
+      return chi2;
+    }//DoEval();
+    
+    virtual double operator()( const std::vector<double> &x ) const
+    {
+      return DoEval( x );
+    }
+    
+    DetectorEffFitness &operator=( const DetectorEffFitness &rhs )
+    {
+      if( &rhs != this )
+      {
+        m_data = rhs.m_data;
+        m_order = rhs.m_order;
       }
       return *this;
     }
@@ -398,4 +459,107 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
     uncerts.push_back( p );
 }//std::vector<float> performResolutionFit(...)
 
+  
+  
+  
+void performEfficiencyFit( const std::vector<DetEffDataPoint> data,
+                            const int fcnOrder,
+                            std::vector<float> &result,
+                            std::vector<float> &uncerts )
+{
+  if( data.empty() )
+    throw runtime_error( "MakeDrfFit::performEfficiencyFit(...): no input peaks" );
+  
+  if( fcnOrder < 1 )
+    throw runtime_error( "MakeDrfFit::performEfficiencyFit(...): requested fit order " + std::to_string(fcnOrder) + " (must be at least 1)" );
+  
+  result.clear();
+  uncerts.clear();
+  
+  auto maxel = std::max_element( begin(data), end(data), [](const DetEffDataPoint &lhs,const DetEffDataPoint &rhs) -> bool {
+    return lhs.energy > rhs.energy;
+  } );
+  
+  const bool inMeV = (maxel->energy < 30);
+  
+  /* ToDo: with a transform, I think we could minimize by just doing the invert
+           matric thing, and maybe do better than using Minuit
+           In PeakFit.cpp see fit_to_polynomial(...).
+   */
+  
+  
+  DetectorEffFitness fitness( data, fcnOrder );
+    
+  ROOT::Minuit2::MnUserParameters inputPrams;
+  if( inMeV )
+  {
+    inputPrams.Add( "A", -7.4, 1.0 );
+    if( fcnOrder > 1 )
+      inputPrams.Add( "B", -0.8, 1.0 );
+    if( fcnOrder > 2 )
+      inputPrams.Add( "C", -0.1, 1.0 );
+    if( fcnOrder > 3 )
+      inputPrams.Add( "D", 0.025, 0.1 );
+    if( fcnOrder > 4 )
+      inputPrams.Add( "E", 0.075, 0.1 );
+    if( fcnOrder > 5 )
+      inputPrams.Add( "F", 0.03, 0.01 );
+    for( int order = 7; order <= fcnOrder; ++order )
+      inputPrams.Add( std::string("")+char('A'+order-1), 0, 0.001 );
+  }else
+  {
+    inputPrams.Add( "A", -344, 100, -1000, 1000 );
+    inputPrams.Add( "B", 270, 50 );
+    inputPrams.Add( "C", -84, 50 );
+    if( fcnOrder > 3 )
+      inputPrams.Add( "D", 13.00, 10 );
+    if( fcnOrder > 4 )
+      inputPrams.Add( "E", -1.0, 0.1 );
+    if( fcnOrder > 5 )
+      inputPrams.Add( "F", 0.03, 0.01 );
+    for( int order = 7; order <= fcnOrder; ++order )
+      inputPrams.Add( std::string("")+char('A'+order-1), 0, 1.0 );
+  }//if( inMeV ) / else
+  
+  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
+  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+  ROOT::Minuit2::MnMinimize fitter( fitness, inputParamState, strategy );
+  
+  double tolerance = 0.5;
+  unsigned int maxFcnCall = 50000;
+  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
+  if( !minimum.IsValid() )
+    minimum = fitter( maxFcnCall, tolerance );
+  
+  ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
+
+  cerr << "Eff final chi2=" << fitness.DoEval( fitParams.Params() ) << endl;
+  
+  if( !minimum.IsValid() )
+  {
+    stringstream msg;
+    msg  << "Eff response function fit status is not valid"
+    << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
+    << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
+    << "\n\tHasReachedCallLimit: " << minimum.HasReachedCallLimit()
+    << "\n\tHasValidCovariance: " << minimum.HasValidCovariance()
+    << "\n\tHasValidParameters: " << minimum.HasValidParameters()
+    << "\n\tIsAboveMaxEdm: " << minimum.IsAboveMaxEdm()
+    << endl;
+    if( minimum.IsAboveMaxEdm() )
+      msg << "\t\tEDM=" << minimum.Edm() << endl;
+    cerr << endl << msg.str() << endl;
+    throw std::runtime_error( msg.str() );
+  }//if( !minimum.IsValid() )
+  
+  for( size_t i = 0; i < fitParams.Params().size(); ++i )
+    cout << "\tFit Par" << i << "=" << fitParams.Params()[i] << endl;
+  
+  for( const double p : fitParams.Params() )
+    result.push_back( static_cast<float>(p) );
+  
+  for( const double p : fitParams.Errors() )
+    uncerts.push_back( p );
+}//performEfficiencyFit(...)
+  
 }//namespace MakeDrfFit

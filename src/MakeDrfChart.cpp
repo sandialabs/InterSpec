@@ -182,7 +182,7 @@ void MakeDrfChart::updateYAxisRange()
   for( int row = 0; row < nrows; ++row )
   {
     const double x = Wt::asNumber( m->data(row, sm_energy_col) );
-    if( x < xmin || x > xmax || isnan(x) )
+    if( x < xmin || x > xmax || isnan(x) || isinf(x) )
       continue;
     
     double eff, fwhm;
@@ -196,13 +196,15 @@ void MakeDrfChart::updateYAxisRange()
       fwhm = Wt::asNumber( m->data(row, sm_data_fwhm_col) );
     }
     
-    if( !isnan(eff) )
+    //Let the data efficiency be whatever, but clamp equation eff from 0 to 5.
+    if( !isnan(eff) && !isinf(eff)
+        && ((row >= sm_num_eqn_energy_rows) || (eff >= 0.0 && eff < 5.0)) )
     {
       miny = std::min( miny, eff );
       maxy = std::max( maxy, eff );
     }
     
-    if( !isnan(fwhm) )
+    if( !isnan(fwhm) && !isinf(fwhm) )
     {
       miny2 = std::min( miny2, fwhm );
       maxy2 = std::max( maxy2, fwhm );
@@ -322,11 +324,11 @@ void MakeDrfChart::updateEffEquationToModel()
   assert( m );
   assert( m->rowCount() >= sm_num_eqn_energy_rows );
   
-  if( m_efficiencyCoefs.empty() && m->data(0, sm_equation_eff_col).empty() )
-    return;
-  
   if( m_efficiencyCoefs.empty() )
   {
+    if( m->data(0, sm_equation_eff_col).empty() )
+      return;
+    
     for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
       m->setData( row, sm_equation_eff_col, boost::any() );
     return;
@@ -340,9 +342,13 @@ void MakeDrfChart::updateEffEquationToModel()
     const double eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy*units, m_efficiencyCoefs );
     
     if( std::isnan(eff) || std::isinf(eff) )
+    {
       m->setData( row, sm_equation_eff_col, boost::any() );
-    else
+    }else
+    {
       m->setData( row, sm_equation_eff_col, boost::any(eff) );
+      //ToDo: go through and set eff lower and uncertainty values
+    }
   }//for( loop over eqn rows )
 }//void updateEffEquationToModel()
 
@@ -449,6 +455,7 @@ void MakeDrfChart::setFwhmCoefficients( const std::vector<float> &coeffs,
   m_fwhmEqnType = eqnType;
   m_fwhmEnergyUnits = units;
   updateFwhmEquationToModel();
+  updateYAxisRange();
 }//void setFwhmCoefficients( const std::vector<double> &coeffs )
 
 
@@ -460,6 +467,7 @@ void MakeDrfChart::setEfficiencyCoefficients( const std::vector<float> &coeffs,
   m_efficiencyCoefUncerts = uncerts;
   m_efficiencyEnergyUnits = units;
   updateEffEquationToModel();
+  updateYAxisRange();
 }//void setEfficiencyCoefficients( const std::vector<double> &coeffs )
 
 
@@ -482,13 +490,14 @@ void MakeDrfChart::setDataPoints( const std::vector<MakeDrfChart::DataPoint> &da
     updateFwhmEquationToModel();
     
     axis(Chart::XAxis).setRange( lower_energy, upper_energy );
-    updateYAxisRange();
   }//if( energy range changed )
   
   updateDataToModel();
   
   if( update_xrange )
     m_xRangeChanged.emit(m_det_lower_energy,m_det_upper_energy);
+  
+  updateYAxisRange();
 }//void setDataPoints(...)
 
 
