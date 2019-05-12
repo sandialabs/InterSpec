@@ -39,6 +39,11 @@ public:
   /** Units efficiency and FWHM equation coefficients are given in. */
   enum class EqnEnergyUnits{ keV, MeV };
   
+  /** Fwhm equation type; equivalent to DetectorPeakResponse::ResolutionFnctForm
+   but redifined here to not have to include that header.
+   */
+  enum class FwhmCoefType{ Gadras, SqrtEqn };
+  
   /** Information from the calibration data for a specific peak.  Used to draw
      data points on the chart.
    */
@@ -104,13 +109,18 @@ public:
   /** Set the coefficients to draw the FWHM response with.
       Setting with zero coefficients will remove line from chart.
   */
-  void setFwhmCoefficients( const std::vector<float> &coeffs, const EqnEnergyUnits units  );
+  void setFwhmCoefficients( const std::vector<float> &coeffs,
+                            const std::vector<float> &uncerts,
+                            const FwhmCoefType eqnType,
+                            const EqnEnergyUnits units  );
   
   
   /** Set the coefficients to draw the detector efficiency response with.
       Setting with zero coefficients will remove line from chart.
    */
-  void setEfficiencyCoefficients( const std::vector<float> &coeffs, const EqnEnergyUnits units );
+  void setEfficiencyCoefficients( const std::vector<float> &coeffs,
+                                  const std::vector<float> &uncerts,
+                                  const EqnEnergyUnits units );
   
   /**
    */
@@ -150,6 +160,8 @@ protected:
    */
   std::vector<float> m_fwhmCoefs;
   
+  std::vector<float> m_fwhmCoefUncerts;
+  
   /** Energy units equation for detector efficiency is given in.  */
   EqnEnergyUnits m_efficiencyEnergyUnits;
   
@@ -157,6 +169,10 @@ protected:
       E.x., exp( a + log(energy)^1 + log(energy)^2 + ...
    */
   std::vector<float> m_efficiencyCoefs;
+  
+  std::vector<float> m_efficiencyCoefUncerts;
+  
+  FwhmCoefType m_fwhmEqnType;
   
   Wt::WColor m_textPenColor;
   

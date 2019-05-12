@@ -117,7 +117,19 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
   const bool notMuchEvolution = (!nuc || PeakDef::ageFitNotAllowed(nuc));
   
   m_table->rowAt(sm_age_at_assay_row)->setHidden( notMuchEvolution );
-  m_sourceAgeAtAssay->setText( "0s" );
+  
+  if( notMuchEvolution || !nuc )
+  {
+    m_sourceAgeAtAssay->setText( "0s" );
+  }else
+  {
+    double ageval = 5.0*nuc->halfLife;
+    if( nuc->canObtainPromptEquilibrium() )
+      ageval = log(10000.0)/log(2.0) * nuc->promptEquilibriumHalfLife();
+    if( ageval > 20*PhysicalUnits::year )
+      ageval = 20*PhysicalUnits::year;
+    m_sourceAgeAtAssay->setText( PhysicalUnits::printToBestTimeUnits(ageval) );
+  }
   
   if( nuc )
   {

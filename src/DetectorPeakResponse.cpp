@@ -41,22 +41,10 @@
 
 #include "rapidxml/rapidxml.hpp"
 
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinos.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
-
 #include "mpParser.h"
 
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/SpectrumDataStructs.h"
@@ -1339,22 +1327,6 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
    << "  - channel=" << channel
    << endl;
    */
-  /*
-   //From Greg T.:
-   IF (E.GE.661.OR.A(6).EQ.0) THEN
-   GetFWHM=6.61*A(7)*(E/661.)**A(8)
-   ELSE IF (A(6).LT.0) THEN
-   P=A(8)**(1./LOG(1.-A(6)))
-   GetFWHM=6.61*A(7)*(E/661.)**P
-   ELSE
-   IF (A(6).GT.6.61*A(7)) THEN
-   GetFWHM=A(6)
-   ELSE
-   A7=SQRT((6.61*A(7))**2-A(6)**2)/6.61
-   GetFWHM=SQRT(A(6)**2+(6.61*A7*(E/661.)**A(8))**2)
-   END IF
-   END IF
-   */
   
   
   switch( fcnFrm )
@@ -1388,17 +1360,16 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       
     case kSqrtPolynomial:
     {
-      //FWHM = sqrt(A1+A2*energy+A3*energy*energy + A4/energy)
       if( pars.size() < 2 )
         throw runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
                              " pars not defined" );
       const float A1 = pars[0];
       const float A2 = pars[1];
-//      const float A3 = pars.size()>2 ? pars[2] : 0.0f;
-//      const float A4 = pars.size()>3 ? pars[3] : 0.0f;
+      const float A3 = pars.size()>2 ? pars[2] : 0.0f;
+      const float A4 = pars.size()>3 ? pars[3] : 0.5f;
       
-      return A1 + A2 *std::sqrt(energy);
-//      return std::sqrt( A1 + A2*energy + A3*energy*energy + A4/energy);
+      energy /= PhysicalUnits::MeV;
+      return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
     }//case kSqrtPolynomial:
       
     case kNumResolutionFnctForm:
@@ -1494,7 +1465,7 @@ DetectorPeakResponse::PeakInput_t DetectorPeakResponse::removeOutlyingWidthPeaks
   for( const PeakModel::PeakShrdPtr peak : *peaks )
   {
     const double predicted_sigma = DetectorPeakResponse::peakResolutionSigma( peak->mean(), fnctnlForm, coefficients );
-    const double chi2 = DetectorPeakResponse::peak_width_chi2( predicted_sigma, *peak );
+    const double chi2 = MakeDrfFit::peak_width_chi2( predicted_sigma, *peak );
     mean_weight += chi2/npeaks;
     weights.push_back( chi2 );
   }//for( const EnergySigma &es : m_energies_and_sigmas )
@@ -1525,321 +1496,17 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
   if( !peaks )
     throw runtime_error( "DetectorPeakResponse::fitResolution(...): invalid input" );
   
-  vector<float> coefficients = m_resolutionCoeffs;
-  performResolutionFit( peaks, meas, fnctnlForm, coefficients );
+  const size_t numchan = meas ? meas->num_gamma_channels() : 0;
+  
+  vector<float> coefficients = m_resolutionCoeffs, uncerts;
+  MakeDrfFit::performResolutionFit( peaks, numchan, fnctnlForm, coefficients, uncerts );
   peaks = removeOutlyingWidthPeaks( peaks, fnctnlForm, coefficients );
-  performResolutionFit( peaks, meas, fnctnlForm, coefficients );
+  MakeDrfFit::performResolutionFit( peaks, numchan, fnctnlForm, coefficients, uncerts );
   
   m_resolutionCoeffs = coefficients;
   m_resolutionForm = fnctnlForm;
   
   computeHash();
 }//void fitResolution(...)
-
-
-double DetectorPeakResponse::peak_width_chi2( double predicted_sigma,
-                                              const PeakDef &peak )
-{
-  double measured_sigma = peak.sigma();
-  double measured_sigma_uncert = peak.sigmaUncert();
-  if( measured_sigma_uncert <= 0.01 )
-    measured_sigma_uncert = 1.0;
-  
-  const double chi = (measured_sigma - predicted_sigma)/measured_sigma_uncert;
-  return chi*chi;
-}//peak_width_chi2(...)
-
-
-
-namespace
-{
-class DetectorResolutionFitness
-: public ROOT::Minuit2::FCNBase
-{
-protected:
-  std::deque<PeakModel::PeakShrdPtr> m_peaks;
-  DetectorPeakResponse::ResolutionFnctForm m_form;
-  
-public:
-  DetectorResolutionFitness( const std::deque<PeakModel::PeakShrdPtr> &peaks,
-                             DetectorPeakResponse::ResolutionFnctForm form )
-  : m_peaks( peaks ),
-    m_form( form )
-  {
-  }
-  
-  virtual ~DetectorResolutionFitness(){}
-  
-  
-  virtual double DoEval( const std::vector<double> &x ) const
-  {
-    for( size_t i = 0; i < x.size(); ++i )
-      if( IsInf(x[i]) || IsNan(x[i]) )
-        return 999999.9;
-   
-    vector<float> fx( x.size() );
-    for( size_t i = 0; i < x.size(); ++i )
-      fx[i] = static_cast<float>( x[i] );
-    
-    double chi2 = 0.0;
-    for( const PeakModel::PeakShrdPtr &peak : m_peaks )
-    {
-      if( !peak )  //probably isnt needed
-        continue;      
-      const float predicted = DetectorPeakResponse::peakResolutionSigma(
-                                                    peak->mean(), m_form, fx );
-      if( predicted <= 0.0 || IsNan(predicted) || IsInf(predicted) )
-        return 999999.9;
-      
-      chi2 += DetectorPeakResponse::peak_width_chi2( predicted, *peak );
-    }//for( const EnergySigma &es : m_energies_and_sigmas )
-    
-    return chi2 / x.size();
-  }//DoEval();
-  
-  virtual double operator()( const std::vector<double> &x ) const
-  {
-    return DoEval( x );
-  }
-  
-  DetectorResolutionFitness&	operator=( const DetectorResolutionFitness &rhs )
-  {
-    if( &rhs != this )
-    {
-      m_peaks = rhs.m_peaks;
-      m_form = rhs.m_form;
-    }
-    return *this;
-  }
-  
-  virtual double Up() const{ return 1.0; }
-};//class DetectorResolutionFitness
-}//namespace
-
-void DetectorPeakResponse::performResolutionFit(
-                      DetectorPeakResponse::PeakInput_t peaks,
-                      const std::shared_ptr<const Measurement> meas,
-                      const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
-                      std::vector<float> &answer )
-{
-  if( !peaks || peaks->empty() )
-    throw runtime_error( "DetectorPeakResponse::performResolutionFit(...):"
-                        " no input peaks" );
-  
-  answer.clear();
-
-  
-  bool highres;
-  if( !!meas )
-  {
-    highres = (meas->num_gamma_channels() > 3000);
-  }else
-  {
-    const size_t index = peaks->size() / 2;
-    const double ratio = (*peaks)[index]->fwhm() / (*peaks)[index]->mean();
-    highres = (ratio < 0.03); //whatever, this is JIC anyway
-  }//if( !!meas ) / else
-  
-  /*
-High res.:
-   Detective-EX100:         {1.54000, 0.26412, 0.33000}
-   Detective-EX:            {1.34000, 0.27759, 0.31000}
-   Detctive:                {1.77168, 0.23563, 0.57223}
-   Falcon 5000:             {1.00000, 0.20028, 0.56000}
-   MicroDetective:          {1.30000, 0.23731, 0.54000}
-   Ortec IDM Portal         {1.11000, 0.23598, 0.39000}
-   Transpec                 {1.33000, 0.25862, 0.28000}
-Low res.:
-   FieldSec:                {-2.00000, 6.80000, 0.70000}
-   Gr130                    {-5.00000, 7.00000, 0.60000}
-   GR135:                   {-7.00000, 6.84000, 0.55000}
-   GR135 Plus:              {-7.00000, 6.84000, 0.55000}
-   Identifinder-LaBr3:      { 3.00000, 3.30000, 0.60000}
-   Identifinder-N:          {-7.00000, 7.50000, 0.55000}
-   Identifinder-NGH         {-6.00000, 7.80000, 0.55000}
-   Identifinder-NGH         {-5.00000, 7.30000, 0.59000}
-   InSpector 1000 (LaBr3):  { 0.00000, 3.60000, 0.51000}
-   InSpector 1000 (NaI)     {-3.00000, 7.60000, 0.58000}
-   Interceptor (CZT)        {-0.52000, 2.13000, 0.68000}
-   LaBr3 PNNL               { 2.00000, 2.60000, 0.52000}
-   NaI 3x3                  {-4.00000, 6.30000, 0.60000}
-   Pager-S                  { 0.00000, 8.50000, 0.50000}
-   Rad-Pack                 { 0.00000, 8.50000, 0.50000}
-   RadSeeker (LaBr3 or NaI) { 4.99023, 2.99883, 0.56174}
-   Raider                   { 2.40000, 2.50000, 0.20000}
-   Ranger                   {-6.00000, 7.80000, 0.50000}
-   Sam-935                  {-6.00000, 7.30000, 0.67000}
-   Sam-EagleLaBr3           { 7.00000, 2.60000, 0.52000}
-   Sam-Eagle Nai            {-3.00000, 7.00000, 0.65000}
-   Spir-ID                  { 7.34303, 3.05497, 0.65990}
-   Spir-ID NaI              { 7.44000, 7.61000, 0.63000}
-   */
-  
-  double a_initial, b_initial, c_initial, d_initial;
-  double lowerA, upperA, lowerB, upperB, lowerC, upperC;
-  
-  switch( fnctnlForm )
-  {
-    case kGadrasResolutionFcn:
-    {
-      if( highres )
-      {
-        lowerA = 0.75*1.0;     //Falcon 5000 is 1.0
-        upperA = 2.0*1.77;     //Detective-DX 1.77
-        lowerB = 0.75*0.20028; //Falcon 5000 is 0.20028
-        upperB = 2.0*0.27759;  //Detective-EX is 0.27759
-        lowerC = 0.75*0.31;    //Detective-EX
-        upperC = 1.5*0.57223;  //Detective-DX
-      }else
-      {
-        lowerA = 1.5*-7.0;     //GR135
-        upperA = 1.5*7.44000;  //Spir-ID NaI
-        lowerB = 0.75*2.13000; //Interceptor (CZT)
-        upperB = 1.5*8.50000;  //Rad-Pack
-        lowerC = 0.75*0.20000; //Raider
-        upperC = 1.25*0.70000; //FieldSec:
-      }
-      
-      if( answer.size() == 3 )
-      { //caller has provided some default values, lets use them
-        a_initial = static_cast<double>( answer[0] );
-        b_initial = static_cast<double>( answer[1] );
-        c_initial = static_cast<double>( answer[2] );
-      }else
-      {
-        if( highres )
-        {
-          a_initial = 0.5*(1.0 + 1.77);
-          b_initial = 0.5*(0.20028 + 0.27759);
-          c_initial = 0.5*(0.31 + 0.57223);
-        }else
-        {
-          a_initial = 0.0;//0.5*(-7.0 + 7.44000);
-          b_initial = 0.5*(2.13000 + 8.50000);
-          c_initial = 0.5*(0.20000 + 0.70000);
-        }
-      }//if( answer.size() == 3 ) / else
-      
-      break;
-    }//case kGadrasResolutionFcn:
-      
-    case kSqrtPolynomial:
-    {
-      if( highres )
-      {
-        a_initial = 2.0;  //-2.68,  3.96,   2.54,   2.45,    3.3,    2.2,   4.63, 3.8
-        b_initial = 0.05;  //0.0579, 0.0488, 0.0697, 0.0459, 0.0669, 0.0605, 0.1, 0.137
-        lowerA = -5.0;
-        upperA = 7.0;
-        lowerB = 0.02;
-        upperB = 0.2;
-      }else
-      {
-        //Based on very few detectors checked
-        a_initial = -7.0; //-7.76, -7.85, -7.77, 4.78
-        b_initial = 2.0;  //1.87, 1.46,  2.1, 2.62
-        lowerA = -10.0;
-        upperA = 5.0;
-        lowerB = 0.5;
-        upperB = 4.0;
-      }//if( highres ) / else
-
-      c_initial = 0.0;
-      d_initial = 0.0;
-      
-      break;
-    }//case kSqrtPolynomial:
-      
-    case kNumResolutionFnctForm:
-      //We should never make it here if the detector FWHM functional form has
-      //  not been explicitly set, so throw and error if we got here
-      throw runtime_error( "DetectorPeakResponse::performResolutionFit(...):"
-                          " invalid ResolutionFnctForm" );
-      break;
-  }//switch( fnctnlForm )
-  
-  
-  //For high res we should only have to to this one fit
-  //But for lowres detectors we should consider the cases of
-  //  A==0, A<0, and A>0 when fitting for kGadrasResolutionFcn
-  
-  DetectorResolutionFitness fitness( *peaks, fnctnlForm );
-  
-  ROOT::Minuit2::MnUserParameters inputPrams;
-  switch( fnctnlForm )
-  {
-    case kGadrasResolutionFcn:
-      if( peaks->size() == 1 )
-      {
-        inputPrams.Add( "A", a_initial );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        inputPrams.Add( "C", c_initial );
-      }else if( peaks->size() == 2 )
-      {
-        inputPrams.Add( "A", a_initial );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
-      }else
-      {
-        inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
-      }//if( all_peaks.size() == 1 )
-      break;
-      
-    case kSqrtPolynomial:
-    {
-      if( peaks->size() == 1 || peaks->size() == 2 )
-      {
-        inputPrams.Add( "A", a_initial );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB) /*, lowerB, upperB*/ );
-      }else
-      {
-        inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-      }
-      break;
-    }//case kSqrtPolynomial:
-      
-    case kNumResolutionFnctForm:
-      break;
-  }//switch
-  
-  
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-  ROOT::Minuit2::MnMinimize fitter( fitness, inputParamState, strategy );
-
-  double tolerance = 1.0;
-  unsigned int maxFcnCall = 50000;
-  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
-  const ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
-  
-  cerr << "FWHM final chi2=" << fitness.DoEval( fitParams.Params() ) << endl;
-  
-  if( !minimum.IsValid() )
-  {
-    stringstream msg;
-    msg  << BOOST_CURRENT_FUNCTION
-         << ": status is not valid"
-         << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
-         << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
-         << "\n\tHasReachedCallLimit: " << minimum.HasReachedCallLimit()
-         << "\n\tHasValidCovariance: " << minimum.HasValidCovariance()
-         << "\n\tHasValidParameters: " << minimum.HasValidParameters()
-         << "\n\tIsAboveMaxEdm: " << minimum.IsAboveMaxEdm()
-         << endl;
-    if( minimum.IsAboveMaxEdm() )
-      msg << "\t\tEDM=" << minimum.Edm() << endl;
-    cerr << endl << msg.str() << endl;
-    throw std::runtime_error( msg.str() );
-  }//if( !minimum.IsValid() )
-  
-  for( size_t i = 0; i < fitParams.Params().size(); ++i )
-    cout << "\tFit Par" << i << "=" << fitParams.Params()[i] << endl;
-  
-  for( const double p : fitParams.Params() )
-    answer.push_back( static_cast<float>(p) );
-}//std::vector<float> performResolutionFit(...)
 
 

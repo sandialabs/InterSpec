@@ -25,11 +25,14 @@
 
 #include "InterSpec_config.h"
 
+#include <vector>
+
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/AuxWindow.h"
 
 class MakeDrf;
+class PeakDef;
 class InterSpec;
 class MaterialDB;
 class MakeDrfChart;
@@ -37,6 +40,7 @@ class MakeDrfChart;
 namespace Wt
 {
   class WText;
+  class WComboBox;
   class WLineEdit;
   class WCheckBox;
   class WDoubleSpinBox;
@@ -70,6 +74,12 @@ protected:
   void handleShowFwhmPointsToggled();
   void chartEnergyRangeChangedCallback( double lower, double upper );
   
+  void fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
+                   const size_t num_gamma_channels );
+  void updateFwhmEqn( std::vector<float> coefs, std::vector<float> uncerts,
+                      const int functionalForm, //see DetectorPeakResponse::ResolutionFnctForm
+                      const int fitid );
+  
   InterSpec *m_interspec;
   MaterialDB *m_materialDB;
   Wt::WSuggestionPopup *m_materialSuggest;
@@ -82,6 +92,8 @@ protected:
   
   Wt::WCheckBox *m_showFwhmPoints;
   
+  Wt::WComboBox *m_fwhmEqnType;
+  
   /** ToDo: make chart properly interactive so user doesnt need to input the
    energy range manually.
    */
@@ -89,6 +101,17 @@ protected:
   Wt::WDoubleSpinBox *m_chartUpperE;
   
   Wt::WText *m_errorMsg;
+  
+  /** Identifies current fit for FWHM.  Fits are done in an auxilary thread,
+   and the user may change things before the fit is done, and some fits take a
+   lot longer than others, so to make sure the the correct one is displayed,
+   we will use this variable (which is only touched from main Wt thread).
+   */
+  int m_fwhmFitId;
+  int m_effEqnFitId;
+  
+  std::vector<float> m_fwhmCoefs, m_fwhmCoefUncerts;
+  std::vector<float> m_effEqnCoefs, m_effEqnCoefUncerts;
 };//class MakeDrf
 
 #endif //MakeDrf_h

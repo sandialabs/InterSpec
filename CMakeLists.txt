@@ -428,6 +428,7 @@ set( sources
     src/MakeDrf.cpp
     src/MakeDrfSrcDef.cpp
     src/MakeDrfChart.cpp
+    src/MakeDrfFit.cpp
     js/CanvasForDragging.js
     js/SpectrumChart.js
     js/InterSpec.js
@@ -501,6 +502,7 @@ set( headers
     InterSpec/MakeDrf.h
     InterSpec/MakeDrfSrcDef.h
     InterSpec/MakeDrfChart.h
+    InterSpec/MakeDrfFit.h
 )
 
 if( USE_DB_TO_STORE_SPECTRA )

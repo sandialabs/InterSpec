@@ -66,8 +66,11 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   m_datapoints{},
   m_fwhmEnergyUnits( EqnEnergyUnits::keV ),
   m_fwhmCoefs{},
+  m_fwhmCoefUncerts{},
   m_efficiencyEnergyUnits( EqnEnergyUnits::keV ),
   m_efficiencyCoefs{},
+  m_efficiencyCoefUncerts{},
+  m_fwhmEqnType( FwhmCoefType::Gadras ),
   m_textPenColor( Wt::black ),
   m_xRangeChanged()
 {
@@ -350,18 +353,22 @@ void MakeDrfChart::updateFwhmEquationToModel()
   assert( m );
   assert( m->rowCount() >= sm_num_eqn_energy_rows );
   
-  if( (m_fwhmCoefs.size()!=3) && m->data(0, sm_equation_eff_col).empty() )
-    return;
-  
-  if( m_fwhmCoefs.size() != 3 )
+  if( ((m_fwhmEqnType==FwhmCoefType::Gadras) && m_fwhmCoefs.size() != 3)
+     || (m_fwhmEqnType==FwhmCoefType::SqrtEqn && m_fwhmCoefs.size() < 2) )
   {
+    if( m->data(0, sm_equation_eff_col).empty() )  //
+      return;
+    
     for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
       m->setData( row, sm_equation_fwhm_col, boost::any() );
     return;
   }//if( no equation )
   
   const float units = ((m_fwhmEnergyUnits==EqnEnergyUnits::keV) ? 1.0f : 0.001f);
-  const auto eqnType = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+  const auto eqnType = ((m_fwhmEqnType==FwhmCoefType::Gadras)
+                       ? DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn
+                       : DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial);
+
   for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
   {
     const float energy = static_cast<float>( m_det_lower_energy + ((m_det_upper_energy * row) / (sm_num_eqn_energy_rows - 1.0)) );
@@ -432,17 +439,25 @@ void MakeDrfChart::paintEvent( Wt::WPaintDevice *device )
 }//void paintEvent( Wt::WPaintDevice *paintDevice )
 
 
-void MakeDrfChart::setFwhmCoefficients( const std::vector<float> &coeffs, const EqnEnergyUnits units )
+void MakeDrfChart::setFwhmCoefficients( const std::vector<float> &coeffs,
+                                        const std::vector<float> &uncerts,
+                                        const FwhmCoefType eqnType,
+                                        const EqnEnergyUnits units )
 {
   m_fwhmCoefs = coeffs;
+  m_fwhmCoefUncerts = uncerts;
+  m_fwhmEqnType = eqnType;
   m_fwhmEnergyUnits = units;
   updateFwhmEquationToModel();
 }//void setFwhmCoefficients( const std::vector<double> &coeffs )
 
 
-void MakeDrfChart::setEfficiencyCoefficients( const std::vector<float> &coeffs, const EqnEnergyUnits units )
+void MakeDrfChart::setEfficiencyCoefficients( const std::vector<float> &coeffs,
+                                              const std::vector<float> &uncerts,
+                                              const EqnEnergyUnits units )
 {
   m_efficiencyCoefs = coeffs;
+  m_efficiencyCoefUncerts = uncerts;
   m_efficiencyEnergyUnits = units;
   updateEffEquationToModel();
 }//void setEfficiencyCoefficients( const std::vector<double> &coeffs )

@@ -31,8 +31,10 @@
 #include <Wt/WPanel>
 #include <Wt/WLabel>
 #include <Wt/WServer>
+#include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
+#include <Wt/WIOService>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
@@ -45,6 +47,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/InterSpecApp.h"
 #include "SandiaDecay/SandiaDecay.h"
@@ -723,9 +726,12 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_files( nullptr ),
   m_detDiameter( nullptr ),
   m_showFwhmPoints( nullptr ),
+  m_fwhmEqnType( nullptr ),
   m_chartLowerE( nullptr ),
   m_chartUpperE( nullptr ),
-  m_errorMsg( nullptr )
+  m_errorMsg( nullptr ),
+  m_fwhmFitId( 0 ),
+  m_effEqnFitId( 0 )
 {
   assert( m_interspec );
   assert( m_materialDB );
@@ -750,6 +756,15 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->setText( "2.54 cm" );
   m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
+  
+  
+  m_fwhmEqnType = new WComboBox( fitOptionsDiv );
+  m_fwhmEqnType->setInline( false );
+  m_fwhmEqnType->addItem( "Gadras Eqation" );
+  m_fwhmEqnType->addItem( "Sqrt Power Series" );
+  m_fwhmEqnType->setCurrentIndex( 0 );
+  m_fwhmEqnType->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  
   
   m_chart = new MakeDrfChart();
   layout->addWidget( m_chart, 0, 1 );
@@ -843,7 +858,8 @@ MakeDrf::~MakeDrf()
 
 void MakeDrf::handleSourcesUpdates()
 {
-  //Get all the MakeDrfChart::DataPoint objects.
+  size_t numchan = 0;
+  vector< std::shared_ptr<const PeakDef> > peaks;
   
   //Go through and and grab background peaks
   vector<DrfPeak *> backgroundpeaks;
@@ -852,6 +868,8 @@ void MakeDrf::handleSourcesUpdates()
     auto fileWidget = dynamic_cast<DrfSpecFile *>( w );
     if( !fileWidget )
       continue;
+    
+    numchan = std::max( numchan, fileWidget->measurement()->num_gamma_channels() );
     
     for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
     {
@@ -1017,6 +1035,23 @@ void MakeDrf::handleSourcesUpdates()
         //ToDo: Add more/better source info.
         point.source_information = buffer;
         
+        
+        /*
+        {
+          const double fracSolidAngle = DetectorPeakResponse::fractionalSolidAngle( m_det_diameter, data.distance );
+          const double expected = data.source_count_rate * data.livetime * fracSolidAngle;
+          const double eff = data.peak_area / expected;
+          
+          double fracUncert2 = 0.0;
+          if( data.peak_area_uncertainty > 0.0f )
+            fracUncert2 += std::pow( data.peak_area_uncertainty / data.peak_area, 2.0f );
+          if( data.source_count_rate_uncertainty > 0.0f )
+            fracUncert2 += std::pow( data.source_count_rate_uncertainty / data.source_count_rate, 2.0f );
+        }
+         */
+        
+        
+        peaks.push_back( peak );
         datapoints.push_back( point );
       }
     }//for( DrfSpecFileSample *sample : sampleWidgets )
@@ -1052,6 +1087,8 @@ void MakeDrf::handleSourcesUpdates()
   m_errorMsg->setHidden( msg.empty() );
   
   m_chart->setDataPoints( datapoints, diameter, minenergy, maxenergy );
+  
+  fitFwhmEqn( peaks, numchan );
 }//void handleSourcesUpdates()
 
 
@@ -1066,3 +1103,104 @@ void MakeDrf::chartEnergyRangeChangedCallback( double lower, double upper )
   m_chartLowerE->setValue( lower );
   m_chartUpperE->setValue( upper );
 }
+
+
+void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
+                          const size_t num_gamma_channels )
+{
+  ++m_fwhmFitId;
+  
+  const int fitid = m_fwhmFitId;
+  const string sessionId = wApp->sessionId();
+  
+  m_fwhmCoefs.clear();
+  m_fwhmCoefUncerts.clear();
+  m_chart->setFwhmCoefficients( vector<float>{}, vector<float>{},
+                                MakeDrfChart::FwhmCoefType::Gadras,
+                                MakeDrfChart::EqnEnergyUnits::keV );
+
+  DetectorPeakResponse::ResolutionFnctForm fnctnlForm;
+  
+  switch( m_fwhmEqnType->currentIndex() )
+  {
+    case 0:
+      fnctnlForm = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+      break;
+      
+    case 1:
+      fnctnlForm = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      break;
+      
+    default:
+      return;
+  }//switch( m_fwhmEqnType->currentIndex() )
+  
+  //ToDo: I'm not entirely sure the next line protects against updateFwhmEqn()
+  //  not being called if this widget is deleted before fit is done.
+  auto updater = boost::bind( &MakeDrf::updateFwhmEqn, this, _1, _2, static_cast<int>(fnctnlForm), fitid );
+  
+  auto worker = [sessionId,fnctnlForm,peaks,num_gamma_channels,updater]() {
+    try
+    {
+      auto peakdequ = std::make_shared<std::deque< std::shared_ptr<const PeakDef> > >( peaks.begin(), peaks.end() );
+    
+      //Takes between 5 and 500ms for a HPGe detector
+      const double start_time = UtilityFunctions::get_wall_time();
+      vector<float> fwhm_coefs, fwhm_coefs_uncert;
+      MakeDrfFit::performResolutionFit( peakdequ, num_gamma_channels, fnctnlForm, fwhm_coefs, fwhm_coefs_uncert );
+    
+      const double end_time = UtilityFunctions::get_wall_time();
+    
+      assert( fwhm_coefs.size() == fwhm_coefs_uncert.size() );
+      cout << "Fit FWHM: {";
+      for( size_t i = 0; i < fwhm_coefs.size(); ++i )
+        cout << fwhm_coefs[i] << "+-" << fwhm_coefs_uncert[i] << ", ";
+      cout << "}; took " << (end_time-start_time) << " seconds" << endl;
+      
+      WServer::instance()->post( sessionId, std::bind( [updater,fwhm_coefs,fwhm_coefs_uncert](){
+        updater(fwhm_coefs,fwhm_coefs_uncert);
+      } ) );
+    }catch( std::exception &e )
+    {
+      cout << "Failed to fit FWHM coefs: " << e.what() << endl;
+    }//try / catch fit FWHM
+  };
+  
+  WServer::instance()->ioService().post( worker );
+}//void fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks )
+
+
+void MakeDrf::updateFwhmEqn( std::vector<float> coefs,
+                             std::vector<float> uncerts,
+                             const int functionalForm,
+                             const int fitid )
+{
+  if( fitid != m_fwhmFitId )
+    return;
+  
+  MakeDrfChart::FwhmCoefType eqnType = MakeDrfChart::FwhmCoefType::Gadras;
+  const auto fcntform = DetectorPeakResponse::ResolutionFnctForm( functionalForm );
+  switch( fcntform )
+  {
+    case DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn:
+      eqnType = MakeDrfChart::FwhmCoefType::Gadras;
+      m_fwhmEqnType->setCurrentIndex( 0 );
+      break;
+    
+    case DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial:
+      eqnType = MakeDrfChart::FwhmCoefType::SqrtEqn;
+      m_fwhmEqnType->setCurrentIndex( 1 );
+      break;
+      
+    case DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm:
+    default:
+      m_fwhmEqnType->setCurrentIndex( -1 );
+      return;
+  }//switch( fcntform )
+  
+  m_chart->setFwhmCoefficients( coefs, uncerts, eqnType, MakeDrfChart::EqnEnergyUnits::keV );
+  
+  wApp->triggerUpdate();
+}//void updateFwhmEqn(...)
+
+
