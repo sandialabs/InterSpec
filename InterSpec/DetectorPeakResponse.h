@@ -482,6 +482,7 @@ protected:
   
   //m_expOfLogPowerSeriesCoeffs: the coefficients for the intrinsic efficiency
   //  when m_efficiencyForm==kExpOfLogPowerSeries
+public:
   std::vector<float> m_expOfLogPowerSeriesCoeffs;
  
   //In order to keep track of lineage and uniqness of detectors, we will use

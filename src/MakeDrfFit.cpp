@@ -25,6 +25,11 @@
 
 #include <vector>
 
+#define BOOST_UBLAS_TYPE_CHECK 0
+#include <boost/numeric/ublas/lu.hpp>
+#include <boost/numeric/ublas/matrix.hpp>
+#include <boost/numeric/ublas/triangular.hpp>
+
 //Roots Minuit2 includes
 #include "Minuit2/FCNBase.h"
 #include "Minuit2/FunctionMinimum.h"
@@ -459,10 +464,94 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
     uncerts.push_back( p );
 }//std::vector<float> performResolutionFit(...)
 
+
+  template<class T>
+  bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
+                     boost::numeric::ublas::matrix<T> &inverse )
+  {
+    using namespace boost::numeric;
+    ublas::matrix<T> A( input );
+    ublas::permutation_matrix<std::size_t> pm( A.size1() );
+    const size_t res = lu_factorize(A, pm);
+    if( res != 0 )
+      return false;
+    inverse.assign( ublas::identity_matrix<T>( A.size1() ) );
+    lu_substitute(A, pm, inverse);
+    return true;
+  }//matrix_invert
+  
+  double fit_intrinsic_eff_least_linear_squares( const std::vector<DetEffDataPoint> data,
+                            const int order,
+                           std::vector<float> &coeffs,
+                           std::vector<float> &coeff_uncerts )
+  {
+    const size_t nbin = data.size();
+    
+    //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3
+    vector<float> x, effs, effs_uncert;
+    x.resize( data.size() );
+    effs.resize( data.size() );
+    effs_uncert.resize( data.size() );
+    for( size_t i = 0; i < data.size(); ++i )
+    {
+      x[i] = data[i].energy;
+      effs[i] = data[i].efficiency;
+      effs_uncert[i] = data[i].efficiency_uncert;
+    }
+    
+    
+    //General Linear Least Squares fit
+    //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+    //Implementation is quite inneficient
+    //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3 + ...
+    using namespace boost::numeric;
+  
+    ublas::matrix<double> A( nbin, order );
+    ublas::vector<double> b( nbin );
+    
+    for( size_t row = 0; row < nbin; ++row )
+    {
+      const double data_y = log(effs[row]);
+      const double data_y_uncert = fabs( log(effs_uncert[row]) );
+      
+      b(row) = data_y / data_y_uncert;
+      for( int col = 0; col < order; ++col )
+        A(row,col) = std::pow( log(x[row]), double(col)) / data_y_uncert;
+    }//for( int col = 0; col < order; ++col )
+    
+    const ublas::matrix<double> A_transpose = ublas::trans( A );
+    const ublas::matrix<double> alpha = prod( A_transpose, A );
+    ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+    const bool success = matrix_invert( alpha, C );
+    if( !success )
+      throw runtime_error( "fit_intrinsic_eff_least_linear_squares(...): trouble inverting matrix" );
+    
+    const ublas::vector<double> beta = prod( A_transpose, b );
+    const ublas::vector<double> a = prod( C, beta );
+    
+    coeffs.resize( order );
+    coeff_uncerts.resize( order );
+    for( int coef = 0; coef < order; ++coef )
+    {
+      coeffs[coef] = static_cast<float>( a(coef) );
+      coeff_uncerts[coef] = static_cast<float>( std::sqrt( C(coef,coef) ) );
+    }//for( int coef = 0; coef < order; ++coef )
+    
+    double chi2 = 0;
+    for( size_t bin = 0; bin < nbin; ++bin )
+    {
+      double y_pred = 0.0;
+      for( int i = 0; i < order; ++i )
+        y_pred += a(i) * std::pow( log(x[bin]), double(i) );
+      y_pred = exp( y_pred );
+      chi2 += std::pow( (y_pred - effs[bin]) / effs_uncert[bin], 2.0 );
+    }//for( int bin = 0; bin < nbin; ++bin )
+    
+    return chi2;
+  }//double fit_intrinsic_eff_least_linear_squares(...)
   
   
-  
-void performEfficiencyFit( const std::vector<DetEffDataPoint> data,
+double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
                             const int fcnOrder,
                             std::vector<float> &result,
                             std::vector<float> &uncerts )
@@ -473,6 +562,10 @@ void performEfficiencyFit( const std::vector<DetEffDataPoint> data,
   if( fcnOrder < 1 )
     throw runtime_error( "MakeDrfFit::performEfficiencyFit(...): requested fit order " + std::to_string(fcnOrder) + " (must be at least 1)" );
   
+  if( fcnOrder > static_cast<int>(data.size()) )
+    throw runtime_error( "MakeDrfFit::performEfficiencyFit(...): requested fit order " + std::to_string(fcnOrder)
+                         + ", with only " + std::to_string(data.size()) + " data points." );
+  
   result.clear();
   uncerts.clear();
   
@@ -480,46 +573,80 @@ void performEfficiencyFit( const std::vector<DetEffDataPoint> data,
     return lhs.energy > rhs.energy;
   } );
   
+  DetectorEffFitness fitness( data, fcnOrder );
+  ROOT::Minuit2::MnUserParameters inputPrams;
+  
+  
   const bool inMeV = (maxel->energy < 30);
   
-  /* ToDo: with a transform, I think we could minimize by just doing the invert
-           matric thing, and maybe do better than using Minuit
-           In PeakFit.cpp see fit_to_polynomial(...).
-   */
+  //Value limits taken from a wide variety of detectors, and then exaggerated
+  //  to hopefully cover all reasonable ranges.
+  const double mev_lower_bounds[8]    = {-4.75, -2.5,  -1.5,  -1.0,  -1.5,  -1.25, -0.75, -0.1 };
+  const double mev_upper_bounds[8]    = {-0.75, -0.25,  1.25,  0.9,   0.25,  0.25,  0.05,  0.05 };
+  const double mev_starting_values[8] = {-2.7,  -1.2,  -0.18, -0.14, -0.40, -0.15, -0.03, -0.002 };
   
   
-  DetectorEffFitness fitness( data, fcnOrder );
+  try
+  {
+    const double chi2 = fit_intrinsic_eff_least_linear_squares( data, fcnOrder, result, uncerts );
     
-  ROOT::Minuit2::MnUserParameters inputPrams;
-  if( inMeV )
+    cout << "GLLS Fit chi2=" << chi2 << ", coefs={";
+    for( size_t i = 0; i < result.size(); ++i )
+      cout << result[i] << ", ";
+    cout << "}" << endl;
+    
+    return (fcnOrder == data.size()) ? chi2 : (chi2 / (data.size() - fcnOrder));
+    
+    //ToDo: using the result of the least linear squares fit as the starting
+    //      point for Minuit seems to result in a _worse_ fit than least linear
+    //      squares - this needs to be figured out.
+    //      Also, I'm not sure if how I tranformed things to allow using Least
+    //      Linear Squares will biase things, so it would be good to check on
+    //      improving results with Minuit.
+    for( size_t i = 0; i < result.size(); ++i )
+    {
+      if( inMeV )
+      {
+        if( result[i] > mev_lower_bounds[i] && result[i] < mev_upper_bounds[i] )
+          inputPrams.Add( std::to_string(i), result[i], (mev_upper_bounds[i] - mev_lower_bounds[i])/10.0, mev_lower_bounds[i], mev_upper_bounds[i] );
+        else
+          inputPrams.Add( std::to_string(i), result[i], (mev_upper_bounds[i] - mev_lower_bounds[i])/10.0 );
+      }else
+      {
+        inputPrams.Add( std::to_string(i), result[i], 1.0 );
+      }
+    }
+    
+  }catch(std::exception &e)
   {
-    inputPrams.Add( "A", -7.4, 1.0 );
-    if( fcnOrder > 1 )
-      inputPrams.Add( "B", -0.8, 1.0 );
-    if( fcnOrder > 2 )
-      inputPrams.Add( "C", -0.1, 1.0 );
-    if( fcnOrder > 3 )
-      inputPrams.Add( "D", 0.025, 0.1 );
-    if( fcnOrder > 4 )
-      inputPrams.Add( "E", 0.075, 0.1 );
-    if( fcnOrder > 5 )
-      inputPrams.Add( "F", 0.03, 0.01 );
-    for( int order = 7; order <= fcnOrder; ++order )
-      inputPrams.Add( std::string("")+char('A'+order-1), 0, 0.001 );
-  }else
-  {
-    inputPrams.Add( "A", -344, 100, -1000, 1000 );
-    inputPrams.Add( "B", 270, 50 );
-    inputPrams.Add( "C", -84, 50 );
-    if( fcnOrder > 3 )
-      inputPrams.Add( "D", 13.00, 10 );
-    if( fcnOrder > 4 )
-      inputPrams.Add( "E", -1.0, 0.1 );
-    if( fcnOrder > 5 )
-      inputPrams.Add( "F", 0.03, 0.01 );
-    for( int order = 7; order <= fcnOrder; ++order )
-      inputPrams.Add( std::string("")+char('A'+order-1), 0, 1.0 );
-  }//if( inMeV ) / else
+    cout << "GLLS Fit failed: " << e.what() << endl;
+    
+    if( inMeV )
+    {
+      for( int i = 0; i < 8 && i < fcnOrder; ++i )
+      {
+        assert( mev_upper_bounds[i] > mev_lower_bounds[i] );
+        inputPrams.Add( std::to_string(i), mev_starting_values[i], (mev_upper_bounds[i] - mev_lower_bounds[i])/10.0, mev_lower_bounds[i], mev_upper_bounds[i] );
+      }
+      
+      for( int order = 8; order <= fcnOrder; ++order )
+        inputPrams.Add( std::to_string(order), 0, 0.001, -0.1, 0.1 );
+    }else
+    {
+      inputPrams.Add( "A", -344, 100, -1000, 1000 );
+      inputPrams.Add( "B", 270, 50 );
+      inputPrams.Add( "C", -84, 50 );
+      if( fcnOrder > 3 )
+        inputPrams.Add( "D", 13.00, 10 );
+      if( fcnOrder > 4 )
+        inputPrams.Add( "E", -1.0, 0.1 );
+      if( fcnOrder > 5 )
+        inputPrams.Add( "F", 0.03, 0.01 );
+      for( int order = 7; order <= fcnOrder; ++order )
+        inputPrams.Add( std::string("")+char('A'+order-1), 0, 1.0 );
+    }//if( inMeV ) / else
+  }
+
   
   ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
   ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
@@ -533,7 +660,8 @@ void performEfficiencyFit( const std::vector<DetEffDataPoint> data,
   
   ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
 
-  cerr << "Eff final chi2=" << fitness.DoEval( fitParams.Params() ) << endl;
+  const double chi2 = fitness.DoEval( fitParams.Params() );
+  cerr << "Eff final chi2=" << chi2 << endl;
   
   if( !minimum.IsValid() )
   {
@@ -560,6 +688,8 @@ void performEfficiencyFit( const std::vector<DetEffDataPoint> data,
   
   for( const double p : fitParams.Errors() )
     uncerts.push_back( p );
+  
+  return (fcnOrder == data.size()) ? chi2 : (chi2 / (data.size() - fcnOrder));
 }//performEfficiencyFit(...)
   
 }//namespace MakeDrfFit

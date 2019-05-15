@@ -68,9 +68,11 @@ namespace MakeDrfFit
       energy is greater than 30; if so, in keV, else MeV.  Returned coefficients
       will be in the same energy units as DetEffDataPoint::energy.
    
+      return value is chi2/dof.
+   
       Throws exception on error with a kinda explanatory message.
    */
-  void performEfficiencyFit( const std::vector<DetEffDataPoint> data,
+  double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
                              const int fcnOrder,
                              std::vector<float> &result,
                              std::vector<float> &uncerts );

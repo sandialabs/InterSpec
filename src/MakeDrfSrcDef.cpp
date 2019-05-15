@@ -136,9 +136,14 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
     const string label = "<span class=\"SrcTitleNuc\">" + nuc->symbol + "</span>, <span class=\"SrcTitleHl\">&lambda;<sub>&frac12;</sub>="
                          + PhysicalUnits::printToBestTimeUnits(nuc->halfLife) + "</span>";
     m_nuclideLabel->setText( WString::fromUTF8(label) );
+    m_useAgeInfo->show();
   }else
   {
-    m_nuclideLabel->setText( "" );
+    m_nuclideLabel->setText( "Non-specified Nuclide" );
+    m_useAgeInfo->setUnChecked();
+    m_distanceEdit->setValueText( "25 cm" );
+    m_activityEdit->setValueText( "1 uCi" );
+    m_useAgeInfo->hide();
   }
   
   useAgeInfoUserToggled();

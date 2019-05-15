@@ -112,12 +112,15 @@ namespace
     const double m_livetime;
     Wt::WCheckBox *m_useCb;
     WText *m_backSubTxt;
+    WDoubleSpinBox *m_userBr;
   
     DrfPeak( std::shared_ptr<const PeakDef> peak, double livetime, WContainerWidget *parent = nullptr )
     : WContainerWidget( parent ),
       m_peak( peak ),
       m_livetime( livetime ),
-      m_useCb( nullptr )
+      m_useCb( nullptr ),
+      m_backSubTxt( nullptr ),
+      m_userBr( nullptr )
     {
       addStyleClass( "DrfPeak" );
       m_useCb = new WCheckBox( "Use", this );
@@ -135,9 +138,13 @@ namespace
       }else
       {
         m_useCb->setUnChecked();
-        m_useCb->disable();
-        disable();
-        snprintf( buffer, sizeof(buffer), "%.2f keV peak - no source associated", peak->mean() );
+        snprintf( buffer, sizeof(buffer), "%.2f keV peak - no nuc. associated", peak->mean() );
+        m_userBr = new WDoubleSpinBox();
+        m_userBr->setRange( 0.0, 1.0 );
+        m_userBr->setSingleStep( 0.01 );
+        m_userBr->setValue( 1.0 );
+        m_userBr->setMargin( 5, Wt::Left );
+        m_userBr->setTextSize( 8 );
       }
       
       WText *txt = new WText( WString::fromUTF8(buffer), this );
@@ -145,6 +152,9 @@ namespace
       m_backSubTxt = new WText( "", this );
       m_backSubTxt->addStyleClass( "DrfPeakBackSubTxt" );
       m_backSubTxt->hide();
+      
+      if( m_userBr )
+        addWidget( m_userBr );
     }//DrfPeak constructor;
     
     void setBackgroundBeingSubtractedInfo( const bool beingsubtracted, const float background_cps )
@@ -509,7 +519,7 @@ namespace
       for( auto w : m_sources->children() )
       {
         auto p = dynamic_cast<MakeDrfSrcDef *>( w );
-        if( p && p->nuclide() )
+        if( p )
           nucToWidget[p->nuclide()] = p;
       }
       
@@ -589,12 +599,10 @@ namespace
       
       for( auto peakw : peakWidgets )
       {
-        if( !peakw->isEnabled() || !peakw->m_useCb->isChecked() )
+        if( !peakw->m_useCb->isChecked() )
           continue;
         
         const auto nuc = peakw->m_peak->parentNuclide();
-        if( !nuc )
-          continue;
         
         MakeDrfSrcDef *src = nullptr;
         for( auto sourcew : sourceWidgets )
@@ -776,7 +784,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_effEqnUnits->setInline( false );
   m_effEqnUnits->addItem( "Int. Eff in keV" );
   m_effEqnUnits->addItem( "Int. Eff in MeV" );
-  m_effEqnUnits->setCurrentIndex( 0 );
+  m_effEqnUnits->setCurrentIndex( 1 );
   m_effEqnUnits->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   
   m_chart = new MakeDrfChart();
@@ -805,6 +813,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   label->setMargin(5,Wt::Left);
   m_chartUpperE = new WDoubleSpinBox( chartOptionsDiv );
   m_chartUpperE->setRange(0, 10000);
+  m_chartUpperE->setValue( 3000.0 );
   label->setBuddy( m_chartUpperE );
   
   auto updateChartRange = [this](){
@@ -949,7 +958,7 @@ void MakeDrf::handleSourcesUpdates()
         {
           const std::shared_ptr<const PeakDef> backpeak = b->m_peak;
           if( fabs(backpeak->mean() - peak->mean()) < 1.5*peak->sigma()
-             || (fabs(backpeak->gammaParticleEnergy() - peak->gammaParticleEnergy()) < 1.0) )
+             || (backpeak->parentNuclide() && peak->parentNuclide() && (fabs(backpeak->gammaParticleEnergy() - peak->gammaParticleEnergy()) < 1.0)) )
           {
             back_peak_area += backpeak->peakArea();
             //ToDo: Check (when I'm not so tired) to make sure this is the right way to handle uncert.
@@ -962,7 +971,7 @@ void MakeDrf::handleSourcesUpdates()
         pp.first->setBackgroundBeingSubtractedInfo( subBack, (subBack ? (back_peak_area/back_peak_lt) : 0.0) );
         
         MakeDrfChart::DataPoint point;
-        point.energy = peak->gammaParticleEnergy();
+        point.energy = peak->parentNuclide() ? peak->gammaParticleEnergy() : peak->mean();
         point.livetime = pp.first->m_livetime;
         point.peak_area = peak->peakArea();
         point.peak_area_uncertainty = peak->peakAreaUncert();
@@ -1028,19 +1037,28 @@ void MakeDrf::handleSourcesUpdates()
           point.source_count_rate = 0.0;
           const double width = 1.25*(peak->gausPeak() ? peak->sigma() : 0.25*peak->roiWidth());
           
-          //ToDo: only create one mixture per nuclide (instead of one per peak),
-          //  and can probably also access relevant gammas more efficiently.
-          SandiaDecay::NuclideMixture mix;
-          mix.addAgedNuclideByActivity( nuc, activity, age );
-          const auto rates = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
-          for( const auto &r : rates )
+          if( nuc )
           {
-            if( fabs(r.energy - peak->gammaParticleEnergy()) < width )
-              point.source_count_rate += r.numPerSecond;
+            //ToDo: only create one mixture per nuclide (instead of one per peak),
+            //  and can probably also access relevant gammas more efficiently.
+            SandiaDecay::NuclideMixture mix;
+            mix.addAgedNuclideByActivity( nuc, activity, age );
+            const auto rates = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+            for( const auto &r : rates )
+            {
+              if( fabs(r.energy - peak->gammaParticleEnergy()) < width )
+                point.source_count_rate += r.numPerSecond;
+            }
+          
+            point.source_count_rate *= transmittion_factor;
+          }else
+          {
+            if( !pp.first->m_userBr || (pp.first->m_userBr->validate()!=WValidator::State::Valid) )
+              throw runtime_error( "Logic error - no nuclide associated with " + std::to_string(peak->mean()) + " keV peak, and no user BR." );
+            point.source_count_rate += transmittion_factor * pp.first->m_userBr->value() * activity;
           }
           
-          point.source_count_rate *= transmittion_factor;
-          //First time threw when the GUI loads, we seem to get this error...
+          //If we get here on initial GUI load, we seem to get error validating the uncertainty (hence a workaround is used to delay first reading)
           point.source_count_rate_uncertainty = point.source_count_rate * pp.second->fractionalActivityUncertainty();
         }catch( std::exception &e )
         {
@@ -1053,9 +1071,18 @@ void MakeDrf::handleSourcesUpdates()
         point.background_peak_area = back_peak_area;
         point.background_peak_live_time = back_peak_lt;
         
+        const double particleEnergy = peak->parentNuclide() ? peak->gammaParticleEnergy() : peak->mean();
+        
         char buffer[256] = { '\0' };
-        snprintf( buffer, sizeof(buffer)-1, "%s %.1f keV, Peak %.1f counts",
-                 nuc->symbol.c_str(), peak->gammaParticleEnergy(), point.peak_area );
+        if( nuc )
+        {
+          snprintf( buffer, sizeof(buffer)-1, "%s %.1f keV, Peak %.1f counts",
+                   nuc->symbol.c_str(), particleEnergy, point.peak_area );
+        }else
+        {
+          snprintf( buffer, sizeof(buffer)-1, "No assoc. nuclide, %.1f keV, Peak %.1f counts",
+                    particleEnergy, point.peak_area );
+        }
         //ToDo: Add more/better source info.
         point.source_information = buffer;
         
@@ -1108,6 +1135,7 @@ void MakeDrf::handleSourcesUpdates()
   
   const int numPeaks = static_cast<int>( peaks.size() );
   const int currentOrder = m_effEqnOrder->currentIndex();
+  
   const int nCurrentOrders = m_effEqnOrder->count();
   if( nCurrentOrders == 8 && numPeaks >= 8 )
   {
