@@ -478,6 +478,7 @@ void RelEffFile::initDetectors()
   
   if( file_opened )
   {
+    vector<vector<float>> detcoefs;
     string line;
     while( UtilityFunctions::safe_get_line( input, line ) )
     {
@@ -492,7 +493,10 @@ void RelEffFile::initDetectors()
       std::shared_ptr<DetectorPeakResponse> det = parseDetector( line );
       
       if( det )
+      {
+        detcoefs.push_back( det->m_expOfLogPowerSeriesCoeffs );
         m_responses.push_back( det );
+      }
     }//while( UtilityFunctions::safe_get_line( input, line ) )
     
     if( m_responses.empty() )
@@ -2468,6 +2472,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
   vector<string> paths;
   UtilityFunctions::split( paths, concat_filenames, "\r\n;" );
   
+  
   for( const string &filename : paths )
   {
     std::ifstream input( filename.c_str() );
@@ -2485,6 +2490,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
       if( UtilityFunctions::icontains( line, smname ) )
       {
         auto det = RelEffFile::parseDetector( line );
+        
         if( det )
           return det;
       }//if( thisname == smname )
