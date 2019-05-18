@@ -67,119 +67,6 @@ using namespace std;
 
 namespace
 {
-  
-std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const Measurement> inmeas,
-                                             std::shared_ptr< std::deque<std::shared_ptr<const PeakDef> > > peaks,
-                                             const vector<ReferenceLineInfo> &displayed,
-                                             double lowx, double upperx,
-                                             const int width, const int height,
-                                             std::shared_ptr<const ColorTheme> theme,
-                                             const bool compact )
-{
-  if( !inmeas )
-    return nullptr;
-  
-  std::shared_ptr<Measurement> meas = std::make_shared<Measurement>( *inmeas );
-  
-  std::shared_ptr<Wt::WSvgImage> img
-  = std::make_shared<WSvgImage>( width, height );
-  std::shared_ptr<SpecMeas> specmeas = std::make_shared<SpecMeas>();
-  specmeas->add_measurment( meas, true );
-  if( peaks )
-    specmeas->setPeaks( *peaks, specmeas->sample_numbers() );
-  
-  PeakModel peakmodel;
-  SpectrumDataModel dataModel;
-  SpectrumChart chart;
-  
-  chart.setModel( &dataModel );
-  chart.setPeakModel( &peakmodel );
-  peakmodel.setDataModel( &dataModel );
-  peakmodel.setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
-  
-  const float liveTime = meas->live_time();
-  const float realTime = meas->real_time();
-  const double neutrons = meas->neutron_counts_sum();
-  dataModel.setDataHistogram( meas, liveTime, realTime, neutrons );
-  
-  const vector<Chart::WDataSeries> series = dataModel.suggestDataSeries();
-  chart.setSeries( series );
-  
-  //chart.enableLegend( true );
-  
-  chart.axis(Chart::YAxis).setScale( Chart::LogScale );
-  
-  for( size_t i = displayed.size(); i > 1; --i )
-  {
-    chart.setReferncePhotoPeakLines( displayed[i-1] );
-    chart.persistCurrentReferncePhotoPeakLines();
-  }
-  if( !displayed.empty() )
-    chart.setReferncePhotoPeakLines( displayed[0] );
-  
-  
-  if( meas && (fabs(upperx-lowx) < 0.000001) )
-  {
-    const size_t nchannel = meas->num_gamma_channels();
-    lowx = meas->gamma_channel_lower( 0 );
-    upperx = meas->gamma_channel_upper( nchannel - 1 );
-  }//if( lowx == upperx )
-  
-  chart.setXAxisRange( lowx, upperx );
-  
-  if( compact )
-  {
-    chart.axis(Chart::XAxis).setTitle("");
-    chart.axis(Chart::YAxis).setTitle("");
-    //chart.setLeftYAxisPadding(<#double width#>, <#double height#>)
-    chart.setPlotAreaPadding( 35, Wt::Left );
-    chart.setPlotAreaPadding( 16, Wt::Bottom );
-    chart.setPlotAreaPadding( 0, Wt::Right );
-    chart.setPlotAreaPadding( 0, Wt::Top );
-    
-    WFont labelFont( WFont::Default );
-    labelFont.setSize(8);
-    chart.axis(Chart::XAxis).setLabelFont( labelFont );
-    chart.axis(Chart::YAxis).setLabelFont( labelFont );
-  }//if( compact )
-  
-  const size_t displayednbin = meas->find_gamma_channel( upperx )
-  - meas->find_gamma_channel( lowx );
-  const int plotAreaWidth = static_cast<int>( img->width().toPixels() )
-  - chart.plotAreaPadding(Left)
-  - chart.plotAreaPadding(Right);
-  const float bins_per_pixel = float(displayednbin) / float(plotAreaWidth);
-  const int factor = max( static_cast<int>(ceil(bins_per_pixel)), 1 );
-  
-  dataModel.setRebinFactor( factor );
-  
-  chart.setAutoYAxisRange();
-  
-  if( theme )
-  {
-    dataModel.setForegroundSpectrumColor( theme->foregroundLine );
-    dataModel.setBackgroundSpectrumColor( theme->backgroundLine );
-    dataModel.setSecondarySpectrumColor( theme->secondaryLine );
-    chart.setSeries( dataModel.suggestDataSeries() );
-                                        
-    chart.setDefaultPeakColor( theme->defaultPeakLine );
-    
-    chart.setAxisLineColor( theme->spectrumAxisLines );
-    chart.setChartMarginColor( theme->spectrumChartMargins );
-    chart.setChartBackgroundColor( theme->spectrumChartBackground );
-    chart.setTextColor( theme->spectrumChartText );
-  }//if( theme )
-  
-  
-  WPainter p( img.get() );
-  chart.paint( p );
-  p.end();
-  
-  return img;
-}//renderChartToSvg(...)
-
-  
-  
 class PeakSelectorWindow : public AuxWindow
 {
   InterSpec *m_viewer;
@@ -196,7 +83,7 @@ class PeakSelectorWindow : public AuxWindow
   const vector<PeakDef> m_orig_peaks;
   std::shared_ptr<const Measurement> m_data;
   const vector<PeakDef> m_final_peaks;
-  const vector<ReferenceLineInfo> m_displayed;
+  vector< shared_ptr<const ReferenceLineInfo>> m_displayed;
   vector<WCheckBox *> m_keep_peak_cbs;
   vector<WComboBox *> m_nuc_select_combos;
   vector<bool> m_peak_updated;
@@ -236,10 +123,13 @@ public:
     m_orig_peaks( orig_peaks ),
     m_data( data ),
     m_final_peaks( final_peaks ),
-    m_displayed( displayed ),
+    m_displayed(),
     m_cancelOperation( false )
   {
     wApp->useStyleSheet( "InterSpec_resources/PeakSelectorWindow.css" );
+    
+    for( const auto &d : displayed )
+      m_displayed.push_back( make_shared<ReferenceLineInfo>(d) );
     
     const int appWidth = viewer->renderedWidth();
     const int appHeight = viewer->renderedHeight();
@@ -329,7 +219,7 @@ public:
             msg + " or ";
           else if( i )
             msg + ", ";
-          msg += m_displayed[i].labelTxt;
+          msg += m_displayed[i]->labelTxt;
         }
         m_keepRefLinePeaksOnly = new WCheckBox( msg, contents() );
         m_keepRefLinePeaksOnly->setInline( false );
@@ -698,19 +588,19 @@ public:
       
       for( const auto &refline : m_displayed )
       {
-        if( refline.nuclide == p->parentNuclide() )
+        if( refline->nuclide == p->parentNuclide() )
         {
           double intensity = 0.0;
-          for( size_t i = 0; i < refline.energies.size(); ++i )
+          for( size_t i = 0; i < refline->energies.size(); ++i )
           {
-            const string &parttype = refline.particlestrs[i];
+            const string &parttype = refline->particlestrs[i];
             
             if( !UtilityFunctions::icontains(parttype,"gamma")
                && !UtilityFunctions::icontains(parttype,"xray") )
               continue;
             
-            const double refenergy = refline.energies[i];
-            const double br = refline.intensities[i];
+            const double refenergy = refline->energies[i];
+            const double br = refline->intensities[i];
             if( fabs(refenergy-photopeakEnergy) < 1.25*peakSigma )
               intensity += br;
           }
@@ -845,7 +735,7 @@ public:
     //  peak colors, and maybe the displayed width.
     
     
-    std::shared_ptr<WSvgImage> svg = renderChartToSvg( m_data, peaks_for_plotting, m_displayed, lowerx, upperx, 225, 125, theme, true );
+    std::shared_ptr<WSvgImage> svg = PeakSearchGuiUtils::renderChartToSvg( m_data, peaks_for_plotting, m_displayed, lowerx, upperx, 225, 125, theme, true );
     if( svg )
     {
       stringstream strm;
@@ -916,13 +806,13 @@ public:
     
     for( const auto &d : m_displayed )
     {
-      if( nuc == d.nuclide )
+      if( nuc == d->nuclide )
       {
-        refline = &d;
+        refline = d.get();
         break;
       }else
       {
-        for( const auto &b : d.backgroundLines )
+        for( const auto &b : d->backgroundLines )
         {
           bool matches = true;
           const BackgroundLineType type = get<3>(*b);
@@ -944,7 +834,7 @@ public:
             const float energy = get<0>(*b);
             if( fabs(energy - particle->energy) < 0.1 )
             {
-              refline = &d;
+              refline = d.get();
               backgroundLine = b;
               break;
             }
@@ -1097,7 +987,7 @@ public:
       {
         for( const auto &l : m_displayed )
         {
-          if( l.lineColor == newpeak->lineColor() )
+          if( l->lineColor == newpeak->lineColor() )
             newpeak->setLineColor( WColor() );
         }//
       }//if( m_viewer->colorPeaksBasedOnReferenceLines() )
@@ -1134,9 +1024,9 @@ public:
             //A quick labmda to test if a peak nuclide matches a BackgroundLine
             //  nuclide.
             auto isBackgroundNuc = [&l,&newpeak,db]() -> bool {
-              if( !newpeak->parentNuclide() || l.backgroundLines.empty() )
+              if( !newpeak->parentNuclide() || l->backgroundLines.empty() )
                 return false;
-              for( const auto b : l.backgroundLines )
+              for( const auto b : l->backgroundLines )
               {
                 string refnuc;
                 const BackgroundLineType type = std::get<3>(*b);
@@ -1161,12 +1051,12 @@ public:
             
             
             if( m_viewer->colorPeaksBasedOnReferenceLines()
-               && ((l.nuclide && (l.nuclide==newpeak->parentNuclide()))
-               || (l.element && (l.element==newpeak->xrayElement()))
-               || (newpeak->reaction() && l.reactionsTxt.size() && UtilityFunctions::icontains(l.reactionsTxt, newpeak->reaction()->name()))
+               && ((l->nuclide && (l->nuclide==newpeak->parentNuclide()))
+               || (l->element && (l->element==newpeak->xrayElement()))
+               || (newpeak->reaction() && l->reactionsTxt.size() && UtilityFunctions::icontains(l->reactionsTxt, newpeak->reaction()->name()))
                || isBackgroundNuc()) )
             {
-              newpeak->setLineColor( l.lineColor );
+              newpeak->setLineColor( l->lineColor );
             }
           }//for( const auto &l : m_displayed )
         }//if( we should set peak color based on reference lines )
@@ -1233,9 +1123,9 @@ public:
       map<double,set<string>> distToDescs;
       for( const auto &ref : m_displayed )
       {
-        for( size_t i = 0; i < ref.energies.size(); ++i )
+        for( size_t i = 0; i < ref->energies.size(); ++i )
         {
-          const string &parttype = ref.particlestrs[i];
+          const string &parttype = ref->particlestrs[i];
           //SandiaDecay::to_str(SandiaDecay::BetaParticle)
           
           if( !UtilityFunctions::icontains(parttype,"gamma")
@@ -1243,8 +1133,8 @@ public:
             continue;
           
           double sf = 1.0;
-          auto sf_iter = ref.particle_sf.find(parttype);
-          if( sf_iter != std::end(ref.particle_sf) )
+          auto sf_iter = ref->particle_sf.find(parttype);
+          if( sf_iter != std::end(ref->particle_sf) )
           {
             sf = sf_iter->second;
           }else
@@ -1257,16 +1147,16 @@ public:
 #endif
           }
           
-          string label = ref.labelTxt;
-          const double refenergy = ref.energies[i];
-          const double intensity = ref.intensities[i] * sf;
+          string label = ref->labelTxt;
+          const double refenergy = ref->energies[i];
+          const double intensity = ref->intensities[i] * sf;
           
           bool backgroundLineMatchedRef = false;
           
-          if( !ref.backgroundLines.empty() )
+          if( !ref->backgroundLines.empty() )
           {
             //Find the background line that cooresponds to `refenergy`
-            for( const auto b : ref.backgroundLines )
+            for( const auto b : ref->backgroundLines )
             {
               const float lineenergy = std::get<0>(*b);
               const string &srcstr = std::get<2>(*b);
@@ -1302,9 +1192,9 @@ public:
           const double diff_from_assigned = fabs( refenergy - energy );
           
           if( (diff_from_assigned < 0.001)
-             && ((p->parentNuclide() && (ref.nuclide==p->parentNuclide()))
-                 || (p->xrayElement() && (ref.element==p->xrayElement()))
-                 || (p->reaction() && ref.reactionsTxt.size() && UtilityFunctions::icontains(ref.reactionsTxt, p->reaction()->name()))
+             && ((p->parentNuclide() && (ref->nuclide==p->parentNuclide()))
+                 || (p->xrayElement() && (ref->element==p->xrayElement()))
+                 || (p->reaction() && ref->reactionsTxt.size() && UtilityFunctions::icontains(ref->reactionsTxt, p->reaction()->name()))
              ))
           {
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1812,13 +1702,119 @@ void set_peaks_from_search( InterSpec *viewer,
 
 
 
-
-
-
-
 namespace PeakSearchGuiUtils
 {
   
+  std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const Measurement> inmeas,
+                                              std::shared_ptr< std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                                              const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
+                                              double lowx, double upperx,
+                                              const int width, const int height,
+                                              std::shared_ptr<const ColorTheme> theme,
+                                              const bool compact )
+  {
+    if( !inmeas )
+      return nullptr;
+    
+    std::shared_ptr<Measurement> meas = std::make_shared<Measurement>( *inmeas );
+    
+    std::shared_ptr<Wt::WSvgImage> img
+    = std::make_shared<WSvgImage>( width, height );
+    std::shared_ptr<SpecMeas> specmeas = std::make_shared<SpecMeas>();
+    specmeas->add_measurment( meas, true );
+    if( peaks )
+      specmeas->setPeaks( *peaks, specmeas->sample_numbers() );
+    
+    PeakModel peakmodel;
+    SpectrumDataModel dataModel;
+    SpectrumChart chart;
+    
+    chart.setModel( &dataModel );
+    chart.setPeakModel( &peakmodel );
+    peakmodel.setDataModel( &dataModel );
+    peakmodel.setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
+    
+    const float liveTime = meas->live_time();
+    const float realTime = meas->real_time();
+    const double neutrons = meas->neutron_counts_sum();
+    dataModel.setDataHistogram( meas, liveTime, realTime, neutrons );
+    
+    const vector<Chart::WDataSeries> series = dataModel.suggestDataSeries();
+    chart.setSeries( series );
+    
+    //chart.enableLegend( true );
+    
+    chart.axis(Chart::YAxis).setScale( Chart::LogScale );
+    
+    for( size_t i = displayed.size(); i > 1; --i )
+    {
+      chart.setReferncePhotoPeakLines( *displayed[i-1] );
+      chart.persistCurrentReferncePhotoPeakLines();
+    }
+    if( !displayed.empty() )
+      chart.setReferncePhotoPeakLines( *displayed[0] );
+    
+    
+    if( meas && (fabs(upperx-lowx) < 0.000001) )
+    {
+      const size_t nchannel = meas->num_gamma_channels();
+      lowx = meas->gamma_channel_lower( 0 );
+      upperx = meas->gamma_channel_upper( nchannel - 1 );
+    }//if( lowx == upperx )
+    
+    chart.setXAxisRange( lowx, upperx );
+    
+    if( compact )
+    {
+      chart.axis(Chart::XAxis).setTitle("");
+      chart.axis(Chart::YAxis).setTitle("");
+      //chart.setLeftYAxisPadding(double width, <#double height#>)
+      chart.setPlotAreaPadding( 35, Wt::Left );
+      chart.setPlotAreaPadding( 16, Wt::Bottom );
+      chart.setPlotAreaPadding( 0, Wt::Right );
+      chart.setPlotAreaPadding( 0, Wt::Top );
+      
+      WFont labelFont( WFont::Default );
+      labelFont.setSize(8);
+      chart.axis(Chart::XAxis).setLabelFont( labelFont );
+      chart.axis(Chart::YAxis).setLabelFont( labelFont );
+    }//if( compact )
+    
+    const size_t displayednbin = meas->find_gamma_channel( upperx )
+    - meas->find_gamma_channel( lowx );
+    const int plotAreaWidth = static_cast<int>( img->width().toPixels() )
+    - chart.plotAreaPadding(Left)
+    - chart.plotAreaPadding(Right);
+    const float bins_per_pixel = float(displayednbin) / float(plotAreaWidth);
+    const int factor = max( static_cast<int>(ceil(bins_per_pixel)), 1 );
+    
+    dataModel.setRebinFactor( factor );
+    
+    chart.setAutoYAxisRange();
+    
+    if( theme )
+    {
+      dataModel.setForegroundSpectrumColor( theme->foregroundLine );
+      dataModel.setBackgroundSpectrumColor( theme->backgroundLine );
+      dataModel.setSecondarySpectrumColor( theme->secondaryLine );
+      chart.setSeries( dataModel.suggestDataSeries() );
+      
+      chart.setDefaultPeakColor( theme->defaultPeakLine );
+      
+      chart.setAxisLineColor( theme->spectrumAxisLines );
+      chart.setChartMarginColor( theme->spectrumChartMargins );
+      chart.setChartBackgroundColor( theme->spectrumChartBackground );
+      chart.setTextColor( theme->spectrumChartText );
+    }//if( theme )
+    
+    
+    WPainter p( img.get() );
+    chart.paint( p );
+    p.end();
+    
+    return img;
+  }//renderChartToSvg(...)
+
 void automated_search_for_peaks( InterSpec *viewer,
                                 const bool keep_old_peaks )
 {

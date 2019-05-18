@@ -35,6 +35,7 @@
 #include "Minuit2/FunctionMinimum.h"
 #include "Minuit2/MnMigrad.h"
 #include "Minuit2/MnMinos.h"
+#include "Minuit2/MinosError.h"
 //#include "Minuit2/Minuit2Minimizer.h"
 #include "Minuit2/MnUserParameters.h"
 #include "Minuit2/MnUserParameterState.h"
@@ -592,23 +593,18 @@ double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
     
     cout << "GLLS Fit chi2=" << chi2 << ", coefs={";
     for( size_t i = 0; i < result.size(); ++i )
-      cout << result[i] << ", ";
+      cout << result[i] << "+-" << uncerts[i] << ", ";
     cout << "}" << endl;
     
-    return (fcnOrder == data.size()) ? chi2 : (chi2 / (data.size() - fcnOrder));
-    
-    //ToDo: using the result of the least linear squares fit as the starting
-    //      point for Minuit seems to result in a _worse_ fit than least linear
-    //      squares - this needs to be figured out.
-    //      Also, I'm not sure if how I tranformed things to allow using Least
-    //      Linear Squares will biase things, so it would be good to check on
-    //      improving results with Minuit.
+    //return (fcnOrder == data.size()) ? chi2 : (chi2 / (data.size() - fcnOrder));
+  
+    //Least Linear Squares
     for( size_t i = 0; i < result.size(); ++i )
     {
       if( inMeV )
       {
         if( result[i] > mev_lower_bounds[i] && result[i] < mev_upper_bounds[i] )
-          inputPrams.Add( std::to_string(i), result[i], (mev_upper_bounds[i] - mev_lower_bounds[i])/10.0, mev_lower_bounds[i], mev_upper_bounds[i] );
+          inputPrams.Add( std::to_string(i), result[i], (mev_upper_bounds[i] - mev_lower_bounds[i])/100.0, mev_lower_bounds[i], mev_upper_bounds[i] );
         else
           inputPrams.Add( std::to_string(i), result[i], (mev_upper_bounds[i] - mev_lower_bounds[i])/10.0 );
       }else
@@ -660,8 +656,21 @@ double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
   
   ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
 
+  //Minos seems to give the same error we already have.
+  //ROOT::Minuit2::MnMinos minos( fitness, minimum, 1 );
+  //vector<pair<double,double>> assymerrors;
+  //for( int i = 0; i < fcnOrder; ++i )
+  //{
+  //  ROOT::Minuit2::MinosError error = minos.Minos(i);
+  //  assymerrors.push_back( make_pair(error.Lower(), error.Upper()) );
+  //  cout << "Par " << i << " error: " << fitParams.Errors()[i] << ", Lower=" <<error.Lower() << ", Upper=" << error.Upper() << endl;
+  //}
+  
+  
   const double chi2 = fitness.DoEval( fitParams.Params() );
-  cerr << "Eff final chi2=" << chi2 << endl;
+  cerr << "Eff final chi2=" << chi2 << " vs "
+  << fitness.DoEval( vector<double>(begin(result),end(result)) ) << " from LLS"
+  << endl;
   
   if( !minimum.IsValid() )
   {
@@ -682,6 +691,9 @@ double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
   
   for( size_t i = 0; i < fitParams.Params().size(); ++i )
     cout << "\tFit Par" << i << "=" << fitParams.Params()[i] << endl;
+  
+  result.clear();
+  uncerts.clear();
   
   for( const double p : fitParams.Params() )
     result.push_back( static_cast<float>(p) );

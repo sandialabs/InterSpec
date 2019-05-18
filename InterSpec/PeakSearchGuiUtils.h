@@ -40,9 +40,14 @@
 class PeakDef;
 class PeakModel;
 class InterSpec;
+class ColorTheme;
 class Measurement;
+class ReferenceLineInfo;
 class ReferencePhotopeakDisplay;
 
+namespace Wt{
+  class WSvgImage;
+};
 
 /** Functions in this header/source are kinda go betweens of the GUI and the
  numerical code (although of course, seperation is never as clean as one would
@@ -50,6 +55,27 @@ class ReferencePhotopeakDisplay;
  */
 namespace PeakSearchGuiUtils
 {
+  
+/** Renders the selcted energy range of the measurement to a SVG image.
+ @param measurement What to plot.  Must be non-null pointer.
+ @param peaks Peaks to include on the histogram.  May be empty.
+ @param reflines Reference lines to show on the chart. May be empty
+ @param lower_energy The lower energy to plot.  If equal to upper_energy than
+        full energy range will be plotted.
+ @param upper_energy The upper energy to plot.
+ @param width_px Width of the SVG in pixels; used to decide re-binning and such.
+ @param height_px Height of the SVG in pixels.
+ @param theme The color theme of plot.  May be nullptr.
+ @param compact Whether to plot the chart to maximize plot area.
+ */
+std::shared_ptr<Wt::WSvgImage> renderChartToSvg( std::shared_ptr<const Measurement> measurement,
+                                                std::shared_ptr< std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                                                const std::vector<std::shared_ptr<const ReferenceLineInfo>> &reflines,
+                                              double lower_energy, double upper_energy,
+                                              const int width_px, const int height_px,
+                                              std::shared_ptr<const ColorTheme> theme,
+                                                const bool compact );
+  
 /** Performs the automated search for peaks - setting the results to the GUI. */
 void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks );
 
