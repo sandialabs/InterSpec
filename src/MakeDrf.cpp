@@ -34,10 +34,12 @@
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
+#include <Wt/WSvgImage>
 #include <Wt/WIOService>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
+#include <Wt/WPopupWidget>
 #include <Wt/WDoubleSpinBox>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
@@ -56,6 +58,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -111,16 +114,26 @@ namespace
     const std::shared_ptr<const PeakDef> m_peak;
     const double m_livetime;
     Wt::WCheckBox *m_useCb;
+    WText *m_descTxt;
     WText *m_backSubTxt;
     WDoubleSpinBox *m_userBr;
-  
-    DrfPeak( std::shared_ptr<const PeakDef> peak, double livetime, WContainerWidget *parent = nullptr )
+    WPushButton *m_previewBtn;
+    WPopupWidget *m_previewPopup;
+    std::shared_ptr<const Measurement> m_summed_meas;
+    
+    DrfPeak( std::shared_ptr<const PeakDef> peak, double livetime,
+             std::shared_ptr<const Measurement> summed_meas,
+             WContainerWidget *parent = nullptr )
     : WContainerWidget( parent ),
       m_peak( peak ),
       m_livetime( livetime ),
       m_useCb( nullptr ),
+      m_descTxt( nullptr ),
       m_backSubTxt( nullptr ),
-      m_userBr( nullptr )
+      m_userBr( nullptr ),
+      m_previewBtn( nullptr ),
+      m_previewPopup( nullptr ),
+      m_summed_meas( summed_meas )
     {
       addStyleClass( "DrfPeak" );
       m_useCb = new WCheckBox( "Use", this );
@@ -137,25 +150,44 @@ namespace
                   peak->gammaParticleEnergy() );
       }else
       {
-        m_useCb->setUnChecked();
         snprintf( buffer, sizeof(buffer), "%.2f keV peak - no nuc. associated", peak->mean() );
         m_userBr = new WDoubleSpinBox();
+        //m_userBr->addStyleClass( "DrfPeakNoNucBr" );
         m_userBr->setRange( 0.0, 1.0 );
         m_userBr->setSingleStep( 0.01 );
         m_userBr->setValue( 1.0 );
         m_userBr->setMargin( 5, Wt::Left );
         m_userBr->setTextSize( 8 );
+        
+        m_useCb->setUnChecked();
+        m_userBr->hide();
+        m_useCb->changed().connect( std::bind( [this](){
+          m_userBr->setHidden( !m_useCb->isChecked() );
+        } ) );
       }
       
-      WText *txt = new WText( WString::fromUTF8(buffer), this );
-      txt->addStyleClass( "DrfPeakInfoTxt" );
+      m_descTxt = new WText( WString::fromUTF8(buffer), this );
+      m_descTxt->addStyleClass( "DrfPeakInfoTxt" );
       m_backSubTxt = new WText( "", this );
       m_backSubTxt->addStyleClass( "DrfPeakBackSubTxt" );
       m_backSubTxt->hide();
       
       if( m_userBr )
+      {
+        WLabel *l = new WLabel( "BR=", this );
+        l->addStyleClass( "DrfPeakNoNucBrLbl" );
+        l->setBuddy( m_userBr );
         addWidget( m_userBr );
+      }
+      
+      m_previewBtn = new WPushButton( "", this );
+      m_previewBtn->setStyleClass( "DrfPeakShowChart" );
+      m_previewBtn->setIcon( "InterSpec_resources/images/peak_small.png" );
+      //m_previewBtn = new WImage( "InterSpec_resources/images/peak_small.png", this );
+      
+      m_previewBtn->clicked().connect( this, &DrfPeak::togglePeakPreview );
     }//DrfPeak constructor;
+    
     
     void setBackgroundBeingSubtractedInfo( const bool beingsubtracted, const float background_cps )
     {
@@ -175,6 +207,64 @@ namespace
         m_backSubTxt->hide();
       }
     }
+    
+    void togglePeakPreview()
+    {
+      //WAnimation animation(WAnimation::AnimationEffect::Pop, WAnimation::Linear, 250 );
+      if( m_previewPopup )
+      {
+        if( m_previewPopup->isHidden() )
+        {
+          m_previewBtn->addStyleClass( "active" );
+          m_previewPopup->setHidden( false );
+        }else
+        {
+          m_previewBtn->removeStyleClass( "active" );
+          m_previewPopup->setHidden( true );
+        }
+        
+        return;
+      }//if( m_previewPopup )
+      
+      try
+      {
+        if( !m_peak )
+          throw runtime_error( "No peak for preview" );
+        
+        auto peakdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( 1, m_peak );
+        vector<shared_ptr<const ReferenceLineInfo>> reflines;  //ToDo: actually fill these out
+        const double lower_energy = m_peak->mean() - 0.75*m_peak->roiWidth();
+        const double upper_energy = m_peak->mean() + 0.75*m_peak->roiWidth();
+        
+        const int chart_width_px = 225;
+        const int chart_height_px = 125;
+        std::shared_ptr<const ColorTheme> theme; //ToDo: actually get this from the InterSpec class...
+        
+        shared_ptr<WSvgImage> svg
+        = PeakSearchGuiUtils::renderChartToSvg( m_summed_meas, peakdeque,
+                                               reflines, lower_energy, upper_energy,
+                                               chart_width_px, chart_height_px, theme, true );
+        if( !svg )
+          throw runtime_error( "No preview svg chart" );
+        
+        stringstream strm;
+        svg->write( strm );
+        
+        WText *chart = new WText( strm.str(), Wt::XHTMLUnsafeText /*, this*/ );
+        chart->addStyleClass( "DrfPeakChart" );
+        m_previewPopup = new WPopupWidget( chart, this );
+      }catch( std::exception & )
+      {
+        WText *msg = new WText( "Unable to generate preview" );
+        m_previewPopup = new WPopupWidget( msg, this );
+      }//try / catch make a chart
+      
+      m_previewPopup->setAnchorWidget( m_previewBtn, Wt::Orientation::Vertical );
+      m_previewPopup->setJavaScriptMember("wtNoReparent", "true");
+      m_previewPopup->show();
+      m_previewBtn->addStyleClass( "active" );
+    }//void togglePeakPreview()
+    
   };//class DrfPeak
   
   
@@ -188,6 +278,7 @@ namespace
     WContainerWidget *m_sources;
     WCheckBox *m_background;
     WText *m_backgroundTxt;
+    WCheckBox *m_allNoneSome;
     Wt::Signal<> m_srcInfoUpdated;
     
     void updateTitle()
@@ -246,6 +337,16 @@ namespace
       
       title += " (using " + std::to_string(npeaksused) + " of " + std::to_string(npeaks) + " peaks)";
       
+      if( m_allNoneSome )
+      {
+        if( npeaksused == npeaks )
+          m_allNoneSome->setCheckState( CheckState::Checked );
+        else if( npeaksused )
+          m_allNoneSome->setCheckState( CheckState::PartiallyChecked );
+        else
+          m_allNoneSome->setCheckState( CheckState::Unchecked );
+      }//if( m_allNoneSome )
+      
       setTitle( WString::fromUTF8(title) );
     }//void updateTitle()
     
@@ -271,7 +372,8 @@ namespace
       m_peaks( nullptr ),
       m_sources( nullptr ),
       m_background( nullptr ),
-      m_backgroundTxt( nullptr )
+      m_backgroundTxt( nullptr ),
+      m_allNoneSome( nullptr )
     {
       const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
       
@@ -319,11 +421,36 @@ namespace
         }//
       }//for( const int sample : samples )
       
+      std::shared_ptr<const Measurement> summed_meas;
+      if( samples.size()==1 && detnames.size()==1 )
+        summed_meas = meas->measurement( *begin(samples), detnames[0] );
+      if( !summed_meas )
+        summed_meas = meas->sum_measurements( samples, meas->detector_numbers() );
+      
+      //ToDo: inprinciple summed_meas->live_time() should equal livetime; should check
+      
+      int npeaks = 0;
       for( auto peak : *peaks )
       {
-        DrfPeak *p = new DrfPeak( peak, livetime, m_peaks );
+        DrfPeak *p = new DrfPeak( peak, livetime, summed_meas, m_peaks );
+        ++npeaks;
         p->m_useCb->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
+        if( p->m_userBr )
+        {
+          p->m_userBr->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
+          p->m_userBr->enterPressed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
+        }
+      }//for( auto peak : *peaks )
+      
+      
+      if( npeaks > 1 )
+      {
+        m_allNoneSome = new WCheckBox( "All Peaks", titleBarWidget() );
+        m_allNoneSome->clicked().preventPropagation();
+        m_allNoneSome->addStyleClass( "DrfSpecFileAllNoneSomeCb" );
+        m_allNoneSome->changed().connect( this, &DrfSpecFileSample::handleUserToggleAllNoneSum );
       }
+      
       
       refreshSourcesVisible();
       
@@ -499,9 +626,35 @@ namespace
         }
         
       }//if( samples.size() == 1 )
-      
     }//DrfSpecFileSample constructor
     
+    void handleUserToggleAllNoneSum()
+    {
+      assert( m_allNoneSome );
+      
+      bool useAll = true;
+      switch( m_allNoneSome->checkState() )
+      {
+        case Wt::Checked:   useAll = true;  break;
+        case Wt::Unchecked: useAll = false; break;
+        case Wt::PartiallyChecked:
+          return;
+      }//switch( m_allNoneSome->checkState() )
+      
+      
+      for( auto w : m_peaks->children() )
+      {
+        auto p = dynamic_cast<DrfPeak *>( w );
+        if( p )
+        {
+          p->m_useCb->setChecked( useAll );
+          if( p->m_userBr )
+            p->m_userBr->setHidden( !useAll );
+        }
+      }//for( auto w : m_peaks->children() )
+      
+      refreshSourcesVisible();
+    }//void handleUserToggleAllNoneSum()
     
     void refreshSourcesVisible()
     {
@@ -1135,8 +1288,8 @@ void MakeDrf::handleSourcesUpdates()
   
   const int numPeaks = static_cast<int>( peaks.size() );
   const int currentOrder = m_effEqnOrder->currentIndex();
-  
   const int nCurrentOrders = m_effEqnOrder->count();
+  
   if( nCurrentOrders == 8 && numPeaks >= 8 )
   {
     //Dont need to do anything
@@ -1145,11 +1298,19 @@ void MakeDrf::handleSourcesUpdates()
     m_effEqnOrder->clear();
     for( int order = 0; order < numPeaks && order < 8; ++order )
       m_effEqnOrder->addItem( std::to_string(order+1) + " Fit Params"  );
+    m_effEqnOrder->refresh();
+    
     if( currentOrder > 0 )
-      m_effEqnOrder->setCurrentIndex( currentOrder );
-    else if( numPeaks )
-      m_effEqnOrder->setCurrentIndex( std::min(numPeaks,6) ); //Default to 6
-    else
+    {
+      if( (currentOrder < (numPeaks/2)) && (currentOrder < 5) )
+        m_effEqnOrder->setCurrentIndex( std::min(numPeaks/2,5) );
+      else
+        m_effEqnOrder->setCurrentIndex( currentOrder );
+    }else if( numPeaks )
+    {
+      const int index = std::min(numPeaks-1,6); //Default to 6.
+      m_effEqnOrder->setCurrentIndex( index );
+    }else
       m_effEqnOrder->setCurrentIndex( -1 );
   }//
   

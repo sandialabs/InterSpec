@@ -36,10 +36,38 @@
 }
 
 .DrfPeakInfoTxt {
-  
+  padding-left: 2em;
 }
 
 .DrfPeakBackSubTxt {
   padding-left: 2em;
   font-style: italic;
+}
+
+.DrfPeakNoNucBrLbl {
+  padding-left: 2em;
+}
+
+.DrfSpecFileAllNoneSomeCb {
+  float: right;
+}
+
+.DrfPeakShowChart, .DrfPeakShowChart:hover {
+  background: none;
+  border: none;
+  outline: none;
+  padding: 0;
+  -webkit-border-radius: 0px;
+  border-radius: 0px;
+  height: 16px;
+  position: absolute;
+  right: 20px;
+}
+
+.DrfPeakShowChart.active {
+  background: rgba(185,185,185,0.80);
+}
+
+.DrfPeakChart {
+  
 }

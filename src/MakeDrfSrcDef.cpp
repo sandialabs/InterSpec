@@ -523,7 +523,17 @@ double MakeDrfSrcDef::fractionalActivityUncertainty() const
   switch( m_activityUncertainty->validate() )
   {
     case WValidator::State::Invalid:
+    {
+      //We actually get here if the value is asked for if we have the same
+      //  main Wt threadlock as when m_activityUncertainty is created; So we
+      //  will, check if the uncertainty string is about what we initially set
+      //  it to ("0.0 %"), and if so, just return zero.
+      const string value = m_activityUncertainty->valueText().toUTF8();
+      if( UtilityFunctions::istarts_with( value, "0.0 ") )
+        return 0.0;
+      
       throw runtime_error( "Activity Uncertainty Invalid" );
+    }
       
     case WValidator::State::InvalidEmpty:
       return 0.0;

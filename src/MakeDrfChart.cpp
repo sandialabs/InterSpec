@@ -47,8 +47,10 @@ namespace
   const int sm_data_fwhm_col = 2;
   const int sm_equation_eff_col = 3;
   const int sm_equation_fwhm_col = 4;
+  const int sm_equation_eff_neg_uncert_col = 5; //Currently set data for this, but not displaying pending validation of values
+  const int sm_equation_eff_pos_uncert_col = 6; //Currently set data for this, but not displaying pending validation of values
   
-  const int sm_num_model_cols = 5;
+  const int sm_num_model_cols = 7;
   /** The first `sm_num_eqn_energy_rows` rows in the model will all be points
    to chart the effificency and FWHM equations.  After that there will be
    MakeDrfChart::m_datapoints.size() more rows to represent the actual data
@@ -103,6 +105,20 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   eqn_eff_series.setMarker( Wt::Chart::MarkerType::NoMarker );
   addSeries( eqn_eff_series );
   
+  //For the moment we wont show the errors since I havent verified they are actually reasonable and correct
+  /*
+  Chart::WDataSeries eqn_eff_neg_uncert_series( sm_equation_eff_neg_uncert_col, Chart::SeriesType::CurveSeries, Chart::YAxis );
+  eqn_eff_neg_uncert_series.setMarker( Wt::Chart::MarkerType::NoMarker );
+  eqn_eff_neg_uncert_series.setPen( WPen(Wt::green) );
+  addSeries( eqn_eff_neg_uncert_series );
+  
+  Chart::WDataSeries eqn_eff_pos_uncert_series( sm_equation_eff_pos_uncert_col, Chart::SeriesType::CurveSeries, Chart::YAxis );
+  eqn_eff_pos_uncert_series.setMarker( Wt::Chart::MarkerType::NoMarker );
+  eqn_eff_pos_uncert_series.setPen( WPen(Wt::red) );
+  addSeries( eqn_eff_pos_uncert_series );
+  */
+  
+  
   Chart::WDataSeries data_fwhm_series( sm_data_fwhm_col, Chart::SeriesType::PointSeries, Chart::Y2Axis );
   data_fwhm_series.setMarker( Chart::MarkerType::XCrossMarker );
   data_fwhm_series.setMarkerSize( 6 );
@@ -111,11 +127,6 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   Chart::WDataSeries eqn_fwhm_series( sm_equation_fwhm_col, Chart::SeriesType::CurveSeries, Chart::Y2Axis );
   eqn_fwhm_series.setMarker( Wt::Chart::MarkerType::NoMarker );
   addSeries( eqn_fwhm_series );
-  
-  //axis(Chart::XAxis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue/* | Chart::ZeroValue*/ );
-  //axis(Chart::YAxis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
-  //axis(Chart::Y2Axis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
-  //axis(Chart::XAxis).setRoundLimits(...)
   
   setPlotAreaPadding(0, Wt::Top);
   setPlotAreaPadding(60, Wt::Bottom);
@@ -139,6 +150,8 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   m->setHeaderData( sm_data_eff_col, Wt::Horizontal, boost::any(WString("Data Intrinsic Eff.")), Wt::DisplayRole );
   m->setHeaderData( sm_data_fwhm_col, Wt::Horizontal, boost::any(WString("Data FWHM")), Wt::DisplayRole );
   m->setHeaderData( sm_equation_eff_col, Wt::Horizontal, boost::any(WString("Fit Intrinsic Eff.")), Wt::DisplayRole );
+  m->setHeaderData( sm_equation_eff_neg_uncert_col, Wt::Horizontal, boost::any(WString("Intrinsic Eff. +2&#963;")), Wt::DisplayRole );
+  m->setHeaderData( sm_equation_eff_pos_uncert_col, Wt::Horizontal, boost::any(WString("Fit Intrinsic Eff. -2&#963;")), Wt::DisplayRole );
   m->setHeaderData( sm_equation_fwhm_col, Wt::Horizontal, boost::any(WString("Fit FWHM")), Wt::DisplayRole );
   
   setLegendEnabled( true );
@@ -330,7 +343,11 @@ void MakeDrfChart::updateEffEquationToModel()
       return;
     
     for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
+    {
       m->setData( row, sm_equation_eff_col, boost::any() );
+      m->setData( row, sm_equation_eff_pos_uncert_col, boost::any() );
+      m->setData( row, sm_equation_eff_neg_uncert_col, boost::any() );
+    }
     return;
   }//if( no equation )
   
@@ -344,12 +361,51 @@ void MakeDrfChart::updateEffEquationToModel()
     if( std::isnan(eff) || std::isinf(eff) )
     {
       m->setData( row, sm_equation_eff_col, boost::any() );
+      m->setData( row, sm_equation_eff_pos_uncert_col, boost::any() );
+      m->setData( row, sm_equation_eff_neg_uncert_col, boost::any() );
     }else
     {
       m->setData( row, sm_equation_eff_col, boost::any(eff) );
-      //ToDo: go through and set eff lower and uncertainty values
-    }
+      
+      boost::any lowerval, upperval;
+      
+      if( m_efficiencyCoefUncerts.size() == m_efficiencyCoefs.size() )
+      {
+        double neguncert = 0.0, posuncert = 0.0;
+        
+        for( size_t i = 0; i < m_efficiencyCoefUncerts.size(); ++i )
+        {
+          const float orig = m_efficiencyCoefs[i];
+          m_efficiencyCoefs[i] = orig + 2.0f*m_efficiencyCoefUncerts[i];
+          const double plus = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy*units, m_efficiencyCoefs ) - eff;
+          m_efficiencyCoefs[i] = orig - 2.0f*m_efficiencyCoefUncerts[i];
+          const double minus = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy*units, m_efficiencyCoefs ) - eff;
+          m_efficiencyCoefs[i] = orig;
+          if( plus > 0.0 )
+            posuncert += plus*plus;
+          else
+            neguncert += plus*plus;
+          if( minus > 0.0 )
+            posuncert += minus*minus;
+          else
+            neguncert += minus*minus;
+        }//for( size_t i = 0; i < m_efficiencyCoefUncerts.size(); ++i )
+        
+        posuncert = sqrt(posuncert);
+        neguncert = sqrt(neguncert);
+        
+        if( std::isnan(posuncert) || std::isinf(posuncert) )
+          upperval = boost::any( eff + posuncert );
+        if( std::isnan(neguncert) || std::isinf(neguncert) )
+          lowerval = boost::any( eff - neguncert );
+      }//if( we have uncertainties )
+      
+      m->setData( row, sm_equation_eff_pos_uncert_col, upperval );
+      m->setData( row, sm_equation_eff_neg_uncert_col, lowerval );
+    }//if( valid eff value ) / else
   }//for( loop over eqn rows )
+  
+  
 }//void updateEffEquationToModel()
 
 
@@ -362,7 +418,7 @@ void MakeDrfChart::updateFwhmEquationToModel()
   if( ((m_fwhmEqnType==FwhmCoefType::Gadras) && m_fwhmCoefs.size() != 3)
      || (m_fwhmEqnType==FwhmCoefType::SqrtEqn && m_fwhmCoefs.size() < 2) )
   {
-    if( m->data(0, sm_equation_eff_col).empty() )  //
+    if( m->data(0, sm_equation_fwhm_col).empty() )  //
       return;
     
     for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
