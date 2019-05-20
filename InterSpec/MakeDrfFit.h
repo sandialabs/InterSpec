@@ -43,14 +43,23 @@ namespace MakeDrfFit
     Currently for kSqrtPolynomial, only the first two coefficients (A1 and A2)
     are fit for.
    
+    @param sqrtEqnOrder Only used if fnctnlForm==DetectorPeakResponse::kSqrtPolynomial
+   
     Throws exception on error with a kinda explanatory message.
   */
   void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
                              const size_t num_gamma_channels,
                              const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                             const int sqrtEqnOrder,
                              std::vector<float> &result,
                              std::vector<float> &uncerts );
   
+  /** Fits the FWHM as a sqrt( Sum_i {A_i *pow(x,i)} )
+   */
+  double fit_fwhm_least_linear_squares( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
+                                       const int order,
+                                       std::vector<float> &coeffs,
+                                       std::vector<float> &coeff_uncerts );
   
   double peak_width_chi2( double predicted_sigma, const PeakDef &peak );
   
