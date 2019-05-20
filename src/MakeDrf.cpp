@@ -839,7 +839,7 @@ namespace
 
 
 MakeDrfWindow::MakeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSuggestionPopup *materialSuggest )
-  : AuxWindow( "Create DRF",
+  : AuxWindow( "Create Detector Response Function",
   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
   | AuxWindowProperties::SetCloseable
   | AuxWindowProperties::DisableCollapse) ),
@@ -888,11 +888,13 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter( nullptr ),
   m_showFwhmPoints( nullptr ),
   m_fwhmEqnType( nullptr ),
+  m_sqrtEqnOrder( nullptr ),
   m_effEqnOrder( nullptr ),
   m_effEqnUnits( nullptr ),
   m_chartLowerE( nullptr ),
   m_chartUpperE( nullptr ),
   m_errorMsg( nullptr ),
+  m_intrinsicEffAnswer( nullptr ),
   m_fwhmFitId( 0 ),
   m_effEqnFitId( 0 )
 {
@@ -926,7 +928,12 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_fwhmEqnType->addItem( "Gadras Eqation" );
   m_fwhmEqnType->addItem( "Sqrt Power Series" );
   m_fwhmEqnType->setCurrentIndex( 0 );
-  m_fwhmEqnType->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_fwhmEqnType->changed().connect( this, &MakeDrf::handleFwhmTypeChanged );
+  
+  m_sqrtEqnOrder = new WComboBox( fitOptionsDiv );
+  m_sqrtEqnOrder->setInline( false );
+  m_sqrtEqnOrder->hide();
+  m_sqrtEqnOrder->changed().connect( this, &MakeDrf::handleSqrtEqnOrderChange );
   
   
   m_effEqnOrder = new WComboBox( fitOptionsDiv );
@@ -985,12 +992,18 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_files->setMaximumSize( WLength::Auto, std::max((wh - chartHeight - 150), 250) );
   m_files->setOverflow( Overflow::OverflowAuto, Wt::Vertical );
   
-  m_errorMsg = new WText( "" );
+  m_errorMsg = new WText( "", Wt::XHTMLText );
   m_errorMsg->addStyleClass( "MakeDrfErrTxt" );
   layout->addWidget( m_errorMsg, 1, 0, 1, 2 );
   m_errorMsg->hide();
   
-  layout->addWidget( m_files, 2, 0, 1, 2 );
+  
+  m_intrinsicEffAnswer = new WText( "", Wt::XHTMLText );
+  m_intrinsicEffAnswer->addStyleClass( "MakeDrfEqnAnswer" );
+  layout->addWidget( m_intrinsicEffAnswer, 2, 0, 1, 2 );
+  m_intrinsicEffAnswer->hide();
+  
+  layout->addWidget( m_files, 3, 0, 1, 2 );
   
   //layout->setRowStretch( 0, 1 );
   //layout->setRowStretch( 1, 3 );
@@ -1298,12 +1311,13 @@ void MakeDrf::handleSourcesUpdates()
     m_effEqnOrder->clear();
     for( int order = 0; order < numPeaks && order < 8; ++order )
       m_effEqnOrder->addItem( std::to_string(order+1) + " Fit Params"  );
-    m_effEqnOrder->refresh();
     
     if( currentOrder > 0 )
     {
       if( (currentOrder < (numPeaks/2)) && (currentOrder < 5) )
         m_effEqnOrder->setCurrentIndex( std::min(numPeaks/2,5) );
+      else if( currentOrder >= numPeaks )
+        m_effEqnOrder->setCurrentIndex( numPeaks-1 );
       else
         m_effEqnOrder->setCurrentIndex( currentOrder );
     }else if( numPeaks )
@@ -1314,12 +1328,75 @@ void MakeDrf::handleSourcesUpdates()
       m_effEqnOrder->setCurrentIndex( -1 );
   }//
   
+  const int currentSqrtOrder = m_effEqnOrder->currentIndex();
+  const int nCurrentSqrtOrders = m_sqrtEqnOrder->count();
+  if( nCurrentSqrtOrders==6 && numPeaks>=6 )
+  {
+    //Dont need to do anything
+  }else if( nCurrentSqrtOrders != numPeaks )
+  {
+    m_sqrtEqnOrder->clear();
+    for( int order = 0; order < numPeaks && order < 6; ++order )
+      m_sqrtEqnOrder->addItem( "Order " + std::to_string(order) + " FWHM"  );
+    
+    if( currentSqrtOrder > 0 )
+    {
+      if( (currentSqrtOrder < (numPeaks/2)) && (currentSqrtOrder < 4) )
+        m_sqrtEqnOrder->setCurrentIndex( std::min(numPeaks/2,4) );
+      else if( currentSqrtOrder >= numPeaks )
+        m_sqrtEqnOrder->setCurrentIndex( numPeaks-1 );
+      else
+        m_sqrtEqnOrder->setCurrentIndex( nCurrentSqrtOrders );
+    }else if( numPeaks )
+    {
+      const int index = std::min(numPeaks-1,4); //Default to 5 fit params.
+      m_sqrtEqnOrder->setCurrentIndex( index );
+    }else
+      m_sqrtEqnOrder->setCurrentIndex( -1 );
+  }//
   
   m_chart->setDataPoints( datapoints, diameter, minenergy, maxenergy );
   
   fitEffEqn( effpoints );
   fitFwhmEqn( peaks, numchan );
 }//void handleSourcesUpdates()
+
+
+void MakeDrf::handleFwhmTypeChanged()
+{
+  switch( m_fwhmEqnType->currentIndex() )
+  {
+    case 0:
+      m_sqrtEqnOrder->hide();
+      break;
+      
+    case 1:
+      m_sqrtEqnOrder->show();
+      break;
+  }//switch( m_fwhmEqnType->currentIndex() )
+  
+  //We could update *just* the FWHM equation like:
+  //size_t numchan = 0;
+  //vector< std::shared_ptr<const PeakDef> > peaks;
+  // ... get peaks and numchan ...
+  //fitFwhmEqn( peaks, numchan );
+  //But instead we'll be lazy and update everything
+  
+  handleSourcesUpdates();
+}//void handleFwhmTypeChanged()
+
+
+void MakeDrf::handleSqrtEqnOrderChange()
+{
+  //We could update *just* the FWHM equation like:
+  //size_t numchan = 0;
+  //vector< std::shared_ptr<const PeakDef> > peaks;
+  // ... get peaks and numchan ...
+  //fitFwhmEqn( peaks, numchan );
+  //But instead we'll be lazy and update everything
+  
+  handleSourcesUpdates();
+}//void handleSqrtEqnOrderChange()
 
 
 void MakeDrf::handleShowFwhmPointsToggled()
@@ -1349,6 +1426,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
                                 MakeDrfChart::FwhmCoefType::Gadras,
                                 MakeDrfChart::EqnEnergyUnits::keV );
 
+  int sqrtEqnOrder = -1;
   DetectorPeakResponse::ResolutionFnctForm fnctnlForm;
   
   switch( m_fwhmEqnType->currentIndex() )
@@ -1359,17 +1437,19 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
       
     case 1:
       fnctnlForm = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      sqrtEqnOrder = m_sqrtEqnOrder->currentIndex() + 1;
       break;
       
     default:
       return;
   }//switch( m_fwhmEqnType->currentIndex() )
   
+  
   //ToDo: I'm not entirely sure the next line protects against updateFwhmEqn()
   //  not being called if this widget is deleted before fit is done.
   auto updater = boost::bind( &MakeDrf::updateFwhmEqn, this, _1, _2, static_cast<int>(fnctnlForm), fitid );
   
-  auto worker = [sessionId,fnctnlForm,peaks,num_gamma_channels,updater]() {
+  auto worker = [sessionId,fnctnlForm,peaks,num_gamma_channels,sqrtEqnOrder,updater]() {
     try
     {
       auto peakdequ = std::make_shared<std::deque< std::shared_ptr<const PeakDef> > >( peaks.begin(), peaks.end() );
@@ -1377,7 +1457,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
       //Takes between 5 and 500ms for a HPGe detector
       const double start_time = UtilityFunctions::get_wall_time();
       vector<float> fwhm_coefs, fwhm_coefs_uncert;
-      MakeDrfFit::performResolutionFit( peakdequ, num_gamma_channels, fnctnlForm, fwhm_coefs, fwhm_coefs_uncert );
+      MakeDrfFit::performResolutionFit( peakdequ, num_gamma_channels, fnctnlForm, sqrtEqnOrder, fwhm_coefs, fwhm_coefs_uncert );
     
       const double end_time = UtilityFunctions::get_wall_time();
     
@@ -1444,7 +1524,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   m_effEqnCoefs.clear();
   m_effEqnCoefUncerts.clear();
   m_chart->setEfficiencyCoefficients( m_effEqnCoefs, m_effEqnCoefUncerts, MakeDrfChart::EqnEnergyUnits::keV );
-  
+  m_intrinsicEffAnswer->setText( "" );
   
   const int eqnOrderIndex = m_effEqnOrder->currentIndex();
   if( data.empty() )
@@ -1465,7 +1545,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   
   //ToDo: I'm not entirely sure the next line protects against updateEffEqn()
   //  not being called if this widget is deleted before fit is done.
-  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, _1, _2, fitid );
+  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, _1, _2, fitid, _3 );
   
   auto worker = [sessionId,data,nfitpars,updater]() {
     try
@@ -1484,11 +1564,15 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
       cout << "}; took " << (end_time-start_time) << " seconds" << endl;
       
       WServer::instance()->post( sessionId, std::bind( [updater,result,uncerts](){
-        updater( result, uncerts );
+        updater( result, uncerts, string("") );
       } ) );
     }catch( std::exception &e )
     {
-      cout << "Failed to fit intrinsic eff coefs: " << e.what() << endl;
+      const string errmsg = e.what();
+      cout << "Failed to fit intrinsic eff coefs: " << errmsg << endl;
+      WServer::instance()->post( sessionId, std::bind( [updater,errmsg](){
+        updater( vector<float>(), vector<float>(), errmsg );
+      } ) );
     }//try / catch fit FWHM
   };
   
@@ -1496,7 +1580,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
 }//void fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
 
 
-void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid )
+void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid, const string errmsg )
 {
   const bool isMeV = (m_effEqnUnits->currentIndex()==1);
   const auto units = (isMeV ? MakeDrfChart::EqnEnergyUnits::MeV : MakeDrfChart::EqnEnergyUnits::keV);
@@ -1504,6 +1588,53 @@ void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts
   m_effEqnCoefs = coefs;
   m_effEqnCoefUncerts = uncerts;
   m_chart->setEfficiencyCoefficients( coefs, uncerts, units );
+  
+  if( !errmsg.empty() )
+  {
+    m_intrinsicEffAnswer->setText( "" );
+    m_intrinsicEffAnswer->setHidden( true );
+    string errormsg = m_errorMsg->text().toUTF8();
+    const bool hadErrorMsg = !errormsg.empty();
+    if( hadErrorMsg )
+      errormsg = "<div>" + errormsg + "</div><div>";
+    errormsg += errormsg;
+    if( hadErrorMsg )
+      errormsg = "</div>";
+    m_errorMsg->setText( WString::fromUTF8(errormsg) );
+    m_errorMsg->setHidden( false );
+  }
+  
+  if( coefs.size() > 1 )
+  {
+    string eqn = "Eff<sub>int.</sub>(x) = exp( ";
+    for( size_t i = 0; i < coefs.size(); ++i )
+    {
+      const float val = fabs(coefs[i]);
+      char buffer[64] = {'\0'};
+      
+      //We will print to 5 significant digits, AFTER the decimal place since
+      //  this is a sum of terms.
+      const string frmtstr = (val > 1.0) ? ("%." + std::to_string( static_cast<int>(std::ceil(std::log10(val)))+5 ) + "g") : string("%.5g");
+      snprintf( buffer, sizeof(buffer), frmtstr.c_str(), val );
+      
+      eqn += (coefs[i]>=0.0) ? "+" : "-";
+      eqn += i ? " " : "";
+      eqn += buffer;
+      eqn += i ? "*log(x)" : "";
+      eqn += (i > 1) ? ("<sup>" + std::to_string(i) + "</sup> ") : string(" ");
+    }
+    eqn += ")";
+    
+    //eqn += " (x in ";
+    //eqn += (isMeV ? "MeV)" : "keV)");
+    
+    m_intrinsicEffAnswer->setText( eqn );
+    m_intrinsicEffAnswer->setHidden( false );
+  }else
+  {
+    m_intrinsicEffAnswer->setText( "" );
+    m_intrinsicEffAnswer->setHidden( true );
+  }//if( coefs.size() > 1 ) / else
   
   wApp->triggerUpdate();
 }//void updateEffEqn(...)

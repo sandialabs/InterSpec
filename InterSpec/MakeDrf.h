@@ -72,6 +72,8 @@ public:
   
 protected:
   void handleSourcesUpdates();
+  void handleSqrtEqnOrderChange();
+  void handleFwhmTypeChanged();
   void handleShowFwhmPointsToggled();
   void chartEnergyRangeChangedCallback( double lower, double upper );
   
@@ -82,7 +84,9 @@ protected:
                       const int fitid );
   
   void fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data );
-  void updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid );
+  
+  /** Error message is not empty, only when there is an error. */
+  void updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid, const std::string errormsg );
   
   InterSpec *m_interspec;
   MaterialDB *m_materialDB;
@@ -98,6 +102,8 @@ protected:
   
   Wt::WComboBox *m_fwhmEqnType;
   
+  Wt::WComboBox *m_sqrtEqnOrder;
+  
   Wt::WComboBox *m_effEqnOrder;
   
   Wt::WComboBox *m_effEqnUnits;
@@ -109,6 +115,7 @@ protected:
   Wt::WDoubleSpinBox *m_chartUpperE;
   
   Wt::WText *m_errorMsg;
+  Wt::WText *m_intrinsicEffAnswer;
   
   /** Identifies current fit for FWHM.  Fits are done in an auxilary thread,
    and the user may change things before the fit is done, and some fits take a

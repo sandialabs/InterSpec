@@ -1360,16 +1360,21 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       
     case kSqrtPolynomial:
     {
-      if( pars.size() < 2 )
+      if( pars.size() < 1 )
         throw runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
                              " pars not defined" );
-      const float A1 = pars[0];
-      const float A2 = pars[1];
-      const float A3 = pars.size()>2 ? pars[2] : 0.0f;
-      const float A4 = pars.size()>3 ? pars[3] : 0.5f;
+      //const float A1 = pars[0];
+      //const float A2 = pars[1];
+      //const float A3 = pars.size()>2 ? pars[2] : 0.0f;
+      //const float A4 = pars.size()>3 ? pars[3] : 0.5f;
       
       energy /= PhysicalUnits::MeV;
-      return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
+      //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
+      
+      double val = 0.0;
+      for( size_t i = 0; i < pars.size(); ++i )
+        val += pars[i] * pow(energy, static_cast<float>(i) );
+      return sqrt( val );
     }//case kSqrtPolynomial:
       
     case kNumResolutionFnctForm:
@@ -1497,11 +1502,16 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
     throw runtime_error( "DetectorPeakResponse::fitResolution(...): invalid input" );
   
   const size_t numchan = meas ? meas->num_gamma_channels() : 0;
+  int sqrtEqnOrder = peaks->size() / 2;
+  if( sqrtEqnOrder > 6 )
+    sqrtEqnOrder = 6;
+  else if( peaks->size() < 3 )
+    sqrtEqnOrder = static_cast<int>( peaks->size() );
   
   vector<float> coefficients = m_resolutionCoeffs, uncerts;
-  MakeDrfFit::performResolutionFit( peaks, numchan, fnctnlForm, coefficients, uncerts );
+  MakeDrfFit::performResolutionFit( peaks, numchan, fnctnlForm, sqrtEqnOrder, coefficients, uncerts );
   peaks = removeOutlyingWidthPeaks( peaks, fnctnlForm, coefficients );
-  MakeDrfFit::performResolutionFit( peaks, numchan, fnctnlForm, coefficients, uncerts );
+  MakeDrfFit::performResolutionFit( peaks, numchan, fnctnlForm, sqrtEqnOrder, coefficients, uncerts );
   
   m_resolutionCoeffs = coefficients;
   m_resolutionForm = fnctnlForm;

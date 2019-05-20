@@ -426,7 +426,7 @@ void MakeDrfChart::updateFwhmEquationToModel()
     return;
   }//if( no equation )
   
-  const float units = ((m_fwhmEnergyUnits==EqnEnergyUnits::keV) ? 1.0f : 0.001f);
+  const float units = 1.0f; //For the moment always using keV  ((m_fwhmEnergyUnits==EqnEnergyUnits::keV) ? 1.0f : 0.001f);
   const auto eqnType = ((m_fwhmEqnType==FwhmCoefType::Gadras)
                        ? DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn
                        : DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial);

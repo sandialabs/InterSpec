@@ -71,3 +71,17 @@
 .DrfPeakChart {
   
 }
+
+
+.MakeDrfEqnAnswer {
+  margin: 10px;
+  padding-top: 11px;
+  height: 41px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: normal;
+  background: white;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  border-radius: 3px;
+}

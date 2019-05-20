@@ -186,10 +186,11 @@ namespace MakeDrfFit
   
 double peak_width_chi2( double predicted_sigma, const PeakDef &peak )
 {
-  double measured_sigma = peak.sigma();
-  double measured_sigma_uncert = peak.sigmaUncert();
-  if( measured_sigma_uncert <= 0.01 )
-    measured_sigma_uncert = 1.0;
+  const double measured_sigma = peak.sigma();
+  //double measured_sigma_uncert = peak.sigmaUncert();
+  //if( measured_sigma_uncert <= 0.01 )
+  //  measured_sigma_uncert = 1.0;
+  const double measured_sigma_uncert = ((peak.sigmaUncert() > 0.0) ? std::max( peak.sigmaUncert(), 0.01*measured_sigma) : 0.05*measured_sigma);
   
   const double chi = (measured_sigma - predicted_sigma)/measured_sigma_uncert;
   return chi*chi;
@@ -200,6 +201,7 @@ double peak_width_chi2( double predicted_sigma, const PeakDef &peak )
 void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
                            const size_t num_gamma_channels,
                            const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                           const int sqrtEqnOrder,
                            std::vector<float> &answer,
                            std::vector<float> &uncerts )
 {
@@ -217,7 +219,7 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
     highres = (ratio < 0.03); //whatever, this is JIC anyway
   }//if( !!meas ) / else
   
-  
+  bool sqrtSeriesLLS = false;
   double a_initial, b_initial, c_initial, d_initial;
   double lowerA, upperA, lowerB, upperB, lowerC, upperC;
   
@@ -268,39 +270,57 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
       
     case DetectorPeakResponse::kSqrtPolynomial:
     {
-      //FWHM = A + B*pow( energy/1E3 + C*energy*energy/1E4, D );
+      if( sqrtEqnOrder < 1 )
+        throw runtime_error( "performResolutionFit: sqrt eqn order should be at least 1" );
+        
       if( highres )
       {
-        //Based on a single detector
-        a_initial = 1.1;
+        //Based on pretty much nothing
+        a_initial = 2.6;
         lowerA = -2.5;
-        upperA = 5.0;
+        upperA = 7.5;
         
-        b_initial = 0.7 / sqrt(0.661);
-        lowerB = 0.0;
-        upperB = 5.0/sqrt(0.661);
+        b_initial = 1.0;
+        lowerB = -5.0;
+        upperB = 5.0;
         
-        c_initial = 0.04;
-        lowerC = 0.0;
-        upperC = 0.125;
+        c_initial = 0;
+        lowerC = -5.0;
+        upperC = 5.0;
       }else
       {
         //Based on zero detectors so far
-        a_initial = 10;
-        lowerA = -10;
-        upperA = 20;
+        a_initial = 100;
+        lowerA = -100;
+        upperA = 400;
         
-        b_initial = 60 / sqrt(0.661);
+        b_initial = 3600.0 / 0.661;
         lowerB = 0.0;
-        upperB = 180/sqrt(0.661);
+        upperB = 180*180 / 0.661;
         
-        c_initial = 0.04;
-        lowerC = 0.0;
-        upperC = 0.25;
+        c_initial = 0;
+        lowerC = -3600.0/(0.661*0.661);
+        upperC = 3600.0/(0.661*0.661);
       }//if( highres ) / else
       
-      d_initial = 0.5;
+      try
+      {
+        double chi2 = MakeDrfFit::fit_fwhm_least_linear_squares( *peaks, sqrtEqnOrder, answer, uncerts );
+        
+        assert( answer.size() == static_cast<int>(sqrtEqnOrder) );
+        cout << "MakeDrfFit::fit_fwhm_least_linear_squares got {";
+        for( size_t i = 0; i < answer.size(); ++i )
+          cout << answer[i] << "+-" << uncerts[i] << ", ";
+        cout << "}.  Chi2=" << chi2 << endl;
+        
+        sqrtSeriesLLS = true;
+      }catch( std::exception &e )
+      {
+        cerr << "MakeDrfFit::fit_fwhm_least_linear_squares threw exception: " << e.what() << endl;
+        
+      }//try / catch
       
+      d_initial = 0.0;
       break;
     }//case kSqrtPolynomial:
       
@@ -312,8 +332,6 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
       break;
   }//switch( fnctnlForm )
   
-  answer.clear();
-  uncerts.clear();
   
   //For high res we should only have to to this one fit
   //But for lowres detectors we should consider the cases of
@@ -347,18 +365,28 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
       
     case DetectorPeakResponse::kSqrtPolynomial:
     {
-      if( peaks->size() < 3 )
+      if( sqrtSeriesLLS )
       {
-        inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-        inputPrams.Add( "B", b_initial );
+        for( int order = 0; order < sqrtEqnOrder; ++order )
+        {
+          const string name = string("") + char('A' + order);
+          inputPrams.Add( name, answer[order], uncerts[order] );
+        }//for( int order = 0; order < sqrtEqnOrder; ++order )
       }else
       {
-        inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        if( peaks->size() > 3 )
-          inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
-        //inputPrams.Add( "D", 0.5, 0.05, 0.25, 0.75 );
-      }
+        if( peaks->size() < 3 )
+        {
+          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
+          inputPrams.Add( "B", b_initial );
+        }else
+        {
+          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
+          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
+          if( peaks->size() > 3 )
+            inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
+          //inputPrams.Add( "D", 0.5, 0.05, 0.25, 0.75 );
+        }
+      }//if( sqrtSeriesLLS )
       break;
     }//case kSqrtPolynomial:
       
@@ -435,8 +463,19 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
     scanpar( "A" );
   }//if( fitting_gad_a )
   
-
-  cerr << "FWHM final chi2=" << fitness.DoEval( fitParams.Params() ) << endl;
+  const double final_chi2 = fitness.DoEval( fitParams.Params() );
+  
+  cout << "FWHM final chi2=" << final_chi2 << endl;
+  if( sqrtSeriesLLS )
+  {
+    const double pre_chi2 = fitness.DoEval( vector<double>( begin(answer), end(answer) ) );
+    cout << "FWHM LLS chi2=" << pre_chi2 << endl;
+    if( pre_chi2 < final_chi2 )
+    {
+      cout << "Least Linear chi2 better than from Minuit, using that" << endl;
+      return;
+    }
+  }
   
   if( !minimum.IsValid() )
   {
@@ -455,8 +494,11 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
     throw std::runtime_error( msg.str() );
   }//if( !minimum.IsValid() )
   
+  answer.clear();
+  uncerts.clear();
+  
   for( size_t i = 0; i < fitParams.Params().size(); ++i )
-    cout << "\tFit Par" << i << "=" << fitParams.Params()[i] << endl;
+    cout << "\tMinuit fit FWHM Par_" << i << "=" << fitParams.Params()[i] << endl;
   
   for( const double p : fitParams.Params() )
     answer.push_back( static_cast<float>(p) );
@@ -466,90 +508,169 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
 }//std::vector<float> performResolutionFit(...)
 
 
-  template<class T>
-  bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
+template<class T>
+bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
                      boost::numeric::ublas::matrix<T> &inverse )
-  {
-    using namespace boost::numeric;
-    ublas::matrix<T> A( input );
-    ublas::permutation_matrix<std::size_t> pm( A.size1() );
-    const size_t res = lu_factorize(A, pm);
-    if( res != 0 )
-      return false;
-    inverse.assign( ublas::identity_matrix<T>( A.size1() ) );
-    lu_substitute(A, pm, inverse);
-    return true;
-  }//matrix_invert
+{
+  using namespace boost::numeric;
+  ublas::matrix<T> A( input );
+  ublas::permutation_matrix<std::size_t> pm( A.size1() );
+  const size_t res = lu_factorize(A, pm);
+  if( res != 0 )
+    return false;
+  inverse.assign( ublas::identity_matrix<T>( A.size1() ) );
+  lu_substitute(A, pm, inverse);
+  return true;
+}//matrix_invert
   
-  double fit_intrinsic_eff_least_linear_squares( const std::vector<DetEffDataPoint> data,
+  
+double fit_fwhm_least_linear_squares( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
+                                      const int order,
+                                      std::vector<float> &coeffs,
+                                      std::vector<float> &coeff_uncerts )
+{
+  const size_t nbin = peaks.size();
+  
+  if( order < 1 )
+    throw runtime_error( "fit_fwhm_least_linear_squares: order must be >= 1" );
+  
+  if( !nbin )
+    throw runtime_error( "fit_fwhm_least_linear_squares: must have at least 1 input peak" );
+  
+  if( nbin < static_cast<size_t>(order) )
+    throw runtime_error( "fit_fwhm_least_linear_squares: must have at least as many peaks as orders to fit to" );
+  
+  //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3, where x is energy in MeV
+  vector<float> x, widths, widths_uncert;
+  x.resize( peaks.size() );
+  widths.resize( peaks.size() );
+  widths_uncert.resize( peaks.size() );
+  for( size_t i = 0; i < peaks.size(); ++i )
+  {
+    x[i] = peaks[i]->mean() / 1000.0f;
+    widths[i] = peaks[i]->fwhm();
+    widths_uncert[i] = 2.35482*((peaks[i]->sigmaUncert() > 0.0) ? std::max( peaks[i]->sigmaUncert(), 0.01*widths[i]) : 0.05*widths[i]);
+  }
+  
+  //General Linear Least Squares fit
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation is quite inneficient.
+  using namespace boost::numeric;
+  
+  ublas::matrix<double> A( nbin, order );
+  ublas::vector<double> b( nbin );
+  
+  for( size_t row = 0; row < nbin; ++row )
+  {
+    const double data_y = widths[row] * widths[row];
+    const double data_y_uncert = widths_uncert[row] * widths_uncert[row];
+    
+    b(row) = data_y / data_y_uncert;
+    for( int col = 0; col < order; ++col )
+      A(row,col) = std::pow( x[row], double(col)) / data_y_uncert;
+  }//for( int col = 0; col < order; ++col )
+  
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  const ublas::matrix<double> alpha = prod( A_transpose, A );
+  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+  const bool success = matrix_invert( alpha, C );
+  if( !success )
+    throw runtime_error( "fit_fwhm_least_linear_squares(...): trouble inverting matrix" );
+  
+  const ublas::vector<double> beta = prod( A_transpose, b );
+  const ublas::vector<double> a = prod( C, beta );
+  
+  coeffs.resize( order );
+  coeff_uncerts.resize( order );
+  for( int coef = 0; coef < order; ++coef )
+  {
+    coeffs[coef] = static_cast<float>( a(coef) );
+    coeff_uncerts[coef] = static_cast<float>( C(coef,coef) );
+  }//for( int coef = 0; coef < order; ++coef )
+  
+  double chi2 = 0;
+  for( size_t bin = 0; bin < nbin; ++bin )
+  {
+    double y_pred = 0.0;
+    for( int i = 0; i < order; ++i )
+      y_pred += a(i) * std::pow( x[bin], static_cast<double>(i) );
+    y_pred = sqrt( y_pred );
+    chi2 += std::pow( (y_pred - widths[bin]) / widths_uncert[bin], 2.0 );
+  }//for( int bin = 0; bin < nbin; ++bin )
+  
+  return chi2;
+}//double fit_fwhm_least_linear_squares(...)
+  
+  
+double fit_intrinsic_eff_least_linear_squares( const std::vector<DetEffDataPoint> data,
                             const int order,
                            std::vector<float> &coeffs,
                            std::vector<float> &coeff_uncerts )
-  {
-    const size_t nbin = data.size();
-    
-    //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3
-    vector<float> x, effs, effs_uncert;
-    x.resize( data.size() );
-    effs.resize( data.size() );
-    effs_uncert.resize( data.size() );
-    for( size_t i = 0; i < data.size(); ++i )
-    {
-      x[i] = data[i].energy;
-      effs[i] = data[i].efficiency;
-      effs_uncert[i] = data[i].efficiency_uncert;
-    }
-    
-    
-    //General Linear Least Squares fit
-    //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-    //Implementation is quite inneficient
-    //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3 + ...
-    using namespace boost::numeric;
+{
+  const size_t nbin = data.size();
   
-    ublas::matrix<double> A( nbin, order );
-    ublas::vector<double> b( nbin );
+  //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3
+  vector<float> x, effs, effs_uncert;
+  x.resize( data.size() );
+  effs.resize( data.size() );
+  effs_uncert.resize( data.size() );
+  for( size_t i = 0; i < data.size(); ++i )
+  {
+    x[i] = data[i].energy;
+    effs[i] = data[i].efficiency;
+    effs_uncert[i] = data[i].efficiency_uncert;
+  }
+  
+  
+  //General Linear Least Squares fit
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation is quite inneficient
+  //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3 + ...
+  using namespace boost::numeric;
+  
+  ublas::matrix<double> A( nbin, order );
+  ublas::vector<double> b( nbin );
+  
+  for( size_t row = 0; row < nbin; ++row )
+  {
+    const double data_y = log(effs[row]);
+    const double data_y_uncert = fabs( log(effs_uncert[row]) );
     
-    for( size_t row = 0; row < nbin; ++row )
-    {
-      const double data_y = log(effs[row]);
-      const double data_y_uncert = fabs( log(effs_uncert[row]) );
-      
-      b(row) = data_y / data_y_uncert;
-      for( int col = 0; col < order; ++col )
-        A(row,col) = std::pow( log(x[row]), double(col)) / data_y_uncert;
-    }//for( int col = 0; col < order; ++col )
-    
-    const ublas::matrix<double> A_transpose = ublas::trans( A );
-    const ublas::matrix<double> alpha = prod( A_transpose, A );
-    ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-    const bool success = matrix_invert( alpha, C );
-    if( !success )
-      throw runtime_error( "fit_intrinsic_eff_least_linear_squares(...): trouble inverting matrix" );
-    
-    const ublas::vector<double> beta = prod( A_transpose, b );
-    const ublas::vector<double> a = prod( C, beta );
-    
-    coeffs.resize( order );
-    coeff_uncerts.resize( order );
-    for( int coef = 0; coef < order; ++coef )
-    {
-      coeffs[coef] = static_cast<float>( a(coef) );
-      coeff_uncerts[coef] = static_cast<float>( std::sqrt( C(coef,coef) ) );
-    }//for( int coef = 0; coef < order; ++coef )
-    
-    double chi2 = 0;
-    for( size_t bin = 0; bin < nbin; ++bin )
-    {
-      double y_pred = 0.0;
-      for( int i = 0; i < order; ++i )
-        y_pred += a(i) * std::pow( log(x[bin]), double(i) );
-      y_pred = exp( y_pred );
-      chi2 += std::pow( (y_pred - effs[bin]) / effs_uncert[bin], 2.0 );
-    }//for( int bin = 0; bin < nbin; ++bin )
-    
-    return chi2;
-  }//double fit_intrinsic_eff_least_linear_squares(...)
+    b(row) = data_y / data_y_uncert;
+    for( int col = 0; col < order; ++col )
+      A(row,col) = std::pow( log(x[row]), double(col)) / data_y_uncert;
+  }//for( int col = 0; col < order; ++col )
+  
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  const ublas::matrix<double> alpha = prod( A_transpose, A );
+  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+  const bool success = matrix_invert( alpha, C );
+  if( !success )
+    throw runtime_error( "fit_intrinsic_eff_least_linear_squares(...): trouble inverting matrix" );
+  
+  const ublas::vector<double> beta = prod( A_transpose, b );
+  const ublas::vector<double> a = prod( C, beta );
+  
+  coeffs.resize( order );
+  coeff_uncerts.resize( order );
+  for( int coef = 0; coef < order; ++coef )
+  {
+    coeffs[coef] = static_cast<float>( a(coef) );
+    coeff_uncerts[coef] = static_cast<float>( std::sqrt( C(coef,coef) ) );
+  }//for( int coef = 0; coef < order; ++coef )
+  
+  double chi2 = 0;
+  for( size_t bin = 0; bin < nbin; ++bin )
+  {
+    double y_pred = 0.0;
+    for( int i = 0; i < order; ++i )
+      y_pred += a(i) * std::pow( log(x[bin]), double(i) );
+    y_pred = exp( y_pred );
+    chi2 += std::pow( (y_pred - effs[bin]) / effs_uncert[bin], 2.0 );
+  }//for( int bin = 0; bin < nbin; ++bin )
+  
+  return chi2;
+}//double fit_intrinsic_eff_least_linear_squares(...)
   
   
 double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
