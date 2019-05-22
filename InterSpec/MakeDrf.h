@@ -41,6 +41,7 @@ class MakeDrfChart;
 namespace Wt
 {
   class WText;
+  class WGroupBox;
   class WComboBox;
   class WLineEdit;
   class WCheckBox;
@@ -100,6 +101,8 @@ protected:
   
   Wt::WCheckBox *m_showFwhmPoints;
   
+  Wt::WGroupBox *m_fwhmOptionGroup;
+  
   Wt::WComboBox *m_fwhmEqnType;
   
   Wt::WComboBox *m_sqrtEqnOrder;
@@ -107,6 +110,8 @@ protected:
   Wt::WComboBox *m_effEqnOrder;
   
   Wt::WComboBox *m_effEqnUnits;
+  
+  Wt::WGroupBox *m_effOptionGroup;
   
   /** ToDo: make chart properly interactive so user doesnt need to input the
    energy range manually.

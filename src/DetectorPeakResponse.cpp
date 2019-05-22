@@ -1363,11 +1363,7 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       if( pars.size() < 1 )
         throw runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
                              " pars not defined" );
-      //const float A1 = pars[0];
-      //const float A2 = pars[1];
-      //const float A3 = pars.size()>2 ? pars[2] : 0.0f;
-      //const float A4 = pars.size()>3 ? pars[3] : 0.5f;
-      
+
       energy /= PhysicalUnits::MeV;
       //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
       
