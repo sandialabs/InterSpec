@@ -35,6 +35,8 @@
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
 #include <Wt/WSvgImage>
+#include <Wt/WGroupBox>
+#include <Wt/WTabWidget>
 #include <Wt/WIOService>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
@@ -137,6 +139,7 @@ namespace
     {
       addStyleClass( "DrfPeak" );
       m_useCb = new WCheckBox( "Use", this );
+      m_useCb->addStyleClass( "DrfPeakUseCb" );
       
       char buffer[512];
       if( peak && peak->parentNuclide() && peak->nuclearTransition() )
@@ -635,12 +638,10 @@ namespace
       bool useAll = true;
       switch( m_allNoneSome->checkState() )
       {
-        case Wt::Checked:   useAll = true;  break;
-        case Wt::Unchecked: useAll = false; break;
-        case Wt::PartiallyChecked:
-          return;
+        case Wt::Checked:          useAll = true;  break;
+        case Wt::Unchecked:        useAll = false; break;
+        case Wt::PartiallyChecked: useAll = false; break;
       }//switch( m_allNoneSome->checkState() )
-      
       
       for( auto w : m_peaks->children() )
       {
@@ -833,7 +834,30 @@ namespace
     std::shared_ptr<const SpecMeas> measurement(){ return m_meas; }
   };//class DrfSpecFile
   
-  
+  /** MakeDrfChart need resize() explicitly called when its size changes, and
+     its not happening when placed directly into the WGridLayout, so this class
+     just does that explicitly
+   */
+  class DrfChartHolder : public WContainerWidget
+  {
+    MakeDrfChart *m_chart;
+    
+  public:
+    DrfChartHolder( MakeDrfChart *chart, WContainerWidget *parent )
+    : WContainerWidget( parent ),
+      m_chart( chart )
+    {
+      setLayoutSizeAware( true );
+      addWidget( m_chart );
+    }
+    
+    virtual ~DrfChartHolder(){};
+    
+    virtual void layoutSizeChanged(int width, int height)
+    {
+      m_chart->resize( width, height );
+    }
+  };//class DrfChartHolder
   
 }//namespace to implement DrfSpecFile and DrfSpecFileSample
 
@@ -842,9 +866,20 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSu
   : AuxWindow( "Create Detector Response Function",
   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
   | AuxWindowProperties::SetCloseable
-  | AuxWindowProperties::DisableCollapse) ),
+  | AuxWindowProperties::DisableCollapse
+  | AuxWindowProperties::EnableResize) ),
   m_makeDrf( nullptr )
 {
+  const int ww = viewer->renderedWidth();
+  const int wh = viewer->renderedHeight();
+  if( ww > 100 && wh > 100 )
+  {
+    const int width = std::min( 3*ww/4, 800 );
+    const int height = ((wh < 420) ? wh : (5*wh)/6 );
+    
+    resizeWindow( width, height );
+  }//if( ww > 100 && wh > 100 )
+  
   m_makeDrf = new MakeDrf( viewer, materialDB, materialSuggest );
   
   stretcher()->addWidget( m_makeDrf, 0, 0 );
@@ -858,12 +893,6 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSu
   finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
   show();
-  
-  //const int screenW = viewer->renderedWidth();
-  //const int screenH = viewer->renderedHeight();
-  //const int width = ((screenW < 600) ? screenW : (3*screenW)/4);
-  //const int height = ((screenH < 420) ? screenH : (5*screenH)/6 );
-  //resizeWindow( width, height );
   
   resizeToFitOnScreen();
   centerWindow();
@@ -887,10 +916,12 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_files( nullptr ),
   m_detDiameter( nullptr ),
   m_showFwhmPoints( nullptr ),
+  m_fwhmOptionGroup( nullptr ),
   m_fwhmEqnType( nullptr ),
   m_sqrtEqnOrder( nullptr ),
   m_effEqnOrder( nullptr ),
   m_effEqnUnits( nullptr ),
+  m_effOptionGroup( nullptr ),
   m_chartLowerE( nullptr ),
   m_chartUpperE( nullptr ),
   m_errorMsg( nullptr ),
@@ -906,15 +937,17 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   
   addStyleClass( "MakeDrf" );
   
-  WGridLayout *layout = new WGridLayout();
-  layout->setContentsMargins( 0, 0, 0, 0 );
-  setLayout( layout );
+  WGridLayout *upperLayout = new WGridLayout();
+  upperLayout->setContentsMargins( 0, 0, 0, 0 );
+  upperLayout->setVerticalSpacing( 0 );
+  upperLayout->setHorizontalSpacing( 0 );
   
   WContainerWidget *fitOptionsDiv = new WContainerWidget();
   fitOptionsDiv->addStyleClass( "MakeDrfOptions" );
-  layout->addWidget( fitOptionsDiv, 0, 0, 2, 1 );
+  upperLayout->addWidget( fitOptionsDiv, 0, 0, 2, 1 );
   
-  m_detDiameter = new WLineEdit( fitOptionsDiv );
+  WGroupBox *detDiamGroup = new WGroupBox( "Det. Diameter", fitOptionsDiv );
+  m_detDiameter = new WLineEdit( detDiamGroup );
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
   m_detDiameter->setValidator( distValidator );
@@ -923,43 +956,42 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
   
   
-  m_fwhmEqnType = new WComboBox( fitOptionsDiv );
+  m_effOptionGroup = new WGroupBox( "Intrinsic Eff.", fitOptionsDiv );
+  m_effEqnOrder = new WComboBox( m_effOptionGroup );
+  m_effEqnOrder->setInline( false );
+  m_effEqnOrder->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  
+  m_effEqnUnits = new WComboBox( m_effOptionGroup );
+  m_effEqnUnits->setInline( false );
+  m_effEqnUnits->addItem( "Eqn. in keV" );
+  m_effEqnUnits->addItem( "Eqn. in MeV" );
+  m_effEqnUnits->setCurrentIndex( 1 );
+  m_effEqnUnits->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  
+  
+  m_fwhmOptionGroup = new WGroupBox( "FWHM Eqn.", fitOptionsDiv );
+  m_fwhmEqnType = new WComboBox( m_fwhmOptionGroup );
   m_fwhmEqnType->setInline( false );
   m_fwhmEqnType->addItem( "Gadras Eqation" );
   m_fwhmEqnType->addItem( "Sqrt Power Series" );
   m_fwhmEqnType->setCurrentIndex( 0 );
   m_fwhmEqnType->changed().connect( this, &MakeDrf::handleFwhmTypeChanged );
   
-  m_sqrtEqnOrder = new WComboBox( fitOptionsDiv );
+  m_sqrtEqnOrder = new WComboBox( m_fwhmOptionGroup );
   m_sqrtEqnOrder->setInline( false );
   m_sqrtEqnOrder->hide();
   m_sqrtEqnOrder->changed().connect( this, &MakeDrf::handleSqrtEqnOrderChange );
   
-  
-  m_effEqnOrder = new WComboBox( fitOptionsDiv );
-  m_effEqnOrder->setInline( false );
-  m_effEqnOrder->changed().connect( this, &MakeDrf::handleSourcesUpdates );
-  
-  m_effEqnUnits = new WComboBox( fitOptionsDiv );
-  m_effEqnUnits->setInline( false );
-  m_effEqnUnits->addItem( "Int. Eff in keV" );
-  m_effEqnUnits->addItem( "Int. Eff in MeV" );
-  m_effEqnUnits->setCurrentIndex( 1 );
-  m_effEqnUnits->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_effOptionGroup->hide();
+  m_fwhmOptionGroup->hide();
   
   m_chart = new MakeDrfChart();
-  layout->addWidget( m_chart, 0, 1 );
-  
-  //m_chart->setMinimumSize( 250, 250 );
-  const int wh = viewer->renderedHeight();
-  const int ww = viewer->renderedWidth();
-  const int chartHeight = std::min( wh/3, 350 );
-  const int chartWidth = std::min( static_cast<int>(0.75*ww - 150), 800 );
-  m_chart->resize( chartWidth, chartHeight );
+  DrfChartHolder *chartholder = new DrfChartHolder( m_chart, nullptr );
+  upperLayout->addWidget( chartholder, 0, 1 );
   
   WContainerWidget *chartOptionsDiv = new WContainerWidget();
-  layout->addWidget( chartOptionsDiv, 1, 1 );
-  
+  chartOptionsDiv->addStyleClass( "MakeDrfChartOptions" );
+  upperLayout->addWidget( chartOptionsDiv, 1, 1 );
   m_showFwhmPoints = new WCheckBox( "Show FWHM points", chartOptionsDiv );
   m_showFwhmPoints->setChecked( true );
   m_showFwhmPoints->changed().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
@@ -987,27 +1019,43 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_chartUpperE->changed().connect( std::bind(updateChartRange) );
   m_chart->xRangeChanged().connect( this, &MakeDrf::chartEnergyRangeChangedCallback );
   
+  WContainerWidget *fileHolder = new WContainerWidget();
+  fileHolder->setOverflow( Overflow::OverflowAuto, Wt::Vertical );
+  fileHolder->addStyleClass( "MakeDrfFiles" );
   
-  m_files = new WContainerWidget();
-  m_files->setMaximumSize( WLength::Auto, std::max((wh - chartHeight - 150), 250) );
-  m_files->setOverflow( Overflow::OverflowAuto, Wt::Vertical );
+  m_files = new WContainerWidget( fileHolder );
   
   m_errorMsg = new WText( "", Wt::XHTMLText );
   m_errorMsg->addStyleClass( "MakeDrfErrTxt" );
-  layout->addWidget( m_errorMsg, 1, 0, 1, 2 );
+  upperLayout->addWidget( m_errorMsg, 2, 0, 1, 2 );
   m_errorMsg->hide();
-  
   
   m_intrinsicEffAnswer = new WText( "", Wt::XHTMLText );
   m_intrinsicEffAnswer->addStyleClass( "MakeDrfEqnAnswer" );
-  layout->addWidget( m_intrinsicEffAnswer, 2, 0, 1, 2 );
-  m_intrinsicEffAnswer->hide();
+  upperLayout->addWidget( m_intrinsicEffAnswer, 3, 0, 1, 2 );
   
-  layout->addWidget( m_files, 3, 0, 1, 2 );
+  upperLayout->setRowStretch( 0, 1 );
+  upperLayout->setColumnStretch( 1, 1 );
   
-  //layout->setRowStretch( 0, 1 );
-  //layout->setRowStretch( 1, 3 );
-  //layout->setColumnStretch( 1, 1 );
+  WGridLayout *layout = new WGridLayout();
+  setLayout( layout );
+  layout->setContentsMargins( 0, 0, 0, 0 );
+  
+  if( viewer->isPhone() )
+  {
+    //Phone layout untested!
+    WTabWidget *tab = new WTabWidget();
+    layout->addWidget( tab, 0, 0 );
+    WContainerWidget *chartTab = new WContainerWidget();
+    chartTab->setLayout( upperLayout );
+    tab->addTab( chartTab, "Chart/Options" );
+    tab->addTab( fileHolder, "Peaks To Use" );
+  }else
+  {
+    layout->addLayout( upperLayout, 0, 0 );
+    layout->addWidget( fileHolder, 1, 0 );
+    layout->setRowResizable( 0, true, 250 );
+  }//if( is phone ) / else
   
   SpecMeasManager *manager = viewer->fileManager();
   SpectraFileModel *measmodel = manager->model();
@@ -1328,7 +1376,7 @@ void MakeDrf::handleSourcesUpdates()
       m_effEqnOrder->setCurrentIndex( -1 );
   }//
   
-  const int currentSqrtOrder = m_effEqnOrder->currentIndex();
+  const int currentSqrtOrder = m_sqrtEqnOrder->currentIndex();
   const int nCurrentSqrtOrders = m_sqrtEqnOrder->count();
   if( nCurrentSqrtOrders==6 && numPeaks>=6 )
   {
@@ -1337,7 +1385,7 @@ void MakeDrf::handleSourcesUpdates()
   {
     m_sqrtEqnOrder->clear();
     for( int order = 0; order < numPeaks && order < 6; ++order )
-      m_sqrtEqnOrder->addItem( "Order " + std::to_string(order) + " FWHM"  );
+      m_sqrtEqnOrder->addItem( std::to_string(order+1) + " Fit Params"  );
     
     if( currentSqrtOrder > 0 )
     {
@@ -1356,6 +1404,9 @@ void MakeDrf::handleSourcesUpdates()
   }//
   
   m_chart->setDataPoints( datapoints, diameter, minenergy, maxenergy );
+  
+  m_effOptionGroup->setHidden( datapoints.empty() );
+  m_fwhmOptionGroup->setHidden( datapoints.empty() );
   
   fitEffEqn( effpoints );
   fitFwhmEqn( peaks, numchan );
@@ -1592,7 +1643,7 @@ void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts
   if( !errmsg.empty() )
   {
     m_intrinsicEffAnswer->setText( "" );
-    m_intrinsicEffAnswer->setHidden( true );
+    //m_intrinsicEffAnswer->setHidden( true );
     string errormsg = m_errorMsg->text().toUTF8();
     const bool hadErrorMsg = !errormsg.empty();
     if( hadErrorMsg )
@@ -1604,7 +1655,7 @@ void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts
     m_errorMsg->setHidden( false );
   }
   
-  if( coefs.size() > 1 )
+  if( !coefs.empty() )
   {
     string eqn = "Eff<sub>int.</sub>(x) = exp( ";
     for( size_t i = 0; i < coefs.size(); ++i )
@@ -1629,12 +1680,12 @@ void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts
     //eqn += (isMeV ? "MeV)" : "keV)");
     
     m_intrinsicEffAnswer->setText( eqn );
-    m_intrinsicEffAnswer->setHidden( false );
+    //m_intrinsicEffAnswer->setHidden( false );
   }else
   {
     m_intrinsicEffAnswer->setText( "" );
-    m_intrinsicEffAnswer->setHidden( true );
-  }//if( coefs.size() > 1 ) / else
+    //m_intrinsicEffAnswer->setHidden( true );
+  }//if( !coefs.empty() ) / else
   
   wApp->triggerUpdate();
 }//void updateEffEqn(...)

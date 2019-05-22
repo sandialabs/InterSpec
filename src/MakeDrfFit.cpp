@@ -497,8 +497,8 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
   answer.clear();
   uncerts.clear();
   
-  for( size_t i = 0; i < fitParams.Params().size(); ++i )
-    cout << "\tMinuit fit FWHM Par_" << i << "=" << fitParams.Params()[i] << endl;
+  //for( size_t i = 0; i < fitParams.Params().size(); ++i )
+  //  cout << "\tMinuit fit FWHM Par_" << i << "=" << fitParams.Params()[i] << endl;
   
   for( const double p : fitParams.Params() )
     answer.push_back( static_cast<float>(p) );
@@ -707,7 +707,7 @@ double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
   const double mev_upper_bounds[8]    = {-0.75, -0.25,  1.25,  0.9,   0.25,  0.25,  0.05,  0.05 };
   const double mev_starting_values[8] = {-2.7,  -1.2,  -0.18, -0.14, -0.40, -0.15, -0.03, -0.002 };
   
-  
+  bool lls_worked = false;
   try
   {
     const double chi2 = fit_intrinsic_eff_least_linear_squares( data, fcnOrder, result, uncerts );
@@ -716,7 +716,7 @@ double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
     for( size_t i = 0; i < result.size(); ++i )
       cout << result[i] << "+-" << uncerts[i] << ", ";
     cout << "}" << endl;
-    
+    lls_worked = true;
     //return (fcnOrder == data.size()) ? chi2 : (chi2 / (data.size() - fcnOrder));
   
     //Least Linear Squares
@@ -773,7 +773,9 @@ double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
   unsigned int maxFcnCall = 50000;
   ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
   if( !minimum.IsValid() )
-    minimum = fitter( maxFcnCall, tolerance );
+    minimum = fitter( maxFcnCall, 2*tolerance );
+  if( !minimum.IsValid() )
+    minimum = fitter( maxFcnCall, static_cast<double>( data.size() ) );
   
   ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
 
@@ -788,10 +790,9 @@ double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
   //}
   
   
-  const double chi2 = fitness.DoEval( fitParams.Params() );
-  cerr << "Eff final chi2=" << chi2 << " vs "
-  << fitness.DoEval( vector<double>(begin(result),end(result)) ) << " from LLS"
-  << endl;
+  double chi2 = fitness.DoEval( fitParams.Params() );
+  const double lls_chi2 = lls_worked ? fitness.DoEval( vector<double>(begin(result),end(result)) ) : std::numeric_limits<double>::infinity();
+  cerr << "Eff final chi2=" << chi2 << " vs " << lls_chi2 << " from LLS" << endl;
   
   if( !minimum.IsValid() )
   {
@@ -807,20 +808,25 @@ double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
     if( minimum.IsAboveMaxEdm() )
       msg << "\t\tEDM=" << minimum.Edm() << endl;
     cerr << endl << msg.str() << endl;
-    throw std::runtime_error( msg.str() );
+    
+    if( !lls_worked )
+      throw std::runtime_error( msg.str() );
   }//if( !minimum.IsValid() )
   
-  for( size_t i = 0; i < fitParams.Params().size(); ++i )
-    cout << "\tFit Par" << i << "=" << fitParams.Params()[i] << endl;
+  if( lls_worked && (lls_chi2 < chi2) )
+  {
+    cerr << "Returning least linear squares answer for Intrinsic Eff equation" << endl;
+    chi2 = lls_chi2;
+  }else
+  {
+    result.clear();
+    for( const double p : fitParams.Params() )
+      result.push_back( static_cast<float>(p) );
   
-  result.clear();
-  uncerts.clear();
-  
-  for( const double p : fitParams.Params() )
-    result.push_back( static_cast<float>(p) );
-  
-  for( const double p : fitParams.Errors() )
-    uncerts.push_back( p );
+    uncerts.clear();
+    for( const double p : fitParams.Errors() )
+      uncerts.push_back( p );
+  }
   
   return (fcnOrder == data.size()) ? chi2 : (chi2 / (data.size() - fcnOrder));
 }//performEfficiencyFit(...)
