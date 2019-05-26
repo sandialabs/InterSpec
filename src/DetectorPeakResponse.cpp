@@ -104,6 +104,59 @@ namespace
     }
     return A_i;
   }//float calcA(...)
+  
+  
+  template<class T> struct index_compare_descend
+  {
+    index_compare_descend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
+    bool operator()(const size_t a, const size_t b) const
+    {
+      return arr[a] > arr[b];
+    }
+    const T arr;
+  };//struct index_compare_descend
+  
+  
+  //removeOutlyingWidthPeaks(...): removes peaks whos width does not agree
+  //  well with the functional form passed in.  Returns survining peaks.
+  DetectorPeakResponse::PeakInput_t removeOutlyingWidthPeaks( DetectorPeakResponse::PeakInput_t peaks,
+                                                              DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                                                              const vector<float> &coefficients )
+  {
+    const double npeaks = static_cast<double>( peaks->size() );
+    if( npeaks < 5 )
+      return peaks;
+    const size_t ndel_max = static_cast<size_t>( floor(0.2*npeaks) );
+    
+    vector<double> weights;
+    double mean_weight = 0.0;
+    for( const PeakModel::PeakShrdPtr peak : *peaks )
+    {
+      const double predicted_sigma = DetectorPeakResponse::peakResolutionSigma( peak->mean(), fnctnlForm, coefficients );
+      const double chi2 = MakeDrfFit::peak_width_chi2( predicted_sigma, *peak );
+      mean_weight += chi2/npeaks;
+      weights.push_back( chi2 );
+    }//for( const EnergySigma &es : m_energies_and_sigmas )
+    
+    vector<size_t> indices( npeaks );
+    for( size_t i = 0; i < npeaks; ++i )
+      indices[i] = i;
+    std::sort( indices.begin(), indices.end(), index_compare_descend<vector<double>&>(weights) );
+    
+    size_t lastInd = 0;
+    while( lastInd <= ndel_max && weights[indices[lastInd]] > 2.5*mean_weight )
+      ++lastInd;
+    indices.erase( indices.begin() + lastInd, indices.end() );
+    
+    std::shared_ptr< deque< std::shared_ptr<const PeakDef> > > reduced_peaks( new deque< PeakModel::PeakShrdPtr >() );
+    for( size_t i = 0; i < npeaks; ++i )
+      if( find( indices.begin(), indices.end(), i) == indices.end() )
+        reduced_peaks->push_back( peaks->operator[](i) );
+    
+    return reduced_peaks;
+  }//removeOutlyingWidthPeaks(...)
+
+  
 }//namespace
 
 
@@ -1437,57 +1490,6 @@ void DetectorPeakResponse::setDescription( const std::string &descrip )
   computeHash();
 }
 
-namespace
-{
-  template<class T> struct index_compare_descend
-  {
-    index_compare_descend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
-    bool operator()(const size_t a, const size_t b) const
-    {
-      return arr[a] > arr[b];
-    }
-    const T arr;
-  };//struct index_compare_descend
-}//namespace
-
-
-DetectorPeakResponse::PeakInput_t DetectorPeakResponse::removeOutlyingWidthPeaks(
-                           DetectorPeakResponse::PeakInput_t peaks,
-                           DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
-                                        const vector<float> &coefficients )
-{
-  const double npeaks = static_cast<double>( peaks->size() );
-  if( npeaks < 5 )
-    return peaks;
-  const size_t ndel_max = static_cast<size_t>( floor(0.2*npeaks) );
-  
-  vector<double> weights;
-  double mean_weight = 0.0;
-  for( const PeakModel::PeakShrdPtr peak : *peaks )
-  {
-    const double predicted_sigma = DetectorPeakResponse::peakResolutionSigma( peak->mean(), fnctnlForm, coefficients );
-    const double chi2 = MakeDrfFit::peak_width_chi2( predicted_sigma, *peak );
-    mean_weight += chi2/npeaks;
-    weights.push_back( chi2 );
-  }//for( const EnergySigma &es : m_energies_and_sigmas )
-  
-  vector<size_t> indices( npeaks );
-  for( size_t i = 0; i < npeaks; ++i )
-    indices[i] = i;
-  std::sort( indices.begin(), indices.end(), index_compare_descend<vector<double>&>(weights) );
-  
-  size_t lastInd = 0;
-  while( lastInd <= ndel_max && weights[indices[lastInd]] > 2.5*mean_weight )
-    ++lastInd;
-  indices.erase( indices.begin() + lastInd, indices.end() );
-  
-  std::shared_ptr< deque< std::shared_ptr<const PeakDef> > > reduced_peaks( new deque< PeakModel::PeakShrdPtr >() );
-  for( size_t i = 0; i < npeaks; ++i )
-    if( find( indices.begin(), indices.end(), i) == indices.end() )
-      reduced_peaks->push_back( peaks->operator[](i) );
-  
-  return reduced_peaks;
-}//removeOutlyingWidthPeaks(...)
 
 
 void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peaks,

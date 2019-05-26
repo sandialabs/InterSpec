@@ -25,14 +25,39 @@
 }
 
 .MakeDrfFiles {
-  border: 1px solid blue;
+  /* border: 1px solid blue; */
+  border-radius: 3px;
 }
 
 .DrfSpecFile {
-  border: 1px solid green;
+  /* border: 1px solid green; */
+  border: 3px solid #888888;
+  border-radius: 3px;
+}
+
+.DrfSpecFile .body {
+  padding-top: 7px;
+}
+
+.DrfSpecFile.SingleSample {
+  border: none;
+}
+
+.DrfSpecFile.SingleFile {
+  border: none;
 }
 
 .DrfSpecFileSample {
+  margin-bottom: 3px;
+  border: 2px solid #888888;
+  border-radius: 3px;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  
+}
+
+.DrfSpecFileSample:not(:first-child) {
+  margin-top: 10px;
 }
 
 .DrfSpecFileSample > .titlebar {
@@ -135,9 +160,9 @@
   font-size: 12px;
   font-weight: normal;
   background: white;
+  border-radius: 3px;
   -webkit-border-radius: 3px;
   -moz-border-radius: 3px;
-  border-radius: 3px;
   
   /* Let the user copy-paste the text*/
   user-select: all;

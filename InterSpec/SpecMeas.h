@@ -190,7 +190,7 @@ public:
   //  The peaks stored by *this will be same pointers to peaks as passed in,
   //  but the deque will be different than passed in.
   //  Note: does not notify PeakModel, or anywhere else.
-  void setPeaks( std::deque< std::shared_ptr<const PeakDef> > &peakdeque,
+  void setPeaks( const std::deque< std::shared_ptr<const PeakDef> > &peakdeque,
                  const std::set<int> &samplenums );
   
   std::shared_ptr< const PeakDeque > automatedSearchPeaks(

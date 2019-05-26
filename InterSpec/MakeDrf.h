@@ -49,17 +49,6 @@ namespace Wt
   class WSuggestionPopup;
 }
 
-class MakeDrfWindow : public AuxWindow
-{
-public:
-  MakeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSuggestionPopup *materialSuggest );
-  
-  virtual ~MakeDrfWindow();
-  
-protected:
-  MakeDrf *m_makeDrf;
-};//class MakeDrfWindow
-
 
 class MakeDrf : public Wt::WContainerWidget
 {
@@ -70,6 +59,37 @@ public:
            Wt::WContainerWidget *parent = nullptr );
   
   virtual ~MakeDrf();
+  
+  /** Create a AuxWindow with the MakeDrf widget as the primary content.
+      Returns pointer to the created AuxWindow, but is will already be shown,
+      and have the signals to delete it when closed hooked up, so you probably
+      wont need the window.
+   */
+  static AuxWindow *makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB,
+                                   Wt::WSuggestionPopup *materialSuggest );
+  
+  /** Creates a "Save As..." dialog.  If the current DRF is not valid, the
+     dialog that will pop up will state as such.
+   */
+  void startSaveAs();
+  
+  /** Returns whether it is worthwhile to call #startSaveAs */
+  bool isIntrinsicEfficiencyValid();
+  
+  /** Signal emmitted wheneever the intrinsic efficiency becomes valid, or
+     invalid.  Intended for enabling/disabling save button.
+   */
+  Wt::Signal<bool> &intrinsicEfficiencyIsValid();
+  
+  /** Assembles a SpecMeas with a single (summed, if need be) spectrum for
+   each sampel number that has a peak being used; has peaks as well.
+   
+   Will return nullptr on error.
+   
+   Currently does not save source information to returned result (if we do this
+   then re-creating this widget is maybe complete?)
+   */
+  std::shared_ptr<SpecMeas> assembleCalFile();
   
 protected:
   void handleSourcesUpdates();
@@ -88,10 +108,13 @@ protected:
   
   /** Error message is not empty, only when there is an error. */
   void updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid, const std::string errormsg );
+
   
   InterSpec *m_interspec;
   MaterialDB *m_materialDB;
   Wt::WSuggestionPopup *m_materialSuggest;
+  
+  Wt::Signal<bool> m_intrinsicEfficiencyIsValid;
   
   MakeDrfChart *m_chart;
   
@@ -132,6 +155,8 @@ protected:
   
   std::vector<float> m_fwhmCoefs, m_fwhmCoefUncerts;
   std::vector<float> m_effEqnCoefs, m_effEqnCoefUncerts;
+  
+  friend class MakeDrfWindow;
 };//class MakeDrf
 
 #endif //MakeDrf_h

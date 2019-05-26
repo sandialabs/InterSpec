@@ -114,6 +114,21 @@ struct FormulaWrapper
 };//struct FormulaWrapper
 
 
+/*
+ //ToDo: Add table to database to track which DRF to use for a given detector
+ //      model, or serial number,
+ struct DrfToUsePreference
+ {
+ Wt::Dbo::ptr<InterSpecUser> user;
+ long int / <DetectorPeakResponse>  //Dbo::weak_ptr<DetectorPeakResponse>
+ enum MatchType{ MatchByDetectorModel, MatchBySerialNumber };
+ MatchType match_type;
+ string detector_dentifier;
+ 
+ //could add info such as detector name, or whatever
+ }
+ */
+
 class DetectorPeakResponse
 {
   /*
@@ -349,7 +364,7 @@ public:
   //std::vector<EnergyEfficiencyPair> m_energyEfficiencies;
   //std::string m_efficiencyFormula;
   //std::function<float(float)> m_efficiencyFcn;
-  const std::vector<float> efficiencyExpOfLogsCoeffs() const { return m_expOfLogPowerSeriesCoeffs; }
+  const std::vector<float> &efficiencyExpOfLogsCoeffs() const { return m_expOfLogPowerSeriesCoeffs; }
   
   
   
@@ -370,17 +385,6 @@ public:
   void fitResolution( PeakInput_t peaks,
                       const std::shared_ptr<const Measurement> meas,
                       const ResolutionFnctForm fnctnlForm );
-  
-  
-  //removeOutlyingWidthPeaks(...): removes peaks whos width does not agree
-  //  well with the functional form passed in.  Returns survining peaks.
-  static PeakInput_t removeOutlyingWidthPeaks( PeakInput_t peaks,
-                                               ResolutionFnctForm fnctnlForm,
-                                    const std::vector<float> &coefficients );
-  
-  
-  
-
   
   //expOfLogPowerSeriesEfficiency(...): evalutaes absolute efficiency for
   // coefficients of the form:
@@ -422,7 +426,8 @@ public:
 
   static float akimaInterpolate( const float energy,
                                 const std::vector<EnergyEfficiencyPair> &xy );
-      
+  
+  //20190525: Why is m_user a raw index, and not a Wt::Dbo::ptr<InterSpecUser>?
   int m_user;
   
 protected:
@@ -437,7 +442,7 @@ protected:
   std::string m_name;
   std::string m_description;
 
-  //m_detectorDiameter: assumes a rond detector face, if other shape you will
+  //m_detectorDiameter: assumes a round detector face, if other shape you will
   //  need to find the equivalent diameter for the face surface area of
   //  detector
   float m_detectorDiameter;
@@ -482,11 +487,10 @@ protected:
   
   //m_expOfLogPowerSeriesCoeffs: the coefficients for the intrinsic efficiency
   //  when m_efficiencyForm==kExpOfLogPowerSeries
-public:
   std::vector<float> m_expOfLogPowerSeriesCoeffs;
  
   //In order to keep track of lineage and uniqness of detectors, we will use
-  //  has values.  All non-serialization related non-const member functions
+  //  hash values.  All non-serialization related non-const member functions
   //  should recompute the m_hash value when/if it makes any changes to the
   //  detector.
   uint64_t m_hash;

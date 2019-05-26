@@ -1402,7 +1402,7 @@ void SpecMeas::removeAllPeaks()
 }//void removeAllPeaks()
 
 
-void SpecMeas::setPeaks( std::deque< std::shared_ptr<const PeakDef> > &peakdeque,
+void SpecMeas::setPeaks( const std::deque< std::shared_ptr<const PeakDef> > &peakdeque,
               const std::set<int> &samplenums )
 {
   if( !m_peaks )

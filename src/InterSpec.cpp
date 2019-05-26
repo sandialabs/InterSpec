@@ -6793,7 +6793,7 @@ void InterSpec::showDoseTool()
 
 void InterSpec::showMakeDrfWindow()
 {
-  new MakeDrfWindow( this, m_materialDB, m_shieldingSuggestion );
+  MakeDrf::makeDrfWindow( this, m_materialDB, m_shieldingSuggestion );
 }//void showDetectorEditWindow()
 
 

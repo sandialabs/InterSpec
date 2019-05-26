@@ -905,6 +905,11 @@ private:
 };//struct UserState
 
 
+/**  20190525: Its probably wort reconsidering if this class is necasary - it
+       was going to be for the ResourceUpdate tool, but I think it might be
+       easier to just copy the relevant files to the user data directory, and
+       just search for them there when need be.
+ */
 struct InterSpecGlobalSetting
 {
   enum ValidityStatus
