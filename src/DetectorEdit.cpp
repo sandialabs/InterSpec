@@ -494,7 +494,7 @@ void RelEffFile::initDetectors()
       
       if( det )
       {
-        detcoefs.push_back( det->m_expOfLogPowerSeriesCoeffs );
+        detcoefs.push_back( det->efficiencyExpOfLogsCoeffs() );
         m_responses.push_back( det );
       }
     }//while( UtilityFunctions::safe_get_line( input, line ) )

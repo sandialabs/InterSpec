@@ -128,6 +128,10 @@ public:
                       const float det_diameter,
                       const float det_low_energy, const float det_up_energy );
   
+  /** Returns the current data points. */
+  const std::vector<DataPoint> &currentDataPoints() const;
+  
+  
   /** Sets whther the FWHM data points and equation should be shown. */
   void showFwhmPoints( const bool show );
   

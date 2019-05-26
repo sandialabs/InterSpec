@@ -25,12 +25,16 @@
 
 #include <set>
 #include <deque>
+#include <regex>
 #include <fstream>
 
 #include <Wt/WText>
+#include <Wt/WImage>
 #include <Wt/WPanel>
 #include <Wt/WLabel>
+#include <Wt/WAnchor>
 #include <Wt/WServer>
+#include <Wt/WResource>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
@@ -42,6 +46,7 @@
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WPopupWidget>
+#include <Wt/Http/Response>
 #include <Wt/WDoubleSpinBox>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
@@ -50,6 +55,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/MakeDrfChart.h"
@@ -110,6 +116,60 @@ namespace
     return false;
   }//source_info_from_lib_file(...)
   
+  
+  /** Class to downlaod either a N42-2012, or PCF file. */
+  class CalFileDownloadResource : public Wt::WResource
+  {
+    const bool m_pcf;
+    MakeDrf * const m_makedrf;
+    
+  public:
+    CalFileDownloadResource( const bool pcf, MakeDrf *parent )
+     : WResource( parent ), m_pcf(pcf), m_makedrf( parent )
+    {}
+    
+    virtual ~CalFileDownloadResource()
+    {
+      beingDeleted();
+    }
+    
+    virtual void handleRequest( const Wt::Http::Request &request,
+                               Wt::Http::Response &response )
+    {
+      if( !m_makedrf )
+        return;
+      
+      shared_ptr<SpecMeas> calfile = m_makedrf->assembleCalFile();
+      if( !calfile )
+        return;
+      
+      string filename = calfile->filename();
+      if( filename.empty() )
+        filename = "MakeDrf";
+      
+      //Remove bad filename characters
+      const string notallowed = "\\/:?\"<>|*";
+      for( auto it = begin(filename) ; it < end(filename) ; ++it )
+      {
+        if( notallowed.find(*it) != string::npos )
+          *it = ' ';
+      }
+      
+      const char * const extension = (m_pcf ? ".pcf" : ".n42");
+      if( !UtilityFunctions::iequals( UtilityFunctions::file_extension(filename), extension ) )
+        filename += extension;
+      
+      suggestFileName( filename, WResource::Attachment );
+      response.setMimeType( "application/octet-stream" );
+      
+      if( m_pcf)
+        calfile->write_pcf( response.out() );
+      else
+        calfile->write_2012_N42( response.out() );
+    }
+  };//class CalFileDownloadResource
+  
+  
   class DrfPeak : public WContainerWidget
   {
   public:
@@ -144,13 +204,34 @@ namespace
       char buffer[512];
       if( peak && peak->parentNuclide() && peak->nuclearTransition() )
       {
-        const bool use = (peak->PeakDef::sourceGammaType()==PeakDef::SourceGammaType::NormalGamma);
+        const bool use = peak->useForDrfFit();
+        
+        const char *gammatype = "";
+        switch( peak->sourceGammaType() )
+        {
+          case PeakDef::SourceGammaType::NormalGamma:
+            break;
+          case PeakDef::SourceGammaType::AnnihilationGamma:
+            gammatype = " (annih.)";
+            break;
+          case PeakDef::SourceGammaType::DoubleEscapeGamma:
+            gammatype = " (D.E.)";
+            break;
+          case PeakDef::SourceGammaType::SingleEscapeGamma:
+            gammatype = " (S.E.)";
+            break;
+          case PeakDef::SourceGammaType::XrayGamma:
+            gammatype = " (x-ray)";
+            break;
+        }//switch( peak->sourceGammaType() )
+        
         m_useCb->setChecked( use );
-        snprintf( buffer, sizeof(buffer), "%s: %.2f keV peak with %.1f cps for %.2f keV gamma.",
+        snprintf( buffer, sizeof(buffer), "%s: %.2f keV peak with %.1f cps for %.2f keV gamma%s.",
                   peak->parentNuclide()->symbol.c_str(),
                   peak->mean(),
                   (peak->amplitude() / livetime),
-                  peak->gammaParticleEnergy() );
+                  peak->gammaParticleEnergy(),
+                  gammatype );
       }else
       {
         snprintf( buffer, sizeof(buffer), "%.2f keV peak - no nuc. associated", peak->mean() );
@@ -462,7 +543,7 @@ namespace
       {
         string shielding;
         bool is_background = false;
-        double distance = -1.0, activity = -1.0;
+        double distance = -1.0, activity = -1.0, age_at_meas = -1.0;
         boost::posix_time::ptime activityDate;
         const SandiaDecay::Nuclide *nuc = nullptr;
         
@@ -502,7 +583,7 @@ namespace
               }catch(...){}
             }//if( pos != string::npos )
             
-            //make work for strings like "133BA_blahblahblah"
+            //make work for strings like "133BA_something_something"
             const size_t first_space = spectitle.find_first_of( " \t_" );
             //ToDo: make this more robost for finding end of the nuclide, like requiring both numbers and letters.
             
@@ -517,6 +598,33 @@ namespace
               remark = remark.substr(7);
               UtilityFunctions::trim( remark );
               
+              //Look for a string like "Age= 13y 5d 3s something something something"
+              std::smatch mtch;
+              std::regex expr( string(".+(Age\\s*\\=\\s*(") + PhysicalUnits::sm_timeDurationRegex + ")).*?", std::regex::icase );
+                
+              if( std::regex_match( remark, mtch, expr ) )
+              {
+                try
+                {
+                  age_at_meas = PhysicalUnits::stringToTimeDurationPossibleHalfLife( mtch[2].str(), (nuc ? nuc->halfLife : -1.0) );
+                }catch( std::exception &e )
+                {
+                  cerr << "Failed to convert '" << mtch[2].str() << "' to an age." << endl;
+                }
+               
+                const string str_to_remove = mtch[1].str();
+                const size_t removepos = remark.find( str_to_remove );
+                if( removepos != string::npos )
+                {
+                  remark = remark.substr(0,removepos) + " " + remark.substr( removepos + str_to_remove.length() );
+                  cout << "After removing matching substr, string = '" << remark << "'" << endl;
+                }else
+                {
+                  //This shouldnt ever happen right?
+                  cerr << "Failed to find regex group '" << str_to_remove << "' in '" << remark << "' - ignoring" << endl;
+                }
+              }//if( found "age = ..." )
+              
               const size_t openCurlyPos = remark.find( '{' );
               if( shielding.empty() && (openCurlyPos != string::npos) )
               {
@@ -529,6 +637,19 @@ namespace
                 }
               }//if( source had shielding defined )
               
+              /*
+               //Untested regex quivalent (or maybe a bit stricter) of the above.
+               std::smatch shieldmtch;
+               std::regex expr( ".+({\\s*[+]?[0-9]*\\.?[0-9]+\\s*,\\s*[+]?[0-9]*\\.?[0-9]+\\s*}).*?" );  //could be optimized, and extended to arbitrary number of floats
+               if( std::regex_match( remark, shieldmtch, expr ) )
+               {
+                 shielding = shieldmtch[1].str();
+                 const size_t removepos = remark.find( shielding );
+                 if( removepos != string::npos )
+                   remark = remark.substr(0,removepos) + " " + remark.substr( removepos + shielding.length() );
+               }
+               */
+              
               if( !nuc )
                 nuc = db->nuclide( remark );  //Probably shouldnt give to many false positives?
               
@@ -539,6 +660,8 @@ namespace
                  && (nuc == db->nuclide(remark.substr(0,commapos))) )
               {
                 //We have something like "133Ba,10uCi"
+                //ToDo: There may be multiple nuclides specified, for example:
+                //      "232U,10uC{26,10}+137Cs,3.2mC{13,5}" - should handle
                 try
                 {
                   activity = PhysicalUnits::stringToActivity( remark.substr(commapos+1) );
@@ -584,10 +707,14 @@ namespace
             {
               if( distance > 0.0 )
                 src->setDistance( distance );
+              
               if( activity > 0.0 && activityDate.is_special() )
                 src->setActivity( activity );
               else if( activity > 0.0 )
                 src->setAssayInfo( activity, activityDate );
+              
+              if( age_at_meas >= 0.0 )
+                src->setAgeAtMeas( age_at_meas );
               
               if( !shielding.empty() )
               {
@@ -615,19 +742,6 @@ namespace
           m_backgroundTxt->show();
           m_sources->hide();
         }
-        
-        //Look through comments of each spectra for a comment similar to "Source: 232U_NIST0623220{92,0.07}", and if curly brackets add shielding to source
-        //  - If source is like "Source: 57CO,16.79uC" then intpret appropriately.
-        //
-        //If measurement has a valid date, put into source widget.
-        //Implement background subtraction (for instrinsic Cs137, or U232)
-        
-        
-        if( samples.size() == 1 )
-        {
-          //check if background, and if so, deselect all peaks.
-        }
-        
       }//if( samples.size() == 1 )
     }//DrfSpecFileSample constructor
     
@@ -806,15 +920,27 @@ namespace
       m_sampleWidgets = new WContainerWidget();
       setCentralWidget( m_sampleWidgets );
       
+      int nsamples = 0;
       for( const set<int> &peakSamps : sampsWithPeaks )
       {
         std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaksptr = meas->peaks( peakSamps );
         if( !peaksptr || peaksptr->empty() )
           continue;
         
+        ++nsamples;
         auto sample = new DrfSpecFileSample( meas, peakSamps, materialDB, materialSuggest, m_sampleWidgets );
         sample->srcInfoUpdated().connect( std::bind( [this](){ m_updated.emit(); }) );
       }//for( const set<int> &peakSamps : sampsWithPeaks )
+      
+      if( nsamples < 2 )
+      {
+        addStyleClass( "SingleSample" );
+      }else
+      {
+        auto t = WString::fromUTF8( meas->filename() );
+        if( !t.empty() )
+          setTitle( t );
+      }
     }//DrfSpecFile(...)
     
     Wt::Signal<> &updated() { return m_updated; }
@@ -862,49 +988,6 @@ namespace
 }//namespace to implement DrfSpecFile and DrfSpecFileSample
 
 
-MakeDrfWindow::MakeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSuggestionPopup *materialSuggest )
-  : AuxWindow( "Create Detector Response Function",
-  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
-  | AuxWindowProperties::SetCloseable
-  | AuxWindowProperties::DisableCollapse
-  | AuxWindowProperties::EnableResize) ),
-  m_makeDrf( nullptr )
-{
-  const int ww = viewer->renderedWidth();
-  const int wh = viewer->renderedHeight();
-  if( ww > 100 && wh > 100 )
-  {
-    const int width = std::min( 3*ww/4, 800 );
-    const int height = ((wh < 420) ? wh : (5*wh)/6 );
-    
-    resizeWindow( width, height );
-  }//if( ww > 100 && wh > 100 )
-  
-  m_makeDrf = new MakeDrf( viewer, materialDB, materialSuggest );
-  
-  stretcher()->addWidget( m_makeDrf, 0, 0 );
-  stretcher()->setContentsMargins( 0, 0, 0, 0 );
-  
-  AuxWindow::addHelpInFooter( footer(), "make-drf" );
-  
-  WPushButton *closeButton = addCloseButtonToFooter();
-  closeButton->clicked().connect( this, &AuxWindow::hide );
-  
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  
-  show();
-  
-  resizeToFitOnScreen();
-  centerWindow();
-  rejectWhenEscapePressed( false );
-}//MakeDrfWindow(...) constrctor
-
-
-MakeDrfWindow::~MakeDrfWindow()
-{
-}
-
-
 MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
                   Wt::WSuggestionPopup *materialSuggest,
                   Wt::WContainerWidget *parent )
@@ -912,6 +995,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_interspec( viewer ),
   m_materialDB( materialDB ),
   m_materialSuggest( materialSuggest ),
+  m_intrinsicEfficiencyIsValid( this ),
   m_chart( nullptr ),
   m_files( nullptr ),
   m_detDiameter( nullptr ),
@@ -1060,6 +1144,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   SpecMeasManager *manager = viewer->fileManager();
   SpectraFileModel *measmodel = manager->model();
   
+  vector<DrfSpecFile *> added;
   const int nLoadedFiles = measmodel->rowCount();
   for( int filenum = 0; filenum < nLoadedFiles; ++filenum )
   {
@@ -1078,7 +1163,15 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
     //Make a widget representing each file
     DrfSpecFile *fileWidget = new DrfSpecFile( meas, materialDB, materialSuggest, m_files );
     fileWidget->updated().connect( this, &MakeDrf::handleSourcesUpdates );
+    added.push_back( fileWidget );
   }//for( loop over opened files )
+  
+  if( added.size() == 1 )
+  {
+    added[0]->addStyleClass( "SingleFile" );
+    if( !added[0]->title().empty() )
+      added[0]->setTitle( "" );
+  }
   
   //If we directly call handleSourcesUpdates() now, getting the activity
   //  uncertainty will throw an exception because they wont validate.... whatever.
@@ -1090,6 +1183,141 @@ MakeDrf::~MakeDrf()
 {
 
 }//~MakeDrf()
+
+
+AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSuggestionPopup *materialSuggest )
+{
+  AuxWindow *window = new AuxWindow( "Create Detector Response Function",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+                                     | AuxWindowProperties::SetCloseable
+                                     | AuxWindowProperties::DisableCollapse
+                                     | AuxWindowProperties::EnableResize) );
+  
+  const int ww = viewer->renderedWidth();
+  const int wh = viewer->renderedHeight();
+  if( ww > 100 && wh > 100 )
+  {
+    const int width = std::min( 3*ww/4, 800 );
+    const int height = ((wh < 420) ? wh : (5*wh)/6 );
+    
+    window->resizeWindow( width, height );
+  }//if( ww > 100 && wh > 100 )
+    
+  MakeDrf *makeDrfWidget = new MakeDrf( viewer, materialDB, materialSuggest );
+    
+  window->stretcher()->addWidget( makeDrfWidget, 0, 0 );
+  window->stretcher()->setContentsMargins( 0, 0, 0, 0 );
+    
+  AuxWindow::addHelpInFooter( window->footer(), "make-drf" );
+    
+  WPushButton *closeButton = window->addCloseButtonToFooter( "Cancel" );
+  closeButton->clicked().connect( window, &AuxWindow::hide );
+    
+  WPushButton *saveAs = new WPushButton( "Save As...", window->footer() );
+  saveAs->clicked().connect( makeDrfWidget, &MakeDrf::startSaveAs );
+  makeDrfWidget->intrinsicEfficiencyIsValid().connect( boost::bind( &WPushButton::setEnabled, saveAs, _1 ) );
+  saveAs->disable();
+    
+  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+    
+  window->show();
+    
+  window->resizeToFitOnScreen();
+  window->centerWindow();
+  window->rejectWhenEscapePressed( false );
+  
+  return window;
+}//AuxWindow *makeDrfWindow(...)
+
+
+void MakeDrf::startSaveAs()
+{
+  Wt::WFlags<AuxWindowProperties> windowprop = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                                               | AuxWindowProperties::PhoneModal
+                                               | AuxWindowProperties::SetCloseable
+                                               | AuxWindowProperties::DisableCollapse;
+  if( m_effEqnCoefs.empty() )
+  {
+    AuxWindow *w = new AuxWindow( "Error", windowprop );
+    WText *t = new WText( "Sorry,&nbsp;DRF&nbsp;not&nbsp;valid.", Wt::XHTMLText, w->contents() );
+    t->setInline( false );
+    WPushButton *b = new WPushButton( "Close", w->footer() );
+    b->clicked().connect( w, &AuxWindow::hide );
+    w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w) );
+    w->rejectWhenEscapePressed();
+    w->show();
+    w->centerWindow();
+    return;
+  }//if( m_effEqnCoefs.empty() )
+  
+  
+  //ToDo: - We need a non-empty name field.
+  //      - A description field
+  //      - (options)
+  //      - Save/Cancel buttons.
+  //      - add download link to N42/PCF file
+  //        - create DetectorPeakResponse first and put it in this file
+  //      - add download link to CSV/TSV absolute eff file (e.g., for S.M.)
+  //      - consider creating a log file for user to see all the details; maybe
+  //        put this on a popup of the main widget
+  //        Could get most info from const m_chart->currentDataPoints();
+  //      - add save DetectorPeakResponse to database button
+  //      - add in a interface to select previously characterized detectors, and
+  //        also upload them
+  
+  AuxWindow *w = new AuxWindow( "Save/Download DRF", windowprop );
+
+  
+  //We need a non-empty name field.
+  //A description field (when changed, update the CalFileDownloadResource with the name)
+  //(options)
+  //Save/Cancel buttons.
+  
+  
+  WContainerWidget *downloadDiv = new WContainerWidget( w->contents() );
+  CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
+  CalFileDownloadResource *pcfResource = new CalFileDownloadResource( true, this );
+  
+  
+  auto help = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), downloadDiv);
+  help->setWidth( 12 );
+  help->setHeight( 12 );
+  const char *tooltip = "Do the download and ";
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  
+  WText *t = new WText( "Download data as&nbsp;", Wt::XHTMLText, downloadDiv );
+  WAnchor *anchor = new WAnchor( pcfResource, "PCF", downloadDiv );
+  t = new WText( "&nbsp;or&nbsp;", Wt::XHTMLText, downloadDiv );
+  anchor = new WAnchor( n42Resource, "N42-2012", downloadDiv );
+  t = new WText( "&nbsp;file.", Wt::XHTMLText, downloadDiv );
+  
+  
+  //Should we also add a table in the database so the full information can be
+  //  saved?  We could save most of it in XML so changes in the future wont need
+  //  to alter the DB schema (Its easier to update XML than the DB).
+  //  Maybe for now we can just offer a XML download link.
+  //  Should the XML include the original measurements and peaks?  Might be
+  //  kinda nice anyway; if so should have options to save with DRF.
+  
+  WPushButton *b = w->addCloseButtonToFooter();
+  b->clicked().connect( w, &AuxWindow::hide );
+  w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w) );
+  w->rejectWhenEscapePressed();
+  w->show();
+  w->centerWindow();
+}//void startSaveAs();
+
+
+Wt::Signal<bool> &MakeDrf::intrinsicEfficiencyIsValid()
+{
+  return m_intrinsicEfficiencyIsValid;
+}
+
+
+bool MakeDrf::isIntrinsicEfficiencyValid()
+{
+  return !m_effEqnCoefs.empty();
+}//bool MakeDrf::isDrfValid()
 
 
 void MakeDrf::handleSourcesUpdates()
@@ -1574,6 +1802,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   
   m_effEqnCoefs.clear();
   m_effEqnCoefUncerts.clear();
+  m_intrinsicEfficiencyIsValid.emit( !m_effEqnCoefs.empty() );
   m_chart->setEfficiencyCoefficients( m_effEqnCoefs, m_effEqnCoefUncerts, MakeDrfChart::EqnEnergyUnits::keV );
   m_intrinsicEffAnswer->setText( "" );
   
@@ -1638,6 +1867,7 @@ void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts
 
   m_effEqnCoefs = coefs;
   m_effEqnCoefUncerts = uncerts;
+  m_intrinsicEfficiencyIsValid.emit( !m_effEqnCoefs.empty() );
   m_chart->setEfficiencyCoefficients( coefs, uncerts, units );
   
   if( !errmsg.empty() )
@@ -1689,3 +1919,159 @@ void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts
   
   wApp->triggerUpdate();
 }//void updateEffEqn(...)
+
+
+std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
+{
+  auto answer = std::make_shared<SpecMeas>();
+  
+  try
+  {
+    //Go through and and grab background peaks
+    map<std::shared_ptr<Measurement>,vector<shared_ptr<PeakDef>>> meas_to_peaks;
+    
+    for( auto w : m_files->children() )
+    {
+      auto fileWidget = dynamic_cast<DrfSpecFile *>( w );
+      if( !fileWidget )
+        continue;
+      
+      for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
+      {
+        auto meas = sample->measurement();
+        set<int> samplenums = sample->samples();
+        if( !meas )
+          continue;  //shouldnt happen
+        
+        vector<shared_ptr<PeakDef>> newpeaks;
+        
+        bool beingUsed = false;
+        for( auto peak : sample->peaks() )
+        {
+          shared_ptr<PeakDef> newpeak = make_shared<PeakDef>( *peak->m_peak );
+          newpeak->useForDrfFit( peak->m_useCb->isChecked() );
+          newpeaks.push_back( newpeak );
+          beingUsed = (beingUsed || peak->m_useCb->isChecked());
+        }
+        
+        if( !beingUsed )
+          continue;
+        
+        auto detnames = meas->detector_names();
+        vector<bool> detstouse( detnames.size(), true );
+        std::shared_ptr<Measurement> m;
+        if( detstouse.size() == 1 && samplenums.size()==1 )
+        {
+          auto origm = meas->measurement( *samplenums.begin(), detnames[0] );
+          if( origm )
+            m = make_shared<Measurement>( *origm );
+        }
+        
+        if( !m )
+          m = meas->sum_measurements( samplenums, detstouse );
+        if( !m )
+          continue;  //shouldnt happen
+        
+        answer->add_measurment( m, false );
+        
+        const auto srctype = sample->isBackground() ? Measurement::SourceType::Background : Measurement::SourceType::Foreground;
+        answer->set_source_type( srctype, m );
+        
+        //ToDo: look through remarks for something like "Source:" and remove it.
+        //ToDo: Add a remark starting with "Source:" and put source information in (or properly deal with storing source info).
+        
+        meas_to_peaks[m] = newpeaks;
+        
+        //These next values will just end up with whatever the last measurement
+        //  used had; usually all files used will have the same info.
+        answer->set_manufacturer( meas->manufacturer() );
+        answer->set_detector_type( meas->detector_type() );
+        answer->set_instrument_id( meas->instrument_id() );
+        answer->set_instrument_type( meas->instrument_type() );
+        answer->set_instrument_model( meas->instrument_model() );
+        
+        double distance = -1.0;
+        vector<string> newremarks;
+        for( MakeDrfSrcDef *source : sample->sources() )
+        {
+          try
+          {
+            newremarks.push_back( "Source: " + source->toGadrasLikeSourceString() );
+          }catch( std::exception &e )
+          {
+            //ToDo: Do we need to handle the error better here?
+            cerr << "Caught exception calling MakeDrfSrcDef::toGadrasLikeSourceString(): " << e.what() << endl;
+          }
+          try
+          {
+            distance = source->distance();
+          }catch(...){}
+        }//
+        
+        for( const string &remark : m->remarks() )
+        {
+          if( !UtilityFunctions::icontains(remark, "Source:") )
+            newremarks.push_back( remark );
+        }//for( MakeDrfSrcDef *source : sample->sources() )
+        
+        answer->set_remarks( newremarks, m );
+        
+        //If we have a distance, put it in the title
+        if( distance > 0.0 )
+        {
+          string title = m->title();
+          std::smatch mtch;
+          
+          string regexstr = PhysicalUnits::sm_distanceRegex;
+          if( regexstr.size()>1 && regexstr[0]=='^')
+            regexstr = regexstr.substr(1);
+          if( regexstr.size()>1 && regexstr[regexstr.size()-1]=='$')
+            regexstr = regexstr.substr(0,regexstr.size()-1);
+          regexstr = string(".+(@\\s*") + regexstr + ").*?";
+          
+          std::regex expr( regexstr, std::regex::icase );
+          
+          if( std::regex_match( title, mtch, expr ) )
+          {
+            size_t distpos = title.find( mtch[1].str() );
+            title = UtilityFunctions::trim_copy( title.substr(0,distpos) )
+                    + " @ " + PhysicalUnits::printToBestLengthUnits(distance)
+                    + " " + UtilityFunctions::trim_copy( title.substr(distpos+mtch[1].str().size()) );
+            //the last space we added is sometimes a waste, and results in something like 'U232 @ 33.33 cm , H=100 cm'
+          }else
+          {
+            //Todo, should check if there is a '@' sybmol in the string anywhere
+            title = UtilityFunctions::trim_copy(title)
+                    + " @ " + PhysicalUnits::printToBestLengthUnits(distance);
+          }
+          
+          UtilityFunctions::trim( title );
+          answer->set_title( title, m );
+        }//if( distance > 0.0 )
+        
+      }//for( DrfSpecFileSample *sample : sampleWidgets )
+    }//for( auto w : m_files->children()  )
+    
+    answer->cleanup_after_load( 0x0 /*MeasurementInfo::CleanupAfterLoadFlags::DontChangeOrReorderSamples*/ );
+    
+    auto newmeasvec = answer->measurements();
+    
+    for( const auto &measpeak : meas_to_peaks )
+    {
+      set<int> samples;
+      samples.insert( measpeak.first->sample_number() );
+      deque<shared_ptr<const PeakDef>> newpeakdeque( begin(measpeak.second), end(measpeak.second) );
+      answer->setPeaks( newpeakdeque, samples );
+      cout << "Set " << newpeakdeque.size() << " peaks for sample " << measpeak.first->sample_number() << " in new SpecMeas" << endl;
+    }
+  }catch( std::exception &e )
+  {
+    cerr << "Caught excpetion in assembleCalFile(): " << e.what();
+    return nullptr;
+  }//try / catch
+  
+  if( answer->measurements().empty() )
+    return nullptr;
+  
+  return answer;
+}//std::shared_ptr<SpecMeas> assembleCalFile()

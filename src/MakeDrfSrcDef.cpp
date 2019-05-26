@@ -133,7 +133,8 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
   
   if( nuc )
   {
-    const string label = "<span class=\"SrcTitleNuc\">" + nuc->symbol + "</span>, <span class=\"SrcTitleHl\">&lambda;<sub>&frac12;</sub>="
+    const string label = "<span class=\"SrcTitleNuc\">" + nuc->symbol + "</span>,"
+                         " <span class=\"SrcTitleHl\">&lambda;<sub>&frac12;</sub>="
                          + PhysicalUnits::printToBestTimeUnits(nuc->halfLife) + "</span>";
     m_nuclideLabel->setText( WString::fromUTF8(label) );
     m_useAgeInfo->show();
@@ -614,9 +615,135 @@ void MakeDrfSrcDef::setAssayInfo( const double activity,
 }//void setAssayInfo(..);
 
 
+/*
+void MakeDrfSrcDef::setAgeAtAssay( const double age )
+{
+  if( age >= 0.0 )
+  {
+    m_useAgeInfo->setChecked( true );
+    useAgeInfoUserToggled();
+    if( !m_assayDate->date().isValid() )
+      m_assayDate->setDate( m_drfMeasurementDate->date() );
+    m_sourceAgeAtAssay->setText( PhysicalUnits::printToBestTimeUnits(age) );
+  }else
+  {
+    setNuclide( m_nuclide );
+  }
+  
+  updateAgedText();
+}//void setAgeAtAssay( const double age );
+*/
+
+void MakeDrfSrcDef::setAgeAtMeas( const double age )
+{
+  if( age < 0.0 )
+  {
+    setNuclide( m_nuclide );
+    updateAgedText();
+  }
+  
+  m_useAgeInfo->setChecked( true );
+  useAgeInfoUserToggled();
+    
+  WDate measDate = m_drfMeasurementDate->date();
+  WDate assayDate = m_assayDate->date();
+    
+  if( !measDate.isValid() && !assayDate.isValid() )
+  {
+    m_drfMeasurementDate->setDate( WDate::currentDate() );
+    m_assayDate->setDate( WDate::currentDate() );
+    measDate = assayDate = WDate::currentDate();
+  }else if( !assayDate.isValid() )
+  {
+    m_assayDate->setDate( measDate );
+    assayDate = measDate;
+  }else if( !measDate.isValid() )
+  {
+    m_drfMeasurementDate->setDate( assayDate );
+    measDate = assayDate;
+  }else if( assayDate > measDate )
+  {
+    m_assayDate->setDate( measDate );
+    assayDate = measDate;
+  }
+    
+  double assayToMeasTime = assayDate.daysTo(measDate) * PhysicalUnits::day;
+  
+  if( assayToMeasTime > age )
+  {
+    m_assayDate->setDate( measDate );
+    assayDate = measDate;
+    assayToMeasTime = 0.0;
+  }
+  
+  m_sourceAgeAtAssay->setText( PhysicalUnits::printToBestTimeUnits(age-assayToMeasTime) );
+
+  updateAgedText();
+}//void setAgeAtMeas( const double age );
+
+
 void MakeDrfSrcDef::setShielding( const float atomic_number, const float areal_density )
 {
   m_useShielding->setChecked();
   m_shieldingSelect->setHidden( false );
   m_shieldingSelect->setAtomicNumberAndArealDensity( atomic_number, areal_density );
 }//void setShielding( const float atomic_number, const float areal_density )
+
+
+std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
+{
+  string answer;
+  if( m_nuclide )
+  {
+    //m_nuclide->symbol == 'U235m2'
+    const size_t numpos = m_nuclide->symbol.find_first_of("0123456789");
+    assert( numpos != string::npos );
+    string numbers = m_nuclide->symbol.substr(numpos);  //235m2
+    string meta;
+    const size_t metapos = numbers.find_first_not_of("0123456789");
+    if( metapos != string::npos )
+    {
+      meta = numbers.substr(metapos);  //m2
+      numbers = numbers.substr(0,metapos); //235
+    }
+    
+    answer = numbers + m_nuclide->symbol.substr(0,numpos) + meta;
+  }//if( m_nuclide )
+  
+  if( !answer.empty() )
+    answer += ",";
+  
+  const double activity = activityAtSpectrumTime();
+  answer += PhysicalUnits::printToBestActivityUnits(activity,5,true);
+  
+  if( m_shieldingSelect && m_useShielding->isChecked() )
+  {
+    double an = 14, ad = 0.0;
+    if( m_shieldingSelect->isGenericMaterial() )
+    {
+      if( !m_shieldingSelect->atomicNumberEdit()->text().empty()
+         && !m_shieldingSelect->arealDensityEdit()->text().empty() )
+      {
+        an = m_shieldingSelect->atomicNumber();
+        ad = m_shieldingSelect->arealDensity();
+      }
+    }else
+    {
+      std::shared_ptr<Material> mat = m_shieldingSelect->material();
+      if( mat )
+      {
+        an = mat->massWeightedAtomicNumber();
+        ad = mat->density * m_shieldingSelect->thickness();
+      }//if( mat )
+    }//if( shield->isGenericMaterial() ) / else
+    
+    answer += "{" + std::to_string(an) + "," + std::to_string(ad) + "}";
+  }//if( user is using shielding )
+  
+  const bool mayEvolve = (m_nuclide && !PeakDef::ageFitNotAllowed(m_nuclide));
+  const double age = ageAtSpectrumTime();
+  if( mayEvolve && age >= 0.0 )
+    answer += " Age=" + PhysicalUnits::printToBestTimeUnits(age);
+  
+  return answer;
+}//std::string toGadrasLikeSourceString() const

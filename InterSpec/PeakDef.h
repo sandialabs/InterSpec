@@ -404,6 +404,23 @@ public:
   inline bool useForShieldingSourceFit() const;
   inline void useForShieldingSourceFit( const bool use );
 
+  /** Returns if should use for DRF fit.  If has not been explicitly set, will
+   return true if their is a nuclide and transition defined, and the source
+   gamma type is SourceGammaType::NormalGamma.
+   \sa MakeDrf
+   */
+  inline bool useForDrfFit() const;
+  
+  /** Sets if the peak should be used or not for DRF fit.
+   \sa MakeDrf
+   */
+  inline void useForDrfFit( const bool use );
+  
+  /** Resets if the peak should be used for DRF fit.
+   \sa MakeDrf
+   */
+  inline void resetUseForDrfFit();
+  
   inline double chi2dof() const;
   inline bool chi2Defined() const;
 
@@ -736,6 +753,21 @@ public:
   bool m_useForCalibration;
   bool m_useForShieldingSourceFit;
   
+  /** Variable to tell if this peak should be used in the detector response
+   model fit; currently the MakeDRF widget only sets this when saving a N42
+   fit.
+   Can only take on the values {-1,0,1}.
+    -1 means it has not been set and so some simple heuristics will be used to
+       determine if it should be set
+     0 means do not use
+     1 means do use
+   
+   ///ToDo: Implement logic similar to #PeakModel::kUseForShieldingSourceFit
+            for this variable, and maybe make it a bool.  Also have MakeDrf
+            widget update it as the user changes it in the widget.
+   */
+  int m_useForDetectorResponseFit;
+  
   /** Line color of the peak.  Will also (currently) be used to set the fill of
       the peak, just with the alpha channel lowered.
       Alpha not currently allowed, partially because of Wt bug parsing strings
@@ -959,5 +991,29 @@ void PeakDef::useForShieldingSourceFit( const bool use )
 {
   m_useForShieldingSourceFit = use;
 }//void useForShieldingSourceFit( const bool use )
+
+
+bool PeakDef::useForDrfFit() const
+{
+  if( m_useForDetectorResponseFit == 1 )
+    return true;
+  if( m_useForDetectorResponseFit == 0 )
+    return false;
+  
+  if( m_parentNuclide && m_transition && m_sourceGammaType==SourceGammaType::NormalGamma )
+    return true;
+  
+  return false;
+}
+
+void PeakDef::useForDrfFit( const bool use )
+{
+  m_useForDetectorResponseFit = (use ? 1 : 0);
+}
+
+void PeakDef::resetUseForDrfFit()
+{
+  m_useForDetectorResponseFit = -1;
+}
 
 #endif

@@ -130,11 +130,43 @@ public:
    */
   void setAssayInfo( const double activity, const boost::posix_time::ptime &assay_date );
   
+  /** Sets the age at assay date, enabling aging if it isnt already.
+   Does not cause the updated() signal to be emitted.
+   //Function was implemented but not tested, so leaving commented out until its needed
+   */
+  //void setAgeAtAssay( const double age );
+  
+  
+  /** Sets the age at the time of measurement.
+     If there is already a measurement and assay date, and 'age' is larger than
+     their difference, the age at assay field is modified.  If this is not the
+     case, the assay date is set equal to measurement date, and age at assay
+     field is set to the value passed in.
+     If a negative value is passed in, the setNuclide(...) is called, effectively
+     reseting things.
+   
+     Does not cause the updated() signal to be emitted.
+   */
+  void setAgeAtMeas( const double age );
+  
+  
   /** Sets the shielding to be generic material with given atomoic number and
      areal density.
      Causes shielding widget to be shown.
    */
   void setShielding( const float atomic_number, const float areal_density );
+  
+  /** Returns a GADRAS style source string.
+      May include source age, if it will matter.
+      Will not include source distance.
+   
+      Examples are: "133Ba,10uCi"
+                    "232U,10uC{26,10}"
+                    "232U,10uC{26,10} Age=20y"  //The Age is a InterSpec extension and not followed by GADRAS.
+   
+      Throughs exception if any input widgets are invalid.
+   */
+  std::string toGadrasLikeSourceString() const;
   
 protected:
   /** Creates the widget, but doesnt fill out any of the information. */

@@ -557,6 +557,12 @@ void MakeDrfChart::setDataPoints( const std::vector<MakeDrfChart::DataPoint> &da
 }//void setDataPoints(...)
 
 
+const std::vector<MakeDrfChart::DataPoint> &MakeDrfChart::currentDataPoints() const
+{
+  return m_datapoints;
+}
+
+
 void MakeDrfChart::showFwhmPoints( const bool show )
 {
   series(sm_data_fwhm_col).setHidden( !show );
