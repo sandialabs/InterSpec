@@ -748,6 +748,32 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
 }//void fromExpOfLogPowerSeriesAbsEff
 
 
+void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
+                         const ResolutionFnctForm form )
+{
+  switch( form )
+  {
+    case ResolutionFnctForm::kSqrtPolynomial:
+      if( coefs.empty() )
+        throw runtime_error( "setFwhmCoefficients: Sqrt polynomial equation must have at least one coefficient." );
+      break;
+    case ResolutionFnctForm::kGadrasResolutionFcn:
+      if( coefs.size() != 3 )
+        throw runtime_error( "setFwhmCoefficients: GADRAS equation must have three coefficients." );
+      
+    case ResolutionFnctForm::kNumResolutionFnctForm:
+      if( !coefs.empty() )
+        throw runtime_error( "setFwhmCoefficients: NumResolutionFnctForm must not have any coefficients." );
+      break;
+  }//switch( form )
+  
+  m_resolutionForm = form;
+  m_resolutionCoeffs = coefs;
+  
+  computeHash();
+}//void setFwhmCoefficients(...)
+
+
 void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent, 
                                   ::rapidxml::xml_document<char> *doc ) const
 {

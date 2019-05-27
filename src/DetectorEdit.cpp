@@ -2353,6 +2353,8 @@ void DetectorEdit::gadrasDetectorSelectCallback()
 void DetectorEdit::acceptAndFinish()
 {
   //Save detector to DB
+  //Actually check if in database already 
+  
   try
   {
     if( !! m_detector )
