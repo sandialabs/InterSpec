@@ -32,6 +32,7 @@
 #include <Wt/WImage>
 #include <Wt/WPanel>
 #include <Wt/WLabel>
+#include <Wt/WTable>
 #include <Wt/WAnchor>
 #include <Wt/WServer>
 #include <Wt/WResource>
@@ -40,6 +41,8 @@
 #include <Wt/WCheckBox>
 #include <Wt/WSvgImage>
 #include <Wt/WGroupBox>
+#include <Wt/WTextArea>
+#include <Wt/WTableCell>
 #include <Wt/WTabWidget>
 #include <Wt/WIOService>
 #include <Wt/WGridLayout>
@@ -60,6 +63,7 @@
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/DataBaseUtils.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -1267,40 +1271,160 @@ void MakeDrf::startSaveAs()
   
   AuxWindow *w = new AuxWindow( "Save/Download DRF", windowprop );
 
+  WTable *table = new WTable( w->contents() );
+  table->addStyleClass( "MakeDrfSaveAsTable" );
   
-  //We need a non-empty name field.
-  //A description field (when changed, update the CalFileDownloadResource with the name)
-  //(options)
-  //Save/Cancel buttons.
+  WTableCell *cell = table->elementAt(0, 0);
+  WLabel *label = new WLabel( "Name", cell );
   
+  cell = table->elementAt(0, 1);
+  WLineEdit *name = new WLineEdit( cell );
+  label->setBuddy( name );
+  name->setTextSize( 32 );
+  name->setMaxLength( 255 );
+  name->setAutoComplete( false );
+  //const char *valid_file_name_regex = "(^(?!\\.)(?!com[0-9]$)(?!con$)(?!lpt[0-9]$)(?!nul$)(?!prn$)[^\\|*\\?\\\\:<>/$\"]*[^\\.\\|*\\?\\\\:<>/$\"]+$";
+  const char *valid_file_name_regex = R"MyRegexDelim(^[^\\\/\:\*\?\"\'\,\;\<\>\|]+$)MyRegexDelim";
+  WRegExpValidator *validator = new WRegExpValidator( valid_file_name_regex, name );
+  name->setValidator( validator );
   
-  WContainerWidget *downloadDiv = new WContainerWidget( w->contents() );
-  CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
-  CalFileDownloadResource *pcfResource = new CalFileDownloadResource( true, this );
-  
-  
-  auto help = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), downloadDiv);
-  help->setWidth( 12 );
-  help->setHeight( 12 );
-  const char *tooltip = "Do the download and ";
+  cell = table->elementAt(0, 2);
+  WImage *help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help->addStyleClass( "MakeDrfSaveHelp" );
+  const char *tooltip = "Name of the detector response function to save to <em>InterSpecs</em>"
+                        " internal database so you can use the response function later."
+                        "  Name must be a valid filename (e.g., no \\\\, /, :, etc. characters).";
   HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
   
-  WText *t = new WText( "Download data as&nbsp;", Wt::XHTMLText, downloadDiv );
-  WAnchor *anchor = new WAnchor( pcfResource, "PCF", downloadDiv );
-  t = new WText( "&nbsp;or&nbsp;", Wt::XHTMLText, downloadDiv );
-  anchor = new WAnchor( n42Resource, "N42-2012", downloadDiv );
-  t = new WText( "&nbsp;file.", Wt::XHTMLText, downloadDiv );
+  cell = table->elementAt(1, 0);
+  label = new WLabel( "Description", cell );
+  cell = table->elementAt(1, 1);
+  cell->setRowSpan( 2 );
+  WTextArea *description = new WTextArea( cell );
+  label->setBuddy( description );
+  description->setWidth( WLength(97,WLength::Percentage) );
+  
+  cell = table->elementAt(1, 2);
+  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help->addStyleClass( "MakeDrfSaveHelp" );
+  tooltip = "Optional description of of the DRF to help remind yourself of details when you use the DRF in the future.";
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  
+
+  cell = table->elementAt(3, 0);
+  cell->setColumnSpan( 2 );
+  CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
+  new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
+  
+  cell = table->elementAt(3, 2);
+  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help->addStyleClass( "MakeDrfSaveHelp" );
+  tooltip = "Export a N42 file containing all spectra and peaks used to create this DRF."
+            "  Source and shielding information is also usually stored into the file as well to,"
+            " in principal, provide all the input information used to create the DRF.";
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
   
   
-  //Should we also add a table in the database so the full information can be
-  //  saved?  We could save most of it in XML so changes in the future wont need
-  //  to alter the DB schema (Its easier to update XML than the DB).
-  //  Maybe for now we can just offer a XML download link.
-  //  Should the XML include the original measurements and peaks?  Might be
-  //  kinda nice anyway; if so should have options to save with DRF.
-  
-  WPushButton *b = w->addCloseButtonToFooter();
+  WPushButton *b = w->addCloseButtonToFooter( "Cancel" );
   b->clicked().connect( w, &AuxWindow::hide );
+  
+  auto doSave = [this, w, validator, name, description](){
+    auto state = validator->validate(name->text()).state();
+    if( name->text().empty() || state!=WValidator::Valid )
+    {
+      passMessage( "Detector name not valid.", "", 3 );
+      return;
+    }
+    
+    if( m_effEqnCoefs.empty() )
+    {
+      passMessage( "Intrinsic Efficiency Equation is not valid.", "", 3 );
+      return;
+    }
+    
+    string drfname = name->text().toUTF8();
+    string drfdescrip = description->text().toUTF8();
+    UtilityFunctions::trim( drfname );
+    UtilityFunctions::trim( drfdescrip );
+    
+    auto drf = make_shared<DetectorPeakResponse>( drfname, drfdescrip );
+    
+    float diameter;
+    try
+    {
+      const double diam = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
+      diameter = static_cast<float>( diam );
+    }catch(...)
+    {
+      passMessage( "Detector diameter entered is not a valid distance.", "", 3 );
+      return;
+    }
+    
+    const bool inMeV = (m_effEqnUnits->currentIndex() == 1);
+    const float energyUnits = inMeV ? 1000.0f : 1.0f;
+    
+    drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, 0.0f, diameter, energyUnits );
+    
+    if( !m_fwhmCoefs.empty() )
+    {
+      switch( m_fwhmEqnType->currentIndex() )
+      {
+        case 0:
+          drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn );
+          break;
+          
+        case 1:
+          drf->setFwhmCoefficients( m_fwhmCoefs, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+          break;
+      }//switch( m_fwhmEqnType->currentIndex() )
+    }//if( !m_fwhmCoefs.empty() )
+  
+    //Need something here to indicate this is a created DRF.
+    
+    try
+    {
+      auto sql = std::make_shared<DataBaseUtils::DbSession>( *m_interspec->sql() );
+      
+      DataBaseUtils::DbTransaction transaction( *sql );
+      //Create a separate DetectorPeakResponse because shared_ptr and dbo::ptr don't work well together
+      DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
+      tempDetector->m_user = m_interspec->m_user.id();
+      sql->session()->add( tempDetector );
+      transaction.commit();
+    }catch( std::exception &e )
+    {
+      passMessage( "Error saving DetectorPeakResponse to data base: " + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
+      return;
+    }//try / catch
+    
+    m_interspec->detectorChanged().emit( drf );
+    
+    w->hide();
+    
+    //We should also do something to hide the current make DRF window so it is obvious things are done...
+  };
+  
+  WPushButton *save = w->addCloseButtonToFooter( "Save" );
+  save->clicked().connect( std::bind(doSave) );
+  save->disable();
+  
+  auto updateSaveBtn = [name,save,validator](){
+    bool enable = false;
+    switch( validator->validate(name->text()).state() )
+    {
+      case WValidator::Invalid:      enable = false; break;
+      case WValidator::InvalidEmpty: enable = false; break;
+      case WValidator::Valid:        enable = !name->text().empty(); break;
+    }
+    save->setEnabled( enable );
+  };
+  
+  name->validated().connect( std::bind(updateSaveBtn) );  //doesnt seem to ever get called...
+  //name->changed().connect( std::bind(updateSaveBtn) );
+  //name->enterPressed().connect( std::bind(updateSaveBtn) );
+  name->keyPressed().connect( std::bind(updateSaveBtn) ); //Uhg, I guess we'll just use this until I figure out whats wrong with above so save button will update in real time
+  
+  
   w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w) );
   w->rejectWhenEscapePressed();
   w->show();

@@ -294,6 +294,15 @@ public:
                                       const float detector_diameter,
                                       const float energyUnits );
 
+  /**
+   if form==kGadrasResolutionFcn then coefs must have 3 entries
+   if form==kSqrtPolynomial then coefs must not be empty,
+      and coefficients must have been fit for energy in MeV
+   if form==kNumResolutionFnctForm then coefs must be empty
+   */
+  void setFwhmCoefficients( const std::vector<float> &coefs,
+                            const ResolutionFnctForm form );
+  
   //efficiency(...): Currently just linearly interpolates between surrounding
   //  efficiency points for m_efficiencyForm=kEnergyEfficiencyPairs.  Will throw
   //  std::runtime_exception if the object has not been initialized.  Above or

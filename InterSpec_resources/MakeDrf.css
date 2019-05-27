@@ -29,6 +29,24 @@
   border-radius: 3px;
 }
 
+.MakeDrfSaveHelp {
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+}
+
+.MakeDrfSaveAsTable {
+  margin-top: 3px;
+}
+
+.MakeDrfSaveAsTable > tbody > tr > td {
+  padding-top: 3px;
+  padding-bottom: 2px;
+  padding-right: 2px;
+  padding-left: 2px;
+}
+
+
 .DrfSpecFile {
   /* border: 1px solid green; */
   border: 3px solid #888888;
