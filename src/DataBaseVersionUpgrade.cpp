@@ -471,9 +471,31 @@ namespace DataBaseVersionUpgrade
     }//if( version<6 && version<DB_SCHEMA_VERSION )
     
     
+    if( version<10 && version<DB_SCHEMA_VERSION )
+    {
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+      
+      const char *sql_statement = nullptr;
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_flags bigint default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_lowerEnergy REAL default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_upperEnergy REAL default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_drfSource integer default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_createdUtc bigint default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_lastUsedUtc bigint default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      
+      version = 10;
+      setDBVersion( version, sqlSession );
+    }//if( version<6 && version<DB_SCHEMA_VERSION )
+    
     
     /// ******************************************************************
-    /// DB_SCHEMA_VERSION is at 9.  Add Version 10 here.  Update InterSpecUser.h!
+    /// DB_SCHEMA_VERSION is at 10.  Add Version 11 here.  Update InterSpecUser.h!
     /// ******************************************************************
   }//void checkAndUpgradeVersion()
   

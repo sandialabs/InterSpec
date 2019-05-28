@@ -6672,7 +6672,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, &InterSpec::createDecay );
 
   
-  item = popup->addMenuItem( "Detector Edit/Select" );
+  item = popup->addMenuItem( "Detector Response Select" );
   HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTipInstantly );
   item->triggered().connect( boost::bind( &InterSpec::showDetectorEditWindow, this ) );
   
@@ -7594,6 +7594,8 @@ void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
 
   std::shared_ptr<DetectorPeakResponse> det;
 
+  //If we implement user option to load certain DRF for certain serial numbers or models, we would check the database here
+  
   try
   {
     switch( type )
@@ -7838,7 +7840,17 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         }
 
         if( meas->detector() != old_det )
+        {
+          auto drf = meas->detector();
           m_detectorChanged.emit( meas->detector() );
+          
+          if( drf )
+          {
+            auto drfcopy = std::make_shared<DetectorPeakResponse>( *drf );
+            boost::function<void(void)> worker = boost::bind( &DetectorEdit::updateLastUsedTimeOrAddToDb, drfcopy, m_user.id(), m_sql );
+            WServer::instance()->ioService().post( worker );
+          }
+        }//if( meas->detector() != old_det )
         
         DetectorType detType = meas->detector_type();
         if( detType == kUnknownDetector )

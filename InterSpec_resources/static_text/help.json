@@ -79,7 +79,7 @@
       },
       {
         "id":"detector-edit-dialog",
-        "title":"Detector Edit/Select",
+        "title":"Detector Select",
         "help-xml":"detector_edit_help.xml",
         "keywords":"Detectors Edit Select Tool Camera Icon GADRAS Relative Efficiency Upload Manually Recent Reference Photopeaks Intrinsic Efficiency Full Width at Half Maximum FWHM Defined Efficiency.csv Parameters Geometric Detector.dat Akima Interpolation Cubic Spline Absolute"
       },
