@@ -1,6 +1,6 @@
     <div align="center">
       <h1 id="detector-edit-dialog">
-            <b>Detector Edit/Select</b>
+            <b>Detector Select</b>
       </h1>
       <hr />
 	  </div>
@@ -14,7 +14,7 @@
         detector with a similar efficiency to manufacturer published specifications is found.
 
          If an appropriate DRF is not found, or an incorrect one is guessed, you can change the detector via menu
-         <b>Tools &#8594; Detector Edit/Select</b>, or by clicking on the detector widget (
+         <b>Tools &#8594; Detector Select</b>, or by clicking on the detector widget (
          <img src="InterSpec_resources/static_text/images/detector_widget.png" valign="middle" style="max-height:30px;" />
          ) found in the following locations:
       <ul>
@@ -47,7 +47,7 @@ fit to converge.
       </div>
 	  <div style="padding-top: 10px">
          The
-         <b>Detector Edit/Select</b>
+         <b>Detector Select</b>
          will provide some generic detector response functions (DRFs) as well as
          an oppritunity to use DRFs from <code>GADRAS</code>, <code>SimpleMass</code>, free from equations,
          standard equation coefficients, or absolute efficiencies specified using a comma seperated value
@@ -80,7 +80,7 @@ fit to converge.
                  of including both intrinsic efficiency and FWHM information (which may help peak fitting).  For further information
                  on <code>GADRAS-DRF</code> detector response functions see:
                  <a target="_blank" href="http://prod.sandia.gov/techlib/access-control.cgi/2014/1420625.pdf">GADRAS-DRF 18.5 User’s Manual</a>.
-                 In order to use GADRAS-DRF response functions you must point the <em>GADRAS</em> tab of the <em>Detector Edit/Select</em>
+                 In order to use GADRAS-DRF response functions you must point the <em>GADRAS</em> tab of the <em>Detector Select</em>
                  to the root directory of your GADRAS-DRF detectors.  This root directory will be saved as a user preference across
                  sessions.
 

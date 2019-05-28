@@ -41,6 +41,9 @@
 #include <functional>
 
 #include <Wt/Dbo/Dbo>
+#include <Wt/WDateTime>
+#include <Wt/Dbo/SqlTraits>
+#include <Wt/Dbo/WtSqlTraits>
 
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
@@ -141,7 +144,7 @@ class DetectorPeakResponse
    try
    {
      float detector_diameter = PhysicalUnits::stringToDistance( "2.2 cm" );
-     det.setIntrinsicEfficiencyFormula( fcn, detector_diameter, 1.0f );
+     det.setIntrinsicEfficiencyFormula( fcn, detector_diameter, 1.0f, 0.0f, 0.0f );
    }catch( std::exception &e )
    {
      std::cerr << "Caught: " << e.what() << std::endl;
@@ -183,6 +186,46 @@ public:
     kUserEfficiencyEquationSpecified,
     kUnknownEfficiencySource
   };//enum EfficiencyDefinitionSource
+  
+  /** Enum used to indicate where the DRF came from.  This is used primarily to
+      help decide what DRFs to show when user browses database.
+   */
+  enum DrfSource
+  {
+    UnknownDrfSource = 0,
+    
+    /** One of the GADRAS based DRFs that come with InterSpec. */
+    DefaultGadrasDrf = 1,
+    
+    /** A GADRAS DRF from the filesystem (like C:\Gadras\Detectors, or
+     InterSpecs user data directory.
+     */
+    UserAddedGadrasDrf = 2,
+    
+    /** Relative (or intrinsic) efficiency DRF from a CSV or TSV from a user
+     specified directory, like InterSpecs user data directory.
+     */
+    UserAddedRelativeEfficiencyDrf = 3,
+    
+    /** User used the "Import" of Detector Select tool to upload Efficiency.csv
+     file, and specified the detector diameter.
+    */
+    UserImportedIntrisicEfficiencyDrf = 4,
+    
+    /** User used the "Import" of DetectorSelect tool to upload an
+        Efficiency.csv and Detector.dat file.
+     */
+    UserImportedGadrasDrf = 5,
+    
+    /** User specified a formula in the Detector Select Tool. */
+    UserSpecifiedFormulaDrf = 6,
+    
+    /** User used the MakeDrf tool to create the DRF. */
+    UserCreatedDrf = 7,
+    
+    /** The DRF was included in a spectrum (N42) file. */
+    FromSpectrumFileDrf = 8
+  };//enum DrfSource
   
 public:
   //DetectorPeakResponse(): constructs with no defined resolution, efficiency,
@@ -258,6 +301,9 @@ public:
   //
   //The 'detector_diameter' is in units of PhysicalUnits (e.g. mm).
   //
+  //The lower and upper energy parameters specify the energy range the function
+  //  is valid over; if unknown specify 0.0f for both.
+  //
   //Throws std::runtime_error if invalid expression, with a message that is
   //  valid HTML
   //Note, valid function names are:
@@ -265,7 +311,9 @@ public:
   //    sinh, cosh, tanh, exp, log, ln (synonym for log), log10
   void setIntrinsicEfficiencyFormula( const std::string &fcn,
                                       const float detector_diameter,
-                                      const float energyUnits );
+                                      const float eqnEnergyUnits,
+                                      const float lowerEnergy,
+                                      const float upperEnergy );
   
   //fromGadrasDefinition(...): accepts the Efficiency.csv and Detector.dat
   //  files from GADRAS to define the detector.
@@ -283,16 +331,31 @@ public:
   void fromGadrasDirectory( const std::string &dir );
   
   
-  //fromExpOfLogPowerSeriesAbsEff(...): sets the detectors as a
-  //  kExpOfLogPowerSeries effiency detector, using the fit absolute
-  //  efficiency coefficients at a distance 'characterizationDist'.
-  //  If characterizationDist<=0.0, then it is assumed the coefficients are
-  //  already intrinsic efficiiency coeficients.
-  //  Recomputes hash value.
+  /** Sets the detectors as a kExpOfLogPowerSeries effiency detector, using the
+      fit absolute efficiency coefficients.
+   
+   \param coefs The coefficients for the exp(A0 + A1*log(x) + A2*log(x)^2...)
+          equation.  If coefficients are not for intrinsic efficiency (e.g.,
+          characterizationDist is not 0.0), they coeffcients will be converted
+          to intrinsic for internal use
+   \param characterizationDist Distance used when fitting coefficents.  If
+          coefficients are for intrinsic efficiency, then this value will be
+          0.0f.
+   \param equationEnergyUnits The energy units equation should be evalueated
+          in. If equn is in MeV, this will be 1000.  If in keV, will be 1.0.
+   \param lowerEnergy Lower energy, in keV, the equation is good for; if
+          unknown pass a value of 0.0f for this parameter and upperEnergy.
+   \param upperEnergy Upper energy, in keV, the equation is good for; if
+          unknown pass a value of 0.0f for this parameter and lowerEnergy.
+   
+   Recomputes hash value.
+  */
   void fromExpOfLogPowerSeriesAbsEff( const std::vector<float> &coefs,
                                       const float characterizationDist,
                                       const float detector_diameter,
-                                      const float energyUnits );
+                                      const float equationEnergyUnits,
+                                      const float lowerEnergy,
+                                      const float upperEnergy );
 
   /**
    if form==kGadrasResolutionFcn then coefs must have 3 entries
@@ -365,6 +428,19 @@ public:
   void setDescription( const std::string &descrip );
   void setEfficiencySource( const EfficiencyDefinitionSource src );
 
+  //Search for: setFwhmCoefficients, fromGadrasDirectory, fromGadrasDefinition, setIntrinsicEfficiencyFormula, fromEnergyEfficiencyCsv, fromExpOfLogPowerSeriesAbsEff
+  //  And maybe consider making them take a DrfSource argument
+  void setDrfSource( const DrfSource source );
+  
+  /** Sets the energy range the DRF is valid over; currently not enforced or
+      indicated anywhere in InterSpec, but may be in the future.
+   */
+  void setEnergyRange( const double lower, const double upper );
+  
+  /** Updated the #m_lastUsedUtc member variable to current time.  Does not
+      save to database.
+   */
+  void updateLastUsedTimeToNow();
   
   //Some temporary accessors for debugging 2019050
   ResolutionFnctForm resolutionFcnType() const { return m_resolutionForm; }
@@ -513,6 +589,30 @@ protected:
   //   detectors in InterSpec)
   uint64_t m_parentHash;
   
+  /** Not currently used, but in place for future upgrades, so DB schema wont
+   have to be changed.
+   */
+  uint64_t m_flags;
+  
+  /** The lower energy (in keV) the DRF is good to; not (currently) enforced
+   anywhere in InterSpec, but is good to know.
+   */
+  double m_lowerEnergy;
+  
+  /** The upper energy (in keV) the DRF is good to; not (currently) enforced
+   anywhere in InterSpec, but is good to know.
+   */
+  double m_upperEnergy;
+  
+  /** Where this DRF originally came from. */
+  DrfSource m_drfSource;
+  
+  /** Time when DRF was created. */
+  int64_t m_createdUtc;
+  
+  /** Last time the DRF was used. */
+  int64_t m_lastUsedUtc;
+  
   static const int sm_xmlSerializationVersion;
   
 public:
@@ -640,22 +740,30 @@ public:
     Wt::Dbo::field( a, m_user, "InterSpecUser_id" );
     
     //Wt::Dbo doesnt support unsigned integers, so we got a little workaround
-    int64_t hash, parentHash;
+    int64_t hash, parentHash, flags;
     if( a.getsValue() )
     {
       hash = reinterpret_cast<int64_t&>(m_hash);
       parentHash = reinterpret_cast<int64_t&>(m_parentHash);
+      flags = reinterpret_cast<int64_t&>(m_flags);
     }
     
     Wt::Dbo::field( a, hash, "Hash" );
     Wt::Dbo::field( a, parentHash, "ParentHash" );
+    Wt::Dbo::field( a, flags, "m_flags" );
     
     if( a.setsValue() || a.isSchema() )
     {
       m_hash = reinterpret_cast<uint64_t&>(hash);
       m_parentHash = reinterpret_cast<uint64_t&>(parentHash);
+      m_flags = reinterpret_cast<uint64_t&>(flags);
     }
 
+    Wt::Dbo::field( a, m_lowerEnergy, "m_lowerEnergy" );
+    Wt::Dbo::field( a, m_upperEnergy, "m_upperEnergy" );
+    Wt::Dbo::field( a, m_drfSource, "m_drfSource" );
+    Wt::Dbo::field( a, m_createdUtc, "m_createdUtc" );
+    Wt::Dbo::field( a, m_lastUsedUtc, "m_lastUsedUtc" );
   } //void persist( Action &a )
 };//class DetectorPeakResponse
 

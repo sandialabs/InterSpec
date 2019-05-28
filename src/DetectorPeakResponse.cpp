@@ -25,6 +25,7 @@
 
 #include <mutex>
 #include <cmath>
+#include <ctime>
 #include <memory>
 #include <cctype>
 #include <string>
@@ -317,7 +318,13 @@ DetectorPeakResponse::DetectorPeakResponse()
     m_efficiencySource( DetectorPeakResponse::kUnknownEfficiencySource ),
     m_efficiencyForm( DetectorPeakResponse::kNumEfficiencyFnctForms ),
     m_hash( 0 ),
-    m_parentHash( 0 )
+    m_parentHash( 0 ),
+    m_flags( 0 ),
+    m_lowerEnergy( 0.0 ),
+    m_upperEnergy( 0.0 ),
+    m_drfSource( DrfSource::UnknownDrfSource ),
+    m_createdUtc( 0 ),
+    m_lastUsedUtc( 0 )
 {
 } //DetectorPeakResponse()
 
@@ -332,14 +339,20 @@ DetectorPeakResponse::DetectorPeakResponse( const std::string &name,
     m_efficiencySource( DetectorPeakResponse::kUnknownEfficiencySource ),
     m_efficiencyForm( DetectorPeakResponse::kNumEfficiencyFnctForms ),
     m_hash( 0 ),
-    m_parentHash( 0 )
+    m_parentHash( 0 ),
+    m_flags( 0x0 ),
+    m_lowerEnergy( 0.0 ),
+    m_upperEnergy( 0.0 ),
+    m_drfSource( DrfSource::UnknownDrfSource ),
+    m_createdUtc( 0 ),
+    m_lastUsedUtc( 0 )
 {
-} //DetectorPeakResponse( const std::string &name, const std::string &descrip )
+}//DetectorPeakResponse( const std::string &name, const std::string &descrip )
 
 
 DetectorPeakResponse::~DetectorPeakResponse()
 {
-} //~DetectorPeakResponse()
+}//~DetectorPeakResponse()
 
 
 uint64_t DetectorPeakResponse::hashValue() const
@@ -385,6 +398,22 @@ void DetectorPeakResponse::computeHash()
 
   for( const float val : m_expOfLogPowerSeriesCoeffs )
     boost::hash_combine( seed, val );
+  
+  //For legacy DRFs (pre 1.0.4 / 20190527) that dont have DRF source info,
+  //  lower/upper energies, and m_flags, dont change the hash.
+  if( m_lowerEnergy != 0.0 || m_upperEnergy != 0.0 )
+  {
+    boost::hash_combine( seed, m_lowerEnergy );
+    boost::hash_combine( seed, m_upperEnergy );
+  }
+  
+  if( m_drfSource != DrfSource::UnknownDrfSource )
+  {
+    boost::hash_combine( seed, m_flags );
+    boost::hash_combine( seed, m_drfSource );
+  }
+  
+  //Dont hash based on m_createdUtc or m_lastUsed
   
   m_hash = seed;
 }//void computeHash()
@@ -441,6 +470,11 @@ void DetectorPeakResponse::reset()
   m_resolutionCoeffs.clear();
   m_energyEfficiencies.clear();
   m_hash = m_parentHash = 0;
+  m_flags = 0;
+  m_lowerEnergy = m_upperEnergy = 0.0;
+  m_drfSource = DrfSource::UnknownDrfSource;
+  m_createdUtc = m_lastUsedUtc = 0;
+  
   
 /*
   m_name = "Flat";
@@ -469,8 +503,14 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && m_efficiencyForm==rhs.m_efficiencyForm
           && m_resolutionCoeffs==rhs.m_resolutionCoeffs
           && m_energyEfficiencies==rhs.m_energyEfficiencies
+          && m_drfSource==rhs.m_drfSource
           && m_hash==rhs.m_hash
-          && m_parentHash==rhs.m_parentHash );
+          && m_parentHash==rhs.m_parentHash
+          && m_lowerEnergy==rhs.m_lowerEnergy
+          && m_upperEnergy==rhs.m_upperEnergy
+          //m_createdUtc
+          //m_lastUsedUtc
+          );
 }//operator==
 
 
@@ -491,6 +531,30 @@ void DetectorPeakResponse::setEfficiencySource(
   m_efficiencySource = src;
   computeHash();
 }//void setEfficiencySource( const EfficiencyDefinitionSource src )
+
+
+void DetectorPeakResponse::setDrfSource( const DetectorPeakResponse::DrfSource source )
+{
+  if( m_drfSource == source )
+    return;
+  
+  m_drfSource = source;
+  computeHash();
+}//void setDrfSource( const DrfSource source );
+
+
+void DetectorPeakResponse::setEnergyRange( const double lower, const double upper )
+{
+  m_lowerEnergy = lower;
+  m_upperEnergy = upper;
+  computeHash();
+}//void setEnergyRange( const double lower, const double upper )
+
+
+void DetectorPeakResponse::updateLastUsedTimeToNow()
+{
+  m_lastUsedUtc = std::time(nullptr);
+}//void updateLastUsedTimeToNow()
 
 
 void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
@@ -555,8 +619,7 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
       throw runtime_error( "Efficiency CSV files can have a max of 5000 total lines or 3000 energy efficiency pairs" );
     
   }//while( UtilityFunctions::safe_get_line(input) )
-  
-  
+
   
   if( m_energyEfficiencies.size() < 2 )
     throw runtime_error( "File was not a valid efficiency file, need at least"
@@ -599,6 +662,13 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
   
   m_efficiencyForm = kEnergyEfficiencyPairs;
   
+  m_flags = 0;
+  
+  m_lowerEnergy = m_energyEfficiencies.front().energy;
+  m_upperEnergy = m_energyEfficiencies.back().energy;
+  
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+  
   computeHash();
 }//void fromEnergyEfficiencyCsv(...)
 
@@ -606,7 +676,9 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
 
 void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
                                                           const float diameter,
-                                                          const float energyUnits )
+                                                          const float energyUnits,
+                                                          const float lowerEnergy,
+                                                          const float upperEnergy )
 {
   std::shared_ptr<FormulaWrapper > expression
                                 = std::make_shared<FormulaWrapper>( fcnstr );
@@ -618,6 +690,15 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
   m_detectorDiameter = diameter;
   m_efficiencyEnergyUnits = energyUnits;
   
+  m_flags = 0;
+  
+  m_lowerEnergy = lowerEnergy;
+  m_upperEnergy = upperEnergy;
+  
+  m_drfSource = DrfSource::UserSpecifiedFormulaDrf;
+  
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+  
   computeHash();
 }//void setIntrinsicEfficiencyFormula( const std::string &fcn )
 
@@ -627,6 +708,7 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
                                                  std::istream &detDatFile )
 {
   float detWidth = 0.0, heightToWidth = 0.0;
+  float lowerEnergy = 0.0, upperEnergy = 0.0;
 
   m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   m_resolutionCoeffs.clear();
@@ -651,11 +733,13 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
 //      const string descrip = parts.at(3);
       switch( parnum )
       {
-        case 6: m_resolutionCoeffs[0] = value; break;
-        case 7: m_resolutionCoeffs[1] = value; break;
-        case 8: m_resolutionCoeffs[2] = value; break;
-        case 11: detWidth = value;      break;
-        case 12: heightToWidth = value; break;
+        case 6:  m_resolutionCoeffs[0] = value; break;
+        case 7:  m_resolutionCoeffs[1] = value; break;
+        case 8:  m_resolutionCoeffs[2] = value; break;
+        case 11: detWidth = value;              break;
+        case 12: heightToWidth = value;         break;
+        case 62: lowerEnergy = value;           break;  //template error / min energy, keV
+        case 63: upperEnergy = value;           break;  //chi-square / max energy, keV
       }//switch( parnum )
     }catch(...)
     {
@@ -674,6 +758,15 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   fromEnergyEfficiencyCsv( csvFile, diam, static_cast<float>(PhysicalUnits::keV) );
   
   m_efficiencySource = kGadrasEfficiencyDefintion;
+  
+  m_flags = 0;
+  
+  m_lowerEnergy = lowerEnergy;
+  m_upperEnergy = upperEnergy;
+
+  m_drfSource = DrfSource::UserAddedGadrasDrf;
+  
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   
   computeHash();
 }//void fromGadrasDefinition(...)
@@ -720,7 +813,9 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
                                    const std::vector<float> &coefs,
                                    const float charactDist,
                                    const float det_diam,
-                                   const float energyUnits )
+                                   const float equationEnergyUnits,
+                                   const float lowerEnergy,
+                                   const float upperEnergy )
 {
   if( coefs.empty() )
     throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invlaid input" );
@@ -731,7 +826,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_efficiencyFormula.clear();
   
   m_efficiencyForm = kExpOfLogPowerSeries;
-  m_efficiencyEnergyUnits = energyUnits;
+  m_efficiencyEnergyUnits = equationEnergyUnits;
   m_detectorDiameter = det_diam;
   m_efficiencySource = kRelativeEfficiencyDefintion;
   m_expOfLogPowerSeriesCoeffs = coefs;
@@ -744,6 +839,15 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
     m_expOfLogPowerSeriesCoeffs[0] += log( 1.0f/gfactor );
   }//if( characterizationDist > 0.0f )
   
+  m_flags = 0;
+  
+  m_lowerEnergy = lowerEnergy;
+  m_upperEnergy = upperEnergy;
+  
+  m_drfSource = DrfSource::UserAddedRelativeEfficiencyDrf;
+  
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+
   computeHash();
 }//void fromExpOfLogPowerSeriesAbsEff
 
@@ -774,7 +878,7 @@ void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
 }//void setFwhmCoefficients(...)
 
 
-void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent, 
+void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
                                   ::rapidxml::xml_document<char> *doc ) const
 {
   using namespace rapidxml;
@@ -880,9 +984,10 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     base_node->append_node( node );
   }//if( m_expOfLogPowerSeriesCoeffs.size() )
   
-  stringstream hashstrm, parenthashstrm;
+  stringstream hashstrm, parenthashstrm, flagsstrm;
   hashstrm << m_hash;
   parenthashstrm << m_parentHash;
+  flagsstrm << m_flags;
   
   val = doc->allocate_string( hashstrm.str().c_str() );
   node = doc->allocate_node( node_element, "Hash", val );
@@ -891,6 +996,59 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   val = doc->allocate_string( parenthashstrm.str().c_str() );
   node = doc->allocate_node( node_element, "ParentHash", val );
   base_node->append_node( node );
+  
+  val = doc->allocate_string( flagsstrm.str().c_str() );
+  node = doc->allocate_node( node_element, "Flags", val );
+  base_node->append_node( node );
+  
+  if( m_lowerEnergy != 0.0 || m_upperEnergy != 0.0 )
+  {
+    snprintf( buffer, sizeof(buffer), "%1.8E", m_lowerEnergy );
+    val = doc->allocate_string( buffer );
+    node = doc->allocate_node( node_element, "LowerEnergy", val );
+    base_node->append_node( node );
+    
+    snprintf( buffer, sizeof(buffer), "%1.8E", m_upperEnergy );
+    val = doc->allocate_string( buffer );
+    node = doc->allocate_node( node_element, "UpperEnergy", val );
+    base_node->append_node( node );
+  }
+  
+  const char *drfSourceTxt = "UnknownDrfSource";
+  switch( m_drfSource )
+  {
+    case UnknownDrfSource:                                                                      break;
+    case DefaultGadrasDrf:                  drfSourceTxt = "DefaultGadrasDrf";                  break;
+    case UserAddedGadrasDrf:                drfSourceTxt = "UserAddedGadrasDrf";                break;
+    case UserAddedRelativeEfficiencyDrf:    drfSourceTxt = "UserAddedRelativeEfficiencyDrf";    break;
+    case UserImportedIntrisicEfficiencyDrf: drfSourceTxt = "UserImportedIntrisicEfficiencyDrf"; break;
+    case UserImportedGadrasDrf:             drfSourceTxt = "UserImportedGadrasDrf";             break;
+    case UserSpecifiedFormulaDrf:           drfSourceTxt = "UserSpecifiedFormulaDrf";           break;
+    case UserCreatedDrf:                    drfSourceTxt = "UserCreatedDrf";                    break;
+    case FromSpectrumFileDrf:               drfSourceTxt = "FromSpectrumFileDrf";               break;
+  }//switch( m_drfSource )
+  
+  node = doc->allocate_node( node_element, "DrfSource", drfSourceTxt );
+  base_node->append_node( node );
+  
+  
+  if( m_createdUtc )
+  {
+    stringstream strm;
+    strm << m_createdUtc;
+    val = doc->allocate_string( strm.str().c_str() );
+    node = doc->allocate_node( node_element, "CreationTimeUtc", val );
+    base_node->append_node( node );
+  }
+  
+  if( m_lastUsedUtc )
+  {
+    stringstream strm;
+    strm << m_lastUsedUtc;
+    val = doc->allocate_string( strm.str().c_str() );
+    node = doc->allocate_node( node_element, "LastUsedTimeUtc", val );
+    base_node->append_node( node );
+  }
 }//toXml(...)
 
 
@@ -1048,6 +1206,81 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse missing ParentHash node" );
   if( !(stringstream(node->value()) >> m_parentHash) )
     throw runtime_error( "DetectorPeakResponse invalid ParentHash" );
+  
+  
+  
+  node = parent->first_node( "Flags", 5 );
+  if( node && node->value_size() )
+  {
+    if( !(stringstream(node->value()) >> m_flags) )
+      throw runtime_error( "DetectorPeakResponse invalid Flags" );
+  }else
+  {
+    m_flags = 0;
+  }
+  
+  
+  node = parent->first_node( "LowerEnergy", 11 );
+  if( node && node->value_size() )
+    m_lowerEnergy = atof( node->value() );
+  else
+    m_lowerEnergy = 0.0f;
+  
+  node = parent->first_node( "UpperEnergy", 11 );
+  if( node && node->value_size() )
+    m_upperEnergy = atof( node->value() );
+  else
+    m_upperEnergy = 0.0f;
+  
+  
+  node = parent->first_node( "DrfSource", 9 );
+  if( node && node->value_size() )
+  {
+    if( compare(node->value(),node->value_size(),"UnknownDrfSource",16,false) )
+      m_drfSource = UnknownDrfSource;
+    else if( compare(node->value(),node->value_size(),"DefaultGadrasDrf",16,false) )
+      m_drfSource = DefaultGadrasDrf;
+    else if( compare(node->value(),node->value_size(),"UserAddedGadrasDrf",18,false) )
+      m_drfSource = UserAddedGadrasDrf;
+    else if( compare(node->value(),node->value_size(),"UserAddedRelativeEfficiencyDrf",30,false) )
+      m_drfSource = UserAddedRelativeEfficiencyDrf;
+    else if( compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false) )
+      m_drfSource = UserImportedIntrisicEfficiencyDrf;
+    else if( compare(node->value(),node->value_size(),"UserImportedGadrasDrf",21,false) )
+      m_drfSource = UserImportedGadrasDrf;
+    else if( compare(node->value(),node->value_size(),"UserSpecifiedFormulaDrf",23,false) )
+      m_drfSource = UserSpecifiedFormulaDrf;
+    else if( compare(node->value(),node->value_size(),"UserCreatedDrf",14,false) )
+      m_drfSource = UserCreatedDrf;
+    else if( compare(node->value(),node->value_size(),"FromSpectrumFileDrf",19,false) )
+      m_drfSource = FromSpectrumFileDrf;
+    else
+      throw runtime_error( "DetectorPeakResponse: invalid DrfSource value" );
+  }else
+  {
+    m_drfSource = UnknownDrfSource;
+  }
+
+  node = parent->first_node( "CreationTimeUtc", 15 );
+  if( node && node->value_size() )
+  {
+    if( !(stringstream(node->value()) >> m_createdUtc) )
+      throw runtime_error( "DetectorPeakResponse invalid CreationTimeUtc" );
+  }else
+  {
+    m_createdUtc = 0;
+  }
+  
+  
+  node = parent->first_node( "LastUsedTimeUtc", 15 );
+  if( node && node->value_size() )
+  {
+    if( !(stringstream(node->value()) >> m_lastUsedUtc) )
+      throw runtime_error( "DetectorPeakResponse invalid LastUsedTimeUtc" );
+  }else
+  {
+    m_lastUsedUtc = 0;
+  }
 }//void fromXml( ::rapidxml::xml_node<char> *parent )
 
 
@@ -1227,6 +1460,58 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
               " doesnt match RHS (%llud)",
               (long long unsigned int)lhs.m_parentHash,
               (long long unsigned int)rhs.m_parentHash );
+    throw runtime_error(buffer);
+  }
+  
+  if( lhs.m_flags != rhs.m_flags )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: flags of LHS (%llud)"
+             " doesnt match RHS (%llud)",
+             (long long unsigned int)lhs.m_flags,
+             (long long unsigned int)rhs.m_flags );
+    throw runtime_error(buffer);
+  }
+  
+  if( fabs(lhs.m_lowerEnergy - rhs.m_lowerEnergy) > 0.01 )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: lower energy"
+             " of LHS (%1.8E) doesnt match RHS (%1.8E)",
+             lhs.m_lowerEnergy, rhs.m_lowerEnergy );
+    throw runtime_error(buffer);
+  }
+  
+  if( fabs(lhs.m_upperEnergy - rhs.m_upperEnergy) > 0.01 )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: upper energy"
+             " of LHS (%1.8E) doesnt match RHS (%1.8E)",
+             lhs.m_upperEnergy, rhs.m_upperEnergy );
+    throw runtime_error(buffer);
+  }
+  
+  if( lhs.m_drfSource != rhs.m_drfSource )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: DrfSource"
+             " of LHS (%i) doesnt match RHS (%i)",
+             static_cast<int>(lhs.m_drfSource),
+             static_cast<int>(rhs.m_drfSource) );
+    throw runtime_error(buffer);
+  }
+  
+  if( lhs.m_createdUtc != rhs.m_createdUtc )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: CreationTimeUtc"
+             " of LHS (%lld) doesnt match RHS (%llud)",
+             static_cast<long long int>(lhs.m_createdUtc),
+             static_cast<long long int>(rhs.m_createdUtc) );
+    throw runtime_error(buffer);
+  }
+  
+  if( lhs.m_lastUsedUtc != rhs.m_lastUsedUtc )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: LastUsedTimeUtc"
+             " of LHS (%lld) doesnt match RHS (%llud)",
+             static_cast<long long int>(lhs.m_lastUsedUtc),
+             static_cast<long long int>(rhs.m_lastUsedUtc) );
     throw runtime_error(buffer);
   }
 }//void equalEnough(...)

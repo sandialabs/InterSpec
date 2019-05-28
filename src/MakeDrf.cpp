@@ -1000,6 +1000,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_materialDB( materialDB ),
   m_materialSuggest( materialSuggest ),
   m_intrinsicEfficiencyIsValid( this ),
+  m_finished( this ),
   m_chart( nullptr ),
   m_files( nullptr ),
   m_detDiameter( nullptr ),
@@ -1230,6 +1231,8 @@ AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt
   window->centerWindow();
   window->rejectWhenEscapePressed( false );
   
+  makeDrfWidget->m_finished.connect( window, &AuxWindow::hide );
+  
   return window;
 }//AuxWindow *makeDrfWindow(...)
 
@@ -1255,17 +1258,10 @@ void MakeDrf::startSaveAs()
   }//if( m_effEqnCoefs.empty() )
   
   
-  //ToDo: - We need a non-empty name field.
-  //      - A description field
-  //      - (options)
-  //      - Save/Cancel buttons.
-  //      - add download link to N42/PCF file
-  //        - create DetectorPeakResponse first and put it in this file
-  //      - add download link to CSV/TSV absolute eff file (e.g., for S.M.)
+  //ToDo: - add download link to CSV/TSV absolute eff file (e.g., for S.M.)
   //      - consider creating a log file for user to see all the details; maybe
   //        put this on a popup of the main widget
   //        Could get most info from const m_chart->currentDataPoints();
-  //      - add save DetectorPeakResponse to database button
   //      - add in a interface to select previously characterized detectors, and
   //        also upload them
   
@@ -1321,7 +1317,8 @@ void MakeDrf::startSaveAs()
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Export a N42 file containing all spectra and peaks used to create this DRF."
             "  Source and shielding information is also usually stored into the file as well to,"
-            " in principal, provide all the input information used to create the DRF.";
+            " in principal, except for detector diameter and equation orders,"
+            " provide all the input information used to create the DRF.";
   HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
   
   
@@ -1361,9 +1358,18 @@ void MakeDrf::startSaveAs()
     }
     
     const bool inMeV = (m_effEqnUnits->currentIndex() == 1);
-    const float energyUnits = inMeV ? 1000.0f : 1.0f;
+    const float eqnEnergyUnits = inMeV ? 1000.0f : 1.0f;
     
-    drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, 0.0f, diameter, energyUnits );
+    float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+    const std::vector<MakeDrfChart::DataPoint> &data = m_chart->currentDataPoints();
+    if( data.size() >= 2 )
+    {
+      lowerEnergy = data.front().energy;
+      upperEnergy = data.back().energy;
+    }
+    
+    drf->fromExpOfLogPowerSeriesAbsEff( m_effEqnCoefs, 0.0f, diameter, eqnEnergyUnits, lowerEnergy, upperEnergy );
+    drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
     
     if( !m_fwhmCoefs.empty() )
     {
@@ -1385,6 +1391,9 @@ void MakeDrf::startSaveAs()
     {
       auto sql = std::make_shared<DataBaseUtils::DbSession>( *m_interspec->sql() );
       
+      //negladgeable chance we have another detector with same hash, so we'll
+      // skip checking for it.
+      
       DataBaseUtils::DbTransaction transaction( *sql );
       //Create a separate DetectorPeakResponse because shared_ptr and dbo::ptr don't work well together
       DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
@@ -1401,7 +1410,7 @@ void MakeDrf::startSaveAs()
     
     w->hide();
     
-    //We should also do something to hide the current make DRF window so it is obvious things are done...
+    m_finished.emit();
   };
   
   WPushButton *save = w->addCloseButtonToFooter( "Save" );

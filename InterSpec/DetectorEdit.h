@@ -55,6 +55,7 @@ namespace Wt
 }//namespace Wt
 
 class InterSpec;
+class InterSpecUser;
 class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
@@ -153,8 +154,16 @@ public:
   //  emitted detector)
   void emitModifiedSignal();
 
-  //Need callback for when detector is changed from somewhere else
 
+  /** Searches the database for DRFs from the specified user with hashes
+      matching the passed in DRF, and updates the last used time for all of
+      them (should only find at most one).  If the DRF does not exist in the DB
+      then it is added to is.
+   */
+  static void updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResponse> drf,
+                                           long long db_user_id,
+                                           std::shared_ptr<DataBaseUtils::DbSession> sql );
+  
   void acceptAndFinish();
   void cancelAndFinish();
 

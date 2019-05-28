@@ -116,6 +116,11 @@ protected:
   
   Wt::Signal<bool> m_intrinsicEfficiencyIsValid;
   
+  /** Signal emmitted when the user saves the DRF (or in the future otherwise
+   indicates they are done with the tool) and the widget should now be deleted.
+   */
+  Wt::Signal<> m_finished;
+  
   MakeDrfChart *m_chart;
   
   Wt::WContainerWidget *m_files;

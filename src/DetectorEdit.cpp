@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <time.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -40,6 +41,7 @@
 #include <Wt/WImage>
 #include <Wt/WTable>
 #include <Wt/WSignal>
+#include <Wt/WDateTime>
 #include <Wt/WTextArea>
 #include <Wt/WTreeView>
 #include <Wt/WLineEdit>
@@ -51,6 +53,7 @@
 #include <Wt/WGridLayout>
 #include <Wt/WRadioButton>
 #include <Wt/WButtonGroup>
+#include <Wt/WEnvironment>
 #include <Wt/WItemDelegate>
 #include <Wt/WStackedWidget>
 #include <Wt/Dbo/QueryModel>
@@ -88,6 +91,65 @@ namespace
     menu->select( item );
     item->triggered().emit( item ); //
   }
+  
+  class UtcToLocalTimeDelegate : public Wt::WItemDelegate
+  {
+    int64_t m_now;
+    int m_timeZoneOffset;
+  public:
+    UtcToLocalTimeDelegate( Wt::WObject *parent = 0 )
+    : WItemDelegate( parent )
+    {
+      m_now = std::time(nullptr);
+      if( wApp )
+        m_timeZoneOffset = wApp->environment().timeZoneOffset();
+      else
+        m_timeZoneOffset = 0;
+    }
+    virtual ~UtcToLocalTimeDelegate(){}
+    virtual Wt::WWidget *update( Wt::WWidget *widget,
+                                const Wt::WModelIndex &index,
+                                Wt::WFlags<Wt::ViewItemRenderFlag > flags )
+    {
+      if( flags & RenderEditing )
+        throw runtime_error( "UtcToLocalTimeDelegate not for editing" );
+      
+      if( !(flags & RenderEditing) )
+      {
+        WText *text = dynamic_cast<WText *>( widget );
+        
+        if( !text )
+          widget = text = new WText();
+        
+        int64_t val;
+        try
+        {
+          val = boost::any_cast<int64_t>( index.data() );
+          string valstr;
+          if( val > 0 )
+          {
+            auto ptt = boost::posix_time::from_time_t( time_t(val) );
+            ptt += boost::posix_time::seconds( 60*m_timeZoneOffset );
+            valstr = UtilityFunctions::to_common_string(ptt, true);
+          }
+          
+          text->setText( WString::fromUTF8( valstr ) );
+        }catch( std::exception &e )
+        {
+          cerr << "UtcToLocalTimeDelegate caught: " << e.what() << endl;
+          text->setText( "" );
+          return widget;
+        }//try / catch
+      }//if( !(flags & RenderEditing) )
+      
+      widget->setStyleClass( asString( index.data(StyleClassRole) ) );
+      if( flags & RenderSelected )
+        widget->addStyleClass(  "Wt-selected" );
+
+      return widget;
+    }
+  };//class UtcToLocalTimeDelegate
+
 }//namespace
 
 class RelEffFile;
@@ -441,12 +503,10 @@ std::shared_ptr<DetectorPeakResponse> RelEffFile::parseDetector( string &line )
     const float diam = 2.0f*static_cast<float>( std::stod(fields[15])*PhysicalUnits::cm );
     const float eunits = float(PhysicalUnits::MeV);
     
-    det.reset( new DetectorPeakResponse() );
-    det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, diam, eunits );
-    det->setEfficiencySource( DetectorPeakResponse::kRelativeEfficiencyDefintion );
-    
-    det->setName( name );
-    det->setDescription( fields[2] + " - from Relative Eff. File" );
+    string description = fields[2] + " - from Relative Eff. File";
+    det.reset( new DetectorPeakResponse( name, description ) );
+    det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, diam, eunits, 0.0f, 0.0f );
+    det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
   }catch( std::exception &e )
   {
     det.reset();
@@ -922,7 +982,14 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
       {
         WAbstractItemModel *m = d->m_detectorSelect->model();
         const string p = boost::any_cast<std::string>( m->data( currentIndex, 0, Wt::UserRole ) );
-        return DetectorEdit::initAGadrasDetectorFromDirectory( p, m_interspec );
+        auto answer = DetectorEdit::initAGadrasDetectorFromDirectory( p, m_interspec );
+        
+        if( p.find("GenericGadrasDetectors") != string::npos )
+          answer->setDrfSource( DetectorPeakResponse::DrfSource::DefaultGadrasDrf );
+        else
+          answer->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedGadrasDrf );
+        
+        return answer;
       }catch( std::exception &e )
       {
         passMessage( "Failed to parse a GADRAS detector: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
@@ -1779,25 +1846,30 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   m_model = new Dbo::QueryModel< Dbo::ptr<DetectorPeakResponse> >( m_DBtable );
 
+  const auto userid = user.id();
   m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                           .where( "InterSpecUser_id = ? ").bind( user.id() )
-                           .orderBy("-1*id") );
+                           .where( "InterSpecUser_id = ? ").bind( userid )
+                           .orderBy( "-1*m_lastUsedUtc" )
+                    );
+  
+  /*  ToDo: - add column for when was last used, but give time in how long ago (remove diameter column)
+            - Add bullets or dropdown to allow filtering by "All", "Uploaded", "Entered Formula", "Made From Data"
+   */
   
   m_model->addColumn( "m_name" );
   m_model->addColumn( "m_description" );
-  m_model->addColumn( "m_detectorDiameter" );
+  m_model->addColumn( "m_lastUsedUtc" );
   
   
   m_model->setHeaderData(  0, Horizontal, WString("Name"), DisplayRole );
   m_DBtable->setColumnWidth( 0, 200 );
   m_model->setHeaderData(  1, Horizontal, WString("Description"), DisplayRole );
   m_DBtable->setColumnWidth( 1, 150 );
-  m_model->setHeaderData(  2, Horizontal, WString("Diameter"), DisplayRole );
+  m_model->setHeaderData(  2, Horizontal, WString("Last Used"), DisplayRole );
   m_DBtable->setColumnWidth( 2, 150 );
  
   
-  WItemDelegate *delegate = new WItemDelegate( m_DBtable );
-  delegate->setTextFormat( "%.2f" );
+  WItemDelegate *delegate = new UtcToLocalTimeDelegate( m_DBtable );
   m_DBtable->setItemDelegateForColumn( 2, delegate );
 
   m_DBtable->setModel( m_model );
@@ -1818,11 +1890,68 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_deleteButton->disable();
   m_deleteButton->clicked().connect( this, &DetectorEdit::deleteDBTableSelected );
 
-  recentDivLayout->addWidget(m_DBtable,0,0);
-  recentDivLayout->setRowStretch(0, 1);
-  recentDivLayout->addWidget(m_deleteButton,1,0,AlignLeft);
+  WComboBox *filter = new WComboBox();
+  filter->addItem( "All" );
+  filter->addItem( "Uploaded" );
+  filter->addItem( "Entered Formula" );
+  filter->addItem( "Made From Data" );
+  filter->addItem( "Included In N42 File" );
+  filter->setCurrentIndex( 0 );
+  
+  filter->changed().connect( std::bind( [filter,this,userid](){
+    m_DBtable->setSelectedIndexes( WModelIndexSet() );
+    m_deleteButton->disable();
+    
+    if( filter->currentIndex() == 0 ) //"All"
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? ").bind( userid ), true );
+    }else if( filter->currentIndex() == 1 ) //"Uploaded"
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? AND (m_drfSource = ? OR m_drfSource = ?)")
+                        .bind( userid )
+                        .bind( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf )
+                        .bind( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf ) , true );
+    }else if( filter->currentIndex() == 2 ) //"Entered Formula"
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? AND m_drfSource = ?")
+                        .bind( userid )
+                        .bind( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf ) , true );
+    }else if( filter->currentIndex() == 3 )
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? AND m_drfSource = ?")
+                        .bind( userid )
+                        .bind( DetectorPeakResponse::DrfSource::UserCreatedDrf ) , true );
+    }else if( filter->currentIndex() == 4 )
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? AND m_drfSource = ?")
+                        .bind( userid )
+                        .bind( DetectorPeakResponse::DrfSource::FromSpectrumFileDrf ) , true );
+    }else
+    {
+      return; //shouldnt happen
+    }
+    
+    m_DBtable->sortByColumn( 2, Wt::SortOrder::DescendingOrder );
+  } ) );
+  
+  recentDivLayout->addWidget( m_DBtable, 0, 0, 1, 3 );
+  recentDivLayout->addWidget( m_deleteButton, 1, 0, AlignLeft);
+  
+  label = new WLabel( "Show:" );
+  label->setBuddy( filter );
+  recentDivLayout->addWidget( label, 1, 1, AlignRight | AlignMiddle );
+  
+  recentDivLayout->addWidget( filter, 1, 2 );
+  recentDivLayout->setRowStretch( 0, 1 );
   recentDiv->setOverflow(Wt::WContainerWidget::OverflowHidden);
   recentDiv->setMaximumSize( WLength::Auto, 180 );
+  
+  m_DBtable->sortByColumn( 2, Wt::SortOrder::DescendingOrder );
   
   //--------------------------------------------------------------------------------
   
@@ -1937,8 +2066,7 @@ void DetectorEdit::dbTableSelectionChanged()
     const WModelIndex index = *indices.begin();
     Dbo::ptr<DetectorPeakResponse> dbfile = m_model->stableResultRow( index.row() );
     det = std::shared_ptr<DetectorPeakResponse>(new DetectorPeakResponse(*dbfile));
-  }//try
-  catch(...)
+  }catch(...)
   {
     failed = true;
     passMessage( "Error getting from DetectorPeakResponse table", "DetectorEdit", WarningWidget::WarningMsgHigh );
@@ -2123,7 +2251,8 @@ void DetectorEdit::setDefineDetector()
               = static_cast<float>(m_eqnEnergyGroup->checkedId()==0
                                     ? PhysicalUnits::keV : PhysicalUnits::MeV);
     
-    detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits );
+    detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits, 0.0f, 0.0f );
+    detec->setDrfSource( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf );
     
     updateChart();
   }catch( std::exception &e )
@@ -2306,9 +2435,11 @@ void DetectorEdit::fileUploadedCallback()
       if( !datfile.is_open() )
         return;
       det->fromGadrasDefinition( csvfile, datfile );
+      det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
     }else
     {
       det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV) );
+      det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
     }//if( isGadrasDet ) / else
   }catch( std::exception &e )
   {
@@ -2350,27 +2481,55 @@ void DetectorEdit::gadrasDetectorSelectCallback()
 }//void gadrasDetectorSelectCallback()
 
 
-void DetectorEdit::acceptAndFinish()
+void DetectorEdit::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResponse> drf,
+                                                long long db_user_id,
+                                                std::shared_ptr<DataBaseUtils::DbSession> sql )
 {
-  //Save detector to DB
-  //Actually check if in database already 
+  if( !drf || !sql )
+    return;
   
   try
   {
-    if( !! m_detector )
+    DataBaseUtils::DbTransaction transaction( *sql );
+    
+    uint64_t hash = drf->hashValue();
+    auto result = sql->session()->find<DetectorPeakResponse>()
+                      .where("InterSpecUser_id = ? AND Hash = ?")
+                      .bind( db_user_id )
+                      .bind( reinterpret_cast<int64_t&>(hash) )
+                      .resultList();
+    int nupdated = 0;
+    for( auto iter = result.begin(); iter != result.end(); ++iter )
     {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
+      (*iter).modify()->updateLastUsedTimeToNow();
+      ++nupdated;
+    }//
+    
+//    cout << "Have seen Detector '" << drf->name() << "' " << nupdated << " times." << endl;
+    
+    if( !nupdated )
+    {
+      //Create a separate DetectorPeakResponse because shared_ptr and
+      //  dbo::ptr don't work well together
+      DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
+      tempDetector->updateLastUsedTimeToNow();
       
-      //Create a separate DetectorPeakResponse because shared_ptr and dbo::ptr don't work well together
-      DetectorPeakResponse* tempDetector = new DetectorPeakResponse( *m_detector );
-      tempDetector->m_user = m_interspec->m_user.id(); //adds the current user to the detectorpeakresponse insertion into DB
-      m_sql->session()->add( tempDetector );
-      transaction.commit();
-    } //session
+      tempDetector->m_user = db_user_id; //adds the current user to the detectorpeakresponse insertion into DB
+      sql->session()->add( tempDetector );
+    }
+    
+    transaction.commit();
   }catch( std::exception &e )
   {
-    passMessage( "Error writing DetectorPeakResponse to DB: " + std::string(e.what()), "DetectorEdit", WarningWidget::WarningMsgHigh );
+    passMessage( "Error writing DetectorPeakResponse to DB: " + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
   }//try / catch
+}//void updateLastUsedTimeOrAddToDb(...)
+
+
+void DetectorEdit::acceptAndFinish()
+{
+  updateLastUsedTimeOrAddToDb( m_detector, m_interspec->m_user.id(), m_sql );
+  
   emitChangedSignal();
   emitModifiedSignal();
   done().emit();
@@ -2494,7 +2653,10 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
         auto det = RelEffFile::parseDetector( line );
         
         if( det )
+        {
+          det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
           return det;
+        }
       }//if( thisname == smname )
     }//while( UtilityFunctions::safe_get_line( input, line ) )
   }//for( const string &filename : paths )
@@ -2634,7 +2796,18 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector( const s
     }//for( size_t i = 0; i < files.size(); ++i )
     
     if( thiscsv.size() && thisdat.size() )
-      return initAGadrasDetectorFromDirectory( path, interspec );
+    {
+      auto det = initAGadrasDetectorFromDirectory( path, interspec );
+      if( det )
+      {
+        if( UtilityFunctions::icontains( basepath, "GenericGadrasDetectors") )
+          det->setDrfSource( DetectorPeakResponse::DrfSource::DefaultGadrasDrf );
+        else
+          det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedGadrasDrf );
+      }
+      
+      return det;
+    }
   }//for( const string &basepath : paths )
   
   throw runtime_error( "Could not find GADRAS detector names " + currentDetName );
@@ -2733,7 +2906,7 @@ DetectorEditWindow::DetectorEditWindow(
                                   std::shared_ptr<DetectorPeakResponse> det,
                                   InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
-  : AuxWindow("Detector Edit/Select", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)),
+  : AuxWindow("Detector Response Select", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)),
     m_edit( NULL )
 {
   disableCollapse();
