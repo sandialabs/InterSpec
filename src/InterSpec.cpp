@@ -7589,9 +7589,10 @@ void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
   if( !meas )
     return;
 
+
   if( type == kUnknownDetector )
     return;
-
+#warning "Blah Blah Blah"
   std::shared_ptr<DetectorPeakResponse> det;
 
   //If we implement user option to load certain DRF for certain serial numbers or models, we would check the database here
@@ -7856,7 +7857,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         if( detType == kUnknownDetector )
           detType = SpecMeas::guessDetectorTypeFromFileName( meas->filename() );
       
-        if( !meas->detector() && (detType != kUnknownDetector) )
+        if( !meas->detector() /* && (detType != kUnknownDetector) */ )
         {
           boost::function<void()> updateemit
                   = wApp->bind( boost::bind( &InterSpec::emitDetectorChanged,
