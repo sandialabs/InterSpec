@@ -7,9 +7,9 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include "rapidxml/rapidxml.hpp"
-#include "rapidxml/rapidxml_utils.hpp"
-#include "rapidxml/rapidxml_print.hpp"
+#include "SpecUtils/3rdparty/rapidxml/rapidxml.hpp"
+#include "SpecUtils/3rdparty/rapidxml/rapidxml_utils.hpp"
+#include "SpecUtils/3rdparty/rapidxml/rapidxml_print.hpp"
 
 #include <Wt/WServer>
 #include <Wt/WIOService>
@@ -38,6 +38,13 @@ namespace
     : string("");
   }//xml_value(...)
 }//namespace
+
+
+void log_error_message( const std::string &message, const std::string &source, const int priority )
+{
+  std::cerr << source << ": " << message << std::endl;
+}
+
 
 QLSpecMeas::QLSpecMeas()
   : MeasurementInfo()
