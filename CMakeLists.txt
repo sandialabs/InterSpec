@@ -746,7 +746,6 @@ else( ANDROID OR IOS )
 
     set_target_properties( ${EXECUTABLE_NAME} PROPERTIES MACOSX_BUNDLE_INFO_PLIST
           "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/Info.plist.template" )
-
   else( BUILD_AS_OSX_APP )
 
     if( BUILD_AS_UNIT_TEST_SUITE )
@@ -993,6 +992,9 @@ ENDIF(ANDROID)
 message( "Linking ${LINK_TO_OBJECT} to ${LIBRARIES_TO_LINK_TO}" )
 target_link_libraries( ${LINK_TO_OBJECT} PUBLIC ${LIBRARIES_TO_LINK_TO} )
 
+if( BUILD_AS_OSX_APP )
+    add_subdirectory( target/macOsQuickLook/SpecFilePreview/SpecFilePreview )
+endif( BUILD_AS_OSX_APP )
 
 IF( BUILD_AS_UNIT_TEST_SUITE )
   target_link_libraries( ${EXECUTABLE_NAME} PUBLIC ${LIBRARYNAME} )
