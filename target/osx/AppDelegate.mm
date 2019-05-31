@@ -477,7 +477,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     }
 #endif
     
-    completionHandler( files );
+    completionHandler( [openDlg URLs] );
   }else
   {
     completionHandler( nil );

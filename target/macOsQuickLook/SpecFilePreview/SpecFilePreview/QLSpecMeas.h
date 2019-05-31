@@ -20,6 +20,8 @@ class QLPeakModel;
 class Recalibrator;
 struct QLPeakContinuum;
 
+void log_error_message( const std::string &message, const std::string &source, const int priority );
+
 
 class QLSpecMeas : public MeasurementInfo
 {
