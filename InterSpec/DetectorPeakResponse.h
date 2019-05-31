@@ -513,6 +513,8 @@ public:
                                 const std::vector<EnergyEfficiencyPair> &xy );
   
   //20190525: Why is m_user a raw index, and not a Wt::Dbo::ptr<InterSpecUser>?
+  //          Maybe for database upgrade so Wt::Dbo doesnt need a reference to
+  //          InterSpecUser?
   int m_user;
   
 protected:
@@ -539,7 +541,8 @@ protected:
 
   ResolutionFnctForm m_resolutionForm;
   std::vector<float> m_resolutionCoeffs;
-
+  /** Valid only if same size as m_resolutionCoeffs. */
+  std::vector<float> m_resolutionUncerts;
   
   EfficiencyDefinitionSource m_efficiencySource;
   
@@ -574,6 +577,9 @@ protected:
   //  when m_efficiencyForm==kExpOfLogPowerSeries
   std::vector<float> m_expOfLogPowerSeriesCoeffs;
  
+  /** Valid if same size as m_expOfLogPowerSeriesCoeffs. */
+  std::vector<float> m_expOfLogPowerSeriesUncerts;
+  
   //In order to keep track of lineage and uniqness of detectors, we will use
   //  hash values.  All non-serialization related non-const member functions
   //  should recompute the m_hash value when/if it makes any changes to the
@@ -748,6 +754,7 @@ public:
       flags = reinterpret_cast<int64_t&>(m_flags);
     }
     
+    
     Wt::Dbo::field( a, hash, "Hash" );
     Wt::Dbo::field( a, parentHash, "ParentHash" );
     Wt::Dbo::field( a, flags, "m_flags" );
@@ -759,6 +766,17 @@ public:
       m_flags = reinterpret_cast<uint64_t&>(flags);
     }
 
+    
+    if( a.getsValue() )
+      saveFloatVectorToDB(m_expOfLogPowerSeriesUncerts, "m_expOfLogPowerSeriesUncerts", a);
+    if( a.setsValue() || a.isSchema() )
+      loadDBToFloatVector(m_expOfLogPowerSeriesUncerts, "m_expOfLogPowerSeriesUncerts", a);
+    
+    if( a.getsValue() )
+      saveFloatVectorToDB(m_resolutionUncerts, "m_resolutionUncerts", a);
+    if( a.setsValue() || a.isSchema() )
+      loadDBToFloatVector(m_resolutionUncerts, "m_resolutionUncerts", a);
+    
     Wt::Dbo::field( a, m_lowerEnergy, "m_lowerEnergy" );
     Wt::Dbo::field( a, m_upperEnergy, "m_upperEnergy" );
     Wt::Dbo::field( a, m_drfSource, "m_drfSource" );

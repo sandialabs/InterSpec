@@ -49,6 +49,7 @@ class SpecMeas;
 struct UserState;
 class UserFileInDb;
 class InterSpec;
+struct UseDrfPref;
 class ColorThemeInfo;
 class UserFileInDbData;
 struct ShieldingSourceModel;
@@ -329,6 +330,7 @@ public:
     Wt::Dbo::hasMany( a, m_dbPreferences, Wt::Dbo::ManyToOne, "InterSpecUser" );
     Wt::Dbo::hasMany( a, m_shieldSrcModels, Wt::Dbo::ManyToOne,"InterSpecUser");
     Wt::Dbo::hasMany( a, m_colorThemes, Wt::Dbo::ManyToOne,"InterSpecUser");
+    Wt::Dbo::hasMany( a, m_drfPref, Wt::Dbo::ManyToOne,"InterSpecUser");
   }//void persist( Action &a )
   
   inline const boost::posix_time::ptime &currentAccessStartUTC() const;
@@ -380,6 +382,9 @@ protected:
   Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> >       m_colorThemes;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserState> >            m_userStates;
 
+  Wt::Dbo::collection< Wt::Dbo::ptr<UseDrfPref> >           m_drfPref;
+  
+  
 //  Wt::Dbo::collection< Wt::Dbo::ptr<DbUserState::Spectrum> > m_spectrums;
   
   /** The file name of the default preferences XML file.  File name is relative
@@ -905,6 +910,35 @@ private:
 };//struct UserState
 
 
+
+struct UseDrfPref
+{
+  enum UseDrfType
+  {
+    UseDetectorSerialNumber,
+    UseDetectorSerialModel
+  };
+
+  Wt::Dbo::ptr<InterSpecUser> m_user;
+  UseDrfType m_field;
+  std::string m_criteria;
+  int m_flags;
+  long long m_drfIndex;
+  
+  template<class Action>
+  void persist( Action &a )
+  {
+    Wt::Dbo::belongsTo( a, m_user, "InterSpecUser", Wt::Dbo::OnDeleteCascade );
+    Wt::Dbo::field( a, m_field, "MatchField" );
+    Wt::Dbo::field( a, m_flags, "Flags" );
+    Wt::Dbo::field( a, m_drfIndex, "DrfIndex" );
+    Wt::Dbo::field( a, m_criteria, "Criteria" );
+  }
+};//struct UseDrfPref
+
+
+
+
 /**  20190525: Its probably wort reconsidering if this class is necasary - it
        was going to be for the ResourceUpdate tool, but I think it might be
        easier to just copy the relevant files to the user data directory, and
@@ -950,6 +984,7 @@ struct InterSpecGlobalSetting
     Wt::Dbo::field( a, data, "Data" );
   }
 };//struct GlobalSetting
+
 
 
 //Implementation of inline and templated functions

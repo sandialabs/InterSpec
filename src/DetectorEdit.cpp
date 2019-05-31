@@ -24,7 +24,6 @@
 #include "InterSpec_config.h"
 
 #include <map>
-#include <time.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -1969,7 +1968,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   item = m_drfTypeMenu->addItem( "Formula", formulaDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  item = m_drfTypeMenu->addItem( "Recent", recentDiv );
+  item = m_drfTypeMenu->addItem( "Previous", recentDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
   m_drfTypeStack->setHeight( WLength(185.0) );

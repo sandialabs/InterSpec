@@ -49,6 +49,8 @@ namespace Wt
   class WSuggestionPopup;
 }
 
+namespace { class DrfPeak; }
+
 
 class MakeDrf : public Wt::WContainerWidget
 {
@@ -97,6 +99,8 @@ protected:
   void handleFwhmTypeChanged();
   void handleShowFwhmPointsToggled();
   void chartEnergyRangeChangedCallback( double lower, double upper );
+  
+  void peakPreviewShown( DrfPeak *peak );
   
   void fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
                    const size_t num_gamma_channels );

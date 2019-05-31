@@ -186,6 +186,8 @@ namespace
     WPushButton *m_previewBtn;
     WPopupWidget *m_previewPopup;
     std::shared_ptr<const Measurement> m_summed_meas;
+    Wt::Signal<DrfPeak *> m_peakPreviewShow;
+    
     
     DrfPeak( std::shared_ptr<const PeakDef> peak, double livetime,
              std::shared_ptr<const Measurement> summed_meas,
@@ -296,6 +298,15 @@ namespace
       }
     }
     
+    void hidePeakPreview()
+    {
+      if( m_previewPopup && !m_previewPopup->isHidden() )
+      {
+        m_previewBtn->removeStyleClass( "active" );
+        m_previewPopup->setHidden( true );
+      }
+    }//void hidePeakPreview()
+    
     void togglePeakPreview()
     {
       //WAnimation animation(WAnimation::AnimationEffect::Pop, WAnimation::Linear, 250 );
@@ -305,6 +316,7 @@ namespace
         {
           m_previewBtn->addStyleClass( "active" );
           m_previewPopup->setHidden( false );
+          m_peakPreviewShow.emit( this );
         }else
         {
           m_previewBtn->removeStyleClass( "active" );
@@ -341,6 +353,8 @@ namespace
         WText *chart = new WText( strm.str(), Wt::XHTMLUnsafeText /*, this*/ );
         chart->addStyleClass( "DrfPeakChart" );
         m_previewPopup = new WPopupWidget( chart, this );
+        
+        //ToDo: add a "X" in the corner so users can close the showing window.
       }catch( std::exception & )
       {
         WText *msg = new WText( "Unable to generate preview" );
@@ -351,6 +365,7 @@ namespace
       m_previewPopup->setJavaScriptMember("wtNoReparent", "true");
       m_previewPopup->show();
       m_previewBtn->addStyleClass( "active" );
+      m_peakPreviewShow.emit( this );
     }//void togglePeakPreview()
     
   };//class DrfPeak
@@ -1169,6 +1184,14 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
     DrfSpecFile *fileWidget = new DrfSpecFile( meas, materialDB, materialSuggest, m_files );
     fileWidget->updated().connect( this, &MakeDrf::handleSourcesUpdates );
     added.push_back( fileWidget );
+    
+
+    for( DrfSpecFileSample *fs : fileWidget->fileSamples() )
+    {
+      for( DrfPeak *p : fs->peaks() )
+        p->m_peakPreviewShow.connect( boost::bind(&MakeDrf::peakPreviewShown, this, _1)  );
+    }
+    
   }//for( loop over opened files )
   
   if( added.size() == 1 )
@@ -1177,6 +1200,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
     if( !added[0]->title().empty() )
       added[0]->setTitle( "" );
   }
+  
   
   //If we directly call handleSourcesUpdates() now, getting the activity
   //  uncertainty will throw an exception because they wont validate.... whatever.
@@ -1306,19 +1330,54 @@ void MakeDrf::startSaveAs()
   tooltip = "Optional description of of the DRF to help remind yourself of details when you use the DRF in the future.";
   HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
   
-
+  
   cell = table->elementAt(3, 0);
+  cell->setColumnSpan( 2 );
+  string serial_number = "123112-NG";
+  WCheckBox *cb = new WCheckBox( "Make default DRF for serial number '" + serial_number + "'", cell );
+  cell = table->elementAt(3, 2);
+  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help->addStyleClass( "MakeDrfSaveHelp" );
+  tooltip = "";
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  
+  
+  cell = table->elementAt(4, 0);
+  cell->setColumnSpan( 2 );
+  string model = "Detective-EX";
+  cb = new WCheckBox( "Make default DRF for model '" + model + "'", cell );
+  cell = table->elementAt(4, 2);
+  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help->addStyleClass( "MakeDrfSaveHelp" );
+  tooltip = "";
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  
+  
+
+  cell = table->elementAt(5, 0);
   cell->setColumnSpan( 2 );
   CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
   new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
   
-  cell = table->elementAt(3, 2);
+  cell = table->elementAt(5, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Export a N42 file containing all spectra and peaks used to create this DRF."
             "  Source and shielding information is also usually stored into the file as well to,"
             " in principal, except for detector diameter and equation orders,"
             " provide all the input information used to create the DRF.";
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  
+  
+  cell = table->elementAt(6, 0);
+  cell->setColumnSpan( 2 );
+  CalFileDownloadResource *csvResource = new CalFileDownloadResource( false, this );
+  new WAnchor( csvResource, "Export DRF as CSV.", cell );
+  
+  cell = table->elementAt(6, 2);
+  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help->addStyleClass( "MakeDrfSaveHelp" );
+  tooltip = "";
   HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
   
   
@@ -1822,6 +1881,27 @@ void MakeDrf::chartEnergyRangeChangedCallback( double lower, double upper )
   m_chartLowerE->setValue( lower );
   m_chartUpperE->setValue( upper );
 }
+
+
+void MakeDrf::peakPreviewShown( DrfPeak *peak )
+{
+  //Hide all other previews showing.
+  for( auto w : m_files->children() )
+  {
+    auto fileWidget = dynamic_cast<DrfSpecFile *>( w );
+    if( !fileWidget )
+      continue;
+    
+    for( DrfSpecFileSample *fs : fileWidget->fileSamples() )
+    {
+      for( DrfPeak *p : fs->peaks() )
+      {
+        if( p != peak )
+          p->hidePeakPreview();
+      }//for( DrfPeak *p : fs->peaks() )
+    }//for( DrfSpecFileSample *fs : fileWidget->fileSamples() )
+  }//for( auto w : m_files->children() )
+}//void peakPreviewShown( DrfPeak *peak )
 
 
 void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,

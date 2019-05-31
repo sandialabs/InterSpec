@@ -219,6 +219,7 @@ void mapDbClasses( Wt::Dbo::Session *session )
   session->mapClass<DetectorPeakResponse>( "DetectorPeakResponse");
   session->mapClass<InterSpecGlobalSetting>( "InterSpecGlobalSetting");
   session->mapClass<ColorThemeInfo>( "ColorThemeInfo");
+  session->mapClass<UseDrfPref>( "UseDrfPref" );
 }//void mapDbClasses( Wt::Dbo::Session *session )
 
 
