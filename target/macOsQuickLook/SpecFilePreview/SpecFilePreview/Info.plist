@@ -2,43 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BuildMachineOSBuild</key>
+	<string>16G1314</string>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>UTExportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>gov.sandia.InterSpec.gamma-spectrum</string>
-			<key>UTTypeReferenceURL</key>
-			<string>https://www.nist.gov/programs-projects/ansiieee-n4242-standard</string>
-			<key>UTTypeDescription</key>
-			<string>Gamma energy spectrum files</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>com.apple.ostype</key>
-				<string>gamma-spectrum</string>
-				<key>public.filename-extension</key>
-				<array>
-					<string>n42</string>
-          <string>pcf</string>
-          <string>cnf</string>
-          <string>dat</string>
-          <string>spe</string>
-          <string>spc</string>
-          <string>mca</string>
-          <string>mps</string>
-          <string>lis</string>
-          <string>chn</string>
-				</array>
-				<key>public.mime-type</key>
-				<string>application/gamma-spectrum</string>
-			</dict>
-		</dict>
-	</array>
+	<string>en</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -49,30 +16,34 @@
 				<string>gov.sandia.InterSpec.gamma-spectrum</string>
 			</array>
 		</dict>
-    <dict>
-      <key>CFBundleTypeExtensions</key>
-      <array>
-        <string>text</string>
-        <string>txt</string>
-        <string>xml</string>
-        <string>csv</string>
-      </array>
-      <key>LSHandlerRank</key>
-      <string>Alternate</string>
-      <key>CFBundleTypeRole</key>
-      <string>QLGenerator</string>
-    </dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>text</string>
+				<string>txt</string>
+				<string>xml</string>
+				<string>csv</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>QLGenerator</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
+	<string>SpecFilePreview</string>
 	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<string>gov.sandia.SpecFilePreview</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>SpecFilePreview</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>CFPlugInDynamicRegisterFunction</key>
@@ -93,6 +64,20 @@
 	</dict>
 	<key>CFPlugInUnloadFunction</key>
 	<string></string>
+	<key>DTCompiler</key>
+	<string>com.apple.compilers.llvm.clang.1_0</string>
+	<key>DTPlatformBuild</key>
+	<string>9C40b</string>
+	<key>DTPlatformVersion</key>
+	<string>GM</string>
+	<key>DTSDKBuild</key>
+	<string>17C76</string>
+	<key>DTSDKName</key>
+	<string>macosx10.13</string>
+	<key>DTXcode</key>
+	<string>0920</string>
+	<key>DTXcodeBuild</key>
+	<string>9C40b</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2017 Johnson, William C. All rights reserved.</string>
 	<key>QLNeedsToBeRunInMainThread</key>
@@ -105,5 +90,40 @@
 	<true/>
 	<key>QLThumbnailMinimumSize</key>
 	<real>17</real>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Gamma energy spectrum files</string>
+			<key>UTTypeIdentifier</key>
+			<string>gov.sandia.InterSpec.gamma-spectrum</string>
+			<key>UTTypeReferenceURL</key>
+			<string>https://www.nist.gov/programs-projects/ansiieee-n4242-standard</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>com.apple.ostype</key>
+				<string>gamma-spectrum</string>
+				<key>public.filename-extension</key>
+				<array>
+					<string>n42</string>
+					<string>pcf</string>
+					<string>cnf</string>
+					<string>dat</string>
+					<string>spe</string>
+					<string>spc</string>
+					<string>mca</string>
+					<string>mps</string>
+					<string>lis</string>
+					<string>chn</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/gamma-spectrum</string>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>
