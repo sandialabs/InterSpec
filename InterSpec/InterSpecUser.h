@@ -338,6 +338,8 @@ public:
   const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &shieldSrcModels() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &userStates() const;
   const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> >   &colorThemes() const;
+  const Wt::Dbo::collection< Wt::Dbo::ptr<UseDrfPref> > &drfPrefs() const;
+  
 protected:
   void incrementAccessCount();
   void setCurrentAccessTime( const boost::posix_time::ptime &utcTime );
@@ -915,8 +917,8 @@ struct UseDrfPref
 {
   enum UseDrfType
   {
-    UseDetectorSerialNumber,
-    UseDetectorSerialModel
+    UseDetectorSerialNumber = 0,
+    UseDetectorModelName = 1
   };
 
   Wt::Dbo::ptr<InterSpecUser> m_user;

@@ -7588,37 +7588,43 @@ void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
 {
   if( !meas )
     return;
-
-
-  if( type == kUnknownDetector )
-    return;
-#warning "Blah Blah Blah"
+  
   std::shared_ptr<DetectorPeakResponse> det;
 
-  //If we implement user option to load certain DRF for certain serial numbers or models, we would check the database here
+  //First see if the user has opted for a detector for this serial number of
+  //  detector model
+  det = DetectorEdit::getUserPrefferedDetector( m_sql, m_user, meas );
   
-  try
+  const bool usingUserDefaultDet = !!det;
+  
+  if( !det )
   {
-    switch( type )
-    {
-      case kIdentiFinderDetector:
-      case kIdentiFinderNGDetector:
-      case kIdentiFinderLaBr3Detector:
-        det = DetectorEdit::initARelEffDetector( type, this );
-      break;
-        
-      default:
-        break;
-    }
+    if( type == kUnknownDetector )
+      return;
     
-    if( !det )
-      det = DetectorEdit::initAGadrasDetector( type, this );
-  }catch( std::exception &e )
-  {
-    cerr << "InterSpec::loadDetectorToPrimarySpectrum caught: "
-         << e.what() << endl;
-    return;
-  }
+    try
+    {
+      switch( type )
+      {
+        case kIdentiFinderDetector:
+        case kIdentiFinderNGDetector:
+        case kIdentiFinderLaBr3Detector:
+          det = DetectorEdit::initARelEffDetector( type, this );
+        break;
+        
+        default:
+          break;
+      }
+    
+      if( !det )
+        det = DetectorEdit::initAGadrasDetector( type, this );
+    }catch( std::exception &e )
+    {
+      cerr << "InterSpec::loadDetectorToPrimarySpectrum caught: "
+           << e.what() << endl;
+      return;
+    }
+  }//if( !det )
 
   if( !det )
     return;
@@ -7645,6 +7651,30 @@ void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
   if( !modifiedcallback.empty() )
     WServer::instance()->post( sessionId, modifiedcallback );
 
+  if( usingUserDefaultDet )
+  {
+    WServer::instance()->post( sessionId, std::bind( [](){
+      //ToDo: could add button to remove association with DRF in database,
+      //      similar to the "Start Fresh Session" button.  Skeleton code to do this
+      /*
+       std::unique_ptr<Wt::JSignal<> > m_clearDrfAssociation;
+       m_clearDrfAssociation.reset( new JSignal<>(this, "removeDrfAssociation", false) );
+       m_clearDrfAssociation->connect( this, &InterSpec::blahBLahBlahs );
+       
+       WStringStream js;
+       js << "<div onclick=\"Wt.emit('" << id() << "',{name:'removeDrfAssociation'});"
+       "$('.qtip.jgrowl:visible:last').remove();return false;\" "
+       "class=\"clearsession\"><span class=\"clearsessiontxt\">Remove association of detector with DRF.</span></div>";
+       
+       passMessage( "Using the detector response function you specified to use as default for this detector."
+                    + js.str(), "", WarningWidget::WarningMsgInfo );
+       */
+      
+      passMessage( "Using the detector response function you specified to use as default for this detector.",
+                   "", WarningWidget::WarningMsgInfo );
+    }) );
+  }//if( usingUserDefaultDet )
+  
 }//void InterSpec::loadDetectorToPrimarySpectrum( WApplication *app )
 
 

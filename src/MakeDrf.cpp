@@ -61,6 +61,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/DetectorEdit.h"
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -1327,39 +1328,83 @@ void MakeDrf::startSaveAs()
   cell = table->elementAt(1, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
-  tooltip = "Optional description of of the DRF to help remind yourself of details when you use the DRF in the future.";
+  tooltip = "Optional description of the DRF to help remind yourself of details when you use the DRF in the future.";
   HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
   
+  std::shared_ptr<const SpecMeas> representative_meas;
   
-  cell = table->elementAt(3, 0);
-  cell->setColumnSpan( 2 );
-  string serial_number = "123112-NG";
-  WCheckBox *cb = new WCheckBox( "Make default DRF for serial number '" + serial_number + "'", cell );
-  cell = table->elementAt(3, 2);
-  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
-  help->addStyleClass( "MakeDrfSaveHelp" );
-  tooltip = "";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
-  
-  
-  cell = table->elementAt(4, 0);
-  cell->setColumnSpan( 2 );
-  string model = "Detective-EX";
-  cb = new WCheckBox( "Make default DRF for model '" + model + "'", cell );
-  cell = table->elementAt(4, 2);
-  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
-  help->addStyleClass( "MakeDrfSaveHelp" );
-  tooltip = "";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
-  
-  
+  for( auto w : m_files->children() )
+  {
+    auto f = dynamic_cast<DrfSpecFile *>( w );
+    if( !f )
+      continue;
+    size_t npeaks = 0;
+    for( auto sample : f->fileSamples() )
+    {
+      for( auto peak : sample->peaks() )
+        npeaks += peak->m_useCb->isChecked();
+    }
+    
+    if( npeaks )
+    {
+      representative_meas = f->measurement();
+      break;
+    }
+  }//for( auto w : m_files->children() )
 
-  cell = table->elementAt(5, 0);
+  WCheckBox *def_for_serial_cb = nullptr;
+  WCheckBox *def_for_model_cb = nullptr;
+  
+  int currentRow = table->rowCount();
+  if( representative_meas )
+  {
+    string serial_number = representative_meas->instrument_id();
+    
+    if( !serial_number.empty() )
+    {
+      cell = table->elementAt(currentRow, 0);
+      cell->setColumnSpan( 2 );
+    
+      def_for_serial_cb = new WCheckBox( "Make default DRF for serial number '" + serial_number + "'", cell );
+      cell = table->elementAt(currentRow, 2);
+      help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+      help->addStyleClass( "MakeDrfSaveHelp" );
+      tooltip = "Make it so when spectra from a detector with a matching serial"
+                " number is loaded into InterSpec, this detector response function"
+                " will automatically be loaded and used.";
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+    }//if( serial_number.size() )
+    
+    string model;
+    if( representative_meas->detector_type() == DetectorType::kUnknownDetector )
+      model = representative_meas->instrument_model();
+    else
+      model = detectorTypeToString( representative_meas->detector_type() );
+    
+    if( !model.empty() )
+    {
+      currentRow = table->rowCount();
+      cell = table->elementAt(currentRow, 0);
+      cell->setColumnSpan( 2 );
+      def_for_model_cb = new WCheckBox( "Make default DRF for model '" + model + "'", cell );
+      cell = table->elementAt(currentRow, 2);
+      help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+      help->addStyleClass( "MakeDrfSaveHelp" );
+      tooltip = "Make it so when spectra from this model detector is loaded"
+                " into InterSpec, this detector response function will"
+                " automatically be loaded and used.";
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+    }//if( !model.empty() )
+  }//if( representative_meas )
+  
+  
+  currentRow = table->rowCount();
+  cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
   new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
   
-  cell = table->elementAt(5, 2);
+  cell = table->elementAt(currentRow, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Export a N42 file containing all spectra and peaks used to create this DRF."
@@ -1368,23 +1413,26 @@ void MakeDrf::startSaveAs()
             " provide all the input information used to create the DRF.";
   HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
   
-  
-  cell = table->elementAt(6, 0);
+  currentRow = table->rowCount();
+  cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CalFileDownloadResource *csvResource = new CalFileDownloadResource( false, this );
   new WAnchor( csvResource, "Export DRF as CSV.", cell );
   
-  cell = table->elementAt(6, 2);
+  cell = table->elementAt(currentRow, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
-  tooltip = "";
+  tooltip = "Exports the DRF into a CSV file that contains all of the information of the DRF."
+            " Especially useful for using with other tools.";
   HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
   
   
   WPushButton *b = w->addCloseButtonToFooter( "Cancel" );
   b->clicked().connect( w, &AuxWindow::hide );
   
-  auto doSave = [this, w, validator, name, description](){
+  auto doSave = [this, w, validator, name, description,
+                 def_for_serial_cb, def_for_model_cb,
+                 representative_meas ](){
     auto state = validator->validate(name->text()).state();
     if( name->text().empty() || state!=WValidator::Valid )
     {
@@ -1457,7 +1505,8 @@ void MakeDrf::startSaveAs()
       //Create a separate DetectorPeakResponse because shared_ptr and dbo::ptr don't work well together
       DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
       tempDetector->m_user = m_interspec->m_user.id();
-      sql->session()->add( tempDetector );
+      auto newDbDet = sql->session()->add( tempDetector );
+      
       transaction.commit();
     }catch( std::exception &e )
     {
@@ -1466,6 +1515,25 @@ void MakeDrf::startSaveAs()
     }//try / catch
     
     m_interspec->detectorChanged().emit( drf );
+    
+    std::shared_ptr<DataBaseUtils::DbSession> sql = m_interspec->sql();
+    Wt::Dbo::ptr<InterSpecUser> user = m_interspec->m_user;
+    
+    if( def_for_serial_cb && def_for_serial_cb->isChecked() && representative_meas )
+    {
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
+      WServer::instance()->ioService().post( std::bind( [=](){
+        DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
+      } ) );
+    }//if( def_for_serial_cb and is checked )
+    
+    if( def_for_model_cb && def_for_model_cb->isChecked() && representative_meas )
+    {
+       UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+      WServer::instance()->ioService().post( std::bind( [=](){
+        DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
+      } ) );
+    }//if( def_for_serial_cb and is checked )
     
     w->hide();
     

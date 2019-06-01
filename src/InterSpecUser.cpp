@@ -1266,6 +1266,11 @@ const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> > &InterSpecUser::colorT
   return m_colorThemes;
 }
 
+const Wt::Dbo::collection< Wt::Dbo::ptr<UseDrfPref> > &InterSpecUser::drfPrefs() const
+{
+  return m_drfPref;
+}
+
 void InterSpecUser::incrementAccessCount()
 {
   ++m_accessCount;
