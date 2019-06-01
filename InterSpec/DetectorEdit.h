@@ -44,6 +44,7 @@ namespace Wt
   class WText;
   class WMenu;
   class WLabel;
+  class WCheckBox;
   class WLineEdit;
   class WComboBox;
   class WTabWidget;
@@ -164,6 +165,23 @@ public:
                                            long long db_user_id,
                                            std::shared_ptr<DataBaseUtils::DbSession> sql );
   
+  /** Checks the database to see if the measurement serial number or measurement
+      model cooresponds to a user preference in the database for  a DRF to use.
+      If found, returns the DRF, if not, returns null.
+   */
+  static std::shared_ptr<DetectorPeakResponse> getUserPrefferedDetector(
+                                std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                Wt::Dbo::ptr<InterSpecUser> user,
+                                std::shared_ptr<const MeasurementInfo> meas );
+  
+  /**
+   */
+  static void setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> drf,
+                                        std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                        Wt::Dbo::ptr<InterSpecUser> user,
+                                        UseDrfPref::UseDrfType prefType,
+                                        std::shared_ptr<const MeasurementInfo> meas );
+  
   void acceptAndFinish();
   void cancelAndFinish();
 
@@ -218,6 +236,9 @@ public:
   
   //a row is selected, so update det and charts
   void dbTableSelectionChanged();
+
+protected:
+  void setAcceptButtonEnabled( const bool enable );
   
 protected:
   WContainerWidget *m_footer;
@@ -289,6 +310,8 @@ protected:
   std::shared_ptr<DataBaseUtils::DbSession> m_sql;
   Wt::Dbo::QueryModel< Wt::Dbo::ptr<DetectorPeakResponse> >    *m_model;
 
+  Wt::WCheckBox *m_defaultForSerialNumber;
+  Wt::WCheckBox *m_defaultForDetectorModel;
 };//class DetectorEdit
 
 

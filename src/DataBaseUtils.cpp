@@ -115,7 +115,7 @@ namespace
           const int nconn = 5;
 #endif
           Dbo::SqlConnection *connection = DataBaseUtils::getDatabaseConnection();
-          connection->setProperty( "show-queries", "true" );
+          connection->setProperty( "show-queries", "false" );
           
           Dbo::FixedSqlConnectionPool *pool
                     = new Wt::Dbo::FixedSqlConnectionPool( connection, nconn );

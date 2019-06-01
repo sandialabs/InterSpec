@@ -396,9 +396,6 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   m_layout->addWidget( m_viewer, 0, 0, 1, 1 );
   m_layout->setRowStretch( 0, 10 );
   
-  m_clearSession.reset( new JSignal<>(this, "clearSession", false) );
-  m_clearSession->connect( this, &InterSpecApp::clearSession );
-  
   bool loadedSpecFile = false;
   const Http::ParameterMap &parmap = environment().getParameterMap();
   
@@ -570,6 +567,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
         m_viewer->loadStateFromDb( state );
         
+        if( !m_clearSession )
+        {
+          m_clearSession.reset( new JSignal<>(this, "clearSession", false) );
+          m_clearSession->connect( this, &InterSpecApp::clearSession );
+        }
+          
         WStringStream js;
         js << "<div onclick="
         "\"Wt.emit('" << id() << "',{name:'clearSession'});"

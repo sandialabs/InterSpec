@@ -40,11 +40,13 @@
 #include <Wt/WImage>
 #include <Wt/WTable>
 #include <Wt/WSignal>
+#include <Wt/WServer>
 #include <Wt/WDateTime>
 #include <Wt/WTextArea>
 #include <Wt/WTreeView>
 #include <Wt/WLineEdit>
 #include <Wt/WComboBox>
+#include <Wt/WIOService>
 #include <Wt/WTableCell>
 #include <Wt/WTabWidget>
 #include <Wt/WFileUpload>
@@ -1421,8 +1423,9 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   m_text = new WText( txt, XHTMLUnsafeText, this );
 
   std::shared_ptr<DetectorPeakResponse> detector;
-  if( m_interspec->measurment(kForeground) )
-    detector = m_interspec->measurment(kForeground)->detector();
+  auto meas = specViewer->measurment(SpectrumType::kForeground);
+  if( meas )
+    detector = meas->detector();
   m_currentDetector = detector;
 
   if( detector && detector->isValid() )
@@ -1503,7 +1506,9 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_drfTypeStack( nullptr ),
     m_deleteButton( nullptr ),
     m_DBtable( nullptr ),
-    m_model( nullptr )
+    m_model( nullptr ),
+    m_defaultForSerialNumber( nullptr ),
+    m_defaultForDetectorModel( nullptr )
 {
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
@@ -1995,6 +2000,22 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_cancelButton->clicked().connect( this, &DetectorEdit::cancelAndFinish );
   
+  auto meas = specViewer->measurment( SpectrumType::kForeground );
+  
+  if( meas && !meas->instrument_id().empty() )
+  {
+    m_defaultForSerialNumber = new WCheckBox( "Default DRF for SN '" + meas->instrument_id() + "'", m_footer );
+  }//if( have serial number )
+    
+  if( meas && (meas->detector_type()!=DetectorType::kUnknownDetector || !meas->instrument_model().empty()) )
+  {
+    string model;
+    if( meas->detector_type() == DetectorType::kUnknownDetector )
+      model = meas->instrument_model();
+    else
+      model = detectorTypeToString( meas->detector_type() );
+    m_defaultForDetectorModel = new WCheckBox( "Fefault DRF for model '" + model + "'", m_footer );
+  }//if( have
   
   if( specViewer && !specViewer->isMobile() )
   {
@@ -2014,12 +2035,22 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_acceptButton->clicked().connect( this, &DetectorEdit::acceptAndFinish );
   if( !currentDet || !currentDet->isValid() )
-    m_acceptButton->disable();
+    setAcceptButtonEnabled( false );
   
   m_drfTypeMenu->select( 0 );
   
   init();
 }//DetectorEdit constructor
+
+
+void DetectorEdit::setAcceptButtonEnabled( const bool enable )
+{
+  m_acceptButton->setEnabled( enable );
+  if( m_defaultForSerialNumber )
+    m_defaultForSerialNumber->setEnabled( enable );
+  if( m_defaultForDetectorModel )
+    m_defaultForDetectorModel->setEnabled( enable );
+}
 
 
 void DetectorEdit::deleteDBTableSelected()
@@ -2071,10 +2102,7 @@ void DetectorEdit::dbTableSelectionChanged()
     passMessage( "Error getting from DetectorPeakResponse table", "DetectorEdit", WarningWidget::WarningMsgHigh );
   }//try / catch
   
-  if( failed )
-    m_acceptButton->disable();
-  else
-    m_acceptButton->enable();
+  setAcceptButtonEnabled( !failed );
   
   m_detector = det;
   emitChangedSignal();
@@ -2161,7 +2189,7 @@ void DetectorEdit::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
 void DetectorEdit::verifyManualDefinition()
 { //if we change anything in the text fields, we should disable Accept
-  m_acceptButton->disable();
+  setAcceptButtonEnabled( false );
   m_manualSetButton->enable();
   
   const bool hideAbs = (m_absOrIntrinsicGroup->checkedId() == 0);
@@ -2207,7 +2235,7 @@ void DetectorEdit::setDefineDetector()
 //    m_detectorManualDiameterText->setText( diamstr );
 //    m_detectorManualDistText->setText( "0" );
 //  
-//    m_acceptButton->enable();
+//    setAcceptButtonEnabled( true );
 //    m_manualSetButton->disable();
 //    return;
 //  }//if(...)
@@ -2257,13 +2285,13 @@ void DetectorEdit::setDefineDetector()
   }catch( std::exception &e )
   {
     passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
-    m_acceptButton->disable();
+    setAcceptButtonEnabled( false );
     m_manualSetButton->enable();
     updateChart();
     return;
   }//try / catch
   
-  m_acceptButton->enable();
+  setAcceptButtonEnabled( true );
   m_manualSetButton->disable();
   m_detector = detec;
 
@@ -2442,7 +2470,7 @@ void DetectorEdit::fileUploadedCallback()
     }//if( isGadrasDet ) / else
   }catch( std::exception &e )
   {
-    m_acceptButton->disable();
+    setAcceptButtonEnabled( false );
     passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
     return;
   }//try / catch
@@ -2453,7 +2481,7 @@ void DetectorEdit::fileUploadedCallback()
   if( det )
     det->setName( csvOrigName );
 
-  m_acceptButton->enable();
+  setAcceptButtonEnabled( true );
 
   m_detector = det;
   emitChangedSignal();
@@ -2470,10 +2498,7 @@ void DetectorEdit::gadrasDetectorSelectCallback()
 {
   std::shared_ptr<DetectorPeakResponse> det = m_gadrasDetSelect->selectedDetector();
 
-  if( !det )
-    m_acceptButton->disable();
-  else
-    m_acceptButton->enable();
+  setAcceptButtonEnabled( !!det );
 
   m_detector = det;
   emitChangedSignal();
@@ -2525,12 +2550,206 @@ void DetectorEdit::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResp
 }//void updateLastUsedTimeOrAddToDb(...)
 
 
+
+std::shared_ptr<DetectorPeakResponse> DetectorEdit::getUserPrefferedDetector(
+                                std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                Wt::Dbo::ptr<InterSpecUser> user,
+                                std::shared_ptr<const MeasurementInfo> meas )
+{
+  std::shared_ptr<DetectorPeakResponse> answer;
+  if( !sql || !user || !meas )
+    return answer;
+  
+  
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *sql );
+    
+    const std::string &serial = meas->instrument_id();
+    
+    Wt::Dbo::ptr<UseDrfPref> pref;
+    
+    if( !serial.empty() )
+    {
+      auto results = sql->session()->find<UseDrfPref>()
+                     .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
+                     .bind( user.id() )
+                     .bind( UseDrfPref::UseDrfType::UseDetectorSerialNumber )
+                     .bind( serial )
+                     .orderBy("id desc") //shouldnt have an effect because we should only get at most one result
+                     .resultList();
+      if( results.size() )
+        pref = results.front();
+    }
+    
+    if( !pref )
+    {
+      string model;
+      if( meas->detector_type() == DetectorType::kUnknownDetector )
+        model = meas->instrument_model();
+      else
+        model = detectorTypeToString( meas->detector_type() );
+      if( !model.empty() )
+      {
+        auto results = sql->session()->find<UseDrfPref>()
+                       .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
+                       .bind( user.id() )
+                       .bind( UseDrfPref::UseDrfType::UseDetectorModelName )
+                       .bind( model )
+                       .orderBy("id desc")  //shouldnt have an effect because we should only get at most one result
+                       .resultList();
+        
+        if( results.size() )
+          pref = results.front();
+      }
+    }//if( !results.size() )
+    
+    if( !pref )
+    {
+      //cout << "Could not find default DRF preference in database" << endl;
+      transaction.commit();
+      return answer;
+    }
+    
+    if( pref->m_drfIndex < 0 )
+    {
+      //cout << "Default DRF preference in database was invalid" << endl;
+      pref.remove();
+      transaction.commit();
+      return answer;
+    }
+    
+    auto drflist = sql->session()->find<DetectorPeakResponse>()
+    .where("InterSpecUser_id = ? AND id = ?")
+    .bind( user.id() )
+    .bind( pref->m_drfIndex )
+    .resultList();
+    
+    for( auto iter = drflist.begin(); !answer && iter != drflist.end(); ++iter )
+      answer = std::make_shared<DetectorPeakResponse>( **iter );
+    
+    transaction.commit();
+  }catch( std::exception &e )
+  {
+    cerr << "Got exception getting user preffered detector from DB: " << e.what() << endl;
+  }//try catch see if the user has a preference
+  
+  //if( answer )
+  //  cout << "Got user preffered default det" << endl;
+  //else
+  //  cout << "Did not get user preffered default det" << endl;
+  
+  return answer;
+};//getUserPrefferedDetector(...)
+
+
+void DetectorEdit::setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> drf,
+                                     std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                     Wt::Dbo::ptr<InterSpecUser> user,
+                                     UseDrfPref::UseDrfType prefType,
+                                     std::shared_ptr<const MeasurementInfo> meas )
+{
+  //Check if there is a UseDrfPref for the measurement.  If so, we will delete
+  //  it.  We will then add one to the database.
+  
+  if( !meas || !drf || !sql || !user )
+    return;
+  
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *sql );
+    
+    string criteria;
+    switch( prefType )
+    {
+      case UseDrfPref::UseDrfType::UseDetectorModelName:
+        if( meas->detector_type() == DetectorType::kUnknownDetector )
+          criteria = meas->instrument_model();
+        else
+          criteria = detectorTypeToString( meas->detector_type() );
+        break;
+        
+      case UseDrfPref::UseDrfType::UseDetectorSerialNumber:
+        criteria = meas->instrument_id();
+        break;
+    }//switch( prefType )
+    
+    //Remove preferences (there should only be a max of one) from the DB
+    auto prevpref = user->drfPrefs().find().where( "MatchField = ? AND Criteria = ?" )
+                         .bind( prefType )
+                         .bind( criteria )
+                         .resultList();
+    for( auto iter = prevpref.begin(); iter != prevpref.end(); ++iter )
+      iter->remove();
+    
+    
+    //Note: adding the preference to the database, even if criteria is empty
+    uint64_t uhash = drf->hashValue();
+    int64_t ihash = reinterpret_cast<int64_t&>(uhash);
+    auto drflist = sql->session()->find<DetectorPeakResponse>()
+                       .where("InterSpecUser_id = ? AND Hash = ?")
+                       .bind( user.id() )
+                       .bind( ihash )
+                       .resultList();
+    if( drflist.size() < 1 )
+      throw runtime_error( "Could not find detector with hash '" + std::to_string(uhash) + " in DB." );
+    
+    UseDrfPref *newprefraw = new UseDrfPref();
+    Wt::Dbo::ptr<UseDrfPref> newpref( newprefraw );
+      
+    newprefraw->m_user = user;
+    newprefraw->m_field = prefType;
+    newprefraw->m_criteria = criteria;
+    newprefraw->m_flags = 0x00;
+    newprefraw->m_drfIndex = drflist.front().id();
+    
+    newpref = sql->session()->add( newpref );
+    
+    auto newid = newpref.id();
+    auto drfindex = newpref->m_drfIndex;
+    
+    transaction.commit();
+    
+    cout << "Added prefered detector to DB for criteria='" << criteria
+         << "', DRF index=" << drfindex << ", as UseDrfPref.id="
+         << newid << endl;
+  }catch( std::exception &e )
+  {
+    cerr << "setUserPrefferedDetector: Got exception setting user preffered detector to DB: " << e.what() << endl;
+  }//try catch see if the user has a preference
+  
+}//void setUserPrefferedDetector(...)
+
+
 void DetectorEdit::acceptAndFinish()
 {
   updateLastUsedTimeOrAddToDb( m_detector, m_interspec->m_user.id(), m_sql );
   
   emitChangedSignal();
   emitModifiedSignal();
+  
+  auto meas = m_interspec->measurment(SpectrumType::kForeground);
+  auto sql = m_interspec->sql();
+  auto user = m_interspec->m_user;
+  auto drf = m_detector;
+  
+  if( meas && drf && m_defaultForSerialNumber && m_defaultForSerialNumber->isChecked() )
+  {
+    UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
+    WServer::instance()->ioService().post( std::bind( [=](){
+      DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, meas );
+    } ) );
+  }//if( m_defaultForSerialNumber and is checked )
+  
+  if( meas && drf && m_defaultForDetectorModel && m_defaultForDetectorModel->isChecked() )
+  {
+    UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+    WServer::instance()->ioService().post( std::bind( [=](){
+      DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, meas );
+    } ) );
+  }//if( m_defaultForDetectorModel and is checked )
+  
+  
   done().emit();
 }//void acceptAndFinish()
 
@@ -2868,7 +3087,7 @@ void DetectorEdit::emitChangedSignal()
   m_previousEmmittedDetector = m_detector;
 
   m_interspec->detectorChanged().emit( m_detector );
-  m_acceptButton->setDisabled( !m_detector );
+  setAcceptButtonEnabled( !!m_detector );
   
   updateChart();
 }//void emitChangedSignal()
