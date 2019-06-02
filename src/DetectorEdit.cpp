@@ -702,6 +702,8 @@ void RelEffDetSelect::userSelectedRelEffDetSelect()
 
 void RelEffDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
+  docreate();
+  
   if( !m_files )
     return;
   
@@ -928,6 +930,8 @@ void GadrasDetSelect::docreate()
 
 bool GadrasDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
+  docreate();  //We need to initialize the widget in order for m_directories to be true
+  
   if( !m_directories )
     return false;
   
@@ -1913,26 +1917,26 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     }else if( filter->currentIndex() == 1 ) //"Uploaded"
     {
       m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                        .where( "InterSpecUser_id = ? AND (m_drfSource = ? OR m_drfSource = ?)")
+                        .where( "InterSpecUser_id = ? AND (m_efficiencySource = ? OR m_efficiencySource = ?)")
                         .bind( userid )
                         .bind( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf )
                         .bind( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf ) , true );
     }else if( filter->currentIndex() == 2 ) //"Entered Formula"
     {
       m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                        .where( "InterSpecUser_id = ? AND m_drfSource = ?")
+                        .where( "InterSpecUser_id = ? AND m_efficiencySource = ?")
                         .bind( userid )
                         .bind( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf ) , true );
     }else if( filter->currentIndex() == 3 )
     {
       m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                        .where( "InterSpecUser_id = ? AND m_drfSource = ?")
+                        .where( "InterSpecUser_id = ? AND m_efficiencySource = ?")
                         .bind( userid )
                         .bind( DetectorPeakResponse::DrfSource::UserCreatedDrf ) , true );
     }else if( filter->currentIndex() == 4 )
     {
       m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                        .where( "InterSpecUser_id = ? AND m_drfSource = ?")
+                        .where( "InterSpecUser_id = ? AND m_efficiencySource = ?")
                         .bind( userid )
                         .bind( DetectorPeakResponse::DrfSource::FromSpectrumFileDrf ) , true );
     }else
@@ -1979,13 +1983,35 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_drfTypeStack->setHeight( WLength(185.0) );
   
   
+  auto meas = specViewer->measurment( SpectrumType::kForeground );
+  
+  if( meas && !meas->instrument_id().empty() )
+  {
+    m_defaultForSerialNumber = new WCheckBox( "Use as default DRF for SN '" + meas->instrument_id() + "'" );
+    m_defaultForSerialNumber->setMargin( 21, Wt::Left );
+    mainLayout->addWidget( m_defaultForSerialNumber, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
+  }//if( have serial number )
+  
+  if( meas && (meas->detector_type()!=DetectorType::kUnknownDetector || !meas->instrument_model().empty()) )
+  {
+    string model;
+    if( meas->detector_type() == DetectorType::kUnknownDetector )
+      model = meas->instrument_model();
+    else
+      model = detectorTypeToString( meas->detector_type() );
+    m_defaultForDetectorModel = new WCheckBox( "Use as default DRF for model '" + model + "'" );
+    m_defaultForDetectorModel->setMargin( 21, Wt::Left );
+    mainLayout->addWidget( m_defaultForDetectorModel, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
+  }//if( have
+  
+  
   if( auxWindow )
   {
     m_footer = auxWindow->footer();
   }else
   {
     m_footer = new WContainerWidget();
-    mainLayout->addWidget( m_footer, 2, 0, 1, 2 );
+    mainLayout->addWidget( m_footer, mainLayout->rowCount(), 0, 1, 2 );
   }
   
   AuxWindow::addHelpInFooter( m_footer, "detector-edit-dialog" );
@@ -1999,23 +2025,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   }
   
   m_cancelButton->clicked().connect( this, &DetectorEdit::cancelAndFinish );
-  
-  auto meas = specViewer->measurment( SpectrumType::kForeground );
-  
-  if( meas && !meas->instrument_id().empty() )
-  {
-    m_defaultForSerialNumber = new WCheckBox( "Default DRF for SN '" + meas->instrument_id() + "'", m_footer );
-  }//if( have serial number )
-    
-  if( meas && (meas->detector_type()!=DetectorType::kUnknownDetector || !meas->instrument_model().empty()) )
-  {
-    string model;
-    if( meas->detector_type() == DetectorType::kUnknownDetector )
-      model = meas->instrument_model();
-    else
-      model = detectorTypeToString( meas->detector_type() );
-    m_defaultForDetectorModel = new WCheckBox( "Fefault DRF for model '" + model + "'", m_footer );
-  }//if( have
+
   
   if( specViewer && !specViewer->isMobile() )
   {
@@ -2117,9 +2127,10 @@ void DetectorEdit::init()
     //m_drfTypeMenu->select( 0 );
   }else
   {
-    switch( m_detector->efficiencySource() )
+    switch( m_detector->drfSource() )
     {
-      case DetectorPeakResponse::kGadrasEfficiencyDefintion:
+      case DetectorPeakResponse::DefaultGadrasDrf:
+      case DetectorPeakResponse::UserAddedGadrasDrf:
       {
         const bool selected = m_gadrasDetSelect->trySelectDetector( m_detector );
         
@@ -2128,23 +2139,16 @@ void DetectorEdit::init()
         else
           m_drfTypeMenu->select( 2 );
         break;
-      }//case kGadrasEfficiencyDefintion:
-        
-      case DetectorPeakResponse::kRelativeEfficiencyDefintion:
+      }
+      
+      case DetectorPeakResponse::UserAddedRelativeEfficiencyDrf:
       {
         m_drfTypeMenu->select( 1 );
         m_relEffSelect->trySelectDetector( m_detector );
         break;
-      }//case kRelativeEfficiencyDefintion:
+      }
         
-        
-      case DetectorPeakResponse::kUserUploadedEfficiencyCsv:
-      {
-        m_drfTypeMenu->select( 2 );
-        break;
-      }//case kUserUploadedEfficiencyCsv:
-        
-      case DetectorPeakResponse::kUserEfficiencyEquationSpecified:
+      case DetectorPeakResponse::UserSpecifiedFormulaDrf:
       {
         m_drfTypeMenu->select( 3 );
         m_detectorManualFunctionName->setText( m_detector->name() );
@@ -2162,10 +2166,46 @@ void DetectorEdit::init()
         break;
       }//case kUserEfficiencyEquationSpecified:
         
-      case DetectorPeakResponse::kUnknownEfficiencySource:
+      case DetectorPeakResponse::UserImportedIntrisicEfficiencyDrf:
+      {
+        m_drfTypeMenu->select( 2 );
         break;
-    }//switch( m_detector->efficiencySource() )
-  
+      }
+      
+      case DetectorPeakResponse::UnknownDrfSource:
+      case DetectorPeakResponse::UserImportedGadrasDrf:
+      case DetectorPeakResponse::UserCreatedDrf:
+      case DetectorPeakResponse::FromSpectrumFileDrf:
+      {
+        m_drfTypeMenu->select( 4 );
+        try
+        {
+          const double start_time = UtilityFunctions::get_wall_time();
+          for( int row = 0; row < m_model->rowCount(); ++row )
+          {
+            Wt::Dbo::ptr<DetectorPeakResponse> drf = m_model->resultRow(row);
+            if( drf && (drf->hashValue() == m_detector->hashValue()) )
+            {
+              WModelIndexSet indexset;
+              indexset.insert( m_model->index(row,0) );
+              m_DBtable->setSelectedIndexes( indexset );
+              break;
+            }
+            
+            //On a quick test, it took about 25ms when the very first row
+            //  matched the detector; even if we loop through all rows, it
+            //  takes about the same amount of time
+            const double now_time = UtilityFunctions::get_wall_time();
+            if( (now_time-start_time) > 0.25 )
+              break;
+          }//for( loop over previous DRFs )
+        }catch( std::exception &e )
+        {
+          cerr << "Caught exception trying to select previous DRF from database to select for the GUI: " << e.what() << endl;
+        }//try / catch
+        break;
+      }
+    };//switch( m_detector->drfSource() )
   }//if( m_detector == NULL ) / else
   
   selectButton( m_drfTypeStack, m_drfTypeMenu, false );
@@ -3129,11 +3169,13 @@ DetectorEditWindow::DetectorEditWindow(
 {
   disableCollapse();
   m_edit = new DetectorEdit( det, specViewer, fileModel, this );
+  contents()->setPadding( 0 );
   stretcher()->addWidget( m_edit, 0, 0 );
+  stretcher()->setContentsMargins( 6, 2, 6, 0 );
   m_edit->done().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
   finished().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
   rejectWhenEscapePressed();
-  setMargin(0);
+  setMargin( 0 );
   resize( WLength(650,WLength::Pixel), WLength(610,WLength::Pixel));
   centerWindow();
   show();

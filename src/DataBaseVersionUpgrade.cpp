@@ -542,7 +542,6 @@ namespace DataBaseVersionUpgrade
        "m_resolutionUncerts" text not null,
        "m_lowerEnergy" double precision not null,
        "m_upperEnergy" double precision not null,
-       "m_drfSource" integer not null,
        "m_createdUtc" bigint not null,
        "m_lastUsedUtc" bigint not null
        )
@@ -557,8 +556,6 @@ namespace DataBaseVersionUpgrade
       sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_lowerEnergy double precision default 0 not null;";
       executeSQL( sql_statement, sqlSession );
       sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_upperEnergy double precision default 0 not null;";
-      executeSQL( sql_statement, sqlSession );
-      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_drfSource integer default 0 not null;";
       executeSQL( sql_statement, sqlSession );
       sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_createdUtc bigint default 0 not null;";
       executeSQL( sql_statement, sqlSession );
