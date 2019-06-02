@@ -177,48 +177,38 @@ public:
     kNumEfficiencyFnctForms
   };//enum EfficiencyFnctForm
   
-  
-  enum EfficiencyDefinitionSource
-  {
-    kGadrasEfficiencyDefintion,
-    kRelativeEfficiencyDefintion,
-    kUserUploadedEfficiencyCsv,
-    kUserEfficiencyEquationSpecified,
-    kUnknownEfficiencySource
-  };//enum EfficiencyDefinitionSource
-  
   /** Enum used to indicate where the DRF came from.  This is used primarily to
       help decide what DRFs to show when user browses database.
    */
   enum DrfSource
   {
-    UnknownDrfSource = 0,
+    UnknownDrfSource = 4,
     
     /** One of the GADRAS based DRFs that come with InterSpec. */
-    DefaultGadrasDrf = 1,
+    DefaultGadrasDrf = 0,
     
     /** A GADRAS DRF from the filesystem (like C:\Gadras\Detectors, or
      InterSpecs user data directory.
      */
-    UserAddedGadrasDrf = 2,
+    UserAddedGadrasDrf = 5,
     
     /** Relative (or intrinsic) efficiency DRF from a CSV or TSV from a user
      specified directory, like InterSpecs user data directory.
      */
-    UserAddedRelativeEfficiencyDrf = 3,
+    UserAddedRelativeEfficiencyDrf = 1,
     
     /** User used the "Import" of Detector Select tool to upload Efficiency.csv
      file, and specified the detector diameter.
     */
-    UserImportedIntrisicEfficiencyDrf = 4,
+    UserImportedIntrisicEfficiencyDrf = 2,
     
     /** User used the "Import" of DetectorSelect tool to upload an
         Efficiency.csv and Detector.dat file.
      */
-    UserImportedGadrasDrf = 5,
+    UserImportedGadrasDrf = 6,
     
     /** User specified a formula in the Detector Select Tool. */
-    UserSpecifiedFormulaDrf = 6,
+    UserSpecifiedFormulaDrf = 3,
     
     /** User used the MakeDrf tool to create the DRF. */
     UserCreatedDrf = 7,
@@ -420,13 +410,13 @@ public:
   const std::string &efficiencyFormula() const;
   const std::string &name() const;
   const std::string &description() const;
-  EfficiencyDefinitionSource efficiencySource() const;
+  DrfSource drfSource() const;
+  
   float efficiencyEnergyUnits() const;
   
   //Simple setters (all recompute hash value)
   void setName( const std::string &name );
   void setDescription( const std::string &descrip );
-  void setEfficiencySource( const EfficiencyDefinitionSource src );
 
   //Search for: setFwhmCoefficients, fromGadrasDirectory, fromGadrasDefinition, setIntrinsicEfficiencyFormula, fromEnergyEfficiencyCsv, fromExpOfLogPowerSeriesAbsEff
   //  And maybe consider making them take a DrfSource argument
@@ -544,7 +534,7 @@ protected:
   /** Valid only if same size as m_resolutionCoeffs. */
   std::vector<float> m_resolutionUncerts;
   
-  EfficiencyDefinitionSource m_efficiencySource;
+  DrfSource m_efficiencySource;
   
   //
   EfficiencyFnctForm m_efficiencyForm;
@@ -609,9 +599,6 @@ protected:
    anywhere in InterSpec, but is good to know.
    */
   double m_upperEnergy;
-  
-  /** Where this DRF originally came from. */
-  DrfSource m_drfSource;
   
   /** Time when DRF was created. */
   int64_t m_createdUtc;
@@ -766,7 +753,6 @@ public:
       m_flags = reinterpret_cast<uint64_t&>(flags);
     }
 
-    
     if( a.getsValue() )
       saveFloatVectorToDB(m_expOfLogPowerSeriesUncerts, "m_expOfLogPowerSeriesUncerts", a);
     if( a.setsValue() || a.isSchema() )
@@ -779,7 +765,6 @@ public:
     
     Wt::Dbo::field( a, m_lowerEnergy, "m_lowerEnergy" );
     Wt::Dbo::field( a, m_upperEnergy, "m_upperEnergy" );
-    Wt::Dbo::field( a, m_drfSource, "m_drfSource" );
     Wt::Dbo::field( a, m_createdUtc, "m_createdUtc" );
     Wt::Dbo::field( a, m_lastUsedUtc, "m_lastUsedUtc" );
   } //void persist( Action &a )

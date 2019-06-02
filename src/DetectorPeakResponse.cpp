@@ -315,14 +315,13 @@ DetectorPeakResponse::DetectorPeakResponse()
     m_detectorDiameter( 0.0f ),
     m_efficiencyEnergyUnits( static_cast<float>(PhysicalUnits::keV) ),
     m_resolutionForm( DetectorPeakResponse::kNumResolutionFnctForm ),
-    m_efficiencySource( DetectorPeakResponse::kUnknownEfficiencySource ),
+    m_efficiencySource( DrfSource::UnknownDrfSource ),
     m_efficiencyForm( DetectorPeakResponse::kNumEfficiencyFnctForms ),
     m_hash( 0 ),
     m_parentHash( 0 ),
     m_flags( 0 ),
     m_lowerEnergy( 0.0 ),
     m_upperEnergy( 0.0 ),
-    m_drfSource( DrfSource::UnknownDrfSource ),
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 )
 {
@@ -336,14 +335,13 @@ DetectorPeakResponse::DetectorPeakResponse( const std::string &name,
     m_detectorDiameter( 0.0 ),
     m_efficiencyEnergyUnits( static_cast<float>(PhysicalUnits::keV) ),
     m_resolutionForm( DetectorPeakResponse::kNumResolutionFnctForm ),
-    m_efficiencySource( DetectorPeakResponse::kUnknownEfficiencySource ),
+    m_efficiencySource( DrfSource::UnknownDrfSource ),
     m_efficiencyForm( DetectorPeakResponse::kNumEfficiencyFnctForms ),
     m_hash( 0 ),
     m_parentHash( 0 ),
     m_flags( 0x0 ),
     m_lowerEnergy( 0.0 ),
     m_upperEnergy( 0.0 ),
-    m_drfSource( DrfSource::UnknownDrfSource ),
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 )
 {
@@ -407,12 +405,6 @@ void DetectorPeakResponse::computeHash()
     boost::hash_combine( seed, m_upperEnergy );
   }
   
-  if( m_drfSource != DrfSource::UnknownDrfSource )
-  {
-    boost::hash_combine( seed, m_flags );
-    boost::hash_combine( seed, m_drfSource );
-  }
-  
   //Dont hash based on m_createdUtc or m_lastUsed
   
   m_hash = seed;
@@ -466,13 +458,12 @@ void DetectorPeakResponse::reset()
   m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   m_resolutionForm = kNumResolutionFnctForm;
   m_efficiencyForm = kNumEfficiencyFnctForms;
-  m_efficiencySource = kUnknownEfficiencySource;
   m_resolutionCoeffs.clear();
   m_energyEfficiencies.clear();
   m_hash = m_parentHash = 0;
   m_flags = 0;
   m_lowerEnergy = m_upperEnergy = 0.0;
-  m_drfSource = DrfSource::UnknownDrfSource;
+  m_efficiencySource = DrfSource::UnknownDrfSource;
   m_createdUtc = m_lastUsedUtc = 0;
   
   
@@ -503,7 +494,6 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && m_efficiencyForm==rhs.m_efficiencyForm
           && m_resolutionCoeffs==rhs.m_resolutionCoeffs
           && m_energyEfficiencies==rhs.m_energyEfficiencies
-          && m_drfSource==rhs.m_drfSource
           && m_hash==rhs.m_hash
           && m_parentHash==rhs.m_parentHash
           && m_lowerEnergy==rhs.m_lowerEnergy
@@ -514,31 +504,22 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
 }//operator==
 
 
-DetectorPeakResponse::EfficiencyDefinitionSource
-                                DetectorPeakResponse::efficiencySource() const
+DetectorPeakResponse::DrfSource DetectorPeakResponse::drfSource() const
 {
   return m_efficiencySource;
-}//EfficiencyDefinitionSource efficiencySource() const
+}
 
 float DetectorPeakResponse::efficiencyEnergyUnits() const
 {
   return m_efficiencyEnergyUnits;
 }
 
-void DetectorPeakResponse::setEfficiencySource(
-                    const DetectorPeakResponse::EfficiencyDefinitionSource src )
-{
-  m_efficiencySource = src;
-  computeHash();
-}//void setEfficiencySource( const EfficiencyDefinitionSource src )
-
-
 void DetectorPeakResponse::setDrfSource( const DetectorPeakResponse::DrfSource source )
 {
-  if( m_drfSource == source )
+  if( m_efficiencySource == source )
     return;
   
-  m_drfSource = source;
+  m_efficiencySource = source;
   computeHash();
 }//void setDrfSource( const DrfSource source );
 
@@ -561,21 +542,18 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
                                     const float detectorDiameter,
                                     const float energyUnits )
 {
-  m_energyEfficiencies.clear();
-  m_detectorDiameter = detectorDiameter;
-  m_efficiencySource = kUserUploadedEfficiencyCsv;
-  m_efficiencyEnergyUnits = energyUnits;
-
-  if( m_detectorDiameter <= 0.0 || IsInf(m_detectorDiameter) || IsNan(m_detectorDiameter) )
+  if( detectorDiameter <= 0.0 || IsInf(detectorDiameter) || IsNan(detectorDiameter) )
     throw runtime_error( "Detector diameter must be greater than 0.0" );
   
-  if( m_efficiencyEnergyUnits <= 0.0 || IsInf(m_efficiencyEnergyUnits) || IsNan(m_efficiencyEnergyUnits) )
+  if( energyUnits <= 0.0 || IsInf(energyUnits) || IsNan(energyUnits) )
     throw runtime_error( "Energy units must be greater than 0.0" );
 
   
   bool gotline = false;
   int linen = 0;
   string line;
+  std::vector<EnergyEfficiencyPair> energyEfficiencies;
+  
   while( UtilityFunctions::safe_get_line( input, line ) )
   {
     ++linen;
@@ -613,25 +591,25 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     point.efficiency = fields[1] / 100.0; //files have it listed as a percentage
     
     gotline = true;
-    m_energyEfficiencies.push_back( point );
+    energyEfficiencies.push_back( point );
     
-    if( linen > 5000 || m_energyEfficiencies.size() > 3000 )
+    if( linen > 5000 || energyEfficiencies.size() > 3000 )
       throw runtime_error( "Efficiency CSV files can have a max of 5000 total lines or 3000 energy efficiency pairs" );
     
   }//while( UtilityFunctions::safe_get_line(input) )
 
   
-  if( m_energyEfficiencies.size() < 2 )
+  if( energyEfficiencies.size() < 2 )
     throw runtime_error( "File was not a valid efficiency file, need at least"
                         " two efficiency points." );
   
   //Lets check if the numbers were strickly increasing or strickly decreasing
-  const bool increasing = (m_energyEfficiencies[1].energy > m_energyEfficiencies[0].energy);
-  for( size_t i = 2; i < m_energyEfficiencies.size(); ++i )
+  const bool increasing = (energyEfficiencies[1].energy > energyEfficiencies[0].energy);
+  for( size_t i = 2; i < energyEfficiencies.size(); ++i )
   {
     //We'll let two be energied be the exact same in a row
-    const float laste = m_energyEfficiencies[i-1].energy;
-    const float thise = m_energyEfficiencies[i].energy;
+    const float laste = energyEfficiencies[i-1].energy;
+    const float thise = energyEfficiencies[i].energy;
     
     if( IsNan(laste) || IsNan(thise)
         || IsInf(laste) || IsInf(thise) )
@@ -640,10 +618,10 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     if( laste<0.0f || thise<0.0f )
       throw runtime_error( "Energy can not be less than zero in CSV efficiecny file" );
     
-    if( m_energyEfficiencies[i-1].efficiency < 0.0f
-       || m_energyEfficiencies[i].efficiency < 0.0f
-       || m_energyEfficiencies[i-1].efficiency > 1.0f
-       || m_energyEfficiencies[i].efficiency > 1.0f )
+    if( energyEfficiencies[i-1].efficiency < 0.0f
+       || energyEfficiencies[i].efficiency < 0.0f
+       || energyEfficiencies[i-1].efficiency > 1.0f
+       || energyEfficiencies[i].efficiency > 1.0f )
       throw runtime_error( "Intrinsic efficiency can not be less than zero or"
                            " greater than 100 in CSV efficiency file" );
     
@@ -654,12 +632,17 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     if( increasing != bigger )
       throw runtime_error( "Energies in efficiency CSV must be strickly "
                            "increasing or strickly decreasing" );
-  }//for( size_t i = 2; i < m_energyEfficiencies.size(); ++i )
+  }//for( size_t i = 2; i < energyEfficiencies.size(); ++i )
   
 
   if( !increasing )
-    std::reverse( m_energyEfficiencies.begin(), m_energyEfficiencies.end() );
+    std::reverse( energyEfficiencies.begin(), energyEfficiencies.end() );
   
+  m_detectorDiameter = detectorDiameter;
+  m_energyEfficiencies = energyEfficiencies;
+  m_efficiencyEnergyUnits = energyUnits;
+  
+  m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
   m_efficiencyForm = kEnergyEfficiencyPairs;
   
   m_flags = 0;
@@ -685,7 +668,6 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
   
   m_efficiencyForm = kFunctialEfficienyForm;
   m_efficiencyFormula = fcnstr;
-  m_efficiencySource = kUserEfficiencyEquationSpecified;
   m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression, _1  );
   m_detectorDiameter = diameter;
   m_efficiencyEnergyUnits = energyUnits;
@@ -695,7 +677,7 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
   
-  m_drfSource = DrfSource::UserSpecifiedFormulaDrf;
+  m_efficiencySource = DrfSource::UserSpecifiedFormulaDrf;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   
@@ -757,14 +739,12 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   
   fromEnergyEfficiencyCsv( csvFile, diam, static_cast<float>(PhysicalUnits::keV) );
   
-  m_efficiencySource = kGadrasEfficiencyDefintion;
-  
   m_flags = 0;
   
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
 
-  m_drfSource = DrfSource::UserAddedGadrasDrf;
+  m_efficiencySource = DrfSource::UserAddedGadrasDrf;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   
@@ -828,7 +808,6 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_efficiencyForm = kExpOfLogPowerSeries;
   m_efficiencyEnergyUnits = equationEnergyUnits;
   m_detectorDiameter = det_diam;
-  m_efficiencySource = kRelativeEfficiencyDefintion;
   m_expOfLogPowerSeriesCoeffs = coefs;
   
   //now we need to account for characterizationDist
@@ -844,7 +823,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
   
-  m_drfSource = DrfSource::UserAddedRelativeEfficiencyDrf;
+  m_efficiencySource = DrfSource::UserAddedRelativeEfficiencyDrf;
   
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
 
@@ -906,13 +885,18 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   node = doc->allocate_node( node_element, "DetectorDiameter", val );
   base_node->append_node( node );
   
+  val = "UnknownDrfSource";
   switch( m_efficiencySource )
   {
-    case kGadrasEfficiencyDefintion:       val = "GadrasEfficiencyDefintion";       break;
-    case kRelativeEfficiencyDefintion:     val = "RelativeEfficiencyDefintion";     break;
-    case kUserUploadedEfficiencyCsv:       val = "UserUploadedEfficiencyCsv";       break;
-    case kUserEfficiencyEquationSpecified: val = "UserEfficiencyEquationSpecified"; break;
-    case kUnknownEfficiencySource:         val = "UnknownEfficiencySource";         break;
+    case UnknownDrfSource:                                                             break;
+    case DefaultGadrasDrf:                  val = "DefaultGadrasDrf";                  break;
+    case UserAddedGadrasDrf:                val = "UserAddedGadrasDrf";                break;
+    case UserAddedRelativeEfficiencyDrf:    val = "UserAddedRelativeEfficiencyDrf";    break;
+    case UserImportedIntrisicEfficiencyDrf: val = "UserImportedIntrisicEfficiencyDrf"; break;
+    case UserImportedGadrasDrf:             val = "UserImportedGadrasDrf";             break;
+    case UserSpecifiedFormulaDrf:           val = "UserSpecifiedFormulaDrf";           break;
+    case UserCreatedDrf:                    val = "UserCreatedDrf";                    break;
+    case FromSpectrumFileDrf:               val = "FromSpectrumFileDrf";               break;
   }//switch( m_efficiencySource )
   
   node = doc->allocate_node( node_element, "EfficiencySource", val );
@@ -1014,24 +998,6 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     base_node->append_node( node );
   }
   
-  const char *drfSourceTxt = "UnknownDrfSource";
-  switch( m_drfSource )
-  {
-    case UnknownDrfSource:                                                                      break;
-    case DefaultGadrasDrf:                  drfSourceTxt = "DefaultGadrasDrf";                  break;
-    case UserAddedGadrasDrf:                drfSourceTxt = "UserAddedGadrasDrf";                break;
-    case UserAddedRelativeEfficiencyDrf:    drfSourceTxt = "UserAddedRelativeEfficiencyDrf";    break;
-    case UserImportedIntrisicEfficiencyDrf: drfSourceTxt = "UserImportedIntrisicEfficiencyDrf"; break;
-    case UserImportedGadrasDrf:             drfSourceTxt = "UserImportedGadrasDrf";             break;
-    case UserSpecifiedFormulaDrf:           drfSourceTxt = "UserSpecifiedFormulaDrf";           break;
-    case UserCreatedDrf:                    drfSourceTxt = "UserCreatedDrf";                    break;
-    case FromSpectrumFileDrf:               drfSourceTxt = "FromSpectrumFileDrf";               break;
-  }//switch( m_drfSource )
-  
-  node = doc->allocate_node( node_element, "DrfSource", drfSourceTxt );
-  base_node->append_node( node );
-  
-  
   if( m_createdUtc )
   {
     stringstream strm;
@@ -1092,21 +1058,34 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   node = parent->first_node( "EfficiencySource", 16 );
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing EfficiencySource node" );
-
-  if( compare(node->value(),node->value_size(),"GadrasEfficiencyDefintion",25,false) )
-    m_efficiencySource = kGadrasEfficiencyDefintion;
+  
+  if( compare(node->value(),node->value_size(),"GadrasEfficiencyDefintion",25,false)
+     || compare(node->value(),node->value_size(),"DefaultGadrasDrf",16,false) )
+    m_efficiencySource = DrfSource::DefaultGadrasDrf;
   else if( compare(node->value(),node->value_size(),   "SimpleMassEfficiencyDefintion",29,false)
-           || compare(node->value(),node->value_size(),"RelativeEfficiencyDefintion",27,false) )
-    m_efficiencySource = kRelativeEfficiencyDefintion;
-  else if( compare(node->value(),node->value_size(),"UserUploadedEfficiencyCsv",25,false) )
-    m_efficiencySource = kUserUploadedEfficiencyCsv;
-  else if( compare(node->value(),node->value_size(),"UserEfficiencyEquationSpecified",31,false) )
-    m_efficiencySource = kUserEfficiencyEquationSpecified;
-  else if( compare(node->value(),node->value_size(),"UnknownEfficiencySource",23,false) )
-    m_efficiencySource = kUnknownEfficiencySource;
+           || compare(node->value(),node->value_size(),"RelativeEfficiencyDefintion",27,false)
+           || compare(node->value(),node->value_size(),"UserAddedRelativeEfficiencyDrf",30,false) )
+    m_efficiencySource = DrfSource::UserAddedRelativeEfficiencyDrf;
+  else if( compare(node->value(),node->value_size(),"UserUploadedEfficiencyCsv",25,false)
+          || compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false) )
+    m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
+  else if( compare(node->value(),node->value_size(),"UserEfficiencyEquationSpecified",31,false)
+          || compare(node->value(),node->value_size(),"UserSpecifiedFormulaDrf",23,false) )
+    m_efficiencySource = DrfSource::UserSpecifiedFormulaDrf;
+  else if( compare(node->value(),node->value_size(),"UnknownEfficiencySource",23,false)
+          || compare(node->value(),node->value_size(),"UnknownDrfSource",16,false) )
+    m_efficiencySource = DrfSource::UnknownDrfSource;
+  else if( compare(node->value(),node->value_size(),"UserAddedGadrasDrf",18,false) )
+    m_efficiencySource = DrfSource::UserAddedGadrasDrf;
+  else if( compare(node->value(),node->value_size(),"UserImportedGadrasDrf",21,false) )
+    m_efficiencySource = DrfSource::UserImportedGadrasDrf;
+  else if( compare(node->value(),node->value_size(),"UserCreatedDrf",14,false) )
+    m_efficiencySource = UserCreatedDrf;
+  else if( compare(node->value(),node->value_size(),"FromSpectrumFileDrf",19,false) )
+    m_efficiencySource = FromSpectrumFileDrf;
   else 
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencySource value" );
-
+  
   
   node = parent->first_node( "EfficiencyEnergyUnits", 21 );
   if( !node || !node->value() )
@@ -1232,35 +1211,6 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   else
     m_upperEnergy = 0.0f;
   
-  
-  node = parent->first_node( "DrfSource", 9 );
-  if( node && node->value_size() )
-  {
-    if( compare(node->value(),node->value_size(),"UnknownDrfSource",16,false) )
-      m_drfSource = UnknownDrfSource;
-    else if( compare(node->value(),node->value_size(),"DefaultGadrasDrf",16,false) )
-      m_drfSource = DefaultGadrasDrf;
-    else if( compare(node->value(),node->value_size(),"UserAddedGadrasDrf",18,false) )
-      m_drfSource = UserAddedGadrasDrf;
-    else if( compare(node->value(),node->value_size(),"UserAddedRelativeEfficiencyDrf",30,false) )
-      m_drfSource = UserAddedRelativeEfficiencyDrf;
-    else if( compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false) )
-      m_drfSource = UserImportedIntrisicEfficiencyDrf;
-    else if( compare(node->value(),node->value_size(),"UserImportedGadrasDrf",21,false) )
-      m_drfSource = UserImportedGadrasDrf;
-    else if( compare(node->value(),node->value_size(),"UserSpecifiedFormulaDrf",23,false) )
-      m_drfSource = UserSpecifiedFormulaDrf;
-    else if( compare(node->value(),node->value_size(),"UserCreatedDrf",14,false) )
-      m_drfSource = UserCreatedDrf;
-    else if( compare(node->value(),node->value_size(),"FromSpectrumFileDrf",19,false) )
-      m_drfSource = FromSpectrumFileDrf;
-    else
-      throw runtime_error( "DetectorPeakResponse: invalid DrfSource value" );
-  }else
-  {
-    m_drfSource = UnknownDrfSource;
-  }
-
   node = parent->first_node( "CreationTimeUtc", 15 );
   if( node && node->value_size() )
   {
@@ -1485,15 +1435,6 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: upper energy"
              " of LHS (%1.8E) doesnt match RHS (%1.8E)",
              lhs.m_upperEnergy, rhs.m_upperEnergy );
-    throw runtime_error(buffer);
-  }
-  
-  if( lhs.m_drfSource != rhs.m_drfSource )
-  {
-    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: DrfSource"
-             " of LHS (%i) doesnt match RHS (%i)",
-             static_cast<int>(lhs.m_drfSource),
-             static_cast<int>(rhs.m_drfSource) );
     throw runtime_error(buffer);
   }
   
