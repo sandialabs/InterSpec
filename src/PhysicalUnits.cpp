@@ -43,6 +43,7 @@ namespace PhysicalUnits
 #define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half life)"
 #define ACTIVITY_UNIT_REGEX "(bq|becquerel|ci|cu|curie|c)"
 #define DURATION_REGEX "(\\+?\\d+:\\d\\d:\\d+(\\.\\d+)?)"
+#define ISO_8601_DURATION_REGEX "[\\-+]?[Pp](?!$)(\\d+(?:\\.\\d+)?[Yy])?(\\d+(?:\\.\\d+)?[Mm])?(\\d+(?:\\.\\d+)?[Ww])?(\\d+(?:\\.\\d+)?[Dd])?([Tt](?=\\d)(\\d+(?:\\.\\d+)?[Hh])?(\\d+(?:\\.\\d+)?[Mm])?(\\d+(?:\\.\\d+)?[Ss])?)?"
   
 const char * const sm_distanceRegex
     = "^(((\\s*[+\\-]?\\s*0\\s*)|((" POS_DECIMAL_REGEX ")\\s*" DIST_UNITS_REGEX ")+\\s*))+$";
@@ -79,7 +80,7 @@ const char * const sm_activityUnitOptionalRegex
               "\\s*$";
   
 const char * const sm_timeDurationRegex
-  = "\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)|(" DURATION_REGEX "\\s*)\\s*)+";
+  = "\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)|(" DURATION_REGEX "\\s*)\\s*)|(" ISO_8601_DURATION_REGEX "\\s*)+";
   
 const char * const sm_timeDurationHalfLiveOptionalRegex
    = "\\s*((" POS_DECIMAL_REGEX "\\s*" TIME_UNIT_REGEX "\\s*)"
@@ -446,6 +447,83 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
     return time_dur;
   }//if( str.find(":") != std::string::npos )
 
+  
+  //if( (hl<=0.0) && (str.size()>2)
+  //    && (str[0]=='p' || ((str[0]=='+' || str[0]=='-') && str[0]=='p') ) )
+  if( str.find('p') != string::npos )
+  {
+    //extended format of ISO 8601, i.e., PnYnMnDTnHnMnS,
+    //  ex 'P1Y2M2W3DT10H30M10.1S', '-P1347M', 'PT1M'
+    
+    boost::smatch matches;
+    boost::regex expression( ISO_8601_DURATION_REGEX );
+    if( boost::regex_search( str, matches, expression ) )
+    {
+      //for( size_t i = 0; i < matches.size(); ++i )
+      //  cout << "Match[" << i << "] = '" << matches[i] << "'" << endl;
+      //For: 'P1Y2M2W3DT10H30M10.1S'
+      //matches[0] = 'P1Y2M2W3DT10H30M10.1S'
+      //matches[1] = '1y'
+      //matches[2] = '2m'
+      //matches[3] = '2w'
+      //matches[4] = '3d'
+      //matches[5] = 'T10H30M10.1S'
+      //matches[6] = '10h'
+      //matches[7] = '30m'
+      //matches[8] = '10.1s'
+      double iso_dur = 0.0;
+      for( size_t i = 1; i < 9; ++i )
+      {
+        string valstr = matches[i].str();
+        if( i==5 || valstr.size()<=1 )
+          continue;
+        
+        valstr = valstr.substr(0,valstr.size()-1);
+        double val = std::stod( valstr );  //could throw, if our regex is messed up
+        
+        switch( i )
+        {
+          case 1: val *= PhysicalUnits::year;    break;
+          case 2: val *= PhysicalUnits::month;   break;
+          case 3: val *= 7.0*PhysicalUnits::day; break;
+          case 4: val *= PhysicalUnits::day;     break;
+          case 6: val *= PhysicalUnits::hour;    break;
+          case 7: val *= PhysicalUnits::minute;  break;
+          case 8: val *= PhysicalUnits::second;  break;
+        }
+        
+        iso_dur += val;
+      }//for( size_t i = 1; i < 10; ++i )
+      
+      const string fullmatch = matches[0].str();
+      assert( fullmatch.size() > 0 );
+      
+      if( fullmatch[0] == '-' )
+        iso_dur *= -1.0;
+      
+      if( fullmatch.size() > 1 ) //protect against regex just matching "p"
+      {
+        time_dur += iso_dur;
+      
+        if( str.size() == fullmatch.size() )
+        return time_dur;
+        
+        const size_t startpos = str.find( fullmatch );
+        if( startpos != string::npos )  //should always be true, but jic
+        {
+          str.erase( begin(str)+startpos, begin(str)+startpos+fullmatch.size() );
+          UtilityFunctions::trim( str );
+          if( !str.empty() )
+            time_dur += stringToTimeDurationPossibleHalfLife( str, hl, second_def );
+        }
+        
+        return time_dur;
+      }//if( fullmatch.size() > 1 )
+    }//if( boost::regex_match( str, matches, expression ) )
+    //If not a required format, keep trying.
+  }//if( str.size()>2 && (str[0]=='p' || ((str[0]=='+' || str[0]=='-') && str[0]=='p') )  )
+  
+  
 
   const string time_regex ="\\s*((\\+|\\-)?((\\d+(\\.\\d*)?)|(\\.\\d*))(?:[Ee][+\\-]?\\d+)?)"
                             "\\s*("

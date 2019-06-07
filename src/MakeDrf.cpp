@@ -175,6 +175,84 @@ namespace
   };//class CalFileDownloadResource
   
   
+  float effEqnUncert( const float energy, vector<float> coefs, const vector<float> &uncerts )
+  {
+    assert( coefs.size() == uncerts.size() );
+    
+    const float eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, coefs );
+    
+    double neguncert = 0.0, posuncert = 0.0;
+    
+    for( size_t i = 0; i < uncerts.size(); ++i )
+    {
+      const float orig = coefs[i];
+      coefs[i] = orig + uncerts[i];
+      const double plus = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, coefs ) - eff;
+      coefs[i] = orig - uncerts[i];
+      const double minus = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, coefs ) - eff;
+      coefs[i] = orig;
+      if( plus > 0.0 )
+        posuncert += plus*plus;
+      else
+        neguncert += plus*plus;
+      if( minus > 0.0 )
+        posuncert += minus*minus;
+      else
+        neguncert += minus*minus;
+    }//for( size_t i = 0; i < uncerts.size(); ++i )
+    
+    posuncert = sqrt(posuncert);
+    neguncert = sqrt(neguncert);
+    
+    if( std::isnan(posuncert) || std::isinf(posuncert)
+       || std::isnan(neguncert) || std::isinf(neguncert) )
+      return -999.9f;
+    
+    return 0.5f*(posuncert + neguncert);
+  }//float effEqnUncert(...)
+  
+  
+  
+  /** Class to downlaod CSV that contains info fit for. */
+  class CsvDrfDownloadResource : public Wt::WResource
+  {
+    string m_filename;
+    MakeDrf * const m_makedrf;
+    
+  public:
+    CsvDrfDownloadResource( MakeDrf *parent )
+    : WResource( parent ), m_filename(""), m_makedrf( parent )
+    {
+      suggestFileName( "drfinfo.csv", WResource::Attachment );
+    }
+    
+    virtual ~CsvDrfDownloadResource()
+    {
+      beingDeleted();
+    }
+    
+    void setSuggestFileName( string filename )
+    {
+      m_filename = filename;
+      
+      if( filename.empty() )
+        filename = "drf";
+      filename += "_drfinfo.csv";
+      suggestFileName( filename, WResource::Attachment );
+    }
+    
+    virtual void handleRequest( const Wt::Http::Request &request,
+                               Wt::Http::Response &response )
+    {
+      assert( wApp );
+      response.setMimeType( "text/csv" );
+      if( m_makedrf )
+        m_makedrf->writeCsvSummary( response.out(), m_filename );
+    }//void handleRequest(...)
+  };//class CsvDrfDownloadResource
+  
+  
+  
   class DrfPeak : public WContainerWidget
   {
   public:
@@ -1416,8 +1494,12 @@ void MakeDrf::startSaveAs()
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
-  CalFileDownloadResource *csvResource = new CalFileDownloadResource( false, this );
+  CsvDrfDownloadResource *csvResource = new CsvDrfDownloadResource( this );
   new WAnchor( csvResource, "Export DRF as CSV.", cell );
+  
+  name->changed().connect( std::bind([name,csvResource](){
+    csvResource->setSuggestFileName( name->text().toUTF8() );
+  }) );
   
   cell = table->elementAt(currentRow, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
@@ -1464,7 +1546,7 @@ void MakeDrf::startSaveAs()
       return;
     }
     
-    const bool inMeV = (m_effEqnUnits->currentIndex() == 1);
+    const bool inMeV = isEffEqnInMeV();
     const float eqnEnergyUnits = inMeV ? 1000.0f : 1.0f;
     
     float lowerEnergy = 0.0f, upperEnergy = 0.0f;
@@ -2009,7 +2091,9 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
   //  not being called if this widget is deleted before fit is done.
   auto updater = boost::bind( &MakeDrf::updateFwhmEqn, this, _1, _2, static_cast<int>(fnctnlForm), fitid );
   
-  auto worker = [sessionId,fnctnlForm,peaks,num_gamma_channels,sqrtEqnOrder,updater]() {
+  const string thisid = id();
+  
+  auto worker = [sessionId,fnctnlForm,peaks,num_gamma_channels,sqrtEqnOrder,updater,thisid]() {
     try
     {
       auto peakdequ = std::make_shared<std::deque< std::shared_ptr<const PeakDef> > >( peaks.begin(), peaks.end() );
@@ -2027,8 +2111,11 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
         cout << fwhm_coefs[i] << "+-" << fwhm_coefs_uncert[i] << ", ";
       cout << "}; took " << (end_time-start_time) << " seconds" << endl;
       
-      WServer::instance()->post( sessionId, std::bind( [updater,fwhm_coefs,fwhm_coefs_uncert](){
-        updater(fwhm_coefs,fwhm_coefs_uncert);
+      WServer::instance()->post( sessionId, std::bind( [updater,fwhm_coefs,fwhm_coefs_uncert,thisid](){
+        if( wApp->domRoot() && dynamic_cast<MakeDrf *>(wApp->domRoot()->findById(thisid)) )
+          updater(fwhm_coefs,fwhm_coefs_uncert);
+        else
+          cerr << "MakeDrf widget was deleted while calculating FWHM coefs" << endl;
       } ) );
     }catch( std::exception &e )
     {
@@ -2097,7 +2184,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   const int nfitpars = std::min( eqnOrderIndex+1, 8 );
   
   
-  const bool inMeV = (m_effEqnUnits->currentIndex() == 1);
+  const bool inMeV = isEffEqnInMeV();
   if( inMeV )
   {
     for( auto &a : data )
@@ -2105,10 +2192,12 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   }//if( inMeV )
   
   //ToDo: I'm not entirely sure the next line protects against updateEffEqn()
-  //  not being called if this widget is deleted before fit is done.
+  //  not being called if this widget is deleted before fit is done. (it doesnt!)
   auto updater = boost::bind( &MakeDrf::updateEffEqn, this, _1, _2, fitid, _3 );
+  const string thisid = id();
   
-  auto worker = [sessionId,data,nfitpars,updater]() {
+  
+  auto worker = [sessionId,thisid,data,nfitpars,updater]() {
     try
     {
       //Takes between 5 and 500ms for a HPGe detector
@@ -2124,15 +2213,22 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
         cout << result[i] << "+-" << uncerts[i] << ", ";
       cout << "}; took " << (end_time-start_time) << " seconds" << endl;
       
-      WServer::instance()->post( sessionId, std::bind( [updater,result,uncerts](){
-        updater( result, uncerts, string("") );
+      WServer::instance()->post( sessionId, std::bind( [updater,thisid,result,uncerts](){
+        //Make sure *this is still in the widget tree (incase user closed window while computation was being done)
+        if( wApp->domRoot() && dynamic_cast<MakeDrf *>(wApp->domRoot()->findById(thisid) ) )
+          updater( result, uncerts, string("") );
+        else
+          cerr << "MakeDrf widget was deleted while efficiency was being calculated" << endl;
       } ) );
     }catch( std::exception &e )
     {
       const string errmsg = e.what();
       cout << "Failed to fit intrinsic eff coefs: " << errmsg << endl;
-      WServer::instance()->post( sessionId, std::bind( [updater,errmsg](){
-        updater( vector<float>(), vector<float>(), errmsg );
+      WServer::instance()->post( sessionId, std::bind( [updater,errmsg,thisid](){
+        if( wApp->domRoot() && dynamic_cast<MakeDrf *>(wApp->domRoot()->findById(thisid) ) )
+          updater( vector<float>(), vector<float>(), errmsg );
+        else
+          cerr << "MakeDrf widget was deleted while efficiency was being calculated" << endl;
       } ) );
     }//try / catch fit FWHM
   };
@@ -2143,7 +2239,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
 
 void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid, const string errmsg )
 {
-  const bool isMeV = (m_effEqnUnits->currentIndex()==1);
+  const bool isMeV = isEffEqnInMeV();
   const auto units = (isMeV ? MakeDrfChart::EqnEnergyUnits::MeV : MakeDrfChart::EqnEnergyUnits::keV);
 
   m_effEqnCoefs = coefs;
@@ -2356,3 +2452,214 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
   
   return answer;
 }//std::shared_ptr<SpecMeas> assembleCalFile()
+
+
+void MakeDrf::writeCsvSummary( std::ostream &out, std::string drfname )
+{
+  const char * const endline = "\r\n";
+  
+  UtilityFunctions::ireplace_all( drfname, ",", " ");
+  const vector<float> fwhmCoefs = m_fwhmCoefs;
+  const vector<float> fwhmCoefUncert = m_fwhmCoefUncerts;
+  const vector<float> effEqnCoefs = m_effEqnCoefs;
+  const vector<float> effEqnCoefsUncerts = m_effEqnCoefUncerts;
+  
+  const vector<MakeDrfChart::DataPoint> data = m_chart->currentDataPoints();
+  
+  const bool effInMeV = isEffEqnInMeV();
+  const bool fwhmIsGadrasEqn = isGadrasFwhmEqnType();
+  const DetectorPeakResponse::ResolutionFnctForm resFcnForm = (fwhmIsGadrasEqn
+                                                               ? DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn
+                                                               : DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial);
+  
+  double diam;
+  try
+  {
+    diam = detectorDiameter();
+  }catch( std::exception &e )
+  {
+    out << "Invalid detector diameter: " << e.what() << endline;
+    return;
+  }
+  
+  if( effEqnCoefs.empty() )
+  {
+    out << "Detector response function not valid" << endline;
+    
+    if( m_errorMsg )
+      out << m_errorMsg->text().toUTF8() << endline;
+    return;
+  }//if( effEqnCoefs.empty() )
+  
+  //Okay, we've got all the variables we need for this function I think, lets
+  //  write stuff
+  
+  const float NaI3x3IntrinsicEff = 0.47096; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
+  const float cs137Energy = (effInMeV ? 0.661657f : 661.657f);
+  const float intrinsicEffAt661 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( cs137Energy, effEqnCoefs );
+  
+  float releffuncert = -999.9f;
+  if( effEqnCoefs.size() == effEqnCoefsUncerts.size() && effEqnCoefs.size() > 0 )
+    releffuncert = effEqnUncert( cs137Energy, effEqnCoefs, effEqnCoefsUncerts );
+  
+
+  out << "# Detector Response Function generated by InterSpec "
+  << UtilityFunctions::to_iso_string( boost::posix_time::second_clock::local_time() )
+  << endline << endline
+  << "# Intrinsic Efficiency Coefficients for equation of form"
+  " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
+  << (effInMeV ? "MeV" : "keV") << endline
+  << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
+  << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
+  << drfname << "," << (100.0*intrinsicEffAt661/NaI3x3IntrinsicEff) << "%,";
+  for( size_t i = 0; i < effEqnCoefs.size(); ++i )
+    out << "," << effEqnCoefs[i];
+  for( size_t i = effEqnCoefs.size(); i < 12; ++i )
+    out << ",";
+  out << "0.0," << (0.5*diam/PhysicalUnits::cm) << ",0.5" << endline;
+  out << "# 1 sigma Uncertainties,";
+  if( releffuncert >= 0.0 )
+    out << 100*(releffuncert / NaI3x3IntrinsicEff) << "%";
+  out << ",";
+  for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
+    out << "," << effEqnCoefsUncerts[i];
+  out << endline << endline;
+  
+  //Convert equation into an absolute efficiency at 25 cm, and output those equations
+  const double solidAngleAt25cm = DetectorPeakResponse::fractionalSolidAngle( diam, 25*PhysicalUnits::cm );
+  out << "# Absolute Efficiency Coefficients (i.e. probability of gamma emitted from source at 25cm being detected in the full energy photopeak) for equation of form"
+  " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
+  << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
+  << "#  i.e. equation for probability of gamma emitted from source at 25cm being detected in the full energy photopeak." << endline
+  << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
+  << drfname << "," << (100.0*intrinsicEffAt661/NaI3x3IntrinsicEff) << "%,";
+  for( size_t i = 0; i < effEqnCoefs.size(); ++i )
+    out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
+  for( size_t i = effEqnCoefs.size(); i < 12; ++i )
+    out << ",";
+  out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline
+  << endline
+  << endline;
+  
+  //Then need to give FWHM equation form and coefficienct, if avaialble.
+  if( fwhmCoefs.size() )
+  {
+    out << "# Full width half maximum (FWHM) follows equation: ";
+    if( fwhmIsGadrasEqn )
+    {
+      out << endline
+          << "# P6 -> resolution @ E=0 (keV)" << endline
+          << "# P7 -> % FWHM @ 661 keV" << endline
+          << "# P8 -> resolution power" << endline
+          << "# if( energy >= 661 or P6=0 ) FWHM = 6.61×P7×(energy/661)^P8" << endline
+          << "# else if( P6 < 0.0 ) FWHM = 6.61 x P7 x (energy/661)^(P8^(1.0/log(1.0-P6))" << endline
+          << "# else if( P6 > 6.61×P7 ) FWHM = P6" << endline
+          << "# else FWHM = sqrt(P6^2 + (6.61 x (sqrt((6.61×P7)^2 - P6^2)/6.61) x (energy/661)^P8)^2)" << endline
+          << "# Energy in keV"<< endline
+          << endline
+          << "# ,P6,P7,P8" << endline;
+    }else
+    {
+      out << "FWHM = sqrt( A0 + A1*(energy/1000) + A2*(energy/1000)^2 + A3*(energy/1000)^3 + ...)" << endline
+           << "# Energy in keV" << endline
+           << "# ";
+      for( size_t i = 0; i < fwhmCoefs.size(); ++i )
+        out << ",A" << i;
+      out << endline;
+    }
+    
+    out << "Values";
+    for( size_t i = 0; i < fwhmCoefs.size(); ++i )
+      out << "," << fwhmCoefs[i];
+    
+    if( fwhmCoefUncert.size() == fwhmCoefs.size() )
+    {
+      out << "Uncertainties";
+      for( size_t i = 0; i < fwhmCoefUncert.size(); ++i )
+        out << "," << fwhmCoefUncert[i];
+    }
+  }//if( fwhmCoefs.size() )
+  
+  //Give upper/lower energy range
+  float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+  if( data.size() >= 2 )
+  {
+    lowerEnergy = data.front().energy;
+    upperEnergy = data.back().energy;
+  }
+  
+  out << endline << endline
+      << "Detector diameter = " << (diam/PhysicalUnits::cm) << " cm." << endline
+      << "Valid energy range: " << lowerEnergy
+      << " keV to " << upperEnergy << " keV." << endline
+      << endline;
+  
+  //Give infomation on the peaks and sources used to do the fit
+  out << "# Peaks used to create DRF" << endline;
+  
+  out << "# Energy (keV),LiveTime (s),PeakArea,PeakArea Uncert,FWHM (keV),FWHM Uncert (keV),"
+         "Source CPS,Source CPS Uncert,Distance (cm),SourceInfo,BackgroundPeakCounts,BackgroundLiveTime" << endline;
+  for( MakeDrfChart::DataPoint d: data )
+  {
+    UtilityFunctions::ireplace_all( d.source_information, ",", " ");
+    
+    out << d.energy << "," << d.livetime
+        << "," << d.peak_area << "," << d.peak_area_uncertainty
+        << "," << d.peak_fwhm << "," << d.peak_fwhm_uncertainty
+        << "," << d.source_count_rate << "," << d.source_count_rate_uncertainty
+        << "," << d.distance / PhysicalUnits::cm
+        << "," << d.source_information
+        << "," << (d.background_peak_area > 0.0 ? std::to_string(d.background_peak_area) : string("") )
+        << "," << (d.background_peak_live_time > 0.0 ? std::to_string(d.background_peak_live_time) : string("") )
+        << endline;
+  }
+  
+  out << endline << endline;
+  
+  //Then should give GADRAS Efficiency.csv style efficiecny and FWHM every 50 keV
+  out << "# Energy (keV),IntrinsicEfficiency,IntrinsicEfficiency Uncert,FWHM" << endline;
+  for( int i = 25; i <= 3000; i += 25 )
+  {
+    const float energy = i / (effInMeV ? 1000.0f : 1.0f);
+    const float eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, effEqnCoefs );
+    const float effUncert = effEqnUncert( energy, effEqnCoefs, effEqnCoefsUncerts );
+    
+    out << i << "," << eff << ",";
+    
+    if( effEqnCoefs.size() == effEqnCoefsUncerts.size() && effEqnCoefs.size() > 0 )
+      out << effUncert;
+    out << ",";
+    
+    if( !fwhmCoefs.empty() )
+      out << DetectorPeakResponse::peakResolutionFWHM( i, resFcnForm, fwhmCoefs );
+    out << endline;
+  }//for( int i = 25; i <= 3000; i += 25 )
+  
+}//void MakeDrf::writeCsvSummary( std::ostream & )
+
+
+bool MakeDrf::isEffEqnInMeV() const
+{
+  return (m_effEqnUnits->currentIndex() == 1);
+}//bool isEffEqnInMeV() const
+
+
+bool MakeDrf::isGadrasFwhmEqnType() const
+{
+  switch( m_fwhmEqnType->currentIndex() )
+  {
+    case 0: return true;
+    case 1: return false;
+  }//switch( m_fwhmEqnType->currentIndex() )
+  
+  return false;
+}//bool isGadrasFwhmEqnType() const
+
+
+double MakeDrf::detectorDiameter() const
+{
+  const double diam = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() );
+  if( diam <= 0.0 )
+    throw runtime_error( "Detector diameter less than or equal to zero." );
+  return diam;
+}//double detectorDiameter() const

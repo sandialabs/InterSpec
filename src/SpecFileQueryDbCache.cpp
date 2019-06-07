@@ -1243,7 +1243,7 @@ bool operator==( const SpecFileInfoToQuery &lhs, const SpecFileInfoToQuery &rhs 
       return false;
     if( rhs.riid_ana.algorithm_name_ != rhs.riid_ana.algorithm_name_ )
       return false;
-    if( rhs.riid_ana.algorithm_version_ != rhs.riid_ana.algorithm_version_ )
+    if( rhs.riid_ana.algorithm_component_versions_ != rhs.riid_ana.algorithm_component_versions_ )
       return false;
     if( rhs.riid_ana.algorithm_creator_ != rhs.riid_ana.algorithm_creator_ )
       return false;
