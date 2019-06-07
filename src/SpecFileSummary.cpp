@@ -289,8 +289,12 @@ public:
     m_algorithm_name->setText( ana->algorithm_name_ );
     m_table->rowAt(AlgorithmName)->setHidden( m_algorithm_name->text().empty() );
     
-    m_algorithm_version->setText( ana->algorithm_version_ );
-    m_table->rowAt(AlgorithmVersion)->setHidden( m_algorithm_version->text().empty() );
+    string algovrsn;
+    for( const auto &nv : ana->algorithm_component_versions_ )
+      algovrsn += (algovrsn.empty() ? "" : ", ") + nv.first + ": " + nv.second;
+    
+    m_algorithm_version->setText( algovrsn );
+    m_table->rowAt(AlgorithmVersion)->setHidden( algovrsn.empty() );
     
     m_algorithm_creator->setText( ana->algorithm_creator_ );
     m_table->rowAt(AlgorithmCreator)->setHidden( m_algorithm_creator->text().empty() );

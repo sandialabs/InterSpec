@@ -798,7 +798,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
                                    const float upperEnergy )
 {
   if( coefs.empty() )
-    throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invlaid input" );
+    throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invalid input" );
   
   m_energyEfficiencies.clear();
   m_expOfLogPowerSeriesCoeffs.clear();

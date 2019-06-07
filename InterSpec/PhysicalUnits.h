@@ -161,9 +161,12 @@ namespace PhysicalUnits
   //stringToTimeDuration(...): Takes a user string, and attempts to interpret
   //  if as a time duration. Takes for example '5.2 y', '52.3 s', '00:01:2.1',
   //  '3.2d 15h', etc.
-  //Note: time periods may be negative.
-  //Note: the "[-]h[h][:mm][:ss][.fff]" format currently throws an expection!
+  // Also supports the extended format of ISO 8601, i.e., PnYnMnDTnHnMnS,
+  //   Examples are: P1Y2M3DT10H30M, -P1347M, PT1M
+  //
   //  throws std::runtime_error on failure
+  //Note: time periods may be negative.
+  //Note: the ISO 8601 format has only barely been tested as of 20190605
   double stringToTimeDuration( std::string str, double second_def = second );
   
   //stringToTimeDurationPossibleHalfLife(): similar to stringToTimeDuration()
