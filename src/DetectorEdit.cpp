@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <regex>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,6 +33,7 @@
 #include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/assign/list_of.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include <Wt/WMenu>
 #include <Wt/WText>
@@ -1694,7 +1696,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_efficiencyCsvUpload = new WFileUpload( uploadDetTab );
   m_efficiencyCsvUpload->setInline( false );
-  m_efficiencyCsvUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this ) );
+  m_efficiencyCsvUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::EfficiencyCsvUploaded ) );
   m_efficiencyCsvUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
   m_efficiencyCsvUpload->changed().connect( m_efficiencyCsvUpload, &WFileUpload::upload );
   m_efficiencyCsvUpload->setInline( false );
@@ -1709,9 +1711,9 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_detectorDiameter->setValidator( distValidator );
   m_detectorDiameter->setTextSize( 10 );
-  m_detectorDiameter->changed().connect( this, &DetectorEdit::fileUploadedCallback );
-  m_detectorDiameter->enterPressed().connect( this, &DetectorEdit::fileUploadedCallback );
-  m_detectorDiameter->blurred().connect( this, &DetectorEdit::fileUploadedCallback );
+  m_detectorDiameter->changed().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
+  m_detectorDiameter->enterPressed().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
+  m_detectorDiameter->blurred().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
 
   WContainerWidget *datDiv = new WContainerWidget( m_detectrDiameterDiv );
   datDiv->addStyleClass( "DetectorDotDatDiv" );
@@ -1720,7 +1722,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   label->setInline( false );
   m_detectorDotDatUpload = new WFileUpload( datDiv );
   m_detectorDotDatUpload->setInline( false );
-  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this ) );
+  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDotDatUploaded ) );
   m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
   m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
   m_detectrDiameterDiv->hide();
@@ -2367,7 +2369,7 @@ void DetectorEdit::selectButton( WStackedWidget *stack,
         break;
         
       case 2:
-        fileUploadedCallback();
+        fileUploadedCallback( UploadCallbackReason::ImportTabChosen );
         break;
         
       case 3:
@@ -2454,13 +2456,134 @@ void DetectorEdit::updateChart()
 } //DetectorEdit::updateChart()
 
 
-void DetectorEdit::fileUploadedCallback()
+std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const std::string filename )
+{
+  ifstream csvfile( filename.c_str(), ios_base::binary | ios_base::in );
+  
+  if( !csvfile.is_open() )
+    return nullptr;
+  
+  string line;
+  int nlineschecked = 0;
+  
+  bool foundMeV = false, foundKeV = false;
+  while( UtilityFunctions::safe_get_line(csvfile, line) && (++nlineschecked < 100) )
+  {
+    foundKeV |= UtilityFunctions::icontains( line, "kev" );
+    foundMeV |= UtilityFunctions::icontains( line, "mev" );
+    
+    vector<string> fields;
+    //UtilityFunctions::split( fields, line,  );
+    boost::algorithm::split( fields, line, boost::is_any_of(",\t") );
+    
+    if( fields.size() < 16 )
+      continue;
+    
+    if( !UtilityFunctions::iequals( fields[3], "c0")
+       || !UtilityFunctions::iequals( fields[4], "c1")
+       || !UtilityFunctions::iequals( fields[5], "c2")
+       || !UtilityFunctions::iequals( fields[6], "c3")
+       || !UtilityFunctions::icontains( fields[15], "radius") )
+      continue;
+    
+    //Okay, next line should be
+    if( !UtilityFunctions::safe_get_line(csvfile, line) )
+      throw runtime_error( "Couldnt get next line" );
+    
+    //UtilityFunctions::split( fields, line, ",\t" );
+    boost::algorithm::split( fields, line, boost::is_any_of(",\t") );
+    try
+    {
+      vector<float> coefs( 8, 0.0f );
+      for( int i = 0; i < 8; ++i )
+      {
+        string field = fields.at(3+i);
+        coefs[i] = (field.empty() ? 0.0f : std::stof(field));
+      }
+      
+      for( int i = 7; i >= 0; --i )
+      {
+        if( coefs[i] != 0.0f )
+          break;
+        else
+          coefs.resize( coefs.size() - 1 );
+      }
+      
+      if( coefs.empty() )
+        continue;
+      
+      const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
+      const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
+      
+      
+      float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+      
+      auto det = std::make_shared<DetectorPeakResponse>();
+      
+      det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, 2.0f*radius,
+                                         ((foundKeV && !foundMeV) ? 1.0f : 1000.0f),
+                                         lowerEnergy,
+                                         upperEnergy );
+      
+      //Look for the line that gives the appropriate energy range.
+#define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
+      const char *exprsn = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
+      
+      std::regex expression( exprsn );
+      while( UtilityFunctions::safe_get_line(csvfile, line) && (++nlineschecked < 100) )
+      {
+        std::smatch matches;
+        if( std::regex_search( line, matches, expression ) )
+        {
+          lowerEnergy = std::stof( matches[1] );
+          upperEnergy = std::stof( matches[6] );
+          det->setEnergyRange( lowerEnergy, upperEnergy );
+        }
+      }//while( getline )
+      
+      return det;
+    }catch(...)
+    {
+      continue;
+    }
+  }//while( more lines )
+  
+  return nullptr;
+}//checkIfFileIsRelEff(...)
+
+
+
+void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
 {
   if( !m_efficiencyCsvUpload->empty() )
     m_detectrDiameterDiv->show();
   else
     m_detectrDiameterDiv->hide();
 
+  switch( context )
+  {
+    case UploadCallbackReason::ImportTabChosen:
+    case UploadCallbackReason::DetectorDiameterChanged:
+    case UploadCallbackReason::DetectorDotDatUploaded:
+      break;
+    case UploadCallbackReason::EfficiencyCsvUploaded:
+      if( !m_efficiencyCsvUpload->empty() )
+      {
+        const string filename = m_efficiencyCsvUpload->spoolFileName();
+        auto det = DetectorEdit::checkIfFileIsRelEff( filename );
+        
+        if( det )
+        {
+          auto detDiamStr = PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() );
+          m_detectorDiameter->setText( detDiamStr );
+          setAcceptButtonEnabled( true );
+          m_detector = det;
+          emitChangedSignal();
+          return;
+        }//if( det )
+      }//if( we have a file to test )
+      break;
+  }//switch( context )
 
   const bool isGadrasDet = (!m_efficiencyCsvUpload->empty()
                             && !m_detectorDotDatUpload->empty()
@@ -2492,7 +2615,7 @@ void DetectorEdit::fileUploadedCallback()
   if( !csvfile.is_open() )
     return;
 
-  std::shared_ptr<DetectorPeakResponse> det( new DetectorPeakResponse() );
+  auto det = std::make_shared<DetectorPeakResponse>();
   try
   {
     if( isGadrasDet )

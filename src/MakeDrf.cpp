@@ -2511,7 +2511,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out, std::string drfname )
   << (effInMeV ? "MeV" : "keV") << endline
   << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
   << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
-  << drfname << "," << (100.0*intrinsicEffAt661/NaI3x3IntrinsicEff) << "%,";
+  << drfname << " Intrinsic," << (100.0*intrinsicEffAt661/NaI3x3IntrinsicEff) << "%,";
   for( size_t i = 0; i < effEqnCoefs.size(); ++i )
     out << "," << effEqnCoefs[i];
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
@@ -2532,7 +2532,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out, std::string drfname )
   << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
   << "#  i.e. equation for probability of gamma emitted from source at 25cm being detected in the full energy photopeak." << endline
   << "# Name,Relative Eff @ 661keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
-  << drfname << "," << (100.0*intrinsicEffAt661/NaI3x3IntrinsicEff) << "%,";
+  << drfname << " Absolute," << (100.0*intrinsicEffAt661/NaI3x3IntrinsicEff) << "%,";
   for( size_t i = 0; i < effEqnCoefs.size(); ++i )
     out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
@@ -2624,10 +2624,10 @@ void MakeDrf::writeCsvSummary( std::ostream &out, std::string drfname )
     const float eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, effEqnCoefs );
     const float effUncert = effEqnUncert( energy, effEqnCoefs, effEqnCoefsUncerts );
     
-    out << i << "," << eff << ",";
+    out << i << "," << 100.0*eff << ",";
     
     if( effEqnCoefs.size() == effEqnCoefsUncerts.size() && effEqnCoefs.size() > 0 )
-      out << effUncert;
+      out << 100.0*effUncert;
     out << ",";
     
     if( !fwhmCoefs.empty() )
