@@ -216,7 +216,22 @@ public:
   //Callbacks for when detector is changed or modified
   void gadrasDetectorSelectCallback();
   void relEffDetectorSelectCallback();
-  void fileUploadedCallback();
+  
+  
+  /** Reason #fileUpladedCallback is being called */
+  enum class UploadCallbackReason
+  {
+    ImportTabChosen,
+    DetectorDiameterChanged,
+    EfficiencyCsvUploaded,
+    DetectorDotDatUploaded
+  };//enum class UploadCallbackReason
+  
+  /** Function called when "Import" tab is chosen, detector diameter is changed,
+      or if a Efficiency.csv, or Detector.dat file is uplaoded.
+      @param context Has value 0 
+   */
+  void fileUploadedCallback( const UploadCallbackReason context );
 
   //updates energy efficient chart
   void updateChart();
@@ -239,6 +254,12 @@ public:
 
 protected:
   void setAcceptButtonEnabled( const bool enable );
+  
+  /** Checks if file at passed in path is a TSV/CSV file that contains
+      coeffeicents for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.
+      If so, returns detector.  If not, returns nullptr.
+   */
+  static std::shared_ptr<DetectorPeakResponse> checkIfFileIsRelEff( const std::string tsvfilepath );
   
 protected:
   WContainerWidget *m_footer;
