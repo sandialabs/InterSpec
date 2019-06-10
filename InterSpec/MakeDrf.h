@@ -93,8 +93,14 @@ public:
    */
   std::shared_ptr<SpecMeas> assembleCalFile();
   
-  
-  void writeCsvSummary( std::ostream &output, std::string drfname );
+  /** Writes fit parameters and input data to a CSV-style file.  Tries to
+     capture most of the relevant information in a the user can reference later.
+     The import tab of Detector Select tool should also be able to import the
+     DRF from this CSV (although at the moment its a little brittle)
+   */
+  void writeCsvSummary( std::ostream &output,
+                        std::string drfname,
+                        std::string drfdescription );
   
   /** Access the user input widget to check if equation is in MeV or keV. */
   bool isEffEqnInMeV() const;
