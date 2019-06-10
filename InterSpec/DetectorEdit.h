@@ -258,6 +258,12 @@ protected:
   /** Checks if file at passed in path is a TSV/CSV file that contains
       coeffeicents for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.
       If so, returns detector.  If not, returns nullptr.
+   
+   ToDo: Currently reads in most of the information exported in the CSV from
+     MakeDrf tool, except the uncertainities - should add this in.  Also, need
+     to cleanup the GUI during loading of this one CSV that has all the info
+     (def not correct, should hide detector diameter and option to upload
+      Detector.dat).
    */
   static std::shared_ptr<DetectorPeakResponse> checkIfFileIsRelEff( const std::string tsvfilepath );
   
@@ -304,6 +310,7 @@ protected:
   Wt::WLineEdit *m_detectorDiameter;
   Wt::WContainerWidget *m_detectrDiameterDiv;
   Wt::WFileUpload *m_efficiencyCsvUpload;
+  Wt::WContainerWidget *m_detectrDotDatDiv;
   Wt::WFileUpload *m_detectorDotDatUpload;
 
   Wt::WPushButton *m_acceptButton;

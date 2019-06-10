@@ -840,9 +840,11 @@ void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
       if( coefs.empty() )
         throw runtime_error( "setFwhmCoefficients: Sqrt polynomial equation must have at least one coefficient." );
       break;
+      
     case ResolutionFnctForm::kGadrasResolutionFcn:
       if( coefs.size() != 3 )
         throw runtime_error( "setFwhmCoefficients: GADRAS equation must have three coefficients." );
+      break;
       
     case ResolutionFnctForm::kNumResolutionFnctForm:
       if( !coefs.empty() )

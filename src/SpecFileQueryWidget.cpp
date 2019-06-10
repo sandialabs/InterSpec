@@ -366,6 +366,8 @@ namespace
   }//void add_logic(...)
   
   
+  //ToDo: this function is also implemented in MakeDrf.cpp - should
+  //      put in a common place
   void output_csv_field( std::ostream &out, std::string s)
   {
     //adapted from http://darrendev.blogspot.com/2009/11/escaping-csv-in-c.html 20160623

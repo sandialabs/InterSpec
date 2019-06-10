@@ -153,6 +153,23 @@ namespace
     }
   };//class UtcToLocalTimeDelegate
 
+  
+  //Allow the file to be comma or tab delimited, but if an individual field
+  //  contains a comma or tab, then the field must be quoted by a double
+  //  quote.  Note that if you just copy cells from Microsoft Excel, that
+  //  contain a comma, and then past into a text editor, fields with a comma
+  //  are not quoted.
+  void split_escaped_csv( vector<string> &fields, const string &line )
+  {
+    fields.clear();
+    
+    typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
+    boost::escaped_list_separator<char> separator("\\",",\t", "\"");
+    Tokeniser t( line, separator );
+    for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
+      fields.push_back(*it);
+  }//void split_escaped_csv(...)
+  
 }//namespace
 
 class RelEffFile;
@@ -470,16 +487,7 @@ std::shared_ptr<DetectorPeakResponse> RelEffFile::parseDetector( string &line )
   vector<string> fields;
   fields.reserve( 20 );
   
-  //Allow the file to be comma or tab delimited, but if an individual field
-  //  contains a comma or tab, then the field must be quoted by a double
-  //  quote.  Note that if you just copy cells from Microsoft Excel, that
-  //  contain a comma, and then past into a text editor, fields with a comma
-  //  are not quoted.
-  typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
-  boost::escaped_list_separator<char> separator("\\",",\t", "\"");
-  Tokeniser t( line, separator );
-  for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
-    fields.push_back(*it);
+  split_escaped_csv( fields, line );
   
   if( fields.size() < 16 )
     return det;
@@ -543,7 +551,7 @@ void RelEffFile::initDetectors()
   {
     vector<vector<float>> detcoefs;
     string line;
-    while( UtilityFunctions::safe_get_line( input, line ) )
+    while( UtilityFunctions::safe_get_line( input, line, 2048 ) )
     {
       UtilityFunctions::trim( line );
       
@@ -1494,6 +1502,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorDiameter( nullptr ),
     m_detectrDiameterDiv( nullptr ),
     m_efficiencyCsvUpload( nullptr ),
+    m_detectrDotDatDiv( nullptr ),
     m_detectorDotDatUpload( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
@@ -1675,18 +1684,16 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   //-------------------------------------
 
   
-  WContainerWidget *uploadDetTab = new WContainerWidget(  );
-
-  WLabel *label = new WLabel( "Intrinsic Efficiency File:", uploadDetTab );
-  label->setInline( false );
+  WContainerWidget *uploadDetTab = new WContainerWidget();
   
   const char *descrstr =
-  "<div>The first column of the efficiency CSV file should be the energy in keV"
-  ", and the second column should be the percent efficient (decimal number 0"
-  " through 100) for gammas at that energy that strike the detector face, to be"
-  " recorded in the photopeak. Further columns will be ignored.</div>"
+  "<div style=\"white-space:nowrap;\">Intrinsic Efficiency CSV File:</div>"
+  "<div>The first column is energy in keV."
+  " Second column is the % efficient (0 through 100) for gammas at that"
+  " energy, incident on the detector, to be recorded in the photopeak.</div>"
   "<div>You will also need to upload a GADRAS Detector.dat file, or enter the"
-  " detectors diameter, after uploading the efficiency file.</div>";
+  " detectors diameter, after uploading the efficiency file.</div>"
+  "<div>You can also upload CSV exported from the <em>Make Detector Response</em> tool.</div>";
   
   WText *descrip = new WText( descrstr, uploadDetTab );
   descrip->setInline( false );
@@ -1703,7 +1710,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
  
   m_detectrDiameterDiv = new WContainerWidget( uploadDetTab );
   m_detectrDiameterDiv->addStyleClass( "DetectorDiamDiv" );
-  label = new WLabel( "Enter detector diameter or upload Detector.dat file:", m_detectrDiameterDiv );
+  WLabel *label = new WLabel( "Enter detector diameter or upload Detector.dat file:", m_detectrDiameterDiv );
   label->setInline( false );
 
   new WLabel( "Detector Diameter:", m_detectrDiameterDiv );
@@ -1715,12 +1722,12 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDiameter->enterPressed().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
   m_detectorDiameter->blurred().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
 
-  WContainerWidget *datDiv = new WContainerWidget( m_detectrDiameterDiv );
-  datDiv->addStyleClass( "DetectorDotDatDiv" );
+  m_detectrDotDatDiv = new WContainerWidget( m_detectrDiameterDiv );
+  m_detectrDotDatDiv->addStyleClass( "DetectorDotDatDiv" );
 
-  label = new WLabel( "GADRAS Detector.Dat File:", datDiv );
+  label = new WLabel( "GADRAS Detector.Dat File:", m_detectrDotDatDiv );
   label->setInline( false );
-  m_detectorDotDatUpload = new WFileUpload( datDiv );
+  m_detectorDotDatUpload = new WFileUpload( m_detectrDotDatDiv );
   m_detectorDotDatUpload->setInline( false );
   m_detectorDotDatUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDotDatUploaded ) );
   m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
@@ -2466,15 +2473,25 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
   string line;
   int nlineschecked = 0;
   
+  string drfname, drfdescrip;
   bool foundMeV = false, foundKeV = false;
-  while( UtilityFunctions::safe_get_line(csvfile, line) && (++nlineschecked < 100) )
+  //ToDo: Need to implement getting lines safely where a quoted field may span
+  //      several lines.
+  while( UtilityFunctions::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
   {
     foundKeV |= UtilityFunctions::icontains( line, "kev" );
     foundMeV |= UtilityFunctions::icontains( line, "mev" );
     
     vector<string> fields;
-    //UtilityFunctions::split( fields, line,  );
-    boost::algorithm::split( fields, line, boost::is_any_of(",\t") );
+    split_escaped_csv( fields, line );
+    
+    if( fields.size() == 2 )
+    {
+      if( fields[0] == "# Name" )
+        drfname = fields[1];
+      if( fields[0] == "# Description" )
+        drfdescrip = fields[1];
+    }
     
     if( fields.size() < 16 )
       continue;
@@ -2487,11 +2504,11 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
       continue;
     
     //Okay, next line should be
-    if( !UtilityFunctions::safe_get_line(csvfile, line) )
+    if( !UtilityFunctions::safe_get_line(csvfile, line, 2048) )
       throw runtime_error( "Couldnt get next line" );
     
-    //UtilityFunctions::split( fields, line, ",\t" );
-    boost::algorithm::split( fields, line, boost::is_any_of(",\t") );
+    split_escaped_csv( fields, line );
+    
     try
     {
       vector<float> coefs( 8, 0.0f );
@@ -2509,35 +2526,65 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
           coefs.resize( coefs.size() - 1 );
       }
       
-      if( coefs.empty() )
+      if( coefs.size() < 16 )
         continue;
       
       const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
       const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
       
-      
+      const string name = (fields[0].empty() ? drfname : fields[0]);
+      const float energUnits = ((foundKeV && !foundMeV) ? 1.0f : 1000.0f);
       float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+      auto det = std::make_shared<DetectorPeakResponse>( fields[0], drfdescrip );
       
-      auto det = std::make_shared<DetectorPeakResponse>();
-      
-      det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, 2.0f*radius,
-                                         ((foundKeV && !foundMeV) ? 1.0f : 1000.0f),
-                                         lowerEnergy,
-                                         upperEnergy );
+      det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, 2.0f*radius, energUnits,
+                                          lowerEnergy, upperEnergy );
       
       //Look for the line that gives the appropriate energy range.
 #define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
-      const char *exprsn = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
+      const char * const rng_exprsn_txt = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
       
-      std::regex expression( exprsn );
-      while( UtilityFunctions::safe_get_line(csvfile, line) && (++nlineschecked < 100) )
+      std::regex range_expression( rng_exprsn_txt );
+      
+      while( UtilityFunctions::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
       {
-        std::smatch matches;
-        if( std::regex_search( line, matches, expression ) )
+        if( UtilityFunctions::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
         {
-          lowerEnergy = std::stof( matches[1] );
-          upperEnergy = std::stof( matches[6] );
+          const bool isSqrt = UtilityFunctions::icontains( line, "sqrt(" );  //Else contains "GadrasEqn"
+          const auto form = isSqrt ? DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial : DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+          int nlinecheck = 0;
+          while( UtilityFunctions::safe_get_line(csvfile, line, 2048)
+                && !UtilityFunctions::icontains(line, "Values")
+                && (++nlinecheck < 15) )
+          {
+          }
+        
+          vector<string> fwhm_fields;
+          split_escaped_csv( fwhm_fields, line );
+          
+          if( fwhm_fields.size() > 1 && UtilityFunctions::icontains(fwhm_fields[0], "Values") )
+          {
+            try
+            {
+              vector<float> coefs;
+              for( size_t i = 1; i < fwhm_fields.size(); ++i )
+                coefs.push_back( stof(fwhm_fields[i]) );
+              if( !coefs.empty() )
+                det->setFwhmCoefficients( coefs,form );
+            }catch(...)
+            {
+            }
+            break;
+          }
+        }//if( start of FWHM section of CSV file )
+        
+        std::smatch range_matches;
+        if( std::regex_search( line, range_matches, range_expression ) )
+        {
+          lowerEnergy = std::stof( range_matches[1] );
+          upperEnergy = std::stof( range_matches[6] );
           det->setEnergyRange( lowerEnergy, upperEnergy );
+          break;
         }
       }//while( getline )
       
@@ -2556,9 +2603,13 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
 void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
 {
   if( !m_efficiencyCsvUpload->empty() )
+  {
     m_detectrDiameterDiv->show();
-  else
+    //m_detectrDotDatDiv
+  }else
+  {
     m_detectrDiameterDiv->hide();
+  }
 
   switch( context )
   {
@@ -3023,7 +3074,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
       continue;
   
     string line;
-    while( UtilityFunctions::safe_get_line( input, line ) )
+    while( UtilityFunctions::safe_get_line( input, line, 2048 ) )
     {
       UtilityFunctions::trim( line );
       if( line.empty() || line[0]=='#' || line.size() < smname.size() )
