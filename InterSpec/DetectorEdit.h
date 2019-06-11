@@ -184,6 +184,7 @@ public:
   
   void acceptAndFinish();
   void cancelAndFinish();
+  void finishWithNoDetector();
 
   //Looks through directories specified by "GadrasDRFPath" for directories that
   //  contain Detector.dat and Efficiency.csv; doesnt test that they are valid.
@@ -315,6 +316,7 @@ protected:
 
   Wt::WPushButton *m_acceptButton;
   Wt::WPushButton *m_cancelButton;
+  Wt::WPushButton *m_noDrfButton;
   
   Wt::WLineEdit    *m_detectorManualFunctionName;
   Wt::WTextArea    *m_detectorManualFunctionText;

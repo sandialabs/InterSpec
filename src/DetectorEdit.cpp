@@ -54,6 +54,7 @@
 #include <Wt/WFileUpload>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
+#include <Wt/WApplication>
 #include <Wt/WRadioButton>
 #include <Wt/WButtonGroup>
 #include <Wt/WEnvironment>
@@ -1429,7 +1430,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   HelpSystem::attachToolTipOn( this, "The currently selected detector.  Click to select a"
                               " different detector, or modify this one.", showToolTipInstantly );
   
-  addStyleClass( "DetectorDisplay" );
+  addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
   new WImage( "InterSpec_resources/images/detector_small_white.png", this );
   new WText( "Detector:&nbsp;", this );
@@ -1506,6 +1507,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorDotDatUpload( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
+    m_noDrfButton( nullptr ),
     m_detectorManualFunctionName( nullptr ),
     m_detectorManualFunctionText( nullptr ),
     m_detectorManualDescription( nullptr ),
@@ -1525,6 +1527,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_defaultForSerialNumber( nullptr ),
     m_defaultForDetectorModel( nullptr )
 {
+  wApp->useStyleSheet( "InterSpec_resources/DetectorEdit.css" );
+  
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   setOverflow(Wt::WContainerWidget::OverflowAuto);
@@ -2024,6 +2028,13 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   }
   
   AuxWindow::addHelpInFooter( m_footer, "detector-edit-dialog" );
+  
+  
+  m_noDrfButton = new WPushButton( "No Detector", m_footer );
+  m_noDrfButton->clicked().connect( this, &DetectorEdit::finishWithNoDetector );
+  if( specViewer && !specViewer->isPhone() )
+    m_noDrfButton->addStyleClass( "NoDrfBtn" );
+  
   if( auxWindow )
   {
     m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
@@ -2036,7 +2047,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_cancelButton->clicked().connect( this, &DetectorEdit::cancelAndFinish );
 
   
-  if( specViewer && !specViewer->isMobile() )
+  if( specViewer && !specViewer->isPhone() )
   {
     m_acceptButton = new WPushButton( "Accept", m_footer );
     m_acceptButton->setFloatSide(Wt::Right);
@@ -2065,6 +2076,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
 void DetectorEdit::setAcceptButtonEnabled( const bool enable )
 {
   m_acceptButton->setEnabled( enable );
+  m_noDrfButton->setHidden( !m_detector );
   if( m_defaultForSerialNumber )
     m_defaultForSerialNumber->setEnabled( enable );
   if( m_defaultForDetectorModel )
@@ -2121,9 +2133,8 @@ void DetectorEdit::dbTableSelectionChanged()
     passMessage( "Error getting from DetectorPeakResponse table", "DetectorEdit", WarningWidget::WarningMsgHigh );
   }//try / catch
   
-  setAcceptButtonEnabled( !failed );
-  
   m_detector = det;
+  setAcceptButtonEnabled( !failed );
   emitChangedSignal();
 }//void dbTableSelectionChanged()
 
@@ -2340,9 +2351,9 @@ void DetectorEdit::setDefineDetector()
     return;
   }//try / catch
   
-  setAcceptButtonEnabled( true );
   m_manualSetButton->disable();
   m_detector = detec;
+  setAcceptButtonEnabled( true );
 
   emitChangedSignal();
 } // setDefineDetector(const std::string fcn)
@@ -2526,7 +2537,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
           coefs.resize( coefs.size() - 1 );
       }
       
-      if( coefs.size() < 16 )
+      if( coefs.size() < 1 )
         continue;
       
       const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
@@ -2605,7 +2616,6 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
   if( !m_efficiencyCsvUpload->empty() )
   {
     m_detectrDiameterDiv->show();
-    //m_detectrDotDatDiv
   }else
   {
     m_detectrDiameterDiv->hide();
@@ -2614,9 +2624,12 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
   switch( context )
   {
     case UploadCallbackReason::ImportTabChosen:
+      break;
     case UploadCallbackReason::DetectorDiameterChanged:
+      break;
     case UploadCallbackReason::DetectorDotDatUploaded:
       break;
+      
     case UploadCallbackReason::EfficiencyCsvUploaded:
       if( !m_efficiencyCsvUpload->empty() )
       {
@@ -2627,10 +2640,16 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
         {
           auto detDiamStr = PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() );
           m_detectorDiameter->setText( detDiamStr );
-          setAcceptButtonEnabled( true );
+          m_detectrDotDatDiv->hide();
+          m_detectorDiameter->disable();
           m_detector = det;
+          setAcceptButtonEnabled( true );
           emitChangedSignal();
           return;
+        }else
+        {
+          m_detectrDotDatDiv->show();
+          m_detectorDiameter->enable();
         }//if( det )
       }//if( we have a file to test )
       break;
@@ -2647,7 +2666,10 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
     diameter = static_cast<float>( PhysicalUnits::stringToDistance( m_detectorDiameter->text().narrow() ) );
     if( diameter < float(0.001*PhysicalUnits::cm) )
       diameter = 0.0f;
-  }catch(...){}
+  }catch(...)
+  {
+    m_detectorDiameter->setText( "" );
+  }
 
   const bool isDiamDet = (!m_efficiencyCsvUpload->empty()
                           && diameter>0.0
@@ -2677,6 +2699,8 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
         return;
       det->fromGadrasDefinition( csvfile, datfile );
       det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
+      if( context == UploadCallbackReason::DetectorDotDatUploaded )
+        m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter()) );
     }else
     {
       det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV) );
@@ -2694,10 +2718,10 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
     csvOrigName = csvOrigName.substr(0, csvOrigName.size()-4);
   if( det )
     det->setName( csvOrigName );
-
-  setAcceptButtonEnabled( true );
-
+  
   m_detector = det;
+  setAcceptButtonEnabled( true );
+  
   emitChangedSignal();
 }//void fileUploadedCallback();
 
@@ -2712,9 +2736,9 @@ void DetectorEdit::gadrasDetectorSelectCallback()
 {
   std::shared_ptr<DetectorPeakResponse> det = m_gadrasDetSelect->selectedDetector();
 
-  setAcceptButtonEnabled( !!det );
-
   m_detector = det;
+  setAcceptButtonEnabled( !!det );
+  
   emitChangedSignal();
 }//void gadrasDetectorSelectCallback()
 
@@ -2978,6 +3002,15 @@ void DetectorEdit::cancelAndFinish()
   emitModifiedSignal();
   done().emit();
 }//void cancelAndFinish()
+
+
+void DetectorEdit::finishWithNoDetector()
+{
+  m_detector.reset();
+  emitChangedSignal();
+  emitModifiedSignal();
+  done().emit();
+}//void finishWithNoDetector()
 
 
 vector<pair<string,string>> DetectorEdit::avaliableGadrasDetectors() const
@@ -3338,7 +3371,8 @@ DetectorEditWindow::DetectorEditWindow(
                                   std::shared_ptr<DetectorPeakResponse> det,
                                   InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
-  : AuxWindow("Detector Response Select", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)),
+  : AuxWindow("Detector Response Function Select",
+              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal),
     m_edit( NULL )
 {
   disableCollapse();
@@ -3350,6 +3384,8 @@ DetectorEditWindow::DetectorEditWindow(
   finished().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
   rejectWhenEscapePressed();
   setMargin( 0 );
+  if( specViewer->isTablet() )
+    titleBar()->hide();
   resize( WLength(650,WLength::Pixel), WLength(610,WLength::Pixel));
   centerWindow();
   show();

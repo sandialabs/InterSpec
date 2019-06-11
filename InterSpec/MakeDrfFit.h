@@ -45,9 +45,11 @@ namespace MakeDrfFit
    
     @param sqrtEqnOrder Only used if fnctnlForm==DetectorPeakResponse::kSqrtPolynomial
    
+    @returns chi2 (not divided by dof).
+   
     Throws exception on error with a kinda explanatory message.
   */
-  void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
+  double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
                              const size_t num_gamma_channels,
                              const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
                              const int sqrtEqnOrder,
