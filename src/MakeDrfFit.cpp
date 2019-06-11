@@ -198,7 +198,7 @@ double peak_width_chi2( double predicted_sigma, const PeakDef &peak )
 
 
 
-void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
+double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
                            const size_t num_gamma_channels,
                            const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
                            const int sqrtEqnOrder,
@@ -473,7 +473,7 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
     if( pre_chi2 < final_chi2 )
     {
       cout << "Least Linear chi2 better than from Minuit, using that" << endl;
-      return;
+      return pre_chi2;
     }
   }
   
@@ -505,6 +505,8 @@ void performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<con
   
   for( const double p : fitParams.Errors() )
     uncerts.push_back( p );
+  
+  return final_chi2;
 }//std::vector<float> performResolutionFit(...)
 
 

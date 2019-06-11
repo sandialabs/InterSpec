@@ -1151,7 +1151,9 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_errorMsg( nullptr ),
   m_intrinsicEffAnswer( nullptr ),
   m_fwhmFitId( 0 ),
-  m_effEqnFitId( 0 )
+  m_effEqnFitId( 0 ),
+  m_fwhmEqnChi2( -999.9 ),
+  m_effEqnChi2( -999.9 )
 {
   assert( m_interspec );
   assert( m_materialDB );
@@ -2120,6 +2122,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
   const int fitid = m_fwhmFitId;
   const string sessionId = wApp->sessionId();
   
+  m_fwhmEqnChi2 = -999.9;
   m_fwhmCoefs.clear();
   m_fwhmCoefUncerts.clear();
   m_chart->setFwhmCoefficients( vector<float>{}, vector<float>{},
@@ -2147,7 +2150,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
   
   //ToDo: I'm not entirely sure the next line protects against updateFwhmEqn()
   //  not being called if this widget is deleted before fit is done.
-  auto updater = boost::bind( &MakeDrf::updateFwhmEqn, this, _1, _2, static_cast<int>(fnctnlForm), fitid );
+  auto updater = boost::bind( &MakeDrf::updateFwhmEqn, this, _1, _2, _3, static_cast<int>(fnctnlForm), fitid );
   
   const string thisid = id();
   
@@ -2159,7 +2162,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
       //Takes between 5 and 500ms for a HPGe detector
       const double start_time = UtilityFunctions::get_wall_time();
       vector<float> fwhm_coefs, fwhm_coefs_uncert;
-      MakeDrfFit::performResolutionFit( peakdequ, num_gamma_channels, fnctnlForm, sqrtEqnOrder, fwhm_coefs, fwhm_coefs_uncert );
+      const double chi2 = MakeDrfFit::performResolutionFit( peakdequ, num_gamma_channels, fnctnlForm, sqrtEqnOrder, fwhm_coefs, fwhm_coefs_uncert );
     
       const double end_time = UtilityFunctions::get_wall_time();
     
@@ -2169,9 +2172,9 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
         cout << fwhm_coefs[i] << "+-" << fwhm_coefs_uncert[i] << ", ";
       cout << "}; took " << (end_time-start_time) << " seconds" << endl;
       
-      WServer::instance()->post( sessionId, std::bind( [updater,fwhm_coefs,fwhm_coefs_uncert,thisid](){
+      WServer::instance()->post( sessionId, std::bind( [updater,fwhm_coefs,fwhm_coefs_uncert,thisid,chi2](){
         if( wApp->domRoot() && dynamic_cast<MakeDrf *>(wApp->domRoot()->findById(thisid)) )
-          updater(fwhm_coefs,fwhm_coefs_uncert);
+          updater(fwhm_coefs,fwhm_coefs_uncert,chi2);
         else
           cerr << "MakeDrf widget was deleted while calculating FWHM coefs" << endl;
       } ) );
@@ -2187,6 +2190,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
 
 void MakeDrf::updateFwhmEqn( std::vector<float> coefs,
                              std::vector<float> uncerts,
+                             const double chi2,
                              const int functionalForm,
                              const int fitid )
 {
@@ -2213,6 +2217,7 @@ void MakeDrf::updateFwhmEqn( std::vector<float> coefs,
       return;
   }//switch( fcntform )
   
+  m_fwhmEqnChi2 = chi2;
   m_fwhmCoefs = coefs;
   m_fwhmCoefUncerts = uncerts;
   m_chart->setFwhmCoefficients( coefs, uncerts, eqnType, MakeDrfChart::EqnEnergyUnits::keV );
@@ -2228,6 +2233,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   const int fitid = m_effEqnFitId;
   const string sessionId = wApp->sessionId();
   
+  m_effEqnChi2 = -999.9;
   m_effEqnCoefs.clear();
   m_effEqnCoefUncerts.clear();
   m_intrinsicEfficiencyIsValid.emit( !m_effEqnCoefs.empty() );
@@ -2253,7 +2259,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   
   //ToDo: I'm not entirely sure the next line protects against updateEffEqn()
   //  not being called if this widget is deleted before fit is done. (it doesnt!)
-  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, _1, _2, fitid, _3 );
+  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, _1, _2, _3, fitid, _4 );
   const string thisid = id();
   
   
@@ -2263,7 +2269,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
       //Takes between 5 and 500ms for a HPGe detector
       const double start_time = UtilityFunctions::get_wall_time();
       vector<float> result, uncerts;
-      MakeDrfFit::performEfficiencyFit( data, nfitpars, result, uncerts );
+      const double chi2 = MakeDrfFit::performEfficiencyFit( data, nfitpars, result, uncerts );
       
       const double end_time = UtilityFunctions::get_wall_time();
       
@@ -2273,10 +2279,10 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
         cout << result[i] << "+-" << uncerts[i] << ", ";
       cout << "}; took " << (end_time-start_time) << " seconds" << endl;
       
-      WServer::instance()->post( sessionId, std::bind( [updater,thisid,result,uncerts](){
+      WServer::instance()->post( sessionId, std::bind( [updater,thisid,result,uncerts,chi2](){
         //Make sure *this is still in the widget tree (incase user closed window while computation was being done)
         if( wApp->domRoot() && dynamic_cast<MakeDrf *>(wApp->domRoot()->findById(thisid) ) )
-          updater( result, uncerts, string("") );
+          updater( result, uncerts, chi2, string("") );
         else
           cerr << "MakeDrf widget was deleted while efficiency was being calculated" << endl;
       } ) );
@@ -2286,7 +2292,7 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
       cout << "Failed to fit intrinsic eff coefs: " << errmsg << endl;
       WServer::instance()->post( sessionId, std::bind( [updater,errmsg,thisid](){
         if( wApp->domRoot() && dynamic_cast<MakeDrf *>(wApp->domRoot()->findById(thisid) ) )
-          updater( vector<float>(), vector<float>(), errmsg );
+          updater( vector<float>(), vector<float>(), -999.9, errmsg );
         else
           cerr << "MakeDrf widget was deleted while efficiency was being calculated" << endl;
       } ) );
@@ -2297,11 +2303,13 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
 }//void fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
 
 
-void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid, const string errmsg )
+void MakeDrf::updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts,
+                            const double chi2, const int fitid, const string errmsg )
 {
   const bool isMeV = isEffEqnInMeV();
   const auto units = (isMeV ? MakeDrfChart::EqnEnergyUnits::MeV : MakeDrfChart::EqnEnergyUnits::keV);
 
+  m_effEqnChi2 = chi2;
   m_effEqnCoefs = coefs;
   m_effEqnCoefUncerts = uncerts;
   m_intrinsicEfficiencyIsValid.emit( !m_effEqnCoefs.empty() );
@@ -2526,12 +2534,17 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   UtilityFunctions::ireplace_all( drfdescription, "\r", " ");
   UtilityFunctions::ireplace_all( drfdescription, "\n", " ");
   
+  const double effChi2 = m_effEqnChi2;
+  const double fwhmChi2 = m_fwhmEqnChi2;
   const vector<float> fwhmCoefs = m_fwhmCoefs;
   const vector<float> fwhmCoefUncert = m_fwhmCoefUncerts;
   const vector<float> effEqnCoefs = m_effEqnCoefs;
   const vector<float> effEqnCoefsUncerts = m_effEqnCoefUncerts;
   
   const vector<MakeDrfChart::DataPoint> data = m_chart->currentDataPoints();
+  
+  const int effDof = static_cast<int>(data.size()) - effEqnCoefs.size();
+  const int fwhmDof = static_cast<int>(data.size()) - fwhmCoefs.size();
   
   const bool effInMeV = isEffEqnInMeV();
   const bool fwhmIsGadrasEqn = isGadrasFwhmEqnType();
@@ -2598,6 +2611,9 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   out << ",";
   for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
     out << "," << effEqnCoefsUncerts[i];
+  if( effChi2 > 0 )
+    out << endline << "# Chi2 / DOF = " << effChi2 << " / " << (effDof-1)
+        << " = " << (effDof >= 1 ? (effChi2/(effDof-1.0)) : 0.0);
   out << endline << endline;
   
   //Convert equation into an absolute efficiency at 25 cm, and output those equations
@@ -2652,6 +2668,9 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
       for( size_t i = 0; i < fwhmCoefUncert.size(); ++i )
         out << "," << fwhmCoefUncert[i];
     }
+    if( fwhmChi2 > 0 )
+      out << endline << "# Chi2 / DOF = " << fwhmChi2 << " / " << (fwhmDof-1)
+          << " = " << (fwhmDof >= 1 ? (fwhmChi2/(fwhmDof-1.0)) : 0.0);
   }//if( fwhmCoefs.size() )
   
   //Give upper/lower energy range

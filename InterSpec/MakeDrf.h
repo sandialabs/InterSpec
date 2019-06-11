@@ -125,13 +125,15 @@ protected:
   void fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
                    const size_t num_gamma_channels );
   void updateFwhmEqn( std::vector<float> coefs, std::vector<float> uncerts,
+                      const double chi2,
                       const int functionalForm, //see DetectorPeakResponse::ResolutionFnctForm
                       const int fitid );
   
   void fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data );
   
   /** Error message is not empty, only when there is an error. */
-  void updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts, const int fitid, const std::string errormsg );
+  void updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts,
+                     const double chi2, const int fitid, const std::string errormsg );
 
   
   InterSpec *m_interspec;
@@ -182,7 +184,10 @@ protected:
   int m_fwhmFitId;
   int m_effEqnFitId;
   
+  double m_fwhmEqnChi2;
   std::vector<float> m_fwhmCoefs, m_fwhmCoefUncerts;
+  
+  double m_effEqnChi2;
   std::vector<float> m_effEqnCoefs, m_effEqnCoefUncerts;
   
   friend class MakeDrfWindow;
