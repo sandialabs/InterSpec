@@ -924,7 +924,7 @@ void GadrasDetSelect::docreate()
 
 #if( IOS )
   const char *gadrasToolTip = "You can place detector response functions imported"
-  " from GADRAS-DRF into <b>InterSpec</b>s directory within the <b>Files</b> app.";
+  " from GADRAS-DRF into <code>InterSpec</code>s directory within the <b>Files</b> app.";
 #else
   const char *gadrasToolTip = "These are detector response functions imported"
   " from GADRAS-DRF.  Currently only the detector dimensions, "
