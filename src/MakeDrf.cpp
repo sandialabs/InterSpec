@@ -1411,7 +1411,7 @@ void MakeDrf::startSaveAs()
   //      - add in a interface to select previously characterized detectors, and
   //        also upload them
   
-  AuxWindow *w = new AuxWindow( "Save/Download DRF", windowprop );
+  AuxWindow *w = new AuxWindow( "Store/Export DRF", windowprop );
 
   WTable *table = new WTable( w->contents() );
   table->addStyleClass( "MakeDrfSaveAsTable" );
