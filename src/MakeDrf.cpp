@@ -162,15 +162,21 @@ namespace
   {
     const bool m_pcf;
     MakeDrf * const m_makedrf;
+    string m_filename;
     
   public:
     CalFileDownloadResource( const bool pcf, MakeDrf *parent )
-     : WResource( parent ), m_pcf(pcf), m_makedrf( parent )
+     : WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" )
     {}
     
     virtual ~CalFileDownloadResource()
     {
       beingDeleted();
+    }
+    
+    void setSuggestFileName( string filename )
+    {
+      m_filename = filename;
     }
     
     virtual void handleRequest( const Wt::Http::Request &request,
@@ -183,9 +189,9 @@ namespace
       if( !calfile )
         return;
       
-      string filename = calfile->filename();
+      string filename = m_filename.empty() ? calfile->filename() : m_filename;
       if( filename.empty() )
-        filename = "MakeDrf";
+        filename = "MakeDrfData";
       
       //Remove bad filename characters
       const string notallowed = "\\/:?\"<>|*";
@@ -307,7 +313,8 @@ namespace
     WPopupWidget *m_previewPopup;
     std::shared_ptr<const Measurement> m_summed_meas;
     Wt::Signal<DrfPeak *> m_peakPreviewShow;
-    
+    bool m_isBackground;
+
     
     DrfPeak( std::shared_ptr<const PeakDef> peak, double livetime,
              std::shared_ptr<const Measurement> summed_meas,
@@ -321,7 +328,8 @@ namespace
       m_userBr( nullptr ),
       m_previewBtn( nullptr ),
       m_previewPopup( nullptr ),
-      m_summed_meas( summed_meas )
+      m_summed_meas( summed_meas ),
+      m_isBackground( false )
     {
       addStyleClass( "DrfPeak" );
       m_useCb = new WCheckBox( "Use", this );
@@ -372,7 +380,7 @@ namespace
         m_useCb->setUnChecked();
         m_userBr->hide();
         m_useCb->changed().connect( std::bind( [this](){
-          m_userBr->setHidden( !m_useCb->isChecked() );
+          m_userBr->setHidden( !m_useCb->isChecked() || m_isBackground );
         } ) );
       }
       
@@ -398,6 +406,28 @@ namespace
       m_previewBtn->clicked().connect( this, &DrfPeak::togglePeakPreview );
     }//DrfPeak constructor;
     
+    bool use() const
+    {
+      return m_useCb->isChecked();
+    }
+    
+    void setUse( const bool use )
+    {
+      m_useCb->setChecked( use );
+      if( m_userBr )
+        m_userBr->setHidden( !use || m_isBackground );
+    }
+    
+    void setIsBackground( const bool back )
+    {
+      m_isBackground = back;
+      
+      //if( m_userBr && back )
+      //  m_userBr->setValue( 1.0 );
+      
+      if( m_userBr )
+        m_userBr->setHidden( !m_useCb->isChecked() || m_isBackground );
+    }//void setIsBackground( const bool back )
     
     void setBackgroundBeingSubtractedInfo( const bool beingsubtracted, const float background_cps )
     {
@@ -555,7 +585,7 @@ namespace
       {
         auto p = dynamic_cast<DrfPeak *>( w );
         npeaks += (p ? 1 : 0);
-        npeaksused += ((p && p->m_useCb->isChecked()) ? 1 : 0);
+        npeaksused += ((p && p->use()) ? 1 : 0);
       }
       
       title += " (using " + std::to_string(npeaksused) + " of " + std::to_string(npeaks) + " peaks)";
@@ -578,6 +608,16 @@ namespace
     {
       m_backgroundTxt->setHidden( !m_background->isChecked() );
       m_sources->setHidden( m_background->isChecked() );
+      
+      for( auto w : m_peaks->children() )
+      {
+        if( auto p = dynamic_cast<DrfPeak *>( w ) )
+        {
+          if( p->m_userBr )
+            p->setIsBackground( m_background->isChecked() );
+        }//
+      }//for( auto w : m_peaks->children() )
+      
       m_srcInfoUpdated.emit();
     }//void isBackgroundToggled()
     
@@ -728,13 +768,18 @@ namespace
             
             nuc = db->nuclide( spectitle.substr(0,first_space) );
             
+            vector<string> remarks = m->remarks();
+            if( !spectitle.empty() )
+              remarks.push_back( "Source:" + spectitle );
             
-            for( string remark : m->remarks() )
+            
+            for( string remark : remarks )
             {
               if( !UtilityFunctions::istarts_with(remark, "Source:") )
                 continue;
               
               remark = remark.substr(7);
+              
               UtilityFunctions::trim( remark );
               
               //Look for a string like "Age= 13y 5d 3s something something something"
@@ -794,7 +839,7 @@ namespace
               
               const size_t commapos = remark.find(',');
               const size_t underscorpos = remark.find('_'); //For a source database name like "133BA_<serial number>"
-              
+                
               if( (commapos < underscorpos)
                  && (nuc == db->nuclide(remark.substr(0,commapos))) )
               {
@@ -803,9 +848,19 @@ namespace
                 //      "232U,10uC{26,10}+137Cs,3.2mC{13,5}" - should handle
                 try
                 {
-                  activity = PhysicalUnits::stringToActivity( remark.substr(commapos+1) );
-                }catch(...)
-                {}
+                  string activitystr = remark.substr(commapos+1);
+                  UtilityFunctions::trim( activitystr );
+                  
+                  //search for a positive decimal number foloowed by some letters; take fir occirance
+                  std::smatch mtch;
+                  std::regex expr( "(\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?)\\s*([a-zA-Z \\-]+)" );
+                  if( std::regex_search( activitystr, mtch, expr ) )
+                    activitystr = UtilityFunctions::trim_copy( mtch[0] );
+                  
+                  activity = PhysicalUnits::stringToActivity( activitystr );
+                }catch( std::exception & )
+                {
+                }
               }//
               
               if( (activity < 0.0) && (underscorpos != string::npos)
@@ -880,7 +935,13 @@ namespace
           m_background->setChecked( true );
           m_backgroundTxt->show();
           m_sources->hide();
-        }
+        
+          for( auto w : m_peaks->children() )
+          {
+            if( auto p = dynamic_cast<DrfPeak *>( w ) )
+              p->setIsBackground( is_background );
+          }//for( auto w : m_peaks->children() )
+        }//if( is_background )
       }//if( samples.size() == 1 )
     }//DrfSpecFileSample constructor
     
@@ -900,11 +961,7 @@ namespace
       {
         auto p = dynamic_cast<DrfPeak *>( w );
         if( p )
-        {
-          p->m_useCb->setChecked( useAll );
-          if( p->m_userBr )
-            p->m_userBr->setHidden( !useAll );
-        }
+          p->setUse( useAll );
       }//for( auto w : m_peaks->children() )
       
       refreshSourcesVisible();
@@ -919,7 +976,7 @@ namespace
       for( auto w : m_peaks->children() )
       {
         auto p = dynamic_cast<DrfPeak *>( w );
-        if( p && p->m_useCb->isChecked() )
+        if( p && p->use() )
           selectedNucs.insert( p->m_peak->parentNuclide() );
       }
       
@@ -1006,7 +1063,7 @@ namespace
       
       for( auto peakw : peakWidgets )
       {
-        if( !peakw->m_useCb->isChecked() )
+        if( !peakw->use() )
           continue;
         
         const auto nuc = peakw->m_peak->parentNuclide();
@@ -1463,7 +1520,7 @@ void MakeDrf::startSaveAs()
     for( auto sample : f->fileSamples() )
     {
       for( auto peak : sample->peaks() )
-        npeaks += peak->m_useCb->isChecked();
+        npeaks += peak->use();
     }
     
     if( npeaks )
@@ -1540,11 +1597,16 @@ void MakeDrf::startSaveAs()
   CsvDrfDownloadResource *csvResource = new CsvDrfDownloadResource( this );
   new WAnchor( csvResource, "Export DRF as CSV.", cell );
   
-  auto updateName = [name,csvResource](){
+  auto updateName = [name,csvResource,n42Resource](){
     if( name->validate() == Wt::WValidator::Valid )
+    {
+      n42Resource->setSuggestFileName( name->text().toUTF8() );
       csvResource->setSuggestFileName( name->text().toUTF8() );
-    else
+    }else
+    {
+      n42Resource->setSuggestFileName( "" );
       csvResource->setSuggestFileName( "" );
+    }
   };
   
   name->changed().connect( std::bind(updateName) );
@@ -1756,7 +1818,7 @@ void MakeDrf::handleSourcesUpdates()
       for( auto peak : sample->peaks() )
       {
         peak->setBackgroundBeingSubtractedInfo( false, 0.0 );
-        if( peak->m_useCb->isChecked() )
+        if( peak->use() )
           backgroundpeaks.push_back( peak );
       }
     }//for( DrfSpecFileSample *sample : sampleWidgets )
@@ -1793,10 +1855,34 @@ void MakeDrf::handleSourcesUpdates()
       }//for( auto det : meas->detector_names() )
       
       
-      //Check if we will background subtract
-      for( auto pp : sample->selected_peak_to_sources() )
+      const vector<pair<DrfPeak *,MakeDrfSrcDef *>> peaks_to_sources = sample->selected_peak_to_sources();
+      
+      map<const SandiaDecay::Nuclide *,vector<SandiaDecay::EnergyRatePair>> mixtures;
+      for( auto pp : peaks_to_sources )
       {
-        const std::shared_ptr<const PeakDef> peak = pp.first->m_peak;
+         const SandiaDecay::Nuclide * const nuc = pp.second->nuclide();
+        if( !pp.first || !nuc || mixtures.count(nuc) )
+          continue;
+        
+        const double activity = pp.second->activityAtSpectrumTime();
+        const double age = pp.second->ageAtSpectrumTime();
+        
+        SandiaDecay::NuclideMixture mix;
+        mix.addAgedNuclideByActivity( nuc, activity, age );
+        
+        mixtures[nuc] = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+      }//for( auto pp : peaks_to_sources )
+    
+      
+      for( auto pp : peaks_to_sources )
+      {
+        MakeDrfSrcDef * const srcDef = pp.second;
+        const SandiaDecay::Nuclide * const nuc = srcDef->nuclide();
+        
+        DrfPeak * const drfPeak = pp.first;
+        const std::shared_ptr<const PeakDef> peak = drfPeak->m_peak;
+        
+        //Check if we will background subtract
         double back_peak_area = 0.0, back_peak_area_uncert = 0.0, back_peak_lt = 0.0;
         for( auto b : backgroundpeaks )
         {
@@ -1812,11 +1898,11 @@ void MakeDrf::handleSourcesUpdates()
         }//for( auto b : backgroundpeaks )
         
         const bool subBack = (back_peak_area > DBL_EPSILON && back_peak_lt > DBL_EPSILON);
-        pp.first->setBackgroundBeingSubtractedInfo( subBack, (subBack ? (back_peak_area/back_peak_lt) : 0.0) );
+        drfPeak->setBackgroundBeingSubtractedInfo( subBack, (subBack ? (back_peak_area/back_peak_lt) : 0.0) );
         
         MakeDrfChart::DataPoint point;
         point.energy = peak->parentNuclide() ? peak->gammaParticleEnergy() : peak->mean();
-        point.livetime = pp.first->m_livetime;
+        point.livetime = drfPeak->m_livetime;
         point.peak_area = peak->peakArea();
         point.peak_area_uncertainty = peak->peakAreaUncert();
         
@@ -1842,68 +1928,138 @@ void MakeDrf::handleSourcesUpdates()
           point.peak_fwhm = point.peak_fwhm_uncertainty = 0.0f;
         }
         
-        const auto nuc = pp.second->nuclide();
         
-        try
-        {
-          point.distance = pp.second->distance();
-          const double activity = pp.second->activityAtSpectrumTime();
-          const double age = pp.second->ageAtSpectrumTime();
+        
+        auto trans_frac = []( const float energy, MakeDrfSrcDef *src ) -> double {
+          ShieldingSelect *shield = src ? src->shielding() : nullptr;
+          if( !shield )
+            return 1.0;
           
-          double transmittion_factor = 1.0;
-          ShieldingSelect *shield = pp.second->shielding();
-          if( shield )
+          //ToDo: Attenuation calculation not checked!
+          double an = 14, ad = 0.0;
+          if( shield->isGenericMaterial() )
           {
-            //ToDo: Attenuation calculation not checked!
-            double an = 14, ad = 0.0;
-            if( shield->isGenericMaterial() )
+            if( !shield->atomicNumberEdit()->text().empty()
+               && !shield->arealDensityEdit()->text().empty() )
             {
-              if( !shield->atomicNumberEdit()->text().empty()
-                 && !shield->arealDensityEdit()->text().empty() )
-              {
-                an = shield->atomicNumber();
-                ad = shield->arealDensity();
-              }
-            }else
+              an = shield->atomicNumber();
+              ad = shield->arealDensity();
+            }
+          }else
+          {
+            std::shared_ptr<Material> mat = shield->material();
+            if( mat )
             {
-              std::shared_ptr<Material> mat = shield->material();
-              if( mat )
-              {
-                an = mat->massWeightedAtomicNumber();
-                ad = mat->density * shield->thickness();
-              }//if( mat )
-            }//if( shield->isGenericMaterial() ) / else
-            
-            const double mu = MassAttenuation::massAttenuationCoeficient( an, point.energy );
-            transmittion_factor = exp( -mu * ad );
-          }//if( shield )
+              an = mat->massWeightedAtomicNumber();
+              ad = mat->density * shield->thickness();
+            }//if( mat )
+          }//if( shield->isGenericMaterial() ) / else
           
-          point.source_count_rate = 0.0;
-          const double width = 1.25*(peak->gausPeak() ? peak->sigma() : 0.25*peak->roiWidth());
+          const double mu = MassAttenuation::massAttenuationCoeficient( an, energy );
+          return exp( -mu * ad );
+        };//trans_frac lambda
+        
+        
+        auto src_rate = [&mixtures,trans_frac,diameter]( const float energy, const float width,
+                                                MakeDrfSrcDef * const src, DrfPeak * const peak,
+                                                float &source_count_rate,
+                                                float &incidentGamma, float &fracUncert ) {
+          source_count_rate = incidentGamma = fracUncert = 0.0;
+          
+          const double distance = src->distance();
+          const double transmittion_factor = trans_frac( energy, src );
+          const SandiaDecay::Nuclide * const nuc = src->nuclide();
           
           if( nuc )
           {
-            //ToDo: only create one mixture per nuclide (instead of one per peak),
-            //  and can probably also access relevant gammas more efficiently.
-            SandiaDecay::NuclideMixture mix;
-            mix.addAgedNuclideByActivity( nuc, activity, age );
-            const auto rates = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+            const vector<SandiaDecay::EnergyRatePair> &rates = mixtures[nuc];
             for( const auto &r : rates )
             {
-              if( fabs(r.energy - peak->gammaParticleEnergy()) < width )
-                point.source_count_rate += r.numPerSecond;
+              if( fabs(r.energy - energy) < width )
+                source_count_rate += (r.numPerSecond * transmittion_factor);
             }
-          
-            point.source_count_rate *= transmittion_factor;
           }else
           {
-            if( !pp.first->m_userBr || (pp.first->m_userBr->validate()!=WValidator::State::Valid) )
-              throw runtime_error( "Logic error - no nuclide associated with " + std::to_string(peak->mean()) + " keV peak, and no user BR." );
-            point.source_count_rate += transmittion_factor * pp.first->m_userBr->value() * activity;
+            if( !peak->m_userBr || (peak->m_userBr->validate()!=WValidator::State::Valid) )
+              throw runtime_error( "Logic error - no nuclide associated with " + std::to_string(peak->m_peak->mean()) + " keV peak, and no user BR." );
+            
+            const double activity = src->activityAtSpectrumTime();
+            const double br = peak->m_userBr->value();
+            source_count_rate += transmittion_factor * br * activity;
           }
           
-          //If we get here on initial GUI load, we seem to get error validating the uncertainty (hence a workaround is used to delay first reading)
-          point.source_count_rate_uncertainty = point.source_count_rate * pp.second->fractionalActivityUncertainty();
+          //If we get here on initial GUI load, we seem to get error validating
+          //  the uncertainty (hence a workaround is used to delay first reading)
+          
+          if( source_count_rate > 0.0f )
+          {
+            const double livetime = peak->m_livetime;
+            const double fracSolidAngle = DetectorPeakResponse::fractionalSolidAngle( diameter, distance );
+            incidentGamma = source_count_rate * livetime * fracSolidAngle;
+            fracUncert = src->fractionalActivityUncertainty();
+          }//if( source_count_rate > 0.0f )
+        };//src_rate labmda
+        
+        MakeDrfFit::DetEffDataPoint effpoint;
+        const double width = 1.25*(peak->gausPeak() ? peak->sigma() : 0.25*peak->roiWidth());
+        
+        try
+        {
+          point.distance = srcDef->distance();
+          
+          float source_count_rate, expected, fracUncert;
+          src_rate( point.energy, width, srcDef, drfPeak, source_count_rate, expected, fracUncert );
+          
+          
+          //Now loop through all the other nuclides and get their expected contribtion
+          for( const auto &nuc_to_rates : mixtures )
+          {
+            const SandiaDecay::Nuclide * const other_nuc = nuc_to_rates.first;
+            if( other_nuc == nuc || !other_nuc )
+              continue;
+            
+            MakeDrfSrcDef *otherSrcDef = nullptr;
+            for( size_t i = 0; !otherSrcDef && i < peaks_to_sources.size(); ++i )
+            {
+              if( peaks_to_sources[i].second->nuclide() == other_nuc )
+                otherSrcDef = peaks_to_sources[i].second;
+            }
+            
+            if( !otherSrcDef )
+              continue;
+            
+            assert( otherSrcDef != srcDef );
+            
+            float other_source_count_rate, other_expected, other_fracUncert;
+            src_rate( point.energy, width, otherSrcDef, drfPeak, other_source_count_rate, other_expected, other_fracUncert );
+            
+            if( other_source_count_rate > 0.0 )
+            {
+              fracUncert = sqrt( pow(expected*fracUncert,2.0f) + pow(other_expected*other_fracUncert,2.0f) );
+              expected += other_expected;
+              source_count_rate += other_source_count_rate;
+              
+              //ToDo: To MakeDrfChart::DataPoint add a other source count rate and uncertainty field.
+              
+              fracUncert /= expected;
+            }
+          }//for( const auto &nuc_to_rates : mixtures )
+          
+          
+          point.source_count_rate = source_count_rate;
+          point.source_count_rate_uncertainty = source_count_rate*fracUncert;
+          
+          const double eff = point.peak_area / expected;
+          
+          double fracUncert2 = 0.0;
+          if( point.peak_area_uncertainty > 0.0f )
+            fracUncert2 += std::pow( point.peak_area_uncertainty / point.peak_area, 2.0f );
+          if( point.source_count_rate_uncertainty > 0.0f )
+            fracUncert2 += std::pow( point.source_count_rate_uncertainty / point.source_count_rate, 2.0f );
+          
+          effpoint.energy = point.energy;
+          effpoint.efficiency = eff;
+          effpoint.efficiency_uncert = sqrt(fracUncert2);
         }catch( std::exception &e )
         {
           cerr << "handleSourcesUpdates: got exception: " << e.what() << endl;
@@ -1915,45 +2071,25 @@ void MakeDrf::handleSourcesUpdates()
         point.background_peak_area = back_peak_area;
         point.background_peak_live_time = back_peak_lt;
         
-        const double particleEnergy = peak->parentNuclide() ? peak->gammaParticleEnergy() : peak->mean();
-        
+        //ToDo: Add more/better source info.
         char buffer[256] = { '\0' };
         if( nuc )
         {
           snprintf( buffer, sizeof(buffer)-1, "%s %.1f keV, Peak %.1f counts",
-                   nuc->symbol.c_str(), particleEnergy, point.peak_area );
+                   nuc->symbol.c_str(), point.energy, point.peak_area );
         }else
         {
           snprintf( buffer, sizeof(buffer)-1, "No assoc. nuclide, %.1f keV, Peak %.1f counts",
-                    particleEnergy, point.peak_area );
+                    point.energy, point.peak_area );
         }
-        //ToDo: Add more/better source info.
+        
         point.source_information = buffer;
         
         
-        {
-          const double fracSolidAngle = DetectorPeakResponse::fractionalSolidAngle( diameter, pp.second->distance() );
-          const double expected = point.source_count_rate * point.livetime * fracSolidAngle;
-          const double eff = point.peak_area / expected;
-          
-          double fracUncert2 = 0.0;
-          if( point.peak_area_uncertainty > 0.0f )
-            fracUncert2 += std::pow( point.peak_area_uncertainty / point.peak_area, 2.0f );
-          if( point.source_count_rate_uncertainty > 0.0f )
-            fracUncert2 += std::pow( point.source_count_rate_uncertainty / point.source_count_rate, 2.0f );
-          
-          MakeDrfFit::DetEffDataPoint effpoint;
-          effpoint.energy = point.energy;
-          effpoint.efficiency = eff;
-          effpoint.efficiency_uncert = sqrt(fracUncert2);
-          
-          effpoints.push_back( effpoint );
-        }
-        
-        
+        effpoints.push_back( effpoint );
         peaks.push_back( peak );
         datapoints.push_back( point );
-      }
+      }//for( auto pp : peaks_to_sources )
     }//for( DrfSpecFileSample *sample : sampleWidgets )
   }//for( auto w : m_files->children()  )
   
@@ -2394,9 +2530,9 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         for( auto peak : sample->peaks() )
         {
           shared_ptr<PeakDef> newpeak = make_shared<PeakDef>( *peak->m_peak );
-          newpeak->useForDrfFit( peak->m_useCb->isChecked() );
+          newpeak->useForDrfFit( peak->use() );
           newpeaks.push_back( newpeak );
-          beingUsed = (beingUsed || peak->m_useCb->isChecked());
+          beingUsed = (beingUsed || peak->use());
         }
         
         if( !beingUsed )
