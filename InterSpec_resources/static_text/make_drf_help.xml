@@ -13,7 +13,7 @@ The <em>Make Detector Response Function</em> tool allows you to use measurements
 of known sources to determine the <em>Intrinsic</em> efficiency (i.e., the
 probability that if a gamma of a given energy is incident on the detector face,
 that its full energy will be absorbed, and it will contribute to the photo-peak)
-of a detector.  Usually the the detector response function (DRF) will only have
+of a detector.  Usually the detector response function (DRF) will only have
 to be determined once for a given system, and often detectors of the same model 
 can use the same response function.
 </p>
@@ -26,8 +26,8 @@ can use the same response function.
 <div style="display:table-row">
 <h4>Overview of creating a DRF</h4>
 <ol>
-  <li>Take measurements, using the detector of interest, of sources with known
-      activities, at known distances.
+  <li>Take measurements using the detector of interest with sources with known
+      activities known distances.
   </li>
   <li>Open spectrum files in <code>InterSpec</code>, and fit peaks of the test-sources,
       associating nuclides with the peaks (most easily by displaying reference
@@ -45,7 +45,7 @@ can use the same response function.
   <li>Enter detector face diameter, select number of fit parameters, and the type of
       equation to fit for FWHM, and other options.
   </li>
-  <li>Save the DRF into the <code>InterSpec</code>s internal database for future use,
+  <li>Save the DRF into the <code>InterSpec</code>'s internal database for future use,
       and/or choose to download a CSV for use on other devices, or to use in
       other programs.
   </li>
@@ -82,7 +82,7 @@ uncertainty you entered for the source.<br />
 <br />
 Some comments on taking test-source data:
 <ul>
-  <li>It is important that the peaks you use from the test sources at least span
+  <li>It is important that the peaks you use from the test-sources at least span
       the energy range you will use the DRF for. Extrapolation outside
       the test-source energy range will often be drastically incorrect.
   </li>
@@ -98,8 +98,8 @@ Some comments on taking test-source data:
   </li>
   <li>Photo-peaks from the test-sources should have plenty of statistics
       and be substantially above background.  For many sources and detectors
-      the sources generally need to be in the 10's of micro-currie range
-      at 25 cm, and for between 5 and 30 minutes dwell time.
+      the sources generally need to be in the 10's of micro-Curie range
+      at 25 cm to 100 cm, and for between 5 and 30 minutes dwell time.
   </li>
   <li>Dead time should not be too high, as this can cause peak-distortions
       and other effects.  Very roughly, scintillating detectors (NaI, LaBr, etc)
@@ -107,12 +107,13 @@ Some comments on taking test-source data:
       have less than about 50% dead-time, although acceptable levels will be
       system dependant.
   </li>
-  <li>Test sources should be at least 25 cm away from the detector so that
+  <li>Test-sources should be at least 25 cm away from the detector so that
       gammas striking the detector are about parallel.
   </li>
-  <li>Sources should be lined up with the detector so that source gammas will
-      be perpendicular to the detector face.  Shielding should be eliminated 
-      or minimized.
+  <li>Test-sources should be lined up with the detector so that source gammas will
+      be perpendicular to the detector face.
+  </li>
+  <li>Shielding should be eliminated or minimized.
   </li>
   <li>It is preferred to measure each source separately.  However, especially
       higher resolution detectors, it may be fine to measure multiple sources 
@@ -132,7 +133,7 @@ for all of your spectra, you should be able to see each of the files available
 in the drop-down, as shown on the left.  The <em>Make Detector Response</em>
 tool will allow you to select peaks from all of the files from your current session.
 If you want to fit peaks across multiple sessions, you can always fit the peaks
-and either save the results to <code>InterSpec</code>s internal database, or export
+and either save the results to <code>InterSpec</code>'s internal database, or export
 to N42-2012 files, which will save the peaks you fit.
 
 <br style="clear: both" />
@@ -140,25 +141,26 @@ to N42-2012 files, which will save the peaks you fit.
 <div align="center" style="padding-top: 10px; padding-left: 10px" >
   <img src="InterSpec_resources/static_text/images/make_drf_peak_fit.png"  class="imageBorder" style="max-width: 50%; margin-left: 10px;" align="right" />
 </div>
-Since the <em>Make Detector Response</em> tool will need to know the nuclide associated
-with each fit peak, it is easiest to show reference lines, like is being done in
-the screenshot on the right, before fitting the peaks, so this way when you fit
-the nuclide, and specific gamma will be automatically associated with the peak.
+The <em>Make Detector Response</em> tool needs to know the nuclide associated
+with each fit peak; there are several ways to accomplish this.
+To do this easily, show reference lines, as demonstrated in
+the screenshot on the right, before fitting the peaks; then when you fit
+the nuclide and specific gamma will be automatically associated with the peak.
 You can also make this association by right-clicking on a peak, and either choosing
 a new nuclide from the list of suggested nuclides, or opening the <em>Peak Editor</em>
-and entering a nuclide; the <em>Peak Manager</em> also lets you set the nuclide
+and entering a nuclide.  The <em>Peak Manager</em> also lets you set the nuclide
 and specific gamma line of a peak.
 </p>
 <p>
 You do not need to fit background peaks for your test-source spectra.<br />
-If any of your test-sources have peaks that overlap with background peaks, and
-that you would like to use, you should use a background spectrum with its peaks
-fit; you do not need to associate nuclides with the peaks of the background
-spectrum.  The background peak rates will be subtracted from the test-source
-peak rates during DRF fitting.<br />
-Especially for HPGe spectra of sources with lots of gamma-lines, or the background,
-the &quot;Search for Peaks&quot; button/tool in the <em>Peak Manager</em> tab
-can be used to automate the peak fitting process.
+If any of your test-sources have peaks that you would like to use and that
+overlap with background peaks, and that you would like to use, you should use a
+background spectrum with its peaks fit; you do not need to associate nuclides
+with the peaks of the background spectrum.  The background peak rates will be
+subtracted from the test-source peak rates during DRF fitting.<br />
+The &quot;Search for Peaks&quot; button/tool in the <em>Peak Manager</em> tab
+can be used to automate the peak fitting process. This is especially useful
+for HPGe spectra of sources with lots of gamma-lines or the background.
 </p>
 </div>
 
@@ -167,7 +169,7 @@ can be used to automate the peak fitting process.
 <h4>Selecting Peaks to Use, and Entering Source Information</h4>
 <p>
 <div style="both">
-You may choose to either use, or not use, peaks that you have fit for to help
+You may choose to either use, or not use, peaks that you have fit to help
 determine the DRF.  Reasons to not use a peak include: not from a source of interest,
 low branching ratio, high background contributions, possible interference from other sources, poor peak fit,
 or a peak may just visually deviate from the reasonable range for the efficiency curve.
@@ -198,7 +200,7 @@ changes with age, you will also be given a chance to enter age at assay date.
 <div style="padding-top: 10px; clear: both">
 <img src="InterSpec_resources/static_text/images/make_drf_source_info_shield.jpg"  class="imageBorder" style="width: 33%; margin-right: 10px;" align="left" />
 You can also choose to enter a shielding between the test-source and detector.
-This is primarily useful to account for the source container, or for self-attenuating sources.
+This is primarily useful to account for the source container or for self-attenuating sources.
 Shielding should be avoided or minimized when making characterization measurements.
 </div>
 
@@ -214,7 +216,7 @@ corrected.
 <div style="padding-top: 10px">
 <img src="InterSpec_resources/static_text/images/make_drf_no_nuc.png"  class="imageBorder" style="max-width:66%;" align="right" />
 If you do not want to associate a nuclide with a peak, you can still use the
-peak for determining the DRF; when the peak is selected to use, a entry form
+peak for determining the DRF; when the peak is selected to use, an entry form
 will appear to enter the branching ratio of this peak, and a generic source
 will also be shown to enter the activity and distance.  This feature is useful
 if you think the nuclide library has an error, or you are determining the DRF
@@ -234,7 +236,7 @@ You can choose how many coefficients you want the <em>Intrinsic Efficiency</em>
 equation to use, with the guiding criteria usually being how well the fit
 equation matches the data, without being over-fitted.
 A maximum of eight coefficients can be used.
-You can also choose if you would like the coefficients fit for energy in keV, or
+You can also choose if you would like the coefficients fit for energy in keV or
 MeV.  Usually MeV gives coefficient values that are slightly more natural
 looking, but the only time the choice really matters is if you want to use the
 coefficients in another application that expects one unit or another.
@@ -285,7 +287,7 @@ You can also choose to show this fit and peak FWHM  data on the chart by selecti
 <h4>Save As Dialog:</h4>
 <div style="padding-top: 10px; padding-left: 10px" >
 <img src="InterSpec_resources/static_text/images/make_drf_save_as.jpg"  class="imageBorder" style="max-width: 30%; margin-left: 10px; margin-right: 10px;" align="left" />
-When saving the DRF it gets saved into <code>InterSpec</code>s internal database,
+When saving the DRF it gets saved into <code>InterSpec</code>'s internal database
 and can be retrieved in the &quot;Previous&quot; tab of the
 <em>Detector Response Select</em> tool.  The name you assign can not have
 symbols commonly prohibited in filenames such as slashes, backslashes, quotes,
@@ -318,7 +320,7 @@ icon will display additional tips for each item in this dialog.
 <h4>Miscellaneous Information:</h4>
 <ul>
   <li>The <em>Create Detector Response Function</em> tool can be used with any
-      detector types you can fit peaks for, including CsI, NaI, LaBr3, CZT,
+      detector type you can fit peaks for, including CsI, NaI, LaBr3, CZT,
       and HPGe.
   </li>
   <li>The error bars shown on the data points of the <em>Intrinsic Efficiency</em>
@@ -327,7 +329,7 @@ icon will display additional tips for each item in this dialog.
       source activity uncertainty.
   </li>
   <li>The efficiency chart defaults to showing the energy range of the spectrum
-      files, but the areas above the highest energy peak used, and bellow the 
+      files, but the areas above the highest energy peak used and below the
       lowest energy peak are slightly greyed out to indicate the DRF is not 
       valid in those regions.
   </li>
@@ -360,8 +362,8 @@ icon will display additional tips for each item in this dialog.
       the actual solution and errors presented by the tool.
   </li>
   <li>Clicking on the <img src="InterSpec_resources/images/peak_small.png" width=16 height=16 />
-      icon next to each peak will show you a preview of that peak, incase you want
-      to check the fit quality of that peak.
+      icon next to each peak will show you a preview of that peak if you want to
+      check the fit quality.
   </li>
 </ul>
 </div>
