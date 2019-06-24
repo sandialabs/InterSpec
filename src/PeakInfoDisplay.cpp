@@ -732,16 +732,26 @@ void PeakInfoDisplay::init()
   
   
   WResource *csv = m_model->peakCsvResource();
+#if( BUILD_AS_OSX_APP )
+  WAnchor *csvButton = new WAnchor( WLink(csv), buttonDiv );
+  csvButton->setTarget( AnchorTarget::TargetNewWindow );
+#else
   WPushButton *csvButton = new WPushButton( buttonDiv );
   csvButton->setIcon( "InterSpec_resources/images/download_small.png" );
   csvButton->setLink( WLink(csv) );
   csvButton->setLinkTarget( Wt::TargetNewWindow );
+#endif
+  
   csvButton->setText( "CSV" );
   csvButton->setStyleClass( "CsvLinkBtn" );
   csvButton->disable();
 
   auto enableDisableCsv = [this,csvButton](){
-    csvButton->setEnabled( m_model->rowCount() > 0 );
+    //csvButton->setEnabled( m_model->rowCount() > 0 );
+    if( m_model->rowCount() > 0 )
+      csvButton->enable();
+    else
+      csvButton->disable();
   };
   
   m_model->dataChanged().connect( std::bind(enableDisableCsv) );

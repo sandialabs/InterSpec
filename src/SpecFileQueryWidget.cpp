@@ -407,7 +407,7 @@ namespace
     WAbstractItemModel *m_model;
     
   public:
-    ResultCsvResource( WAbstractItemModel *model, WPushButton *parent )
+    ResultCsvResource( WAbstractItemModel *model, WObject *parent )
      : WResource( parent ),
        m_model( model )
     {
@@ -1540,12 +1540,18 @@ void SpecFileQueryWidget::init()
   linelayout->setColumnStretch( 0, 1 );
   linelayout->setColumnStretch( 1, 2 );
   
+  ResultCsvResource *csvresource = new ResultCsvResource( m_resultmodel, this );
   
+#if( BUILD_AS_OSX_APP )
+  m_csv = new WAnchor( WLink(csvresource) );
+  m_csv->setTarget( Wt::TargetNewWindow );
+#else
   m_csv = new WPushButton();
-  ResultCsvResource *csvresource = new ResultCsvResource( m_resultmodel, m_csv );
   m_csv->setIcon( "InterSpec_resources/images/download_small.png" );
   m_csv->setLink( WLink(csvresource) );
   m_csv->setLinkTarget( Wt::TargetNewWindow );
+#endif
+  
   m_csv->setText( "CSV" );
   m_csv->setStyleClass( "CsvLinkBtn" );
   m_csv->disable();
