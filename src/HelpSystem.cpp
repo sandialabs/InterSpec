@@ -163,6 +163,40 @@ WT_DECLARE_WT_MEMBER
  );
 
 
+namespace
+{
+  /** A class used to track when the widget that a qtip (tool tip created by
+      attachToolTipOn(..) ) is attached to, gets deleted.  When the original
+      widget gets deleted, we should delete the qtip from the client-side DOM.
+      Therefore, everytime we attach a qtip, we will create an instance of
+      RmHelpFromDom as the child of the widget getting the tooltip attached,
+      then from the destructor of RmHelpFromDom, we will issue the JS to cleanup
+      the DOM.  This all requires the 'id' of the qtip is set to the 'id' of
+      this class (the qtip library will append a 'qtip-' to the id, so there
+      will be no DOM conflicts).
+   */
+  class RmHelpFromDom : public Wt::WObject
+  {
+  public:
+    RmHelpFromDom( WObject *parent )
+    : WObject( parent )
+    {
+    }
+    
+    virtual ~RmHelpFromDom()
+    {
+      WApplication *app = wApp;
+      if( !app || !app->domRoot() )
+        return;
+      
+      const string js = "try{ $('#qtip-" + id() + "').qtip('destroy', true);}catch(error){}";  //I dont think try/catch is necassary, but JIC
+      app->doJavaScript( js );
+    }
+  };//RmHelpFromDom
+  
+}//namespace
+
+
 namespace HelpSystem
 {
   void createHelpWindow( const std::string &preselect )
@@ -748,7 +782,7 @@ namespace HelpSystem
     helpPopup->mouseWentOut().connect( js );
   }//void addToolTipToWidget...)
   
-  
+
   /*
    Attach a tooltip onto a widget.  Depending on preference, it might show immediately.
    
@@ -787,7 +821,7 @@ namespace HelpSystem
       keyPressHide= "keypress"; //for pro users so the tooltip hides
     
     //Create popup notifications
-    std::stringstream strm;
+    Wt::WStringStream strm;
     
     //need to escape the ' in the text message
     std::string val = text;
@@ -801,8 +835,13 @@ namespace HelpSystem
       case Right: pos = "my: 'left center', at: 'right center', ";break;
       case Left: pos = "my: 'right center', at: 'left center', ";break;
     }
+    
+
+    RmHelpFromDom *remover = new RmHelpFromDom( widget );
+    
     //Note: need to prerender, as toggling requires tooltip already rendered.
-    strm << "$('#"<<widget->id()<<"').qtip({ "
+    strm << "$('#"<< widget->id() <<"').qtip({ "
+        "id: '" << remover->id() << "',"
         "prerender: true, "
         "content:  { text: '"<< val <<"'}, "
         "position: { " << pos <<
@@ -815,7 +854,7 @@ namespace HelpSystem
                   "delay: "<< delay << ""
               "},"
         "hide:  {  fixed: true, event: 'mouseleave focusout "<< keyPressHide <<"'  },"
-        "style: { classes: 'qtip-rounded qtip-shadow" << (overrideShow ? "" : " delayable") << "',"
+        "style: { classes: 'qtip-rounded qtip-shadow" << string(overrideShow ? "" : " delayable") << "',"
                   "tip: {"
                         "corner: true, "
                         "width: 18, "
@@ -824,6 +863,7 @@ namespace HelpSystem
         "});";
     widget->doJavaScript(strm.str());
     
-  }//  void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text, bool force)
+    
+  }//void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text, bool force)
 
 } //namespace HelpSystem

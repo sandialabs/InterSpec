@@ -1,0 +1,24 @@
+.MakeDrfSrcDef {
+  border: 1px solid grey;
+  padding: 3px;
+  display: inline-block;
+}
+
+.SrcInputTable > tbody > tr > td:nth-child(1) {
+  /* Select first colum */
+}
+
+.SrcNuclideTitle {
+  text-align: center;
+}
+
+.SrcTitleNuc {
+  font-weight: bold;
+}
+.SrcTitleHl {
+  font-size: smaller;
+}
+
+.SrcInputError {
+  color: red;
+}

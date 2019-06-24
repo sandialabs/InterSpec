@@ -471,9 +471,104 @@ namespace DataBaseVersionUpgrade
     }//if( version<6 && version<DB_SCHEMA_VERSION )
     
     
+    if( version<10 && version<DB_SCHEMA_VERSION )
+    {
+      /*
+      try
+      {
+        std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+        sqlSession->mapClass<UseDrfPref>( "UseDrfPref" );
+        sqlSession->createTables();
+        std::cout << "Created the UseDrfPref Table" << std::endl;
+      }catch( std::exception &e )
+      {
+        //Get error Class 13InterSpecUser was not mapped
+        std::cerr << "DB_SCHEMA_VERSION 10: Failed to create UseDrfPref table: "
+        << e.what() << std::endl
+        << "I guess we'll go on, but things will probably blow up." << std::endl;
+      }
+      */
+      
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+      
+      /*
+       create table "UseDrfPref" (
+       "id" integer primary key autoincrement,
+       "version" integer not null,
+       "InterSpecUser_id" bigint,
+       "MatchField" integer not null,
+       "Flags" integer not null,
+       "DrfIndex" bigint not null,
+       "Criteria" text not null,
+       constraint "fk_UseDrfPref_InterSpecUser" foreign key ("InterSpecUser_id") references "InterSpecUser" ("id") on delete cascade deferrable initially deferred
+       )
+       */
+      
+      const char *sql_statement = nullptr;
+      
+      sql_statement = R"Delim(create table "UseDrfPref" (
+      "id" integer primary key autoincrement,
+      "version" integer not null,
+      "InterSpecUser_id" bigint,
+      "MatchField" integer not null,
+      "Flags" integer not null,
+      "DrfIndex" bigint not null,
+      "Criteria" text not null,
+      constraint "fk_UseDrfPref_InterSpecUser" foreign key ("InterSpecUser_id") references "InterSpecUser" ("id") on delete cascade deferrable initially deferred
+      ))Delim";
+      executeSQL( sql_statement, sqlSession );
+      
+      
+      /*
+       create table "DetectorPeakResponse" (
+       "id" integer primary key autoincrement,
+       "version" integer not null,
+       "m_name" varchar(255) not null,
+       "m_description" varchar(255) not null,
+       "m_detectorDiameter" real not null,
+       "m_efficiencyEnergyUnits" real not null,
+       "m_resolutionForm" integer not null,
+       "m_resolutionCoeffs" text not null,
+       "m_efficiencySource" integer not null,
+       "m_efficiencyForm" integer not null,
+       "m_energyEfficiencies" text not null,
+       "m_efficiencyFormula" text not null,
+       "m_expOfLogPowerSeriesCoeffs" text not null,
+       "InterSpecUser_id" integer not null,
+       "Hash" bigint not null,
+       "ParentHash" bigint not null,
+       "m_flags" bigint not null,
+       "m_expOfLogPowerSeriesUncerts" text not null,
+       "m_resolutionUncerts" text not null,
+       "m_lowerEnergy" double precision not null,
+       "m_upperEnergy" double precision not null,
+       "m_createdUtc" bigint not null,
+       "m_lastUsedUtc" bigint not null
+       )
+       */
+      
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_flags bigint default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_expOfLogPowerSeriesUncerts text default \"\" not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_resolutionUncerts text default \"\" not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_lowerEnergy double precision default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_upperEnergy double precision default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_createdUtc bigint default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_lastUsedUtc bigint default 0 not null;";
+      executeSQL( sql_statement, sqlSession );
+      
+      version = 10;
+      setDBVersion( version, sqlSession );
+    }//if( version<6 && version<DB_SCHEMA_VERSION )
+    
     
     /// ******************************************************************
-    /// DB_SCHEMA_VERSION is at 9.  Add Version 10 here.  Update InterSpecUser.h!
+    /// DB_SCHEMA_VERSION is at 10.  Add Version 11 here.  Update InterSpecUser.h!
     /// ******************************************************************
   }//void checkAndUpgradeVersion()
   

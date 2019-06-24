@@ -167,6 +167,15 @@ public:
   
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                                  peaks( const std::set<int> &samplenums );
+  /** CAUTION: the returned deque may be modified elsewhere in the app, if for
+   example the user adds or removes a peak.  However, the individual peaks will
+   not be modified.  So if you plan to use the returned deque from outside of
+   the main thread, you should make a new deque and fill it with pointers to the
+   peaks.
+   ToDo: I fixed one place I ran into the above issue, however this function
+         should be rewritten to return a unique deque, instead of a pointer to
+         a shared one.
+   */
   std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > >
                                  peaks( const std::set<int> &samplenums ) const;
   
@@ -181,7 +190,7 @@ public:
   //  The peaks stored by *this will be same pointers to peaks as passed in,
   //  but the deque will be different than passed in.
   //  Note: does not notify PeakModel, or anywhere else.
-  void setPeaks( std::deque< std::shared_ptr<const PeakDef> > &peakdeque,
+  void setPeaks( const std::deque< std::shared_ptr<const PeakDef> > &peakdeque,
                  const std::set<int> &samplenums );
   
   std::shared_ptr< const PeakDeque > automatedSearchPeaks(

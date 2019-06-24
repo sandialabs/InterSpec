@@ -1971,7 +1971,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
           stringstream msg;
           msg << "\t" << energy_count.first << " keV photopeak reduced by "
               << eff/deteff << " * " << deteff
-              << " (solid angle)*(det abs eff) from "
+              << " (solid angle)*(det intrinsic eff) from "
               << energy_count.second*PhysicalUnits::second << " cps "
               << "to " << energy_count.second*PhysicalUnits::second*eff << " cps";
           info->push_back( msg.str() );

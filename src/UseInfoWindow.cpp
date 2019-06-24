@@ -354,9 +354,9 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       
       
       
-      msg = "<p>You can also open spectra files by selecting <em>Open File</em> in the <em>InterSpec</em> sub menu after exiting thie screen.<br />"
-      "For email attachments, or files in apps like <em>Files</em>, <em>Dropbox</em>, <em>Google Drive</em>, etc., you can open"
-      " spectra files in <em>InterSpec</em> by selecting &quot;Copy To InterSpec&quot;"
+      msg = "<p>You can also open spectra files by selecting <em>Open File</em> in the <code>InterSpec</code> sub menu after exiting thie screen.<br />"
+      "For email attachments, or files in apps like <code>Files</code>, <code>Dropbox</code>, <code>Google Drive</code>, etc., you can open"
+      " spectra files in <code>InterSpec</code> by selecting &quot;Copy To InterSpec&quot;"
       "</p>";
       desc = new WText( msg );
       importLayout->addWidget( desc, 2, 0, AlignBottom );
@@ -622,13 +622,13 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
    
   }else
   {
-    msg += "<h1 align=\"center\">Welcome To <em>InterSpec</em>"
+    msg += "<h1 align=\"center\">Welcome To <code>InterSpec</code>"
            "</h1><div align=\"left\">";
     msg += "<p>You can use the references on the left to become "
-                        "more familiar with <em>InterSpec</em>, or you can "
+                        "more familiar with <code>InterSpec</code>, or you can "
                         "pick up from a previous session or spectrum below.";
     msg += " Alternatively, you can also drag and drop your "
-    "own spectrum file onto <em>InterSpec</em>.</p>";
+    "own spectrum file onto <code>InterSpec</code>.</p>";
   }
 
   msg += "</div>";
@@ -639,13 +639,13 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   "<img src=\"InterSpec_resources/images/phone_tips.png\" width=12 height=12 alt=\"information icon\" class=\"WhiteIcon\" /> "
   "icon to the left for the basics of interacting with the chart and fitting for peaks."
   "Tap the <img src=\"InterSpec_resources/images/help_mobile.svg\" width=12 height=12 alt=\"help icon\" class=\"WhiteIcon\" /> "
-  "icon for detailed information about <em>InterSpec</em>s tools and features."
+  "icon for detailed information about <code>InterSpec</code>s tools and features."
   "</p>";
   if( m_viewer->isTablet() )
     mobilePostcriptText = "<p>Tap on the <b>Use Info</b> button to the left for"
      " the basics of interacting with the chart and fitting for peaks."
      "Tap the <img src=\"InterSpec_resources/images/help_mobile.svg\" width=12 height=12 alt=\"help icon\" class=\"WhiteIcon\" /> "
-     "icon for detailed information about <em>InterSpec</em>s tools and features."
+     "icon for detailed information about <code>InterSpec</code>s tools and features."
      "</p>";
   
   if( m_viewer->isPhone() )
@@ -672,7 +672,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     rightLayout->addWidget( text, 2, 0 );
     
     /*
-     //"Spectra attached to emails can be copied into <em>InterSpec</em> from within your mail app.<br />"
+     //"Spectra attached to emails can be copied into <code>InterSpec</code> from within your mail app.<br />"
      //"Once you have analyzed a spectrum, you can save a snapshot of your work, and it will show up in the <em>Saved Snapshots</em> tab."
      */
   }else

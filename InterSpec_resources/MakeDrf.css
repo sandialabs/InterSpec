@@ -1,0 +1,193 @@
+.MakeDrf {
+  
+}
+
+
+.MakeDrfOptions {
+  width: 150px;
+  border: 1px solid grey;
+  margin-bottom: 4px;
+}
+
+.MakeDrfOptions > fieldset {
+  border: none;
+  padding-top: 1px;
+  padding-bottom: 5px;
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+
+.MakeDrfErrTxt {
+  padding: 1em;
+  margin: 2px;
+  color: red;
+  border: 1px solid grey;
+}
+
+.MakeDrfFiles {
+  /* border: 1px solid blue; */
+  border-radius: 3px;
+}
+
+.MakeDrfSaveHelp {
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+}
+
+.MakeDrfSaveAsTable {
+  margin-top: 3px;
+}
+
+.MakeDrfSaveAsTable > tbody > tr > td {
+  padding-top: 3px;
+  padding-bottom: 2px;
+  padding-right: 2px;
+  padding-left: 2px;
+}
+
+
+.DrfSpecFile {
+  /* border: 1px solid green; */
+  border: 3px solid #888888;
+  border-radius: 3px;
+}
+
+.DrfSpecFile .body {
+  padding-top: 7px;
+}
+
+.DrfSpecFile.SingleSample {
+  border: none;
+}
+
+.DrfSpecFile.SingleFile {
+  border: none;
+}
+
+.DrfSpecFileSample {
+  margin-bottom: 3px;
+  border: 2px solid #888888;
+  border-radius: 3px;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  
+}
+
+.DrfSpecFileSample:not(:first-child) {
+  margin-top: 10px;
+}
+
+.DrfSpecFileSample > .titlebar {
+  padding-top: 6px;
+  padding-left: 0px;
+}
+
+.DrfSpecFileSample > .titlebar > span {
+  margin-left: 0.5em;
+  margin-right: 0.5em;
+}
+
+.DrfPeak {
+  border: 1px solid grey;
+  height: 28px;
+  vertical-align: middle;
+  margin-bottom: 3px;
+}
+
+.DrfPeak > span, .DrfPeak > label {
+  display: inline-block;
+  padding-top: 6px;
+}
+
+.DrfPeakUseCb {
+  padding-left: 0.5em;
+}
+
+.DrfPeakInfoTxt {
+  padding-left: 0.75em;
+  /* width: 50%; */
+}
+
+.DrfPeakBackSubTxt {
+  padding-left: 2em;
+  font-style: italic;
+}
+
+.DrfPeakNoNucBrLbl {
+  padding-left: 2em;
+}
+
+.DrfPeak > input {
+  /* The BR input */
+  right: 80px;
+}
+
+
+.DrfPeakShowChart, .DrfPeakShowChart:hover {
+  display: inline-block;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 0;
+  border-radius: 0px;
+  -webkit-border-radius: 0px;
+  height: 16px;
+  /* position: absolute;
+  right: 20px;
+   */
+  float: right;
+  margin-right: 0.5em;
+  margin-top: 5px;
+}
+
+.DrfPeakShowChart.active {
+  background: rgba(185,185,185,0.80);
+}
+
+.DrfSpecFileSampleBackground {
+  padding-left: 2em;
+}
+
+.DrfSpecFileSampleBackgroundTxt {
+  color: red;
+  padding-left: 1em;
+}
+
+
+.DrfSpecFileAllNoneSomeCb {
+  float: right;
+}
+
+
+
+.DrfPeakChart {
+  
+}
+
+.MakeDrfChartOptions {
+  padding-top: 3px;
+  padding-bottom: 4px;
+}
+
+.MakeDrfEqnAnswer {
+  display: inline-block;
+  /* margin: 5px 2px 3px 2 px; */
+  padding-top: 2px;
+  height: 26px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: normal;
+  background: white;
+  border-radius: 3px;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  
+  /* Let the user copy-paste the text*/
+  user-select: all;
+  -moz-user-select: all;
+  -webkit-user-select: all;
+  -ms-user-select: all;
+  -khtml-user-select: all;
+  -o-user-select: all;
+}

@@ -344,7 +344,7 @@
 				LIBRARY_SEARCH_PATHS = /Users/wcjohns/install/osx_wt_prefix/lib/;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
 				OTHER_LDFLAGS = (
-					../../../external_libs/SpecUtils/build_quick_look/lib/libSpecUtils.a,
+					../../../build_macos/external_libs/SpecUtils/lib/Release/libSpecUtils.a,
 					/Users/wcjohns/install/osx_wt_prefix/lib/libwt.a,
 					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbo.a,
 					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbosqlite3.a,
@@ -368,7 +368,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = gov.sandia.SpecFilePreview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SYSTEM_HEADER_SEARCH_PATHS = /Users/wcjohns/install/osx_wt_prefix/include;
-				USER_HEADER_SEARCH_PATHS = "../../../external_libs/SpecUtils ../../../external_libs/SpecUtils/build_quick_look/ ../../../external_libs/";
+				USER_HEADER_SEARCH_PATHS = "../../../external_libs/SpecUtils ../../../external_libs/SpecUtils/build_quick_look/ ../../../external_libs/ ../../../build_macos/external_libs/SpecUtils/";
 				WRAPPER_EXTENSION = qlgenerator;
 			};
 			name = Debug;
@@ -385,7 +385,7 @@
 				LIBRARY_SEARCH_PATHS = /Users/wcjohns/install/osx_wt_prefix/lib/;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
 				OTHER_LDFLAGS = (
-					../../../external_libs/SpecUtils/build_quick_look/lib/libSpecUtils.a,
+					../../../build_macos/external_libs/SpecUtils/lib/Release/libSpecUtils.a,
 					/Users/wcjohns/install/osx_wt_prefix/lib/libwt.a,
 					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbo.a,
 					/Users/wcjohns/install/osx_wt_prefix/lib/libwtdbosqlite3.a,
@@ -409,7 +409,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = gov.sandia.SpecFilePreview;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SYSTEM_HEADER_SEARCH_PATHS = /Users/wcjohns/install/osx_wt_prefix/include;
-				USER_HEADER_SEARCH_PATHS = "../../../external_libs/SpecUtils ../../../external_libs/SpecUtils/build_quick_look/ ../../../external_libs/";
+				USER_HEADER_SEARCH_PATHS = "../../../external_libs/SpecUtils ../../../external_libs/SpecUtils/build_quick_look/ ../../../external_libs/ ../../../build_macos/external_libs/SpecUtils/";
 				WRAPPER_EXTENSION = qlgenerator;
 			};
 			name = Release;

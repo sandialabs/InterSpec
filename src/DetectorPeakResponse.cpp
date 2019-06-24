@@ -25,6 +25,7 @@
 
 #include <mutex>
 #include <cmath>
+#include <ctime>
 #include <memory>
 #include <cctype>
 #include <string>
@@ -41,22 +42,10 @@
 
 #include "rapidxml/rapidxml.hpp"
 
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinos.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
-
 #include "mpParser.h"
 
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/SpectrumDataStructs.h"
@@ -116,6 +105,59 @@ namespace
     }
     return A_i;
   }//float calcA(...)
+  
+  
+  template<class T> struct index_compare_descend
+  {
+    index_compare_descend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
+    bool operator()(const size_t a, const size_t b) const
+    {
+      return arr[a] > arr[b];
+    }
+    const T arr;
+  };//struct index_compare_descend
+  
+  
+  //removeOutlyingWidthPeaks(...): removes peaks whos width does not agree
+  //  well with the functional form passed in.  Returns survining peaks.
+  DetectorPeakResponse::PeakInput_t removeOutlyingWidthPeaks( DetectorPeakResponse::PeakInput_t peaks,
+                                                              DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                                                              const vector<float> &coefficients )
+  {
+    const double npeaks = static_cast<double>( peaks->size() );
+    if( npeaks < 5 )
+      return peaks;
+    const size_t ndel_max = static_cast<size_t>( floor(0.2*npeaks) );
+    
+    vector<double> weights;
+    double mean_weight = 0.0;
+    for( const PeakModel::PeakShrdPtr peak : *peaks )
+    {
+      const double predicted_sigma = DetectorPeakResponse::peakResolutionSigma( peak->mean(), fnctnlForm, coefficients );
+      const double chi2 = MakeDrfFit::peak_width_chi2( predicted_sigma, *peak );
+      mean_weight += chi2/npeaks;
+      weights.push_back( chi2 );
+    }//for( const EnergySigma &es : m_energies_and_sigmas )
+    
+    vector<size_t> indices( npeaks );
+    for( size_t i = 0; i < npeaks; ++i )
+      indices[i] = i;
+    std::sort( indices.begin(), indices.end(), index_compare_descend<vector<double>&>(weights) );
+    
+    size_t lastInd = 0;
+    while( lastInd <= ndel_max && weights[indices[lastInd]] > 2.5*mean_weight )
+      ++lastInd;
+    indices.erase( indices.begin() + lastInd, indices.end() );
+    
+    std::shared_ptr< deque< std::shared_ptr<const PeakDef> > > reduced_peaks( new deque< PeakModel::PeakShrdPtr >() );
+    for( size_t i = 0; i < npeaks; ++i )
+      if( find( indices.begin(), indices.end(), i) == indices.end() )
+        reduced_peaks->push_back( peaks->operator[](i) );
+    
+    return reduced_peaks;
+  }//removeOutlyingWidthPeaks(...)
+
+  
 }//namespace
 
 
@@ -273,10 +315,15 @@ DetectorPeakResponse::DetectorPeakResponse()
     m_detectorDiameter( 0.0f ),
     m_efficiencyEnergyUnits( static_cast<float>(PhysicalUnits::keV) ),
     m_resolutionForm( DetectorPeakResponse::kNumResolutionFnctForm ),
-    m_efficiencySource( DetectorPeakResponse::kUnknownEfficiencySource ),
+    m_efficiencySource( DrfSource::UnknownDrfSource ),
     m_efficiencyForm( DetectorPeakResponse::kNumEfficiencyFnctForms ),
     m_hash( 0 ),
-    m_parentHash( 0 )
+    m_parentHash( 0 ),
+    m_flags( 0 ),
+    m_lowerEnergy( 0.0 ),
+    m_upperEnergy( 0.0 ),
+    m_createdUtc( 0 ),
+    m_lastUsedUtc( 0 )
 {
 } //DetectorPeakResponse()
 
@@ -288,17 +335,22 @@ DetectorPeakResponse::DetectorPeakResponse( const std::string &name,
     m_detectorDiameter( 0.0 ),
     m_efficiencyEnergyUnits( static_cast<float>(PhysicalUnits::keV) ),
     m_resolutionForm( DetectorPeakResponse::kNumResolutionFnctForm ),
-    m_efficiencySource( DetectorPeakResponse::kUnknownEfficiencySource ),
+    m_efficiencySource( DrfSource::UnknownDrfSource ),
     m_efficiencyForm( DetectorPeakResponse::kNumEfficiencyFnctForms ),
     m_hash( 0 ),
-    m_parentHash( 0 )
+    m_parentHash( 0 ),
+    m_flags( 0x0 ),
+    m_lowerEnergy( 0.0 ),
+    m_upperEnergy( 0.0 ),
+    m_createdUtc( 0 ),
+    m_lastUsedUtc( 0 )
 {
-} //DetectorPeakResponse( const std::string &name, const std::string &descrip )
+}//DetectorPeakResponse( const std::string &name, const std::string &descrip )
 
 
 DetectorPeakResponse::~DetectorPeakResponse()
 {
-} //~DetectorPeakResponse()
+}//~DetectorPeakResponse()
 
 
 uint64_t DetectorPeakResponse::hashValue() const
@@ -344,6 +396,16 @@ void DetectorPeakResponse::computeHash()
 
   for( const float val : m_expOfLogPowerSeriesCoeffs )
     boost::hash_combine( seed, val );
+  
+  //For legacy DRFs (pre 1.0.4 / 20190527) that dont have DRF source info,
+  //  lower/upper energies, and m_flags, dont change the hash.
+  if( m_lowerEnergy != 0.0 || m_upperEnergy != 0.0 )
+  {
+    boost::hash_combine( seed, m_lowerEnergy );
+    boost::hash_combine( seed, m_upperEnergy );
+  }
+  
+  //Dont hash based on m_createdUtc or m_lastUsed
   
   m_hash = seed;
 }//void computeHash()
@@ -396,10 +458,14 @@ void DetectorPeakResponse::reset()
   m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   m_resolutionForm = kNumResolutionFnctForm;
   m_efficiencyForm = kNumEfficiencyFnctForms;
-  m_efficiencySource = kUnknownEfficiencySource;
   m_resolutionCoeffs.clear();
   m_energyEfficiencies.clear();
   m_hash = m_parentHash = 0;
+  m_flags = 0;
+  m_lowerEnergy = m_upperEnergy = 0.0;
+  m_efficiencySource = DrfSource::UnknownDrfSource;
+  m_createdUtc = m_lastUsedUtc = 0;
+  
   
 /*
   m_name = "Flat";
@@ -429,48 +495,65 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && m_resolutionCoeffs==rhs.m_resolutionCoeffs
           && m_energyEfficiencies==rhs.m_energyEfficiencies
           && m_hash==rhs.m_hash
-          && m_parentHash==rhs.m_parentHash );
+          && m_parentHash==rhs.m_parentHash
+          && m_lowerEnergy==rhs.m_lowerEnergy
+          && m_upperEnergy==rhs.m_upperEnergy
+          //m_createdUtc
+          //m_lastUsedUtc
+          );
 }//operator==
 
 
-DetectorPeakResponse::EfficiencyDefinitionSource
-                                DetectorPeakResponse::efficiencySource() const
+DetectorPeakResponse::DrfSource DetectorPeakResponse::drfSource() const
 {
   return m_efficiencySource;
-}//EfficiencyDefinitionSource efficiencySource() const
+}
 
 float DetectorPeakResponse::efficiencyEnergyUnits() const
 {
   return m_efficiencyEnergyUnits;
 }
 
-void DetectorPeakResponse::setEfficiencySource(
-                    const DetectorPeakResponse::EfficiencyDefinitionSource src )
+void DetectorPeakResponse::setDrfSource( const DetectorPeakResponse::DrfSource source )
 {
-  m_efficiencySource = src;
+  if( m_efficiencySource == source )
+    return;
+  
+  m_efficiencySource = source;
   computeHash();
-}//void setEfficiencySource( const EfficiencyDefinitionSource src )
+}//void setDrfSource( const DrfSource source );
+
+
+void DetectorPeakResponse::setEnergyRange( const double lower, const double upper )
+{
+  m_lowerEnergy = lower;
+  m_upperEnergy = upper;
+  computeHash();
+}//void setEnergyRange( const double lower, const double upper )
+
+
+void DetectorPeakResponse::updateLastUsedTimeToNow()
+{
+  m_lastUsedUtc = std::time(nullptr);
+}//void updateLastUsedTimeToNow()
 
 
 void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
                                     const float detectorDiameter,
                                     const float energyUnits )
 {
-  m_energyEfficiencies.clear();
-  m_detectorDiameter = detectorDiameter;
-  m_efficiencySource = kUserUploadedEfficiencyCsv;
-  m_efficiencyEnergyUnits = energyUnits;
-
-  if( m_detectorDiameter <= 0.0 || IsInf(m_detectorDiameter) || IsNan(m_detectorDiameter) )
+  if( detectorDiameter <= 0.0 || IsInf(detectorDiameter) || IsNan(detectorDiameter) )
     throw runtime_error( "Detector diameter must be greater than 0.0" );
   
-  if( m_efficiencyEnergyUnits <= 0.0 || IsInf(m_efficiencyEnergyUnits) || IsNan(m_efficiencyEnergyUnits) )
+  if( energyUnits <= 0.0 || IsInf(energyUnits) || IsNan(energyUnits) )
     throw runtime_error( "Energy units must be greater than 0.0" );
 
   
   bool gotline = false;
   int linen = 0;
   string line;
+  std::vector<EnergyEfficiencyPair> energyEfficiencies;
+  
   while( UtilityFunctions::safe_get_line( input, line ) )
   {
     ++linen;
@@ -508,26 +591,25 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     point.efficiency = fields[1] / 100.0; //files have it listed as a percentage
     
     gotline = true;
-    m_energyEfficiencies.push_back( point );
+    energyEfficiencies.push_back( point );
     
-    if( linen > 5000 || m_energyEfficiencies.size() > 3000 )
+    if( linen > 5000 || energyEfficiencies.size() > 3000 )
       throw runtime_error( "Efficiency CSV files can have a max of 5000 total lines or 3000 energy efficiency pairs" );
     
   }//while( UtilityFunctions::safe_get_line(input) )
+
   
-  
-  
-  if( m_energyEfficiencies.size() < 2 )
+  if( energyEfficiencies.size() < 2 )
     throw runtime_error( "File was not a valid efficiency file, need at least"
                         " two efficiency points." );
   
   //Lets check if the numbers were strickly increasing or strickly decreasing
-  const bool increasing = (m_energyEfficiencies[1].energy > m_energyEfficiencies[0].energy);
-  for( size_t i = 2; i < m_energyEfficiencies.size(); ++i )
+  const bool increasing = (energyEfficiencies[1].energy > energyEfficiencies[0].energy);
+  for( size_t i = 2; i < energyEfficiencies.size(); ++i )
   {
     //We'll let two be energied be the exact same in a row
-    const float laste = m_energyEfficiencies[i-1].energy;
-    const float thise = m_energyEfficiencies[i].energy;
+    const float laste = energyEfficiencies[i-1].energy;
+    const float thise = energyEfficiencies[i].energy;
     
     if( IsNan(laste) || IsNan(thise)
         || IsInf(laste) || IsInf(thise) )
@@ -536,10 +618,10 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     if( laste<0.0f || thise<0.0f )
       throw runtime_error( "Energy can not be less than zero in CSV efficiecny file" );
     
-    if( m_energyEfficiencies[i-1].efficiency < 0.0f
-       || m_energyEfficiencies[i].efficiency < 0.0f
-       || m_energyEfficiencies[i-1].efficiency > 1.0f
-       || m_energyEfficiencies[i].efficiency > 1.0f )
+    if( energyEfficiencies[i-1].efficiency < 0.0f
+       || energyEfficiencies[i].efficiency < 0.0f
+       || energyEfficiencies[i-1].efficiency > 1.0f
+       || energyEfficiencies[i].efficiency > 1.0f )
       throw runtime_error( "Intrinsic efficiency can not be less than zero or"
                            " greater than 100 in CSV efficiency file" );
     
@@ -550,13 +632,25 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     if( increasing != bigger )
       throw runtime_error( "Energies in efficiency CSV must be strickly "
                            "increasing or strickly decreasing" );
-  }//for( size_t i = 2; i < m_energyEfficiencies.size(); ++i )
+  }//for( size_t i = 2; i < energyEfficiencies.size(); ++i )
   
 
   if( !increasing )
-    std::reverse( m_energyEfficiencies.begin(), m_energyEfficiencies.end() );
+    std::reverse( energyEfficiencies.begin(), energyEfficiencies.end() );
   
+  m_detectorDiameter = detectorDiameter;
+  m_energyEfficiencies = energyEfficiencies;
+  m_efficiencyEnergyUnits = energyUnits;
+  
+  m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
   m_efficiencyForm = kEnergyEfficiencyPairs;
+  
+  m_flags = 0;
+  
+  m_lowerEnergy = m_energyEfficiencies.front().energy;
+  m_upperEnergy = m_energyEfficiencies.back().energy;
+  
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   
   computeHash();
 }//void fromEnergyEfficiencyCsv(...)
@@ -565,17 +659,27 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
 
 void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
                                                           const float diameter,
-                                                          const float energyUnits )
+                                                          const float energyUnits,
+                                                          const float lowerEnergy,
+                                                          const float upperEnergy )
 {
   std::shared_ptr<FormulaWrapper > expression
                                 = std::make_shared<FormulaWrapper>( fcnstr );
   
   m_efficiencyForm = kFunctialEfficienyForm;
   m_efficiencyFormula = fcnstr;
-  m_efficiencySource = kUserEfficiencyEquationSpecified;
   m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression, _1  );
   m_detectorDiameter = diameter;
   m_efficiencyEnergyUnits = energyUnits;
+  
+  m_flags = 0;
+  
+  m_lowerEnergy = lowerEnergy;
+  m_upperEnergy = upperEnergy;
+  
+  m_efficiencySource = DrfSource::UserSpecifiedFormulaDrf;
+  
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   
   computeHash();
 }//void setIntrinsicEfficiencyFormula( const std::string &fcn )
@@ -586,6 +690,7 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
                                                  std::istream &detDatFile )
 {
   float detWidth = 0.0, heightToWidth = 0.0;
+  float lowerEnergy = 0.0, upperEnergy = 0.0;
 
   m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   m_resolutionCoeffs.clear();
@@ -610,11 +715,13 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
 //      const string descrip = parts.at(3);
       switch( parnum )
       {
-        case 6: m_resolutionCoeffs[0] = value; break;
-        case 7: m_resolutionCoeffs[1] = value; break;
-        case 8: m_resolutionCoeffs[2] = value; break;
-        case 11: detWidth = value;      break;
-        case 12: heightToWidth = value; break;
+        case 6:  m_resolutionCoeffs[0] = value; break;
+        case 7:  m_resolutionCoeffs[1] = value; break;
+        case 8:  m_resolutionCoeffs[2] = value; break;
+        case 11: detWidth = value;              break;
+        case 12: heightToWidth = value;         break;
+        case 62: lowerEnergy = value;           break;  //template error / min energy, keV
+        case 63: upperEnergy = value;           break;  //chi-square / max energy, keV
       }//switch( parnum )
     }catch(...)
     {
@@ -632,7 +739,14 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   
   fromEnergyEfficiencyCsv( csvFile, diam, static_cast<float>(PhysicalUnits::keV) );
   
-  m_efficiencySource = kGadrasEfficiencyDefintion;
+  m_flags = 0;
+  
+  m_lowerEnergy = lowerEnergy;
+  m_upperEnergy = upperEnergy;
+
+  m_efficiencySource = DrfSource::UserAddedGadrasDrf;
+  
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   
   computeHash();
 }//void fromGadrasDefinition(...)
@@ -679,10 +793,12 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
                                    const std::vector<float> &coefs,
                                    const float charactDist,
                                    const float det_diam,
-                                   const float energyUnits )
+                                   const float equationEnergyUnits,
+                                   const float lowerEnergy,
+                                   const float upperEnergy )
 {
   if( coefs.empty() )
-    throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invlaid input" );
+    throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invalid input" );
   
   m_energyEfficiencies.clear();
   m_expOfLogPowerSeriesCoeffs.clear();
@@ -690,9 +806,8 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_efficiencyFormula.clear();
   
   m_efficiencyForm = kExpOfLogPowerSeries;
-  m_efficiencyEnergyUnits = energyUnits;
+  m_efficiencyEnergyUnits = equationEnergyUnits;
   m_detectorDiameter = det_diam;
-  m_efficiencySource = kRelativeEfficiencyDefintion;
   m_expOfLogPowerSeriesCoeffs = coefs;
   
   //now we need to account for characterizationDist
@@ -703,11 +818,48 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
     m_expOfLogPowerSeriesCoeffs[0] += log( 1.0f/gfactor );
   }//if( characterizationDist > 0.0f )
   
+  m_flags = 0;
+  
+  m_lowerEnergy = lowerEnergy;
+  m_upperEnergy = upperEnergy;
+  
+  m_efficiencySource = DrfSource::UserAddedRelativeEfficiencyDrf;
+  
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+
   computeHash();
 }//void fromExpOfLogPowerSeriesAbsEff
 
 
-void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent, 
+void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
+                         const ResolutionFnctForm form )
+{
+  switch( form )
+  {
+    case ResolutionFnctForm::kSqrtPolynomial:
+      if( coefs.empty() )
+        throw runtime_error( "setFwhmCoefficients: Sqrt polynomial equation must have at least one coefficient." );
+      break;
+      
+    case ResolutionFnctForm::kGadrasResolutionFcn:
+      if( coefs.size() != 3 )
+        throw runtime_error( "setFwhmCoefficients: GADRAS equation must have three coefficients." );
+      break;
+      
+    case ResolutionFnctForm::kNumResolutionFnctForm:
+      if( !coefs.empty() )
+        throw runtime_error( "setFwhmCoefficients: NumResolutionFnctForm must not have any coefficients." );
+      break;
+  }//switch( form )
+  
+  m_resolutionForm = form;
+  m_resolutionCoeffs = coefs;
+  
+  computeHash();
+}//void setFwhmCoefficients(...)
+
+
+void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
                                   ::rapidxml::xml_document<char> *doc ) const
 {
   using namespace rapidxml;
@@ -735,13 +887,18 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   node = doc->allocate_node( node_element, "DetectorDiameter", val );
   base_node->append_node( node );
   
+  val = "UnknownDrfSource";
   switch( m_efficiencySource )
   {
-    case kGadrasEfficiencyDefintion:       val = "GadrasEfficiencyDefintion";       break;
-    case kRelativeEfficiencyDefintion:     val = "RelativeEfficiencyDefintion";     break;
-    case kUserUploadedEfficiencyCsv:       val = "UserUploadedEfficiencyCsv";       break;
-    case kUserEfficiencyEquationSpecified: val = "UserEfficiencyEquationSpecified"; break;
-    case kUnknownEfficiencySource:         val = "UnknownEfficiencySource";         break;
+    case UnknownDrfSource:                                                             break;
+    case DefaultGadrasDrf:                  val = "DefaultGadrasDrf";                  break;
+    case UserAddedGadrasDrf:                val = "UserAddedGadrasDrf";                break;
+    case UserAddedRelativeEfficiencyDrf:    val = "UserAddedRelativeEfficiencyDrf";    break;
+    case UserImportedIntrisicEfficiencyDrf: val = "UserImportedIntrisicEfficiencyDrf"; break;
+    case UserImportedGadrasDrf:             val = "UserImportedGadrasDrf";             break;
+    case UserSpecifiedFormulaDrf:           val = "UserSpecifiedFormulaDrf";           break;
+    case UserCreatedDrf:                    val = "UserCreatedDrf";                    break;
+    case FromSpectrumFileDrf:               val = "FromSpectrumFileDrf";               break;
   }//switch( m_efficiencySource )
   
   node = doc->allocate_node( node_element, "EfficiencySource", val );
@@ -813,9 +970,10 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     base_node->append_node( node );
   }//if( m_expOfLogPowerSeriesCoeffs.size() )
   
-  stringstream hashstrm, parenthashstrm;
+  stringstream hashstrm, parenthashstrm, flagsstrm;
   hashstrm << m_hash;
   parenthashstrm << m_parentHash;
+  flagsstrm << m_flags;
   
   val = doc->allocate_string( hashstrm.str().c_str() );
   node = doc->allocate_node( node_element, "Hash", val );
@@ -824,6 +982,41 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   val = doc->allocate_string( parenthashstrm.str().c_str() );
   node = doc->allocate_node( node_element, "ParentHash", val );
   base_node->append_node( node );
+  
+  val = doc->allocate_string( flagsstrm.str().c_str() );
+  node = doc->allocate_node( node_element, "Flags", val );
+  base_node->append_node( node );
+  
+  if( m_lowerEnergy != 0.0 || m_upperEnergy != 0.0 )
+  {
+    snprintf( buffer, sizeof(buffer), "%1.8E", m_lowerEnergy );
+    val = doc->allocate_string( buffer );
+    node = doc->allocate_node( node_element, "LowerEnergy", val );
+    base_node->append_node( node );
+    
+    snprintf( buffer, sizeof(buffer), "%1.8E", m_upperEnergy );
+    val = doc->allocate_string( buffer );
+    node = doc->allocate_node( node_element, "UpperEnergy", val );
+    base_node->append_node( node );
+  }
+  
+  if( m_createdUtc )
+  {
+    stringstream strm;
+    strm << m_createdUtc;
+    val = doc->allocate_string( strm.str().c_str() );
+    node = doc->allocate_node( node_element, "CreationTimeUtc", val );
+    base_node->append_node( node );
+  }
+  
+  if( m_lastUsedUtc )
+  {
+    stringstream strm;
+    strm << m_lastUsedUtc;
+    val = doc->allocate_string( strm.str().c_str() );
+    node = doc->allocate_node( node_element, "LastUsedTimeUtc", val );
+    base_node->append_node( node );
+  }
 }//toXml(...)
 
 
@@ -867,21 +1060,34 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   node = parent->first_node( "EfficiencySource", 16 );
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing EfficiencySource node" );
-
-  if( compare(node->value(),node->value_size(),"GadrasEfficiencyDefintion",25,false) )
-    m_efficiencySource = kGadrasEfficiencyDefintion;
+  
+  if( compare(node->value(),node->value_size(),"GadrasEfficiencyDefintion",25,false)
+     || compare(node->value(),node->value_size(),"DefaultGadrasDrf",16,false) )
+    m_efficiencySource = DrfSource::DefaultGadrasDrf;
   else if( compare(node->value(),node->value_size(),   "SimpleMassEfficiencyDefintion",29,false)
-           || compare(node->value(),node->value_size(),"RelativeEfficiencyDefintion",27,false) )
-    m_efficiencySource = kRelativeEfficiencyDefintion;
-  else if( compare(node->value(),node->value_size(),"UserUploadedEfficiencyCsv",25,false) )
-    m_efficiencySource = kUserUploadedEfficiencyCsv;
-  else if( compare(node->value(),node->value_size(),"UserEfficiencyEquationSpecified",31,false) )
-    m_efficiencySource = kUserEfficiencyEquationSpecified;
-  else if( compare(node->value(),node->value_size(),"UnknownEfficiencySource",23,false) )
-    m_efficiencySource = kUnknownEfficiencySource;
+           || compare(node->value(),node->value_size(),"RelativeEfficiencyDefintion",27,false)
+           || compare(node->value(),node->value_size(),"UserAddedRelativeEfficiencyDrf",30,false) )
+    m_efficiencySource = DrfSource::UserAddedRelativeEfficiencyDrf;
+  else if( compare(node->value(),node->value_size(),"UserUploadedEfficiencyCsv",25,false)
+          || compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false) )
+    m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
+  else if( compare(node->value(),node->value_size(),"UserEfficiencyEquationSpecified",31,false)
+          || compare(node->value(),node->value_size(),"UserSpecifiedFormulaDrf",23,false) )
+    m_efficiencySource = DrfSource::UserSpecifiedFormulaDrf;
+  else if( compare(node->value(),node->value_size(),"UnknownEfficiencySource",23,false)
+          || compare(node->value(),node->value_size(),"UnknownDrfSource",16,false) )
+    m_efficiencySource = DrfSource::UnknownDrfSource;
+  else if( compare(node->value(),node->value_size(),"UserAddedGadrasDrf",18,false) )
+    m_efficiencySource = DrfSource::UserAddedGadrasDrf;
+  else if( compare(node->value(),node->value_size(),"UserImportedGadrasDrf",21,false) )
+    m_efficiencySource = DrfSource::UserImportedGadrasDrf;
+  else if( compare(node->value(),node->value_size(),"UserCreatedDrf",14,false) )
+    m_efficiencySource = UserCreatedDrf;
+  else if( compare(node->value(),node->value_size(),"FromSpectrumFileDrf",19,false) )
+    m_efficiencySource = FromSpectrumFileDrf;
   else 
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencySource value" );
-
+  
   
   node = parent->first_node( "EfficiencyEnergyUnits", 21 );
   if( !node || !node->value() )
@@ -981,6 +1187,52 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse missing ParentHash node" );
   if( !(stringstream(node->value()) >> m_parentHash) )
     throw runtime_error( "DetectorPeakResponse invalid ParentHash" );
+  
+  
+  
+  node = parent->first_node( "Flags", 5 );
+  if( node && node->value_size() )
+  {
+    if( !(stringstream(node->value()) >> m_flags) )
+      throw runtime_error( "DetectorPeakResponse invalid Flags" );
+  }else
+  {
+    m_flags = 0;
+  }
+  
+  
+  node = parent->first_node( "LowerEnergy", 11 );
+  if( node && node->value_size() )
+    m_lowerEnergy = atof( node->value() );
+  else
+    m_lowerEnergy = 0.0f;
+  
+  node = parent->first_node( "UpperEnergy", 11 );
+  if( node && node->value_size() )
+    m_upperEnergy = atof( node->value() );
+  else
+    m_upperEnergy = 0.0f;
+  
+  node = parent->first_node( "CreationTimeUtc", 15 );
+  if( node && node->value_size() )
+  {
+    if( !(stringstream(node->value()) >> m_createdUtc) )
+      throw runtime_error( "DetectorPeakResponse invalid CreationTimeUtc" );
+  }else
+  {
+    m_createdUtc = 0;
+  }
+  
+  
+  node = parent->first_node( "LastUsedTimeUtc", 15 );
+  if( node && node->value_size() )
+  {
+    if( !(stringstream(node->value()) >> m_lastUsedUtc) )
+      throw runtime_error( "DetectorPeakResponse invalid LastUsedTimeUtc" );
+  }else
+  {
+    m_lastUsedUtc = 0;
+  }
 }//void fromXml( ::rapidxml::xml_node<char> *parent )
 
 
@@ -1162,6 +1414,49 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
               (long long unsigned int)rhs.m_parentHash );
     throw runtime_error(buffer);
   }
+  
+  if( lhs.m_flags != rhs.m_flags )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: flags of LHS (%llud)"
+             " doesnt match RHS (%llud)",
+             (long long unsigned int)lhs.m_flags,
+             (long long unsigned int)rhs.m_flags );
+    throw runtime_error(buffer);
+  }
+  
+  if( fabs(lhs.m_lowerEnergy - rhs.m_lowerEnergy) > 0.01 )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: lower energy"
+             " of LHS (%1.8E) doesnt match RHS (%1.8E)",
+             lhs.m_lowerEnergy, rhs.m_lowerEnergy );
+    throw runtime_error(buffer);
+  }
+  
+  if( fabs(lhs.m_upperEnergy - rhs.m_upperEnergy) > 0.01 )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: upper energy"
+             " of LHS (%1.8E) doesnt match RHS (%1.8E)",
+             lhs.m_upperEnergy, rhs.m_upperEnergy );
+    throw runtime_error(buffer);
+  }
+  
+  if( lhs.m_createdUtc != rhs.m_createdUtc )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: CreationTimeUtc"
+             " of LHS (%lld) doesnt match RHS (%llud)",
+             static_cast<long long int>(lhs.m_createdUtc),
+             static_cast<long long int>(rhs.m_createdUtc) );
+    throw runtime_error(buffer);
+  }
+  
+  if( lhs.m_lastUsedUtc != rhs.m_lastUsedUtc )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: LastUsedTimeUtc"
+             " of LHS (%lld) doesnt match RHS (%llud)",
+             static_cast<long long int>(lhs.m_lastUsedUtc),
+             static_cast<long long int>(rhs.m_lastUsedUtc) );
+    throw runtime_error(buffer);
+  }
 }//void equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 
@@ -1339,22 +1634,6 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
    << "  - channel=" << channel
    << endl;
    */
-  /*
-   //From Greg T.:
-   IF (E.GE.661.OR.A(6).EQ.0) THEN
-   GetFWHM=6.61*A(7)*(E/661.)**A(8)
-   ELSE IF (A(6).LT.0) THEN
-   P=A(8)**(1./LOG(1.-A(6)))
-   GetFWHM=6.61*A(7)*(E/661.)**P
-   ELSE
-   IF (A(6).GT.6.61*A(7)) THEN
-   GetFWHM=A(6)
-   ELSE
-   A7=SQRT((6.61*A(7))**2-A(6)**2)/6.61
-   GetFWHM=SQRT(A(6)**2+(6.61*A7*(E/661.)**A(8))**2)
-   END IF
-   END IF
-   */
   
   
   switch( fcnFrm )
@@ -1388,17 +1667,17 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       
     case kSqrtPolynomial:
     {
-      //FWHM = sqrt(A1+A2*energy+A3*energy*energy + A4/energy)
-      if( pars.size() < 2 )
+      if( pars.size() < 1 )
         throw runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
                              " pars not defined" );
-      const float A1 = pars[0];
-      const float A2 = pars[1];
-//      const float A3 = pars.size()>2 ? pars[2] : 0.0f;
-//      const float A4 = pars.size()>3 ? pars[3] : 0.0f;
+
+      energy /= PhysicalUnits::MeV;
+      //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
       
-      return A1 + A2 *std::sqrt(energy);
-//      return std::sqrt( A1 + A2*energy + A3*energy*energy + A4/energy);
+      double val = 0.0;
+      for( size_t i = 0; i < pars.size(); ++i )
+        val += pars[i] * pow(energy, static_cast<float>(i) );
+      return sqrt( val );
     }//case kSqrtPolynomial:
       
     case kNumResolutionFnctForm:
@@ -1465,57 +1744,6 @@ void DetectorPeakResponse::setDescription( const std::string &descrip )
   computeHash();
 }
 
-namespace
-{
-  template<class T> struct index_compare_descend
-  {
-    index_compare_descend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
-    bool operator()(const size_t a, const size_t b) const
-    {
-      return arr[a] > arr[b];
-    }
-    const T arr;
-  };//struct index_compare_descend
-}//namespace
-
-
-DetectorPeakResponse::PeakInput_t DetectorPeakResponse::removeOutlyingWidthPeaks(
-                           DetectorPeakResponse::PeakInput_t peaks,
-                           DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
-                                        const vector<float> &coefficients )
-{
-  const double npeaks = static_cast<double>( peaks->size() );
-  if( npeaks < 5 )
-    return peaks;
-  const size_t ndel_max = static_cast<size_t>( floor(0.2*npeaks) );
-  
-  vector<double> weights;
-  double mean_weight = 0.0;
-  for( const PeakModel::PeakShrdPtr peak : *peaks )
-  {
-    const double predicted_sigma = DetectorPeakResponse::peakResolutionSigma( peak->mean(), fnctnlForm, coefficients );
-    const double chi2 = DetectorPeakResponse::peak_width_chi2( predicted_sigma, *peak );
-    mean_weight += chi2/npeaks;
-    weights.push_back( chi2 );
-  }//for( const EnergySigma &es : m_energies_and_sigmas )
-  
-  vector<size_t> indices( npeaks );
-  for( size_t i = 0; i < npeaks; ++i )
-    indices[i] = i;
-  std::sort( indices.begin(), indices.end(), index_compare_descend<vector<double>&>(weights) );
-  
-  size_t lastInd = 0;
-  while( lastInd <= ndel_max && weights[indices[lastInd]] > 2.5*mean_weight )
-    ++lastInd;
-  indices.erase( indices.begin() + lastInd, indices.end() );
-  
-  std::shared_ptr< deque< std::shared_ptr<const PeakDef> > > reduced_peaks( new deque< PeakModel::PeakShrdPtr >() );
-  for( size_t i = 0; i < npeaks; ++i )
-    if( find( indices.begin(), indices.end(), i) == indices.end() )
-      reduced_peaks->push_back( peaks->operator[](i) );
-  
-  return reduced_peaks;
-}//removeOutlyingWidthPeaks(...)
 
 
 void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peaks,
@@ -1525,321 +1753,22 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
   if( !peaks )
     throw runtime_error( "DetectorPeakResponse::fitResolution(...): invalid input" );
   
-  vector<float> coefficients = m_resolutionCoeffs;
-  performResolutionFit( peaks, meas, fnctnlForm, coefficients );
+  const size_t numchan = meas ? meas->num_gamma_channels() : 0;
+  int sqrtEqnOrder = peaks->size() / 2;
+  if( sqrtEqnOrder > 6 )
+    sqrtEqnOrder = 6;
+  else if( peaks->size() < 3 )
+    sqrtEqnOrder = static_cast<int>( peaks->size() );
+  
+  vector<float> coefficients = m_resolutionCoeffs, uncerts;
+  MakeDrfFit::performResolutionFit( peaks, numchan, fnctnlForm, sqrtEqnOrder, coefficients, uncerts );
   peaks = removeOutlyingWidthPeaks( peaks, fnctnlForm, coefficients );
-  performResolutionFit( peaks, meas, fnctnlForm, coefficients );
+  MakeDrfFit::performResolutionFit( peaks, numchan, fnctnlForm, sqrtEqnOrder, coefficients, uncerts );
   
   m_resolutionCoeffs = coefficients;
   m_resolutionForm = fnctnlForm;
   
   computeHash();
 }//void fitResolution(...)
-
-
-double DetectorPeakResponse::peak_width_chi2( double predicted_sigma,
-                                              const PeakDef &peak )
-{
-  double measured_sigma = peak.sigma();
-  double measured_sigma_uncert = peak.sigmaUncert();
-  if( measured_sigma_uncert <= 0.01 )
-    measured_sigma_uncert = 1.0;
-  
-  const double chi = (measured_sigma - predicted_sigma)/measured_sigma_uncert;
-  return chi*chi;
-}//peak_width_chi2(...)
-
-
-
-namespace
-{
-class DetectorResolutionFitness
-: public ROOT::Minuit2::FCNBase
-{
-protected:
-  std::deque<PeakModel::PeakShrdPtr> m_peaks;
-  DetectorPeakResponse::ResolutionFnctForm m_form;
-  
-public:
-  DetectorResolutionFitness( const std::deque<PeakModel::PeakShrdPtr> &peaks,
-                             DetectorPeakResponse::ResolutionFnctForm form )
-  : m_peaks( peaks ),
-    m_form( form )
-  {
-  }
-  
-  virtual ~DetectorResolutionFitness(){}
-  
-  
-  virtual double DoEval( const std::vector<double> &x ) const
-  {
-    for( size_t i = 0; i < x.size(); ++i )
-      if( IsInf(x[i]) || IsNan(x[i]) )
-        return 999999.9;
-   
-    vector<float> fx( x.size() );
-    for( size_t i = 0; i < x.size(); ++i )
-      fx[i] = static_cast<float>( x[i] );
-    
-    double chi2 = 0.0;
-    for( const PeakModel::PeakShrdPtr &peak : m_peaks )
-    {
-      if( !peak )  //probably isnt needed
-        continue;      
-      const float predicted = DetectorPeakResponse::peakResolutionSigma(
-                                                    peak->mean(), m_form, fx );
-      if( predicted <= 0.0 || IsNan(predicted) || IsInf(predicted) )
-        return 999999.9;
-      
-      chi2 += DetectorPeakResponse::peak_width_chi2( predicted, *peak );
-    }//for( const EnergySigma &es : m_energies_and_sigmas )
-    
-    return chi2 / x.size();
-  }//DoEval();
-  
-  virtual double operator()( const std::vector<double> &x ) const
-  {
-    return DoEval( x );
-  }
-  
-  DetectorResolutionFitness&	operator=( const DetectorResolutionFitness &rhs )
-  {
-    if( &rhs != this )
-    {
-      m_peaks = rhs.m_peaks;
-      m_form = rhs.m_form;
-    }
-    return *this;
-  }
-  
-  virtual double Up() const{ return 1.0; }
-};//class DetectorResolutionFitness
-}//namespace
-
-void DetectorPeakResponse::performResolutionFit(
-                      DetectorPeakResponse::PeakInput_t peaks,
-                      const std::shared_ptr<const Measurement> meas,
-                      const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
-                      std::vector<float> &answer )
-{
-  if( !peaks || peaks->empty() )
-    throw runtime_error( "DetectorPeakResponse::performResolutionFit(...):"
-                        " no input peaks" );
-  
-  answer.clear();
-
-  
-  bool highres;
-  if( !!meas )
-  {
-    highres = (meas->num_gamma_channels() > 3000);
-  }else
-  {
-    const size_t index = peaks->size() / 2;
-    const double ratio = (*peaks)[index]->fwhm() / (*peaks)[index]->mean();
-    highres = (ratio < 0.03); //whatever, this is JIC anyway
-  }//if( !!meas ) / else
-  
-  /*
-High res.:
-   Detective-EX100:         {1.54000, 0.26412, 0.33000}
-   Detective-EX:            {1.34000, 0.27759, 0.31000}
-   Detctive:                {1.77168, 0.23563, 0.57223}
-   Falcon 5000:             {1.00000, 0.20028, 0.56000}
-   MicroDetective:          {1.30000, 0.23731, 0.54000}
-   Ortec IDM Portal         {1.11000, 0.23598, 0.39000}
-   Transpec                 {1.33000, 0.25862, 0.28000}
-Low res.:
-   FieldSec:                {-2.00000, 6.80000, 0.70000}
-   Gr130                    {-5.00000, 7.00000, 0.60000}
-   GR135:                   {-7.00000, 6.84000, 0.55000}
-   GR135 Plus:              {-7.00000, 6.84000, 0.55000}
-   Identifinder-LaBr3:      { 3.00000, 3.30000, 0.60000}
-   Identifinder-N:          {-7.00000, 7.50000, 0.55000}
-   Identifinder-NGH         {-6.00000, 7.80000, 0.55000}
-   Identifinder-NGH         {-5.00000, 7.30000, 0.59000}
-   InSpector 1000 (LaBr3):  { 0.00000, 3.60000, 0.51000}
-   InSpector 1000 (NaI)     {-3.00000, 7.60000, 0.58000}
-   Interceptor (CZT)        {-0.52000, 2.13000, 0.68000}
-   LaBr3 PNNL               { 2.00000, 2.60000, 0.52000}
-   NaI 3x3                  {-4.00000, 6.30000, 0.60000}
-   Pager-S                  { 0.00000, 8.50000, 0.50000}
-   Rad-Pack                 { 0.00000, 8.50000, 0.50000}
-   RadSeeker (LaBr3 or NaI) { 4.99023, 2.99883, 0.56174}
-   Raider                   { 2.40000, 2.50000, 0.20000}
-   Ranger                   {-6.00000, 7.80000, 0.50000}
-   Sam-935                  {-6.00000, 7.30000, 0.67000}
-   Sam-EagleLaBr3           { 7.00000, 2.60000, 0.52000}
-   Sam-Eagle Nai            {-3.00000, 7.00000, 0.65000}
-   Spir-ID                  { 7.34303, 3.05497, 0.65990}
-   Spir-ID NaI              { 7.44000, 7.61000, 0.63000}
-   */
-  
-  double a_initial, b_initial, c_initial, d_initial;
-  double lowerA, upperA, lowerB, upperB, lowerC, upperC;
-  
-  switch( fnctnlForm )
-  {
-    case kGadrasResolutionFcn:
-    {
-      if( highres )
-      {
-        lowerA = 0.75*1.0;     //Falcon 5000 is 1.0
-        upperA = 2.0*1.77;     //Detective-DX 1.77
-        lowerB = 0.75*0.20028; //Falcon 5000 is 0.20028
-        upperB = 2.0*0.27759;  //Detective-EX is 0.27759
-        lowerC = 0.75*0.31;    //Detective-EX
-        upperC = 1.5*0.57223;  //Detective-DX
-      }else
-      {
-        lowerA = 1.5*-7.0;     //GR135
-        upperA = 1.5*7.44000;  //Spir-ID NaI
-        lowerB = 0.75*2.13000; //Interceptor (CZT)
-        upperB = 1.5*8.50000;  //Rad-Pack
-        lowerC = 0.75*0.20000; //Raider
-        upperC = 1.25*0.70000; //FieldSec:
-      }
-      
-      if( answer.size() == 3 )
-      { //caller has provided some default values, lets use them
-        a_initial = static_cast<double>( answer[0] );
-        b_initial = static_cast<double>( answer[1] );
-        c_initial = static_cast<double>( answer[2] );
-      }else
-      {
-        if( highres )
-        {
-          a_initial = 0.5*(1.0 + 1.77);
-          b_initial = 0.5*(0.20028 + 0.27759);
-          c_initial = 0.5*(0.31 + 0.57223);
-        }else
-        {
-          a_initial = 0.0;//0.5*(-7.0 + 7.44000);
-          b_initial = 0.5*(2.13000 + 8.50000);
-          c_initial = 0.5*(0.20000 + 0.70000);
-        }
-      }//if( answer.size() == 3 ) / else
-      
-      break;
-    }//case kGadrasResolutionFcn:
-      
-    case kSqrtPolynomial:
-    {
-      if( highres )
-      {
-        a_initial = 2.0;  //-2.68,  3.96,   2.54,   2.45,    3.3,    2.2,   4.63, 3.8
-        b_initial = 0.05;  //0.0579, 0.0488, 0.0697, 0.0459, 0.0669, 0.0605, 0.1, 0.137
-        lowerA = -5.0;
-        upperA = 7.0;
-        lowerB = 0.02;
-        upperB = 0.2;
-      }else
-      {
-        //Based on very few detectors checked
-        a_initial = -7.0; //-7.76, -7.85, -7.77, 4.78
-        b_initial = 2.0;  //1.87, 1.46,  2.1, 2.62
-        lowerA = -10.0;
-        upperA = 5.0;
-        lowerB = 0.5;
-        upperB = 4.0;
-      }//if( highres ) / else
-
-      c_initial = 0.0;
-      d_initial = 0.0;
-      
-      break;
-    }//case kSqrtPolynomial:
-      
-    case kNumResolutionFnctForm:
-      //We should never make it here if the detector FWHM functional form has
-      //  not been explicitly set, so throw and error if we got here
-      throw runtime_error( "DetectorPeakResponse::performResolutionFit(...):"
-                          " invalid ResolutionFnctForm" );
-      break;
-  }//switch( fnctnlForm )
-  
-  
-  //For high res we should only have to to this one fit
-  //But for lowres detectors we should consider the cases of
-  //  A==0, A<0, and A>0 when fitting for kGadrasResolutionFcn
-  
-  DetectorResolutionFitness fitness( *peaks, fnctnlForm );
-  
-  ROOT::Minuit2::MnUserParameters inputPrams;
-  switch( fnctnlForm )
-  {
-    case kGadrasResolutionFcn:
-      if( peaks->size() == 1 )
-      {
-        inputPrams.Add( "A", a_initial );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        inputPrams.Add( "C", c_initial );
-      }else if( peaks->size() == 2 )
-      {
-        inputPrams.Add( "A", a_initial );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
-      }else
-      {
-        inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
-      }//if( all_peaks.size() == 1 )
-      break;
-      
-    case kSqrtPolynomial:
-    {
-      if( peaks->size() == 1 || peaks->size() == 2 )
-      {
-        inputPrams.Add( "A", a_initial );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB) /*, lowerB, upperB*/ );
-      }else
-      {
-        inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-      }
-      break;
-    }//case kSqrtPolynomial:
-      
-    case kNumResolutionFnctForm:
-      break;
-  }//switch
-  
-  
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-  ROOT::Minuit2::MnMinimize fitter( fitness, inputParamState, strategy );
-
-  double tolerance = 1.0;
-  unsigned int maxFcnCall = 50000;
-  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
-  const ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
-  
-  cerr << "FWHM final chi2=" << fitness.DoEval( fitParams.Params() ) << endl;
-  
-  if( !minimum.IsValid() )
-  {
-    stringstream msg;
-    msg  << BOOST_CURRENT_FUNCTION
-         << ": status is not valid"
-         << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
-         << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
-         << "\n\tHasReachedCallLimit: " << minimum.HasReachedCallLimit()
-         << "\n\tHasValidCovariance: " << minimum.HasValidCovariance()
-         << "\n\tHasValidParameters: " << minimum.HasValidParameters()
-         << "\n\tIsAboveMaxEdm: " << minimum.IsAboveMaxEdm()
-         << endl;
-    if( minimum.IsAboveMaxEdm() )
-      msg << "\t\tEDM=" << minimum.Edm() << endl;
-    cerr << endl << msg.str() << endl;
-    throw std::runtime_error( msg.str() );
-  }//if( !minimum.IsValid() )
-  
-  for( size_t i = 0; i < fitParams.Params().size(); ++i )
-    cout << "\tFit Par" << i << "=" << fitParams.Params()[i] << endl;
-  
-  for( const double p : fitParams.Params() )
-    answer.push_back( static_cast<float>(p) );
-}//std::vector<float> performResolutionFit(...)
 
 

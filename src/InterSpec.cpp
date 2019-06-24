@@ -108,6 +108,7 @@
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 
+#include "InterSpec/MakeDrf.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakEdit.h"
@@ -4855,7 +4856,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
            case k2012N42SpectrumFile:
             tooltip = "A 2012 N42 XML document will be produced which contains"
                       " all samples of the current spectrum file, as well as"
-                      " some additional <i>InterSpec</i> spefic information"
+                      " some additional <code>InterSpec</code> information"
                       " such as the identified peaks and detector response.";
             break;
             
@@ -6640,7 +6641,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
   
   item = popup->addMenuItem( "Gamma XS Calc", "" );
-  HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <i>InterSpec</i>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <code>InterSpec</code>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTipInstantly );
   item->triggered().connect( boost::bind( &InterSpec::showGammaXsTool, this ) );
     
     
@@ -6671,13 +6672,17 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, &InterSpec::createDecay );
 
   
-  item = popup->addMenuItem( "Detector Edit/Select" );
+  item = popup->addMenuItem( "Detector Response Select" );
   HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTipInstantly );
   item->triggered().connect( boost::bind( &InterSpec::showDetectorEditWindow, this ) );
+  
+  item = popup->addMenuItem( "Make Detector Response" );
+  HelpSystem::attachToolTipOn( item, "Create detector response function from characterization data.", showToolTipInstantly );
+  item->triggered().connect( boost::bind( &InterSpec::showMakeDrfWindow, this ) );
 
   
   item = popup->addMenuItem( "File Parameters" );
-  HelpSystem::attachToolTipOn( item,"Allows user to view/edit the file parameters. If ever the application is unable to render activity calculation, use this tool to provide parameters the original file did not provide; <i>InterSpec</i> needs all parameters for activity calculation.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to view/edit the file parameters. If ever the application is unable to render activity calculation, use this tool to provide parameters the original file did not provide; <code>InterSpec</code> needs all parameters for activity calculation.", showToolTipInstantly );
   item->triggered().connect( this, &InterSpec::createFileParameterWindow );
 
   item = popup->addMenuItem( "Energy Range Count" );
@@ -6784,6 +6789,12 @@ void InterSpec::showDoseTool()
 {
   new DoseCalcWindow( m_materialDB, m_shieldingSuggestion, this );
 }
+
+
+void InterSpec::showMakeDrfWindow()
+{
+  MakeDrf::makeDrfWindow( this, m_materialDB, m_shieldingSuggestion );
+}//void showDetectorEditWindow()
 
 
 void InterSpec::showDetectorEditWindow()
@@ -7577,34 +7588,43 @@ void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
 {
   if( !meas )
     return;
-
-  if( type == kUnknownDetector )
-    return;
-
+  
   std::shared_ptr<DetectorPeakResponse> det;
 
-  try
+  //First see if the user has opted for a detector for this serial number of
+  //  detector model
+  det = DetectorEdit::getUserPrefferedDetector( m_sql, m_user, meas );
+  
+  const bool usingUserDefaultDet = !!det;
+  
+  if( !det )
   {
-    switch( type )
-    {
-      case kIdentiFinderDetector:
-      case kIdentiFinderNGDetector:
-      case kIdentiFinderLaBr3Detector:
-        det = DetectorEdit::initARelEffDetector( type, this );
-      break;
-        
-      default:
-        break;
-    }
+    if( type == kUnknownDetector )
+      return;
     
-    if( !det )
-      det = DetectorEdit::initAGadrasDetector( type, this );
-  }catch( std::exception &e )
-  {
-    cerr << "InterSpec::loadDetectorToPrimarySpectrum caught: "
-         << e.what() << endl;
-    return;
-  }
+    try
+    {
+      switch( type )
+      {
+        case kIdentiFinderDetector:
+        case kIdentiFinderNGDetector:
+        case kIdentiFinderLaBr3Detector:
+          det = DetectorEdit::initARelEffDetector( type, this );
+        break;
+        
+        default:
+          break;
+      }
+    
+      if( !det )
+        det = DetectorEdit::initAGadrasDetector( type, this );
+    }catch( std::exception &e )
+    {
+      cerr << "InterSpec::loadDetectorToPrimarySpectrum caught: "
+           << e.what() << endl;
+      return;
+    }
+  }//if( !det )
 
   if( !det )
     return;
@@ -7631,6 +7651,30 @@ void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
   if( !modifiedcallback.empty() )
     WServer::instance()->post( sessionId, modifiedcallback );
 
+  if( usingUserDefaultDet )
+  {
+    WServer::instance()->post( sessionId, std::bind( [](){
+      //ToDo: could add button to remove association with DRF in database,
+      //      similar to the "Start Fresh Session" button.  Skeleton code to do this
+      /*
+       std::unique_ptr<Wt::JSignal<> > m_clearDrfAssociation;
+       m_clearDrfAssociation.reset( new JSignal<>(this, "removeDrfAssociation", false) );
+       m_clearDrfAssociation->connect( this, &InterSpec::blahBLahBlahs );
+       
+       WStringStream js;
+       js << "<div onclick=\"Wt.emit('" << id() << "',{name:'removeDrfAssociation'});"
+       "$('.qtip.jgrowl:visible:last').remove();return false;\" "
+       "class=\"clearsession\"><span class=\"clearsessiontxt\">Remove association of detector with DRF.</span></div>";
+       
+       passMessage( "Using the detector response function you specified to use as default for this detector."
+                    + js.str(), "", WarningWidget::WarningMsgInfo );
+       */
+      
+      passMessage( "Using the detector response function you specified to use as default for this detector.",
+                   "", WarningWidget::WarningMsgInfo );
+    }) );
+  }//if( usingUserDefaultDet )
+  
 }//void InterSpec::loadDetectorToPrimarySpectrum( WApplication *app )
 
 
@@ -7827,13 +7871,23 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         }
 
         if( meas->detector() != old_det )
+        {
+          auto drf = meas->detector();
           m_detectorChanged.emit( meas->detector() );
+          
+          if( drf )
+          {
+            auto drfcopy = std::make_shared<DetectorPeakResponse>( *drf );
+            boost::function<void(void)> worker = boost::bind( &DetectorEdit::updateLastUsedTimeOrAddToDb, drfcopy, m_user.id(), m_sql );
+            WServer::instance()->ioService().post( worker );
+          }
+        }//if( meas->detector() != old_det )
         
         DetectorType detType = meas->detector_type();
         if( detType == kUnknownDetector )
           detType = SpecMeas::guessDetectorTypeFromFileName( meas->filename() );
       
-        if( !meas->detector() && (detType != kUnknownDetector) )
+        if( !meas->detector() /* && (detType != kUnknownDetector) */ )
         {
           boost::function<void()> updateemit
                   = wApp->bind( boost::bind( &InterSpec::emitDetectorChanged,

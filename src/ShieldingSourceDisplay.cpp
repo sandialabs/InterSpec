@@ -381,6 +381,9 @@ void ShieldingSelect::setMassFraction( const SandiaDecay::Nuclide *nuc,
 void ShieldingSelect::setMaterialNameAndThickness( const string &name,
                                                    const string &thickness )
 {
+  if( m_isGenericMaterial )
+    handleToggleGeneric();
+  
   const Material *mat = material( name );
   
   if( !mat && name.size() )
@@ -394,6 +397,26 @@ void ShieldingSelect::setMaterialNameAndThickness( const string &name,
   
   handleMaterialChange();
 }//void setMaterialNameAndThickness(...)
+
+
+void ShieldingSelect::setAtomicNumberAndArealDensity( const double an, const double ad )
+{
+  if( an < 1.0 || an > 100.0 )
+    throw runtime_error( "setAtomicNumberAndArealDensity: Atomic number must be between 1 and 100." );
+  
+  const double ad_gcm2 = ad * PhysicalUnits::cm2/PhysicalUnits::g;
+  if( ad_gcm2 < 0.0 || ad_gcm2 > 1000.0 )
+    throw runtime_error( "setAtomicNumberAndArealDensity: Areal density must be between 0 and 1000 g/cm2." );
+  
+  if( !m_isGenericMaterial )
+    handleToggleGeneric();
+  
+  m_atomicNumberEdit->setText( std::to_string(an) );
+  m_arealDensityEdit->setText( std::to_string(ad_gcm2) );
+  
+  handleMaterialChange();
+}//void setAtomicNumberAndArealDensity( const double an, const double ad )
+
 
 
 WLineEdit *ShieldingSelect::materialEdit()

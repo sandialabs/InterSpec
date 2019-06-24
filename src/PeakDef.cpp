@@ -969,7 +969,6 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     throw runtime_error( buffer );
   }
   
-  
   if( lhs.m_transition != rhs.m_transition )
   {
     snprintf(buffer, sizeof(buffer),
@@ -1008,7 +1007,6 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     throw runtime_error( buffer );
   }
   
-  
   if( fabs(lhs.m_xrayEnergy - rhs.m_xrayEnergy) > 0.001 )
   {
     snprintf(buffer, sizeof(buffer),
@@ -1017,7 +1015,6 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     throw runtime_error( buffer );
   }
 
-  
   if( lhs.m_reaction != rhs.m_reaction )
   {
     snprintf(buffer, sizeof(buffer),
@@ -1027,7 +1024,6 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     throw runtime_error( buffer );
   }
 
-
   if( fabs(lhs.m_reactionEnergy - rhs.m_reactionEnergy) > 0.001 )
   {
     snprintf(buffer, sizeof(buffer),
@@ -1035,7 +1031,6 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
              lhs.m_reactionEnergy, rhs.m_reactionEnergy );
     throw runtime_error( buffer );
   }
-
   
   if( lhs.m_useForCalibration != rhs.m_useForCalibration )
   {
@@ -1050,6 +1045,14 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     snprintf(buffer, sizeof(buffer),
              "PeakDef use for shielding source fit of LHS (%i) vs RHS (%i) doent match.",
              int(lhs.m_useForShieldingSourceFit), int(rhs.m_useForShieldingSourceFit) );
+    throw runtime_error( buffer );
+  }
+  
+  if( lhs.m_useForDetectorResponseFit != rhs.m_useForDetectorResponseFit )
+  {
+    snprintf(buffer, sizeof(buffer),
+             "PeakDef use for DRF fit of LHS (%i) vs RHS (%i) doent match.",
+             int(lhs.m_useForDetectorResponseFit), int(rhs.m_useForDetectorResponseFit) );
     throw runtime_error( buffer );
   }
 }//void equalEnough( const PeakDef &lhs, const PeakDef &rhs )
@@ -1190,6 +1193,7 @@ void PeakDef::reset()
   m_sourceGammaType          = NormalGamma;
   m_useForCalibration        = true;
   m_useForShieldingSourceFit = false;
+  m_useForDetectorResponseFit = -1;
   
   m_xrayElement              = NULL;
   m_xrayEnergy               = 0.0;
@@ -1677,6 +1681,11 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   att = doc->allocate_attribute( "source", (m_useForShieldingSourceFit ? "true" : "false") );
   peak_node->append_attribute( att );
   
+  if( m_useForDetectorResponseFit==0 || m_useForDetectorResponseFit==1 )
+  {
+    att = doc->allocate_attribute( "useForDrfFit", (m_useForDetectorResponseFit ? "true" : "false") );
+    peak_node->append_attribute( att );
+  }
   
   if( !m_lineColor.isDefault() )
   {
@@ -1814,7 +1823,16 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
     throw runtime_error( "missing source attribute" );
   m_useForShieldingSourceFit = compare(att->value(),att->value_size(),"true",4,false);
   if( !m_useForShieldingSourceFit && !compare(att->value(),att->value_size(),"false",5,false) )
-    throw runtime_error( "invalis source value" );
+    throw runtime_error( "invalid source value" );
+  
+  att = peak_node->first_attribute( "useForDrfFit", 12 );
+  if( att )
+    m_useForDetectorResponseFit = compare(att->value(),att->value_size(),"true",4,false);
+  else
+    m_useForDetectorResponseFit = -1;
+  
+  if( att && !m_useForDetectorResponseFit && !compare(att->value(),att->value_size(),"false",5,false) )
+    throw runtime_error( "invalid use for DRF fit value" );
   
   att = peak_node->first_attribute( "version", 7 );
   if( !att )
@@ -2793,6 +2811,7 @@ const PeakDef &PeakDef::operator=( const PeakDef &rhs )
   m_radparticleIndex         = rhs.m_radparticleIndex;
   m_useForCalibration        = rhs.m_useForCalibration;
   m_useForShieldingSourceFit = rhs.m_useForShieldingSourceFit;
+  m_useForDetectorResponseFit = rhs.m_useForDetectorResponseFit;
 
   const size_t nbytes = sizeof(m_coefficients[0])*NumCoefficientTypes;
   memcpy( &(m_coefficients[0]), &(rhs.m_coefficients[0]), nbytes );
@@ -2817,6 +2836,7 @@ bool PeakDef::operator==( const PeakDef &rhs ) const
       && m_radparticleIndex==rhs.m_radparticleIndex
       && m_useForCalibration==rhs.m_useForCalibration
       && m_useForShieldingSourceFit==rhs.m_useForShieldingSourceFit
+      && m_useForDetectorResponseFit==rhs.m_useForDetectorResponseFit
       && m_lineColor==rhs.m_lineColor
       ;
 }//PeakDef::operator==
@@ -3055,6 +3075,7 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
   
   m_useForCalibration = parent.m_useForCalibration;
   m_useForShieldingSourceFit = parent.m_useForShieldingSourceFit;
+  m_useForDetectorResponseFit = parent.m_useForDetectorResponseFit;
   
   for( CoefficientType t = CoefficientType(0);
       t < NumCoefficientTypes; t = CoefficientType(t+1) )

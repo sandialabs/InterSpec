@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <regex>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,6 +33,7 @@
 #include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/assign/list_of.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include <Wt/WMenu>
 #include <Wt/WText>
@@ -40,17 +42,22 @@
 #include <Wt/WImage>
 #include <Wt/WTable>
 #include <Wt/WSignal>
+#include <Wt/WServer>
+#include <Wt/WDateTime>
 #include <Wt/WTextArea>
 #include <Wt/WTreeView>
 #include <Wt/WLineEdit>
 #include <Wt/WComboBox>
+#include <Wt/WIOService>
 #include <Wt/WTableCell>
 #include <Wt/WTabWidget>
 #include <Wt/WFileUpload>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
+#include <Wt/WApplication>
 #include <Wt/WRadioButton>
 #include <Wt/WButtonGroup>
+#include <Wt/WEnvironment>
 #include <Wt/WItemDelegate>
 #include <Wt/WStackedWidget>
 #include <Wt/Dbo/QueryModel>
@@ -88,6 +95,82 @@ namespace
     menu->select( item );
     item->triggered().emit( item ); //
   }
+  
+  class UtcToLocalTimeDelegate : public Wt::WItemDelegate
+  {
+    int64_t m_now;
+    int m_timeZoneOffset;
+  public:
+    UtcToLocalTimeDelegate( Wt::WObject *parent = 0 )
+    : WItemDelegate( parent )
+    {
+      m_now = std::time(nullptr);
+      if( wApp )
+        m_timeZoneOffset = wApp->environment().timeZoneOffset();
+      else
+        m_timeZoneOffset = 0;
+    }
+    virtual ~UtcToLocalTimeDelegate(){}
+    virtual Wt::WWidget *update( Wt::WWidget *widget,
+                                const Wt::WModelIndex &index,
+                                Wt::WFlags<Wt::ViewItemRenderFlag > flags )
+    {
+      if( flags & RenderEditing )
+        throw runtime_error( "UtcToLocalTimeDelegate not for editing" );
+      
+      if( !(flags & RenderEditing) )
+      {
+        WText *text = dynamic_cast<WText *>( widget );
+        
+        if( !text )
+          widget = text = new WText();
+        
+        int64_t val;
+        try
+        {
+          val = boost::any_cast<int64_t>( index.data() );
+          string valstr;
+          if( val > 0 )
+          {
+            auto ptt = boost::posix_time::from_time_t( time_t(val) );
+            ptt += boost::posix_time::seconds( 60*m_timeZoneOffset );
+            valstr = UtilityFunctions::to_common_string(ptt, true);
+          }
+          
+          text->setText( WString::fromUTF8( valstr ) );
+        }catch( std::exception &e )
+        {
+          cerr << "UtcToLocalTimeDelegate caught: " << e.what() << endl;
+          text->setText( "" );
+          return widget;
+        }//try / catch
+      }//if( !(flags & RenderEditing) )
+      
+      widget->setStyleClass( asString( index.data(StyleClassRole) ) );
+      if( flags & RenderSelected )
+        widget->addStyleClass(  "Wt-selected" );
+
+      return widget;
+    }
+  };//class UtcToLocalTimeDelegate
+
+  
+  //Allow the file to be comma or tab delimited, but if an individual field
+  //  contains a comma or tab, then the field must be quoted by a double
+  //  quote.  Note that if you just copy cells from Microsoft Excel, that
+  //  contain a comma, and then past into a text editor, fields with a comma
+  //  are not quoted.
+  void split_escaped_csv( vector<string> &fields, const string &line )
+  {
+    fields.clear();
+    
+    typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
+    boost::escaped_list_separator<char> separator("\\",",\t", "\"");
+    Tokeniser t( line, separator );
+    for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
+      fields.push_back(*it);
+  }//void split_escaped_csv(...)
+  
 }//namespace
 
 class RelEffFile;
@@ -405,16 +488,7 @@ std::shared_ptr<DetectorPeakResponse> RelEffFile::parseDetector( string &line )
   vector<string> fields;
   fields.reserve( 20 );
   
-  //Allow the file to be comma or tab delimited, but if an individual field
-  //  contains a comma or tab, then the field must be quoted by a double
-  //  quote.  Note that if you just copy cells from Microsoft Excel, that
-  //  contain a comma, and then past into a text editor, fields with a comma
-  //  are not quoted.
-  typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
-  boost::escaped_list_separator<char> separator("\\",",\t", "\"");
-  Tokeniser t( line, separator );
-  for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
-    fields.push_back(*it);
+  split_escaped_csv( fields, line );
   
   if( fields.size() < 16 )
     return det;
@@ -441,12 +515,10 @@ std::shared_ptr<DetectorPeakResponse> RelEffFile::parseDetector( string &line )
     const float diam = 2.0f*static_cast<float>( std::stod(fields[15])*PhysicalUnits::cm );
     const float eunits = float(PhysicalUnits::MeV);
     
-    det.reset( new DetectorPeakResponse() );
-    det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, diam, eunits );
-    det->setEfficiencySource( DetectorPeakResponse::kRelativeEfficiencyDefintion );
-    
-    det->setName( name );
-    det->setDescription( fields[2] + " - from Relative Eff. File" );
+    string description = fields[2] + " - from Relative Eff. File";
+    det.reset( new DetectorPeakResponse( name, description ) );
+    det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, diam, eunits, 0.0f, 0.0f );
+    det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
   }catch( std::exception &e )
   {
     det.reset();
@@ -478,8 +550,9 @@ void RelEffFile::initDetectors()
   
   if( file_opened )
   {
+    vector<vector<float>> detcoefs;
     string line;
-    while( UtilityFunctions::safe_get_line( input, line ) )
+    while( UtilityFunctions::safe_get_line( input, line, 2048 ) )
     {
       UtilityFunctions::trim( line );
       
@@ -492,7 +565,10 @@ void RelEffFile::initDetectors()
       std::shared_ptr<DetectorPeakResponse> det = parseDetector( line );
       
       if( det )
+      {
+        detcoefs.push_back( det->efficiencyExpOfLogsCoeffs() );
         m_responses.push_back( det );
+      }
     }//while( UtilityFunctions::safe_get_line( input, line ) )
     
     if( m_responses.empty() )
@@ -637,6 +713,8 @@ void RelEffDetSelect::userSelectedRelEffDetSelect()
 
 void RelEffDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
+  docreate();
+  
   if( !m_files )
     return;
   
@@ -846,7 +924,7 @@ void GadrasDetSelect::docreate()
 
 #if( IOS )
   const char *gadrasToolTip = "You can place detector response functions imported"
-  " from GADRAS-DRF into <b>InterSpec</b>s directory within the <b>Files</b> app.";
+  " from GADRAS-DRF into <code>InterSpec</code>s directory within the <b>Files</b> app.";
 #else
   const char *gadrasToolTip = "These are detector response functions imported"
   " from GADRAS-DRF.  Currently only the detector dimensions, "
@@ -863,6 +941,8 @@ void GadrasDetSelect::docreate()
 
 bool GadrasDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
+  docreate();  //We need to initialize the widget in order for m_directories to be true
+  
   if( !m_directories )
     return false;
   
@@ -918,7 +998,14 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
       {
         WAbstractItemModel *m = d->m_detectorSelect->model();
         const string p = boost::any_cast<std::string>( m->data( currentIndex, 0, Wt::UserRole ) );
-        return DetectorEdit::initAGadrasDetectorFromDirectory( p, m_interspec );
+        auto answer = DetectorEdit::initAGadrasDetectorFromDirectory( p, m_interspec );
+        
+        if( p.find("GenericGadrasDetectors") != string::npos )
+          answer->setDrfSource( DetectorPeakResponse::DrfSource::DefaultGadrasDrf );
+        else
+          answer->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedGadrasDrf );
+        
+        return answer;
       }catch( std::exception &e )
       {
         passMessage( "Failed to parse a GADRAS detector: " + string(e.what()), "", WarningWidget::WarningMsgHigh );
@@ -1343,7 +1430,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   HelpSystem::attachToolTipOn( this, "The currently selected detector.  Click to select a"
                               " different detector, or modify this one.", showToolTipInstantly );
   
-  addStyleClass( "DetectorDisplay" );
+  addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
   new WImage( "InterSpec_resources/images/detector_small_white.png", this );
   new WText( "Detector:&nbsp;", this );
@@ -1351,8 +1438,9 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   m_text = new WText( txt, XHTMLUnsafeText, this );
 
   std::shared_ptr<DetectorPeakResponse> detector;
-  if( m_interspec->measurment(kForeground) )
-    detector = m_interspec->measurment(kForeground)->detector();
+  auto meas = specViewer->measurment(SpectrumType::kForeground);
+  if( meas )
+    detector = meas->detector();
   m_currentDetector = detector;
 
   if( detector && detector->isValid() )
@@ -1415,9 +1503,11 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorDiameter( nullptr ),
     m_detectrDiameterDiv( nullptr ),
     m_efficiencyCsvUpload( nullptr ),
+    m_detectrDotDatDiv( nullptr ),
     m_detectorDotDatUpload( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
+    m_noDrfButton( nullptr ),
     m_detectorManualFunctionName( nullptr ),
     m_detectorManualFunctionText( nullptr ),
     m_detectorManualDescription( nullptr ),
@@ -1433,8 +1523,12 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_drfTypeStack( nullptr ),
     m_deleteButton( nullptr ),
     m_DBtable( nullptr ),
-    m_model( nullptr )
+    m_model( nullptr ),
+    m_defaultForSerialNumber( nullptr ),
+    m_defaultForDetectorModel( nullptr )
 {
+  wApp->useStyleSheet( "InterSpec_resources/DetectorEdit.css" );
+  
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   setOverflow(Wt::WContainerWidget::OverflowAuto);
@@ -1594,18 +1688,16 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   //-------------------------------------
 
   
-  WContainerWidget *uploadDetTab = new WContainerWidget(  );
-
-  WLabel *label = new WLabel( "Intrinsic Efficiency File:", uploadDetTab );
-  label->setInline( false );
+  WContainerWidget *uploadDetTab = new WContainerWidget();
   
   const char *descrstr =
-  "<div>The first column of the efficiency CSV file should be the energy in keV"
-  ", and the second column should be the percent efficient (decimal number 0"
-  " through 100) for gammas at that energy that strike the detector face, to be"
-  " recorded in the photopeak. Further columns will be ignored.</div>"
+  "<div style=\"white-space:nowrap;\">Intrinsic Efficiency CSV File:</div>"
+  "<div>The first column is energy in keV."
+  " Second column is the % efficient (0 through 100) for gammas at that"
+  " energy, incident on the detector, to be recorded in the photopeak.</div>"
   "<div>You will also need to upload a GADRAS Detector.dat file, or enter the"
-  " detectors diameter, after uploading the efficiency file.</div>";
+  " detectors diameter, after uploading the efficiency file.</div>"
+  "<div>You can also upload CSV exported from the <em>Make Detector Response</em> tool.</div>";
   
   WText *descrip = new WText( descrstr, uploadDetTab );
   descrip->setInline( false );
@@ -1615,14 +1707,14 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_efficiencyCsvUpload = new WFileUpload( uploadDetTab );
   m_efficiencyCsvUpload->setInline( false );
-  m_efficiencyCsvUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this ) );
+  m_efficiencyCsvUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::EfficiencyCsvUploaded ) );
   m_efficiencyCsvUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
   m_efficiencyCsvUpload->changed().connect( m_efficiencyCsvUpload, &WFileUpload::upload );
   m_efficiencyCsvUpload->setInline( false );
  
   m_detectrDiameterDiv = new WContainerWidget( uploadDetTab );
   m_detectrDiameterDiv->addStyleClass( "DetectorDiamDiv" );
-  label = new WLabel( "Enter detector diameter or upload Detector.dat file:", m_detectrDiameterDiv );
+  WLabel *label = new WLabel( "Enter detector diameter or upload Detector.dat file:", m_detectrDiameterDiv );
   label->setInline( false );
 
   new WLabel( "Detector Diameter:", m_detectrDiameterDiv );
@@ -1630,18 +1722,18 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_detectorDiameter->setValidator( distValidator );
   m_detectorDiameter->setTextSize( 10 );
-  m_detectorDiameter->changed().connect( this, &DetectorEdit::fileUploadedCallback );
-  m_detectorDiameter->enterPressed().connect( this, &DetectorEdit::fileUploadedCallback );
-  m_detectorDiameter->blurred().connect( this, &DetectorEdit::fileUploadedCallback );
+  m_detectorDiameter->changed().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
+  m_detectorDiameter->enterPressed().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
+  m_detectorDiameter->blurred().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
 
-  WContainerWidget *datDiv = new WContainerWidget( m_detectrDiameterDiv );
-  datDiv->addStyleClass( "DetectorDotDatDiv" );
+  m_detectrDotDatDiv = new WContainerWidget( m_detectrDiameterDiv );
+  m_detectrDotDatDiv->addStyleClass( "DetectorDotDatDiv" );
 
-  label = new WLabel( "GADRAS Detector.Dat File:", datDiv );
+  label = new WLabel( "GADRAS Detector.Dat File:", m_detectrDotDatDiv );
   label->setInline( false );
-  m_detectorDotDatUpload = new WFileUpload( datDiv );
+  m_detectorDotDatUpload = new WFileUpload( m_detectrDotDatDiv );
   m_detectorDotDatUpload->setInline( false );
-  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this ) );
+  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DetectorEdit::fileUploadedCallback, this, UploadCallbackReason::DetectorDotDatUploaded ) );
   m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, _1) );
   m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
   m_detectrDiameterDiv->hide();
@@ -1775,25 +1867,30 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   m_model = new Dbo::QueryModel< Dbo::ptr<DetectorPeakResponse> >( m_DBtable );
 
+  const auto userid = user.id();
   m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                           .where( "InterSpecUser_id = ? ").bind( user.id() )
-                           .orderBy("-1*id") );
+                           .where( "InterSpecUser_id = ? ").bind( userid )
+                           .orderBy( "-1*m_lastUsedUtc" )
+                    );
+  
+  /*  ToDo: - add column for when was last used, but give time in how long ago (remove diameter column)
+            - Add bullets or dropdown to allow filtering by "All", "Uploaded", "Entered Formula", "Made From Data"
+   */
   
   m_model->addColumn( "m_name" );
   m_model->addColumn( "m_description" );
-  m_model->addColumn( "m_detectorDiameter" );
+  m_model->addColumn( "m_lastUsedUtc" );
   
   
   m_model->setHeaderData(  0, Horizontal, WString("Name"), DisplayRole );
   m_DBtable->setColumnWidth( 0, 200 );
   m_model->setHeaderData(  1, Horizontal, WString("Description"), DisplayRole );
   m_DBtable->setColumnWidth( 1, 150 );
-  m_model->setHeaderData(  2, Horizontal, WString("Diameter"), DisplayRole );
+  m_model->setHeaderData(  2, Horizontal, WString("Last Used"), DisplayRole );
   m_DBtable->setColumnWidth( 2, 150 );
  
   
-  WItemDelegate *delegate = new WItemDelegate( m_DBtable );
-  delegate->setTextFormat( "%.2f" );
+  WItemDelegate *delegate = new UtcToLocalTimeDelegate( m_DBtable );
   m_DBtable->setItemDelegateForColumn( 2, delegate );
 
   m_DBtable->setModel( m_model );
@@ -1814,11 +1911,68 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_deleteButton->disable();
   m_deleteButton->clicked().connect( this, &DetectorEdit::deleteDBTableSelected );
 
-  recentDivLayout->addWidget(m_DBtable,0,0);
-  recentDivLayout->setRowStretch(0, 1);
-  recentDivLayout->addWidget(m_deleteButton,1,0,AlignLeft);
+  WComboBox *filter = new WComboBox();
+  filter->addItem( "All" );
+  filter->addItem( "Uploaded" );
+  filter->addItem( "Entered Formula" );
+  filter->addItem( "Made From Data" );
+  filter->addItem( "Included In N42 File" );
+  filter->setCurrentIndex( 0 );
+  
+  filter->changed().connect( std::bind( [filter,this,userid](){
+    m_DBtable->setSelectedIndexes( WModelIndexSet() );
+    m_deleteButton->disable();
+    
+    if( filter->currentIndex() == 0 ) //"All"
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? ").bind( userid ), true );
+    }else if( filter->currentIndex() == 1 ) //"Uploaded"
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? AND (m_efficiencySource = ? OR m_efficiencySource = ?)")
+                        .bind( userid )
+                        .bind( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf )
+                        .bind( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf ) , true );
+    }else if( filter->currentIndex() == 2 ) //"Entered Formula"
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? AND m_efficiencySource = ?")
+                        .bind( userid )
+                        .bind( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf ) , true );
+    }else if( filter->currentIndex() == 3 )
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? AND m_efficiencySource = ?")
+                        .bind( userid )
+                        .bind( DetectorPeakResponse::DrfSource::UserCreatedDrf ) , true );
+    }else if( filter->currentIndex() == 4 )
+    {
+      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                        .where( "InterSpecUser_id = ? AND m_efficiencySource = ?")
+                        .bind( userid )
+                        .bind( DetectorPeakResponse::DrfSource::FromSpectrumFileDrf ) , true );
+    }else
+    {
+      return; //shouldnt happen
+    }
+    
+    m_DBtable->sortByColumn( 2, Wt::SortOrder::DescendingOrder );
+  } ) );
+  
+  recentDivLayout->addWidget( m_DBtable, 0, 0, 1, 3 );
+  recentDivLayout->addWidget( m_deleteButton, 1, 0, AlignLeft);
+  
+  label = new WLabel( "Show:" );
+  label->setBuddy( filter );
+  recentDivLayout->addWidget( label, 1, 1, AlignRight | AlignMiddle );
+  
+  recentDivLayout->addWidget( filter, 1, 2 );
+  recentDivLayout->setRowStretch( 0, 1 );
   recentDiv->setOverflow(Wt::WContainerWidget::OverflowHidden);
   recentDiv->setMaximumSize( WLength::Auto, 180 );
+  
+  m_DBtable->sortByColumn( 2, Wt::SortOrder::DescendingOrder );
   
   //--------------------------------------------------------------------------------
   
@@ -1836,10 +1990,32 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   item = m_drfTypeMenu->addItem( "Formula", formulaDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
-  item = m_drfTypeMenu->addItem( "Recent", recentDiv );
+  item = m_drfTypeMenu->addItem( "Previous", recentDiv );
   item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
   
   m_drfTypeStack->setHeight( WLength(185.0) );
+  
+  
+  auto meas = specViewer->measurment( SpectrumType::kForeground );
+  
+  if( meas && !meas->instrument_id().empty() )
+  {
+    m_defaultForSerialNumber = new WCheckBox( "Use as default DRF for SN '" + meas->instrument_id() + "'" );
+    m_defaultForSerialNumber->setMargin( 21, Wt::Left );
+    mainLayout->addWidget( m_defaultForSerialNumber, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
+  }//if( have serial number )
+  
+  if( meas && (meas->detector_type()!=DetectorType::kUnknownDetector || !meas->instrument_model().empty()) )
+  {
+    string model;
+    if( meas->detector_type() == DetectorType::kUnknownDetector )
+      model = meas->instrument_model();
+    else
+      model = detectorTypeToString( meas->detector_type() );
+    m_defaultForDetectorModel = new WCheckBox( "Use as default DRF for model '" + model + "'" );
+    m_defaultForDetectorModel->setMargin( 21, Wt::Left );
+    mainLayout->addWidget( m_defaultForDetectorModel, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
+  }//if( have
   
   
   if( auxWindow )
@@ -1848,10 +2024,17 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   }else
   {
     m_footer = new WContainerWidget();
-    mainLayout->addWidget( m_footer, 2, 0, 1, 2 );
+    mainLayout->addWidget( m_footer, mainLayout->rowCount(), 0, 1, 2 );
   }
   
   AuxWindow::addHelpInFooter( m_footer, "detector-edit-dialog" );
+  
+  
+  m_noDrfButton = new WPushButton( "No Detector", m_footer );
+  m_noDrfButton->clicked().connect( this, &DetectorEdit::finishWithNoDetector );
+  if( specViewer && !specViewer->isPhone() )
+    m_noDrfButton->addStyleClass( "NoDrfBtn" );
+  
   if( auxWindow )
   {
     m_cancelButton = auxWindow->addCloseButtonToFooter( "Cancel" );
@@ -1862,9 +2045,9 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   }
   
   m_cancelButton->clicked().connect( this, &DetectorEdit::cancelAndFinish );
+
   
-  
-  if( specViewer && !specViewer->isMobile() )
+  if( specViewer && !specViewer->isPhone() )
   {
     m_acceptButton = new WPushButton( "Accept", m_footer );
     m_acceptButton->setFloatSide(Wt::Right);
@@ -1882,12 +2065,23 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_acceptButton->clicked().connect( this, &DetectorEdit::acceptAndFinish );
   if( !currentDet || !currentDet->isValid() )
-    m_acceptButton->disable();
+    setAcceptButtonEnabled( false );
   
   m_drfTypeMenu->select( 0 );
   
   init();
 }//DetectorEdit constructor
+
+
+void DetectorEdit::setAcceptButtonEnabled( const bool enable )
+{
+  m_acceptButton->setEnabled( enable );
+  m_noDrfButton->setHidden( !m_detector );
+  if( m_defaultForSerialNumber )
+    m_defaultForSerialNumber->setEnabled( enable );
+  if( m_defaultForDetectorModel )
+    m_defaultForDetectorModel->setEnabled( enable );
+}
 
 
 void DetectorEdit::deleteDBTableSelected()
@@ -1933,19 +2127,14 @@ void DetectorEdit::dbTableSelectionChanged()
     const WModelIndex index = *indices.begin();
     Dbo::ptr<DetectorPeakResponse> dbfile = m_model->stableResultRow( index.row() );
     det = std::shared_ptr<DetectorPeakResponse>(new DetectorPeakResponse(*dbfile));
-  }//try
-  catch(...)
+  }catch(...)
   {
     failed = true;
     passMessage( "Error getting from DetectorPeakResponse table", "DetectorEdit", WarningWidget::WarningMsgHigh );
   }//try / catch
   
-  if( failed )
-    m_acceptButton->disable();
-  else
-    m_acceptButton->enable();
-  
   m_detector = det;
+  setAcceptButtonEnabled( !failed );
   emitChangedSignal();
 }//void dbTableSelectionChanged()
 
@@ -1958,9 +2147,10 @@ void DetectorEdit::init()
     //m_drfTypeMenu->select( 0 );
   }else
   {
-    switch( m_detector->efficiencySource() )
+    switch( m_detector->drfSource() )
     {
-      case DetectorPeakResponse::kGadrasEfficiencyDefintion:
+      case DetectorPeakResponse::DefaultGadrasDrf:
+      case DetectorPeakResponse::UserAddedGadrasDrf:
       {
         const bool selected = m_gadrasDetSelect->trySelectDetector( m_detector );
         
@@ -1969,23 +2159,16 @@ void DetectorEdit::init()
         else
           m_drfTypeMenu->select( 2 );
         break;
-      }//case kGadrasEfficiencyDefintion:
-        
-      case DetectorPeakResponse::kRelativeEfficiencyDefintion:
+      }
+      
+      case DetectorPeakResponse::UserAddedRelativeEfficiencyDrf:
       {
         m_drfTypeMenu->select( 1 );
         m_relEffSelect->trySelectDetector( m_detector );
         break;
-      }//case kRelativeEfficiencyDefintion:
+      }
         
-        
-      case DetectorPeakResponse::kUserUploadedEfficiencyCsv:
-      {
-        m_drfTypeMenu->select( 2 );
-        break;
-      }//case kUserUploadedEfficiencyCsv:
-        
-      case DetectorPeakResponse::kUserEfficiencyEquationSpecified:
+      case DetectorPeakResponse::UserSpecifiedFormulaDrf:
       {
         m_drfTypeMenu->select( 3 );
         m_detectorManualFunctionName->setText( m_detector->name() );
@@ -2003,10 +2186,46 @@ void DetectorEdit::init()
         break;
       }//case kUserEfficiencyEquationSpecified:
         
-      case DetectorPeakResponse::kUnknownEfficiencySource:
+      case DetectorPeakResponse::UserImportedIntrisicEfficiencyDrf:
+      {
+        m_drfTypeMenu->select( 2 );
         break;
-    }//switch( m_detector->efficiencySource() )
-  
+      }
+      
+      case DetectorPeakResponse::UnknownDrfSource:
+      case DetectorPeakResponse::UserImportedGadrasDrf:
+      case DetectorPeakResponse::UserCreatedDrf:
+      case DetectorPeakResponse::FromSpectrumFileDrf:
+      {
+        m_drfTypeMenu->select( 4 );
+        try
+        {
+          const double start_time = UtilityFunctions::get_wall_time();
+          for( int row = 0; row < m_model->rowCount(); ++row )
+          {
+            Wt::Dbo::ptr<DetectorPeakResponse> drf = m_model->resultRow(row);
+            if( drf && (drf->hashValue() == m_detector->hashValue()) )
+            {
+              WModelIndexSet indexset;
+              indexset.insert( m_model->index(row,0) );
+              m_DBtable->setSelectedIndexes( indexset );
+              break;
+            }
+            
+            //On a quick test, it took about 25ms when the very first row
+            //  matched the detector; even if we loop through all rows, it
+            //  takes about the same amount of time
+            const double now_time = UtilityFunctions::get_wall_time();
+            if( (now_time-start_time) > 0.25 )
+              break;
+          }//for( loop over previous DRFs )
+        }catch( std::exception &e )
+        {
+          cerr << "Caught exception trying to select previous DRF from database to select for the GUI: " << e.what() << endl;
+        }//try / catch
+        break;
+      }
+    };//switch( m_detector->drfSource() )
   }//if( m_detector == NULL ) / else
   
   selectButton( m_drfTypeStack, m_drfTypeMenu, false );
@@ -2030,7 +2249,7 @@ void DetectorEdit::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
 void DetectorEdit::verifyManualDefinition()
 { //if we change anything in the text fields, we should disable Accept
-  m_acceptButton->disable();
+  setAcceptButtonEnabled( false );
   m_manualSetButton->enable();
   
   const bool hideAbs = (m_absOrIntrinsicGroup->checkedId() == 0);
@@ -2076,7 +2295,7 @@ void DetectorEdit::setDefineDetector()
 //    m_detectorManualDiameterText->setText( diamstr );
 //    m_detectorManualDistText->setText( "0" );
 //  
-//    m_acceptButton->enable();
+//    setAcceptButtonEnabled( true );
 //    m_manualSetButton->disable();
 //    return;
 //  }//if(...)
@@ -2119,21 +2338,22 @@ void DetectorEdit::setDefineDetector()
               = static_cast<float>(m_eqnEnergyGroup->checkedId()==0
                                     ? PhysicalUnits::keV : PhysicalUnits::MeV);
     
-    detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits );
+    detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits, 0.0f, 0.0f );
+    detec->setDrfSource( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf );
     
     updateChart();
   }catch( std::exception &e )
   {
     passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
-    m_acceptButton->disable();
+    setAcceptButtonEnabled( false );
     m_manualSetButton->enable();
     updateChart();
     return;
   }//try / catch
   
-  m_acceptButton->enable();
   m_manualSetButton->disable();
   m_detector = detec;
+  setAcceptButtonEnabled( true );
 
   emitChangedSignal();
 } // setDefineDetector(const std::string fcn)
@@ -2167,7 +2387,7 @@ void DetectorEdit::selectButton( WStackedWidget *stack,
         break;
         
       case 2:
-        fileUploadedCallback();
+        fileUploadedCallback( UploadCallbackReason::ImportTabChosen );
         break;
         
       case 3:
@@ -2254,13 +2474,186 @@ void DetectorEdit::updateChart()
 } //DetectorEdit::updateChart()
 
 
-void DetectorEdit::fileUploadedCallback()
+std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const std::string filename )
+{
+  ifstream csvfile( filename.c_str(), ios_base::binary | ios_base::in );
+  
+  if( !csvfile.is_open() )
+    return nullptr;
+  
+  string line;
+  int nlineschecked = 0;
+  
+  string drfname, drfdescrip;
+  bool foundMeV = false, foundKeV = false;
+  //ToDo: Need to implement getting lines safely where a quoted field may span
+  //      several lines.
+  while( UtilityFunctions::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
+  {
+    foundKeV |= UtilityFunctions::icontains( line, "kev" );
+    foundMeV |= UtilityFunctions::icontains( line, "mev" );
+    
+    vector<string> fields;
+    split_escaped_csv( fields, line );
+    
+    if( fields.size() == 2 )
+    {
+      if( fields[0] == "# Name" )
+        drfname = fields[1];
+      if( fields[0] == "# Description" )
+        drfdescrip = fields[1];
+    }
+    
+    if( fields.size() < 16 )
+      continue;
+    
+    if( !UtilityFunctions::iequals( fields[3], "c0")
+       || !UtilityFunctions::iequals( fields[4], "c1")
+       || !UtilityFunctions::iequals( fields[5], "c2")
+       || !UtilityFunctions::iequals( fields[6], "c3")
+       || !UtilityFunctions::icontains( fields[15], "radius") )
+      continue;
+    
+    //Okay, next line should be
+    if( !UtilityFunctions::safe_get_line(csvfile, line, 2048) )
+      throw runtime_error( "Couldnt get next line" );
+    
+    split_escaped_csv( fields, line );
+    
+    try
+    {
+      vector<float> coefs( 8, 0.0f );
+      for( int i = 0; i < 8; ++i )
+      {
+        string field = fields.at(3+i);
+        coefs[i] = (field.empty() ? 0.0f : std::stof(field));
+      }
+      
+      for( int i = 7; i >= 0; --i )
+      {
+        if( coefs[i] != 0.0f )
+          break;
+        else
+          coefs.resize( coefs.size() - 1 );
+      }
+      
+      if( coefs.size() < 1 )
+        continue;
+      
+      const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
+      const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
+      
+      const string name = (fields[0].empty() ? drfname : fields[0]);
+      const float energUnits = ((foundKeV && !foundMeV) ? 1.0f : 1000.0f);
+      float lowerEnergy = 0.0f, upperEnergy = 0.0f;
+      auto det = std::make_shared<DetectorPeakResponse>( fields[0], drfdescrip );
+      
+      det->fromExpOfLogPowerSeriesAbsEff( coefs, dist, 2.0f*radius, energUnits,
+                                          lowerEnergy, upperEnergy );
+      
+      //Look for the line that gives the appropriate energy range.
+#define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
+      const char * const rng_exprsn_txt = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
+      
+      std::regex range_expression( rng_exprsn_txt );
+      
+      while( UtilityFunctions::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
+      {
+        if( UtilityFunctions::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
+        {
+          const bool isSqrt = UtilityFunctions::icontains( line, "sqrt(" );  //Else contains "GadrasEqn"
+          const auto form = isSqrt ? DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial : DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
+          int nlinecheck = 0;
+          while( UtilityFunctions::safe_get_line(csvfile, line, 2048)
+                && !UtilityFunctions::icontains(line, "Values")
+                && (++nlinecheck < 15) )
+          {
+          }
+        
+          vector<string> fwhm_fields;
+          split_escaped_csv( fwhm_fields, line );
+          
+          if( fwhm_fields.size() > 1 && UtilityFunctions::icontains(fwhm_fields[0], "Values") )
+          {
+            try
+            {
+              vector<float> coefs;
+              for( size_t i = 1; i < fwhm_fields.size(); ++i )
+                coefs.push_back( stof(fwhm_fields[i]) );
+              if( !coefs.empty() )
+                det->setFwhmCoefficients( coefs,form );
+            }catch(...)
+            {
+            }
+            break;
+          }
+        }//if( start of FWHM section of CSV file )
+        
+        std::smatch range_matches;
+        if( std::regex_search( line, range_matches, range_expression ) )
+        {
+          lowerEnergy = std::stof( range_matches[1] );
+          upperEnergy = std::stof( range_matches[6] );
+          det->setEnergyRange( lowerEnergy, upperEnergy );
+          break;
+        }
+      }//while( getline )
+      
+      return det;
+    }catch(...)
+    {
+      continue;
+    }
+  }//while( more lines )
+  
+  return nullptr;
+}//checkIfFileIsRelEff(...)
+
+
+
+void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
 {
   if( !m_efficiencyCsvUpload->empty() )
+  {
     m_detectrDiameterDiv->show();
-  else
+  }else
+  {
     m_detectrDiameterDiv->hide();
+  }
 
+  switch( context )
+  {
+    case UploadCallbackReason::ImportTabChosen:
+      break;
+    case UploadCallbackReason::DetectorDiameterChanged:
+      break;
+    case UploadCallbackReason::DetectorDotDatUploaded:
+      break;
+      
+    case UploadCallbackReason::EfficiencyCsvUploaded:
+      if( !m_efficiencyCsvUpload->empty() )
+      {
+        const string filename = m_efficiencyCsvUpload->spoolFileName();
+        auto det = DetectorEdit::checkIfFileIsRelEff( filename );
+        
+        if( det )
+        {
+          auto detDiamStr = PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() );
+          m_detectorDiameter->setText( detDiamStr );
+          m_detectrDotDatDiv->hide();
+          m_detectorDiameter->disable();
+          m_detector = det;
+          setAcceptButtonEnabled( true );
+          emitChangedSignal();
+          return;
+        }else
+        {
+          m_detectrDotDatDiv->show();
+          m_detectorDiameter->enable();
+        }//if( det )
+      }//if( we have a file to test )
+      break;
+  }//switch( context )
 
   const bool isGadrasDet = (!m_efficiencyCsvUpload->empty()
                             && !m_detectorDotDatUpload->empty()
@@ -2273,7 +2666,10 @@ void DetectorEdit::fileUploadedCallback()
     diameter = static_cast<float>( PhysicalUnits::stringToDistance( m_detectorDiameter->text().narrow() ) );
     if( diameter < float(0.001*PhysicalUnits::cm) )
       diameter = 0.0f;
-  }catch(...){}
+  }catch(...)
+  {
+    m_detectorDiameter->setText( "" );
+  }
 
   const bool isDiamDet = (!m_efficiencyCsvUpload->empty()
                           && diameter>0.0
@@ -2292,7 +2688,7 @@ void DetectorEdit::fileUploadedCallback()
   if( !csvfile.is_open() )
     return;
 
-  std::shared_ptr<DetectorPeakResponse> det( new DetectorPeakResponse() );
+  auto det = std::make_shared<DetectorPeakResponse>();
   try
   {
     if( isGadrasDet )
@@ -2302,13 +2698,17 @@ void DetectorEdit::fileUploadedCallback()
       if( !datfile.is_open() )
         return;
       det->fromGadrasDefinition( csvfile, datfile );
+      det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
+      if( context == UploadCallbackReason::DetectorDotDatUploaded )
+        m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter()) );
     }else
     {
       det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV) );
+      det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
     }//if( isGadrasDet ) / else
   }catch( std::exception &e )
   {
-    m_acceptButton->disable();
+    setAcceptButtonEnabled( false );
     passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
     return;
   }//try / catch
@@ -2318,10 +2718,10 @@ void DetectorEdit::fileUploadedCallback()
     csvOrigName = csvOrigName.substr(0, csvOrigName.size()-4);
   if( det )
     det->setName( csvOrigName );
-
-  m_acceptButton->enable();
-
+  
   m_detector = det;
+  setAcceptButtonEnabled( true );
+  
   emitChangedSignal();
 }//void fileUploadedCallback();
 
@@ -2336,37 +2736,258 @@ void DetectorEdit::gadrasDetectorSelectCallback()
 {
   std::shared_ptr<DetectorPeakResponse> det = m_gadrasDetSelect->selectedDetector();
 
-  if( !det )
-    m_acceptButton->disable();
-  else
-    m_acceptButton->enable();
-
   m_detector = det;
+  setAcceptButtonEnabled( !!det );
+  
   emitChangedSignal();
 }//void gadrasDetectorSelectCallback()
 
 
-void DetectorEdit::acceptAndFinish()
+void DetectorEdit::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResponse> drf,
+                                                long long db_user_id,
+                                                std::shared_ptr<DataBaseUtils::DbSession> sql )
 {
-  //Save detector to DB
+  if( !drf || !sql )
+    return;
+  
   try
   {
-    if( !! m_detector )
+    DataBaseUtils::DbTransaction transaction( *sql );
+    
+    uint64_t hash = drf->hashValue();
+    auto result = sql->session()->find<DetectorPeakResponse>()
+                      .where("InterSpecUser_id = ? AND Hash = ?")
+                      .bind( db_user_id )
+                      .bind( reinterpret_cast<int64_t&>(hash) )
+                      .resultList();
+    int nupdated = 0;
+    for( auto iter = result.begin(); iter != result.end(); ++iter )
     {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
+      (*iter).modify()->updateLastUsedTimeToNow();
+      ++nupdated;
+    }//
+    
+//    cout << "Have seen Detector '" << drf->name() << "' " << nupdated << " times." << endl;
+    
+    if( !nupdated )
+    {
+      //Create a separate DetectorPeakResponse because shared_ptr and
+      //  dbo::ptr don't work well together
+      DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
+      tempDetector->updateLastUsedTimeToNow();
       
-      //Create a separate DetectorPeakResponse because shared_ptr and dbo::ptr don't work well together
-      DetectorPeakResponse* tempDetector = new DetectorPeakResponse( *m_detector );
-      tempDetector->m_user = m_interspec->m_user.id(); //adds the current user to the detectorpeakresponse insertion into DB
-      m_sql->session()->add( tempDetector );
-      transaction.commit();
-    } //session
+      tempDetector->m_user = db_user_id; //adds the current user to the detectorpeakresponse insertion into DB
+      sql->session()->add( tempDetector );
+    }
+    
+    transaction.commit();
   }catch( std::exception &e )
   {
-    passMessage( "Error writing DetectorPeakResponse to DB: " + std::string(e.what()), "DetectorEdit", WarningWidget::WarningMsgHigh );
+    passMessage( "Error writing DetectorPeakResponse to DB: " + std::string(e.what()), "", WarningWidget::WarningMsgHigh );
   }//try / catch
+}//void updateLastUsedTimeOrAddToDb(...)
+
+
+
+std::shared_ptr<DetectorPeakResponse> DetectorEdit::getUserPrefferedDetector(
+                                std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                Wt::Dbo::ptr<InterSpecUser> user,
+                                std::shared_ptr<const MeasurementInfo> meas )
+{
+  std::shared_ptr<DetectorPeakResponse> answer;
+  if( !sql || !user || !meas )
+    return answer;
+  
+  
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *sql );
+    
+    const std::string &serial = meas->instrument_id();
+    
+    Wt::Dbo::ptr<UseDrfPref> pref;
+    
+    if( !serial.empty() )
+    {
+      auto results = sql->session()->find<UseDrfPref>()
+                     .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
+                     .bind( user.id() )
+                     .bind( UseDrfPref::UseDrfType::UseDetectorSerialNumber )
+                     .bind( serial )
+                     .orderBy("id desc") //shouldnt have an effect because we should only get at most one result
+                     .resultList();
+      if( results.size() )
+        pref = results.front();
+    }
+    
+    if( !pref )
+    {
+      string model;
+      if( meas->detector_type() == DetectorType::kUnknownDetector )
+        model = meas->instrument_model();
+      else
+        model = detectorTypeToString( meas->detector_type() );
+      if( !model.empty() )
+      {
+        auto results = sql->session()->find<UseDrfPref>()
+                       .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
+                       .bind( user.id() )
+                       .bind( UseDrfPref::UseDrfType::UseDetectorModelName )
+                       .bind( model )
+                       .orderBy("id desc")  //shouldnt have an effect because we should only get at most one result
+                       .resultList();
+        
+        if( results.size() )
+          pref = results.front();
+      }
+    }//if( !results.size() )
+    
+    if( !pref )
+    {
+      //cout << "Could not find default DRF preference in database" << endl;
+      transaction.commit();
+      return answer;
+    }
+    
+    if( pref->m_drfIndex < 0 )
+    {
+      //cout << "Default DRF preference in database was invalid" << endl;
+      pref.remove();
+      transaction.commit();
+      return answer;
+    }
+    
+    auto drflist = sql->session()->find<DetectorPeakResponse>()
+    .where("InterSpecUser_id = ? AND id = ?")
+    .bind( user.id() )
+    .bind( pref->m_drfIndex )
+    .resultList();
+    
+    for( auto iter = drflist.begin(); !answer && iter != drflist.end(); ++iter )
+      answer = std::make_shared<DetectorPeakResponse>( **iter );
+    
+    transaction.commit();
+  }catch( std::exception &e )
+  {
+    cerr << "Got exception getting user preffered detector from DB: " << e.what() << endl;
+  }//try catch see if the user has a preference
+  
+  //if( answer )
+  //  cout << "Got user preffered default det" << endl;
+  //else
+  //  cout << "Did not get user preffered default det" << endl;
+  
+  return answer;
+};//getUserPrefferedDetector(...)
+
+
+void DetectorEdit::setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> drf,
+                                     std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                     Wt::Dbo::ptr<InterSpecUser> user,
+                                     UseDrfPref::UseDrfType prefType,
+                                     std::shared_ptr<const MeasurementInfo> meas )
+{
+  //Check if there is a UseDrfPref for the measurement.  If so, we will delete
+  //  it.  We will then add one to the database.
+  
+  if( !meas || !drf || !sql || !user )
+    return;
+  
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *sql );
+    
+    string criteria;
+    switch( prefType )
+    {
+      case UseDrfPref::UseDrfType::UseDetectorModelName:
+        if( meas->detector_type() == DetectorType::kUnknownDetector )
+          criteria = meas->instrument_model();
+        else
+          criteria = detectorTypeToString( meas->detector_type() );
+        break;
+        
+      case UseDrfPref::UseDrfType::UseDetectorSerialNumber:
+        criteria = meas->instrument_id();
+        break;
+    }//switch( prefType )
+    
+    //Remove preferences (there should only be a max of one) from the DB
+    auto prevpref = user->drfPrefs().find().where( "MatchField = ? AND Criteria = ?" )
+                         .bind( prefType )
+                         .bind( criteria )
+                         .resultList();
+    for( auto iter = prevpref.begin(); iter != prevpref.end(); ++iter )
+      iter->remove();
+    
+    
+    //Note: adding the preference to the database, even if criteria is empty
+    uint64_t uhash = drf->hashValue();
+    int64_t ihash = reinterpret_cast<int64_t&>(uhash);
+    auto drflist = sql->session()->find<DetectorPeakResponse>()
+                       .where("InterSpecUser_id = ? AND Hash = ?")
+                       .bind( user.id() )
+                       .bind( ihash )
+                       .resultList();
+    if( drflist.size() < 1 )
+      throw runtime_error( "Could not find detector with hash '" + std::to_string(uhash) + " in DB." );
+    
+    UseDrfPref *newprefraw = new UseDrfPref();
+    Wt::Dbo::ptr<UseDrfPref> newpref( newprefraw );
+      
+    newprefraw->m_user = user;
+    newprefraw->m_field = prefType;
+    newprefraw->m_criteria = criteria;
+    newprefraw->m_flags = 0x00;
+    newprefraw->m_drfIndex = drflist.front().id();
+    
+    newpref = sql->session()->add( newpref );
+    
+    auto newid = newpref.id();
+    auto drfindex = newpref->m_drfIndex;
+    
+    transaction.commit();
+    
+    cout << "Added prefered detector to DB for criteria='" << criteria
+         << "', DRF index=" << drfindex << ", as UseDrfPref.id="
+         << newid << endl;
+  }catch( std::exception &e )
+  {
+    cerr << "setUserPrefferedDetector: Got exception setting user preffered detector to DB: " << e.what() << endl;
+  }//try catch see if the user has a preference
+  
+}//void setUserPrefferedDetector(...)
+
+
+void DetectorEdit::acceptAndFinish()
+{
+  updateLastUsedTimeOrAddToDb( m_detector, m_interspec->m_user.id(), m_sql );
+  
   emitChangedSignal();
   emitModifiedSignal();
+  
+  auto meas = m_interspec->measurment(SpectrumType::kForeground);
+  auto sql = m_interspec->sql();
+  auto user = m_interspec->m_user;
+  auto drf = m_detector;
+  
+  if( meas && drf && m_defaultForSerialNumber && m_defaultForSerialNumber->isChecked() )
+  {
+    UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
+    WServer::instance()->ioService().post( std::bind( [=](){
+      DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, meas );
+    } ) );
+  }//if( m_defaultForSerialNumber and is checked )
+  
+  if( meas && drf && m_defaultForDetectorModel && m_defaultForDetectorModel->isChecked() )
+  {
+    UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+    WServer::instance()->ioService().post( std::bind( [=](){
+      DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, meas );
+    } ) );
+  }//if( m_defaultForDetectorModel and is checked )
+  
+  
   done().emit();
 }//void acceptAndFinish()
 
@@ -2381,6 +3002,15 @@ void DetectorEdit::cancelAndFinish()
   emitModifiedSignal();
   done().emit();
 }//void cancelAndFinish()
+
+
+void DetectorEdit::finishWithNoDetector()
+{
+  m_detector.reset();
+  emitChangedSignal();
+  emitModifiedSignal();
+  done().emit();
+}//void finishWithNoDetector()
 
 
 vector<pair<string,string>> DetectorEdit::avaliableGadrasDetectors() const
@@ -2468,6 +3098,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
   vector<string> paths;
   UtilityFunctions::split( paths, concat_filenames, "\r\n;" );
   
+  
   for( const string &filename : paths )
   {
     std::ifstream input( filename.c_str() );
@@ -2476,7 +3107,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
       continue;
   
     string line;
-    while( UtilityFunctions::safe_get_line( input, line ) )
+    while( UtilityFunctions::safe_get_line( input, line, 2048 ) )
     {
       UtilityFunctions::trim( line );
       if( line.empty() || line[0]=='#' || line.size() < smname.size() )
@@ -2485,8 +3116,12 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
       if( UtilityFunctions::icontains( line, smname ) )
       {
         auto det = RelEffFile::parseDetector( line );
+        
         if( det )
+        {
+          det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
           return det;
+        }
       }//if( thisname == smname )
     }//while( UtilityFunctions::safe_get_line( input, line ) )
   }//for( const string &filename : paths )
@@ -2626,7 +3261,18 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector( const s
     }//for( size_t i = 0; i < files.size(); ++i )
     
     if( thiscsv.size() && thisdat.size() )
-      return initAGadrasDetectorFromDirectory( path, interspec );
+    {
+      auto det = initAGadrasDetectorFromDirectory( path, interspec );
+      if( det )
+      {
+        if( UtilityFunctions::icontains( basepath, "GenericGadrasDetectors") )
+          det->setDrfSource( DetectorPeakResponse::DrfSource::DefaultGadrasDrf );
+        else
+          det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedGadrasDrf );
+      }
+      
+      return det;
+    }
   }//for( const string &basepath : paths )
   
   throw runtime_error( "Could not find GADRAS detector names " + currentDetName );
@@ -2688,7 +3334,7 @@ void DetectorEdit::emitChangedSignal()
   m_previousEmmittedDetector = m_detector;
 
   m_interspec->detectorChanged().emit( m_detector );
-  m_acceptButton->setDisabled( !m_detector );
+  setAcceptButtonEnabled( !!m_detector );
   
   updateChart();
 }//void emitChangedSignal()
@@ -2725,16 +3371,21 @@ DetectorEditWindow::DetectorEditWindow(
                                   std::shared_ptr<DetectorPeakResponse> det,
                                   InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
-  : AuxWindow("Detector Edit/Select", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)),
+  : AuxWindow("Detector Response Function Select",
+              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal),
     m_edit( NULL )
 {
   disableCollapse();
   m_edit = new DetectorEdit( det, specViewer, fileModel, this );
+  contents()->setPadding( 0 );
   stretcher()->addWidget( m_edit, 0, 0 );
+  stretcher()->setContentsMargins( 6, 2, 6, 0 );
   m_edit->done().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
   finished().connect( boost::bind( &DetectorEditWindow::acceptAndDelete, this ) );
   rejectWhenEscapePressed();
-  setMargin(0);
+  setMargin( 0 );
+  if( specViewer->isTablet() )
+    titleBar()->hide();
   resize( WLength(650,WLength::Pixel), WLength(610,WLength::Pixel));
   centerWindow();
   show();
