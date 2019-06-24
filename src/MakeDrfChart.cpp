@@ -358,7 +358,7 @@ void MakeDrfChart::updateEffEquationToModel()
     const float energy = static_cast<float>( m_det_lower_energy + ((m_det_upper_energy * row) / (sm_num_eqn_energy_rows - 1.0)) );
     const double eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy*units, m_efficiencyCoefs );
     
-    if( std::isnan(eff) || std::isinf(eff) )
+    if( isnan(eff) || isinf(eff) )
     {
       m->setData( row, sm_equation_eff_col, boost::any() );
       m->setData( row, sm_equation_eff_pos_uncert_col, boost::any() );
@@ -394,9 +394,9 @@ void MakeDrfChart::updateEffEquationToModel()
         posuncert = sqrt(posuncert);
         neguncert = sqrt(neguncert);
         
-        if( std::isnan(posuncert) || std::isinf(posuncert) )
+        if( isnan(posuncert) || isinf(posuncert) )
           upperval = boost::any( eff + posuncert );
-        if( std::isnan(neguncert) || std::isinf(neguncert) )
+        if( isnan(neguncert) || isinf(neguncert) )
           lowerval = boost::any( eff - neguncert );
       }//if( we have uncertainties )
       

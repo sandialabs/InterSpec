@@ -522,7 +522,7 @@ void ElementAttenuation::loadTxt( std::string datapath, const int atomicNumber )
     throw runtime_error( "Error reading first line of: " + datapath );
   
   int nextchar = file.peek();
-  while( (nextchar=='\n') && nextchar!=EOF )
+  while( (nextchar=='\n' || nextchar == '\r') && nextchar!=EOF )
   {
     file.get();
     nextchar = file.peek();
