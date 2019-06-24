@@ -993,7 +993,7 @@ message( "Linking ${LINK_TO_OBJECT} to ${LIBRARIES_TO_LINK_TO}" )
 target_link_libraries( ${LINK_TO_OBJECT} PUBLIC ${LIBRARIES_TO_LINK_TO} )
 
 if( BUILD_AS_OSX_APP )
-    add_subdirectory( target/macOsQuickLook/SpecFilePreview/SpecFilePreview )
+#    add_subdirectory( target/macOsQuickLook/SpecFilePreview/SpecFilePreview )
 endif( BUILD_AS_OSX_APP )
 
 IF( BUILD_AS_UNIT_TEST_SUITE )

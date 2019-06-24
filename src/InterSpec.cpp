@@ -3555,19 +3555,25 @@ void InterSpec::showWelcomeDialog( bool force )
     return;
   }
   
-  /*
-   For Android, showing this useInfoWindow at startup causes some exceptions
-   in the JavaScript whenever the loading indicator is shown.  I'm pretty 
-   confused by it.
-   I tried setting a new loading indicator in deleteWelcomeCountDialog(), but it didnt work
-   */
+  WServer::instance()->post( wApp->sessionId(), std::bind( [this](){
+    /*
+     For Android, showing this useInfoWindow at startup causes some exceptions
+     in the JavaScript whenever the loading indicator is shown.  I'm pretty
+     confused by it.
+     I tried setting a new loading indicator in deleteWelcomeCountDialog(), but it didnt work
+     
+     Havent checked if creating this window via "posting" helps
+     */
+    if( m_useInfoWindow )
+      return;
+    
+    std::function<void(bool)> dontShowAgainCallback = [this](bool value){
+      InterSpecUser::setPreferenceValue<bool>( m_user, "ShowSplashScreen", value, this );
+    };
+    m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
   
-  std::function<void(bool)> dontShowAgainCallback = [this](bool value){
-    InterSpecUser::setPreferenceValue<bool>( m_user, "ShowSplashScreen", value, this );
-  };
-  m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
-  
-  m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeCountDialog );
+    m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeCountDialog );
+  } ) );
 }//void showWelcomeDialog()
 
 

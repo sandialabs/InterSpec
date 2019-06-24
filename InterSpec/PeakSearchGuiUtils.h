@@ -40,9 +40,9 @@
 class PeakDef;
 class PeakModel;
 class InterSpec;
-class ColorTheme;
+struct ColorTheme;
 class Measurement;
-class ReferenceLineInfo;
+struct ReferenceLineInfo;
 class ReferencePhotopeakDisplay;
 
 namespace Wt{
