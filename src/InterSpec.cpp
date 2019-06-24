@@ -8942,68 +8942,6 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
   if( !dataH )
     return;
   
-////////////////////////////////////////////////////////////////////////////////
-//  Some code to test out the new fit method - it still isnt working correctly
-//  it appears, so leaving it disabled for now.
-  double newMethodChi2 = DBL_MAX;
-  vector<PeakDef> newMethodPeaks;
-  if( false )
-  {
-    if( x1 < x0 )
-      std::swap( x0, x1 );
-    const double range = x1 - x0;
-    LinearProblemSubSolveChi2Fcn ch2Fcn( nPeaks, dataH, PeakContinuum::Linear, x0, x1 );
-    const double minsigma = range / ch2Fcn.nbin();
-    
-    ROOT::Minuit2::MnUserParameters params;
-    for( int i = 0; i < nPeaks; ++i )
-    {
-      char buffer[64];
-      snprintf( buffer, sizeof(buffer), "Mean%i", i );
-      const double mean = x0 + range*(i+0.5)/nPeaks;
-      params.Add( buffer,  mean, 0.1*range, x0, x1 );
-    }//for( int i = 0; i < nPeaks; ++i )
-    
-    double sigma = range / (2.0*nPeaks);
-    std::shared_ptr<DetectorPeakResponse> det = m_dataMeasurement->detector();
-    if( det && det->hasResolutionInfo() )
-      sigma = det->peakResolutionSigma( ((nPeaks>1) ? x0 : 0.5*(x0+x1)) );
-    
-    params.Add( "Sigma0", sigma, 0.2*sigma, minsigma, range/nPeaks );
-    if( nPeaks > 1 )
-      params.Add( "SigmaFcn", 0.0, 0.01, -0.2, 0.2 );
-    
-    ROOT::Minuit2::MnUserParameterState inputParamState( params );
-    ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-    
-    ROOT::Minuit2::CombinedMinimizer fitter;
-    unsigned int maxFcnCall = 0;
-    const double tolerance = 0.001;
-    
-    ROOT::Minuit2::FunctionMinimum minimum
-          = fitter.Minimize( ch2Fcn, params, strategy, maxFcnCall, tolerance );
-    
-    params = minimum.UserState().Parameters();
-    const vector<double> pars = params.Params();
-    const vector<double> errors = params.Errors();
-    
-    try
-    {
-      newMethodChi2 = ch2Fcn.parametersToPeaks( newMethodPeaks, &pars[0], &errors[0] );
-      cerr << "New method returned chi2/dof=" << newMethodChi2/ch2Fcn.dof() << endl;
-      for( size_t i = 0; i < newMethodPeaks.size(); ++i )
-        cerr << "New method peak " << i << ": mean=" << newMethodPeaks[i].mean()
-             << ", sigma=" << newMethodPeaks[i].sigma() << endl;
-//      for( size_t i = 0; i < newMethodPeaks.size(); ++i )
-//        addPeak( newMethodPeaks[i], true );
-//      return;
-    }catch( std::exception &e )
-    {
-      newMethodChi2 = DBL_MAX;
-      cerr << "New method fit failed: " << e.what() << endl << endl;
-    }
-  }
-////////////////////////////////////////////////////////////////////////////////
   std::vector<std::thread> thread_grp;
   
   for( MultiPeakInitialGuesMethod method = MultiPeakInitialGuesMethod(0);
@@ -9039,53 +8977,6 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
       bestchi2 = method;
   }//for(...)
   
-  //If the the bestchi2 is greater than ~10*num_bins, then we have a problem
-  //  and should re-try
-  cerr << "InterSpec::findPeakFromControlDrag: Not allowing possiblilty of normal fit method for poor fits" << endl;
-  if( false && chi2[bestchi2] > (5*nbin) )
-  {
-    cerr << "Probably got a bad multi-peak fit, chi2/bin="
-         << (chi2[bestchi2]/nbin) << ", retrying" << endl;
-    
-    std::vector<PeakDef> input_peaks;
-    for( size_t i = 0; i < answer[bestchi2].size(); ++ i )
-      input_peaks.push_back( *answer[bestchi2][i] );
-    
-    double thischi2 = DBL_MAX;
-    vector<PeakDef> fixedpeaks;
-    const bool amp_only = false;
-    const double stat_threshold = 0.0;
-    const double hypothesis_threshold = 0.0;
-    vector<PeakDef> newPeaks = fitPeaksInRange( x0, x1, 0, stat_threshold,
-                                                hypothesis_threshold,
-                                                input_peaks, dataH,
-                                                fixedpeaks, amp_only );
-    
-    try
-    {
-      const int start_bin = dataH->FindFixBin( x0 ) - 1;
-      const int end_bin   = dataH->FindFixBin( x1 ) + 1;
-      MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, PeakContinuum::Linear,
-                                   start_bin, end_bin );
-
-      thischi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newPeaks );
-    
-      if( thischi2 < chi2[bestchi2] )
-      {
-        cerr << "Improved chi2 to " << thischi2/nbin << "/nbin from "
-             << (chi2[bestchi2]/nbin) << endl;
-        answer[bestchi2].clear();
-        for( size_t i = 0; i < newPeaks.size(); ++i )
-          answer[bestchi2].push_back( std::make_shared<PeakDef>(newPeaks[i]) );
-        chi2[bestchi2] = thischi2;
-      }//if( thischi2 < chi2[bestchi2] )
-    }catch( std::exception &e )
-    {
-      cerr << "InterSpec::findPeakFromControlDrag(...) caught: "
-           << e.what() << endl;
-    }//try / catch
-  }//if( chi2[bestchi2] > (5*nbin) )
-  
   //Remove peaks from x0 to x1
   for( int peakn = 0; peakn < int(m_peakModel->npeaks()); ++peakn )
   {
@@ -9105,22 +8996,11 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
   const double dof = (nbin + 3*nPeaks + answer[bestchi2][0]->type());
   const double chi2Dof = chi2[bestchi2] / dof;
   
-  
-  double newMethodChi2Dof = newMethodChi2 / dof;
-  if( newMethodChi2Dof < chi2Dof )
+  for( size_t i = 0; i < answer[bestchi2].size(); ++i )
   {
-    cerr << "\n\nNew Method of fitting better!  " << chi2Dof << " vs " << newMethodChi2Dof << endl;
-    for( size_t i = 0; i < newMethodPeaks.size(); ++i )
-      addPeak( newMethodPeaks[i], true );
-  }else
-  {
-    cerr << "\n\nNew Method of fitting not better, " << chi2Dof << " vs " << newMethodChi2Dof << endl;
-    for( size_t i = 0; i < answer[bestchi2].size(); ++i )
-    {
-      answer[bestchi2][i]->set_coefficient( chi2Dof, PeakDef::Chi2DOF );
-      addPeak( *(answer[bestchi2][i]), true );
-    }
-  }//if( newMethodChi2Dof < chi2Dof )
+    answer[bestchi2][i]->set_coefficient( chi2Dof, PeakDef::Chi2DOF );
+    addPeak( *(answer[bestchi2][i]), true );
+  }
 }//void findPeakFromControlDrag( )
 
 

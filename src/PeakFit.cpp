@@ -967,8 +967,8 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   PeakContinuum::OffsetType offsetType = PeakContinuum::Linear;
   if( intputSharesContinuum )
     offsetType = answer[0]->continuum()->type();
-  //  else if( nPeaks > 3 )
-  //    offsetType = PeakContinuum::Quardratic;
+  else if( nPeaks > 3 && (end_channel - start_channel) > 20 )  //20 is a WAG
+    offsetType = PeakContinuum::Quardratic;
   
   PeakContinuum::eqn_from_offsets( start_channel, end_channel, start_range,
                                   dataH, nSideBinsToAverage, p1, p0 );
@@ -4982,6 +4982,7 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
     ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
     ROOT::Minuit2::MnMinimize fitter( chi2Fcn, inputParamState, strategy );
+    //fitter.SetPrecision(<#double#>)
     
     unsigned int maxFcnCall = 5000;
     double tolerance = 2.5;
