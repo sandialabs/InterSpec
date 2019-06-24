@@ -219,6 +219,7 @@ void mapDbClasses( Wt::Dbo::Session *session )
   session->mapClass<DetectorPeakResponse>( "DetectorPeakResponse");
   session->mapClass<InterSpecGlobalSetting>( "InterSpecGlobalSetting");
   session->mapClass<ColorThemeInfo>( "ColorThemeInfo");
+  session->mapClass<UseDrfPref>( "UseDrfPref" );
 }//void mapDbClasses( Wt::Dbo::Session *session )
 
 
@@ -1263,6 +1264,11 @@ const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &InterSpecUser::userStates(
 const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> > &InterSpecUser::colorThemes() const
 {
   return m_colorThemes;
+}
+
+const Wt::Dbo::collection< Wt::Dbo::ptr<UseDrfPref> > &InterSpecUser::drfPrefs() const
+{
+  return m_drfPref;
 }
 
 void InterSpecUser::incrementAccessCount()

@@ -44,6 +44,7 @@ namespace Wt
   class WText;
   class WMenu;
   class WLabel;
+  class WCheckBox;
   class WLineEdit;
   class WComboBox;
   class WTabWidget;
@@ -55,6 +56,7 @@ namespace Wt
 }//namespace Wt
 
 class InterSpec;
+class InterSpecUser;
 class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
@@ -153,10 +155,36 @@ public:
   //  emitted detector)
   void emitModifiedSignal();
 
-  //Need callback for when detector is changed from somewhere else
 
+  /** Searches the database for DRFs from the specified user with hashes
+      matching the passed in DRF, and updates the last used time for all of
+      them (should only find at most one).  If the DRF does not exist in the DB
+      then it is added to is.
+   */
+  static void updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResponse> drf,
+                                           long long db_user_id,
+                                           std::shared_ptr<DataBaseUtils::DbSession> sql );
+  
+  /** Checks the database to see if the measurement serial number or measurement
+      model cooresponds to a user preference in the database for  a DRF to use.
+      If found, returns the DRF, if not, returns null.
+   */
+  static std::shared_ptr<DetectorPeakResponse> getUserPrefferedDetector(
+                                std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                Wt::Dbo::ptr<InterSpecUser> user,
+                                std::shared_ptr<const MeasurementInfo> meas );
+  
+  /**
+   */
+  static void setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> drf,
+                                        std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                        Wt::Dbo::ptr<InterSpecUser> user,
+                                        UseDrfPref::UseDrfType prefType,
+                                        std::shared_ptr<const MeasurementInfo> meas );
+  
   void acceptAndFinish();
   void cancelAndFinish();
+  void finishWithNoDetector();
 
   //Looks through directories specified by "GadrasDRFPath" for directories that
   //  contain Detector.dat and Efficiency.csv; doesnt test that they are valid.
@@ -189,7 +217,22 @@ public:
   //Callbacks for when detector is changed or modified
   void gadrasDetectorSelectCallback();
   void relEffDetectorSelectCallback();
-  void fileUploadedCallback();
+  
+  
+  /** Reason #fileUpladedCallback is being called */
+  enum class UploadCallbackReason
+  {
+    ImportTabChosen,
+    DetectorDiameterChanged,
+    EfficiencyCsvUploaded,
+    DetectorDotDatUploaded
+  };//enum class UploadCallbackReason
+  
+  /** Function called when "Import" tab is chosen, detector diameter is changed,
+      or if a Efficiency.csv, or Detector.dat file is uplaoded.
+      @param context Has value 0 
+   */
+  void fileUploadedCallback( const UploadCallbackReason context );
 
   //updates energy efficient chart
   void updateChart();
@@ -209,6 +252,21 @@ public:
   
   //a row is selected, so update det and charts
   void dbTableSelectionChanged();
+
+protected:
+  void setAcceptButtonEnabled( const bool enable );
+  
+  /** Checks if file at passed in path is a TSV/CSV file that contains
+      coeffeicents for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.
+      If so, returns detector.  If not, returns nullptr.
+   
+   ToDo: Currently reads in most of the information exported in the CSV from
+     MakeDrf tool, except the uncertainities - should add this in.  Also, need
+     to cleanup the GUI during loading of this one CSV that has all the info
+     (def not correct, should hide detector diameter and option to upload
+      Detector.dat).
+   */
+  static std::shared_ptr<DetectorPeakResponse> checkIfFileIsRelEff( const std::string tsvfilepath );
   
 protected:
   WContainerWidget *m_footer;
@@ -253,10 +311,12 @@ protected:
   Wt::WLineEdit *m_detectorDiameter;
   Wt::WContainerWidget *m_detectrDiameterDiv;
   Wt::WFileUpload *m_efficiencyCsvUpload;
+  Wt::WContainerWidget *m_detectrDotDatDiv;
   Wt::WFileUpload *m_detectorDotDatUpload;
 
   Wt::WPushButton *m_acceptButton;
   Wt::WPushButton *m_cancelButton;
+  Wt::WPushButton *m_noDrfButton;
   
   Wt::WLineEdit    *m_detectorManualFunctionName;
   Wt::WTextArea    *m_detectorManualFunctionText;
@@ -280,6 +340,8 @@ protected:
   std::shared_ptr<DataBaseUtils::DbSession> m_sql;
   Wt::Dbo::QueryModel< Wt::Dbo::ptr<DetectorPeakResponse> >    *m_model;
 
+  Wt::WCheckBox *m_defaultForSerialNumber;
+  Wt::WCheckBox *m_defaultForDetectorModel;
 };//class DetectorEdit
 
 

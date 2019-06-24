@@ -113,7 +113,7 @@
         </table>
         </div>
     
-        <div style="padding-top: 10px">The <b>Math/Command Terminal</b> for <b>InterSpec</b> also features the ability to use <i>string constants</i> that are used for arguments inside several <b>InterSpec</b> functions. These constants can be used directly as its ID’s instead of placing them inside quotes as strings <i>(eg. “hello” or “hello world!”)</i>.</div>
+        <div style="padding-top: 10px">The <b>Math/Command Terminal</b> for <code>InterSpec</code> also features the ability to use <i>string constants</i> that are used for arguments inside several <code>InterSpec</code> functions. These constants can be used directly as its ID’s instead of placing them inside quotes as strings <i>(eg. “hello” or “hello world!”)</i>.</div>
         <div style="padding-top: 10px" align="center">
             <table>
                 <tr><th><b>Constant</b></th><th><b>Value</b></th><th><b>Notes</b></th></tr>

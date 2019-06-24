@@ -383,8 +383,13 @@ namespace SpecFileQuery
         const vector<string> &remarks = meas.riid_ana.remarks_;
         const vector<DetectorAnalysisResult> &res = meas.riid_ana.results_;
         
-        if( test_string( meas.riid_ana.algorithm_version_, m_stringSearchType, m_searchString ) )
-          return true;
+        for( const auto &nv : meas.riid_ana.algorithm_component_versions_ )
+        {
+          if( test_string( nv.first, m_stringSearchType, m_searchString ) )
+            return true;
+          if( test_string( nv.second, m_stringSearchType, m_searchString ) )
+            return true;
+        }
         
         if( test_string( meas.riid_ana.algorithm_name_, m_stringSearchType, m_searchString ) )
           return true;
