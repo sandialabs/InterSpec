@@ -221,6 +221,9 @@ public:
   //  one calibration to another.
   //  XXX - Currently does not translate skew values (also, uncertainties may
   //        not be handled correctly either)!
+  //
+  //ToDo: Only handles polynomial or full range fraction calibration type;
+  //      should handle lower channel energy.
   static void translatePeakForCalibrationChange( PeakDef &peak,
                     std::vector<float> old_pars,
                     const std::vector< std::pair<float,float> > &old_devpairs,

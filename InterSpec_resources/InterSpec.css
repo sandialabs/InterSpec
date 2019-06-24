@@ -726,6 +726,12 @@ background: #9B9B9B;
   display: inline-block;
 }
 
+.RecalConvertToPolyTxt
+{
+  white-space: nowrap;
+  min-width: 275px;
+}
+
 .RecalFitBtn, .RecalFitBtn:hover
 {
 float:right;
