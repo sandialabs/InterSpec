@@ -245,8 +245,8 @@ namespace
     posuncert = sqrt(posuncert);
     neguncert = sqrt(neguncert);
     
-    if( std::isnan(posuncert) || std::isinf(posuncert)
-       || std::isnan(neguncert) || std::isinf(neguncert) )
+    if( isnan(posuncert) || isinf(posuncert)
+       || isnan(neguncert) || isinf(neguncert) )
       return -999.9f;
     
     return 0.5f*(posuncert + neguncert);
