@@ -27,6 +27,7 @@
 
 #include <Wt/WText>
 #include <Wt/WMenu>
+#include <Wt/Utils>
 #include <Wt/WBorder>
 #include <Wt/WString>
 #include <Wt/WTemplate>
@@ -140,6 +141,9 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   makeLgplLicenseItem();
   makeItem( "Credits", "credits" );
   makeItem( "Contact", "contact" );
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+  makeDataStorageItem();
+#endif
   m_menu->select( 0 );
   
   layout->setColumnStretch( 1, 1 );
@@ -272,6 +276,73 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeLgplLicenseItem()
   m_menu->addItem( item );
   
   return item;
-}//SideMenuItem * LicenseAndDisclaimersWindow::makeItem( const WString &title, const string &resource)
+}//SideMenuItem *makeItem( const WString &title, const string &resource)
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *parent )
+{
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  
+  InterSpec *viewer = app ? app->viewer() : nullptr;
+  
+  string contents;
+  if( viewer )
+  {
+    string datadir = Wt::Utils::htmlEncode( viewer->writableDataDirectory() );
+    string staticdir = Wt::Utils::htmlEncode( viewer->staticDataDirectory() );
+    
+    //UtilityFunctions::is_absolute_path( staticdir )
+    try
+    {
+      UtilityFunctions::make_canonical_path( datadir );
+      UtilityFunctions::make_canonical_path( staticdir );
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to make_canonical_path for either '" << datadir
+           << "' or '" << staticdir << "': " << e.what() << endl;
+    }
+    
+    const string style = "font-family: monospace;"
+                         " background: white;"
+                         " color: black;"
+                         " white-space: nowrap;"
+                         " padding: 4px 5px 4px 10px;"
+                         " overflow-x: auto;"
+                         " -webkit-user-select: all;"
+                         " user-select: all;";
+    
+    contents =
+    "<p>User data is stored in"
+    "<div style=\"" + style + "\">" + datadir + "</div>"
+    "</p>"
+    "<p>The data that comes with InterSpec, such as nuclear decay info,"
+    " cross-section, and similar is stored in"
+    "<div style=\"" + style + "\">" + staticdir + "</div>"
+    "</p>";
+  }else
+  {
+    contents = "Error retrieving directory data";
+  }
+  
+  WText *text = new WText( WString::fromUTF8(contents), XHTMLText, parent );
+  text->setAttributeValue( "style", "display: block; margin: 1em 0;" );
+}//void dataStorageCreator( Wt::WContainerWidget *parent );
 
 
+SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
+{
+  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::dataStorageCreator, this, _1 );
+  
+  WWidget *w = deferCreate( f );
+  w->addStyleClass( "UseInfoItem" );
+  
+  SideMenuItem *item = new SideMenuItem( "Data", w );
+  
+  item->clicked().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
+  item->mouseWentDown().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
+  
+  m_menu->addItem( item );
+  
+  return item;
+}//SideMenuItem *makeDataStorageItem()
+#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
