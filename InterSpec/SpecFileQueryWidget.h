@@ -223,7 +223,12 @@ protected:
   
   Wt::WText *m_numberFiles;
   Wt::WText *m_numberResults;
+  
+#if( BUILD_AS_OSX_APP )
+  Wt::WAnchor *m_csv;
+#else
   Wt::WPushButton *m_csv;
+#endif
   
   std::string m_queryJson;
   
