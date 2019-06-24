@@ -40,6 +40,7 @@
 #include <condition_variable>
 
 #include <boost/asio.hpp>
+#include <boost/filesystem.hpp>
 #include <boost/asio/signal_set.hpp>
 
 #include <Wt/WServer>
@@ -59,6 +60,7 @@
 #include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "target/electron/ElectronUtils.h"
+#include "SpecUtils/SerialToDetectorModel.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 using namespace std;

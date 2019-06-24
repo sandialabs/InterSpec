@@ -467,7 +467,7 @@ string resolve_icon_path( string iconPath )
   if( iconPath.empty() )
     return "";
   
-  iconPath = UtilityFunctions::append_path(boost::filesystem::current_path().string<string>(),iconPath);
+  iconPath = UtilityFunctions::append_path( UtilityFunctions::get_working_path(),iconPath);
   
   if( !UtilityFunctions::is_file( iconPath ) )
   {
@@ -620,7 +620,7 @@ Wt::WMenuItem *PopupDivMenu::addSeparatorAt( int index )
 #if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
   if( m_type==AppLevelMenu )
   {
-    Need to modify Wt.WT.AddSeperatorToElectronMenu to also take the index
+    //Need to modify Wt.WT.AddSeperatorToElectronMenu to also take the index
     WApplication::instance()->doJavaScript( "Wt.WT.InsertSeperatorInElectronMenu('" + id() + "'," + std::to_string(index) + ");" );
   }
 #elif( USE_OSX_NATIVE_MENU )
@@ -923,8 +923,8 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
      && InterSpecApp::isElectronInstance() )
   {
     item->m_electron_clicked.connect( item, &PopupDivMenuItem::emitClickFromElectronMenu );
-    Need to edit Wt.WT.AddMenuItemToElectronMenu to take into accoutn the index were adding it at
-    WApplication::instance()->doJavaScript( "Wt.WT.AddMenuItemToElectronMenu('" + id() + "',"
+    //Need to edit Wt.WT.AddMenuItemToElectronMenu to take into accoutn the index were adding it at
+     WApplication::instance()->doJavaScript( "Wt.WT.AddMenuItemToElectronMenu('" + id() + "',"
                                            + "'" + text.toUTF8() + "',"
                                            + "'" + resolve_icon_path(iconPath) + "',"
                                            + "'" + item->id() + "', null);" );
