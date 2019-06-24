@@ -55,11 +55,12 @@ class PeakFitChi2Fcn
   //  and is by no means correct or finished.
   //
   //ToDo:
-  //  -The function chi2(...) should be gone through, refined, and checked that
-  //   it is doing what it claims.
-  //  -A -2*ln(liklihood) based figure of merrit method should be implemented.
-  //  -Should fully integrate MultiPeakFitChi2Fcn into this class (along with
-  //   checking of benchmarks)
+  //  - The function chi2(...) should be gone through, refined, and checked that
+  //    it is doing what it claims.
+  //  - A -2*ln(liklihood) based figure of merrit method should be implemented.
+  //  - Should fully integrate MultiPeakFitChi2Fcn into this class (along with
+  //    checking of benchmarks)
+  //  - Try inherriting from FCNGradientBase so can provide gradient
 
 public:
   //FitPars gives the order of parameters.

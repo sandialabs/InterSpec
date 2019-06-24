@@ -331,6 +331,9 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   // And disable all the buttons
   m_revert->disable();
 
+  //Add a Polynomial/FullWidthFraction/LowerEdge select here
+  //Or add a button for when LowerEdge that converts to Polynomial
+  
   //Hook the buttons up
   m_revert->clicked().connect( boost::bind( &Recalibrator::engageRecalibration, this, RevertRecal ) );
   
@@ -1168,22 +1171,31 @@ void Recalibrator::refreshRecalibrator()
   const set<int> samples = m_hostViewer->displayedSamples(kForeground);
   ShrdConstFVecPtr dataBinning = m_hostViewer->getBinning( samples, useGamma, foreground );
 
-  // Limiting the data binning size protects against rebinning of SAIC detectors
+  // Limiting the data binning size protects against rebinning low channel count
+  // detectors that it doesnt make sense to recalibrate, because you wouldnt be
+  // able to see peaks anyway
   if( !foreground || !displ_foreground || !dataBinning
       || dataBinning->size() < 16 || (!!foreground
         && (displ_foreground->energy_calibration_model()==Measurement::LowerChannelEdge
             || displ_foreground->energy_calibration_model()==Measurement::InvalidEquationType)) )
   {
-    disable();
     m_coefficientDisplay[0]->setValue(0.0);
     m_coefficientDisplay[1]->setValue(0.0);
     m_coefficientDisplay[2]->setValue(0.0);
-    
+    disable();
+    m_coefficientDisplay[0]->disable();
+    m_coefficientDisplay[1]->disable();
+    m_coefficientDisplay[2]->disable();
     return;
   }//if( we cant recalibrate this detector anyway )
   
   if( !isEnabled() )
+  {
     enable();
+    m_coefficientDisplay[0]->enable();
+    m_coefficientDisplay[1]->enable();
+    m_coefficientDisplay[2]->enable();
+  }
   
   m_applyTo[kForeground]->enable();
   m_applyTo[kBackground]->enable();
@@ -1238,9 +1250,10 @@ void Recalibrator::refreshRecalibrator()
     break;
 
   case Measurement::LowerChannelEdge:
-    // TODO: SAIC detectors are calibrated by LowerChannelEdge, but the bin widths aren't uniform. However, the
-    // equationCoefficients are assigned as if they were. This is issue.
-    // Another issue is that this might not be consistent in assignment MeasurementInfo::calibration_model,
+    // TODO: Some detectors calibrated by LowerChannelEdge, but the bin widths
+    //  aren't uniform. However, the equationCoefficients are assigned as if
+    // they were. This is issue. Another issue is that this might not be
+    //  consistent in assignment MeasurementInfo::calibration_model,
     // because often times recalibrate_by_lower_edge(...) is called to computationally and memory-wise
     // efficiently set the binning. If this is a case, and a third order polynomial actually describes the
     // binning, this is a serious problem. Note: originally everything was forced into a 2nd order poly to
