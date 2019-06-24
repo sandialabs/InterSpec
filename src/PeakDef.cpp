@@ -2200,12 +2200,16 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 		}//switch( p.type() )
 
 		answer << q << "skewType" << q << ":";
-		switch (p.type())
+		switch( p.skewType() )
 		{
-		case PeakDef::NoSkew:     answer << q << "NoSkew" << q << ","; break;
-		case PeakDef::LandauSkew: answer << q << "LandauSkew" << q << ",";     break;
+		  case PeakDef::NoSkew:
+        answer << q << "NoSkew" << q << ",";
+        break;
+        
+		  case PeakDef::LandauSkew:
+        answer << q << "LandauSkew" << q << ",";
+        break;
 		}//switch( p.type() )
-
 
 		for (PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
 			t < PeakDef::NumCoefficientTypes; t = PeakDef::CoefficientType(t + 1))

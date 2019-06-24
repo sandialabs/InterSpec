@@ -482,7 +482,7 @@ void ColorThemeWindow::uploadThemeCallback()
     }
   }) );
   
-  upload->fileTooLarge().connect( std::bind( [this,window,upload](){
+  upload->fileTooLarge().connect( std::bind( [window,upload](){
     upload->hide();
     new WText( "Too Large of file.", window->contents() );
   }) );
