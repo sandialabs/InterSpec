@@ -101,6 +101,11 @@ Recalibrator::Recalibrator(
     m_isotopeView( 0 ),
     m_fitCoefButton( 0 ),
     m_graphicalRecal( 0 ),
+    m_applyToLabel( nullptr ),
+    m_applyTo{ nullptr },
+    m_convertToPolynomialLabel( nullptr ),
+    m_convertToPolynomial( nullptr ),
+    m_convertToPolyDialog( nullptr ),
     m_revert( 0 ),
     m_acceptText( 0 ),
     m_acceptButtonDiv( 0 ),
@@ -275,7 +280,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
 
 
   // Add the check boxes for what to apply to; initially all disabled
-  WText *applyRecalibLabel = new WText( "Apply to:" );
+  m_applyToLabel = new WText( "Apply to:" );
   
   for( int i = 0; i < 3; ++i )
   {
@@ -294,6 +299,14 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
     m_applyTo[type]->checked().connect( boost::bind(&Recalibrator::specTypeCheckedCallback, this, type, true ) );
     m_applyTo[type]->unChecked().connect( boost::bind(&Recalibrator::specTypeCheckedCallback, this, type, false ) );
   }//for( loop over SpectrumType )
+  
+  
+  m_convertToPolynomialLabel = new WText( "Calibration is specified by channel energy" );
+  m_convertToPolynomialLabel->setInline( false );
+  m_convertToPolynomialLabel->addStyleClass( "RecalConvertToPolyTxt" );
+  
+  m_convertToPolynomial = new WPushButton( "Convert To Polynomial..." );
+  m_convertToPolynomial->clicked().connect( this, &Recalibrator::startConvertToPolynomial );
   
   // Lastly, add in the buttons
   m_acceptButtonDiv = new WContainerWidget();
@@ -342,7 +355,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   m_layout->addWidget( m_coefficientDisplay[0], row, 1 );
   m_layout->addWidget( m_exponentLabels[0],     row, 2 );
   m_layout->addWidget( m_fitFor[0],             row, 3, AlignCenter );
-
+  
   row++; //1
   m_layout->addWidget( linearLabel,             row, 0 );
   m_layout->addWidget( m_coefficientDisplay[1], row, 1 );
@@ -356,6 +369,11 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   m_layout->addWidget( m_fitFor[2],             row, 3, AlignCenter );
   
   
+  offsetLabel->setBuddy( m_coefficientDisplay[0] );
+  linearLabel->setBuddy( m_coefficientDisplay[1] );
+  quadraticLabel->setBuddy( m_coefficientDisplay[2] );
+  
+  
   m_devPairs = new DeviationPairDisplay( nullptr );
   m_devPairs->changed().connect( boost::bind( &Recalibrator::engageRecalibration, this, ApplyRecal ) );
   
@@ -367,7 +385,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   if( style == kTall )
   {
     row++; //3
-    m_layout->addWidget( m_devPairs ,row, 0, 1, 4 );
+    m_layout->addWidget( m_devPairs, row, 0, 1, 4 );
     m_devPairs->setMinimumSize(WLength::Auto, WLength(150));
     m_devPairs->setMaximumSize(WLength::Auto, WLength(150));
 
@@ -392,12 +410,31 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   m_applyTo[kBackground]->setStyleClass( "RecalApplyToCbL" );
 
   row++; //tall=7, wide=3
-  m_layout->addWidget( applyRecalibLabel,            row, 0 );
+  m_layout->addWidget( m_applyToLabel,               row, 0 );
   m_layout->addWidget( m_applyTo[kForeground],       row, 1 );
   m_layout->addWidget( m_applyTo[kSecondForeground], row, 2 );
 
   row++; //tall=8, wide=4
   m_layout->addWidget( m_applyTo[kBackground], row, 1 );
+  
+  //For some reason if we put m_convertToPolynomialLabel and m_convertToPolynomial
+  //  into their own rows and show/hide them, there are some wierd artificats
+  //  introduced into the layout, so for now we'll just have things a bit.
+  //row++;
+  //m_layout->addWidget( m_convertToPolynomialLabel, row, 0, 1, 3 );
+  //row++;
+  //m_layout->addWidget( m_convertToPolynomial, row, 0, 1, 3, Wt::AlignCenter | Wt::AlignTop );
+  
+  WContainerWidget *polyDiv = new WContainerWidget();
+  polyDiv->addWidget( m_convertToPolynomialLabel );
+  polyDiv->addWidget( m_convertToPolynomial );
+  m_convertToPolynomialLabel->hide();
+  m_convertToPolynomial->hide();
+  
+  row++;
+  m_layout->addWidget( polyDiv, row, 0, 1, 3 );
+  
+  
   multFiles->setIcon( "InterSpec_resources/images/page_white_stack.png" );
   if( style == kWide )
     multFiles->addStyleClass( "MultCalBtnWide" );
@@ -412,7 +449,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
     for( int i = 0; i <= row; ++i )
       m_layout->setRowStretch( row, 1 );
     
-    row++; //5
+    row++;
     m_layout->addWidget( m_acceptButtonDiv, row, 0, 1, 4 );
     
     m_layout->addWidget( m_isotopeView, 0, 4, row, 1 );
@@ -521,6 +558,17 @@ void Recalibrator::shiftPeaksForEnergyCalibration( PeakModel *peakmodel,
                                                    const std::vector< std::pair<float,float> > &old_devpairs,
                                                    Measurement::EquationType old_eqn_type )
 {
+  
+  if( old_eqn_type==Measurement::EquationType::LowerChannelEdge
+     || old_eqn_type==Measurement::EquationType::InvalidEquationType
+     || new_eqn_type==Measurement::EquationType::LowerChannelEdge
+     || new_eqn_type==Measurement::EquationType::InvalidEquationType )
+  {
+    //ToDo: We can only currently handle Polynomial or Full Range Fraction
+    //      calibrations.  This could be fixed.
+    return;
+  }
+    
   if( !meas )
     throw runtime_error( "shiftPeaksForEnergyCalibration: invalid input" );
   
@@ -578,6 +626,121 @@ void Recalibrator::createMultifileFitter()
 {
   new MultiFileCalibFit( this );
 }//void createMultifileFitter()
+
+
+void Recalibrator::startConvertToPolynomial()
+{
+  if( m_convertToPolyDialog )
+  {
+    passMessage( "Convert dialog is already showing!", "", WarningWidget::WarningMsgHigh );
+    m_convertToPolyDialog->show();
+    return;
+  }
+  
+  auto foreground = m_hostViewer->measurment(kForeground);
+  auto displ_foreground = m_hostViewer->displayedHistogram(kForeground);
+  
+  if( !foreground || !displ_foreground )
+  {
+    passMessage( "No foreground to convert to polynomial binning.", "", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  if( displ_foreground->energy_calibration_model() != Measurement::LowerChannelEdge )
+  {
+    passMessage( "Foreground calibration is not specified by lower channel - wont convert to polynomial.", "", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  const vector<bool> useGamma = m_hostViewer->detectors_to_display();
+  const set<int> samples = m_hostViewer->displayedSamples(kForeground);
+  ShrdConstFVecPtr dataBinning = m_hostViewer->getBinning( samples, useGamma, foreground );
+  
+  if( !dataBinning )
+  {
+    passMessage( "Issue getting channel energies of foreground.", "", WarningWidget::WarningMsgHigh );
+    return;
+  }
+
+  
+  m_convertToPolyDialog = new AuxWindow( "Confirm", WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal) | DisableCollapse | SetCloseable | IsAlwaysModal );
+  m_convertToPolyDialog->rejectWhenEscapePressed();
+  
+  m_convertToPolyDialog->setWidth( 300 );
+  WContainerWidget *body = m_convertToPolyDialog->contents();
+  
+  new WText( "Converting from energy calibration specified by each channels"
+             " lower energy to polynomial will lose any non-linearity in the"
+             " energy calibration.<br />"
+             "This same calibration will be applied to all spectra in the "
+             " foreground, background, and secondary files.<br />"
+             "<br />"
+             "Are you sure you would like to proceed?",
+             TextFormat::XHTMLText, body );
+  
+  Wt::WPushButton *cancel = m_convertToPolyDialog->addCloseButtonToFooter( "No" );
+  cancel->clicked().connect( boost::bind( &Recalibrator::finishConvertToPolynomial, this, false ) );
+  
+  Wt::WPushButton *proceed = m_convertToPolyDialog->addCloseButtonToFooter( "Yes" );
+  proceed->clicked().connect( boost::bind( &Recalibrator::finishConvertToPolynomial, this, true ) );
+  
+  m_convertToPolyDialog->finished().connect( boost::bind( &Recalibrator::finishConvertToPolynomial, this, false ) );
+  
+  m_convertToPolyDialog->centerWindowHeavyHanded();
+}//void startConvertToPolynomial()
+
+
+void Recalibrator::finishConvertToPolynomial( const bool followThrough )
+{
+  if( !m_convertToPolyDialog )
+    return;
+  
+  AuxWindow::deleteAuxWindow( m_convertToPolyDialog );
+  m_convertToPolyDialog = nullptr;
+  
+  if( !followThrough )
+    return;
+  
+  std::shared_ptr<SpecMeas> foreground = m_hostViewer->measurment(kForeground);
+  std::shared_ptr<const Measurement> displ_foreground = m_hostViewer->displayedHistogram(kForeground);
+  
+  if( !foreground || !displ_foreground
+      || displ_foreground->num_gamma_channels() < 16
+      || !displ_foreground->channel_energies()
+      || displ_foreground->channel_energies()->empty() )
+  {
+    passMessage( "Recalibrator::finishConvertToPolynomial: invalid foreground.", "", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+
+  vector<float> coefs( 2, 0.0f );
+  DeviationPairVec devpairs;
+  coefs[1] = displ_foreground->channel_energies()->back() / displ_foreground->num_gamma_channels();
+  
+  //ToDo: If any of of the SpecMeas objects have Measurements with a differing
+  //      number of channels, we will get an exception.  Should handle this
+  //      correctly...
+  if( foreground )
+    foreground->recalibrate_by_eqn( coefs, devpairs, Measurement::EquationType::Polynomial );
+  
+  std::shared_ptr<SpecMeas> background = m_hostViewer->measurment(kBackground);
+  if( background )
+    background->recalibrate_by_eqn( coefs, devpairs, Measurement::EquationType::Polynomial );
+  
+  std::shared_ptr<SpecMeas> secondary = m_hostViewer->measurment(kSecondForeground);
+  if( secondary )
+    secondary->recalibrate_by_eqn( coefs, devpairs, Measurement::EquationType::Polynomial );
+  
+  if( foreground )
+    m_hostViewer->displayForegroundData( true );
+  if( secondary )
+    m_hostViewer->displaySecondForegroundData();
+  if( background )
+    m_hostViewer->displayBackgroundData();
+  
+  refreshRecalibrator();
+}//void finishConvertToPolynomial()
 
 
 void Recalibrator::engageRecalibration( RecalAction action )
@@ -1171,6 +1334,12 @@ void Recalibrator::refreshRecalibrator()
   const set<int> samples = m_hostViewer->displayedSamples(kForeground);
   ShrdConstFVecPtr dataBinning = m_hostViewer->getBinning( samples, useGamma, foreground );
 
+  if( m_convertToPolyDialog )
+  {
+    AuxWindow::deleteAuxWindow( m_convertToPolyDialog );
+    m_convertToPolyDialog = nullptr;
+  }
+  
   // Limiting the data binning size protects against rebinning low channel count
   // detectors that it doesnt make sense to recalibrate, because you wouldnt be
   // able to see peaks anyway
@@ -1179,23 +1348,46 @@ void Recalibrator::refreshRecalibrator()
         && (displ_foreground->energy_calibration_model()==Measurement::LowerChannelEdge
             || displ_foreground->energy_calibration_model()==Measurement::InvalidEquationType)) )
   {
-    m_coefficientDisplay[0]->setValue(0.0);
-    m_coefficientDisplay[1]->setValue(0.0);
-    m_coefficientDisplay[2]->setValue(0.0);
-    disable();
-    m_coefficientDisplay[0]->disable();
-    m_coefficientDisplay[1]->disable();
-    m_coefficientDisplay[2]->disable();
+    m_fitCoefButton->disable();
+    m_applyToLabel->hide();
+    for( int i = 0; i < 3; ++i )
+    {
+      m_coefficientDisplay[i]->setValue( 0.0 );
+      m_fitFor[i]->hide();
+      m_applyTo[i]->hide();
+      m_coefficientDisplay[i]->hide();
+      m_exponentLabels[i]->hide();
+    }
+    
+    if( dataBinning && foreground
+        && dataBinning->size() >= 16
+        && displ_foreground->energy_calibration_model()==Measurement::LowerChannelEdge )
+    {
+      m_convertToPolynomialLabel->show();
+      m_convertToPolynomial->show();
+    }else
+    {
+      m_convertToPolynomialLabel->hide();
+      m_convertToPolynomial->hide();
+    }
+    
     return;
   }//if( we cant recalibrate this detector anyway )
   
-  if( !isEnabled() )
+  if( m_coefficientDisplay[0]->isHidden() )
   {
-    enable();
-    m_coefficientDisplay[0]->enable();
-    m_coefficientDisplay[1]->enable();
-    m_coefficientDisplay[2]->enable();
-  }
+    m_convertToPolynomialLabel->hide();
+    m_convertToPolynomial->hide();
+    m_fitCoefButton->enable();
+    m_applyToLabel->show();
+    for( int i = 0; i < 3; ++i )
+    {
+      m_fitFor[i]->show();
+      m_applyTo[i]->show();
+      m_coefficientDisplay[i]->show();
+      m_exponentLabels[i]->show();
+    }
+  }//if( m_coefficientDisplay[0]->isHidden() )
   
   m_applyTo[kForeground]->enable();
   m_applyTo[kBackground]->enable();
@@ -1250,17 +1442,7 @@ void Recalibrator::refreshRecalibrator()
     break;
 
   case Measurement::LowerChannelEdge:
-    // TODO: Some detectors calibrated by LowerChannelEdge, but the bin widths
-    //  aren't uniform. However, the equationCoefficients are assigned as if
-    // they were. This is issue. Another issue is that this might not be
-    //  consistent in assignment MeasurementInfo::calibration_model,
-    // because often times recalibrate_by_lower_edge(...) is called to computationally and memory-wise
-    // efficiently set the binning. If this is a case, and a third order polynomial actually describes the
-    // binning, this is a serious problem. Note: originally everything was forced into a 2nd order poly to
-    // avoid this issue, but that might not have ugraded properly.
-
-    // Possibly just flash a warning (high?) for the user not to recalibrate, but also fit for the nearest
-    // coefficients and deviation pairs.
+    //Note: we will never make it here!
   case Measurement::InvalidEquationType:
     equationCoefficients.resize( 3 ); // Third degree polynomial *wonk*
     if( binning.size() != 0 )

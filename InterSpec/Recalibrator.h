@@ -206,6 +206,25 @@ protected:
     
   void createMultifileFitter();
 
+  /** Function called when user requests that a lower channel energy calibration
+      be converted to polynomial.
+   */
+  void startConvertToPolynomial();
+  
+  /** Function that performs the work of converting lower channel energy to
+     polynomial calibraiton.
+   
+   ToDo: Currently discards any non-linearities in the spectrum by just using a
+         linear calibration that matches the old energy range.  Could try to
+         fit a higher order polynomial, maybe with deviation pairs, or could
+         provide an option that would allow the user to choose if they want this
+         or to destructivly rebin counts to match a new polynomial...
+   ToDo: Currently applies changes to the entire files of foreground,
+         background, and secondary spectrum.  Should provide more fine-grained
+         controls for this.
+   */
+  void finishConvertToPolynomial( const bool followThrough );
+  
   LayoutStyle m_currentLayout;
   
   WContainerWidget *footer;
@@ -238,10 +257,15 @@ protected:
   //Fields which apply to manual and peak calibration
   std::vector< Wt::WCheckBox * > m_detectors;
   
+  Wt::WText *m_applyToLabel;
+  
   // Which datafields to apply it to
   Wt::WCheckBox *m_applyTo[3];
   
-  // The buttons that get pushed beep boop
+  Wt::WText *m_convertToPolynomialLabel;
+  Wt::WPushButton *m_convertToPolynomial;
+  AuxWindow *m_convertToPolyDialog;
+  
   Wt::WPushButton *m_revert, *m_closeButton;
 
   Wt::WText *m_acceptText;
