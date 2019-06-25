@@ -1211,11 +1211,11 @@ double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
   
   const int master_nuclide_index = nearFIndex - 1;
   
-  if( static_cast<size_t>(2*master_nuclide_index+1) >= params.size() )
+  if( static_cast<size_t>(master_nuclide_index) >= params.size() )
     throw runtime_error( "Got a negative age value that is larger than could be"
                          " for indicating a master nuclide age: " + std::to_string(params[2*ind+1]) );
   
-  const double master_age = params[2*master_nuclide_index+1];
+  const double master_age = params[master_nuclide_index];
   if( master_age < -0.00001 )
     throw runtime_error( "Master age is also less than zero (shouldnt happen)" );
   
