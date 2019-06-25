@@ -267,6 +267,18 @@ void OneOverR2Calc::doCalc()
   const double farStrength = m_farMeasurement->value() - background;
   const double distance = m_distance->value();
 
+  size_t nsigfigs = 4;
+  auto nsigfigsLambda = []( WDoubleSpinBox *w ) -> size_t {
+    string valstr = w->text().toUTF8();
+    size_t ndig = 0;
+    for( size_t i = 0; i < valstr.size(); ++i )
+      ndig += (valstr[i]>='0' && valstr[i]<='9');
+    return ndig;
+  };
+  nsigfigs = std::max( nsigfigs, nsigfigsLambda(m_nearMeasurement) );
+  nsigfigs = std::max( nsigfigs, nsigfigsLambda(m_farMeasurement) );
+  nsigfigs = std::max( nsigfigs, nsigfigsLambda(m_distance) );
+  
   if( farStrength >= nearStrength )
   {
     m_message->setText( "Far measurement must be less than near one" );
@@ -333,6 +345,6 @@ void OneOverR2Calc::doCalc()
   const double r = distance /( std::pow( (nearStrength/farStrength), 1.0/power) - 1.0 );
   
   char answerStr[64];
-  snprintf( answerStr, sizeof(answerStr), "%.2g", r );
+  snprintf( answerStr, sizeof(answerStr), ("%." + std::to_string(nsigfigs) + "g").c_str(), r );
   m_answer->setText( answerStr );
 }//void doCalc()
