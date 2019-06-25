@@ -1,0 +1,12 @@
+Spectra simulated using GADRAS-DRF, with a 6.6 cm diameter equivalent detector face, and depth of 4 cm.  
+An outside scattering environment was used, with the detector at a height of 1m.
+Background is estimated for Livermore Ca.
+Background: 1800s
+241Am,50uC @50cm, 600s
+109Cd,50uC @50cm, 600s
+57Co,50uC @50cm, 600s
+133Ba,50uC @50cm, 600s
+137Cs,50uC @50cm, 600s
+Co60,50uC @50cm, 600s
+Na22,50uC @50cm, 600s
+U232,50uC @50cm, 600s

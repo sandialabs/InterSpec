@@ -666,9 +666,9 @@ public class InterSpec extends Activity
     }
 
     //Note: as of 20190311, the getExternalFilesDir() or getFilesDir() calls have not been tested.
-    String userDataDir = activity.getExternalFilesDir();
+    String userDataDir = activity.getExternalFilesDir(null).getAbsolutePath();
     if( userDataDir.isEmpty() )
-      userDataDir = activity.getFilesDir();
+      userDataDir = activity.getFilesDir().getAbsolutePath();
 
     List<String> args = new ArrayList<String>();
     args.add("app");
