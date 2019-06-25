@@ -867,8 +867,19 @@ void GadrasDetSelect::docreate()
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
   try
   {
+    //ToDo: do more testing and use only the Android implementation
+#if( ANDROID )
+    const string basestr = InterSpec::writableDataDirectory();
+    const vector<string> subdirs = UtilityFunctions::ls_directories_in_directory( basestr );
+    for( const string &subdir : subdirs )
+    {
+      const string subdirpath = UtilityFunctions::append_path(basestr, subdir);
+      auto subsubdirs = GadrasDirectory::recursive_list_gadras_drfs(subdirpath);
+      if( subsubdirs.size() )
+        pathstr += (pathstr.empty() ? "" : ";") + subdirpath;
+    }//for( const string &subdir : subdirs )
+#else
     using namespace boost::filesystem;
-    
     auto itr = directory_iterator( InterSpec::writableDataDirectory() );
     
     for( ; itr != directory_iterator(); ++itr )
@@ -882,10 +893,10 @@ void GadrasDetSelect::docreate()
           pathstr += (pathstr.empty() ? "" : ";") + pstr;
       }
     }//for( loop over
-    
-  }catch( std::exception & )
+#endif //if ANDROID / else
+  }catch( std::exception &e )
   {
-    cerr << "Got exception looking for GADRAS DRFs in user document dir" << endl;
+    cerr << "Got exception looking for GADRAS DRFs in user document dir: " << e.what() << endl;
   }//try / catch
 #endif
   
@@ -1316,8 +1327,6 @@ std::shared_ptr<DetectorPeakResponse> GadrasDirectory::parseDetector( string pat
 
 vector<string> GadrasDirectory::recursive_list_gadras_drfs( const string &sourcedir )
 {
-  using namespace boost::filesystem;
-  
   vector<string> files;
   if( !UtilityFunctions::is_directory( sourcedir ) )
     return files;
@@ -1328,6 +1337,17 @@ vector<string> GadrasDirectory::recursive_list_gadras_drfs( const string &source
   if( UtilityFunctions::is_file(csv_file) && UtilityFunctions::is_file(dat_file) )
     files.push_back( sourcedir );
   
+  //ToDo: Maybe we should use the Android implemenatation always.
+#if( ANDROID )
+  const vector<string> subdirs = UtilityFunctions::ls_directories_in_directory( sourcedir );
+  for( const string &subdir : subdirs )
+  {
+    const string subdirpath = UtilityFunctions::append_path(sourcedir, subdir);
+    auto subsubdirs = recursive_list_gadras_drfs( subdirpath );
+    files.insert( end(files), begin(subsubdirs), end(subsubdirs) );
+  }//for( const string &subdir : subdirs )
+#else
+using namespace boost::filesystem;
   directory_iterator end_itr; // default construction yields past-the-end
   
   directory_iterator itr;
@@ -1350,6 +1370,7 @@ vector<string> GadrasDirectory::recursive_list_gadras_drfs( const string &source
       files.insert( end(files), begin(subdirs), end(subdirs) );
     }
   }//for( loop over
+#endif //if ANDROID / else
   
   return files;
 }//vector<string> recursive_list_gadras_drfs( const string &sourcedir )
