@@ -429,7 +429,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   if( !appearance )
   {
-    InterSpecApp::osThemeChange( "default" );
+    InterSpecApp::osThemeChange( "light" );
   }else if( [appearance rangeOfString:@"Dark" options:NSCaseInsensitiveSearch].location != NSNotFound )
   {
     InterSpecApp::osThemeChange( "dark" );

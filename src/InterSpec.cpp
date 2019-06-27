@@ -821,6 +821,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   updateSaveWorkspaceMenu();
 #endif
   
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
+  initOsColorThemeChangeDetect();
+#endif
+  
   applyColorTheme( nullptr );
 }//InterSpec( constructor )
 
@@ -3417,13 +3421,13 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 }//void InterSpec::applyColorTheme()
 
 
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS )
 void InterSpec::osThemeChange( std::string name )
 {
   cout << "InterSpec::osThemeChange('" << name << "');" << endl;
   
   UtilityFunctions::to_lower(name);
-  if( name != "default" && name != "dark" )
+  if( name != "light" && name != "dark" && name != "default" && name != "no-preference" && name != "no-support" )
   {
     cerr << "InterSpec::osThemeChange('" << name << "'): unknown OS theme." << endl;
     return;
@@ -3444,10 +3448,18 @@ void InterSpec::osThemeChange( std::string name )
     
     if( name == "dark" )
     {
+      //Check to see if we already have dark applied
+      if( m_colorTheme && UtilityFunctions::icontains( m_colorTheme->theme_name.toUTF8(), "Dark") )
+        return;
+     
       cerr << "Will set to dark" << endl;
       theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DarkColorTheme );
-    }else if( name == "default" )
+    }else if( name == "light" || name == "default" || name == "no-preference" || name == "no-support" )
     {
+      //Check to see if we already have light applied
+      if( m_colorTheme && UtilityFunctions::icontains( m_colorTheme->theme_name.toUTF8(), "Default") )
+        return;
+      
       cerr << "Will set to default" << endl;
       theme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme::DefaultColorTheme );
     }
@@ -7586,6 +7598,19 @@ void InterSpec::emitDetectorChanged()
 }//void emitDetectorChanged( std::shared_ptr<DetectorPeakResponse> det )
 
 
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
+void InterSpec::initOsColorThemeChangeDetect()
+{
+  m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", true ) );
+  m_osColorThemeChange->connect( boost::bind( &InterSpec::osThemeChange, this, _1 ) );
+  
+  LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsSetupOsColorThemeChangeJs);
+  
+  doJavaScript( "Wt.WT.SetupOsColorThemeChangeJs('" + id() + "')" );
+}//void initOsColorThemeChangeDetect()
+#endif
+
+
 void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
                                                     std::shared_ptr<SpecMeas> meas,
                                                     const string sessionId,
@@ -7665,7 +7690,7 @@ void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
       /*
        std::unique_ptr<Wt::JSignal<> > m_clearDrfAssociation;
        m_clearDrfAssociation.reset( new JSignal<>(this, "removeDrfAssociation", false) );
-       m_clearDrfAssociation->connect( this, &InterSpec::blahBLahBlahs );
+       m_clearDrfAssociation->connect( this, &InterSpec::... );
        
        WStringStream js;
        js << "<div onclick=\"Wt.emit('" << id() << "',{name:'removeDrfAssociation'});"

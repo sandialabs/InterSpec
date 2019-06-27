@@ -255,3 +255,50 @@ function()
   }
 }
 );
+
+
+//Requires {macOS 10.14, iOS 13.0, iPadOS 13.0, Windows 10} and {Chrome 76, Safari 12.1, Firefox 67}
+WT_DECLARE_WT_MEMBER
+(SetupOsColorThemeChangeJs, Wt::JavaScriptFunction, "SetupOsColorThemeChangeJs",
+function(id)
+{
+  try
+  {
+    var darkQ = window.matchMedia('(prefers-color-scheme: dark)');
+    var lightQ = window.matchMedia('(prefers-color-scheme: light)');
+    var noPrefQ = window.matchMedia('(prefers-color-scheme: no-preference)');
+    var isSupported = darkQ.matches || lightQ.matches || noPrefQ.matches;
+    
+    if( !isSupported )
+      throw 'no-support';
+    
+    if( darkQ.matches )
+      Wt.emit( id, {name: 'OsColorThemeChange' }, 'dark' );
+    
+    if( lightQ.matches )
+      Wt.emit( id, {name: 'OsColorThemeChange' }, 'light' );
+    
+    if( noPrefQ.matches )
+      Wt.emit( id, {name: 'OsColorThemeChange' }, 'no-preference' );
+    
+    darkQ.addListener( function(e){
+      if( e && e.matches )
+        Wt.emit( id, {name: 'OsColorThemeChange' }, 'dark' );
+    } );
+    
+    lightQ.addListener( function(e){
+      if( e && e.matches )
+        Wt.emit( id, {name: 'OsColorThemeChange' }, 'light' );
+    } );
+    
+    noPrefQ.addListener( function(e){
+      if( e && e.matches )
+        Wt.emit( id, {name: 'OsColorThemeChange' }, 'no-preference' );
+    } );
+    
+  }catch(error)
+  {
+    Wt.emit( id, {name: 'OsColorThemeChange' }, 'no-support' );
+  }
+}
+);
