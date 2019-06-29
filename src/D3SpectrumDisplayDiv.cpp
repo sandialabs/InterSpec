@@ -80,8 +80,6 @@ m_chartMarginColor(),
 m_chartBackgroundColor(),
 m_defaultPeakColor( 0, 51, 255, 155 )
 {
-  
-  
   setLayoutSizeAware( true );
   addStyleClass( "SpectrumDisplayDiv" );
   
@@ -90,7 +88,10 @@ m_defaultPeakColor( 0, 51, 255, 155 )
                      "event.cancelBubble = true; event.returnValue = false; return false;"
                     );
   
-  wApp->useStyleSheet("external_libs/SpecUtils/d3_resources/SpectrumChartD3.css");
+  //wApp->useStyleSheet("external_libs/SpecUtils/d3_resources/SpectrumChartD3.css");
+  wApp->useStyleSheet("InterSpec_resources/SpectrumChartD3NoColor.css");
+  initChangeableCssRules();
+  
   wApp->require( "external_libs/SpecUtils/d3_resources/d3.v3.min.js" );
   wApp->require( "external_libs/SpecUtils/d3_resources/c.min.js" );
   
@@ -138,6 +139,11 @@ m_defaultPeakColor( 0, 51, 255, 155 )
   m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this, _1, _2, _3, _4 ) );
   
   //need legend closed signal.
+  m_legendClosedJS.reset( new JSignal<>( this, "legendClosed", true ) );
+  m_legendClosedJS->connect( std::bind( [this](){
+    m_legendEnabled = false;
+    m_legendDisabledSignal.emit();
+  }) );
   
   // Create the Spectrum Chart D3 object to display the chart
   doJavaScript(
@@ -148,6 +154,23 @@ m_defaultPeakColor( 0, 51, 255, 155 )
                + "window.graph.setShowNuclideEnergies(false);"
                );
 }//D3SpectrumDisplayDiv constructor
+
+
+void D3SpectrumDisplayDiv::initChangeableCssRules()
+{
+  WCssStyleSheet &style = wApp->styleSheet();
+
+  m_cssRules["TextColor"] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "stroke: blue" );
+  m_cssRules["AxisColor"] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick", "stroke: red;" );
+  m_cssRules["GridColor"] = style.addRule( ".xgrid > .tick, .ygrid > .tick", "stroke: #b3b3b3" );
+  m_cssRules["MinorGridColor"] = style.addRule( ".minorgrid", "stroke: #e6e6e6" );
+  m_cssRules["FeatureLinesColor"] = style.addRule( ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine", "stroke: black" );
+  
+  /*
+  .lightMouseLine { font-size: 0.8em; stroke-width: 0.5;  stroke: gray }
+  */
+}//void initChangeableCssRules()
+
 
 void D3SpectrumDisplayDiv::setTextInMiddleOfChart( const Wt::WString &s )
 {
@@ -1140,41 +1163,86 @@ void D3SpectrumDisplayDiv::setSecondarySpectrumColor( const Wt::WColor &color )
 void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
 {
   m_textColor = color.isDefault() ? WColor(0,0,0) : color;
-  #warning "D3SpectrumDisplayDiv::setTextColor() Not Implemented"
+  const string c = m_textColor.cssText();
+  
+  const string rulename = "TextColor";
+  
+  WCssStyleSheet &style = wApp->styleSheet();
+  if( m_cssRules.count(rulename) )
+    style.removeRule( m_cssRules[rulename] );
+  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "stroke: " + c );
 }
 
 
 void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
 {
-  const string rulename = "SpectrumChartAxisLineColor";
   m_axisColor = color.isDefault() ? WColor(0,0,0) : color;
   
-  //".tick > line"
-  //.attr( 'stroke', 'green' );
+  string rulename = "AxisColor";
   
-  //$('.xaxis').css( 'stroke', 'red' );
-  //$('.yaxis').css( 'stroke', 'red' );
+  WCssStyleSheet &style = wApp->styleSheet();
+  if( m_cssRules.count(rulename) )
+    style.removeRule( m_cssRules[rulename] );
+  m_cssRules[rulename] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick", "stroke: " + m_axisColor.cssText() );
   
+  //ToDo: is setting feature line colors okay like this
+  rulename = "FeatureLinesColor";
+  if( m_cssRules.count(rulename) )
+    style.removeRule( m_cssRules[rulename] );
+  m_cssRules[rulename] = style.addRule( ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine", "stroke: " + m_axisColor.cssText() );
   
-  //WCssStyleSheet &style = wApp->styleSheet();
-  //WCssTextRule *rule = style.addRule(<#const std::string &selector#>, <#const Wt::WString &declarations#>)
-  
-  //style.ruleModified(...)
-#warning "D3SpectrumDisplayDiv::setAxisLineColor() Not Implemented"
+  //ToDo: figure out how to make grid lines look okay.
+  //rulename = "GridColor";
+  //if( m_cssRules.count(rulename) )
+  //  style.removeRule( m_cssRules[rulename] );
+  //m_cssRules[rulename] = style.addRule( ".xgrid > .tick, .ygrid > .tick", "stroke: #b3b3b3" );
+  //
+  //rulename = "MinorGridColor";
+  //if( m_cssRules.count(rulename) )
+  //  style.removeRule( m_cssRules[rulename] );
+  //m_cssRules[rulename] = style.addRule( ".minorgrid", "stroke: #e6e6e6" );
 }
 
 void D3SpectrumDisplayDiv::setChartMarginColor( const Wt::WColor &color )
 {
   m_chartMarginColor = color;
-  const string c = color.isDefault() ? string("rgba(0,0,0,0)") : color.cssText();
-  doJavaScript( "$('#" + id() + " > svg').css('background','" + c + "');" );
-}
+  
+  const string rulename = "MarginColor";
+  
+  WCssStyleSheet &style = wApp->styleSheet();
+  
+  if( color.isDefault() )
+  {
+    if( m_cssRules.count(rulename) )
+    {
+      style.removeRule( m_cssRules[rulename] );
+      m_cssRules.erase( rulename );
+    }
+    
+    return;
+  }//if( color.isDefault() )
+  
+  //Actualkly this will set the background for the entire chart...
+  m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() );
+}//setChartMarginColor(...)
+
 
 void D3SpectrumDisplayDiv::setChartBackgroundColor( const Wt::WColor &color )
 {
   m_chartBackgroundColor = color;
-  const string c = color.isDefault() ? string("rgba(0,0,0,0)") : color.cssText();
-  doJavaScript( "$('#" + id() + " > svg > g > rect').css('background','" + c + "');" );
+  const string c = color.isDefault() ? "rgba(0,0,0,0)" : color.cssText();
+  
+  const string rulename = "BackgroundColor";
+  
+  WCssStyleSheet &style = wApp->styleSheet();
+  
+  if( color.isDefault() )
+  {
+    if( m_cssRules.count(rulename) )
+      style.removeRule( m_cssRules[rulename] );
+  }//if( color.isDefault() )
+  
+  m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c );
 }
 
 void D3SpectrumDisplayDiv::setDefaultPeakColor( const Wt::WColor &color )
