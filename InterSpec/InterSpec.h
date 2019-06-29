@@ -926,7 +926,7 @@ public:
 //  at least make sure it doesnt cause problems on older borwsers.
 //  Also, currently dont use JS for OSX App build, but there isnt really a
 //  reason why not, other than I just havent checked it wont cause issues.
-#define APPLY_OS_COLOR_THEME_FROM_JS 0
+#define APPLY_OS_COLOR_THEME_FROM_JS 1
   
 #if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
   /** Sets up client-side JS to detect the operating system color-theme.  Will

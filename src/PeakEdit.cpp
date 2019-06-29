@@ -554,6 +554,11 @@ void PeakEdit::changeToNextPeakInRoi( const bool back )
   if( peakn == (npeak-1) && !back )
     return;
   
+  //If we're here, we will change peaks; lets check if we have changes to accept
+  //  and if so, accept them.
+  if( m_apply->isEnabled() )
+    apply();
+    
   peakn += (back ? -1 : +1);
   
   const double newmean = peaksInRoi[peakn]->mean();

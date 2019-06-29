@@ -3,6 +3,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <memory>
 #include <vector>
 #include <utility>
@@ -10,6 +11,7 @@
 #include <Wt/WColor>
 #include <Wt/WEvent>
 #include <Wt/WSignal>
+#include <Wt/WCssStyleSheet>
 #include <Wt/WContainerWidget>
 
 #include <boost/thread.hpp>
@@ -31,6 +33,7 @@ class CanvasForDragging;
 namespace Wt
 {
   class WGridLayout;
+  class WCssTextRule;
   class WApplication;
   class WButtonGroup;
   class WStackedWidget;
@@ -304,6 +307,13 @@ protected:
   
   void initUserTools();
   
+  /** In order to change some chart colors after intial load, we have to use
+      WCssTextRule's, which dont seem to overide the text css files loaded, and
+      using our own WCssStyleSheet (instead of WApplications) didnt seem to work
+      out super easily on first try...
+   */
+  void initChangeableCssRules();
+  
   //layoutSizeChanged(...): adjusts display binning if necessary
   virtual void layoutSizeChanged ( int width, int height );
   
@@ -341,6 +351,7 @@ protected:
   boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_leftClickJS;
   boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_rightClickJS;
   boost::scoped_ptr<Wt::JSignal<double,double> > m_xRangeChangedJS;
+  boost::scoped_ptr<Wt::JSignal<> > m_legendClosedJS;
   
   // Wt Signals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
@@ -399,6 +410,8 @@ protected:
   Wt::WColor m_chartMarginColor;
   Wt::WColor m_chartBackgroundColor;
   Wt::WColor m_defaultPeakColor;
+  
+  std::map<std::string,Wt::WCssTextRule *> m_cssRules;
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

@@ -5523,9 +5523,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   
   addDetectorMenu( m_displayOptionsPopupDiv );
   
-  
+#if( !USE_SPECTRUM_CHART_D3 )
   CanvasForDragging *overlay = m_spectrum->overlayCanvas();
   if( overlay )
+#endif
   {
     string js;
     PopupDivMenu *submenu = NULL;
@@ -5544,19 +5545,20 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     HelpSystem::attachToolTipOn(item, "Show energy of single and double escapes at"
                      " E-511 keV and E-1022 keV after a pair creation"
                      " event happened in the detector", showToolTipInstantly );
+    
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, false ) );
+    
+#if( USE_SPECTRUM_CHART_D3 )
+    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, EscapePeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, EscapePeakMarker, false ) );
+#else
     const string can = "$('#c" + overlay->id() + "')";
     js = "function(s,e){try{"+can+".data('escpeaks',s.checked);}catch(err){}}";
     
     std::shared_ptr<JSlot> jsslot = std::make_shared<JSlot>( js, cb );
     m_unNamedJSlots.push_back( jsslot );
     cb->changed().connect( *jsslot );
-#if( USE_SPECTRUM_CHART_D3 )
-    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, EscapePeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, EscapePeakMarker, false ) );
-#else
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, false ) );
-#endif
     
 #if( USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
     js = "try{"+can+".data('escpeaks',true);}catch(err){}";
@@ -5564,7 +5566,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     js = "try{"+can+".data('escpeaks',false);}catch(err){}";
     cb->unChecked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
 #endif
-    
+#endif
+  
     
 #if( USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)  )
     cerr << "\n\n\nCompton angle not yet implemented for OSX Native Menus\n\n" << endl;
@@ -5586,6 +5589,31 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     label->setBuddy( spin );
     spin->setRange( 0, 180 );
     spin->setValue( 180 );
+    
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonPeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonPeakMarker, false ) );
+    
+#if( USE_SPECTRUM_CHART_D3 )
+    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonPeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonPeakMarker, false ) );
+    
+    {//Begin codeblock to do java script to set comptom peak angle
+      js = "function(s,e){try{ window.graph.setComptonPeakAngle(s.value);}catch(err){}}";
+      std::shared_ptr<JSlot> jsslot = std::make_shared<JSlot>( js, spin );
+      m_unNamedJSlots.push_back( jsslot );
+      spin->changed().connect( *jsslot );
+    
+      js = "function(s,e){try{"
+        "var spin = Wt.WT.getElement('" + spin->id() + "');"
+        "if(spin) window.graph.setComptonPeakAngle(s.value);"
+      "}catch(err){}}";
+      jsslot = std::make_shared<JSlot>( js, spin );
+      m_unNamedJSlots.push_back( jsslot );
+      cb->checked().connect( *jsslot );
+    }//End codeblock to do java script to set comptom peak angle
+    
+    
+#else
     js = "function(s,e){try{" + can + ".data('compangle', s.value);}catch(err){}}";
     jsslot = std::make_shared<JSlot>( js, spin );
     m_unNamedJSlots.push_back( jsslot );
@@ -5602,8 +5630,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     m_unNamedJSlots.push_back( jsslot );
     cb->checked().connect( *jsslot );
     cb->unChecked().connect( *jsslot );
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonPeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonPeakMarker, false ) );
+#endif
     
     spin->disable();
     cb->unChecked().connect( spin, &WSpinBox::disable );
@@ -5620,17 +5647,18 @@ void InterSpec::addDisplayMenu( WWidget *parent )
                      " interaction", showToolTipInstantly );
     
     //    checkbox->setToolTip( "Maximum energy detected (&theta;=180&deg;) for photon which interacted once in the detector via a compton interaction", XHTMLText ); //\u03B8=180\u00B0
-    js = "function(s,e){try{"+can+".data('compedge',s.checked);}catch(err){}}";
-    jsslot = std::make_shared<JSlot>( js, cb );
-    m_unNamedJSlots.push_back( jsslot );
-    cb->changed().connect( *jsslot );
+
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, false ) );
+    
 #if( USE_SPECTRUM_CHART_D3 )
     cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonEdgeMarker, true ) );
     cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonEdgeMarker, false ) );
 #else
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, false ) );
-#endif
+    js = "function(s,e){try{"+can+".data('compedge',s.checked);}catch(err){}}";
+    jsslot = std::make_shared<JSlot>( js, cb );
+    m_unNamedJSlots.push_back( jsslot );
+    cb->changed().connect( *jsslot );
     
 #if( USE_OSX_NATIVE_MENU  || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
     js = "try{"+can+".data('compedge',true);}catch(err){}";
@@ -5638,6 +5666,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     js = "try{"+can+".data('compedge',false);}catch(err){}";
     cb->unChecked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
 #endif
+#endif
+    
     
     cb = new WCheckBox( "Sum Peak" );
     cb->setChecked(false);
@@ -5645,19 +5675,25 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     
     HelpSystem::attachToolTipOn(item, "Energy of peak due to random summing of coincident"
                      " photopeak gammas.", showToolTipInstantly );
+    
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, false ) );
+#if( USE_SPECTRUM_CHART_D3 )
+    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, SumPeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, SumPeakMarker, false ) );
+#else
     js = "function(s,e){try{"+can+".data('sumpeak',s.checked);"
     +can+".data('sumpeakclick',null);}catch(err){}}";
     jsslot = std::make_shared<JSlot>( js, cb );
     m_unNamedJSlots.push_back( jsslot );
     cb->changed().connect( *jsslot );
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, false ) );
-    
+
 #if( USE_OSX_NATIVE_MENU  || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)  )
     js = "try{"+can+".data('sumpeak',true);"+can+".data('sumpeakclick',null);}catch(err){}";
     cb->checked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
     js = "try{"+can+".data('sumpeak',false);}catch(err){}";
     cb->unChecked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
+#endif
 #endif
     
     //If didnt want to use JSlot, could do...
