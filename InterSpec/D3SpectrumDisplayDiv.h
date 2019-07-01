@@ -176,16 +176,6 @@ public:
   bool isEnergyDisplay() const;
   bool isTimeDisplay() const;
   
-  //setControlDragDebouncePeriod(...): set how often the client will phone home
-  //  to the server during a control-drag event.  Periods of <= 0 will result
-  //  in it happening whenever the mouse is moved.
-  void setControlDragDebouncePeriod( int milliseconds );
-  
-  //setControlDragContinuumPreview(...): draws a straight line from the bin
-  //  contents at energy_start to energy_finish, but only if the overlay
-  //  canvas is being used
-  void setControlDragContinuumPreview( double energy_start, double x_finish );
-  
   void showHistogramIntegralsInLegend( const bool show );
   
   void enableOverlayCanvas( bool outline, bool highlight, bool enalbeAltShiftHighlight );
@@ -225,12 +215,8 @@ public:
   Wt::Signal<double,double> &xRangeChanged();
   Wt::Signal<double,double> &rightMouseDragg();
   
-  Wt::Signal<double,double> &altKeyDragged();
   Wt::Signal<double,double> &shiftAltKeyDragged();
-  
-  Wt::Signal<double,double> &controlMouseMoved();
-  
-  void prefferPngRenderForChart(); //default is <canvas>
+
   
   //By default SpectrumDisplayDiv has setLayoutSizeAware(true) set, so if the
   //  widget is being sized by a Wt layout manager, layoutWidth() and
@@ -359,10 +345,8 @@ protected:
   Wt::Signal<> m_legendEnabledSignal;
   Wt::Signal<> m_legendDisabledSignal;
   Wt::Signal<double,double> m_xRangeChanged;
-  Wt::Signal<double,double> m_controlMouseMoved;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_controlKeyDragg;
   Wt::Signal<double,double> m_shiftKeyDragg;
-  Wt::Signal<double,double> m_altKeyDragg;
   Wt::Signal<double,double> m_shiftAltKeyDragg;
   Wt::Signal<double,double> m_rightMouseDragg;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_leftClick;
@@ -381,6 +365,13 @@ protected:
   //chartXRangeChangedCallback(...): rebins the displayed data, and sets the
   //  y-axis to be auto-range
   void chartXRangeChangedCallback( double x, double y );
+  
+  /** The javascript variable name used to refer to the SpecrtumChartD3 object.
+      Currently is `"window.plot" + id()` but might be changed in the future
+      to be a member variable of the <div> to have less errorprone lifetime
+      managment.
+   */
+  const std::string m_jsgraph;
   
   // X-axis and Y-axis values
   double m_xAxisMinimum;

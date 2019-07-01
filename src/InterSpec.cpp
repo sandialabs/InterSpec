@@ -579,18 +579,14 @@ InterSpec::InterSpec( WContainerWidget *parent )
       m_spectrum->overlayCanvasJsException()->connect( boost::bind( &InterSpec::overlayCanvasJsExceptionCallback, this, _1 ) );
   }//if( isOldIE ) / else
   
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT && !USE_SPECTRUM_CHART_D3 )
   m_spectrum->setControlDragDebouncePeriod( 500 );
 #endif 
-  
-  m_spectrum->controlMouseMoved().connect(
-                                          boost::bind(
-#if ( USE_SPECTRUM_CHART_D3 )
-                                                      &D3SpectrumDisplayDiv::setControlDragContinuumPreview,
-#else
-                                                      &SpectrumDisplayDiv::setControlDragContinuumPreview,
-#endif
+
+#if( !USE_SPECTRUM_CHART_D3 )
+  m_spectrum->controlMouseMoved().connect( boost::bind( &SpectrumDisplayDiv::setControlDragContinuumPreview,
                                                       m_spectrum, _1, _2 ) );
+#endif
 
   m_fileManager = new SpecMeasManager( this );
   
@@ -3585,6 +3581,8 @@ void InterSpec::showWelcomeDialog( bool force )
     m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
   
     m_useInfoWindow->finished().connect( this, &InterSpec::deleteWelcomeCountDialog );
+    
+    wApp->triggerUpdate();
   } ) );
 }//void showWelcomeDialog()
 
@@ -9618,6 +9616,16 @@ void InterSpec::setChartSpacing()
   if( m_chartsLayout && (m_chartsLayout->verticalSpacing() != vertSpacing) )
   {
     //The tool tabs are showing
+    
+#if( USE_SPECTRUM_CHART_D3 )
+    //The <svg> element will be removed from the chart here... we need to fix this...
+    //  The below doesnt work.  I guess you cant simple set elements equal to each other
+    //  ToDo: figure out how to make work in JS, or go through and create new D3 SpectrumChart (maybe add a recreate function to the C++ class)
+    //const string jsel = "Wt.WT.d3chartInnerHTML" + m_spectrum->id();
+    //const string getsvgjs = jsel + "=" + m_spectrum->jsRef() + ".innerHTML;";
+    //wApp->doJavaScript( getsvgjs, false );
+#endif
+    
     m_chartsLayout->removeWidget( m_spectrum );
     m_chartsLayout->removeWidget( m_timeSeries );
     
@@ -9631,7 +9639,6 @@ void InterSpec::setChartSpacing()
       }
     }//for( int i = 0; i < m_layout->count(); ++i )
     
-    delete m_chartsLayout;
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
     m_chartsLayout->setVerticalSpacing( vertSpacing );
@@ -9642,6 +9649,13 @@ void InterSpec::setChartSpacing()
     m_chartsLayout->setRowResizable( 0 );
     
     m_layout->addLayout( m_chartsLayout, m_menuDiv ? 1 : 0, 0 );
+    
+#if( USE_SPECTRUM_CHART_D3 )
+    //wApp->doJavaScript( m_spectrum->jsRef() + ".innerHTML = " + jsel + ";"
+    //                   + "window.graph" + m_spectrum->id() + ".chart = " + m_spectrum->jsRef() + ";"
+    //                   + "window.graph" + m_spectrum->id() + ".handleResize();"
+    //                   + jsel + "=null;", false );
+#endif
   }else if( !m_chartsLayout && (m_layout->verticalSpacing() != vertSpacing) )
   {
     //The tool tabs are not showing

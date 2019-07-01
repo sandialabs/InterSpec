@@ -113,7 +113,7 @@ SpectrumDisplayDiv::SpectrumDisplayDiv( WContainerWidget *parent )
         var problemNode = document.getElementById('p'+c.id);
         if(problemNode){try{problemNode.style.overflowY='hidden';}catch(e){};}
       }else{
-        console.log( "SpectrumDisplayDiv and SpectrumChart should have exactly one child." );
+        console.log( "SpectrumDisplayDiv and SpectrumChart should have exactly one child (have " + self.children.length + ")" );
       }
   });
   
