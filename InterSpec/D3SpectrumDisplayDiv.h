@@ -74,6 +74,12 @@ public:
   Wt::Signal<double/*keV start*/,double/*keV end*/,int/*last pageX*/,int/*last pageY*/> &controlKeyDragged();
   Wt::Signal<double/*keV start*/,double/*keV end*/> &shiftKeyDragged();
   
+  Wt::Signal<double /*new roi lower energy*/,
+             double /*new roi upper energy*/,
+             double /*new roi lower px*/,
+             double /*new roi upper px*/,
+             double /*original roi lower energy*/,
+             bool /*isFinalRange*/> &roiDragUpdate();
   
   void setPeakModel( PeakModel *model );
   
@@ -337,6 +343,8 @@ protected:
   boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_leftClickJS;
   boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_rightClickJS;
   boost::scoped_ptr<Wt::JSignal<double,double> > m_xRangeChangedJS;
+  boost::scoped_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_roiDraggedJS;
+  
   boost::scoped_ptr<Wt::JSignal<> > m_legendClosedJS;
   
   // Wt Signals
@@ -353,6 +361,14 @@ protected:
   Wt::Signal<double,double> m_doubleLeftClick;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_rightClick;
   
+  Wt::Signal<double /*new roi lower energy*/,
+             double /*new roi upper energy*/,
+             double /*new roi lower px*/,
+             double /*new roi upper px*/,
+             double /*original roi lower energy*/,
+             bool /*isFinalRange*/> m_roiDrag;
+  
+  
   // Signal Callbacks
   void chartControlKeyDragCallback( double x0, double x1, int pageX, int pageY );
   void chartShiftKeyDragCallback( double x0, double x1 );
@@ -361,6 +377,10 @@ protected:
   void chartLeftClickCallback( double x, double y, int pageX, int pageY );
   void chartDoubleLeftClickCallback( double x, double y );
   void chartRightClickCallback( double x, double y, int pageX, int pageY );
+  void chartRoiDragedCallback( double new_lower_energy, double new_upper_energy,
+                               double new_lower_px, double new_upper_px,
+                               double original_lower_energy,
+                               bool isfinal );
   
   //chartXRangeChangedCallback(...): rebins the displayed data, and sets the
   //  y-axis to be auto-range

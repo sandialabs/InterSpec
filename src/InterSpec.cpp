@@ -9620,7 +9620,7 @@ void InterSpec::setChartSpacing()
 #if( USE_SPECTRUM_CHART_D3 )
     //The <svg> element will be removed from the chart here... we need to fix this...
     //  The below doesnt work.  I guess you cant simple set elements equal to each other
-    //  ToDo: figure out how to make work in JS, or go through and create new D3 SpectrumChart (maybe add a recreate function to the C++ class)
+    //  ToDo: figure out how to make work in JS, or go through and create new D3 SpectrumChart (maybe add a recreate function to the C++)
     //const string jsel = "Wt.WT.d3chartInnerHTML" + m_spectrum->id();
     //const string getsvgjs = jsel + "=" + m_spectrum->jsRef() + ".innerHTML;";
     //wApp->doJavaScript( getsvgjs, false );

@@ -788,7 +788,6 @@ protected:
   void setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
                        std::string nuclide );
   
-  
   std::shared_ptr<const PeakDef> nearestPeak( const double energy ) const;
   
   void setIsotopeSearchEnergy( double energy );

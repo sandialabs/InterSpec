@@ -135,6 +135,10 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_rightClickJS.reset( new JSignal<double,double,int,int>( this, "rightclicked", true ) );
   m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this, _1, _2, _3, _4 ) );
   
+  m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
+  m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+  
+  
   //need legend closed signal.
   m_legendClosedJS.reset( new JSignal<>( this, "legendClosed", true ) );
   m_legendClosedJS->connect( std::bind( [this](){
@@ -340,6 +344,10 @@ Wt::Signal<double,double,int,int> &D3SpectrumDisplayDiv::rightClicked()
   return m_rightClick;
 }
 
+Wt::Signal<double,double,double,double,double,bool> &D3SpectrumDisplayDiv::roiDragUpdate()
+{
+  return m_roiDrag;
+}
 
 Wt::Signal<double,double> &D3SpectrumDisplayDiv::doubleLeftClick()
 {
@@ -610,6 +618,7 @@ void D3SpectrumDisplayDiv::setYAxisMaximum( const double maximum )
 
 void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double maximum )
 {
+  cout << "setXAxisRange" << endl;
   const string minimumStr = to_string( minimum );
   const string maximumStr = to_string( maximum );
   m_xAxisMinimum = minimum;
@@ -623,6 +632,7 @@ void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double max
 void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
                                        const double maximum )
 {
+  cout << "setYAxisRange" << endl;
   const string minimumStr = to_string( minimum );
   const string maximumStr = to_string( maximum );
   m_yAxisMinimum = minimum;
@@ -1220,41 +1230,177 @@ void D3SpectrumDisplayDiv::setFeatureMarkerOption( InterSpec::FeatureMarkerType 
 
 void D3SpectrumDisplayDiv::chartControlKeyDragCallback( double x0, double x1, int pageX, int pageY )
 {
+  cout << "chartControlKeyDragCallback" << endl;
   m_controlKeyDragg.emit( x0, x1, pageX, pageY );
 }//void D3SpectrumDisplayDiv::chartControlKeyDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartShiftKeyDragCallback( double x0, double x1 )
 {
+  cout << "chartShiftKeyDragCallback" << endl;
   m_shiftKeyDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartShiftKeyDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback( double x0, double x1 )
 {
+  cout << "chartShiftAltKeyDragCallback" << endl;
   m_shiftAltKeyDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartRightMouseDragCallback( double x0, double x1 )
 {
+  cout << "chartRightMouseDragCallback" << endl;
   m_rightMouseDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartRightMouseDragCallback(...)
 
 void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, int pageX, int pageY )
 {
+  cout << "chartLeftClickCallback" << endl;
   m_leftClick.emit( x, y, pageX, pageY );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
 void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y )
 {
+  cout << "chartDoubleLeftClickCallback" << endl;
   m_doubleLeftClick.emit( x, y );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
 void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, int pageX, int pageY )
 {
+  cout << "chartRightClickCallback" << endl;
   m_rightClick.emit( x, y, pageX, pageY );
 }//void D3SpectrumDisplayDiv::chartRightClickCallback(...)
 
+void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, double new_upper_energy,
+                                                  double new_lower_px, double new_upper_px,
+                                                  double original_lower_energy, bool isfinal )
+{
+  cout << "chartRoiDragedCallback: energy={" << new_lower_energy << "," << new_upper_energy << "}, "
+       << "newPx={" << new_lower_px << "," << new_upper_px << "}, original_lower_energy=" << original_lower_energy
+       << ", isfinal=" << isfinal << endl;
+  
+  if( !m_peakModel || !m_model )  //Shouldnt ever happen
+    return;
+  
+  //m_peakModel
+  //m_model
+  //m_model->getData()
+  //Lets get the peaks this ROI belongs to.
+  
+  
+  //If region to narrow, or fit fails, pass back null if !isFinal, or original ROI if isFinal
+  if( new_upper_energy < (new_lower_energy+10) )
+  {
+    if( isfinal )
+    {
+      doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
+      return;
+    }
+    //blah blah blah
+    //Delete peaks from this ROI from the model
+  }//if( narrow region ).
+  
+  /*
+  vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+  vector< std::shared_ptr<const PeakDef> > inpkptrs;
+  
+  const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(kForeground);
+  const std::shared_ptr<const Measurement> continuum;
+  std::shared_ptr<const SpecMeas> meas = m_viewer->measurment(kForeground);
+  
+  
+  if( !data || !meas )
+    return;
+  
+  const PeakModel::PeakShrdPtr &thispeak = m_peakModel->peak(m_peakIndex);
+  //  inputPeak.push_back( *thispeak );
+  
+  const int npeak = static_cast<int>(m_peakModel->npeaks());
+  for( int peak = 0; peak < npeak; ++peak )
+  {
+    WModelIndex index = m_peakModel->index( peak, 0 );
+    const PeakModel::PeakShrdPtr &p = m_peakModel->peak(index);
+    
+    if( p->continuum() == thispeak->continuum() )
+    {
+      inputPeak.push_back( *p );
+      inpkptrs.push_back( p );
+    }else
+      fixedPeaks.push_back( *p );
+  }//for( int peak = 0; peak < npeak; ++peak )
+  
+  if( inputPeak.size() > 1 )  //JIC
+    std::sort( inputPeak.begin(), inputPeak.end(), &PeakDef::lessThanByMean );
+  
+  //  const double lowE = peak->mean() - 0.1;
+  //  const double upE = peak->mean() + 0.1;
+  const double lowE = inputPeak.front().mean() - 0.1;
+  const double upE = inputPeak.back().mean() + 0.1;
+  const double ncausalitysigma = 0.0;
+  const double stat_threshold  = 0.0;
+  const double hypothesis_threshold = 0.0;
+  
+  
+  //if peak
+  if( (inputPeak.size()>1) && thispeak->continuum()->isPolynomial() && !!data )
+  {
+    const std::shared_ptr<DetectorPeakResponse> &detector
+    = m_viewer->measurment(kForeground)->detector();
+    const PeakShrdVec outp = refitPeaksThatShareROI( data, detector, inpkptrs );
+    for( size_t i = 0; i < outp.size(); ++i )
+      outputPeak.push_back( *outp[i] );
+  }else
+  {
+    const bool isRefit = true;
+    outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
+                                 hypothesis_threshold, inputPeak, data,
+                                 fixedPeaks, isRefit );
+  }
+  
+  
+  if( outputPeak.size() != inputPeak.size() )
+  {
+    passMessage( "Failed to refit peak (became insignificant), so not doing "
+                "anything", "", WarningWidget::WarningMsgHigh );
+    return;
+  }//if( outputPeak.size() != inputPeak.size() )
+  
+  if( inputPeak.size() > 1 )
+  {
+    m_energy = m_currentPeak.mean();
+    fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
+    std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+    m_peakModel->setPeaks( fixedPeaks );
+    
+    changePeak( m_energy );
+  }else
+  {
+    for( PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
+        t < PeakDef::NumCoefficientTypes;
+        t = PeakDef::CoefficientType(t+1) )
+    {
+      outputPeak[0].setFitFor(t, m_currentPeak.fitFor(t));
+    }//for( loop over PeakDef::CoefficientType )
+    
+    m_currentPeak = outputPeak[0];
+    m_blockInfoRefresh = true;
+    m_peakModel->removePeak( m_peakIndex );
+    m_peakIndex   = m_viewer->addPeak( m_currentPeak, false );
+    m_currentPeak = *m_peakModel->peak( m_peakIndex );
+    m_blockInfoRefresh = false;
+    
+    refreshPeakInfo();
+  }//if( inputPeak.size() > 1 )
+  
+  
+  */
+  
+  m_roiDrag.emit( new_lower_energy, new_upper_energy, new_lower_px, new_upper_px,
+                  original_lower_energy,  isfinal );
+}
+
 void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x, double y )
 {
+  cout << "chartXRangeChangedCallback{" << x << "," << y << "}" << endl;
   m_xRangeChanged.emit( x, y );
 }//void D3SpectrumDisplayDiv::chartXRangeChangedCallback(...)
 
