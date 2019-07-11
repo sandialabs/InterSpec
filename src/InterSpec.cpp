@@ -560,6 +560,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   // Set up the floating energy recalibrator.
   initRecalibrator();
 
+#if( !USE_SPECTRUM_CHART_D3 )
   const WEnvironment &env = wApp->environment();
   const bool isOldIE = (env.agentIsIE() && env.agent()<WEnvironment::IE9);
 
@@ -578,6 +579,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     if( m_spectrum->overlayCanvasJsException() )
       m_spectrum->overlayCanvasJsException()->connect( boost::bind( &InterSpec::overlayCanvasJsExceptionCallback, this, _1 ) );
   }//if( isOldIE ) / else
+#endif  //#if( !USE_SPECTRUM_CHART_D3 )
   
 #if( BUILD_FOR_WEB_DEPLOYMENT && !USE_SPECTRUM_CHART_D3 )
   m_spectrum->setControlDragDebouncePeriod( 500 );
@@ -698,13 +700,14 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_timeSeries->setYAxisTitle( "Gamma CPS" );
   m_timeSeries->setY2AxisTitle( "Neutron CPS" );
   m_timeSeries->setAutoAdjustDisplayRebinFactor( true );
-
   m_spectrum->setXAxisTitle( "Energy (keV)" );
   m_spectrum->setYAxisTitle( "Counts/Channel" );
 
   m_spectrum->enableLegend( false );
   m_spectrum->showHistogramIntegralsInLegend( true );
+#if( !USE_SPECTRUM_CHART_D3 )
   m_spectrum->setAutoAdjustDisplayRebinFactor( true );
+#endif
   m_spectrum->shiftAltKeyDragged().connect( this, &InterSpec::handleShiftAltDrag );
 
 //  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, _1) );
@@ -1351,11 +1354,15 @@ void InterSpec::initDragNDrop()
 void InterSpec::initWindowZoomWatcher()
 {
   //Look for window.onresize events, and force the JS canvases to re-align....
-  JSlot *specslot = alignSpectrumOverlayCanvas();
-  JSlot *timeslot = alignTimeSeriesOverlayCanvas();
   string command;
+  
+#if( !USE_SPECTRUM_CHART_D3 )
+  JSlot *specslot = alignSpectrumOverlayCanvas();
   if( specslot )
     command += specslot->execJs();
+#endif
+  
+  JSlot *timeslot = alignTimeSeriesOverlayCanvas();
   if( timeslot )
     command += timeslot->execJs();  //Christian [04182018]: Changed "specslot->execJs()" to "timeslot->execJs()", causing issues with D3 charts
   
@@ -1549,7 +1556,7 @@ void InterSpec::refitPeakFromRightClick()
   {
     const std::shared_ptr<DetectorPeakResponse> &detector
                                                 = m_dataMeasurement->detector();
-    PeakShrdVec result = refitPeaksThatShareROI( data, detector, inpeakOrigs );
+    PeakShrdVec result = refitPeaksThatShareROI( data, detector, inpeakOrigs, 0.25 );
     
     if( result.size() == inputPeak.size() )
     {
@@ -1630,6 +1637,17 @@ void InterSpec::addPeakFromRightClick()
     contToPeaks[thispeak->continuum()].push_back( *thispeak );
   
   std::vector<PeakDef> roiPeaks = contToPeaks[peak->continuum()];
+  
+  //Make sure we dont try to mix data defined and gaussian defined peaks
+  for( const PeakDef &p : roiPeaks )
+  {
+    if( !p.gausPeak() )
+    {
+      passMessage( "Sorry, cant add peaks to a ROI with a data defined peak.",
+                  "", WarningWidget::WarningMsgInfo );
+      return;
+    }
+  }//for( const PeakDef &p : roiPeaks )
   
   if( roiPeaks.empty() )
     throw runtime_error( "Logic error in InterSpec::addPeakFromRightClick()" );
@@ -1840,7 +1858,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   if( peak->continuum() == peaktoshare->continuum() )
     return;
   
-  if( !peaktoshare->continuum()->isPolynomial() )
+  if( !peaktoshare->continuum()->isPolynomial() || !peaktoshare->gausPeak() )
     return;
   
   vector<PeakModel::PeakShrdPtr> leftpeaks, rightpeaks;
@@ -2569,7 +2587,13 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     entry.modify()->energyAxisMaximum = m_spectrum->xAxisMaximum();
     entry.modify()->countsAxisMinimum = m_spectrum->yAxisMinimum();
     entry.modify()->countsAxisMaximum = m_spectrum->yAxisMaximum();
-    entry.modify()->displayBinFactor  = m_spectrum->displayRebinFactor();
+#if( USE_SPECTRUM_CHART_D3 )
+    entry.modify()->displayBinFactor = 0;
+#else
+    entry.modify()->displayBinFactor = m_spectrum->displayRebinFactor();
+#endif
+    
+    
     
     entry.modify()->shownDisplayFeatures = 0x0;
     if( toolTabsVisible() )
@@ -3092,9 +3116,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       xmin = std::max( xmin, hist->gamma_channel_lower( 0 ) );
       xmax = std::min( xmax, hist->gamma_channel_upper( nbin - 1 ) );
       m_spectrum->setXAxisRange( xmin, xmax );
+#if( !USE_SPECTRUM_CHART_D3 )
       m_spectrum->guessAndUpdateDisplayRebinFactor();
+#endif
     }//if( xmin != xmax )
     
+#if( !USE_SPECTRUM_CHART_D3 )
     if( (entry->countsAxisMinimum != entry->countsAxisMaximum)
         && (entry->countsAxisMinimum > 0.0 || entry->countsAxisMaximum > 0.0) )
     {
@@ -3105,6 +3132,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       m_spectrum->setYAxisRange( entry->countsAxisMinimum,
                                  scale * entry->countsAxisMaximum );
     }//if( entry->countsAxisMinimum != entry->countsAxisMaximum )
+#endif
     
 //    bool logY = (entry->shownDisplayFeatures & UserState::kLogSpectrumCounts);
 //    bool grid = (entry->shownDisplayFeatures & UserState::kGridLines);
@@ -3151,8 +3179,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     //    if( entry->displayBinFactor > 0 )
     //      m_spectrum->setDisplayRebinFactor( displayBinFactor );
+#if( !USE_SPECTRUM_CHART_D3 )
     m_spectrum->guessAndUpdateDisplayRebinFactor();
-
+#endif
     
     //Should take care of entry->showingWindows here, so we can relie on it below
     if( entry->gammaLinesXml.size() )
@@ -6074,7 +6103,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   } //!isMobile()
   
     //High Bandwidth interactions
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
+#if( USE_HIGH_BANDWIDTH_INTERACTIONS && !USE_SPECTRUM_CHART_D3 )
     WCheckBox *highBWCb = new WCheckBox( "Smooth Zoom/Pan" );
     item = subPopup->addWidget( highBWCb );
     
@@ -8653,44 +8682,28 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
 
 void InterSpec::setOverlayCanvasVisible( bool visible )
 {
+#if( !USE_SPECTRUM_CHART_D3 )
   m_spectrum->setOverlayCanvasVisible( visible );
+#endif
   m_timeSeries->setOverlayCanvasVisible( visible );
 }//void setOverlayCanvasVisible( bool visible )
 
 
+#if( !USE_SPECTRUM_CHART_D3 )
 Wt::JSlot *InterSpec::alignSpectrumOverlayCanvas()
 {
   return m_spectrum->alignOverlayCanvas();
 }
-
+#endif
 
 Wt::JSlot *InterSpec::alignTimeSeriesOverlayCanvas()
 {
  return m_timeSeries->alignOverlayCanvas();
 }
 
-void InterSpec::setSpectrumScrollingParent( WContainerWidget *parent )
-{
-  m_spectrum->setScrollingParent( parent );
-}//void setSpectrumScrollingParent( Wt::WContainerWidget *parent )
-
-
-void InterSpec::setTimeSeriesScrollingParent( WContainerWidget *parent )
-{
-  m_timeSeries->setScrollingParent( parent );
-}//void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
-
-
-
-void InterSpec::setScrollY( int scrollY )
-{
-  m_spectrum->setScrollY( scrollY );
-}
-
-
 size_t InterSpec::addHighlightedEnergyRange( const float lowerEnergy,
-                                                const float upperEnergy,
-                                                const WColor &color )
+                                            const float upperEnergy,
+                                            const WColor &color )
 {
   return m_spectrum->addDecorativeHighlightRegion( lowerEnergy, upperEnergy, color );
 }//void setHighlightedEnergyRange( double lowerEnergy, double upperEnergy )
@@ -8700,6 +8713,23 @@ bool InterSpec::removeHighlightedEnergyRange( const size_t regionid )
 {
   return m_spectrum->removeDecorativeHighlightRegion( regionid );
 }//bool removeHighlightedEnergyRange( const size_t regionid );
+
+#if( !USE_SPECTRUM_CHART_D3 )
+void InterSpec::setSpectrumScrollingParent( WContainerWidget *parent )
+{
+  m_spectrum->setScrollingParent( parent );
+}//void setSpectrumScrollingParent( Wt::WContainerWidget *parent )
+
+void InterSpec::setTimeSeriesScrollingParent( WContainerWidget *parent )
+{
+  m_timeSeries->setScrollingParent( parent );
+}//void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
+
+void InterSpec::setScrollY( int scrollY )
+{
+  m_spectrum->setScrollY( scrollY );
+}
+#endif  //#if( !USE_SPECTRUM_CHART_D3 )
 
 
 void InterSpec::setDisplayedEnergyRange( float lowerEnergy, float upperEnergy )
@@ -8725,7 +8755,7 @@ void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
 }//void InterSpec::handleShiftAltDrag( double lowEnergy, double upperEnergy )
 
 
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
+#if( USE_HIGH_BANDWIDTH_INTERACTIONS && !USE_SPECTRUM_CHART_D3 )
 void InterSpec::enableSmoothChartOperations()
 {
   if( m_spectrum->overlayCanvas() )
@@ -8748,7 +8778,9 @@ void InterSpec::overlayCanvasJsExceptionCallback( const std::string &message )
 {
   if( UtilityFunctions::starts_with( message, "[initCanvasForDragging exception]" ) )
   {
+#if( !USE_SPECTRUM_CHART_D3 )
     m_spectrum->disableOverlayCanvas();
+#endif
     m_timeSeries->disableOverlayCanvas();
   }//if( starts_with( message, "[initCanvasForDragging exception]" ) )
 
@@ -8771,27 +8803,31 @@ void InterSpec::searchForSinglePeak( const double x )
   if( !m_dataMeasurement || !data )
     return;
   
-#if ( !USE_SPECTRUM_CHART_D3 )
-  //Christian: Only need to calculate pixels per keV if 
   const double xmin = m_spectrum->xAxisMinimum();
   const double xmax = m_spectrum->xAxisMaximum();
+  
+#if ( USE_SPECTRUM_CHART_D3 )
+  const double specWidthPx = m_spectrum->chartWidthInPixels();
+  const double pixPerKeV = (xmax > xmin && xmax > 0.0 && specWidthPx > 10.0) ? std::max(0.001,(specWidthPx/(xmax - xmin))): 0.001;
+#else
   const double xpixmin = m_spectrum->mapEnergyToXPixel( xmin );
   const double xpixmax = m_spectrum->mapEnergyToXPixel( xmax );
+  const double pixPerKeV = std::max( 0.001, (xpixmax-xpixmin)/(xmax-xmin) );
 #endif
-  const double pixPerKeV = std::max(
-                                    0.001,
-#if ( !USE_SPECTRUM_CHART_D3 )
-                                    (xpixmax-xpixmin)/(xmax-xmin)
-#else
-                                    0.001
-#endif
-                                    );
+  
+  
   std::shared_ptr<const DetectorPeakResponse> det = m_dataMeasurement->detector();
   vector< PeakModel::PeakShrdPtr > origPeaks;
   if( !!m_peakModel->peaks() )
   {
     for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
+    {
       origPeaks.push_back( p );
+      
+      //Avoid fitting a peak in the same area a data defined peak is.
+      if( !p->gausPeak() && (x >= p->lowerX()) && (x <= p->upperX()) )
+        return;
+    }
   }//if( m_peakModel->peaks() )
   
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
@@ -9318,7 +9354,7 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
     //This would make things more consistent between right clicking to fit, and
     //  erasing part of the ROI (which is what happened if we are here).
     
-    PeakShrdVec newpeaks = refitPeaksThatShareROI( data, detector, iter->second );
+    PeakShrdVec newpeaks = refitPeaksThatShareROI( data, detector, iter->second, 0.25 );
     if( newpeaks.size() == iter->second.size() )
     {
       for( size_t j = 0; j < newpeaks.size(); ++j )
@@ -9618,13 +9654,14 @@ void InterSpec::setChartSpacing()
     //The tool tabs are showing
     
 #if( USE_SPECTRUM_CHART_D3 )
+    //blah blah blah
     //The <svg> element will be removed from the chart here... we need to fix this...
     //  The below doesnt work.  I guess you cant simple set elements equal to each other
     //  ToDo: figure out how to make work in JS, or go through and create new D3 SpectrumChart (maybe add a recreate function to the C++)
     //const string jsel = "Wt.WT.d3chartInnerHTML" + m_spectrum->id();
     //const string getsvgjs = jsel + "=" + m_spectrum->jsRef() + ".innerHTML;";
     //wApp->doJavaScript( getsvgjs, false );
-#endif
+#else
     
     m_chartsLayout->removeWidget( m_spectrum );
     m_chartsLayout->removeWidget( m_timeSeries );
@@ -9639,6 +9676,8 @@ void InterSpec::setChartSpacing()
       }
     }//for( int i = 0; i < m_layout->count(); ++i )
     
+    //wait, did m_chartsLayout get deleted?
+    
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
     m_chartsLayout->setVerticalSpacing( vertSpacing );
@@ -9649,7 +9688,7 @@ void InterSpec::setChartSpacing()
     m_chartsLayout->setRowResizable( 0 );
     
     m_layout->addLayout( m_chartsLayout, m_menuDiv ? 1 : 0, 0 );
-    
+#endif
 #if( USE_SPECTRUM_CHART_D3 )
     //wApp->doJavaScript( m_spectrum->jsRef() + ".innerHTML = " + jsel + ";"
     //                   + "window.graph" + m_spectrum->id() + ".chart = " + m_spectrum->jsRef() + ";"

@@ -588,6 +588,18 @@ vector<IsotopeSearchByEnergy::SearchEnergy *> IsotopeSearchByEnergy::searches()
 
 void IsotopeSearchByEnergy::loadSearchEnergiesToClient()
 {
+#if( USE_SPECTRUM_CHART_D3 )
+  
+  vector<pair<double,double>> searchRegions;
+  
+  for( auto sw : searches() )
+  {
+    if( sw->energy() > 0.1 )
+      searchRegions.push_back( make_pair(sw->energy(), sw->window()) );
+  }
+  
+  m_chart->setSearchEnergies( searchRegions );
+#else
   CanvasForDragging *can = m_chart->overlayCanvas();
   if( !can )
     return;
@@ -617,6 +629,7 @@ void IsotopeSearchByEnergy::loadSearchEnergiesToClient()
     js = "null";
   doJavaScript( "$('#c"+can->id()+"').data('SearchEnergies'," + js + ");"
                 "Wt.WT.DrawGammaLines('c" + can->id() + "',true);" );
+#endif
 }//void loadSearchEnergiesToClient()
 
 
@@ -633,12 +646,16 @@ Wt::SortOrder IsotopeSearchByEnergyModel::sortOrder() const
 
 void IsotopeSearchByEnergy::clearSearchEnergiesOnClient()
 {
+#if( USE_SPECTRUM_CHART_D3 )
+  m_chart->setSearchEnergies( vector<pair<double,double>>() );
+#else
   //Calling wApp->doJavaScript(...) rather than this->doJavaScript(...) to
   //  ensure the command is done, even if this widget is deleted
   CanvasForDragging *can = m_chart->overlayCanvas();
   if( can )
     wApp->doJavaScript( "$('#c"+can->id()+"').data('SearchEnergies',null);"
                        "Wt.WT.DrawGammaLines('c" + can->id() + "',true);" );
+#endif
 }//void clearSearchEnergiesOnClient()
 
 

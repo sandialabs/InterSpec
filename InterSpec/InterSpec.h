@@ -426,7 +426,9 @@ public:
   //ToDo: add a signal that fires when the app size changes, to allow adjusting AuxWindow's and stuff.
 
   void setOverlayCanvasVisible( bool visible );
+#if( !USE_SPECTRUM_CHART_D3 )
   Wt::JSlot *alignSpectrumOverlayCanvas();  //returns NULL if overlay canvas not enabled
+#endif
   Wt::JSlot *alignTimeSeriesOverlayCanvas();
 
   
@@ -439,6 +441,23 @@ public:
              std::set<int>               //The sample numbers displayed
              >& displayedSpectrumChanged();
 
+  //overlayCanvasJsExceptionCallback(...) is mostly for debugging and will
+  //  probably be romived in the future
+  void overlayCanvasJsExceptionCallback( const std::string &message );
+  
+  
+  //addHighlightedEnergyRange(): Adds highlighted range to the energy spectrum.
+  //  Returns the ID of the highlight region, which you will need to remove
+  //  the highlight region.
+  size_t addHighlightedEnergyRange( const float lowerEnergy,
+                                   const float upperEnergy,
+                                   const Wt::WColor &color );
+  //removeHighlightedEnergyRange(): removes the region cooresponding to the ID
+  //  passed in from the energy chart.  Returns succesfulness of the removing
+  //  the region.
+  bool removeHighlightedEnergyRange( const size_t regionid );
+  
+#if( !USE_SPECTRUM_CHART_D3 )
   //set___ScrollingParent(...): sets the scrolling frame which contains the chart
   //  from which the overlay canvas should not extend beyond.  Calling this
   //  function when the overlay canvas is not enabled has no effect. Calling
@@ -449,22 +468,8 @@ public:
   void setSpectrumScrollingParent( Wt::WContainerWidget *parent );
   void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
 
-  //overlayCanvasJsExceptionCallback(...) is mostly for debugging and will
-  //  probably be romived in the future
-  void overlayCanvasJsExceptionCallback( const std::string &message );
   void setScrollY( int scrollY );
-
-  //addHighlightedEnergyRange(): Adds highlighted range to the energy spectrum.
-  //  Returns the ID of the highlight region, which you will need to remove
-  //  the highlight region.
-  size_t addHighlightedEnergyRange( const float lowerEnergy,
-                                    const float upperEnergy,
-                                    const Wt::WColor &color );
-  //removeHighlightedEnergyRange(): removes the region cooresponding to the ID
-  //  passed in from the energy chart.  Returns succesfulness of the removing
-  //  the region.
-  bool removeHighlightedEnergyRange( const size_t regionid );
-  
+#endif  //#if( !USE_SPECTRUM_CHART_D3 )
   
   //setDisplayedEnergyRange(): sets the displayed energy range that should be
   //  shown.  Range is not checked for validity. E.g. you should not ask to zoom
@@ -479,7 +484,7 @@ public:
   
   void handleShiftAltDrag( double lowEnergy, double upperEnergy );
   
-#if( USE_HIGH_BANDWIDTH_INTERACTIONS )
+#if( USE_HIGH_BANDWIDTH_INTERACTIONS && !USE_SPECTRUM_CHART_D3 )
   void enableSmoothChartOperations();
   void disableSmoothChartOperations();
 #endif

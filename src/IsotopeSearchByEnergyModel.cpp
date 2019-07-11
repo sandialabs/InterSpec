@@ -288,7 +288,10 @@ namespace
       = [&]() -> vector<shared_ptr<const PeakDef>> {
         vector<shared_ptr<const PeakDef>> answer;
         for( const auto &p : user_peaks )
-          if( p ) answer.push_back( p );
+        {
+          if( p )
+            answer.push_back( p );
+        }
     
         //Add automated search peaks that arent already represented by the user peaks
         for( const auto &peak : automated_search_peaks ){
@@ -296,7 +299,8 @@ namespace
             continue;
           
           auto nearpeak = nearest_peak( peak->mean(), allpeaks );
-          if( !nearpeak || (fabs(nearpeak->mean() - peak->mean()) > peak->sigma()) )
+          const double peak_sigma = peak->gausPeak() ? peak->sigma() : 0.25*peak->roiWidth();
+          if( !nearpeak || (fabs(nearpeak->mean() - peak->mean()) > peak_sigma) )
             answer.push_back( peak );
         }
         return answer;
@@ -306,7 +310,7 @@ namespace
     {
       cout << "Have peaks: ";
       for( auto i : allpeaks )
-        cout << "{" << i->mean() << "keV,amp=" << i->amplitude() << "},";
+        cout << "{" << i->mean() << "keV,amp=" << (i->gausPeak() ? i->amplitude() : -1.0) << "},";
       cout << endl;
     }//if( print_debug() )
     
@@ -365,8 +369,10 @@ namespace
       
       double peak_area = 0.0;
       for( const auto &p : allpeaks )
+      {
         if( (p->mean() > (energy-w)) && (p->mean() < (energy+w)) )
-           peak_area += p->amplitude();
+          peak_area += p->gausPeak() ? p->amplitude() : p->areaFromData(displayed_measurement);
+      }
       
       //If no peaks, use somethign like minimum detectable peak area
       if( peak_area < 0.1 && displayed_measurement )

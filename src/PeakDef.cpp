@@ -2128,55 +2128,75 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 	answer << "{" << q << "type" << q << ":" << q;
 	switch (continuum->type())
 	{
-	case PeakContinuum::NoOffset:   answer << "NoOffset";   break;
-	case PeakContinuum::Constant:   answer << "Constant";   break;
-	case PeakContinuum::Linear:     answer << "Linear";     break;
-	case PeakContinuum::Quardratic: answer << "Quardratic"; break;
-	case PeakContinuum::Cubic:      answer << "Cubic";      break;
-	case PeakContinuum::External:   answer << "External";   break;
+	  case PeakContinuum::NoOffset:   answer << "NoOffset";   break;
+	  case PeakContinuum::Constant:   answer << "Constant";   break;
+	  case PeakContinuum::Linear:     answer << "Linear";     break;
+	  case PeakContinuum::Quardratic: answer << "Quardratic"; break;
+	  case PeakContinuum::Cubic:      answer << "Cubic";      break;
+	  case PeakContinuum::External:   answer << "External";   break;
 	}//switch( continuum->type() )
 	answer << q << "," << q << "lowerEnergy" << q << ":" << continuum->lowerEnergy()
 		<< "," << q << "upperEnergy" << q << ":" << continuum->upperEnergy();
 
-	if (continuum->type() != PeakContinuum::NoOffset && continuum->type() != PeakContinuum::External)
-	{
-		answer << "," << q << "referenceEnergy" << q << ":" << continuum->referenceEnergy();
-		const vector<double> &values = continuum->parameters();
-		const vector<double> &uncerts = continuum->unertainties();
-		answer << "," << q << "coeffs" << q << ":[";
-		for (size_t i = 0; i < values.size(); ++i)
-			answer << (i ? "," : "") << values[i];
-		answer << "]," << q << "coeffUncerts" << q << ":[";
-		for (size_t i = 0; i < uncerts.size(); ++i)
-			answer << (i ? "," : "") << uncerts[i];
-		answer << "]";
+  switch( continuum->type() )
+  {
+    case PeakContinuum::NoOffset:
+      break;
+      
+    case PeakContinuum::Constant:
+    case PeakContinuum::Linear:
+    case PeakContinuum::Quardratic:
+    case PeakContinuum::Cubic:
+    {
+      answer << "," << q << "referenceEnergy" << q << ":" << continuum->referenceEnergy();
+      const vector<double> &values = continuum->parameters();
+      const vector<double> &uncerts = continuum->unertainties();
+      answer << "," << q << "coeffs" << q << ":[";
+      for (size_t i = 0; i < values.size(); ++i)
+        answer << (i ? "," : "") << values[i];
+      answer << "]," << q << "coeffUncerts" << q << ":[";
+      for (size_t i = 0; i < uncerts.size(); ++i)
+        answer << (i ? "," : "") << uncerts[i];
+      answer << "]";
+      
+      answer << "," << q << "fitForCoeff" << q << ":[";
+      for (size_t i = 0; i < continuum->fitForParameter().size(); ++i)
+        answer << (i ? "," : "") << (continuum->fitForParameter()[i] ? "true" : "false");
+      answer << "]";
+      
+      break;
+    }//polynomial continuum
+      
+      
+    case PeakContinuum::External:
+    {
+      if( continuum->externalContinuum()
+          && continuum->externalContinuum()->num_gamma_channels() )
+      {
+        std::shared_ptr<const Measurement> hist = continuum->externalContinuum();
+        size_t firstbin = hist->find_gamma_channel(continuum->lowerEnergy());
+        size_t lastbin = hist->find_gamma_channel(continuum->upperEnergy());
+        
+        if (firstbin > 0)
+          --firstbin;
+        if (firstbin > 0)
+          --firstbin;
+        if (lastbin < (hist->num_gamma_channels() - 1))
+          ++lastbin;
+        if (lastbin < (hist->num_gamma_channels() - 1))
+          ++lastbin;
+        
+        answer << "," << q << "continuumEnergies" << q << ":[";
+        for (size_t i = 0; i <= lastbin; ++i)
+          answer << (i ? "," : "") << hist->gamma_channel_lower(i);
+        answer << "]," << q << "continuumCounts" << q << ":[";
+        for (size_t i = 0; i <= lastbin; ++i)
+          answer << (i ? "," : "") << hist->gamma_channel_content(i);
+        answer << "]";
+      }
+    }//case PeakContinuum::External:
+  }//switch( continuum->type() )
 
-		answer << "," << q << "fitForCoeff" << q << ":[";
-		for (size_t i = 0; i < continuum->fitForParameter().size(); ++i)
-			answer << (i ? "," : "") << (continuum->fitForParameter()[i] ? "true" : "false");
-		answer << "]";
-	}//if( m_type != NoOffset && m_type != External )
-
-	if ((continuum->type() != PeakContinuum::External)
-		&& continuum->externalContinuum()
-		&& continuum->externalContinuum()->num_gamma_channels())
-	{
-		std::shared_ptr<const Measurement> hist = continuum->externalContinuum();
-		size_t firstbin = hist->find_gamma_channel(continuum->lowerEnergy());
-		size_t lastbin = hist->find_gamma_channel(continuum->upperEnergy());
-
-		if (firstbin > 0)
-			--firstbin;
-		if (lastbin < (hist->num_gamma_channels() - 1))
-			++lastbin;
-		answer << "," << q << "continuumEnergies" << q << ":[";
-		for (size_t i = 0; i <= lastbin; ++i)
-			answer << (i ? "," : "") << hist->gamma_channel_lower(i);
-		answer << "]," << q << "continuumCounts" << q << ":[";
-		for (size_t i = 0; i <= lastbin; ++i)
-			answer << (i ? "," : "") << hist->gamma_channel_content(i);
-		answer << "]";
-	}//if( continuum->type() != PeakContinuum::External )
 
 	answer << "," << q << "peaks" << q << ":[";
 	for (size_t i = 0; i < peaks.size(); ++i)
@@ -2195,8 +2215,13 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 		answer << q << "type" << q << ":";
 		switch (p.type())
 		{
-		case PeakDef::GaussianDefined: answer << q << "GaussianDefined" << q << ","; break;
-		case PeakDef::DataDefined:     answer << q << "DataDefined" << q << ",";     break;
+		  case PeakDef::GaussianDefined:
+        answer << q << "GaussianDefined" << q << ",";
+      break;
+        
+		  case PeakDef::DataDefined:
+        answer << q << "DataDefined" << q << ",";
+      break;
 		}//switch( p.type() )
 
 		answer << q << "skewType" << q << ":";
@@ -2444,6 +2469,37 @@ void PeakDef::setPeakAreaUncert( const double uncert )
 }//void setPeakAreaUncert( const double a )
 
 
+double PeakDef::areaFromData( std::shared_ptr<const Measurement> data ) const
+{
+  double sumval = 0.0;
+  if( !data || !m_continuum || !m_continuum->energyRangeDefined() )
+    return sumval;
+  
+  try
+  {
+    const float energyStart = (float)m_continuum->lowerEnergy();
+    const float energyEnd = (float)m_continuum->upperEnergy();
+    
+    const size_t lower_channel = data->find_gamma_channel( energyStart );
+    const size_t upper_channel = data->find_gamma_channel(energyEnd);
+    
+    for( size_t i = lower_channel; i <= upper_channel; ++i )
+    {
+      const float e0 = std::max( energyStart, data->gamma_channel_lower(i) );
+      const float e1 = std::min( energyEnd, data->gamma_channel_upper(i) );
+      const double data_area_i = data->gamma_integral(e0, e1);
+      const double cont_area_1 = m_continuum->offset_integral(e0, e1);
+      if( data_area_i > cont_area_1 )
+        sumval += (data_area_i - cont_area_1);
+    }
+  }catch( std::exception &e )
+  {
+    cerr << "Caught exception in PeakDef::areaFromData(): " << e.what() << endl;
+    return 0.0;
+  }
+  
+  return sumval;
+}//double areaFromData( std::shared_ptr<const Measurement> data ) const;
 
 bool PeakDef::lessThanByMean( const PeakDef &lhs, const PeakDef &rhs )
 {

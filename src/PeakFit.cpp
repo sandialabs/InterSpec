@@ -586,17 +586,12 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
   return fitpeakvec;
 }//search_for_peaks_singlethread(...)
 
-//should replace TEST_MULTITHREADED_PEAK_SEARCH with PERFORM_DEVELOPER_CHECKS
-
-#define TEST_MULTITHREADED_PEAK_SEARCH 0
-
   
 vector<std::shared_ptr<const PeakDef> > search_for_peaks(
                               const std::shared_ptr<const Measurement> meas,
                               std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
                               const bool singleThreaded  )
 {
-#if( !TEST_MULTITHREADED_PEAK_SEARCH )
   vector<std::shared_ptr<const PeakDef> > answer;
   
   if( singleThreaded )
@@ -605,130 +600,6 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks(
     answer = search_for_peaks_multithread( meas, origpeaks );
   
   return answer;
-#else
-  //Currently (20141218) if the multithreaded approach is limited to fitting one
-  //  peaks at a time, its results agrees with singlethreaded version of the
-  //  function - implying the logic for the fitting is correct, but somehow the
-  //  permutation of fitting order, or logic that keeps peaks that will
-  //  interfere with eachother from being fit together, is where the problem
-  //  lies (I may have fixed this, without updating the above message, need to
-  //  check this!).
-  
-  const vector<std::shared_ptr<const PeakDef> > multithreadresult
-                             = search_for_peaks_multithread( meas, origpeaks );
-
-  const vector<std::shared_ptr<const PeakDef> > singlethreadresult
-                             = search_for_peaks_singlethread( meas, origpeaks );
-
-  if( multithreadresult.size() != singlethreadresult.size() )
-  {
-    cerr << "Failed (multithreadresult.size() == singlethreadresult.size()), "
-         << multithreadresult.size() << " vs " << singlethreadresult.size()
-         << endl;
-   
-    stringstream msg;
-    msg << "Failed (multithreadresult.size() == singlethreadresult.size()), "
-        << multithreadresult.size() << " vs " << singlethreadresult.size()
-        << "\n"
-        << "multithreadresult = {";
-    for( size_t i = 0; i < multithreadresult.size(); ++i )
-    {
-      const PeakDef &p = *multithreadresult[i];
-      msg << (i ? "," : "") << "\n\t{ mean: " << p.mean() << ", sigma: "
-          << p.sigma() << ", amp: " << p.amplitude() << ", roilower: "
-          << p.lowerX() << ", roiupper: " << p.upperX() << " }";
-    }
-    msg << "\n\t}\nsignlethreadresult = {";
-    
-    for( size_t i = 0; i < singlethreadresult.size(); ++i )
-    {
-      const PeakDef &p = *singlethreadresult[i];
-      msg << (i ? "," : "") << "\n\t{ mean: " << p.mean() << ", sigma: "
-      << p.sigma() << ", amp: " << p.amplitude() << ", roilower: "
-      << p.lowerX() << ", roiupper: " << p.upperX() << " }";
-    }
-    msg << "\n};";
-    
-#if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
-#else
-    cerr << msg.str() << endl;
-#endif
-    
-    assert( 0 );
-    
-    if( multithreadresult.size() > singlethreadresult.size() )
-      return multithreadresult;
-    return singlethreadresult;
-//    assert( multithreadresult.size() == singlethreadresult.size() );
-  }//if( multithreadresult.size() != singlethreadresult.size() )
-  
-  
-  for( size_t i = 0; i < multithreadresult.size(); ++i )
-  {
-    const PeakDef &multi = *multithreadresult[i];
-    const PeakDef &single = *singlethreadresult[i];
-    
-    if( fabs(multi.lowerX() - single.lowerX()) > 0.5 )
-    {
-      cerr << "Failed (multi.lowerX() - single.lowerX()), " << multi.lowerX()
-           << " vs " << single.lowerX() << endl;
-      cerr << multi << endl;
-      cerr << single << endl;
-      
-      assert( 0 );
-      return singlethreadresult;
-    }
-    
-    if( fabs(multi.upperX() - single.upperX()) > 0.5 )
-    {
-      cerr << "Failed (multi.upperX() - single.upperX()), "
-           << multi.upperX() << " vs " << single.upperX() << endl;
-      cerr << multi << endl;
-      cerr << single << endl;
-      
-      assert( 0 );
-      return singlethreadresult;
-    }
-    
-    
-    if( fabs(multi.amplitude() - single.amplitude()) > 0.5 )
-    {
-      cerr << "Failed (multi.amplitude() - single.amplitude()), "
-           << multi.amplitude() << " vs " << single.amplitude() << endl;
-      cerr << multi << endl;
-      cerr << single << endl;
-      
-      assert( 0 );
-      return singlethreadresult;
-    }
-    
-    
-    if( fabs(multi.fwhm() - single.fwhm()) > 0.5 )
-    {
-      cerr << "Failed (multi.fwhm() - single.fwhm()), "
-           << multi.fwhm() << " vs " << single.fwhm() << endl;
-      cerr << multi << endl;
-      cerr << single << endl;
-      
-      assert( 0 );
-      return singlethreadresult;
-    }
-    
-    if( fabs(multi.mean() - single.mean()) > 0.5 )
-    {
-      cerr << "Failed (mean() - mean()), "
-           << multi.mean() << " vs " << single.mean() << endl;
-      cerr << multi << endl;
-      cerr << single << endl;
-      
-      assert( 0 );
-      return singlethreadresult;
-    }
-  }//for( size_t i = 0; i < multithreadresult.size(); ++i )
-  
-  return singlethreadresult;
-#endif
 }
   
 }//namespace ExperimentalAutomatedPeakSearch
@@ -1464,7 +1335,6 @@ std::shared_ptr<Measurement> estimateContinuum( std::shared_ptr<const Measuremen
                      filterOrder, smoothing, smoothWindow, compton );
   std::shared_ptr<Measurement> background( new Measurement() );
   *background = *data;
-  background->reset();
   background->set_gamma_counts( source, data->live_time(), data->real_time() );
   
   return background;
@@ -1567,7 +1437,8 @@ double chi2_for_region( const PeakShrdVec &peaks,
 
 PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &dataH,
                                    const DetctorPtr &detector,
-                                   const PeakShrdVec &inpeaks)
+                                   const PeakShrdVec &inpeaks,
+                                   const double meanSigmaVary )
 {
   typedef std::shared_ptr<const PeakDef> PeakPtr;
   
@@ -1607,13 +1478,15 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
       char name[64];
       snprintf( name, sizeof(name), "Mean%i", static_cast<int>(i) );
       const double mean = inpeaks[i]->mean();
-      const double sigma = inpeaks[i]->sigma();
+      const double sigma = inpeaks[i]->sigma(); //Will throw exception if peak not Gaussian defined - wanted behaviour
       minsigma = std::min( minsigma, 0.9*sigma );
       
-      if( !inpeaks[i]->fitFor(PeakDef::Mean) )
+      if( !inpeaks[i]->fitFor(PeakDef::Mean) || meanSigmaVary==0.0 )
         params.Add( name, mean );
+      else if( meanSigmaVary > 0.0 )
+        params.Add( name, mean, 0.1*sigma, mean-meanSigmaVary*sigma, mean+meanSigmaVary*sigma );
       else
-        params.Add( name, mean, 0.1*sigma, mean-0.25*sigma, mean+0.25*sigma );
+        params.Add( name, mean, 0.1*sigma, lx, ux );
       
       nFitWidth += inpeaks[i]->fitFor(PeakDef::Sigma);
     }//for( const PeakDefShrdPtr &peak : inpeaks )
@@ -2498,6 +2371,30 @@ void get_candidate_peak_estimates_for_user_click(
       }
       
       if( !nearmean )
+      {
+        for( auto dataDefPeak : inpeaks )
+        {
+          if( !dataDefPeak || dataDefPeak->gausPeak() )
+            continue;
+          
+          //Candidate mean shouldnt be within a data defined peak ROI, and
+          //  the candidate shouldnt span over the data defined peak.
+          if( ((p->mean() > dataDefPeak->lowerX()) && (p->mean() < dataDefPeak->upperX()))
+              || ((p->lowerX() < dataDefPeak->lowerX()) && (p->upperX() > dataDefPeak->upperX())) )
+          {
+            nearmean = true;
+            break;
+          }
+      
+          if( (p->lowerX() > dataDefPeak->lowerX()) && (p->lowerX() < dataDefPeak->upperX()) )
+            p->continuum()->setRange( dataDefPeak->upperX(), p->upperX() );
+          
+          if( (p->upperX() > dataDefPeak->lowerX()) && (p->upperX() < dataDefPeak->upperX()) )
+            p->continuum()->setRange( p->lowerX(), dataDefPeak->lowerX() );
+        }//for( auto dataDefPeak : inpeaks )
+      }//if( !nearmean )
+      
+      if( !nearmean )
         candidatesMap[fabs(p->mean()-x)] = p;
     }//for( const PeakDef &p : candidates )
     
@@ -2506,10 +2403,11 @@ void get_candidate_peak_estimates_for_user_click(
       const PeakDef &peak = *(candidatesMap.begin()->second);
       const double pixelUncert = 1.5*peak.sigma()*pixelPerKev + 20.0;
       const double pixelDelta = fabs(peak.mean()-x)*pixelPerKev;
+      
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
       DebugLog(cerr) << "For peak at " << peak.mean() << ", pixelDelta=" << pixelDelta
       << ", pixelUncert=" << pixelUncert << ", pixelPerKev=" << pixelPerKev
-      << ", peak.sigma=" << peak.sigma() << "\n";
+      << ", peak.sigma=" << (peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth()) << "\n";
 #endif
       if( (pixelDelta < pixelUncert) && pixelDelta < 75.0 )  //The 75 is arbitrary
       {
@@ -7329,7 +7227,7 @@ bool chi2_significance_test( PeakDef peak,
                 
                 
                 
-                resultpeaks = refitPeaksThatShareROI( meas, detctorPtr, inputpeaks );
+                resultpeaks = refitPeaksThatShareROI( meas, detctorPtr, inputpeaks, 0.25 );
                 
                 for( size_t j = 0; j < resultpeaks.size(); ++j )
                 {

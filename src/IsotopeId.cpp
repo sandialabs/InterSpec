@@ -636,7 +636,7 @@ void findCharacteristics( vector<string> &characteristicnucs,
   
   
   const double mean = peak->mean();
-  const double sigma = peak->sigma();
+  const double sigma = peak->gausPeak() ? peak->sigma() : 0.125*peak->roiWidth();
   const double nsigma = (0.03 < (sigma/mean)) ? 1.25 : 2.5;
   double width = nsigma*sigma;
   if( mean > 3200.0 )
@@ -818,7 +818,7 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
 
   
   const double mean = peak->mean();
-  const double sigma = peak->sigma();
+  const double sigma = peak->gausPeak() ? peak->sigma() : 0.125*peak->roiWidth();
   const double nsigma = (0.03 < (sigma/mean)) ? 1.25 : 2.5;
   double width = nsigma*sigma;
   if( mean > 3200.0 )
@@ -958,7 +958,7 @@ void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const
   
   const auto initialsize = candidates->size();
   const double mean = peak->mean();
-  const double sigma = peak->sigma();
+  const double sigma = peak->gausPeak() ? peak->sigma() : 0.125*peak->roiWidth();
   
   for( const ReferenceLineInfo &ref : showingRefLines )
   {
@@ -1157,7 +1157,7 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
     candidates->push_back( "" );
   
   const double mean = peak->mean();
-  const double sigma = peak->sigma();
+  const double sigma = peak->gausPeak() ? peak->sigma() : 0.125*peak->roiWidth();
   
   vector<string> escapes;
   for( deque< std::shared_ptr<const PeakDef> >::const_iterator i = allpeaks->begin();
@@ -1165,7 +1165,7 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
   {
     std::shared_ptr<const PeakDef> p = *i;
     const double pmean = p->mean();
-    const double tolerance = 1.5*p->sigma();
+    const double tolerance = 1.5*(p->gausPeak() ? p->sigma() : 0.125*p->roiWidth());
     
     const bool singleEscape = (fabs((pmean-mean) - 510.99) < tolerance);
     const bool doubleEscape = (fabs((pmean-mean) - 2.*510.99) < tolerance);
@@ -1216,10 +1216,16 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
   vector<string> summs;
   for( size_t i = 0; i < allpeaks->size(); ++i )
   {
+    const double peakAmp = peak->gausPeak() ? peak->amplitude() : peak->areaFromData(data);
+    if( !peak->gausPeak() )
+      continue;  //be lazy for the moment and not deal with this edge case
+      
     char buffer[128];
     std::shared_ptr<const PeakDef> rpeak = (*allpeaks)[i];
-    if( fabs(2.0*rpeak->mean() - mean) < 2.0*sigma
-        && (peak->amplitude() < rpeak->amplitude()) )
+    
+    const double rpeakAmp = rpeak->gausPeak() ? rpeak->amplitude() : rpeak->areaFromData(data);
+    
+    if( fabs(2.0*rpeak->mean() - mean) < 2.0*sigma && (peakAmp < rpeakAmp) )
     {
       cerr << "Have sum for peak " << rpeak.get() << endl;
       snprintf( buffer, sizeof(buffer), "(Sum from %.2f keV peak)", rpeak->mean() );
@@ -1229,8 +1235,14 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
     for( size_t j = 0; j < i; ++j )
     {
       std::shared_ptr<const PeakDef> lpeak = (*allpeaks)[j];
+      
+      const double lpeakAmp = lpeak->gausPeak() ? lpeak->amplitude() : lpeak->areaFromData(data);
+      
+      if( !lpeak->gausPeak() )
+        continue; //be lazy for the moment and not deal with this edge case
+      
       if( fabs(lpeak->mean() + rpeak->mean() - mean) < 2.0*sigma
-          && ((rpeak->amplitude()+lpeak->amplitude()) > peak->amplitude()) )
+          && ((rpeakAmp+lpeakAmp) > peakAmp) )
       {
         cerr << "Have double sum for peak " << rpeak.get() << " and " << lpeak.get() << endl;
         snprintf( buffer, sizeof(buffer), "(Sum %.2f and %.2f peaks)",

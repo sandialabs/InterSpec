@@ -89,6 +89,7 @@ protected:
 //  void handleSliderChanged( const int slidervalue, const SpectrumType type );
   void handleUserEnterdScaleFactor( const SpectrumType type );
     void handleUserEnterdScaleFactorWheel( const SpectrumType type, Wt::WMouseEvent e);
+  void handleRenormalizeByLIveTime( const SpectrumType type );
   
 private:
   Wt::WComboBox *m_selects[3];
@@ -100,6 +101,7 @@ private:
   Wt::WInteractWidget *m_prevSampleNumButtons[3];
 //  Wt::WSlider *m_scaleSlider[3];
   Wt::WDoubleSpinBox *m_scaleValueTxt[3];  //could use a WInPlaceEdit
+  Wt::WPushButton *m_rescaleByLiveTime[3];
   
   //We want to avoid un-necassarily re-loading the data on blur of the sample
   //  number edit, but we do wnat to re-load the data if the text shows
