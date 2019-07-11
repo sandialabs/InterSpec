@@ -25,6 +25,7 @@ build_*
 documentation
 testing
 README.txt
+build_instructions.txt
 *.tmp
 *.zip
 *.tgz

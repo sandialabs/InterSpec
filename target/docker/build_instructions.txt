@@ -1,8 +1,15 @@
+# Step 1) build and install boost 1.65.1 and Wt 3.3.4 into an Ubuntu 18.0.4 base image
+docker build -t interspec_ubuntu_build_env:v1.0 -f "setup_build_env_ubuntu.dockerfile" ../..
 
-docker build -t interspec_dev_env:1.0 -f "setup_build_env.dockerfile" ../..
+# Step 2) Compile InterSpec.
+docker build -t interspec_ubuntu_build:v1.0 -f "build_interspec_ubuntu.dockerfile" ../..
 
-docker build -t makeinterspec:v1 -f "build_interspec.dockerfile" ../..
+# Step 3) Enter docker image with compiled InterSpec.  The below command will let you use gdb to debug if you want and it maps the images port 8080 to your machines port 8080.
+docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -p 8080:8080 -i -t -v /Users/wcjohns/rad_ana/InterSpec:/interspec interspec_ubuntu_build:v1.0 bash
 
-docker run -i -t -v /Users/wcjohns/rad_ana/InterSpec:/interspec makeinterspec:v1 bash
+# Step 4) From within docker, run InterSpec
+cd /tmp/build_interspec/
+./bin/InterSpec.exe --docroot . --http-address 0.0.0.0 --http-port 8080 -c ./data/config/wt_config_localweb.xml
 
-#to debug: docker run  --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -i -t -v /Users/wcjohns/rad_ana/InterSpec:/interspec makeinterspec:v1 bash
+# Step 5) Point your browser to http://localhost:8080/ and use InterSpec.
+
