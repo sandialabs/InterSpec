@@ -58,7 +58,7 @@ option( USE_SPECRUM_FILE_QUERY_WIDGET "Enables compilation of the spectrum file 
 option( USE_SEARCH_MODE_3D_CHART "Enable 3D chart or searchmode/passthrough data.  Requires Wt >=3.3.4 compiled with WebGL/OpenGL support" OFF )
 option( USE_TERMINAL_WIDGET "Enables use of terminal widget" OFF )
 set( SpecUtils_ENABLE_D3_CHART ON CACHE BOOL "Enables use of exporting D3 HTML files" )
-option( USE_SPECTRUM_CHART_D3 "(experimental) Replaces Wt SpectrumChart with D3.js chart" OFF )
+option( USE_SPECTRUM_CHART_D3 "(experimental) Replaces Wt SpectrumChart with D3.js chart" ON )
 option( USE_SIMPLE_NUCLIDE_ASSIST "Enable using of Mike E. gamma rays of interest to help with nuclide ID" OFF )
 
 option( USE_SQLITE3_DB "Use SQLITE3 database to store user preferences and spectra" ON )
@@ -249,7 +249,7 @@ IF( BUILD_AS_OSX_APP )
   set( USE_SPECRUM_FILE_QUERY_WIDGET ON )
   set( USE_TERMINAL_WIDGET OFF )
   set( SpecUtils_ENABLE_D3_CHART ON )
-  set( USE_SPECTRUM_CHART_D3 OFF )
+  set( USE_SPECTRUM_CHART_D3 ON )
 ENDIF( BUILD_AS_OSX_APP )
 
 
@@ -273,7 +273,7 @@ IF( BUILD_AS_UNIT_TEST_SUITE )
     set( USE_SPECRUM_FILE_QUERY_WIDGET ON )
     set( USE_TERMINAL_WIDGET ON )
     set( SpecUtils_ENABLE_D3_CHART ON )
-    set( USE_SPECTRUM_CHART_D3 OFF )
+    set( USE_SPECTRUM_CHART_D3 ON )
 ENDIF( BUILD_AS_UNIT_TEST_SUITE )
 
 IF( BUILD_FOR_WEB_DEPLOYMENT )
@@ -291,7 +291,7 @@ IF( BUILD_FOR_WEB_DEPLOYMENT )
     set( USE_SPECRUM_FILE_QUERY_WIDGET OFF )
     set( USE_TERMINAL_WIDGET OFF )
     set( SpecUtils_ENABLE_D3_CHART ON )
-    set( USE_SPECTRUM_CHART_D3 OFF )
+    set( USE_SPECTRUM_CHART_D3 ON )
     set( ENABLE_RESOURCE_UPDATES OFF )
 ENDIF( BUILD_FOR_WEB_DEPLOYMENT )
 
@@ -612,6 +612,10 @@ IF( USE_SPECRUM_FILE_QUERY_WIDGET )
 ENDIF( USE_SPECRUM_FILE_QUERY_WIDGET )
 
 if( USE_SPECTRUM_CHART_D3 )
+  if( NOT RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
+    MESSAGE(FATAL_ERROR "You must enable RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE when enabling USE_SPECTRUM_CHART_D3" )
+  endif()
+
    list( APPEND sources
       src/D3SpectrumDisplayDiv.cpp
       external_libs/SpecUtils/d3_resources/d3.v3.min.js
