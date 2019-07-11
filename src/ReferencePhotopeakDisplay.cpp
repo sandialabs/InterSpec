@@ -1235,6 +1235,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     
     m_particleModel->clear();
     
+#if( !USE_SPECTRUM_CHART_D3 )
     CanvasForDragging *canvas = m_chart->overlayCanvas();
     if( canvas )
     {
@@ -1243,7 +1244,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
                   "Wt.WT.DrawGammaLines('c" + canvas->id() + "',true);";
       doJavaScript( js );
     }//canvas
-
+#endif
+    
     if( age < 0.0 || !nuc )
     {
       m_particleModel->clear();
@@ -1720,6 +1722,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   
   
   string json;
+#if( !USE_SPECTRUM_CHART_D3 )
   CanvasForDragging *canvas = m_chart->overlayCanvas();
   if( canvas )
   {
@@ -1729,6 +1732,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     json += ");";
     json += "Wt.WT.DrawGammaLines('c" + canvas->id() + "',true);";
   }
+#endif
 
   if( show )
   {
@@ -1759,6 +1763,7 @@ void ReferencePhotopeakDisplay::persistCurentLines()
   m_chart->persistCurrentReferncePhotoPeakLines();
 #endif
 
+#if( !USE_SPECTRUM_CHART_D3 )
   CanvasForDragging *canvas = m_chart->overlayCanvas();
   if( canvas )
   {
@@ -1774,6 +1779,7 @@ void ReferencePhotopeakDisplay::persistCurentLines()
     
     doJavaScript( js.str() );
   }//if( canvas )
+#endif
   
   vector<ReferenceLineInfo>::iterator pos;
   pos = std::find( m_persisted.begin(), m_persisted.end(),
@@ -2206,7 +2212,9 @@ void ReferencePhotopeakDisplay::refreshLinesDisplayedToGui( int millisecdelay )
   m_chart->setReferncePhotoPeakLines( m_currentlyShowingNuclide );
 #endif
 
-  
+#if( USE_SPECTRUM_CHART_D3 )
+  return;
+#else
   CanvasForDragging *canvas = m_chart->overlayCanvas();
   if( !canvas )
     return;
@@ -2265,6 +2273,7 @@ void ReferencePhotopeakDisplay::refreshLinesDisplayedToGui( int millisecdelay )
 //  cerr << "Sending: " << js.str() << endl;
   
   wApp->doJavaScript( js.str() );
+#endif  //#if( USE_SPECTRUM_CHART_D3 ) / else
 }//void refreshLinesDisplayedToGui()
 
 
@@ -2389,6 +2398,7 @@ void ReferencePhotopeakDisplay::clearAllLines()
   m_chart->clearAllReferncePhotoPeakLines();
 #endif
 
+#if( !USE_SPECTRUM_CHART_D3 )
   CanvasForDragging *canvas = m_chart->overlayCanvas();
   if( canvas )
   {
@@ -2404,6 +2414,7 @@ void ReferencePhotopeakDisplay::clearAllLines()
     //  calling WWidget::doJavaScript(...) )
     wApp->doJavaScript( js.str() );
   }//if( canvas )
+#endif //USE_SPECTRUM_CHART_D3
   
   m_nuclidesCleared.emit();
 }//void clearAllLines()

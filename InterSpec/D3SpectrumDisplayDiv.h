@@ -19,6 +19,8 @@
 #include "InterSpec/SpectrumChart.h"
 #include "SpecUtils/SpectrumDataStructs.h"
 
+static_assert( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE, "RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE must be enabled when USE_SPECTRUM_CHART_D3 is enabled" );
+
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 #include "InterSpec/ReferenceLineInfo.h"
 #endif
@@ -156,16 +158,6 @@ public:
   
   float xUnitsPerPixel() const;
   
-  void clearTimeHighlightRegions( const SpectrumType type );
-  void setTimeHighLightRegions( const std::vector< std::pair<double,double> > &p,
-                               const SpectrumType type );
-  bool removeDecorativeHighlightRegion( size_t regionid );
-  size_t addDecorativeHighlightRegion( const float lowerx,
-                                      const float upperx,
-                                      const Wt::WColor &color );
-  
-  void setAutoAxisRange();
-  
   void enableLegend( const bool forceMobileStyle );
   void disableLegend();
   bool legendIsEnabled() const;
@@ -183,32 +175,7 @@ public:
   bool isTimeDisplay() const;
   
   void showHistogramIntegralsInLegend( const bool show );
-  
-  void enableOverlayCanvas( bool outline, bool highlight, bool enalbeAltShiftHighlight );
-  CanvasForDragging *overlayCanvas();
-  void disableOverlayCanvas();
-  bool overlayCanvasEnabled() const;
-  void setOverlayCanvasVisible( bool visible );
-  Wt::JSlot *alignOverlayCanvas();  //returns NULL if overlay canvas not enabled
-  
-  //setScrollingParent(...): sets the scrolling frame which contains the chart
-  //  from which the overlay canvas should not extend beyond.  Calling this
-  //  function when the overlay canvas is not enabled has no effect. Calling
-  //  this function with a NULL argument removes this parent.
-  void setScrollingParent( Wt::WContainerWidget *parent );
-  
-  void setScrollY( int scrollY );
-  
-  //overlayCanvasJsException() is mostly for debugging and will
-  //  probably be removed in the future
-  Wt::JSignal<std::string> *overlayCanvasJsException();  //returns NULL if not available
-  
-  //functions to connect/disconnect the Wt::Chart::WCartesianChart based
-  //  mouse signals.  If you are using the overlay canvas, you can (but dont
-  //  have to) disconnect these signals.  If you are not using the overlay
-  //  canvas, than you should connect these signals.
-  void connectWtMouseConnections();
-  void disconnectWtMouseConnections();
+
   
   virtual void setHidden( bool hidden,
                          const Wt::WAnimation &animation = Wt::WAnimation() );
@@ -223,6 +190,17 @@ public:
   
   Wt::Signal<double,double> &shiftAltKeyDragged();
 
+  /** Set search energies.  First number is energy, second number is window;
+     you can have how ever many pairs you want.  Calling with zero pairs removes
+     all things on the chart.
+   */
+  void setSearchEnergies( const std::vector<std::pair<double,double>> &energy_windows );
+  
+  bool removeDecorativeHighlightRegion( size_t regionid );
+  size_t addDecorativeHighlightRegion( const float lowerx,
+                                      const float upperx,
+                                      const Wt::WColor &color );
+  
   
   //By default SpectrumDisplayDiv has setLayoutSizeAware(true) set, so if the
   //  widget is being sized by a Wt layout manager, layoutWidth() and
@@ -234,6 +212,9 @@ public:
   //  range is set, but chart hasnt been rendered  (although maybe +-DBL_MAX)
   double xAxisMinimum() const;
   double xAxisMaximum() const;
+  
+  double chartWidthInPixels() const;
+  double chartHeightInPixels() const;
   
   double yAxisMinimum() const;
   double yAxisMaximum() const;
@@ -269,18 +250,7 @@ public:
   SpectrumDataModel *model(){ return m_model; }
 #endif
   
-  void setDisplayRebinFactor( const int factor );
-  //relies on setLayoutSizeAware(true) being set.
-  void guessAndUpdateDisplayRebinFactor();
-  void setAutoAdjustDisplayRebinFactor( bool auto_rebin = true );
-  
-  int displayRebinFactor() const;
-  
-#if( IOS || ANDROID )
-  //forceOverlayAlign(): does the JS for force an align of the overlay
-  void forceOverlayAlign();
-#endif
-  
+    
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   void setReferncePhotoPeakLines( const ReferenceLineInfo &nuc );
   void persistCurrentReferncePhotoPeakLines();
@@ -324,7 +294,6 @@ protected:
   bool m_showHorizontalLines;
   bool m_showHistogramIntegralsInLegend;
   
-  SpectrumChart::XAxisUnits m_xAxisUnits;
   
   std::map<SpectrumChart::PeakLabels,bool> m_peakLabelsToShow;
   
@@ -342,7 +311,12 @@ protected:
   boost::scoped_ptr<Wt::JSignal<double, double> > m_doubleLeftClickJS;
   boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_leftClickJS;
   boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_rightClickJS;
-  boost::scoped_ptr<Wt::JSignal<double,double> > m_xRangeChangedJS;
+  /** Currently including chart area in pixels in xRange changed from JS; this
+      size in pixels is only approximate, since chart may not have been totally layed out
+      and rendered when this signal was emmitted.
+   ToDo: Should create dedicated signals for chart size in pixel, and also Y-range.
+   */
+  boost::scoped_ptr<Wt::JSignal<double,double,double,double> > m_xRangeChangedJS;
   boost::scoped_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_roiDraggedJS;
   
   boost::scoped_ptr<Wt::JSignal<> > m_legendClosedJS;
@@ -352,7 +326,7 @@ protected:
   //  where x is in energy, and y is in counts.
   Wt::Signal<> m_legendEnabledSignal;
   Wt::Signal<> m_legendDisabledSignal;
-  Wt::Signal<double,double> m_xRangeChanged;
+  Wt::Signal<double/*xlow*/,double/*xhigh*/> m_xRangeChanged;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_controlKeyDragg;
   Wt::Signal<double,double> m_shiftKeyDragg;
   Wt::Signal<double,double> m_shiftAltKeyDragg;
@@ -384,7 +358,7 @@ protected:
   
   //chartXRangeChangedCallback(...): rebins the displayed data, and sets the
   //  y-axis to be auto-range
-  void chartXRangeChangedCallback( double x, double y );
+  void chartXRangeChangedCallback( double x, double y, double chart_width_px, double chart_height_px );
   
   /** The javascript variable name used to refer to the SpecrtumChartD3 object.
       Currently is `"window.plot" + id()` but might be changed in the future
@@ -398,6 +372,10 @@ protected:
   double m_xAxisMaximum;
   double m_yAxisMinimum;
   double m_yAxisMaximum;
+  
+  /** The width of the plotting area. */
+  double m_chartWidthPx;
+  double m_chartHeightPx;
   
   // Plot Area Padding values
   int m_plotAreaPaddingLeft;

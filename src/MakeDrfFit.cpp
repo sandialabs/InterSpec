@@ -186,6 +186,9 @@ namespace MakeDrfFit
   
 double peak_width_chi2( double predicted_sigma, const PeakDef &peak )
 {
+  if( !peak.gausPeak() )
+    return 0.0;  //shouldnt ever get here
+  
   const double measured_sigma = peak.sigma();
   //double measured_sigma_uncert = peak.sigmaUncert();
   //if( measured_sigma_uncert <= 0.01 )

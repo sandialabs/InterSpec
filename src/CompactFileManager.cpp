@@ -180,8 +180,9 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     
     if( mode==TopToBottom || type == kForeground )
     {
-//      m_scaleSlider[type] = (WSlider *)0;
-      m_scaleValueTxt[type] = (WDoubleSpinBox *)0;
+//      m_scaleSlider[type] = nullptr;
+      m_scaleValueTxt[type] = nullptr;
+      m_rescaleByLiveTime[type] = nullptr;
     }else
     {
       WContainerWidget *rowdiv = new WContainerWidget( );
@@ -224,8 +225,16 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 //      slidelayout->addWidget( m_scaleSlider[type], 0, 0, 1, 2 );
       
       WLabel *label = new WLabel( "Scale Factor:" );
-      slidelayout->addWidget( label, 0, 0, AlignLeft);
-      slidelayout->addWidget( m_scaleValueTxt[type], 0, 1, AlignLeft );
+      slidelayout->addWidget( label, 0, 0, AlignLeft | AlignMiddle );
+      slidelayout->addWidget( m_scaleValueTxt[type], 0, 1, AlignLeft | AlignMiddle );
+      
+      m_rescaleByLiveTime[type] = new WPushButton( "Normalize" );
+      m_rescaleByLiveTime[type]->hide();
+      m_rescaleByLiveTime[type]->clicked().connect( boost::bind( &CompactFileManager::handleRenormalizeByLIveTime, this, type) );
+      //20190707: making this button visible adds some jitter to the layout, but
+      //  since this is a rare-ish action, we'll live with it for now.
+      slidelayout->addWidget( m_rescaleByLiveTime[type], 0, 2, AlignCenter | AlignMiddle );
+      
       slidelayout->setColumnStretch( 1, 1 );
 //      slidelayout->setRowStretch( 1, 1 );
       
@@ -702,6 +711,8 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
     updateLiveTimeSlider( 1.0, spectrum_type );
     if( m_scaleValueTxt[spectrum_type] )
       m_scaleValueTxt[spectrum_type]->disable();
+    if( m_rescaleByLiveTime[spectrum_type] )
+      m_rescaleByLiveTime[spectrum_type]->hide();
     
     return;
   }//if( !meas )
@@ -711,6 +722,9 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
 //    m_scaleSlider[spectrum_type]->enable();
     m_scaleValueTxt[spectrum_type]->enable();
   }
+  
+  if( m_rescaleByLiveTime[spectrum_type] )
+    m_rescaleByLiveTime[spectrum_type]->hide();
 
   WModelIndex index = m_files->index( meas );
   if( !index.isValid() )
@@ -957,17 +971,31 @@ void CompactFileManager::handleUserEnterdScaleFactor( const SpectrumType type )
   
   
   if( update )
+  {
+    if( m_rescaleByLiveTime[type] )
+      m_rescaleByLiveTime[type]->show();
     m_hostViewer->setDisplayScaleFactor( sf, type );
+  }
 }//void handleUserEnterdScaleFactor( const SpectrumType type )
 
 
 
 void CompactFileManager::handleUserEnterdScaleFactorWheel( const SpectrumType type,  WMouseEvent e )
 {
-   
-    int i = e.wheelDelta();
-     m_scaleValueTxt[type]->setValue(m_scaleValueTxt[type]->value() + m_scaleValueTxt[type]->singleStep()*i);
-    handleUserEnterdScaleFactor(type);
+  int i = e.wheelDelta();
+  m_scaleValueTxt[type]->setValue(m_scaleValueTxt[type]->value() + m_scaleValueTxt[type]->singleStep()*i);
+  handleUserEnterdScaleFactor(type);
 }//void handleUserEnterdScaleFactor( const SpectrumType type )
 
+
+void CompactFileManager::handleRenormalizeByLIveTime( const SpectrumType type )
+{
+  const float lt = m_hostViewer->liveTime(type);
+  const float datalt = m_hostViewer->liveTime(kForeground);
+  const double sf = ((lt>0.0f && datalt>0.0f) ? (datalt/lt) : 1.0f);
+  updateLiveTimeSlider( sf, type );
+  if( m_rescaleByLiveTime[type] )
+    m_rescaleByLiveTime[type]->hide();
+  m_hostViewer->setDisplayScaleFactor( sf, type );
+}//void handleRenormalizeByLIveTime( const SpectrumType type )
 

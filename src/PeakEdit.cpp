@@ -1448,6 +1448,12 @@ void PeakEdit::skewTypeChanged()
   PeakDef::SkewType type = PeakDef::SkewType( m_skewType->currentIndex() );
   std::shared_ptr<const PeakContinuum> continuum = m_currentPeak.continuum();
   
+  if( m_currentPeak.type() == PeakDef::DefintionType::DataDefined )
+  {
+    type = PeakDef::NoSkew;
+    m_skewType->setCurrentIndex(PeakDef::NoSkew);
+  }
+  
   switch( type )
   {
     case PeakDef::NoSkew:
@@ -1739,7 +1745,7 @@ void PeakEdit::refit()
   {
     const std::shared_ptr<DetectorPeakResponse> &detector
                                 = m_viewer->measurment(kForeground)->detector();
-    const PeakShrdVec outp = refitPeaksThatShareROI( data, detector, inpkptrs );
+    const PeakShrdVec outp = refitPeaksThatShareROI( data, detector, inpkptrs, 0.25 );
     for( size_t i = 0; i < outp.size(); ++i )
       outputPeak.push_back( *outp[i] );
   }else

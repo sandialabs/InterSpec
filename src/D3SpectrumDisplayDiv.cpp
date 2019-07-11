@@ -36,6 +36,7 @@
 
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakModel.h"
@@ -65,12 +66,16 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_peakModel( 0 ),
   m_layoutWidth( 0 ),
   m_layoutHeight( 0 ),
-  m_autoAdjustDisplayBinnning( false ),
   m_compactAxis( false ),
   m_legendEnabled( true ),
   m_yAxisIsLog( true ),
-  m_xAxisUnits( SpectrumChart::kUndefinedUnits ),
   m_jsgraph( "window.graph" + id() ),
+  m_xAxisMinimum(0.0),
+  m_xAxisMaximum(0.0),
+  m_yAxisMinimum(0.0),
+  m_yAxisMaximum(0.0),
+  m_chartWidthPx(0.0),
+  m_chartHeightPx(0.0),
   m_showRefLineInfoForMouseOver( true ),
   m_foregroundLineColor( 0x00, 0x00, 0x00 ),  //black
   m_backgroundLineColor( 0x00, 0xff, 0xff ),  //cyan
@@ -110,9 +115,9 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   
   
   setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
-    
-  m_xRangeChangedJS.reset( new JSignal<double,double>( this, "xrangechanged", true ) );
-  m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this, _1, _2 ) );
+
+  m_xRangeChangedJS.reset( new JSignal<double,double,double,double>( this, "xrangechanged", true ) );
+  m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this, _1, _2, _3, _4 ) );
   
   m_controlKeyDraggJS.reset( new JSignal<double,double,int,int>( this, "controlkeydragged", true ) );
   m_controlKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartControlKeyDragCallback, this, _1, _2, _3, _4 ) );
@@ -222,65 +227,12 @@ void D3SpectrumDisplayDiv::disableLegend()
 }//void disableLegend()
 
 
-void D3SpectrumDisplayDiv::setIsEnergyDisplay()
-{
-  m_xAxisUnits = SpectrumChart::kkeV;
-}
-
-void D3SpectrumDisplayDiv::setIsTimeDisplay()
-{
-  m_xAxisUnits = SpectrumChart::kSeconds;
-}
-
-bool D3SpectrumDisplayDiv::isEnergyDisplay() const
-{
-  return (m_xAxisUnits == SpectrumChart::kkeV);
-}
-
-bool D3SpectrumDisplayDiv::isTimeDisplay() const
-{
-  return (m_xAxisUnits == SpectrumChart::kSeconds);
-}
-
-
 void D3SpectrumDisplayDiv::showHistogramIntegralsInLegend( const bool show )
 {
   m_showHistogramIntegralsInLegend = show;
   // TODO: No option in D3 to show/hide histogram integrals in legend
 }
 
-void D3SpectrumDisplayDiv::enableOverlayCanvas( bool outline,
-                                             bool highlight,
-                                             bool enalbeAltShiftHighlight  )
-{
-}//void enableOverlayCanvas()
-
-
-CanvasForDragging *D3SpectrumDisplayDiv::overlayCanvas()
-{
-  return NULL;
-}//CanvasForDragging *overlayCanvas()
-
-bool D3SpectrumDisplayDiv::overlayCanvasEnabled() const
-{
-  return false;
-}//bool overlayCanvasEnabled() const
-
-void D3SpectrumDisplayDiv::setOverlayCanvasVisible( bool visible )
-{
-}//void setOverlayCanvasVisible( bool visible )
-
-void D3SpectrumDisplayDiv::disableOverlayCanvas()
-{
-}//void disableOverlayCanvas()
-
-void D3SpectrumDisplayDiv::setScrollingParent( Wt::WContainerWidget *parent )
-{
-}//void setScrollingParent( Wt::WContainerWidget *parent );
-
-void D3SpectrumDisplayDiv::setScrollY( int scrollY )
-{
-}//void setScrollY( int scrollY )
 
 Signal<> &D3SpectrumDisplayDiv::legendEnabled()
 {
@@ -371,37 +323,6 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::rightMouseDragg()
 }//Signal<double,double> &rightMouseDragg()
 
 
-Wt::JSlot *D3SpectrumDisplayDiv::alignOverlayCanvas()
-{
-  return NULL;
-}
-
-
-Wt::JSignal<std::string> *D3SpectrumDisplayDiv::overlayCanvasJsException()
-{
-  return NULL;
-}
-
-
-void D3SpectrumDisplayDiv::connectWtMouseConnections()
-{
-}
-
-
-void D3SpectrumDisplayDiv::disconnectWtMouseConnections()
-{
-}
-
-
-#if( IOS || ANDROID )
-void D3SpectrumDisplayDiv::forceOverlayAlign()
-{
-  Wt::JSlot *align = alignOverlayCanvas();
-  if( align )
-    align->exec();
-}//void forceOverlayAlign()
-#endif
-
 
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 void D3SpectrumDisplayDiv::setReferncePhotoPeakLines( const ReferenceLineInfo &nuc )
@@ -469,19 +390,6 @@ void D3SpectrumDisplayDiv::layoutSizeChanged ( int width, int height )
 {
   m_layoutWidth = width;
   m_layoutHeight = height;
-  
-  if( m_autoAdjustDisplayBinnning )
-  {
-    guessAndUpdateDisplayRebinFactor();
-  }//if( m_autoAdjustDisplayBinnning )
-  
-  
-#if( IOS || ANDROID )
-  //When the soft-keyboard disapears (on Android at a minimum), the overlays
-  //  dont resize properly (until you change tab bellow the chart, or something)
-  //  so we will force it.
-  forceOverlayAlign();
-#endif
 }//void layoutSizeChanged ( int width, int height )
 
 
@@ -508,6 +416,16 @@ double D3SpectrumDisplayDiv::xAxisMaximum() const
   return m_xAxisMaximum;
 }//double xAxisMaximum() const
 
+
+double D3SpectrumDisplayDiv::chartWidthInPixels() const
+{
+  return m_chartWidthPx;
+}//double chartWidthInPixels() const
+
+double D3SpectrumDisplayDiv::chartHeightInPixels() const
+{
+  return m_chartHeightPx;
+}//double chartHeightInPixels() const
 
 double D3SpectrumDisplayDiv::yAxisMinimum() const
 {
@@ -623,9 +541,7 @@ void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double max
   const string maximumStr = to_string( maximum );
   m_xAxisMinimum = minimum;
   m_xAxisMaximum = maximum;
-  doJavaScript( m_jsgraph + ".setXAxisRange(" + minimumStr + "," + maximumStr + ");" );
-  if( m_autoAdjustDisplayBinnning )
-    m_xRangeChanged.emit( minimum, maximum );
+  doJavaScript( m_jsgraph + ".setXAxisRange(" + minimumStr + "," + maximumStr + ",false);" );
 }//void setXAxisRange( const double minimum, const double maximum );
 
 
@@ -639,52 +555,6 @@ void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
   m_yAxisMaximum = maximum;
   doJavaScript( m_jsgraph + ".setYAxisRange(" + minimumStr + "," + maximumStr + ");" );
 }//void setYAxisRange( const double minimum, const double maximum );
-
-
-void D3SpectrumDisplayDiv::setDisplayRebinFactor( const int factor )
-{
-  m_model->setRebinFactor( factor );
-}//void setDisplayRebinFactor( const int factor )
-
-
-void D3SpectrumDisplayDiv::setAutoAdjustDisplayRebinFactor( bool auto_rebin )
-{
-  m_autoAdjustDisplayBinnning = auto_rebin;
-}//void setAutoAdjustDisplayRebinFactor( bool auto_rebin )
-
-
-int D3SpectrumDisplayDiv::displayRebinFactor() const
-{
-  return m_model->rebinFactor();
-}//int displayRebinFactor() const
-
-
-void D3SpectrumDisplayDiv::guessAndUpdateDisplayRebinFactor()
-{
-  //my guess is this function houldnt have ant real effect (in terms of
-  //  server/client interactions) if it is being called due to itself (e.g.
-  //  calling setDisplayRebinFactor(...) with a NEW rebin factor causes
-  //  the model to change dimensions, which causes the chart to resize).
-  std::shared_ptr<Measurement> axisH = m_model->histUsedForXAxis();
-  
-  if( !axisH || !layoutSizeAware() )
-  {
-    setDisplayRebinFactor( 1 );
-    return;
-  }//if( !axisH )
-  
-  const float displayedxmin = static_cast<float>( m_xAxisMinimum );
-  const float displayedxmax = static_cast<float>( m_xAxisMaximum );
-  const size_t displayednbin = axisH->find_gamma_channel( displayedxmax )
-  - axisH->find_gamma_channel( displayedxmin );
-  const int width = layoutWidth()
-  - m_plotAreaPaddingLeft
-  - m_plotAreaPaddingRight;
-  const float bins_per_pixel = float(displayednbin) / float(width);
-  const int rebin_factor = max( static_cast<int>(ceil(bins_per_pixel)), 1 );
-  
-  setDisplayRebinFactor( rebin_factor );
-}//void guessAndUpdateDisplayRebinFactor()
 
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
@@ -874,38 +744,6 @@ void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist,
 
 
 
-
-void D3SpectrumDisplayDiv::clearTimeHighlightRegions( const SpectrumType type )
-{
-}//void clearTimeHighlightRegions();
-
-
-void D3SpectrumDisplayDiv::setTimeHighLightRegions( const vector< pair<double,double> > &p,
-                                                 const SpectrumType type )
-{
-}//void setHighLightRegions(...)
-
-
-bool D3SpectrumDisplayDiv::removeDecorativeHighlightRegion( size_t uniqueid )
-{
-  return true;
-}//void removeDecorativeHighlightRegions()
-
-
-size_t D3SpectrumDisplayDiv::addDecorativeHighlightRegion( const float lowerx,
-                                                        const float upperx,
-                                                        const Wt::WColor &color )
-{
-  return 0;
-}//void addDecorativeHighlightRegion(...)
-
-
-void D3SpectrumDisplayDiv::setAutoAxisRange()
-{
-}//void setAutoAxisRange()
-
-
-
 void D3SpectrumDisplayDiv::setPlotAreaPadding( int left, int top, int right, int bottom )
 {
   m_plotAreaPaddingLeft = left;
@@ -1001,9 +839,7 @@ void D3SpectrumDisplayDiv::disableMouseDragActions()
 {
 }//void disableMouseDragActions()
 
-//Christian: I'm not exactly if this signal is emitted with the D3 chart, since I saw
-//  that it's main use was with time series. If D3 should support time series, then
-//  I believe this should have use. But for now, this is just a placeholder.
+
 Wt::Signal<double,double> &D3SpectrumDisplayDiv::xRangeChanged()
 {
   return m_xRangeChanged;
@@ -1014,6 +850,35 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::shiftAltKeyDragged()
 {
   return m_shiftAltKeyDragg;
 }
+
+void D3SpectrumDisplayDiv::setSearchEnergies( const vector<pair<double,double>> &energies )
+{
+  string js = "[";
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    js += string(i ? "," : "") + "{energy:" + std::to_string(energies[i].first)
+          + ", window:" + std::to_string(energies[i].second) + "}";
+  }
+  js += "]";
+
+  doJavaScript( m_jsgraph + ".setSearchWindows(" + js + ");" );
+}//void setSearchEnergies( const std::vector<std::pair<double,double>> &energies )
+
+
+bool D3SpectrumDisplayDiv::removeDecorativeHighlightRegion( size_t uniqueid )
+{
+  return true;
+}//void removeDecorativeHighlightRegions()
+
+
+size_t D3SpectrumDisplayDiv::addDecorativeHighlightRegion( const float lowerx,
+                                                          const float upperx,
+                                                          const Wt::WColor &color )
+{
+  //ToDo: need to implement this
+  return 0;
+}//void addDecorativeHighlightRegion(...)
+
 
 void D3SpectrumDisplayDiv::updateData()
 {
@@ -1270,138 +1135,132 @@ void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, int page
   m_rightClick.emit( x, y, pageX, pageY );
 }//void D3SpectrumDisplayDiv::chartRightClickCallback(...)
 
+
 void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, double new_upper_energy,
                                                   double new_lower_px, double new_upper_px,
                                                   double original_lower_energy, bool isfinal )
 {
-  cout << "chartRoiDragedCallback: energy={" << new_lower_energy << "," << new_upper_energy << "}, "
-       << "newPx={" << new_lower_px << "," << new_upper_px << "}, original_lower_energy=" << original_lower_energy
-       << ", isfinal=" << isfinal << endl;
+//  cout << "chartRoiDragedCallback: energy={" << new_lower_energy << "," << new_upper_energy << "}, "
+//       << "newPx={" << new_lower_px << "," << new_upper_px << "}, original_lower_energy=" << original_lower_energy
+//       << ", isfinal=" << isfinal << endl;
   
-  if( !m_peakModel || !m_model )  //Shouldnt ever happen
-    return;
-  
-  //m_peakModel
-  //m_model
-  //m_model->getData()
-  //Lets get the peaks this ROI belongs to.
-  
-  
-  //If region to narrow, or fit fails, pass back null if !isFinal, or original ROI if isFinal
-  if( new_upper_energy < (new_lower_energy+10) )
+  try
   {
-    if( isfinal )
+    if( !m_peakModel || !m_model )  //Shouldnt ever happen
+      return;
+    
+    shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks = m_peakModel->peaks();
+    if( !origpeaks )
+      return;  //shouldnt ever happen
+    
+    double minDe = 999999.9;
+    std::shared_ptr<const PeakContinuum> continuum;
+    for( auto p : *origpeaks )
+    {
+      const double de = fabs( p->continuum()->lowerEnergy() - original_lower_energy );
+      if( de < minDe )
+      {
+        minDe = de;
+        continuum = p->continuum();
+      }
+    }//for( auto p : *origpeaks )
+    
+    if( !continuum || minDe > 1.0 )  //0.001 would probably be fine instead of 1.0
     {
       doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
-      return;
+      
+      throw runtime_error( "Couldnt find a continuum with lower energy " + std::to_string(original_lower_energy)
+                          + " (de=" + std::to_string(minDe) + ")" );
+    }//if( failed to find continuum )
+    
+    cout << "Found continuum with minDe=" << minDe << endl;
+    
+    auto new_continuum = std::make_shared<PeakContinuum>( *continuum );
+    //XXX balh blah blah - need to re-use one of the ranges energies, so we dont get into a loop of changing toe side we dont want to
+    new_continuum->setRange( new_lower_energy, new_upper_energy );
+    
+    vector< shared_ptr<const PeakDef>> new_roi_initial_peaks, orig_roi_peaks;
+    for( auto p : *origpeaks )
+    {
+      if( p->continuum() == continuum )
+      {
+        orig_roi_peaks.push_back( p );
+        auto newpeak = make_shared<PeakDef>(*p);
+        newpeak->setContinuum( new_continuum );
+        new_roi_initial_peaks.push_back( newpeak );
+      }
     }
-    //blah blah blah
-    //Delete peaks from this ROI from the model
-  }//if( narrow region ).
-  
-  /*
-  vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
-  vector< std::shared_ptr<const PeakDef> > inpkptrs;
-  
-  const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(kForeground);
-  const std::shared_ptr<const Measurement> continuum;
-  std::shared_ptr<const SpecMeas> meas = m_viewer->measurment(kForeground);
-  
-  
-  if( !data || !meas )
-    return;
-  
-  const PeakModel::PeakShrdPtr &thispeak = m_peakModel->peak(m_peakIndex);
-  //  inputPeak.push_back( *thispeak );
-  
-  const int npeak = static_cast<int>(m_peakModel->npeaks());
-  for( int peak = 0; peak < npeak; ++peak )
-  {
-    WModelIndex index = m_peakModel->index( peak, 0 );
-    const PeakModel::PeakShrdPtr &p = m_peakModel->peak(index);
     
-    if( p->continuum() == thispeak->continuum() )
+    //If region to narrow, or fit fails, pass back null if !isFinal, or original ROI if isFinal
+    //cout << "new_upper_px=" << new_upper_px << ", new_lower_px=" << new_lower_px << endl;
+    
+    if( new_upper_px >= (new_lower_px+10) )  //perhaps this should be by percentage of ROI?
     {
-      inputPeak.push_back( *p );
-      inpkptrs.push_back( p );
+      //Need to check that all peaks are Gaussian.
+      //  Actually should make sure a ROI can only have data defined or Gausian peaks only (what happens now)
+      std::shared_ptr<const DetectorPeakResponse> detector;
+      std::shared_ptr<Measurement> foreground = m_model->getData();
+      vector<shared_ptr<const PeakDef>> refitpeaks
+                  = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, 3.0 );
+      
+      //If the fit failed, use the old peaks, but with the ROI changed to what the user has
+      const auto &newpeaks = refitpeaks.empty() ? new_roi_initial_peaks : refitpeaks;
+      
+      if( isfinal )
+      {
+        for( auto p : orig_roi_peaks )
+          m_peakModel->removePeak( p );
+        
+        std::vector<PeakDef> peaks_to_add;
+        for( auto p : newpeaks )
+          peaks_to_add.push_back( *p );
+        
+        m_peakModel->addPeaks( peaks_to_add );
+        updateData();
+      }else
+      {
+        string adjustRoiJson = PeakDef::gaus_peaks_to_json( newpeaks );
+        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
+      }
+      
     }else
-      fixedPeaks.push_back( *p );
-  }//for( int peak = 0; peak < npeak; ++peak )
-  
-  if( inputPeak.size() > 1 )  //JIC
-    std::sort( inputPeak.begin(), inputPeak.end(), &PeakDef::lessThanByMean );
-  
-  //  const double lowE = peak->mean() - 0.1;
-  //  const double upE = peak->mean() + 0.1;
-  const double lowE = inputPeak.front().mean() - 0.1;
-  const double upE = inputPeak.back().mean() + 0.1;
-  const double ncausalitysigma = 0.0;
-  const double stat_threshold  = 0.0;
-  const double hypothesis_threshold = 0.0;
-  
-  
-  //if peak
-  if( (inputPeak.size()>1) && thispeak->continuum()->isPolynomial() && !!data )
-  {
-    const std::shared_ptr<DetectorPeakResponse> &detector
-    = m_viewer->measurment(kForeground)->detector();
-    const PeakShrdVec outp = refitPeaksThatShareROI( data, detector, inpkptrs );
-    for( size_t i = 0; i < outp.size(); ++i )
-      outputPeak.push_back( *outp[i] );
-  }else
-  {
-    const bool isRefit = true;
-    outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                                 hypothesis_threshold, inputPeak, data,
-                                 fixedPeaks, isRefit );
-  }
-  
-  
-  if( outputPeak.size() != inputPeak.size() )
-  {
-    passMessage( "Failed to refit peak (became insignificant), so not doing "
-                "anything", "", WarningWidget::WarningMsgHigh );
-    return;
-  }//if( outputPeak.size() != inputPeak.size() )
-  
-  if( inputPeak.size() > 1 )
-  {
-    m_energy = m_currentPeak.mean();
-    fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
-    std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
-    m_peakModel->setPeaks( fixedPeaks );
-    
-    changePeak( m_energy );
-  }else
-  {
-    for( PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
-        t < PeakDef::NumCoefficientTypes;
-        t = PeakDef::CoefficientType(t+1) )
     {
-      outputPeak[0].setFitFor(t, m_currentPeak.fitFor(t));
-    }//for( loop over PeakDef::CoefficientType )
-    
-    m_currentPeak = outputPeak[0];
-    m_blockInfoRefresh = true;
-    m_peakModel->removePeak( m_peakIndex );
-    m_peakIndex   = m_viewer->addPeak( m_currentPeak, false );
-    m_currentPeak = *m_peakModel->peak( m_peakIndex );
-    m_blockInfoRefresh = false;
-    
-    refreshPeakInfo();
-  }//if( inputPeak.size() > 1 )
-  
-  
-  */
+      cout << "User wants to erase peaks" << endl;
+      doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
+      
+      if( isfinal )
+      {
+        for( auto p : orig_roi_peaks )
+          m_peakModel->removePeak( p );
+        updateData();
+      }
+    }//if( not narrow region ) / else
+  }catch( std::exception &e )
+  {
+    cerr << "Caught exception: " << e.what() << endl;
+  }//try / catch
   
   m_roiDrag.emit( new_lower_energy, new_upper_energy, new_lower_px, new_upper_px,
                   original_lower_energy,  isfinal );
-}
+}//chartRoiDragedCallback(...)
 
-void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x, double y )
+
+void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1, double chart_width_px, double chart_height_px )
 {
-  cout << "chartXRangeChangedCallback{" << x << "," << y << "}" << endl;
-  m_xRangeChanged.emit( x, y );
+  if( fabs(m_xAxisMinimum-x0)<0.0001 && fabs(m_xAxisMaximum-x1)<0.0001
+      && fabs(m_chartWidthPx-chart_width_px)<0.0001 && fabs(m_chartHeightPx-chart_height_px)<0.0001 )
+  {
+    cout << "No appreciable change in x-range or chart pixel, not emitting" << endl;
+    return;
+  }
+  
+  cout << "chartXRangeChangedCallback{" << x0 << "," << x1 << "," << chart_width_px << "," << chart_height_px << "}" << endl;
+  m_xAxisMinimum = x0;
+  m_xAxisMaximum = x1;
+  m_chartWidthPx = chart_width_px;
+  m_chartHeightPx = chart_height_px;
+  
+  m_xRangeChanged.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartXRangeChangedCallback(...)
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()

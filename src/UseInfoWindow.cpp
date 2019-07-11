@@ -751,7 +751,18 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       //&& (viewer->renderedHeight() > 512.0)
       && !viewer->isMobile() )
   {
-    resizeScaledWindow( 0.5, 0.8 );
+    if( viewer->renderedWidth() > 100 && viewer->renderedHeight() > 100 )
+    {
+      //We do know the window size, so lets use it.  This is very rough - (not tested as of 20190706)
+      if( viewer->renderedWidth() > 725 )
+        resizeWindow( std::max(700,viewer->renderedWidth()/2), std::max(0.75*viewer->renderedHeight(),512.0) );
+      else
+        resizeWindow( viewer->renderedWidth() - 30, viewer->renderedHeight() - 40 );
+    }else
+    {
+      //We dont know the window size
+      resizeScaledWindow( 0.5, 0.8 );
+    }
     centerWindowHeavyHanded();
   }else
   {

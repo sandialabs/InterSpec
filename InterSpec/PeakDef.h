@@ -383,6 +383,11 @@ public:
   void setPeakArea( const double a );
   void setPeakAreaUncert( const double a );
   
+  /** Returns the area between the continuum and data, everywhere data is above
+     continuum in the ROI.
+   */
+  double areaFromData( std::shared_ptr<const Measurement> data ) const;
+  
   
   inline double meanUncert() const;
   inline double sigmaUncert() const;

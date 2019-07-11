@@ -190,9 +190,13 @@ std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 //  searchForPeakFromUser(...), for instance when you modfiy the ROI range.
 //  Returns an empty result if error occurs, or is not able to produce a better
 //  fit
-PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &dataH,
-                                    const DetctorPtr &detector,
-                                    const PeakShrdVec &inpeaks );
+//  meanSigmaVary is how many sigma we should limit the peak means to. A negative
+//  value means no limit (untested).  Recomend 0.25.
+std::vector< std::shared_ptr<const PeakDef> >
+    refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &dataH,
+                            const DetctorPtr &detector,
+                            const std::vector< std::shared_ptr<const PeakDef> > &inpeaks,
+                            const double meanSigmaVary );
 
 
 //For meaning of stat_threshold and hypothesis_threshold see notes for

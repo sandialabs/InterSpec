@@ -143,7 +143,7 @@ public:
       const PeakDef &oldPeak = orig_peaks[oldindex];
       //Just match peaks up by mean for now.
       const double oldMean = oldPeak.mean();
-      const double oldSigma = oldPeak.sigma();
+      const double oldSigma = oldPeak.gausPeak() ? oldPeak.sigma() : 0.25*oldPeak.roiWidth();
       
       int nearestNew = -1;
       for( size_t newindex = 0; newindex < final_peaks.size(); ++newindex )
