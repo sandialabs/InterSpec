@@ -1,37 +1,35 @@
 #Dockerfile to compile InterSpec on (installs correct versions of Wt and Boost)
 
-FROM alpine:3.9
+FROM ubuntu:18.04
 
-#ENV http_proxy wwwproxy.ca.sandia.gov:80
-#ENV https_proxy wwwproxy.ca.sandia.gov:80
-
+# RUN export http_proxy=http://wwwproxy.ca.sandia.gov:80/
+# RUN export https_proxy=https://wwwproxy.ca.sandia.gov:80/
 
 ADD . /InterSpec
 
 WORKDIR /tmp
 
 
-
-#since this is just to build things, we'll use lots of run commands to d=take advantage of
+#since this is just to build things, we'll use lots of run commands to take advantage of
 # docker caching
+RUN apt update && apt -y install bash build-essential binutils gcc cmake wget zlib1g-dev
 
-#gcc version 8.2.0
-#cmake version 3.13.0
-RUN apk add build-base binutils gcc abuild cmake linux-headers zlib-dev musl-dev libc-dev
+#To Try and link to static runtime, add 'runtime-link=static' to below b2 command
 RUN mkdir build; cd build \
 && wget https://dl.bintray.com/boostorg/release/1.65.1/source/boost_1_65_1.tar.gz \
 && tar -xzvf boost_1_65_1.tar.gz \
 && cd boost_1_65_1 \
 && ./bootstrap.sh --without-icu --without-libraries=python,mpi,container,type_erasure,graph,graph_parallel,log,coroutine,stacktrace,test,wave --prefix=/usr/local \
-&& ./b2 variant=release link=static threading=multi runtime-link=static -j8 install \
+&& ./b2 variant=release link=static cxxflags="-std=c++11" threading=multi -j4 install  \
 && cd .. \
 && rm -rf boost_1_65_1 boost_1_65_1.tar.gz
 
+#if you want to try and static link, add '-DCMAKE_EXE_LINKER_FLAGS="-static"' to the below cmake command
 RUN wget https://github.com/emweb/wt/archive/3.3.4.tar.gz \
 && tar -xzvf 3.3.4.tar.gz && cd wt-3.3.4 \
 && cp src/Wt/Dbo/backend/amalgamation/sqlite3.h /usr/local/include/ \
-&& patch -b src/Wt/Render/CssParser.C /InterSpec/target/patches/wt/3.3.4/CssParser.C.patch \
-&& patch -b src/http/RequestParser.C /InterSpec/target/patches/wt/3.3.4/RequestParser.C.patch \
+&& patch src/Wt/Render/CssParser.C /InterSpec/target/patches/wt/3.3.4/CssParser.C.patch \
+&& patch src/http/RequestParser.C /InterSpec/target/patches/wt/3.3.4/RequestParser.C.patch \
 && mkdir build && cd build \
 && cmake -DWT_CPP_11_MODE="-std=c++11" -DWT_SIGNALS_IMPLEMENTATION="boost.signals2" \
       -DENABLE_SSL=OFF -DSHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release \
