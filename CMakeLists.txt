@@ -616,14 +616,23 @@ if( USE_SPECTRUM_CHART_D3 )
     MESSAGE(FATAL_ERROR "You must enable RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE when enabling USE_SPECTRUM_CHART_D3" )
   endif()
 
-   list( APPEND sources
-      src/D3SpectrumDisplayDiv.cpp
-      external_libs/SpecUtils/d3_resources/d3.v3.min.js
-      external_libs/SpecUtils/d3_resources/c.min.js
-      external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
-      external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
-      )
-    set( headers ${headers} InterSpec/D3SpectrumDisplayDiv.h )
+  list( APPEND sources
+    src/D3SpectrumDisplayDiv.cpp
+    external_libs/SpecUtils/d3_resources/d3.v3.min.js
+    external_libs/SpecUtils/d3_resources/c.min.js
+    external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
+    external_libs/SpecUtils/d3_resources/SpectrumChartD3.css )
+  list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h )
+
+#ToDo: at compile time copy D3 reources into InterSpec_resources; if not debug
+#      should run uglify (and eventually bable) if necassary.
+#  add_custom_command(
+#    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js
+#    COMMAND ${CMAKE_COMMAND} -E copy
+#      ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
+#      ${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js
+#    MAIN_DEPENDENCY ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js )
+
 endif( USE_SPECTRUM_CHART_D3 )
 
 
