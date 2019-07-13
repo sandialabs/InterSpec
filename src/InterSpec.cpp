@@ -157,7 +157,7 @@
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
-#if ( USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #endif
 
@@ -511,7 +511,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
 
   m_peakModel  = new PeakModel( this );
-#if ( USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
   m_spectrum   = new D3SpectrumDisplayDiv();
 #else
   m_spectrum   = new SpectrumDisplayDiv();
@@ -560,7 +560,19 @@ InterSpec::InterSpec( WContainerWidget *parent )
   // Set up the floating energy recalibrator.
   initRecalibrator();
 
-#if( !USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
+  const WEnvironment &env = wApp->environment();
+  const bool isOldIE = (env.agentIsIE() && env.agent()<WEnvironment::IE9);
+  
+  if( isOldIE )
+  {
+    m_timeSeries->connectWtMouseConnections();
+  }else
+  {
+    m_timeSeries->enableOverlayCanvas( false, true, false );
+    m_timeSeries->setIsTimeDisplay();
+  }//if( isOldIE ) / else
+#else
   const WEnvironment &env = wApp->environment();
   const bool isOldIE = (env.agentIsIE() && env.agent()<WEnvironment::IE9);
 
@@ -5597,7 +5609,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   
     
 #if( USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)  )
-    cerr << "\n\n\nCompton angle not yet implemented for OSX Native Menus\n\n" << endl;
+    cerr << "\n\n\nCompton angle not yet implemented for macOS or Electron Native Menus\n\n" << endl;
 #else
     cb = new WCheckBox( "Comp. Peak" );
     cb->setChecked(false);
@@ -5621,25 +5633,15 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonPeakMarker, false ) );
     
 #if( USE_SPECTRUM_CHART_D3 )
+    //For some reason the signal through c++ always gives a value of 180 - so as
+    //  a hack, we'll just do it in JS.
+    //spin->valueChanged().connect( boost::bind( &D3SpectrumDisplayDiv::setComptonPeakAngle, m_spectrum, _1 ) );
+    js = "function(s,e){try{" + m_spectrum->jsRef() + ".chart.setComptonPeakAngle(s.value);}catch(err){}}";
+    spin->changed().connect( js );
+    m_spectrum->setComptonPeakAngle( spin->value() );
+    
     cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonPeakMarker, true ) );
     cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonPeakMarker, false ) );
-    
-    {//Begin codeblock to do java script to set comptom peak angle
-      js = "function(s,e){try{ window.graph.setComptonPeakAngle(s.value);}catch(err){}}";
-      std::shared_ptr<JSlot> jsslot = std::make_shared<JSlot>( js, spin );
-      m_unNamedJSlots.push_back( jsslot );
-      spin->changed().connect( *jsslot );
-    
-      js = "function(s,e){try{"
-        "var spin = Wt.WT.getElement('" + spin->id() + "');"
-        "if(spin) window.graph.setComptonPeakAngle(s.value);"
-      "}catch(err){}}";
-      jsslot = std::make_shared<JSlot>( js, spin );
-      m_unNamedJSlots.push_back( jsslot );
-      cb->checked().connect( *jsslot );
-    }//End codeblock to do java script to set comptom peak angle
-    
-    
 #else
     js = "function(s,e){try{" + can + ".data('compangle', s.value);}catch(err){}}";
     jsslot = std::make_shared<JSlot>( js, spin );
@@ -8720,16 +8722,16 @@ void InterSpec::setSpectrumScrollingParent( WContainerWidget *parent )
   m_spectrum->setScrollingParent( parent );
 }//void setSpectrumScrollingParent( Wt::WContainerWidget *parent )
 
-void InterSpec::setTimeSeriesScrollingParent( WContainerWidget *parent )
-{
-  m_timeSeries->setScrollingParent( parent );
-}//void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
-
 void InterSpec::setScrollY( int scrollY )
 {
   m_spectrum->setScrollY( scrollY );
 }
 #endif  //#if( !USE_SPECTRUM_CHART_D3 )
+
+void InterSpec::setTimeSeriesScrollingParent( WContainerWidget *parent )
+{
+  m_timeSeries->setScrollingParent( parent );
+}//void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
 
 
 void InterSpec::setDisplayedEnergyRange( float lowerEnergy, float upperEnergy )
@@ -8806,7 +8808,7 @@ void InterSpec::searchForSinglePeak( const double x )
   const double xmin = m_spectrum->xAxisMinimum();
   const double xmax = m_spectrum->xAxisMaximum();
   
-#if ( USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
   const double specWidthPx = m_spectrum->chartWidthInPixels();
   const double pixPerKeV = (xmax > xmin && xmax > 0.0 && specWidthPx > 10.0) ? std::max(0.001,(specWidthPx/(xmax - xmin))): 0.001;
 #else
@@ -8947,7 +8949,7 @@ void InterSpec::automatedPeakSearchCompleted()
   if( m_peakInfoDisplay )
     m_peakInfoDisplay->enablePeakSearchButton( true );
 
-#if ( USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->updateData();
 #endif
 }//void automatedPeakSearchCompleted()
@@ -9143,7 +9145,7 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
     }//if( mean >= x0 && mean <= x1 )
   }//for( loop over peaks )
   
-#if ( USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->updateData();
 #endif
 
@@ -9394,7 +9396,7 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   
   
   m_peakModel->setPeaks( all_peaks );
-#if ( USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->updateData();
 #endif
   
@@ -9555,7 +9557,7 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
       applock.reset( new WApplication::UpdateLock(app) );
     
     m_peakModel->setPeaks( modifiedPeaks );
-#if ( USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
     m_spectrum->updateData();
 #endif
     
@@ -9651,18 +9653,6 @@ void InterSpec::setChartSpacing()
   //  so we have to re-create the layout here...
   if( m_chartsLayout && (m_chartsLayout->verticalSpacing() != vertSpacing) )
   {
-    //The tool tabs are showing
-    
-#if( USE_SPECTRUM_CHART_D3 )
-    //blah blah blah
-    //The <svg> element will be removed from the chart here... we need to fix this...
-    //  The below doesnt work.  I guess you cant simple set elements equal to each other
-    //  ToDo: figure out how to make work in JS, or go through and create new D3 SpectrumChart (maybe add a recreate function to the C++)
-    //const string jsel = "Wt.WT.d3chartInnerHTML" + m_spectrum->id();
-    //const string getsvgjs = jsel + "=" + m_spectrum->jsRef() + ".innerHTML;";
-    //wApp->doJavaScript( getsvgjs, false );
-#else
-    
     m_chartsLayout->removeWidget( m_spectrum );
     m_chartsLayout->removeWidget( m_timeSeries );
     
@@ -9688,13 +9678,6 @@ void InterSpec::setChartSpacing()
     m_chartsLayout->setRowResizable( 0 );
     
     m_layout->addLayout( m_chartsLayout, m_menuDiv ? 1 : 0, 0 );
-#endif
-#if( USE_SPECTRUM_CHART_D3 )
-    //wApp->doJavaScript( m_spectrum->jsRef() + ".innerHTML = " + jsel + ";"
-    //                   + "window.graph" + m_spectrum->id() + ".chart = " + m_spectrum->jsRef() + ";"
-    //                   + "window.graph" + m_spectrum->id() + ".handleResize();"
-    //                   + jsel + "=null;", false );
-#endif
   }else if( !m_chartsLayout && (m_layout->verticalSpacing() != vertSpacing) )
   {
     //The tool tabs are not showing
