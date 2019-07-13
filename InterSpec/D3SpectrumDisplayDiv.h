@@ -151,10 +151,10 @@ public:
   virtual int plotAreaPadding( const Wt::Side side ) const;
   virtual void setXAxisTitle( const std::string &title );
   virtual void setYAxisTitle( const std::string &title );
-  virtual void setY2AxisTitle( const std::string &title );
+  
   const std::string xAxisTitle() const;
   const std::string yAxisTitle() const;
-  const std::string y2AxisTitle() const;
+
   
   float xUnitsPerPixel() const;
   
@@ -180,11 +180,7 @@ public:
   virtual void setHidden( bool hidden,
                          const Wt::WAnimation &animation = Wt::WAnimation() );
   
-  void setMouseDragZooms(); // default action
-  void setMouseDragHighlights( const bool allowMultiple = false,
-                              const bool allowSingleClick = true );
-  void allowArrowToMoveSingleClickRegion( bool allow = true );
-  void disableMouseDragActions(); // signal will still be emitted
+
   Wt::Signal<double,double> &xRangeChanged();
   Wt::Signal<double,double> &rightMouseDragg();
   
@@ -232,6 +228,8 @@ public:
   void setBackgroundSubtract( bool subtract );
   
   void setFeatureMarkerOption( InterSpec::FeatureMarkerType option, bool show );
+  void setComptonPeakAngle( int angle );
+  
   
   void setXAxisMinimum( const double minimum );
   void setXAxisMaximum( const double maximum );
@@ -266,6 +264,7 @@ public:
   void removeAllPeaks();
   
 protected:
+  void defineJavaScript();
   
   void initUserTools();
   
@@ -276,9 +275,15 @@ protected:
    */
   void initChangeableCssRules();
   
+  /** Sets the highlight regions to client - currently unimplemented. */
+  void setHighlightRegionsToClient();
+  
   //layoutSizeChanged(...): adjusts display binning if necessary
   virtual void layoutSizeChanged ( int width, int height );
   
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+  
+  //ToDo: should eliminate use of SpectrumDataModel in this class
   SpectrumDataModel *m_model;
   PeakModel *m_peakModel;
   
@@ -289,17 +294,19 @@ protected:
   bool m_compactAxis;
   bool m_legendEnabled;
   bool m_yAxisIsLog;
+  bool m_backgroundSubtract;
   
   bool m_showVerticalLines;
   bool m_showHorizontalLines;
   bool m_showHistogramIntegralsInLegend;
   
+  std::vector<std::pair<double,double> > m_searchEnergies;
+  std::vector<SpectrumChart::HighlightRegion> m_highlights;
   
   std::map<SpectrumChart::PeakLabels,bool> m_peakLabelsToShow;
   
   std::string m_xAxisTitle;
   std::string m_yAxisTitle;
-  std::string m_y2AxisTitle;
   
   // JSignals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
@@ -361,9 +368,7 @@ protected:
   void chartXRangeChangedCallback( double x, double y, double chart_width_px, double chart_height_px );
   
   /** The javascript variable name used to refer to the SpecrtumChartD3 object.
-      Currently is `"window.plot" + id()` but might be changed in the future
-      to be a member variable of the <div> to have less errorprone lifetime
-      managment.
+      Currently is `jsRef() + ".chart"`.
    */
   const std::string m_jsgraph;
   
@@ -390,6 +395,13 @@ protected:
 #endif
   bool m_showRefLineInfoForMouseOver;
   
+  bool m_showFeatureMarker[InterSpec::NumFeatureMarkers];
+  
+  /** Current compton angle used - note there is a bug in the WSpinBox inside
+     WMenu (at least in Wt 3.3.4) so this value is likely not valid, and instead
+     a JS only mehtod is used for setting this value client-side.
+   */
+  int m_comptonPeakAngle;
   
   Wt::WColor m_foregroundLineColor;
   Wt::WColor m_backgroundLineColor;
@@ -401,6 +413,14 @@ protected:
   Wt::WColor m_defaultPeakColor;
   
   std::map<std::string,Wt::WCssTextRule *> m_cssRules;
+  
+  /** JS calls requested before the widget has been rendered, so wouldnt have
+     ended up doing anything are saved here, and then executed once the widget
+     is rendered.
+     Note that not all calls to the D3 chart before Wt's rendering need to go
+     here as they will be options set to the D3 chart during first rendering.
+   */
+  std::vector<std::string> m_pendingJs;
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

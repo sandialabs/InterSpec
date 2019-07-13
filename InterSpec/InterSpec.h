@@ -466,10 +466,10 @@ public:
   //  wanted (e.g. if time series chart will never scroll beyond parent, but
   //  energy spectrum might).
   void setSpectrumScrollingParent( Wt::WContainerWidget *parent );
-  void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
-
   void setScrollY( int scrollY );
 #endif  //#if( !USE_SPECTRUM_CHART_D3 )
+  
+  void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
   
   //setDisplayedEnergyRange(): sets the displayed energy range that should be
   //  shown.  Range is not checked for validity. E.g. you should not ask to zoom

@@ -69,7 +69,8 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_compactAxis( false ),
   m_legendEnabled( true ),
   m_yAxisIsLog( true ),
-  m_jsgraph( "window.graph" + id() ),
+  m_backgroundSubtract( false ),
+  m_jsgraph( jsRef() + ".chart" ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
   m_yAxisMinimum(0.0),
@@ -77,6 +78,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartWidthPx(0.0),
   m_chartHeightPx(0.0),
   m_showRefLineInfoForMouseOver( true ),
+  m_comptonPeakAngle( 180 ),
   m_foregroundLineColor( 0x00, 0x00, 0x00 ),  //black
   m_backgroundLineColor( 0x00, 0xff, 0xff ),  //cyan
   m_secondaryLineColor( 0x00, 0x80, 0x80 ),   //dark green
@@ -113,54 +115,119 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
     m_peakLabelsToShow[label] = false;
   }//for( loop over all labels )
   
-  
-  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
-
-  m_xRangeChangedJS.reset( new JSignal<double,double,double,double>( this, "xrangechanged", true ) );
-  m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this, _1, _2, _3, _4 ) );
-  
-  m_controlKeyDraggJS.reset( new JSignal<double,double,int,int>( this, "controlkeydragged", true ) );
-  m_controlKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartControlKeyDragCallback, this, _1, _2, _3, _4 ) );
-  
-  m_shiftKeyDraggJS.reset( new JSignal<double,double>( this, "shiftkeydragged", true ) );
-  m_shiftKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftKeyDragCallback, this, _1, _2 ) );
-  
-  m_shiftAltKeyDraggJS.reset( new JSignal<double,double>( this, "shiftaltkeydragged", true ) );
-  m_shiftAltKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback, this, _1, _2 ) );
-  
-  m_rightMouseDraggJS.reset( new JSignal<double,double>( this, "rightmousedragged", true ) );
-  m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback, this, _1, _2 ) );
-  
-  m_leftClickJS.reset( new JSignal<double,double,int,int>( this, "leftclicked", true ) );
-  m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this, _1, _2, _3, _4 ) );
-  
-  m_doubleLeftClickJS.reset( new JSignal<double,double>( this, "doubleclicked", true ) );
-  m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback, this, _1, _2 ) );
-  
-  m_rightClickJS.reset( new JSignal<double,double,int,int>( this, "rightclicked", true ) );
-  m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this, _1, _2, _3, _4 ) );
-  
-  m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
-  m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this, _1, _2, _3, _4, _5, _6 ) );
-  
-  
-  //need legend closed signal.
-  m_legendClosedJS.reset( new JSignal<>( this, "legendClosed", true ) );
-  m_legendClosedJS->connect( std::bind( [this](){
-    m_legendEnabled = false;
-    m_legendDisabledSignal.emit();
-  }) );
-  
-  // Create the Spectrum Chart D3 object to display the chart
-  doJavaScript(
-               m_jsgraph + " = new SpectrumChartD3(" + jsRef()
-               + ",{title:'',xlabel:'',ylabel:'', showAnimation: true, animationDuration: 200});"
-               + m_jsgraph + ".setShowUserLabels(false);"
-               + m_jsgraph + ".setShowPeakLabels(false);"
-               + m_jsgraph + ".setShowNuclideNames(false);"
-               + m_jsgraph + ".setShowNuclideEnergies(false);"
-               );
+  for( InterSpec::FeatureMarkerType type = InterSpec::FeatureMarkerType(0);
+      type < InterSpec::FeatureMarkerType::NumFeatureMarkers;
+      type = InterSpec::FeatureMarkerType(type + 1) )
+  {
+    m_showFeatureMarker[type] = false;
+  }
 }//D3SpectrumDisplayDiv constructor
+
+
+void D3SpectrumDisplayDiv::defineJavaScript()
+{
+  auto jsbool = [](bool t) -> std::string { return t ? "true" : "false"; };
+  
+  string options = "{title: '', showAnimation: true, animationDuration: 200";
+  options += ", xlabel: '" + m_xAxisTitle + "'";
+  options += ", ylabel: '" + m_yAxisTitle + "'";
+  options += ", compactXAxis: " + jsbool(m_compactAxis);
+  options += ", allowDragRoiExtent: true";
+  options += ", showRefLineInfoForMouseOver: " + jsbool(m_showRefLineInfoForMouseOver);
+  options += ", yscale: " + string(m_yAxisIsLog ? "'log'" : "'lin'");
+  options += ", backgroundSubtract: " + jsbool( m_backgroundSubtract );
+  options += ", showLegend: " + jsbool(m_legendEnabled);
+  options += ", gridx: " + jsbool(m_showHorizontalLines);
+  options += ", gridy: " + jsbool(m_showVerticalLines);
+  options += ", showUserLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakUserLabel]);
+  options += ", showPeakLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakEnergyLabel]);
+  options += ", showNuclideNames: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakNuclideLabel]);
+  options += ", showNuclideEnergies: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakNuclideEnergies]);
+  
+  for( InterSpec::FeatureMarkerType type = InterSpec::FeatureMarkerType(0);
+      type < InterSpec::FeatureMarkerType::NumFeatureMarkers;
+      type = InterSpec::FeatureMarkerType(type + 1) )
+  {
+    switch( type )
+    {
+      case InterSpec::FeatureMarkerType::EscapePeakMarker:
+        options += ", showEscapePeaks:" + jsbool(m_showFeatureMarker[type]);
+        break;
+      case InterSpec::FeatureMarkerType::ComptonPeakMarker:
+        options += ", showComptonPeaks:" + jsbool(m_showFeatureMarker[type]);
+        break;
+      case InterSpec::FeatureMarkerType::ComptonEdgeMarker:
+        options += ", showComptonPeaks:" + jsbool(m_showFeatureMarker[type]);
+        break;
+      case InterSpec::FeatureMarkerType::SumPeakMarker:
+        options += ", showSumPeaks:" + jsbool(m_showFeatureMarker[type]);
+        break;
+      case InterSpec::FeatureMarkerType::NumFeatureMarkers:
+      default:
+        return;
+    }//switch( option )
+  }//for( loop over FeatureMarkerType's )
+  options += ", comptonPeakAngle:" + std::to_string(m_comptonPeakAngle);
+  
+  options += "}";
+  
+  setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
+  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+  
+#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
+  updateReferncePhotoPeakLines();
+#endif
+  
+  setHighlightRegionsToClient();
+  
+  setSearchEnergies( m_searchEnergies );
+  
+  if( !m_xRangeChangedJS )
+  {
+    m_xRangeChangedJS.reset( new JSignal<double,double,double,double>( this, "xrangechanged", true ) );
+    m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this, _1, _2, _3, _4 ) );
+    
+    m_controlKeyDraggJS.reset( new JSignal<double,double,int,int>( this, "controlkeydragged", true ) );
+    m_controlKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartControlKeyDragCallback, this, _1, _2, _3, _4 ) );
+    
+    m_shiftKeyDraggJS.reset( new JSignal<double,double>( this, "shiftkeydragged", true ) );
+    m_shiftKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftKeyDragCallback, this, _1, _2 ) );
+    
+    m_shiftAltKeyDraggJS.reset( new JSignal<double,double>( this, "shiftaltkeydragged", true ) );
+    m_shiftAltKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback, this, _1, _2 ) );
+    
+    m_rightMouseDraggJS.reset( new JSignal<double,double>( this, "rightmousedragged", true ) );
+    m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback, this, _1, _2 ) );
+    
+    m_leftClickJS.reset( new JSignal<double,double,int,int>( this, "leftclicked", true ) );
+    m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this, _1, _2, _3, _4 ) );
+    
+    m_doubleLeftClickJS.reset( new JSignal<double,double>( this, "doubleclicked", true ) );
+    m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback, this, _1, _2 ) );
+    
+    m_rightClickJS.reset( new JSignal<double,double,int,int>( this, "rightclicked", true ) );
+    m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this, _1, _2, _3, _4 ) );
+    
+    m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
+    m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+    
+    //need legend closed signal.
+    m_legendClosedJS.reset( new JSignal<>( this, "legendClosed", true ) );
+    m_legendClosedJS->connect( std::bind( [this](){
+      m_legendEnabled = false;
+      m_legendDisabledSignal.emit();
+    }) );
+  }//if( !m_xRangeChangedJS )
+  
+  
+  for( const string &js : m_pendingJs )
+    doJavaScript( js );
+  m_pendingJs.clear();
+  m_pendingJs.shrink_to_fit();
+  
+  //I think x and y ranges should be taken care of via m_pendingJs... untested
+  //m_xAxisMinimum, m_xAxisMaximum, m_yAxisMinimum, m_yAxisMaximum;
+}//void defineJavaScript()
 
 
 void D3SpectrumDisplayDiv::initChangeableCssRules()
@@ -188,7 +255,8 @@ void D3SpectrumDisplayDiv::setCompactAxis( const bool compact )
 {
   m_compactAxis = compact;
   const string isCompact = compact ? "true" : "false";
-  doJavaScript( m_jsgraph + ".setCompactXAxis(" + isCompact + ");" );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setCompactXAxis(" + isCompact + ");" );
 }
 
 bool D3SpectrumDisplayDiv::isAxisCompacted() const
@@ -215,7 +283,9 @@ void D3SpectrumDisplayDiv::enableLegend( const bool forceMobileStyle )
 {
   m_legendEnabled = true;
   m_legendEnabledSignal.emit();
-  doJavaScript( m_jsgraph + ".setShowLegend(true);" );
+  
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setShowLegend(true);" );
 }//void D3SpectrumDisplayDiv::enableLegend()
 
 
@@ -223,7 +293,9 @@ void D3SpectrumDisplayDiv::disableLegend()
 {
   m_legendEnabled = false;
   m_legendDisabledSignal.emit();
-  doJavaScript( m_jsgraph + ".setShowLegend(false);" );
+  
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setShowLegend(false);" );
 }//void disableLegend()
 
 
@@ -255,27 +327,33 @@ void D3SpectrumDisplayDiv::setHidden( bool hidden, const Wt::WAnimation &anim )
 void D3SpectrumDisplayDiv::setShowPeakLabel( int label, bool show )
 {
   SpectrumChart::PeakLabels peakLabel = SpectrumChart::PeakLabels(label);
-  m_peakLabelsToShow[ peakLabel ] = show;
   
-  const string shouldShow = show ? "true" : "false";
-  
-  switch ( peakLabel )
+  string js = m_jsgraph;
+  switch( peakLabel )
   {
     case SpectrumChart::PeakLabels::kShowPeakUserLabel:
-      doJavaScript( m_jsgraph + ".setShowUserLabels(" + shouldShow + ");");
+      js += ".setShowUserLabels";
       break;
     case SpectrumChart::PeakLabels::kShowPeakEnergyLabel:
-      doJavaScript(m_jsgraph + ".setShowPeakLabels(" + shouldShow + ");");
+      js += ".setShowPeakLabels";
       break;
     case SpectrumChart::PeakLabels::kShowPeakNuclideLabel:
-      doJavaScript(m_jsgraph + ".setShowNuclideNames(" + shouldShow + ");");
+      js += ".setShowNuclideNames";
       break;
     case SpectrumChart::PeakLabels::kShowPeakNuclideEnergies:
-      doJavaScript(m_jsgraph + ".setShowNuclideEnergies(" + shouldShow + ");");
+      js += ".setShowNuclideEnergies";
       break;
     case SpectrumChart::PeakLabels::kNumPeakLabels:
-    default: break;
+    default:
+      return;
+      break;
   }
+  js += "(" + string(show ? "true" : "false") + ");";
+  
+  m_peakLabelsToShow[peakLabel] = show;
+  
+  if( isRendered() )
+    doJavaScript( js );
 }//void setShowPeakLabel( int label, bool show )
 
 
@@ -353,7 +431,9 @@ void D3SpectrumDisplayDiv::clearAllReferncePhotoPeakLines()
 {
   m_referencePhotoPeakLines.reset();
   m_persistedPhotoPeakLines.clear();
-  doJavaScript(m_jsgraph + ".clearReferenceLines();");
+  
+  if( isRendered() )
+    doJavaScript(m_jsgraph + ".clearReferenceLines();");
 }
 
 void D3SpectrumDisplayDiv::updateReferncePhotoPeakLines()
@@ -374,15 +454,19 @@ void D3SpectrumDisplayDiv::updateReferncePhotoPeakLines()
     }
   }
   result += "]";
-  doJavaScript(m_jsgraph + ".setReferenceLines(" + result + ")");
+  
+  if( isRendered() )
+    doJavaScript(m_jsgraph + ".setReferenceLines(" + result + ")");
 }
 #endif //#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
+
 
 void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 {
   m_showRefLineInfoForMouseOver = show;
   const string showRefLineInfo = show ? "true" : "false";
-  doJavaScript( m_jsgraph + ".setShowRefLineInfoForMouseOver(" + showRefLineInfo + ")" );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setShowRefLineInfoForMouseOver(" + showRefLineInfo + ")" );
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
@@ -391,6 +475,18 @@ void D3SpectrumDisplayDiv::layoutSizeChanged ( int width, int height )
   m_layoutWidth = width;
   m_layoutHeight = height;
 }//void layoutSizeChanged ( int width, int height )
+
+
+void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
+  //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
+  
+  WContainerWidget::render( flags );
+  
+  if( renderFull )
+    defineJavaScript();
+}
 
 
 int D3SpectrumDisplayDiv::layoutWidth() const
@@ -448,7 +544,8 @@ bool D3SpectrumDisplayDiv::yAxisIsLog() const
 void D3SpectrumDisplayDiv::setYAxisLog( bool log )
 {
   m_yAxisIsLog = log;
-  doJavaScript( m_jsgraph + (log ? ".setLogY();" : ".setLinearY();") );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + (log ? ".setLogY();" : ".setLinearY();") );
 }//void setYAxisLog( bool log )
 
 void D3SpectrumDisplayDiv::showGridLines( bool show )
@@ -456,22 +553,25 @@ void D3SpectrumDisplayDiv::showGridLines( bool show )
   const string shouldDraw = show ? "true" : "false";
   m_showVerticalLines = show;
   m_showHorizontalLines = show;
-  doJavaScript( m_jsgraph + ".setGridX(" + shouldDraw + ");"
-                + m_jsgraph + ".setGridY(" + shouldDraw + ");" );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setGridX(" + shouldDraw + ");"
+                  + m_jsgraph + ".setGridY(" + shouldDraw + ");" );
 }
 
 void D3SpectrumDisplayDiv::showVerticalLines( const bool draw )
 {
   const string shouldDraw = draw ? "true" : "false";
   m_showVerticalLines = draw;
-  doJavaScript( m_jsgraph + ".setGridX(" + shouldDraw + ");" );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setGridX(" + shouldDraw + ");" );
 }
 
 void D3SpectrumDisplayDiv::showHorizontalLines( const bool draw )
 {
   const string shouldDraw = draw ? "true" : "false";
   m_showHorizontalLines = draw;
-  doJavaScript( m_jsgraph + ".setGridY(" + shouldDraw + ");" );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setGridY(" + shouldDraw + ");" );
 }
 
 bool D3SpectrumDisplayDiv::verticalLinesShowing() const
@@ -487,26 +587,33 @@ bool D3SpectrumDisplayDiv::horizontalLinesShowing() const
 
 bool D3SpectrumDisplayDiv::backgroundSubtract() const
 {
-  return m_model->backgroundSubtract();
+  return m_backgroundSubtract;
 }//bool backgroundSubtract() const
 
 
 void D3SpectrumDisplayDiv::setBackgroundSubtract( bool subtract )
 {
-  if( subtract == m_model->backgroundSubtract() )
+  if( subtract == m_backgroundSubtract )
     return;
   
+  m_backgroundSubtract = subtract;
   m_model->setBackgroundSubtract( subtract );
   
   const string shouldSubtract = subtract ? "true" : "false";
-  doJavaScript( m_jsgraph + ".setBackgroundSubtract(" + shouldSubtract + ");" );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setBackgroundSubtract(" + shouldSubtract + ");" );
 }//void setBackgroundSubtract( bool subtract )
 
 void D3SpectrumDisplayDiv::setXAxisMinimum( const double minimum )
 {
   const string minimumStr = to_string( minimum );
   m_xAxisMinimum = minimum;
-  doJavaScript( m_jsgraph + ".setXAxisMinimum(" + minimumStr + ");" );
+  
+  string js = m_jsgraph + ".setXAxisMinimum(" + minimumStr + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void setXAxisMinimum( const double minimum )
 
 
@@ -514,7 +621,12 @@ void D3SpectrumDisplayDiv::setXAxisMaximum( const double maximum )
 {
   const string maximumStr = to_string( maximum );
   m_xAxisMaximum = maximum;
-  doJavaScript( m_jsgraph + ".setXAxisMaximum(" + maximumStr + ");" );
+  
+  string js = m_jsgraph + ".setXAxisMaximum(" + maximumStr + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void setXAxisMaximum( const double maximum )
 
 
@@ -522,7 +634,12 @@ void D3SpectrumDisplayDiv::setYAxisMinimum( const double minimum )
 {
   const string minimumStr = to_string( minimum );
   m_yAxisMinimum = minimum;
-  doJavaScript( m_jsgraph + ".setYAxisMinimum(" + minimumStr + ");" );
+  
+  string js = m_jsgraph + ".setYAxisMinimum(" + minimumStr + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void setYAxisMinimum( const double minimum )
 
 
@@ -530,18 +647,27 @@ void D3SpectrumDisplayDiv::setYAxisMaximum( const double maximum )
 {
   const string maximumStr = to_string( maximum );
   m_yAxisMaximum = maximum;
-  doJavaScript( m_jsgraph + ".setYAxisMaximum(" + maximumStr + ");" );
+  
+  string js = m_jsgraph + ".setYAxisMaximum(" + maximumStr + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void setYAxisMaximum( const double maximum )
 
 
 void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double maximum )
 {
-  cout << "setXAxisRange" << endl;
   const string minimumStr = to_string( minimum );
   const string maximumStr = to_string( maximum );
   m_xAxisMinimum = minimum;
   m_xAxisMaximum = maximum;
-  doJavaScript( m_jsgraph + ".setXAxisRange(" + minimumStr + "," + maximumStr + ",false);" );
+  
+  string js = m_jsgraph + ".setXAxisRange(" + minimumStr + "," + maximumStr + ",false);";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void setXAxisRange( const double minimum, const double maximum );
 
 
@@ -553,7 +679,12 @@ void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
   const string maximumStr = to_string( maximum );
   m_yAxisMinimum = minimum;
   m_yAxisMaximum = maximum;
-  doJavaScript( m_jsgraph + ".setYAxisRange(" + minimumStr + "," + maximumStr + ");" );
+  
+  string js = m_jsgraph + ".setYAxisRange(" + minimumStr + "," + maximumStr + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void setYAxisRange( const double minimum, const double maximum );
 
 
@@ -565,6 +696,7 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
 {
   m_model->setDataHistogram( data_hist, liveTime, realTime, neutronCounts );
   
+  string js;
   const string resetDomain = keep_curent_xrange ? "false" : "true";
   
   // Set the data for the chart
@@ -595,11 +727,17 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
       string data = ostr.str();
       size_t index = data.find( "spec_chart_" );
       data = data.substr( 0, index );
-      doJavaScript( data + m_jsgraph + ".setSpectrumData(data_" + id() + ", " + resetDomain + ", 'FOREGROUND', 0, 1 );" );
+      js = data + m_jsgraph + ".setSpectrumData(data_" + id() + ", " + resetDomain + ", 'FOREGROUND', 0, 1 );";
     }
   } else {
-    doJavaScript( m_jsgraph + ".removeSpectrumData(" + resetDomain + ", 'FOREGROUND' );" );
+    js = m_jsgraph + ".removeSpectrumData(" + resetDomain + ", 'FOREGROUND' );";
   }//if ( data_hist )
+  
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void setData( std::shared_ptr<Measurement> data_hist )
 
 
@@ -725,7 +863,10 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> backgroun
   m_model->setBackgroundHistogram( background, liveTime, realTime, neutronCounts );
   
   if( !background && m_model->backgroundSubtract() )
+  {
+    m_backgroundSubtract = false;
     m_model->setBackgroundSubtract( false );
+  }
   
   updateBackground();
 }//void D3SpectrumDisplayDiv::setBackground(...);
@@ -786,31 +927,25 @@ const string D3SpectrumDisplayDiv::yAxisTitle() const
 }//const Wt::WString &yAxisTitle() const;
 
 
-const string D3SpectrumDisplayDiv::y2AxisTitle() const
-{
-  return m_y2AxisTitle;
-}//const Wt::WString &y2AxisTitle() const;
-
 
 void D3SpectrumDisplayDiv::setXAxisTitle( const std::string &title )
 {
   m_xAxisTitle = title;
-  doJavaScript( m_jsgraph + ".setXAxisTitle('" + title + "');" );
+  UtilityFunctions::ireplace_all( m_xAxisTitle, "'", "&#39;" );
+  
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setXAxisTitle('" + title + "');" );
 }//void setXAxisTitle( const std::string &title )
 
 
 void D3SpectrumDisplayDiv::setYAxisTitle( const std::string &title )
 {
   m_yAxisTitle = title;
-  doJavaScript( m_jsgraph + ".setYAxisTitle('" + title + "');" );
+  UtilityFunctions::ireplace_all( m_yAxisTitle, "'", "&#39;" );
+  
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setYAxisTitle('" + title + "');" );
 }//void setYAxisTitle( const std::string &title )
-
-
-void D3SpectrumDisplayDiv::setY2AxisTitle( const std::string &title )
-{
-  // Since no Y2 Axis title exists for current set of D3 charts, we ignore this (for now)
-  m_y2AxisTitle = title;
-}//void setY2AxisTitle( const std::string &title )
 
 
 float D3SpectrumDisplayDiv::xUnitsPerPixel() const
@@ -818,26 +953,6 @@ float D3SpectrumDisplayDiv::xUnitsPerPixel() const
   //Christian: We use 0.001 as a placeholder since we don't have reference to SpectrumChart anymore
   return 0.001;
 }
-
-void D3SpectrumDisplayDiv::setMouseDragZooms()
-{
-}//void D3SpectrumDisplayDiv::setMouseDragZooms()
-
-
-void D3SpectrumDisplayDiv::setMouseDragHighlights( const bool allowMultiple,
-                                                const bool allowSingleClick )
-{
-}//void setMouseDragHighlights( const bool allowMultiple )
-
-
-void D3SpectrumDisplayDiv::allowArrowToMoveSingleClickRegion( bool allow )
-{
-}//void allowArrowToMoveSingleClickRegion( allow )
-
-
-void D3SpectrumDisplayDiv::disableMouseDragActions()
-{
-}//void disableMouseDragActions()
 
 
 Wt::Signal<double,double> &D3SpectrumDisplayDiv::xRangeChanged()
@@ -853,6 +968,8 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::shiftAltKeyDragged()
 
 void D3SpectrumDisplayDiv::setSearchEnergies( const vector<pair<double,double>> &energies )
 {
+  m_searchEnergies = energies;
+  
   string js = "[";
   for( size_t i = 0; i < energies.size(); ++i )
   {
@@ -861,13 +978,30 @@ void D3SpectrumDisplayDiv::setSearchEnergies( const vector<pair<double,double>> 
   }
   js += "]";
 
-  doJavaScript( m_jsgraph + ".setSearchWindows(" + js + ");" );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setSearchWindows(" + js + ");" );
 }//void setSearchEnergies( const std::vector<std::pair<double,double>> &energies )
 
 
 bool D3SpectrumDisplayDiv::removeDecorativeHighlightRegion( size_t uniqueid )
 {
-  return true;
+  cerr << "D3SpectrumDisplayDiv::removeDecorativeHighlightRegion: uniqueid=" << uniqueid << endl;
+  if( uniqueid < 3 )
+    return false;
+  
+  const size_t nprev = m_highlights.size();
+  for( size_t i = 0; i < nprev; ++i )
+  {
+    if( m_highlights[i].hash == uniqueid )
+    {
+      m_highlights.erase( m_highlights.begin() + i );
+      setHighlightRegionsToClient();
+      cout << "Found it" << endl;
+      return true;
+    }
+  }
+  cout << "Didnt find it" << endl;
+  return false;
 }//void removeDecorativeHighlightRegions()
 
 
@@ -875,9 +1009,61 @@ size_t D3SpectrumDisplayDiv::addDecorativeHighlightRegion( const float lowerx,
                                                           const float upperx,
                                                           const Wt::WColor &color )
 {
-  //ToDo: need to implement this
-  return 0;
+  SpectrumChart::HighlightRegion region;
+  region.lowerx = lowerx;
+  region.upperx = upperx;
+  region.color = color;
+  region.hash = 0;
+  boost::hash_combine( region.hash, lowerx );
+  boost::hash_combine( region.hash, upperx );
+  boost::hash_combine( region.hash, color.red() );
+  boost::hash_combine( region.hash, color.green() );
+  boost::hash_combine( region.hash, color.blue() );
+  boost::hash_combine( region.hash, color.alpha() );
+  
+  if( region.hash <= 2 )
+    region.hash += 3;
+  
+  //should in principle check for collision, but whatever
+  
+  m_highlights.push_back( region );
+  
+  setHighlightRegionsToClient();
+  
+  return region.hash;
 }//void addDecorativeHighlightRegion(...)
+
+
+void D3SpectrumDisplayDiv::setHighlightRegionsToClient()
+{
+  WStringStream jsstrm;
+  jsstrm << m_jsgraph << ".setHighlightRegions";
+  
+  if( m_highlights.empty() )
+  {
+    jsstrm << "(null);";
+  }else
+  {
+    jsstrm << "([";
+    for( size_t i = 0; i < m_highlights.size(); ++i )
+    {
+      const SpectrumChart::HighlightRegion &region = m_highlights[i];
+      jsstrm << std::string(i ? ",{" : "{")
+             << "lowerEnergy:" << static_cast<double>(region.lowerx)
+             << ", upperEnergy:" << static_cast<double>(region.upperx)
+             << ", fill: 'rgba(" << region.color.red() << "," << region.color.green()  //bug in Wt 3.3.4 means need to manually write out rgba()
+                                 << "," << region.color.blue()
+                                 << "," << (region.color.alpha()/255.0) << ")'"
+             << ", hash:" << std::to_string(region.hash)
+             << "}";
+    }//for( loop over m_highlights )
+  
+    jsstrm << "]);";
+  }//if( no highlights ) / else
+  
+  if( isRendered() )
+    doJavaScript( jsstrm.str() );
+}//void setHighlightRegionsToClient()
 
 
 void D3SpectrumDisplayDiv::updateData()
@@ -893,6 +1079,7 @@ void D3SpectrumDisplayDiv::updateData()
 
 void D3SpectrumDisplayDiv::updateBackground()
 {
+  string js;
   const std::shared_ptr<Measurement> background = m_model->getBackground();
   
   // Set the data for the chart
@@ -914,15 +1101,21 @@ void D3SpectrumDisplayDiv::updateBackground()
       string data = ostr.str();
       size_t index = data.find( "spec_chart_" );
       data = data.substr( 0, index );
-      doJavaScript( data + m_jsgraph + ".setSpectrumData(data_" + id() + ", false, 'BACKGROUND', 1, -1);" );
+      js = data + m_jsgraph + ".setSpectrumData(data_" + id() + ", false, 'BACKGROUND', 1, -1);";
     }
   } else {
-    doJavaScript( m_jsgraph + ".removeSpectrumData(false, 'BACKGROUND' );" );
+    js = m_jsgraph + ".removeSpectrumData(false, 'BACKGROUND' );";
   }//if ( background )
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::updateBackground()
 
 void D3SpectrumDisplayDiv::updateSecondData()
 {
+  string js;
   const std::shared_ptr<Measurement> hist = m_model->getSecondData();
   
   // Set the data for the chart
@@ -944,11 +1137,16 @@ void D3SpectrumDisplayDiv::updateSecondData()
       string data = ostr.str();
       size_t index = data.find( "spec_chart_" );
       data = data.substr( 0, index );
-      doJavaScript( data + m_jsgraph + ".setSpectrumData(data_" + id() + ", false, 'SECONDARY', 2, 1);" );
+      js = data + m_jsgraph + ".setSpectrumData(data_" + id() + ", false, 'SECONDARY', 2, 1);";
     }
   } else {
-    doJavaScript( m_jsgraph + ".removeSpectrumData(false, 'SECONDARY' );" );
+    js = m_jsgraph + ".removeSpectrumData(false, 'SECONDARY' );";
   }//if ( hist )
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::updateSecondData()
 
 
@@ -1074,24 +1272,43 @@ void D3SpectrumDisplayDiv::removeAllPeaks()
 void D3SpectrumDisplayDiv::setFeatureMarkerOption( InterSpec::FeatureMarkerType option, bool show )
 {
   const string shouldShow = show ? "true" : "false";
-  switch ( option )
+  string js = m_jsgraph;
+  
+  switch( option )
   {
     case InterSpec::FeatureMarkerType::EscapePeakMarker:
-      doJavaScript( m_jsgraph + ".setEscapePeaks(" + shouldShow + ");" );
+      js += ".setEscapePeaks";
       break;
     case InterSpec::FeatureMarkerType::ComptonPeakMarker:
-      doJavaScript( m_jsgraph + ".setComptonPeaks(" + shouldShow + ");" );
+      js += ".setComptonPeaks";
       break;
     case InterSpec::FeatureMarkerType::ComptonEdgeMarker:
-      doJavaScript( m_jsgraph + ".setComptonEdge(" + shouldShow + ");" );
+      js += ".setComptonEdge";
       break;
     case InterSpec::FeatureMarkerType::SumPeakMarker:
-      doJavaScript( m_jsgraph + ".setSumPeaks(" + shouldShow + ");" );
+      js += ".setSumPeaks";
       break;
     case InterSpec::FeatureMarkerType::NumFeatureMarkers:
-    default: break;
-  }
+    default:
+      return;
+  }//switch( option )
+  
+  m_showFeatureMarker[option] = show;
+  js += "(" + shouldShow + ");";
+  
+  if( isRendered() )
+    doJavaScript( js );
 }//void D3SpectrumDisplayDiv::setFeatureMarkerOption(...)
+
+
+void D3SpectrumDisplayDiv::setComptonPeakAngle( int angle )
+{
+  m_comptonPeakAngle = angle;
+  
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setComptonPeakAngle(" + std::to_string(angle) + ");" );
+}//void D3SpectrumDisplayDiv::setComptonPeakAngle( int angle )
+
 
 void D3SpectrumDisplayDiv::chartControlKeyDragCallback( double x0, double x1, int pageX, int pageY )
 {
@@ -1173,10 +1390,17 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
                           + " (de=" + std::to_string(minDe) + ")" );
     }//if( failed to find continuum )
     
-    cout << "Found continuum with minDe=" << minDe << endl;
-    
+  
     auto new_continuum = std::make_shared<PeakContinuum>( *continuum );
-    //XXX balh blah blah - need to re-use one of the ranges energies, so we dont get into a loop of changing toe side we dont want to
+    
+    //Lets re-use the c++ ROI value that we arent dragging, to avoid some cycle
+    //  of rounding that could lead us to the end not being changed ending up
+    //  with a different value than initially.
+    if( fabs(new_lower_energy - continuum->lowerEnergy()) < fabs(new_upper_energy - continuum->upperEnergy()) )
+      new_lower_energy = continuum->lowerEnergy();
+    else
+      new_upper_energy = continuum->upperEnergy();
+    
     new_continuum->setRange( new_lower_energy, new_upper_energy );
     
     vector< shared_ptr<const PeakDef>> new_roi_initial_peaks, orig_roi_peaks;
@@ -1265,7 +1489,7 @@ void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1, dou
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
 {
-  doJavaScript( "try{" + m_jsgraph + "=null;}catch(){}" );
+  //doJavaScript( "try{" + m_jsgraph + "=null;}catch(){}" );
 }//~D3SpectrumDisplayDiv()
 
 
