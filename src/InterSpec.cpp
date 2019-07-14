@@ -1644,14 +1644,21 @@ void InterSpec::addPeakFromRightClick()
   typedef std::shared_ptr<const PeakContinuum> ContPtr;
   typedef map<ContPtr, std::vector<PeakDef > > ContToPeakMap;
   
-  ContToPeakMap contToPeaks;
-  for( const PeakModel::PeakShrdPtr &thispeak : *m_peakModel->peaks() )
-    contToPeaks[thispeak->continuum()].push_back( *thispeak );
   
-  std::vector<PeakDef> roiPeaks = contToPeaks[peak->continuum()];
+  const auto origContinumm = peak->continuum();
+  const std::shared_ptr<const deque<PeakModel::PeakShrdPtr>> allOrigPeaks = m_peakModel->peaks();
+  
+  ContToPeakMap contToPeaks;
+  for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  {
+    if( thispeak )
+      contToPeaks[thispeak->continuum()].push_back( *thispeak );
+  }
+  
+  std::vector<PeakDef> origRoiPeaks = contToPeaks[peak->continuum()];
   
   //Make sure we dont try to mix data defined and gaussian defined peaks
-  for( const PeakDef &p : roiPeaks )
+  for( const PeakDef &p : origRoiPeaks )
   {
     if( !p.gausPeak() )
     {
@@ -1659,9 +1666,9 @@ void InterSpec::addPeakFromRightClick()
                   "", WarningWidget::WarningMsgInfo );
       return;
     }
-  }//for( const PeakDef &p : roiPeaks )
+  }//for( const PeakDef &p : origRoiPeaks )
   
-  if( roiPeaks.empty() )
+  if( origRoiPeaks.empty() )
     throw runtime_error( "Logic error in InterSpec::addPeakFromRightClick()" );
   
   const double x0 = peak->lowerX();
@@ -1673,16 +1680,16 @@ void InterSpec::addPeakFromRightClick()
   double startingChi2, fitChi2;
   
   {//begin codeblock to evaluate startingChi2
-    MultiPeakFitChi2Fcn chi2fcn( roiPeaks.size(), dataH,
+    MultiPeakFitChi2Fcn chi2fcn( origRoiPeaks.size(), dataH,
                                 peak->continuum()->type(),
                                 lowbin, highbin );
-    startingChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), roiPeaks );
+    startingChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), origRoiPeaks );
   }//end codeblock to evaluate startingChi2
   
   
   bool inserted = false;
   vector< std::shared_ptr<PeakDef> > answer;
-  for( PeakDef p : roiPeaks )
+  for( PeakDef p : origRoiPeaks )
   {
     if( fabs(p.mean() - peak->mean()) < 0.01 )
     {
@@ -1710,32 +1717,46 @@ void InterSpec::addPeakFromRightClick()
 //      p.setFitFor(PeakDef::GaussAmplitude, false);
       answer.push_back( std::make_shared<PeakDef>( p ) );
     }
-  }//for( PeakDef p : roiPeaks )
+  }//for( PeakDef p : origRoiPeaks )
   
   if( !inserted )
     throw runtime_error( "Logic error 2 in InterSpec::addPeakFromRightClick()" );
 
-  findPeaksInUserRange( x0, x1, int(answer.size()), FromInputPeaks, dataH,
+  
+  const MultiPeakInitialGuesMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
+  
+  for( auto method : methods )
+  {
+    vector< std::shared_ptr<PeakDef> > orig_answer;
+    for( auto p : answer )
+      orig_answer.push_back( make_shared<PeakDef>( *p ) );
+    
+    findPeaksInUserRange( x0, x1, int(answer.size()), method, dataH,
                         m_dataMeasurement->detector(), answer, fitChi2 );
   
-  {//begin codeblock to evaluate fitChi2
     std::vector<PeakDef> newRoiPeaks;
     for( size_t i = 0; i < answer.size(); ++i )
       newRoiPeaks.push_back( *answer[i] );
-      
-
+    
     MultiPeakFitChi2Fcn chi2fcn( newRoiPeaks.size(), dataH,
                                  peak->continuum()->type(),
                                  lowbin, highbin );
     fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
-  }//end codeblock to evaluate fitChi2
-  
+    
+    if( fitChi2 < startingChi2 )
+    {
+      //cout << "Method " << method << " gave fitChi2=" << fitChi2 << ", which is better than initial startingChi2=" << startingChi2 << endl;
+      break;
+    }
+    
+    answer = orig_answer;
+  }//for( auto method : methods )
   
 //  could try to fix all peaks other than the new one, and the nearest one, do the
 //  fit, then replace the other peaks to original fitFor state, and refit all of
 //  them.
   
-  const double dof = (nbin + 3*roiPeaks.size() + peak->continuum()->type());
+  const double dof = (nbin + 3*origRoiPeaks.size() + peak->continuum()->type());
   const double chi2Dof = fitChi2 / dof;
   
   cerr << "m_rightClickEnergy=" << m_rightClickEnergy << endl;
@@ -1748,6 +1769,52 @@ void InterSpec::addPeakFromRightClick()
          << answer[i]->sigma() << ", and amp=" << answer[i]->amplitude() << endl;
   }
   
+  //Remove old ROI peaks
+  if( fitChi2 > startingChi2 )
+  {
+    passMessage( "Adding a peak did not improve overall ROI fit - not adding one.",
+                "", WarningWidget::WarningMsgInfo );
+    return;
+  }
+  
+  
+  std::map<std::shared_ptr<PeakDef>,PeakModel::PeakShrdPtr> new_to_orig_peaks;
+  for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  {
+    if( !thispeak || (thispeak->continuum() != origContinumm) )
+      continue;
+    
+    m_peakModel->removePeak( thispeak );
+    
+    //Associate new peak 
+    double dist = 99999.9;
+    std::shared_ptr<PeakDef> nearest_new;
+    for( std::shared_ptr<PeakDef> newpeak : answer )
+    {
+      const double d = fabs( newpeak->mean() - thispeak->mean() );
+      if( d < dist && !new_to_orig_peaks.count(newpeak) )
+      {
+        dist = d;
+        nearest_new = newpeak;
+      }
+    }//
+    if( nearest_new )
+    {
+      nearest_new->inheritUserSelectedOptions( *thispeak, true );
+      new_to_orig_peaks[nearest_new] = thispeak;
+    }
+  }//for( const PeakModel::PeakShrdPtr &thispeak : *allOrigPeaks )
+  
+  
+  for( size_t i = 0; i < answer.size(); ++i )
+  {
+    const bool isNew = !new_to_orig_peaks.count(answer[i]);
+    InterSpec::addPeak( *answer[i], isNew );
+  }
+  
+#if ( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->updateData();
+#endif
 }//void addPeakFromRightClick()
 
 

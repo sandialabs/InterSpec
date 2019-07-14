@@ -906,15 +906,29 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
         
         if( detector && detector->hasResolutionInfo() )
         {
+          const double sigma = inpeaks[i].sigma();
           if( i == 0 )
-            inputPrams.Add( "sigma" + parnum, inpeaks[i].sigma() );
-          else if( i == 1 )
+          {
+            inputPrams.Add( "sigma" + parnum, sigma, 0.1*sigma, 0.5*sigma, 2.0*sigma );
+          }else if( i == 1 )
           {
             const double lowsigma = detector->peakResolutionSigma( start_range );
             const double highsigma = detector->peakResolutionSigma( end_range );
-            inputPrams.Add( "sigma" + parnum, (highsigma/lowsigma) );
+            //sigma = x[m_numOffset] + ((centroid-m_rangeLow)/(m_highRange-m_rangeLow))*x[m_numOffset+3];
+            
+            const double sigma_diff = (highsigma - lowsigma);
+            cout << "sigma_diff=" << sigma_diff << ", highsigma=" << highsigma << ", lowsigma=" << lowsigma << ", sigma=" << sigma << endl;
+            if( highsigma > lowsigma && sigma_diff < sigma )
+            {
+              inputPrams.Add( "sigma" + parnum, sigma_diff, 0.2*sigma_diff, -0.25*sigma, 4*sigma_diff );
+            }else
+            {
+              inputPrams.Add( "sigma" + parnum, 0.0, 0.1, -0.25*sigma, 0.5*sigma );
+            }
           }else
+          {
             inputPrams.Add( "sigma" + parnum, -1.0 );
+          }
         }else
         {
           if( i == 0 )
@@ -1056,15 +1070,15 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
       inputPrams.Add( "P3",  0.0, 0.25 );
   }//if( intputSharesContinuum ) / else
   
-  const bool isHpge = (dataH->GetNbinsX()>2049);
+  const bool isHpge = (dataH->GetNbinsX()>4094);
   
   for( size_t i = 0; i < inpeaks.size(); ++i )
   {
     const string istr = std::to_string(i);
     double sigma = inpeaks[i].sigma();
-    const bool fixSigma = (method==FromInputPeaks && inpeaks[i].fitFor(PeakDef::Sigma));
-    const bool fixMean = (method==FromInputPeaks && inpeaks[i].fitFor(PeakDef::Mean));
-    const bool fixAmp = (method==FromInputPeaks && inpeaks[i].fitFor(PeakDef::GaussAmplitude));
+    const bool fixSigma = (method==FromInputPeaks && !inpeaks[i].fitFor(PeakDef::Sigma));
+    const bool fixMean = (method==FromInputPeaks && !inpeaks[i].fitFor(PeakDef::Mean));
+    const bool fixAmp = (method==FromInputPeaks && !inpeaks[i].fitFor(PeakDef::GaussAmplitude));
     
     double maxsigma = fabs(x1-x0)/nPeaks;
     double minsigma = (isHpge ? 0.0025 : 0.02) * inpeaks[i].mean();
@@ -1073,6 +1087,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     {
       float minw, maxw;
       expected_peak_width_limits( inpeaks[i].mean(), isHpge, minw, maxw );
+      
       maxsigma = std::max( maxsigma, double(maxw) );
       minsigma = std::min( minsigma, double(minw) );
       sigma = std::max( sigma, minsigma );
@@ -1084,7 +1099,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     else if( i == 0 )
       inputPrams.Add( "sigma" + istr, sigma, 0.1*sigma, minsigma, maxsigma );
     else if( i == 1 )
-      inputPrams.Add( "sigma" + istr, 1.0, 0.01, 0.85, 1.15 );
+      inputPrams.Add( "sigma" + istr, 0.0, 0.1*sigma, -0.1*sigma, 0.75*sigma ); //could do somethign better here
     else
       inputPrams.Add( "sigma" + istr, 0.0 );
     

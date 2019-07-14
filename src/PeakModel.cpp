@@ -422,9 +422,13 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
     sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder );
     meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder );
 
-    beginInsertRows( WModelIndex(), 0, static_cast<int>(npeaksadd-1) );
-
+    //Make sure no null peaks
+    peaks->erase( std::remove_if( peaks->begin(), peaks->end(), [](std::shared_ptr<const PeakDef> a){return !a;}), peaks->end() );
+    
+    
     std::sort( peaks->begin(), peaks->end(), meansort );
+    
+    beginInsertRows( WModelIndex(), 0, static_cast<int>(npeaksadd-1) );
 
     m_sortedPeaks = *peaks;
     std::stable_sort( m_sortedPeaks.begin(), m_sortedPeaks.end(), sortfcn );
@@ -432,6 +436,9 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
     m_peaks = peaks;
     endInsertRows();
   }//if( peaks.size() )
+  
+  
+  
 }//void setPeakFromSpecMeas(...)
 
 
@@ -664,7 +671,10 @@ void PeakModel::setPeaks( const std::vector<std::shared_ptr<const PeakDef> > &pe
   vector<PeakDef> peakcopies;
   peakcopies.reserve( peaks.size() );
   for( size_t i = 0; i < peaks.size(); ++i )
-    peakcopies.push_back( *peaks[i] );
+  {
+    if( peaks[i] )
+      peakcopies.push_back( *peaks[i] );
+  }
   
   setPeaks( peakcopies );
 }//void PeakModel::setPeaks()
