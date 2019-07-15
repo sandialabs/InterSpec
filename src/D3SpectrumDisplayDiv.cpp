@@ -60,6 +60,18 @@ using namespace std;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
+namespace
+{
+  const std::string &jsbool( bool val )
+  {
+    static const std::string t = "true";
+    static const std::string f = "false";
+    
+    return val ? t : f;
+  };
+}
+
+
 D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_model( new SpectrumDataModel( this ) ),
@@ -70,6 +82,10 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_legendEnabled( true ),
   m_yAxisIsLog( true ),
   m_backgroundSubtract( false ),
+  m_showVerticalLines( false ),
+  m_showHorizontalLines( false ),
+  m_showHistogramIntegralsInLegend( true ),
+  m_showXAxisSliderChart( false ),
   m_jsgraph( jsRef() + ".chart" ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
@@ -96,18 +112,21 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
                      "event.cancelBubble = true; event.returnValue = false; return false;"
                     );
   
-  //wApp->useStyleSheet("external_libs/SpecUtils/d3_resources/SpectrumChartD3.css");
-  wApp->useStyleSheet("InterSpec_resources/SpectrumChartD3NoColor.css");
+  //For development it may be useful to directly use the original JS/CSS files,
+  //  but normally we should use the resources CMake will copy into
+  //  InterSpec_resources (not checked that Andorid/iOS build systems will
+  //  grab these files); when developing note that CMake will only update
+  //  files to InterSpec_resources when you run the "make" command.
+  const string resource_base = "InterSpec_resources/";
+  //const string resource_base = "external_libs/SpecUtils/d3_resources/";
+  
+  wApp->useStyleSheet( resource_base + "SpectrumChartD3.css" );
   initChangeableCssRules();
   
-  wApp->require( "external_libs/SpecUtils/d3_resources/d3.v3.min.js" );
-  wApp->require( "external_libs/SpecUtils/d3_resources/c.min.js" );
+  wApp->require( resource_base + "d3.v3.min.js" );
+  wApp->require( resource_base + "c.min.js" );
+  wApp->require( resource_base + "SpectrumChartD3.js" );
   
-  // Turn peak fitting off temporarily (Christian: 05282018)
-  // wApp->require( "external_libs/SpecUtils/d3_resources/numeric-1.2.6.min.js" );
-  // wApp->require( "external_libs/SpecUtils/d3_resources/PeakFit.js" );
-  
-  wApp->require( "external_libs/SpecUtils/d3_resources/SpectrumChartD3.js" );
   
   for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
       label < SpectrumChart::PeakLabels::kNumPeakLabels; label = SpectrumChart::PeakLabels(label+1) )
@@ -126,7 +145,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 
 void D3SpectrumDisplayDiv::defineJavaScript()
 {
-  auto jsbool = [](bool t) -> std::string { return t ? "true" : "false"; };
+  
   
   string options = "{title: '', showAnimation: true, animationDuration: 200";
   options += ", xlabel: '" + m_xAxisTitle + "'";
@@ -139,6 +158,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", showLegend: " + jsbool(m_legendEnabled);
   options += ", gridx: " + jsbool(m_showHorizontalLines);
   options += ", gridy: " + jsbool(m_showVerticalLines);
+  options += ", showXAxisSliderChart: " + jsbool(m_showXAxisSliderChart);
+  options += ", sliderChartHeightFraction: 0.1";  //ToDo: track this in C++
   options += ", showUserLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakUserLabel]);
   options += ", showPeakLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakEnergyLabel]);
   options += ", showNuclideNames: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakNuclideLabel]);
@@ -254,9 +275,8 @@ void D3SpectrumDisplayDiv::setTextInMiddleOfChart( const Wt::WString &s )
 void D3SpectrumDisplayDiv::setCompactAxis( const bool compact )
 {
   m_compactAxis = compact;
-  const string isCompact = compact ? "true" : "false";
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setCompactXAxis(" + isCompact + ");" );
+    doJavaScript( m_jsgraph + ".setCompactXAxis(" + jsbool(compact) + ");" );
 }
 
 bool D3SpectrumDisplayDiv::isAxisCompacted() const
@@ -272,6 +292,7 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
   model->setDataModel( m_model );
   m_peakModel = model;
 }//void setPeakModel( PeakModel *model );
+
 
 bool D3SpectrumDisplayDiv::legendIsEnabled() const
 {
@@ -348,7 +369,7 @@ void D3SpectrumDisplayDiv::setShowPeakLabel( int label, bool show )
       return;
       break;
   }
-  js += "(" + string(show ? "true" : "false") + ");";
+  js += "(" + jsbool(show) + ");";
   
   m_peakLabelsToShow[peakLabel] = show;
   
@@ -464,9 +485,8 @@ void D3SpectrumDisplayDiv::updateReferncePhotoPeakLines()
 void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 {
   m_showRefLineInfoForMouseOver = show;
-  const string showRefLineInfo = show ? "true" : "false";
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setShowRefLineInfoForMouseOver(" + showRefLineInfo + ")" );
+    doJavaScript( m_jsgraph + ".setShowRefLineInfoForMouseOver(" + jsbool(show) + ")" );
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
@@ -550,28 +570,25 @@ void D3SpectrumDisplayDiv::setYAxisLog( bool log )
 
 void D3SpectrumDisplayDiv::showGridLines( bool show )
 {
-  const string shouldDraw = show ? "true" : "false";
   m_showVerticalLines = show;
   m_showHorizontalLines = show;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setGridX(" + shouldDraw + ");"
-                  + m_jsgraph + ".setGridY(" + shouldDraw + ");" );
+    doJavaScript( m_jsgraph + ".setGridX(" + jsbool(show) + ");"
+                  + m_jsgraph + ".setGridY(" + jsbool(show) + ");" );
 }
 
 void D3SpectrumDisplayDiv::showVerticalLines( const bool draw )
 {
-  const string shouldDraw = draw ? "true" : "false";
   m_showVerticalLines = draw;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setGridX(" + shouldDraw + ");" );
+    doJavaScript( m_jsgraph + ".setGridX(" + jsbool(draw) + ");" );
 }
 
 void D3SpectrumDisplayDiv::showHorizontalLines( const bool draw )
 {
-  const string shouldDraw = draw ? "true" : "false";
   m_showHorizontalLines = draw;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setGridY(" + shouldDraw + ");" );
+    doJavaScript( m_jsgraph + ".setGridY(" + jsbool(draw) + ");" );
 }
 
 bool D3SpectrumDisplayDiv::verticalLinesShowing() const
@@ -599,9 +616,8 @@ void D3SpectrumDisplayDiv::setBackgroundSubtract( bool subtract )
   m_backgroundSubtract = subtract;
   m_model->setBackgroundSubtract( subtract );
   
-  const string shouldSubtract = subtract ? "true" : "false";
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setBackgroundSubtract(" + shouldSubtract + ");" );
+    doJavaScript( m_jsgraph + ".setBackgroundSubtract(" + jsbool(subtract) + ");" );
 }//void setBackgroundSubtract( bool subtract )
 
 void D3SpectrumDisplayDiv::setXAxisMinimum( const double minimum )
@@ -884,16 +900,6 @@ void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist,
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> background );
 
 
-
-void D3SpectrumDisplayDiv::setPlotAreaPadding( int left, int top, int right, int bottom )
-{
-  m_plotAreaPaddingLeft = left;
-  m_plotAreaPaddingTop = top;
-  m_plotAreaPaddingRight = right;
-  m_plotAreaPaddingBottom = bottom;
-}//void setPlotAreaPadding( int left, int top, int right, int bottom )
-
-
 void D3SpectrumDisplayDiv::visibleRange( double &xmin, double &xmax,
                                       double &ymin, double &ymax ) const
 {
@@ -902,17 +908,6 @@ void D3SpectrumDisplayDiv::visibleRange( double &xmin, double &xmax,
   ymin = m_yAxisMinimum;
   ymax = m_yAxisMaximum;
 }
-
-int D3SpectrumDisplayDiv::plotAreaPadding( const Wt::Side side ) const
-{
-  switch ( side ) {
-    case Left: return m_plotAreaPaddingLeft;
-    case Right: return m_plotAreaPaddingRight;
-    case Top: return m_plotAreaPaddingTop;
-    case Bottom: return m_plotAreaPaddingBottom;
-    default: return 0;
-  }
-}//int plotAreaPadding( const Wt::Side side ) const
 
 
 const string D3SpectrumDisplayDiv::xAxisTitle() const
@@ -925,7 +920,6 @@ const string D3SpectrumDisplayDiv::yAxisTitle() const
 {
   return m_yAxisTitle;
 }//const Wt::WString &yAxisTitle() const;
-
 
 
 void D3SpectrumDisplayDiv::setXAxisTitle( const std::string &title )
@@ -1271,7 +1265,6 @@ void D3SpectrumDisplayDiv::removeAllPeaks()
 
 void D3SpectrumDisplayDiv::setFeatureMarkerOption( InterSpec::FeatureMarkerType option, bool show )
 {
-  const string shouldShow = show ? "true" : "false";
   string js = m_jsgraph;
   
   switch( option )
@@ -1294,7 +1287,7 @@ void D3SpectrumDisplayDiv::setFeatureMarkerOption( InterSpec::FeatureMarkerType 
   }//switch( option )
   
   m_showFeatureMarker[option] = show;
-  js += "(" + shouldShow + ");";
+  js += "(" + jsbool(show) + ");";
   
   if( isRendered() )
     doJavaScript( js );
@@ -1308,6 +1301,23 @@ void D3SpectrumDisplayDiv::setComptonPeakAngle( int angle )
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setComptonPeakAngle(" + std::to_string(angle) + ");" );
 }//void D3SpectrumDisplayDiv::setComptonPeakAngle( int angle )
+
+
+void D3SpectrumDisplayDiv::showXAxisSliderChart( const bool show )
+{
+  if( m_showXAxisSliderChart == show )
+    return;
+  
+  m_showXAxisSliderChart = show;
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setShowXAxisSliderChart(" + jsbool(show) + ");" );
+}//void showXAxisSliderChart( const bool show )
+
+
+bool D3SpectrumDisplayDiv::xAxisSliderChartIsVisible() const
+{
+  return m_showXAxisSliderChart;
+}//void xAxisSliderChartIsVisible() const;
 
 
 void D3SpectrumDisplayDiv::chartControlKeyDragCallback( double x0, double x1, int pageX, int pageY )

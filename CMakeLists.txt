@@ -624,15 +624,17 @@ if( USE_SPECTRUM_CHART_D3 )
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.css )
   list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h )
 
-#ToDo: at compile time copy D3 reources into InterSpec_resources; if not debug
-#      should run uglify (and eventually bable) if necassary.
-#  add_custom_command(
-#    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js
-#    COMMAND ${CMAKE_COMMAND} -E copy
-#      ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
-#      ${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js
-#    MAIN_DEPENDENCY ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js )
-
+#At compile time copy D3 resources into InterSpec_resources directory
+# ToDo: if not debug should run uglify (and eventually bable) if necassary.
+  set( D3_RSRCs_TO_COPY "SpectrumChartD3.js" "SpectrumChartD3.css" "d3.v3.min.js" "c.min.js" )
+  foreach(_file ${D3_RSRCs_TO_COPY})
+    add_custom_command(
+      OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}
+      COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}
+        ${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}
+        MAIN_DEPENDENCY ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file} )
+  endforeach()
 endif( USE_SPECTRUM_CHART_D3 )
 
 
