@@ -147,8 +147,6 @@ public:
   void visibleRange( double &xmin, double &xmax,
                     double &ymin, double &ymax ) const;
   
-  virtual void setPlotAreaPadding( int left, int top, int right, int bottom );
-  virtual int plotAreaPadding( const Wt::Side side ) const;
   virtual void setXAxisTitle( const std::string &title );
   virtual void setYAxisTitle( const std::string &title );
   
@@ -230,6 +228,8 @@ public:
   void setFeatureMarkerOption( InterSpec::FeatureMarkerType option, bool show );
   void setComptonPeakAngle( int angle );
   
+  void showXAxisSliderChart( const bool show );
+  bool xAxisSliderChartIsVisible() const;
   
   void setXAxisMinimum( const double minimum );
   void setXAxisMaximum( const double maximum );
@@ -298,7 +298,9 @@ protected:
   
   bool m_showVerticalLines;
   bool m_showHorizontalLines;
-  bool m_showHistogramIntegralsInLegend;
+  bool m_showHistogramIntegralsInLegend;  //Not currently used/implemented
+  
+  bool m_showXAxisSliderChart;
   
   std::vector<std::pair<double,double> > m_searchEnergies;
   std::vector<SpectrumChart::HighlightRegion> m_highlights;
@@ -381,12 +383,6 @@ protected:
   /** The width of the plotting area. */
   double m_chartWidthPx;
   double m_chartHeightPx;
-  
-  // Plot Area Padding values
-  int m_plotAreaPaddingLeft;
-  int m_plotAreaPaddingRight;
-  int m_plotAreaPaddingTop;
-  int m_plotAreaPaddingBottom;
   
   
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )

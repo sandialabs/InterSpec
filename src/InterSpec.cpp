@@ -515,11 +515,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum   = new D3SpectrumDisplayDiv();
 #else
   m_spectrum   = new SpectrumDisplayDiv();
+  m_spectrum->setPlotAreaPadding( 80, 2, 10, 44 );
 #endif
   m_timeSeries = new SpectrumDisplayDiv();
   m_calibrateContainer = new WContainerWidget();
   
-  m_spectrum->setPlotAreaPadding( 80, 2, 10, 44 );
   m_timeSeries->setPlotAreaPadding( 80, 0, 10, 44 );
   
   if( isPhone() )
@@ -717,7 +717,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   m_spectrum->enableLegend( false );
   m_spectrum->showHistogramIntegralsInLegend( true );
-#if( !USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
+#else
   m_spectrum->setAutoAdjustDisplayRebinFactor( true );
 #endif
   m_spectrum->shiftAltKeyDragged().connect( this, &InterSpec::handleShiftAltDrag );
@@ -5567,6 +5568,32 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_spectrum->showHorizontalLines( horizontalLines );
   m_timeSeries->showHorizontalLines( horizontalLines );
   
+#if( USE_SPECTRUM_CHART_D3 )
+  const bool showSlider = InterSpecUser::preferenceValue<bool>( "ShowXAxisSlider", this );
+  m_spectrum->showXAxisSliderChart( showSlider );
+  m_showXAxisSliderItems[0] = chartmenu->addMenuItem( "Show Energy Slider" , "");
+  m_showXAxisSliderItems[1] = chartmenu->addMenuItem( "Hide Energy Slider" , "");
+  m_showXAxisSliderItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, true ) );
+  m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
+  m_showXAxisSliderItems[0]->setHidden( showSlider );
+  m_showXAxisSliderItems[1]->setHidden( !showSlider );
+  
+  if( isPhone() )
+  {
+    m_compactXAxisItems[0] = m_compactXAxisItems[1] = nullptr;
+  }else
+  {
+    const bool makeCompact = InterSpecUser::preferenceValue<bool>( "CompactXAxis", this );
+    m_spectrum->setCompactAxis( makeCompact );
+    m_compactXAxisItems[0] = chartmenu->addMenuItem( "Compact X-Axis" , "");
+    m_compactXAxisItems[1] = chartmenu->addMenuItem( "Normal X-Axis" , "");
+    m_compactXAxisItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, true ) );
+    m_compactXAxisItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, false ) );
+    m_compactXAxisItems[0]->setHidden( makeCompact );
+    m_compactXAxisItems[1]->setHidden( !makeCompact );
+  }
+#endif
+  
   //What we should do here is have a dialog that pops up that lets users  select
   //  colors for foreground, background, secondary, as well as the first number
   //  of reference lines.
@@ -5981,6 +6008,55 @@ void InterSpec::setHorizantalLines( bool show )
   m_timeSeries->showHorizontalLines( show );
 }//void setHorizantalLines( bool show )
 
+
+#if( USE_SPECTRUM_CHART_D3 )
+void InterSpec::setXAxisSlider( bool show )
+{
+  InterSpecUser::setPreferenceValue<bool>( m_user, "ShowXAxisSlider", show, this );
+  m_showXAxisSliderItems[0]->setHidden( show );
+  m_showXAxisSliderItems[1]->setHidden( !show );
+  
+  if( show )
+  {
+    //Default to compact x-axis.
+    if( m_compactXAxisItems[0] )
+      m_compactXAxisItems[0]->setHidden( true );
+    if( m_compactXAxisItems[1] )
+      m_compactXAxisItems[1]->setHidden( false );
+    
+     m_spectrum->setCompactAxis( true );
+    m_timeSeries->setCompactAxis( true );
+  }else
+  {
+    //Go back to whatever the user wants/selects
+    const bool makeCompact = InterSpecUser::preferenceValue<bool>( "CompactXAxis", this );
+    
+    if( m_compactXAxisItems[0] )
+      m_compactXAxisItems[0]->setHidden( makeCompact );
+    if( m_compactXAxisItems[1] )
+      m_compactXAxisItems[1]->setHidden( !makeCompact );
+    
+    m_spectrum->setCompactAxis( makeCompact );
+    m_timeSeries->setCompactAxis( makeCompact );
+  }//show /hide
+  
+  m_spectrum->showXAxisSliderChart( show );
+}//void setXAxisSlider( bool show )
+
+
+void InterSpec::setXAxisCompact( bool compact )
+{
+  InterSpecUser::setPreferenceValue<bool>( m_user, "CompactXAxis", compact, this );
+  
+  if( m_compactXAxisItems[0] )
+    m_compactXAxisItems[0]->setHidden( compact );
+  if( m_compactXAxisItems[1] )
+    m_compactXAxisItems[1]->setHidden( !compact );
+  
+  m_spectrum->setCompactAxis( compact );
+  m_timeSeries->setCompactAxis( compact );
+}//void setXAxisCompact( bool compact );
+#endif
 
 
 ReferencePhotopeakDisplay *InterSpec::referenceLinesWidget()

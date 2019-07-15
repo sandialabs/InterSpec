@@ -896,7 +896,12 @@ public:
   void setBackgroundSub( bool sub );
   void setVerticalLines( bool show );
   void setHorizantalLines( bool show );
-    
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  void setXAxisSlider( bool show );
+  void setXAxisCompact( bool compact );
+#endif
+  
   ReferencePhotopeakDisplay *referenceLinesWidget();
 
 #if( defined(WIN32) && BUILD_AS_ELECTRON_APP )
@@ -1142,6 +1147,11 @@ protected:
   PopupDivMenuItem *m_backgroundSubItems[2];
   PopupDivMenuItem *m_verticalLinesItems[2];
   PopupDivMenuItem *m_horizantalLinesItems[2];
+#if( USE_SPECTRUM_CHART_D3 )
+  PopupDivMenuItem *m_showXAxisSliderItems[2];
+  PopupDivMenuItem *m_compactXAxisItems[2];
+#endif
+  
   
   enum class ToolTabMenuItems
   {
