@@ -14,7 +14,7 @@ For executable installation:
 - Android phones and tablets: [Android Google Play Store](https://play.google.com/store/apps/details?id=gov.sandia.interspec)
 - From source: see the [Building From Source](https://github.com/sandialabs/InterSpec#building-from-source).
 
-A brief getting started guide can be found in [tutorials/brief_analysis_intro](https://github.com/sandialabs/InterSpec/tree/master/tutorials/brief_analysis_intro/); a more comprehsive tutorial is planned for the future.
+A brief getting started guide can be found in [docs/tutorials/brief_analysis_intro/brief_ana_overview_InterSpec_Oct2018.pdf](https://sandialabs.github.io/InterSpec/tutorials/brief_analysis_intro/brief_ana_overview_InterSpec_Oct2018.pdf); a more comprehensive tutorial is planned for the future.
 
 
 ## Some Screen Shots
