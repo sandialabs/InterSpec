@@ -373,7 +373,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_shieldingSuggestion( 0 ),
     m_shieldingSourceFit( 0 ),
     m_shieldingSourceFitWindow( 0 ),
-    m_materialDB( 0 ),
+    m_materialDB( nullptr ),
     m_nuclideSearchWindow( 0 ),
     m_isotopeSearchContainer(0),
     m_isotopeSearch( 0 ),
@@ -1031,10 +1031,6 @@ InterSpec::~InterSpec()
     delete m_shieldingSuggestion;
   m_shieldingSuggestion = NULL;
 
-  if( m_materialDB )
-    delete m_materialDB;
-  m_materialDB = NULL;
-  
   if( m_menuDiv )
   {
     delete m_menuDiv;
@@ -1231,7 +1227,10 @@ void InterSpec::layoutSizeChanged( int w, int h )
   //When the soft-keyboard disapears (on Android at a minimum), the overlays
   //  dont resize properly (until you change tab below the chart, or something)
   //  so we will force it.
+#if( !USE_SPECTRUM_CHART_D3 )
   m_spectrum->forceOverlayAlign();
+#endif
+  
   if( !m_timeSeries->isHidden() )
     m_timeSeries->forceOverlayAlign();
 #endif  //#if( IOS || ANDROID )
@@ -5292,7 +5291,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_referencePhotopeakLinesWindow = NULL;
       
     m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                              m_materialDB,
+                                              m_materialDB.get(),
                                               m_shieldingSuggestion,
                                               this );
     setReferenceLineColors( nullptr );
@@ -6939,13 +6938,14 @@ void InterSpec::initRecalibrator()
 }//void initRecalibrator()
 
 
-void InterSpec::fillMaterialDb( MaterialDB *materialDB,
+void InterSpec::fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
                                      const std::string sessionid,
                                      boost::function<void(void)> update )
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   try
   {
+    //materialDB can get destructed if the session ends immediately....
     materialDB->parseGadrasMaterialFile( "data/MaterialDataBase.txt", db, false );
     
     WServer::instance()->post( sessionid, update );
@@ -6994,7 +6994,7 @@ void InterSpec::initMaterialDbAndSuggestions()
 
   if( !m_materialDB )
   {
-    m_materialDB = new MaterialDB();
+    m_materialDB = std::make_shared<MaterialDB>();
     
     boost::function<void(void)> success = wApp->bind( boost::bind(&InterSpec::pushMaterialSuggestionsToUsers, this) );
     
@@ -7007,19 +7007,19 @@ void InterSpec::initMaterialDbAndSuggestions()
 
 void InterSpec::showGammaXsTool()
 {
-  new GammaXsWindow( m_materialDB, m_shieldingSuggestion, this );
+  new GammaXsWindow( m_materialDB.get(), m_shieldingSuggestion, this );
 } //showGammaXsTool()
 
 
 void InterSpec::showDoseTool()
 {
-  new DoseCalcWindow( m_materialDB, m_shieldingSuggestion, this );
+  new DoseCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
 }
 
 
 void InterSpec::showMakeDrfWindow()
 {
-  MakeDrf::makeDrfWindow( this, m_materialDB, m_shieldingSuggestion );
+  MakeDrf::makeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
 }//void showDetectorEditWindow()
 
 
@@ -7150,7 +7150,7 @@ void InterSpec::showShieldingSourceFitWindow()
 
     m_shieldingSourceFitWindow = new AuxWindow( "Activity/Shielding Fit" );
     m_shieldingSourceFit = new ShieldingSourceDisplay( m_peakModel, this,
-                                          m_shieldingSuggestion, m_materialDB );
+                                          m_shieldingSuggestion, m_materialDB.get() );
 
     m_shieldingSourceFitWindow->setResizable( true );
     m_shieldingSourceFitWindow->contents()->setOffsets(WLength(0,WLength::Pixel));
@@ -7312,7 +7312,7 @@ void InterSpec::showGammaLinesWindow()
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();
 
   m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                               m_materialDB,
+                                               m_materialDB.get(),
                                                m_shieldingSuggestion,
                                                this );
   setReferenceLineColors( nullptr );
@@ -7389,7 +7389,7 @@ void InterSpec::closeGammaLinesWindow()
   if( m_toolsTabs )
   {
     m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                                   m_materialDB,
+                                                   m_materialDB.get(),
                                                    m_shieldingSuggestion,
                                                    this );
     setReferenceLineColors( nullptr );

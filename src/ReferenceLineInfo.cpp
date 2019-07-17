@@ -542,7 +542,17 @@ void ReferenceLineInfo::deSerialize( const rapidxml::xml_node<char> *base_node )
     for( const string &str : particlestrs )
     {
       if( !particle_sf.count(str) )
-        throw runtime_error( "Particle type does not have a SF: " + str );
+      {
+        //got an error on iPhone 20190716 with an error for str=="xray", but couldnt follow through on diagnosing.
+        //if( str == SandiaDecay::to_str(SandiaDecay::ProductType::XrayParticle)
+        //   && particle_sf.count(SandiaDecay::to_str(SandiaDecay::ProductType::GammaParticle)) )
+        //{
+        //  particle_sf[str] = particle_sf[SandiaDecay::to_str(SandiaDecay::ProductType::GammaParticle)];
+        //}else
+        //{
+          throw runtime_error( "Particle type does not have a SF: " + str );
+        //}
+      }
     }
   }else
   {

@@ -114,11 +114,15 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   
   //For development it may be useful to directly use the original JS/CSS files,
   //  but normally we should use the resources CMake will copy into
-  //  InterSpec_resources (not checked that Andorid/iOS build systems will
+  //  InterSpec_resources (not checked that Andorid build systems will
   //  grab these files); when developing note that CMake will only update
   //  files to InterSpec_resources when you run the "make" command.
+#if( defined(NDEBUG) || IOS || ANDROID || BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+  //THe NDEBUG should be enough, but just making sure
   const string resource_base = "InterSpec_resources/";
-  //const string resource_base = "external_libs/SpecUtils/d3_resources/";
+#else
+  const string resource_base = "external_libs/SpecUtils/d3_resources/";
+#endif
   
   wApp->useStyleSheet( resource_base + "SpectrumChartD3.css" );
   initChangeableCssRules();
@@ -261,9 +265,6 @@ void D3SpectrumDisplayDiv::initChangeableCssRules()
   m_cssRules["MinorGridColor"] = style.addRule( ".minorgrid", "stroke: #e6e6e6" );
   //m_cssRules["FeatureLinesColor"] = style.addRule( ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine", "stroke: black" );
   
-  /*
-  .lightMouseLine { font-size: 0.8em; stroke-width: 0.5;  stroke: gray }
-  */
 }//void initChangeableCssRules()
 
 
