@@ -516,7 +516,7 @@ public:
   //fillMaterialDb(): populates materialDB, and then calls the provided
   //  'update' function by posting to the WServer thread pool for 'sessionid'
   //  so it will be executed in its event loop.
-  static void fillMaterialDb( MaterialDB *materialDB,
+  static void fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
                               const std::string sessionid,
                               boost::function<void(void)> update );
   
@@ -1061,7 +1061,7 @@ protected:
   Wt::WSuggestionPopup   *m_shieldingSuggestion;
   ShieldingSourceDisplay *m_shieldingSourceFit;
   AuxWindow              *m_shieldingSourceFitWindow;
-  MaterialDB             *m_materialDB;
+  std::shared_ptr<MaterialDB> m_materialDB;
 
   //m_nuclideSearchWindow: only valid when in tool tabs are hidden, and the user
   //  currently has the window nuclide search window open.

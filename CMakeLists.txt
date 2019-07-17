@@ -229,8 +229,8 @@ IF(IOS)
   set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
   set(SUPPORT_ZIPPED_SPECTRUM_FILES ON)
   set(USE_TERMINAL_WIDGET OFF)
-  set(SpecUtils_ENABLE_D3_CHART OFF)
-  set(USE_SPECTRUM_CHART_D3 OFF)
+  set(SpecUtils_ENABLE_D3_CHART ON)
+  set(USE_SPECTRUM_CHART_D3 ON)
 
   #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
   # iosbuild.rb everywhere, and in the Xcode project.
