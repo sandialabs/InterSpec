@@ -333,6 +333,8 @@ Wt::Dbo::SqlConnection *getDatabaseConnection()
   }//try / catch
 #elif( USE_SQLITE3_DB )
   const string &dbLocation = DataBaseUtils::preferenceDatabaseFile();
+  //Note that on Windows sqlite3 takes UTF-8 encoded path (not whatever codepage
+  //  is currently defined)
   return new Wt::Dbo::backend::Sqlite3( dbLocation );
 #else
 #error "Either a SQLITE3 or MySQL database must be selected to use to store user preferences and spectra"

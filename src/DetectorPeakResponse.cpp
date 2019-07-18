@@ -776,8 +776,15 @@ void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
   if( eff_file.empty() )
     throw runtime_error( "Directory '" + dir + "' did not contain a Efficiency.csv file." );
   
+#ifdef _WIN32
+  const std::wstring weff_file = UtilityFunctions::convert_from_utf8_to_utf16(eff_file);
+  const std::wstring wdat_file = UtilityFunctions::convert_from_utf8_to_utf16(dat_file);
+  ifstream csv( weff_file.c_str(), ios_base::binary|ios_base::in );
+  ifstream datFile( wdat_file.c_str(), ios_base::binary|ios_base::in );
+#else
   ifstream csv( eff_file.c_str(), ios_base::binary|ios_base::in );
   ifstream datFile( dat_file.c_str(), ios_base::binary|ios_base::in );
+#endif
   
   if( !csv.is_open() )
     throw runtime_error( "Could not open file '" + eff_file + "'." );

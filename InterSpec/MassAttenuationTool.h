@@ -40,7 +40,11 @@ namespace MassAttenuation
       function.  You can only call this function before getting any
       cross-sections, or else exception will be thrown.
    */
+#ifdef _WIN32
+  void set_data_directory( const std::wstring &dir );
+#else
   void set_data_directory( const std::string &dir );
+#endif
   
   /** Tests if the directory pointed to by 'dir' has a sub-directory
       'em_xs_data' with valid data files (used for allowing upgrades,
@@ -48,7 +52,11 @@ namespace MassAttenuation
    
        Throws exception if directory is invalid.
    */
+#ifdef _WIN32
+  void test_data_directory_validity( const std::wstring &dir );
+#else
   void test_data_directory_validity( const std::string &dir );
+#endif
   
   static const int sm_min_xs_atomic_number = 1;
   
