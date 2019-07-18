@@ -135,7 +135,14 @@ map<const SandiaDecay::Nuclide *, int> characteristics(
   {//begin codeblock to read characteristic gammas
     string line;
     const string filename = UtilityFunctions::append_path( dataDirectory(), "CharacteristicGammas.txt" );
+    
+#ifdef _WIN32
+    const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
     ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
+#else
+    ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+    
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     
     while( UtilityFunctions::safe_get_line( characteristicFile, line ) )
@@ -523,8 +530,15 @@ void findCandidates( vector<string> &suggestednucs,
         datFilename = UtilityFunctions::append_path( basename, "NaI 3x3/Detector.dat" );
       }//if( this is a NaI or other low resolution detector )
       
+#ifdef _WIN32
+      const std::wstring wcsvfilename = UtilityFunctions::convert_from_utf8_to_utf16(csvfilename);
+      const std::wstring wdatFilename = UtilityFunctions::convert_from_utf8_to_utf16(datFilename);
+      ifstream csv( wcsvfilename.c_str(), ios_base::binary|ios_base::in );
+      ifstream datFile( wdatFilename.c_str(), ios_base::binary|ios_base::in );
+#else
       ifstream csv( csvfilename.c_str(), ios_base::binary|ios_base::in );
       ifstream datFile( datFilename.c_str(), ios_base::binary|ios_base::in );
+#endif
       if( csv.good() && datFile.good() )
       {
         detPtr->fromGadrasDefinition( csv, datFile );
@@ -618,7 +632,12 @@ void findCharacteristics( vector<string> &characteristicnucs,
   //  whatever for now.
   const string filename = UtilityFunctions::append_path( dataDirectory(), "PhotoPeak.lis" );
 
+#ifdef _WIN32
+  const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+  ifstream input( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
   ifstream input( filename.c_str(), ios_base::binary | ios_base::in );
+#endif
   
   if( !input.good() )
   {

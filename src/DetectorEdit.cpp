@@ -544,7 +544,12 @@ void RelEffFile::initDetectors()
   pathstr = m_fileEdit->text().toUTF8();
 #endif
   
+#ifdef _WIN32
+  const std::wstring wpathstr = UtilityFunctions::convert_from_utf8_to_utf16(pathstr);
+  std::ifstream input( wpathstr.c_str(), ios::in | ios::binary );
+#else
   std::ifstream input( pathstr.c_str(), ios::in | ios::binary );
+#endif
   
   const bool file_opened = input.is_open();
   
@@ -2497,7 +2502,12 @@ void DetectorEdit::updateChart()
 
 std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const std::string filename )
 {
+#ifdef _WIN32
+  const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+  ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
   ifstream csvfile( filename.c_str(), ios_base::binary | ios_base::in );
+#endif
   
   if( !csvfile.is_open() )
     return nullptr;
@@ -2705,7 +2715,13 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
 
   const string csvFileName = m_efficiencyCsvUpload->spoolFileName();
 
+#ifdef _WIN32
+  const std::wstring wcsvFileName = UtilityFunctions::convert_from_utf8_to_utf16(csvFileName);
+  ifstream csvfile( wcsvFileName.c_str(), ios_base::binary | ios_base::in );
+#else
   ifstream csvfile( csvFileName.c_str(), ios_base::binary|ios_base::in );
+#endif
+  
   if( !csvfile.is_open() )
     return;
 
@@ -2715,7 +2731,12 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
     if( isGadrasDet )
     {
       const string dotDatFileName = m_detectorDotDatUpload->spoolFileName();
+#ifdef _WIN32
+      const std::wstring wdotDatFileName = UtilityFunctions::convert_from_utf8_to_utf16(dotDatFileName);
+      ifstream datfile( wdotDatFileName.c_str(), ios_base::binary|ios_base::in );
+#else
       ifstream datfile( dotDatFileName.c_str(), ios_base::binary|ios_base::in );
+#endif
       if( !datfile.is_open() )
         return;
       det->fromGadrasDefinition( csvfile, datfile );
@@ -3122,8 +3143,13 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
   
   for( const string &filename : paths )
   {
+#ifdef _WIN32
+    const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+    std::ifstream input( wfilename.c_str() );
+#else
     std::ifstream input( filename.c_str() );
-  
+#endif
+    
     if( !input.is_open() )
       continue;
   
@@ -3325,11 +3351,23 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetectorFromDirec
   if( thisdat.empty() )
     throw runtime_error( "Could not find a Detector.dat file in '" + path + "'" );
   
+#ifdef _WIN32
+  const std::wstring wthiscsv = UtilityFunctions::convert_from_utf8_to_utf16(thiscsv);
+  ifstream effstrm( wthiscsv.c_str(), ios_base::binary|ios_base::in );
+#else
   ifstream effstrm( thiscsv.c_str(), ios_base::binary|ios_base::in );
+#endif
+  
   if( !effstrm.is_open() )
     throw runtime_error( "Could not open '" + thiscsv + "'" );
 
+#ifdef _WIN32
+  const std::wstring wthisdat = UtilityFunctions::convert_from_utf8_to_utf16(thisdat);
+  ifstream datstrm( wthisdat.c_str(), ios_base::binary|ios_base::in );
+#else
   ifstream datstrm( thisdat.c_str(), ios_base::binary|ios_base::in );
+#endif
+  
   if( !datstrm.is_open() )
     throw runtime_error( "Could not open '" + thisdat + "'" );
 

@@ -1632,7 +1632,12 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
   
   for( const string jsonfilename : jsonfilenames )
   {
+#ifdef _WIN32
+    const std::wstring wjsonfilename = UtilityFunctions::convert_from_utf8_to_utf16(jsonfilename);
+    ifstream inputjsonfile( wjsonfilename.c_str() );
+#else
     ifstream inputjsonfile( jsonfilename.c_str() );
+#endif
   
     if( !inputjsonfile.is_open() )
     {

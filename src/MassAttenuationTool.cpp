@@ -67,14 +67,18 @@ namespace
   
   //Taken from UtilityFunctions, but copied to reduce cross-dependancies (and
   //  use on other projects that dont otherwise need UtilityFunctions)
+#ifdef _WIN32
+  std::wstring append_path( const std::wstring &base, const std::wstring &name )
+#else
   std::string append_path( const std::string &base, const std::string &name )
+#endif
   {
-#if ( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
-    if( base.size() && (base[base.size()-1]=='\\'||base[base.size()-1]=='/') )
+#ifdef _WIN32
+    if( base.size() && (base[base.size()-1]==wchar_t('\\')||base[base.size()-1]==wchar_t('/')) )
       return base + name;
-    if( name.size() && (name[0]=='\\'||name[0]=='/') )
+    if( name.size() && (name[0]==wchar_t('\\') || name[0]==wchar_t('/')) )
       return base + name;
-    return base + '\\' + name;
+    return base + wchar_t('\\') + name;
 #else
     if( base.size() && base[base.size()-1]=='/' )
       return base + name;
@@ -90,12 +94,21 @@ namespace
 #define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif
 
+#ifdef _WIN32
+  bool is_directory( const std::wstring &name )
+  {
+    struct stat statbuf;
+    _wstat( name.c_str(), &statbuf);
+    return S_ISDIR(statbuf.st_mode);
+  }//bool is_directory( const std::string &name )
+#else
   bool is_directory( const std::string &name )
   {
     struct stat statbuf;
     stat( name.c_str(), &statbuf);
     return S_ISDIR(statbuf.st_mode);
   }//bool is_directory( const std::string &name )
+#endif
   
   struct AttCoeffData
   {
@@ -127,8 +140,13 @@ namespace
     
     size_t memsize() const;
     
+#ifdef _WIN32
+    void saveTxt( std::wstring datapath );
+    void loadTxt( std::wstring datapath, const int atomicNumber );
+#else
     void saveTxt( std::string datapath );
     void loadTxt( std::string datapath, const int atomicNumber );
+#endif
   };//struct ElementAttenuation
 
 
@@ -149,7 +167,11 @@ namespace
     /** Must be called before any cross-sections are loaded or an exception will
         be thrown
      */
+#ifdef _WIN32
+    void set_data_dir( const std::wstring &dir );
+#else
     void set_data_dir( const std::string &dir );
+#endif
     
     //Protect against copy or copy construction
     MassAttenuationTool( const MassAttenuationTool &tool ) = delete;
@@ -200,7 +222,11 @@ namespace
      */
     const ElementAttenuation *attenuationData( const int atomic_number );
     
+#ifdef _WIN32
+    std::wstring m_dataPath;
+#else
     std::string m_dataPath;
+#endif
     
     std::atomic<const ElementAttenuation *> m_atten[98];
   };//class MassAttenuationTool
@@ -226,20 +252,32 @@ namespace MassAttenuation
 {
   static std::mutex sm_data_directory_mutex;  //probably a bit overkill
   static bool sm_have_loadded_data = false;
+#ifdef _WIN32
+  static std::wstring sm_data_directory = L"data";
+#else
   static std::string sm_data_directory = "data";
+#endif
   
   /** Have a singleton MassAttenuationTool tool object
    */
   static MassAttenuationTool sm_xs_tool;
   
+#ifdef _WIN32
+  std::wstring data_directory()
+#else
   std::string data_directory()
+#endif
   {
     std::lock_guard<std::mutex> lock( sm_data_directory_mutex );
     sm_have_loadded_data = true;
     return sm_data_directory;
   }
   
+#ifdef _WIN32
+  void set_data_directory( const std::wstring &dir )
+#else
   void set_data_directory( const std::string &dir )
+#endif
   {
     std::lock_guard<std::mutex> lock( sm_data_directory_mutex );
     if( sm_have_loadded_data )
@@ -248,7 +286,11 @@ namespace MassAttenuation
     sm_xs_tool.set_data_dir( append_path( dir, "em_xs_data") );
   }
   
+#ifdef _WIN32
+  void test_data_directory_validity( const std::wstring &dir )
+#else
   void test_data_directory_validity( const std::string &dir )
+#endif
   {
     if( !is_directory(dir) )
       throw runtime_error( "Directory '" + dir + "' does not exist or is not accessible" );
@@ -289,7 +331,11 @@ namespace MassAttenuation
     
     if( !data )
     {
+#ifdef _WIN32
+      const wstring path = append_path( MassAttenuation::data_directory(), L"CrossSection.lib" );
+#else
       const string path = append_path( MassAttenuation::data_directory(), "CrossSection.lib" );
+#endif
       
       ifstream input( path.c_str() );
       
@@ -467,14 +513,25 @@ size_t MassAttenuationTool::memsize() const
   return size;
 }//size_t ElementAttenuation::memsize() const
 
-
+#ifdef _WIN32
+void ElementAttenuation::saveTxt( std::wstring datapath )
+#else
 void ElementAttenuation::saveTxt( std::string path )
+#endif
 {
+#ifdef _WIN32
+  wchar_t filename[12];
+  _snwprintf( filename, sizeof(filename), L"%i.xs.txt", m_atomicNumber );
+  path = append_path( path, filename );
+  
+  FILE *pFile = _wfopen( path.c_str(), L"w" );
+#else
   char filename[12];
   snprintf( filename, sizeof(filename), "%i.xs.txt", m_atomicNumber );
   path = append_path( path, filename );
   
   FILE *pFile = fopen( path.c_str(), "w" );
+#endif
   
   if( !pFile )
     throw runtime_error( "Coulnt open file " + path );
@@ -506,12 +563,21 @@ void ElementAttenuation::saveTxt( std::string path )
 }//void saveTxt( string datapath )
 
 
-
+#ifdef _WIN32
+void ElementAttenuation::loadTxt( std::wstring datapath, const int atomicNumber )
+#else
 void ElementAttenuation::loadTxt( std::string datapath, const int atomicNumber )
+#endif
 {
+#ifdef _WIN32
+  wchar_t filename[12];
+  _snwprintf( filename, sizeof(filename), L"%i.xs.txt", atomicNumber );
+  datapath = append_path( datapath, filename );
+#else
   char filename[12];
   snprintf( filename, sizeof(filename), "%i.xs.txt", atomicNumber );
   datapath = append_path( datapath, filename );
+#endif
   
   ifstream file( datapath.c_str(), ios_base::binary|ios_base::in );
   
@@ -587,7 +653,11 @@ MassAttenuationTool::MassAttenuationTool()
     p = nullptr;
 }
 
+#ifdef _WIN32
+void MassAttenuationTool::set_data_dir( const std::wstring &dir )
+#else
 void MassAttenuationTool::set_data_dir( const std::string &dir )
+#endif
 {
   for( auto &p : m_atten )
     if( p.load() )
