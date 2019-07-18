@@ -136,7 +136,7 @@ Wt::WApplication *createApplication( const Wt::WEnvironment &env )
 /** Get command line arguments encoded as UTF-8.
     This function just leaks the memory
  */
-void getUtf8Args( int &argc, char ** &argv );
+void getUtf8Args( int &argc, char ** &argv )
 {
   //ToDo:
   //  - on windows:
@@ -173,7 +173,8 @@ void getUtf8Args( int &argc, char ** &argv );
   // Free memory allocated for CommandLineToArgvW arguments.
   LocalFree(argvw);
 }//void processCustomArgs()
-#else
+#endif
+
 void processCustomArgs( int argc, char **argv )
 {
   for( int i = 1; i < (argc-1); ++i )
@@ -196,4 +197,3 @@ void processCustomArgs( int argc, char **argv )
 #endif  //if( not a webapp )
   }//for( int i = 1; i < (argc-1); ++i )
 }//void processCustomArgs( int argc, char **argv )
-#endif
