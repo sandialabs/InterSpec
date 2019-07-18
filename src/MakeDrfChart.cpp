@@ -468,7 +468,7 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
   //Paint some grey-ish rectangles over the energy we dont have peaks for
   if( !m_efficiencyCoefs.empty() && !m_datapoints.empty() )
   {
-    float mindata = 9999999.9, maxdata = -9999999.9;
+    float mindata = 9999999.9f, maxdata = -9999999.9f;
     for( const auto &d : m_datapoints )
     {
       mindata = std::min( mindata, d.energy );

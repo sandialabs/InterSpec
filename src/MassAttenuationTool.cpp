@@ -97,7 +97,7 @@ namespace
 #ifdef _WIN32
   bool is_directory( const std::wstring &name )
   {
-    struct stat statbuf;
+    struct _stat statbuf;
     _wstat( name.c_str(), &statbuf);
     return S_ISDIR(statbuf.st_mode);
   }//bool is_directory( const std::string &name )
@@ -283,7 +283,11 @@ namespace MassAttenuation
     if( sm_have_loadded_data )
       throw runtime_error( "You must not call MassAttenuation::set_data_directory(...) after using any cross sections" );
     sm_data_directory = dir;
-    sm_xs_tool.set_data_dir( append_path( dir, "em_xs_data") );
+#ifdef _WIN32
+    sm_xs_tool.set_data_dir( append_path( dir, L"em_xs_data") );
+#else
+    sm_xs_tool.set_data_dir( append_path( dir, "em_xs_data" ) );
+#endif
   }
   
 #ifdef _WIN32
@@ -293,9 +297,18 @@ namespace MassAttenuation
 #endif
   {
     if( !is_directory(dir) )
+#ifdef _WIN32
+      throw runtime_error( "Directory does not exist or is not accessible" );
+#else
       throw runtime_error( "Directory '" + dir + "' does not exist or is not accessible" );
+#endif
+
+#ifdef _WIN32
+    const wstring datadir = append_path( dir, L"em_xs_data" );
+#else
+    const string datadir = append_path( dir, "em_xs_data" );
+#endif
     
-    const string datadir = append_path( dir, "em_xs_data");
     if( !is_directory(dir) )
       throw runtime_error( "EM Cross Section directory specified must have a subdirectory 'em_xs_data' containing the actual data files" );
     
@@ -340,8 +353,12 @@ namespace MassAttenuation
       ifstream input( path.c_str() );
       
       if( !input.is_open() )
+#ifdef _WIN32
+        throw runtime_error( "Failed reading data file" );
+#else
         throw runtime_error( "Failed reading " + path );
-      
+#endif
+
       AttCoeffData *newdata = new AttCoeffData();
       
       if( !input.read(   (char *)newdata->ZA,   sizeof(newdata->ZA) )
@@ -514,7 +531,7 @@ size_t MassAttenuationTool::memsize() const
 }//size_t ElementAttenuation::memsize() const
 
 #ifdef _WIN32
-void ElementAttenuation::saveTxt( std::wstring datapath )
+void ElementAttenuation::saveTxt( std::wstring path )
 #else
 void ElementAttenuation::saveTxt( std::string path )
 #endif
@@ -525,16 +542,20 @@ void ElementAttenuation::saveTxt( std::string path )
   path = append_path( path, filename );
   
   FILE *pFile = _wfopen( path.c_str(), L"w" );
+  if( !pFile )
+    throw runtime_error( "Coulnt open file file to save to" );
+
 #else
   char filename[12];
   snprintf( filename, sizeof(filename), "%i.xs.txt", m_atomicNumber );
   path = append_path( path, filename );
   
   FILE *pFile = fopen( path.c_str(), "w" );
-#endif
-  
+
   if( !pFile )
     throw runtime_error( "Coulnt open file " + path );
+#endif
+  
   
   fprintf( pFile, "%s %1.8E %i\n", m_symbol.c_str(), m_atomicMass, m_atomicNumber );
   
@@ -582,11 +603,19 @@ void ElementAttenuation::loadTxt( std::string datapath, const int atomicNumber )
   ifstream file( datapath.c_str(), ios_base::binary|ios_base::in );
   
   if( !file.is_open() || !file.good() )
+#ifdef _WIN32
+    throw runtime_error( "Coulnt open file datapath" );
+#else
     throw runtime_error( "Coulnt open file " + datapath );
-  
+#endif
+
   if( !(file >> m_symbol >> m_atomicMass >> m_atomicNumber) )
+#ifdef _WIN32
+    throw runtime_error( "Error reading first line of datapath" );
+#else
     throw runtime_error( "Error reading first line of: " + datapath );
-  
+#endif
+
   int nextchar = file.peek();
   while( (nextchar=='\n' || nextchar == '\r') && nextchar!=EOF )
   {
@@ -645,7 +674,12 @@ void ElementAttenuation::loadTxt( std::string datapath, const int atomicNumber )
 
 
 MassAttenuationTool::MassAttenuationTool()
-  : m_dataPath( "data/em_xs_data" )
+  :
+#ifdef _WIN32
+  m_dataPath( L"data/em_xs_data" )
+#else
+  m_dataPath( "data/em_xs_data" )
+#endif
 {
   static_assert( (sizeof(m_atten)/sizeof(m_atten[0])) == MassAttenuation::sm_max_xs_atomic_number, "" );
   

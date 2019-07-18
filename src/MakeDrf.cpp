@@ -2710,7 +2710,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   //Okay, we've got all the variables we need for this function I think, lets
   //  write stuff
   
-  const float NaI3x3IntrinsicEff = 0.47096; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
+  const float NaI3x3IntrinsicEff = 0.47096f; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
   const float cs137Energy = (effInMeV ? 0.661657f : 661.657f);
   const float intrinsicEffAt661 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( cs137Energy, effEqnCoefs );
   

@@ -849,9 +849,12 @@ void InterSpec::setStaticDataDirectory( const std::string &dir )
     throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " is not a directory." );
   
   sm_staticDataDirectory = dir;
-  
+
+#ifdef _WIN32
+  MassAttenuation::set_data_directory( UtilityFunctions::convert_from_utf8_to_utf16(dir) );
+#else
   MassAttenuation::set_data_directory( dir );
-  
+#endif
   const string rctn_xml_file = UtilityFunctions::append_path( dir, "sandia.reactiongamma.xml" );
   if( !UtilityFunctions::is_file(rctn_xml_file) )
     throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " does not contain a sandia.reactiongamma.xml file." );
