@@ -4016,7 +4016,12 @@ void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
     
     filepath = UtilityFunctions::append_path( filepath, (name.toUTF8() + "_" + timestr + ".n42") );
     
+#ifdef _WIN32
+    const std::wstring wfilepath = UtilityFunctions::convert_from_utf8_to_utf16(filepath);
+    ofstream output( wfilepath.c_str(), ios::binary|ios::out );
+#else
     ofstream output( filepath.c_str(), ios::binary|ios::out );
+#endif
     if( !output.is_open() )
       throw runtime_error( "Couldnt open test file ouput '"
                            + filepath + "'" );
@@ -4384,7 +4389,12 @@ void InterSpec::loadN42TestState( const std::string &filename )
   if( filename.empty() )
     return;
   
+#ifdef _WIN32
+  const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+  ifstream input( wfilename.c_str(), ios::in | ios::binary );
+#else
   ifstream input( filename.c_str(), ios::in | ios::binary );
+#endif
   if( !input.is_open() )
     throw runtime_error( "Couldnt open test state file: " + filename );
   
@@ -8625,7 +8635,12 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
               
               if( !iszip ) //check for zip files magic number to more-confirm
               {
+#ifdef _WIN32
+                const std::wstring wfilepath = UtilityFunctions::convert_from_utf8_to_utf16(filepath);
+                ifstream test( wfilepath.c_str() );
+#else
                 ifstream test( filepath.c_str() );
+#endif
                 iszip = (test.get()==0x50 && test.get()==0x4B
                          && test.get()==0x03 && test.get()==0x04);
               }//if( !iszip )

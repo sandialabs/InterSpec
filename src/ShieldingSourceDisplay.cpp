@@ -4630,12 +4630,14 @@ void ShieldingSourceDisplay::finishModelUpload( AuxWindow *window,
     serialize( &original_doc );
     
     const std::string filename = upload->spoolFileName();
-    rapidxml::file<char> input_file( filename.c_str() );
+    
+    std::vector<char> data;
+    UtilityFunctions::load_file_data( filename.c_str(), data );
     
     rapidxml::xml_document<char> new_doc;
     const int flags = rapidxml::parse_normalize_whitespace
                       | rapidxml::parse_trim_whitespace;
-    new_doc.parse<flags>( input_file.data() );
+    new_doc.parse<flags>( &data.front() );
     deSerialize( new_doc.first_node() );
     
     m_modifiedThisForeground = true;

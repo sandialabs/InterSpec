@@ -22,10 +22,9 @@
  */
 #include "InterSpec_config.h"
 
-#include <fstream>
+#include <string>
 #include <iostream>
 #include <iterator>
-#include <string>
 
 #include <Wt/Dbo/Dbo>
 #include <Wt/Dbo/SqlConnection>

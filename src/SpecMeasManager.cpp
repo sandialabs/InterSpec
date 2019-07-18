@@ -939,7 +939,12 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     size_t nbytewritten = 0;
     
     {
+#ifdef _WIN32
+      const std::wstring wtmpfile = UtilityFunctions::convert_from_utf8_to_utf16(tmpfile);
+      ofstream tmpfilestrm( wtmpfile.c_str(), ios::out | ios::binary );
+#else
       ofstream tmpfilestrm( tmpfile.c_str(), ios::out | ios::binary );
+#endif
       nbytewritten = read_file_from_zip( zipfilestrm, headers[fileInZip], tmpfilestrm );
     }
     

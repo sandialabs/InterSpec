@@ -707,7 +707,12 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     bool written = false;
     
     {
+#ifdef _WIN32
+      const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+      ofstream output( wfilename.c_str(), ios::binary | ios::out );
+#else
       ofstream output( filename.c_str(), ios::binary | ios::out );
+#endif
       if( !output.is_open() )
       {
         log_developer_error( BOOST_CURRENT_FUNCTION, "Failed to open temp output file" );
@@ -1093,7 +1098,12 @@ void SpectraFileHeader::saveToFileSystemImmediately( SpecMeas *meas ) const
     m_fileSystemLocation = tempfile;
     
     {
+#ifdef _WIN32
+      const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(m_fileSystemLocation);
+      ofstream output( wfilename.c_str(), ios::binary | ios::out );
+#else
       ofstream output( m_fileSystemLocation.c_str(), ios::binary | ios::out );
+#endif
       if( !output.is_open() )
         throw runtime_error( "Couldnt open file for writing: " + m_fileSystemLocation );
       if( !meas->write_2012_N42( output ) )

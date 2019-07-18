@@ -634,19 +634,7 @@ void ReactionGamma::init( const string &input )
   using namespace rapidxml;
 
   vector<char> inputdata;
-
-  {//Begin codeblock for reading the data from disk
-    basic_ifstream<char> stream(input.c_str(), ios::binary);
-    if (!stream)
-      throw runtime_error(string("Cannot open file ") + input);
-    stream.unsetf(ios::skipws);
-    stream.seekg(0, ios::end);
-    const ifstream::pos_type size = stream.tellg();
-    stream.seekg(0);
-    inputdata.resize(1 + static_cast<size_t>(size) );
-    stream.read(&inputdata.front(), static_cast<streamsize>(size));
-    inputdata[static_cast<size_t>(size)] = 0;
-  }//end codeblock for reading the data from disk
+  UtilityFunctions::load_file_data( input.c_str(), inputdata );
 
   xml_document<char> document;
   document.parse<parse_normalize_whitespace | parse_trim_whitespace>( &inputdata.front() );
