@@ -1073,9 +1073,9 @@ public:
     if( col == FileDataField::Filename )
     {
       if( role == DisplayRole )
-        return WString(UtilityFunctions::filename(fields[col]));
+        return WString::fromUTF8(UtilityFunctions::filename(fields[col]));
       if( role == UserRole )
-        return WString(fields[col]);
+        return WString::fromUTF8(fields[col]);
       return boost::any();
     }
     
@@ -1090,7 +1090,7 @@ public:
       return boost::any();
     }
     
-    return WString( fields[col] );
+    return WString::fromUTF8( fields[col] );
   }//data(...)
   
   
@@ -1980,111 +1980,132 @@ void SpecFileQueryWidget::basePathChanged()
 
 
 void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
-                                    const bool recursive, const bool extfilter,
-                                    const size_t maxsize,
-                                    SpecFileQueryWidget *querywidget,
-                                    const std::string sessionid,
-                                    std::shared_ptr< std::atomic<bool> > widgetdeleted,
-                                    std::shared_ptr<SpecFileQueryDbCache> database )
+  const bool recursive, const bool extfilter,
+  const size_t maxsize,
+  SpecFileQueryWidget *querywidget,
+  const std::string sessionid,
+  std::shared_ptr< std::atomic<bool> > widgetdeleted,
+  std::shared_ptr<SpecFileQueryDbCache> database )
 {
   vector<string> files;
-  
+
   UtilityFunctions::file_match_function_t filterfcn = extfilter ? &maybe_spec_file : &file_smaller_than;
-  
-#if( USE_DIRECTORY_ITERATOR_METHOD )
-  double updatetime = UtilityFunctions::get_wall_time();
-  const bool docache = (database && database->caching_enabled());
-  
-  size_t nfiles = 0;
-  boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::symlink_option::recurse );
-  const boost::filesystem::recursive_directory_iterator dirend;
-  
-  while( diriter != dirend )
+
+  try
   {
-    if( *widgetdeleted )
-      return;
-    
-    string filename = diriter->path().string<std::string>();
-    
-    const bool is_dir = boost::filesystem::is_directory( diriter.status() ); //folows symlinks to see if target of symlink is a directory
-    bool is_file = (diriter.status().type() == boost::filesystem::file_type::regular_file);  //folows symlinks
-    
-    if( !recursive && is_dir )
-    {
-      is_file = false; //JIC
-      diriter.no_push();  //Dont recurse down into directories if we arent doing a recursive search
-    }
-    
-    bool is_simlink_dir = false;
-    if( is_dir && recursive )
-    {
-      //If this is a directory, check if we are actually on a symlink to a
-      //  directory, because if so, we need to check for cyclical links.
-      boost::system::error_code symec;
-      const auto symstat = boost::filesystem::symlink_status( diriter->path(), symec );
-      is_simlink_dir = (!symec && (symstat.type()==boost::filesystem::file_type::symlink_file));
-    }
-    
-    if( is_simlink_dir )
-    {
-      auto resvedpath = boost::filesystem::read_symlink( diriter->path() );
-      if( resvedpath.is_relative() )
-        resvedpath = diriter->path().parent_path() / resvedpath;
-      resvedpath = boost::filesystem::canonical( resvedpath );
-      auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
-      if( UtilityFunctions::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
-        diriter.no_push();  //Dont recurse down into directories
-    }//if( is_simlink_dir && recursive )
-    
-    
-    if( is_file && filterfcn( filename, (void *)&maxsize ) )
-    {
-      if( docache && (files.size() < 100000) )
-        files.push_back( filename );
-      
-      ++nfiles;
-      if( (nfiles % 500) == 0 )
-      {
-        const double nowtime = UtilityFunctions::get_wall_time();
-        if( (nowtime - updatetime) > 1.0 )
-        {
-          updatetime = nowtime;
-          if( !(*widgetdeleted) )
-            WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateNumberFilesInGui,
-                                                              nfiles, false, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
-          else
-            return;
-        }
-      }//if( (nfiles % 500) == 0 )
-    }//if( this is a potential file we should check on )
-    
-    boost::system::error_code ec;
-    diriter.increment(ec);
-    while( ec && (diriter!=dirend) )
-    {
-      std::cerr << "Error While Accessing : " << diriter->path().string() << " :: " << ec.message() << '\n';
-      diriter.increment(ec);
-    }
-  }//while( diriter != dirend )
-  
-  if( !(*widgetdeleted) )
-    WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateNumberFilesInGui,
-                                                      nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+
+#if( USE_DIRECTORY_ITERATOR_METHOD )
+    double updatetime = UtilityFunctions::get_wall_time();
+    const bool docache = (database && database->caching_enabled());
+
+    size_t nfiles = 0;
+#ifdef _WIN32
+    const wstring wsrcdir = UtilityFunctions::convert_from_utf8_to_utf16( srcdir );
+    boost::filesystem::recursive_directory_iterator diriter( wsrcdir, boost::filesystem::symlink_option::recurse );
 #else
-  if( recursive )
-    files = UtilityFunctions::recursive_ls( srcdir, filterfcn, (void *)&maxsize );
-  else
-    files = UtilityFunctions::ls_files_in_directory( srcdir, filterfcn, (void *)&maxsize );
-  
-  const size_t nfiles = files.size();
-  
-  if( !(*widgetdeleted) )
-    WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateNumberFilesInGui,
-                                                    nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
-  
+    boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::symlink_option::recurse );
 #endif
-  
-  
+    const boost::filesystem::recursive_directory_iterator dirend;
+
+    while( diriter != dirend )
+    {
+      if( *widgetdeleted )
+        return;
+
+#ifdef _WIN32
+      const wstring wfilename = diriter->path().string<std::wstring>();
+      const string filename = UtilityFunctions::convert_from_utf16_to_utf8( wfilename );
+#else
+      string filename = diriter->path().string<std::string>();
+#endif
+
+      const bool is_dir = boost::filesystem::is_directory( diriter.status() ); //folows symlinks to see if target of symlink is a directory
+      bool is_file = (diriter.status().type() == boost::filesystem::file_type::regular_file);  //folows symlinks
+
+      if( !recursive && is_dir )
+      {
+        is_file = false; //JIC
+        diriter.no_push();  //Dont recurse down into directories if we arent doing a recursive search
+      }
+
+      bool is_simlink_dir = false;
+      if( is_dir && recursive )
+      {
+        //If this is a directory, check if we are actually on a symlink to a
+        //  directory, because if so, we need to check for cyclical links.
+        boost::system::error_code symec;
+        const auto symstat = boost::filesystem::symlink_status( diriter->path(), symec );
+        is_simlink_dir = (!symec && (symstat.type() == boost::filesystem::file_type::symlink_file));
+      }
+
+      if( is_simlink_dir )
+      {
+        auto resvedpath = boost::filesystem::read_symlink( diriter->path() );
+        if( resvedpath.is_relative() )
+          resvedpath = diriter->path().parent_path() / resvedpath;
+        resvedpath = boost::filesystem::canonical( resvedpath );
+        auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
+        if( UtilityFunctions::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
+          diriter.no_push();  //Dont recurse down into directories
+      }//if( is_simlink_dir && recursive )
+
+
+      if( is_file && filterfcn( filename, (void *)&maxsize ) )
+      {
+        if( docache && (files.size() < 100000) )
+          files.push_back( filename );
+
+        ++nfiles;
+        if( (nfiles % 500) == 0 )
+        {
+          const double nowtime = UtilityFunctions::get_wall_time();
+          if( (nowtime - updatetime) > 1.0 )
+          {
+            updatetime = nowtime;
+            if( !(*widgetdeleted) )
+              WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,
+                nfiles, false, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+            else
+              return;
+          }
+        }//if( (nfiles % 500) == 0 )
+      }//if( this is a potential file we should check on )
+
+      boost::system::error_code ec;
+      diriter.increment( ec );
+      while( ec && (diriter != dirend) )
+      {
+        std::cerr << "Error While Accessing : " << diriter->path().string() << " :: " << ec.message() << '\n';
+        diriter.increment( ec );
+      }
+    }//while( diriter != dirend )
+
+    if( !(*widgetdeleted) )
+      WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,
+        nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+#else
+    if( recursive )
+      files = UtilityFunctions::recursive_ls( srcdir, filterfcn, (void *)&maxsize );
+    else
+      files = UtilityFunctions::ls_files_in_directory( srcdir, filterfcn, (void *)&maxsize );
+
+    const size_t nfiles = files.size();
+
+    if( !(*widgetdeleted) )
+      WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,
+        nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+
+#endif
+  } catch( ... )
+  {
+    std::cerr << "Error in updateNumberFiles; unexpected exception" << std::endl;
+
+    if( !(*widgetdeleted) )
+      WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,
+        0, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+    return;
+  }
+
   if( database && database->caching_enabled() )
     database->cache_results( std::move(files) );
 }//updateNumberFiles
@@ -2485,7 +2506,12 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     size_t ncheckssubmitted = 0;
     std::mutex result_mutex;
     
+#ifdef _WIN32
+    const std::wstring wbasedir = UtilityFunctions::convert_from_utf8_to_utf16( basedir );
+    boost::filesystem::recursive_directory_iterator diriter( wbasedir, boost::filesystem::symlink_option::recurse );
+#else
     boost::filesystem::recursive_directory_iterator diriter( basedir, boost::filesystem::symlink_option::recurse );
+#endif
     const boost::filesystem::recursive_directory_iterator dirend;
     
     while( diriter != dirend )
@@ -2493,8 +2519,13 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
       if( stopUpdate->load() )
         throw runtime_error("");
       
+#ifdef _WIN32
+      const wstring wfilename = diriter->path().string<std::wstring>();
+      const std::string filename = UtilityFunctions::convert_from_utf16_to_utf8( wfilename );
+#else
       string filename = diriter->path().string<std::string>();
-      
+#endif
+
       const bool is_dir = boost::filesystem::is_directory( diriter.status() ); //folows symlinks to see if target of symlink is a directory
       bool is_file = (diriter.status().type() == boost::filesystem::file_type::regular_file);  //folows symlinks
      

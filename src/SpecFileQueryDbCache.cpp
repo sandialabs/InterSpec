@@ -873,8 +873,8 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   {
     //see if "<event>" is in the first 128 bytes.
 #ifdef _WIN32
-    const std::wstring wfilepath = convert_from_utf8_to_utf16( filepath );
-    ifstream datstrm( filepath.c_str(), ios_base::binary|ios_base::in );
+    const std::wstring wfilepath = UtilityFunctions::convert_from_utf8_to_utf16( filepath );
+    ifstream datstrm( wfilepath.c_str(), ios_base::binary|ios_base::in );
 #else
     ifstream datstrm( filepath.c_str(), ios_base::binary|ios_base::in );
 #endif
@@ -981,8 +981,8 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
   for( const auto &xmlfilename : candidates )
   {
 #ifdef _WIN32
-    const std::wstring wxmlfilename = convert_from_utf8_to_utf16( xmlfilename );
-    ifstream f( xmlfilename.c_str() );
+    const std::wstring wxmlfilename = UtilityFunctions::convert_from_utf8_to_utf16( xmlfilename );
+    ifstream f( wxmlfilename.c_str() );
 #else
     ifstream f( xmlfilename.c_str() );
 #endif

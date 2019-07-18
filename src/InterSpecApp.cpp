@@ -869,9 +869,11 @@ InterSpecApp *InterSpecApp::instanceFromExtenalIdString( const std::string &idst
     return (InterSpecApp *)0;
   
   std::lock_guard<std::mutex> lock( AppInstancesMutex );
+  //cout << "THere are AppInstances=" << AppInstances.size() << "; we want session: '" << idstr << "'" << std::endl;
   for( InterSpecApp *app : AppInstances )
   {
     Wt::WApplication::UpdateLock lock( app );
+    //cout << "\t An instance=" << app->sessionUrlId() << std::endl;
     if( app->sessionUrlId() == idstr )
       return app;
   }
