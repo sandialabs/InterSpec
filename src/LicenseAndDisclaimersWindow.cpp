@@ -223,7 +223,12 @@ void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *pare
   
   try
   {
+#ifdef _WIN32
+    const std::wstring wlicense_file = UtilityFunctions::convert_from_utf8_to_utf16(license_file);
+    ifstream stream( wlicense_file.c_str(), ios::in | ios::binary );
+#else
     ifstream stream( license_file.c_str(), ios::in | ios::binary );
+#endif
     if( !stream )
       throw runtime_error( "Cannot open license file " + license_file );
     

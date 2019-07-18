@@ -459,7 +459,12 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
 
   try
   {
+#ifdef _WIN32
+    const std::wstring wfile = UtilityFunctions::convert_from_utf8_to_utf16(file);
+    ifstream is( wfile.c_str(), ios_base::binary|ios_base::in );
+#else
     ifstream is( file.c_str(), ios_base::binary|ios_base::in );
+#endif
     if( !is.is_open() )
     {
       cerr << "Couldnt open file " << file << endl;
@@ -687,7 +692,12 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
 
   try
   {
+#ifdef _WIN32
+    const std::wstring wfile = UtilityFunctions::convert_from_utf8_to_utf16(file);
     ifstream is( file.c_str(), ios_base::binary|ios_base::in );
+#else
+    ifstream is( file.c_str(), ios_base::binary|ios_base::in );
+#endif
     if( !is.is_open() )
     {
       cerr << "Couldnt open file " << file << endl;

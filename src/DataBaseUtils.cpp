@@ -352,13 +352,14 @@ Wt::Dbo::SqlConnection *getDatabaseConnection()
     typedef rapidxml::xml_attribute<char> XmlAttribute;
     
     //will throw runtime_error upon failure
-    rapidxml::file<char> input_file( DATABASE_PASSWORD_FILE );
+    std::vector<char> data;
+    UtilityFunctions::load_file_data( DATABASE_PASSWORD_FILE, data );
     
     rapidxml::xml_document<char> doc;
     const int flags = rapidxml::parse_normalize_whitespace
     | rapidxml::parse_trim_whitespace;
     
-    doc.parse<flags>( input_file.data() );
+    doc.parse<flags>( &data.front() );
     XmlNode *doc_node = doc.first_node( "databases", 9 );
     
     if( !doc_node || !doc_node->name() )

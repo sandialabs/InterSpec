@@ -87,7 +87,12 @@ namespace
                                   double &activity, boost::posix_time::ptime &activityDate, string &comments )
   {
     cout << "Will try to find '" << srcname << "' from " << filename << endl;
+#ifdef _WIN32
+    const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+    ifstream file( wfilename.c_str(), ios::in | ios::binary );
+#else
     ifstream file( filename.c_str(), ios::in | ios::binary );
+#endif
     if( !file )
       return false;
    

@@ -872,7 +872,13 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   if( !loaded )
   {
     //see if "<event>" is in the first 128 bytes.
+#ifdef _WIN32
+    const std::wstring wfilepath = convert_from_utf8_to_utf16( filepath );
     ifstream datstrm( filepath.c_str(), ios_base::binary|ios_base::in );
+#else
+    ifstream datstrm( filepath.c_str(), ios_base::binary|ios_base::in );
+#endif
+    
     if( datstrm.is_open() )
     {
       string startdata( 129, '\0' );
@@ -974,7 +980,13 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
   
   for( const auto &xmlfilename : candidates )
   {
+#ifdef _WIN32
+    const std::wstring wxmlfilename = convert_from_utf8_to_utf16( xmlfilename );
     ifstream f( xmlfilename.c_str() );
+#else
+    ifstream f( xmlfilename.c_str() );
+#endif
+    
     if( !f )
       continue;
     
@@ -987,8 +999,13 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
     }//if( !base_node_test.empty() )
     
     pugi::xml_document doc;
-    if( !doc.load_file( xmlfilename.c_str() ) )
+#ifdef _WIN32
+    if( !doc.load_file( wxmlfilename.c_str() ) )
       continue;
+#else
+    if( !doc.load_file( xmlfilename.c_str() ) )
+      
+#endif
     
     for( const EventXmlFilterInfo &test : xmlfilters )
     {

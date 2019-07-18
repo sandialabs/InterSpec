@@ -388,7 +388,12 @@ void UserFileInDbData::setFileData( const std::string &path,
                                     const SerializedFileFormat format )
 {
   fileData.clear();
+#ifdef _WIN32
+  const std::wstring wpath = UtilityFunctions::convert_from_utf8_to_utf16(path);
+  std::ifstream file( wpath.c_str() );
+#else
   std::ifstream file( path.c_str() );
+#endif
   
   if( !file )
     throw runtime_error( "UserFileInDbData::setFileData():"
@@ -852,7 +857,6 @@ void InterSpecUser::initFromDefaultValues( Wt::Dbo::ptr<InterSpecUser> user,
                           std::shared_ptr<DataBaseUtils::DbSession> session )
 {
   using rapidxml::internal::compare;
-  typedef rapidxml::file<char>          XmlFile;
   typedef rapidxml::xml_node<char>      XmlNode;
   typedef rapidxml::xml_attribute<char> XmlAttribute;
 
@@ -874,32 +878,8 @@ void InterSpecUser::initFromDefaultValues( Wt::Dbo::ptr<InterSpecUser> user,
   
   const string filename = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
   
-  //InterSpec::staticDataDirectory() is UTF-8 encoded, so we cant use the standard
-  //  fstream constructor on Windows....
-  //rapidxml::file<char> input_file( filename.c_str() );  //throws runtime_error upon failure
-  
   std::vector<char> data;
-  
-  {
-#ifdef _WIN32
-    const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
-    basic_ifstream<char> stream(wfilename.c_str(), ios::binary);
-#else
-    basic_ifstream<char> stream(filename.c_str(), ios::binary);
-#endif
-    
-    if (!stream)
-      throw runtime_error(string("cannot open file ") + filename);
-    stream.unsetf(ios::skipws);
-    stream.seekg(0, ios::end);
-    size_t size = static_cast<size_t>( stream.tellg() );
-    stream.seekg(0);
-    // Load data and add terminating 0
-    data.resize(size + 1);
-    stream.read(&data.front(), static_cast<streamsize>(size));
-    data[size] = 0;
-  }
-  
+  UtilityFunctions::load_file_data( filename.c_str(), data );
     
   rapidxml::xml_document<char> doc;
   const int flags = rapidxml::parse_normalize_whitespace
@@ -1035,13 +1015,15 @@ UserOption *InterSpecUser::getDefaultUserPreference( const std::string &name,
   const size_t namelen = name.length();
   
   const string filename = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
-  rapidxml::file<char> input_file( filename.c_str() );  //throws runtime_error upon failure
+  
+  std::vector<char> data;
+  UtilityFunctions::load_file_data( filename.c_str(), data );
   
   rapidxml::xml_document<char> doc;
   const int flags = rapidxml::parse_normalize_whitespace
                     | rapidxml::parse_trim_whitespace;
   
-  doc.parse<flags>( input_file.data() );
+  doc.parse<flags>( &data.front() );
   rapidxml::xml_node<char> *node = doc.first_node();
   if( !node || !node->name()
      || !compare( node->name(), node->name_size(), "preferences", 11, true) )

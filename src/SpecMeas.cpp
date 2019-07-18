@@ -500,7 +500,12 @@ bool SpecMeas::save2012N42File( const std::string &filename )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
+#ifdef _WIN32
+  const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+  ofstream ofs( wfilename.c_str(), ios::binary|ios::out );
+#else
   ofstream ofs( filename.c_str(), ios::binary|ios::out );
+#endif
 
   return ofs.is_open() && write_2012_N42( ofs );
 }//bool save2012N42File( const std::string &filename );
@@ -1180,13 +1185,14 @@ bool SpecMeas::load_N42_file( const std::string &filename )
   
   try
   {
-    rapidxml::file<char> input_file( filename.c_str() );  //throws runtime_error upon failure
+    std::vector<char> data;
+    UtilityFunctions::load_file_data( filename.c_str(), data );
     
 #if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
-    const bool loaded = SpecMeas::load_N42_from_data( input_file.data(), input_file.data() + input_file.size() );
+    const bool loaded = SpecMeas::load_N42_from_data( &data.front(), (&data.front()) + data.size() );
 #else
     input_file.check_for_premature_nulls( 2048, ' ' );
-    const bool loaded = SpecMeas::load_N42_from_data( input_file.data() );
+    const bool loaded = SpecMeas::load_N42_from_data( &data.front() );
 #endif
     
     if( !loaded )
