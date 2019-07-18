@@ -252,6 +252,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   
   //I think x and y ranges should be taken care of via m_pendingJs... untested
   //m_xAxisMinimum, m_xAxisMaximum, m_yAxisMinimum, m_yAxisMaximum;
+  
+  doJavaScript( m_jsgraph + ".setSpectrumScaleFactorWidget(true);" );
 }//void defineJavaScript()
 
 
@@ -703,6 +705,30 @@ void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
   else
     m_pendingJs.push_back( js );
 }//void setYAxisRange( const double minimum, const double maximum );
+
+
+void D3SpectrumDisplayDiv::updateForegroundPeaksToClient()
+{
+  string js;
+  
+  if( m_peakModel )
+  {
+    std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
+    vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+    js = PeakDef::peak_json( inpeaks );
+  }
+  
+  if( js.empty() )
+    js = "[]";
+  
+  js = m_jsgraph + ".setRoiData(" + js + ", 'FOREGROUND');";
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//void updateForegroundPeaksToClient()
+
 
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
@@ -1451,7 +1477,8 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
           peaks_to_add.push_back( *p );
         
         m_peakModel->addPeaks( peaks_to_add );
-        updateData();
+        //updateData();
+        updateForegroundPeaksToClient();
       }else
       {
         string adjustRoiJson = PeakDef::gaus_peaks_to_json( newpeaks );
@@ -1467,7 +1494,9 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       {
         for( auto p : orig_roi_peaks )
           m_peakModel->removePeak( p );
-        updateData();
+        
+        updateForegroundPeaksToClient();
+        //updateData();
       }
     }//if( not narrow region ) / else
   }catch( std::exception &e )
