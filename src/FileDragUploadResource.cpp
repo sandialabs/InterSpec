@@ -126,7 +126,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
   {
     const string temp_name = UtilityFunctions::temp_file_name( wApp->sessionId(), InterSpecApp::tempDirectory() );
 #ifdef _WIN32
-    const string wtemp_name = UtilityFunctions::convert_from_utf8_to_utf16(temp_name);
+    const wstring wtemp_name = UtilityFunctions::convert_from_utf8_to_utf16(temp_name);
     ofstream spool_file( wtemp_name.c_str(), ios::binary|ios::out );
 #else
     ofstream spool_file( temp_name.c_str(), ios::binary|ios::out );

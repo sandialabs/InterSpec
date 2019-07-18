@@ -2232,8 +2232,7 @@ PreserveCalibWindow::PreserveCalibWindow(
                              const SpectrumType oldtype,
                              Recalibrator *calibrator )
 : AuxWindow( "Keep Calibration?",
-             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-               | AuxWindowProperties::PhoneModal) ),
+             Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal) ),
   m_calibrator( calibrator ),
   m_newmeas( newmeas ),
   m_newtype( newtype ),
