@@ -5454,7 +5454,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //We have to completely replace m_layout or else the vertical spacing
     //  changes wont quite trigger.  Prob a Wt bug, so should investigate again
     //  if we ever upgrade Wt.
-    delete m_layout;
+    //delete m_layout;
     m_layout = new WGridLayout();
     m_layout->setContentsMargins( 0, 0, 0, 0 );
     m_layout->setHorizontalSpacing( 0 );
@@ -5503,6 +5503,12 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
             
         }
     }
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  //Not sure _why_ this next statement is needed, but it is, or else the
+  //  spectrum chart shows up with no data
+  m_spectrum->updateData();
+#endif
 }//void setToolTabsVisible( bool showToolTabs )
 
 
@@ -9011,11 +9017,7 @@ void InterSpec::searchForSinglePeak( const double x )
   
   for( const PeakModel::PeakShrdPtr &p : foundPeaks.second )
     m_peakModel->removePeak( p );
-  
-#if( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateData();
-#endif
-  
+
   
   //We want to add all of the previously found peaks back into the model, before
   //  adding the new peak.
@@ -9095,7 +9097,13 @@ void InterSpec::searchForSinglePeak( const double x )
     if( !p->parentNuclide() && !p->reaction() && !p->xrayElement() )
       addPeak( *p, true );
   }
-}//void SpectrumDisplayDiv::searchForSinglePeak( const double x )
+  
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->updateForegroundPeaksToClient();
+  //m_spectrum->updateData();
+#endif
+}//void searchForSinglePeak( const double x )
 
 
 void InterSpec::automatedPeakSearchStarted()
@@ -9558,12 +9566,10 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   
   m_peakModel->setPeaks( all_peaks );
 #if( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateData();
+  //m_spectrum->updateData();
+  m_spectrum->updateForegroundPeaksToClient();
 #endif
   
-  
-  
-
 //  m_peakModel->setPeaks( newpeaks );
 }//void excludePeaksFromRange( const double x0, const double x1 )
 

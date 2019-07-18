@@ -105,6 +105,7 @@ public:
   void updateBackground();
   void updateSecondData();
   
+  void updateForegroundPeaksToClient();
   
   void setForegroundSpectrumColor( const Wt::WColor &color );
   void setBackgroundSpectrumColor( const Wt::WColor &color );
