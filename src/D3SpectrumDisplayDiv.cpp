@@ -1363,7 +1363,7 @@ void D3SpectrumDisplayDiv::showYAxisScalers( const bool show )
   
   m_showYAxisScalers = show;
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setSpectrumScaleFactorWidget(" + jsbool(show) + ");" );
+    doJavaScript( m_jsgraph + ".setShowSpectrumScaleFactorWidget(" + jsbool(show) + ");" );
 }//void showXAxisSliderChart( const bool show )
 
 
