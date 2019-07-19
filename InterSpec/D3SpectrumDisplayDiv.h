@@ -83,6 +83,8 @@ public:
              double /*original roi lower energy*/,
              bool /*isFinalRange*/> &roiDragUpdate();
   
+  Wt::Signal<double,SpectrumType> &yAxisScaled();
+  
   void setPeakModel( PeakModel *model );
   
   void setData( std::shared_ptr<Measurement> data_hist,
@@ -232,6 +234,9 @@ public:
   void showXAxisSliderChart( const bool show );
   bool xAxisSliderChartIsVisible() const;
   
+  void showYAxisScalers( const bool show );
+  bool yAxisScalersIsVisible() const;
+  
   void setXAxisMinimum( const double minimum );
   void setXAxisMaximum( const double maximum );
   void setXAxisRange( const double minimum, const double maximum );
@@ -302,6 +307,7 @@ protected:
   bool m_showHistogramIntegralsInLegend;  //Not currently used/implemented
   
   bool m_showXAxisSliderChart;
+  bool m_showYAxisScalers;
   
   std::vector<std::pair<double,double> > m_searchEnergies;
   std::vector<SpectrumChart::HighlightRegion> m_highlights;
@@ -328,6 +334,7 @@ protected:
    */
   boost::scoped_ptr<Wt::JSignal<double,double,double,double> > m_xRangeChangedJS;
   boost::scoped_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_roiDraggedJS;
+  boost::scoped_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
   
   boost::scoped_ptr<Wt::JSignal<> > m_legendClosedJS;
   
@@ -352,6 +359,7 @@ protected:
              double /*original roi lower energy*/,
              bool /*isFinalRange*/> m_roiDrag;
   
+  Wt::Signal<double,SpectrumType> m_yAxisScaled;
   
   // Signal Callbacks
   void chartControlKeyDragCallback( double x0, double x1, int pageX, int pageY );
@@ -365,6 +373,8 @@ protected:
                                double new_lower_px, double new_upper_px,
                                double original_lower_energy,
                                bool isfinal );
+  
+  void yAxisScaled( const double scale, const std::string &spectrum );
   
   //chartXRangeChangedCallback(...): rebins the displayed data, and sets the
   //  y-axis to be auto-range

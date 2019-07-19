@@ -250,7 +250,9 @@ namespace
                 case 22: val = static_cast<int>(DetectorType::kOrtecRadEagleCeBr3Inch); break;
                 case 23: val = static_cast<int>(DetectorType::kOrtecRadEagleLaBr); break;
                 case 24: val = static_cast<int>(DetectorType::kSrpm210); break;
-                case 25: val = static_cast<int>(DetectorType::kUnknownDetector); break;
+                case 25: val = static_cast<int>(DetectorType::kDetectiveX); break;
+                case 26: val = static_cast<int>(DetectorType::kUnknownDetector); break;
+                  
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
               }//switch( val )

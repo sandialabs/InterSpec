@@ -900,6 +900,7 @@ public:
 #if( USE_SPECTRUM_CHART_D3 )
   void setXAxisSlider( bool show );
   void setXAxisCompact( bool compact );
+  void setShowYAxisScalers( bool show );
 #endif
   
   ReferencePhotopeakDisplay *referenceLinesWidget();
@@ -1149,6 +1150,7 @@ protected:
   PopupDivMenuItem *m_horizantalLinesItems[2];
 #if( USE_SPECTRUM_CHART_D3 )
   PopupDivMenuItem *m_showXAxisSliderItems[2];
+  PopupDivMenuItem *m_showYAxisScalerItems[2];
   PopupDivMenuItem *m_compactXAxisItems[2];
 #endif
   

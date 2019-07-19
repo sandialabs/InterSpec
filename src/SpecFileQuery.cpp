@@ -1012,6 +1012,7 @@ namespace SpecFileQuery
           case kIdentiFinderNGDetector: case kIdentiFinderLaBr3Detector:
           case kDetectiveDetector: case kDetectiveExDetector:
           case kDetectiveEx100Detector: case kDetectiveEx200Detector:
+          case kDetectiveX:
           case kSAIC8Detector: case kFalcon5000: case kUnknownDetector:
           case kMicroDetectiveDetector: case kMicroRaiderDetector:
           case kRadHunterNaI: case kRadHunterLaBr3: case kRsi701: case kRsi705:
