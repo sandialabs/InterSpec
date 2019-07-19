@@ -84,10 +84,17 @@ public:
   //handleSampleNumEditBlur(): load-spuctrum if the desired sample nums changed
   void handleSampleNumEditBlur( SpectrumType spectrum_type );
 
+  /** Function called when the user scales a chart.  Updates displayed numbers,
+   and shows "Normalize" button.
+   */
   void handleSpectrumScale( const double scale, SpectrumType spectrum_type );
   
 protected:
-  void updateLiveTimeDisplay( const double sf, const SpectrumType type );
+  
+  /** Updates the displayed scale factor numbers to user.
+   Does not show the "Normalize" button, or notify the parent InterSpec instance.
+   */
+  void updateDisplayedScaleFactorNumbers( const double sf, const SpectrumType type );
   
 //  void handleSliderChanged( const int slidervalue, const SpectrumType type );
   void handleUserEnterdScaleFactor( const SpectrumType type );
@@ -104,7 +111,6 @@ private:
   Wt::WLineEdit *m_displaySampleNumEdits[3];
   Wt::WInteractWidget *m_nextSampleNumButtons[3];
   Wt::WInteractWidget *m_prevSampleNumButtons[3];
-//  Wt::WSlider *m_scaleSlider[3];
   Wt::WDoubleSpinBox *m_scaleValueTxt[3];  //could use a WInPlaceEdit
   Wt::WPushButton *m_rescaleByLiveTime[3];
   
