@@ -201,7 +201,8 @@ function( divid, parentid, additional_filters )
       22: 'RadEagle CeBr3 3x0.8',
       23: 'RadEagle LaBr3 2x1',
       24: 'SRPM-210',
-      25: 'Unknown'
+      25: 'Detective X',
+      26: 'Unknown'
     },
     operators: ['equal']
   },{

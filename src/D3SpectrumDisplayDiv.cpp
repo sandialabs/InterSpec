@@ -86,6 +86,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_showHorizontalLines( false ),
   m_showHistogramIntegralsInLegend( true ),
   m_showXAxisSliderChart( false ),
+  m_showYAxisScalers( false ),
   m_jsgraph( jsRef() + ".chart" ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
@@ -163,6 +164,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", gridx: " + jsbool(m_showHorizontalLines);
   options += ", gridy: " + jsbool(m_showVerticalLines);
   options += ", showXAxisSliderChart: " + jsbool(m_showXAxisSliderChart);
+  options += ", scaleBackgroundSecondary: " + jsbool(m_showYAxisScalers);
   options += ", sliderChartHeightFraction: 0.1";  //ToDo: track this in C++
   options += ", showUserLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakUserLabel]);
   options += ", showPeakLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakEnergyLabel]);
@@ -236,6 +238,9 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
     m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this, _1, _2, _3, _4, _5, _6 ) );
     
+    m_yAxisDraggedJS.reset( new Wt::JSignal<double,std::string>( this, "yscaled", true ) );
+    m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this, _1, _2 ) );
+    
     //need legend closed signal.
     m_legendClosedJS.reset( new JSignal<>( this, "legendClosed", true ) );
     m_legendClosedJS->connect( std::bind( [this](){
@@ -252,8 +257,6 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   
   //I think x and y ranges should be taken care of via m_pendingJs... untested
   //m_xAxisMinimum, m_xAxisMaximum, m_yAxisMinimum, m_yAxisMaximum;
-  
-  doJavaScript( m_jsgraph + ".setSpectrumScaleFactorWidget(true);" );
 }//void defineJavaScript()
 
 
@@ -401,6 +404,11 @@ Wt::Signal<double,double,int,int> &D3SpectrumDisplayDiv::rightClicked()
 Wt::Signal<double,double,double,double,double,bool> &D3SpectrumDisplayDiv::roiDragUpdate()
 {
   return m_roiDrag;
+}
+
+Wt::Signal<double,SpectrumType> &D3SpectrumDisplayDiv::yAxisScaled()
+{
+  return m_yAxisScaled;
 }
 
 Wt::Signal<double,double> &D3SpectrumDisplayDiv::doubleLeftClick()
@@ -1347,6 +1355,25 @@ bool D3SpectrumDisplayDiv::xAxisSliderChartIsVisible() const
 }//void xAxisSliderChartIsVisible() const;
 
 
+
+void D3SpectrumDisplayDiv::showYAxisScalers( const bool show )
+{
+  if( m_showYAxisScalers == show )
+    return;
+  
+  m_showYAxisScalers = show;
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setSpectrumScaleFactorWidget(" + jsbool(show) + ");" );
+}//void showXAxisSliderChart( const bool show )
+
+
+bool D3SpectrumDisplayDiv::yAxisScalersIsVisible() const
+{
+  return m_showYAxisScalers;
+}//void xAxisSliderChartIsVisible() const;
+
+
+
 void D3SpectrumDisplayDiv::chartControlKeyDragCallback( double x0, double x1, int pageX, int pageY )
 {
   cout << "chartControlKeyDragCallback" << endl;
@@ -1507,6 +1534,36 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
   m_roiDrag.emit( new_lower_energy, new_upper_energy, new_lower_px, new_upper_px,
                   original_lower_energy,  isfinal );
 }//chartRoiDragedCallback(...)
+
+
+void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &spectrum )
+{
+  SpectrumType type;
+
+  //Dont call D3SpectrumDisplayDiv::setDisplayScaleFactor(...) since we dont
+  //  have to re-load data to client, but we should keep all the c++ up to date.
+  
+  if( spectrum == "FOREGROUND" )
+  {
+    type = SpectrumType::kForeground;
+  }else if( spectrum == "BACKGROUND" )
+  {
+    type = SpectrumType::kBackground;
+    m_model->setBackgroundDataScaleFactor( scale );
+  }else if( spectrum == "SECONDARY" )
+  {
+    type = SpectrumType::kSecondForeground;
+    m_model->setSecondDataScaleFactor( scale );
+  }else
+  {
+    cerr << "Recieved yscaled signal with scale " << scale << " and spectrum = '"
+    << spectrum << "', which is invalid" << endl;
+    return;
+  }
+  
+  m_yAxisScaled.emit(scale,type);
+}//void yAxisScaled( const double scale, const std::string &spectrum )
+
 
 
 void D3SpectrumDisplayDiv::chartXRangeChangedCallback( double x0, double x1, double chart_width_px, double chart_height_px )

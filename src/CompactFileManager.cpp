@@ -507,6 +507,22 @@ void CompactFileManager::handleSampleNumEditBlur( SpectrumType type )
 }//void handleSampleNumEditBlur( SpectrumType spectrum_type )
 
 
+void CompactFileManager::handleSpectrumScale( const double scale, SpectrumType type )
+{
+  switch( type )
+  {
+    case SpectrumType::kForeground:
+      cerr << "CompactFileManager::handleSpectrumScale: cannot handle scaling of foreground - ignoring" << endl;
+      return;
+      
+    case SpectrumType::kBackground:
+    case SpectrumType::kSecondForeground:
+      updateLiveTimeDisplay( scale, type );
+      break;
+  }//switch( type )
+}//void handleSpectrumScale( const double scale, SpectrumType spectrum_type );
+
+
 void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
 {
   const WString text = m_displaySampleNumEdits[type]->text();
@@ -606,7 +622,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
 
 //    m_hostViewer->setSpectrum( meas, sampleNumToLoad, type, false );
     m_hostViewer->changeDisplayedSampleNums( sampleNumToLoad, type );
-    updateLiveTimeSlider( m_hostViewer->displayScaleFactor(type), type );
+    updateLiveTimeDisplay( m_hostViewer->displayScaleFactor(type), type );
   }catch( exception &e )
   { 
     cerr << SRC_LOCATION << "\n\t" << e.what() << endl;
@@ -708,7 +724,7 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
     m_displayedPreTexts[spectrum_type]->setText( "" );
     m_displayedPostTexts[spectrum_type]->setText( "" );
     m_displaySampleNumEdits[spectrum_type]->setText( "" );
-    updateLiveTimeSlider( 1.0, spectrum_type );
+    updateLiveTimeDisplay( 1.0, spectrum_type );
     if( m_scaleValueTxt[spectrum_type] )
       m_scaleValueTxt[spectrum_type]->disable();
     if( m_rescaleByLiveTime[spectrum_type] )
@@ -860,14 +876,14 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
   
   const double livetimeSF = m_hostViewer->displayScaleFactor(spectrum_type);
   
-  updateLiveTimeSlider( livetimeSF, spectrum_type );
+  updateLiveTimeDisplay( livetimeSF, spectrum_type );
   
   if( spectrum_type == kForeground )
   {
     if( !!m_hostViewer->measurment(kBackground) )
-      updateLiveTimeSlider( m_hostViewer->displayScaleFactor(kBackground), kBackground );
+      updateLiveTimeDisplay( m_hostViewer->displayScaleFactor(kBackground), kBackground );
     if( !!m_hostViewer->measurment(kSecondForeground) )
-      updateLiveTimeSlider( m_hostViewer->displayScaleFactor(kSecondForeground), kSecondForeground );
+      updateLiveTimeDisplay( m_hostViewer->displayScaleFactor(kSecondForeground), kSecondForeground );
   }//if( spectrum_type == kForeground )
 }//void handleDisplayChange(...)
 
@@ -908,7 +924,7 @@ void CompactFileManager::refreshContents()
 }//void refreshContents()
 
 
-void CompactFileManager::updateLiveTimeSlider( const double sf,
+void CompactFileManager::updateLiveTimeDisplay( const double sf,
                                                const SpectrumType type )
 {
   if( !m_scaleValueTxt[type] )
@@ -918,7 +934,7 @@ void CompactFileManager::updateLiveTimeSlider( const double sf,
   snprintf( buffer, sizeof(buffer), "%.2f", sf );
   m_scaleValueTxt[type]->setText( buffer );
 //  m_scaleSlider[type]->setValue( 50 );
-}//void updateLiveTimeSlider(...)
+}//void updateLiveTimeDisplay(...)
 
 
 //void CompactFileManager::handleSliderChanged( const int slidervalue,
@@ -937,7 +953,7 @@ void CompactFileManager::updateLiveTimeSlider( const double sf,
 //    update = false;
 //  }
 //
-//  updateLiveTimeSlider( sf, type );
+//  updateLiveTimeDisplay( sf, type );
 //  
 //  if( update )
 //    m_hostViewer->setDisplayScaleFactor( sf, type );
@@ -967,7 +983,7 @@ void CompactFileManager::handleUserEnterdScaleFactor( const SpectrumType type )
     sf = m_hostViewer->displayScaleFactor(type);
   }//
   
-  updateLiveTimeSlider( sf, type );
+  updateLiveTimeDisplay( sf, type );
   
   
   if( update )
@@ -993,7 +1009,7 @@ void CompactFileManager::handleRenormalizeByLIveTime( const SpectrumType type )
   const float lt = m_hostViewer->liveTime(type);
   const float datalt = m_hostViewer->liveTime(kForeground);
   const double sf = ((lt>0.0f && datalt>0.0f) ? (datalt/lt) : 1.0f);
-  updateLiveTimeSlider( sf, type );
+  updateLiveTimeDisplay( sf, type );
   if( m_rescaleByLiveTime[type] )
     m_rescaleByLiveTime[type]->hide();
   m_hostViewer->setDisplayScaleFactor( sf, type );

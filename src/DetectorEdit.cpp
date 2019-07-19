@@ -3120,6 +3120,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
     case kDetectiveExDetector:       smname = "Detetive DX";       break;
     case kDetectiveEx100Detector:    smname = "Detective EX-100";  break;
     case kDetectiveEx200Detector:    smname = "Detective EX-200";  break;
+    case kDetectiveX:                smname = "Detective X";       break;
     case kSAIC8Detector:             smname = "";                  break;
     case kFalcon5000:                smname = "Falcon 5000";       break;
     case kUnknownDetector:           smname = "";                  break;
@@ -3193,6 +3194,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
     case kDetectiveExDetector:       name = "Detective-EX";       break;
     case kDetectiveEx100Detector:    name = "Detective-EX100";    break;
     case kDetectiveEx200Detector:    name = "Ortec IDM Portal";   break;
+    case kDetectiveX:                name = "Detective X";        break;
     case kSAIC8Detector:             name = "";                   break;
     case kFalcon5000:                name = "Falcon 5000";        break;
     case kUnknownDetector:           name = "";                   break;

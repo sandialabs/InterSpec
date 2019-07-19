@@ -39,4 +39,5 @@
  <pref name="FileQueryEventQmlyFieldsFile" type="String">data/file_query_event_xml_fields.json</pref>
  <pref name="ShowXAxisSlider" type="Boolean">false</pref>
  <pref name="CompactXAxis" type="Boolean">false</pref>
+ <pref name="ShowYAxisScalers" type="Boolean">false</pref>
 </preferences>

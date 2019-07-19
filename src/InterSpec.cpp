@@ -1222,8 +1222,18 @@ void InterSpec::layoutSizeChanged( int w, int h )
   const bool comactX = (h <= 420); //Apple iPhone 6+, 6s+, 7+, 8+
   if( (h > 20) && (comactX != m_spectrum->isAxisCompacted()) )
   {
-    m_spectrum->setCompactAxis( comactX );
-    m_timeSeries->setCompactAxis( comactX );
+    //Only set axis compact if it isnt already; dont ever set non-compact
+    //  ToDo: For case screen is made small, so axis goes compact, then user
+    //        makes screen large, currently wont un-compactify axis, even if
+    //        user wants this; should evaluate if its worth checking the user
+    //        preference about this.
+    //const bool makeCompact = InterSpecUser::preferenceValue<bool>( "CompactXAxis", this );
+    
+    if( comactX && !m_spectrum->isAxisCompacted() )
+      m_spectrum->setCompactAxis( comactX );
+    
+    if( comactX && !m_timeSeries->isAxisCompacted() )
+      m_timeSeries->setCompactAxis( comactX );
   }
   
 #if( IOS || ANDROID )
@@ -5287,6 +5297,10 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
     
+#if( USE_SPECTRUM_CHART_D3 )
+    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
+#endif
+    
     //WMenuItem * peakManTab =
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
 //    const char *tooltip = "Displays parameters of all identified peaks in a sortable table.";
@@ -5595,6 +5609,18 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
   m_showXAxisSliderItems[0]->setHidden( showSlider );
   m_showXAxisSliderItems[1]->setHidden( !showSlider );
+  
+  
+  const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
+  m_spectrum->showYAxisScalers( showScalers );
+  
+  m_showYAxisScalerItems[0] = chartmenu->addMenuItem( "Show Y-Axis Scalers" , "");
+  m_showYAxisScalerItems[1] = chartmenu->addMenuItem( "Hide Y-Axis Scalers" , "");
+  m_showYAxisScalerItems[0]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, true ) );
+  m_showYAxisScalerItems[1]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, false ) );
+  m_showYAxisScalerItems[0]->setHidden( showScalers );
+  m_showYAxisScalerItems[1]->setHidden( !showScalers );
+  
   
   if( isPhone() )
   {
@@ -6073,7 +6099,22 @@ void InterSpec::setXAxisCompact( bool compact )
   
   m_spectrum->setCompactAxis( compact );
   m_timeSeries->setCompactAxis( compact );
-}//void setXAxisCompact( bool compact );
+}//void setXAxisCompact( bool compact )
+
+
+void InterSpec::setShowYAxisScalers( bool show )
+{
+  InterSpecUser::setPreferenceValue<bool>( m_user, "ShowYAxisScalers", show, this );
+  
+  if( m_showYAxisScalerItems[0] )
+    m_showYAxisScalerItems[0]->setHidden( show );
+  if( m_showYAxisScalerItems[1] )
+    m_showYAxisScalerItems[1]->setHidden( !show );
+  
+  m_spectrum->showYAxisScalers( show );
+}//void setShowYAxisScalers( bool show )
+
+
 #endif
 
 
@@ -7061,6 +7102,10 @@ void InterSpec::showCompactFileManagerWindow()
                                               : CompactFileManager::TopToBottom;
   CompactFileManager *compact
                        = new CompactFileManager( m_fileManager, this, cfmMode );
+
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
+#endif
   
   AuxWindow *window = new AuxWindow( "Select Opened Spectra to Display", (AuxWindowProperties::TabletModal) );
   window->disableCollapse();

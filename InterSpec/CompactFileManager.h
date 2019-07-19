@@ -84,11 +84,16 @@ public:
   //handleSampleNumEditBlur(): load-spuctrum if the desired sample nums changed
   void handleSampleNumEditBlur( SpectrumType spectrum_type );
 
+  void handleSpectrumScale( const double scale, SpectrumType spectrum_type );
+  
 protected:
-  void updateLiveTimeSlider( const double sf, const SpectrumType type );
+  void updateLiveTimeDisplay( const double sf, const SpectrumType type );
+  
 //  void handleSliderChanged( const int slidervalue, const SpectrumType type );
   void handleUserEnterdScaleFactor( const SpectrumType type );
-    void handleUserEnterdScaleFactorWheel( const SpectrumType type, Wt::WMouseEvent e);
+  
+  void handleUserEnterdScaleFactorWheel( const SpectrumType type, Wt::WMouseEvent e);
+  
   void handleRenormalizeByLIveTime( const SpectrumType type );
   
 private:
