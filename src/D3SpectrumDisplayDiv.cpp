@@ -1460,13 +1460,16 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
     //Lets re-use the c++ ROI value that we arent dragging, to avoid some cycle
     //  of rounding that could lead us to the end not being changed ending up
     //  with a different value than initially.
-    if( fabs(new_lower_energy - continuum->lowerEnergy()) < fabs(new_upper_energy - continuum->upperEnergy()) )
+    const bool dragginUpperEnergy = (fabs(new_lower_energy - continuum->lowerEnergy()) < fabs(new_upper_energy - continuum->upperEnergy()));
+    
+    if( dragginUpperEnergy )
       new_lower_energy = continuum->lowerEnergy();
     else
       new_upper_energy = continuum->upperEnergy();
     
     new_continuum->setRange( new_lower_energy, new_upper_energy );
     
+    bool allPeaksInRoiAreGaus = true;
     vector< shared_ptr<const PeakDef>> new_roi_initial_peaks, orig_roi_peaks;
     for( auto p : *origpeaks )
     {
@@ -1475,14 +1478,55 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
         orig_roi_peaks.push_back( p );
         auto newpeak = make_shared<PeakDef>(*p);
         newpeak->setContinuum( new_continuum );
+        allPeaksInRoiAreGaus = (allPeaksInRoiAreGaus && newpeak->gausPeak());
         new_roi_initial_peaks.push_back( newpeak );
       }
     }
     
+    //if( dragginUpperEnergy && newpeak->gau && new_upper_energy < (newpeak->mean() - newpeak->sigma()) )
+    if( allPeaksInRoiAreGaus && (new_roi_initial_peaks.size() > 1) )
+    {
+      map<double,shared_ptr<const PeakDef>> distance_to_roi;
+      
+      //Add all peaks that are at least 1 sigma outside of the ROI bounds to distance_to_roi.
+      for( auto p : new_roi_initial_peaks )
+      {
+        const double m = p->mean();
+        if( (m+p->sigma()) < new_lower_energy || (m-p->sigma()) > new_upper_energy )
+          distance_to_roi[-std::min(m - new_lower_energy, m-new_upper_energy)] = p;
+      }
+      
+      //Erase peaks in distance_to_roi from new_roi_initial_peaks, starting with
+      //  ones furthest outside of ROI bounds.  Make sure that there is at least
+      //  one peak left though.
+      for( const auto &dp : distance_to_roi )
+      {
+        if( new_roi_initial_peaks.size() > 1 )
+          new_roi_initial_peaks.erase( std::find(begin(new_roi_initial_peaks),end(new_roi_initial_peaks),dp.second) );
+      }
+    }//if( new_roi_initial_peaks.size() > 1 )
+    
     //If region to narrow, or fit fails, pass back null if !isFinal, or original ROI if isFinal
     //cout << "new_upper_px=" << new_upper_px << ", new_lower_px=" << new_lower_px << endl;
-    
-    if( new_upper_px >= (new_lower_px+10) )  //perhaps this should be by percentage of ROI?
+    if( !allPeaksInRoiAreGaus )
+    {
+      if( isfinal )
+      {
+        for( auto p : orig_roi_peaks )
+          m_peakModel->removePeak( p );
+        
+        std::vector<PeakDef> peaks_to_add;
+        for( auto p : new_roi_initial_peaks )
+          peaks_to_add.push_back( *p );
+        
+        m_peakModel->addPeaks( peaks_to_add );
+        updateForegroundPeaksToClient();
+      }else
+      {
+        string adjustRoiJson = PeakDef::gaus_peaks_to_json( new_roi_initial_peaks );
+        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
+      }
+    }else if( new_upper_px >= (new_lower_px+10) )  //perhaps this should be by percentage of ROI?
     {
       //Need to check that all peaks are Gaussian.
       //  Actually should make sure a ROI can only have data defined or Gausian peaks only (what happens now)
