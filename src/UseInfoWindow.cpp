@@ -196,7 +196,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   //  This is super confusing, and I dont understand it.  This manifests
   //  particularly on Android native version of app, but I think it might
   //  elsewhere as well.  (wcjohns 20150124)
-  tabW->addTab( spectrumContainer, "Saved Snapshots", WTabWidget::PreLoading );
+  tabW->addTab( spectrumContainer, "Saved States", WTabWidget::PreLoading );
   tabW->addTab( samplesContainer, "Example Spectra", WTabWidget::PreLoading ); 
   
   if( m_viewer->isMobile() )
@@ -673,7 +673,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     /*
      //"Spectra attached to emails can be copied into <code>InterSpec</code> from within your mail app.<br />"
-     //"Once you have analyzed a spectrum, you can save a snapshot of your work, and it will show up in the <em>Saved Snapshots</em> tab."
+     //"Once you have analyzed a spectrum, you can save a snapshot of your work, and it will show up in the <em>Saved States</em> tab."
      */
   }else
   {
