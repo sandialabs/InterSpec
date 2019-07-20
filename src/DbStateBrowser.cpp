@@ -44,7 +44,7 @@ using namespace std;
 using namespace Wt;
 
 DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
-  : AuxWindow( "Restore Previously Saved Snapshot", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
+  : AuxWindow( "Restore Previously Saved State", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
     m_viewer( viewer ),
     m_model( 0 ),
     m_table( 0 ),

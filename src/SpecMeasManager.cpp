@@ -812,7 +812,7 @@ void  SpecMeasManager::startSpectrumManager()
     } //isSupportFile()
     
 #if( USE_DB_TO_STORE_SPECTRA )
-    Wt::WPushButton* importButton = new Wt::WPushButton( "Saved Snapshots...", uploadDiv );
+    Wt::WPushButton* importButton = new Wt::WPushButton( "Previous...", uploadDiv );
     importButton->clicked().connect( boost::bind(  &SpecMeasManager::browseDatabaseSpectrumFiles, this, "", (SpectrumType)0, std::shared_ptr<SpectraFileHeader>()) );
     HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTipInstantly , HelpSystem::Bottom);
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
@@ -3984,7 +3984,7 @@ void SpecMeasManager::finishSaveSnapshotInDb(
       UserFileInDb::makeWriteProtected( dbptr );
       
       transaction.commit();
-      passMessage( "Saved snapshot of " + dbptr->filename,
+      passMessage( "Saved state of " + dbptr->filename,
                   "", WarningWidget::WarningMsgSave );
     }catch( FileToLargeForDbException &e )
     {
@@ -4060,7 +4060,7 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
       layout->addWidget( new WText("<b>Spectrum</b>", XHTMLText), 0, 0 );
       layout->addWidget( new WText("<b>Description</b>", XHTMLText), 0, 1 );
       if( specs.size() > 2 )
-          layout->addWidget( new WText("<b>Save Snapshot</b>", XHTMLText), 0, 2 );
+          layout->addWidget( new WText("<b>Save State</b>", XHTMLText), 0, 2 );
       
       for( int i = 0; i < static_cast<int>(specs.size()); ++i )
       {

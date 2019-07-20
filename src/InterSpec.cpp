@@ -4690,7 +4690,7 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
     }//if( writeProtected )
     
     
-    passMessage( "Saved snapshot '" + state->name + "'", "",
+    passMessage( "Saved state '" + state->name + "'", "",
                  WarningWidget::WarningMsgSave );
     return;
   }//if( state )
