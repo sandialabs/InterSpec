@@ -36,6 +36,14 @@ namespace ElectronUtils
   
   /** The externalid passed into #run_app. */
   std::string external_id();
+  
+  /** Requests main.js to load a new clean session (i.e., don restore any state)
+   This is a workaround to when the user requests a new session, the normal
+   mechanism in c++ creates duplicate Electron menu items...
+   
+   return whether message was succesfully sent or not.
+   */
+  bool requestNewCleanSession();
 }
 
 

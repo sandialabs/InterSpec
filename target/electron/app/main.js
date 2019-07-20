@@ -21,15 +21,7 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-/* ToDo list (20171126)
-   [done]-Use WebSocket or zeromq or something on top of TCP so IPC messages will be
-    garunteed to be complete when sent/recieved (TCP doesnt garuntee this,
-    messages may be chuncked).
-      --Could also make simple protocal myself, see https://stackoverflow.com/questions/14407223/boost-asio-tcp-separation-of-messages
-      --Or use https://github.com/uNetworking/uWebSockets
-        or https://libwebsockets.org/ (looks to be very customizable so only a minimum build, uses cmake)
-        or https://github.com/boostorg/beast (header only)
-        or https://github.com/zaphoyd/websocketpp (header only)
+/* ToDo list (partial):
    -Finish setting up launch_options.json (see get_launch_options())
    -Get working, and package on Windows
    -Setup a decent way to develop and package the app, rather than abusing Cmake
@@ -56,11 +48,7 @@
      --Change so externalid is is sent to c++ through IPC, who then sends a
        response when the session can then be loaded
    -Look at using node file menu integration
-   -Look into making the c++ code a node addon, see http://www.benfarrell.com/2013/01/03/c-and-node-js-an-unholy-combination-but-oh-so-right/
-   -Right now when ran on a network drive on windows, gets "UNC path are not supported" 
-     error message. Should fix.  See https://stackoverflow.com/questions/9013941/how-to-run-batch-file-from-network-share-without-unc-path-are-not-supported-me
-     or https://social.technet.microsoft.com/Forums/ie/en-US/2c44083d-86d0-450d-b24e-955cfc473872/unc-paths-are-not-supported-error-message-comes-up-is-it-ok-to-ignore?forum=ITCG
-     Also, take a look at https://github.com/resin-io-modules/drivelist to get the mount point of network drives from within node...
+   -Look into making the c++ code a node addon, see http://www.benfarrell.com/2013/01/03/c-and-node-js-an-unholy-combination-but-oh-so-right/ and a nice guide at https://pspdfkit.com/blog/2018/running-native-code-in-electron-and-the-case-for-webassembly/ makes it look like it will be pretty easy.
  */
 
 const electron = require('electron')
@@ -596,17 +584,25 @@ app.on('ready', function(){
           console.log('Will Load ' + msg);
           mainWindow.loadURL( msg );
         }else if( msg.startsWith("ServerKilled") ) {
-          console.log( "Recieved ServerKilled" );
+          console.log( "Received ServerKilled" );
           interspec_url = null;
           if( !app_is_closing  )
             app.quit();
+        }else if( msg.startsWith("NewCleanSession:") ) {
+
+          session_token = msg.substr(16);
+          console.log( "Received NewCleanSession" );
+          
+          doMenuStuff(mainWindow);
+          
+          mainWindow.loadURL( interspec_url + "?externalid=" + session_token + "&restore=no");
         } else {
-          console.log('In JS Recieved ' + data.toString());
+          console.log('In JS Received ' + data.toString());
         }
       });
       
       ws.on( 'close', function close(code,msg){
-        console.log( 'WebSocket clossed in JS' );
+        console.log( 'WebSocket closed in JS' );
       } );
       
       ws.on( 'error', function close(code,msg){

@@ -600,6 +600,8 @@ PopupDivMenu::~PopupDivMenu()
     if( m_parentItem )
     {
   	//This is a sub-menu, so we should get rid of the electron sub-menu tooss
+      //WApplication::instance()->doJavaScript( "Wt.WT.HideElectronMenuItem('" + id() + "',true);" );
+      //WApplication::instance()->doJavaScript( "Wt.WT.ClearElectronMenu('" + id() + "');" );
     }else if( m_menuParent )
     {
     }
