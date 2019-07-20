@@ -43,6 +43,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/asio/signal_set.hpp>
 
+#include <Wt/WRandom>
 #include <Wt/WServer>
 #include <Wt/Json/Array>
 #include <Wt/Json/Object>
@@ -76,6 +77,19 @@ namespace
   std::mutex ns_run_mutex;
   std::condition_variable ns_run_cv;
   bool ns_keep_running = true;
+  
+  
+  /** Protect ns_send_message variable.*/
+  std::mutex ns_send_message_mutex;
+  
+  /** Function to send a message to main.js (node) via websocket connection.
+      Take a lock on ns_send_message_mutex using ns_send_message; you should
+      also check to make sure its valid.
+   
+   Note: I *think* the multithreading on the websocket sender is okay, but need
+         do check the websocketpp documentation a little closer.
+   */
+  std::function<void(std::string)> ns_send_message;
   
   
   Wt::WApplication *createApplication( const Wt::WEnvironment &env )
@@ -355,7 +369,6 @@ int run_app( int argc, char *argv[] )
     }
   } );
   
-  
   std::thread runner( [&ws_io_service](){ ws_io_service.run(); } );
   
   
@@ -383,11 +396,26 @@ int run_app( int argc, char *argv[] )
     cout << "Queded connection" << endl;
   }//end scope of con
   
+  {
+    std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
+    ns_send_message = [ws_handle,&ws_client]( std::string msg ){
+      websocketpp::lib::error_code ec;
+      ws_client.send( ws_handle, msg, websocketpp::frame::opcode::TEXT, ec );
+      
+      if( ec )
+        throw runtime_error( "Error sending request for new clean session: " + ec.message() );
+    };
+  }
   
   {
     std::unique_lock<std::mutex> run_lock( ns_run_mutex );
     while( ns_keep_running )
       ns_run_cv.wait( run_lock, []{return !ns_keep_running;} );
+  }
+  
+  {
+    std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
+    ns_send_message = nullptr;
   }
   
   cout << "Will kill InterSpec server" << endl;
@@ -415,9 +443,41 @@ int run_app( int argc, char *argv[] )
   return EXIT_SUCCESS;
 }//int run_app( int argc, char *argv[] )
 
-  std::string external_id()
+std::string external_id()
+{
+  lock_guard<mutex> lock(ns_externalid_mutex);
+  return ns_externalid;
+}
+  
+bool requestNewCleanSession()
+{
+  const string newexternalid = Wt::WRandom::generateId( 16 );
+  std::cout << "requestNewCleanSession()"<< endl;
+  
   {
     lock_guard<mutex> lock(ns_externalid_mutex);
-    return ns_externalid;
+    ns_externalid = newexternalid;
   }
+  
+  std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
+  
+  if( !ns_send_message )
+  {
+    std::cerr << "requestNewCleanSession(): No active connection" << std::endl;
+    return false;
+  }
+  
+  try
+  {
+    ns_send_message( "NewCleanSession:" + newexternalid );
+  }catch( std::exception &e )
+  {
+    cerr << "requestNewCleanSession(): caught exception sendign WS message: " << e.what() << endl;
+    return false;
+  }
+  
+  std::cout << "requestNewCleanSession() successfully sent" << endl;
+  return true;
+}//void requestNewCleanSession()
+  
 }//namespace ElectronUtils
