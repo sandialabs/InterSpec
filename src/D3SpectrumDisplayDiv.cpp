@@ -1156,7 +1156,7 @@ void D3SpectrumDisplayDiv::updateSecondData()
     D3SpectrumExport::D3SpectrumOptions secondaryOptions;
     
     // Set options for the spectrum
-    secondaryOptions.line_color = m_secondaryLineColor.isDefault() ? string("steelblue") : m_backgroundLineColor.cssText();
+    secondaryOptions.line_color = m_secondaryLineColor.isDefault() ? string("steelblue") : m_secondaryLineColor.cssText();
     secondaryOptions.spectrum_type = kSecondForeground;
     secondaryOptions.display_scale_factor = displayScaleFactor( kSecondForeground );
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(hist.get(), secondaryOptions) );

@@ -1167,15 +1167,17 @@ void InterSpecApp::prepareForEndOfSession()
 
 void InterSpecApp::clearSession()
 {
-  cout << "InterSpecApp::clearSession()" << endl;
 #if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
   //  sends websocket message to node land to clear menus, and load a new session
   //  but with argument "restore=no"
-  cout << "Will call ElectronUtils::requestNewCleanSession()" << endl;
-  ElectronUtils::requestNewCleanSession();
+  if( !ElectronUtils::requestNewCleanSession() )
+  {
+    passMessage( "There was an error requesting a new session - sorry.",
+                "", WarningWidget::WarningMsgHigh );
+  }
+  
 #else
-  cout << "Will call setupWidgets( false )" << endl;
   setupWidgets( false );
 #endif
 }//void clearSession()
