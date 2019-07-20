@@ -16,7 +16,7 @@ A foreground must be loaded before either the background or 2nd foreground will 
 
 <div style="padding-top: 10px">
 You can display additional spectra at the same time by
-<u>dragging</u> and <u>dropping</u> them in as background or 2nd foreground types.  You can also import files via <b>InterSpec &#8594; Manager</b> and then <u>selecting</u> <b>File</b> or <b>Saved Snapshots</b>.
+<u>dragging</u> and <u>dropping</u> them in as background or 2nd foreground types.  You can also import files via <b>InterSpec &#8594; Manager</b> and then <u>selecting</u> <b>File</b> or <b>Previous...</b>.
 </div>
 <div style="padding-top: 10px">
 The

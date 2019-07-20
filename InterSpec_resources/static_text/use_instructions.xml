@@ -293,11 +293,8 @@ the XHTML message for that entry.
   <message id="known-issues">
     Current known issues:
     <ul>
-        <li><b>All:</b> (Peak Manager) "Search for Peaks" in rare cases does not work</li>
         <li><b>All:</b> (Peak Manager) "ID Nuclide" in rare cases does not work </li>
         <li><b>All:</b> "Save State On Exit" in rare cases does not work</li>
-        <li><b>All:</b> (Nuclide Search) "Min. BR" in rare cases does not work</li>
-        <li><b>All:</b> Restoring a Snapshot of a Linear Spectrum from Logarithmic Mode Results in Permanent Loading or Crashing</li>
     </ul>
   </message>
 </messages>

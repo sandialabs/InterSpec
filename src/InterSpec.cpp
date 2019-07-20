@@ -4468,7 +4468,7 @@ void InterSpec::stateSaveAs()
 {
   const bool forTesting = false;
     
-  AuxWindow *window = new AuxWindow( "Save As", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+  AuxWindow *window = new AuxWindow( "Store State As", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
@@ -4516,7 +4516,7 @@ void InterSpec::stateSaveAs()
 //New method to save tag for snapshot
 void InterSpec::stateSaveTag()
 {
-  AuxWindow *window = new AuxWindow( "Tag current snapshot",
+  AuxWindow *window = new AuxWindow( "Tag current state",
                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
@@ -4808,56 +4808,54 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   
   
 #if( USE_DB_TO_STORE_SPECTRA )
-//  item = m_fileMenuPopup->addMenuItem( "Test Serialization" );
-//  item->triggered().connect( this, &InterSpec::testLoadSaveState );
+  //  item = m_fileMenuPopup->addMenuItem( "Test Serialization" );
+  //  item->triggered().connect( this, &InterSpec::testLoadSaveState );
   
-    //----temporary
-//    PopupDivMenu *backupmenu = m_fileMenuPopup->addPopupMenuItem( "Backup", "InterSpec_resources/images/database_go.png" );
-
-//    m_fileMenuPopup->addSeparator();
-    
+  //----temporary
+  //    PopupDivMenu *backupmenu = m_fileMenuPopup->addPopupMenuItem( "Backup", "InterSpec_resources/images/database_go.png" );
+  
+  //    m_fileMenuPopup->addSeparator();
+  
   if( m_fileManager )
   {
-      
-      item = m_fileMenuPopup->addMenuItem( "Manager...", "InterSpec_resources/images/file_manager_small.png" );
-      HelpSystem::attachToolTipOn(item, "Manage loaded spectra", showToolTipInstantly );
-
-      item->triggered().connect( m_fileManager, &SpecMeasManager::startSpectrumManager );
-
-      m_fileMenuPopup->addSeparator();
-
-#if( USE_DB_TO_STORE_SPECTRA )
-
-    const char *save_txt = "Save";
-    const char *save_as_txt = "Save As...";
+    
+    item = m_fileMenuPopup->addMenuItem( "Manager...", "InterSpec_resources/images/file_manager_small.png" );
+    HelpSystem::attachToolTipOn(item, "Manage loaded spectra", showToolTipInstantly );
+    
+    item->triggered().connect( m_fileManager, &SpecMeasManager::startSpectrumManager );
+    
+    m_fileMenuPopup->addSeparator();
+    
+    const char *save_txt = "Store";           //"Save"
+    const char *save_as_txt = "Store As...";  //"Save As..."
     const char *tag_txt = "Tag...";
     
     // --- new save menu ---
     m_saveState = m_fileMenuPopup->addMenuItem( save_txt );
     m_saveState->triggered().connect( boost::bind( &InterSpec::stateSave, this ) );
-    HelpSystem::attachToolTipOn(m_saveState, "Saves the current state", showToolTipInstantly );
-
-
+    HelpSystem::attachToolTipOn(m_saveState, "Saves the current app state to InterSpecs database", showToolTipInstantly );
+    
+    
     // --- new save as menu ---
     m_saveStateAs = m_fileMenuPopup->addMenuItem( save_as_txt );
     m_saveStateAs->triggered().connect( boost::bind( &InterSpec::stateSaveAs, this ) );
-    HelpSystem::attachToolTipOn(m_saveStateAs, "Saves the current state to a new branch", showToolTipInstantly );
+    HelpSystem::attachToolTipOn(m_saveStateAs, "Saves the current app state to a new listing in InterSpecs database", showToolTipInstantly );
     m_saveStateAs->setDisabled( true );
-
+    
     // --- new save tag menu ---
     m_createTag = m_fileMenuPopup->addMenuItem( tag_txt , "InterSpec_resources/images/stop_time_small.png");
     m_createTag->triggered().connect( boost::bind(&InterSpec::stateSaveTag, this ));
-      
-    HelpSystem::attachToolTipOn(m_createTag, "Tags the current Interspec snapshot so you "
-                                  "can revert to at a later time.  When loading a snapshot, "
-                                  "you can select past tagged versions.", showToolTipInstantly );
+    
+    HelpSystem::attachToolTipOn(m_createTag, "Tags the current Interspec state so you "
+                                "can revert to at a later time.  When loading an app state, "
+                                "you can choose either the most recent save, or select past tagged versions.", showToolTipInstantly );
     
     m_fileMenuPopup->addSeparator();
     
     item = m_fileMenuPopup->addMenuItem( "Previous..." , "InterSpec_resources/images/db_small.png");
     item->triggered().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles, m_fileManager, "", (SpectrumType)0, std::shared_ptr<SpectraFileHeader>()) );
-    HelpSystem::attachToolTipOn(item, "Opens previously saved snapshots", showToolTipInstantly );
-#endif  //#if( USE_DB_TO_STORE_SPECTRA )
+    HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTipInstantly );
+    
     
     if( isMobile )
     {
@@ -4866,8 +4864,8 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     }//if( isMobile )
     
     m_fileMenuPopup->addSeparator();
-    }//if( m_fileManager )
-#endif
+  }//if( m_fileManager )
+#endif  //USE_DB_TO_STORE_SPECTRA
 
   PopupDivMenu *subPopup = 0;
 
@@ -6286,10 +6284,10 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
     
-  WCheckBox *cb = new WCheckBox( " Automatically save snapshots" );
+  WCheckBox *cb = new WCheckBox( " Automatically store session" );
   InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this, false );
   item = subPopup->addWidget( cb );
-  HelpSystem::attachToolTipOn( item, "Automatically save snapshots when modified", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Automatically stores app state", showToolTipInstantly );
 
   if (!isMobile())
   {
