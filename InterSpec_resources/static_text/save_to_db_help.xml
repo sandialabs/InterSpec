@@ -8,14 +8,14 @@
          In order to save the alterations you made to a spectrum file that occurred during calibration,
          <u>navigate</u>
          to the
-         <b>Interspec &#8594; Save As</b>;
-this will save the entire InterSpec state (includes current spectra) to the database under your specified name/description which you can restore back to at a later time.  To save any changes in the future, <u>select</u> <b>InterSpec  &#8594; Save</b> which will overwrite the save data.  This is known as the HEAD, and will always contain the latest changes.   </div>
+         <b>Interspec &#8594; Store As</b>;
+this will save the entire InterSpec state (includes current spectra) to the database under your specified name/description which you can restore back to at a later time.  To save any changes in the future, <u>select</u> <b>InterSpec  &#8594; Store</b> which will overwrite the save data.  This is known as the HEAD, and will always contain the latest changes.   </div>
 
       <div style="padding-top: 10px">
-        To save a bookmark (also known as tag) of the current state, <u>select</u> <b>InterSpec  &#8594; Tag</b>.  Tags can not be overwritten.  Think of them as an archived state.
+       To &quot;tag&quot; the current state, <u>select</u> <b>InterSpec  &#8594; Tag</b>.  Tags can not be overwritten.  Think of them as an archived state.
       </div>
       <div style="padding-top: 10px">
-        To open either the entire application state or individual spectra, navigate to <b>Interspec &#8594; Load</b> or  <b>Interspec &#8594; Manager  &#8594; Saved Snapshots</b>.
+        To open either the entire application state or individual spectra, navigate to <b>Interspec &#8594; Load</b> or  <b>Interspec &#8594; Manager  &#8594; Previous...</b>.
       </div>
       <div style="padding-top: 10px">
-         To change whether InterSpec will automatically save application state, nagivate to <b>Help &#8594; Options  &#8594; Automatically save snapshots</b>.      </div>
+         To change whether InterSpec will automatically save application state, nagivate to <b>Help &#8594; Options  &#8594; Automatically store session</b>.      </div>

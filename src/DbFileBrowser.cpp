@@ -60,7 +60,7 @@ using namespace Wt;
 
 
 DbFileBrowser::DbFileBrowser( SpecMeasManager *manager, InterSpec *viewer , std::string uuid, SpectrumType type, std::shared_ptr<SpectraFileHeader> header)
-: AuxWindow( "Saved Snapshots",
+: AuxWindow( "Previously Stored States",
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) )
   {
     int width = 500, height = 475;

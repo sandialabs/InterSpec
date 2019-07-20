@@ -165,6 +165,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", gridy: " + jsbool(m_showVerticalLines);
   options += ", showXAxisSliderChart: " + jsbool(m_showXAxisSliderChart);
   options += ", scaleBackgroundSecondary: " + jsbool(m_showYAxisScalers);
+  options += ", wheelScrollYAxis: true";
   options += ", sliderChartHeightFraction: 0.1";  //ToDo: track this in C++
   options += ", showUserLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakUserLabel]);
   options += ", showPeakLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakEnergyLabel]);

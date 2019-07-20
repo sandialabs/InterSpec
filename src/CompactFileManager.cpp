@@ -301,7 +301,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
             button->clicked().connect( m_hostViewer->fileManager(), &SpecMeasManager::startSpectrumManager );
             layout2->addWidget(button,0,0);
 #if( USE_DB_TO_STORE_SPECTRA )
-            WPushButton *button2 = new WPushButton( "Saved Snapshots...");
+            WPushButton *button2 = new WPushButton( "Previous...");
             button2->clicked().connect(  boost::bind(
                                       &SpecMeasManager::browseDatabaseSpectrumFiles, m_hostViewer->fileManager(), "", (SpectrumType)0, std::shared_ptr<SpectraFileHeader>() ) );
             layout2->addWidget(button2,0,1);

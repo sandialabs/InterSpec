@@ -621,13 +621,14 @@ if( USE_SPECTRUM_CHART_D3 )
     external_libs/SpecUtils/d3_resources/d3.v3.min.js
     external_libs/SpecUtils/d3_resources/c.min.js
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
-    external_libs/SpecUtils/d3_resources/SpectrumChartD3.css )
+    external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
+    external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css)
   list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h )
 
 #At compile time copy D3 resources into InterSpec_resources directory
 # ToDo: if not debug should run uglify (and eventually bable) if necassary.
-  set( D3_RSRCs_TO_COPY "SpectrumChartD3.js" "SpectrumChartD3.css" "d3.v3.min.js" "c.min.js" )
-  foreach(_file ${D3_RSRCs_TO_COPY})
+  set( D3_RESOURCES_TO_COPY "SpectrumChartD3.js" "SpectrumChartD3.css" "SpectrumChartD3StandAlone.css" "d3.v3.min.js" "c.min.js" )
+  foreach(_file ${D3_RESOURCES_TO_COPY})
     add_custom_command(
       OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}
       COMMAND ${CMAKE_COMMAND} -E copy
@@ -649,6 +650,7 @@ set( SpecUtils_BUILD_TEST OFF CACHE BOOL "" )
 set( SpecUtils_PYTHON_BINDINGS OFF CACHE BOOL "" )
 set( SpecUtils_JAVA_SWIG OFF CACHE BOOL "" )
 set( SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "" )
+set( SpecUtils_D3_SCRIPTS_RUNTIME_DIR "InterSpec_resources" CACHE STRING "" )
 include_directories( "${Wt_INCLUDE_DIR}" )
 
 add_subdirectory( external_libs/SpecUtils )

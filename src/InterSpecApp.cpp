@@ -1138,15 +1138,13 @@ void InterSpecApp::prepareForEndOfSession()
                   cerr << "Could not access current Snapshot State ID while EndOfSession " << e.what() << endl;
               }//try / catch
           }
-
-          
-          
           
         dbstate = sql->session()->add( state );
         
         try
         {
           m_viewer->saveStateToDb( dbstate );
+          cout << "Saved end of session app state to database" << endl;
         }catch( std::exception &e )
         {
           cerr << "InterSpecApp::prepareForEndOfSession(): " << e.what() << endl;
