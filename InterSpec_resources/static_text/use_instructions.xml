@@ -174,20 +174,20 @@ the XHTML message for that entry.
 -->
 <message id='desktop-mouse-interactions-info'>
 {
-  "1desktop-mouse-interactions-zoomin": {
-    "title": "Zoom-In",
-    "img": "InterSpec_resources/images/ZoomIn.gif",
-    "desc_message_id": "1desktop-mouse-interactions-zoomin-desc"
+  "1desktop-mouse-interactions-zoominout": {
+    "title": "Zoom-In/Out",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "1desktop-mouse-interactions-zoominout-desc"
   },
-  "2desktop-mouse-interactions-zoomout": {
-    "title": "Zoom-Out",
-    "img": "InterSpec_resources/images/ZoomOut.gif",
-    "desc_message_id": "2desktop-mouse-interactions-zoomout-desc"
-  },
-  "3desktop-mouse-interactions-shiftenergyrange": {
+  "2desktop-mouse-interactions-shiftenergyrange": {
     "title": "Pan Energy",
     "img": "InterSpec_resources/images/ERShift.gif",
-    "desc_message_id": "3desktop-mouse-interactions-shiftenergyrange-desc"
+    "desc_message_id": "2desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "3desktop-mouse-interactions-energyslider": {
+    "title": "Energy Slider",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "3desktop-mouse-interactions-energyslider-desc"
   },
   "4desktop-mouse-interactions-identifypeaks": {
     "title": "Identify Peak(s)",
@@ -209,24 +209,38 @@ the XHTML message for that entry.
     "img": "InterSpec_resources/images/PeakEdit.gif",
     "message-id": "5desktop-mouse-interactions-peakeditor-desc"
   },
-  "8desktop-mouse-interactions-countgamma": {
+  "8desktop-mouse-interactions-adjustROI": {
+    "title": "Adjust ROI",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "8desktop-mouse-interactions-adjustROI-desc"
+  },
+  "8desktop-mouse-interactions-scale-y": {
+    "title": "Scale Y",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "8desktop-mouse-interactions-scale-y-desc"
+  },
+  "9desktop-mouse-interactions-countgamma": {
     "title": "Count Gammas",
     "img": "InterSpec_resources/images/ERCount.gif",
-    "desc_message_id": "8desktop-mouse-interactions-countgamma-desc"
+    "desc_message_id": "9desktop-mouse-interactions-countgamma-desc"
   }
 }
 </message>
 
-<message id='1desktop-mouse-interactions-zoomin-desc'>
-<center>Left-Click Drag</center>
+<message id='1desktop-mouse-interactions-zoominout-desc'>
+<div><center>Left-Click Drag <b>right</b> to zoom-in.</center></div>
+<div><center>Left-Click Drag <b>left</b> to zoom-out.</center></div>
 </message>
 
-<message id='2desktop-mouse-interactions-zoomout-desc'>
-<center>Left-Click Drag</center>
+<message id='2desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>Right-Click Drag</center>
 </message>
 
-<message id='3desktop-mouse-interactions-shiftenergyrange-desc'>
-<center><b><kbd>ALT</kbd></b> + Left-Click Drag</center>
+
+<message id='3desktop-mouse-interactions-energyslider-desc'>
+<center> From <b>View</b> &#8594; <b>Chart Options</b> select &quot;<b>Show Energy Slider</b>&quot;.
+</center>
+<div>Easy to use way to adjust spectrum energy range.  <b>InterSpec</b> will remember if you want the energy slider chart showing.</div>
 </message>
 
 <message id='4desktop-mouse-interactions-identifypeaks-desc'>
@@ -253,14 +267,30 @@ the XHTML message for that entry.
 </message>
 
 <message id='6desktop-mouse-interactions-visualcalibration-desc'>
-<center>Right-Click Drag &#8594; <u>Optional</u>: Adjust Quantities &#8594; "<b>Accept</b>"</center>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Left-Click Drag &#8594; <u>Optional</u>: Adjust Quantities &#8594; "<b>Accept</b>"</center>
 </message>
 
 <message id='5desktop-mouse-interactions-peakeditor-desc'>
 <center>Right-Click &#8594; "Peak Editor"</center>
 </message>
 
-<message id='8desktop-mouse-interactions-countgamma-desc'>
+
+
+<message id='8desktop-mouse-interactions-adjustROI-desc'>
+<center><div>Place mouse on edge of Region of Interest (ROI) and drag.</div>
+  <div>Mouse must be within the y-range of the peak, and within 10 pixels of the edge of the ROI.</div>
+</center>
+</message>
+
+
+<message id='8desktop-mouse-interactions-scale-y-desc'>
+<center>Scale the y-range of background and/or secondary spectra.
+<b>InterSpec</b> will remember if you want these sliders showing when there is a background or secondary spectrum.
+</center>
+</message>
+
+
+<message id='9desktop-mouse-interactions-countgamma-desc'>
 <center>
 <ol>
 <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Left-Click Drag &#8594; <u>Optional</u>: Adjust Quantities</li>
