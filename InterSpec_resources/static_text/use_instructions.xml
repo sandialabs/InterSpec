@@ -194,8 +194,13 @@ the XHTML message for that entry.
     "img": "InterSpec_resources/images/IDPeaks.gif",
     "desc_message_id": "4desktop-mouse-interactions-identifypeaks-desc"
   },
+  "4desktop-mouse-interactions-multipeaks": {
+    "title": "Fit Peak(s)",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "4desktop-mouse-interactions-multipeaks-desc"
+  },
   "7desktop-mouse-interactions-deletepeaks": {
-    "title": "Delete Peak(s)",
+    "title": "Fit Multi-Peak(s)",
     "img": "InterSpec_resources/images/DeletePeaks.gif",
     "desc_message_id": "7desktop-mouse-interactions-deletepeaks-desc"
   },
@@ -252,6 +257,14 @@ the XHTML message for that entry.
 <li>Left-Click "<b>Add</b>" &#8594; <u>Optional</u>: Double-Left-Click "<b>Mean</b>," "<b>FWHM</b>," or "<b>Area</b>" to adjust parameters</li>
 <li>Left-Click "<b>Search for Peaks</b>"</li>
 </ol>
+</center>
+</message>
+
+
+<message id='4desktop-mouse-interactions-multipeaks-desc'>
+<center>
+To define how many peaks should be in a Region of Interest (ROI): <b><kbd>CTRL</kbd></b> + Left-Click Drag &#8594; and then select how many peaks.
+
 </center>
 </message>
 
