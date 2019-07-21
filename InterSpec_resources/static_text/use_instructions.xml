@@ -243,7 +243,7 @@ the XHTML message for that entry.
 
 
 <message id='3desktop-mouse-interactions-energyslider-desc'>
-<center> From <b>View</b> &#8594; <b>Chart Options</b> select &quot;<b>Show Energy Slider</b>&quot;.
+<center> From <b>View</b> &rarr; <b>Chart Options</b> select &quot;<b>Show Energy Slider</b>&quot;.
 </center>
 <div>Easy to use way to adjust spectrum energy range.  <b>InterSpec</b> will remember if you want the energy slider chart showing.</div>
 </message>
@@ -253,8 +253,8 @@ the XHTML message for that entry.
 <p style="font-size: 14px"> To Identify peaks, you may use any of the following options: </p>
 <ol>
 <li>Double-Left-Click</li>
-<li><b><kbd>CTRL</kbd></b> + Left-Click Drag &#8594; Left-Click </li>
-<li>Left-Click "<b>Add</b>" &#8594; <u>Optional</u>: Double-Left-Click "<b>Mean</b>," "<b>FWHM</b>," or "<b>Area</b>" to adjust parameters</li>
+<li><b><kbd>CTRL</kbd></b> + Left-Click Drag &rarr; Left-Click </li>
+<li>Left-Click "<b>Add</b>" &rarr; <u>Optional</u>: Double-Left-Click "<b>Mean</b>," "<b>FWHM</b>," or "<b>Area</b>" to adjust parameters</li>
 <li>Left-Click "<b>Search for Peaks</b>"</li>
 </ol>
 </center>
@@ -263,7 +263,7 @@ the XHTML message for that entry.
 
 <message id='4desktop-mouse-interactions-multipeaks-desc'>
 <center>
-To define how many peaks should be in a Region of Interest (ROI): <b><kbd>CTRL</kbd></b> + Left-Click Drag &#8594; and then select how many peaks.
+To define how many peaks should be in a Region of Interest (ROI): <b><kbd>CTRL</kbd></b> + Left-Click Drag &rarr; and then select how many peaks.
 
 </center>
 </message>
@@ -271,20 +271,20 @@ To define how many peaks should be in a Region of Interest (ROI): <b><kbd>CTRL</
 <message id='7desktop-mouse-interactions-deletepeaks-desc'>
 <center>
 <ol>
-<li>Right-Click &#8594; "<b>Delete Peak</b>"</li>
-<li>Right-Click &#8594; "<b>Peak Editor</b>" &#8594; "<b>Delete</b>"</li>
+<li>Right-Click &rarr; "<b>Delete Peak</b>"</li>
+<li>Right-Click &rarr; "<b>Peak Editor</b>" &rarr; "<b>Delete</b>"</li>
 <li><b><kbd>SHIFT</kbd></b> + Left-Click Drag</li>
-<li>Left-Click "<b>Clear all Peaks</b>" &#8594; Left-Click "<b>Yes</b>"</li>
+<li>Left-Click "<b>Clear all Peaks</b>" &rarr; Left-Click "<b>Yes</b>"</li>
 </ol>
 </center>
 </message>
 
 <message id='6desktop-mouse-interactions-visualcalibration-desc'>
-<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Left-Click Drag &#8594; <u>Optional</u>: Adjust Quantities &#8594; "<b>Accept</b>"</center>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Left-Click Drag &rarr; <u>Optional</u>: Adjust Quantities &rarr; "<b>Accept</b>"</center>
 </message>
 
 <message id='5desktop-mouse-interactions-peakeditor-desc'>
-<center>Right-Click &#8594; "Peak Editor"</center>
+<center>Right-Click &rarr; "Peak Editor"</center>
 </message>
 
 
@@ -306,8 +306,8 @@ To define how many peaks should be in a Region of Interest (ROI): <b><kbd>CTRL</
 <message id='9desktop-mouse-interactions-countgamma-desc'>
 <center>
 <ol>
-<li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Left-Click Drag &#8594; <u>Optional</u>: Adjust Quantities</li>
-<li><b>Tools</b> &#8594; <b>Energy Range Count</b></li>
+<li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Left-Click Drag &rarr; <u>Optional</u>: Adjust Quantities</li>
+<li><b>Tools</b> &rarr; <b>Energy Range Count</b></li>
 </ol>
 </center>
 </message>
