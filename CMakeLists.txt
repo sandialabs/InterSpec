@@ -625,17 +625,22 @@ if( USE_SPECTRUM_CHART_D3 )
     external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css)
   list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h )
 
-#At compile time copy D3 resources into InterSpec_resources directory
-# ToDo: if not debug should run uglify (and eventually bable) if necassary.
-  set( D3_RESOURCES_TO_COPY "SpectrumChartD3.js" "SpectrumChartD3.css" "SpectrumChartD3StandAlone.css" "d3.v3.min.js" "c.min.js" )
-  foreach(_file ${D3_RESOURCES_TO_COPY})
-    add_custom_command(
-      OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}
-      COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}
-        ${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}
-        MAIN_DEPENDENCY ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file} )
+  #Copy D3 resources into InterSpec_resources directory at compile time
+  include(cmake/DeployJsAndCss.cmake)
+
+
+  set( JS_RESOURCES_TO_COPY "SpectrumChartD3.js" "d3.v3.min.js" "c.min.js" )
+  foreach(_file ${JS_RESOURCES_TO_COPY})
+    deploy_js_resource( "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}"
+       "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}" )
   endforeach()
+
+  set( CSS_RESOURCES_TO_COPY "SpectrumChartD3.css" "SpectrumChartD3StandAlone.css" )
+  foreach(_file ${CSS_RESOURCES_TO_COPY})
+    deploy_css_resource( "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}"
+      "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}" )
+  endforeach()
+
 endif( USE_SPECTRUM_CHART_D3 )
 
 
@@ -734,7 +739,7 @@ else( ANDROID OR IOS )
                   "${CMAKE_CURRENT_BINARY_DIR}/${EXECUTABLE_OUTPUT_PATH}/\${CONFIGURATION}/${EXECUTABLE_NAME}.app/Contents/Resources/en.lproj/${_file}" )
     endforeach()
 
-    SET( SUPPORT_DIRECTORIES InterSpec_resources data example_spectra external_libs/SpecUtils/d3_resources  )
+    SET( SUPPORT_DIRECTORIES InterSpec_resources data example_spectra  )
     foreach(_dir ${SUPPORT_DIRECTORIES})
       add_custom_command(TARGET copy PRE_BUILD COMMAND ${CMAKE_COMMAND} -E
         copy_directory ${PROJECT_SOURCE_DIR}/${_dir}
@@ -1234,7 +1239,7 @@ ELSE(NOT WT_RESOURCES_DIRECTORY)
 ENDIF(NOT WT_RESOURCES_DIRECTORY)
 
 IF( NOT ANDROID )
-  SET( SUPPORT_DIRECTORIES InterSpec_resources data example_spectra external_libs/SpecUtils/d3_resources )
+  SET( SUPPORT_DIRECTORIES InterSpec_resources data example_spectra )
 endif( NOT ANDROID )
 
 foreach(_dir ${SUPPORT_DIRECTORIES})
