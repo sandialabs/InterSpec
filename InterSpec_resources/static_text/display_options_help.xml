@@ -39,7 +39,7 @@
     <ul>
       <li><b>Log/Linear</b>: makes the y-axis (i.e., the counts-axis) either log or linear scale.  Default is log-scale as it is generally most useful.
       </li>
-      <li><b>Peak Labels</b>: These options allow you to display labels on the spectrum for <em>peak energies</em>, <em>nuclides assigned to peaks</em>, and/or <em>custom user labels</em> (which can be set usingthe <em>Peak Editor</em>).
+      <li><b>Peak Labels</b>: These options allow you to display labels on the spectrum for <em>peak energies</em>, <em>nuclides assigned to peaks</em>, and/or <em>custom user labels</em> (which can be set using the <em>Peak Editor</em>).
       </li>
       <li><b>Vertical</b> and <b>Horizontal Lines</b>: light-colored rectilinear lines drawn on the spectrum to help judge energies of spectrum features.
       </li>
