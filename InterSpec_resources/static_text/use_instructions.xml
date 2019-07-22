@@ -96,7 +96,7 @@
 	  </div>
     </div>
 	  <div class="UseInstructionSection">
-      <div class="UseInstructionHeader">Identify Peak(s)</div>
+      <div class="UseInstructionHeader">Fit Peak(s)</div>
 	  <div style="border:1px solid black">
 	  <div style="padding-top: 10px" align="center"><h3><b>Method 1</b></h3></div>
 	  <div style="padding-top: 10px" align="center">
@@ -190,22 +190,22 @@ the XHTML message for that entry.
     "desc_message_id": "3desktop-mouse-interactions-energyslider-desc"
   },
   "4desktop-mouse-interactions-identifypeaks": {
-    "title": "Identify Peak(s)",
-    "img": "InterSpec_resources/images/IDPeaks.gif",
+    "title": "Peak Fit",
+    "img": "InterSpec_resources/images/PeakFit.gif",
     "desc_message_id": "4desktop-mouse-interactions-identifypeaks-desc"
   },
   "4desktop-mouse-interactions-multipeaks": {
-    "title": "Fit Peak(s)",
+    "title": "ROI Fit",
     "img": "InterSpec_resources/images/multi_peak_fit.gif",
     "desc_message_id": "4desktop-mouse-interactions-multipeaks-desc"
   },
   "7desktop-mouse-interactions-deletepeaks": {
-    "title": "Fit Multi-Peak(s)",
+    "title": "Delete Peak",
     "img": "InterSpec_resources/images/DeletePeaks.gif",
     "desc_message_id": "7desktop-mouse-interactions-deletepeaks-desc"
   },
   "6desktop-mouse-interactions-visualcalibration": {
-    "title": "Visual Calibration",
+    "title": "Energy Calibration",
     "img": "InterSpec_resources/images/VisRecalib.gif",
     "desc_message_id": "6desktop-mouse-interactions-visualcalibration-desc"
   },
@@ -243,44 +243,56 @@ the XHTML message for that entry.
 
 
 <message id='3desktop-mouse-interactions-energyslider-desc'>
-<center> From <b>View</b> &rarr; <b>Chart Options</b> select &quot;<b>Show Energy Slider</b>&quot;.
-</center>
-<div>Easy to use way to adjust spectrum energy range.  <b>InterSpec</b> will remember if you want the energy slider chart showing.</div>
+<center> From <b>View</b> &rarr; &quot;<b>Chart Options</b>&quot; select &quot;<b>Show Energy Slider</b>&quot;.</center>
+<div>This is an easy to use way to adjust spectrum energy range.</div>
+<div><b>InterSpec</b> will remember if you want the energy slider chart showing.</div>
 </message>
 
 <message id='4desktop-mouse-interactions-identifypeaks-desc'>
 <center>
-<p style="font-size: 14px"> To Identify peaks, you may use any of the following options: </p>
-<ol>
-<li>Double-Left-Click</li>
-<li><b><kbd>CTRL</kbd></b> + Left-Click Drag &rarr; Left-Click </li>
-<li>Left-Click "<b>Add</b>" &rarr; <u>Optional</u>: Double-Left-Click "<b>Mean</b>," "<b>FWHM</b>," or "<b>Area</b>" to adjust parameters</li>
-<li>Left-Click "<b>Search for Peaks</b>"</li>
-</ol>
+<p style="font-size: 14px">There are a number of ways to fit peaks, including: </p>
 </center>
+<ol>
+  <li>Double-Left-Click.  You can double click near the same peak again to add another one.</li>
+  <li><b><kbd>CTRL</kbd></b> + Left-Click Drag &rarr; Left-Click (see &quot;ROI fit&quot;) </li>
+  <li>From the &quot;<b>Peak Manager</b>&quot; tab click &quot;<b>Add</b>&quot; &rarr;. You can then adjust the parameters in the table to the values you would like.</li>
+  <li>From the &quot;<b>Peak Manager</b>&quot; tab click &quot;<b>Search for Peaks</b>&quot; to git all the peaks in the spcetrum.</li>
+<li>Right-click on an existing peak and select &quot;<b>Add Peak</b>&quot; to add a peak to the same ROI.</li>
+</ol>
+
+<p>Hint: before fitting a peak it is useful to be showing the reference lines of the
+nuclide responsible for it, so this way when the peak is fit for, it will get associated
+with that nuclide.  This infomation is used to fit for energy calibration, detector response, activity, and shielding quantities.
+</p>
 </message>
 
 
 <message id='4desktop-mouse-interactions-multipeaks-desc'>
+<div>To fit a definite number of peaks in a Region of Interest (ROI):</div>
 <center>
-To define how many peaks should be in a Region of Interest (ROI): <b><kbd>CTRL</kbd></b> + Left-Click Drag &rarr; and then select how many peaks.
-
+<b><kbd>CTRL</kbd></b> + Left-Click Drag &rarr; and then select how many peaks.
 </center>
 </message>
 
 <message id='7desktop-mouse-interactions-deletepeaks-desc'>
-<center>
 <ol>
 <li>Right-Click &rarr; "<b>Delete Peak</b>"</li>
 <li>Right-Click &rarr; "<b>Peak Editor</b>" &rarr; "<b>Delete</b>"</li>
 <li><b><kbd>SHIFT</kbd></b> + Left-Click Drag</li>
 <li>Left-Click "<b>Clear all Peaks</b>" &rarr; Left-Click "<b>Yes</b>"</li>
+<li>Drag one side of the ROI past the other side.</li>
 </ol>
-</center>
 </message>
 
 <message id='6desktop-mouse-interactions-visualcalibration-desc'>
-<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Left-Click Drag &rarr; <u>Optional</u>: Adjust Quantities &rarr; "<b>Accept</b>"</center>
+<div>To graphically adjust energy calibration:</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Left-Click Drag &rarr; <u>Optional</u>: Adjust Quantities &rarr; &quot;<b>Accept</b>&quot;</center>
+<div>Note: if do this action again, like first on a high energy peak, then on a low energy peak (or vice versa), the dialog that pops up will
+give you the option to preserve both actions by adjusting both the offset and gain so this way both peaks will remain at the energies you drug them to.
+</div>
+<p>The &quot;Energy Calibration&quot; tab also allows you to either manually adjust
+energy calibration coefficients, or fit for them using the nuclides associated with peaks.
+</p>
 </message>
 
 <message id='5desktop-mouse-interactions-peakeditor-desc'>
@@ -290,16 +302,17 @@ To define how many peaks should be in a Region of Interest (ROI): <b><kbd>CTRL</
 
 
 <message id='8desktop-mouse-interactions-adjustROI-desc'>
-<center><div>Place mouse on edge of Region of Interest (ROI) and drag.</div>
-  <div>Mouse must be within the y-range of the peak, and within 10 pixels of the edge of the ROI.</div>
-</center>
+<center><div>Place mouse near the edge of Region of Interest (ROI) and drag.</div></center>
+<div>Mouse must be within the y-range of the peak, and within 10 pixels of the edge of the ROI.</div>
 </message>
 
 
 <message id='8desktop-mouse-interactions-scale-y-desc'>
-<center>Scale the y-range of background and/or secondary spectra.
-<b>InterSpec</b> will remember if you want these sliders showing when there is a background or secondary spectrum.
+<center>Scale the amplitude of background and/or secondary spectra relative to the foreground
+by selecting <b>View</b> &rarr; &quot;<b>Chart Options</b>&quot; &rarr; &quot;<b>Show Y-Axis Scalers</b>&quot;.
 </center>
+<p>To restore the background or secondary spectrum to being live-time normalized, click the &quot;Normalize&quot; button on the &quot;Spectrum Files&quot; tab.</p>
+<p><b>InterSpec</b> will remember if you want these sliders showing when there is a background or secondary spectrum.</p>
 </message>
 
 

@@ -13,8 +13,6 @@
   * Various smaller bug fixes and improvements
 
 * Interactions with the spectra:
-  * ![GitHub Logo](/images/logo.png)
-
   * ![Zoom in and out](v1.0.4/ZoomInOut.gif)
 
   * ![SHift the energy range shown](v1.0.4/ERShift.gif)
@@ -24,6 +22,8 @@
   * ![Scale background and/or secondary spectrum](v1.0.4/yscale.gif)
 
   * ![Adjust the energy range of a Region of Interest (ROI)](v1.0.4/roi_range_adjust.gif)
+
+  * ![Fit for peaks](v1.0.4/PeakFit.gif)
 
   * ![Fit for multiple peaks](v1.0.4/multi_peak_fit.gif)
 
