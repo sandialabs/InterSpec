@@ -276,10 +276,10 @@ with that nuclide.  This infomation is used to fit for energy calibration, detec
 
 <message id='7desktop-mouse-interactions-deletepeaks-desc'>
 <ol>
-<li>Right-Click &rarr; "<b>Delete Peak</b>"</li>
-<li>Right-Click &rarr; "<b>Peak Editor</b>" &rarr; "<b>Delete</b>"</li>
+<li>Right-Click &rarr; &quot;<b>Delete Peak</b>&quot;</li>
+<li>Right-Click &rarr; &quot;<b>Peak Editor</b>&quot; &rarr; &quot;<b>Delete</b>&quot;</li>
 <li><b><kbd>SHIFT</kbd></b> + Left-Click Drag</li>
-<li>Left-Click "<b>Clear all Peaks</b>" &rarr; Left-Click "<b>Yes</b>"</li>
+<li>Left-Click &quot;<b>Clear all Peaks</b>&quot; &rarr; Left-Click &quot;<b>Yes</b>&quot;</li>
 <li>Drag one side of the ROI past the other side.</li>
 </ol>
 </message>
@@ -296,7 +296,7 @@ energy calibration coefficients, or fit for them using the nuclides associated w
 </message>
 
 <message id='5desktop-mouse-interactions-peakeditor-desc'>
-<center>Right-Click &rarr; "Peak Editor"</center>
+<div><center>Right-Click &rarr; &quot;Peak Editor&quot;</center></div>
 </message>
 
 
@@ -349,8 +349,8 @@ by selecting <b>View</b> &rarr; &quot;<b>Chart Options</b>&quot; &rarr; &quot;<b
   <message id="known-issues">
     Current known issues:
     <ul>
-        <li><b>All:</b> (Peak Manager) "ID Nuclide" in rare cases does not work </li>
-        <li><b>All:</b> "Save State On Exit" in rare cases does not work</li>
+<li><b>All:</b> (Peak Manager) &quot;ID Nuclide&quot; in rare cases does not work </li>
+        <li><b>All:</b> &quot;Save State On Exit&quot; in rare cases does not work</li>
     </ul>
   </message>
 </messages>
