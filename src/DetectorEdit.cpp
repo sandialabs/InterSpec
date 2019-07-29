@@ -2440,6 +2440,7 @@ void DetectorEdit::updateChart()
   
   if( hasEfficiency )
   {
+    int nValidPoints = 0, nEffPoints = 0;
     try
     {
       const bool hasResloution = m_detector->hasResolutionInfo();
@@ -2457,13 +2458,26 @@ void DetectorEdit::updateChart()
         efficincy = static_cast<float>( m_detector->intrinsicEfficiency( energy ) );
         m_efficiencyModel->setData(row, 0, energy );
 
-		//capping it at 1.2 (just outside of rendering range), so values don't crap out Wt
-        if( efficincy>1.2 )
-           efficincy = 1.2f; 
-          
-        m_efficiencyModel->setData(row, 1, efficincy );
+
+        //Skip any points outside where we would expect.
+        if( std::isnan(efficincy) || std::isinf(efficincy) || efficincy > 1.2f || efficincy < 0.0f )
+        {
+          m_efficiencyModel->setData(row, 1, boost::any() );
+        }else
+        {
+          ++nValidPoints;
+          m_efficiencyModel->setData(row, 1, efficincy );
+        }
+        
         if( hasResloution )
-          m_efficiencyModel->setData(row, 2, m_detector->peakResolutionFWHM(energy));
+        {
+          const float fwhm = m_detector->peakResolutionFWHM(energy);
+          if( !std::isnan(fwhm) && !std::isinf(fwhm) && fwhm>=0.0f && fwhm<9999.9f )
+          {
+            ++nEffPoints;
+            m_efficiencyModel->setData(row, 2, fwhm);
+          }
+        }
       }//for( int row = 0; row < numEnergyPoints; ++row )
      
       m_efficiencyModel->setHeaderData(0, Wt::WString("Energy"));
@@ -2476,11 +2490,16 @@ void DetectorEdit::updateChart()
       s1.setPen( WPen(m_chartEnergyLineColor) );
       m_chart->addSeries(s1);
     
-      //m_chart->axis(Wt::Chart::Y1Axis).setRange( 0.0, 1.0 );
-      //m_chart->axis(Wt::Chart::Y1Axis).setRoundLimits(<#WFlags<Wt::Chart::AxisValue> locations#>)
-      m_chart->axis(Wt::Chart::Y1Axis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
+      if( nValidPoints == 0 )
+      {
+        m_chart->axis(Wt::Chart::Y1Axis).setRange( 0.0, 1.0 );
+      }else
+      {
+        //m_chart->axis(Wt::Chart::Y1Axis).setRoundLimits(<#WFlags<Wt::Chart::AxisValue> locations#>)
+        m_chart->axis(Wt::Chart::Y1Axis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
+      }
     
-      if( hasResloution )
+      if( nEffPoints )
       { //only if there is resolution FWHM
         Wt::Chart::WDataSeries s2(2, Wt::Chart::LineSeries,Wt::Chart::Y2Axis);
         s2.setPen( WPen(m_chartFwhmLineColor) );

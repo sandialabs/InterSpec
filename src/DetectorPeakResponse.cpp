@@ -162,19 +162,38 @@ namespace
 
 
   
-FormulaWrapper::FormulaWrapper( const std::string &fcnstr )
+FormulaWrapper::FormulaWrapper( const std::string &fcnstr, const bool isMev )
   : m_fcnstr( fcnstr ), m_var_name( "x" )
 {
   UtilityFunctions::to_lower( m_fcnstr );
   UtilityFunctions::erase_any_character( m_fcnstr, "\t\n\r" );
   
-  m_var_name = find_variable_name( m_fcnstr );
   
   m_parser.reset( new mup::ParserX() );
-  m_value.reset( new mup::Value(100.0) );
+  m_value.reset( new mup::Value(isMev ? 0.1 : 100.0) );
   
   if( m_fcnstr.empty() )
     m_fcnstr = "1";
+  
+  
+  
+  try
+  {
+    m_var_name = "x";
+    mup::ParserX trialparser;
+    trialparser.DefineVar( m_var_name, mup::Variable(m_value.get()) );
+    trialparser.SetExpr( m_fcnstr );
+    trialparser.Eval();  //Trigger evaluation; if we get an exception, we'll try somethign besides "x".
+  }catch( mup::ParserError &e )
+  {
+    const mup::EErrorCodes code = e.GetCode();
+    
+    if( code == mup::EErrorCodes::ecUNASSIGNABLE_TOKEN )
+      m_var_name = e.GetToken();
+    else
+      m_var_name = find_variable_name( m_fcnstr );
+  }//try catch to figure out if 'x' works for varaiable name, or we need something else
+  
   
   try
   {
@@ -267,11 +286,26 @@ std::string FormulaWrapper::find_variable_name( std::string eqn )
     if( !found_open )
     {
       const string substr = eqn.substr(open_pos+1, close_pos-open_pos-1);
-      auto iter = argcounts.find(substr);
-      if( iter == end(argcounts) )
-        argcounts[substr] = 1;
-      else
-        iter->second += 1;
+      
+      bool maybeOtherStuff = false;
+      //Really weak test to make sure parenthesis only contains the variable name
+      //  ToDo: improve this test!  Wouldnt catc should be y in 'pow(y,2)', etc.
+      if( substr.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_") != string::npos )
+        maybeOtherStuff = true;
+      
+      if( open_pos == 0 )  //Check equation isnt starting with this parenthesis
+        maybeOtherStuff = true;
+      else if( !isalpha(eqn[open_pos-1]) )  //check this parenthesis is somethign lile 'log(y)', or 'sqrt(y)', and not '1/(x)^2'.  ... actualy sure this test is necassary...
+        maybeOtherStuff = true;
+      
+      if( !maybeOtherStuff )
+      {
+        auto iter = argcounts.find(substr);
+        if( iter == end(argcounts) )
+          argcounts[substr] = 1;
+        else
+          iter->second += 1;
+      }//if( !maybeOtherStuff )
     }//
     
     open_pos = eqn.find( '(', open_pos + 1 );
@@ -663,8 +697,9 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
                                                           const float lowerEnergy,
                                                           const float upperEnergy )
 {
+  const bool isMeV = (energyUnits > 10.f);
   std::shared_ptr<FormulaWrapper > expression
-                                = std::make_shared<FormulaWrapper>( fcnstr );
+                                = std::make_shared<FormulaWrapper>( fcnstr, isMeV );
   
   m_efficiencyForm = kFunctialEfficienyForm;
   m_efficiencyFormula = fcnstr;
@@ -1166,9 +1201,11 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     {
       //if( m_efficiencySource != kUserEfficiencyEquationSpecified )
         //throw runtime_error( "An detector efficiency formula was specified but the the EfficiencySource had a different value" );
+      const bool isMeV = (m_efficiencyEnergyUnits > 10.0f);
+      
       try
       {
-        auto expression = std::make_shared<FormulaWrapper>( m_efficiencyFormula );
+        auto expression = std::make_shared<FormulaWrapper>( m_efficiencyFormula, isMeV );
         m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression, _1  );
       }catch( std::exception &e )
       {
