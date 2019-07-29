@@ -87,7 +87,14 @@ namespace mup
 
 struct FormulaWrapper
 {
-  FormulaWrapper( const std::string &fcnstr );
+  /** Constructor that takes an equation as a string, and creates a callable
+   object to evaluate that equation.
+   
+   \param fcnstr The function to use.  Ex: "exp(-1.2 + 3*lox(x) + ...)"
+   \param isMeV Only used to determine which energy value to use to test if the
+   function is valid or not;  If isMeV is true, uses 0.1, else 100.
+   */
+  FormulaWrapper( const std::string &fcnstr, const bool isMev );
   ~FormulaWrapper();
   
   float efficiency( const float x );
@@ -712,9 +719,10 @@ public:
     
     if( (a.setsValue() || a.isSchema()) && m_efficiencyFormula.size() )
     {
+      const bool isMeV = (m_efficiencyEnergyUnits > 10.0f);
       try
       {
-        std::shared_ptr<FormulaWrapper> expression = std::make_shared<FormulaWrapper>(m_efficiencyFormula);
+        std::shared_ptr<FormulaWrapper> expression = std::make_shared<FormulaWrapper>(m_efficiencyFormula,isMeV);
         m_efficiencyFcn = [expression](float a) -> float { return expression->efficiency(a); };
       }catch( std::exception & )
       {
