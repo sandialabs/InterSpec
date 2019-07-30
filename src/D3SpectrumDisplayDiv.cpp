@@ -1125,6 +1125,15 @@ void D3SpectrumDisplayDiv::updateBackground()
     backgroundOptions.line_color = m_backgroundLineColor.isDefault() ? string("green") : m_backgroundLineColor.cssText();
     backgroundOptions.spectrum_type = kBackground;
     backgroundOptions.display_scale_factor = displayScaleFactor( kBackground );
+    
+    // We cant currently access the parent InterSpec class, but if we could, then
+    //  we could draw the background peaks by doing something like:
+    //const std::set<int> &backSample = m_interspec->displayedSamples(SpectrumType::kBackground);
+    //std::shared_ptr<SpecMeas> backgroundMeas = m_interspec->measurment(SpectrumType::kBackground);
+    //std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > > backpeaks = backgroundMeas->peaks( backSample );
+    //vector< std::shared_ptr<const PeakDef> > inpeaks( backpeaks->begin(), backpeaks->end() );
+    //backgroundOptions.peaks_json = PeakDef::peak_json( inpeaks );
+    
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(background.get(), backgroundOptions) );
     
     // Set the data on the JS side
