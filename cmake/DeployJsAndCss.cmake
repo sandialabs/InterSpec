@@ -33,7 +33,7 @@ macro( deploy_css_resource input output )
     message( "Will uglify ${input} to ${output} using ${UglifyCSS_EXECUTABLE}")
     add_custom_command(
         OUTPUT ${output}
-        COMMAND ${UglifyCSS_EXECUTABLE} -c -o \"${output}\" \"${input}\" MAIN_DEPENDENCY ${input} )
+        COMMAND ${UglifyCSS_EXECUTABLE} --output \"${output}\" \"${input}\" MAIN_DEPENDENCY ${input} )
   else( UglifyCSS_EXECUTABLE )
     message( "Will COPY ${input} to ${output}")
     add_custom_command( OUTPUT ${output} COMMAND ${CMAKE_COMMAND} -E copy ${input} ${output} MAIN_DEPENDENCY ${input} )
