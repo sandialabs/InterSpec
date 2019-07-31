@@ -307,6 +307,12 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
            << "' or '" << staticdir << "': " << e.what() << endl;
     }
     
+    
+#ifdef _WIN32
+    UtilityFunctions::ireplace_all( datadir, "/", "\\" );
+    UtilityFunctions::ireplace_all( staticdir, "/", "\\" );
+#endif
+    
     const string style = "font-family: monospace;"
                          " background: white;"
                          " color: black;"
