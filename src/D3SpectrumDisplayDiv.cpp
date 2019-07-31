@@ -347,12 +347,6 @@ Signal<> &D3SpectrumDisplayDiv::legendDisabled()
 }
 
 
-void D3SpectrumDisplayDiv::setHidden( bool hidden, const Wt::WAnimation &anim )
-{
-  WContainerWidget::setHidden( hidden, anim );
-}//void setHidden( bool hidden, const Wt::WAnimation &animation )
-
-
 void D3SpectrumDisplayDiv::setShowPeakLabel( int label, bool show )
 {
   SpectrumChart::PeakLabels peakLabel = SpectrumChart::PeakLabels(label);
@@ -747,6 +741,8 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
                                  float neutronCounts,
                                  bool keep_curent_xrange )
 {
+  cout << "D3SpectrumDisplayDiv::setData" << endl;
+  
   m_model->setDataHistogram( data_hist, liveTime, realTime, neutronCounts );
   
   string js;
@@ -1305,7 +1301,7 @@ void D3SpectrumDisplayDiv::removeAllPeaks()
 {
   if ( m_peakModel ) {
     m_peakModel->removeAllPeaks();
-    updateData();
+    updateForegroundPeaksToClient();
   }
 }
 
@@ -1559,7 +1555,6 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
           peaks_to_add.push_back( *p );
         
         m_peakModel->addPeaks( peaks_to_add );
-        //updateData();
         updateForegroundPeaksToClient();
       }else
       {
@@ -1578,7 +1573,6 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
           m_peakModel->removePeak( p );
         
         updateForegroundPeaksToClient();
-        //updateData();
       }
     }//if( not narrow region ) / else
   }catch( std::exception &e )
