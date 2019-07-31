@@ -43,6 +43,7 @@
 #include <Wt/WTable>
 #include <Wt/WSignal>
 #include <Wt/WServer>
+#include <Wt/WRandom>
 #include <Wt/WDateTime>
 #include <Wt/WTextArea>
 #include <Wt/WTreeView>
@@ -74,6 +75,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
+#include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "SpecUtils/UtilityFunctions.h"
@@ -1116,6 +1118,8 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_msg( new WText() ),
   m_deleteBtn( new WPushButton() )
 {
+  setObjectName( "GadDir" + Wt::WRandom::generateId() );
+  
   addStyleClass( "RelEffFile" );
   
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
@@ -1236,6 +1240,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   
   m_msg->setInline( false );
   bottomDiv->addWidget( m_msg );
+  
   
   initDetectors();
 }//GadrasDirectory constructor
@@ -1389,7 +1394,9 @@ void GadrasDirectory::initDetectors()
   m_msg->setText( "" );
   m_msg->hide();
   
-  if( !UtilityFunctions::is_directory( directory() ) )
+  const std::string basedir = directory();
+  
+  if( !UtilityFunctions::is_directory( basedir ) )
   {
     m_msg->setText( "<span style=\"color:red;\">Not a valid directory.</span>" );
     m_msg->show();
@@ -1397,35 +1404,88 @@ void GadrasDirectory::initDetectors()
     m_detectorSelect->setCurrentIndex( 0 );
     m_detectorSelect->disable();
     return;
-  }//if( !UtilityFunctions::is_directory( directory() ) )
+  }//if( !UtilityFunctions::is_directory( basedir ) )
   
-  const vector<string> dirs = recursive_list_gadras_drfs( directory() );
-  for( const auto &d : dirs )
-  {
-    auto drf = parseDetector( d );
-    if( drf )
-      m_responses.push_back( drf );
-  }
+  m_detectorSelect->disable();
+  this->disable();
   
-  if( m_responses.empty() )
-  {
-    m_detectorSelect->addItem( "<no responses in directory>" );
-    m_detectorSelect->disable();
-  }else
-  {
-    m_detectorSelect->addItem( "<select detector>" );
-    m_detectorSelect->enable();
-  }
   
-  for( const auto drf : m_responses )
-    m_detectorSelect->addItem( drf->name() );
-  m_detectorSelect->setCurrentIndex( 0 );
+  const std::string objname = objectName();
+  const std::string sessid = wApp->sessionId();
   
-  if( m_responses.empty() )
-  {
-    m_msg->setText( "<span style=\"color:red;\">No valid DRFs in directory, or its subdirectories.</span>" );
-    m_msg->show();
-  }
+  auto updategui = [this,objname]( std::vector<std::shared_ptr<DetectorPeakResponse> > drfs ){
+    
+    //Lets make sure this widget hasnt been deleted, by looking for it in the DOM
+    WWidget *w = wApp->findWidget(objname);
+    if( !w )
+    {
+      cerr << "Couldnt find widget '" << objname << "' in the DOM." << endl;
+      return;
+    }
+    
+    //cout << "Found widget '" << objname << "' in the DOM!" << endl;
+    
+    for( auto drf : drfs )
+    {
+      if( drf )
+        m_responses.push_back( drf );
+    }
+    
+    if( m_responses.empty() )
+    {
+      m_detectorSelect->addItem( "<no responses in directory>" );
+      m_detectorSelect->disable();
+    }else
+    {
+      m_detectorSelect->addItem( "<select detector>" );
+      m_detectorSelect->enable();
+    }
+    
+    for( const auto drf : m_responses )
+      m_detectorSelect->addItem( drf->name() );
+    m_detectorSelect->setCurrentIndex( 0 );
+    
+    if( m_responses.empty() )
+    {
+      m_msg->setText( "<span style=\"color:red;\">No valid DRFs in directory, or its subdirectories.</span>" );
+      m_msg->show();
+    }else
+    {
+      m_detectorSelect->enable();
+    }
+    
+    this->enable();
+    
+    
+    wApp->triggerUpdate();
+  };//updategui lambda
+  
+  auto searchpaths = [basedir, objname, sessid, updategui](){
+    const vector<string> dirs = recursive_list_gadras_drfs( basedir );
+    std::vector<std::shared_ptr<DetectorPeakResponse> > dets( dirs.size(), nullptr );
+    
+    SpecUtilsAsync::ThreadPool pool;
+    for( size_t i = 0; i < dirs.size(); ++i )
+      pool.post( [i,&dets,&dirs](){ dets[i] = GadrasDirectory::parseDetector( dirs[i] ); } );
+    pool.join();
+    
+    //for( const auto &d : dirs )
+    //{
+    //  auto drf = parseDetector( d );
+    //  if( drf )
+    //    m_responses.push_back( drf );
+    //}
+    //end section that should be done off the main thread
+    
+    Wt::WServer *server = Wt::WServer::instance();
+    if( server )
+      server->post(sessid, std::bind( [updategui,dets](){ updategui(dets); } ) );
+  };//searchpaths lamda
+  
+  
+  Wt::WServer *server = Wt::WServer::instance();
+  Wt::WIOService &io = server->ioService();
+  io.post( searchpaths );
 }//void initDetectors()
 
 
