@@ -469,6 +469,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
                         || iter->second[0] == "false"));
     }//if( saveState && saveSpectra )
     
+    //For DAQ, never load previous state.
+    saveState = false;
+    
     if( !loadedSpecFile && saveSpectra && saveState )
     {
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();

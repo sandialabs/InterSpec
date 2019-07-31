@@ -53,6 +53,8 @@
 #include "target/electron/ElectronUtils.h"
 #endif
 
+#include "InterSpec/Daq.h"
+
 //Forward declaration
 Wt::WApplication *createApplication( const Wt::WEnvironment &env );
 
@@ -74,6 +76,7 @@ int main( int argc, char **argv )
   getUtf8Args( argc, argv );
 #endif
 
+  Daq::init_daq( argc, argv );
   
 #if( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
   return developcode::run_development_code();

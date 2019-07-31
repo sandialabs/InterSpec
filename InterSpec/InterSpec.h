@@ -126,6 +126,12 @@ public:
 
   virtual ~InterSpec();
   
+  /** Function that recieves updated foreground/background spectra, and will update the users dispaly.
+   */
+  void update_displayed_spectrum_from_daq( std::shared_ptr<const Measurement> foreground,
+                                          std::shared_ptr<const Measurement> background );
+  
+  
   /** Sets the directory InterSpec "data" files are located, including cross
       sections, materials, detector response functions, nuclear decay info
       and similar.

@@ -892,6 +892,89 @@ void InterSpec::setWritableDataDirectory( const std::string &dir )
   sm_writableDataDirectory = dir;
 }//setWritableDataDirectory( const std::string &dir )
 
+
+
+void InterSpec::update_displayed_spectrum_from_daq( std::shared_ptr<const Measurement> foreground,
+                                        std::shared_ptr<const Measurement> background )
+{
+  //This function is horribly inefficient, and poorly coded/designed
+  
+  if( !foreground || foreground->num_gamma_channels() < 5 )
+  {
+    setSpectrum( nullptr, set<int>{}, SpectrumType::kForeground, false );
+    setSpectrum( nullptr, set<int>{}, SpectrumType::kBackground, false );
+    return;
+  }
+  
+  auto foremeas = std::make_shared<SpecMeas>();
+  auto foregroundspec = std::make_shared<Measurement>( *foreground );
+  foremeas->add_measurment( foregroundspec, true );
+  const set<int> sample_numbers = foremeas->sample_numbers();
+  
+  double old_min_energy = -9999, old_max_energy = -9999;
+  std::vector<PeakDef> newpeaks;
+  std::shared_ptr<SpecMeas> currentmeas =  measurment( SpectrumType::kForeground );
+  std::shared_ptr<const Measurement> currentfore = displayedHistogram( SpectrumType::kForeground );
+  if( currentfore && currentmeas )
+  {
+    old_min_energy = m_spectrum->xAxisMinimum();
+    old_max_energy = m_spectrum->xAxisMaximum();
+    
+    const double newlt = foreground->live_time();
+    const double oldlt = currentfore->live_time();
+    std::vector<PeakDef> oldpeaks = m_peakModel->peakVec();
+    
+    if( newlt > 0.0 && oldlt > 0.0 )
+    {
+      for( auto &p : oldpeaks )
+      {
+        p.setAmplitude( p.amplitude()*newlt/oldlt );
+        newpeaks.push_back( p );
+      }
+      
+      if( newpeaks.size() )
+      {
+        const double x0 = foreground->gamma_channel_lower(0);
+        const double x1 = foreground->gamma_channel_upper(foreground->num_gamma_channels()-1);
+        const double ncausalitysigma = 0.0;
+        const double stat_threshold  = 0.0;
+        const double hypothesis_threshold = 0.0;
+        const bool isRefit = true;
+        newpeaks = fitPeaksInRange( x0, x1, ncausalitysigma, stat_threshold,
+                                    hypothesis_threshold, newpeaks, foregroundspec,
+                                   std::vector<PeakDef>{}, isRefit );
+      }
+    }
+  }//if( currentfore && currentmeas )
+  
+  
+  setSpectrum( foremeas, sample_numbers, SpectrumType::kForeground, false );
+  
+  if( !background )
+  {
+    setSpectrum( nullptr, set<int>{}, SpectrumType::kBackground, false );
+  }else
+  {
+    auto backmeas = std::make_shared<SpecMeas>();
+    auto backspec = std::make_shared<Measurement>( *background );
+    backmeas->add_measurment( backspec, true );
+    const set<int> back_sample_numbers = backmeas->sample_numbers();
+    setSpectrum( backmeas, back_sample_numbers, SpectrumType::kBackground, false );
+  }
+  
+  m_peakModel->setPeaks( newpeaks );
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->updateForegroundPeaksToClient();
+  //m_spectrum->updateData();
+#endif
+  
+  if( old_min_energy > 0 && old_max_energy > old_min_energy )
+    m_spectrum->setXAxisRange( old_min_energy, old_max_energy );
+  
+}//update_displayed_spectrum_from_daq()
+
+
+
 std::string InterSpec::writableDataDirectory()
 {
   std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
@@ -8102,10 +8185,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   switch( spec_type )
   {
     case kForeground:
-#if( USE_DB_TO_STORE_SPECTRA )
-      m_currentStateID = -1;
-      updateSaveWorkspaceMenu();
-#endif
+//#if( USE_DB_TO_STORE_SPECTRA )
+//      m_currentStateID = -1;
+//      updateSaveWorkspaceMenu();
+//#endif
       if( !sameSpec )
         deletePeakEdit();
     break;
@@ -8386,9 +8469,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     {
       if( m_dataMeasurement )
       {
-        auto peaks = m_dataMeasurement->automatedSearchPeaks(sample_numbers);
-        if( !peaks )
-          searchForHintPeaks( m_dataMeasurement, sample_numbers );
+//        auto peaks = m_dataMeasurement->automatedSearchPeaks(sample_numbers);
+//        if( !peaks )
+//          searchForHintPeaks( m_dataMeasurement, sample_numbers );
       }
       break;
     }
