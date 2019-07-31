@@ -420,7 +420,7 @@ void PeakInfoDisplay::createNewPeak()
 //  m_spectrumDisplayDiv->refresh();
   
 #if ( USE_SPECTRUM_CHART_D3 )
-  m_spectrumDisplayDiv->updateData();
+  m_spectrumDisplayDiv->updateForegroundPeaksToClient();
 #endif
 }//void createNewPeak()
 
@@ -447,7 +447,7 @@ void PeakInfoDisplay::deleteSelectedPeak()
         m_model->removeRows( row, 1 );
         disablePeakDelete();
 #if ( USE_SPECTRUM_CHART_D3 )
-        m_spectrumDisplayDiv->updateData();
+        m_spectrumDisplayDiv->updateForegroundPeaksToClient();
 #endif
         return;
       }//if( we found the field being edditied

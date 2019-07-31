@@ -11,10 +11,7 @@
 #include <Wt/WColor>
 #include <Wt/WEvent>
 #include <Wt/WSignal>
-#include <Wt/WCssStyleSheet>
 #include <Wt/WContainerWidget>
-
-#include <boost/thread.hpp>
 
 #include "InterSpec/SpectrumChart.h"
 #include "SpecUtils/SpectrumDataStructs.h"
@@ -28,28 +25,36 @@ static_assert( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE, "RENDER_REFERENCE_PHOTOPE
 //Forward declarations
 class SpecMeas;
 class PeakModel;
-class SpectrumChart;
 class InterSpec;
 class SpectrumDataModel;
-class CanvasForDragging;
 namespace Wt
 {
-  class WGridLayout;
   class WCssTextRule;
-  class WApplication;
-  class WButtonGroup;
-  class WStackedWidget;
-  class WContainerWidget;
 }//namespace Wt
 
 
-//
-//2012-03-14: Instead of using a WBorderLayout to strech the charts <canvas>
-//  element, which adds a whole bunch of tables and divs to the page, we can use
-//  a simple customization of the javascript function wtResize to do this.
-//  Note: I think in Newer Wt, this is no longer the case, so we could remove
-//  this feature.
-#define SpectrumDisplayDiv_USE_CUSTOM_LAYOUT 0
+/**
+ ToDo:
+ - Listen to PeakModel::rowsAboutToBeRemoved(), PeakModel::rowsInserted(),
+   PeakModel::dataChanged(), PeakModel::modelReset() to determine if peak
+   information needs to be resent to client, and when it does need to be, mark
+   this with a member variable, call WWidget::scheduleRender(0), and send the
+   data actually in D3SpectrumDisplayDiv::render().  Then get rid of all calls
+   to updateForegroundPeaksToClient().
+ - When new foreground/background/secondary histogram is set, should set
+   internal flag, call WWidget::scheduleRender(0), and not load the JS/JSON to
+   client until D3SpectrumDisplayDiv::render() is called.  Same thing with
+   colors and scale factors.
+ - Get rid of SpectrumDataModel.  Will also require modifying PeakModel.
+ - The y-axis range is not propogated from the client to server after many
+   operations; this should be fixed.  Also, not sure if x-axis range is always
+   propogated.
+ - showHistogramIntegralsInLegend() is not implemented client side
+ - setTextInMiddleOfChart() is not implemented client side
+ - assign unique spectrum ID's in the JSON for each spectrum; convert JS to
+   use this info.
+ - Upgrade to use v5 of d3.js.
+ */
 
 
 class D3SpectrumDisplayDiv : public Wt::WContainerWidget
@@ -166,22 +171,9 @@ public:
   Wt::Signal<> &legendEnabled();
   Wt::Signal<> &legendDisabled();
   
-  //Some functions to tell the SpectrumChart what kind of data it is displaying.
-  //  This is currently only used for telling the units of the mouse on the
-  //  overlay canvas.  If you do not set that this display is for either
-  //  energy or time, then mouse coordanents will not be displayed.
-  void setIsEnergyDisplay();
-  void setIsTimeDisplay();
-  bool isEnergyDisplay() const;
-  bool isTimeDisplay() const;
-  
   void showHistogramIntegralsInLegend( const bool show );
 
   
-  virtual void setHidden( bool hidden,
-                         const Wt::WAnimation &animation = Wt::WAnimation() );
-  
-
   Wt::Signal<double,double> &xRangeChanged();
   Wt::Signal<double,double> &rightMouseDragg();
   
