@@ -38,7 +38,6 @@
 #include <Wt/WServer>
 #include <Wt/WLineEdit>
 #include <Wt/WTabWidget>
-#include <Wt/WTreeView>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
 #include <Wt/WBorderLayout>

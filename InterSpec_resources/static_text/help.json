@@ -145,6 +145,12 @@
         "keywords":"Dose Distance Shielding Source Neutron Neutrons Gamma Gammas"
       },
       {
+        "id":"flux-tool",
+        "title":"Flux Tool",
+        "help-xml":"flux_tool_help.xml",
+        "keywords":"Gamma Gammas Flux rate pi steridians"
+      },
+      {
         "id":"spectrum-file-query",
         "title":"Spectrum File Query Tool",
         "help-xml":"file_query_tool_help.xml",

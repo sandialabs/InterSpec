@@ -31,9 +31,7 @@
 
 namespace Wt
 {
-  class WTreeView;
   class WPushButton;
-  class WTreeView;
   class WTree;
 }//namespace Wt
 

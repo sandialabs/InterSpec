@@ -64,7 +64,6 @@
 #include <Wt/WGroupBox>
 #include <Wt/WTextArea>
 #include <Wt/WCheckBox>
-#include <Wt/WTreeView>
 #include <Wt/WTreeNode>
 #include <Wt/WTemplate>
 #include <Wt/WIOService>
@@ -111,6 +110,7 @@
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PopupDiv.h"
+#include "InterSpec/FluxTool.h"
 #include "InterSpec/PeakEdit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
@@ -6643,6 +6643,12 @@ void InterSpec::createActivityConverter()
 }//void createActivityConverter()
 
 
+void InterSpec::createFluxTool()
+{
+  new FluxToolWindow( this );
+}//void createFluxTool()
+
+
 void InterSpec::createDecay()
 {
   Decay *decay = new Decay( this );
@@ -6949,6 +6955,10 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( "Activity Converter" );
   HelpSystem::attachToolTipOn( item,"Curie to Becquerel converter.", showToolTipInstantly );
   item->triggered().connect( this, &InterSpec::createActivityConverter );
+  
+  item = popup->addMenuItem( "Flux Tool" );
+  HelpSystem::attachToolTipOn( item,"Converts detectred peak counts, to gammas emitted by the source.", showToolTipInstantly );
+  item->triggered().connect( this, &InterSpec::createFluxTool );
   
   item = popup->addMenuItem( "Nuclide Decay Info" );
   HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTipInstantly );
