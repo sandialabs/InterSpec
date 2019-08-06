@@ -36,7 +36,6 @@
 #include <Wt/WServer>
 #include <Wt/WLineEdit>
 #include <Wt/WCheckBox>
-#include <Wt/WTreeView>
 #include <Wt/WIOService>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>

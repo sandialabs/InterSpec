@@ -55,7 +55,6 @@
 #include <Wt/WTextArea>
 #include <Wt/WRectArea>
 #include <Wt/WResource>
-#include <Wt/WTreeView>
 #include <Wt/WTabWidget>
 #include <Wt/WIOService>
 #include <Wt/WGridLayout>

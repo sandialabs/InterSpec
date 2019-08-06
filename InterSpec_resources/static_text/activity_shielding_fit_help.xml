@@ -116,8 +116,8 @@ ages, and shieldings you want to fit, the &quot;<b>Perform Model Fit</b>&quot;
 will perform a &chi;<sup>2</sup> based fit of the model to data.<br />
 
 The quality of the fit to data can generally be determined from the graphic.
-You want the dots on the &chi; graphic to be within &pm;10 of zero, ideally within
-&pm;2 or &pm;3 of zero.  If you are vieweing the graphic as the multiple chart,
+You want the dots on the &chi; graphic to be within &plusmn;10 of zero, ideally within
+&plusmn;2 or &plusmn;3 of zero.  If you are vieweing the graphic as the multiple chart,
 you want each of the peaks to be near one.  You can use these charts to eliminate
 outlying peaks (that may be due to being associated with the wrong uclide or
 gamma/x-ray, or other interfering sources), or make tweaks to what you are fitting

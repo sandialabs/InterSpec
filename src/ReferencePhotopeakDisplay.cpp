@@ -36,7 +36,6 @@
 #include <Wt/WLabel>
 #include <Wt/WCheckBox>
 #include <Wt/WLineEdit>
-#include <Wt/WTreeView>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>

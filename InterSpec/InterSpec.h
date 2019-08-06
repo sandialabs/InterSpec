@@ -663,6 +663,7 @@ protected:
   
   void createOneOverR2Calculator();
   void createActivityConverter();
+  void createFluxTool();
   void createDecay();
   void createFileParameterWindow();
   
