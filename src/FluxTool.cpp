@@ -10,9 +10,11 @@
 #include <Wt/WText>
 #include <Wt/WTable>
 #include <Wt/WLabel>
+#include <Wt/WCheckBox>
 #include <Wt/WResource>
 #include <Wt/WLineEdit>
 #include <Wt/WModelIndex>
+#include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/Http/Request>
@@ -391,8 +393,10 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   assert( viewer );
   rejectWhenEscapePressed( true );
   
-  m_fluxTool = new FluxToolWidget( viewer, contents() );
-  m_fluxTool->setHeight( WLength(100, WLength::Percentage) );
+  m_fluxTool = new FluxToolWidget( viewer );
+  //m_fluxTool->setHeight( WLength(100, WLength::Percentage) );
+  
+  stretcher()->addWidget( m_fluxTool, 0, 0 );
   
   AuxWindow::addHelpInFooter( footer(), "flux-tool" );
   
@@ -428,11 +432,11 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   
   show();
   
-  //const int screenW = viewer->renderedWidth();
-  //const int screenH = viewer->renderedHeight();
-  //const int width = ((screenW < 600) ? screenW : 600);
-  //const int height = ((screenH < 420) ? screenH : 420);
-  //resizeWindow( width, height );
+  const int screenW = viewer->renderedWidth();
+  const int screenH = viewer->renderedHeight();
+  const int width = ((screenW < 680) ? screenW : 680);
+  const int height = ((screenH < 420) ? screenH : 420);
+  resizeWindow( width, height );
   
   resizeToFitOnScreen();
   centerWindowHeavyHanded();
@@ -450,7 +454,9 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
     m_detector( nullptr ),
     m_msg( nullptr ),
     m_distance( nullptr ),
+    m_table( nullptr ),
     m_needsTableRefresh( true ),
+    m_compactColumns( false ),
     m_tableUpdated( this )
 {
   init();
@@ -516,8 +522,12 @@ void FluxToolWidget::init()
   
   addStyleClass( "FluxToolWidget" );
   
-  WTable *distDetRow = new WTable( this );
+  WGridLayout *layout = new WGridLayout();
+  setLayout( layout );
+  
+  WTable *distDetRow = new WTable();
   distDetRow->addStyleClass( "FluxDistMsgDetTbl" );
+  layout->addWidget( distDetRow, 0, 0 );
   
   SpectraFileModel *specFileModel = m_interspec->fileManager()->model();
   m_detector = new DetectorDisplay( m_interspec, specFileModel );
@@ -557,29 +567,59 @@ void FluxToolWidget::init()
   auto msgCell = distDetRow->elementAt(1,0);
   msgCell->setColumnSpan( 2 );
   msgCell->addStyleClass( "FluxMsgCell" );
-  m_msg = new WText( "&nbsp;", Wt::XHTMLText, msgCell );
-  //m_msg->setInline( false );
+  m_msg = new WText( "", Wt::XHTMLText, msgCell );
   m_msg->addStyleClass( "FluxMsg" );
   
   
   FluxToolImp::FluxModel *fluxmodel = new FluxToolImp::FluxModel( this );
-  RowStretchTreeView *fluxview = new RowStretchTreeView();
-  fluxview->setModel( fluxmodel );
-  fluxview->setRootIsDecorated(false);
-  fluxview->addStyleClass( "FluxTable" );
-  fluxview->setAlternatingRowColors( true );
-  fluxview->sortByColumn( FluxColumns::FluxEnergyCol, Wt::AscendingOrder );
+  m_table = new RowStretchTreeView();
+  m_table->setModel( fluxmodel );
+  m_table->setRootIsDecorated( false );
+  m_table->addStyleClass( "FluxTable" );
+  m_table->setAlternatingRowColors( true );
+  m_table->sortByColumn( FluxColumns::FluxEnergyCol, Wt::AscendingOrder );
+  m_table->setSelectable( true );
+  //m_table->setSelectionMode( Wt::SelectionMode::SingleSelection );
   
   FluxToolImp::FluxRenderDelegate *renderdel = new FluxToolImp::FluxRenderDelegate( this );
-  fluxview->setItemDelegate( renderdel );
+  m_table->setItemDelegate( renderdel );
   
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
-  {
-    fluxview->setColumnHidden( col, false );
-    fluxview->setSortingEnabled( col, (col!=FluxColumns::FluxGeometricEffCol) );
-  }
+    m_table->setSortingEnabled( col, (col!=FluxColumns::FluxGeometricEffCol) );
   
-  this->addWidget( fluxview );
+  layout->addWidget( m_table, 1, 0 );
+  layout->setRowStretch( 1, 1 );
+  
+  WCheckBox *cb = new WCheckBox( "show more info" );
+  cb->addStyleClass( "FluxMoreInfoCB" );
+  cb->setChecked( false );
+  cb->changed().connect( std::bind( [this,cb](){
+    setMinimalColumnsOnly( !cb->isChecked() );
+  }) );
+  
+  layout->addWidget( cb, 2, 0, AlignRight );
+  
+
+  for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
+  {
+    WLength length;
+    switch( col )
+    {
+      case FluxEnergyCol:         length = WLength(7.5, WLength::FontEm); break;
+      case FluxPeakCpsCol:        length = WLength(7.5, WLength::FontEm); break;
+      case FluxIntrinsicEffCol:   length = WLength(7.5, WLength::FontEm); break;
+      case FluxGeometricEffCol:   length = WLength(7.5, WLength::FontEm); break;
+      case FluxFluxOnDetCol:      length = WLength(7.5, WLength::FontEm); break;
+      case FluxFluxPerCm2PerSCol: length = WLength(9.0, WLength::FontEm); break;
+      case FluxGammasInto4PiCol:  length = WLength(9.0, WLength::FontEm); break;
+      case FluxNumColumns:        break;
+    }//switch( col )
+    
+    m_table->setColumnWidth( col, length);
+  }//for( loop over columns )
+  
+  m_compactColumns = false; //set false so setMinimalColumnsOnly(true) will do work
+  setMinimalColumnsOnly( true );
 }//void init()
 
 
@@ -708,6 +748,40 @@ void FluxToolWidget::refreshPeakTable()
 }//void refreshPeakTable()
 
 
+void FluxToolWidget::setMinimalColumnsOnly( const bool minonly )
+{
+  if( minonly == m_compactColumns )
+    return;
+  
+  m_compactColumns = minonly;
+  
+  for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
+  {
+    bool show = true;
+    switch( col )
+    {
+      case FluxEnergyCol:
+      case FluxPeakCpsCol:
+      case FluxFluxPerCm2PerSCol:
+      case FluxGammasInto4PiCol:
+        show = true;
+      break;
+        
+      case FluxIntrinsicEffCol:
+      case FluxGeometricEffCol:
+      case FluxFluxOnDetCol:
+        show = !m_compactColumns;
+        break;
+        
+      case FluxNumColumns:
+        break;
+    }//switch( col )
+    
+    m_table->setColumnHidden( col, !show );
+  }//for( loop over columns )
+  
+  m_table->refreshColWidthLayout();
+}//void setMinimalColumnsOnly( const bool minonly )
 
 
 

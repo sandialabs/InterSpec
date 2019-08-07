@@ -39,6 +39,7 @@
 class InterSpec;
 class FluxToolWidget;
 class DetectorDisplay;
+class RowStretchTreeView;
 
 namespace Wt
 {
@@ -94,14 +95,23 @@ protected:
   void init();
   void setTableNeedsUpdating();
   void refreshPeakTable();
+  void setMinimalColumnsOnly( const bool minonly );
   
   InterSpec *m_interspec;
   DetectorDisplay *m_detector;
   
   Wt::WText *m_msg;
   Wt::WLineEdit *m_distance;
+  RowStretchTreeView *m_table;
   
+  /** We will only update dm_data and m_uncertainties from peak model right
+      before rendering happens to avoid duplicate work if multiple peaks are
+      being added.
+   */
   bool m_needsTableRefresh;
+  
+  /** Whether to show all the columns or not. Default no. */
+  bool m_compactColumns;
   
   Wt::Signal<> m_tableUpdated;
   
