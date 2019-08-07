@@ -166,6 +166,13 @@ void RowStretchTreeView::setModel( Wt::WAbstractItemModel *model )
 }//void setModel( Wt::WAbstractItemModel *model )
 
 
+void RowStretchTreeView::refreshColWidthLayout()
+{
+  //doJavaScript( "Wt.WT.TreeViewCheckWidth(" + jsRef() + ");" );
+  widthChanged( m_rowWidthPx, m_scrollBarWidth );
+}//virtual void refreshColWidthLayout();
+
+
 void RowStretchTreeView::render(	Wt::WFlags<Wt::RenderFlag> flags )
 {
   WTreeView::render( flags );

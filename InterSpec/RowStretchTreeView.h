@@ -55,6 +55,11 @@ public:
   //  removed, in order to deal with if the scroll bars will appear or disapear.
   virtual void setModel( Wt::WAbstractItemModel *model );
   
+  /** Useful to call after showing/hiding columns to force a recomutation of
+     column stretches and such.
+   */
+  virtual void refreshColWidthLayout();
+  
 protected:
   //render is specialized to check to see if the row widths have changed, and
   //  thus column widths should be adjusted; this check happens both when the
