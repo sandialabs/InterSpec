@@ -25,10 +25,13 @@
 
 #include "InterSpec_config.h"
 
+#include <array>
 #include <string>
 #include <vector>
 #include <memory>
 
+#include <Wt/WSignal>
+#include <Wt/WString>
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/AuxWindow.h"
@@ -44,6 +47,10 @@ namespace Wt
   class WLineEdit;
 }//namespace Wt
 
+namespace FluxToolImp
+{
+  class FluxCsvResource;
+}
 
 class FluxToolWindow : public AuxWindow
 {
@@ -81,6 +88,29 @@ protected:
   Wt::WLineEdit *m_distance;
   
   bool m_needsTableRefresh;
+  
+  Wt::Signal<> m_tableUpdated;
+  
+  enum FluxColumns
+  {
+    FluxEnergyCol,
+    FluxPeakCpsCol,
+    FluxIntrinsicEffCol,
+    FluxGeometricEffCol,
+    FluxFluxOnDetCol,
+    FluxFluxPerCm2PerSCol,
+    FluxGammasInto4PiCol,
+    FluxNumColumns
+  };//enum FluxColumns
+  
+  std::array<Wt::WString,FluxColumns::FluxNumColumns> m_colnames;
+  std::array<Wt::WString,FluxColumns::FluxNumColumns> m_colnamesCsv;
+  
+  std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_data;
+  std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_uncertainties;
+  
+  friend class FluxToolWindow;
+  friend class FluxToolImp::FluxCsvResource;
 };//class FluxToolWidget
 
 #endif //FluxTool_h
