@@ -12,12 +12,15 @@
 #include <Wt/WLabel>
 #include <Wt/WResource>
 #include <Wt/WLineEdit>
+#include <Wt/WModelIndex>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
 #include <Wt/WRegExpValidator>
 #include <Wt/WContainerWidget>
+#include <Wt/WAbstractItemModel>
+#include <Wt/WAbstractItemDelegate>
 
 #include "InterSpec/FluxTool.h"
 #include "InterSpec/InterSpec.h"
@@ -29,12 +32,251 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "SpecUtils/UtilityFunctions.h"
+#include "InterSpec/RowStretchTreeView.h"
 
 using namespace std;
 using namespace Wt;
 
 namespace FluxToolImp
 {
+  struct index_compare_sort
+  {
+    const std::vector<std::array<double,FluxToolWidget::FluxColumns::FluxNumColumns>> &arr;
+    int m_sortColumn;
+    Wt::SortOrder m_sortOrder;
+    
+    index_compare_sort(const std::vector<std::array<double,FluxToolWidget::FluxColumns::FluxNumColumns>> &arr, int col, Wt::SortOrder order)
+      : arr(arr),
+        m_sortColumn( col ),
+        m_sortOrder( order )
+    {
+    }
+    
+    bool operator()(const size_t a, const size_t b) const
+    {
+      const bool less = arr[a][m_sortColumn] < arr[b][m_sortColumn];
+      return (m_sortOrder==Wt::SortOrder::AscendingOrder ? less : !less);
+    }
+  };//struct index_compare
+  
+  
+  class FluxModel : public  Wt::WAbstractItemModel
+  {
+  protected:
+    FluxToolWidget *m_fluxtool;
+    FluxToolWidget::FluxColumns m_sortColumn;
+    Wt::SortOrder m_sortOrder;
+    
+    //Depending on sort column and order, we will map the rows of
+    //  m_fluxtool->m_data to the row in this model
+    vector<size_t> m_sort_indices;
+    
+  public:
+    FluxModel( FluxToolWidget *parent )
+    : WAbstractItemModel( parent ),
+      m_fluxtool( parent ),
+      m_sortColumn( FluxToolWidget::FluxColumns::FluxEnergyCol ),
+      m_sortOrder( Wt::SortOrder::AscendingOrder )
+    {
+      parent->tableUpdated().connect( this, &FluxModel::handleFluxToolWidgetUpdated );
+    }
+    
+    
+    virtual ~FluxModel()
+    {
+    }
+    
+    
+    virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const
+    {
+      return Wt::WFlags<Wt::ItemFlag>(Wt::ItemFlag::ItemIsXHTMLText);
+    }
+    
+    
+    virtual WFlags<Wt::HeaderFlag> headerFlags( int section, Wt::Orientation orientation = Wt::Horizontal ) const
+    {
+      return Wt::WFlags<Wt::HeaderFlag>(Wt::HeaderFlag::HeaderIsXHTMLText);
+    }
+    
+    
+    void handleFluxToolWidgetUpdated()
+    {
+      if( !m_sort_indices.empty() )
+      {
+        beginRemoveRows( WModelIndex(), 0, static_cast<int>(m_sort_indices.size() - 1) );
+        m_sort_indices.clear();
+        endRemoveRows();
+      }
+      
+      if( !m_fluxtool->m_data.empty() )
+      {
+        beginInsertRows( WModelIndex(), 0, static_cast<int>(m_fluxtool->m_data.size() - 1) );
+        doSortWork();
+        endInsertRows();
+      }//
+    }//void handleFluxToolWidgetUpdated()
+    
+    
+    virtual boost::any data( const Wt::WModelIndex &index,
+                             int role = Wt::DisplayRole ) const
+    {
+      if( index.parent().isValid() )
+        return boost::any();
+      
+      const int row = index.row();
+      const int col = index.column();
+      
+      if( row < 0 || col < 0
+         || col >= FluxToolWidget::FluxColumns::FluxNumColumns
+         || row >= static_cast<int>(m_sort_indices.size()) )
+        return boost::any();
+      
+      const size_t realind = m_sort_indices[row];
+      
+      const auto &data = m_fluxtool->m_data;
+      const auto &uncerts = m_fluxtool->m_uncertainties;
+      
+      assert( realind < data.size() );
+      
+      switch( role )
+      {
+        case Wt::DisplayRole:
+          return boost::any( data[realind][col] );
+          
+        //case Wt::StyleClassRole: break;
+        //case Wt::ToolTipRole: break;
+        case Wt::UserRole:
+          return uncerts[realind][col] > std::numeric_limits<double>::epsilon() ? boost::any(uncerts[realind][col]) : boost::any();
+
+        default:
+          return boost::any();
+      }//switch( role )
+      
+      return boost::any();
+    }//data(...)
+    
+    
+    boost::any headerData( int section,
+                          Wt::Orientation orientation = Wt::Horizontal,
+                          int role = Wt::DisplayRole ) const
+    {
+      if( section < 0 || section >= FluxToolWidget::FluxColumns::FluxNumColumns
+         || orientation != Wt::Horizontal
+         || role != Wt::DisplayRole )
+        return boost::any();
+      return boost::any( m_fluxtool->m_colnames[section] );
+    }
+    
+    virtual int columnCount( const Wt::WModelIndex &parent
+                            = Wt::WModelIndex() ) const
+    {
+      if( parent.isValid() )
+        return 0;
+      return FluxToolWidget::FluxColumns::FluxNumColumns;
+    }
+    
+    virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const
+    {
+      if( parent.isValid() )
+        return 0;
+      return static_cast<int>( m_sort_indices.size() );
+    }
+    
+    virtual Wt::WModelIndex parent( const Wt::WModelIndex &index) const
+    {
+      return WModelIndex();
+    }
+    
+    virtual Wt::WModelIndex index( int row, int column,
+                                  const Wt::WModelIndex &parent = Wt::WModelIndex() ) const
+    {
+      return WAbstractItemModel::createIndex(row, column, nullptr);
+    }
+    
+    void doSortWork()
+    {
+      m_sort_indices.resize( m_fluxtool->m_data.size() );
+      
+      for( size_t i = 0; i < m_sort_indices.size(); ++i )
+        m_sort_indices[i] = i;
+      
+      std::stable_sort( m_sort_indices.begin(), m_sort_indices.end(),
+                       index_compare_sort(m_fluxtool->m_data,m_sortColumn,m_sortOrder) );
+    }//void doSortWork()
+    
+    virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder )
+    {
+      m_sortOrder = order;
+      m_sortColumn = FluxToolWidget::FluxColumns( column );
+      
+      layoutAboutToBeChanged().emit();
+      doSortWork();
+      layoutChanged().emit();
+    }//sort(...)
+  };//class FluxModel(...)
+  
+  
+  class FluxRenderDelegate : public WAbstractItemDelegate
+  {
+  public:
+    FluxRenderDelegate( FluxToolWidget *parent )
+    : WAbstractItemDelegate( parent )
+    {
+    }
+    
+    virtual WWidget *update(WWidget *widget, const WModelIndex& index,
+                            WFlags<ViewItemRenderFlag> flags)
+    {
+      auto model = index.model();
+      if( !model )
+        return nullptr;
+      auto data = index.data();
+      auto uncertdata = model->data( index.row(), index.column(), Wt::UserRole );
+      
+      if( data.empty() )
+        return nullptr;
+      
+      const bool hasUncert = !uncertdata.empty();
+      
+      double val = 0.0, uncert = 0.0;
+      try
+      {
+        val = boost::any_cast<double>(data);
+        if( hasUncert )
+          uncert = boost::any_cast<double>(uncertdata);
+      }catch(...)
+      {
+        return nullptr;
+      }
+      
+      auto oldwidget = dynamic_cast<WText *>( widget );
+      
+      char buffer[128];
+      
+      if( index.column() == FluxToolWidget::FluxColumns::FluxEnergyCol )
+      {
+        snprintf( buffer, sizeof(buffer), "%.2f", val );
+      }else
+      {
+        if( hasUncert )
+          snprintf( buffer, sizeof(buffer), "%.4g &plusmn; %.1f", val, uncert );
+        else
+          snprintf( buffer, sizeof(buffer), "%.4g", val );
+      }
+      
+      
+      if( !oldwidget )
+      {
+        if( widget )
+          delete widget;
+        oldwidget = new WText();
+      }
+      
+      oldwidget->setText( WString::fromUTF8(buffer) );
+      return oldwidget;
+    }
+  };
+  
   class FluxCsvResource : public Wt::WResource
   {
   protected:
@@ -207,7 +449,6 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
     m_interspec( viewer ),
     m_detector( nullptr ),
     m_msg( nullptr ),
-    m_table( nullptr ),
     m_distance( nullptr ),
     m_needsTableRefresh( true ),
     m_tableUpdated( this )
@@ -218,6 +459,12 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
 
 FluxToolWidget::~FluxToolWidget()
 {
+}
+
+
+Wt::Signal<> &FluxToolWidget::tableUpdated()
+{
+  return m_tableUpdated;
 }
 
 
@@ -315,11 +562,24 @@ void FluxToolWidget::init()
   m_msg->addStyleClass( "FluxMsg" );
   
   
-  WContainerWidget *tableHolder = new WContainerWidget( this );
-  tableHolder->addStyleClass( "FluxTableHolder" );
+  FluxToolImp::FluxModel *fluxmodel = new FluxToolImp::FluxModel( this );
+  RowStretchTreeView *fluxview = new RowStretchTreeView();
+  fluxview->setModel( fluxmodel );
+  fluxview->setRootIsDecorated(false);
+  fluxview->addStyleClass( "FluxTable" );
+  fluxview->setAlternatingRowColors( true );
+  fluxview->sortByColumn( FluxColumns::FluxEnergyCol, Wt::AscendingOrder );
   
-  m_table = new WTable( tableHolder );
-  m_table->addStyleClass( "FluxTable" );
+  FluxToolImp::FluxRenderDelegate *renderdel = new FluxToolImp::FluxRenderDelegate( this );
+  fluxview->setItemDelegate( renderdel );
+  
+  for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
+  {
+    fluxview->setColumnHidden( col, false );
+    fluxview->setSortingEnabled( col, (col!=FluxColumns::FluxGeometricEffCol) );
+  }
+  
+  this->addWidget( fluxview );
 }//void init()
 
 
@@ -346,18 +606,7 @@ void FluxToolWidget::refreshPeakTable()
   m_data.clear();
   m_uncertainties.clear();
   
-  m_table->clear();
-  m_msg->setText( "&nbsp;" );
-  
-  //ToDo: switch to RowStretchTreeView or Wt::WTreeView using a WAbstractItemDelegate to format the data... sounds like a lot of work
-  
-  //Set up table header
-  m_table->setHeaderCount( 1, Wt::Horizontal );
-  for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
-  {
-    new WText( m_colnames[col], m_table->elementAt(0,col) );
-  }//for( loop over columns )
-  
+  m_msg->setText( "" );
   
   float distance = static_cast<float>( 1.0*PhysicalUnits::meter );
   try
@@ -406,30 +655,15 @@ void FluxToolWidget::refreshPeakTable()
     m_uncertainties[i].fill( 0.0 );
     
     const PeakDef &peak = peaks[i];
-    char buffer[128];
     
     const double energy = peak.mean();
-    snprintf( buffer, sizeof(buffer), "%.2f", energy );
-    new WText( buffer, Wt::XHTMLText, m_table->elementAt(1+i,0) );
     
     const double amp = peak.peakArea();  //ToDO: make sure this works for non-Gaussian peaks
     const double ampUncert = peak.peakAreaUncert();
     const double cps = amp / live_time;
     const double cpsUncert = ampUncert / live_time;
-    if( ampUncert > 0.0 )
-      snprintf( buffer, sizeof(buffer), "%.4g &plusmn; %.1f", cps, cpsUncert );
-    else
-      snprintf( buffer, sizeof(buffer), "%.4g", cps );
-    new WText( buffer, Wt::XHTMLText, m_table->elementAt(1+i,1) );
-    
     const double intrisic = det->intrinsicEfficiency(energy);
-    snprintf( buffer, sizeof(buffer), "%.4g", intrisic );
-    new WText( buffer, Wt::XHTMLText, m_table->elementAt(1+i,2) );
-    
     const double geomEff = det->fractionalSolidAngle( det->detectorDiameter(), distance );
-    snprintf( buffer, sizeof(buffer), "%.4g", geomEff );
-    new WText( buffer, Wt::XHTMLText, m_table->elementAt(1+i,3) );
-    
     const double totaleff = det->efficiency(energy, distance );
     
     m_data[i][FluxColumns::FluxEnergyCol] = energy;
@@ -442,9 +676,6 @@ void FluxToolWidget::refreshPeakTable()
     
     if( totaleff <= 0.0 || intrisic <= 0.0 )
     {
-      new WText( "inf", m_table->elementAt(1+i,4) );
-      new WText( "inf", m_table->elementAt(1+i,5) );
-      new WText( "inf", m_table->elementAt(1+i,6) );
       m_data[i][FluxColumns::FluxFluxOnDetCol]      = std::numeric_limits<double>::infinity();
       m_data[i][FluxColumns::FluxFluxPerCm2PerSCol] = std::numeric_limits<double>::infinity();
       m_data[i][FluxColumns::FluxGammasInto4PiCol]  = std::numeric_limits<double>::infinity();
@@ -452,11 +683,6 @@ void FluxToolWidget::refreshPeakTable()
     {
       const double fluxOnDet = cps / intrisic;
       const double fluxOnDetUncert = cpsUncert / intrisic;
-      if( ampUncert > 0.0 )
-        snprintf( buffer, sizeof(buffer), "%.4g &plusmn; %.4g", fluxOnDet, fluxOnDetUncert );
-      else
-        snprintf( buffer, sizeof(buffer), "%.4g", fluxOnDet );
-      new WText( buffer, Wt::XHTMLText, m_table->elementAt(1+i,4) );
       
       //gammas into 4pi
       const double gammaInto4pi = cps / totaleff;
@@ -466,17 +692,6 @@ void FluxToolWidget::refreshPeakTable()
       const double flux = gammaInto4pi / (4*M_PI*distance*distance);
       const double fluxUncert = gammaInto4piUncert / (4*M_PI*distance*distance);
       
-      if( ampUncert > 0.0 )
-        snprintf( buffer, sizeof(buffer), "%.4g &plusmn; %.4g", flux, fluxUncert );
-      else
-        snprintf( buffer, sizeof(buffer), "%.4g", flux );
-      new WText( buffer, Wt::XHTMLText, m_table->elementAt(1+i,5) );
-      
-      if( ampUncert > 0.0 )
-        snprintf( buffer, sizeof(buffer), "%.4g &plusmn; %.4g", gammaInto4pi, gammaInto4piUncert );
-      else
-        snprintf( buffer, sizeof(buffer), "%.4g", gammaInto4pi );
-      new WText( buffer, Wt::XHTMLText, m_table->elementAt(1+i,6) );
       
       m_data[i][FluxColumns::FluxFluxOnDetCol] = fluxOnDet;
       m_uncertainties[i][FluxColumns::FluxFluxOnDetCol] = fluxOnDetUncert;

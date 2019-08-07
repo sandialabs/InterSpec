@@ -43,14 +43,15 @@ class DetectorDisplay;
 namespace Wt
 {
   class WText;
-  class WTable;
   class WLineEdit;
 }//namespace Wt
 
 namespace FluxToolImp
 {
+  class FluxModel;
   class FluxCsvResource;
-}
+}//namespace FluxToolImp
+
 
 class FluxToolWindow : public AuxWindow
 {
@@ -75,22 +76,6 @@ public:
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
-protected:
-  void init();
-  void setTableNeedsUpdating();
-  void refreshPeakTable();
-  
-  InterSpec *m_interspec;
-  DetectorDisplay *m_detector;
-  
-  Wt::WText *m_msg;
-  Wt::WTable *m_table;
-  Wt::WLineEdit *m_distance;
-  
-  bool m_needsTableRefresh;
-  
-  Wt::Signal<> m_tableUpdated;
-  
   enum FluxColumns
   {
     FluxEnergyCol,
@@ -103,6 +88,23 @@ protected:
     FluxNumColumns
   };//enum FluxColumns
   
+  Wt::Signal<> &tableUpdated();
+  
+protected:
+  void init();
+  void setTableNeedsUpdating();
+  void refreshPeakTable();
+  
+  InterSpec *m_interspec;
+  DetectorDisplay *m_detector;
+  
+  Wt::WText *m_msg;
+  Wt::WLineEdit *m_distance;
+  
+  bool m_needsTableRefresh;
+  
+  Wt::Signal<> m_tableUpdated;
+  
   std::array<Wt::WString,FluxColumns::FluxNumColumns> m_colnames;
   std::array<Wt::WString,FluxColumns::FluxNumColumns> m_colnamesCsv;
   
@@ -110,6 +112,7 @@ protected:
   std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_uncertainties;
   
   friend class FluxToolWindow;
+  friend class FluxToolImp::FluxModel;
   friend class FluxToolImp::FluxCsvResource;
 };//class FluxToolWidget
 
