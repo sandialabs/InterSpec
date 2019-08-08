@@ -106,11 +106,15 @@ namespace FluxToolImp
   struct index_compare_sort
   {
     const std::vector<std::array<double,FluxToolWidget::FluxColumns::FluxNumColumns>> &arr;
+    const std::vector<std::string> &names;
     int m_sortColumn;
     Wt::SortOrder m_sortOrder;
     
-    index_compare_sort(const std::vector<std::array<double,FluxToolWidget::FluxColumns::FluxNumColumns>> &arr, int col, Wt::SortOrder order)
+    index_compare_sort(const std::vector<std::array<double,FluxToolWidget::FluxColumns::FluxNumColumns>> &arr,
+                       const std::vector<std::string> &nucnames,
+                       int col, Wt::SortOrder order)
       : arr(arr),
+        names( nucnames ),
         m_sortColumn( col ),
         m_sortOrder( order )
     {
@@ -118,10 +122,38 @@ namespace FluxToolImp
     
     bool operator()(const size_t a, const size_t b) const
     {
-      const bool less = arr[a][m_sortColumn] < arr[b][m_sortColumn];
+      bool less;
+      if( m_sortColumn == FluxToolWidget::FluxColumns::FluxNuclideCol )
+        less = names[a] < names[b];
+      else
+        less = arr[a][m_sortColumn] < arr[b][m_sortColumn];
       return (m_sortOrder==Wt::SortOrder::AscendingOrder ? less : !less);
     }
   };//struct index_compare
+  
+  
+  bool showFluxColumnInCompact( const FluxToolWidget::FluxColumns col )
+  {
+    switch( col )
+    {
+      case FluxToolWidget::FluxColumns::FluxEnergyCol:
+      case FluxToolWidget::FluxColumns::FluxPeakCpsCol:
+      case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
+      case FluxToolWidget::FluxColumns::FluxGammasInto4PiCol:
+        return true;
+        break;
+        
+      case FluxToolWidget::FluxColumns::FluxNuclideCol:
+      case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
+      case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
+      case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
+      case FluxToolWidget::FluxColumns::FluxNumColumns:
+        return false;
+        break;
+    }//switch( col )
+    
+    return false;
+  }//bool showFluxColumnInCompact( const FluxToolWidget::FluxColumns col )
   
   
   class FluxModel : public  Wt::WAbstractItemModel
@@ -197,19 +229,26 @@ namespace FluxToolImp
       
       const size_t realind = m_sort_indices[row];
       
+      const auto &nucs = m_fluxtool->m_nucNames;
       const auto &data = m_fluxtool->m_data;
       const auto &uncerts = m_fluxtool->m_uncertainties;
       
+      assert( nucs.size() == data.size() );
+      assert( uncerts.size() == data.size() );
       assert( realind < data.size() );
       
       switch( role )
       {
         case Wt::DisplayRole:
+          if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
+            return nucs[realind].empty() ? boost::any() : boost::any( WString::fromUTF8(nucs[realind]) );
           return boost::any( data[realind][col] );
           
         //case Wt::StyleClassRole: break;
         //case Wt::ToolTipRole: break;
         case Wt::UserRole:
+          if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
+            return boost::any();
           return uncerts[realind][col] > std::numeric_limits<double>::epsilon() ? boost::any(uncerts[realind][col]) : boost::any();
 
         default:
@@ -259,13 +298,15 @@ namespace FluxToolImp
     
     void doSortWork()
     {
+      assert( m_fluxtool->m_data.size() == m_fluxtool->m_nucNames.size() );
+      
       m_sort_indices.resize( m_fluxtool->m_data.size() );
       
       for( size_t i = 0; i < m_sort_indices.size(); ++i )
         m_sort_indices[i] = i;
       
       std::stable_sort( m_sort_indices.begin(), m_sort_indices.end(),
-                       index_compare_sort(m_fluxtool->m_data,m_sortColumn,m_sortOrder) );
+                       index_compare_sort( m_fluxtool->m_data, m_fluxtool->m_nucNames, m_sortColumn, m_sortOrder) );
     }//void doSortWork()
     
     virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder )
@@ -288,57 +329,70 @@ namespace FluxToolImp
     {
     }
     
-    virtual WWidget *update(WWidget *widget, const WModelIndex& index,
-                            WFlags<ViewItemRenderFlag> flags)
+    
+    virtual WWidget *update( WWidget *widget, const WModelIndex& index, WFlags<ViewItemRenderFlag> flags )
     {
-      auto model = index.model();
-      if( !model )
-        return nullptr;
-      auto data = index.data();
-      auto uncertdata = model->data( index.row(), index.column(), Wt::UserRole );
-      
-      if( data.empty() )
-        return nullptr;
-      
-      const bool hasUncert = !uncertdata.empty();
-      
-      double val = 0.0, uncert = 0.0;
-      try
-      {
-        val = boost::any_cast<double>(data);
-        if( hasUncert )
-          uncert = boost::any_cast<double>(uncertdata);
-      }catch(...)
-      {
-        return nullptr;
-      }
-      
       auto oldwidget = dynamic_cast<WText *>( widget );
       
-      char buffer[128];
-      
-      if( index.column() == FluxToolWidget::FluxColumns::FluxEnergyCol )
+      if( oldwidget )
       {
-        snprintf( buffer, sizeof(buffer), "%.2f", val );
+        oldwidget->setText("");
       }else
-      {
-        if( hasUncert )
-          snprintf( buffer, sizeof(buffer), "%.4g &plusmn; %.1f", val, uncert );
-        else
-          snprintf( buffer, sizeof(buffer), "%.4g", val );
-      }
-      
-      
-      if( !oldwidget )
       {
         if( widget )
           delete widget;
         oldwidget = new WText();
       }
       
-      oldwidget->setText( WString::fromUTF8(buffer) );
+      
+      auto model = index.model();
+      if( !model )
+        return oldwidget;
+      
+      auto data = index.data();
+      auto uncertdata = model->data( index.row(), index.column(), Wt::UserRole );
+      
+      if( data.empty() )
+        return oldwidget;
+      
+      WString valstr;
+      if( index.column() == FluxToolWidget::FluxColumns::FluxNuclideCol )
+      {
+        valstr = Wt::asString(data);
+      }else
+      {
+        const bool hasUncert = !uncertdata.empty();
+        
+        double val = 0.0, uncert = 0.0;
+        try
+        {
+          val = boost::any_cast<double>(data);
+          if( hasUncert )
+            uncert = boost::any_cast<double>(uncertdata);
+        }catch(...)
+        {
+          return oldwidget;
+        }
+        
+        
+        char buffer[128];
+        if( index.column() == FluxToolWidget::FluxColumns::FluxEnergyCol )
+        {
+          snprintf( buffer, sizeof(buffer), "%.2f", val );
+        }else
+        {
+          if( hasUncert )
+            snprintf( buffer, sizeof(buffer), "%.4g &plusmn; %.1f", val, uncert );
+          else
+            snprintf( buffer, sizeof(buffer), "%.4g", val );
+        }
+        valstr = WString::fromUTF8(buffer);
+      }//if( nucname ) / else
+      
+      
+      oldwidget->setText( valstr );
       return oldwidget;
-    }
+    }//WWidget *update(...)
   };
   
   class FluxCsvResource : public Wt::WResource
@@ -360,7 +414,7 @@ namespace FluxToolImp
     
     static void data_to_strm( FluxToolWidget *tool, std::ostream &strm, const bool html, const bool compact )
     {
-      const string eol_char = html ? "\\n" : "\r\n"; //for windows - could potentially cosutomize this for the users operating system
+      const string eol_char = html ? "\\n" : "\r\n"; //for windows - could potentially customize this for the users operating system
       
       if( html )
         strm << "<table border=\"1\" cellpadding=\"2\" style=\"border-collapse: collapse\">" << eol_char;
@@ -370,37 +424,21 @@ namespace FluxToolImp
       {
         const WString &colname = tool->m_colnamesCsv[col];
         
-        if( compact )
-        {
-          switch( col )
-          {
-            case FluxToolWidget::FluxEnergyCol:
-            case FluxToolWidget::FluxPeakCpsCol:
-            case FluxToolWidget::FluxFluxPerCm2PerSCol:
-            case FluxToolWidget::FluxGammasInto4PiCol:
-              break;
-              
-            case FluxToolWidget::FluxIntrinsicEffCol:
-            case FluxToolWidget::FluxGeometricEffCol:
-            case FluxToolWidget::FluxNumColumns:
-            case FluxToolWidget::FluxFluxOnDetCol:
-              continue;
-              break;
-          }//switch( col )
-        }//if( compact )
-        
+        if( compact && !FluxToolImp::showFluxColumnInCompact(col) )
+          continue;
         
         if( html )
           strm << (col==0 ? "\\t<tr><th>" : "</th><th>") << colname;
         else
           strm << (col==0 ? "" : ",") << colname;
         
-        //No uncertainty on energy.
+        //No uncertainty on energy, effs, or nuc
         switch( col )
         {
           case FluxToolWidget::FluxEnergyCol:
           case FluxToolWidget::FluxIntrinsicEffCol:
           case FluxToolWidget::FluxGeometricEffCol:
+          case FluxToolWidget::FluxNuclideCol:
           case FluxToolWidget::FluxNumColumns:
             break;
             
@@ -431,37 +469,25 @@ namespace FluxToolImp
         for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
             col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
         {
-          if( compact )
-          {
-            switch( col )
-            {
-              case FluxToolWidget::FluxEnergyCol:
-              case FluxToolWidget::FluxPeakCpsCol:
-              case FluxToolWidget::FluxFluxPerCm2PerSCol:
-              case FluxToolWidget::FluxGammasInto4PiCol:
-                break;
-                
-              case FluxToolWidget::FluxIntrinsicEffCol:
-              case FluxToolWidget::FluxGeometricEffCol:
-              case FluxToolWidget::FluxNumColumns:
-              case FluxToolWidget::FluxFluxOnDetCol:
-                continue;
-                break;
-            }//switch( col )
-          }//if( compact )
+          if( compact && !FluxToolImp::showFluxColumnInCompact(col) )
+            continue;
           
           const double data = tool->m_data[row][col];
           const double uncert = tool->m_uncertainties[row][col];
           
+          const std::string datastr = (col==FluxToolWidget::FluxColumns::FluxNuclideCol ? tool->m_nucNames[row] : std::to_string(data));
+          
           if( html )
-            strm << (col==0 ? "<td>" : "</td><td>") << std::to_string(data);
+            strm << (col==0 ? "<td>" : "</td><td>") << datastr;
           else
-            strm << (col==0 ? "" : ",") << std::to_string(data);
+            strm << (col==0 ? "" : ",") << datastr;
+          
           switch( col )
           {
             case FluxToolWidget::FluxEnergyCol:
             case FluxToolWidget::FluxIntrinsicEffCol:
             case FluxToolWidget::FluxGeometricEffCol:
+            case FluxToolWidget::FluxNuclideCol:
             case FluxToolWidget::FluxNumColumns:
               break;
               
@@ -469,7 +495,7 @@ namespace FluxToolImp
             case FluxToolWidget::FluxFluxOnDetCol:
             case FluxToolWidget::FluxFluxPerCm2PerSCol:
             case FluxToolWidget::FluxGammasInto4PiCol:
-              
+            {
               if( compact )
               {
                 if( uncert > std::numeric_limits<double>::epsilon() )
@@ -484,6 +510,7 @@ namespace FluxToolImp
                   strm << std::to_string(uncert);
               }
               break;
+            }//case CPS, FluxOnDet, FluxPerArea, GammasInto 4pi
           }//switch( col )
         }//for( loop over columns )
         
@@ -635,6 +662,10 @@ void FluxToolWidget::init()
         m_colnames[col] = WString::fromUTF8("Energy (keV)");
         m_colnamesCsv[col] = WString::fromUTF8("Energy (keV)");
         break;
+      case FluxNuclideCol:
+        m_colnames[col] = WString::fromUTF8("Nuclide");
+        m_colnamesCsv[col] = WString::fromUTF8("Nuclide");
+        break;
       case FluxPeakCpsCol:
         m_colnames[col] = WString::fromUTF8("Peak CPS");
         m_colnamesCsv[col] = WString::fromUTF8("Peak CPS");
@@ -769,9 +800,10 @@ void FluxToolWidget::init()
     switch( col )
     {
       case FluxEnergyCol:         length = WLength(7.5, WLength::FontEm); break;
+      case FluxNuclideCol:        length = WLength(5.0, WLength::FontEm); break;
       case FluxPeakCpsCol:        length = WLength(7.5, WLength::FontEm); break;
-      case FluxIntrinsicEffCol:   length = WLength(7.5, WLength::FontEm); break;
-      case FluxGeometricEffCol:   length = WLength(7.5, WLength::FontEm); break;
+      case FluxIntrinsicEffCol:   length = WLength(6.5, WLength::FontEm); break;
+      case FluxGeometricEffCol:   length = WLength(6.5, WLength::FontEm); break;
       case FluxFluxOnDetCol:      length = WLength(7.5, WLength::FontEm); break;
       case FluxFluxPerCm2PerSCol: length = WLength(9.0, WLength::FontEm); break;
       case FluxGammasInto4PiCol:  length = WLength(9.0, WLength::FontEm); break;
@@ -820,6 +852,7 @@ void FluxToolWidget::refreshPeakTable()
 {
   PeakModel *peakmodel = m_interspec->peakModel();
   
+  m_nucNames.clear();
   m_data.clear();
   m_uncertainties.clear();
   
@@ -863,6 +896,7 @@ void FluxToolWidget::refreshPeakTable()
   const vector<PeakDef> peaks = peakmodel->peakVec();
   
   const size_t npeaks = peaks.size();
+  m_nucNames.resize( npeaks );
   m_data.resize( npeaks );
   m_uncertainties.resize( npeaks );
 
@@ -882,6 +916,14 @@ void FluxToolWidget::refreshPeakTable()
     const double intrisic = det->intrinsicEfficiency(energy);
     const double geomEff = det->fractionalSolidAngle( det->detectorDiameter(), distance );
     const double totaleff = det->efficiency(energy, distance );
+    
+    
+    if( peak.parentNuclide() )
+      m_nucNames[i] = peak.parentNuclide()->symbol;
+    else if( peak.xrayElement() )
+      m_nucNames[i] = peak.xrayElement()->symbol;
+    else if( peak.reaction() )
+      m_nucNames[i] = peak.reaction()->name();
     
     m_data[i][FluxColumns::FluxEnergyCol] = energy;
     m_data[i][FluxColumns::FluxPeakCpsCol] = cps;
@@ -931,6 +973,8 @@ void FluxToolWidget::refreshPeakTable()
 }//void refreshPeakTable()
 
 
+
+
 void FluxToolWidget::setMinimalColumnsOnly( const bool minonly )
 {
   if( minonly == m_compactColumns )
@@ -942,26 +986,7 @@ void FluxToolWidget::setMinimalColumnsOnly( const bool minonly )
   
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
   {
-    bool show = true;
-    switch( col )
-    {
-      case FluxEnergyCol:
-      case FluxPeakCpsCol:
-      case FluxFluxPerCm2PerSCol:
-      case FluxGammasInto4PiCol:
-        show = true;
-      break;
-        
-      case FluxIntrinsicEffCol:
-      case FluxGeometricEffCol:
-      case FluxFluxOnDetCol:
-        show = !m_compactColumns;
-        break;
-        
-      case FluxNumColumns:
-        break;
-    }//switch( col )
-    
+    const bool show = (FluxToolImp::showFluxColumnInCompact(col) || !m_compactColumns);
     m_table->setColumnHidden( col, !show );
   }//for( loop over columns )
   

@@ -1,0 +1,51 @@
+<div align="center">
+  <h1 id="flux-tool"><b>Flux Tool</b></h1>
+</div>
+
+<div align="left">
+<img src="InterSpec_resources/static_text/images/flux_tool_overview.png" class="imageBorder" style="max-width:60%;float:left;display:block;margin-right:20px;"/>
+<p>
+The <b>Flux Tool</b> converts the observed counts per second peak rates into
+the flux of that energy gamma or x-ray by accounting for the detector response
+and geometrical factor.  For each energy, the tool gives the number of incident
+photons on the detector per second, the number of incident photons per cm&sup2;
+per second, and the total number of gammas into 4&pi; steradians per second.
+This information can be useful for dose calculations, record keeping, or for
+export for specialized applications like density determinations.
+</p>
+<p>
+The fluxes and total number of gammas into 4&pi; steradians is the total emitted
+after any shielding.  That is, the numbers given are the uncollided gammas
+after any shielding materials.
+</p>
+<p>Since the output of this tool is primarily intended for export for use outside
+of <b>InterSpec</b>, you can either export to a <em>CSV</em> file, or copy the
+table to your clipboard to paste into other applications by clicking on the
+&quot;Copy&nbsp;To&nbsp;Clipboard&quot; button.  When exported as a <em>CSV</em>
+file all information will always be included to full accuracy (the table displayed
+in the tool has limited number of significant figures), and when copied to the
+clipboard all columns shown in the tool will be copied with full accuracy.
+</p>
+<p>In order for the table in the GUI to have any entries, you must enter a
+distance and have a detector response function (DRF) selected.  The distance can
+be entered in nearly any reasonable format (ex. &quot;3.2 cm&quot;,
+&quot;4ft 8in&quot;, &quot;5m&quot;, etc.), and the DRF can be selected by
+clicking or tapping on the detector widget in the upper right side of the tool
+to bring up the DRF selection tool.  If either the DRF is not selected, or a
+valid distance is not entered, there will be a prominent message displayed.
+</p>
+<p>The &quot;<i>show more info</i>&quot; check box lets you toggle between
+showing only the energy, CPS, flux per cm&sup2;, and flux into 4&pi;, and
+showing those same columns plus nuclide, intrinsic efficiency, geometric
+efficiency, and flux on detector.  This option effects what information will be
+copied to the clipboard, but not what will be included in the <em>CSV</em>
+export.
+</p>
+<p>Uncertainties given by this tool are based on the statistical uncertainty of
+the peak amplitude only, and currently do not include uncertainties of the DRF
+(note: only DRFs fit within <b>InterSpec</b> have uncertainties), or anything
+else.
+</p>
+</div>
+
+
