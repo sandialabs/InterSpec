@@ -36,9 +36,14 @@
 
 #include "InterSpec/AuxWindow.h"
 
-//Havent fully tested that copying to clipboard will work everywhere.
-//  ToDo: Currently copies text as HTML to clipboard; should maybe instead copy
-//        as formated text (if this is even possible)
+//  ToDo:
+//    - Havent fully tested that copying to clipboard will work everywhere.
+//    - Can maybe improve copying to clipboard using the clipboard API.
+//    - Have some capability to automatically fit for a number of pre-defined
+//      peaks for easier batch processing of like Co60 density measurements.
+
+//I think copying to the clipboard is working well, but leaving this optional
+//  for the moment until I do some more testing.
 #define FLUX_USE_COPY_TO_CLIPBOARD 1
 
 class InterSpec;
@@ -88,6 +93,7 @@ public:
   enum FluxColumns
   {
     FluxEnergyCol,
+    FluxNuclideCol,
     FluxPeakCpsCol,
     FluxIntrinsicEffCol,
     FluxGeometricEffCol,
@@ -134,6 +140,7 @@ protected:
   std::array<Wt::WString,FluxColumns::FluxNumColumns> m_colnames;
   std::array<Wt::WString,FluxColumns::FluxNumColumns> m_colnamesCsv;
   
+  std::vector<std::string> m_nucNames;
   std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_data;
   std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_uncertainties;
   
