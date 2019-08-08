@@ -49,15 +49,15 @@ WT_DECLARE_WT_MEMBER
   if( !text )
     return false;
   
+  var didcopy = 0;
   try
   {
     //This bit of code seems to work on Chrome, but not safari
-    var didcopy = false;
     function listener(e) {
       e.clipboardData.setData("text/html", text);
       e.clipboardData.setData("text/plain", text);
       console.log( 'I think I copied it...' );
-      didcopy = true;
+      didcopy = 1;
       e.preventDefault();
     }
     document.addEventListener("copy", listener);
@@ -65,7 +65,7 @@ WT_DECLARE_WT_MEMBER
     document.removeEventListener("copy", listener);
   
     if( didcopy )
-      return true;
+      return didcopy;
   }catch(error){
     console.warn( 'Failed to copy richtext to copyboard' );
   }
@@ -85,15 +85,16 @@ WT_DECLARE_WT_MEMBER
     document.body.appendChild(temparea);
     temparea.select();
     try {
-      return document.execCommand("copy");
+      var copysuccess = document.execCommand("copy");
+      return copysuccess ? 2 : 0;
     } catch( ex ) {
       console.warn("Copy to clipboard failed.", ex);
-      return false;
+      return 0;
     } finally {
       document.body.removeChild( temparea );
     }
   } else {
-    return false;
+    return 0;
   }
 }
 );
@@ -362,7 +363,7 @@ namespace FluxToolImp
       const string eol_char = html ? "\\n" : "\r\n"; //for windows - could potentially cosutomize this for the users operating system
       
       if( html )
-        strm << "<table>" << eol_char;
+        strm << "<table border=\"1\" cellpadding=\"2\" style=\"border-collapse: collapse\">" << eol_char;
       
       for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
           col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
@@ -600,7 +601,7 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
     m_table( nullptr ),
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
     m_copyBtn( nullptr ),
-    m_copyFail( this, "copyfail", true ),
+    m_infoCopied( this, "infocopied", true ),
 #endif
     m_needsTableRefresh( true ),
     m_compactColumns( false ),
@@ -757,7 +758,7 @@ void FluxToolWidget::init()
   }) );
   
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
-  layout->addWidget( cb, 2, 1, AlignCenter | AlignMiddle );
+  layout->addWidget( cb, 2, 1, AlignRight | AlignMiddle );
 #else
   layout->addWidget( cb, 2, 0, AlignRight );
 #endif
@@ -787,13 +788,11 @@ void FluxToolWidget::init()
   m_copyBtn = new WPushButton( "Copy To Clipboard" );
   m_copyBtn->clicked().connect( "function(s,e){ "
     "var success = Wt.WT.CopyFluxDataTextToClipboard(s,e,'" + m_copyBtn->id() + "'); "
-    "if(!success){ Wt.emit( '" + id() + "', {name:'copyfail', eventObject:e} ); }"
+    "Wt.emit( '" + id() + "', {name:'infocopied', eventObject:e}, success );"
   "}" );
   layout->addWidget( m_copyBtn, 2, 0, AlignLeft | AlignMiddle );
   
-  m_copyFail.connect( std::bind([](){
-    passMessage( "Failed to copy to clipboard - maybe a permissions issue - sorry.", "", 3 );
-  }) );
+  m_infoCopied.connect( boost::bind( &FluxToolWidget::tableCopiedToCliboardCallback, this, _1 ) );
 #endif
   
   m_compactColumns = false; //set false so setMinimalColumnsOnly(true) will do work
@@ -970,5 +969,27 @@ void FluxToolWidget::setMinimalColumnsOnly( const bool minonly )
 }//void setMinimalColumnsOnly( const bool minonly )
 
 
-
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+void FluxToolWidget::tableCopiedToCliboardCallback( const int copied )
+{
+  switch( copied )
+  {
+    case 0:
+      passMessage( "Failed to copy to clipboard - maybe a permissions issue - sorry.", "", 3 );
+      break;
+    
+    case 1:
+      passMessage( "Copied table to clipboard.", "", 0 );
+      break;
+    
+    case 2:
+      passMessage( "Copied table to clipboard as HTML text.", "", 0 );
+      break;
+      
+    default:
+      passMessage( "Unknown result of copy command - sorry.", "", 3 );
+      break;
+  }//switch( copied )
+}//void tableCopiedToCliboardCallback( const int copied )
+#endif
 
