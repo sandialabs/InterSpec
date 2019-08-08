@@ -36,6 +36,11 @@
 
 #include "InterSpec/AuxWindow.h"
 
+//Havent fully tested that copying to clipboard will work everywhere.
+//  ToDo: Currently copies text as HTML to clipboard; should maybe instead copy
+//        as formated text (if this is even possible)
+#define FLUX_USE_COPY_TO_CLIPBOARD 1
+
 class InterSpec;
 class FluxToolWidget;
 class DetectorDisplay;
@@ -45,6 +50,9 @@ namespace Wt
 {
   class WText;
   class WLineEdit;
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  class WPushButton;
+#endif
 }//namespace Wt
 
 namespace FluxToolImp
@@ -103,6 +111,11 @@ protected:
   Wt::WText *m_msg;
   Wt::WLineEdit *m_distance;
   RowStretchTreeView *m_table;
+  
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  Wt::WPushButton *m_copyBtn;
+  Wt::JSignal<> m_copyFail;
+#endif
   
   /** We will only update dm_data and m_uncertainties from peak model right
       before rendering happens to avoid duplicate work if multiple peaks are

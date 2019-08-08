@@ -39,6 +39,67 @@
 using namespace std;
 using namespace Wt;
 
+
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+WT_DECLARE_WT_MEMBER
+(CopyFluxDataTextToClipboard, Wt::JavaScriptFunction, "CopyFluxDataTextToClipboard",
+ function( sender, event, id )
+{
+  var text = $('#'+id).data('TableData');
+  if( !text )
+    return false;
+  
+  try
+  {
+    //This bit of code seems to work on Chrome, but not safari
+    var didcopy = false;
+    function listener(e) {
+      e.clipboardData.setData("text/html", text);
+      e.clipboardData.setData("text/plain", text);
+      console.log( 'I think I copied it...' );
+      didcopy = true;
+      e.preventDefault();
+    }
+    document.addEventListener("copy", listener);
+    document.execCommand("copy");
+    document.removeEventListener("copy", listener);
+  
+    if( didcopy )
+      return true;
+  }catch(error){
+    console.warn( 'Failed to copy richtext to copyboard' );
+  }
+  
+  console.log( 'Will try to copy HTML to copyboard' );
+  
+  //We failed to copy richtext, lets just copy the HTML as text.
+  //  ToDo: We could probably try the clipboard API to copy formated text
+  //        See https://developer.mozilla.org/en-US/docs/Web/API/Clipboard
+  
+  if( window.clipboardData && window.clipboardData.setData ) {
+    return clipboardData.setData("Text", text);  // IE
+  }else if( document.queryCommandSupported && document.queryCommandSupported("copy") ) {
+    var temparea = document.createElement("textarea");
+    temparea.textContent = text;
+    temparea.style.position = "fixed";
+    document.body.appendChild(temparea);
+    temparea.select();
+    try {
+      return document.execCommand("copy");
+    } catch( ex ) {
+      console.warn("Copy to clipboard failed.", ex);
+      return false;
+    } finally {
+      document.body.removeChild( temparea );
+    }
+  } else {
+    return false;
+  }
+}
+);
+#endif //FLUX_USE_COPY_TO_CLIPBOARD
+
+
 namespace FluxToolImp
 {
   struct index_compare_sort
@@ -296,6 +357,144 @@ namespace FluxToolImp
       beingDeleted();
     }
     
+    static void data_to_strm( FluxToolWidget *tool, std::ostream &strm, const bool html, const bool compact )
+    {
+      const string eol_char = html ? "\\n" : "\r\n"; //for windows - could potentially cosutomize this for the users operating system
+      
+      if( html )
+        strm << "<table>" << eol_char;
+      
+      for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
+          col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
+      {
+        const WString &colname = tool->m_colnamesCsv[col];
+        
+        if( compact )
+        {
+          switch( col )
+          {
+            case FluxToolWidget::FluxEnergyCol:
+            case FluxToolWidget::FluxPeakCpsCol:
+            case FluxToolWidget::FluxFluxPerCm2PerSCol:
+            case FluxToolWidget::FluxGammasInto4PiCol:
+              break;
+              
+            case FluxToolWidget::FluxIntrinsicEffCol:
+            case FluxToolWidget::FluxGeometricEffCol:
+            case FluxToolWidget::FluxNumColumns:
+            case FluxToolWidget::FluxFluxOnDetCol:
+              continue;
+              break;
+          }//switch( col )
+        }//if( compact )
+        
+        
+        if( html )
+          strm << (col==0 ? "\\t<tr><th>" : "</th><th>") << colname;
+        else
+          strm << (col==0 ? "" : ",") << colname;
+        
+        //No uncertainty on energy.
+        switch( col )
+        {
+          case FluxToolWidget::FluxEnergyCol:
+          case FluxToolWidget::FluxIntrinsicEffCol:
+          case FluxToolWidget::FluxGeometricEffCol:
+          case FluxToolWidget::FluxNumColumns:
+            break;
+            
+          case FluxToolWidget::FluxPeakCpsCol:
+          case FluxToolWidget::FluxFluxOnDetCol:
+          case FluxToolWidget::FluxFluxPerCm2PerSCol:
+          case FluxToolWidget::FluxGammasInto4PiCol:
+            if( !compact )
+            {
+              if( html )
+                strm << "</th><th>" << (colname + " Uncertainty");
+              else
+                strm << "," << (colname + " Uncertainty");
+            }//
+            break;
+        }//switch( col )
+      }//for( loop over columns )
+      
+      if( html )
+        strm << "</th></tr>";
+      strm << eol_char;
+      
+      for( size_t row = 0; row < tool->m_data.size(); ++row )
+      {
+        if( html )
+          strm << "\\t<tr>";
+        
+        for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
+            col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
+        {
+          if( compact )
+          {
+            switch( col )
+            {
+              case FluxToolWidget::FluxEnergyCol:
+              case FluxToolWidget::FluxPeakCpsCol:
+              case FluxToolWidget::FluxFluxPerCm2PerSCol:
+              case FluxToolWidget::FluxGammasInto4PiCol:
+                break;
+                
+              case FluxToolWidget::FluxIntrinsicEffCol:
+              case FluxToolWidget::FluxGeometricEffCol:
+              case FluxToolWidget::FluxNumColumns:
+              case FluxToolWidget::FluxFluxOnDetCol:
+                continue;
+                break;
+            }//switch( col )
+          }//if( compact )
+          
+          const double data = tool->m_data[row][col];
+          const double uncert = tool->m_uncertainties[row][col];
+          
+          if( html )
+            strm << (col==0 ? "<td>" : "</td><td>") << std::to_string(data);
+          else
+            strm << (col==0 ? "" : ",") << std::to_string(data);
+          switch( col )
+          {
+            case FluxToolWidget::FluxEnergyCol:
+            case FluxToolWidget::FluxIntrinsicEffCol:
+            case FluxToolWidget::FluxGeometricEffCol:
+            case FluxToolWidget::FluxNumColumns:
+              break;
+              
+            case FluxToolWidget::FluxPeakCpsCol:
+            case FluxToolWidget::FluxFluxOnDetCol:
+            case FluxToolWidget::FluxFluxPerCm2PerSCol:
+            case FluxToolWidget::FluxGammasInto4PiCol:
+              
+              if( compact )
+              {
+                if( uncert > std::numeric_limits<double>::epsilon() )
+                  strm << " &plusmn; " << std::to_string(uncert);
+              }else
+              {
+                if( html )
+                  strm << "</td><td>";
+                else
+                  strm << ",";
+                if( uncert > std::numeric_limits<double>::epsilon() )
+                  strm << std::to_string(uncert);
+              }
+              break;
+          }//switch( col )
+        }//for( loop over columns )
+        
+        if( html )
+          strm << "</td></tr>";
+        strm << eol_char;
+      }//for( size_t row = 0; row < m_fluxtool->m_data.size(); ++row )
+      
+      if( html )
+        strm << "</table>";
+    }//static void data_to_strm( FluxToolWidget *tool, std::ostream &strm, const bool html )
+    
     
   private:
     virtual void handleRequest( const Wt::Http::Request &, Wt::Http::Response &response )
@@ -320,63 +519,7 @@ namespace FluxToolImp
       
       suggestFileName( filename, WResource::Attachment );
       
-      for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
-          col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
-      {
-        const WString &colname = m_fluxtool->m_colnamesCsv[col];
-        
-        response.out() << (col==0 ? "" : ",") << colname;
-        
-        //No uncertainty on energy.
-        switch( col )
-        {
-          case FluxToolWidget::FluxEnergyCol:
-          case FluxToolWidget::FluxIntrinsicEffCol:
-          case FluxToolWidget::FluxGeometricEffCol:
-          case FluxToolWidget::FluxNumColumns:
-            break;
-            
-          case FluxToolWidget::FluxPeakCpsCol:
-          case FluxToolWidget::FluxFluxOnDetCol:
-          case FluxToolWidget::FluxFluxPerCm2PerSCol:
-          case FluxToolWidget::FluxGammasInto4PiCol:
-            response.out() << "," << (colname + " Uncertainty");
-            break;
-        }//switch( col )
-      }//for( loop over columns )
-      
-      response.out() << eol_char;
-      
-      for( size_t row = 0; row < m_fluxtool->m_data.size(); ++row )
-      {
-        for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
-            col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
-        {
-          const double data = m_fluxtool->m_data[row][col];
-          const double uncert = m_fluxtool->m_uncertainties[row][col];
-          
-          response.out() << (col==0 ? "" : ",") << std::to_string(data);
-          switch( col )
-          {
-            case FluxToolWidget::FluxEnergyCol:
-            case FluxToolWidget::FluxIntrinsicEffCol:
-            case FluxToolWidget::FluxGeometricEffCol:
-            case FluxToolWidget::FluxNumColumns:
-              break;
-              
-            case FluxToolWidget::FluxPeakCpsCol:
-            case FluxToolWidget::FluxFluxOnDetCol:
-            case FluxToolWidget::FluxFluxPerCm2PerSCol:
-            case FluxToolWidget::FluxGammasInto4PiCol:
-              response.out() << ",";
-              if( uncert > std::numeric_limits<double>::epsilon() )
-                response.out() << std::to_string(uncert);
-              break;
-          }//switch( col )
-        }//for( loop over columns )
-        
-        response.out() << eol_char;
-      }//for( size_t row = 0; row < m_fluxtool->m_data.size(); ++row )
+      data_to_strm( m_fluxtool, response.out(), false, false );
     }//handleRequest(...)
     
   };//class class FluxCsvResource
@@ -455,6 +598,10 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
     m_msg( nullptr ),
     m_distance( nullptr ),
     m_table( nullptr ),
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+    m_copyBtn( nullptr ),
+    m_copyFail( this, "copyfail", true ),
+#endif
     m_needsTableRefresh( true ),
     m_compactColumns( false ),
     m_tableUpdated( this )
@@ -523,11 +670,16 @@ void FluxToolWidget::init()
   addStyleClass( "FluxToolWidget" );
   
   WGridLayout *layout = new WGridLayout();
+  layout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( layout );
   
   WTable *distDetRow = new WTable();
   distDetRow->addStyleClass( "FluxDistMsgDetTbl" );
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  layout->addWidget( distDetRow, 0, 0, 1, 2 );
+#else
   layout->addWidget( distDetRow, 0, 0 );
+#endif
   
   SpectraFileModel *specFileModel = m_interspec->fileManager()->model();
   m_detector = new DetectorDisplay( m_interspec, specFileModel );
@@ -578,7 +730,10 @@ void FluxToolWidget::init()
   m_table->addStyleClass( "FluxTable" );
   m_table->setAlternatingRowColors( true );
   m_table->sortByColumn( FluxColumns::FluxEnergyCol, Wt::AscendingOrder );
-  m_table->setSelectable( true );
+  
+  //Setting rows selectable doesnt seem to work... not that it would do us
+  //  any good anyway since you probably want to copy the info to the clipboard.
+  //m_table->setSelectable( true );
   //m_table->setSelectionMode( Wt::SelectionMode::SingleSelection );
   
   FluxToolImp::FluxRenderDelegate *renderdel = new FluxToolImp::FluxRenderDelegate( this );
@@ -587,7 +742,11 @@ void FluxToolWidget::init()
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
     m_table->setSortingEnabled( col, (col!=FluxColumns::FluxGeometricEffCol) );
   
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  layout->addWidget( m_table, 1, 0, 1, 2 );
+#else
   layout->addWidget( m_table, 1, 0 );
+#endif
   layout->setRowStretch( 1, 1 );
   
   WCheckBox *cb = new WCheckBox( "show more info" );
@@ -597,8 +756,11 @@ void FluxToolWidget::init()
     setMinimalColumnsOnly( !cb->isChecked() );
   }) );
   
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  layout->addWidget( cb, 2, 1, AlignCenter | AlignMiddle );
+#else
   layout->addWidget( cb, 2, 0, AlignRight );
-  
+#endif
 
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
   {
@@ -617,6 +779,22 @@ void FluxToolWidget::init()
     
     m_table->setColumnWidth( col, length);
   }//for( loop over columns )
+  
+  
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  LOAD_JAVASCRIPT(wApp, "FluxTool.cpp", "FluxTool", wtjsCopyFluxDataTextToClipboard );
+  
+  m_copyBtn = new WPushButton( "Copy To Clipboard" );
+  m_copyBtn->clicked().connect( "function(s,e){ "
+    "var success = Wt.WT.CopyFluxDataTextToClipboard(s,e,'" + m_copyBtn->id() + "'); "
+    "if(!success){ Wt.emit( '" + id() + "', {name:'copyfail', eventObject:e} ); }"
+  "}" );
+  layout->addWidget( m_copyBtn, 2, 0, AlignLeft | AlignMiddle );
+  
+  m_copyFail.connect( std::bind([](){
+    passMessage( "Failed to copy to clipboard - maybe a permissions issue - sorry.", "", 3 );
+  }) );
+#endif
   
   m_compactColumns = false; //set false so setMinimalColumnsOnly(true) will do work
   setMinimalColumnsOnly( true );
@@ -744,6 +922,12 @@ void FluxToolWidget::refreshPeakTable()
     }//if( eff > 0 ) / else
   }//for( const PeakDef &peak : peaks )
   
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  stringstream pastebrdtxt;
+  FluxToolImp::FluxCsvResource::data_to_strm( this, pastebrdtxt, true, m_compactColumns );
+  m_copyBtn->doJavaScript( "$('#" + m_copyBtn->id() + "').data('TableData','" + pastebrdtxt.str() + "');" );
+#endif
+  
   m_tableUpdated.emit();
 }//void refreshPeakTable()
 
@@ -754,6 +938,8 @@ void FluxToolWidget::setMinimalColumnsOnly( const bool minonly )
     return;
   
   m_compactColumns = minonly;
+  
+  setTableNeedsUpdating();
   
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
   {
