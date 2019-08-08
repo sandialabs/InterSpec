@@ -104,6 +104,9 @@ protected:
   void setTableNeedsUpdating();
   void refreshPeakTable();
   void setMinimalColumnsOnly( const bool minonly );
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  void tableCopiedToCliboardCallback( const int copied );
+#endif
   
   InterSpec *m_interspec;
   DetectorDisplay *m_detector;
@@ -114,7 +117,7 @@ protected:
   
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   Wt::WPushButton *m_copyBtn;
-  Wt::JSignal<> m_copyFail;
+  Wt::JSignal<int> m_infoCopied;
 #endif
   
   /** We will only update dm_data and m_uncertainties from peak model right

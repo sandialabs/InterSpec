@@ -45,4 +45,7 @@
 }
 
 .FluxMoreInfoCB {
+  /* Keep text from doign line breaks... */
+  display: inline-block;
+  width: 15em;
 }
