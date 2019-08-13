@@ -749,6 +749,22 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   if( m_viewer->m_user )
     cerr << "Have started session " << sessionId() << " for user "
     << m_viewer->m_user->userName() << endl;
+  
+  
+#if( BUILD_AS_ELECTRON_APP )
+  {
+    string externalid;
+    for( const Http::ParameterMap::value_type &p : parmap )
+    {
+      if( UtilityFunctions::iequals(p.first, "externalid") && !p.second.empty() )
+        externalid = p.second.front();
+    }//for( const Http::ParameterMap::value_type &p : parmap )
+    
+    WTimer::singleShot( 25, std::bind( [externalid](){
+      ElectronUtils::notifyNodeJsOfNewSessionLoad(externalid);
+    }) );
+  }
+#endif
 }//void setupWidgets()
 
 
