@@ -25,6 +25,8 @@
  
 #include "InterSpec_config.h"
 
+#include <string>
+
 namespace ElectronUtils
 {
   /** Must specify:
@@ -41,10 +43,22 @@ namespace ElectronUtils
    This is a workaround to when the user requests a new session, the normal
    mechanism in c++ creates duplicate Electron menu items...
    
-   return whether message was succesfully sent or not.
+   @returns whether message was succesfully sent or not.
    */
   bool requestNewCleanSession();
-}
+  
+  
+  /** Sends a message through the websocket connection letting main.js know that
+   the session has loaded.
+   
+   @param The 'externalid' URL argument so main.js knows which session has loaded.
+   @returns whether message was succesfully sent or not.
+   
+   Note: main.js will wait till recieveing this notification before asking the
+   session to open any files the OS requested.
+   */
+  bool notifyNodeJsOfNewSessionLoad( const std::string externalid );
+}//namespace ElectronUtils
 
 
 #endif  //#ifndef ElectronUtils_h
