@@ -894,6 +894,19 @@ void InterSpec::setWritableDataDirectory( const std::string &dir )
 
 
 
+std::string InterSpec::writableDataDirectory()
+{
+  std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
+  
+  if( sm_writableDataDirectory.empty() )
+    throw runtime_error( "writableDataDirectory hasnt been set." );
+  
+  return sm_writableDataDirectory;
+}//string writableDataDirectory()
+#endif  //if( not a webapp )
+
+
+
 void InterSpec::update_displayed_spectrum_from_daq( std::shared_ptr<const Measurement> foreground,
                                         std::shared_ptr<const Measurement> background )
 {
@@ -972,19 +985,6 @@ void InterSpec::update_displayed_spectrum_from_daq( std::shared_ptr<const Measur
     m_spectrum->setXAxisRange( old_min_energy, old_max_energy );
   
 }//update_displayed_spectrum_from_daq()
-
-
-
-std::string InterSpec::writableDataDirectory()
-{
-  std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
-  
-  if( sm_writableDataDirectory.empty() )
-    throw runtime_error( "writableDataDirectory hasnt been set." );
-  
-  return sm_writableDataDirectory;
-}//string writableDataDirectory()
-#endif  //if( not a webapp )
 
 
 
