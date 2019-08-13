@@ -441,9 +441,11 @@ function createWindow () {
     }
   
     page_loaded = true;
-//    if( initial_file_to_open )
-//      load_file(initial_file_to_open);
-//    initial_file_to_open = null;
+    if( wtapp_loaded && initial_file_to_open )
+    {
+      load_file(initial_file_to_open);
+      initial_file_to_open = null;
+    }
     //I think this is were we set any files to be opened
   })
 
@@ -580,6 +582,13 @@ app.on('ready', function(){
 //  so this way we can require all traffic, both in Electron and in InterSpec to come from, and 
 //  go to this URL (same thing with IPC WebSocket)
 
+          //If we are opening one spectrum file, just do it immediately on app load, via
+          //  specifying it in the URL.
+          if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
+            let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
+            msg += "&specfilename=" + encodeURI(filepath);
+            initial_file_to_open = null;
+          }
 
           console.log('Will Load ' + msg);
           mainWindow.loadURL( msg );
@@ -604,10 +613,13 @@ app.on('ready', function(){
           console.log( "Received SessionFinishedLoading for ID='" + loadedexternalid + "'" );
             
           //ToDo: should make sure loadedexternalid is what we want
-
+          //ToDo: just aff &specfilename="UriEncodedFilename" to URL argument... (but make sure ALLOW_URL_TO_FILESYSTEM_MAP is enabled)
+          
           if( initial_file_to_open )
+          {
             load_file(initial_file_to_open);
-          initial_file_to_open = null;
+            initial_file_to_open = null;
+          }
         } else {
           console.log('In JS Received ' + data.toString());
         }
