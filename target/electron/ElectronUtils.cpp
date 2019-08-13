@@ -157,8 +157,40 @@ namespace
         app->triggerUpdate();
       }else
       {
-        cerr << "There is no app with externalid=" << externalid
-        << "; not opening files" << endl;
+        //I dont know why we would get here... but lets deal with it JIC
+        cerr << "There is no app with externalid=" << externalid << endl;
+        Wt::WServer *server = Wt::WServer::instance();
+        if( server )
+        {
+          cerr << "Will ask ALL current sesssions to open file." << endl;
+          
+          server->postAll( std::bind( [files](){
+            Wt::WApplication *wtap = wApp;
+            if( !wtap )
+            {
+              //Not sure why this happens some times.
+              cerr << "No WApplication::instance() in postAll(...)" << endl;
+              return;
+            }
+            
+            InterSpecApp *app = dynamic_cast<InterSpecApp *>( wtap );
+            assert( app );
+            
+            InterSpec *interspec = app->viewer();
+            assert( interspec );
+            
+            for( auto filename : files )
+            {
+              if( !app->userOpenFromFileSystem( filename ) )
+                cerr << "InterSpec failed to open file filename" << endl;
+            }
+            
+            app->triggerUpdate();
+          }) );
+        }else
+        {
+          cerr << "There is no server running, not opening file." << endl;
+        }
       }//if( app ) / else
     }else
     {
@@ -480,4 +512,27 @@ bool requestNewCleanSession()
   return true;
 }//void requestNewCleanSession()
   
+  
+bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
+{
+  std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
+  
+  if( !ns_send_message )
+  {
+    std::cerr << "notifyNodeJsOfNewSessionLoad(): No active connection" << std::endl;
+    return false;
+  }
+  
+  try
+  {
+    ns_send_message( "SessionFinishedLoading:" + sessionid );
+  }catch( std::exception &e )
+  {
+    cerr << "notifyNodeJsOfNewSessionLoad(): caught exception sendign WS message: " << e.what() << endl;
+    return false;
+  }
+  
+  std::cout << "notifyNodeJsOfNewSessionLoad() successfully sent" << endl;
+  return true;
+}//bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
 }//namespace ElectronUtils

@@ -840,11 +840,25 @@ namespace
                */
               
               if( !nuc )
-                nuc = db->nuclide( remark );  //Probably shouldnt give to many false positives?
+                nuc = db->nuclide( remark );  //Doesnt look like this gives a nuclide if there is anything invalid trailing the nuclide (ex, 'Ba133,10uCi')
               
               const size_t commapos = remark.find(',');
               const size_t underscorpos = remark.find('_'); //For a source database name like "133BA_<serial number>"
-                
+              
+              if( !nuc && commapos!=string::npos )
+                nuc = db->nuclide( remark.substr(0,commapos) );
+              
+              if( !nuc && underscorpos!=string::npos )
+                nuc = db->nuclide( remark.substr(0,underscorpos) );
+              
+              if( !nuc )
+              {
+                //ToDo: come up with a Regex that will find any reasonable nuclide "Cs137, Cs-137, 137Cs, Cesium 137, U 238m 238mU, etc."
+                const size_t first_space = spectitle.find_first_of( " \t_" );
+                if( first_space != string::npos )
+                  nuc = db->nuclide( remark.substr(0,first_space) );
+              }
+              
               if( (commapos < underscorpos)
                  && (nuc == db->nuclide(remark.substr(0,commapos))) )
               {

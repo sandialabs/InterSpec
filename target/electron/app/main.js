@@ -72,7 +72,7 @@ const BrowserWindow = electron.BrowserWindow
 let ws_server = null;
 var ws_connection = null;
 var initial_file_to_open = null;
-var page_loaded = false;
+var page_loaded = false, wtapp_loaded = false;
 let interspec_url = null;
 let app_is_closing = false;
 
@@ -165,7 +165,7 @@ function load_file(filename){
     filename.push( singlefname );
   }
   
-  if( !page_loaded || !ws_connection ){
+  if( !wtapp_loaded || !page_loaded || !ws_connection ){
     if( initial_file_to_open ){
        if( Array.isArray(initial_file_to_open) )
          filename = initial_file_to_open.concat(filename);
@@ -441,9 +441,9 @@ function createWindow () {
     }
   
     page_loaded = true;
-    if( initial_file_to_open )
-      load_file(initial_file_to_open);
-    initial_file_to_open = null;
+//    if( initial_file_to_open )
+//      load_file(initial_file_to_open);
+//    initial_file_to_open = null;
     //I think this is were we set any files to be opened
   })
 
@@ -596,6 +596,18 @@ app.on('ready', function(){
           doMenuStuff(mainWindow);
           
           mainWindow.loadURL( interspec_url + "?externalid=" + session_token + "&restore=no");
+        }else if( msg.startsWith("SessionFinishedLoading:") ) {
+          
+          wtapp_loaded = true;
+
+          let loadedexternalid = msg.substr(23);
+          console.log( "Received SessionFinishedLoading for ID='" + loadedexternalid + "'" );
+            
+          //ToDo: should make sure loadedexternalid is what we want
+
+          if( initial_file_to_open )
+            load_file(initial_file_to_open);
+          initial_file_to_open = null;
         } else {
           console.log('In JS Received ' + data.toString());
         }
