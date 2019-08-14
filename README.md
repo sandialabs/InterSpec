@@ -20,9 +20,12 @@ A brief getting started guide can be found in [brief_ana_overview_InterSpec_Oct2
 ## Some Screen Shots
 ![W187 peak fit example](/docs/imgs/overview_W187.png?raw=true "Easy to use user interface.")
 
-Interactions with the chart are fast and natural.  Peak fiting is as easy as double clikcing where 
+Interactions with the chart are fast and natural.  Peak fitting is as easy as double clicking where 
 you want a peak fit, or there is an automated option that is especially useful for HPGe detectors.
 
+![Activity Fit Tool](/docs/imgs/th232_activity_fit.png?raw=true "Advanced fitting for nuclide activity, age, and shielding")
+
+Can fit for activities and shielding for multiple nuclides at once, taking into account interferences, ages, self-attenuation, etc.  A large shielding database is included, or generic shielding can be used.  
 
 ![Ho166m and Eu152 peak fit example](/docs/imgs/ho166m_eu152_ex.png?raw=true "Advanced peak fitting")
 
@@ -47,12 +50,6 @@ to order results in an intelligent way.
 ![Dose calculation example](/docs/imgs/dose_calculator.png?raw=true "Dose calculator")
 
 You can go from source activity to dose, or from measured dose to source activity, or shielding amount.  
-
-
-![Nuclear decay chart](/docs/imgs/th232_activity_fit.png?raw=true "Advanced fitting for nuclide activity, age, and shielding")
-
-Can fit for multiple nuclides at once, taking into account interferences, ages, etc.  A large shielding database is included, or generic shielding can be used.
-
 
 
 ## Building from source
