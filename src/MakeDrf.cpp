@@ -2830,11 +2830,17 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   
   //Give upper/lower energy range
   float lowerEnergy = 0.0f, upperEnergy = 0.0f;
-  if( data.size() >= 2 )
+  if( !data.empty() )
   {
-    lowerEnergy = data.front().energy;
-    upperEnergy = data.back().energy;
-  }
+    lowerEnergy = 99999.9f;
+    upperEnergy = -99999.9f;
+    //Data is not sorted
+    for( const auto &p : data )
+    {
+      lowerEnergy = std::min( lowerEnergy, p.energy );
+      upperEnergy = std::max( upperEnergy, p.energy );
+    }
+  }//if( data.size() >= 2 )
   
   out << endline << endline
       << "Detector diameter = " << (diam/PhysicalUnits::cm) << " cm." << endline
@@ -2846,11 +2852,16 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   out << "# Peaks used to create DRF" << endline;
   
   out << "# Energy (keV),LiveTime (s),PeakArea,PeakArea Uncert,FWHM (keV),FWHM Uncert (keV),"
-         "Source CPS,Source CPS Uncert,Distance (cm),SourceInfo,BackgroundPeakCounts,BackgroundLiveTime" << endline;
+         "Source CPS,Source CPS Uncert,Distance (cm),SourceInfo,BackgroundPeakCounts,BackgroundLiveTime"
+         ",DetectionEfficiency,DetectionEfficiencyUncert,GeometryFactor" << endline;
   for( MakeDrfChart::DataPoint d: data )
   {
     UtilityFunctions::ireplace_all( d.source_information, ",", " ");
     
+    const double deteff = d.peak_area / d.source_count_rate;
+    const double deteffUncert = deteff * sqrt( pow(d.peak_area_uncertainty/d.peak_area,2)
+                                               + pow(d.source_count_rate_uncertainty/d.source_count_rate,2) );
+    const double geomFactor = DetectorPeakResponse::fractionalSolidAngle(diam, d.distance);
     out << d.energy << "," << d.livetime
         << "," << d.peak_area << "," << d.peak_area_uncertainty
         << "," << d.peak_fwhm << "," << d.peak_fwhm_uncertainty
@@ -2859,8 +2870,11 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
         << "," << d.source_information
         << "," << (d.background_peak_area > 0.0 ? std::to_string(d.background_peak_area) : string("") )
         << "," << (d.background_peak_live_time > 0.0 ? std::to_string(d.background_peak_live_time) : string("") )
+        << "," << deteff
+        << "," << deteffUncert
+        << "," << geomFactor
         << endline;
-  }
+  }//for( MakeDrfChart::DataPoint d: data )
   
   out << endline << endline;
   
