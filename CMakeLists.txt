@@ -694,13 +694,9 @@ else( ANDROID OR IOS )
     SET(MACOSX_BUNDLE_SHORT_VERSION_STRING "InterSpec" )
     SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
     SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
-    SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.InterSpec" )
-    SET(MACOSX_BUNDLE_INFO_PLIST  )
+    SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 
     SET( ${PRODUCT_NAME} "InterSpec" )
-
-    #${MACOSX_DEPLOYMENT_TARGET}
-
     SET( MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
 
     FIND_LIBRARY(WEBKIT_LIBRARY WebKit)
@@ -722,54 +718,91 @@ else( ANDROID OR IOS )
 
     set( app_headers ${headers} "target/osx/AppDelegate.h" )
 
-    ADD_EXECUTABLE( ${EXECUTABLE_NAME} MACOSX_BUNDLE ${app_sources} ${app_headers} ${sources} ${headers} )
+
+    #In order to copy all the needed resources to the "Archive" builds of Xcode,
+    #  we need to specify each individual file, and later set their MACOSX_PACKAGE_LOCATION properties...
+    file(GLOB_RECURSE DATA_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/data/*")
+    file(GLOB_RECURSE WT_RES_SOURCES "${WT_RESOURCES_DIRECTORY}/*")
+    file(GLOB_RECURSE INTERSPEC_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*")
+    file(GLOB_RECURSE EXAMPLE_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/example_spectra/*")
+    SET( EN_LOCALIZATION_FILES "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/InfoPlist.strings" "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/Credits.rtf" )
+
+    find_program(IBTOOL ibtool HINTS "/usr/bin" "${OSX_DEVELOPER_ROOT}/usr/bin")
+    if( ${IBTOOL} STREQUAL "IBTOOL-NOTFOUND" )
+      message(SEND_ERROR "could fine ibtool to compile the .xib files")
+    endif()
+
+    add_custom_command( OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
+                        COMMAND ${IBTOOL} --errors --warnings --notices --output-format human-readable-text
+                        --compile "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/MainMenu.xib"
+                        COMMENT "Compiling MainMenu.xib" )
+
+    ADD_EXECUTABLE( ${EXECUTABLE_NAME} MACOSX_BUNDLE ${app_sources} ${app_headers} ${sources} ${headers}
+                    ${DATA_RES_SOURCES} ${WT_RES_SOURCES} ${INTERSPEC_RES_SOURCES} ${EXAMPLE_RES_SOURCES} ${EN_LOCALIZATION_FILES}
+                    "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib" )
     SET_TARGET_PROPERTIES( ${EXECUTABLE_NAME} PROPERTIES MACOSX_BUNDLE TRUE )
 
     SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 
-    SET( EN_LOCALIZATION_FILES InfoPlist.strings Credits.rtf )
 
-    #set( LINK_TO_OBJECT "${EXECUTABLE_NAME}" )
-    #target_link_libraries( ${EXECUTABLE_NAME} PRIVATE ${LIBRARIES_TO_LINK_TO} )
-    #set_property(TARGET ${EXECUTABLE_NAME} PROPERTY CXX_STANDARD 11)
-    #set_property(TARGET prog PROPERTY CXX_STANDARD_REQUIRED ON)
+    #Set resources MACOSX_PACKAGE_LOCATION property so it is where we want in the app bundle
+    #ToDo: combine 5 loops below into a single loop...
+    # set( RES_SOURCES_DIRS DATA_RES_SOURCES WT_RES_SOURCES INTERSPEC_RES_SOURCES EXAMPLE_RES_SOURCES EN_LOCALIZATION_FILES )
+    # set( RES_DEST_DIRS data resources InterSpec_resources example_spectra en.lproj )
 
-    add_custom_target(copy)
-    foreach(_file ${EN_LOCALIZATION_FILES})
-        add_custom_command(TARGET copy PRE_BUILD COMMAND ${CMAKE_COMMAND} -E
-            copy "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/${_file}"
-                  "${CMAKE_CURRENT_BINARY_DIR}/${EXECUTABLE_OUTPUT_PATH}/\${CONFIGURATION}/${EXECUTABLE_NAME}.app/Contents/Resources/en.lproj/${_file}" )
-    endforeach()
+    foreach(RES_FILE ${DATA_RES_SOURCES})
+      #Get the relative path from the data-folder to the particular file
+      file(RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data" ${RES_FILE})
+      get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
+      #Set it's location inside the app package (under Resources)
+      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/data/${RES_PATH}")
+    endforeach(RES_FILE)
 
-    SET( SUPPORT_DIRECTORIES InterSpec_resources data example_spectra  )
-    foreach(_dir ${SUPPORT_DIRECTORIES})
-      add_custom_command(TARGET copy PRE_BUILD COMMAND ${CMAKE_COMMAND} -E
-        copy_directory ${PROJECT_SOURCE_DIR}/${_dir}
-        ${CMAKE_CURRENT_BINARY_DIR}/${EXECUTABLE_OUTPUT_PATH}/\${CONFIGURATION}/${EXECUTABLE_NAME}.app/Contents/Resources/${_dir} )
-    endforeach()
+    foreach(RES_FILE ${WT_RES_SOURCES})
+      file(RELATIVE_PATH RES_PATH "${WT_RESOURCES_DIRECTORY}" ${RES_FILE})
+      get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
+      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/resources/${RES_PATH}")
+    endforeach(RES_FILE)
 
-    add_custom_command(TARGET copy PRE_BUILD COMMAND ${CMAKE_COMMAND} -E
-        copy_directory ${WT_RESOURCES_DIRECTORY}
-        ${CMAKE_CURRENT_BINARY_DIR}/${EXECUTABLE_OUTPUT_PATH}/\${CONFIGURATION}/${EXECUTABLE_NAME}.app/Contents/Resources/resources )
+    foreach(RES_FILE ${INTERSPEC_RES_SOURCES})
+      file(RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources" ${RES_FILE})
+      get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
+      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/InterSpec_resources/${RES_PATH}")
+    endforeach(RES_FILE)
 
+    foreach(RES_FILE ${EXAMPLE_RES_SOURCES})
+      file(RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/example_spectra" ${RES_FILE})
+      get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
+      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/example_spectra/${RES_PATH}")
+     endforeach(RES_FILE)
 
-    find_program(IBTOOL ibtool HINTS "/usr/bin" "${OSX_DEVELOPER_ROOT}/usr/bin")
-    if( ${IBTOOL} STREQUAL "IBTOOL-NOTFOUND" )
-        message(SEND_ERROR "could fine ibtool to compile the .xib files")
-    endif()
+    foreach(RES_FILE ${EN_LOCALIZATION_FILES})
+      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/en.lproj/")
+    endforeach(RES_FILE)
 
-    add_custom_target( makenib )
-    add_custom_command( TARGET makenib POST_BUILD
-        COMMAND ${IBTOOL} --errors --warnings --notices --output-format human-readable-text
-                --compile "${CMAKE_CURRENT_BINARY_DIR}/${EXECUTABLE_OUTPUT_PATH}/\${CONFIGURATION}/${EXECUTABLE_NAME}.app/Contents/Resources/en.lproj/MainMenu.nib"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/MainMenu.xib"
-                COMMENT "Compiling MainMenu.xib" )
+    set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib" PROPERTY MACOSX_PACKAGE_LOCATION "Resources/en.lproj/")
 
-    add_dependencies( makenib copy )
-    add_dependencies( ${EXECUTABLE_NAME} makenib )
 
     set_target_properties( ${EXECUTABLE_NAME} PROPERTIES MACOSX_BUNDLE_INFO_PLIST
           "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/Info.plist.template" )
+
+    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
+                           "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.entitlements")
+
+    #When I do the bellow, Xcode doesnt recognize the signing name - ToDo - figure it out later.
+    #Figure out the development team ID, and set this info for Xcode so it will default to signing the app
+    #  This is probably a little brittle on other peoples machined
+    #execute_process(COMMAND /usr/bin/security find-identity -v -p codesigning OUTPUT_VARIABLE dev_team_ids )
+    #STRING(REGEX REPLACE ";" "\\\\;" dev_team_ids "${dev_team_ids}")
+    #STRING(REGEX REPLACE "\n" ";" dev_team_ids "${dev_team_ids}")
+    #list(FILTER dev_team_ids INCLUDE REGEX "Mac Developer:.+" )
+    #string(REGEX MATCH ": .*\\(" mac_team_id ${dev_team_ids} )
+    #STRING(REGEX REPLACE ": |\\(" "" mac_team_id "${mac_team_id}")
+    #message( "Using Mac Developer Team ID='${mac_team_id}'" )
+    #
+    #set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer")
+    #set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ${mac_team_id} )
   else( BUILD_AS_OSX_APP )
 
     if( BUILD_AS_UNIT_TEST_SUITE )

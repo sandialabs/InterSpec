@@ -572,6 +572,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
 
   
   // ---- Cheat sheet PDF
+/*
+ //Cheat sheet is currently outdated, so dont display it.
   if( m_viewer->isSupportFile() && !m_viewer->isMobile() )
   {
     WContainerWidget* controlContainer = new WContainerWidget();
@@ -604,6 +606,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     }
     m_menu->addItem( item );
   } //Cheat sheet PDF
+*/
   
   string msg;
 

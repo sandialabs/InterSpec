@@ -71,7 +71,7 @@
 	<key>CFBundleIconFile</key>
 	<string>InterSpec</string>
 	<key>CFBundleIdentifier</key>
-	<string>sandia.InterSpec</string>
+	<string>gov.sandia.macOS.InterSpec</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>NSAppTransportSecurity</key>  
