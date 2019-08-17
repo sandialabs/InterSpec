@@ -590,7 +590,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   csvButton->setAttributeValue( "style", "float: none;" );  //Keep the CSV download to the left side of the close button.  .CsvLinkBtn style class has the button float right..
   
   auto enableDisableCsv = [csvButton,this](){
-    csvButton->setEnabled( !m_fluxTool->m_data.empty() );
+    csvButton->setDisabled( m_fluxTool->m_data.empty() );
   };
   
   m_fluxTool->m_tableUpdated.connect( std::bind(enableDisableCsv) );

@@ -4803,8 +4803,11 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::UnHide );
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Front );
   m_fileMenuPopup->addSeparator();
+#elif( BUILD_AS_OSX_APP )
+  item = m_fileMenuPopup->addMenuItem( "About InterSpec" );
+  item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+  m_fileMenuPopup->addSeparator();  //doesnt seem to be showing up for some reason... owe well.
 #endif
-  
   
   
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -4818,7 +4821,6 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   
   if( m_fileManager )
   {
-    
     item = m_fileMenuPopup->addMenuItem( "Manager...", "InterSpec_resources/images/file_manager_small.png" );
     HelpSystem::attachToolTipOn(item, "Manage loaded spectra", showToolTipInstantly );
     
@@ -6343,11 +6345,12 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   HelpSystem::attachToolTipOn( item, doloadtext, showToolTipInstantly );
   InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this, false );
 #endif
-    
+#if( !BUILD_AS_OSX_APP )
   m_helpMenuPopup->addSeparator();
   
   item = m_helpMenuPopup->addMenuItem( "About InterSpec..." );
   item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+#endif
 }//void addAboutMenu( Wt::WContainerWidget *menuDiv )
 
 
