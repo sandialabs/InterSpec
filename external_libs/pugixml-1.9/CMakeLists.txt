@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_policy(SET CMP0048 NEW)
+cmake_minimum_required(VERSION 3.1)
 
-project(pugixml)
+project( pugixml VERSION 1.9 )
 
 option(BUILD_SHARED_LIBS "Build shared instead of static library" OFF)
 option(BUILD_TESTS "Build tests" OFF)

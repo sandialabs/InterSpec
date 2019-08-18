@@ -60,7 +60,7 @@
 
 #cmakedefine DATABASE_PASSWORD_FILE "@DATABASE_PASSWORD_FILE@"
 
-#cmakedefine InterSpec_VERSION "@InterSpec_VERSION@"
+#cmakedefine InterSpec_VERSION "@PROJECT_VERSION@"
 
 #cmakedefine MAX_SPECTRUM_MEMMORY_SIZE_MB @MAX_SPECTRUM_MEMMORY_SIZE_MB@
 
