@@ -69,3 +69,6 @@ target_link_libraries( SpecFilePreview PUBLIC
   /System/Library/Frameworks/QuickLook.framework/QuickLook
   /System/Library/Frameworks/CoreServices.framework/CoreServices
 )
+
+
+#install(TARGETS SpecFilePreview  DESTINATION InterSpec.app/Contents/Library/QuickLook/ )

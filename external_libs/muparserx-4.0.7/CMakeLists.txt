@@ -1,8 +1,10 @@
+cmake_policy(SET CMP0048 NEW)
+
 ########################################################################
 # Project setup
 ########################################################################
-cmake_minimum_required(VERSION 2.8.12)
-project(muparserx CXX)
+cmake_minimum_required(VERSION 3.1)
+project(muparserx VERSION 4.0.7 LANGUAGES CXX)
 
 ########################################################################
 # Extract version
@@ -35,7 +37,7 @@ set_target_properties( muparserx PROPERTIES
 )
 
 
-target_include_directories( muparserx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} )
+target_include_directories( muparserx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/parser )
 
 
 #link with lib math when found

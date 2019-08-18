@@ -1,11 +1,7 @@
-project(InterSpec)
+cmake_policy(SET CMP0048 NEW)
+project(InterSpec VERSION 1.0.5)
 
 cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
-if ( COMMAND cmake_policy )
-  cmake_policy( SET CMP0003 NEW )
-endif( COMMAND cmake_policy )
-
-
 set( CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE )
 
 set( CMAKE_CXX_STANDARD 14 )
@@ -26,10 +22,8 @@ IF(WIN32)
     #0x0601==Win7, 0x0501==WinXP
 ELSE(WIN32)
     set( EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE )
-#    set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ftemplate-depth=512" )
 ENDIF(WIN32)
 
-SET( InterSpec_VERSION Development CACHE STRING "InterSpec Version" )
 SET( MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if applicable): dev/qc/prod" )
 
 option( BUILD_AS_OSX_APP "Build a OSX native app" OFF )
@@ -38,10 +32,12 @@ option( BUILD_FOR_WEB_DEPLOYMENT "Selects options appropriate for the web in the
 option( BUILD_AS_LOCAL_SERVER "Build for use as a server for local computer (e.g. run from the command line and connect to with a browser on LOCALHOST)" ON )
 option( BUILD_AS_UNIT_TEST_SUITE "Builds unit tests as well the analysis tests (aka end-to-end tests)" OFF )
 option( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE "Compiles so executable only does offline testing of the user test states in the database (e.g. end-to-end testing)" OFF )
+set( TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/testing" CACHE STRING "Path to directory that contains the \"analysis_tests\" directory for saving N42 test states.  Leave empty for CWD." )
+
 option( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT "Build executable for use while testing new code, not running InterSpec" OFF )
 
 option( INCLUDE_ANALYSIS_TEST_SUITE "Allow whether user can save and load test spectra" on )
-set( TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/testing" CACHE STRING "Path to directory that contains the \"analysis_tests\" directory for saving N42 test states.  Leave empty for CWD." )
+
 
 option( PERFORM_DEVELOPER_CHECKS "Performs additional computationally expensive tests during execution" off )
 option( USE_OSX_NATIVE_MENU "Mirrors WMenus with OSX native NSMenu (not fully implemented)" off )
@@ -84,9 +80,6 @@ IF(NOT CMAKE_BUILD_TYPE)
         FORCE)
 ENDIF(NOT CMAKE_BUILD_TYPE)
 
-IF(POLICY CMP0048)  
- 	  CMAKE_POLICY(SET CMP0048 OLD)
-ENDIF(POLICY CMP0048)
 
 if(BUILD_AS_UNIT_TEST_SUITE)
     set(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE ON)
@@ -250,6 +243,7 @@ IF( BUILD_AS_OSX_APP )
   set( USE_TERMINAL_WIDGET OFF )
   set( SpecUtils_ENABLE_D3_CHART ON )
   set( USE_SPECTRUM_CHART_D3 ON )
+  set( USE_SEARCH_MODE_3D_CHART ON )
 ENDIF( BUILD_AS_OSX_APP )
 
 
@@ -658,7 +652,6 @@ set( SpecUtils_PYTHON_BINDINGS OFF CACHE BOOL "" )
 set( SpecUtils_JAVA_SWIG OFF CACHE BOOL "" )
 set( SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "" )
 set( SpecUtils_D3_SCRIPTS_RUNTIME_DIR "InterSpec_resources" CACHE STRING "" )
-include_directories( "${Wt_INCLUDE_DIR}" )
 
 add_subdirectory( external_libs/SpecUtils )
 list( APPEND LIBRARIES_TO_LINK_TO SpecUtils )
@@ -666,9 +659,6 @@ list( APPEND LIBRARIES_TO_LINK_TO SpecUtils )
 add_subdirectory( external_libs/SandiaDecay )
 list( APPEND LIBRARIES_TO_LINK_TO SandiaDecay )
 
-set( RAPID_XML_INC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdparty )
-#find_path( RAPID_XML_INC_DIR rapidxml/rapidxml.hpp ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdparty )
-INCLUDE_DIRECTORIES( ${RAPID_XML_INC_DIR} )
 
 #We should have figured out all the header and source files we need by here, so
 #  lets add the executable to the build
@@ -683,7 +673,6 @@ if( ANDROID OR IOS )
   endif(IOS)
 else( ANDROID OR IOS )
   if( BUILD_AS_OSX_APP )
-
     set( sources ${sources} src/InterSpecServer.cpp )
     set( headers ${headers} InterSpec/InterSpecServer.h )
 
@@ -790,19 +779,30 @@ else( ANDROID OR IOS )
     set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
                            "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.entitlements")
 
+#add_subdirectory( target/macOsQuickLook/SpecFilePreview/SpecFilePreview )
+#Then need to copy the quicklook bundle to InterSpec.app/Contents/Library/QuickLook
+
+#add_custom_command( TARGET ${EXECUTABLE_NAME} POST_BUILD
+#                    COMMAND cp -r ${CMAKE_CURRENT_SOURCE_DIR}/example_spectra  $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Resources )
+
+    # With out this next line, Xcode will (silently) fail to build Archive builds
+    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_INSTALL_PATH "/Applications")
+
+
     #When I do the bellow, Xcode doesnt recognize the signing name - ToDo - figure it out later.
     #Figure out the development team ID, and set this info for Xcode so it will default to signing the app
     #  This is probably a little brittle on other peoples machined
-    #execute_process(COMMAND /usr/bin/security find-identity -v -p codesigning OUTPUT_VARIABLE dev_team_ids )
-    #STRING(REGEX REPLACE ";" "\\\\;" dev_team_ids "${dev_team_ids}")
-    #STRING(REGEX REPLACE "\n" ";" dev_team_ids "${dev_team_ids}")
-    #list(FILTER dev_team_ids INCLUDE REGEX "Mac Developer:.+" )
-    #string(REGEX MATCH ": .*\\(" mac_team_id ${dev_team_ids} )
-    #STRING(REGEX REPLACE ": |\\(" "" mac_team_id "${mac_team_id}")
-    #message( "Using Mac Developer Team ID='${mac_team_id}'" )
+    execute_process(COMMAND /usr/bin/security find-identity -v -p codesigning OUTPUT_VARIABLE dev_team_ids )
+    STRING(REGEX REPLACE ";" "\\\\;" dev_team_ids "${dev_team_ids}")
+    STRING(REGEX REPLACE "\n" ";" dev_team_ids "${dev_team_ids}")
+    LIST(FILTER dev_team_ids INCLUDE REGEX "Developer ID Application:.+" )
+    STRING(REGEX MATCH "\\(.+\\)" mac_team_id ${dev_team_ids} )
+    STRING(REGEX REPLACE "\\(|\\)" "" mac_team_id "${mac_team_id}")
+    message( "Using Mac Developer Team ID='${mac_team_id}'" )
     #
-    #set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer")
-    #set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ${mac_team_id} )
+    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer")
+    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
+    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
   else( BUILD_AS_OSX_APP )
 
     if( BUILD_AS_UNIT_TEST_SUITE )
@@ -817,9 +817,7 @@ else( ANDROID OR IOS )
 endif( ANDROID OR IOS )
 
 
-
 if(ANDROID)
-    INCLUDE_DIRECTORIES( target )
     set( headers ${headers} target/android/AndroidUtils.hpp )
 ENDIF(ANDROID)
 
@@ -830,7 +828,7 @@ list( APPEND LIBRARIES_TO_LINK_TO minuit2 )
 
 if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     list( APPEND LIBRARIES_TO_LINK_TO ${Wt_TEST_LIBRARY} )
-endif( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT )
+endif()
 
 
 IF( IOS )
@@ -847,13 +845,11 @@ IF( NOT USE_MYSQL_DB AND NOT USE_SQLITE3_DB )
 ENDIF( NOT USE_MYSQL_DB AND NOT USE_SQLITE3_DB )
 
 
-INCLUDE_DIRECTORIES(
-    ${Wt_INCLUDE_DIR}
-    ${Boost_INCLUDE_DIR}
-    ${CMAKE_BINARY_DIR}
-    external_libs
-    .
-)
+set( RAPID_XML_INC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdparty )
+
+
+target_include_directories( ${LINK_TO_OBJECT} PUBLIC ${Wt_INCLUDE_DIR} ${Boost_INCLUDE_DIR}
+                       ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR} ${RAPID_XML_INC_DIR} external_libs )
 
 
 if( NOT IOS )
@@ -962,7 +958,6 @@ endif( TRY_TO_STATIC_LINK )
 
 
 IF( BUILD_AS_UNIT_TEST_SUITE )
-  enable_testing()
   list( APPEND LIBRARIES_TO_LINK_TO ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} )
 ENDIF( BUILD_AS_UNIT_TEST_SUITE )
 
@@ -1005,7 +1000,7 @@ if( SUPPORT_ZIPPED_SPECTRUM_FILES OR ENABLE_RESOURCE_UPDATES )
     if( NOT ZLIB_FOUND )
       MESSAGE(FATAL_ERROR "ZLIB required to enable SUPPORT_ZIPPED_SPECTRUM_FILES or ENABLE_RESOURCE_UPDATES, but it wasnt found" )
     else( NOT ZLIB_FOUND )
-      include_directories( ${ZLIB_INCLUDE_DIRS} )
+      target_include_directories( ${LINK_TO_OBJECT} PUBLIC ${ZLIB_INCLUDE_DIRS} )
       list( APPEND LIBRARIES_TO_LINK_TO ${ZLIB_LIBRARIES} )
     endif( NOT ZLIB_FOUND )
   else( NOT (IOS OR ANDROID) )
@@ -1038,141 +1033,22 @@ add_subdirectory( external_libs/Cuba-3.0 )
 list( APPEND LIBRARIES_TO_LINK_TO Cuba-3.0 )
 
 add_subdirectory( external_libs/muparserx-4.0.7 )
-include_directories( external_libs/muparserx-4.0.7/parser )
+
 list( APPEND LIBRARIES_TO_LINK_TO muparserx )
 
 IF(ANDROID)
   list( APPEND LIBRARIES_TO_LINK_TO log )
+  target_include_directories( ${LINK_TO_OBJECT} PUBLIC target )
 ENDIF(ANDROID)
 
 
 message( "Linking ${LINK_TO_OBJECT} to ${LIBRARIES_TO_LINK_TO}" )
 target_link_libraries( ${LINK_TO_OBJECT} PUBLIC ${LIBRARIES_TO_LINK_TO} )
 
-if( BUILD_AS_OSX_APP )
-#    add_subdirectory( target/macOsQuickLook/SpecFilePreview/SpecFilePreview )
-endif( BUILD_AS_OSX_APP )
 
 IF( BUILD_AS_UNIT_TEST_SUITE )
+  add_subdirectory( testing )
   target_link_libraries( ${EXECUTABLE_NAME} PUBLIC ${LIBRARYNAME} )
-
-  add_executable( testCalibration.exe testing/testCalibration.cpp )
-  target_link_libraries( testCalibration.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-  add_test( "\"Test Calibration\""
-                 ${EXECUTABLE_OUTPUT_PATH}/testCalibration.exe
-                 "--indir=${testdir}" --log_level=test_suite --run_test=testCalibration --catch_system_error=yes ) 
-  add_test( "\"Test Calibration\""
-                 ${EXECUTABLE_OUTPUT_PATH}/testCalibration.exe
-                 "--indir=${testdir}" --log_level=test_suite --run_test=testFindEnergy --catch_system_error=yes )
-
-  add_executable( testFileOpen.exe testing/testFileOpen.cpp )
-  target_link_libraries( testFileOpen.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-
-
-  SET( curdir ${PROJECT_SOURCE_DIR}/testing/interspec_test_spectra )
-  FILE(GLOB children RELATIVE ${curdir} ${curdir}/*)
-  FOREACH(child ${children})
-    SET( testdir ${curdir}/${child} )
-    IF(IS_DIRECTORY ${testdir})
-       #uhg, if we dont get rid of spaces in the file name, it gets interprested as a
-       #  seperate command line argument - even if we escape it with quotes
-       string(REPLACE " " "%20" testdir ${testdir} )
-       message( ${testdir} )
-       add_test( "\"Test open ${child}\""
-                 ${EXECUTABLE_OUTPUT_PATH}/testFileOpen.exe 
-                 "--indir=${testdir}" --log_level=test_suite --run_test=testFileOpen --catch_system_error=yes ) 
-    ENDIF()
-  ENDFOREACH()
-
-
-add_executable( testIsoTimeString.exe testing/testIsoTimeString.cpp )
-  target_link_libraries( testIsoTimeString.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-add_test( TestIsoTimeString ${EXECUTABLE_OUTPUT_PATH}/testIsoTimeString.exe "--indir=${testdir}" --log_level=test_suite --run_test=testIsoTimeString --catch_system_error=yes )
-
-add_executable( testSafeGetLine.exe testing/testSafeGetLine.cpp )
-  target_link_libraries( testSafeGetLine.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-add_test( TestSafeGetLine ${EXECUTABLE_OUTPUT_PATH}/testSafeGetLine.exe "--indir=${testdir}" --log_level=test_suite --run_test=testSafeGetLine --catch_system_error=yes )
-
-add_executable( testTimeFromString.exe testing/testTimeFromString.cpp )
-  target_link_libraries( testTimeFromString.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-add_test( TestTimeFromString ${EXECUTABLE_OUTPUT_PATH}/testTimeFromString.exe "--indir=${testdir}" --log_level=test_suite --run_test=testTimeFromString --catch_system_error=yes )
-
-
-add_executable( testUtilityStringFunctions.exe testing/testUtilityStringFunctions.cpp )
-  target_link_libraries( testUtilityStringFunctions.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-add_test( "\"Test Utility String Functions\"" ${EXECUTABLE_OUTPUT_PATH}/testUtilityStringFunctions.exe "--indir=${testdir}" --log_level=test_suite --run_test=testUtilityStringFunctions --catch_system_error=yes )
-
-add_test( "\"Test Utility String Functions\"" ${EXECUTABLE_OUTPUT_PATH}/testUtilityStringFunctions.exe "--indir=${testdir}" --log_level=test_suite --run_test=testUtilityStringFunctions --catch_system_error=yes ) 
-
-
-add_executable( testPhysicalUnits.exe testing/testPhysicalUnits.cpp )
-target_link_libraries( testPhysicalUnits.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-add_test( "\"Test PhysicalUnits Functions\"" ${EXECUTABLE_OUTPUT_PATH}/testPhysicalUnits.exe "--indir=${testdir}" --log_level=test_suite --run_test=testPhysicalUnits_suite --catch_system_error=yes )
-
-add_test( "\"Test Utility String Functions\"" ${EXECUTABLE_OUTPUT_PATH}/testUtilityStringFunctions.exe "--indir=${testdir}" --log_level=test_suite --run_test=testUtilityStringFunctions --catch_system_error=yes )
-
-  
-add_executable( test_split_to_floats_and_ints.exe testing/test_split_to_floats_and_ints.cpp )
-  target_link_libraries( test_split_to_floats_and_ints.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-
-
-add_executable( test_utf8_str_size_limit.exe testing/test_utf8_str_size_limit.cpp )
-  target_link_libraries( test_utf8_str_size_limit.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-
-add_executable( test_utf8_limit_str_size.exe testing/test_utf8_limit_str_size.cpp )
-  target_link_libraries( test_utf8_limit_str_size.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-
-add_executable( test_utf8_str_len.exe testing/test_utf8_str_len.cpp )
-  target_link_libraries( test_utf8_str_len.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
- 
-
- add_test( TestSplittoFloats ${EXECUTABLE_OUTPUT_PATH}/test_split_to_floats_and_ints.exe "--indir=${testdir}" --log_level=test_suite --run_test=split_to_floats_and_ints_suite --catch_system_error=yes )
-
-add_test( TestUtf8LimitStrSize ${EXECUTABLE_OUTPUT_PATH}/test_utf8_limit_str_size.exe "--indir=${testdir}" --log_level=test_suite --run_test=test_utf8_limit_str_size --catch_system_error=yes ) 
-
-add_test( TestUtf8StrSizeLimit ${EXECUTABLE_OUTPUT_PATH}/test_utf8_str_size_limit.exe "--indir=${testdir}" --log_level=test_suite --run_test=test_utf8_str_size_limit --catch_system_error=yes ) 
-
-add_test( TestUtf8StrLen ${EXECUTABLE_OUTPUT_PATH}/test_utf8_str_len.exe "--indir=${testdir}" --log_level=test_suite --run_test=test_utf8_str_len --catch_system_error=yes )
-
-  add_executable( testDetectorResponseOpen.exe testing/testDetectorResponseOpen.cpp )
-  target_link_libraries( testDetectorResponseOpen.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-
-  SET( curdir ${PROJECT_SOURCE_DIR}/data/OUO_GadrasDetectors )
-  FILE(GLOB children RELATIVE ${curdir} ${curdir}/*/Detector.dat)
-  FOREACH(child ${children})
-    SET( curfile "${curdir}/${child}" )
-    string(REPLACE " " "%20" curfile ${curfile} )
-    add_test( "\"Detector Response Open ${child}\""
-              "${EXECUTABLE_OUTPUT_PATH}/testDetectorResponseOpen.exe"
-              ARGS --infile=${curfile} --log_level=test_suite --run_test=testDetectorResponseOpen --catch_system_error=yes )
-  ENDFOREACH()
-  
-  
-  add_executable( testDetectorResponseDoesntOpen.exe testing/testDetectorResponseDoesntOpen.cpp )
-  target_link_libraries( testDetectorResponseDoesntOpen.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-
-  SET( curdir ${PROJECT_SOURCE_DIR}/testing/detector_response_files/shouldnt_be_valid )
-  FILE(GLOB children RELATIVE ${curdir} ${curdir}/*)
-  FOREACH(child ${children})
-    SET( curfile "${curdir}/${child}" )
-    string(REPLACE " " "%20" curfile ${curfile} )
-    message( "Got child ${curfile}" )
-    add_test( "\"Detector Response Shouldnt Open ${child}\""
-              "${EXECUTABLE_OUTPUT_PATH}/testDetectorResponseDoesntOpen.exe"
-              ARGS --infile=${curfile} --log_level=test_suite --run_test=testDetectorResponseDoesntOpen --catch_system_error=yes )
-  ENDFOREACH()
-
-  add_executable( testUtilityFilesystemFunctions.exe testing/testUtilityFilesystemFunctions.cpp )
-  target_link_libraries( testUtilityFilesystemFunctions.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-  add_test( testUtilityFilesystemFunctions ${EXECUTABLE_OUTPUT_PATH}/testUtilityFilesystemFunctions.exe  --log_level=test_suite --run_test=testUtilityFilesystemFunctions --catch_system_error=yes )
-
-#  add_executable( peakFitCompare.exe testing/peakFitCompare.cpp )
-#  target_link_libraries( peakFitCompare.exe PRIVATE ${LIBRARIES_TO_LINK_TO} ${LIBRARYNAME} )
-#  add_test( "\"Test peak fitting\""
-#              "${EXECUTABLE_OUTPUT_PATH}/peakFitCompare.exe"
-#              ARGS --log_level=test_suite --run_test=peakFitCompare --catch_system_error=yes )
-
-
 ENDIF( BUILD_AS_UNIT_TEST_SUITE )
 
 
@@ -1208,7 +1084,7 @@ IF( BUILD_AS_ELECTRON_APP )
   find_path( WEBSOCKETPP_INCLUDE_DIR NAMES websocketpp/version.hpp REQUIRED
              HINTS "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/websocketpp/" )
 
-  include_directories( ${WEBSOCKETPP_INCLUDE_DIR} )
+  target_include_directories( ${LINK_TO_OBJECT} PUBLIC ${WEBSOCKETPP_INCLUDE_DIR} )
 
   set( ELECTRON_SUPPORT_FILES
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/main.js
@@ -1225,7 +1101,7 @@ IF( BUILD_AS_ELECTRON_APP )
 #  this for now, for a workaround see
 #  https://cmake.org/pipermail/cmake/2012-May/050221.html
 #  (It would be nice to use $<TARGET_FILE:${EXECUTABLE_NAME}>)
-#See the script : target/electron/app/copy_resources.in.js for use of this variabel
+#See the script : target/electron/app/copy_resources.in.js for use of this variable
   IF(WIN32)
       set( INTERSPEC_EXE_LOCATION "${PROJECT_BINARY_DIR}/MinSizeRel/InterSpec.exe.exe")
   ELSE(WIN32)
@@ -1298,15 +1174,4 @@ IF( INCLUDE_ANALYSIS_TEST_SUITE )
 ENDIF()
 
 configure_file( ${PROJECT_SOURCE_DIR}//external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml ${PROJECT_BINARY_DIR}/data/sandia.decay.xml COPYONLY )
-
-IF( BUILD_AS_UNIT_TEST_SUITE )
-    IF(WIN32)
-#        file(COPY ${PROJECT_SOURCE_DIR}/testing/interspec_test_spectra
- #                 ${PROJECT_BINARY_DIR}/interspec_test_spectra )
-    ELSE(WIN32)
-        execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-                        ${PROJECT_SOURCE_DIR}/testing/interspec_test_spectra
-                        ${PROJECT_BINARY_DIR}/interspec_test_spectra )
-    ENDIF(WIN32)
-ENDIF()
 
