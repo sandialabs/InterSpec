@@ -1,3 +1,5 @@
+#define _USE_MATH_DEFINES
+
 #include "InterSpec_config.h"
 
 #include <cmath>
