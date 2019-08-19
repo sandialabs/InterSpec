@@ -1,7 +1,7 @@
 #adapted from https://github.com/Kitware/CMake/tree/master/Tests/CFBundleTest
 cmake_minimum_required(VERSION 3.1.0)
 
-project( SpecFilePreview )
+#project( SpecFilePreview )
 
 
 set( CMAKE_CXX_STANDARD 14 )
@@ -70,5 +70,8 @@ target_link_libraries( SpecFilePreview PUBLIC
   /System/Library/Frameworks/CoreServices.framework/CoreServices
 )
 
+target_include_directories( SpecFilePreview PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../../external_libs )
+message( "SpecFilePreview: ${CMAKE_CURRENT_SOURCE_DIR}/../../../../external_libs" )
 
-#install(TARGETS SpecFilePreview  DESTINATION InterSpec.app/Contents/Library/QuickLook/ )
+
+#install(TARGETS SpecFilePreview DESTINATION InterSpec.app/Contents/Library/QuickLook/ )

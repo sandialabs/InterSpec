@@ -737,6 +737,11 @@ else( ANDROID OR IOS )
 
     #Set resources MACOSX_PACKAGE_LOCATION property so it is where we want in the app bundle
     #ToDo: combine 5 loops below into a single loop...
+    # ToDo: Try to use: install(DIRECTORY InterSpec_resources DESTINATION $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Resources/ )
+    # ToDo: Try using (something like):
+    #                 add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
+    #                                    "${CMAKE_SOURCE_DIR}/example_spectra" "$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/Contents/Resources/")
+
     # set( RES_SOURCES_DIRS DATA_RES_SOURCES WT_RES_SOURCES INTERSPEC_RES_SOURCES EXAMPLE_RES_SOURCES EN_LOCALIZATION_FILES )
     # set( RES_DEST_DIRS data resources InterSpec_resources example_spectra en.lproj )
 
@@ -779,7 +784,11 @@ else( ANDROID OR IOS )
     set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
                            "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.entitlements")
 
+#Adding SpecFilePreview as a subdirectory generates a Xcode project for it...
+#  Also, we need to figure out how to copy the SpecFilePreview.qlgenerator to InterSpec.app/Contents/Library/QuickLook/
 #add_subdirectory( target/macOsQuickLook/SpecFilePreview/SpecFilePreview )
+#install(TARGETS SpecFilePreview DESTINATION $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/ )
+
 #Then need to copy the quicklook bundle to InterSpec.app/Contents/Library/QuickLook
 
 #add_custom_command( TARGET ${EXECUTABLE_NAME} POST_BUILD
@@ -1089,7 +1098,7 @@ IF( BUILD_AS_ELECTRON_APP )
   set( ELECTRON_SUPPORT_FILES
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/main.js
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/loading.html
-       ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/README.md
+       ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/README.md
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/package.json
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/copy_resources.in.js
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/launch_options.json
