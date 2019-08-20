@@ -2520,7 +2520,7 @@ void DetectorEdit::updateChart()
 
 
         //Skip any points outside where we would expect.
-        if( std::isnan(efficincy) || std::isinf(efficincy) || efficincy > 1.2f || efficincy < 0.0f )
+        if( IsNan(efficincy) || IsInf(efficincy) || efficincy > 1.2f || efficincy < 0.0f )
         {
           m_efficiencyModel->setData(row, 1, boost::any() );
         }else
@@ -2532,7 +2532,7 @@ void DetectorEdit::updateChart()
         if( hasResloution )
         {
           const float fwhm = m_detector->peakResolutionFWHM(energy);
-          if( !std::isnan(fwhm) && !std::isinf(fwhm) && fwhm>=0.0f && fwhm<9999.9f )
+          if( !IsNan(fwhm) && !IsInf(fwhm) && fwhm>=0.0f && fwhm<9999.9f )
           {
             ++nEffPoints;
             m_efficiencyModel->setData(row, 2, fwhm);
