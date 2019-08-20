@@ -96,7 +96,7 @@ namespace
 #endif
 
   
-#if( ALLOW_URL_TO_FILESYSTEM_MAP && (INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS) )
+#if( ALLOW_URL_TO_FILESYSTEM_MAP && (BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS) )
   std::string uri_decode( const std::string &sSrc )
   {
     //adapted from http://www.codeguru.com/cpp/cpp/algorithms/strings/article.php/c12759/URI-Encoding-and-Decoding.htm
@@ -405,18 +405,28 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   const Http::ParameterMap &parmap = environment().getParameterMap();
   
 #if( ALLOW_URL_TO_FILESYSTEM_MAP )
-#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS )
+#if( BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS )
   //Allowing opening a file via the URL could potentially be a security issue
-  //  (not entirely sure how, but JIC), so will restrict this feature to
-  //  development builds only (outside of development we dont need this anyway).
+  //  if serving over the web, or the port being served on is available outside
+  //  of the local computer (or user account).  Therefore we will only enable this
+  //  feature for test setups, and to allow the Electron based app to more reliably
+  //  open spectrum files when the user drags the spectrum to the app icon; the Electron
+  //  app serves on 127.0.0.1, which is only available on the local computer, so this 
+  //  povides some protection.
   const Http::ParameterMap::const_iterator specfileiter
-  = parmap.find( "specfilename" );
+                                   = parmap.find( "specfilename" );
   if( (specfileiter != parmap.end()) && specfileiter->second.size() )
   {
+    //An initial test says  environment().clientAddress() return "127.0.0.1".
+    //  ToDo: after a little more testing enable always testing the request is
+    //        from 127.0.0.1, AND for Electron version of app that that the 
+    //        value of "externalid" in the URL matches ElectronUtils::external_id()
+    //UtilityFunctions::icontains( environment().clientAddress(), "127.0.0.1" )
+    
     const string filename = uri_decode( specfileiter->second[0] );
     loadedSpecFile = m_viewer->userOpenFileFromFilesystem( filename );
     if( loadedSpecFile )
-      cerr << "Openend file specified by URL '" << filename << "'" << endl;
+      cout << "Openend file specified by URL '" << filename << "'" << endl;
     else
       cerr << "Invalid specfile specified in URL '" << filename << "'" << endl;
   }//if( speciter != parmap.end() )
@@ -424,7 +434,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 
   
   const Http::ParameterMap::const_iterator speciter = parmap.find( "specfile" );
-  if( (speciter != parmap.end()) && speciter->second.size() )
+  if( !loadedSpecFile && (speciter != parmap.end()) && speciter->second.size() )
   {
     try
     {
