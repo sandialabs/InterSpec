@@ -1,3 +1,19 @@
+## v1.0.5 (August 23, 2019)
+This release is mostly small bug fixes, improvements, and the addition of the "Flux Tool".
+
+* Bug Fixes and improvements:
+  - A concurrency issue that could lead to the File Query Tool very rarely missing results for Windows/Linux was fixed.
+  - For Windows, fixed issue where when opening a spectrum file by dragging it to `InterSpec`s icon in Windows Explorer, the file wouldnt always be opened 
+  - The macOS version of InterSpec is now sandboxed, has the hardened runtime enabled, and notarized by Apple.  Unfortunately this required a one-time change that if you would like to keep your previous settings and worked saved in `InterSpec`s internal database, please see [these instructions](macOS_upgrade_notes.md)
+  - Some small improvements to plotting the spectra, including the background spectrum line is now plotted behind the foreground spectrum line.
+  - Other small fixes and improvements.
+
+
+* Feature addition:
+  - Added a "Flux Tool" that helps you to compute the number of gammas at a given energy produced by a source, either per unit area per second, or into 4&pi; steradians per second.  The tool uses the fit peak areas, an entered distance, and the detector response function to take into account geometrical and detection efficiencies.  More detailed information can be found in [flux_tool_help.pdf](v1.0.5/flux_tool_help.pdf) (also available inside `InterSpec`s built in help system).
+  ![Flux tool overview](v1.0.5/flux_tool_overview.png)
+
+
 ## v1.0.4 (July 21, 2019)
 This release primarily improves the interactivity with the spectrum.
 Download Windows, Linux, and macOS binaries from: [https://github.com/sandialabs/InterSpec/releases/tag/v1.0.4](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.4)
