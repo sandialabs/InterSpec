@@ -4,7 +4,7 @@ This release is mostly small bug fixes, improvements, and the addition of the **
 * Bug Fixes and improvements:
   - A concurrency issue that could lead to the **File Query Tool** rarely missing results for Windows/Linux was fixed.
   - Fixed issue in Windows, where when opening a spectrum file by dragging it to the `InterSpec` icon in Windows Explorer, the file wouldnt always be opened 
-  - The macOS version of InterSpec is now [sandboxed](https://developer.apple.com/app-sandboxing/), has the [hardened runtime](https://developer.apple.com/documentation/security/hardened_runtime_entitlements?language=objc) enabled, and [notarized](https://developer.apple.com/documentation/security/notarizing_your_app_before_distribution?language=objc) by Apple.  Unfortunately this required a one-time change that if you would like to keep your previous settings and work saved in `InterSpec`s internal database, please see [these instructions](v1.0.5/macOS_upgrade_notes).
+  - The macOS version of InterSpec is now [sandboxed](https://developer.apple.com/app-sandboxing/), has the [hardened runtime](https://developer.apple.com/documentation/security/hardened_runtime_entitlements?language=objc) enabled, and [notarized](https://developer.apple.com/documentation/security/notarizing_your_app_before_distribution?language=objc) by Apple.  Mac users, please see [these instructions](v1.0.5/macOS_upgrade_notes) for upgrade notes.
   - Some small improvements to plotting the spectra, including the background spectrum line is now plotted behind the foreground spectrum line.
   - Other small fixes and improvements.
 

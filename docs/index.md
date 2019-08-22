@@ -2,8 +2,7 @@
 
 - [Code and introductory page](https://github.com/sandialabs/InterSpec): [https://github.com/sandialabs/InterSpec](https://github.com/sandialabs/InterSpec)
 - [Latest Release](http://github.com/sandialabs/InterSpec/releases/latest): [http://github.com/sandialabs/InterSpec/releases/latest](http://github.com/sandialabs/InterSpec/releases/latest)
-  - <a href='https://apps.apple.com/us/app/interspec-radiation-analysis/id1447080767'><img alt='Get it on the Apple App Store' src='releases/assets/apple-badge.svg' width="236"/></a>
-  - <a href='https://play.google.com/store/apps/details?id=gov.sandia.interspec&hl=en_US&pcampaignid=MKT-Other-global-all-co-prtnr-py-PartBadge-Mar2515-1'><img alt='Get it on Google Play' src='https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png' width="236"/></a>
+  - <a href='https://apps.apple.com/us/app/interspec-radiation-analysis/id1447080767'><img alt='Get it on the Apple App Store' src='releases/assets/apple-badge.svg' width="150"/></a>  <a href='https://play.google.com/store/apps/details?id=gov.sandia.interspec&hl=en_US&pcampaignid=MKT-Other-global-all-co-prtnr-py-PartBadge-Mar2515-1'><img alt='Get it on Google Play' src='https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png' width="150"/></a>
 - [Release Notes, including short usage videos](https://sandialabs.github.io/InterSpec/releases/): [https://sandialabs.github.io/InterSpec/releases/](https://sandialabs.github.io/InterSpec/releases/)
 - [Tutorials and example problems/solutions](https://sandialabs.github.io/InterSpec/tutorials/): [https://sandialabs.github.io/InterSpec/tutorials/](https://sandialabs.github.io/InterSpec/tutorials/)
 
