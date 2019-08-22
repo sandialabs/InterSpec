@@ -7,15 +7,11 @@
 - [Tutorials and example problems/solutions](https://sandialabs.github.io/InterSpec/tutorials/): [https://sandialabs.github.io/InterSpec/tutorials/](https://sandialabs.github.io/InterSpec/tutorials/)
 
 
-<img src="imgs/overview_W187.png" width="33%"><img src="imgs/nuc_decay_chart_example.png" width="33%"><img src="imgs/ho166m_eu152_ex.png?" width="33%">
+Some example screenshots:
+<a href='imgs/overview_W187.png'><img src="imgs/overview_W187.png" width="33%"></a><a href='imgs/nuc_decay_chart_example.png'><img src="imgs/nuc_decay_chart_example.png" width="33%"></a><a href='imgs/ho166m_eu152_ex.png'><img src="imgs/ho166m_eu152_ex.png" width="33%"></a>
+<a href='imgs/th232_activity_fit.png'><img src="imgs/th232_activity_fit.png" width="33%"></a><a href='imgs/nuc_decay_chain_example.png'><img src="imgs/nuc_decay_chain_example.png" width="33%"></a><a href='imgs/nuclide_id_help.png'><img src="imgs/nuclide_id_help.png" width="33%"></a>
 
-<img src="imgs/overview_W187.png" width="33%"><img src="imgs/nuc_decay_chart_example.png" width="33%"><img src="imgs/ho166m_eu152_ex.png?" width="33%">
-
-
-![Activity Fit Tool](imgs/th232_activity_fit.png?raw=true "Advanced fitting for nuclide activity, age, and shielding")
-![Nuclear decay chain](imgs/nuc_decay_chain_example.png?raw=true "Decay chain visualization/reference")
-![Nuclide identification by energy](imgs/nuclide_id_help.png?raw=true "Nuclide identification by energy")
-![Dose calculation example](imgs/dose_calculator.png?raw=true "Dose calculator")
+<!--- ![Dose calculation example](imgs/dose_calculator.png?raw=true "Dose calculator") -->
 
 
 
