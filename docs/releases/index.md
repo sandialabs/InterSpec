@@ -1,5 +1,6 @@
 ## v1.0.5 (August 23, 2019)
 This release is mostly small bug fixes, improvements, and the addition of the **Flux Tool**.
+Download Windows, Linux, and macOS binaries from: [https://github.com/sandialabs/InterSpec/releases/tag/v1.0.5](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.5)
 
 * Bug Fixes and improvements:
   - A concurrency issue that could lead to the **File Query Tool** rarely missing results for Windows/Linux was fixed.
