@@ -17,5 +17,5 @@ Some example screenshots:
 
 
 
-<span style="font-size:8px; font-style: italic;">Apple and the Apple logo are trademarks of Apple Inc., registered in the U.S. and other countries and regions. App Store is a service mark of Apple Inc.</span>
-<span style="font-size:6px; font-style: italic;">Google Play and the Google Play logo are trademarks of Google LLC.</span>
+<div style="font-size:8px; font-style: italic;">Apple and the Apple logo are trademarks of Apple Inc., registered in the U.S. and other countries and regions. App Store is a service mark of Apple Inc.</div>
+<div style="font-size:8px; font-style: italic;">Google Play and the Google Play logo are trademarks of Google LLC.</div>
