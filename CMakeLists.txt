@@ -707,6 +707,32 @@ else( ANDROID OR IOS )
 
     set( app_headers ${headers} "target/osx/AppDelegate.h" )
 
+    # Xcode doesnt like having two bundles for some reason, so we will add the
+    # QuickLook project as an external project and add it to the final application
+    # at InterSpec.app/Contents/Library/QuickLook
+    include( ExternalProject )
+    ExternalProject_Add( SpecFilePreview
+        BINARY_DIR "${CMAKE_BINARY_DIR}/SpecFilePreview"
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/target/macOsQuickLook/SpecFilePreview/SpecFilePreview/
+        CMAKE_GENERATOR "Unix Makefiles"
+        CMAKE_CACHE_ARGS -DWt_INCLUDE_DIR:PATH=${Wt_INCLUDE_DIR}
+                         -DBOOST_ROOT:PATH=${Boost_INCLUDE_DIR}/..
+                         -DBOOST_INCLUDEDIR:PATH=${Boost_INCLUDE_DIR}
+                         -DCMAKE_BUILD_TYPE:STRING=RELEASE
+                         -DSpecUtils_ENABLE_D3_CHART:BOOL=OFF
+                         INSTALL_COMMAND ""
+    )
+
+    # Add dummy command to let cmake know SpecFilePreview.qlgenerator isnt available
+    # at configure time so it wont complain
+    add_custom_command( OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator" COMMAND "" )
+
+    #When archiving the app, the copy command doesnt get called... need to figure out...
+    #install( DIRECTORY SpecFilePreview/SpecFilePreview.qlgenerator DESTINATION "$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/" )
+#    add_custom_command( TARGET ${EXECUTABLE_NAME} POST_BUILD
+#    COMMAND mkdir -p $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/ && cp -r ${CMAKE_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator  $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/ )
+    #install( TARGETS SpecFilePreview BUNDLE DESTINATION "$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/" )
+
 
     #In order to copy all the needed resources to the "Archive" builds of Xcode,
     #  we need to specify each individual file, and later set their MACOSX_PACKAGE_LOCATION properties...
@@ -729,11 +755,14 @@ else( ANDROID OR IOS )
 
     ADD_EXECUTABLE( ${EXECUTABLE_NAME} MACOSX_BUNDLE ${app_sources} ${app_headers} ${sources} ${headers}
                     ${DATA_RES_SOURCES} ${WT_RES_SOURCES} ${INTERSPEC_RES_SOURCES} ${EXAMPLE_RES_SOURCES} ${EN_LOCALIZATION_FILES}
-                    "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib" )
+                    "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
+                    "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator"
+    )
     SET_TARGET_PROPERTIES( ${EXECUTABLE_NAME} PROPERTIES MACOSX_BUNDLE TRUE )
 
     SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 
+    add_dependencies(${EXECUTABLE_NAME} SpecFilePreview)
 
     #Set resources MACOSX_PACKAGE_LOCATION property so it is where we want in the app bundle
     #ToDo: combine 5 loops below into a single loop...
@@ -744,6 +773,8 @@ else( ANDROID OR IOS )
 
     # set( RES_SOURCES_DIRS DATA_RES_SOURCES WT_RES_SOURCES INTERSPEC_RES_SOURCES EXAMPLE_RES_SOURCES EN_LOCALIZATION_FILES )
     # set( RES_DEST_DIRS data resources InterSpec_resources example_spectra en.lproj )
+
+    set_property(SOURCE ${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator PROPERTY MACOSX_PACKAGE_LOCATION "Library/QuickLook/")
 
     foreach(RES_FILE ${DATA_RES_SOURCES})
       #Get the relative path from the data-folder to the particular file
@@ -777,6 +808,8 @@ else( ANDROID OR IOS )
 
     set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib" PROPERTY MACOSX_PACKAGE_LOCATION "Resources/en.lproj/")
 
+    #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
+    math(EXPR MACOS_BUNDLE_VERSION_NUMBER "100*(${PROJECT_VERSION_MAJOR}-1) + 10*${PROJECT_VERSION_MINOR} + ${PROJECT_VERSION_PATCH}" )
 
     set_target_properties( ${EXECUTABLE_NAME} PROPERTIES MACOSX_BUNDLE_INFO_PLIST
           "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/Info.plist.template" )
@@ -784,15 +817,6 @@ else( ANDROID OR IOS )
     set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
                            "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.entitlements")
 
-#Adding SpecFilePreview as a subdirectory generates a Xcode project for it...
-#  Also, we need to figure out how to copy the SpecFilePreview.qlgenerator to InterSpec.app/Contents/Library/QuickLook/
-#add_subdirectory( target/macOsQuickLook/SpecFilePreview/SpecFilePreview )
-#install(TARGETS SpecFilePreview DESTINATION $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/ )
-
-#Then need to copy the quicklook bundle to InterSpec.app/Contents/Library/QuickLook
-
-#add_custom_command( TARGET ${EXECUTABLE_NAME} POST_BUILD
-#                    COMMAND cp -r ${CMAKE_CURRENT_SOURCE_DIR}/example_spectra  $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Resources )
 
     # With out this next line, Xcode will (silently) fail to build Archive builds
     set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_INSTALL_PATH "/Applications")
@@ -900,7 +924,7 @@ endif( NOT IOS )
 #ENDIF(WIN32)
 
 if(APPLE AND NOT IOS)
-  set( CMAKE_OSX_DEPLOYMENT_TARGET "10.10" )
+  set( CMAKE_OSX_DEPLOYMENT_TARGET "10.10.0" )
 endif()
 
 #20180104: on my mac I tried compiling Wt with support for PDF (libharu), but only
@@ -922,8 +946,6 @@ endif()
 #bellow is what I need to get things working 20131120 for statically linked
 if( TRY_TO_STATIC_LINK )
   if(APPLE AND NOT IOS)
-    set( CMAKE_OSX_DEPLOYMENT_TARGET "10.10" )
-
     FIND_LIBRARY(LIBZ_LIBRARY z)
 
     list( APPEND LIBRARIES_TO_LINK_TO

@@ -3,7 +3,7 @@ const path = require('path');
 var pdf = require('html-pdf');
 
 var origdir = process.cwd();
-var helpfile = "make_drf_help.xml";
+var helpfile = "flux_tool_help.xml";
 try{
   process.chdir('../../..');
 console.log( 'cwd=' + process.cwd() );
