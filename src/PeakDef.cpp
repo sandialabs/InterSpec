@@ -3064,7 +3064,23 @@ float PeakDef::gammaParticleEnergy() const
     return m_xrayEnergy;
   
   if( m_reaction )
-    return m_reactionEnergy;
+  {
+    switch( m_sourceGammaType )
+    {
+      case NormalGamma:
+      case XrayGamma:
+        return m_reactionEnergy;
+        
+      case AnnihilationGamma:
+        return static_cast<float>( 510.99891*SandiaDecay::keV );
+        
+      case SingleEscapeGamma:
+        return m_reactionEnergy - 510.9989f;
+        
+      case DoubleEscapeGamma:
+        return m_reactionEnergy - 2.0f*510.9989f;
+    }//switch( m_sourceGammaType )
+  }//if( m_reaction )
   
   throw runtime_error( "Peak doesnt have a gamma associated with it" );
   
