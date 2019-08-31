@@ -1360,7 +1360,8 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
           bool currentlyused = false;
           for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
           {
-            if( pp->reaction() == rpp.reaction )
+            if( pp->reaction() && (pp->reaction() == rpp.reaction)
+                && (fabs(pp->reactionEnergy() - rpp.energy) < 1.0) )
             {
               currentlyused = true;
               if( dist < prevPeakDist )
