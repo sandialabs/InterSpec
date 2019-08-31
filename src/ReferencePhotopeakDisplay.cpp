@@ -402,7 +402,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_shieldingSelect( NULL ),
     m_particleView( NULL ),
     m_particleModel( NULL ),
-    m_layout( NULL ),
     m_currentlyShowingNuclide(),
     m_colorSelect( nullptr ),
     m_userHasPickedColor( false ),
@@ -420,9 +419,14 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   const bool showToolTipInstantly
       = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
-  m_layout = new WGridLayout();
-  m_layout->setContentsMargins( 0, 0, 0, 0 );
-  
+  //The inputDiv/Layout is the left side of the widget that holds all the
+  //  nuclide input,age, color picker, DRF, etc
+  WContainerWidget *inputDiv = new WContainerWidget();
+  WGridLayout *inputLayout = new WGridLayout();
+  inputLayout->setContentsMargins( 0, 0, 0, 0 );
+  inputDiv->setLayout( inputLayout );
+    
+    
   const bool isPhone = m_spectrumViewer->isPhone();
     
   if( isPhone )
@@ -434,7 +438,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     addStyleClass( "ReferencePhotopeakDisplay" );
   }//if( specViewer->isPhone() ) / else
   
-  setLayout( m_layout );
+  
   
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
   const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
@@ -456,8 +460,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
 //  m_nuclideEdit->selected().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
   
-  m_layout->addWidget( nucInputLabel, 0, 0, AlignMiddle );
-  m_layout->addWidget( m_nuclideEdit, 0, 1, 1, 1 );
+  inputLayout->addWidget( nucInputLabel, 0, 0, AlignMiddle );
+  inputLayout->addWidget( m_nuclideEdit, 0, 1 );
   
   Wt::JSlot *hotKeySlot = m_spectrumViewer->hotkeyJsSlot();
   if( hotKeySlot )
@@ -518,8 +522,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_ageEdit->setValidator(validator);
   m_ageEdit->setAutoComplete( false );
 
-  m_layout->addWidget( ageInputLabel, 1, 0, AlignMiddle );
-  m_layout->addWidget( m_ageEdit, 1, 1 );
+  
+  inputLayout->addWidget( ageInputLabel, 1, 0, AlignMiddle );
+  inputLayout->addWidget( m_ageEdit, 1, 1 );
   m_ageEdit->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_ageEdit->blurred().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_ageEdit->enterPressed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
@@ -559,7 +564,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   //m_layout->addWidget( m_promptLinesOnly, 3, 2, AlignMiddle );
   
   WContainerWidget *hlRow = new WContainerWidget();
-  m_layout->addWidget( hlRow, 3, 0, 1, 3 );
+  inputLayout->addWidget( hlRow, 2, 0, 1, 3 );
   
   m_halflife = new WText( hlRow );
   //Hack to make the text roughly vertically align in middle due to increased color input size...
@@ -592,13 +597,13 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   specViewer->detectorChanged().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
   specViewer->detectorModified().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
   
-  m_layout->addWidget( m_detectorDisplay, 4, 0,  1, 3 );
+  inputLayout->addWidget( m_detectorDisplay, 3, 0,  1, 3 );
 
   m_shieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
   m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
   m_shieldingSelect->materialChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_shieldingSelect->materialModified().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_layout->addWidget( m_shieldingSelect, 5, 0, 1, 3 );
+  inputLayout->addWidget( m_shieldingSelect, 4, 0, 1, 3 );
 
 
   //m_persistLines = new WPushButton( "Persist" );
@@ -607,7 +612,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   HelpSystem::attachToolTipOn( m_persistLines, tooltip, showToolTipInstantly );
 
   m_persistLines->clicked().connect( this, &ReferencePhotopeakDisplay::persistCurentLines );
-  m_layout->addWidget( m_persistLines, 0, 2 );
+  inputLayout->addWidget( m_persistLines, 0, 2 );
   m_persistLines->disable();
 
   //Well make the "Clear All" button a little bit wider for phones so that
@@ -630,13 +635,13 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
             " lines.";
   HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTipInstantly );
   m_clearLines->clicked().connect( this, &ReferencePhotopeakDisplay::clearAllLines );
-  m_layout->addWidget( m_clearLines, 1, 2 );
+  inputLayout->addWidget( m_clearLines, 1, 2 );
 
   //m_fitPeaks = new WPushButton( "Fit Peaks" );
   //tooltip = "Fits dominant peaks for primary nuclide";
   //HelpSystem::attachToolTipOn( m_fitPeaks, tooltip, showToolTipInstantly );
   //m_fitPeaks->clicked().connect( this, &ReferencePhotopeakDisplay::fitPeaks );
-  //m_layout->addWidget( m_fitPeaks, 2, 2 );
+  //inputLayout->addWidget( m_fitPeaks, 2, 2 );
   //m_fitPeaks->disable();
   
   if( m_lineColors.empty() )
@@ -682,7 +687,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showBetas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_showBetas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   
-  m_layout->addWidget( whatToShow, 6, 0, 1, 3 );
+  inputLayout->addWidget( whatToShow, 5, 0, 1, 3 );
 
   
   m_showAlphas->checked().connect( std::bind([](){
@@ -719,11 +724,16 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   if( !isPhone )
     setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
 
-  m_layout->addWidget( m_particleView, 0, 3, 8, 1 );
-  m_layout->addWidget( new WContainerWidget(), 7, 1, 1, 3 );
-  
-  m_layout->setColumnStretch( 3, 1 );
-  m_layout->setRowStretch( 7, 1 );
+  inputLayout->addWidget( new WContainerWidget(), 6, 0, 1, 3 );
+  inputLayout->setRowStretch( 6, 1 );
+    
+  WGridLayout *overallLayout = new WGridLayout();
+  overallLayout->setContentsMargins( 0, 0, 0, 0 );
+  setLayout( overallLayout );
+    
+  overallLayout->addWidget( inputDiv, 0, 0 );
+  overallLayout->addWidget( m_particleView, 0, 1 );
+  overallLayout->setColumnStretch( 1, 1 );
 }//ReferencePhotopeakDisplay constructor
 
 

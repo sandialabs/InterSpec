@@ -293,8 +293,6 @@ protected:
   Wt::WTreeView *m_particleView;
   DecayParticleModel *m_particleModel;
 
-  Wt::WGridLayout *m_layout;
-
   std::vector<ReferenceLineInfo> m_persisted;
   ReferenceLineInfo m_currentlyShowingNuclide;
   
