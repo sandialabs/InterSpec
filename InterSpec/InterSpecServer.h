@@ -30,10 +30,17 @@
 
 #include <Wt/WApplication>
 
+
 namespace InterSpecServer
 {
   void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication );
+  
+  void startServerNodeAddon( std::string proccessname,
+                             std::string basedir,
+                             const std::string configpath );
+  
+  
   void killServer();
   
   
@@ -51,7 +58,7 @@ namespace InterSpecServer
   bool changeToBaseDir( int argc, char *argv[] );
   
   std::string getWtConfigXml( int argc, char *argv[] );
-}
+}//namespace InterSpecServer
 
 
 #endif /* InterSpecServer_hpp */

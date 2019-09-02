@@ -49,9 +49,6 @@
 #include <Wt/Json/Object>
 #include <Wt/Json/Parser>
 
-#include "websocketpp/client.hpp"
-#include "websocketpp/config/asio_no_tls_client.hpp"
-
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -65,7 +62,6 @@
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 using namespace std;
-typedef websocketpp::client<websocketpp::config::asio_client> ws_client_t;
 
 
 namespace
@@ -74,406 +70,11 @@ namespace
   string ns_externalid;
   std::mutex ns_externalid_mutex;
   
-  std::mutex ns_run_mutex;
-  std::condition_variable ns_run_cv;
-  bool ns_keep_running = true;
-  
-  
-  /** Protect ns_send_message variable.*/
-  std::mutex ns_send_message_mutex;
-  
-  /** Function to send a message to main.js (node) via websocket connection.
-      Take a lock on ns_send_message_mutex using ns_send_message; you should
-      also check to make sure its valid.
-   
-   Note: I *think* the multithreading on the websocket sender is okay, but need
-         do check the websocketpp documentation a little closer.
-   */
-  std::function<void(std::string)> ns_send_message;
-  
-  
-  Wt::WApplication *createApplication( const Wt::WEnvironment &env )
-  {
-    return new InterSpecApp( env );
-  }// Wt::WApplication *createApplication(const Wt::WEnvironment& env)
-  
-  
-  //Returns true if should keep running
-  bool handle_parent_message( const std::string &recieved )
-  {
-    const bool shutdown = (recieved.find( "command=exit" ) != string::npos);
-    if( shutdown )
-      return false;
-    
-    if( UtilityFunctions::istarts_with(recieved, "openfile=") )
-    {
-      //Are we garunteed to recieve the entire message at once?
-      cerr << "Opening files not tested!" << endl;
-      
-      vector<string> files;
-      
-      try
-      {
-        Wt::Json::Value result;
-        Wt::Json::parse( recieved.substr(9), result, true );
-        
-        if( result.type() != Wt::Json::ArrayType )
-          throw runtime_error( "Json passed in was not an array" );
-        
-        const Wt::Json::Array &jsonfiles = result;
-        for( const auto &val : jsonfiles )
-        {
-          const string valstr = val.orIfNull("");
-          if( UtilityFunctions::is_file(valstr) )
-            files.push_back(valstr);
-          else
-            cerr << "File '" << valstr << "' is not a file" << endl;
-        }//for( const auto &val : jsonfiles )
-      }catch( std::exception &e )
-      {
-        cerr << "Failed to parse '" << recieved.substr(9)
-        << "' as valid JSON. Issue: " << e.what() << endl;
-      }//try / catch
-      
-      
-      //Look for session with 'externalid' and open file...
-      string externalid;
-      {
-        lock_guard<mutex> lock(ns_externalid_mutex);
-        externalid = ns_externalid;
-      }
-      
-      InterSpecApp *app = InterSpecApp::instanceFromExtenalIdString( externalid );
-      if( app )
-      {
-        Wt::WApplication::UpdateLock applock( app );
-        
-        for( auto filename : files )
-        {
-          if( !app->userOpenFromFileSystem( filename ) )
-            cerr << "InterSpec failed to open file filename" << endl;
-        }
-        
-        app->triggerUpdate();
-      }else
-      {
-        //I dont know why we would get here... but lets deal with it JIC
-        cerr << "There is no app with externalid=" << externalid << endl;
-        Wt::WServer *server = Wt::WServer::instance();
-        if( server )
-        {
-          cerr << "Will ask ALL current sesssions to open file." << endl;
-          
-          server->postAll( std::bind( [files](){
-            Wt::WApplication *wtap = wApp;
-            if( !wtap )
-            {
-              //Not sure why this happens some times.
-              cerr << "No WApplication::instance() in postAll(...)" << endl;
-              return;
-            }
-            
-            InterSpecApp *app = dynamic_cast<InterSpecApp *>( wtap );
-            assert( app );
-            
-            InterSpec *interspec = app->viewer();
-            assert( interspec );
-            
-            for( auto filename : files )
-            {
-              if( !app->userOpenFromFileSystem( filename ) )
-                cerr << "InterSpec failed to open file filename" << endl;
-            }
-            
-            app->triggerUpdate();
-          }) );
-        }else
-        {
-          cerr << "There is no server running, not opening file." << endl;
-        }
-      }//if( app ) / else
-    }else
-    {
-      cerr << "Unrecognized command: " << recieved << endl;
-    }
 
-    return true;
-  }//void handle_parent_message( const std::string &msg )
-  
-  void do_ipc_shutdown()
-  {
-    cout << "Shutting dow IPC mechanism" << endl;
-    std::unique_lock<std::mutex> run_lock( ns_run_mutex );
-    ns_keep_running = false;
-    run_lock.unlock();
-    ns_run_cv.notify_all();
-    cout << "Done shutting down IPC" << endl;
-  }
-  
 }//namespace
 
 namespace ElectronUtils
 {
-
-int run_app( int argc, char *argv[] )
-{
-  //Port used to communicate with Electron App.
-  int ipc_port = 0;
-  string userdatadir;
-  
-  for( int i = 1; i < argc-1; ++i )
-  {
-    if( argv[i] == string("--ipc") )
-    {
-      try
-      {
-        ipc_port = std::stoi( argv[i+1] );
-      }catch( std::exception & )
-      {
-        std::cerr << "IntializeError: --ipc value of '" << argv[i+1]
-                  << "' is not a valid integer." << endl;
-        return EXIT_FAILURE;
-      }
-    }else if( argv[i] == string("--userdatadir") )
-    {
-      userdatadir = argv[i+1];
-    }else if( argv[i] == string("--externalid") )
-    {
-      lock_guard<mutex> lock(ns_externalid_mutex);
-      ns_externalid = argv[i+1];
-	}else if (argv[i] == string("--basedir"))
-	{
-    InterSpec::setStaticDataDirectory( argv[i + 1] );
-
-		try
-		{
-		  boost::filesystem::current_path(argv[i + 1]);
-		  cout << "Changed to cwd: " << argv[i + 1] << endl;
-		}catch ( std::exception &e )
-		{
-		  cerr << "Unable to change to directory: '" << argv[i + 1] << "' :" << e.what() << endl;
-		}
-	}
-  }//for( int i = 1; i < argc-1; ++i )
-  
-  if( !ipc_port )
-  {
-    std::cerr << "IntializeError: no \"--ipc\" specified." << endl;
-    return EXIT_FAILURE;
-  }
-  
-  if( userdatadir.empty() )
-  {
-    std::cerr << "IntializeError: no \"--userdatadir\" specified." << endl;
-    return EXIT_FAILURE;
-  }
-  
-  if( !UtilityFunctions::create_directory(userdatadir) )
-  {
-    cerr << "IntializeError: Failed to create directory '"
-         << userdatadir << "' for user data." << endl;
-    return EXIT_FAILURE;
-  }
-  
-  {//begin lock on ns_externalid_mutex
-    lock_guard<mutex> lock(ns_externalid_mutex);
-    if( ns_externalid.empty() )
-    {
-      std::cerr << "IntializeError: no \"--externalid\" specified." << endl;
-      return EXIT_FAILURE;
-    }
-    cout << "Using externalid: " << ns_externalid << endl;
-  }//end lock on ns_externalid_mutex
-  
-  
-  const string preffile = UtilityFunctions::append_path( userdatadir, "InterSpecUserData.db" );
-  
-  cout << "Will set user preferences file to: '" << preffile << "'" << endl;
-  DataBaseUtils::setPreferenceDatabaseFile( preffile );
-  DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( userdatadir );
-  const auto serial_db = UtilityFunctions::ls_files_in_directory( userdatadir, "serial_to_model.csv" );
-  if( !serial_db.empty() )
-    SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
-  ResourceUpdate::setUserDataDirectory( userdatadir );
-  InterSpec::setWritableDataDirectory( userdatadir );
-
-  cout << "Will make sure preferences database is up to date" << endl;
-  DataBaseVersionUpgrade::checkAndUpgradeVersion();
-  
-  ResourceUpdate::setupGlobalPrefsFromDb();
-  
-  cout << "Using port " << ipc_port << " for interprocess communication" << endl;
-  
-  try
-  {
-    InterSpecServer::startServer( argc, argv, &createApplication );
-  }catch( std::runtime_error &e )
-  {
-    std::cerr << "IntializeError: " << e.what() << endl;
-    return EXIT_FAILURE;
-  }
-  
-  //const int interspec_port = InterSpecServer::portBeingServedOn();
-  std::string const interspec_url = InterSpecServer::urlBeingServedOn();
-  
-  
-  ws_client_t ws_client;
-  websocketpp::connection_hdl ws_handle;
-  websocketpp::lib::asio::io_service ws_io_service;
-  
-  ws_client.clear_access_channels(websocketpp::log::alevel::all);
-  ws_client.set_access_channels(websocketpp::log::alevel::connect);
-  ws_client.set_access_channels(websocketpp::log::alevel::disconnect);
-  ws_client.set_access_channels(websocketpp::log::alevel::app);
-  
-  websocketpp::log::level elog_level =( 0x0
-                                       | websocketpp::log::elevel::devel
-                                       | websocketpp::log::elevel::library
-                                       | websocketpp::log::elevel::info
-                                       | websocketpp::log::elevel::warn
-                                       | websocketpp::log::elevel::rerror
-                                       | websocketpp::log::elevel::fatal
-                                       );
-  ws_client.get_elog().set_channels( elog_level );
-  
-  ws_client.init_asio( &ws_io_service );
-
-#if( defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64) )
-  boost::asio::signal_set signals(ws_io_service, SIGINT, SIGTERM, SIGABRT);
-#else
-  boost::asio::signal_set signals( ws_io_service, SIGINT, SIGTERM, SIGHUP );
-#endif
-
-  auto handle_interupt = []( const boost::system::error_code& error, int signal_number ) {
-    if( error )  // m_signals is destructing or canceled or something maybe?
-      return;
-    do_ipc_shutdown();
-  };//handle_interupt(...)
-  
-  signals.async_wait( [&handle_interupt](const boost::system::error_code& error, int signal_number){
-    cerr << "boost::asio::signal_set, recived error: " << error.message() << " (" << signal_number << ")" << endl;
-    handle_interupt(error,signal_number);
-  });
-  
-  ws_client.set_interrupt_handler( [&handle_interupt]( websocketpp::connection_hdl hdl ){
-    cerr << "WebSocket recieved interupt" << endl;
-    handle_interupt( boost::system::error_code{}, 0 );
-  });
-  
-  //The open handler is called after the WebSocket handshake is complete and
-  //  the connection is considered OPEN.
-  ws_client.set_open_handler( [&ws_client,&ws_handle,&interspec_url](websocketpp::connection_hdl hdl){
-    cout << "WebSocket connection opened in c++" << endl;
-    ws_handle = hdl;
-    websocketpp::lib::error_code ec;
-    ws_client.send( hdl, "InterSpecUrl=" + interspec_url, websocketpp::frame::opcode::TEXT, ec );
-    if( ec )
-    {
-      cerr << "IntializeError: Failed to send InterSpecUrl after open" << endl;
-      do_ipc_shutdown();
-    }
-  } );
-  
-  //The close handler is called immediately after the connection is closed.
-  ws_client.set_close_handler( [&ws_handle,&ws_client](websocketpp::connection_hdl hdl){
-    cout << "WebSocket close connection handler" << endl;
-    ws_handle.reset();
-    do_ipc_shutdown();
-    ws_client.stop_perpetual();
-    ws_client.stop();
-  } );
-  
-  //The fail handler is called whenever the connection fails while the
-  //  handshake is bring processed.
-  ws_client.set_fail_handler( [&ws_handle,&ws_client](websocketpp::connection_hdl hdl){
-    cerr << "IntializeError: WebSocket handshake failed" << endl;
-    ws_handle.reset();
-    do_ipc_shutdown();
-    ws_client.stop_perpetual();
-    ws_client.stop();
-  } );
-
-  ws_client.set_message_handler( []( websocketpp::connection_hdl hdl, ws_client_t::message_ptr msg ){
-    if( !handle_parent_message( msg->get_payload() ) )
-    {
-      cerr << "Recieved shutdown message, will close connection." << endl;
-      do_ipc_shutdown();
-    }
-  } );
-  
-  std::thread runner( [&ws_io_service](){ ws_io_service.run(); } );
-  
-  
-  websocketpp::lib::error_code ec;
-  
-  {//begin scope of con
-#ifdef __linux__
-    ws_client_t::connection_ptr con = ws_client.get_connection("http://127.0.0.1:" + to_string(ipc_port), ec);
-#else
-    ws_client_t::connection_ptr con = ws_client.get_connection("http://[::1]:" + to_string(ipc_port), ec);
-#endif
-  
-    cout << "Got con" << endl;
-    if( ec )
-    {
-      cerr << "Get Connection Error: " << ec.message() << endl;
-    
-      return EXIT_FAILURE;
-    }
-  
-    ws_handle = con->get_handle();
-    cout << "Got handle" << endl;
-  
-    ws_client.connect( con );
-    cout << "Queded connection" << endl;
-  }//end scope of con
-  
-  {
-    std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
-    ns_send_message = [ws_handle,&ws_client]( std::string msg ){
-      websocketpp::lib::error_code ec;
-      ws_client.send( ws_handle, msg, websocketpp::frame::opcode::TEXT, ec );
-      
-      if( ec )
-        throw runtime_error( "Error sending request for new clean session: " + ec.message() );
-    };
-  }
-  
-  {
-    std::unique_lock<std::mutex> run_lock( ns_run_mutex );
-    while( ns_keep_running )
-      ns_run_cv.wait( run_lock, []{return !ns_keep_running;} );
-  }
-  
-  {
-    std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
-    ns_send_message = nullptr;
-  }
-  
-  cout << "Will kill InterSpec server" << endl;
-  InterSpecServer::killServer();
-  
-  ws_client.send( ws_handle, "ServerKilled", websocketpp::frame::opcode::TEXT, ec );
-  if( ec )
-  {
-    cerr << "ShutdownError: Failed to send 'ServerKilled' message: " << ec.message() << endl;
-    do_ipc_shutdown();
-  }
-  
-  cout << "Will stop ws_client" << endl;
-  if( ws_client.is_listening() )
-    ws_client.stop_listening( ec );
-  
-  if( ws_client.get_con_from_hdl(ws_handle,ec) )
-    ws_client.close( ws_handle, websocketpp::close::status::going_away, "", ec );
-  
-  
-  cout << "Will join IPC main thread" << endl;
-  runner.join();
-  
-  cout << "Exiting native sub-process code" << endl;
-  return EXIT_SUCCESS;
-}//int run_app( int argc, char *argv[] )
 
 std::string external_id()
 {
@@ -484,6 +85,9 @@ std::string external_id()
 bool requestNewCleanSession()
 {
   const string newexternalid = Wt::WRandom::generateId( 16 );
+  
+#warning "Need to implement calling back into JS for requestNewCleanSession"
+  /*
   std::cout << "requestNewCleanSession()"<< endl;
   
   {
@@ -509,14 +113,17 @@ bool requestNewCleanSession()
   }
   
   std::cout << "requestNewCleanSession() successfully sent" << endl;
+*/
   return true;
 }//void requestNewCleanSession()
   
   
 bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
 {
-  std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
-  
+#warning "Need to implement calling back into JS for notifyNodeJsOfNewSessionLoad"
+/*
+ std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
+ 
   if( !ns_send_message )
   {
     std::cerr << "notifyNodeJsOfNewSessionLoad(): No active connection" << std::endl;
@@ -533,6 +140,167 @@ bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
   }
   
   std::cout << "notifyNodeJsOfNewSessionLoad() successfully sent" << endl;
+*/
+  
   return true;
 }//bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
 }//namespace ElectronUtils
+
+
+#if( BUILD_AS_ELECTRON_APP )
+
+int interspec_start_server( const char *process_name, const char *userdatadir,
+                            const char *basedir, const char *xml_config_path )
+{
+  try
+  {
+    //ToDo: refactor this userdatadir stuff into function inside InterSpecServer
+    //      or InterSpecApp or something.
+    if( !UtilityFunctions::create_directory(userdatadir) )
+      throw std::runtime_error( "Failed to create directory '" + string(userdatadir) + "' for user data." );
+  
+    const string preffile = UtilityFunctions::append_path( userdatadir, "InterSpecUserData.db" );
+    
+    cout << "Will set user preferences file to: '" << preffile << "'" << endl;
+    DataBaseUtils::setPreferenceDatabaseFile( preffile );
+    DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( userdatadir );
+    const auto serial_db = UtilityFunctions::ls_files_in_directory( userdatadir, "serial_to_model.csv" );
+    if( !serial_db.empty() )
+      SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
+#if( ENABLE_RESOURCE_UPDATES )
+    ResourceUpdate::setUserDataDirectory( userdatadir );
+#endif
+    InterSpec::setWritableDataDirectory( userdatadir );
+    
+    cout << "Will make sure preferences database is up to date" << endl;
+    DataBaseVersionUpgrade::checkAndUpgradeVersion();
+    
+#if( ENABLE_RESOURCE_UPDATES )
+    ResourceUpdate::setupGlobalPrefsFromDb();
+#endif
+    
+    InterSpec::setStaticDataDirectory( UtilityFunctions::append_path(basedir,"data") );
+    
+    //try
+    //{
+    //  boost::filesystem::current_path( basedir );
+    //  cout << "Changed to cwd: " << basedir << endl;
+    //}catch ( std::exception &e )
+    //{
+    //  cerr << "Unable to change to directory: '" << basedir << "' :" << e.what() << endl;
+    //}
+    
+    InterSpecServer::startServerNodeAddon( process_name, basedir, xml_config_path );
+  }catch( std::exception &e )
+  {
+    std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"
+    << e.what() << std::endl << std::endl;
+    return -1;
+  }
+  
+  return InterSpecServer::portBeingServedOn();
+}//int interspec_start_server( int argc, char *argv[] )
+
+void interspec_add_session_id( const char *session_id )
+{
+#warning "Need to make add_session_id() handle more than just single session ID"
+  lock_guard<mutex> lock(ns_externalid_mutex);
+  ns_externalid = session_id;
+}//void interspec_add_session_id( const char *session_id )
+
+int interspec_open_file( const char *sessionToken, const char *files_json )
+{
+  #warning "Need to actually test interspec_open_file"
+  
+  //Are we garunteed to recieve the entire message at once?
+  cerr << "Opening files not tested!" << endl;
+    
+  vector<string> files;
+    
+  try
+  {
+    Wt::Json::Value result;
+    Wt::Json::parse( files_json, result, true );
+    
+    if( result.type() != Wt::Json::ArrayType )
+      throw runtime_error( "Json passed in was not an array" );
+      
+    const Wt::Json::Array &jsonfiles = result;
+    for( const auto &val : jsonfiles )
+    {
+      const string valstr = val.orIfNull("");
+      if( UtilityFunctions::is_file(valstr) )
+        files.push_back(valstr);
+      else
+        cerr << "File '" << valstr << "' is not a file" << endl;
+    }//for( const auto &val : jsonfiles )
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to parse '" << files_json
+         << "' as valid JSON. Issue: " << e.what() << endl;
+  }//try / catch
+    
+    
+  //Look for session with 'externalid' and open file...
+  string externalid = sessionToken;
+    
+  InterSpecApp *app = InterSpecApp::instanceFromExtenalIdString( externalid );
+  if( app )
+  {
+    Wt::WApplication::UpdateLock applock( app );
+    
+    for( auto filename : files )
+    {
+      if( !app->userOpenFromFileSystem( filename ) )
+        cerr << "InterSpec failed to open file filename" << endl;
+    }
+      
+    app->triggerUpdate();
+  }else
+  {
+    //I dont know why we would get here... but lets deal with it JIC
+    cerr << "There is no app with externalid=" << externalid << endl;
+    Wt::WServer *server = Wt::WServer::instance();
+    if( server )
+    {
+      cerr << "Will ask ALL current sesssions to open file." << endl;
+        
+      server->postAll( std::bind( [files](){
+        Wt::WApplication *wtap = wApp;
+        if( !wtap )
+        {
+          //Not sure why this happens some times.
+          cerr << "No WApplication::instance() in postAll(...)" << endl;
+          return;
+        }
+          
+        InterSpecApp *app = dynamic_cast<InterSpecApp *>( wtap );
+        assert( app );
+        
+        InterSpec *interspec = app->viewer();
+        assert( interspec );
+        
+        for( auto filename : files )
+        {
+          if( !app->userOpenFromFileSystem( filename ) )
+              cerr << "InterSpec failed to open file filename" << endl;
+        }
+          
+        app->triggerUpdate();
+      }) );
+    }else
+    {
+      cerr << "There is no server running, not opening file." << endl;
+    }
+  }//if( app ) / else
+  
+  return -1;
+}
+
+void interspec_kill_server()
+{
+  InterSpecServer::killServer();
+}//void interspec_kill_server()
+
+
+#endif //#if( BUILD_AS_ELECTRON_APP )

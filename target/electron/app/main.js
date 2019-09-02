@@ -53,24 +53,23 @@
 
 const electron = require('electron')
 
+const interspec = require('./build/Release/InterSpecAddOn.node');
+
+
 const {dialog} = electron;
 const {Menu, MenuItem} = electron;
 
-const WebSocket = require('ws')
+
 const http = require('http');
 const path = require('path')
 var fs = require("fs")
 const url = require('url')
-var spawn = require('child_process').spawn;
 
 // Module to control application life.
 const app = electron.app
 // Module to create native browser window.
 const BrowserWindow = electron.BrowserWindow
 
-
-let ws_server = null;
-var ws_connection = null;
 var initial_file_to_open = null;
 var page_loaded = false, wtapp_loaded = false;
 let interspec_url = null;
@@ -83,10 +82,6 @@ global.__basedir = __dirname;
 //  (we could setup allowing multiple windows, but not currently properly
 //   handled in most places)
 let mainWindow
-
-// Reference to the spawned instance of the InterSpec server
-let child_process = null;
-let ipc_server = null;
 
 //Create the 'externalid' we will designate for the main window
 const crypto = require('crypto');
@@ -165,7 +160,7 @@ function load_file(filename){
     filename.push( singlefname );
   }
   
-  if( !wtapp_loaded || !page_loaded || !ws_connection ){
+  if( !wtapp_loaded || !page_loaded || !interspec_url ){
     if( initial_file_to_open ){
        if( Array.isArray(initial_file_to_open) )
          filename = initial_file_to_open.concat(filename);
@@ -177,13 +172,11 @@ function load_file(filename){
     console.log( "Will open files " + JSON.stringify(filename) + " once page_loaded" );
     return;
   }
-  
+
   var msg = "openfile=" + JSON.stringify(filename);
   console.log( "" + (typeof filename)+ "To IPC Sending: " +  msg );
-  ws_connection.send(msg, function ack(error) {
-    // If error is not defined, the send has been completed, otherwise the error
-    // object will indicate what failed.
-  });
+
+  interspec.openFile( session_token, JSON.stringify(filename) );
 }
 
 
@@ -236,21 +229,6 @@ function get_launch_options(){
   //app.getPath('temp')
 }
 
-function findInterSpecExe(){
-  //Should look around for InterSpec.exe ...
-  //console.log( "global.__basedir=" + global.__basedir );
-  //console.log( "process.cwd=" + process.cwd() );
-  var appDir = path.dirname(require.main.filename);
-  return path.join(appDir, "InterSpec.exe")
-}
-
-function getInterSpecWorkingDirectory(){
-  //console.log( "global.__basedir=" + global.__basedir );
-  //console.log( "process.cwd=" + process.cwd() );
-  
-  //should search around for 'data', 'resources', and 'InterSpec_resources' directories, or at least loading.html
-  return path.dirname(require.main.filename);
-}
 
 function doMenuStuff(currentwindow){
   
@@ -325,9 +303,20 @@ function createWindow () {
   
   
   if( interspec_url ) {
-    mainWindow.loadURL( interspec_url + "?externalid=" + session_token );
+    let msg = interspec_url  + "?externalid=" + session_token;
+    if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
+      let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
+      msg += "&specfilename=" + encodeURI(filepath);
+      initial_file_to_open = null;
+    }
+  
+    interspec.addSessionId( session_token );
+
+    console.log('Will Load ' + msg);
+
+    mainWindow.loadURL( msg );
   } else {
-    let workingdir = getInterSpecWorkingDirectory();
+    let workingdir = path.dirname(require.main.filename);
     mainWindow.loadURL( "file://" + path.join(workingdir, "loading.html") );
   }
   
@@ -541,57 +530,16 @@ app.on('ready', function(){
   session_token = session_token_buf.toString('hex');
   console.log("Session token: " + session_token );
 
+  const process_name = require.main.filename;
+  const basedir = path.dirname(require.main.filename);
+  const xml_config_path = path.join(basedir, "/data/config/wt_config_electron.xml");
 
-
-  ipc_server = http.createServer((socket) => {
+  const portnum = interspec.startServingInterSpec( process_name, userdata, basedir, xml_config_path );
   
-  }).on('error', (err) => {
-    // handle errors here
-    dialog.showErrorBox("Error Creating IPC", "Message: " + err );
-    app.quit();
-  });
-  
-  
-  ipc_server.listen( () => {
-    console.log( 'opened IPC server on', ipc_server.address() );
-    
-    ws_server = new WebSocket.Server( {server: ipc_server} );
-    
-    ws_server.on('connection', function connection(ws, req) {
-      const ip = req.connection.remoteAddress;  //should make sure a local IP, or else destroy connection
-      ws_connection = ws;
-      ws.isAlive = true;
-      console.log('This connection! ' + ip );
-      
-      ws.on('message', function incoming(data) {
-        var msg = data.toString();
-        if( msg.startsWith("InterSpecUrl=") ){
-          msg = msg.substr(13);
-          interspec_url = "" + msg;
-          msg += "?externalid=" + session_token
 
-//XXX - ToDo!
-//Need to make sure the address contains 127.0.0.1 or the IPv6 equivalent - not localhost (this can be spoofed).
-//  Perhaps make it so the WebSocket connection sends back the port only (and ensure only digits), not the
-//  address.
-//See: https://letsencrypt.org/docs/certificates-for-localhost/
-//  I feel like there is more that can be done to ensure security, but not totally convinced
-//  any of my hair-brained certificate or challenge based schemes are actually secure...
-//I guess the best I have so far is something similar to the  "--externalid" that is passed to the 
-//  c++ executable, but instead of having as a url argument, could have it as part of the URL path,
-//  so this way we can require all traffic, both in Electron and in InterSpec to come from, and 
-//  go to this URL (same thing with IPC WebSocket)
+  interspec_url = "http://127.0.0.1:" + portnum;
 
-          //If we are opening one spectrum file, just do it immediately on app load, via
-          //  specifying it in the URL.
-          if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
-            let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
-            msg += "&specfilename=" + encodeURI(filepath);
-            initial_file_to_open = null;
-          }
-
-          console.log('Will Load ' + msg);
-          mainWindow.loadURL( msg );
+/*
         }else if( msg.startsWith("ServerKilled") ) {
           console.log( "Received ServerKilled" );
           interspec_url = null;
@@ -623,128 +571,11 @@ app.on('ready', function(){
         } else {
           console.log('In JS Received ' + data.toString());
         }
-      });
-      
-      ws.on( 'close', function close(code,msg){
-        console.log( 'WebSocket closed in JS' );
-      } );
-      
-      ws.on( 'error', function close(code,msg){
-        console.log( 'WebSocket Error in JS' );
-      } );
-      
-      ws.on( 'headers', function headers(headers,response){
-        //Emitted when response headers are received from the server as part of
-        //the handshake. This allows you to read headers from the server, for example 'set-cookie' headers.
-      } );
-      
-      
-      ws.on( 'open', function open(){
-        console.log( 'WebSocket open in JS' );
-      } );
-      
-      ws.on( 'ping', function ping(data){
-        console.log( 'WebSocket ping in JS' );
-      } );
-      
-      ws.on( 'pong', function pong(data){
-        console.log( 'WebSocket pong in JS' );
-      } );
-      
-      ws.on( 'unexpected-response', function unexpected(data){
-        console.log( 'WebSocket unexpected-response in JS' );
-      } );
-    });
-    
-    ws_server.on('error', function incoming(error) {
-      console.log('got ws error: ' + error);
-    });
-    
-    
-    //var executablePath = "/Users/wcjohns/rad_ana/InterSpec/build_electron/bin/Debug/InterSpec.exe";
-    var executablePath = findInterSpecExe();   
-    let basedir = getInterSpecWorkingDirectory();
-    
-    var spawn_options = {shell: true, detached: false};
-    
-    let network_drive = false; //If on a Win32 UNC drive, e.g., a network drive.
-      if (process.platform === "win32") {
-          let testregex = /^[\\\/]{2,}[^\\\/]+[\\\/]+[^\\\/]+/;
+        */
 
-          network_drive = testregex.test(executablePath);
-          console.log('On network drive: ' + network_drive);
-          //network_drive = (basedir.startsWith("\\\\") || basedir.startsWith("//"));
-          //network_drive = true;
-    }
-
-      if (network_drive) {
-          //This method of launching the InterSpec server executable looks to work wether or
-          //  not we're on a network drive - however, we will still preffer "properly" 
-          //  launching things if we're not on a network drive because I havent tested 
-          //  this stuff super much
-          executablePath = "pushd \"" + path.dirname(executablePath) + "\""
-              + " & InterSpec.exe --docroot ."
-              + " --http-adress 0.0.0.0"
-              + " -c \"" + basedir + "\\data\\config\\wt_config_electron.xml\""
-              + " --ipc " + ipc_server.address().port.toString()
-              + " --userdatadir \"" + userdata + "\""
-              + " --externalid " + session_token;
-          console.log("Will launch InterSpec server with command: " + executablePath );
-          spawn_options.cwd = app.getPath('temp');
-          child_process = spawn(executablePath, [], spawn_options);
-    } else {
-
-      var parameters = ["--docroot", ".", "--http-address", "0.0.0.0",
-              "-c", "data/config/wt_config_electron.xml",
-              "--ipc", ipc_server.address().port,
-              "--userdatadir", "\"" + userdata + "\"",
-              "--externalid", session_token
-      ];
-
-      spawn_options.cwd = basedir;
-      child_process = spawn( '"' + executablePath + '"', parameters, spawn_options);
-    }
-
-    child_process.on('error', (err) => {
-      console.log('Failed to start child process. ' + err );
-      document.write(process.versions.electron)
-      
-      if( mainWindow ){
-        let contents = mainWindow.webContents();
-        contents.executeJavaScript( "document.body.appendChild( document.createTextNode('Error...') );", true );
-      }
-    });
     
-    child_process.on("exit",  function(){
-      console.log( "Wt code exited" )
-      child_process = null;
-      app.quit();
-    } )
     
-    child_process.stdout.on('data', (data) => {
-      console.log(`stdout: ${data}`);
-      
-      //Dont output if contains with:
-      //"GET /", "POST /", "WebRequest:"
-    });
-    
-    child_process.stderr.on('data', (data) => {
-      console.log(`stderr: ${data}`);
-      
-      //if( data.contains('IntializeError') ){
-        //There was a problem starting Wt....
-        // We only need to do this until a page loads and we are all good
-        //display:none
-        //let contents = mainWindow.webContents();
-        //let jsstr = "var el=document.getElementById('errormsgs');
-          //          + "if(el) el.insertAdjacentHTML('<b>" + "errormsg" + "</b>');";
-        //contents.executeJavaScript( jsstr, true );
-      //}
-      
-    });
-    
-  });
- 
+    //var executablePath = "/Users/wcjohns/rad_ana/InterSpec/build_electron/bin/Debug/InterSpec.exe"; 
   
   createWindow();
 });
@@ -757,36 +588,17 @@ app.on('window-all-closed', function () {
     //app.quit()
   //}
   
-  //Right now we kill all Wt sessions, even ones a browser may have open.  We
-  //  could change this to hang around untill all sessions are closed...
-  if( ws_connection )
-    ws_connection.send('command=exit', function ack(error) {
-      // If error is not defined, the send has been completed, otherwise the error
-      // object will indicate what failed.
-    });
-  else
-    app.quit();
+  interspec.killServer();
+
+  app.quit();
 })
 
 app.on('before-quit', function() {
   //Emitted before the application starts closing its windows.
   app_is_closing = true;
   
-  if( ws_connection )
-  {
-    console.log( "Sending Wt code command to exit" );
-    ws_connection.send('command=exit', function ack(error) {
-      // If error is not defined, the send has been completed, otherwise the error
-      // object will indicate what failed.
-    });
-  }else if (typeof child_process !== 'undefined' && child_process !== null )
-  {
-    console.log( "Sending child SIGTERM command" );
-    child_process.kill('SIGTERM');
-  }else
-  {
-    console.log( "Native code is shutdown" );
-  }
+  console.log( "Sending Wt code command to exit" );
+  interspec.killServer();
 });
 
 app.on('will-quit', function(){
