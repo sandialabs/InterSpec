@@ -47,6 +47,14 @@
 
 using namespace std;
 
+namespace
+{
+  Wt::WApplication *create_application( const Wt::WEnvironment &env )
+  {
+    return new InterSpecApp( env );
+  }// Wt::WApplication *createApplication(const Wt::WEnvironment& env)
+}
+
 namespace InterSpecServer
 {
   int sm_portServedOn = -1;
@@ -215,6 +223,60 @@ namespace InterSpecServer
     }//if( server.start() )
   }//void startServer()
   
+
+  
+  void startServerNodeAddon( string name,
+                             std::string basedir,
+                             const std::string xml_config_path )
+  {
+    boost::lock_guard<boost::mutex> serverlock( ns_servermutex );
+    if( ns_server )
+    {
+      std::cerr << "experimental_startServer: already running" << std::endl;
+      return;
+    }
+    
+    if( name.empty() )
+      name = "\0";
+    if( basedir.empty() )
+      basedir = ".";
+    
+    ns_server = new Wt::WServer( name, xml_config_path );
+    char *exe_param_name  = &(name[0]);
+    char httpaddr_param_name[]  = "--http-addr";
+    char httpaddr_param_value[] = "127.0.0.1";
+    char httpport_param_name[]  = "--http-port";
+    char httpport_param_value[] = "0";           //Assign port automatically
+    char docroot_param_name[]   = "--docroot";
+    char *docroot_param_value  = &(basedir[0]);
+    
+    char *argv_wthttp[] = { exe_param_name,
+      httpaddr_param_name, httpaddr_param_value,
+      httpport_param_name, httpport_param_value,
+      docroot_param_name, docroot_param_value
+    };
+    const int argc_wthttp = sizeof(argv_wthttp)/sizeof(argv_wthttp[0]);
+    
+    ns_server->setServerConfiguration( argc_wthttp, argv_wthttp, WTHTTP_CONFIGURATION );
+    
+    ns_server->addEntryPoint( Wt::Application, boost::bind( &createAppForServer, _1, create_application ) );
+    
+    if( ns_server->start() )
+    {
+      const int port = ns_server->httpPort();
+      std::string this_url = "http://127.0.0.1:" + boost::lexical_cast<string>(port);
+      
+      {
+        boost::lock_guard<boost::mutex> lock( sm_servedOnMutex );
+        sm_portServedOn = port;
+        sm_urlServedOn = this_url;
+      }
+    }else
+    {
+      throw std::runtime_error( "Failed to start Wt server" );
+    }//if( server.start() )
+  }
+  
   
   void killServer()
   {
@@ -233,3 +295,4 @@ namespace InterSpecServer
   
   
 }//namespace InterSpecServer
+

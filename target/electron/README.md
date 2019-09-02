@@ -35,10 +35,14 @@ cd ../target/electron/app
 npm install electron -g
 npm install electron-packager -g
 
+
 #Install the packages needed to make a distrbutable
 #  You may need to edit package.json to get dependancies to work out
 #  or manually locally install some of them 
 npm install package.json
+
+#Build the native code
+npm run build
 
 #If all has gone well, open an electron window and run InterSpec
 npm start

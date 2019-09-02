@@ -155,14 +155,6 @@ This InterSpec Software was developed with funds from the Science and Technology
       </div>
     </li>
 
-    <li><b><a href="https://github.com/zaphoyd/websocketpp" target="_blank">WebSocket++</a> 0.7.0:</b> C++ library that implements RFC6455 The WebSocket Protocol.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>WebSocket++</b> is used to communicate between the c++ code and the <b>Electron</b> gui for Windows and Linux stand-alone desktop builds of <b>InterSpec</b>.
-        <b>WebSocket++</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
-        (Windows and Linux Electron builds only)
-      </div>
-    </li>
-
     <li><b><a href="https://jquery.org/" target="_blank">jQuery</a> 1.11.1:</b> javascript library.
       <div style="margin-left: 1em; font-size: small;">
         <b>jQuery</b> is used to help deal with cross-browser idiosyncrasies in the client-side java script.

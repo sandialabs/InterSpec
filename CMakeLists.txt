@@ -41,7 +41,7 @@ option( INCLUDE_ANALYSIS_TEST_SUITE "Allow whether user can save and load test s
 
 option( PERFORM_DEVELOPER_CHECKS "Performs additional computationally expensive tests during execution" off )
 option( USE_OSX_NATIVE_MENU "Mirrors WMenus with OSX native NSMenu (not fully implemented)" off )
-option( USE_ELECTRON_NATIVE_MENU "Mirrors WMenus with Electrons native Menu (not fully implemented)" on )
+option( USE_ELECTRON_NATIVE_MENU "Mirrors WMenus with Electrons native Menu (not fully implemented)" OFF )
 option( USE_HIGH_BANDWIDTH_INTERACTIONS "Allow more interactiveness with the charts" ON )
 option( SUPPORT_ZIPPED_SPECTRUM_FILES "(Work in progress) Allows opening zipped spectrum files" ON )
 option( ENABLE_RESOURCE_UPDATES "Enables user uploads of resource (nuc decay info, DRFs, etc) upgrades" ON )
@@ -127,11 +127,11 @@ else( BUILD_AS_OSX_APP )
     endif()
 endif( BUILD_AS_OSX_APP )
 
-if(ANDROID OR IOS OR BUILD_AS_UNIT_TEST_SUITE )
+if(ANDROID OR IOS OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_ELECTRON_APP )
   SET( LINK_TO_OBJECT ${LIBRARYNAME})
-else(ANDROID OR IOS OR BUILD_AS_UNIT_TEST_SUITE )
+else()
   SET( LINK_TO_OBJECT ${EXECUTABLE_NAME})
-endif(ANDROID OR IOS OR BUILD_AS_UNIT_TEST_SUITE )
+endif()
 
 
 IF(ANDROID)
@@ -253,6 +253,10 @@ IF( BUILD_AS_ELECTRON_APP )
   set( USE_OSX_NATIVE_MENU OFF )
   set( USE_SPECRUM_FILE_QUERY_WIDGET ON )
   set( USE_TERMINAL_WIDGET OFF )
+  set( SpecUtils_ENABLE_D3_CHART ON )
+  set( USE_SPECTRUM_CHART_D3 ON )
+  set( USE_SEARCH_MODE_3D_CHART ON )
+  set( USE_ELECTRON_NATIVE_MENU ON )
 ENDIF( BUILD_AS_ELECTRON_APP )
 
 
@@ -357,6 +361,7 @@ ENDIF(NOT BOOST_WT_FOUND)
 
 
 set( sources
+    src/InterSpecApp.cpp
     src/DecayDataBaseServer.cpp
     src/IsotopeSelectionAids.cpp
     src/IsotopeId.cpp
@@ -432,6 +437,7 @@ set( sources
 
 set( headers
     InterSpec/InterSpec_config.h.in
+    InterSpec/InterSpecApp.h
     InterSpec/DecayDataBaseServer.h
     InterSpec/IsotopeSelectionAids.h
     InterSpec/IsotopeId.h
@@ -502,29 +508,25 @@ set( headers
 )
 
 if( USE_DB_TO_STORE_SPECTRA )
-  set( headers ${headers} InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h )
-  set( sources ${sources} src/DbStateBrowser.cpp src/DbFileBrowser.cpp )
+  list( APPEND sources src/DbStateBrowser.cpp src/DbFileBrowser.cpp )
+  list( APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h )
 endif( USE_DB_TO_STORE_SPECTRA )
 
 if( ALLOW_URL_TO_FILESYSTEM_MAP )
-    set( headers ${headers} InterSpec/DbToFilesystemLink.h  )
-    set( sources ${sources} src/DbToFilesystemLink.cpp  )
+    list( APPEND sources src/DbToFilesystemLink.cpp  )
+    list( APPEND headers InterSpec/DbToFilesystemLink.h  )
+
 endif( ALLOW_URL_TO_FILESYSTEM_MAP )
 
 if( NOT ANDROID AND NOT IOS )
-    set( sources ${sources} src/FileDragUploadResource.cpp )
-    set( headers ${headers} InterSpec/FileDragUploadResource.h )
+    list( APPEND sources src/FileDragUploadResource.cpp )
+    list( APPEND headers InterSpec/FileDragUploadResource.h )
 endif( NOT ANDROID AND NOT IOS )
 
 if( BUILD_AS_ELECTRON_APP )
-  set( sources ${sources} src/InterSpecServer.cpp target/electron/ElectronUtils.cpp )
-  set( headers ${headers} InterSpec/InterSpecServer.h target/electron/ElectronUtils.h )
+  list( APPEND sources src/InterSpecServer.cpp target/electron/ElectronUtils.cpp )
+  list( APPEND headers InterSpec/InterSpecServer.h target/electron/ElectronUtils.h )
 endif( BUILD_AS_ELECTRON_APP )
-
-
-set( sources src/InterSpecApp.cpp ${sources} )
-set( headers InterSpec/InterSpecApp.h ${headers} )
-
 
 if( INCLUDE_ANALYSIS_TEST_SUITE )
     set( sources ${sources} src/SpectrumViewerTester.cpp )
@@ -840,10 +842,16 @@ else( ANDROID OR IOS )
 
     if( BUILD_AS_UNIT_TEST_SUITE )
       add_library( ${LIBRARYNAME} STATIC ${sources} ${headers} )
-      #list( APPEND LIBRARIES_TO_LINK_TO ${LIBRARYNAME} )
       add_executable( ${EXECUTABLE_NAME} ${GUI_TYPE} main.cpp )
+      target_link_libraries( ${EXECUTABLE_NAME} PUBLIC ${LIBRARYNAME} )
     else( BUILD_AS_UNIT_TEST_SUITE )
-      add_executable( ${EXECUTABLE_NAME} ${GUI_TYPE} main.cpp ${sources} ${headers} )
+      if( BUILD_AS_ELECTRON_APP )
+        add_library( ${LIBRARYNAME} SHARED ${sources} ${headers} )
+        add_executable( ${EXECUTABLE_NAME} ${GUI_TYPE} main.cpp )
+        target_link_libraries( ${EXECUTABLE_NAME} PUBLIC ${LIBRARYNAME} )
+      else( BUILD_AS_ELECTRON_APP )
+        add_executable( ${EXECUTABLE_NAME} ${GUI_TYPE} main.cpp ${sources} ${headers} )
+      endif( BUILD_AS_ELECTRON_APP )
     endif( BUILD_AS_UNIT_TEST_SUITE )
 
   endif( BUILD_AS_OSX_APP )
@@ -1114,12 +1122,6 @@ add_custom_target( interspec_resources SOURCES ${OTHER_SUPPORT_FILES} )
 
 
 IF( BUILD_AS_ELECTRON_APP )
-
-  find_path( WEBSOCKETPP_INCLUDE_DIR NAMES websocketpp/version.hpp REQUIRED
-             HINTS "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/websocketpp/" )
-
-  target_include_directories( ${LINK_TO_OBJECT} PUBLIC ${WEBSOCKETPP_INCLUDE_DIR} )
-
   set( ELECTRON_SUPPORT_FILES
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/main.js
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/loading.html

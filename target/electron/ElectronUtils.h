@@ -27,15 +27,9 @@
 
 #include <string>
 
+
 namespace ElectronUtils
 {
-  /** Must specify:
-      - --userdatadir "/path/to/writable/app/data/dir"
-      - --externalid "SomeUniqueString"
-      - --ipc "<port number>"
-   */
-  int run_app( int argc, char *argv[] );
-  
   /** The externalid passed into #run_app. */
   std::string external_id();
   
@@ -59,6 +53,41 @@ namespace ElectronUtils
    */
   bool notifyNodeJsOfNewSessionLoad( const std::string externalid );
 }//namespace ElectronUtils
+
+#if( BUILD_AS_ELECTRON_APP )
+
+#ifdef _WIN32
+#define LIB_INTERFACE(type) __declspec(dllexport) type __cdecl
+#else
+#define LIB_INTERFACE(type) type
+#endif
+
+extern "C"
+{
+  /** Returns port being served on.
+   Will always serve on 127.0.0.1.
+   
+   All input paths should be UTF-8
+   ToDo: Make sure basedir and xml_config_path all work okay on Windows - maybe consider making them relative (in the JS probably)
+   */
+  LIB_INTERFACE(int) interspec_start_server( const char *process_name,
+                                            const char *user_data_dir,
+                                            const char *basedir,
+                                            const char *xml_config_path );
+  
+  
+  LIB_INTERFACE(void) interspec_kill_server();
+  
+  /** ToDo: 
+   */
+  LIB_INTERFACE(void) interspec_add_session_id( const char *session_id );
+  
+  /** files_json should be a JSON array of files. */
+  LIB_INTERFACE(int) interspec_open_file( const char *sessionToken, const char *files_json );
+
+}//extern "C"
+
+#endif //#if( BUILD_AS_ELECTRON_APP )
 
 
 #endif  //#ifndef ElectronUtils_h
