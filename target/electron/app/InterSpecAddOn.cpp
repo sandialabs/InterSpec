@@ -94,19 +94,35 @@ namespace functionexample
   }
   
 
-  Napi::Boolean addSessionId(const Napi::CallbackInfo& info) 
+  Napi::Boolean addSessionToken(const Napi::CallbackInfo& info) 
   {
     Napi::Env env = info.Env();
 
     if (info.Length() < 1 || !info[0].IsString() ) {
-        Napi::TypeError::New(env, "setBaseDir: Expected one strings").ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "addSessionToken: Expected one strings").ThrowAsJavaScriptException();
     } 
 
-    std::string seshid = info[0].ToString();
+    std::string token = info[0].ToString();
 
-    interspec_add_session_id( seshid.c_str() );
+    interspec_add_allowed_session_token( token.c_str() );
 
     return Napi::Boolean::New( env, true );
+  }
+
+
+  Napi::Number removeSessionToken(const Napi::CallbackInfo& info) 
+  {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 1 || !info[0].IsString() ) {
+        Napi::TypeError::New(env, "removeSessionToken: Expected one strings").ThrowAsJavaScriptException();
+    } 
+
+    std::string token = info[0].ToString();
+
+    const int removed = interspec_remove_allowed_session_token( token.c_str() );
+
+    return Napi::Number::New( env, removed );
   }
 
 
@@ -132,7 +148,9 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   exports.Set( "openFile", Napi::Function::New(env, functionexample::openFile ));
 
   exports.Set( "setTempDir", Napi::Function::New(env, functionexample::setTempDir ));
-  exports.Set( "addSessionId", Napi::Function::New(env, functionexample::addSessionId ));
+  exports.Set( "addSessionToken", Napi::Function::New(env, functionexample::addSessionToken ));
+  exports.Set( "removeSessionToken", Napi::Function::New(env, functionexample::removeSessionToken ));
+
 
   exports.Set("add", Napi::Function::New(env, functionexample::AddWrapped));
   return exports;

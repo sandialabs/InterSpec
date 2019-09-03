@@ -249,6 +249,9 @@ namespace InterSpecServer
     char httpport_param_value[] = "0";           //Assign port automatically
     char docroot_param_name[]   = "--docroot";
     char *docroot_param_value  = &(basedir[0]);
+    //char approot_param_name[]   = "--approot";
+    //char *approot_param_value  = &(basedir[0]);
+    
     
     char *argv_wthttp[] = { exe_param_name,
       httpaddr_param_name, httpaddr_param_value,

@@ -56,6 +56,10 @@ const electron = require('electron')
 const interspec = require('./build/Release/InterSpecAddOn.node');
 
 
+//To use IPC, just:
+const { ipcMain } = electron;
+
+
 const {dialog} = electron;
 const {Menu, MenuItem} = electron;
 
@@ -76,6 +80,11 @@ let interspec_url = null;
 let app_is_closing = false;
 
 global.__basedir = __dirname;
+
+
+exports.test = function(){
+  console.log( "interspec_url=" + interspec_url );
+};
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -310,7 +319,7 @@ function createWindow () {
       initial_file_to_open = null;
     }
   
-    interspec.addSessionId( session_token );
+    interspec.addSessionToken( session_token );
 
     console.log('Will Load ' + msg);
 
@@ -320,7 +329,7 @@ function createWindow () {
     mainWindow.loadURL( "file://" + path.join(workingdir, "loading.html") );
   }
   
-  // Open the DevTools.
+  // Open the developer tools.
   //mainWindow.webContents.openDevTools({mode: "bottom"})
 
   // Emitted when the window is closed.
@@ -536,48 +545,55 @@ app.on('ready', function(){
 
   const portnum = interspec.startServingInterSpec( process_name, userdata, basedir, xml_config_path );
   
+  if( portnum <= 0 ){
+    //Load
+  }
 
   interspec_url = "http://127.0.0.1:" + portnum;
-
-/*
-        }else if( msg.startsWith("ServerKilled") ) {
-          console.log( "Received ServerKilled" );
-          interspec_url = null;
-          if( !app_is_closing  )
-            app.quit();
-        }else if( msg.startsWith("NewCleanSession:") ) {
-
-          session_token = msg.substr(16);
-          console.log( "Received NewCleanSession" );
-          
-          doMenuStuff(mainWindow);
-          
-          mainWindow.loadURL( interspec_url + "?externalid=" + session_token + "&restore=no");
-        }else if( msg.startsWith("SessionFinishedLoading:") ) {
-          
-          wtapp_loaded = true;
-
-          let loadedexternalid = msg.substr(23);
-          console.log( "Received SessionFinishedLoading for ID='" + loadedexternalid + "'" );
-            
-          //ToDo: should make sure loadedexternalid is what we want
-          //ToDo: just aff &specfilename="UriEncodedFilename" to URL argument... (but make sure ALLOW_URL_TO_FILESYSTEM_MAP is enabled)
-          
-          if( initial_file_to_open )
-          {
-            load_file(initial_file_to_open);
-            initial_file_to_open = null;
-          }
-        } else {
-          console.log('In JS Received ' + data.toString());
-        }
-        */
-
-    
-    
-    //var executablePath = "/Users/wcjohns/rad_ana/InterSpec/build_electron/bin/Debug/InterSpec.exe"; 
   
   createWindow();
+
+  ipcMain.on('NewCleanSession', function(evt, oldtoken ){
+    //ToDo: Check that oldtoken is valid token; also identify window this token belongs to
+    console.log( 'Got NewCleanSession from session with token: ' + oldtoken );
+    const session_token_buf = crypto.randomBytes(16);
+    session_token = session_token_buf.toString('hex');
+    console.log("New session token: " + session_token );
+    
+    interspec.removeSessionToken( oldtoken );
+    interspec.addSessionToken( session_token );
+    doMenuStuff(mainWindow);
+    mainWindow.loadURL( interspec_url + "?externalid=" + session_token + "&restore=no");
+  } );
+
+  ipcMain.on('SessionFinishedLoading', function(evt, token ){
+    wtapp_loaded = true;
+
+    console.log( "Received SessionFinishedLoading for Token='" + token + "'" );
+      
+    //ToDo: should make sure token is what we want
+    //ToDo: just aff &specfilename="UriEncodedFilename" to URL argument... (but make sure ALLOW_URL_TO_FILESYSTEM_MAP is enabled)
+    
+    if( initial_file_to_open )
+    {
+      load_file(initial_file_to_open);
+      initial_file_to_open = null;
+    }
+  } );
+  
+  //Setup a debug message, mostly for timing things.
+  ipcMain.on('debug-msg', function(evt,msg){
+    var timestamp = '[' + Date.now() + '] ';
+    console.log( timestamp + msg );
+  } );
+  
+  //"ServerKilled"
+
+
+////Then from the browsers JS, do:
+//const { ipcRenderer } = require('electron');
+//ipcRenderer.send('test-event', "Hello dude")
+
 });
 
 // Quit when all windows are closed.
