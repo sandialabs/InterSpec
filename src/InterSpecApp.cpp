@@ -177,6 +177,15 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   //Might as well initialize the DecayDataBaseServer, but in the background
   WServer::instance()->ioService().post( &DecayDataBaseServer::initialize );
  
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  if( !checkExternalTokenFromUrl() )
+  {
+    new WText( "Invalid external token.", root() );
+    quit();
+    return;
+  }
+#endif
+  
   setupDomEnvironment();
   setupWidgets( true );
 }//InterSpecApp constructor
@@ -193,6 +202,22 @@ InterSpecApp::~InterSpecApp()
 }//~InterSpecApp()
 
 
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+bool InterSpecApp::checkExternalTokenFromUrl()
+{
+  const Http::ParameterMap &parmap = environment().getParameterMap();
+  for( const Http::ParameterMap::value_type &p : parmap )
+  {
+    if( UtilityFunctions::iequals(p.first, "externalid") && !p.second.empty() )
+      m_externalToken = p.second.front();
+  }//for( const Http::ParameterMap::value_type &p : parmap )
+  
+  //ToDo: actually enforce the token being one of the allowed ones.
+  return true;
+}//bool checkExternalTokenFromUrl()
+#endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+
+
 void InterSpecApp::setupDomEnvironment()
 {
 #if( BUILD_AS_ELECTRON_APP )
@@ -202,7 +227,9 @@ void InterSpecApp::setupDomEnvironment()
 
 #if( USE_ELECTRON_NATIVE_MENU )
   //Some support to use native menu...
-  doJavaScript( "const {remote} = require('electron');const {Menu, MenuItem} = remote;", false );
+  doJavaScript( "const { remote, ipcRenderer } = require('electron');const {Menu, MenuItem} = remote;", false );
+#else
+  doJavaScript( "const {remote, ipcRenderer} = require('electron'); ", false );
 #endif
   
 #endif
@@ -761,19 +788,22 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     << m_viewer->m_user->userName() << endl;
   
   
-#if( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  if( !m_externalToken.empty() )
   {
-    string externalid;
-    for( const Http::ParameterMap::value_type &p : parmap )
-    {
-      if( UtilityFunctions::iequals(p.first, "externalid") && !p.second.empty() )
-        externalid = p.second.front();
-    }//for( const Http::ParameterMap::value_type &p : parmap )
-    
-    WTimer::singleShot( 25, std::bind( [externalid](){
-      ElectronUtils::notifyNodeJsOfNewSessionLoad(externalid);
+    WTimer::singleShot( 25, std::bind( [](){
+      ElectronUtils::notifyNodeJsOfNewSessionLoad();
     }) );
-  }
+  }//if( !m_externalToken.empty() )
+#endif
+  
+#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+  if( !m_externalToken.empty() )
+  {
+    //ToDo: time if WTimer::singleShot or post() is better
+    //WServer::instance()->post( sessionId(), [](){ PopupDivMenu::triggerElectronMenuUpdate(); } );
+    PopupDivMenu::triggerElectronMenuUpdate();
+  }//if( !m_externalToken.empty() )
 #endif
 }//void setupWidgets()
 
@@ -856,22 +886,36 @@ InterSpec *InterSpecApp::viewer()
 }//InterSpec* viewer()
 
 
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-std::string InterSpecApp::sessionUrlId()
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+std::string InterSpecApp::externalToken()
 {
   WApplication::UpdateLock lock( this );
+  return m_externalToken;
+}//const std::string &externalToken() const
 
-  const Http::ParameterMap &parmap = environment().getParameterMap();
-  for( const Http::ParameterMap::value_type &p : parmap )
-  {
-    if( UtilityFunctions::iequals(p.first, "externalid") && !p.second.empty() )
-      return p.second.front();
-  }//for( const Http::ParameterMap::value_type &p : parmap )
+
+InterSpecApp *InterSpecApp::instanceFromExtenalToken( const std::string &idstr )
+{
+  if( idstr.empty() )
+    return (InterSpecApp *)0;
   
-  return "";
-}//const std::string &sessionUrlId() const
+  std::lock_guard<std::mutex> lock( AppInstancesMutex );
+  //cout << "THere are AppInstances=" << AppInstances.size() << "; we want session: '" << idstr << "'" << std::endl;
+  for( InterSpecApp *app : AppInstances )
+  {
+    Wt::WApplication::UpdateLock lock( app );
+    //cout << "\t An instance=" << app->externalToken() << std::endl;
+    if( app->externalToken() == idstr )
+      return app;
+  }
+  
+  return nullptr;
+}//InterSpecApp *instanceFromExtenalToken( const std::string &idstr )
+#endif //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
 
 
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
 bool InterSpecApp::userOpenFromFileSystem( const std::string &path )
 {
   if( !m_viewer )
@@ -892,25 +936,6 @@ std::set<InterSpecApp *> InterSpecApp::runningInstances()
   std::lock_guard<std::mutex> lock( AppInstancesMutex );
   return AppInstances;
 }//set<InterSpecApp *> runningInstances()
-
-
-InterSpecApp *InterSpecApp::instanceFromExtenalIdString( const std::string &idstr )
-{
-  if( idstr.empty() )
-    return (InterSpecApp *)0;
-  
-  std::lock_guard<std::mutex> lock( AppInstancesMutex );
-  //cout << "THere are AppInstances=" << AppInstances.size() << "; we want session: '" << idstr << "'" << std::endl;
-  for( InterSpecApp *app : AppInstances )
-  {
-    Wt::WApplication::UpdateLock lock( app );
-    //cout << "\t An instance=" << app->sessionUrlId() << std::endl;
-    if( app->sessionUrlId() == idstr )
-      return app;
-  }
-  
-  return (InterSpecApp *)0;
-}//InterSpecApp *instanceFromExtenalIdString( const std::string &idstr )
 
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 
@@ -938,7 +963,7 @@ bool InterSpecApp::isElectronInstance()
   if( !lock )
     return false;
 
-  const string externalid = app->sessionUrlId();
+  const string externalid = app->externalToken();
   
   //XXX - should compare externalid to ElectronUtils::external_id()
 

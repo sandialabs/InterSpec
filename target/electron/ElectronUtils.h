@@ -33,6 +33,8 @@ namespace ElectronUtils
   /** The externalid passed into #run_app. */
   std::string external_id();
   
+  
+#if( USE_ELECTRON_NATIVE_MENU )
   /** Requests main.js to load a new clean session (i.e., don restore any state)
    This is a workaround to when the user requests a new session, the normal
    mechanism in c++ creates duplicate Electron menu items...
@@ -40,21 +42,25 @@ namespace ElectronUtils
    @returns whether message was succesfully sent or not.
    */
   bool requestNewCleanSession();
-  
+#endif
   
   /** Sends a message through the websocket connection letting main.js know that
    the session has loaded.
    
-   @param The 'externalid' URL argument so main.js knows which session has loaded.
    @returns whether message was succesfully sent or not.
    
    Note: main.js will wait till recieveing this notification before asking the
    session to open any files the OS requested.
    */
-  bool notifyNodeJsOfNewSessionLoad( const std::string externalid );
+  bool notifyNodeJsOfNewSessionLoad();
 }//namespace ElectronUtils
 
 #if( BUILD_AS_ELECTRON_APP )
+
+/* Since we are using node-addon-api to interface to LibInterSpec, we could use
+ standard c++ (namespaced) functions, however to avoid any issues with compiler
+ versions or whatever, we will only call extern "C" functions from N-API.
+ */
 
 #ifdef _WIN32
 #define LIB_INTERFACE(type) __declspec(dllexport) type __cdecl
@@ -75,15 +81,36 @@ extern "C"
                                             const char *basedir,
                                             const char *xml_config_path );
   
-  
+  /** ToDo: also remove all session tokens
+   */
   LIB_INTERFACE(void) interspec_kill_server();
   
-  /** ToDo: 
+  /** ToDo: allow adding of mutliple tokens; should also add a mechanism to
+            mark the token as having been loaded, so it cant be reused.
    */
-  LIB_INTERFACE(void) interspec_add_session_id( const char *session_id );
+  LIB_INTERFACE(void) interspec_add_allowed_session_token( const char *session_token );
   
-  /** files_json should be a JSON array of files. */
-  LIB_INTERFACE(int) interspec_open_file( const char *sessionToken, const char *files_json );
+  /** Returns -1 if invalid token.  Returns +1 if valid token that had never been loaded.  Returns zero if .  */
+  LIB_INTERFACE(int) interspec_remove_allowed_session_token( const char *session_token );
+  
+  
+  /** Open one or more files from the filesystem.  For macOS this would be
+      dropping a file to the app icon in the Finder.  Or on Windows it would be
+      dropping multiple files onto app icon.
+   
+      ToDo: should add logic to try and figure out what files are background, foreground, etc.
+   
+      \param session_token session token you want to open the file.
+      \param files_json: a JSON array of files to open.  Opened,
+             ex. ["/path/to/some/file","/some/other/file"] .
+             Input files are opened one at a time using #InterSpecApp::userOpenFromFileSystem
+      \returns number of files opened.
+               Will be zero if files were not valid spectrum files.
+               -1 if files_json is invalid format.
+               -2 if session_token is invalid (however, currently will ask ALL
+               sessions to open the files... ToDo: decide on this behaviour).
+   */
+  LIB_INTERFACE(int) interspec_open_file( const char *session_token, const char *files_json );
 
 }//extern "C"
 

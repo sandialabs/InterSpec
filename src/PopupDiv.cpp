@@ -227,8 +227,8 @@ function( name, selfid )
       //console.log('Set Electron Menu Item: ' + i.label );
       return;
     }
-   console.log('Failed to set Electron Menu Item data for : ' + name );
   }
+  console.log('Failed to find Electron Menu Item data for : ' + name );
 });
 
 WT_DECLARE_WT_MEMBER(AddMenuItemToElectronMenu, Wt::JavaScriptFunction, "AddMenuItemToElectronMenu",
@@ -248,8 +248,6 @@ function( selfid, txt, iconstr, itemid, roleType )
     console.log('Couldnt get app menu');
     return;
   }
-  
-  //Menu.setApplicationMenu(null);
 
   var newItem = new MenuItem({label: txt,
     role: roleType,
@@ -261,9 +259,8 @@ function( selfid, txt, iconstr, itemid, roleType )
   
   $(window).data('electronItem'+itemid, newItem);
   
-  //console.log( 'Set electronItem for ' + itemid );
-  
-  Menu.setApplicationMenu(appmenu);
+  if( $(window).data('HaveTriggeredMenuUpdate') )
+    Menu.setApplicationMenu(appmenu);
 });
 
 WT_DECLARE_WT_MEMBER(AddSeperatorToElectronMenu, Wt::JavaScriptFunction, "AddSeperatorToElectronMenu",
@@ -276,7 +273,8 @@ function( selfid )
 
   m.submenu.append( new MenuItem({type: 'separator'}) );
   
-  Menu.setApplicationMenu(appmenu);
+  if( $(window).data('HaveTriggeredMenuUpdate') )
+    Menu.setApplicationMenu(appmenu);
 });
 
 WT_DECLARE_WT_MEMBER(InsertSeperatorInElectronMenu, Wt::JavaScriptFunction, "InsertSeperatorInElectronMenu",
@@ -292,7 +290,8 @@ WT_DECLARE_WT_MEMBER(InsertSeperatorInElectronMenu, Wt::JavaScriptFunction, "Ins
   else
     m.submenu.append( new MenuItem({type: 'separator'}) );
   
-  Menu.setApplicationMenu(appmenu);
+  if( $(window).data('HaveTriggeredMenuUpdate') )
+    Menu.setApplicationMenu(appmenu);
 });
 
 WT_DECLARE_WT_MEMBER(HideElectronMenuItem, Wt::JavaScriptFunction, "HideElectronMenuItem",
@@ -308,7 +307,8 @@ WT_DECLARE_WT_MEMBER(HideElectronMenuItem, Wt::JavaScriptFunction, "HideElectron
     console.log( 'Failed to get electronItem for ' + itemid );
   }
   
-  Menu.setApplicationMenu(appmenu);
+  if( $(window).data('HaveTriggeredMenuUpdate') )
+    Menu.setApplicationMenu(appmenu);
 });
 
 
@@ -318,8 +318,6 @@ WT_DECLARE_WT_MEMBER(DisableElectronMenuItem, Wt::JavaScriptFunction, "DisableEl
   let appmenu = Menu.getApplicationMenu();
   if( !appmenu ) return;
   
-  //Menu.setApplicationMenu(null);
-  
   let eitem = $(window).data('electronItem'+itemid);
   if( eitem ){
     eitem.enabled = !disabled;
@@ -327,7 +325,8 @@ WT_DECLARE_WT_MEMBER(DisableElectronMenuItem, Wt::JavaScriptFunction, "DisableEl
     console.log( 'Failed to get electronItem for ' + itemid );
   }
   
-  Menu.setApplicationMenu(appmenu);
+  if( $(window).data('HaveTriggeredMenuUpdate') )
+    Menu.setApplicationMenu(appmenu);
 });
 
 /*
@@ -371,7 +370,9 @@ function( menuid )
   
   let appmenu = Menu.getApplicationMenu();
   if( !appmenu ) return;
-  Menu.setApplicationMenu(appmenu);
+  
+  if( $(window).data('HaveTriggeredMenuUpdate') )
+    Menu.setApplicationMenu(appmenu);
 } );
 
 WT_DECLARE_WT_MEMBER(AddCheckBoxItemToElectronMenu, Wt::JavaScriptFunction, "AddCheckBoxItemToElectronMenu",
@@ -388,8 +389,6 @@ function( menuid, itemid, txt, isChecked )
     return;
   }
   
-  //Menu.setApplicationMenu(null);
-  
   var newItem = new MenuItem({label: txt, type: 'checkbox', checked: isChecked, click: function(item, BrowserWindow){
     console.log( "Got click status: " + item.checked );
     Wt.emit(itemid,'electron_checked',item.checked);
@@ -399,9 +398,8 @@ function( menuid, itemid, txt, isChecked )
   
   $(window).data('electronItem'+itemid, newItem);
   
-  //console.log( 'Set electronItem for checked item id=' + itemid + ", " + txt );
-  
-  Menu.setApplicationMenu(appmenu);
+  if( $(window).data('HaveTriggeredMenuUpdate') )
+    Menu.setApplicationMenu(appmenu);
 } );
 
 
@@ -420,15 +418,14 @@ function( menuid, submenuid, txt, iconPath )
     return;
   }
 
-  //Menu.setApplicationMenu(null);
-  //console.log( 'Adding icon ' + iconPath );
   var newItem = new MenuItem({label: txt, icon: (iconPath.length>0 ? iconPath : null), submenu: []});
   m.submenu.append( newItem );
   
   $(window).data('electronMenu'+submenuid, newItem );
   //console.log( 'Added submenu for ' + submenuid + ', ' + newItem.label );
   
-  Menu.setApplicationMenu(appmenu);
+  if( $(window).data('HaveTriggeredMenuUpdate') )
+    Menu.setApplicationMenu(appmenu);
 } );
 
 
@@ -438,8 +435,6 @@ function( menuid, roleName )
   let appmenu = Menu.getApplicationMenu();
   if( !appmenu ) return;
   
-  //Menu.setApplicationMenu(null);
-  
   let m = $(window).data('electronMenu'+menuid);
   if( m ){
     m.submenu.append( new MenuItem({role: roleName}) );
@@ -447,7 +442,8 @@ function( menuid, roleName )
     console.log( 'Failed to get electronMenu for ' + itemid + ' to implement ' + role );
   }
   
-  Menu.setApplicationMenu(appmenu);
+  if( $(window).data('HaveTriggeredMenuUpdate') )
+    Menu.setApplicationMenu(appmenu);
 });
 
 
@@ -455,9 +451,22 @@ function( menuid, roleName )
 WT_DECLARE_WT_MEMBER(TriggerElectronMenuUpdate, Wt::JavaScriptFunction, "TriggerElectronMenuUpdate",
 function()
 {
+  //This function gets called once, after loading all the widgets into the
+  //  GUI, and doing the initial defining of Electron menu items.
+  //
+  //Calling Menu.setApplicationMenu() for each item we add to the menu during
+  //  program start up is pretty slow.  Takes initial load time from about
+  //  1.5 seconds on macOS if we only do it once, to 3.4 seconds if we do it
+  //  for every menu item addded, etc (first request Wt log prints out, to final
+  //  request).  Since this function gets called once after initial load, we can
+  //  defer all calls to Menu.setApplicationMenu() until now.  But after this
+  //  we want changes to take effect immediately (ex enable/disable a menu item)
+  //Note: requestNewCleanSession() will reset this variable to speedup resets.
+  $(window).data('HaveTriggeredMenuUpdate',true);
+  
   let appmenu = Menu.getApplicationMenu();
-  if( !appmenu ) return;
-  Menu.setApplicationMenu(appmenu);
+  if( appmenu )
+    Menu.setApplicationMenu(appmenu);
 });
 
 

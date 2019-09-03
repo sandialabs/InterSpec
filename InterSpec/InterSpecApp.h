@@ -119,9 +119,14 @@ public:
   //  other not-super-fast actions.
   static std::string tempDirectory();
 
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  /** Returns the token passed as part of url "" */
+  std::string externalToken();
+  
+  static InterSpecApp *instanceFromExtenalToken( const std::string &externalToken );
+#endif
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-  std::string sessionUrlId();
   
   //
   bool userOpenFromFileSystem( const std::string &path );
@@ -131,7 +136,6 @@ public:
 #endif
   
   static std::set<InterSpecApp *> runningInstances();
-  static InterSpecApp *instanceFromExtenalIdString( const std::string &idstr );
   
   //Need put put in a function that will minimize memmorry usage of all cuurently
   //  running sessions.
@@ -201,6 +205,16 @@ protected:
   //  any saved state).
   virtual void clearSession();
   
+  
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  /** Checks for URL argument "externalid", and if found sets m_externalToken
+   to it.
+   Returns true if should load session.  False if should redirect.
+   ToDo: Some day will validate against allowed tokens...
+   */
+  bool checkExternalTokenFromUrl();
+#endif
+  
   //setupDomEnvironment(): loads required JS and CSS resource, sets the
   //  appropriate meta tags.
   void setupDomEnvironment();
@@ -237,6 +251,10 @@ protected:
   //m_thinkingLeaveSignal: an experimental signal that tries to catch unload
   //  events a little better; still doesnt catch refresh events.
   std::unique_ptr<Wt::JSignal<> > m_thinkingLeaveSignal;
+#endif
+  
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  std::string m_externalToken;
 #endif
   
   std::unique_ptr<Wt::JSignal<> > m_clearSession;

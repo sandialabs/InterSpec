@@ -82,65 +82,49 @@ std::string external_id()
   return ns_externalid;
 }
   
+#if( USE_ELECTRON_NATIVE_MENU )
 bool requestNewCleanSession()
 {
-  const string newexternalid = Wt::WRandom::generateId( 16 );
+  auto app = dynamic_cast<InterSpecApp *>(wApp);
   
-#warning "Need to implement calling back into JS for requestNewCleanSession"
-  /*
-  std::cout << "requestNewCleanSession()"<< endl;
-  
+  const string oldexternalid = app ? app->externalToken() : string();
+  if( !oldexternalid.empty() )
   {
-    lock_guard<mutex> lock(ns_externalid_mutex);
-    ns_externalid = newexternalid;
+    //should check ns_externalid==oldexternalid
+    string js;
+    //Speed up loading by defering calls to Menu.setApplicationMenu() until app
+    //  is fully reloaded.
+    js += "$(window).data('HaveTriggeredMenuUpdate',null);";
+    
+    //Have electron reload the page.
+    js += "ipcRenderer.send('NewCleanSession','" + app->externalToken() + "');";
+    
+    //Just in case the page reload doesnt go through, make sure menus will get updated eventually
+    //  (this shouldnt be necassary, right?)
+    js += "setTimeout(function(){$(window).data('HaveTriggeredMenuUpdate',true);},5000);";
+    
+    wApp->doJavaScript(js);
+    return true;
+  }else
+  {
+    cerr << "requestNewCleanSession(): failed; couldnt get external token." << endl;
   }
-  
-  std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
-  
-  if( !ns_send_message )
-  {
-    std::cerr << "requestNewCleanSession(): No active connection" << std::endl;
-    return false;
-  }
-  
-  try
-  {
-    ns_send_message( "NewCleanSession:" + newexternalid );
-  }catch( std::exception &e )
-  {
-    cerr << "requestNewCleanSession(): caught exception sendign WS message: " << e.what() << endl;
-    return false;
-  }
-  
-  std::cout << "requestNewCleanSession() successfully sent" << endl;
-*/
-  return true;
+
+  return false;
 }//void requestNewCleanSession()
+#endif //USE_ELECTRON_NATIVE_MENU
   
-  
-bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
+bool notifyNodeJsOfNewSessionLoad()
 {
-#warning "Need to implement calling back into JS for notifyNodeJsOfNewSessionLoad"
-/*
- std::unique_lock<std::mutex> run_lock( ns_send_message_mutex );
- 
-  if( !ns_send_message )
+  auto app = dynamic_cast<InterSpecApp *>(wApp);
+  if( !app )
   {
-    std::cerr << "notifyNodeJsOfNewSessionLoad(): No active connection" << std::endl;
+    cerr << "Error: notifyNodeJsOfNewSessionLoad: wApp is null!!!" << endl;
     return false;
   }
-  
-  try
-  {
-    ns_send_message( "SessionFinishedLoading:" + sessionid );
-  }catch( std::exception &e )
-  {
-    cerr << "notifyNodeJsOfNewSessionLoad(): caught exception sendign WS message: " << e.what() << endl;
-    return false;
-  }
-  
-  std::cout << "notifyNodeJsOfNewSessionLoad() successfully sent" << endl;
-*/
+
+  app->doJavaScript( "ipcRenderer.send('SessionFinishedLoading','" + app->externalToken() + "');" );
+  app->triggerUpdate();
   
   return true;
 }//bool notifyNodeJsOfNewSessionLoad( const std::string sessionid )
@@ -181,6 +165,8 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
     
     InterSpec::setStaticDataDirectory( UtilityFunctions::append_path(basedir,"data") );
     
+    //ToDo: should look into using '--approot' Wt Argument.
+    
     //try
     //{
     //  boost::filesystem::current_path( basedir );
@@ -201,12 +187,26 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   return InterSpecServer::portBeingServedOn();
 }//int interspec_start_server( int argc, char *argv[] )
 
-void interspec_add_session_id( const char *session_id )
+void interspec_add_allowed_session_token( const char *session_id )
 {
 #warning "Need to make add_session_id() handle more than just single session ID"
   lock_guard<mutex> lock(ns_externalid_mutex);
   ns_externalid = session_id;
-}//void interspec_add_session_id( const char *session_id )
+}//void interspec_add_allowed_session_token( const char *session_id )
+
+int interspec_remove_allowed_session_token( const char *session_token )
+{
+#warning "Need to make interspec_remove_allowed_session_token() take into account if sesion with token had been seen"
+  lock_guard<mutex> lock(ns_externalid_mutex);
+  if( session_token == ns_externalid )
+  {
+    ns_externalid = "";
+    return 0;
+  }
+
+  return -1;
+}//int interspec_remove_allowed_session_token( const char *session_token )
+
 
 int interspec_open_file( const char *sessionToken, const char *files_json )
 {
@@ -238,24 +238,30 @@ int interspec_open_file( const char *sessionToken, const char *files_json )
   {
     cerr << "Failed to parse '" << files_json
          << "' as valid JSON. Issue: " << e.what() << endl;
+    return -1;
   }//try / catch
     
     
   //Look for session with 'externalid' and open file...
   string externalid = sessionToken;
     
-  InterSpecApp *app = InterSpecApp::instanceFromExtenalIdString( externalid );
+  InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( externalid );
   if( app )
   {
+    int numopened = 0;
     Wt::WApplication::UpdateLock applock( app );
     
     for( auto filename : files )
     {
-      if( !app->userOpenFromFileSystem( filename ) )
+      if( app->userOpenFromFileSystem( filename ) )
+        numopened += 1;
+      else
         cerr << "InterSpec failed to open file filename" << endl;
     }
       
     app->triggerUpdate();
+    
+    return numopened;
   }else
   {
     //I dont know why we would get here... but lets deal with it JIC
@@ -294,7 +300,7 @@ int interspec_open_file( const char *sessionToken, const char *files_json )
     }
   }//if( app ) / else
   
-  return -1;
+  return -2;
 }
 
 void interspec_kill_server()

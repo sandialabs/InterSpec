@@ -136,7 +136,7 @@ void *addOsxMenu( PopupDivMenu *menu, const char *name  )
     //  check the URL for a 'externalid=...' argument, wich the native gui app
     //  should have, but others shouldnt
     InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
-    if( !app || app->sessionUrlId().empty() )
+    if( !app || app->externalToken().empty() )
       return 0;
   }//if( apps.size() )
   

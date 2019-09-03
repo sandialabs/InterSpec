@@ -806,7 +806,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
 #if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
   m_menuDiv->hide();
-  PopupDivMenu::triggerElectronMenuUpdate();
 #endif
   
   if( m_user->preferenceValue<bool>( "StartDocked" ) && !isPhone() )
