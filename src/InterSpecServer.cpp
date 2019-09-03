@@ -42,6 +42,7 @@
 
 
 #include "InterSpec/InterSpecApp.h"
+#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DbToFilesystemLink.h"
 
 
@@ -240,6 +241,7 @@ namespace InterSpecServer
       name = "\0";
     if( basedir.empty() )
       basedir = ".";
+    
     
     ns_server = new Wt::WServer( name, xml_config_path );
     char *exe_param_name  = &(name[0]);

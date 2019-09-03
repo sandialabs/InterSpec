@@ -136,35 +136,100 @@ bool notifyNodeJsOfNewSessionLoad()
 int interspec_start_server( const char *process_name, const char *userdatadir,
                             const char *basedir, const char *xml_config_path )
 {
+  //Using a relative path should get us in less trouble than an absolute path
+  //  on Windows.  Although havent yet tested (20190902) with network drives and such on Windows.
+  //Should check if basedir is a relative or absolut path before this next step
+#warning "Need to check out how this "
+  
+  const string cwd = UtilityFunctions::get_working_path();
+  string relbasedir = UtilityFunctions::fs_relative( cwd, basedir );
+  cerr << "cwd='" << cwd << "'" << endl;
+  cerr << "relbasedir='" << relbasedir << "'" << endl;
+  cerr << "userdatadir='" << userdatadir << "'" << endl;
+  if( relbasedir.size() >= strlen(basedir) )
+    relbasedir = basedir;
+  if( relbasedir.empty() )
+    relbasedir = ".";
+  
+  
   try
   {
     //ToDo: refactor this userdatadir stuff into function inside InterSpecServer
     //      or InterSpecApp or something.
     if( !UtilityFunctions::create_directory(userdatadir) )
       throw std::runtime_error( "Failed to create directory '" + string(userdatadir) + "' for user data." );
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -1;
+  }
   
+  try
+  {
     const string preffile = UtilityFunctions::append_path( userdatadir, "InterSpecUserData.db" );
     
     cout << "Will set user preferences file to: '" << preffile << "'" << endl;
     DataBaseUtils::setPreferenceDatabaseFile( preffile );
     DbToFilesystemLink::setFileNumToFilePathDBNameBasePath( userdatadir );
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -2;
+  }
+  
+  try
+  {
     const auto serial_db = UtilityFunctions::ls_files_in_directory( userdatadir, "serial_to_model.csv" );
     if( !serial_db.empty() )
       SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -3;
+  }
+  
+  
+  try
+  {
 #if( ENABLE_RESOURCE_UPDATES )
     ResourceUpdate::setUserDataDirectory( userdatadir );
 #endif
     InterSpec::setWritableDataDirectory( userdatadir );
-    
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -4;
+  }
+  
+  try
+  {
     cout << "Will make sure preferences database is up to date" << endl;
     DataBaseVersionUpgrade::checkAndUpgradeVersion();
-    
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -5;
+  }
+  
+  try
+  {
 #if( ENABLE_RESOURCE_UPDATES )
     ResourceUpdate::setupGlobalPrefsFromDb();
 #endif
-    
-    InterSpec::setStaticDataDirectory( UtilityFunctions::append_path(basedir,"data") );
-    
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -6;
+  }
+  
+  try
+  {
+    InterSpec::setStaticDataDirectory( UtilityFunctions::append_path(relbasedir,"data") );
+  }catch( std::exception &e )
+  {
+    cerr << e.what() << endl;
+    return -7;
+  }
     //ToDo: should look into using '--approot' Wt Argument.
     
     //try
@@ -175,13 +240,15 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
     //{
     //  cerr << "Unable to change to directory: '" << basedir << "' :" << e.what() << endl;
     //}
-    
-    InterSpecServer::startServerNodeAddon( process_name, basedir, xml_config_path );
+
+  try
+  {
+    InterSpecServer::startServerNodeAddon( process_name, relbasedir, xml_config_path );
   }catch( std::exception &e )
   {
     std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"
     << e.what() << std::endl << std::endl;
-    return -1;
+    return -8;
   }
   
   return InterSpecServer::portBeingServedOn();
