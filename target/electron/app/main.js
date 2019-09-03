@@ -22,33 +22,27 @@
  */
 
 /* ToDo list (partial):
-   -Finish setting up launch_options.json (see get_launch_options())
-   -Get working, and package on Windows
-   -Setup a decent way to develop and package the app, rather than abusing Cmake
-     --See https://github.com/electron-userland/electron-packager
-   -Test out opening files (macOS and Windows; somewhat works on mac)
-   -Setup, or figure out, signing app on Windows and macOS
-    --On mac you can 'codesign-electron.sh InterSpec.app' to sign
-   -Handle errors in c++ by sending through IPC socket once its open
-   -Handle fatal errors with dialog.showErrorBox(...)
-   -Catch 'IntializeError' in stderr during startup, and handle
-   -Catch death in C++ code and display an error
-     --Could probably setup general error displaying mechanism of looking if
+   - Finish setting up launch_options.json (see get_launch_options())
+   - Setup building/packaging Electron app as a single, or easy set of commands.
+   - Test out opening files (macOS and Windows; somewhat works on mac)
+   - Setup, or figure out, signing app on Windows and macOS
+     - On mac you can 'codesign-electron.sh InterSpec.app' to sign
+   - Handle errors in c++ by sending through IPC socket once its open
+   - Handle fatal errors with dialog.showErrorBox(...)
+   - Catch 'IntializeError' in stderr during startup, and handle
+   - Catch death in C++ code and display an error
+     - Could probably setup general error displaying mechanism of looking if
        there is a window showing loading.html, and if so, display there, and
        if not create a dialog.  Needs more thought.
-   -Look at creating a backup preferences file, and if the C++ fails to start
-    2 or 3 times, go back to the previous preferences file (should be done for
-    all targets maybe).
-   -Implement app.makeSingleInstance(...), see https://github.com/electron/electron/blob/master/docs/api/app.md
-   -move checkWindowPosition() into its own file.
-   -Test the window positon stuff with multiple displays.
-   -Setup to allow multiple windows (but dont actually allow yet)
-     --Make so a request for a new session is sent to C++, which then sends back
-       a URL (which includes the externalid) to connect to
-     --Change so externalid is is sent to c++ through IPC, who then sends a
-       response when the session can then be loaded
-   -Look at using node file menu integration
-   -Look into making the c++ code a node addon, see http://www.benfarrell.com/2013/01/03/c-and-node-js-an-unholy-combination-but-oh-so-right/ and a nice guide at https://pspdfkit.com/blog/2018/running-native-code-in-electron-and-the-case-for-webassembly/ makes it look like it will be pretty easy.
+   - Look at creating a backup preferences file, and if the C++ fails to start
+     2 or 3 times, go back to the previous preferences file (should be done for
+     all targets maybe).
+   - Implement app.makeSingleInstance(...), see https://github.com/electron/electron/blob/master/docs/api/app.md
+   - move checkWindowPosition() into its own file.
+   - Test the window positon stuff with multiple displays.
+   - Setup to allow multiple windows (but dont actually allow yet)
+     - Make so a request for a new session is sent to C++, which then sends back
+       a URL (which includes the externalid token) to connect to
  */
 
 const electron = require('electron')
@@ -81,10 +75,6 @@ let app_is_closing = false;
 
 global.__basedir = __dirname;
 
-
-exports.test = function(){
-  console.log( "interspec_url=" + interspec_url );
-};
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -236,6 +226,8 @@ function get_launch_options(){
   
   //app.getPath('userData')
   //app.getPath('temp')
+  //If previous states should be reloaded
+  //  Additional DRF directories
 }
 
 
@@ -312,6 +304,10 @@ function createWindow () {
   
   
   if( interspec_url ) {
+    const session_token_buf = crypto.randomBytes(16);
+    session_token = session_token_buf.toString('hex');
+    interspec.addSessionToken( session_token );
+
     let msg = interspec_url  + "?externalid=" + session_token;
     if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
       let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
@@ -319,8 +315,6 @@ function createWindow () {
       initial_file_to_open = null;
     }
   
-    interspec.addSessionToken( session_token );
-
     console.log('Will Load ' + msg);
 
     mainWindow.loadURL( msg );
@@ -534,19 +528,24 @@ function createWindow () {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', function(){  
-
-  const session_token_buf = crypto.randomBytes(16);
-  session_token = session_token_buf.toString('hex');
-  console.log("Session token: " + session_token );
-
   const process_name = require.main.filename;
-  const basedir = path.dirname(require.main.filename);
-  const xml_config_path = path.join(basedir, "/data/config/wt_config_electron.xml");
-
-  const portnum = interspec.startServingInterSpec( process_name, userdata, basedir, xml_config_path );
+  //actually process.cwd()==path.dirname(require.main.filename) when running using node from command line
+  const basedir = path.relative( process.cwd(), path.dirname(require.main.filename) );
+  const xml_config_path = path.join(basedir, "data/config/wt_config_electron.xml");
+  let portnum = 0;
   
-  if( portnum <= 0 ){
-    //Load
+  try {
+    portnum = interspec.startServingInterSpec( process_name, userdata, basedir, xml_config_path );
+  } catch(e) {
+    createWindow();
+    var html = [
+      "<body>",
+        "<h1>Error</h1>",
+        e.message,
+      "</body>",
+    ].join("");
+    mainWindow.loadURL( "data:text/html;charset=utf-8," + encodeURI(html) );
+    return;
   }
 
   interspec_url = "http://127.0.0.1:" + portnum;
@@ -588,12 +587,6 @@ app.on('ready', function(){
   } );
   
   //"ServerKilled"
-
-
-////Then from the browsers JS, do:
-//const { ipcRenderer } = require('electron');
-//ipcRenderer.send('test-event', "Hello dude")
-
 });
 
 // Quit when all windows are closed.

@@ -73,7 +73,10 @@ extern "C"
   /** Returns port being served on.
    Will always serve on 127.0.0.1.
    
-   All input paths should be UTF-8
+   All input paths should be UTF-8.
+   \param basedir has only been tested to be a directory relative to CWD, i.e, "."
+   \param xml_config_path has only been tested to be a directory relative to CWD, i.e, "./data/config/wt_config_electron.xml"
+   
    ToDo: Make sure basedir and xml_config_path all work okay on Windows - maybe consider making them relative (in the JS probably)
    */
   LIB_INTERFACE(int) interspec_start_server( const char *process_name,

@@ -42,6 +42,9 @@ namespace functionexample
     int serverPort = interspec_start_server( process_name.c_str(), userdatadir.c_str(), 
                                              basedir.c_str(), xml_config_path.c_str() );
 
+    if( serverPort <= 0 )
+      Napi::TypeError::New(env, "startServingInterSpec: Received error code " + std::to_string(serverPort) ).ThrowAsJavaScriptException();
+
     return Napi::Number::New( env, serverPort );
   }
 
