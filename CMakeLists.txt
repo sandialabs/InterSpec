@@ -1,3 +1,6 @@
+# This CMakeLists potentially defines two items, InterSpecLib and for all targets
+# excpet iOS, Android, and Electron, InterSpecExe
+
 cmake_policy(SET CMP0048 NEW)
 project(InterSpec VERSION 1.0.5)
 
@@ -82,19 +85,19 @@ ENDIF(NOT CMAKE_BUILD_TYPE)
 
 
 if(BUILD_AS_UNIT_TEST_SUITE)
-    set(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE ON)
+  set(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE ON)
 endif(BUILD_AS_UNIT_TEST_SUITE)
 
 if(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE)
-    set(INCLUDE_ANALYSIS_TEST_SUITE ON)
+  set(INCLUDE_ANALYSIS_TEST_SUITE ON)
 endif(BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE)
 
 if(INCLUDE_ANALYSIS_TEST_SUITE)
-    set(USE_DB_TO_STORE_SPECTRA ON)
+  set(USE_DB_TO_STORE_SPECTRA ON)
 endif(INCLUDE_ANALYSIS_TEST_SUITE)
 
 if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    set(PERFORM_DEVELOPER_CHECKS ON)
+  set(PERFORM_DEVELOPER_CHECKS ON)
 endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 
@@ -111,27 +114,6 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 endif()
 
 
-#-----------------------------------------------------------------------------
-
-if( BUILD_AS_OSX_APP )
-    SET(EXECUTABLE_NAME InterSpec)
-else( BUILD_AS_OSX_APP )
-    SET(LIBRARYNAME LibInterSpec)
-    IF(WIN32)
-        SET(EXECUTABLE_NAME InterSpec)
-    else(WIN32)
-        SET(EXECUTABLE_NAME InterSpec.exe)
-    endif(WIN32)
-    if(ANDROID)
-      SET( LIBRARYNAME "InterSpec" )
-    endif()
-endif( BUILD_AS_OSX_APP )
-
-if(ANDROID OR IOS OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_ELECTRON_APP )
-  SET( LINK_TO_OBJECT ${LIBRARYNAME})
-else()
-  SET( LINK_TO_OBJECT ${EXECUTABLE_NAME})
-endif()
 
 
 IF(ANDROID)
@@ -513,75 +495,67 @@ if( USE_DB_TO_STORE_SPECTRA )
 endif( USE_DB_TO_STORE_SPECTRA )
 
 if( ALLOW_URL_TO_FILESYSTEM_MAP )
-    list( APPEND sources src/DbToFilesystemLink.cpp  )
-    list( APPEND headers InterSpec/DbToFilesystemLink.h  )
-
+  list( APPEND sources src/DbToFilesystemLink.cpp  )
+  list( APPEND headers InterSpec/DbToFilesystemLink.h  )
 endif( ALLOW_URL_TO_FILESYSTEM_MAP )
 
 if( NOT ANDROID AND NOT IOS )
-    list( APPEND sources src/FileDragUploadResource.cpp )
-    list( APPEND headers InterSpec/FileDragUploadResource.h )
+  list( APPEND sources src/FileDragUploadResource.cpp )
+  list( APPEND headers InterSpec/FileDragUploadResource.h )
 endif( NOT ANDROID AND NOT IOS )
 
-if( BUILD_AS_ELECTRON_APP )
-  list( APPEND sources src/InterSpecServer.cpp target/electron/ElectronUtils.cpp )
-  list( APPEND headers InterSpec/InterSpecServer.h target/electron/ElectronUtils.h )
-endif( BUILD_AS_ELECTRON_APP )
-
 if( INCLUDE_ANALYSIS_TEST_SUITE )
-    set( sources ${sources} src/SpectrumViewerTester.cpp )
-    set( headers ${headers} InterSpec/SpectrumViewerTester.h )
+  list( APPEND sources src/SpectrumViewerTester.cpp )
+  list( APPEND headers InterSpec/SpectrumViewerTester.h )
 endif( INCLUDE_ANALYSIS_TEST_SUITE )
 
 if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
-  set( SRCS ${SRCS} src/ChartToImageResource.cpp )
-  set( HEADRS ${HEADRS} InterSpec/ChartToImageResource.h )
+  list( APPEND SRCS src/ChartToImageResource.cpp )
+  list( APPEND HEADRS InterSpec/ChartToImageResource.h )
 endif( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
 
-
 if(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    set( sources ${sources} testing/developcode.cpp src/DbUserState.cpp )
-    set( headers ${headers} testing/developcode.h InterSpec/DbUserState.h )
+  list( APPEND sources testing/developcode.cpp src/DbUserState.cpp )
+  list( APPEND headers testing/developcode.h InterSpec/DbUserState.h )
 endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
-
 if( USE_OSX_NATIVE_MENU )
-    set( sources ${sources} target/osx/NativeMenu.mm )
-    set( headers ${headers} target/osx/NativeMenu.h )
+  list( APPEND sources target/osx/NativeMenu.mm )
+  list( APPEND headers target/osx/NativeMenu.h )
 endif( USE_OSX_NATIVE_MENU )
 
 if( IOS )
-    set( sources ${sources} target/ios/InterSpec/FileHandling.mm )
-    set( headers ${headers} target/ios/InterSpec/FileHandling.h )
+  list( APPEND sources target/ios/InterSpec/FileHandling.mm )
+  list( APPEND headers target/ios/InterSpec/FileHandling.h )
 endif( IOS )
 
 if( USE_GOOGLE_MAP )
-    set( sources ${sources} src/GoogleMap.cpp )
-    set( headers ${headers} InterSpec/GoogleMap.h )
+  list( APPEND sources src/GoogleMap.cpp )
+  list( APPEND headers InterSpec/GoogleMap.h )
 endif( USE_GOOGLE_MAP )
 
 
 if( USE_SEARCH_MODE_3D_CHART )
-    set( sources ${sources} src/SearchMode3DChart.cpp src/SearchMode3DDataModel.cpp )
-    set( headers ${headers} InterSpec/SearchMode3DChart.h InterSpec/SearchMode3DDataModel.h )
+  list( APPEND sources src/SearchMode3DChart.cpp src/SearchMode3DDataModel.cpp )
+  list( APPEND headers InterSpec/SearchMode3DChart.h InterSpec/SearchMode3DDataModel.h )
 endif( USE_SEARCH_MODE_3D_CHART )
 
 
 if( USE_TERMINAL_WIDGET )
-    set( sources ${sources} src/TerminalModel.cpp    src/TerminalWidget.cpp   js/TerminalWidget.js )
-    set( headers ${headers} InterSpec/TerminalModel.h   InterSpec/TerminalWidget.h )
+  list( APPEND sources src/TerminalModel.cpp  src/TerminalWidget.cpp  js/TerminalWidget.js )
+  list( APPEND headers InterSpec/TerminalModel.h  InterSpec/TerminalWidget.h )
 endif( USE_TERMINAL_WIDGET )
 
 
 if( SUPPORT_ZIPPED_SPECTRUM_FILES )
-    set( sources ${sources} src/ZipArchive.cpp )
-    set( headers ${headers} InterSpec/ZipArchive.h )
+  list( APPEND sources src/ZipArchive.cpp )
+  list( APPEND headers InterSpec/ZipArchive.h )
 endif( SUPPORT_ZIPPED_SPECTRUM_FILES )
 
 
 if( ENABLE_RESOURCE_UPDATES )
-    set( sources ${sources} src/ResourceUpdate.cpp src/ResourceUpdateTool.cpp )
-    set( headers ${headers} InterSpec/ResourceUpdate.h InterSpec/ResourceUpdateTool.h )
+  list( APPEND sources src/ResourceUpdate.cpp src/ResourceUpdateTool.cpp )
+  list( APPEND headers InterSpec/ResourceUpdate.h InterSpec/ResourceUpdateTool.h )
 
   if( BUILD_FOR_WEB_DEPLOYMENT )
     MESSAGE( FATAL_ERROR "ENABLE_RESOURCE_UPDATES must not be enabled if you are building for web deployment" )
@@ -589,24 +563,19 @@ if( ENABLE_RESOURCE_UPDATES )
 endif( ENABLE_RESOURCE_UPDATES )
 
 if( USE_SIMPLE_NUCLIDE_ASSIST )
-    set( sources ${sources} src/SimpleNuclideAssist.cpp )
-    set( headers ${headers} InterSpec/SimpleNuclideAssist.h )
+  list( APPEND sources src/SimpleNuclideAssist.cpp )
+  list( APPEND headers InterSpec/SimpleNuclideAssist.h )
 endif( USE_SIMPLE_NUCLIDE_ASSIST )
 
 
 IF( USE_SPECRUM_FILE_QUERY_WIDGET )
-  IF( BUILD_FOR_WEB_DEPLOYMENT )
-    message ( FATAL_ERROR "The spectrum file query widget can not be enabled for web deployements." )
-  ENDIF( BUILD_FOR_WEB_DEPLOYMENT )
-
-  IF( BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP OR BUILD_AS_LOCAL_SERVER OR BUILD_AS_UNIT_TEST_SUITE )
-    set( sources ${sources} src/SpecFileQuery.cpp src/SpecFileQueryWidget.cpp src/SpecFileQueryDbCache.cpp )
-    set( headers ${headers} InterSpec/SpecFileQuery.h InterSpec/SpecFileQueryWidget.h InterSpec/SpecFileQueryDbCache.h )
+  if( BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP OR BUILD_AS_LOCAL_SERVER OR BUILD_AS_UNIT_TEST_SUITE )
+    list( APPEND sources src/SpecFileQuery.cpp src/SpecFileQueryWidget.cpp src/SpecFileQueryDbCache.cpp )
+    list( APPEND headers InterSpec/SpecFileQuery.h InterSpec/SpecFileQueryWidget.h InterSpec/SpecFileQueryDbCache.h )
     list( APPEND sources js/SpecFileQueryWidget.js )
-
-    add_subdirectory( external_libs/pugixml-1.9 )
-    list( APPEND LIBRARIES_TO_LINK_TO pugixml )
-  ENDIF( BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP OR BUILD_AS_LOCAL_SERVER OR BUILD_AS_UNIT_TEST_SUITE )
+  else()
+    message ( FATAL_ERROR "The spectrum file query widget can not be enabled for web deployements." )
+  endif()
 ENDIF( USE_SPECRUM_FILE_QUERY_WIDGET )
 
 if( USE_SPECTRUM_CHART_D3 )
@@ -642,9 +611,10 @@ if( USE_SPECTRUM_CHART_D3 )
 endif( USE_SPECTRUM_CHART_D3 )
 
 
-FIND_PATH( WT_RESOURCES_DIRECTORY form.css
-           ${Wt_INCLUDE_DIR}/../share/Wt/resources )
+find_path( WT_RESOURCES_DIRECTORY form.css ${Wt_INCLUDE_DIR}/../share/Wt/resources )
 
+
+#Set SpecUtils compile options
 set( SpecUtils_REBIN_FILES_TO_SINGLE_BINNING ON CACHE BOOL "Set Rebin spectrum to single energy cal" )
 set( SpecUtils_NO_BOOST_LIB OFF CACHE BOOL "Use boost for threading primitives in SpecUtils" )
 set( SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "" )
@@ -655,65 +625,66 @@ set( SpecUtils_JAVA_SWIG OFF CACHE BOOL "" )
 set( SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "" )
 set( SpecUtils_D3_SCRIPTS_RUNTIME_DIR "InterSpec_resources" CACHE STRING "" )
 
-add_subdirectory( external_libs/SpecUtils )
-list( APPEND LIBRARIES_TO_LINK_TO SpecUtils )
 
+#add in all the subdirectories the project will always use
+add_subdirectory( external_libs/Minuit2 )
+add_subdirectory( external_libs/Cuba-3.0 )
+add_subdirectory( external_libs/SpecUtils )
 add_subdirectory( external_libs/SandiaDecay )
-list( APPEND LIBRARIES_TO_LINK_TO SandiaDecay )
+add_subdirectory( external_libs/muparserx-4.0.7 )
 
 
 #We should have figured out all the header and source files we need by here, so
 #  lets add the executable to the build
-if( ANDROID OR IOS )
-  if( IOS )
-    set( sources ${sources} src/InterSpecServer.cpp )
-    set( headers ${headers} InterSpec/InterSpecServer.h )
-    add_library( ${LIBRARYNAME} STATIC ${sources} ${headers} )
-  else( IOS )
-    add_library( ${LIBRARYNAME} SHARED main.cpp ${sources} ${headers} )
-    set( EXECUTABLE_NAME ${LIBRARYNAME} )
-  endif(IOS)
-else( ANDROID OR IOS )
-  if( BUILD_AS_OSX_APP )
-    set( sources ${sources} src/InterSpecServer.cpp )
-    set( headers ${headers} InterSpec/InterSpecServer.h )
+if( IOS )
+  list( APPEND sources src/InterSpecServer.cpp )
+  list( APPEND headers InterSpec/InterSpecServer.h )
+  add_library( InterSpecLib STATIC ${sources} ${headers} )
+elseif( ANDROID )
+  list( APPEND headers target/android/AndroidUtils.hpp )
+  add_library( InterSpecLib SHARED main.cpp ${sources} ${headers} )
+elseif( BUILD_AS_OSX_APP )
+  list( APPEND sources src/InterSpecServer.cpp )
+  list( APPEND headers InterSpec/InterSpecServer.h )
 
-    SET(MACOSX_BUNDLE_INFO_STRING "InterSpec - Sandia National Lab, Will Johnson" )
-    SET(MACOSX_BUNDLE_ICON_FILE InterSpec )
-    SET(MACOSX_BUNDLE_LONG_VERSION_STRING "" )
-    SET(MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
-    SET(MACOSX_BUNDLE_SHORT_VERSION_STRING "InterSpec" )
-    SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
-    SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
-    SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
+  SET(MACOSX_BUNDLE_INFO_STRING "InterSpec - Sandia National Lab, Will Johnson" )
+  SET(MACOSX_BUNDLE_ICON_FILE InterSpec )
+  SET(MACOSX_BUNDLE_LONG_VERSION_STRING "" )
+  SET(MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
+  SET(MACOSX_BUNDLE_SHORT_VERSION_STRING "InterSpec" )
+  SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
+  SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
+  SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 
-    SET( ${PRODUCT_NAME} "InterSpec" )
-    SET( MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
+  SET( ${PRODUCT_NAME} "InterSpec" )
+  SET( MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
 
-    FIND_LIBRARY(WEBKIT_LIBRARY WebKit)
-    FIND_LIBRARY(COCOA_LIBRARY Cocoa)
-    FIND_LIBRARY(COREDATA_LIBRARY CoreData)
-    FIND_LIBRARY(APPKIT_LIBRARY AppKit)
-    FIND_LIBRARY(FOUNDATION_LIBRARY Foundation)
+  FIND_LIBRARY(WEBKIT_LIBRARY WebKit)
+  FIND_LIBRARY(COCOA_LIBRARY Cocoa)
+  FIND_LIBRARY(COREDATA_LIBRARY CoreData)
+  FIND_LIBRARY(APPKIT_LIBRARY AppKit)
+  FIND_LIBRARY(FOUNDATION_LIBRARY Foundation)
 
-    MARK_AS_ADVANCED( WEBKIT_LIBRARY COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
-    list( APPEND LIBRARIES_TO_LINK_TO
+  MARK_AS_ADVANCED( WEBKIT_LIBRARY COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
+  add_library( InterSpecLib STATIC ${sources} ${headers} )
+
+  target_link_libraries( InterSpecLib PUBLIC
           ${WEBKIT_LIBRARY} ${COCOA_LIBRARY} ${APPKIT_LIBRARY}
           ${COREDATA_LIBRARY} ${FOUNDATION_LIBRARY} )
 
-    set( app_sources
-          ${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.icns
-          "target/osx/en.lproj/MainMenu.xib"
-          "target/osx/AppDelegate.mm"
-          "target/osx/main.m" )
+  set( app_sources
+       ${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.icns
+       "target/osx/en.lproj/MainMenu.xib"
+       "target/osx/AppDelegate.mm"
+       "target/osx/main.m" )
 
-    set( app_headers ${headers} "target/osx/AppDelegate.h" )
+  set( app_headers ${headers} "target/osx/AppDelegate.h" )
 
-    # Xcode doesnt like having two bundles for some reason, so we will add the
-    # QuickLook project as an external project and add it to the final application
-    # at InterSpec.app/Contents/Library/QuickLook
-    include( ExternalProject )
-    ExternalProject_Add( SpecFilePreview
+  # Xcode doesnt like having two bundles for some reason, so we will add the
+  # QuickLook project as an external project and add it to the final application
+  # at InterSpec.app/Contents/Library/QuickLook
+  include( ExternalProject )
+  ExternalProject_Add( SpecFilePreview
         BINARY_DIR "${CMAKE_BINARY_DIR}/SpecFilePreview"
         URL ${CMAKE_CURRENT_SOURCE_DIR}/target/macOsQuickLook/SpecFilePreview/SpecFilePreview/
         CMAKE_GENERATOR "Unix Makefiles"
@@ -723,198 +694,194 @@ else( ANDROID OR IOS )
                          -DCMAKE_BUILD_TYPE:STRING=RELEASE
                          -DSpecUtils_ENABLE_D3_CHART:BOOL=OFF
                          INSTALL_COMMAND ""
-    )
+  )
 
-    # Add dummy command to let cmake know SpecFilePreview.qlgenerator isnt available
-    # at configure time so it wont complain
-    add_custom_command( OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator" COMMAND "" )
+  # Add dummy command to let cmake know SpecFilePreview.qlgenerator isnt available
+  # at configure time so it wont complain
+  add_custom_command( OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator" COMMAND "" )
 
-    #When archiving the app, the copy command doesnt get called... need to figure out...
-    #install( DIRECTORY SpecFilePreview/SpecFilePreview.qlgenerator DESTINATION "$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/" )
-#    add_custom_command( TARGET ${EXECUTABLE_NAME} POST_BUILD
-#    COMMAND mkdir -p $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/ && cp -r ${CMAKE_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator  $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/ )
-    #install( TARGETS SpecFilePreview BUNDLE DESTINATION "$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Library/QuickLook/" )
+  #In order to copy all the needed resources to the "Archive" builds of Xcode,
+  #  we need to specify each individual file, and later set their MACOSX_PACKAGE_LOCATION properties...
+  file(GLOB_RECURSE DATA_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/data/*")
+  file(GLOB_RECURSE WT_RES_SOURCES "${WT_RESOURCES_DIRECTORY}/*")
+  file(GLOB_RECURSE INTERSPEC_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*")
+  file(GLOB_RECURSE EXAMPLE_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/example_spectra/*")
+  SET( EN_LOCALIZATION_FILES "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/InfoPlist.strings" "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/Credits.rtf" )
 
+  find_program(IBTOOL ibtool HINTS "/usr/bin" "${OSX_DEVELOPER_ROOT}/usr/bin")
+  if( ${IBTOOL} STREQUAL "IBTOOL-NOTFOUND" )
+    message(SEND_ERROR "could fine ibtool to compile the .xib files")
+  endif()
 
-    #In order to copy all the needed resources to the "Archive" builds of Xcode,
-    #  we need to specify each individual file, and later set their MACOSX_PACKAGE_LOCATION properties...
-    file(GLOB_RECURSE DATA_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/data/*")
-    file(GLOB_RECURSE WT_RES_SOURCES "${WT_RESOURCES_DIRECTORY}/*")
-    file(GLOB_RECURSE INTERSPEC_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*")
-    file(GLOB_RECURSE EXAMPLE_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/example_spectra/*")
-    SET( EN_LOCALIZATION_FILES "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/InfoPlist.strings" "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/Credits.rtf" )
-
-    find_program(IBTOOL ibtool HINTS "/usr/bin" "${OSX_DEVELOPER_ROOT}/usr/bin")
-    if( ${IBTOOL} STREQUAL "IBTOOL-NOTFOUND" )
-      message(SEND_ERROR "could fine ibtool to compile the .xib files")
-    endif()
-
-    add_custom_command( OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
+  add_custom_command( OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
                         COMMAND ${IBTOOL} --errors --warnings --notices --output-format human-readable-text
                         --compile "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
                         "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/en.lproj/MainMenu.xib"
                         COMMENT "Compiling MainMenu.xib" )
 
-    ADD_EXECUTABLE( ${EXECUTABLE_NAME} MACOSX_BUNDLE ${app_sources} ${app_headers} ${sources} ${headers}
+  ADD_EXECUTABLE( InterSpecExe MACOSX_BUNDLE ${app_sources} ${app_headers}
                     ${DATA_RES_SOURCES} ${WT_RES_SOURCES} ${INTERSPEC_RES_SOURCES} ${EXAMPLE_RES_SOURCES} ${EN_LOCALIZATION_FILES}
                     "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
                     "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator"
-    )
-    SET_TARGET_PROPERTIES( ${EXECUTABLE_NAME} PROPERTIES MACOSX_BUNDLE TRUE )
+  )
+  SET_TARGET_PROPERTIES( InterSpecExe PROPERTIES MACOSX_BUNDLE TRUE )
 
-    SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  target_link_libraries( InterSpecExe PUBLIC InterSpecLib )
 
-    add_dependencies(${EXECUTABLE_NAME} SpecFilePreview)
+  SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 
-    #Set resources MACOSX_PACKAGE_LOCATION property so it is where we want in the app bundle
-    #ToDo: combine 5 loops below into a single loop...
-    # ToDo: Try to use: install(DIRECTORY InterSpec_resources DESTINATION $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/../Resources/ )
-    # ToDo: Try using (something like):
-    #                 add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
-    #                                    "${CMAKE_SOURCE_DIR}/example_spectra" "$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/Contents/Resources/")
+  add_dependencies( InterSpecExe SpecFilePreview )
 
-    # set( RES_SOURCES_DIRS DATA_RES_SOURCES WT_RES_SOURCES INTERSPEC_RES_SOURCES EXAMPLE_RES_SOURCES EN_LOCALIZATION_FILES )
-    # set( RES_DEST_DIRS data resources InterSpec_resources example_spectra en.lproj )
+  #Set resources MACOSX_PACKAGE_LOCATION property so it is where we want in the app bundle
+  #ToDo: combine 5 loops below into a single loop...
+  # ToDo: Try to use: install(DIRECTORY InterSpec_resources DESTINATION $<TARGET_FILE_DIR:InterSpecExe>/../Resources/ )
+  # ToDo: Try using (something like):
+  #                 add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
+  #                                    "${CMAKE_SOURCE_DIR}/example_spectra" "$<TARGET_FILE_DIR:InterSpecExe>/Contents/Resources/")
 
-    set_property(SOURCE ${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator PROPERTY MACOSX_PACKAGE_LOCATION "Library/QuickLook/")
+  # set( RES_SOURCES_DIRS DATA_RES_SOURCES WT_RES_SOURCES INTERSPEC_RES_SOURCES EXAMPLE_RES_SOURCES EN_LOCALIZATION_FILES )
+  # set( RES_DEST_DIRS data resources InterSpec_resources example_spectra en.lproj )
 
-    foreach(RES_FILE ${DATA_RES_SOURCES})
-      #Get the relative path from the data-folder to the particular file
-      file(RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data" ${RES_FILE})
-      get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
-      #Set it's location inside the app package (under Resources)
-      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/data/${RES_PATH}")
-    endforeach(RES_FILE)
+  set_property(SOURCE ${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator PROPERTY MACOSX_PACKAGE_LOCATION "Library/QuickLook/")
 
-    foreach(RES_FILE ${WT_RES_SOURCES})
-      file(RELATIVE_PATH RES_PATH "${WT_RESOURCES_DIRECTORY}" ${RES_FILE})
-      get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
-      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/resources/${RES_PATH}")
-    endforeach(RES_FILE)
+  foreach(RES_FILE ${DATA_RES_SOURCES})
+    #Get the relative path from the data-folder to the particular file
+    file(RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data" ${RES_FILE})
+    get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
+    #Set it's location inside the app package (under Resources)
+    set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/data/${RES_PATH}")
+  endforeach(RES_FILE)
 
-    foreach(RES_FILE ${INTERSPEC_RES_SOURCES})
-      file(RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources" ${RES_FILE})
-      get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
-      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/InterSpec_resources/${RES_PATH}")
-    endforeach(RES_FILE)
+  foreach(RES_FILE ${WT_RES_SOURCES})
+    file(RELATIVE_PATH RES_PATH "${WT_RESOURCES_DIRECTORY}" ${RES_FILE})
+    get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
+    set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/resources/${RES_PATH}")
+  endforeach(RES_FILE)
 
-    foreach(RES_FILE ${EXAMPLE_RES_SOURCES})
-      file(RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/example_spectra" ${RES_FILE})
-      get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
-      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/example_spectra/${RES_PATH}")
-     endforeach(RES_FILE)
+  foreach(RES_FILE ${INTERSPEC_RES_SOURCES})
+    file(RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources" ${RES_FILE})
+    get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
+    set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/InterSpec_resources/${RES_PATH}")
+  endforeach(RES_FILE)
 
-    foreach(RES_FILE ${EN_LOCALIZATION_FILES})
-      set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/en.lproj/")
-    endforeach(RES_FILE)
+  foreach(RES_FILE ${EXAMPLE_RES_SOURCES})
+    file(RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/example_spectra" ${RES_FILE})
+    get_filename_component(RES_PATH ${RES_PATH} DIRECTORY )
+    set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/example_spectra/${RES_PATH}")
+  endforeach(RES_FILE)
 
-    set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib" PROPERTY MACOSX_PACKAGE_LOCATION "Resources/en.lproj/")
+  foreach(RES_FILE ${EN_LOCALIZATION_FILES})
+    set_property(SOURCE ${RES_FILE} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/en.lproj/")
+  endforeach(RES_FILE)
 
-    #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
-    math(EXPR MACOS_BUNDLE_VERSION_NUMBER "100*(${PROJECT_VERSION_MAJOR}-1) + 10*${PROJECT_VERSION_MINOR} + ${PROJECT_VERSION_PATCH}" )
+  set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib" PROPERTY MACOSX_PACKAGE_LOCATION "Resources/en.lproj/")
 
-    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES MACOSX_BUNDLE_INFO_PLIST
+  #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
+  math(EXPR MACOS_BUNDLE_VERSION_NUMBER "100*(${PROJECT_VERSION_MAJOR}-1) + 10*${PROJECT_VERSION_MINOR} + ${PROJECT_VERSION_PATCH}" )
+
+  set_target_properties( InterSpecExe PROPERTIES MACOSX_BUNDLE_INFO_PLIST
           "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/Info.plist.template" )
 
-    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
+  set_target_properties( InterSpecExe PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
                            "${CMAKE_CURRENT_SOURCE_DIR}/target/osx/InterSpec.entitlements")
 
+  # With out this next line, Xcode will (silently) fail to build Archive builds
+  set_target_properties( InterSpecExe PROPERTIES XCODE_ATTRIBUTE_INSTALL_PATH "/Applications")
 
-    # With out this next line, Xcode will (silently) fail to build Archive builds
-    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_INSTALL_PATH "/Applications")
+  #Figure out the development team ID, and set this info for Xcode so it will default to signing the app
+  #  This is probably a little brittle on other peoples machined
+  execute_process(COMMAND /usr/bin/security find-identity -v -p codesigning OUTPUT_VARIABLE dev_team_ids )
+  STRING(REGEX REPLACE ";" "\\\\;" dev_team_ids "${dev_team_ids}")
+  STRING(REGEX REPLACE "\n" ";" dev_team_ids "${dev_team_ids}")
+  LIST(FILTER dev_team_ids INCLUDE REGEX "Developer ID Application:.+" )
+  STRING(REGEX MATCH "\\(.+\\)" mac_team_id ${dev_team_ids} )
+  STRING(REGEX REPLACE "\\(|\\)" "" mac_team_id "${mac_team_id}")
+  message( "Using Mac Developer Team ID='${mac_team_id}'" )
+
+  set_target_properties( InterSpecExe PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer")
+  set_target_properties( InterSpecExe PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
+  set_target_properties( InterSpecExe PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
+elseif( BUILD_AS_UNIT_TEST_SUITE )
+  add_library( InterSpecLib STATIC ${sources} ${headers} )
+  add_executable( InterSpecExe ${GUI_TYPE} main.cpp )
+  target_link_libraries( InterSpecExe PUBLIC InterSpecLib )
+elseif( BUILD_AS_ELECTRON_APP )
+  list( APPEND sources src/InterSpecServer.cpp target/electron/ElectronUtils.cpp )
+  list( APPEND headers InterSpec/InterSpecServer.h target/electron/ElectronUtils.h )
+
+#  If we want to statically link the node addon to InterSpec, we will also
+#  need to statically link the node module to all the libraries we would
+#  link InterSpec too... which the easiest way to do that might be to template
+#  binding.gyp.  Can get_target_property(OUT InterSpecLib LINK_LIBRARIES), although onese built by CMake wont be full paths...
+  add_library( InterSpecLib SHARED ${sources} ${headers} )
+  add_executable( InterSpecExe ${GUI_TYPE} main.cpp )
+  target_link_libraries( InterSpecExe PUBLIC InterSpecLib )
+#  The next two lines should hide all the symbols in the shared library, but this doesn
+#  look to be the case on macOS at least
+#  set_target_properties( InterSpecLib PROPERTIES C_VISIBILITY_PRESET hidden )
+  set_target_properties( InterSpecLib PROPERTIES CXX_VISIBILITY_PRESET hidden )
+else()
+  add_library( InterSpecLib STATIC ${sources} ${headers} )
+  add_executable( InterSpecExe ${GUI_TYPE} main.cpp )
+  target_link_libraries( InterSpecExe PUBLIC InterSpecLib )
+endif( IOS )
+
+set_target_properties( InterSpecLib PROPERTIES PREFIX "" )
+set_target_properties( InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec" )
+
+#set_target_properties( InterSpecExe PROPERTIES SUFFIX "")
+set_target_properties( InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec" )
 
 
-    #When I do the bellow, Xcode doesnt recognize the signing name - ToDo - figure it out later.
-    #Figure out the development team ID, and set this info for Xcode so it will default to signing the app
-    #  This is probably a little brittle on other peoples machined
-    execute_process(COMMAND /usr/bin/security find-identity -v -p codesigning OUTPUT_VARIABLE dev_team_ids )
-    STRING(REGEX REPLACE ";" "\\\\;" dev_team_ids "${dev_team_ids}")
-    STRING(REGEX REPLACE "\n" ";" dev_team_ids "${dev_team_ids}")
-    LIST(FILTER dev_team_ids INCLUDE REGEX "Developer ID Application:.+" )
-    STRING(REGEX MATCH "\\(.+\\)" mac_team_id ${dev_team_ids} )
-    STRING(REGEX REPLACE "\\(|\\)" "" mac_team_id "${mac_team_id}")
-    message( "Using Mac Developer Team ID='${mac_team_id}'" )
-    #
-    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer")
-    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
-    set_target_properties( ${EXECUTABLE_NAME} PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
-  else( BUILD_AS_OSX_APP )
-
-    if( BUILD_AS_UNIT_TEST_SUITE )
-      add_library( ${LIBRARYNAME} STATIC ${sources} ${headers} )
-      add_executable( ${EXECUTABLE_NAME} ${GUI_TYPE} main.cpp )
-      target_link_libraries( ${EXECUTABLE_NAME} PUBLIC ${LIBRARYNAME} )
-    else( BUILD_AS_UNIT_TEST_SUITE )
-      if( BUILD_AS_ELECTRON_APP )
-        add_library( ${LIBRARYNAME} SHARED ${sources} ${headers} )
-        add_executable( ${EXECUTABLE_NAME} ${GUI_TYPE} main.cpp )
-        target_link_libraries( ${EXECUTABLE_NAME} PUBLIC ${LIBRARYNAME} )
-      else( BUILD_AS_ELECTRON_APP )
-        add_executable( ${EXECUTABLE_NAME} ${GUI_TYPE} main.cpp ${sources} ${headers} )
-      endif( BUILD_AS_ELECTRON_APP )
-    endif( BUILD_AS_UNIT_TEST_SUITE )
-
-  endif( BUILD_AS_OSX_APP )
-endif( ANDROID OR IOS )
+target_link_libraries( InterSpecLib PUBLIC SpecUtils SandiaDecay minuit2 Cuba-3.0 muparserx )
 
 
-if(ANDROID)
-    set( headers ${headers} target/android/AndroidUtils.hpp )
-ENDIF(ANDROID)
-
-
-add_subdirectory( external_libs/Minuit2 )
-list( APPEND LIBRARIES_TO_LINK_TO minuit2 )
-
-
-if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
-    list( APPEND LIBRARIES_TO_LINK_TO ${Wt_TEST_LIBRARY} )
+if( USE_SPECRUM_FILE_QUERY_WIDGET )
+  add_subdirectory( external_libs/pugixml-1.9 )
+  target_link_libraries( InterSpecLib PUBLIC pugixml )
 endif()
 
 
-IF( IOS )
-  #kludge for Xcode linker error
-  set( HAS_WTDBOMYSQL OFF )
-ENDIF( IOS )
+if( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
+  target_link_libraries( InterSpecLib PUBLIC ${Wt_TEST_LIBRARY} )
+endif()
 
-IF( USE_MYSQL_DB AND USE_SQLITE3_DB )
-  MESSAGE(FATAL_ERROR "Only one type of database (MySQL or SQLITE3) may be chosen" )
-ENDIF( USE_MYSQL_DB AND USE_SQLITE3_DB )
 
-IF( NOT USE_MYSQL_DB AND NOT USE_SQLITE3_DB )
-  MESSAGE(FATAL_ERROR "You must choose either a MySQL or SQLITE3 database" )
-ENDIF( NOT USE_MYSQL_DB AND NOT USE_SQLITE3_DB )
+if( USE_MYSQL_DB EQUAL USE_SQLITE3_DB )
+  MESSAGE(FATAL_ERROR "Exactly one type of database (MySQL or SQLITE3) must be chosen" )
+endif()
 
 
 set( RAPID_XML_INC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdparty )
 
 
-target_include_directories( ${LINK_TO_OBJECT} PUBLIC ${Wt_INCLUDE_DIR} ${Boost_INCLUDE_DIR}
+target_include_directories( InterSpecLib PUBLIC ${Wt_INCLUDE_DIR} ${Boost_INCLUDE_DIR}
                        ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR} ${RAPID_XML_INC_DIR} external_libs )
 
 
 if( NOT IOS )
 
-IF(WIN32)
-  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    list( APPEND LIBRARIES_TO_LINK_TO ${Wt_DEBUG_LIBRARIES} )
-  else(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    list( APPEND LIBRARIES_TO_LINK_TO ${Wt_LIBRARIES} )
-  endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  link_directories( ${Boost_LIBRARY_DIR} )
+  IF(WIN32)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+      target_link_libraries( InterSpecLib PUBLIC ${Wt_DEBUG_LIBRARIES} )
+    else(CMAKE_BUILD_TYPE STREQUAL "Debug")
+      target_link_libraries( InterSpecLib PUBLIC ${Wt_LIBRARIES} )
+    endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 
-  IF( Boost_CHRONO_FOUND )
-    list( APPEND LIBRARIES_TO_LINK_TO ${Boost_CHRONO_LIBRARY} )
-  ENDIF( Boost_CHRONO_FOUND )
+    target_link_directories( InterSpecLib ${Boost_LIBRARY_DIR} )
 
-  IF( Boost_TIMER_FOUND )
-    list( APPEND LIBRARIES_TO_LINK_TO ${Boost_TIMER_LIBRARY} )
-  ENDIF( Boost_TIMER_FOUND )
-ELSE(WIN32)
-  list( APPEND LIBRARIES_TO_LINK_TO ${Wt_LIBRARIES} )
-ENDIF(WIN32)
+    IF( Boost_CHRONO_FOUND )
+      target_link_libraries( InterSpecLib PUBLIC ${Boost_CHRONO_LIBRARY} )
+    ENDIF( Boost_CHRONO_FOUND )
 
-  list( APPEND LIBRARIES_TO_LINK_TO
+    IF( Boost_TIMER_FOUND )
+      target_link_libraries( InterSpecLib PUBLIC ${Boost_TIMER_LIBRARY} )
+    ENDIF( Boost_TIMER_FOUND )
+  ELSE(WIN32)
+    target_link_libraries( InterSpecLib PUBLIC ${Wt_LIBRARIES} )
+  ENDIF(WIN32)
+
+  target_link_libraries( InterSpecLib PUBLIC
       ${Boost_LIBRARIES}
       ${Boost_SYSTEM_LIBRARY}
       ${Boost_REGEX_LIBRARY}
@@ -926,10 +893,9 @@ ENDIF(WIN32)
   )
 
   find_package( Threads REQUIRED )
-  target_link_libraries( ${LINK_TO_OBJECT} PUBLIC Threads::Threads )
-
+  target_link_libraries( InterSpecLib PUBLIC Threads::Threads )
 endif( NOT IOS )
-#ENDIF(WIN32)
+
 
 if(APPLE AND NOT IOS)
   set( CMAKE_OSX_DEPLOYMENT_TARGET "10.10.0" )
@@ -941,12 +907,12 @@ FIND_LIBRARY( HPDF_LIBRARY NAME hpdfs HINTS ${Wt_INCLUDE_DIR}/../lib )
 if( NOT HPDF_LIBRARY )
   message( "Could not find libharu - if Wt was built with PDF support, you will get link errors" )
 else()
-  list( APPEND LIBRARIES_TO_LINK_TO ${HPDF_LIBRARY} )
+  target_link_libraries( InterSpecLib PUBLIC ${HPDF_LIBRARY} )
   FIND_LIBRARY( PNG_LIBRARY NAME png HINTS ${Wt_INCLUDE_DIR}/../lib )
   if( NOT PNG_LIBRARY )
     message( FATAL "Could not find libpng - requred for libharu" )
   else()
-    list( APPEND LIBRARIES_TO_LINK_TO ${PNG_LIBRARY} )
+    target_link_libraries( InterSpecLib PUBLIC ${PNG_LIBRARY} )
   endif()
 endif()
 
@@ -956,7 +922,7 @@ if( TRY_TO_STATIC_LINK )
   if(APPLE AND NOT IOS)
     FIND_LIBRARY(LIBZ_LIBRARY z)
 
-    list( APPEND LIBRARIES_TO_LINK_TO
+    target_link_libraries( InterSpecLib PUBLIC
          ${Boost_RANDOM_LIBRARY}
          ${Boost_PROGRAM_OPTIONS_LIBRARY}
          ${LIBZ_LIBRARY}
@@ -966,46 +932,46 @@ if( TRY_TO_STATIC_LINK )
     )
 
     if(USE_OSX_NATIVE_MENU)
-      list( APPEND LIBRARIES_TO_LINK_TO /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit )
+      target_link_libraries( InterSpecLib PUBLIC /System/Library/Frameworks/AppKit.framework/Versions/C/AppKit )
     endif(USE_OSX_NATIVE_MENU)
   endif(APPLE AND NOT IOS)
 
-  list( APPEND LIBRARIES_TO_LINK_TO ${CMAKE_DL_LIBS} )
+  target_link_libraries( InterSpecLib PUBLIC ${CMAKE_DL_LIBS} )
 
   if( USE_MYSQL_DB )
     include( cmake/WtFindMysql.txt )
-    list( APPEND LIBRARIES_TO_LINK_TO ${MYSQL_LIBRARIES} )
+    target_link_libraries( InterSpecLib PUBLIC ${MYSQL_LIBRARIES} )
   endif( USE_MYSQL_DB )
 
   if( Wt_FCGI_LIBRARY )
     include( cmake/WtFindFcgi.txt )
-    list( APPEND LIBRARIES_TO_LINK_TO ${FCGI_LIBRARIES} )
+    target_link_libraries( InterSpecLib PUBLIC ${FCGI_LIBRARIES} )
   endif( Wt_FCGI_LIBRARY )
 
   include( cmake/WtFindSsl.txt )
   if( SSL_FOUND )
-    list( APPEND LIBRARIES_TO_LINK_TO ${SSL_LIBRARIES} )
+    target_link_libraries( InterSpecLib PUBLIC ${SSL_LIBRARIES} )
   endif( SSL_FOUND )
 
   #link to zlib since Wt might
   if("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT SUPPORT_ZIPPED_SPECTRUM_FILES)
-    list( APPEND LIBRARIES_TO_LINK_TO ${ZLIB_LIBRARIES} )
+    target_link_libraries( InterSpecLib PUBLIC ${ZLIB_LIBRARIES} )
   endif("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT SUPPORT_ZIPPED_SPECTRUM_FILES)
 
   if("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
-    list( APPEND LIBRARIES_TO_LINK_TO -lrt )
+    target_link_libraries( InterSpecLib PUBLIC -lrt )
     set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++" )
   endif("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
 endif( TRY_TO_STATIC_LINK )
 
 
 IF( BUILD_AS_UNIT_TEST_SUITE )
-  list( APPEND LIBRARIES_TO_LINK_TO ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} )
+  target_link_libraries( InterSpecLib PUBLIC ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} )
 ENDIF( BUILD_AS_UNIT_TEST_SUITE )
 
 
 IF( PERFORM_DEVELOPER_CHECKS )
-    list( APPEND LIBRARIES_TO_LINK_TO ${Boost_DATE_TIME_LIBRARY} )
+    target_link_libraries( InterSpecLib PUBLIC ${Boost_DATE_TIME_LIBRARY} )
 ENDIF( PERFORM_DEVELOPER_CHECKS )
 
 
@@ -1020,19 +986,11 @@ if( Wt_MYSQL_LIBRARY )
   check_include_file_cxx( "Wt/Dbo/backend/MySQL"    HAS_WTDBOMYSQL )
 endif( Wt_MYSQL_LIBRARY )
 
-if( Wt_DBOPOSTGRES_LIBRARY )
-  check_include_file_cxx( "Wt/Dbo/backend/Postgres" HAS_WTDBOPOSTGRES )
-endif( Wt_DBOPOSTGRES_LIBRARY )
-
-if( Wt_FIREBIRD_LIBRARY )
-  check_include_file_cxx( "Wt/Dbo/backend/Firebird" HAS_WTDBOFIREBIRD )
-endif( Wt_FIREBIRD_LIBRARY )
-
 INCLUDE( CheckIncludeFiles )
 
 if( ZLIB_FOUND AND Boost_IOSTREAMS_FOUND )
   #CHECK_INCLUDE_FILES( "zlib.h" HAS_ZLIB_SUPPORT )
-  list( APPEND LIBRARIES_TO_LINK_TO ${ZLIB_LIBRARIES} ${Boost_IOSTREAMS_LIBRARY} )
+  target_link_libraries( InterSpecLib PUBLIC ${ZLIB_LIBRARIES} ${Boost_IOSTREAMS_LIBRARY} )
 endif( ZLIB_FOUND AND Boost_IOSTREAMS_FOUND )
 
 if( SUPPORT_ZIPPED_SPECTRUM_FILES OR ENABLE_RESOURCE_UPDATES )
@@ -1042,11 +1000,11 @@ if( SUPPORT_ZIPPED_SPECTRUM_FILES OR ENABLE_RESOURCE_UPDATES )
     if( NOT ZLIB_FOUND )
       MESSAGE(FATAL_ERROR "ZLIB required to enable SUPPORT_ZIPPED_SPECTRUM_FILES or ENABLE_RESOURCE_UPDATES, but it wasnt found" )
     else( NOT ZLIB_FOUND )
-      target_include_directories( ${LINK_TO_OBJECT} PUBLIC ${ZLIB_INCLUDE_DIRS} )
-      list( APPEND LIBRARIES_TO_LINK_TO ${ZLIB_LIBRARIES} )
+      target_include_directories( InterSpecLib PUBLIC ${ZLIB_INCLUDE_DIRS} )
+      target_link_libraries( InterSpecLib PUBLIC ${ZLIB_LIBRARIES} )
     endif( NOT ZLIB_FOUND )
   else( NOT (IOS OR ANDROID) )
-    list( APPEND LIBRARIES_TO_LINK_TO z )
+    target_link_libraries( InterSpecLib PUBLIC z )
   endif( NOT (IOS OR ANDROID) )
 endif( SUPPORT_ZIPPED_SPECTRUM_FILES OR ENABLE_RESOURCE_UPDATES )
 
@@ -1060,7 +1018,7 @@ IF( USE_MYSQL_DB AND NOT HAS_WTDBOMYSQL )
   MESSAGE(FATAL_ERROR "You do not have the MySQL Wt Dbo backend installed, but you have asked to use it")
 ENDIF( USE_MYSQL_DB AND NOT HAS_WTDBOMYSQL )
 
-SET( HAS_WTDBOSQLITE3 1 )
+
 IF( USE_SQLITE3_DB AND NOT HAS_WTDBOSQLITE3 )
   MESSAGE(FATAL_ERROR "You do not have the SQLITE3 Wt Dbo backend installed, but you have asked to use it")
 ENDIF( USE_SQLITE3_DB AND NOT HAS_WTDBOSQLITE3 )
@@ -1071,26 +1029,15 @@ configure_file(
     ${CMAKE_BINARY_DIR}/InterSpec_config.h
 )
 
-add_subdirectory( external_libs/Cuba-3.0 )
-list( APPEND LIBRARIES_TO_LINK_TO Cuba-3.0 )
-
-add_subdirectory( external_libs/muparserx-4.0.7 )
-
-list( APPEND LIBRARIES_TO_LINK_TO muparserx )
 
 IF(ANDROID)
-  list( APPEND LIBRARIES_TO_LINK_TO log )
-  target_include_directories( ${LINK_TO_OBJECT} PUBLIC target )
+  target_link_libraries( InterSpecLib PUBLIC log )
+  target_include_directories( InterSpecLib PUBLIC target )
 ENDIF(ANDROID)
-
-
-message( "Linking ${LINK_TO_OBJECT} to ${LIBRARIES_TO_LINK_TO}" )
-target_link_libraries( ${LINK_TO_OBJECT} PUBLIC ${LIBRARIES_TO_LINK_TO} )
 
 
 IF( BUILD_AS_UNIT_TEST_SUITE )
   add_subdirectory( testing )
-  target_link_libraries( ${EXECUTABLE_NAME} PUBLIC ${LIBRARYNAME} )
 ENDIF( BUILD_AS_UNIT_TEST_SUITE )
 
 
@@ -1136,13 +1083,9 @@ IF( BUILD_AS_ELECTRON_APP )
 #We cant get the executable location at configure time, so I'll just hardcode
 #  this for now, for a workaround see
 #  https://cmake.org/pipermail/cmake/2012-May/050221.html
-#  (It would be nice to use $<TARGET_FILE:${EXECUTABLE_NAME}>)
+#  (It would be nice to use $<TARGET_FILE:InterSpecExe>)
 #See the script : target/electron/app/copy_resources.in.js for use of this variable
-  IF(WIN32)
-      set( INTERSPEC_EXE_LOCATION "${PROJECT_BINARY_DIR}/MinSizeRel/InterSpec.exe.exe")
-  ELSE(WIN32)
-       set( INTERSPEC_EXE_LOCATION "${PROJECT_BINARY_DIR}/bin/InterSpec.exe")
-  ENDIF(WIN32)
+#  ToDo: Fix up this copy resource stuff, including for now usign things as an Electron addon
 
   configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/copy_resources.in.js
@@ -1169,10 +1112,6 @@ IF( IOS )
   MESSAGE("***** WT_RESOURCES_DIRECTORY is ${WT_RESOURCES_DIRECTORY}")
 
   MESSAGE("WT_RESOURCES_DIRECTORY IS ${WT_RESOURCES_DIRECTORY}")
-
-#next line doesnt seem to work?
-#We would also want to do this for Wt and and the actual InterSpec.app projects.
-  set_xcode_property( ${LINK_TO_OBJECT} IPHONEOS_DEPLOYMENT_TARGET "7.0" )
 ENDIF( IOS )
 
 

@@ -788,7 +788,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     << m_viewer->m_user->userName() << endl;
   
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#if( BUILD_AS_ELECTRON_APP )
   if( !m_externalToken.empty() )
   {
     WTimer::singleShot( 25, std::bind( [](){

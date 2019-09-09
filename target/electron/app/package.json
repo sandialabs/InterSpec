@@ -1,6 +1,6 @@
 {
   "name": "InterSpec",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "description": "Application for interactive gamma spectroscopy",
   "homepage": "https://github.com/sandialabs/InterSpec",
   "main": "main.js",
@@ -34,7 +34,7 @@
   "license": "LGPL-2.1-only",
   "dependencies": {
     "electron": "^6.0.7",
-    "node-addon-api": "^1.7.1",
+    "node-addon-api": "*",
     "package.json": "^2.0.1"
   },
   "devDependencies": {
