@@ -22,38 +22,11 @@
  License along with this library; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
- 
+
 #include "InterSpec_config.h"
 
 #include <string>
 
-
-namespace ElectronUtils
-{
-  /** The externalid passed into #run_app. */
-  std::string external_id();
-  
-  
-#if( USE_ELECTRON_NATIVE_MENU )
-  /** Requests main.js to load a new clean session (i.e., don restore any state)
-   This is a workaround to when the user requests a new session, the normal
-   mechanism in c++ creates duplicate Electron menu items...
-   
-   @returns whether message was succesfully sent or not.
-   */
-  bool requestNewCleanSession();
-#endif
-  
-  /** Sends a message through the websocket connection letting main.js know that
-   the session has loaded.
-   
-   @returns whether message was succesfully sent or not.
-   
-   Note: main.js will wait till recieveing this notification before asking the
-   session to open any files the OS requested.
-   */
-  bool notifyNodeJsOfNewSessionLoad();
-}//namespace ElectronUtils
 
 #if( BUILD_AS_ELECTRON_APP )
 
@@ -65,7 +38,7 @@ namespace ElectronUtils
 #ifdef _WIN32
 #define LIB_INTERFACE(type) __declspec(dllexport) type __cdecl
 #else
-#define LIB_INTERFACE(type) type
+#define LIB_INTERFACE(type) __attribute__ ((visibility ("default"))) type
 #endif
 
 extern "C"
@@ -89,7 +62,7 @@ extern "C"
   LIB_INTERFACE(void) interspec_kill_server();
   
   /** ToDo: allow adding of mutliple tokens; should also add a mechanism to
-            mark the token as having been loaded, so it cant be reused.
+   mark the token as having been loaded, so it cant be reused.
    */
   LIB_INTERFACE(void) interspec_add_allowed_session_token( const char *session_token );
   
@@ -98,26 +71,59 @@ extern "C"
   
   
   /** Open one or more files from the filesystem.  For macOS this would be
-      dropping a file to the app icon in the Finder.  Or on Windows it would be
-      dropping multiple files onto app icon.
+   dropping a file to the app icon in the Finder.  Or on Windows it would be
+   dropping multiple files onto app icon.
    
-      ToDo: should add logic to try and figure out what files are background, foreground, etc.
+   ToDo: should add logic to try and figure out what files are background, foreground, etc.
    
-      \param session_token session token you want to open the file.
-      \param files_json: a JSON array of files to open.  Opened,
-             ex. ["/path/to/some/file","/some/other/file"] .
-             Input files are opened one at a time using #InterSpecApp::userOpenFromFileSystem
-      \returns number of files opened.
-               Will be zero if files were not valid spectrum files.
-               -1 if files_json is invalid format.
-               -2 if session_token is invalid (however, currently will ask ALL
-               sessions to open the files... ToDo: decide on this behaviour).
+   \param session_token session token you want to open the file.
+   \param files_json: a JSON array of files to open.  Opened,
+   ex. ["/path/to/some/file","/some/other/file"] .
+   Input files are opened one at a time using #InterSpecApp::userOpenFromFileSystem
+   \returns number of files opened.
+   Will be zero if files were not valid spectrum files.
+   -1 if files_json is invalid format.
+   -2 if session_token is invalid (however, currently will ask ALL
+   sessions to open the files... ToDo: decide on this behaviour).
    */
   LIB_INTERFACE(int) interspec_open_file( const char *session_token, const char *files_json );
-
 }//extern "C"
 
 #endif //#if( BUILD_AS_ELECTRON_APP )
+
+
+namespace ElectronUtils
+{
+  /** The externalid passed into #run_app. */
+  std::string external_id();
+  
+  
+#if( USE_ELECTRON_NATIVE_MENU )
+  /** Requests main.js to load a new clean session (i.e., don restore any state)
+   This is a workaround to when the user requests a new session, the normal
+   mechanism in c++ creates duplicate Electron menu items...
+   
+   Must be called from within a WApplication thread (e.g., wApp is valid).
+   
+   @returns whether message was succesfully sent or not.
+   */
+  bool requestNewCleanSession();
+#endif
+  
+  /** Sends a message through the websocket connection letting main.js know that
+   the session has loaded.
+   
+   Must be called from within a WApplication thread (e.g., wApp is valid).
+   
+   @returns whether message was succesfully sent or not.
+   
+   Note: main.js will wait till recieveing this notification before asking the
+   session to open any files the OS requested.
+   */
+  bool notifyNodeJsOfNewSessionLoad();
+}//namespace ElectronUtils
+
+
 
 
 #endif  //#ifndef ElectronUtils_h

@@ -49,9 +49,7 @@
 #include "testing/developcode.h"
 #endif
 
-#if( BUILD_AS_ELECTRON_APP )
-#include "target/electron/ElectronUtils.h"
-#endif
+static_assert( !BUILD_AS_ELECTRON_APP, "main.cpp shouldnt be included with Electron builds" );
 
 //Forward declaration
 Wt::WApplication *createApplication( const Wt::WEnvironment &env );
@@ -63,13 +61,8 @@ void getUtf8Args( int &argc, char ** &argv );
 void processCustomArgs( int argc, char **argv );
 
 
-//#include "InterSpec/GammaInteractionCalc.h"
-
 int main( int argc, char **argv )
 {
-//  GammaInteractionCalc::example_integration();
-//  return 1;
-  
 #ifdef _WIN32
   getUtf8Args( argc, argv );
 #endif
@@ -106,13 +99,7 @@ int main( int argc, char **argv )
   Wt::WString::setDefaultEncoding( Wt::UTF8 );
 #endif
   
-  
   processCustomArgs( argc, argv );
-
-  
-#if( BUILD_AS_ELECTRON_APP )
-  return ElectronUtils::run_app(argc,argv);
-#endif
   
   DataBaseVersionUpgrade::checkAndUpgradeVersion();
   
@@ -138,20 +125,6 @@ Wt::WApplication *createApplication( const Wt::WEnvironment &env )
  */
 void getUtf8Args( int &argc, char ** &argv )
 {
-  //ToDo:
-  //  - on windows:
-  //     - Convert command line arguments to UTF-8
-  //     - Make all UtilityFunctions filesystem calls convert inputs from UTF8 to UTF16 and call wide versions of windows functions
-  //     - Make all UtilityFunctions filesystem related functiosn return UTF8 encoded results
-  //     - Make sure all instacces of DataBaseUtils::get/setPreferenceDatabaseFile() are aware of changes
-  //     - Check that database upgrade functions use wide functions
-  //     - Check target/electron/ElectronUtils.cpp for consistency
-  //     - Check file query widget to make sure it is okay 
-  //     - Check all instances of InterSpec::setWritableDataDirectory()/InterSpec::writableDataDirectory() are aware of changes
-  //     - Check anywhere that calls cwd() or get_working_path() or temp_dir()
-  //     - TO convert between utf16 and utf8 see from http://www.nubaria.com/en/blog/?p=289, or can do it cross-platform on c++11
-  
-  //
   LPWSTR *argvw = CommandLineToArgvW( GetCommandLineW(), &argc );
   if( !argvw )
   {
