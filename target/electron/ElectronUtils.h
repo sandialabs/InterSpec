@@ -25,9 +25,6 @@
 
 #include "InterSpec_config.h"
 
-#include <string>
-
-
 #if( BUILD_AS_ELECTRON_APP )
 
 /* Since we are using node-addon-api to interface to LibInterSpec, we could use
@@ -94,10 +91,6 @@ extern "C"
 
 namespace ElectronUtils
 {
-  /** The externalid passed into #run_app. */
-  std::string external_id();
-  
-  
 #if( USE_ELECTRON_NATIVE_MENU )
   /** Requests main.js to load a new clean session (i.e., don restore any state)
    This is a workaround to when the user requests a new session, the normal
@@ -110,8 +103,8 @@ namespace ElectronUtils
   bool requestNewCleanSession();
 #endif
   
-  /** Sends a message through the websocket connection letting main.js know that
-   the session has loaded.
+  /** Notify parent application (main.js, or objective-c) that the session has
+   loaded.
    
    Must be called from within a WApplication thread (e.g., wApp is valid).
    
@@ -122,8 +115,6 @@ namespace ElectronUtils
    */
   bool notifyNodeJsOfNewSessionLoad();
 }//namespace ElectronUtils
-
-
 
 
 #endif  //#ifndef ElectronUtils_h
