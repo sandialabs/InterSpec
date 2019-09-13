@@ -64,23 +64,11 @@
 using namespace std;
 
 
-namespace
-{
-  //The externalid of the primary session (the main electron window)
-  string ns_externalid;
-  std::mutex ns_externalid_mutex;
-  
 
-}//namespace
 
 namespace ElectronUtils
 {
 
-std::string external_id()
-{
-  lock_guard<mutex> lock(ns_externalid_mutex);
-  return ns_externalid;
-}
   
 #if( USE_ELECTRON_NATIVE_MENU )
 bool requestNewCleanSession()
@@ -256,118 +244,19 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
 
 void interspec_add_allowed_session_token( const char *session_id )
 {
-#warning "Need to make add_session_id() handle more than just single session ID"
-  lock_guard<mutex> lock(ns_externalid_mutex);
-  ns_externalid = session_id;
+  InterSpecServer::add_allowed_session_token( session_id );
 }//void interspec_add_allowed_session_token( const char *session_id )
+
 
 int interspec_remove_allowed_session_token( const char *session_token )
 {
-#warning "Need to make interspec_remove_allowed_session_token() take into account if sesion with token had been seen"
-  lock_guard<mutex> lock(ns_externalid_mutex);
-  if( session_token == ns_externalid )
-  {
-    ns_externalid = "";
-    return 0;
-  }
-
-  return -1;
+  return InterSpecServer::remove_allowed_session_token( session_token );
 }//int interspec_remove_allowed_session_token( const char *session_token )
 
 
-int interspec_open_file( const char *sessionToken, const char *files_json )
+int interspec_open_file( const char *session_token, const char *files_json )
 {
-  #warning "Need to actually test interspec_open_file"
-  
-  //Are we garunteed to recieve the entire message at once?
-  cerr << "Opening files not tested!" << endl;
-    
-  vector<string> files;
-    
-  try
-  {
-    Wt::Json::Value result;
-    Wt::Json::parse( files_json, result, true );
-    
-    if( result.type() != Wt::Json::ArrayType )
-      throw runtime_error( "Json passed in was not an array" );
-      
-    const Wt::Json::Array &jsonfiles = result;
-    for( const auto &val : jsonfiles )
-    {
-      const string valstr = val.orIfNull("");
-      if( UtilityFunctions::is_file(valstr) )
-        files.push_back(valstr);
-      else
-        cerr << "File '" << valstr << "' is not a file" << endl;
-    }//for( const auto &val : jsonfiles )
-  }catch( std::exception &e )
-  {
-    cerr << "Failed to parse '" << files_json
-         << "' as valid JSON. Issue: " << e.what() << endl;
-    return -1;
-  }//try / catch
-    
-    
-  //Look for session with 'externalid' and open file...
-  string externalid = sessionToken;
-    
-  InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( externalid );
-  if( app )
-  {
-    int numopened = 0;
-    Wt::WApplication::UpdateLock applock( app );
-    
-    for( auto filename : files )
-    {
-      if( app->userOpenFromFileSystem( filename ) )
-        numopened += 1;
-      else
-        cerr << "InterSpec failed to open file filename" << endl;
-    }
-      
-    app->triggerUpdate();
-    
-    return numopened;
-  }else
-  {
-    //I dont know why we would get here... but lets deal with it JIC
-    cerr << "There is no app with externalid=" << externalid << endl;
-    Wt::WServer *server = Wt::WServer::instance();
-    if( server )
-    {
-      cerr << "Will ask ALL current sesssions to open file." << endl;
-        
-      server->postAll( std::bind( [files](){
-        Wt::WApplication *wtap = wApp;
-        if( !wtap )
-        {
-          //Not sure why this happens some times.
-          cerr << "No WApplication::instance() in postAll(...)" << endl;
-          return;
-        }
-          
-        InterSpecApp *app = dynamic_cast<InterSpecApp *>( wtap );
-        assert( app );
-        
-        InterSpec *interspec = app->viewer();
-        assert( interspec );
-        
-        for( auto filename : files )
-        {
-          if( !app->userOpenFromFileSystem( filename ) )
-              cerr << "InterSpec failed to open file filename" << endl;
-        }
-          
-        app->triggerUpdate();
-      }) );
-    }else
-    {
-      cerr << "There is no server running, not opening file." << endl;
-    }
-  }//if( app ) / else
-  
-  return -2;
+  return InterSpecServer::open_file_in_session( session_token, files_json );
 }
 
 void interspec_kill_server()
