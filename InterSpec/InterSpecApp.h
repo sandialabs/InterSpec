@@ -226,7 +226,6 @@ protected:
   //  recent saved state, unless the URL contains a restore=0 argument.
   void setupWidgets( const bool attemptStateLoad );
   
-  
 protected:
   InterSpec *m_viewer;
   Wt::WGridLayout *m_layout;
@@ -257,6 +256,13 @@ protected:
   std::string m_externalToken;
 #endif
   
+  //iOS version of app handles not reloading app state through the iOS restore
+  //  stuff.
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
+  void loadSuccesfullCallback();
+  std::unique_ptr<Wt::JSignal<> > m_sucessfullyLoadedSignal;
+#endif
+  
   std::unique_ptr<Wt::JSignal<> > m_clearSession;
   
 #if( IOS )
@@ -271,6 +277,7 @@ protected:
   /** CSS px values for areas on iPhoneX's like the notch or bottom bar. */
   float m_safeAreas[4];
 #endif
+  
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

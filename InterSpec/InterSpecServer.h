@@ -58,6 +58,37 @@ namespace InterSpecServer
   bool changeToBaseDir( int argc, char *argv[] );
   
   std::string getWtConfigXml( int argc, char *argv[] );
+  
+
+  /** ToDo: allow adding of mutliple tokens; should also add a mechanism to
+   mark the token as having been loaded, so it cant be reused.
+   */
+  void add_allowed_session_token( const char *session_id );
+
+  /** Returns -1 if invalid token.  Returns +1 if valid token that had never been loaded.  Returns zero if .  */
+  int remove_allowed_session_token( const char *session_token );
+  
+  /** The externalid passed into #run_app. */
+  std::string external_id();
+  
+  
+  /** Open one or more files from the filesystem.  For macOS this would be
+   dropping a file to the app icon in the Finder.  Or on Windows it would be
+   dropping multiple files onto app icon.
+   
+   ToDo: should add logic to try and figure out what files are background, foreground, etc.
+   
+   \param session_token session token you want to open the file.
+   \param files_json: a JSON array of files to open.  Opened,
+   ex. ["/path/to/some/file","/some/other/file"] .
+   Input files are opened one at a time using #InterSpecApp::userOpenFromFileSystem
+   \returns number of files opened.
+   Will be zero if files were not valid spectrum files.
+   -1 if files_json is invalid format.
+   -2 if session_token is invalid (however, currently will ask ALL
+   sessions to open the files... ToDo: decide on this behaviour).
+   */
+  int open_file_in_session( const char *session_token, const char *files_json );
 }//namespace InterSpecServer
 
 

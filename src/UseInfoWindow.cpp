@@ -52,13 +52,15 @@
 #include <Wt/WStandardItemModel>
 #include <Wt/WAbstractItemDelegate>
 
+
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecUser.h"
-#include "InterSpec/InterSpec.h"
-#include "InterSpec/InterSpecApp.h"
+#include "SpecUtils/UtilityFunctions.h"
 
 
 using namespace Wt;
@@ -988,7 +990,10 @@ void UseInfoWindow::loadSample( const Wt::WModelIndex index )
   
   SpecMeasManager* manager = m_viewer->fileManager();
   
-  manager->loadFromFileSystem(val.toUTF8(), kForeground, parserType);
+  const string docroot = wApp->docRoot();
+  string filepath = UtilityFunctions::append_path( docroot, val.toUTF8() );
+  
+  manager->loadFromFileSystem( filepath, kForeground, parserType );
 }//void UseInfoWindow::loadSample( const Wt::WModelIndex index )
 
 

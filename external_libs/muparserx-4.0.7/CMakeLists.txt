@@ -49,11 +49,11 @@ if(M_LIBRARY)
     target_link_libraries(muparserx ${M_LIBRARY})
 endif(M_LIBRARY)
 
-install(TARGETS muparserx
-    LIBRARY DESTINATION lib${LIB_SUFFIX} # .so file
-    ARCHIVE DESTINATION lib${LIB_SUFFIX} # .lib file
-    RUNTIME DESTINATION bin              # .dll file
-)
+#install(TARGETS muparserx
+#    LIBRARY DESTINATION lib${LIB_SUFFIX} # .so file
+#    ARCHIVE DESTINATION lib${LIB_SUFFIX} # .lib file
+#    RUNTIME DESTINATION bin              # .dll file
+#)
 
 ########################################################################
 # Build pkg config file
@@ -63,35 +63,35 @@ configure_file(
     ${CMAKE_CURRENT_BINARY_DIR}/muparserx.pc
 @ONLY)
 
-install(
-    FILES ${CMAKE_CURRENT_BINARY_DIR}/muparserx.pc
-    DESTINATION lib${LIB_SUFFIX}/pkgconfig
-)
+#install(
+#    FILES ${CMAKE_CURRENT_BINARY_DIR}/muparserx.pc
+#    DESTINATION lib${LIB_SUFFIX}/pkgconfig
+#)
 
 ########################################################################
 # Install project config
 ########################################################################
-configure_file(
-    ${PROJECT_SOURCE_DIR}/cmake/muparserxConfigVersion.in.cmake
-    ${PROJECT_BINARY_DIR}/muparserxConfigVersion.cmake
-@ONLY)
+#configure_file(
+#    ${PROJECT_SOURCE_DIR}/cmake/muparserxConfigVersion.in.cmake
+#    ${PROJECT_BINARY_DIR}/muparserxConfigVersion.cmake
+#@ONLY)
 set(cmake_files
     ${PROJECT_SOURCE_DIR}/cmake/muparserxConfig.cmake
     ${PROJECT_BINARY_DIR}/muparserxConfigVersion.cmake)
-if (UNIX)
-    install(FILES ${cmake_files} DESTINATION share/cmake/muparserx)
-elseif (WIN32)
-    install(FILES ${cmake_files} DESTINATION cmake)
-endif ()
+#if (UNIX)
+#    install(FILES ${cmake_files} DESTINATION share/cmake/muparserx)
+#elseif (WIN32)
+#    install(FILES ${cmake_files} DESTINATION cmake)
+#endif ()
 
 ########################################################################
 # Install headers
 ########################################################################
 file(GLOB MUPARSERX_HEADERS "${MUPARSERX_SOURCE_DIR}/*.h")
-install(
-    FILES ${MUPARSERX_HEADERS}
-    DESTINATION include/muparserx
-)
+#install(
+#    FILES ${MUPARSERX_HEADERS}
+#    DESTINATION include/muparserx
+#)
 
 ########################################################################
 # Example application
@@ -106,4 +106,4 @@ install(
 # Print summary
 ########################################################################
 message(STATUS "Building muparserx version: ${MUPARSERX_VERSION}")
-message(STATUS "Using install prefix: ${CMAKE_INSTALL_PREFIX}")
+#message(STATUS "Using install prefix: ${CMAKE_INSTALL_PREFIX}")

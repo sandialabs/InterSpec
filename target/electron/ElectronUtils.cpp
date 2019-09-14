@@ -127,7 +127,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   //Using a relative path should get us in less trouble than an absolute path
   //  on Windows.  Although havent yet tested (20190902) with network drives and such on Windows.
   //Should check if basedir is a relative or absolut path before this next step
-#warning "Need to check out how this "
+#warning "Need to check out how this setting basedir for Electron tartget works on WIndows network drives and such"
   
   const string cwd = UtilityFunctions::get_working_path();
   string relbasedir = UtilityFunctions::fs_relative( cwd, basedir );

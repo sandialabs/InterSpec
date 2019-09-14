@@ -1,53 +1,50 @@
 # Creating a Distributable Electron Package
 
-Currently, the [Electron]([https://electronjs.org/](https://electronjs.org/) packaged version of `InterSpec` starts the `InterSpec` server as a sub-process from [main.js](app/main.js).  So to create a Electron packaged version of `InterSpec` you must first build the server code using the CMake based build system, then package that into the Electron package, using the standard [node.js]([https://nodejs.org/en/](https://nodejs.org/) tools.
+In order to create the [Electron]([https://electronjs.org/](https://electronjs.org/) packaged version of `InterSpec`, we create a node add-on that contains all the C++ code, and then request to start the `InterSpec` server from [main.js](app/main.js).  To create the add-on we use [cmake-js](https://www.npmjs.com/package/cmake-js) to build things, and [node-addon-api](https://www.npmjs.com/package/node-addon-api) to actually interface the C++ to JS.
 
-The below shows how to do this on macOS and Linux; Windows is essentually the same process, but you would use the CMake GUI and Visual Studio to build things (building using MingGW, Clang, or other build tools on Windows is not tested), and the npm terminal to package things.
 
 ```bash
-#The CMake build directory must be named 'build_electron' for
-#  the packaging scripts to work
-cd /path/to/InterSpec
-mkdir build_electron
-cd build_electron
+npm install -g cmake-js
 
-#For macOS only, you may want to define a deployment target
+# For macOS only, you may want to define a deployment target
 export MACOSX_DEPLOYMENT_TARGET=10.10
 
-#Run CMake, letting it know you want to build the electron app.  
-#  Specifying Boost and Wt paths is only necessary if they aren't 
-#  in the standard locations
-cmake -DBUILD_AS_ELECTRON_APP:BOOL="ON" \
-      -DINCLUDE_ANALYSIS_TEST_SUITE:BOOL="OFF" \
-      -DBOOST_ROOT=/path/to/boost \
-      -DWt_INCLUDE_DIR=/path/to/wt/include \
-      -DCMAKE_BUILD_TYPE="Release" \
-      ..
+cd /path/to/InterSpec/target/electron
 
-#Build the InterSpec server executable; this will get packed 
-#  into an Electron app
-make -j8
+# Install dependency for compiling a node.js add-on
+npm install --save-dev node-addon-api
 
-#Change to electron target directory
-cd ../target/electron/app
+# If boost and Wt are in standard locations, you can just run
+cmake-js
 
-#(optional) Install electron and electron-packager globally on your system for development
-npm install electron -g
-npm install electron-packager -g
+# Or to have a little more control over things
+cmake-js --CDBOOST_ROOT=/path/to/boost \
+         --CDWt_INCLUDE_DIR=/path/to/wt/include \
+         --CDCMAKE_BUILD_TYPE="Release" \
+         --out="build_dir"
 
+# If you make changes and want to recompile
+cmake-js build --out="build_dir"
+# Or
+ninja -C build_dir
 
-#Install the packages needed to make a distrbutable
-#  You may need to edit package.json to get dependancies to work out
-#  or manually locally install some of them 
-npm install package.json
+# To run InterSpec without packaging everything, you
+# need to install the Electron package
+npm install electron
 
-#Build the native code
-npm run build
-
-#If all has gone well, open an electron window and run InterSpec
+# Then to actually run things
 npm start
 
-#To create a distributable electron package, run one of the following
+
+# To create a packaged version of InterSpec, you
+# need to install electron-packager
+npm install electron-packager
+
+# And also copy all the InterSpec resources to the 
+# 'app' sub-directory of your build dir
+ninja -C build_dir install
+
+# Then to actually create the distributable package, run on of the  following
 npm run package-mac
 npm run package-win
 npm run package-linux

@@ -70,6 +70,11 @@
 }
 
 
+//- (void)application:(NSApplication *)app didDecodeRestorableState:(NSCoder *)coder;
+//- (void)application:(NSApplication *)app willEncodeRestorableState:(NSCoder *)coder;
+//See https://www.bignerdranch.com/blog/cocoa-ui-preservation-yall/ for how to actually use.
+//See also : https://developer.apple.com/library/archive/documentation/General/Conceptual/MOSXAppProgrammingGuide/CoreAppDesign/CoreAppDesign.html
+
 -(BOOL)application:(NSApplication *)theApplication openFile:(NSString *)filename
 {
   BOOL loaded = NO;
@@ -265,11 +270,10 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //[prefs setValue:@NO forKey:@"peerConnectionEnabled"]; //WebRTC
   //[prefs setValue:@NO forKey:@"mediaDevicesEnabled"]; //cameras, microphones, etc
   //[prefs setValue:@NO forKey:@"screenCaptureEnabled"];
-  //[prefs setValue:@NO forKey:@"javaScriptCanAccessClipboard"];
+  //[prefs setValue:@YES forKey:@"javaScriptCanAccessClipboard"];  //doesnt seem to make a difference for flux tool (always HTML text)
   //hiddenPageDOMTimerThrottlingEnabled
   //hiddenPageDOMTimerThrottlingAutoIncreases
   //pageVisibilityBasedProcessSuppressionEnabled
-  
   
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -320,7 +324,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   InterSpecServer::startServer( argc, (char **)argv, &createApplication );
   
-  //now well wait for the server to start
+  //now we'll wait for the server to start
   std::string url;
   int running = -1;
   int numtries = 0;
@@ -371,6 +375,31 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       }
     }//if( >= macOS 10.14 )
 #endif
+    
+    //ToDo: make this mechanism like the iOS one, where it is determined via the OS mecahnism
+    //      (and dont look for this file and whatever)
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    //Will return false by defautl
+    BOOL doNotResume = [defaults boolForKey:@"DoNotResume"];
+    
+    //Set to not resume; when we get confirmation all loaded okay, we will set
+    // it back to resuming by default.
+    [defaults setBool:YES forKey:@"DoNotResume"];
+    
+    //Check for file DoNotResume in data directory
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    NSURL *testResumeFile = [[self applicationFilesDirectory] URLByAppendingPathComponent:@"DoNotResume"];
+    NSString *testResumeFilePath = [testResumeFile path];
+    if ([fileManager fileExistsAtPath:testResumeFilePath]) {
+      NSLog( @"Found DoNotResume file at %@\n\tWill not resume previous state.", testResumeFilePath );
+      doNotResume = YES;
+      NSError *error = nil;
+      [[NSFileManager defaultManager] removeItemAtPath:testResumeFilePath error:&error];
+    }
+    
+    if( doNotResume )
+      actualURL = [NSString stringWithFormat:@"%@&restore=no", actualURL];
+    
     
     //if( [_InterSpecWebView respondsToSelector:@selector(mainFrame)])
     //[[_InterSpecWebView mainFrame] loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];
