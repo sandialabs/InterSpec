@@ -47,7 +47,7 @@
 
 const electron = require('electron')
 
-const interspec = require('./build/Release/InterSpecAddOn.node');
+const interspec = require('./InterSpecAddOn.node');
 
 
 //To use IPC, just:
@@ -218,6 +218,7 @@ app.on('open-url', function (event,url) {
 
 const userdata = app.getPath('userData');
 var guiOtionsPath = path.join(userdata, "init.json");
+let allowReloadPath = path.join(userdata, "do_reload");
 
 function get_launch_options(){
   //InterSpecResourceDir
@@ -302,6 +303,17 @@ function createWindow () {
 
   doMenuStuff(mainWindow);
   
+
+  let allowReload = false;
+  try{ 
+    if( fs.lstatSync(allowReloadPath).isFile() ){
+      allowReload = true;
+      fs.unlinkSync( allowReloadPath );
+    } 
+  }catch(e) {
+    console.error( 'Exception checking on/deleting allow reload path ("' + allowReloadPath + '"): ' + e );
+  }
+  
   
   if( interspec_url ) {
     const session_token_buf = crypto.randomBytes(16);
@@ -314,6 +326,9 @@ function createWindow () {
       msg += "&specfilename=" + encodeURI(filepath);
       initial_file_to_open = null;
     }
+    
+    if( !allowReload )
+      msg += "&restore=no";
   
     console.log('Will Load ' + msg);
 
@@ -531,6 +546,10 @@ app.on('ready', function(){
   const process_name = require.main.filename;
   //actually process.cwd()==path.dirname(require.main.filename) when running using node from command line
   const basedir = path.relative( process.cwd(), path.dirname(require.main.filename) );
+  console.log( 'process.cwd()="' + process.cwd() + '"');
+  console.log( 'path.dirname(require.main.filename)="' + path.dirname(require.main.filename) + '"');
+  console.log( 'basedir="' + basedir + '"');
+
   const xml_config_path = path.join(basedir, "data/config/wt_config_electron.xml");
   let portnum = 0;
   
@@ -570,6 +589,13 @@ app.on('ready', function(){
 
     console.log( "Received SessionFinishedLoading for Token='" + token + "'" );
       
+    try{ 
+      fs.writeFileSync(allowReloadPath, ""+Date.now() ); 
+      console.log( 'Wrote reload file: ' + allowReloadPath );
+    }catch(e){
+      console.log( "Error writing allow reload file " );
+    }
+
     //ToDo: should make sure token is what we want
     //ToDo: just aff &specfilename="UriEncodedFilename" to URL argument... (but make sure ALLOW_URL_TO_FILESYSTEM_MAP is enabled)
     

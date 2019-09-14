@@ -484,7 +484,7 @@ void D3SpectrumDisplayDiv::updateReferncePhotoPeakLines()
   result += "]";
   
   if( isRendered() )
-    doJavaScript(m_jsgraph + ".setReferenceLines(" + result + ")");
+    doJavaScript( "try{" + m_jsgraph + ".setReferenceLines(" + result + ")}catch(e){ console.log('Exception setting ref lines: ' + e ); }");
 }
 #endif //#if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 

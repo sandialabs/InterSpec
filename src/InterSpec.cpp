@@ -4872,42 +4872,44 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
 
   subPopup = m_fileMenuPopup->addPopupMenuItem( "Samples" );
   
+  const string docroot = wApp->docRoot();
+  
   item = subPopup->addMenuItem( "Ba-133 (16k channel)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                         "example_spectra/ba133_source_640s_20100317.n42",
+                                         UtilityFunctions::append_path(docroot, "example_spectra/ba133_source_640s_20100317.n42"),
                                          kForeground, k2006Icd1Parser ) );
   if( isMobile )
     item = subPopup->addMenuItem( "Passthrough (16k channel)" );
   else
     item = subPopup->addMenuItem( "Passthrough (16k bin ICD1, 8 det., 133 samples)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                         "example_spectra/passthrough.n42",
+                                         UtilityFunctions::append_path(docroot, "example_spectra/passthrough.n42"),
                                          kForeground, k2006Icd1Parser ) );
   
   item = subPopup->addMenuItem( "Background (16k bin N42)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                         "example_spectra/background_20100317.n42",
+                                         UtilityFunctions::append_path(docroot, "example_spectra/background_20100317.n42"),
                                          kBackground, k2006Icd1Parser ) );
   //If its a mobile device, we'll give a few more spectra to play with
   if( isMobile )
   {
     item = subPopup->addMenuItem( "Ba-133 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           "example_spectra/Ba133LowResNoCalib.spe",
+                                           UtilityFunctions::append_path(docroot, "example_spectra/Ba133LowResNoCalib.spe"),
                                            kForeground, kIaeaParser ) );
     
     item = subPopup->addMenuItem( "Co-60 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           "example_spectra/Co60LowResNoCalib.spe",
+                                           UtilityFunctions::append_path(docroot, "example_spectra/Co60LowResNoCalib.spe"),
                                            kForeground, kIaeaParser ) );
     
     item = subPopup->addMenuItem( "Cs-137 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           "example_spectra/Cs137LowResNoCalib.spe",
+                                           UtilityFunctions::append_path(docroot, "example_spectra/Cs137LowResNoCalib.spe"),
                                            kForeground, kIaeaParser ) );
     item = subPopup->addMenuItem( "Th-232 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           "example_spectra/Th232LowResNoCalib.spe",
+                                           UtilityFunctions::append_path(docroot, "example_spectra/Th232LowResNoCalib.spe"),
                                            kForeground, kIaeaParser ) );
   }//if( isMobile )
   
@@ -7016,7 +7018,8 @@ void InterSpec::fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
   try
   {
     //materialDB can get destructed if the session ends immediately....
-    materialDB->parseGadrasMaterialFile( "data/MaterialDataBase.txt", db, false );
+    const string materialfile = UtilityFunctions::append_path(sm_staticDataDirectory, "MaterialDataBase.txt" );
+    materialDB->parseGadrasMaterialFile( materialfile, db, false );
     
     WServer::instance()->post( sessionid, update );
   }catch( std::exception &e )
@@ -9684,11 +9687,11 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
       DetectorPeakResponse *detPtr = new DetectorPeakResponse();
       detector.reset( detPtr );
     
-      const char *drf_dir = "data/GenericGadrasDetectors/HPGe 40%";
+      string drf_dir = UtilityFunctions::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
       if( data && (data->num_gamma_channels() <= 2049) )
-        drf_dir = "data/GenericGadrasDetectors/NaI 1x1";
-
-      detPtr->fromGadrasDirectory( "data/GenericGadrasDetectors/NaI 1x1" );
+        drf_dir = UtilityFunctions::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/NaI 1x1" );
+      
+      detPtr->fromGadrasDirectory( drf_dir );
     }//if( !detector || !detector->isValid() )
   }//end code-block to get input data
   

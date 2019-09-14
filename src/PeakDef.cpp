@@ -30,16 +30,18 @@
 #include <boost/math/special_functions/erf.hpp>
 #include <boost/math/distributions/poisson.hpp>
 
+#include <Wt/WApplication>
+
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
+#include "InterSpec/InterSpecApp.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/SpectrumDataStructs.h"
 

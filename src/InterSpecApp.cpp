@@ -81,6 +81,13 @@
 #endif
 
 
+#if( BUILD_AS_OSX_APP )
+#include "target/osx/macOsUtils.h"
+#endif
+
+
+
+
 using namespace std;
 using namespace Wt;
 
@@ -447,7 +454,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //An initial test says  environment().clientAddress() return "127.0.0.1".
     //  ToDo: after a little more testing enable always testing the request is
     //        from 127.0.0.1, AND for Electron version of app that that the 
-    //        value of "externalid" in the URL matches ElectronUtils::external_id()
+    //        value of "externalid" in the URL matches InterSpecServer::external_id()
     //UtilityFunctions::icontains( environment().clientAddress(), "127.0.0.1" )
     
     const string filename = uri_decode( specfileiter->second[0] );
@@ -804,6 +811,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //WServer::instance()->post( sessionId(), [](){ PopupDivMenu::triggerElectronMenuUpdate(); } );
     PopupDivMenu::triggerElectronMenuUpdate();
   }//if( !m_externalToken.empty() )
+#endif
+  
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
+  m_sucessfullyLoadedSignal.reset( new Wt::JSignal<>( this, "SucessfullyLoadedConf" ) );
+  m_sucessfullyLoadedSignal->connect( this, &InterSpecApp::loadSuccesfullCallback );
+  doJavaScript( "setTimeout(function(){Wt.emit('" + id() + "',{name: 'SucessfullyLoadedConf'});}, 250);" );
 #endif
 }//void setupWidgets()
 
@@ -1304,3 +1317,21 @@ bool InterSpecApp::isTablet() const
                 && agent.find("Mobile") == string::npos)
             );
 }//bool isTablet() const
+
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID )
+void InterSpecApp::loadSuccesfullCallback()
+{
+  m_sucessfullyLoadedSignal.reset();
+  
+#if( BUILD_AS_ELECTRON_APP )
+  ElectronUtils::notifyNodeJsOfNewSessionLoad();
+#elif( BUILD_AS_OSX_APP )
+  macOsUtils::sessionSuccessfullyLoaded();
+#elif( ANDROID )
+  #warning "Need to implement notifying for parent process for Android"
+#else
+  static_assert( 0, "Something messed up with pre-processor setup" );
+#endif
+}//void loadSuccesfullCallback()
+#endif

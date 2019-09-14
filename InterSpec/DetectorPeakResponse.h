@@ -50,7 +50,6 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "SpecUtils/UtilityFunctions.h"
-#include "InterSpec/DetectorPeakResponse.h"
 
 
 class PeakDef;

@@ -36,8 +36,8 @@
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/PopupDiv.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/InterSpecApp.h"
+#include "SpecUtils/UtilityFunctions.h"
 
 #if(USE_OSX_NATIVE_MENU)
 #include "target/osx/NativeMenu.h"
@@ -471,16 +471,22 @@ function()
 
 
 //A hack since we apparetnyl need absolute path to icons, or else there is  a fata exception in the JS
-string resolve_icon_path( string iconPath )
+string resolve_icon_path( string inputIconPath )
 {
-  if( iconPath.empty() )
+  if( inputIconPath.empty() )
     return "";
   
-  iconPath = UtilityFunctions::append_path( UtilityFunctions::get_working_path(),iconPath);
+  const std::string docroot = (wApp ? wApp->docRoot() : string());
+  string iconPath = UtilityFunctions::append_path( docroot, inputIconPath );
+  
+  if( !UtilityFunctions::is_file( iconPath ) )
+    iconPath = UtilityFunctions::append_path( UtilityFunctions::get_working_path(), inputIconPath );
   
   if( !UtilityFunctions::is_file( iconPath ) )
   {
-    cerr << "Icone '" << iconPath << "' not a file" << endl;
+    cerr << "Couldnt find icon '" << inputIconPath
+         << "' in docRoot ('" << docroot << "') or CWD ('"
+         << UtilityFunctions::get_working_path() << "')" << endl;
     iconPath = "";
   }
   

@@ -49,7 +49,6 @@
 #include "testing/developcode.h"
 #endif
 
-static_assert( !BUILD_AS_ELECTRON_APP, "main.cpp shouldnt be included with Electron builds" );
 
 //Forward declaration
 Wt::WApplication *createApplication( const Wt::WEnvironment &env );

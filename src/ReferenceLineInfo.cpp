@@ -289,7 +289,10 @@ void ReferenceLineInfo::toJson( string &json ) const
     
     printed = true;
     char buffer[32];
-    snprintf( buffer, sizeof(buffer), "%.3g", intensities[i] );
+    if( IsNan(intensities[i]) || IsInf(intensities[i]) )
+      snprintf( buffer, sizeof(buffer), "0" );
+    else
+      snprintf( buffer, sizeof(buffer), "%.3g", intensities[i] );
     
     jsonstrm << "{e:" << energies[i]
     << ",h:" << buffer;

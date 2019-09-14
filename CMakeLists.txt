@@ -239,6 +239,7 @@ IF( BUILD_AS_ELECTRON_APP )
   set( USE_SPECTRUM_CHART_D3 ON )
   set( USE_SEARCH_MODE_3D_CHART ON )
   set( USE_ELECTRON_NATIVE_MENU ON )
+  set( INCLUDE_ANALYSIS_TEST_SUITE OFF )
 ENDIF( BUILD_AS_ELECTRON_APP )
 
 
@@ -644,8 +645,8 @@ elseif( ANDROID )
   list( APPEND headers target/android/AndroidUtils.hpp )
   add_library( InterSpecLib SHARED main.cpp ${sources} ${headers} )
 elseif( BUILD_AS_OSX_APP )
-  list( APPEND sources src/InterSpecServer.cpp )
-  list( APPEND headers InterSpec/InterSpecServer.h )
+  list( APPEND sources src/InterSpecServer.cpp target/osx/macOsUtils.mm )
+  list( APPEND headers InterSpec/InterSpecServer.h target/osx/macOsUtils.h )
 
   SET(MACOSX_BUNDLE_INFO_STRING "InterSpec - Sandia National Lab, Will Johnson" )
   SET(MACOSX_BUNDLE_ICON_FILE InterSpec )
@@ -725,6 +726,8 @@ elseif( BUILD_AS_OSX_APP )
                     "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator"
   )
   SET_TARGET_PROPERTIES( InterSpecExe PROPERTIES MACOSX_BUNDLE TRUE )
+  #set_target_properties( InterSpecExe PROPERTIES SUFFIX "")
+  set_target_properties( InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec" )
 
   target_link_libraries( InterSpecExe PUBLIC InterSpecLib )
 
@@ -805,33 +808,21 @@ elseif( BUILD_AS_UNIT_TEST_SUITE )
   add_library( InterSpecLib STATIC ${sources} ${headers} )
   add_executable( InterSpecExe ${GUI_TYPE} main.cpp )
   target_link_libraries( InterSpecExe PUBLIC InterSpecLib )
+  set_target_properties( InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec" )
 elseif( BUILD_AS_ELECTRON_APP )
   list( APPEND sources src/InterSpecServer.cpp target/electron/ElectronUtils.cpp )
   list( APPEND headers InterSpec/InterSpecServer.h target/electron/ElectronUtils.h )
-
-#  If we want to statically link the node addon to InterSpec, we will also
-#  need to statically link the node module to all the libraries we would
-#  link InterSpec too... which the easiest way to do that might be to template
-#  binding.gyp.  Can get_target_property(OUT InterSpecLib LINK_LIBRARIES), although onese built by CMake wont be full paths...
-  add_library( InterSpecLib SHARED ${sources} ${headers} )
-  add_executable( InterSpecExe ${GUI_TYPE} main.cpp )
-  target_link_libraries( InterSpecExe PUBLIC InterSpecLib )
-#  The next two lines should hide all the symbols in the shared library, but this doesn
-#  look to be the case on macOS at least
-#  set_target_properties( InterSpecLib PROPERTIES C_VISIBILITY_PRESET hidden )
-  set_target_properties( InterSpecLib PROPERTIES CXX_VISIBILITY_PRESET hidden )
+  add_library( InterSpecLib STATIC ${sources} ${headers} )
 else()
   add_library( InterSpecLib STATIC ${sources} ${headers} )
   add_executable( InterSpecExe ${GUI_TYPE} main.cpp )
   target_link_libraries( InterSpecExe PUBLIC InterSpecLib )
+  #set_target_properties( InterSpecExe PROPERTIES SUFFIX "")
+  set_target_properties( InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec" )
 endif( IOS )
 
 set_target_properties( InterSpecLib PROPERTIES PREFIX "" )
 set_target_properties( InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec" )
-
-#set_target_properties( InterSpecExe PROPERTIES SUFFIX "")
-set_target_properties( InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec" )
-
 
 target_link_libraries( InterSpecLib PUBLIC SpecUtils SandiaDecay minuit2 Cuba-3.0 muparserx )
 
@@ -859,28 +850,31 @@ target_include_directories( InterSpecLib PUBLIC ${Wt_INCLUDE_DIR} ${Boost_INCLUD
                        ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR} ${RAPID_XML_INC_DIR} external_libs )
 
 
-if( NOT IOS )
-
-  IF(WIN32)
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-      target_link_libraries( InterSpecLib PUBLIC ${Wt_DEBUG_LIBRARIES} )
-    else(CMAKE_BUILD_TYPE STREQUAL "Debug")
-      target_link_libraries( InterSpecLib PUBLIC ${Wt_LIBRARIES} )
-    endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-
-    target_link_directories( InterSpecLib ${Boost_LIBRARY_DIR} )
-
-    IF( Boost_CHRONO_FOUND )
-      target_link_libraries( InterSpecLib PUBLIC ${Boost_CHRONO_LIBRARY} )
-    ENDIF( Boost_CHRONO_FOUND )
-
-    IF( Boost_TIMER_FOUND )
-      target_link_libraries( InterSpecLib PUBLIC ${Boost_TIMER_LIBRARY} )
-    ENDIF( Boost_TIMER_FOUND )
-  ELSE(WIN32)
+if( IOS )
+elseif(WIN32)
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_libraries( InterSpecLib PUBLIC ${Wt_DEBUG_LIBRARIES} )
+  else(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_link_libraries( InterSpecLib PUBLIC ${Wt_LIBRARIES} )
-  ENDIF(WIN32)
+  endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 
+  target_link_directories( InterSpecLib ${Boost_LIBRARY_DIR} )
+
+  IF( Boost_CHRONO_FOUND )
+    target_link_libraries( InterSpecLib PUBLIC ${Boost_CHRONO_LIBRARY} )
+  ENDIF( Boost_CHRONO_FOUND )
+
+  IF( Boost_TIMER_FOUND )
+    target_link_libraries( InterSpecLib PUBLIC ${Boost_TIMER_LIBRARY} )
+  ENDIF( Boost_TIMER_FOUND )
+elseif( BUILD_AS_ELECTRON_APP )
+  #Not sure why Wt_LIBRARIES isnt filled out here, but its not, so will manually specify Wt libraries for the moment
+  target_link_libraries( InterSpecLib PUBLIC ${Wt_TEST_LIBRARY} ${Wt_LIBRARY} ${Wt_HTTP_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
+elseif( YES )
+  target_link_libraries( InterSpecLib PUBLIC ${Wt_LIBRARIES} )
+endif( IOS )
+
+if( NOT IOS )
   target_link_libraries( InterSpecLib PUBLIC
       ${Boost_LIBRARIES}
       ${Boost_SYSTEM_LIBRARY}
@@ -1073,25 +1067,11 @@ IF( BUILD_AS_ELECTRON_APP )
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/main.js
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/loading.html
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/README.md
-       ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/package.json
-       ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/copy_resources.in.js
+       ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/package.json
        ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/launch_options.json
       )
 
   add_custom_target( electron_resources SOURCES ${ELECTRON_SUPPORT_FILES} )
-
-#We cant get the executable location at configure time, so I'll just hardcode
-#  this for now, for a workaround see
-#  https://cmake.org/pipermail/cmake/2012-May/050221.html
-#  (It would be nice to use $<TARGET_FILE:InterSpecExe>)
-#See the script : target/electron/app/copy_resources.in.js for use of this variable
-#  ToDo: Fix up this copy resource stuff, including for now usign things as an Electron addon
-
-  configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/copy_resources.in.js
-    ${CMAKE_CURRENT_SOURCE_DIR}/target/electron/app/copy_resources.js
-  )
-
 ENDIF( BUILD_AS_ELECTRON_APP )
 
 #Copy files to the install directory
