@@ -70,10 +70,23 @@
 }
 
 
-//- (void)application:(NSApplication *)app didDecodeRestorableState:(NSCoder *)coder;
-//- (void)application:(NSApplication *)app willEncodeRestorableState:(NSCoder *)coder;
 //See https://www.bignerdranch.com/blog/cocoa-ui-preservation-yall/ for how to actually use.
 //See also : https://developer.apple.com/library/archive/documentation/General/Conceptual/MOSXAppProgrammingGuide/CoreAppDesign/CoreAppDesign.html
+
+- (void)application:(NSApplication *)app didDecodeRestorableState:(NSCoder *)coder
+{
+  // This seems to get called only when the app was killed by like Xcode or force-kill of the app
+  NSLog( @"didDecodeRestorableState" );
+}
+
+
+- (void)application:(NSApplication *)app willEncodeRestorableState:(NSCoder *)coder
+{
+  // Gets called when you change window size, or put app into background, etc.
+  // (not when you quit the app normally)
+  NSLog( @"willEncodeRestorableState" );
+}
+
 
 -(BOOL)application:(NSApplication *)theApplication openFile:(NSString *)filename
 {
@@ -232,15 +245,63 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
 {
   NSLog(@"Finished Launching");
+
+  /*
+   //Could maybe get rid of using XIB/NIB by manueally creating a window like:
+   NSRect frame = NSMakeRect(0, 0, 300, 300);
+   NSWindow *window  = [[[NSWindow alloc] initWithContentRect:frame
+                 styleMask:NSBorderlessWindowMask
+                 backing:NSBackingStoreBuffered
+                 defer:NO] autorelease];
+   [window setBackgroundColor:[NSColor redColor]];
+   [window makeKeyAndOrderFront:NSApp];
+   [window setFrameUsingName: @"MainWindow"];
+   [window setFrameAutosaveName: @"MainWindow"];
+   */
   
-  //Lets adjust the size and position of the main window to be reasonable
-  const int width = [[NSScreen mainScreen] frame].size.width;
-  const int height = [[NSScreen mainScreen] frame].size.height;
-  NSSize mySize;
-  mySize.width = 0.85*width;
-  mySize.height = 0.85*height;
-  [_window setContentSize: mySize];
-  [[self window] setFrameTopLeftPoint:NSMakePoint(0.025*width, 0.95*height)];
+  //ToDo: I think the OS provides a better mechanism than manually tracking if
+  //      shutdown was clean or not... but first tries with didDe/willEn-codeRestorableState
+  //      didnt work super well.
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  //Will return false by defautl
+  BOOL doResume = [defaults boolForKey:@"DoResume"];
+  NSLog( @"DoResume %i", doResume );
+  
+  //Set to not resume; when we get confirmation all loaded okay, we will set
+  // it back to resuming by default.
+  [defaults setBool:NO forKey:@"DoResume"];
+  //[defaults commitEditing];  //seems to not be valid here, but is when app is ending
+  
+  /*
+   //Check for file "DoNotResume" in data directory.  Probably not necassary since force-killing the app
+   //  should achieve the same things.  But leaving commented out until I test stuff.
+   NSFileManager *fileManager = [NSFileManager defaultManager];
+   NSURL *testResumeFile = [[self applicationFilesDirectory] URLByAppendingPathComponent:@"DoNotResume"];
+   NSString *testResumeFilePath = [testResumeFile path];
+   if ([fileManager fileExistsAtPath:testResumeFilePath]) {
+   NSLog( @"Found DoNotResume file at %@\n\tWill not resume previous state.", testResumeFilePath );
+   doResume = NO;
+   NSError *error = nil;
+   [[NSFileManager defaultManager] removeItemAtPath:testResumeFilePath error:&error];
+   }
+   */
+  
+  
+  if( doResume )
+  {
+    //ToDo: Make sure window is showing... or check if this is necassary even
+  }else
+  {
+    //Place window at a reasonable size and location
+    const int width = [[NSScreen mainScreen] frame].size.width;
+    const int height = [[NSScreen mainScreen] frame].size.height;
+    NSSize mySize;
+    mySize.width = 0.85*width;
+    mySize.height = 0.85*height;
+    [_window setContentSize: mySize];
+    [[self window] setFrameTopLeftPoint:NSMakePoint(0.025*width, 0.95*height)];
+  }//if( doResume ) / else
+  
   
   
   WKWebViewConfiguration *webConfig = [[WKWebViewConfiguration alloc] init];
@@ -375,29 +436,9 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       }
     }//if( >= macOS 10.14 )
 #endif
+  
     
-    //ToDo: make this mechanism like the iOS one, where it is determined via the OS mecahnism
-    //      (and dont look for this file and whatever)
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    //Will return false by defautl
-    BOOL doNotResume = [defaults boolForKey:@"DoNotResume"];
-    
-    //Set to not resume; when we get confirmation all loaded okay, we will set
-    // it back to resuming by default.
-    [defaults setBool:YES forKey:@"DoNotResume"];
-    
-    //Check for file DoNotResume in data directory
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSURL *testResumeFile = [[self applicationFilesDirectory] URLByAppendingPathComponent:@"DoNotResume"];
-    NSString *testResumeFilePath = [testResumeFile path];
-    if ([fileManager fileExistsAtPath:testResumeFilePath]) {
-      NSLog( @"Found DoNotResume file at %@\n\tWill not resume previous state.", testResumeFilePath );
-      doNotResume = YES;
-      NSError *error = nil;
-      [[NSFileManager defaultManager] removeItemAtPath:testResumeFilePath error:&error];
-    }
-    
-    if( doNotResume )
+    if( !doResume )
       actualURL = [NSString stringWithFormat:@"%@&restore=no", actualURL];
     
     
@@ -790,6 +831,8 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
 {
   // Save changes in the application's managed object context before the application terminates.
   
+  NSLog( @"Terminated %p", _window );
+  
   if (!_managedObjectContext)
   {
     InterSpecServer::killServer();
@@ -837,5 +880,15 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
   return NSTerminateNow;
 }
 
+- (void)applicationWillTerminate:(NSNotification *)notification
+{
+  //This is the last function called before termination; not called if force-quit
+  NSLog( @"applicationWillTerminate" );
+  
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  [defaults setBool: YES forKey: @"DoResume"];
+  [defaults commitEditing];
+  NSLog( @"applicationWillTerminate: setting to YES, DoResume=%i", [defaults boolForKey:@"DoResume"] );
+}
 
 @end
