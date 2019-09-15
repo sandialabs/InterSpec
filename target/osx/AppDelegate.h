@@ -46,4 +46,8 @@
 -(BOOL) application:(NSApplication *)theApplication openFile:(NSString *)filename;
 -(BOOL) applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender;
 -(void)themeChanged:(NSNotification *) notification;
+
+-(void)application:(NSApplication *)app didDecodeRestorableState:(NSCoder *)coder;
+-(void)application:(NSApplication *)app willEncodeRestorableState:(NSCoder *)coder;
+-(void)applicationWillTerminate:(NSNotification *)notification;
 @end
