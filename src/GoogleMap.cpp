@@ -427,7 +427,18 @@ public:
       "if(self)self.appendChild(document.createTextNode(\"Error loading google maps: \" + errorThrown + \". Check internet connection, or google maps key may be invalid\"));"
       "}";
     
-      doJavaScript( "$.ajax({url: \"" + jsapi + "\", dataType: \"script\", cache: true, timeout: 5000, error: " + errorLoadingFcn + " });" );
+      string successfcn = "function(data,textStatus,jqXHR){ $(window).data('HasLoadedGMaps',true); }";
+      
+      
+      doJavaScript( "if(!$(window).data('HasLoadedGMaps'))"
+                   " $.ajax({url: \"" + jsapi + "\","
+                   + " dataType: \"script\""
+                   + ", cache: true"
+                   + ", timeout: 5000"
+                   + ", error: " + errorLoadingFcn
+                   + ", success: " + successfcn
+                   + " });"
+                   + " else " + initFcn + "();" );
       //doJavaScript( "$.getScript(\"" + jsapi + "\");" );
     }//if( flags & RenderFull )
     
