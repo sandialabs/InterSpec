@@ -939,56 +939,6 @@ struct UseDrfPref
 };//struct UseDrfPref
 
 
-
-
-/**  20190525: Its probably wort reconsidering if this class is necasary - it
-       was going to be for the ResourceUpdate tool, but I think it might be
-       easier to just copy the relevant files to the user data directory, and
-       just search for them there when need be.
- */
-struct InterSpecGlobalSetting
-{
-  enum ValidityStatus
-  {
-    GlobalSettingActive = 0,
-    GlobalSettingInActive = 1, //not being used
-    GlobalSettingInvalid = 2,   //Found to no longer be valid
-    GlobalSettingUserRemoved = 3  //User deleted this setting, but we're leaving in DB
-  };//enum ValidityStatus
-  
-  ValidityStatus status;
-  
-  /** Time originally added to database */
-  Wt::WDateTime creationTime;
-  
-  /** Time this setting has most recently been updated. */
-  Wt::WDateTime lastModifiedTime;
-  
-  /** Basically a 'key' value to determine how to interpret #data.
-      ex. "DetectorResponseFunctionDirectory", "DetectorSerialNumberMapping"
-   */
-  std::string settingCatagory;
-  
-  /** Interpreted according to settingCatagory specified.
-      Usually a file path; if so either absolute, or relative to user-data
-      directory (not the default InterSpec data directory).
-   */
-  std::string data;
-  
-  
-  template<class Action>
-  void persist( Action &a )
-  {
-    Wt::Dbo::field( a, status, "Status" );
-    Wt::Dbo::field( a, creationTime, "CreationTime" );
-    Wt::Dbo::field( a, lastModifiedTime, "LastModifiedTime" );
-    Wt::Dbo::field( a, settingCatagory, "SettingCatagory" );
-    Wt::Dbo::field( a, data, "Data" );
-  }
-};//struct GlobalSetting
-
-
-
 //Implementation of inline and templated functions
 #include <sstream>
 #include <stdexcept>

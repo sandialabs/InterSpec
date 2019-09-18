@@ -47,16 +47,18 @@ namespace MassAttenuation
 #endif
   
   /** Tests if the directory pointed to by 'dir' has a sub-directory
-      'em_xs_data' with valid data files (used for allowing upgrades,
-       see ResourceUpdate.cpp).
+      'em_xs_data' with valid data files.
    
        Throws exception if directory is invalid.
    */
+  /*
 #ifdef _WIN32
   void test_data_directory_validity( const std::wstring &dir );
 #else
   void test_data_directory_validity( const std::string &dir );
 #endif
+  */
+  
   
   static const int sm_min_xs_atomic_number = 1;
   

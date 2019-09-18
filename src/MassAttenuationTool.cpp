@@ -290,6 +290,7 @@ namespace MassAttenuation
 #endif
   }
   
+  /*
 #ifdef _WIN32
   void test_data_directory_validity( const std::wstring &dir )
 #else
@@ -327,7 +328,7 @@ namespace MassAttenuation
       throw runtime_error( "Error using cross-section data: " + string(e.what()) );
     }//
   }//void test_data_directory_validity( const std::string &dir )
-  
+  */
   
   float AttCoef( const float energy, const int atomic_number,
                 float &scatter_mu, float &photoelectric_mu, float &pair_prod_mu )

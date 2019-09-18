@@ -554,15 +554,6 @@ if( SUPPORT_ZIPPED_SPECTRUM_FILES )
 endif( SUPPORT_ZIPPED_SPECTRUM_FILES )
 
 
-if( ENABLE_RESOURCE_UPDATES )
-  list( APPEND sources src/ResourceUpdate.cpp src/ResourceUpdateTool.cpp )
-  list( APPEND headers InterSpec/ResourceUpdate.h InterSpec/ResourceUpdateTool.h )
-
-  if( BUILD_FOR_WEB_DEPLOYMENT )
-    MESSAGE( FATAL_ERROR "ENABLE_RESOURCE_UPDATES must not be enabled if you are building for web deployment" )
-  endif( BUILD_FOR_WEB_DEPLOYMENT )
-endif( ENABLE_RESOURCE_UPDATES )
-
 if( USE_SIMPLE_NUCLIDE_ASSIST )
   list( APPEND sources src/SimpleNuclideAssist.cpp )
   list( APPEND headers InterSpec/SimpleNuclideAssist.h )

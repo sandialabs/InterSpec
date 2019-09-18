@@ -44,7 +44,9 @@ npm install electron-packager
 # 'app' sub-directory of your build dir
 ninja -C build_dir install
 
-# Then to actually create the distributable package, run on of the  following
+# Then to actually create the distributable package, run on of the following
+# (assuming your build directory is 'build_macos', 'build_win', or 'build_linux', 
+#  otherwise you need to edit path in package.json)
 npm run package-mac
 npm run package-win
 npm run package-linux
@@ -57,14 +59,13 @@ apt-get install libnss3
 apt-get install libxss1
 ```
 
-If you are cross-compiling, you can build the Linux package from macOS using a command like 
+If you are cross-compiling, you can, for example, build the Linux package from macOS using a command like 
 
 ```bash
 npm i --target_arch=x64 --target_platform=linux ws
 ```
 
 ## Future Work
-
-In the future the build process may be improved to reduce the number of steps.
-
-In the future it may also be possible to build the `InterSpec` server code as a native node.js module for a tighter, cleaner, integration between the GUI window and the server code.
+- In the future the build process may be improved to do the final packaging through CMake.  
+- launch_options.json is intended to allow users to customize behaviours (like allow multiple windows, or not), but is not actually implemented.
+- Need to look into having only a single instance of the application running when user wants multiple windows open.
