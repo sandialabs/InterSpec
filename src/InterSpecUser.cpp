@@ -217,7 +217,6 @@ void mapDbClasses( Wt::Dbo::Session *session )
   session->mapClass<ShieldingSourceModel>( "ShieldingSourceModel" );
   session->mapClass<UserState>( "UserState" );
   session->mapClass<DetectorPeakResponse>( "DetectorPeakResponse");
-  session->mapClass<InterSpecGlobalSetting>( "InterSpecGlobalSetting");
   session->mapClass<ColorThemeInfo>( "ColorThemeInfo");
   session->mapClass<UseDrfPref>( "UseDrfPref" );
 }//void mapDbClasses( Wt::Dbo::Session *session )

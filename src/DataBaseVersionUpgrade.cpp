@@ -158,19 +158,8 @@ namespace DataBaseVersionUpgrade
      */
     if( version<6 && version<DB_SCHEMA_VERSION )
     {
-      try
-      {
-        std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
-        executeSQL("DROP TABLE IF EXISTS InterSpecGlobalSetting;",sqlSession);
-      }catch( std::exception & )
-      {
-        //We *should* probably get here, as the table shouldnt exist.
-      }
-      
+      //For a while we had a table "InterSpecGlobalSetting" but this got removed 20191015, so the upgrade code also got removed.
       std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
-      sqlSession->mapClass<InterSpecGlobalSetting>( "InterSpecGlobalSetting" );
-      sqlSession->createTables();
-      
       version = 7;  //This should have been 6, so 
       setDBVersion( version, sqlSession );
     }//if( version<6 && version<DB_SCHEMA_VERSION )
