@@ -43,8 +43,6 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/DataBaseUtils.h"
-#include "InterSpec/ResourceUpdate.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
@@ -270,7 +268,6 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //Set to not resume; when we get confirmation all loaded okay, we will set
   // it back to resuming by default.
   [defaults setBool:NO forKey:@"DoResume"];
-  //[defaults commitEditing];  //seems to not be valid here, but is when app is ending
   
   /*
    //Check for file "DoNotResume" in data directory.  Probably not necassary since force-killing the app
@@ -366,10 +363,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   [self setDbDirectory];
   DataBaseVersionUpgrade::checkAndUpgradeVersion();
-  
-#if( ENABLE_RESOURCE_UPDATES )
-  ResourceUpdate::setupGlobalPrefsFromDb();
-#endif
+
   
   static const std::string basedir = std::string("--basedir=")
                             + [[[NSBundle mainBundle] resourcePath] UTF8String];
@@ -887,7 +881,7 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
   
   NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
   [defaults setBool: YES forKey: @"DoResume"];
-  [defaults commitEditing];
+  
   NSLog( @"applicationWillTerminate: setting to YES, DoResume=%i", [defaults boolForKey:@"DoResume"] );
 }
 
