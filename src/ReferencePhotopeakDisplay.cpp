@@ -459,9 +459,16 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideEdit->changed().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
   
 //  m_nuclideEdit->selected().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
+  m_persistLines = new WPushButton( "Add Another" );
+  tooltip = "Keep the currently displayed lines and add a new nuclide/source to display.";
+  HelpSystem::attachToolTipOn( m_persistLines, tooltip, showToolTipInstantly );
+  m_persistLines->clicked().connect( this, &ReferencePhotopeakDisplay::persistCurentLines );
+  m_persistLines->disable();
   
   inputLayout->addWidget( nucInputLabel, 0, 0, AlignMiddle );
   inputLayout->addWidget( m_nuclideEdit, 0, 1 );
+  inputLayout->addWidget( m_persistLines, 0, 2 );
+  
   
   Wt::JSlot *hotKeySlot = m_spectrumViewer->hotkeyJsSlot();
   if( hotKeySlot )
@@ -522,32 +529,59 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_ageEdit->setValidator(validator);
   m_ageEdit->setAutoComplete( false );
 
-  
-  inputLayout->addWidget( ageInputLabel, 1, 0, AlignMiddle );
-  inputLayout->addWidget( m_ageEdit, 1, 1 );
+
   m_ageEdit->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_ageEdit->blurred().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_ageEdit->enterPressed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   
+  
+  //Well make the "Clear All" button a little bit wider for phones so that
+  //  "Gammas" will be on same line as its check box, a little bit hacky
+  if( specViewer->isPhone() )
+    m_clearLines = new WPushButton( "Remove" );
+    else
+      m_clearLines = new WPushButton( "Clear" );
+      m_clearLines->disable();
+      
+      if( specViewer->isMobile() )
+      {
+        //Get rid of the software keyboard on mobile devices.  It would be nice to
+        //  simulate a screen tap on android devices as well, to get rid of system
+        //  navigation UI
+        m_nuclideEdit->enterPressed().connect( boost::bind( &WPushButton::setFocus, m_clearLines, true ) );
+      }
+  
+  m_clearLines->clicked().connect( this, &ReferencePhotopeakDisplay::clearAllLines );
+  
+  inputLayout->addWidget( ageInputLabel, 1, 0, AlignMiddle );
+  inputLayout->addWidget( m_ageEdit, 1, 1 );
+  inputLayout->addWidget( m_clearLines, 1, 2 );
+  
+  
   tooltip = "<div>Age can be specified using a combination of time units, "
-            "similar to '<b>5.3y 8d 22m</b>' or in half lives like "
-            "'<b>2.5 HL</b>'.</div>"
-            "<div>"
-            "Acceptible time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
-            "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
-            "you can specify time period by <b>hh:mm:ss</b>. Half life units can be "
-            "specified using <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>, "
-            "<b>half lives</b>, or <b>half life</b>."
-            "</div>"
-            "<div>"
-           "Half life units or time periods can not be mixed with "
-           "other units. When multiple time periods are "
-            "specified, they are summed, e.x. '1y6months 3m' is interpreted as "
-            "18 months and 3 minutes"
-            "</div>";
-  //NAZ I think we can shorten this tooltip by taking out: "<div>Age can be specified using a combination of time units, " "similar to '<b>5.3y 8d 22m</b>' or in half lives like " "'<b>2.5 HL</b>'.</div>" portion. It is pretty much covered in the paragraph under it - just a suggestion :)
-
+  "similar to '<b>5.3y 8d 22m</b>' or in half lives like "
+  "'<b>2.5 HL</b>'.</div>"
+  "<div>"
+  "Acceptible time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
+  "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
+  "you can specify time period by <b>hh:mm:ss</b>. Half life units can be "
+  "specified using <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>, "
+  "<b>half lives</b>, or <b>half life</b>."
+  "</div>"
+  "<div>"
+  "Half life units or time periods can not be mixed with "
+  "other units. When multiple time periods are "
+  "specified, they are summed, e.x. '1y6months 3m' is interpreted as "
+  "18 months and 3 minutes"
+  "</div>";
+  
   HelpSystem::attachToolTipOn( m_ageEdit, tooltip, showToolTipInstantly );
+  
+  
+  tooltip = "Clears all persisted lines, as well as the current non-persisted"
+  " lines.";
+  HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTipInstantly );
+  
   
   m_promptLinesOnly = new WCheckBox( "Prompt Only" );  //ɣ
   m_promptLinesOnly->setMargin( 5, Wt::Left );
@@ -563,8 +597,19 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   //m_layout->addWidget( m_promptLinesOnly, 3, 2, AlignMiddle );
   
+  //If we use a single layout for all the input elements, it seems when we enter
+  //  a shielding, then the "Add Another" button will be shortened and layout
+  //  messed up.  This must somehow be the layout for the shielding widget
+  //  interacting with the layout for this element, however a quick attempt to
+  //  fix didnt yield results. Sooo, the solution to this looks to be to have
+  //  enough layouts, such that none of them need any spanning of columns.
+  WContainerWidget *lowerInput = new WContainerWidget();
+  WGridLayout *lowerInputLayout = new WGridLayout();
+  lowerInputLayout->setContentsMargins(0, 0, 0, 0);
+  lowerInput->setLayout( lowerInputLayout );
+  
   WContainerWidget *hlRow = new WContainerWidget();
-  inputLayout->addWidget( hlRow, 2, 0, 1, 3 );
+  lowerInputLayout->addWidget( hlRow, 0, 0 );
   
   m_halflife = new WText( hlRow );
   //Hack to make the text roughly vertically align in middle due to increased color input size...
@@ -594,48 +639,20 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   SpectraFileModel *specFileModel = specViewer->fileManager()->model();
   m_detectorDisplay = new DetectorDisplay( specViewer, specFileModel );
   
+  //ToDo: When the detector is changed, should actually call a specialized function
+  //      so all of the persisted gamma lines will be changed...
+  //      Also, it doesnt look like changing the DRF changes current showing primary lines...
+  
   specViewer->detectorChanged().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
   specViewer->detectorModified().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, true ) );
   
-  inputLayout->addWidget( m_detectorDisplay, 3, 0,  1, 3 );
+  lowerInputLayout->addWidget( m_detectorDisplay, 1, 0 );
 
   m_shieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
   m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
   m_shieldingSelect->materialChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_shieldingSelect->materialModified().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  inputLayout->addWidget( m_shieldingSelect, 4, 0, 1, 3 );
-
-
-  //m_persistLines = new WPushButton( "Persist" );
-  m_persistLines = new WPushButton( "Add Another" );
-  tooltip = "Keep the currently displayed lines and add a new nuclide/source to display.";
-  HelpSystem::attachToolTipOn( m_persistLines, tooltip, showToolTipInstantly );
-
-  m_persistLines->clicked().connect( this, &ReferencePhotopeakDisplay::persistCurentLines );
-  inputLayout->addWidget( m_persistLines, 0, 2 );
-  m_persistLines->disable();
-
-  //Well make the "Clear All" button a little bit wider for phones so that
-  //  "Gammas" will be on same line as its check box, a little bit hacky
-  if( specViewer->isPhone() )
-    m_clearLines = new WPushButton( "Remove" );
-  else
-    m_clearLines = new WPushButton( "Clear" );
-  m_clearLines->disable();
-  
-  if( specViewer->isMobile() )
-  {
-    //Get rid of the software keyboard on mobile devices.  It would be nice to
-    //  simulate a screen tap on android devices as well, to get rid of system
-    //  navigation UI
-    m_nuclideEdit->enterPressed().connect( boost::bind( &WPushButton::setFocus, m_clearLines, true ) );
-  }
-  
-  tooltip = "Clears all persisted lines, as well as the current non-persisted"
-            " lines.";
-  HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTipInstantly );
-  m_clearLines->clicked().connect( this, &ReferencePhotopeakDisplay::clearAllLines );
-  inputLayout->addWidget( m_clearLines, 1, 2 );
+  lowerInputLayout->addWidget( m_shieldingSelect, 2, 0 );
 
   //m_fitPeaks = new WPushButton( "Fit Peaks" );
   //tooltip = "Fits dominant peaks for primary nuclide";
@@ -687,7 +704,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showBetas->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_showBetas->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   
-  inputLayout->addWidget( whatToShow, 5, 0, 1, 3 );
+  lowerInputLayout->addWidget( whatToShow, 3, 0 );
 
   
   m_showAlphas->checked().connect( std::bind([](){
@@ -723,16 +740,17 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   if( !isPhone )
     setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
-
-  inputLayout->addWidget( new WContainerWidget(), 6, 0, 1, 3 );
-  inputLayout->setRowStretch( 6, 1 );
     
   WGridLayout *overallLayout = new WGridLayout();
   overallLayout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( overallLayout );
     
   overallLayout->addWidget( inputDiv, 0, 0 );
-  overallLayout->addWidget( m_particleView, 0, 1 );
+  overallLayout->addWidget( lowerInput, 1, 0 );
+  overallLayout->addWidget( new WContainerWidget(), 2, 0 );
+  overallLayout->addWidget( m_particleView, 0, 1, 3, 1 );
+    
+  overallLayout->setRowStretch( 2, 1 );
   overallLayout->setColumnStretch( 1, 1 );
 }//ReferencePhotopeakDisplay constructor
 
@@ -1033,24 +1051,31 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     try
     {
       const string agestr = m_ageEdit->text().toUTF8();
-      const double hl = (nuc ? nuc->halfLife : -1.0);
-      age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
-      
-      if( age > 100.0*nuc->halfLife || age < 0.0 )
+      if( canHavePromptEquil && m_promptLinesOnly->isChecked() )
       {
-        string agestr;
-        age = PeakDef::defaultDecayTime( nuc, &agestr );
-        passMessage("Changed age to a more reasonable value for " + nuc->symbol,
-                     " from '" + agestr + "' to " + agestr,
-                     WarningWidget::WarningMsgLow );
-        m_ageEdit->setText( agestr );
-      }
+        age = 0.0;
+      }else
+      {
+        const double hl = (nuc ? nuc->halfLife : -1.0);
+        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( agestr, hl );
+        
+        if( age > 100.0*nuc->halfLife || age < 0.0 )
+        {
+          string agestr;
+          age = PeakDef::defaultDecayTime( nuc, &agestr );
+          passMessage("Changed age to a more reasonable value for " + nuc->symbol,
+                      " from '" + agestr + "' to " + agestr,
+                      WarningWidget::WarningMsgLow );
+          m_ageEdit->setText( agestr );
+        }
+      }//if( prompt ) / else
     }catch(...)
     {
       if( m_ageEdit->text().toUTF8() == "" )
       {
-        m_ageEdit->setText( "5 HL" );
-        age = 5.0 * nuc->halfLife;
+        string agestr;
+        age = PeakDef::defaultDecayTime( nuc, &agestr );
+        m_ageEdit->setText( agestr );
       }else
       {
         show = false;
