@@ -25,6 +25,7 @@
 
 #include <memory>
 #include <vector>
+#include <cstdlib>
 #include <sstream>
 #include <iostream>
 
@@ -501,7 +502,7 @@ void ShieldingSelect::init()
     m_materialSuggest->forEdit( m_materialEdit,
                    WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
 
-  m_materialSummarry = new WText( "", XHTMLUnsafeText );
+  m_materialSummarry = new WText( "", XHTMLText );
   if( m_forFitting )
     materialDivLayout->addWidget(m_materialSummarry,1,1,AlignMiddle);
   else
@@ -1793,7 +1794,12 @@ void ShieldingSelect::handleToggleGeneric()
     if( mat )
     {
       const string thick = m_thicknessEdit->text().toUTF8();
-      try{ ad = mat->density * PhysicalUnits::stringToDistance(thick); }catch( std::exception & ){}
+      try
+      {
+        ad = mat->density * PhysicalUnits::stringToDistance(thick);
+      }catch( std::exception & )
+      {
+      }
     }//if( mat )
     
     if( ad >= 0.0 && mat )
@@ -1816,55 +1822,63 @@ void ShieldingSelect::handleToggleGeneric()
     m_thicknessDiv->show();
     m_genericMaterialDiv->hide();
     
-    //Get the atomic number closest to what the generic material was
-    int atomicNum = (m_forFitting ? 16 : -1);
-    double ad = -1;
-    try
-    {
-      string aNstr = m_atomicNumberEdit->text().toUTF8();
-      string aDstr = m_arealDensityEdit->text().toUTF8();
-      UtilityFunctions::trim(aNstr);
-      UtilityFunctions::trim(aDstr);
-      atomicNum = static_cast<int>( 0.5+std::stod(aNstr) );
-      ad = std::stod(aDstr) * PhysicalUnits::g / PhysicalUnits::cm2;
-    }catch(...){};
+    string aNstr = UtilityFunctions::trim_copy( m_atomicNumberEdit->text().toUTF8() );
+    string aDstr = UtilityFunctions::trim_copy( m_arealDensityEdit->text().toUTF8() );
     
-    if( !m_forFitting )
+    if( aNstr.empty() || aDstr.empty()
+        || std::atof(aDstr.c_str())<=0.0
+        || std::atof(aNstr.c_str())<=0.0 )
     {
-      if( atomicNum > 97 )
-        atomicNum = -1;
+      m_materialEdit->setText( "" );
+      m_thicknessEdit->setText( "1.0 cm" );
     }else
     {
-      atomicNum = max( atomicNum, 1 );
-      atomicNum = min( atomicNum, 97 );
-    }
-    
-    const SandiaDecay::Element *el = 0;
-    
-    if( atomicNum >= 1 )
-    {
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      el = db->element( atomicNum );
-    }
-    
-    if( el )
-    {
-      m_materialEdit->setText( el->symbol );
-      const Material *mat = m_materialDB->material( el->symbol );
-      if( ad >= 0.0 )
+      //Get the atomic number closest to what the generic material was
+      int atomicNum = (m_forFitting ? 16 : -1);
+      double ad = -1;
+      try
       {
-        const double dist = ad / mat->density;
-        const string diststr = PhysicalUnits::printToBestLengthUnits( dist );
-        m_thicknessEdit->setText( diststr );
+        atomicNum = static_cast<int>( 0.5+std::stod(aNstr) );
+        ad = std::stod(aDstr) * PhysicalUnits::g / PhysicalUnits::cm2;
+      }catch(...){};
+      
+      if( !m_forFitting )
+      {
+        if( atomicNum > 97 )
+          atomicNum = -1;
       }else
       {
-        m_thicknessEdit->setText( "0 cm" );
+        atomicNum = max( atomicNum, 1 );
+        atomicNum = min( atomicNum, 97 );
       }
-    }else
-    {
-      m_materialEdit->setText( "Fe (iron)" );
-      m_thicknessEdit->setText( "0 cm" );
-    }
+      
+      const SandiaDecay::Element *el = 0;
+      
+      if( atomicNum >= 1 )
+      {
+        const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+        el = db->element( atomicNum );
+      }
+      
+      if( el )
+      {
+        m_materialEdit->setText( el->symbol );
+        const Material *mat = m_materialDB->material( el->symbol );
+        if( ad >= 0.0 )
+        {
+          const double dist = ad / mat->density;
+          const string diststr = PhysicalUnits::printToBestLengthUnits( dist );
+          m_thicknessEdit->setText( diststr );
+        }else
+        {
+          m_thicknessEdit->setText( "0 cm" );
+        }
+      }else
+      {
+        m_materialEdit->setText( "" );
+        m_thicknessEdit->setText( "1 cm" );
+      }
+    }//if( input is empty ) / else
   }//if( m_isGenericMaterial ) / else
   
   
@@ -1874,8 +1888,6 @@ void ShieldingSelect::handleToggleGeneric()
 
 void ShieldingSelect::handleMaterialChange()
 {
-  cerr << "handleMaterialChange()" << endl;
-  
   typedef pair<const SandiaDecay::Element *,float> ElementFrac;
   typedef pair<const SandiaDecay::Nuclide *,float> NuclideFrac;
 
@@ -1942,7 +1954,7 @@ void ShieldingSelect::handleMaterialChange()
           if( ef.first )
           {
             char buffer[256];
-            snprintf( buffer, sizeof(buffer), "\t%.4f %s\n",
+            snprintf( buffer, sizeof(buffer), "%.4f %s\n",
                       ef.second, ef.first->name.c_str() );
             tooltip += buffer;
           }
