@@ -26,7 +26,9 @@
 #include "InterSpec_config.h"
 
 #include <mutex>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "SandiaDecay/SandiaDecay.h"
 

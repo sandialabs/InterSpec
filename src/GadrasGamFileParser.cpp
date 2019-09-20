@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 #include <cstdio>
+#include <stdexcept>
 
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/GadrasGamFileParser.h"

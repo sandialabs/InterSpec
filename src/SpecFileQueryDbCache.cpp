@@ -43,6 +43,18 @@
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
 
+
+#include <boost/config.hpp>
+
+
+#if( defined(BOOST_NO_CXX11_HDR_CODECVT) )
+//gcc 4.8 doesnt have enable_if_t or codecvt...
+#define HAS_STD_ENABLE_IF 0
+#include <boost/core/enable_if.hpp>
+#else
+#define HAS_STD_ENABLE_IF 1
+#endif
+
 using namespace std;
 using namespace Wt;
 
@@ -171,8 +183,14 @@ namespace Wt {
       return true;
     }//do_splitting( float )
 
+
+#if( HAS_STD_ENABLE_IF )
     template<class T,
       typename = std::enable_if_t<std::is_integral<T>::value || std::is_enum<T>::value> >
+#else
+    template<class T,
+    typename = boost::enable_if_c<boost::is_integral<T>::value || boost::is_enum<T>::value> >
+#endif
     bool do_splitting( const std::string &data, set<T> &v )
     {
       vector<long long> valints;

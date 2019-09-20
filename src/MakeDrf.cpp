@@ -250,8 +250,8 @@ namespace
     posuncert = sqrt(posuncert);
     neguncert = sqrt(neguncert);
     
-    if( isnan(posuncert) || isinf(posuncert)
-       || isnan(neguncert) || isinf(neguncert) )
+    if( IsNan(posuncert) || IsInf(posuncert)
+       || IsNan(neguncert) || IsInf(neguncert) )
       return -999.9f;
     
     return 0.5f*(posuncert + neguncert);
