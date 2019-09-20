@@ -64,7 +64,7 @@ may be useful for you:
 
 ### Prerequisites
 
-To compile, you need a c++11 compiler, and:
+To compile, you need a C++11 compiler, and:
 * [Wt](https://www.webtoolkit.eu/wt) versions 3.3.1 through 3.3.4 should work, but 3.3.4 is recommended.
 * [boost](https://www.boost.org/) versions 1.48 through 1.65.1 will probably work, but development is done using 1.65.1.
 * [cmake](https://cmake.org/) 
@@ -73,8 +73,7 @@ To make building a little easier, other required libraries, including
 [Cuba](http://www.feynarts.de/cuba), 
 [Minuit2](https://github.com/root-project/root/tree/master/math/minuit2), 
 [muparserx](https://github.com/beltoforion/muparserx), 
-[rapidxml](http://rapidxml.sourceforge.net/), 
-and [websocketpp](https://github.com/zaphoyd/websocketpp), are included in this git repository already in the  
+and [rapidxml](http://rapidxml.sourceforge.net/), are included in this git repository already in the
 [external_libs](https://github.com/sandialabs/interspec/tree/master/external_libs) directory, while 
 the [js](https://github.com/sandialabs/interspec/tree/master/js) directory contains some ECMAScript libraries, including
 [jQuery](https://jquery.org),

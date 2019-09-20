@@ -75,7 +75,7 @@ namespace
     virtual double DoEval( const std::vector<double> &x ) const
     {
       for( size_t i = 0; i < x.size(); ++i )
-        if( isinf(x[i]) || isnan(x[i]) )
+        if( IsInf(x[i]) || IsNan(x[i]) )
           return 999999.9;
       
       vector<float> fx( x.size() );
@@ -88,7 +88,7 @@ namespace
         if( !peak )  //probably isnt needed
           continue;
         const float predicted = DetectorPeakResponse::peakResolutionSigma( peak->mean(), m_form, fx );
-        if( predicted <= 0.0 || isnan(predicted) || isinf(predicted) )
+        if( predicted <= 0.0 || IsNan(predicted) || IsInf(predicted) )
           return 999999.9;
         
         chi2 += MakeDrfFit::peak_width_chi2( predicted, *peak );
@@ -135,7 +135,7 @@ namespace
     virtual double DoEval( const std::vector<double> &x ) const
     {
       for( const double val : x )
-        if( isinf(val) || isnan(val) )
+        if( IsInf(val) || IsNan(val) )
           return 999999.9;
       
       vector<float> fx( x.size() );
@@ -146,7 +146,7 @@ namespace
       for( const MakeDrfFit::DetEffDataPoint &data : m_data )
       {
         const float eqneff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( data.energy, fx );
-        if( eqneff <= 0.0 || isnan(eqneff) || isinf(eqneff) )
+        if( eqneff <= 0.0 || IsNan(eqneff) || IsInf(eqneff) )
           return 999999.9;
         
         const double uncert = data.efficiency_uncert <= 0.0 ? 0.05*data.efficiency : data.efficiency_uncert;

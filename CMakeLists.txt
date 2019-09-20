@@ -47,7 +47,6 @@ option( USE_OSX_NATIVE_MENU "Mirrors WMenus with OSX native NSMenu (not fully im
 option( USE_ELECTRON_NATIVE_MENU "Mirrors WMenus with Electrons native Menu (not fully implemented)" OFF )
 option( USE_HIGH_BANDWIDTH_INTERACTIONS "Allow more interactiveness with the charts" ON )
 option( SUPPORT_ZIPPED_SPECTRUM_FILES "(Work in progress) Allows opening zipped spectrum files" ON )
-option( ENABLE_RESOURCE_UPDATES "Enables user uploads of resource (nuc decay info, DRFs, etc) upgrades" ON )
 option( TRY_TO_STATIC_LINK "Try to link to static libs whenever possible" OFF )
 option( DRAW_GAMMA_LINES_LOG_AND_LIN "Have gamma lines indicators be drawn in log mode when y-axis is log" OFF )
 option( ALLOW_URL_TO_FILESYSTEM_MAP "Allows a file ID to be specified in the URL to open a file from the filesystem" ON )
@@ -230,6 +229,7 @@ ENDIF( BUILD_AS_OSX_APP )
 
 
 IF( BUILD_AS_ELECTRON_APP )
+  set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL )
   set( BUILD_AS_LOCAL_SERVER OFF )
   set( ALLOW_URL_TO_FILESYSTEM_MAP ON )
   set( USE_OSX_NATIVE_MENU OFF )
@@ -273,7 +273,6 @@ IF( BUILD_FOR_WEB_DEPLOYMENT )
     set( USE_TERMINAL_WIDGET OFF )
     set( SpecUtils_ENABLE_D3_CHART ON )
     set( USE_SPECTRUM_CHART_D3 ON )
-    set( ENABLE_RESOURCE_UPDATES OFF )
 ENDIF( BUILD_FOR_WEB_DEPLOYMENT )
 
 
@@ -804,6 +803,8 @@ elseif( BUILD_AS_ELECTRON_APP )
   list( APPEND sources src/InterSpecServer.cpp target/electron/ElectronUtils.cpp )
   list( APPEND headers InterSpec/InterSpecServer.h target/electron/ElectronUtils.h )
   add_library( InterSpecLib STATIC ${sources} ${headers} )
+
+  #set_property( TARGET InterSpecLib PROPERTY POSITION_INDEPENDENT_CODE ON )
 else()
   add_library( InterSpecLib STATIC ${sources} ${headers} )
   add_executable( InterSpecExe ${GUI_TYPE} main.cpp )
@@ -978,12 +979,12 @@ if( ZLIB_FOUND AND Boost_IOSTREAMS_FOUND )
   target_link_libraries( InterSpecLib PUBLIC ${ZLIB_LIBRARIES} ${Boost_IOSTREAMS_LIBRARY} )
 endif( ZLIB_FOUND AND Boost_IOSTREAMS_FOUND )
 
-if( SUPPORT_ZIPPED_SPECTRUM_FILES OR ENABLE_RESOURCE_UPDATES )
+if( SUPPORT_ZIPPED_SPECTRUM_FILES )
 #CMake seems to fail to find zlib on ios/android (even using find_package(ZLIB REQUIRED)), but we know it will be in
 #  the systems path anyway, so just blindly link to zlib
   if( NOT (IOS OR ANDROID) )
     if( NOT ZLIB_FOUND )
-      MESSAGE(FATAL_ERROR "ZLIB required to enable SUPPORT_ZIPPED_SPECTRUM_FILES or ENABLE_RESOURCE_UPDATES, but it wasnt found" )
+      MESSAGE(FATAL_ERROR "ZLIB required to enable SUPPORT_ZIPPED_SPECTRUM_FILES, but it wasnt found" )
     else( NOT ZLIB_FOUND )
       target_include_directories( InterSpecLib PUBLIC ${ZLIB_INCLUDE_DIRS} )
       target_link_libraries( InterSpecLib PUBLIC ${ZLIB_LIBRARIES} )
@@ -991,7 +992,7 @@ if( SUPPORT_ZIPPED_SPECTRUM_FILES OR ENABLE_RESOURCE_UPDATES )
   else( NOT (IOS OR ANDROID) )
     target_link_libraries( InterSpecLib PUBLIC z )
   endif( NOT (IOS OR ANDROID) )
-endif( SUPPORT_ZIPPED_SPECTRUM_FILES OR ENABLE_RESOURCE_UPDATES )
+endif( SUPPORT_ZIPPED_SPECTRUM_FILES )
 
 
 IF( Wt_MYSQL_LIBRARY AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB )

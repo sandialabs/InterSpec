@@ -195,7 +195,7 @@ void MakeDrfChart::updateYAxisRange()
   for( int row = 0; row < nrows; ++row )
   {
     const double x = Wt::asNumber( m->data(row, sm_energy_col) );
-    if( x < xmin || x > xmax || isnan(x) || isinf(x) )
+    if( x < xmin || x > xmax || IsNan(x) || IsInf(x) )
       continue;
     
     double eff, fwhm;
@@ -210,14 +210,14 @@ void MakeDrfChart::updateYAxisRange()
     }
     
     //Let the data efficiency be whatever, but clamp equation eff from 0 to 5.
-    if( !isnan(eff) && !isinf(eff)
+    if( !IsNan(eff) && !IsInf(eff)
         && ((row >= sm_num_eqn_energy_rows) || (eff >= 0.0 && eff < 5.0)) )
     {
       miny = std::min( miny, eff );
       maxy = std::max( maxy, eff );
     }
     
-    if( !isnan(fwhm) && !isinf(fwhm) )
+    if( !IsNan(fwhm) && !IsInf(fwhm) )
     {
       miny2 = std::min( miny2, fwhm );
       maxy2 = std::max( maxy2, fwhm );
@@ -358,7 +358,7 @@ void MakeDrfChart::updateEffEquationToModel()
     const float energy = static_cast<float>( m_det_lower_energy + ((m_det_upper_energy * row) / (sm_num_eqn_energy_rows - 1.0)) );
     const double eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy*units, m_efficiencyCoefs );
     
-    if( isnan(eff) || isinf(eff) )
+    if( IsNan(eff) || IsInf(eff) )
     {
       m->setData( row, sm_equation_eff_col, boost::any() );
       m->setData( row, sm_equation_eff_pos_uncert_col, boost::any() );
@@ -394,9 +394,9 @@ void MakeDrfChart::updateEffEquationToModel()
         posuncert = sqrt(posuncert);
         neguncert = sqrt(neguncert);
         
-        if( isnan(posuncert) || isinf(posuncert) )
+        if( IsNan(posuncert) || IsInf(posuncert) )
           upperval = boost::any( eff + posuncert );
-        if( isnan(neguncert) || isinf(neguncert) )
+        if( IsNan(neguncert) || IsInf(neguncert) )
           lowerval = boost::any( eff - neguncert );
       }//if( we have uncertainties )
       
@@ -456,7 +456,7 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
     const double eff = Wt::asNumber( m->data(row,sm_data_eff_col,Wt::DisplayRole) );
     const double uncert = Wt::asNumber( m->data(row,sm_data_eff_col,Wt::UserRole) );
     
-    if( isnan(energy) || isnan(eff) || isnan(uncert) )
+    if( IsNan(energy) || IsNan(eff) || IsNan(uncert) )
       continue;
   
     const WPointF upper_uncert = mapToDevice( energy, eff + uncert );
@@ -577,7 +577,7 @@ void MakeDrfChart::setXRange( double lower, double upper )
   if( upper < lower )
     std::swap( lower, upper );
   
-  if( fabs(lower-upper) < 1.0 || isnan(lower) || isnan(upper) || isinf(lower) || isinf(upper) )
+  if( fabs(lower-upper) < 1.0 || IsNan(lower) || IsNan(upper) || IsInf(lower) || IsInf(upper) )
     return;
   
   axis(Chart::XAxis).setRange( lower, upper );

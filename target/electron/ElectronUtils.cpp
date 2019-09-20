@@ -52,7 +52,6 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
-#include "InterSpec/ResourceUpdate.h"
 #include "InterSpec/InterSpecServer.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DbToFilesystemLink.h"
