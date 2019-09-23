@@ -244,10 +244,10 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
   const string eol_char = "\r\n"; //for windows - could potentially cosutomize this for the users operating system
   
   response.out() << "Centroid,  Net_Area,   Net_Area,      Peak, FWHM,   FWHM,Reduced, ROI_Total,ROI, "
-                    "File, Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy"
+                    "File,         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy"
                  << eol_char
                  << "     keV,    Counts,Uncertainty,       CPS,  keV,Percent,Chi_Sqr,    Counts,ID#, "
-                    "Name,        ,              keV,              keV,              keV"
+                    "Name, LiveTime, Date, Time,        ,              keV,              keV,              keV"
                  << eol_char;
   
   
@@ -256,9 +256,13 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
     const PeakDef &peak = m_model->peak( peakn );
 
     std::shared_ptr<const Measurement> data = m_model->m_dataModel->getData();
+    float live_time = 0.0;
+    boost::posix_time::ptime meastime;
     double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
     if( data )
     {
+      live_time = data->live_time();
+      meastime = data->start_time();
       findROIEnergyLimits( xlow, xhigh, peak, data );
       region_area = gamma_integral( data, xlow, xhigh );
     }//if( data )
@@ -303,16 +307,21 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
     while( areauncertstr.size() < 11 )
       areauncertstr = areauncertstr + " ";
     
-    snprintf( buffer, sizeof(buffer), "%1.3e", peak.peakAreaUncert() );
-    string cpststr = buffer;
-    size_t epos = cpststr.find( "e" );
-    if( epos != string::npos )
+    string cpststr;
+    if( live_time > 0.0f )
     {
-      if( cpststr[epos+1]!='-' && cpststr[epos+1]!='+' )
-        cpststr.insert( cpststr.begin() + epos + 1, '+' );
-      while( (cpststr.size()-epos) < 5 )
-        cpststr.insert( cpststr.begin() + epos + 2, '0' );
-    }
+      snprintf( buffer, sizeof(buffer), "%1.4e", (peak.peakArea()/data->live_time()) );
+      cpststr = buffer;
+      size_t epos = cpststr.find( "e" );
+      if( epos != string::npos )
+      {
+        if( cpststr[epos+1]!='-' && cpststr[epos+1]!='+' )
+          cpststr.insert( cpststr.begin() + epos + 1, '+' );
+        while( (cpststr.size()-epos) < 5 )
+          cpststr.insert( cpststr.begin() + epos + 2, '0' );
+      }
+    }//if( data && data->live_time() > 0.0f )
+    
     
     const double width = peak.gausPeak() ? (2.35482*peak.sigma()) : 0.5*peak.roiWidth();
     snprintf( buffer, sizeof(buffer), "%.2f", width );
@@ -344,6 +353,26 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
     specfilename = "  ";
     UtilityFunctions::ireplace_all( specfilename, ",", "-" );
     
+    string live_time_str;
+    if( live_time > 0.0f )
+    {
+      snprintf( buffer, sizeof(buffer), "%.3f", live_time );
+      live_time_str = buffer;
+    }
+    
+    string datestr, timestr;
+    if( !meastime.is_special() )
+    {
+      const string tstr = UtilityFunctions::to_common_string( meastime, true );
+      const auto pos = tstr.find(' ');
+      if( pos != string::npos )
+      {
+        datestr = tstr.substr(0,pos);
+        timestr = tstr.substr(pos+1);
+      }
+    }//if( !meastime.is_special() )
+    
+    
     response.out() << meanstr
             << ',' << areastr
             << ',' << areauncertstr
@@ -354,6 +383,9 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
             << ',' << roiareastr
             << ',' << numstr
             << ',' << specfilename
+            << ',' << live_time_str
+            << ',' << datestr
+            << ',' << timestr
             << ',' << nuclide
             << ',' << energy
             << ',' << xlow
