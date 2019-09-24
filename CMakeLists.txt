@@ -38,10 +38,7 @@ option( BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE "Compiles so executable only does o
 set( TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/testing" CACHE STRING "Path to directory that contains the \"analysis_tests\" directory for saving N42 test states.  Leave empty for CWD." )
 
 option( BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT "Build executable for use while testing new code, not running InterSpec" OFF )
-
-option( INCLUDE_ANALYSIS_TEST_SUITE "Allow whether user can save and load test spectra" on )
-
-
+option( INCLUDE_ANALYSIS_TEST_SUITE "Allow whether user can save and load test spectra" OFF )
 option( PERFORM_DEVELOPER_CHECKS "Performs additional computationally expensive tests during execution" off )
 option( USE_OSX_NATIVE_MENU "Mirrors WMenus with OSX native NSMenu (not fully implemented)" off )
 option( USE_ELECTRON_NATIVE_MENU "Mirrors WMenus with Electrons native Menu (not fully implemented)" OFF )
@@ -229,7 +226,7 @@ ENDIF( BUILD_AS_OSX_APP )
 
 
 IF( BUILD_AS_ELECTRON_APP )
-  set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL )
+  set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make electron lib" )
   set( BUILD_AS_LOCAL_SERVER OFF )
   set( ALLOW_URL_TO_FILESYSTEM_MAP ON )
   set( USE_OSX_NATIVE_MENU OFF )
@@ -861,7 +858,11 @@ elseif(WIN32)
   ENDIF( Boost_TIMER_FOUND )
 elseif( BUILD_AS_ELECTRON_APP )
   #Not sure why Wt_LIBRARIES isnt filled out here, but its not, so will manually specify Wt libraries for the moment
-  target_link_libraries( InterSpecLib PUBLIC ${Wt_TEST_LIBRARY} ${Wt_LIBRARY} ${Wt_HTTP_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
+  target_link_libraries( InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_HTTP_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
+
+  if( INCLUDE_ANALYSIS_TEST_SUITE )
+    target_link_libraries( InterSpecLib PUBLIC ${Wt_TEST_LIBRARY} )
+  endif( INCLUDE_ANALYSIS_TEST_SUITE )
 elseif( YES )
   target_link_libraries( InterSpecLib PUBLIC ${Wt_LIBRARIES} )
 endif( IOS )
@@ -945,8 +946,16 @@ if( TRY_TO_STATIC_LINK )
   endif("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT SUPPORT_ZIPPED_SPECTRUM_FILES)
 
   if("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
-    target_link_libraries( InterSpecLib PUBLIC -lrt )
-    set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++" )
+    find_library( RT_LIB rt )
+    if( RT_LIB EQUAL RT_LIB-NOTFOUND )
+      message( FATAL "could not find rt lib")
+    endif()
+
+    target_link_libraries( InterSpecLib PUBLIC ${RT_LIB} )
+
+    #target_link_libraries( InterSpecExe -static-libgcc -static-libstdc++)
+    #Next line statically links to pthread, copying whole archive into exe
+    #set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} "-static -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
   endif("${CMAKE_SYSTEM}" MATCHES "Linux" AND NOT ANDROID)
 endif( TRY_TO_STATIC_LINK )
 
