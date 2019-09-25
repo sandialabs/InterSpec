@@ -221,8 +221,10 @@ namespace HelpSystem
     //"help-xml-phone"
     //"help-xml-tablet"
     
-    const char *help_json = "InterSpec_resources/static_text/help.json";
-    ifstream helpinfo( help_json );
+    const string docroot = wApp->docRoot();
+    const std::string help_json = UtilityFunctions::append_path(docroot,"InterSpec_resources/static_text/help.json");
+    
+    ifstream helpinfo( help_json.c_str() );
     if( helpinfo.is_open() )
     {
       m_helpLookupTable = string( (std::istreambuf_iterator<char>(helpinfo)),
@@ -559,9 +561,12 @@ namespace HelpSystem
       //All paths relative to the curent help.json file, which is in
       // "InterSpec_resources/static_text"
       
-      //ToDoL: should remove leading and trailing quotes I guess...
+      //ToDo: should remove leading and trailing quotes I guess...
       
+      const string docroot = wApp->docRoot();
       filepath = UtilityFunctions::append_path( "InterSpec_resources/static_text", filepath );
+      filepath = UtilityFunctions::append_path(docroot, filepath);
+      
       ifstream infile( filepath.c_str() );
       if( !infile.is_open() )
       {

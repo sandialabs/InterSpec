@@ -545,6 +545,11 @@ function createWindow () {
 app.on('ready', function(){  
   const process_name = require.main.filename;
   //actually process.cwd()==path.dirname(require.main.filename) when running using node from command line
+  
+  //It looks like we dont need to change the CWD anymore (I think everywhere in
+  // InterSpec no longer assumes a specific CWD), but lets do it anyway.
+  process.chdir( path.dirname(require.main.filename) );
+
   const basedir = path.relative( process.cwd(), path.dirname(require.main.filename) );
   console.log( 'process.cwd()="' + process.cwd() + '"');
   console.log( 'path.dirname(require.main.filename)="' + path.dirname(require.main.filename) + '"');

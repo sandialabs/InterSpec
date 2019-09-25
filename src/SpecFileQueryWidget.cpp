@@ -1616,21 +1616,22 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
   string filters = "[";
   
   vector<string> jsonfilenames;
-  try
-  {
-    const string jsonfilename = InterSpecUser::preferenceValue<string>("FileQueryEventQmlyFieldsFile", m_viewer);
-    UtilityFunctions::split( jsonfilenames, jsonfilename, ";" );
-  }catch(...)
-  {
-  }
-  
   const string default_file = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "file_query_event_xml_fields.json" );
-  bool hasDefault = false;
-  for( const auto &f : jsonfilenames )
-    hasDefault = hasDefault || (UtilityFunctions::filename(f) == "file_query_event_xml_fields.json");
-  if( !hasDefault )
+  
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
+  const string user_file = UtilityFunctions::append_path( InterSpec::writableDataDirectory(), "file_query_event_xml_fields.json" );
+  string user_file_cpy = user_file;
+  string default_file_cpy = default_file;
+#if( SpecUtils_NO_BOOST_LIB || BOOST_VERSION >= 104500 )
+  UtilityFunctions::make_canonical_path( user_file_cpy );
+  UtilityFunctions::make_canonical_path( default_file_cpy );
+#endif
+  if( UtilityFunctions::is_file(user_file) && (user_file_cpy!=default_file_cpy) )
+    jsonfilenames.push_back( user_file );
+#endif
+  
+  if( jsonfilenames.empty() && UtilityFunctions::is_file(default_file) )
     jsonfilenames.push_back( default_file );
-    
   
   for( const string jsonfilename : jsonfilenames )
   {
@@ -1694,6 +1695,17 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
 
     for( const auto &et : these_filters )
     {
+      //Lets filter out duplicates.
+      bool hasfilter = false;
+      for( const auto &f : m_eventXmlFilters )
+      {
+        if( f.m_xpath==et.m_xpath && f.m_label==et.m_label
+           && f.m_base_node_test==et.m_base_node_test && f.m_type==et.m_type )
+          hasfilter = true;
+      }
+      if( hasfilter )
+        continue;
+      
       m_eventXmlFilters.push_back( et );
       
       string thisfilter;

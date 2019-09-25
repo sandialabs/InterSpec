@@ -166,7 +166,9 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   layout->addWidget( stack, 0, 1, nstack_rows, 1 );
   layout->setRowStretch( 0, 1 );
   
-  m_resourceBundle.use("InterSpec_resources/static_text/use_instructions",false);
+  const string docroot = wApp->docRoot();
+  const string bundle_file = UtilityFunctions::append_path(docroot, "InterSpec_resources/static_text/use_instructions" );
+  m_resourceBundle.use(bundle_file,false);
   
   initVideoInfoMap();
   WContainerWidget* welcomeContainer = new WContainerWidget();
