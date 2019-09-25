@@ -65,6 +65,10 @@ If you are cross-compiling, you can, for example, build the Linux package from m
 npm i --target_arch=x64 --target_platform=linux ws
 ```
 
+## Linux Considerations
+The `InterSpec` module is really a shared library that node.js loads, therefore you need the `-fPIC` C/C++ compiler flag enabled not just for the `InterSpec` code, but for all of the static libraries you link it against, including boost, Wt, and zlib - which isnt the default when compiling static libraries for any of them, so when building them you may want to add `-fPIC -std=c++11` flags to the flags.
+
+
 ## Future Work
 - In the future the build process may be improved to do the final packaging through CMake.  
 - launch_options.json is intended to allow users to customize behaviours (like allow multiple windows, or not), but is not actually implemented.
