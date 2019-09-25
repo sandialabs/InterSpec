@@ -224,7 +224,14 @@ namespace HelpSystem
     const string docroot = wApp->docRoot();
     const std::string help_json = UtilityFunctions::append_path(docroot,"InterSpec_resources/static_text/help.json");
     
+    
+#ifdef _WIN32
+    const std::wstring whelp_json = UtilityFunctions::convert_from_utf8_to_utf16(help_json);
+    ifstream helpinfo( whelp_json.c_str() );
+#else
     ifstream helpinfo( help_json.c_str() );
+#endif
+    
     if( helpinfo.is_open() )
     {
       m_helpLookupTable = string( (std::istreambuf_iterator<char>(helpinfo)),
@@ -567,7 +574,13 @@ namespace HelpSystem
       filepath = UtilityFunctions::append_path( "InterSpec_resources/static_text", filepath );
       filepath = UtilityFunctions::append_path(docroot, filepath);
       
+#ifdef _WIN32
+      const std::wstring wfilepath = UtilityFunctions::convert_from_utf8_to_utf16(filepath);
+      ifstream infile( wfilepath.c_str() );
+#else
       ifstream infile( filepath.c_str() );
+#endif
+
       if( !infile.is_open() )
       {
         helpStr = "Could not open expected file: " + filepath + "";
