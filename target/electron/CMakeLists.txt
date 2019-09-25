@@ -3,7 +3,7 @@ project( InterSpecAddOn )
 
 cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
 
-set( CMAKE_CXX_STANDARD 14 )
+set( CMAKE_CXX_STANDARD 11 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
 
 if( BOOST_ROOT AND Wt_INCLUDE_DIR )
@@ -59,7 +59,7 @@ install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandi
         DESTINATION ${PROJECT_BINARY_DIR}/app/data/
         RENAME sandia.decay.xml )
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/package_for_running.json
-        DESTINATION ${PROJECT_BINARY_DIR}/app/data/
+        DESTINATION ${PROJECT_BINARY_DIR}/app/
         RENAME package.json )
 install( TARGETS ${PROJECT_NAME} DESTINATION ${PROJECT_BINARY_DIR}/app/ )
 
