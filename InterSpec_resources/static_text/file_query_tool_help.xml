@@ -166,7 +166,8 @@ The fields of Event XML files that can be queried are defined using a JSON file 
 a <a target="_blank" href="https://en.wikipedia.org/wiki/XPath">XPath</a> to the field, as well as 
 how the user can enter a value to test against.
 <em>InterSpec</em> comes with a generic JSON file, <code>data/file_query_event_xml_fields.json</code>, that 
-can be used as an example for how to define a new field to search.  
+can be used as an example for how to define a new field to search.  If you place a file <code>file_query_event_xml_fields.json</code>
+into the apps user data directory (<em>Help</em>&rarr;<em>About InterSpec</em>&rarr;<em>Data</em>), it will override the defaults.
 The first bit of this file is shown below (note: all comments are added for display, actual
       <code>JSON</code> does not allow comments):
 <pre>

@@ -30,24 +30,8 @@
 //#include <unistd.h>
 #include <sys/stat.h>
 
-#include <mutex>
-#include <atomic>
 #include <string>
-#include <thread>
-#include <chrono>
 #include <memory>
-#include <iostream>
-#include <condition_variable>
-
-#include <boost/asio.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/asio/signal_set.hpp>
-
-#include <Wt/WRandom>
-#include <Wt/WServer>
-#include <Wt/Json/Array>
-#include <Wt/Json/Object>
-#include <Wt/Json/Parser>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
@@ -61,9 +45,6 @@
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 using namespace std;
-
-
-
 
 namespace ElectronUtils
 {

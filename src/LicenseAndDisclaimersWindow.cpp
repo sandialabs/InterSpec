@@ -60,7 +60,8 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   if( !is_awk )
     rejectWhenEscapePressed();
   
-  m_resourceBundle.use("InterSpec_resources/static_text/copyright_and_about",false);
+  const string docroot = wApp->docRoot();
+  m_resourceBundle.use( UtilityFunctions::append_path(docroot,"InterSpec_resources/static_text/copyright_and_about") ,false);
   
   double width = 0.5*screen_width, height = 0.8*screen_height;
 
@@ -215,8 +216,9 @@ SideMenuItem * LicenseAndDisclaimersWindow::makeItem( const WString &title, cons
 
 void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *parent )
 {
-  const string approot = wApp->appRoot();  //looks to be blank if CWD
-  const string license_file = UtilityFunctions::append_path(approot, "InterSpec_resources/static_text/lgpl-2.1.txt" );
+  //const string approot = wApp->appRoot();  //looks to be blank if CWD
+  const string docroot = wApp->docRoot();
+  const string license_file = UtilityFunctions::append_path(docroot, "InterSpec_resources/static_text/lgpl-2.1.txt" );
   
   bool error_reading = false;
   string license_content;
