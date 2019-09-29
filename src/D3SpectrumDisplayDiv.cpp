@@ -779,7 +779,9 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
       js = data + m_jsgraph + ".setSpectrumData(data_" + id() + ", " + resetDomain + ", 'FOREGROUND', 0, 1 );";
     }
   } else {
-    js = m_jsgraph + ".removeSpectrumData(" + resetDomain + ", 'FOREGROUND' );";
+    //js = m_jsgraph + ".removeSpectrumData(" + resetDomain + ", 'FOREGROUND' );";
+    js = m_jsgraph + ".setData(null,true);";
+    
   }//if ( data_hist )
   
   

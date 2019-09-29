@@ -3148,8 +3148,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
               std::inserter( otherSamples, otherSamples.end() ) );
     
     setSpectrum( foreground, foregroundNums, kForeground, false );
-    setSpectrum( background, backgroundNums, kBackground, false );
-    setSpectrum( second, secondNums, kSecondForeground, false );
+    if( foreground )
+    {
+      //If we dont have a foreground, we probably shouldnt be loading the state, but...
+      setSpectrum( background, backgroundNums, kBackground, false );
+      setSpectrum( second, secondNums, kSecondForeground, false );
+    }
     
     //Load the other spectra the user had opened.  Note that they were not
     //  write protected so they may have been changed or removed
