@@ -1051,12 +1051,46 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
   
   SpecUtilsAsync::ThreadPool pool;
   
+  /*
   std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > allpeaks
                                                                     = hintpeaks;
   
   if( !allpeaks || (!!userpeaks && userpeaks->size() >= allpeaks->size()) )
     allpeaks = userpeaks;
-
+  */
+  
+  //Construct a set of peaks that has all user peaks, but also the hint peaks
+  //  the user hasnt identified yet.
+  std::shared_ptr<deque< std::shared_ptr<const PeakDef> > > allpeaks;
+  if( userpeaks )
+    allpeaks = make_shared< deque<std::shared_ptr<const PeakDef>> >( *userpeaks );
+  else
+    allpeaks = make_shared< deque<std::shared_ptr<const PeakDef>> >();
+  
+  auto &peaks = *allpeaks;
+  std::sort( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr );
+  
+  if( hintpeaks )
+  {
+    for( const auto &hintp : *hintpeaks )
+    {
+      if( !hintp || !hintp->gausPeak() )  //shouldnt ever happen
+        continue;
+      const float mean = hintp->mean();
+      const float sigma = hintp->sigma();
+      
+      auto pos = std::lower_bound( begin(peaks), end(peaks), hintp, &PeakDef::lessThanByMeanShrdPtr );
+      bool already_have = false;
+      if( pos != begin(peaks) && fabs((*(pos-1))->mean()-mean)<sigma )  //I dont think we need this one
+        already_have = true;
+      if( pos != end(peaks) && fabs((*pos)->mean()-mean)<sigma )
+        already_have = true;
+      if( !already_have )
+        peaks.insert( pos, hintp );
+    }//for( const auto &hintp : *hintpeaks )
+  }//if( hintpeaks )
+  
+  
   pool.post( boost::bind( &findCandidates,
                          boost::ref(suggestednucs),
                          peak, allpeaks, detector, data ) );
@@ -1064,7 +1098,7 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
   pool.post( boost::bind( &findCharacteristics,
                          boost::ref(characteristicnucs), peak ) );
   
-  if( !!userpeaks )
+  if( userpeaks )
     pool.post( boost::bind( &isotopesFromOtherPeaks,
                            boost::ref(otherpeaksnucs), peak, userpeaks ) );
   
@@ -1217,7 +1251,10 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
       
       
       if( !std::count( candidates->begin(), candidates->end(), buffer ) )
+      {
         escapes.push_back( buffer );
+        entries.insert( buffer );
+      }
     }//f( normal && (singleEscape || doubleEscape) )
   }//for( loop over allpeaks looking for potential escape peaks )
   
@@ -1267,6 +1304,7 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
         snprintf( buffer, sizeof(buffer), "(Sum %.2f and %.2f peaks)",
                   lpeak->mean(), rpeak->mean() );
         summs.push_back( buffer );
+        entries.insert( buffer );
       }
     }//for( size_t j = 0; j < i; ++j )
   }//for( size_t i = 0; i < allpeaks->size(); ++i )

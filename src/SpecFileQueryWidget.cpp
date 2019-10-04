@@ -1619,15 +1619,22 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
   const string default_file = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "file_query_event_xml_fields.json" );
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
-  const string user_file = UtilityFunctions::append_path( InterSpec::writableDataDirectory(), "file_query_event_xml_fields.json" );
-  string user_file_cpy = user_file;
-  string default_file_cpy = default_file;
-#if( SpecUtils_NO_BOOST_LIB || BOOST_VERSION >= 104500 )
-  UtilityFunctions::make_canonical_path( user_file_cpy );
-  UtilityFunctions::make_canonical_path( default_file_cpy );
-#endif
-  if( UtilityFunctions::is_file(user_file) && (user_file_cpy!=default_file_cpy) )
-    jsonfilenames.push_back( user_file );
+  try
+  {
+    //writableDataDirectory or make_canonical_path may throw
+    const string user_file = UtilityFunctions::append_path( InterSpec::writableDataDirectory(), "file_query_event_xml_fields.json" );
+    string user_file_cpy = user_file;
+    string default_file_cpy = default_file;
+  #if( SpecUtils_NO_BOOST_LIB || BOOST_VERSION >= 104500 )
+    UtilityFunctions::make_canonical_path( user_file_cpy );
+    UtilityFunctions::make_canonical_path( default_file_cpy );
+  #endif
+    if( UtilityFunctions::is_file(user_file) && (user_file_cpy!=default_file_cpy) )
+      jsonfilenames.push_back( user_file );
+  }catch( std::exception & )
+  {
+    
+  }
 #endif
   
   if( jsonfilenames.empty() && UtilityFunctions::is_file(default_file) )
