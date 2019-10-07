@@ -83,7 +83,8 @@ namespace functionexample
     } 
 
 #ifdef WIN32
-      std::wstring tmpdir = info[0].ToString()
+      std::u16string tmpdiru16 = info[0].ToString().Utf16Value();
+      std::wstring tmpdir( std::begin(tmpdiru16), std::end(tmpdiru16) );
       _wputenv_s( L"TMPDIR", tmpdir.c_str() );
       _wputenv_s( L"WT_TMP_DIR", tmpdir.c_str() );
 #else

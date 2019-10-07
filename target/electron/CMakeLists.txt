@@ -16,6 +16,16 @@ endif()
 set( BUILD_AS_ELECTRON_APP ON CACHE BOOL "Set to build Electron target" )
 set( TRY_TO_STATIC_LINK ON CACHE BOOL "Lets statically link everything" )
 
+
+IF(WIN32)
+  set( MSVC_RUNTIME "static" )
+  include( ../../cmake/ConfigureMsvc.txt )
+  configure_msvc_runtime() 
+  set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj -D_SCL_SECURE_NO_WARNINGS /MP /wd4996 /wd4267 /DWINVER=0x0601 /D_WIN32_WINNT=0x0601" )
+    #0x0601==Win7, 0x0501==WinXP
+ENDIF(WIN32)
+
+
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
 
@@ -54,6 +64,8 @@ install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/app/loading.html
         ${CMAKE_CURRENT_SOURCE_DIR}/app/launch_options.json
         DESTINATION ${PROJECT_BINARY_DIR}/app/ 
 )
+#Need to get d3.min.js and related into InterSpec_resources as well!
+
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml
         PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
         DESTINATION ${PROJECT_BINARY_DIR}/app/data/
