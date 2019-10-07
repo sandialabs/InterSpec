@@ -1301,7 +1301,8 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
                                  std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > previouspeaks,
                                  const std::shared_ptr<const Measurement> &data,
                                  const vector<ReferenceLineInfo> &displayed,
-                                 const bool colorPeaksBasedOnReferenceLines )
+                                 const bool colorPeaksBasedOnReferenceLines,
+                                 const bool showingEscapePeakFeature )
 {
   std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>> other_change;
   
@@ -1326,6 +1327,8 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
   
   try
   {
+    //const bool isHPGe = (data && data->num_gamma_channels() > 2048);
+    
     double mindist = 99999999.9;
     double nearestEnergy = -999.9;
     
@@ -1350,6 +1353,30 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
         
         const double delta_e = fabs( mean - rpp.energy );
         const double dist = (0.25*sigma + delta_e) / rpp.abundance;
+        
+        /*
+         //ToDo: implement checking if the S.E. or D.E. of this line is a better
+         //      fit than this line, and if so, use it, and assign the peak
+         //      as a S.E. or D.E.
+        bool is_SE = false, is_DE = false;
+        if( isHPGe && showingEscapePeakFeature && rpp.energy > 1122.0f )
+        {
+          //ToDo: Right now we are assuming the escape peaks will have the same
+          //      amplitudes as the full energy peaks, which isnt correct.
+          
+          const double se_delta_e = fabs( mean + 510.9989 - rpp.energy );
+          const double se_dist = (0.25*sigma + se_delta_e) / rpp.abundance;
+          
+          const double de_delta_e = fabs( mean + (2*510.9989) - rpp.energy );
+          const double de_dist = (0.25*sigma + de_delta_e) / rpp.abundance;
+          
+          if( se_dist < dist )
+          {
+            is_SE = true;
+            dist = se_dist;
+          }
+        }//if( showingEscapePeakFeature )
+        */
         
         if( dist < mindist && rpp.energy >= minx && rpp.energy <= maxx )
         {
@@ -1923,7 +1950,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   //  then create the popup window widget to let the user change things - this
   //  function should also use that same popup window!
   
-  
+  const bool showingEscapePeakFeature = viewer->showingFeatureMarker(InterSpec::FeatureMarkerType::EscapePeakMarker);
   auto peakModel = viewer->peakModel();
   auto foreground = viewer->displayedHistogram(kForeground);
   const ReferencePhotopeakDisplay *refLineDisp = viewer->referenceLinesWidget();
@@ -1952,7 +1979,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   for( const PeakDef &p : peaks )
     resultpeaks->push_back( make_shared<PeakDef>(p) );
   
-  assign_srcs_from_ref_lines( foreground, resultpeaks, displayed, assignColor );
+  assign_srcs_from_ref_lines( foreground, resultpeaks, displayed, assignColor, showingEscapePeakFeature );
   
   for( const auto &foundpeak : *resultpeaks )
   {
@@ -2011,7 +2038,8 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
                                        PeakModel *peakModel,
                                        const std::shared_ptr<const Measurement> &data,
                                        const ReferencePhotopeakDisplay *refLineDisp,
-                                       const bool setColor )
+                                       const bool setColor,
+                                       const bool showingEscapePeakFeature )
 {
   if( !data || !refLineDisp || !peakModel )
     return;
@@ -2031,7 +2059,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
     previouspeaks = std::make_shared<deque< PeakModel::PeakShrdPtr > >();
   
   unique_ptr<pair<PeakModel::PeakShrdPtr,std::string>> addswap
-    = assign_nuc_from_ref_lines( peak, previouspeaks, data, displayed, setColor );
+    = assign_nuc_from_ref_lines( peak, previouspeaks, data, displayed, setColor, showingEscapePeakFeature );
   
   if( addswap )
   {
@@ -2082,7 +2110,7 @@ void search_for_peaks_worker( std::weak_ptr<const Measurement> weak_data,
   {
     *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, existingPeaks, singleThread );
     
-    assign_srcs_from_ref_lines( data, resultpeaks, displayed, setColor );
+    assign_srcs_from_ref_lines( data, resultpeaks, displayed, setColor, false );
   }catch( std::exception &e )
   {
     string msg = "InterSpec::search_for_peaks_worker(): caught exception: '";
@@ -2106,7 +2134,8 @@ void search_for_peaks_worker( std::weak_ptr<const Measurement> weak_data,
 void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
                                   std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
                                   const vector<ReferenceLineInfo> &displayed,
-                                  const bool setColor )
+                                  const bool setColor,
+                                  const bool showingEscapePeakFeature )
 {
   if( !resultpeaks || !data )
     return;
@@ -2135,7 +2164,7 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
   
   for( shared_ptr<PeakDef> peak : unassignedpeaks )
   {
-    auto addswap = assign_nuc_from_ref_lines( *peak, answerpeaks, data, displayed, setColor );
+    auto addswap = assign_nuc_from_ref_lines( *peak, answerpeaks, data, displayed, setColor, showingEscapePeakFeature );
     
     if( addswap )  //The assignemnt caused a better assignment to be made for a previously existing peak.
     {

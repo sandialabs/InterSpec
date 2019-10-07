@@ -2466,10 +2466,16 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
   m_isotopeSearch->setNextSearchEnergy( energy, sigma );
 }//void setIsotopeSearchEnergy( double energy );
 
-void InterSpec::setFeatureMarkerOption( InterSpec::FeatureMarkerType option, bool show )
+void InterSpec::setFeatureMarkerOption( const InterSpec::FeatureMarkerType option, const bool show )
 {
   m_featureMarkersShown[option] = show;
 }
+
+bool InterSpec::showingFeatureMarker( const FeatureMarkerType option )
+{
+  return m_featureMarkersShown[option];
+}
+
 
 Wt::Signal<SpectrumType,std::shared_ptr<SpecMeas>, std::set<int> > &
                                       InterSpec::displayedSpectrumChanged()
@@ -2505,8 +2511,11 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
 #endif
   }
   
+  const bool showingEscape = showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
   auto foreground = displayedHistogram(kForeground);
-  PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel, foreground, m_referencePhotopeakLines, m_colorPeaksBasedOnReferenceLines );
+  PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
+                         foreground, m_referencePhotopeakLines,
+                         m_colorPeaksBasedOnReferenceLines, showingEscape );
   
   WModelIndex newpeakindex = m_peakModel->addNewPeak( peak );
 #if ( USE_SPECTRUM_CHART_D3 )

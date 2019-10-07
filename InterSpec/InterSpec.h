@@ -814,7 +814,8 @@ public:
     NumFeatureMarkers
   };//enum FeatureMarkerType
   
-  void setFeatureMarkerOption( FeatureMarkerType option, bool show );
+  void setFeatureMarkerOption( const FeatureMarkerType option, const bool show );
+  bool showingFeatureMarker( const FeatureMarkerType option );
   
 public:
 
