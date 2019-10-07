@@ -1286,13 +1286,14 @@ function( can, canElement, currentX, currentY )
     var sumPeak   = can.data('sumpeak');
     var sumPeakClick = can.data('sumpeakclick');
     var compAngle = can.data('compangle');
+    var compPeak = can.data('comppeak');
     var compEdge  = can.data('compedge');
     var escPeaks  = can.data('escpeaks');
     
     var energy = xeqn( currentX );
     var canPairProduce = (energy > 1021.99782);
     
-    if( !sumPeak && !isNumber(compAngle) && !compEdge && !(escPeaks && canPairProduce) )
+    if( !sumPeak && (!compPeak || !isNumber(compAngle)) && !compEdge && !(escPeaks && canPairProduce) )
     return;
     
     
@@ -1387,7 +1388,7 @@ function( can, canElement, currentX, currentY )
     }//if( escPeaks && canPairProduce )
     
     
-    if( isNumber(compAngle) )
+    if( compPeak && isNumber(compAngle) )
     {
       var compAngleRad = compAngle*(3.14159265/180.0);
       var compEnergy = energy / (1 + ((energy/510.99891)*(1-Math.cos(compAngleRad))));
@@ -1405,7 +1406,7 @@ function( can, canElement, currentX, currentY )
         txt = "" + Math.round(10*compEnergy)/10 + ' ' + xunitstr;
         context.strokeText( txt, compx + 4, ctop+15+fontSize );
       }
-    }//if( isNumber(compAngle) )
+    }//if( compPeak && isNumber(compAngle) )
     
     
     if( compEdge )

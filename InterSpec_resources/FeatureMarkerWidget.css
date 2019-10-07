@@ -1,0 +1,15 @@
+.FeatureMarkerWindow {
+  
+}
+
+.FeatureMarkerWidget {
+  width: 9em;
+  padding-bottom: 6px;
+}
+
+.FeatureMarkerWidget > label {
+  padding-top: 6px;
+}
+.FeatureMarkerWidget > div {
+  padding-top: 3px;
+}

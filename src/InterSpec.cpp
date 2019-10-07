@@ -149,6 +149,9 @@
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
+#if( USE_SIMPLE_NUCLIDE_ASSIST )
+#include "InterSpec/FeatureMarkerWidget.h"
+#endif
 #include "InterSpec/MassAttenuationTool.h"
 #include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -203,6 +206,10 @@
 
 #if( SpecUtils_ENABLE_D3_CHART )
 #include "SpecUtils/D3SpectrumExport.h"
+#endif
+
+#if( USE_FEATURE_MARKER_WIDGET )
+#include "InterSpec/FeatureMarkerWidget.h"
 #endif
 
 #include "js/InterSpec.js"
@@ -404,6 +411,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_horizantalLinesItems{0},
   m_tabToolsMenuItems{0},
   m_featureMarkersShown{false},
+#if( USE_FEATURE_MARKER_WIDGET )
+  m_featureMarkers( nullptr ),
+  m_featureMarkerMenuItem( nullptr ),
+#endif
 #if( USE_GOOGLE_MAP )
     m_mapMenuItem( 0 ),
 #endif
@@ -2466,16 +2477,88 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
   m_isotopeSearch->setNextSearchEnergy( energy, sigma );
 }//void setIsotopeSearchEnergy( double energy );
 
+
+
 void InterSpec::setFeatureMarkerOption( const InterSpec::FeatureMarkerType option, const bool show )
 {
   m_featureMarkersShown[option] = show;
-}
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->setFeatureMarkerOption( option, show );
+#elif( USE_FEATURE_MARKER_WIDGET || USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+  CanvasForDragging *overlay = m_spectrum->overlayCanvas();
+  if( !overlay )
+    return;
+  
+  string jsoption;
+  switch( option )
+  {
+    case EscapePeakMarker:  jsoption = "escpeaks";  break;
+    case ComptonEdgeMarker: jsoption = "compedge";  break;
+    case ComptonPeakMarker: jsoption = "comppeak";  break;
+    case SumPeakMarker:     jsoption = "sumpeak";   break;
+    case NumFeatureMarkers:                       break;
+  };//switch( option )
+  
+  if( !jsoption.empty() )
+  {
+    wApp->doJavaScript( "try{$('#c"+overlay->id()+"').data('" + jsoption + "',"
+                       + string(show ? "true" : "false") + ");}catch(err){}", false );
+  }
+#endif
+}//setFeatureMarkerOption(...)
+
 
 bool InterSpec::showingFeatureMarker( const FeatureMarkerType option )
 {
   return m_featureMarkersShown[option];
 }
 
+
+#if( USE_FEATURE_MARKER_WIDGET )
+void InterSpec::setComptonPeakAngle( const int angle )
+{
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->setComptonPeakAngle( angle );
+#else
+  CanvasForDragging *overlay = m_spectrum->overlayCanvas();
+  if( overlay )
+    wApp->doJavaScript( "try{$('#c"+overlay->id()+"').data('compangle',"
+                       + std::to_string(angle) + ");}catch(err){}", false );
+#endif
+}//void setComptonPeakAngle( const float angle );
+
+void InterSpec::toggleFeatureMarkerWindow()
+{
+  if( m_featureMarkers )
+  {
+    deleteFeatureMarkerWindow();
+    return;
+  }//if( m_featureMarkers )
+
+  m_featureMarkers = new FeatureMarkerWindow( this );
+  m_featureMarkers->finished().connect( this, &InterSpec::deleteFeatureMarkerWindow );
+  
+  m_featureMarkerMenuItem->setText( "Hide Feature Markers" );
+}//void toggleFeatureMarkerWindow()
+
+
+void InterSpec::deleteFeatureMarkerWindow()
+{
+  if( !m_featureMarkers )
+    return;
+  
+  AuxWindow::deleteAuxWindow( m_featureMarkers );
+  m_featureMarkers = nullptr;
+  m_featureMarkerMenuItem->setText( "Feature Markers..." );
+  
+  for( FeatureMarkerType i = FeatureMarkerType(0); i < FeatureMarkerType::NumFeatureMarkers; i = FeatureMarkerType(i+1) )
+  {
+    if( m_featureMarkersShown[i] )
+      setFeatureMarkerOption( i, false );
+  }
+}//void deleteFeatureMarkerWindow()
+#endif //USE_FEATURE_MARKER_WIDGET
 
 Wt::Signal<SpectrumType,std::shared_ptr<SpecMeas>, std::set<int> > &
                                       InterSpec::displayedSpectrumChanged()
@@ -3735,7 +3818,7 @@ void InterSpec::deletePreserveCalibWindow()
   if( m_preserveCalibWindow )
   {
     delete m_preserveCalibWindow;
-    m_preserveCalibWindow = 0;
+    m_preserveCalibWindow = nullptr;
   }
 }//void deletePreserveCalibWindow()
 
@@ -5719,15 +5802,20 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   if( overlay )
 #endif
   {
+#if( USE_FEATURE_MARKER_WIDGET )
+    m_featureMarkerMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Feature Markers...", "", true );
+    HelpSystem::attachToolTipOn( m_featureMarkerMenuItem,
+                    "Tool to show single/double escape peaks, Compton peak, Compton Edge, and sum peaks",
+                     showToolTipInstantly );
+    m_featureMarkerMenuItem->triggered().connect( this, &InterSpec::toggleFeatureMarkerWindow );
+#else
     string js;
     PopupDivMenu *submenu = NULL;
-    
     submenu = m_displayOptionsPopupDiv->addPopupMenuItem( "Feature Markers" );
     
     //We have to put all the below checkboxes into a div, inorder to have the
     //  tool-tip work with the mouse anywhere over the item, otherwise only the
     //  check-box itself will have the tool-tip, not the label
-    
     
     WCheckBox* cb = new WCheckBox( "Escape Peaks" );
     cb->setChecked(false);
@@ -5739,26 +5827,16 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     
     cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, true ) );
     cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, false ) );
-    
-#if( USE_SPECTRUM_CHART_D3 )
-    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, EscapePeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, EscapePeakMarker, false ) );
-#else
+
+#if( !USE_SPECTRUM_CHART_D3 )
     const string can = "$('#c" + overlay->id() + "')";
     js = "function(s,e){try{"+can+".data('escpeaks',s.checked);}catch(err){}}";
     
     std::shared_ptr<JSlot> jsslot = std::make_shared<JSlot>( js, cb );
     m_unNamedJSlots.push_back( jsslot );
     cb->changed().connect( *jsslot );
-    
-#if( USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
-    js = "try{"+can+".data('escpeaks',true);}catch(err){}";
-    cb->checked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
-    js = "try{"+can+".data('escpeaks',false);}catch(err){}";
-    cb->unChecked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
-#endif
-#endif
-  
+#endif //if(USE_SPECTRUM_CHART_D3)/else
+
     
 #if( USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)  )
     cerr << "\n\n\nCompton angle not yet implemented for macOS or Electron Native Menus\n\n" << endl;
@@ -5791,22 +5869,24 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     js = "function(s,e){try{" + m_spectrum->jsRef() + ".chart.setComptonPeakAngle(s.value);}catch(err){}}";
     spin->changed().connect( js );
     m_spectrum->setComptonPeakAngle( spin->value() );
-    
-    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonPeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonPeakMarker, false ) );
 #else
+    js = "function(s,e){try{"+can+".data('comppeak',s.checked);}catch(err){}}";
+    jsslot = std::make_shared<JSlot>( js, cb );
+    m_unNamedJSlots.push_back( jsslot );
+    cb->changed().connect( *jsslot );
+    
+    wApp->doJavaScript( "try{"+can + ".data('compangle',180);}catch(err){}", false );
+    
     js = "function(s,e){try{" + can + ".data('compangle', s.value);}catch(err){}}";
     jsslot = std::make_shared<JSlot>( js, spin );
     m_unNamedJSlots.push_back( jsslot );
     spin->changed().connect( *jsslot );
     
-    js = "function(s,e){try{"
-    "var spin = Wt.WT.getElement('" + spin->id() + "');"
-    "if(spin && s.checked)"
-    + can + ".data('compangle', spin.value);"
-    "else "
-    + can + ".data('compangle', null);"
-    "}catch(err){}}";
+    js = "function(s,e){try{" + m_spectrum->jsRef() + ".chart.setComptonPeakAngle(s.value);}catch(err){}}";
+    //js = "function(s,e){try{"
+    //"var spin = Wt.WT.getElement('" + spin->id() + "');"
+    //+ can + ".data('compangle', spin.value);"
+    //"}catch(err){}}";
     jsslot = std::make_shared<JSlot>( js, spin );
     m_unNamedJSlots.push_back( jsslot );
     cb->checked().connect( *jsslot );
@@ -5822,31 +5902,18 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     cb->setChecked(false);
     item = submenu->addWidget( cb );
 
-
-	HelpSystem::attachToolTipOn(item, "Maximum energy detected (&#952; = 180 &#176;) for photon which"
+    HelpSystem::attachToolTipOn(item, "Maximum energy detected (&#952; = 180 &#176;) for photon which"
                      " interacted once in the detector via a compton"
                      " interaction", showToolTipInstantly );
     
-    //    checkbox->setToolTip( "Maximum energy detected (&theta;=180&deg;) for photon which interacted once in the detector via a compton interaction", XHTMLText ); //\u03B8=180\u00B0
-
     cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, true ) );
     cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, false ) );
     
-#if( USE_SPECTRUM_CHART_D3 )
-    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonEdgeMarker, true ) );
-    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, ComptonEdgeMarker, false ) );
-#else
+#if( !USE_SPECTRUM_CHART_D3 )
     js = "function(s,e){try{"+can+".data('compedge',s.checked);}catch(err){}}";
     jsslot = std::make_shared<JSlot>( js, cb );
     m_unNamedJSlots.push_back( jsslot );
     cb->changed().connect( *jsslot );
-    
-#if( USE_OSX_NATIVE_MENU  || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
-    js = "try{"+can+".data('compedge',true);}catch(err){}";
-    cb->checked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
-    js = "try{"+can+".data('compedge',false);}catch(err){}";
-    cb->unChecked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
-#endif
 #endif
     
     
@@ -5859,23 +5926,14 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     
     cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, true ) );
     cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, false ) );
-#if( USE_SPECTRUM_CHART_D3 )
-    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, SumPeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setFeatureMarkerOption, m_spectrum, SumPeakMarker, false ) );
-#else
+#if( !USE_SPECTRUM_CHART_D3 )
     js = "function(s,e){try{"+can+".data('sumpeak',s.checked);"
     +can+".data('sumpeakclick',null);}catch(err){}}";
     jsslot = std::make_shared<JSlot>( js, cb );
     m_unNamedJSlots.push_back( jsslot );
     cb->changed().connect( *jsslot );
-
-#if( USE_OSX_NATIVE_MENU  || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)  )
-    js = "try{"+can+".data('sumpeak',true);"+can+".data('sumpeakclick',null);}catch(err){}";
-    cb->checked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
-    js = "try{"+can+".data('sumpeak',false);}catch(err){}";
-    cb->unChecked().connect( boost::bind(&WApplication::doJavaScript, wApp, js, false) );
 #endif
-#endif
+#endif //USE_FEATURE_MARKER_WIDGET
     
     //If didnt want to use JSlot, could do...
     //    js = can + ".data('compangle',null);";
