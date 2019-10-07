@@ -847,7 +847,7 @@ elseif(WIN32)
     target_link_libraries( InterSpecLib PUBLIC ${Wt_LIBRARIES} )
   endif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 
-  target_link_directories( InterSpecLib ${Boost_LIBRARY_DIR} )
+  target_link_directories( InterSpecLib PUBLIC ${Boost_LIBRARY_DIR} )
 
   IF( Boost_CHRONO_FOUND )
     target_link_libraries( InterSpecLib PUBLIC ${Boost_CHRONO_LIBRARY} )
@@ -1014,9 +1014,9 @@ IF( USE_MYSQL_DB AND NOT HAS_WTDBOMYSQL )
 ENDIF( USE_MYSQL_DB AND NOT HAS_WTDBOMYSQL )
 
 
-IF( USE_SQLITE3_DB AND NOT HAS_WTDBOSQLITE3 )
+IF( USE_SQLITE3_DB AND NOT HAS_WTDBOSQLITE3 AND NOT WIN32 )
   MESSAGE(FATAL_ERROR "You do not have the SQLITE3 Wt Dbo backend installed, but you have asked to use it")
-ENDIF( USE_SQLITE3_DB AND NOT HAS_WTDBOSQLITE3 )
+ENDIF( USE_SQLITE3_DB AND NOT HAS_WTDBOSQLITE3 NOT WIN32 )
 
 
 configure_file(
