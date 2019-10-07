@@ -96,7 +96,9 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
                                           PeakModel *peakModel,
                                           const std::shared_ptr<const Measurement> &data,
                                           const ReferencePhotopeakDisplay *refLineDisp,
-                                          const bool colorPeaksBasedOnReferenceLines );
+                                          const bool colorPeaksBasedOnReferenceLines,
+                                          const bool showingEscapePeakFeature
+                                         );
  
   
   
@@ -124,7 +126,8 @@ void search_for_peaks_worker( std::weak_ptr<const Measurement> weak_data,
 void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
                                  std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > peaks,
                                 const std::vector<ReferenceLineInfo> &displayed,
-                                 const bool setColor );
+                                 const bool setColor,
+                                const bool showingEscapePeakFeature );
   
 }//namespace PeakSearchGuiUtils
 #endif //AssignPeaksToRefLine_h

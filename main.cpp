@@ -149,6 +149,7 @@ void getUtf8Args( int &argc, char ** &argv )
 
 void processCustomArgs( int argc, char **argv )
 {
+  bool set_serial_num_file = false;
   for( int i = 1; i < (argc-1); ++i )
   {
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
@@ -159,7 +160,10 @@ void processCustomArgs( int argc, char **argv )
         InterSpec::setWritableDataDirectory( argv[i+1] );
         const std::vector<std::string> serial_db = UtilityFunctions::ls_files_in_directory( argv[i+1], "serial_to_model.csv" );
         if( !serial_db.empty() )
+        {
           SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
+          set_serial_num_file = true;
+        }
       }catch( std::exception &e )
       {
         std::cerr << "Invalid userdatadir ('" << argv[i+1] << "') specified"
@@ -168,4 +172,21 @@ void processCustomArgs( int argc, char **argv )
     }//if( argv[i] == std::string("--userdatadir") )
 #endif  //if( not a webapp )
   }//for( int i = 1; i < (argc-1); ++i )
+  
+  
+#if( BUILD_AS_LOCAL_SERVER )
+  if( !set_serial_num_file )
+  {
+    const char * const searchdirs[] = { "data", "data_ouo" };
+    for( const char *dir : searchdirs )
+    {
+      const std::vector<std::string> serial_db = UtilityFunctions::ls_files_in_directory( dir, "serial_to_model.csv" );
+      if( !serial_db.empty() )
+      {
+        SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
+        break;
+      }
+    }
+  }//if( !set_serial_num_file )
+#endif
 }//void processCustomArgs( int argc, char **argv )
