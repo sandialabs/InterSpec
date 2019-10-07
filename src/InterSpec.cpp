@@ -2490,6 +2490,8 @@ void InterSpec::setFeatureMarkerOption( const InterSpec::FeatureMarkerType optio
   if( !overlay )
     return;
   
+  const string showstr = (show ? "true" : "false");
+  
   string jsoption;
   switch( option )
   {
@@ -2503,7 +2505,7 @@ void InterSpec::setFeatureMarkerOption( const InterSpec::FeatureMarkerType optio
   if( !jsoption.empty() )
   {
     wApp->doJavaScript( "try{$('#c"+overlay->id()+"').data('" + jsoption + "',"
-                       + string(show ? "true" : "false") + ");}catch(err){}", false );
+                       + showstr + ");}catch(err){}", false );
   }
 #endif
 }//setFeatureMarkerOption(...)
@@ -5870,27 +5872,18 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     spin->changed().connect( js );
     m_spectrum->setComptonPeakAngle( spin->value() );
 #else
-    js = "function(s,e){try{"+can+".data('comppeak',s.checked);}catch(err){}}";
+    js = "function(s,e){"
+      "try{" + can + ".data('comppeak',s.checked);}catch(err){}"
+      "try{" + can + ".data('compangle',parseFloat(" + spin->jsRef() + ".value));}catch(err){}"
+    "}";
     jsslot = std::make_shared<JSlot>( js, cb );
     m_unNamedJSlots.push_back( jsslot );
     cb->changed().connect( *jsslot );
-    
-    wApp->doJavaScript( "try{"+can + ".data('compangle',180);}catch(err){}", false );
     
     js = "function(s,e){try{" + can + ".data('compangle', s.value);}catch(err){}}";
     jsslot = std::make_shared<JSlot>( js, spin );
     m_unNamedJSlots.push_back( jsslot );
     spin->changed().connect( *jsslot );
-    
-    js = "function(s,e){try{" + m_spectrum->jsRef() + ".chart.setComptonPeakAngle(s.value);}catch(err){}}";
-    //js = "function(s,e){try{"
-    //"var spin = Wt.WT.getElement('" + spin->id() + "');"
-    //+ can + ".data('compangle', spin.value);"
-    //"}catch(err){}}";
-    jsslot = std::make_shared<JSlot>( js, spin );
-    m_unNamedJSlots.push_back( jsslot );
-    cb->checked().connect( *jsslot );
-    cb->unChecked().connect( *jsslot );
 #endif
     
     spin->disable();
