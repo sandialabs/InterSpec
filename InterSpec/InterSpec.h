@@ -67,6 +67,9 @@ class SpectrumDisplayDiv;
 class D3SpectrumDisplayDiv;
 #endif
 class PreserveCalibWindow;
+#if( USE_FEATURE_MARKER_WIDGET )
+class FeatureMarkerWindow;
+#endif
 class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
@@ -816,6 +819,11 @@ public:
   
   void setFeatureMarkerOption( const FeatureMarkerType option, const bool show );
   bool showingFeatureMarker( const FeatureMarkerType option );
+#if( USE_FEATURE_MARKER_WIDGET )
+  void setComptonPeakAngle( const int angle );
+  void toggleFeatureMarkerWindow();
+  void deleteFeatureMarkerWindow();
+#endif
   
 public:
 
@@ -1180,6 +1188,16 @@ protected:
   //Christian (20170425): Featuer marker option helpers for D3.js preferences
   bool m_featureMarkersShown[NumFeatureMarkers];
   
+#if( USE_FEATURE_MARKER_WIDGET )
+  /** A window that controls if S.E., D.E., Compton Peak, Compton Edge, or Sum
+   Peaks are shown.  Is null when window is not showing.
+   */
+  FeatureMarkerWindow *m_featureMarkers;
+  
+  PopupDivMenuItem *m_featureMarkerMenuItem;
+#endif //USE_FEATURE_MARKER_WIDGET
+
+  
 #if( USE_GOOGLE_MAP )
   PopupDivMenuItem *m_mapMenuItem;
 #endif
@@ -1237,6 +1255,7 @@ protected:
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
   PreserveCalibWindow *m_preserveCalibWindow;
+  
   
   //Current width and height are set in layoutSizeChanged(...).
   int m_renderedWidth;

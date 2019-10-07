@@ -50,6 +50,7 @@ option( ALLOW_URL_TO_FILESYSTEM_MAP "Allows a file ID to be specified in the URL
 option( USE_DB_TO_STORE_SPECTRA "Use the database to store spectra" ON )
 option( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE "Render photopeaks server-side rather than client side" ON )
 option( USE_SPECRUM_FILE_QUERY_WIDGET "Enables compilation of the spectrum file query tool (not for web deployment)" OFF )
+option( USE_FEATURE_MARKER_WIDGET "Use the feature marker widget to display feature marker options" ON )
 option( USE_SEARCH_MODE_3D_CHART "Enable 3D chart or searchmode/passthrough data.  Requires Wt >=3.3.4 compiled with WebGL/OpenGL support" OFF )
 option( USE_TERMINAL_WIDGET "Enables use of terminal widget" OFF )
 set( SpecUtils_ENABLE_D3_CHART ON CACHE BOOL "Enables use of exporting D3 HTML files" )
@@ -536,6 +537,12 @@ if( USE_SEARCH_MODE_3D_CHART )
   list( APPEND sources src/SearchMode3DChart.cpp src/SearchMode3DDataModel.cpp )
   list( APPEND headers InterSpec/SearchMode3DChart.h InterSpec/SearchMode3DDataModel.h )
 endif( USE_SEARCH_MODE_3D_CHART )
+
+
+if( USE_FEATURE_MARKER_WIDGET )
+  list( APPEND sources src/FeatureMarkerWidget.cpp )
+  list( APPEND headers InterSpec/FeatureMarkerWidget.h )
+endif( USE_FEATURE_MARKER_WIDGET )
 
 
 if( USE_TERMINAL_WIDGET )
@@ -1059,6 +1066,9 @@ if( USE_SEARCH_MODE_3D_CHART )
   list( APPEND OTHER_SUPPORT_FILES "InterSpec_resources/SearchMode3DChart.css" )
 endif( USE_SEARCH_MODE_3D_CHART )
 
+if( USE_FEATURE_MARKER_WIDGET )
+  list( APPEND OTHER_SUPPORT_FILES "InterSpec_resources/FeatureMarkerWidget.css" )
+endif( USE_FEATURE_MARKER_WIDGET )
 
 add_custom_target( interspec_resources SOURCES ${OTHER_SUPPORT_FILES} )
 
