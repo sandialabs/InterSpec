@@ -55,6 +55,8 @@ FeatureMarkerWindow::FeatureMarkerWindow( InterSpec *viewer )
      | AuxWindowProperties::DisableCollapse) ),
     m_feature( nullptr )
 {
+  //ToDo: for mobile, replace the close icon with a larger button.
+  
   addStyleClass( "FeatureMarkerWindow" );
   
   rejectWhenEscapePressed( false );
