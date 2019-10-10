@@ -411,7 +411,7 @@ function createWindow () {
 
     dialog_options.defaultPath = path.join(dialog_options.defaultPath, fname);
     
-    let filename = dialog.showSaveDialog( mainWindow, dialog_options );
+    let filename = dialog.showSaveDialogSync( mainWindow, dialog_options );
     
     if (typeof filename == "undefined") {
       item.cancel();
