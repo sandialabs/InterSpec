@@ -56,7 +56,7 @@ const { ipcMain } = electron;
 
 const {dialog} = electron;
 const {Menu, MenuItem} = electron;
-
+//const {systemPreferences} = electron;
 
 const http = require('http');
 const path = require('path')
@@ -218,7 +218,7 @@ app.on('open-url', function (event,url) {
 
 const userdata = app.getPath('userData');
 var guiOtionsPath = path.join(userdata, "init.json");
-let allowReloadPath = path.join(userdata, "do_reload");
+let allowRestorePath = path.join(userdata, "do_restore");
 
 function get_launch_options(){
   //InterSpecResourceDir
@@ -233,7 +233,7 @@ function get_launch_options(){
 
 
 function doMenuStuff(currentwindow){
-  
+  console.log( 'Doing doMenuStuff' );
   currentwindow.setMenu(null);
   
   const template = [{label: 'Edit', submenu: [{role: 'cut'},{role: 'copy'},{role: 'paste'}]},
@@ -283,6 +283,11 @@ function createWindow () {
   
   var windowPrefs = Object.assign({}, guiConfig.bounds);
   
+  if( !windowPrefs.minWidth )
+    windowPrefs.minWidth = 200;
+  if( !windowPrefs.minHeight )  
+    windowPrefs.minHeight = 200;
+
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
   windowPrefs.webPreferences = {nodeIntegration: true, nativeWindowOpen: true };
@@ -290,6 +295,55 @@ function createWindow () {
   mainWindow = new BrowserWindow( windowPrefs );
   
 
+  let allowRestore = false;
+  try{
+    if( fs.lstatSync(allowRestorePath).isFile() ){
+      allowRestore = true;
+      fs.unlinkSync( allowRestorePath );
+    }
+  }catch(e) {
+    console.error( 'Exception checking on/deleting allow reload path ("' + allowRestorePath + '"): ' + e );
+  }
+  
+  
+  let hasSetInialUrl = false;
+  
+  let setInitialUrl = function(){
+    
+    hasSetInialUrl = true;
+    
+    if( interspec_url ) {
+      const session_token_buf = crypto.randomBytes(16);
+      session_token = session_token_buf.toString('hex');
+      interspec.addSessionToken( session_token );
+      
+      let msg = interspec_url  + "?externalid=" + session_token;
+      if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
+        let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
+        msg += "&specfilename=" + encodeURI(filepath);
+        initial_file_to_open = null;
+      }
+
+      //See https://github.com/electron/electron/blob/master/docs/tutorial/mojave-dark-mode-guide.md
+      //  For implementing dark mode (leaving out for the moment since havent had time to test)
+      //if( systemPreferences.isDarkMode() )
+      //  msg += "&colortheme=dark";
+      //Actually should use nativeTheme.shouldUseDarkColors
+      //  see https://github.com/electron/electron/blob/master/docs/api/native-theme.md#nativethemeshouldusedarkcolors-readonly
+      
+      if( !allowRestore )
+        msg += "&restore=no";
+      
+      console.log('Will Load ' + msg);
+      
+      doMenuStuff(mainWindow);
+      mainWindow.loadURL( msg );
+    } else {
+      let workingdir = path.dirname(require.main.filename);
+      mainWindow.loadURL( "file://" + path.join(workingdir, "loading.html") );
+    }
+  };
+  
   //If we are behind a proxy, we need to make sure we dont try to resolve the local address
   //  as proxies do all sorts of wierd things that will block us from loading our local 
   //  address (this for example happens to me at work)
@@ -299,44 +353,23 @@ function createWindow () {
   //      from the setback, but the current way seems to work right now...
   let ses = mainWindow.webContents.session;
   ses.setProxy( {proxyBypassRules: 'local,<local>,127.0.0.1,http://127.0.0.1,http://<local>,http://localhost'}, 
-                function(){ console.log('Bypassing proxy for local'); } );
+    function(){
+    console.log('Bypassing proxy for local');
+    setInitialUrl();
+  } );
 
-  doMenuStuff(mainWindow);
   
-
-  let allowReload = false;
-  try{ 
-    if( fs.lstatSync(allowReloadPath).isFile() ){
-      allowReload = true;
-      fs.unlinkSync( allowReloadPath );
-    } 
-  }catch(e) {
-    console.error( 'Exception checking on/deleting allow reload path ("' + allowReloadPath + '"): ' + e );
-  }
-  
-  
-  if( interspec_url ) {
-    const session_token_buf = crypto.randomBytes(16);
-    session_token = session_token_buf.toString('hex');
-    interspec.addSessionToken( session_token );
-
-    let msg = interspec_url  + "?externalid=" + session_token;
-    if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
-      let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
-      msg += "&specfilename=" + encodeURI(filepath);
-      initial_file_to_open = null;
+  //JIC setProxy(...) doesnt call the callback or something... probably not actually needed.
+  setTimeout( function() {
+    if( !hasSetInialUrl ){
+      console.log('ses.setProxy Took longer than 500ms.');
+      setInitialUrl();
     }
-    
-    if( !allowReload )
-      msg += "&restore=no";
+  }, 500 );
   
-    console.log('Will Load ' + msg);
-
-    mainWindow.loadURL( msg );
-  } else {
-    let workingdir = path.dirname(require.main.filename);
-    mainWindow.loadURL( "file://" + path.join(workingdir, "loading.html") );
-  }
+  
+  
+  
   
   // Open the developer tools.
   //mainWindow.webContents.openDevTools({mode: "bottom"})
@@ -355,12 +388,26 @@ function createWindow () {
   });
 
 
-  mainWindow.webContents.on('will-navigate', function(event, url){ 
+  mainWindow.webContents.on('will-navigate', function(event, url){
+    //Emitted when a user or the page wants to start navigation. It can happen
+    //  when the window.location object is changed or a user clicks a link in
+    //  the page.
+    //This event will not emit when the navigation is started programmatically
+    //  with APIs like webContents.loadURL and webContents.back.
+    //It is also not emitted for in-page navigations, such as clicking anchor
+    //  links or updating the window.location.hash.
+    
     console.log('webContents: will-navigate');
     if( !url.startsWith(interspec_url) ) {
       console.log( "Will prevent Opening URL=" + url + ", mainWindow.webContents.getURL()=" + mainWindow.webContents.getURL() );
       event.preventDefault();
       electron.shell.openExternal(url)
+    } else {
+      //We seem to only get here if the JS application dies and the message saying
+      // "The application has stopped running, would you like to restart?" and
+      // the user clicks okay.
+      //(as of 20191012 only tested by calling wApp->quit() from c++).
+      doMenuStuff(mainWindow);
     }
   });
 
@@ -411,7 +458,7 @@ function createWindow () {
 
     dialog_options.defaultPath = path.join(dialog_options.defaultPath, fname);
     
-    let filename = dialog.showSaveDialog( mainWindow, dialog_options );
+    let filename = dialog.showSaveDialogSync( mainWindow, dialog_options );
     
     if (typeof filename == "undefined") {
       item.cancel();
@@ -427,6 +474,13 @@ function createWindow () {
       console.log( "Error saving file: " + e );
       item.cancel();
     }
+  });
+
+  
+  mainWindow.webContents.on('did-start-loading', (event) => {
+    //Corresponds to the points in time when the spinner of the tab started spinning.
+    console.log( "did-start-loading" );
+    
   });
 
 
@@ -479,6 +533,16 @@ function createWindow () {
    //item.once('done', (event, state) => { } )
   //})
   
+  //mainWindow.webContents.on('did-navigate-in-page',function(){
+  //  console.log( 'did-navigate-in-page' );
+  //});
+  //mainWindow.webContents.on('destroyed',function(){
+  //  console.log( 'destroyed!' );
+  //});
+  //mainWindow.webContents.on('unresponsive',function(){
+  //  console.log( 'unresponsive!' );
+  //});
+
   mainWindow.on('session-end', function () {
     //Windows only here
     //Could save the work here.
@@ -595,8 +659,8 @@ app.on('ready', function(){
     console.log( "Received SessionFinishedLoading for Token='" + token + "'" );
       
     try{ 
-      fs.writeFileSync(allowReloadPath, ""+Date.now() ); 
-      console.log( 'Wrote reload file: ' + allowReloadPath );
+      fs.writeFileSync(allowRestorePath, ""+Date.now() );
+      console.log( 'Wrote reload file: ' + allowRestorePath );
     }catch(e){
       console.log( "Error writing allow reload file " );
     }

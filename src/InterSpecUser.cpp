@@ -247,6 +247,9 @@ void InterSpecUser::pushPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
     throw runtime_error( "pushPreferenceValue(): Invlaid input" );
   
   const bool oldValue = user->preferenceValue<bool>( name );
+  if( oldValue == value )
+    return;
+  
   
   int nchanged = 0;
   const vector<string> &widgets = user->m_preferenceWidgets[name];
@@ -274,8 +277,15 @@ void InterSpecUser::pushPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
 
   if( !nchanged )
   {
-    cerr << "Didnt change any prefs for " << name << " so doing it manually" << endl;
+    //We didnt find the widget associated with this preference (it may have been
+    //  in a pop-up window somewhere, or it may not be a simple widget like a
+    //  checkbox), so we will set the preference value, but we are not setting
+    //  the widgets into the correct state.
+    //ToDo: instead of associateWidget(...) we need a associateFunction( function<void(bool)> )
+    //      that can handle these other cases... but there will then be life-cycle issues and
+    //      such if not careful.
     
+    cerr << "Didnt change any prefs for " << name << " so doing it manually" << endl;
     std::shared_ptr<DataBaseUtils::DbSession> sql = viewer->sql();
     setPreferenceValue<bool>( user, name, value, viewer );
   }

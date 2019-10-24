@@ -843,7 +843,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   updateSaveWorkspaceMenu();
 #endif
   
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
   initOsColorThemeChangeDetect();
 #endif
   
@@ -3412,7 +3412,8 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       {
       Json::Value userOptionsVal( Json::ArrayType );
       Json::parse( entry->userOptionsJson, userOptionsVal );
-      cerr << "Parsed User Options, but not doing anything with them" << endl;
+      //cerr << "Parsed User Options, but not doing anything with them" << endl;
+        
       const Json::Array &userOptions = userOptionsVal;
       for( size_t i = 0; i < userOptions.size(); ++i )
       {
@@ -3430,7 +3431,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
             case UserOption::Boolean:
             {
               bool value = obj.get("value");
-              cerr << "Pushing value for " << name.toUTF8() << endl;
+              //cerr << "Pushing value for " << name.toUTF8() << endl;
               InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
                                                   value, this, wApp );
             }//case UserOption::Boolean:
@@ -3635,7 +3636,7 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 }//void InterSpec::applyColorTheme()
 
 
-#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS )
+#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP )
 void InterSpec::osThemeChange( std::string name )
 {
   cout << "InterSpec::osThemeChange('" << name << "');" << endl;
@@ -5698,6 +5699,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_horizantalLinesItems[1]->setHidden( !horizontalLines );
   m_spectrum->showHorizontalLines( horizontalLines );
   m_timeSeries->showHorizontalLines( horizontalLines );
+  //InterSpecUser::associateWidget( m_user, "ShowHorizontalGridlines", Wt::WCheckBox *cb, this, false );
   
 #if( USE_SPECTRUM_CHART_D3 )
   const bool showSlider = InterSpecUser::preferenceValue<bool>( "ShowXAxisSlider", this );
@@ -5933,10 +5935,9 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     //    checkbox->checked().connect( boost::bind( &WApplication::doJavaScript, wApp, js, true ) );
     
 #if ( USE_SPECTRUM_CHART_D3 )
-    //ToDo: add ability to save <svg> to PNG.
-    //  https://stackoverflow.com/questions/5433806/convert-embedded-svg-to-png-in-place
-    //  or https://stackoverflow.com/questions/11567668/svg-to-canvas-with-d3-js/23667012#23667012
-    //  or http://dinbror.dk/blog/how-to-download-an-inline-svg-as-jpg-or-png/
+    //m_displayOptionsPopupDiv->addSeparator();
+    //auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
+    //saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToPng, this, true) );
 #elif( !IOS )
     //Add a download link to convert the canvas into a PNG and download it.
     m_displayOptionsPopupDiv->addSeparator();
@@ -6620,8 +6621,7 @@ std::shared_ptr<const Measurement> InterSpec::displayedHistogram( SpectrumType s
   return std::shared_ptr<const Measurement>();
 }//displayedHistogram(...)
 
-#if ( USE_SPECTRUM_CHART_D3 )
-#else
+
 void InterSpec::saveChartToPng( const bool spectrum )
 {
   std::shared_ptr<const SpecMeas> spec = measurment(kForeground);
@@ -6638,13 +6638,12 @@ void InterSpec::saveChartToPng( const bool spectrum )
   if( ppos != string::npos )
     timestr = timestr.substr(0,ppos);
   filename += "_" + timestr + ".png";
-  
+
   if( spectrum )
     m_spectrum->saveChartToPng( filename );
   else
     m_timeSeries->saveChartToPng( filename );
 }//saveSpectrumToPng()
-#endif //USE_SPECTRUM_CHART_D3 / else
 
 
 double InterSpec::displayScaleFactor( SpectrumType spectrum_type ) const
@@ -7947,7 +7946,7 @@ void InterSpec::emitDetectorChanged()
 }//void emitDetectorChanged( std::shared_ptr<DetectorPeakResponse> det )
 
 
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
 void InterSpec::initOsColorThemeChangeDetect()
 {
   m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", true ) );

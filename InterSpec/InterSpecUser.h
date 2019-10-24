@@ -261,6 +261,11 @@ public:
                                Wt::WCheckBox *cb,
                                InterSpec *viewer,
                                bool reverseValue = false );
+  //static void associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
+  //                            const std::string &name,
+  //                            std::function<void(bool)> toggle,
+  //                            InterSpec *viewer );
+  
   static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                               const std::string &name,
                               Wt::WRadioButton *trueButton,

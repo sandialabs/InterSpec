@@ -71,6 +71,90 @@ namespace
   };
 }
 
+WT_DECLARE_WT_MEMBER
+(SvgToPngDownload, Wt::JavaScriptFunction, "SvgToPngDownload",
+ function(elid,filename)
+{
+  console.log( 'In SvgToPngDownload' );
+  try{
+    var svgchart = $('#' + elid).find('svg')[0];
+    
+    if( svgchart.length === 0 )
+      throw 'Could not find svg';
+    
+    console.log( 'In SvgToPngDownload: svgchart' );
+    if( filename.length === 0 )
+      filename = "spectrum.png"; //ToDo: add in date/time or something.
+    
+    var w = parseFloat(svgchart.getAttribute("width"));
+    var h = parseFloat(svgchart.getAttribute("height"));
+    
+    var canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    //document.body.appendChild(canvas);
+    $('#' + elid)[0].appendChild(canvas);
+    
+    
+    //We will need to propogate all the styles we can dynamically set in the SVG
+    //  to the <defs> section of the new SVG.
+    //This is a real pain - and no wher close to being done.
+    //m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c );
+    //m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() );
+    var chartstyle = getComputedStyle($('#chartarea' + elid)[0]);
+    //This next select doesnt seem to work, so maybe assign an id to the <svg> elements and change how the CSS is set?
+    var svgbackstyle = getComputedStyle( $('#' + elid)[0], , ' > svg' );
+    
+    
+    var svgMarkup = '<svg xmlns="http://www.w3.org/2000/svg"' + ' width="'  + w + '"' + ' height="' + h + '"' + '>'
+    + '<defs><style type="text/css">'
+    + (chartstyle && chartstyle.fill ? '.chartarea{fill: ' + chartstyle.fill + ';}\n' : "")
+    + (svgbackstyle && svgbackstyle.background ? 'svg{ background:' + svgbackstyle.background + '}\n' : "")
+    //+ '.legend{ font-size: 1em; }\n'
+    + '.legendBack{ fill: rgba(245,245,245,0.5); stroke: rgba(185,185,185,0.80); }\n'
+    //+ '.xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis{ stroke: black; }\n'
+    //+ '.xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick { stroke: black; }\n'
+    //+ '.peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine { stroke: black; }\n'
+    //+ '.xgrid > .tick, .ygrid > .tick{ stroke: #b3b3b3;}\n'
+    //+ '.minorgrid{ stroke: #e6e6e6; }\n'
+    + '</style>'
+    + '</defs>'
+    + svgchart.innerHTML.toString()
+    +'</svg>';
+
+    //var serializer = new XMLSerializer();
+    //var svgMarkup = serializer.serializeToString(svgchart);
+     
+    var ctx = canvas.getContext("2d");
+    var img = new Image();
+    var svg = new Blob([svgMarkup], {type: "image/svg+xml;charset=utf-8"});
+    var url = window.URL.createObjectURL(svg);
+    img.onload = function() {
+      ctx.drawImage(img, 0, 0);
+      window.URL.revokeObjectURL(url);
+      
+      var dt = canvas.toDataURL('image/png');
+      dt = dt.replace(/^data:image\\/[^;]*/, 'data:application/octet-stream');
+      dt = dt.replace(/^data:application\\/octet-stream/, 'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename='+filename);
+      
+      var link = document.createElement("a");
+      link.download = filename;
+      link.href = dt;
+      link.target="_blank";
+      link.click();
+      
+      canvas.remove();
+    };
+    img.src = url;
+    
+  }catch(e){
+    console.log( 'Error saving PNG from SVG spectrum: ' + e );
+  }
+}
+);
+
+
+
 
 D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 : WContainerWidget( parent ),
@@ -1306,6 +1390,16 @@ void D3SpectrumDisplayDiv::removeAllPeaks()
     updateForegroundPeaksToClient();
   }
 }
+
+
+void D3SpectrumDisplayDiv::saveChartToPng( const std::string &filename )
+{
+  LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsSvgToPngDownload);
+  
+  doJavaScript( "Wt.WT.SvgToPngDownload('" + id() + "','" + filename +"');" );
+}//void saveChartToPng( const std::string &name )
+
+
 
 void D3SpectrumDisplayDiv::setFeatureMarkerOption( InterSpec::FeatureMarkerType option, bool show )
 {

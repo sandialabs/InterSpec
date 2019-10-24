@@ -777,7 +777,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
 #endif
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
   auto themeiter = parmap.find( "colortheme" );
   if( themeiter != parmap.end() && themeiter->second.size() )
     m_viewer->osThemeChange( themeiter->second[0] );
@@ -793,16 +793,6 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   if( m_viewer->m_user )
     cerr << "Have started session " << sessionId() << " for user "
     << m_viewer->m_user->userName() << endl;
-  
-  
-#if( BUILD_AS_ELECTRON_APP )
-  if( !m_externalToken.empty() )
-  {
-    WTimer::singleShot( 25, std::bind( [](){
-      ElectronUtils::notifyNodeJsOfNewSessionLoad();
-    }) );
-  }//if( !m_externalToken.empty() )
-#endif
   
 #if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
   if( !m_externalToken.empty() )
@@ -985,7 +975,7 @@ bool InterSpecApp::isElectronInstance()
 #endif
 
 
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
 void InterSpecApp::osThemeChange( std::string name )
 {
   auto server = WServer::instance();
