@@ -43,7 +43,23 @@ namespace functionexample
                                              basedir.c_str(), xml_config_path.c_str() );
 
     if( serverPort <= 0 )
-      Napi::TypeError::New(env, "startServingInterSpec: Received error code " + std::to_string(serverPort) ).ThrowAsJavaScriptException();
+    {
+      //ToDo: should probably add some mechanism so interspec_start_server() can poplulate the error string.
+      std::string errmsg;
+      switch( serverPort )
+      {
+        case -1: errmsg = "Failed to create user data directory '" + userdatadir + "'"; break;
+        case -2: errmsg = "InterSpecUserData.db: error in DataBaseUtils::setPreferenceDatabaseFile() or DbToFilesystemLink::setFileNumToFilePathDBNameBasePath()"; break;
+        case -3: errmsg = "Error in set_detector_model_input_csv(), unexpected"; break;
+        case -4: errmsg = "Error in InterSpec::setWritableDataDirectory('" + userdatadir + "')"; break;
+        case -5: errmsg = "Error in DataBaseVersionUpgrade::checkAndUpgradeVersion()"; break;
+        case -6: errmsg = "Error in ResourceUpdate::setupGlobalPrefsFromDb()"; break;
+        case -7: errmsg = "Error in InterSpec::setStaticDataDirectory('" + basedir + "/data')"; break;
+        case -8: errmsg = "Caught exception trying to start InterSpec server."; break;
+        default: errmsg = "Unrecognized error code."; break;
+      }
+      Napi::TypeError::New(env, "startServingInterSpec: Received error code " + std::to_string(serverPort) + ": " + errmsg ).ThrowAsJavaScriptException();
+    }
 
     return Napi::Number::New( env, serverPort );
   }

@@ -384,10 +384,17 @@ public:
   
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   
-#if ( USE_SPECTRUM_CHART_D3 )
-#else
+
+  /** Converts the current chart to a PNG and triggers a download of the
+     resulting file.
+   
+   Note: Currently not fully working for D3 based spectrum chart.
+   
+   @param spectrum If true, make a PNG for the spcetrum chart.  If false make
+          PNG for the time-series chart
+   */
   void saveChartToPng( const bool spectrum );
-#endif
+
   
   //displayScaleFactor(...): the live time scale factor used by to display
   //  the histogram returned by displayedHistogram( spectrum_type ).
@@ -948,14 +955,14 @@ public:
 //  reason why not, other than I just havent checked it wont cause issues.
 #define APPLY_OS_COLOR_THEME_FROM_JS 1
   
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS && !BUILD_AS_ELECTRON_APP )
   /** Sets up client-side JS to detect the operating system color-theme.  Will
    trigger the signal to be emitted right after initial load.
    */
   void initOsColorThemeChangeDetect();
 #endif
   
-#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS )
+#if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP )
   /** Notification that the operating system changed themes (e.g., macOS went
    into dark mode, or light mode).
    
@@ -1301,7 +1308,7 @@ protected:
   std::unique_ptr< Wt::JSignal<unsigned int> > m_hotkeySignal;
   std::unique_ptr< Wt::JSlot > m_hotkeySlot;
   
-#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP )
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !IOS )
   /** Signal emitted from JS when the operating systems color theme changes, or
       right after application starts.
    

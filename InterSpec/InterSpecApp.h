@@ -152,7 +152,7 @@ public:
   static bool isElectronInstance();
 #endif
 
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
   static void osThemeChange( std::string name );
 #endif
   

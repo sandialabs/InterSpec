@@ -214,6 +214,9 @@ function( name, selfid )
   let appmenu = Menu.getApplicationMenu();
   //remote.getCurrentWindow()
   
+  //console.log( 'appmenu:' );
+  //console.log( appmenu );
+  
   if(!appmenu){
     console.log('Couldnt get app menu');
     return;
@@ -222,12 +225,22 @@ function( name, selfid )
   for( var i of appmenu.items ){
     if( i.label == name )
     {
+      //console.log( 'Found menu ' + name );
+      //console.log( i );
+      
       $(window).data('electronMenu'+selfid, i );
       //$('#'+selfid).data('electronMenu',i);
       //console.log('Set Electron Menu Item: ' + i.label );
       return;
     }
   }
+  
+  //Start of trying to dynamically add menu items...
+  //let newmenu = new MenuItem( {type: 'submenu', label: name, id: selfid, submenu: appmenu } );
+  //appmenu.items.push(newmenu);
+  //$(window).data('electronMenu'+selfid, newmenu );
+  //Menu.setApplicationMenu(appmenu);
+  
   console.log('Failed to find Electron Menu Item data for : ' + name );
 });
 
@@ -242,12 +255,6 @@ function( selfid, txt, iconstr, itemid, roleType )
     console.log( 'No electron menu set when trying to add: ' + txt );
     return;
   }
-  
-  let appmenu = Menu.getApplicationMenu();
-  if(!appmenu){
-    console.log('Couldnt get app menu');
-    return;
-  }
 
   var newItem = new MenuItem({label: txt,
     role: roleType,
@@ -259,8 +266,13 @@ function( selfid, txt, iconstr, itemid, roleType )
   
   $(window).data('electronItem'+itemid, newItem);
   
-  if( $(window).data('HaveTriggeredMenuUpdate') )
-    Menu.setApplicationMenu(appmenu);
+  if( $(window).data('HaveTriggeredMenuUpdate') ){
+    let appmenu = Menu.getApplicationMenu();
+    if(appmenu)
+      Menu.setApplicationMenu(appmenu);
+    else
+      console.log('Couldnt get app menu');  //dont think getting app menu has ever failed, that I've seen
+  }
 });
 
 WT_DECLARE_WT_MEMBER(AddSeperatorToElectronMenu, Wt::JavaScriptFunction, "AddSeperatorToElectronMenu",
@@ -578,7 +590,7 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
         //In Js, we should find the menu, and get a reference to it.
         //app->doJavaScript( "console.log('Adding PopupDivMenu id=" + id() + " parentTxt=" + menuParent->text().toUTF8() + "');" );
         app->doJavaScript( "Wt.WT.FindElectronMenu('" + menuParent->text().toUTF8() + "', '" + id() + "');" );
-		m_hasElectronCounterpart = true;
+        m_hasElectronCounterpart = true;
       }
 #endif
       
@@ -1166,7 +1178,7 @@ void PopupDivMenuItem::toggleFromElectronMenu(bool checked)
 
 void PopupDivMenuItem::setHidden( bool hidden, const Wt::WAnimation &animation )
 {
-  cout << "Hiding " << text().toUTF8() << endl;
+  //cout << "Hiding " << text().toUTF8() << endl;
   WMenuItem::setHidden( hidden, animation );
   WApplication::instance()->doJavaScript( "Wt.WT.HideElectronMenuItem('" + id() + "',"
                                          + string(hidden ? "true" : "false") + ");" );
@@ -1174,7 +1186,7 @@ void PopupDivMenuItem::setHidden( bool hidden, const Wt::WAnimation &animation )
 
 void PopupDivMenuItem::setDisabled(bool disabled)
 {
-  cout << "DIsabling " << text().toUTF8() << endl;
+  //cout << "DIsabling " << text().toUTF8() << endl;
   WMenuItem::setDisabled(disabled);
   WApplication::instance()->doJavaScript( "Wt.WT.DisableElectronMenuItem('" + id() + "',"
                                          + string(disabled ? "true" : "false") + ");" );

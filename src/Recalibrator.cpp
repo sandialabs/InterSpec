@@ -226,7 +226,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   //XXX - see notes above about postioning of m_isotopeView
 
   m_fitCoefButton->clicked().connect( boost::bind( &Recalibrator::recalibrateByPeaks, this ) );
-
+  
   m_isotopeView = new RowStretchTreeView();
   m_isotopeView->setRootIsDecorated( false ); //makes the tree look like a table! :)
   
