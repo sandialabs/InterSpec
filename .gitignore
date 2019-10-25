@@ -6,6 +6,15 @@ target/ios/boost*
 target/ios/prefix
 target/ios/wt
 target/ios/libs
+target/ios/build*
+target/android/Boost*
+target/android/InterSpec/app/arm*
+target/android/InterSpec/app/libs
+target/android/InterSpec/app/universal
+target/android/InterSpec/app/x86*
+target/android/InterSpec/app/
+target/android/InterSpec/app/build
+
 *OUO*
 .svn
 .vscode
@@ -19,8 +28,10 @@ XcodeFiles
 node_modules
 build
 build_*
+build-*
 release-builds*
 package-lock.json
+node_modules
 documentation
 testing
 README.txt
