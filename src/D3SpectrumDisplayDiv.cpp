@@ -158,6 +158,7 @@ WT_DECLARE_WT_MEMBER
 
 D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 : WContainerWidget( parent ),
+  m_renderFlags( 0 ),
   m_model( new SpectrumDataModel( this ) ),
   m_peakModel( 0 ),
   m_layoutWidth( 0 ),
@@ -597,6 +598,11 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( renderFull )
     defineJavaScript();
+  
+  if( m_renderFlags.testFlag(UpdateForegroundPeaks) )
+    setForegroundPeaksToClient();
+  
+  m_renderFlags = 0;
 }
 
 
@@ -795,7 +801,7 @@ void D3SpectrumDisplayDiv::setYAxisRange( const double minimum,
 }//void setYAxisRange( const double minimum, const double maximum );
 
 
-void D3SpectrumDisplayDiv::updateForegroundPeaksToClient()
+void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
 {
   string js;
   
@@ -815,7 +821,14 @@ void D3SpectrumDisplayDiv::updateForegroundPeaksToClient()
     doJavaScript( js );
   else
     m_pendingJs.push_back( js );
-}//void updateForegroundPeaksToClient()
+}//void setForegroundPeaksToClient();
+
+void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
+{
+  m_renderFlags |= UpdateForegroundPeaks;
+  
+  scheduleRender();
+}//void scheduleForegroundPeakRedraw()
 
 
 
@@ -1387,7 +1400,6 @@ void D3SpectrumDisplayDiv::removeAllPeaks()
 {
   if ( m_peakModel ) {
     m_peakModel->removeAllPeaks();
-    updateForegroundPeaksToClient();
   }
 }
 
@@ -1623,7 +1635,6 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
           peaks_to_add.push_back( *p );
         
         m_peakModel->addPeaks( peaks_to_add );
-        updateForegroundPeaksToClient();
       }else
       {
         string adjustRoiJson = PeakDef::gaus_peaks_to_json( new_roi_initial_peaks );
@@ -1651,7 +1662,6 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
           peaks_to_add.push_back( *p );
         
         m_peakModel->addPeaks( peaks_to_add );
-        updateForegroundPeaksToClient();
       }else
       {
         string adjustRoiJson = PeakDef::gaus_peaks_to_json( newpeaks );
@@ -1667,8 +1677,6 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       {
         for( auto p : orig_roi_peaks )
           m_peakModel->removePeak( p );
-        
-        updateForegroundPeaksToClient();
       }
     }//if( not narrow region ) / else
   }catch( std::exception &e )

@@ -524,6 +524,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_peakModel  = new PeakModel( this );
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum   = new D3SpectrumDisplayDiv();
+  m_peakModel->dataChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->rowsRemoved().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->rowsInserted().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->layoutChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->modelReset().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
 #else
   m_spectrum   = new SpectrumDisplayDiv();
   m_spectrum->setPlotAreaPadding( 80, 2, 10, 44 );
@@ -1599,9 +1604,6 @@ void InterSpec::refitPeakFromRightClick()
         fixedPeaks.push_back( *result[i] );
       std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
       m_peakModel->setPeaks( fixedPeaks );
-#if ( USE_SPECTRUM_CHART_D3 )
-      m_spectrum->updateForegroundPeaksToClient();
-#endif
       return;
     }else
     {
@@ -1642,9 +1644,6 @@ void InterSpec::refitPeakFromRightClick()
     m_peakModel->removePeak( peakIndex );
     addPeak( outputPeak[0], false );
   }//if( inputPeak.size() > 1 )
-#if ( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateForegroundPeaksToClient();
-#endif
 }//void refitPeakFromRightClick()
 
 
@@ -1834,10 +1833,6 @@ void InterSpec::addPeakFromRightClick()
     const bool isNew = !new_to_orig_peaks.count(answer[i]);
     InterSpec::addPeak( *answer[i], isNew );
   }
-  
-#if ( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateForegroundPeaksToClient();
-#endif
 }//void addPeakFromRightClick()
 
 
@@ -1870,9 +1865,6 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
   
   m_peakModel->removePeak( peak );
   addPeak( newpeak, true );
-#if ( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateForegroundPeaksToClient();
-#endif
   
   refitPeakFromRightClick();
   
@@ -2011,10 +2003,6 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
     m_peakModel->removePeak( p );
     addPeak( newpeak, false );
   }//for( PeakModel::PeakShrdPtr &p : leftpeaks )
-  
-#if ( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateForegroundPeaksToClient();
-#endif
 
 //Instead of the more computationally expensive stuff (lots of signals get
 //  emmitted, tables re-rendered, and charts re-drawn - although hopefully
@@ -2048,9 +2036,6 @@ void InterSpec::deletePeakFromRightClick()
     if( thispeak == peak )
     {
       m_peakModel->removePeak( index );
-#if ( USE_SPECTRUM_CHART_D3 )
-      m_spectrum->updateForegroundPeaksToClient();
-#endif
       return;
     }
   }//for( int peak = 0; peak < npeak; ++peak )
@@ -2576,25 +2561,11 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
   if( fabs(peak.mean())<0.1 && fabs(peak.amplitude())<0.1 )
     return WModelIndex();
   
-  if( !m_referencePhotopeakLines || !associateShowingNuclideXrayRctn ) {
-#if ( USE_SPECTRUM_CHART_D3 )
-    WModelIndex index = m_peakModel->addNewPeak( peak );
-    m_spectrum->updateForegroundPeaksToClient();
-    return index;
-#else
+  if( !m_referencePhotopeakLines || !associateShowingNuclideXrayRctn )
     return m_peakModel->addNewPeak( peak );
-#endif
-  }
   
-  if( peak.parentNuclide() || peak.xrayElement() || peak.reaction() ) {
-#if ( USE_SPECTRUM_CHART_D3 )
-    WModelIndex index = m_peakModel->addNewPeak( peak );
-    m_spectrum->updateForegroundPeaksToClient();
-    return index;
-#else
+  if( peak.parentNuclide() || peak.xrayElement() || peak.reaction() )
     return m_peakModel->addNewPeak( peak );
-#endif
-  }
   
   const bool showingEscape = showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
   auto foreground = displayedHistogram(kForeground);
@@ -2603,9 +2574,6 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
                          m_colorPeaksBasedOnReferenceLines, showingEscape );
   
   WModelIndex newpeakindex = m_peakModel->addNewPeak( peak );
-#if ( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateForegroundPeaksToClient();
-#endif
   
   PeakModel::PeakShrdPtr newpeak = m_peakModel->peak(newpeakindex);
   try_update_hint_peak( newpeak, m_dataMeasurement, m_displayedSamples );
@@ -9221,7 +9189,6 @@ void InterSpec::searchForSinglePeak( const double x )
   
   
 #if( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateForegroundPeaksToClient();
   //m_spectrum->updateData();
 #endif
 }//void searchForSinglePeak( const double x )
@@ -9238,10 +9205,6 @@ void InterSpec::automatedPeakSearchCompleted()
 {
   if( m_peakInfoDisplay )
     m_peakInfoDisplay->enablePeakSearchButton( true );
-
-#if( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateForegroundPeaksToClient();
-#endif
 }//void automatedPeakSearchCompleted()
 
 
@@ -9434,11 +9397,6 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
       peakn = -1;
     }//if( mean >= x0 && mean <= x1 )
   }//for( loop over peaks )
-  
-#if( USE_SPECTRUM_CHART_D3 )
-  m_spectrum->updateForegroundPeaksToClient();
-#endif
-
   
   const double dof = (nbin + 3*nPeaks + answer[bestchi2][0]->type());
   const double chi2Dof = chi2[bestchi2] / dof;
@@ -9688,7 +9646,6 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   m_peakModel->setPeaks( all_peaks );
 #if( USE_SPECTRUM_CHART_D3 )
   //m_spectrum->updateData();
-  m_spectrum->updateForegroundPeaksToClient();
 #endif
   
 //  m_peakModel->setPeaks( newpeaks );
@@ -9845,9 +9802,6 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
       applock.reset( new WApplication::UpdateLock(app) );
     
     m_peakModel->setPeaks( modifiedPeaks );
-#if( USE_SPECTRUM_CHART_D3 )
-    m_spectrum->updateForegroundPeaksToClient();
-#endif
     
     if( app )
       app->triggerUpdate();

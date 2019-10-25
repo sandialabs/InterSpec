@@ -35,12 +35,6 @@ namespace Wt
 
 /**
  ToDo:
- - Listen to PeakModel::rowsAboutToBeRemoved(), PeakModel::rowsInserted(),
-   PeakModel::dataChanged(), PeakModel::modelReset() to determine if peak
-   information needs to be resent to client, and when it does need to be, mark
-   this with a member variable, call WWidget::scheduleRender(0), and send the
-   data actually in D3SpectrumDisplayDiv::render().  Then get rid of all calls
-   to updateForegroundPeaksToClient().
  - When new foreground/background/secondary histogram is set, should set
    internal flag, call WWidget::scheduleRender(0), and not load the JS/JSON to
    client until D3SpectrumDisplayDiv::render() is called.  Same thing with
@@ -112,7 +106,10 @@ public:
   void updateBackground();
   void updateSecondData();
   
-  void updateForegroundPeaksToClient();
+  /** Schedules the foreground peaks to be re-loaded to the client during the
+   next call to #render (which Wt takes care of calling).
+   */
+  void scheduleForegroundPeakRedraw();
   
   void setForegroundSpectrumColor( const Wt::WColor &color );
   void setBackgroundSpectrumColor( const Wt::WColor &color );
@@ -268,6 +265,7 @@ public:
   void saveChartToPng( const std::string &name );
   
 protected:
+
   void defineJavaScript();
   
   void initUserTools();
@@ -282,10 +280,23 @@ protected:
   /** Sets the highlight regions to client - currently unimplemented. */
   void setHighlightRegionsToClient();
   
+  void setForegroundPeaksToClient();
+  
   //layoutSizeChanged(...): adjusts display binning if necessary
   virtual void layoutSizeChanged ( int width, int height );
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+  
+  /** Flags */
+  enum D3RenderActions
+  {
+    UpdateForegroundPeaks = 0x01
+    
+    //ToDo: upgrade setting forground/background/secondary and maybe a few other
+    //      things to this mechanism.
+  };//enum D3RenderActions
+  
+  Wt::WFlags<D3RenderActions> m_renderFlags;
   
   //ToDo: should eliminate use of SpectrumDataModel in this class
   SpectrumDataModel *m_model;
