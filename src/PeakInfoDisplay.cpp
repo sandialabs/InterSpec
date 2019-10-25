@@ -417,10 +417,6 @@ void PeakInfoDisplay::createNewPeak()
   //  chart doesnt know it needs to be repainted..., if we want to avoid this
   //  we can do something like:
 //  m_spectrumDisplayDiv->refresh();
-  
-#if ( USE_SPECTRUM_CHART_D3 )
-  m_spectrumDisplayDiv->updateForegroundPeaksToClient();
-#endif
 }//void createNewPeak()
 
 
@@ -445,9 +441,6 @@ void PeakInfoDisplay::deleteSelectedPeak()
       {
         m_model->removeRows( row, 1 );
         disablePeakDelete();
-#if ( USE_SPECTRUM_CHART_D3 )
-        m_spectrumDisplayDiv->updateForegroundPeaksToClient();
-#endif
         return;
       }//if( we found the field being edditied
     }//for( loop over columns )

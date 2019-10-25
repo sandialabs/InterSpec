@@ -1565,9 +1565,58 @@ bool PeakModel::setData( const WModelIndex &index,
 
       case kIsotope:
       {
+        const std::string srctxt = txt_val.toUTF8();
         const SetGammaSource result
-                   = setNuclideXrayReaction( new_peak, txt_val.narrow(), 4.0 );
+                   = setNuclideXrayReaction( new_peak, srctxt, 4.0 );
         changedFit |= (result==SourceAndUseChanged);
+        
+        //Lambda to see if any peaks, other than the ignorePeak, that has the
+        //  same nuc/xray/rctn assigned as srcPeak has a color, and if so
+        //  return that color.  If the source has more than one color of peaks
+        //  then dont return a color.
+        auto sameSrcColor = [this]( const PeakDef &srcPeak, const PeakShrdPtr &ignorePeak ) -> WColor {
+          if( !m_peaks || !ignorePeak )
+            return WColor();
+          
+          vector<WColor> src_colors;
+          for( const auto &p : *m_peaks )
+          {
+            if( p
+               && p != ignorePeak
+               && (srcPeak.parentNuclide() || srcPeak.xrayElement() || srcPeak.reaction())
+               && srcPeak.parentNuclide()==p->parentNuclide()
+               && srcPeak.xrayElement()==p->xrayElement()
+               && srcPeak.reaction()==p->reaction()
+               && !p->lineColor().isDefault() )
+            {
+              if( std::find( begin(src_colors), end(src_colors),p->lineColor()) == end(src_colors) )
+                src_colors.push_back( p->lineColor() );
+            }
+          }//for( const auto &p : *m_peaks )
+          
+          return src_colors.size()==1 ? *begin(src_colors) : WColor();
+        };//sameSrcColor lambda
+        
+        
+        if( !new_peak.hasSourceGammaAssigned() && old_peak->hasSourceGammaAssigned()
+            && (result != NoSourceChange)  )
+        {
+          if( old_peak->lineColor() == sameSrcColor(*old_peak,old_peak) )
+            new_peak.setLineColor( WColor() );
+        }else if( (result != NoSourceChange) )
+        {
+          const auto oldsrccolor = sameSrcColor(*old_peak,old_peak);
+          const auto newcolor = sameSrcColor(new_peak,old_peak);
+          
+          //If the old peak had a different color than its source - then dont change the color.
+          //If
+          
+          if( (!oldsrccolor.isDefault() && oldsrccolor==old_peak->lineColor()) || !newcolor.isDefault() )
+          {
+            if( oldsrccolor.isDefault() || old_peak->lineColor().isDefault() || oldsrccolor==old_peak->lineColor() )
+              new_peak.setLineColor( newcolor );
+          }
+        }
         
         break;
       }//case kIsotope:
@@ -1802,7 +1851,7 @@ bool PeakModel::setData( const WModelIndex &index,
         dataChanged().emit( index, index );
     }else
     {
-      dataChanged().emit( index, PeakModel::index(row, kUseForShieldingSourceFit) );
+      dataChanged().emit( index, PeakModel::index(row, kUserLabel) );
     }
 
 
