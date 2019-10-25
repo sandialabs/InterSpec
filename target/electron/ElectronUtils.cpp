@@ -107,18 +107,25 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   //Using a relative path should get us in less trouble than an absolute path
   //  on Windows.  Although havent yet tested (20190902) with network drives and such on Windows.
   //Should check if basedir is a relative or absolut path before this next step
-#warning "Need to check out how this setting basedir for Electron tartget works on WIndows network drives and such"
-  
-  const string cwd = UtilityFunctions::get_working_path();
-  string relbasedir = UtilityFunctions::fs_relative( cwd, basedir );
-  cerr << "cwd='" << cwd << "'" << endl;
-  cerr << "relbasedir='" << relbasedir << "'" << endl;
-  cerr << "userdatadir='" << userdatadir << "'" << endl;
-  if( relbasedir.size() >= strlen(basedir) )
-    relbasedir = basedir;
-  if( relbasedir.empty() )
-    relbasedir = ".";
-  
+//#warning "Need to check out how this setting basedir for Electron tartget works on WIndows network drives and such"
+  string cwd, relbasedir;
+
+  try
+  {
+    cwd = UtilityFunctions::get_working_path();
+    relbasedir = basedir; //UtilityFunctions::fs_relative( cwd, basedir );
+    cerr << "cwd='" << cwd << "'" << endl;
+    cerr << "relbasedir='" << relbasedir << "'" << endl;
+    cerr << "userdatadir='" << userdatadir << "'" << endl;
+    //if( relbasedir.size() >= strlen(basedir) )
+    //  relbasedir = basedir;
+    if( relbasedir.empty() )
+      relbasedir = ".";
+  }catch( std::exception &e )
+  {
+    cerr << "When setting directories to serve, caught: " << e.what() << endl;
+    return -1;
+  }
   
   try
   {
@@ -129,7 +136,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;
-    return -1;
+    return -2;
   }
   
   try
@@ -142,7 +149,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;
-    return -2;
+    return -3;
   }
   
   try
@@ -153,7 +160,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;
-    return -3;
+    return -4;
   }
   
   
@@ -166,7 +173,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;
-    return -4;
+    return -5;
   }
   
   try
@@ -176,7 +183,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;
-    return -5;
+    return -6;
   }
   
   try
@@ -187,7 +194,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;
-    return -6;
+    return -7;
   }
   
   try
@@ -196,7 +203,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;
-    return -7;
+    return -8;
   }
     //ToDo: should look into using '--approot' Wt Argument.
     
@@ -216,7 +223,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   {
     std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"
     << e.what() << std::endl << std::endl;
-    return -8;
+    return -9;
   }
   
   return InterSpecServer::portBeingServedOn();

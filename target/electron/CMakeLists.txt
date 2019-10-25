@@ -16,6 +16,16 @@ endif()
 set( BUILD_AS_ELECTRON_APP ON CACHE BOOL "Set to build Electron target" )
 set( TRY_TO_STATIC_LINK ON CACHE BOOL "Lets statically link everything" )
 
+
+IF(WIN32)
+  set( MSVC_RUNTIME "static" )
+  include( ../../cmake/ConfigureMsvc.txt )
+  configure_msvc_runtime() 
+  set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj -D_SCL_SECURE_NO_WARNINGS /MP /wd4996 /wd4267 /DWINVER=0x0601 /D_WIN32_WINNT=0x0601" )
+    #0x0601==Win7, 0x0501==WinXP
+ENDIF(WIN32)
+
+
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
 
@@ -40,8 +50,6 @@ target_include_directories( ${PROJECT_NAME} PUBLIC
 #CMAKE_INSTALL_PREFIX
 
 install( DIRECTORY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/app/ )
-
-install( DIRECTORY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/app/ )
 install( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../data 
          DESTINATION ${PROJECT_BINARY_DIR}/app/ 
          PATTERN "*OUO*" EXCLUDE
@@ -54,6 +62,10 @@ install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/app/loading.html
         ${CMAKE_CURRENT_SOURCE_DIR}/app/launch_options.json
         DESTINATION ${PROJECT_BINARY_DIR}/app/ 
 )
+
+#Need to get {d3.v3.min.js, c.min.js, SpectrumChartD3.js, SpectrumChartD3.css} and related into InterSpec_resources as well.
+#  SHould be workin, but on Windows it doesnt look like it at the moment.
+
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml
         PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
         DESTINATION ${PROJECT_BINARY_DIR}/app/data/

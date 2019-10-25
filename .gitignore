@@ -2,12 +2,6 @@
 data/sandia.decay.xml
 InterSpec/InterSpec.entitlements
 #target/ios/InterSpec/InterSpec.xcodeproj
-target/electron/app/node_modules
-target/electron/app/data
-target/electron/app/InterSpec_resources
-target/electron/app/example_spectra
-target/electron/app/resources
-target/electron/app/release-builds
 target/ios/boost*
 target/ios/prefix
 target/ios/wt
@@ -20,9 +14,13 @@ target/ios/libs
 .cproject
 .project
 .svnignore
+.bin
 XcodeFiles
+node_modules
 build
 build_*
+release-builds*
+package-lock.json
 documentation
 testing
 README.txt
@@ -57,3 +55,4 @@ xcuserdata/
 *.ipa
 *.dSYM.zip
 *.dSYM
+target/electron/node_modules/.bin/asar
