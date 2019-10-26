@@ -67,6 +67,12 @@ using namespace std;
 
 namespace
 {
+  enum class PeakSelectorWindowReason
+  {
+    PeakSearch,
+    NuclideId
+  };
+  
 class PeakSelectorWindow : public AuxWindow
 {
   InterSpec *m_viewer;
@@ -79,7 +85,7 @@ class PeakSelectorWindow : public AuxWindow
   Wt::Chart::WCartesianChart *m_chart;
   Wt::WStandardItemModel* m_relEffModel;
   
-  const bool m_nuclide_id_only;
+  const PeakSelectorWindowReason m_reason;
   const vector<PeakDef> m_orig_peaks;
   std::shared_ptr<const Measurement> m_data;
   const vector<PeakDef> m_final_peaks;
@@ -104,12 +110,12 @@ class PeakSelectorWindow : public AuxWindow
   
 public:
   PeakSelectorWindow( InterSpec *viewer,
-                      const bool nuclide_id_only,
+                      const PeakSelectorWindowReason reason,
                       const vector<PeakDef> &orig_peaks,
                       std::shared_ptr<const Measurement> data,
                       const vector<PeakDef> &final_peaks,
                       const vector<ReferenceLineInfo> &displayed )
-  : AuxWindow( (nuclide_id_only ? "Confirm Nuclide Assignment" : "Check Peak Search Results" ),
+  : AuxWindow( "Dummy",
                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse) ),
     m_viewer( viewer ),
     m_table( nullptr ),
@@ -119,13 +125,23 @@ public:
     m_chartPanel( nullptr ),
     m_chart( nullptr ),
     m_relEffModel( nullptr ),
-    m_nuclide_id_only( nuclide_id_only ),
+    m_reason( reason ),
     m_orig_peaks( orig_peaks ),
     m_data( data ),
     m_final_peaks( final_peaks ),
     m_displayed(),
     m_cancelOperation( false )
   {
+    switch( m_reason )
+    {
+      case PeakSelectorWindowReason::NuclideId:
+        setWindowTitle( "Confirm Nuclide Assignment" );
+        break;
+      case PeakSelectorWindowReason::PeakSearch:
+        setWindowTitle( "Check Peak Search Results" );
+        break;
+    }//switch( m_reason )
+    
     wApp->useStyleSheet( "InterSpec_resources/PeakSelectorWindow.css" );
     
     for( const auto &d : displayed )
@@ -190,49 +206,61 @@ public:
 
     WText *txt = nullptr;
     
-    if( nuclide_id_only )
+    switch( m_reason )
     {
-      txt = new WText( "Check and fix nuclide assignments.", contents() );
-    }else
-    {
-      if( m_displayed.size() )
-        txt = new WText( "Adjust nuclide assignments, or which peaks to keep.", contents() );
-      else
-        txt = new WText( "Unselect any peaks you would not like to keep.", contents() );
-    }//if( nuclide_id_only ) / else
+      case PeakSelectorWindowReason::PeakSearch:
+        if( m_displayed.size() )
+          txt = new WText( "Adjust nuclide assignments, or which peaks to keep.", contents() );
+        else
+          txt = new WText( "Unselect any peaks you would not like to keep.", contents() );
+        break;
+        
+      case PeakSelectorWindowReason::NuclideId:
+        txt = new WText( "Check and fix nuclide assignments.", contents() );
+        break;
+    }//switch( m_reason )
     
+   
     txt->setInline( false );
     
-    if( !nuclide_id_only && !m_displayed.empty() )
+    switch ( m_reason )
     {
-      bool anyNonAssignedPeaks = false;
-      for( size_t i = 0; !anyNonAssignedPeaks && i < m_old_to_new_peaks.size(); ++i )
-        if( m_old_to_new_peaks[i].second )
-          anyNonAssignedPeaks = !m_old_to_new_peaks[i].second->hasSourceGammaAssigned();
+      case PeakSelectorWindowReason::NuclideId:
+        m_showAllPeaks = new WCheckBox( "Show all peaks", contents() );
+        break;
         
-      if( anyNonAssignedPeaks )
-      {
-        string msg = "Keep only new peaks assigned to ";
-        for( size_t i = 0; i < m_displayed.size(); ++i )
+      case PeakSelectorWindowReason::PeakSearch:
+        if( !m_displayed.empty() )
         {
-          if( i && (i+1)==m_displayed.size() )
-            msg + " or ";
-          else if( i )
-            msg + ", ";
-          msg += m_displayed[i]->labelTxt;
-        }
-        m_keepRefLinePeaksOnly = new WCheckBox( msg, contents() );
-        m_keepRefLinePeaksOnly->setInline( false );
-        m_keepRefLinePeaksOnly->changed().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
-        m_keepRefLinePeaksOnly->setMargin( 10, Wt::Top );
-        m_keepRefLinePeaksOnly->addStyleClass( "KeepRefLinPeaksOnlyCb" );
-      }//if( anyNonAssignedPeaks )
-    }//if( we searched for peaks, and there were reference lines )
+          bool anyNonAssignedPeaks = false;
+          for( size_t i = 0; !anyNonAssignedPeaks && i < m_old_to_new_peaks.size(); ++i )
+            if( m_old_to_new_peaks[i].second )
+              anyNonAssignedPeaks = !m_old_to_new_peaks[i].second->hasSourceGammaAssigned();
+          
+          if( anyNonAssignedPeaks )
+          {
+            string msg = "Keep only new peaks assigned to ";
+            for( size_t i = 0; i < m_displayed.size(); ++i )
+            {
+              if( i && (i+1)==m_displayed.size() )
+                msg + " or ";
+              else if( i )
+                msg + ", ";
+              msg += m_displayed[i]->labelTxt;
+            }
+            m_keepRefLinePeaksOnly = new WCheckBox( msg, contents() );
+            m_keepRefLinePeaksOnly->setInline( false );
+            m_keepRefLinePeaksOnly->changed().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
+            m_keepRefLinePeaksOnly->setMargin( 10, Wt::Top );
+            m_keepRefLinePeaksOnly->addStyleClass( "KeepRefLinPeaksOnlyCb" );
+          }//if( anyNonAssignedPeaks )
+        }//if( we searched for peaks, and there were reference lines )
+        
+        m_showAllPeaks = new WCheckBox( "Show previous peaks too", contents() );
+        break;
+    }//switch ( m_reason )
     
-    if( nuclide_id_only )
-      m_showAllPeaks = new WCheckBox( "Show all peaks", contents() );
-    else
-      m_showAllPeaks = new WCheckBox( "Show previous peaks too", contents() );
+    
     m_showAllPeaks->addStyleClass( "ShowAllPeaksCb" );
     m_showAllPeaks->setInline( false );
     m_showAllPeaks->setChecked( false );
@@ -271,39 +299,43 @@ public:
     //Check if any reference lines are showing, and if not hide columns 2 and 3
     if( displayed.empty() )
     {
-      if( nuclide_id_only )
+      switch( m_reason )
       {
-        //Actually we shouldnt be here!  But lets set indexes rather than handling this potential logic error for now.
-        peakEnergyIndex = 0;
-        origColumnIndex = 1;
-        newColumnIndex  = 2;
-        previewIndex    = 3;
-        keepPeakIndex   = -1;
-      }else
-      {
-        keepPeakIndex   = 0;
-        peakEnergyIndex = 1;
-        previewIndex    = 2;
-        newColumnIndex = origColumnIndex = -1;
-      }
+        case PeakSelectorWindowReason::PeakSearch:
+          keepPeakIndex   = 0;
+          peakEnergyIndex = 1;
+          previewIndex    = 2;
+          newColumnIndex = origColumnIndex = -1;
+          break;
+        case PeakSelectorWindowReason::NuclideId:
+          //Actually we shouldnt be here!  But lets set indexes rather than handling this potential logic error for now.
+          peakEnergyIndex = 0;
+          origColumnIndex = 1;
+          newColumnIndex  = 2;
+          previewIndex    = 3;
+          keepPeakIndex   = -1;
+          break;
+      }//switch( m_reason )
     }else
     {
-      if( nuclide_id_only )
+      switch( m_reason )
       {
-        keepPeakIndex   = -1;
-        peakEnergyIndex = 0;
-        origColumnIndex = 1;
-        newColumnIndex  = 2;
-        previewIndex    = 3;
-      }else
-      {
-        keepPeakIndex   = 0;
-        peakEnergyIndex = 1;
-        origColumnIndex = 2;
-        newColumnIndex  = 3;
-        previewIndex    = 4;
-      }
-    }//if( displayed.empty() ) / else
+        case PeakSelectorWindowReason::PeakSearch:
+          keepPeakIndex   = 0;
+          peakEnergyIndex = 1;
+          origColumnIndex = 2;
+          newColumnIndex  = 3;
+          previewIndex    = 4;
+          break;
+        case PeakSelectorWindowReason::NuclideId:
+          keepPeakIndex   = -1;
+          peakEnergyIndex = 0;
+          origColumnIndex = 1;
+          newColumnIndex  = 2;
+          previewIndex    = 3;
+          break;
+      }//switch( m_reason )
+  }//if( displayed.empty() ) / else
 
     bool anyPrevPeaksHadNucs = false;
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
@@ -372,15 +404,24 @@ public:
         row->hide();
       }
       
-      if( !nuclide_id_only && (keepPeakIndex>=0) )
+      switch( m_reason )
       {
-        WTableCell *cbcell = m_table->elementAt( table_row, keepPeakIndex );
-        cbcell->addStyleClass( "KeepPeakCell" );
-        WCheckBox *cb = new WCheckBox( "Keep Peak", cbcell );
-        cb->setChecked(true);
-        cb->changed().connect( this, &PeakSelectorWindow::keepPeakChanged );
-        m_keep_peak_cbs[i] = cb;
-      }
+        case PeakSelectorWindowReason::PeakSearch:
+          if( (keepPeakIndex>=0) )
+          {
+            WTableCell *cbcell = m_table->elementAt( table_row, keepPeakIndex );
+            cbcell->addStyleClass( "KeepPeakCell" );
+            WCheckBox *cb = new WCheckBox( "Keep Peak", cbcell );
+            cb->setChecked(true);
+            cb->changed().connect( this, &PeakSelectorWindow::keepPeakChanged );
+            m_keep_peak_cbs[i] = cb;
+          }
+          break;
+          
+        case PeakSelectorWindowReason::NuclideId:
+          break;
+      }//switch( m_reason )
+
       
       if( origColumnIndex >= 0 )
       {
@@ -431,13 +472,22 @@ public:
     
     populateNuclideSelects();
     
-    if( nuclide_id_only && !some_nuclides_changed )
+    switch( m_reason )
     {
-      txt = new WText( "<strong>No nuclides changed</strong>", contents() );
-      txt->setPadding( 10, Wt::Top | Wt::Bottom );
-      txt->setTextAlignment( Wt::AlignmentFlag::AlignCenter );
-      txt->setInline( false );
-    }
+      case PeakSelectorWindowReason::PeakSearch:
+        break;
+        
+      case PeakSelectorWindowReason::NuclideId:
+        if( some_nuclides_changed )
+        {
+          txt = new WText( "<strong>No nuclides changed</strong>", contents() );
+          txt->setPadding( 10, Wt::Top | Wt::Bottom );
+          txt->setTextAlignment( Wt::AlignmentFlag::AlignCenter );
+          txt->setInline( false );
+        }
+        break;
+    }//switch( m_reason )
+
     
     keepPeakChanged();
     refreshRelEffChart();
@@ -1110,13 +1160,17 @@ public:
       //  peak did not have any source identified, then dont identify a source
       //  for the new peak either.  If the old peak did have a source, then that
       //  would not have been changed by the ID part of the search anyway.
-      if( !m_nuclide_id_only
-         && oldpeak
-         && !oldpeak->parentNuclide()
-         && !oldpeak->xrayElement()
-         && !oldpeak->reaction() )
-        p->clearSources();
-      
+      switch( m_reason )
+      {
+        case PeakSelectorWindowReason::PeakSearch:
+          if( oldpeak && !oldpeak->hasSourceGammaAssigned() )
+            p->clearSources();
+          break;
+          
+        case PeakSelectorWindowReason::NuclideId:
+          break;
+      }//switch( m_reason )
+
       
       //We'll sort the select by distance away from current nuclide, or peak mean
       //  - will probably miss some weird edgecase, but what ever for the moment.
@@ -1722,7 +1776,7 @@ void set_peaks_from_search( InterSpec *viewer,
   for( const auto &p : filtered_peaks )
     result_peaks.push_back( *p );
   
-  new PeakSelectorWindow( viewer, false, originalPeaks, originaldata, result_peaks, displayed );
+  new PeakSelectorWindow( viewer, PeakSelectorWindowReason::PeakSearch, originalPeaks, originaldata, result_peaks, displayed );
   
   wApp->triggerUpdate();
 }//void set_peaks_from_search( const vector<PeakDef> &peaks )
@@ -2028,7 +2082,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   
   peakModel->setPeaks( result_peaks );
 
-  new PeakSelectorWindow( viewer, true, orig_peaks, foreground, result_peaks, displayed );
+  new PeakSelectorWindow( viewer, PeakSelectorWindowReason::NuclideId, orig_peaks, foreground, result_peaks, displayed );
   
   wApp->triggerUpdate();
 }//void assign_peak_nuclides_from_reference_lines()
@@ -2200,5 +2254,23 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
   for( auto &p : *answerpeaks )
     resultpeaks->push_back( p );
 }//void assign_srcs_from_ref_lines(...)
+  
+  
+void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const Measurement> data, std::vector<PeakDef> &&input_peaks )
+{
+  const bool isRefit = true;
+  std::vector<PeakDef> orig_peaks;
+  const double x0 = data->gamma_energy_min();
+  const double x1 = data->gamma_energy_max();
+  const double ncausalitysigma = 0.0;
+  const double stat_threshold  = 0.0;
+  const double hypothesis_threshold = 0.0;
+  
+  vector<PeakDef> fitpeaks = fitPeaksInRange( x0, x1, ncausalitysigma,
+                                             stat_threshold, hypothesis_threshold,
+                                             input_peaks, data, orig_peaks, isRefit );
+  vector<ReferenceLineInfo> reflines;
+  new PeakSelectorWindow( interspec, PeakSelectorWindowReason::NuclideId, orig_peaks, data, fitpeaks, reflines );
+}//fit_template_peaks( ... )
   
 }//namespace PeakSearchGuiUtils

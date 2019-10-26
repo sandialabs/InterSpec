@@ -2056,15 +2056,6 @@ void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
     return;
   }//if( !peak || nuclide.empty() || !db )
   
-  
-//  enum SetGammaSource{ NoSourceChange, SourceChange, SourceAndUseChanged };
-//  static SetGammaSource setNuclideXrayReaction( PeakDef &peak, std::string txt,
-//                                               const double nsigma_window );
-  
-//  const SandiaDecay::Nuclide *nuc = db->nuclide( nuclide );
-//  if( !nuc )
-//    return;
-  
   WModelIndex index = m_peakModel->indexOfPeak( peak );
   if( !index.isValid() )
   {
@@ -2076,6 +2067,28 @@ void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
   index = m_peakModel->index( index.row(), PeakModel::kIsotope );
   
   m_peakModel->setData( index, boost::any(WString(nuclide)) );
+  
+  const PeakModel::PeakShrdPtr &p = m_peakModel->peak(index);
+  
+  //Reactions not implemented yet.
+  if( !p || !p->hasSourceGammaAssigned() || p->reaction() )
+    return;
+  
+  //Check if source is same as showing reference line, if so, set peak color to that.
+  //ToDo: implement this if the user types into the Peak Manager.
+  vector<ReferenceLineInfo> refLines;
+  if( m_referencePhotopeakLines )
+    refLines = m_referencePhotopeakLines->showingNuclides();
+  for( const auto &lines : refLines )
+  {
+    if( (lines.nuclide || lines.element )
+       && lines.nuclide==p->parentNuclide()
+       && lines.element==p->xrayElement() )
+    {
+      index = m_peakModel->index( index.row(), PeakModel::kPeakLineColor );
+      m_peakModel->setData( index, boost::any(WString(lines.lineColor.cssText())) );
+    }
+  }//for( const auto &lines : refLines )
 }//void setPeakNuclide(...)
 
 
@@ -6327,18 +6340,34 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 
   if (!isMobile())
   {
-      WCheckBox* checkbox = new WCheckBox( " Instant tooltips" );
+    WCheckBox* checkbox = new WCheckBox( " Instant tooltips" );
     
-      InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this, false );
-      item = subPopup->addWidget( checkbox );
-      HelpSystem::attachToolTipOn( item,
-            "Instant tooltips show up immediately and is helpful for beginners "
-            "to understand how to use InterSpec.  Advanced users are recommended"
-            " to turn this off, causing tooltips to show only after a 1 second"
-                              " delay." , true, HelpSystem::Right, HelpSystem::AlwaysShow );
-      checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
-      checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
+    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this, false );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item,
+                                "Instant tooltips show up immediately and is helpful for beginners "
+                                "to understand how to use InterSpec.  Advanced users are recommended"
+                                " to turn this off, causing tooltips to show only after a 1 second"
+                                " delay." , true, HelpSystem::Right, HelpSystem::CanDelayShowing );
+    checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
+    checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
   } //!isMobile()
+  
+  {//begin add "AskPropagatePeaks" to menu
+    WCheckBox* checkbox = new WCheckBox( " Ask to Propagate Peaks" );
+    
+    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this, false );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item,
+                                 "When loading spectra from the same detector,"
+                                 " ask if should re-fit the same peaks for the"
+                                 " new spectrum.  Only applies if new spectrum"
+                                 " doesnt have any peaks, but previous"
+                                 " foreground did.",
+                                 true, HelpSystem::Right, HelpSystem::CanDelayShowing );
+    checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
+    checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
+  }//end add "AskPropagatePeaks" to menu
   
     //High Bandwidth interactions
 #if( USE_HIGH_BANDWIDTH_INTERACTIONS && !USE_SPECTRUM_CHART_D3 )
@@ -8115,6 +8144,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//if( meas )
   
   std::shared_ptr<SpecMeas> previous = measurment(spec_type);
+  const set<int> prevsamples = displayedSamples(spec_type);
   const bool sameSpec = (meas==previous);
   std::shared_ptr<const Measurement> prev_display = m_spectrum->histUsedForXAxis();
   
@@ -8351,6 +8381,37 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   };//switch( spec_type )
   
   
+  const bool askToPropigatePeaks
+             = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
+  if( askToPropigatePeaks && checkForPrevioudEnergyCalib
+     && !sameSpec && meas && m_dataMeasurement && previous && m_spectrum->data()
+     && spec_type==kForeground
+     && previous->instrument_id()==meas->instrument_id()
+     && previous->num_gamma_channels()==meas->num_gamma_channels() )
+  {
+    
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> prevpeak, currpeaks;
+    
+    //Call const version of peaks so a new deque wont be created if it doesnt exist.
+    prevpeak = std::const_pointer_cast<const SpecMeas>(previous)->peaks(prevsamples);
+    currpeaks = std::const_pointer_cast<const SpecMeas>(m_dataMeasurement)->peaks(m_displayedSamples);
+    
+    if( prevpeak && !prevpeak->empty() && (!currpeaks || currpeaks->empty()) )
+    {
+      std::vector<PeakDef> input_peaks;
+      for( const auto &p : *prevpeak )
+      {
+        if( p )  //Shouldnt be necassary, but JIC
+          input_peaks.push_back( *p );
+      }
+      
+      std::shared_ptr<const Measurement> data = m_spectrum->data();
+      PeakSearchGuiUtils::fit_template_peaks( this, data, std::move(input_peaks) );
+    }//
+  }//if( should propogate peaks )
+  
+  
+  
   deletePreserveCalibWindow();
   
   if( checkForPrevioudEnergyCalib && !sameSpec && m_recalibrator && !!meas && !!m_dataMeasurement )
@@ -8375,7 +8436,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( m_preserveCalibWindow )
       m_preserveCalibWindow->finished().connect( this, &InterSpec::deletePreserveCalibWindow );
   }//if( !sameSpec && m_recalibrator && !!meas )
-  
   
   switch( spec_type )
   {
