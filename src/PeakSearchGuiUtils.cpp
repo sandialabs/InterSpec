@@ -67,13 +67,40 @@ using namespace std;
 
 namespace
 {
+  /** The user action that caused a PeakSelectorWindow to be made.
+   This influences how things are presented to the user.
+   */
   enum class PeakSelectorWindowReason
   {
+    /** User hit the "Search For Peaks" button in the Peak Manager */
     PeakSearch,
+    
+    /** User hit the "Nuc. from Ref." button in the Peak Manager */
     NuclideId,
+    
+    /** User loaded a new spectrum from same detector as last one, and had the
+     "Ask to Propagate Peaks" option selected.
+     
+     In this case the 'orig_peaks' passed into the window constructor are the
+     candidate peaks to try and fit for.
+     */
     PeaksFromPreviousSpectum,
-  };
+    
+    /** User updloaded a peaks CSV file.
+     */
+    PeaksFromCsvFile,
+  };//enum class PeakSelectorWindowReason
   
+  
+/** Class representing a dialog that allows the user to select which peaks to
+ keep, or nuclides to assign to a peak after an automated peak fitting, nuclide
+ ID, or peak propagation function.
+ 
+ Currently this window can be triggered from four different user actions,
+ leading to a base of four different ways to display things (there are also some
+ dynamic display changes based on data and results), which adds some complexity,
+ but maybe at the moment this is more manageable than breakign this class up...
+ */
 class PeakSelectorWindow : public AuxWindow
 {
   InterSpec *m_viewer;
@@ -110,11 +137,19 @@ class PeakSelectorWindow : public AuxWindow
   bool m_cancelOperation;
   
 public:
-  /**
+  /** PeakSelectorWindow constructor.
    
-   @param orig_peaks For reasons of PeakSearch and NuclideId, these are the
-          peaks that existed before the fit.  For PeaksFromPreviousSpectum,
-          these are the peaks that were fed into the fitter
+   @param viewer The InterSpec instance to create this dialog for.
+   @param reason The source of the user action that triggered making this dialog.
+   @param orig_peaks For reasons of PeakSearch, NuclideId, and PeaksFromCsvFile,
+          these are the peaks that existed before the fit.
+          For PeaksFromPreviousSpectum, these are the peaks that were fed into
+          the fitter.
+   @param data The gamma spectrum the peaks are for.
+   @param final_peaks All peaks; both previously existing and fit for.
+   @param displayed The displayed reference lines.  If provided will add user
+          option to the GUI to keep only peaks assigned to one of the reference
+          lines.
    */
   PeakSelectorWindow( InterSpec *viewer,
                       const PeakSelectorWindowReason reason,
@@ -151,6 +186,9 @@ public:
         break;
       case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
         setWindowTitle( "Peaks to Keep from Previous Spectrum" );
+        break;
+      case PeakSelectorWindowReason::PeaksFromCsvFile:
+        setWindowTitle( "Peaks to import from CSV" );
         break;
     }//switch( m_reason )
     
@@ -230,6 +268,7 @@ public:
         break;
         
       case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+      case PeakSelectorWindowReason::PeaksFromCsvFile:
         txt = new WText( "Select peaks peaks you would like to keep.", contents() );
         break;
     }//switch( m_reason )
@@ -237,13 +276,14 @@ public:
    
     txt->setInline( false );
     
-    switch ( m_reason )
+    switch( m_reason )
     {
       case PeakSelectorWindowReason::NuclideId:
         m_showAllPeaks = new WCheckBox( "Show all peaks", contents() );
         break;
         
       case PeakSelectorWindowReason::PeakSearch:
+      case PeakSelectorWindowReason::PeaksFromCsvFile:
       {
         if( !m_displayed.empty() )
         {
@@ -311,6 +351,7 @@ public:
       {
         case PeakSelectorWindowReason::NuclideId:
         case PeakSelectorWindowReason::PeakSearch:
+        case PeakSelectorWindowReason::PeaksFromCsvFile:
           break;
           
         case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
@@ -354,6 +395,7 @@ public:
           break;
           
         case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        case PeakSelectorWindowReason::PeaksFromCsvFile:
           keepPeakIndex   = 0;
           peakEnergyIndex = 1;
           origColumnIndex = -1;
@@ -382,6 +424,7 @@ public:
         break;
           
         case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        case PeakSelectorWindowReason::PeaksFromCsvFile:
           //Actually we shouldnt be here!  But lets set indexes rather than handling this potential logic error for now.
           keepPeakIndex   = 0;
           peakEnergyIndex = 1;
@@ -491,7 +534,9 @@ public:
         WTableCell *newNucCell = m_table->elementAt( table_row, newColumnIndex );
         newNucCell->addStyleClass( "NewNucCell" );
         
-        if( has_changed && m_reason!=PeakSelectorWindowReason::PeaksFromPreviousSpectum)
+        if( has_changed
+            && m_reason!=PeakSelectorWindowReason::PeaksFromPreviousSpectum
+            && m_reason!=PeakSelectorWindowReason::PeaksFromCsvFile )
         {
           m_nuc_select_combos[i] = new WComboBox(newNucCell);
           m_nuc_select_combos[i]->changed().connect( boost::bind( &PeakSelectorWindow::nucSelectChanged, this, i ) );
@@ -533,6 +578,7 @@ public:
     {
       case PeakSelectorWindowReason::PeakSearch:
       case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+      case PeakSelectorWindowReason::PeaksFromCsvFile:
         break;
         
       case PeakSelectorWindowReason::NuclideId:
@@ -1257,6 +1303,9 @@ public:
           
         case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
           break;
+          
+        case PeakSelectorWindowReason::PeaksFromCsvFile:
+          break;
       }//switch( m_reason )
 
       
@@ -1379,7 +1428,6 @@ public:
         }
       }//for( auto iter = begin(distToDescs); iter != end(distToDescs); ++iter )
       
-      
       m_nuc_select_combos[i]->setCurrentIndex( std::max(0, currentitem) );
     }//for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
   }//void populateNuclideSelects()
@@ -1407,7 +1455,11 @@ public:
       }
       
       if( m_keep_peak_cbs[i] && !m_keep_peak_cbs[i]->isChecked() )
+      {
         m_old_to_new_peaks[i].second.reset();
+        if( m_reason == PeakSelectorWindowReason::PeaksFromCsvFile )
+          m_old_to_new_peaks[i].first.reset();
+      }
     }//for( size_t i = 0; i < peaks.size(); ++i )
     
     auto peakModel = m_viewer->peakModel();
@@ -1416,10 +1468,28 @@ public:
       vector<PeakDef> final_peaks;
       for( const auto &i : m_old_to_new_peaks )
       {
-        if( i.second && !m_cancelOperation )
-          final_peaks.push_back( *i.second );
-        else if( i.first && m_reason!=PeakSelectorWindowReason::PeaksFromPreviousSpectum )
-          final_peaks.push_back( *i.first );
+        switch( m_reason )
+        {
+          case PeakSelectorWindowReason::NuclideId:
+          case PeakSelectorWindowReason::PeakSearch:
+            if( i.second && !m_cancelOperation )
+              final_peaks.push_back( *i.second );
+            else if( i.first )
+              final_peaks.push_back( *i.first );
+          break;
+          
+          case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+            if( i.second && !m_cancelOperation )
+              final_peaks.push_back( *i.second );
+          break;
+            
+          case PeakSelectorWindowReason::PeaksFromCsvFile:
+            if( i.first )
+              final_peaks.push_back( *i.first );
+            else if( i.second && !m_cancelOperation )
+              final_peaks.push_back( *i.second );
+          break;
+        }//switch( m_reason )
       }//for( const auto &i : m_old_to_new_peaks )
       
       peakModel->setPeaks( final_peaks );
@@ -1864,7 +1934,8 @@ void set_peaks_from_search( InterSpec *viewer,
   for( const auto &p : filtered_peaks )
     result_peaks.push_back( *p );
   
-  new PeakSelectorWindow( viewer, PeakSelectorWindowReason::PeakSearch, originalPeaks, originaldata, result_peaks, displayed );
+  new PeakSelectorWindow( viewer, PeakSelectorWindowReason::PeakSearch, originalPeaks,
+                          originaldata, result_peaks, displayed );
   
   wApp->triggerUpdate();
 }//void set_peaks_from_search( const vector<PeakDef> &peaks )
@@ -2170,7 +2241,8 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   
   peakModel->setPeaks( result_peaks );
 
-  new PeakSelectorWindow( viewer, PeakSelectorWindowReason::NuclideId, orig_peaks, foreground, result_peaks, displayed );
+  new PeakSelectorWindow( viewer, PeakSelectorWindowReason::NuclideId, orig_peaks,
+                          foreground, result_peaks, displayed );
   
   wApp->triggerUpdate();
 }//void assign_peak_nuclides_from_reference_lines()
@@ -2346,10 +2418,61 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
   
 void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const Measurement> data,
                          std::vector<PeakDef> input_peaks,
+                         std::vector<PeakDef> orig_peaks,
                          const PeakTemplateFitSrc fitsrc, const string sessionid )
 {
+  if( !data )
+  {
+    cerr << "fit_template_peaks: data is invalid!" << endl; //prob shouldnt ever happen
+    return;
+  }
+  
+  vector<PeakDef> candidate_peaks, data_def_peaks;
+  
+  //The input continuum and peak area could be WAY off from current spectrum,
+  // so estimate some sane starting values for them
+  for( PeakDef peak : input_peaks )
+  {
+    if( !peak.gausPeak() )
+    {
+      auto externalcont = peak.continuum()->externalContinuum();
+      
+      //Update peak area for new data.  I dont think anything else needs updating
+      //  (but not 100% sure ATM)
+      double peak_area = data->gamma_integral( peak.lowerX(), peak.upperX() );
+      if( externalcont )
+        peak_area -= externalcont->gamma_integral( peak.lowerX(), peak.upperX() );
+      peak.setPeakArea( peak_area );
+      
+      data_def_peaks.push_back( peak );
+      continue;
+    }//if( !peak.gausPeak() )
+    
+    
+    //If the template peak is the same as an already existing peak - skip it
+    bool already_has = false;
+    const double centroid = peak.mean();
+    for( const PeakDef &p : orig_peaks )
+      already_has = (already_has || (fabs(p.mean() - centroid) < 1.5*p.sigma()));
+    if( already_has )
+      continue;
+    
+    const PeakContinuum::OffsetType type = peak.continuum()->type();
+    peak.continuum()->calc_linear_continuum_eqn( data, peak.lowerX(), peak.upperX(), 1 );
+    peak.continuum()->setType( type );
+    
+    const double lowerx = std::max( peak.lowerX(), peak.mean() - 3*peak.sigma() );
+    const double upperx = std::min( peak.upperX(), peak.mean() + 3*peak.sigma() );
+    const double dataarea = data->gamma_integral( lowerx, upperx );
+    const double contarea = peak.continuum()->offset_integral( lowerx, upperx );
+    const double peakarea = (dataarea > contarea) ? (dataarea - contarea) : 10.0;
+    peak.setPeakArea( peakarea );
+    
+    candidate_peaks.push_back( peak );
+  }//for( auto &peak : input_peaks )
+  
+  
   const bool isRefit = true;
-  std::vector<PeakDef> orig_peaks;
   const double x0 = data->gamma_energy_min();
   const double x1 = data->gamma_energy_max();
   const double ncausalitysigma = 0.0;
@@ -2358,18 +2481,38 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const Measurement
   
   vector<PeakDef> fitpeaks = fitPeaksInRange( x0, x1, ncausalitysigma,
                                              stat_threshold, hypothesis_threshold,
-                                             input_peaks, data, orig_peaks, isRefit );
+                                             candidate_peaks, data, orig_peaks, isRefit );
+  
+  //Add back in data_def_peaks and orig_peaks.
+  fitpeaks.insert( end(fitpeaks), begin(data_def_peaks), end(data_def_peaks) );
+  fitpeaks.insert( end(fitpeaks), begin(orig_peaks), end(orig_peaks) );
+  
+  //Make sure peaks are sorted, for good measure
+  std::sort( begin(fitpeaks), end(fitpeaks), &PeakDef::lessThanByMean );
+  
   WServer::instance()->post( sessionid, [=](){
     
     //Check if a new spectrum has been loaded while the peaks were being fit.
     //  If so, dont try to propogate the fit peaks.
     if( !wApp || (interspec->displayedHistogram(kForeground) != data) )
       return;
-      
-    vector<ReferenceLineInfo> reflines;
-    new PeakSelectorWindow( interspec, PeakSelectorWindowReason::PeaksFromPreviousSpectum,
-                            input_peaks, data, fitpeaks, reflines );
     
+    vector<ReferenceLineInfo> reflines;
+    
+    PeakSelectorWindowReason reason;
+    switch( fitsrc )
+    {
+      case PeakTemplateFitSrc::CsvFile:
+        reason = PeakSelectorWindowReason::PeaksFromCsvFile;
+        new PeakSelectorWindow( interspec, reason, orig_peaks, data, fitpeaks, reflines );
+        break;
+        
+      case PeakTemplateFitSrc::PreviousSpectrum:
+        reason = PeakSelectorWindowReason::PeaksFromPreviousSpectum;
+        new PeakSelectorWindow( interspec, reason, input_peaks, data, fitpeaks, reflines );
+        break;
+    }//switch( fitsrc )
+
     wApp->triggerUpdate();
   } );
 }//fit_template_peaks( ... )

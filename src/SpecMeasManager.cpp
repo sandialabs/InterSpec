@@ -1429,13 +1429,14 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   {
     try
     {
+      const vector<PeakDef> orig_peaks = m_viewer->peakModel()->peakVec();
       const vector<PeakDef> candidate_peaks
                       = PeakModel::csv_to_candidate_fit_peaks(currdata, infile);
       
       const std::string seessionid = wApp->sessionId();
       Wt::WServer::instance()->ioService().post( std::bind( [=](){
         PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
-                  PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
+                  orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
       } ) );
       
       delete w;

@@ -129,15 +129,42 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
                                  const bool setColor,
                                 const bool showingEscapePeakFeature );
   
+  
+/** Enum to tell #fit_template_peaks where the candidate peaks to fit are
+   comming from.  This info will be propagated through to the GUI and influence
+   what the user can do and see.
+ */
 enum class PeakTemplateFitSrc
 {
   PreviousSpectrum,
   CsvFile
 };//enum class PeakTemplateFitSrc
   
+  
+/** Fits the template peaks to the passed in data, and then will open a dialog
+  to allow the user to select what peaks they want to keep.
+ 
+ @param interspec Application instance this work is being performed for.
+ @param data The gamma spectrum to fit the peaks to.  Must be valid spectrum.
+ @param template_peaks Candidate peaks to fit.  The peak continuum and amplitude
+        will be estimated based off of the data before fitting incase they are
+        way off.  The continuum order, source nuclide, color, ROI extent, etc.,
+        will all be directly preserved.  The FWHM will be fit for within some
+        small range (so input peaks should be reasonably close), the amplitude
+        and continuum coefficients will be freely fit for.
+ @param original_peaks The original peaks in the spectrum.  These wont be
+        altered.  These are the peaks in the spectrum before fitting for the
+        template peaks.
+ @param fitsrc The source of the template peaks.  Either from a previous
+        spectrum or a peak CSV file.  Effects how results are displayed.
+ @param sessionid The WApplication session ID to post to, to display results.
+ 
+ As of 20191028 not particularly well tested.
+ */
 void fit_template_peaks( InterSpec *interspec,
                          std::shared_ptr<const Measurement> data,
                          std::vector<PeakDef> template_peaks,
+                         std::vector<PeakDef> original_peaks,
                          const PeakTemplateFitSrc fitsrc,
                          const std::string sessionid );
   

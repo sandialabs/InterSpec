@@ -205,23 +205,13 @@ bool PeakModel::recomendUseForFit( const SandiaDecay::Nuclide *nuc,
 }//recomendUseForFit( const SandiaDecay::Nuclide *nuc )
 
 
-PeakModel::PeakCsvResource::PeakCsvResource( PeakModel *parent )
-  : WResource( parent ),
-    m_model( parent )
-{
-}
-
-
-PeakModel::PeakCsvResource::~PeakCsvResource()
-{
-  beingDeleted();
-}
-
-
 std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
-                                        std::shared_ptr<const Measurement> meas,
-                                        std::istream &csv )
+                                      std::shared_ptr<const Measurement> meas,
+                                      std::istream &csv )
 {
+  //Info that will be parsed is based on PeakModel::PeakCsvResource::handleRequest(...)
+  //  with a few small accommodations for how other programs may save peak CSVs.
+  
   using UtilityFunctions::trim_copy;
   using UtilityFunctions::to_lower_copy;
   
@@ -248,10 +238,11 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   if( line.empty() || !csv )
     throw runtime_error( "Failed to get first line" );
   
-  //Mapping of header names to field positions.
-  //  Garunteed to exist and be >= 0: "Centroid", "Net_Area", "FWHM"
-  //  Garunteed to exist, but may be -1: "Nuclide", "Photopeak_Energy", "ROI_Lower_Energy", "ROI_Upper_Energy"
-  std::map<std::string,int> field_pos;
+  //Columns garunteed to be in file, or we'll throw an exception.
+  int mean_index = -1, area_index = -1, fwhm_index = -1;
+  
+  //Columns that may or not be in file, in whcih case will be >= 0.
+  int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1;
   
   {//begin to get field_pos
     vector<string> headers;
@@ -270,44 +261,29 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     
     if( centroid_pos == end(headers) )
       throw runtime_error( "Header did not contain 'Centroid'" );
-    field_pos["Centroid"] = static_cast<int>( centroid_pos - begin(headers) );
+    mean_index = static_cast<int>( centroid_pos - begin(headers) );
     
     if( net_area_pos == end(headers) )
       throw runtime_error( "Header did not contain 'Net_Area'" );
-    field_pos["Net_Area"] = static_cast<int>( net_area_pos - begin(headers) );
+    area_index = static_cast<int>( net_area_pos - begin(headers) );
     
     if( fwhm_pos == end(headers) )
       throw runtime_error( "Header did not contain 'FWHM'" );
-    field_pos["FWHM"] = static_cast<int>( fwhm_pos - begin(headers) );
+    fwhm_index = static_cast<int>( fwhm_pos - begin(headers) );
     
-    if( nuc_pos == end(headers) )
-      field_pos["Nuclide"] = -1;
-    else
-      field_pos["Nuclide"] = static_cast<int>( nuc_pos - begin(headers) );
+    if( nuc_pos != end(headers) )
+      nuc_index = static_cast<int>( nuc_pos - begin(headers) );
     
-    if( nuc_energy_pos == end(headers) )
-      field_pos["Photopeak_Energy"] = -1;
-    else
-      field_pos["Photopeak_Energy"] = static_cast<int>( nuc_energy_pos - begin(headers) );
+    if( nuc_energy_pos != end(headers) )
+      nuc_energy_index = static_cast<int>( nuc_energy_pos - begin(headers) );
     
-    if( roi_start_pos == end(headers) )
-      field_pos["ROI_Lower_Energy"] = -1;
-    else
-      field_pos["ROI_Lower_Energy"] = static_cast<int>( roi_start_pos - begin(headers) );
+    if( roi_start_pos != end(headers) )
+      roi_lower_index = static_cast<int>( roi_start_pos - begin(headers) );
     
-    if( roi_end_pos == end(headers) )
-      field_pos["ROI_Upper_Energy"] = -1;
-    else
-      field_pos["ROI_Upper_Energy"] = static_cast<int>( roi_end_pos - begin(headers) );
+    if( roi_end_pos != end(headers) )
+      roi_upper_index = static_cast<int>( roi_end_pos - begin(headers) );
   }//end to get field_pos
   
-  const int mean_index = field_pos["Centroid"];
-  const int area_index = field_pos["Net_Area"];
-  const int fwhm_index = field_pos["FWHM"];
-  const int roi_lower_index = field_pos["ROI_Lower_Energy"];
-  const int roi_upper_index = field_pos["ROI_Upper_Energy"];
-  const int nuc_index = field_pos["Nuclide"];
-  const int nuc_energy_index = field_pos["Photopeak_Energy"];
   
   vector<PeakDef> answer;
   
@@ -316,7 +292,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     UtilityFunctions::trim(line);
     if( line.empty() || line[0]=='#' || (!isnumber(line[0]) && line[0]!='+' && line[0]!='-') )
       continue;
-  
+    
     vector<string> fields;
     Tokeniser t( line, separator );
     for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
@@ -339,7 +315,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
       PeakDef peak( centroid, fwhm/2.35482, area );
       
       if( roi_lower_index >= 0 && roi_lower_index < nfields
-          && roi_upper_index >= 0 && roi_upper_index < nfields )
+         && roi_upper_index >= 0 && roi_upper_index < nfields )
       {
         const float roi_lower = std::max( minenergy, std::stof( fields[roi_lower_index] ) );
         const float roi_upper = std::min( maxenergy, std::stof( fields[roi_upper_index] ) );
@@ -357,15 +333,16 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
         peak.continuum()->calc_linear_continuum_eqn( meas, lowerEnengy, upperEnergy, 1 );
       }//if( CSV five ROI extent ) / else( find from data )
       
+      
       if( nuc_index >= 0 && nuc_energy_index >= 0
-          && nuc_index < nfields && nuc_energy_index < nfields
-          && !fields[nuc_index].empty() && !fields[nuc_energy_index].empty() )
+         && nuc_index < nfields && nuc_energy_index < nfields
+         && !fields[nuc_index].empty() && !fields[nuc_energy_index].empty() )
       {
         const string nuctxt = fields[nuc_index] + " " + fields[nuc_energy_index] + " keV";
         const SetGammaSource result = setNuclideXrayReaction( peak, nuctxt, 4.0 );
         if( result == SetGammaSource::NoSourceChange )
           cerr << "csv_to_candidate_fit_peaks: could not assign src txt '"
-               << nuctxt << "' as a nuc/xray/rctn" << endl;
+          << nuctxt << "' as a nuc/xray/rctn" << endl;
       }//if( nuc_index >= 0 || nuc_energy_index >= 0 )
       
       //Go through existing peaks and if the new peak should share a ROI, do that here
@@ -376,16 +353,20 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
           if( !p.continuum()->energyRangeDefined() )
             continue;
           if( fabs(p.continuum()->lowerEnergy() - peak.continuum()->lowerEnergy()) < 0.0001
-              && fabs(p.continuum()->upperEnergy()-peak.continuum()->upperEnergy()) < 0.0001 )
+             && fabs(p.continuum()->upperEnergy() - peak.continuum()->upperEnergy()) < 0.0001 )
+          {
             peak.setContinuum( p.continuum() );
-        }
+            //ToDo: determine if we need to make the continuum quadratic or higher...
+            //peak.setType( OffsetType::Quardratic );
+          }//if( ROI bounds are about same as another continuum )
+        }//for( loop over peaks previously found to see if we should share continuum )
       }//if( new peak has a defined energy range )
       
       answer.push_back( peak );
     }catch( std::exception &e )
     {
       throw runtime_error( "Invalid value on line '" + line + "', " + string(e.what()) );
-    }
+    }//try / catch to parse a line into a peak
   }//while( UtilityFunctions::safe_get_line(csv, line, 2048) )
   
   
@@ -396,10 +377,25 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
 }//csv_to_candidate_fit_peaks(...)
 
 
+PeakModel::PeakCsvResource::PeakCsvResource( PeakModel *parent )
+  : WResource( parent ),
+    m_model( parent )
+{
+}
+
+
+PeakModel::PeakCsvResource::~PeakCsvResource()
+{
+  beingDeleted();
+}
+
 
 void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*request*/,
                                                 Wt::Http::Response& response )
 {
+  //If you update the fields or headers of this function, you should also update
+  //  PeakModel::csv_to_candidate_fit_peaks(...)
+  
   std::shared_ptr<SpecMeas> meas = m_model->m_measurment.lock();
   string filename = "peaks.CSV", specfilename = "Unknown";
   if( meas && !meas->filename().empty() )
