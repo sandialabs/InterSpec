@@ -42,6 +42,7 @@
 
 #include <boost/any.hpp>
 #include <boost/regex.hpp>
+#include <boost/tokenizer.hpp>
 
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -215,6 +216,184 @@ PeakModel::PeakCsvResource::~PeakCsvResource()
 {
   beingDeleted();
 }
+
+
+std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
+                                        std::shared_ptr<const Measurement> meas,
+                                        std::istream &csv )
+{
+  using UtilityFunctions::trim_copy;
+  using UtilityFunctions::to_lower_copy;
+  
+  typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
+  boost::escaped_list_separator<char> separator("\\",",\t", "\"");
+  
+  if( !meas || !meas->gamma_counts() || meas->gamma_counts()->size() < 7 )
+    throw runtime_error( "input data invalid" );
+  
+  const float minenergy = meas->gamma_energy_min();
+  const float maxenergy = meas->gamma_energy_max();
+  
+  
+  string line;
+  
+  //Get first non-empty, non-comment ('#') line.
+  while( UtilityFunctions::safe_get_line(csv, line, 2048) )
+  {
+    UtilityFunctions::trim(line);
+    if( !line.empty() && line[0]!='#' )
+      break;
+  }
+  
+  if( line.empty() || !csv )
+    throw runtime_error( "Failed to get first line" );
+  
+  //Mapping of header names to field positions.
+  //  Garunteed to exist and be >= 0: "Centroid", "Net_Area", "FWHM"
+  //  Garunteed to exist, but may be -1: "Nuclide", "Photopeak_Energy", "ROI_Lower_Energy", "ROI_Upper_Energy"
+  std::map<std::string,int> field_pos;
+  
+  {//begin to get field_pos
+    vector<string> headers;
+    Tokeniser t( line, separator );
+    for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
+      headers.push_back( to_lower_copy( trim_copy(*it) ) );
+    
+    const auto centroid_pos = std::find( begin(headers), end(headers), "centroid");
+    const auto net_area_pos = std::find( begin(headers), end(headers), "net_area");
+    //Note First FWHM is in keV; there is a second FWHM that is %
+    const auto fwhm_pos = std::find( begin(headers), end(headers), "fwhm");
+    const auto nuc_pos = std::find( begin(headers), end(headers), "nuclide");
+    const auto nuc_energy_pos = std::find( begin(headers), end(headers), "photopeak_energy");
+    const auto roi_start_pos = std::find( begin(headers), end(headers), "roi_lower_energy");
+    const auto roi_end_pos = std::find( begin(headers), end(headers), "roi_upper_energy");
+    
+    if( centroid_pos == end(headers) )
+      throw runtime_error( "Header did not contain 'Centroid'" );
+    field_pos["Centroid"] = static_cast<int>( centroid_pos - begin(headers) );
+    
+    if( net_area_pos == end(headers) )
+      throw runtime_error( "Header did not contain 'Net_Area'" );
+    field_pos["Net_Area"] = static_cast<int>( net_area_pos - begin(headers) );
+    
+    if( fwhm_pos == end(headers) )
+      throw runtime_error( "Header did not contain 'FWHM'" );
+    field_pos["FWHM"] = static_cast<int>( fwhm_pos - begin(headers) );
+    
+    if( nuc_pos == end(headers) )
+      field_pos["Nuclide"] = -1;
+    else
+      field_pos["Nuclide"] = static_cast<int>( nuc_pos - begin(headers) );
+    
+    if( nuc_energy_pos == end(headers) )
+      field_pos["Photopeak_Energy"] = -1;
+    else
+      field_pos["Photopeak_Energy"] = static_cast<int>( nuc_energy_pos - begin(headers) );
+    
+    if( roi_start_pos == end(headers) )
+      field_pos["ROI_Lower_Energy"] = -1;
+    else
+      field_pos["ROI_Lower_Energy"] = static_cast<int>( roi_start_pos - begin(headers) );
+    
+    if( roi_end_pos == end(headers) )
+      field_pos["ROI_Upper_Energy"] = -1;
+    else
+      field_pos["ROI_Upper_Energy"] = static_cast<int>( roi_end_pos - begin(headers) );
+  }//end to get field_pos
+  
+  const int mean_index = field_pos["Centroid"];
+  const int area_index = field_pos["Net_Area"];
+  const int fwhm_index = field_pos["FWHM"];
+  const int roi_lower_index = field_pos["ROI_Lower_Energy"];
+  const int roi_upper_index = field_pos["ROI_Upper_Energy"];
+  const int nuc_index = field_pos["Nuclide"];
+  const int nuc_energy_index = field_pos["Photopeak_Energy"];
+  
+  vector<PeakDef> answer;
+  
+  while( UtilityFunctions::safe_get_line(csv, line, 2048) )
+  {
+    UtilityFunctions::trim(line);
+    if( line.empty() || line[0]=='#' || (!isnumber(line[0]) && line[0]!='+' && line[0]!='-') )
+      continue;
+  
+    vector<string> fields;
+    Tokeniser t( line, separator );
+    for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
+      fields.push_back( to_lower_copy( trim_copy(*it) ) );
+    
+    const int nfields = static_cast<int>( fields.size() );
+    
+    if( nfields < mean_index || nfields < area_index || nfields < fwhm_index )
+      continue;
+    
+    try
+    {
+      const float centroid = std::stof( fields[mean_index] );
+      const float fwhm = std::stof( fields[fwhm_index] );
+      const float area = std::stof( fields[area_index] );
+      
+      if( centroid <= minenergy || centroid >= maxenergy || fwhm <= 0.0 || area <= 0.0 )
+        continue;
+      
+      PeakDef peak( centroid, fwhm/2.35482, area );
+      
+      if( roi_lower_index >= 0 && roi_lower_index < nfields
+          && roi_upper_index >= 0 && roi_upper_index < nfields )
+      {
+        const float roi_lower = std::max( minenergy, std::stof( fields[roi_lower_index] ) );
+        const float roi_upper = std::min( maxenergy, std::stof( fields[roi_upper_index] ) );
+        if( roi_lower >= roi_upper || centroid < roi_lower || centroid > roi_upper )
+          throw runtime_error( "ROI range invalid." );
+        
+        peak.continuum()->setRange( roi_lower, roi_upper );
+        peak.continuum()->calc_linear_continuum_eqn( meas, roi_lower, roi_upper, 1 );
+      }else
+      {
+        double lowerEnengy, upperEnergy;
+        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, meas );
+        
+        peak.continuum()->setRange( lowerEnengy, upperEnergy );
+        peak.continuum()->calc_linear_continuum_eqn( meas, lowerEnengy, upperEnergy, 1 );
+      }//if( CSV five ROI extent ) / else( find from data )
+      
+      if( nuc_index >= 0 && nuc_energy_index >= 0
+          && nuc_index < nfields && nuc_energy_index < nfields
+          && !fields[nuc_index].empty() && !fields[nuc_energy_index].empty() )
+      {
+        const string nuctxt = fields[nuc_index] + " " + fields[nuc_energy_index] + " keV";
+        const SetGammaSource result = setNuclideXrayReaction( peak, nuctxt, 4.0 );
+        if( result == SetGammaSource::NoSourceChange )
+          cerr << "csv_to_candidate_fit_peaks: could not assign src txt '"
+               << nuctxt << "' as a nuc/xray/rctn" << endl;
+      }//if( nuc_index >= 0 || nuc_energy_index >= 0 )
+      
+      //Go through existing peaks and if the new peak should share a ROI, do that here
+      if( peak.continuum()->energyRangeDefined() )
+      {
+        for( auto &p : answer )
+        {
+          if( !p.continuum()->energyRangeDefined() )
+            continue;
+          if( fabs(p.continuum()->lowerEnergy() - peak.continuum()->lowerEnergy()) < 0.0001
+              && fabs(p.continuum()->upperEnergy()-peak.continuum()->upperEnergy()) < 0.0001 )
+            peak.setContinuum( p.continuum() );
+        }
+      }//if( new peak has a defined energy range )
+      
+      answer.push_back( peak );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "Invalid value on line '" + line + "', " + string(e.what()) );
+    }
+  }//while( UtilityFunctions::safe_get_line(csv, line, 2048) )
+  
+  
+  if( answer.empty() )
+    throw runtime_error( "No peak rows found in file." );
+  
+  return answer;
+}//csv_to_candidate_fit_peaks(...)
 
 
 
