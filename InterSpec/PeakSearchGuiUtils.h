@@ -129,9 +129,10 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
                                  const bool setColor,
                                 const bool showingEscapePeakFeature );
   
-  void fit_template_peaks( InterSpec *interspec,
-                           std::shared_ptr<const Measurement> data,
-                           std::vector<PeakDef> &&template_peaks );
+void fit_template_peaks( InterSpec *interspec,
+                         std::shared_ptr<const Measurement> data,
+                         std::vector<PeakDef> template_peaks,
+                         const std::string sessionid );
   
 }//namespace PeakSearchGuiUtils
 #endif //AssignPeaksToRefLine_h
