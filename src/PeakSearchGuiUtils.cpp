@@ -70,7 +70,8 @@ namespace
   enum class PeakSelectorWindowReason
   {
     PeakSearch,
-    NuclideId
+    NuclideId,
+    PeaksFromPreviousSpectum,
   };
   
 class PeakSelectorWindow : public AuxWindow
@@ -109,6 +110,12 @@ class PeakSelectorWindow : public AuxWindow
   bool m_cancelOperation;
   
 public:
+  /**
+   
+   @param orig_peaks For reasons of PeakSearch and NuclideId, these are the
+          peaks that existed before the fit.  For PeaksFromPreviousSpectum,
+          these are the peaks that were fed into the fitter
+   */
   PeakSelectorWindow( InterSpec *viewer,
                       const PeakSelectorWindowReason reason,
                       const vector<PeakDef> &orig_peaks,
@@ -132,6 +139,8 @@ public:
     m_displayed(),
     m_cancelOperation( false )
   {
+    wApp->useStyleSheet( "InterSpec_resources/PeakSelectorWindow.css" );
+   
     switch( m_reason )
     {
       case PeakSelectorWindowReason::NuclideId:
@@ -140,9 +149,10 @@ public:
       case PeakSelectorWindowReason::PeakSearch:
         setWindowTitle( "Check Peak Search Results" );
         break;
+      case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        setWindowTitle( "Peaks to Keep from Previous Spectrum" );
+        break;
     }//switch( m_reason )
-    
-    wApp->useStyleSheet( "InterSpec_resources/PeakSelectorWindow.css" );
     
     for( const auto &d : displayed )
       m_displayed.push_back( make_shared<ReferenceLineInfo>(d) );
@@ -218,6 +228,10 @@ public:
       case PeakSelectorWindowReason::NuclideId:
         txt = new WText( "Check and fix nuclide assignments.", contents() );
         break;
+        
+      case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        txt = new WText( "Select peaks peaks you would like to keep.", contents() );
+        break;
     }//switch( m_reason )
     
    
@@ -230,6 +244,7 @@ public:
         break;
         
       case PeakSelectorWindowReason::PeakSearch:
+      {
         if( !m_displayed.empty() )
         {
           bool anyNonAssignedPeaks = false;
@@ -256,17 +271,27 @@ public:
           }//if( anyNonAssignedPeaks )
         }//if( we searched for peaks, and there were reference lines )
         
-        m_showAllPeaks = new WCheckBox( "Show previous peaks too", contents() );
+        if( orig_peaks.size() )
+          m_showAllPeaks = new WCheckBox( "Show previous peaks too", contents() );
+        break;
+      }//case PeakSelectorWindowReason::PeakSearch:
+        
+      case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+        if( final_peaks.size() != orig_peaks.size() )
+          m_showAllPeaks = new WCheckBox( "Show absent peaks", contents() );
         break;
     }//switch ( m_reason )
     
+    if( m_showAllPeaks )
+    {
+      m_showAllPeaks->addStyleClass( "ShowAllPeaksCb" );
+      m_showAllPeaks->setInline( false );
+      m_showAllPeaks->setChecked( false );
+      m_showAllPeaks->changed().connect( this, &PeakSelectorWindow::showAllPeaksCbChanged );
+      if( !m_keepRefLinePeaksOnly )
+        m_showAllPeaks->setMargin( 10, Wt::Top );
+    }//if( m_showAllPeaks )
     
-    m_showAllPeaks->addStyleClass( "ShowAllPeaksCb" );
-    m_showAllPeaks->setInline( false );
-    m_showAllPeaks->setChecked( false );
-    m_showAllPeaks->changed().connect( this, &PeakSelectorWindow::showAllPeaksCbChanged );
-    if( !m_keepRefLinePeaksOnly )
-      m_showAllPeaks->setMargin( 10, Wt::Top );
     
     // The rel eff chart is close, but not fully debugged, so leaving diabled for now
     //setupRelEffChart();
@@ -281,6 +306,17 @@ public:
     
     auto nucs_changed = [this]( size_t index ){
       assert( index < m_old_to_new_peaks.size() );
+      
+      switch( m_reason )
+      {
+        case PeakSelectorWindowReason::NuclideId:
+        case PeakSelectorWindowReason::PeakSearch:
+          break;
+          
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+          return true;
+      }//switch( m_reason )
+      
       shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[index].first;
       shared_ptr<PeakDef> &newpeak = m_old_to_new_peaks[index].second;
       
@@ -307,6 +343,7 @@ public:
           previewIndex    = 2;
           newColumnIndex = origColumnIndex = -1;
           break;
+          
         case PeakSelectorWindowReason::NuclideId:
           //Actually we shouldnt be here!  But lets set indexes rather than handling this potential logic error for now.
           peakEnergyIndex = 0;
@@ -314,6 +351,14 @@ public:
           newColumnIndex  = 2;
           previewIndex    = 3;
           keepPeakIndex   = -1;
+          break;
+          
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+          keepPeakIndex   = 0;
+          peakEnergyIndex = 1;
+          origColumnIndex = -1;
+          newColumnIndex  = 2;
+          previewIndex    = 3;
           break;
       }//switch( m_reason )
     }else
@@ -326,16 +371,26 @@ public:
           origColumnIndex = 2;
           newColumnIndex  = 3;
           previewIndex    = 4;
-          break;
+        break;
+          
         case PeakSelectorWindowReason::NuclideId:
           keepPeakIndex   = -1;
           peakEnergyIndex = 0;
           origColumnIndex = 1;
           newColumnIndex  = 2;
           previewIndex    = 3;
+        break;
+          
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+          //Actually we shouldnt be here!  But lets set indexes rather than handling this potential logic error for now.
+          keepPeakIndex   = 0;
+          peakEnergyIndex = 1;
+          origColumnIndex = -1;
+          newColumnIndex  = 2;
+          previewIndex    = 3;
           break;
       }//switch( m_reason )
-  }//if( displayed.empty() ) / else
+    }//if( displayed.empty() ) / else
 
     bool anyPrevPeaksHadNucs = false;
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
@@ -402,26 +457,26 @@ public:
         all_peaks_modified = false;
         WTableRow *row = m_table->rowAt(table_row);
         row->hide();
-      }
+      }//if( !has_changed )
       
-      switch( m_reason )
-      {
-        case PeakSelectorWindowReason::PeakSearch:
-          if( (keepPeakIndex>=0) )
-          {
-            WTableCell *cbcell = m_table->elementAt( table_row, keepPeakIndex );
-            cbcell->addStyleClass( "KeepPeakCell" );
-            WCheckBox *cb = new WCheckBox( "Keep Peak", cbcell );
-            cb->setChecked(true);
-            cb->changed().connect( this, &PeakSelectorWindow::keepPeakChanged );
-            m_keep_peak_cbs[i] = cb;
-          }
-          break;
-          
-        case PeakSelectorWindowReason::NuclideId:
-          break;
-      }//switch( m_reason )
 
+      if( (keepPeakIndex>=0) )
+      {
+        WTableCell *cbcell = m_table->elementAt( table_row, keepPeakIndex );
+        cbcell->addStyleClass( "KeepPeakCell" );
+        
+        if( m_reason==PeakSelectorWindowReason::PeaksFromPreviousSpectum
+            && !m_old_to_new_peaks[i].second )
+        {
+          new WText( "Not Found", cbcell );
+        }else
+        {
+          WCheckBox *cb = new WCheckBox( "Keep Peak", cbcell );
+          cb->setChecked(true);
+          cb->changed().connect( this, &PeakSelectorWindow::keepPeakChanged );
+          m_keep_peak_cbs[i] = cb;
+        }
+      }//
       
       if( origColumnIndex >= 0 )
       {
@@ -436,7 +491,7 @@ public:
         WTableCell *newNucCell = m_table->elementAt( table_row, newColumnIndex );
         newNucCell->addStyleClass( "NewNucCell" );
         
-        if( has_changed )
+        if( has_changed && m_reason!=PeakSelectorWindowReason::PeaksFromPreviousSpectum)
         {
           m_nuc_select_combos[i] = new WComboBox(newNucCell);
           m_nuc_select_combos[i]->changed().connect( boost::bind( &PeakSelectorWindow::nucSelectChanged, this, i ) );
@@ -455,8 +510,9 @@ public:
       {
         char buffer[512] = { '\0' };
         snprintf( buffer, sizeof(buffer), "<div style=\"white-space: nowrap;\">"
-                "mean=%.1f keV</div><div style=\"white-space: nowrap;\">FWHM=%.1f keV</div>",
-                 displayPeak->mean(), displayPeak->fwhm() );
+                     "mean=%.1f keV</div><div style=\"white-space: nowrap;\">FWHM=%.1f keV</div>",
+                     displayPeak->mean(), displayPeak->fwhm() );
+        
         WTableCell *peakene = m_table->elementAt( table_row, peakEnergyIndex );
         peakene->addStyleClass( "PeakEnergyCell" );
         new WText( buffer, peakene );
@@ -468,17 +524,19 @@ public:
       }//if( peak )
     }//for( size_t i = 0; i < peaks.size(); ++i )
     
-    m_showAllPeaks->setHidden( all_peaks_modified );
+    if( m_showAllPeaks )
+      m_showAllPeaks->setHidden( all_peaks_modified );
     
     populateNuclideSelects();
     
     switch( m_reason )
     {
       case PeakSelectorWindowReason::PeakSearch:
+      case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
         break;
         
       case PeakSelectorWindowReason::NuclideId:
-        if( some_nuclides_changed )
+        if( !some_nuclides_changed )
         {
           txt = new WText( "<strong>No nuclides changed</strong>", contents() );
           txt->setPadding( 10, Wt::Top | Wt::Bottom );
@@ -737,13 +795,15 @@ public:
       series.setMarker( markers[col%markers.size()] );
       m_chart->addSeries( series );
     }//for( auto &lp : src_to_energy_eff )
-    
   }//void refreshRelEffChart()
   
   
   
   void showAllPeaksCbChanged()
   {
+    if( !m_showAllPeaks )
+      return;
+    
     const bool showAll = m_showAllPeaks->isChecked();
     if( showAll )
     {
@@ -846,13 +906,25 @@ public:
   
   
   
-  std::string nuclideDesc( const SandiaDecay::Nuclide *nuc, const SandiaDecay::RadParticle *particle )
+  std::string nuclideDesc( const SandiaDecay::Nuclide *nuc,
+                           const SandiaDecay::RadParticle *particle,
+                           const PeakDef::SourceGammaType type )
   {
     if( !nuc || !particle )
       return "---";
     
     const ReferenceLineInfo *refline = nullptr;
     const BackgroundLine *backgroundLine = nullptr;
+    
+    const char *gamtype = "";
+    switch( type )
+    {
+      case PeakDef::NormalGamma: case PeakDef::XrayGamma:    break;
+      case PeakDef::AnnihilationGamma: gamtype = " Annih."; break;
+      case PeakDef::DoubleEscapeGamma: gamtype = " D.E.";   break;
+      case PeakDef::SingleEscapeGamma: gamtype = " S.E.";   break;
+    }//switch( displayPeak->sourceGammaType() )
+    
     
     for( const auto &d : m_displayed )
     {
@@ -925,8 +997,8 @@ public:
         intensity += refline->intensities[i] * sf;
       }//for( loop over ref line particles )
       
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV, I=%.2g%%",
-               nuc->symbol.c_str(), particle->energy, 100.0*intensity );
+      snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
+               nuc->symbol.c_str(), particle->energy, gamtype, 100.0*intensity );
     }else
     {
       const double activity = 1.0E-3*SandiaDecay::curie;
@@ -943,8 +1015,8 @@ public:
       }
       intensity /= activity;
       
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV, I=%.2g%%",
-               nuc->symbol.c_str(), particle->energy, 100.0*intensity );
+      snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
+               nuc->symbol.c_str(), particle->energy, gamtype, 100.0*intensity );
     }//if( source is a reference line ) / else
     
     
@@ -973,10 +1045,22 @@ public:
   }//std::string xrayDesc( const SandiaDecay::Element *el )
   
   
-  std::string reactionDesc( const ReactionGamma::Reaction *rctn, const float energy )
+  std::string reactionDesc( const ReactionGamma::Reaction *rctn,
+                            const float energy,
+                            const PeakDef::SourceGammaType type )
   {
     if( !rctn )
       return "---";
+    
+    const char *gamtype = "";
+    switch( type )
+    {
+      case PeakDef::NormalGamma: case PeakDef::XrayGamma:    break;
+      case PeakDef::AnnihilationGamma: gamtype = " Annih."; break;
+      case PeakDef::DoubleEscapeGamma: gamtype = " D.E.";   break;
+      case PeakDef::SingleEscapeGamma: gamtype = " S.E.";   break;
+    }//switch( displayPeak->sourceGammaType() )
+    
     
     char buffer[256] = { '\0' };
     
@@ -985,7 +1069,8 @@ public:
       if( fabs(g.energy - energy) < 0.1 )
         intensity += g.abundance;
     
-    snprintf( buffer, sizeof(buffer), "%s %.1f keV, I=%.2g%%", rctn->name().c_str(), energy, 100.0*intensity );
+    snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
+              rctn->name().c_str(), energy, gamtype, 100.0*intensity );
     
     return buffer;
   }//std::string reactionDesc(...)
@@ -999,13 +1084,13 @@ public:
     
     if( p->parentNuclide() && p->decayParticle() )
     {
-      return nuclideDesc( p->parentNuclide(), p->decayParticle() );
+      return nuclideDesc( p->parentNuclide(), p->decayParticle(), p->sourceGammaType() );
     }else if( p->xrayElement() )
     {
       return xrayDesc( p->xrayElement(), p->xrayEnergy() );
     }else if( p->reaction() )
     {
-      return reactionDesc( p->reaction(), p->reactionEnergy() );
+      return reactionDesc( p->reaction(), p->reactionEnergy(), p->sourceGammaType() );
     }
     
     return "---";
@@ -1169,6 +1254,9 @@ public:
           
         case PeakSelectorWindowReason::NuclideId:
           break;
+          
+        case PeakSelectorWindowReason::PeaksFromPreviousSpectum:
+          break;
       }//switch( m_reason )
 
       
@@ -1330,7 +1418,7 @@ public:
       {
         if( i.second && !m_cancelOperation )
           final_peaks.push_back( *i.second );
-        else if( i.first )
+        else if( i.first && m_reason!=PeakSelectorWindowReason::PeaksFromPreviousSpectum )
           final_peaks.push_back( *i.first );
       }//for( const auto &i : m_old_to_new_peaks )
       
@@ -2256,7 +2344,8 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
 }//void assign_srcs_from_ref_lines(...)
   
   
-void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const Measurement> data, std::vector<PeakDef> &&input_peaks )
+void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const Measurement> data,
+                         std::vector<PeakDef> input_peaks, const string sessionid )
 {
   const bool isRefit = true;
   std::vector<PeakDef> orig_peaks;
@@ -2269,8 +2358,19 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const Measurement
   vector<PeakDef> fitpeaks = fitPeaksInRange( x0, x1, ncausalitysigma,
                                              stat_threshold, hypothesis_threshold,
                                              input_peaks, data, orig_peaks, isRefit );
-  vector<ReferenceLineInfo> reflines;
-  new PeakSelectorWindow( interspec, PeakSelectorWindowReason::NuclideId, orig_peaks, data, fitpeaks, reflines );
+  WServer::instance()->post( sessionid, [=](){
+    
+    //Check if a new spectrum has been loaded while the peaks were being fit.
+    //  If so, dont try to propogate the fit peaks.
+    if( !wApp || (interspec->displayedHistogram(kForeground) != data) )
+      return;
+      
+    vector<ReferenceLineInfo> reflines;
+    new PeakSelectorWindow( interspec, PeakSelectorWindowReason::PeaksFromPreviousSpectum,
+                            input_peaks, data, fitpeaks, reflines );
+    
+    wApp->triggerUpdate();
+  } );
 }//fit_template_peaks( ... )
   
 }//namespace PeakSearchGuiUtils

@@ -8380,16 +8380,19 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       displayBackgroundData();
   };//switch( spec_type )
   
+  //Making fcn call take current data as a argument so that if this way a
+  //  recalibration happens (which will change m_spectrum->data()), then the
+  //  peak fit routine will get the correct data to use.
+  std::function<void(std::shared_ptr<const Measurement>)> propigate_peaks_fcns;
   
   const bool askToPropigatePeaks
-             = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
+          = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
   if( askToPropigatePeaks && checkForPrevioudEnergyCalib
      && !sameSpec && meas && m_dataMeasurement && previous && m_spectrum->data()
      && spec_type==kForeground
      && previous->instrument_id()==meas->instrument_id()
      && previous->num_gamma_channels()==meas->num_gamma_channels() )
   {
-    
     shared_ptr<const deque<shared_ptr<const PeakDef>>> prevpeak, currpeaks;
     
     //Call const version of peaks so a new deque wont be created if it doesnt exist.
@@ -8405,9 +8408,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           input_peaks.push_back( *p );
       }
       
-      std::shared_ptr<const Measurement> data = m_spectrum->data();
-      PeakSearchGuiUtils::fit_template_peaks( this, data, std::move(input_peaks) );
-    }//
+      const std::string seessionid = wApp->sessionId();
+      propigate_peaks_fcns = [=]( std::shared_ptr<const Measurement> data ){
+        PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, seessionid );
+      };
+    }//if( prev spec had peaks and new one doesnt )
   }//if( should propogate peaks )
   
   
@@ -8434,8 +8439,30 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     };//switch( spec_type )
   
     if( m_preserveCalibWindow )
-      m_preserveCalibWindow->finished().connect( this, &InterSpec::deletePreserveCalibWindow );
+    {
+      if( propigate_peaks_fcns )
+      {
+        m_preserveCalibWindow->finished().connect( std::bind( [=](){
+          deletePreserveCalibWindow();
+          std::shared_ptr<const Measurement> data = m_spectrum->data();
+          WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
+        } ) );
+        
+        propigate_peaks_fcns = nullptr;
+      }else
+      {
+        m_preserveCalibWindow->finished().connect( this, &InterSpec::deletePreserveCalibWindow );
+      }//if( propigate_peaks_fcns ) / else
+      
+    }
   }//if( !sameSpec && m_recalibrator && !!meas )
+  
+  if( propigate_peaks_fcns )
+  {
+    std::shared_ptr<const Measurement> data = m_spectrum->data();
+    WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
+    propigate_peaks_fcns = nullptr;
+  }
   
   switch( spec_type )
   {
