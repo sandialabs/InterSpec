@@ -8408,9 +8408,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           input_peaks.push_back( *p );
       }
       
+      vector<PeakDef> original_peaks;
+      
       const std::string sessionid = wApp->sessionId();
       propigate_peaks_fcns = [=]( std::shared_ptr<const Measurement> data ){
-        PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks,
+        PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
                        PeakSearchGuiUtils::PeakTemplateFitSrc::PreviousSpectrum,
                        sessionid );
       };
