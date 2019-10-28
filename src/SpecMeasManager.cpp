@@ -101,19 +101,20 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/PeakModel.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
-#include "InterSpec/InterSpec.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/LocalTimeDelegate.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "SpecUtils/SpectrumDataStructs.h"
-
-#include "InterSpec/HelpSystem.h"
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include "InterSpec/DbFileBrowser.h"
@@ -1201,11 +1202,21 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const size_t filesize = infile.tellg();
   infile.seekg(0);
   
-  if( filesize <= 1024 )
+  if( filesize <= 256 )
   {
     passMessage( "File was probably an empty file - not a spectrum file.", "", 2 );
     return true;
   }
+  
+  uint8_t data[1024] = { 0x0 };
+  
+  if( !infile.read( (char *)data, std::min(boost::size(data),filesize) ) )
+  {
+    passMessage( "Failed to read non-spectrum file.", "", 2 );
+    return true;
+  }
+  infile.seekg(0);
+  
   
   AuxWindow *w = new AuxWindow( "Not a spectrum file",
                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
@@ -1219,11 +1230,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w ) );
   if( !m_viewer->isMobile() && m_viewer->renderedWidth() > 400 && m_viewer->renderedHeight() > 250 )
     w->resize( 400, 250 );
-  
-  uint8_t data[1024] = { 0x0 };
-  
-  infile.read( (char *)data, boost::size(data) );
-  infile.seekg(0);
   
   // const string filename = UtilityFunctions::filename(displayName);
   
@@ -1297,6 +1303,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const bool ispng = check_magic_number( data, png_mn );
   const bool isbmp = check_magic_number( data, bmp_mn );
   
+  
   if( iszip )
   {
     const char *msg = NULL;
@@ -1353,7 +1360,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     t->setTextAlignment( Wt::AlignCenter );
     w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
    
-    const size_t max_disp_size = 5*1024*1024;
+    const size_t max_disp_size = 16*1024*1024;
     
     if( filesize < max_disp_size )
     {
@@ -1399,6 +1406,57 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }//if( isgif || isjpg || ispng || isbmp )
 
+  //Check if CSV giving peak ROIs.
+  std::shared_ptr<const Measurement> currdata = m_viewer->displayedHistogram(kForeground);
+  
+  //Case insensitive search of 'term' in the header 'data'
+  auto header_contains = [&data]( const std::string &term ) -> bool {
+    const char * const char_start = (const char *)data;
+    const char * const char_end = (const char *)(data + boost::size(data));
+    const auto pos = std::search( char_start, char_end, begin(term), end(term),
+                                  [](unsigned char a, unsigned char b) -> bool {
+                                    return std::tolower(a)==std::tolower(b);
+                                 } );
+    return (pos != char_end);
+  };//header_contains lambda
+  
+  
+  if( currdata
+      //&& UtilityFunctions::icontains( UtilityFunctions::file_extension(displayName), "csv" )
+      && header_contains("Centroid")
+      && header_contains("Net_Area")
+      && header_contains("FWHM") )
+  {
+    try
+    {
+      const vector<PeakDef> candidate_peaks
+                      = PeakModel::csv_to_candidate_fit_peaks(currdata, infile);
+      
+      const std::string seessionid = wApp->sessionId();
+      Wt::WServer::instance()->ioService().post( std::bind( [=](){
+        PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
+                  PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
+      } ) );
+      
+      delete w;
+      return true;
+    }catch( exception &e )
+    {
+      WText *errort = new WText( "Uploaded file looked like a Peak CSV file, but was invalid." );
+      errort->setTextAlignment( Wt::AlignCenter );
+      w->stretcher()->addWidget( errort, 1, 0, AlignCenter | AlignMiddle );
+      
+      errort = new WText( string(e.what()) );
+      errort->setAttributeValue( "style", "color: red; font-weight: bold; font-family: monospace; " );
+      errort->setTextAlignment( Wt::AlignCenter );
+      w->stretcher()->addWidget( errort, 2, 0, AlignCenter | AlignMiddle );
+      
+      w->show();
+      w->resizeToFitOnScreen();
+      w->centerWindowHeavyHanded();
+    }//try / catch get candidate peaks )
+  }//if( we could possible care about propogating peaks from a CSV file )
+  
   delete w;
   
   return false;

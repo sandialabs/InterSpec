@@ -2345,7 +2345,8 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
   
   
 void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const Measurement> data,
-                         std::vector<PeakDef> input_peaks, const string sessionid )
+                         std::vector<PeakDef> input_peaks,
+                         const PeakTemplateFitSrc fitsrc, const string sessionid )
 {
   const bool isRefit = true;
   std::vector<PeakDef> orig_peaks;

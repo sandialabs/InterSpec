@@ -129,9 +129,16 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
                                  const bool setColor,
                                 const bool showingEscapePeakFeature );
   
+enum class PeakTemplateFitSrc
+{
+  PreviousSpectrum,
+  CsvFile
+};//enum class PeakTemplateFitSrc
+  
 void fit_template_peaks( InterSpec *interspec,
                          std::shared_ptr<const Measurement> data,
                          std::vector<PeakDef> template_peaks,
+                         const PeakTemplateFitSrc fitsrc,
                          const std::string sessionid );
   
 }//namespace PeakSearchGuiUtils
