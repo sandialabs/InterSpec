@@ -779,7 +779,7 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
         PeakDef::SourceGammaType sourceGammaType = PeakDef::NormalGamma;
         
         PeakDef::findNearestPhotopeak( nm.first, energies[i],
-                                      windows[i], transition, trans_index, sourceGammaType );
+                                      windows[i], false, transition, trans_index, sourceGammaType );
         if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )
           continue;
         

@@ -968,6 +968,7 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
   //         isotope name, for user convience
   //  TODO - In addition to sorting results by the number of matching characters,
   //         should first sort my photopeak-closeness as determined by SandiaDecay
+  //  TODO - Support x-rays of a specific isotope.
 
 
   const int user_input_is_meta = determineAndRemoveIsoLevel( testTxt );
@@ -1235,11 +1236,20 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
   }//for( size_t i = 0; i < nuclides.size(); ++i )
   
   
+  //If the user has explicitly type "xray", dont bother to show other suggestions
+  if( elements.size() && srcType==PeakDef::XrayGamma )
+  {
+    displayData.clear();
+    userData.clear();
+    suggest_reactions.clear();
+  }//if( the user probably only wanst reactions suggested )
+  
   for( size_t i = 0; i < elements.size(); ++i )
   {
     const SandiaDecay::Element *el = elements[ element_sort_indices[i] ];
     displayData.push_back( displayText(el, Wt::DisplayRole, m_minHalfLife) );
     userData.push_back( displayText(el, Wt::UserRole, m_minHalfLife) );
+    
     if( el->xrays.size() )
     {
       displayData.push_back( el->symbol + " xray" );

@@ -2667,6 +2667,7 @@ double PeakDef::defaultDecayTime( const SandiaDecay::Nuclide *nuclide, string *s
 void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
                                      const double energy,
                                      const double windowHalfWidth,
+                                     const bool xraysOnly,
                                      const SandiaDecay::Transition *&transition,
                                      size_t &transition_index,
                                      SourceGammaType &sourceGammaType )
@@ -2686,6 +2687,9 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
   vector<SandiaDecay::EnergyRatePair> gammas
   = mixture.gammas( decaytime,
                    SandiaDecay::NuclideMixture::OrderByAbundance, true );
+  
+  if( xraysOnly )
+    gammas = mixture.xrays( decaytime, SandiaDecay::NuclideMixture::OrderByAbundance );
   
   if( gammas.empty() )
     return;
@@ -2729,6 +2733,9 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
       {
         const SandiaDecay::RadParticle &product = products[index];
         
+        if( xraysOnly && (product.type != SandiaDecay::XrayParticle) )
+          continue;
+        
         float energy;
         if( product.type == SandiaDecay::GammaParticle || product.type == SandiaDecay::XrayParticle )
           energy = product.energy;
@@ -2769,6 +2776,9 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
         }else if( product.type == SandiaDecay::GammaParticle || product.type == SandiaDecay::XrayParticle )
         {
           if( product.energy > maxEnergy || product.energy < minEnergy )
+            continue;
+          
+          if( xraysOnly && (product.type != SandiaDecay::XrayParticle) )
             continue;
           
           double intensity = activity.activity * trans->branchRatio * product.intensity;
