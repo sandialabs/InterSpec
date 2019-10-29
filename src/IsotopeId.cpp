@@ -568,7 +568,7 @@ void findCandidates( vector<string> &suggestednucs,
       const SandiaDecay::Transition *transition = NULL;
       const double sigma = peak->gausPeak() ? peak->sigma() : 0.125*peak->roiWidth();
       PeakDef::findNearestPhotopeak( p.nuclide, suggestedNucs.energy,
-                                     4.0*sigma, transition,
+                                     4.0*sigma, false, transition,
                                      radparticleIndex, sourceGammaType );
       
       if( p.nuclide && (transition || (sourceGammaType==PeakDef::AnnihilationGamma)) )
@@ -747,7 +747,7 @@ void findCharacteristics( vector<string> &characteristicnucs,
         size_t index = 0;
         const SandiaDecay::Transition *trans = NULL;
         PeakDef::SourceGammaType type;
-        PeakDef::findNearestPhotopeak( nuc, energy, -1.0, trans, index, type );
+        PeakDef::findNearestPhotopeak( nuc, energy, -1.0, false, trans, index, type );
         if( trans )
         {
           energy = trans->products[index].energy;
@@ -863,7 +863,7 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
       size_t index = 0;
       const SandiaDecay::Transition *trans = NULL;
       PeakDef::SourceGammaType type;
-      PeakDef::findNearestPhotopeak( nuc, mean, sigma, trans, index, type );
+      PeakDef::findNearestPhotopeak( nuc, mean, sigma, false, trans, index, type );
      
       if( trans )
       {
@@ -900,7 +900,7 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
           && (p->sourceGammaType() == PeakDef::NormalGamma
                || p->sourceGammaType() == PeakDef::SingleEscapeGamma) )
       {
-        PeakDef::findNearestPhotopeak( nuc, mean+510.99, sigma, trans, index, type );
+        PeakDef::findNearestPhotopeak( nuc, mean+510.99, sigma, false, trans, index, type );
         if( trans )
         {
           const float candidateE = trans->products[index].energy;
@@ -927,7 +927,7 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
       
       if( p->sourceGammaType() == PeakDef::NormalGamma )
       {
-        PeakDef::findNearestPhotopeak( nuc, mean+2.0*510.99, sigma, trans, index, type );
+        PeakDef::findNearestPhotopeak( nuc, mean+2.0*510.99, sigma, false, trans, index, type );
         if( trans )
         {
           const float candidateE = trans->products[index].energy;

@@ -1474,15 +1474,17 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
       case PeakDef::DoubleEscapeGamma: extraEnergy = 2.0*510.99891; break;
     }//switch( srcType )
     
-    PeakDef::SourceGammaType sourceGammaType;
+    const bool xrayOnly = (srcType == PeakDef::SourceGammaType::XrayGamma);
+    PeakDef::SourceGammaType sourceGammaType = srcType;
+    
     PeakDef::findNearestPhotopeak( nuclide, ref_energy + extraEnergy, width,
-                                  transition, transition_index, sourceGammaType );
+                                    xrayOnly, transition, transition_index, sourceGammaType );
     
     //There wasnt any photopeaks within 4 sigma, so instead we'll just use
     //  the closest photpopeak
     if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma)
         && nsigma_window>=0.0 )
-      PeakDef::findNearestPhotopeak( nuclide, ref_energy + extraEnergy, -1.0,
+      PeakDef::findNearestPhotopeak( nuclide, ref_energy + extraEnergy, -1.0, xrayOnly,
                                     transition, transition_index, sourceGammaType );
     
     switch( srcType )
@@ -1535,14 +1537,10 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
       
       return (changedFit ? SourceAndUseChanged : SourceChange);
     }
-  }else
+  }else if( srcType == PeakDef::SourceGammaType::XrayGamma )
   {
-    //Lets try for xray
-    if( ((label.find("xray") != string::npos)
-          || (label.find("x-ray") != string::npos))
-       && (label.find("(") == string::npos) )
-    {
-      //Assume input like "fe xray 98.2 kev"
+      //Assume input like "fe xray 98.2 kev", which will have been transformed
+      //  to "fe 98.2 kev" by PeakDef::gammaTypeFromUserInput
       size_t alpha_start = label.size(), alpha_end = label.size();
       for( size_t i = 0; i < label.size(); ++i )
         if( label[i]>='a' && label[i]<='z' ) { alpha_start = i; break; }
@@ -1613,8 +1611,7 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
       peak.setReaction( rctn, static_cast<float>(energy), srcType );
       
       return (rctn ? SourceChange : NoSourceChange);
-    }//if( has xray in name ) / else
-  }//if( nuclide ) / else
+  }//if( nuclide ) / else if( xray ) / else
   
   return NoSourceChange;
 }//bool PeakModel::setNuclideXrayReaction( PeakDef &peak, std::string )
@@ -1832,7 +1829,8 @@ bool PeakModel::setData( const WModelIndex &index,
           //The 0.0 below means find the actual closest in energy, and not the
           //  most likely
           PeakDef::SourceGammaType sourceGammaType;
-          PeakDef::findNearestPhotopeak( nuclide, energy, 0.0,
+          const bool xrayOnly = (srcType == PeakDef::SourceGammaType::XrayGamma);
+          PeakDef::findNearestPhotopeak( nuclide, energy, 0.0, xrayOnly,
                                 transition, trans_index, sourceGammaType );
           
           if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )

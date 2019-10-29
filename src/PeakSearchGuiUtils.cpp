@@ -2215,7 +2215,6 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   }//for( const auto &foundpeak : *resultpeaks )
   
   
-  
   //Hack because I'm short on time
   if( result_peaks.size() != orig_peaks.size() )
   {
