@@ -24,8 +24,8 @@ target/android/InterSpec/app/build
 .project
 .svnignore
 .bin
+WtsRsrcs
 XcodeFiles
-node_modules
 build
 build_*
 build-*

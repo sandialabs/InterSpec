@@ -1052,6 +1052,7 @@ set( OTHER_SUPPORT_FILES
   )
 
   FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
+  list( FILTER CSS_FILES EXCLUDE REGEX  ".*SpectrumChartD3.*css")
   list( APPEND OTHER_SUPPORT_FILES ${CSS_FILES} )
 
   FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml )
