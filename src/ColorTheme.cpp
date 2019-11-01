@@ -194,7 +194,7 @@ ColorTheme::ColorTheme()
   
   peaksTakeOnReferenceLineColor = true;
   referenceLineColor = std::vector<Wt::WColor>{ {"#0000FF"},{"#006600"},
-      {"#0099FF"},{"#9933FF"},{"#FF66FF"},{"#CC3333"},{"#FF6633"},{"#FFFF99"},
+      {"#0099FF"},{"#9933FF"},{"#FF66FF"},{"#CC3333"},{"#FF6633"},{"#F1C232"},
       {"#CCFFCC"},{"#0000CC"},{"#666666"},{"#003333"} };
   
   referenceLineColorForSources["U235"] = WColor( Wt::GlobalColor::darkMagenta );
