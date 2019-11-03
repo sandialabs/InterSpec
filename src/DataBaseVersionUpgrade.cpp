@@ -77,7 +77,7 @@ namespace DataBaseVersionUpgrade
           setDBVersion( DB_SCHEMA_VERSION, sqlSession );
         }catch( std::exception &e )
         {
-          std::cerr << "Trying initial table mapping, got exception: " << e.what() << std::endl;
+          std::cout << "Trying initial table mapping, got exception: " << e.what() << std::endl;
         }
         
         std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
@@ -228,19 +228,6 @@ namespace DataBaseVersionUpgrade
       
       std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
       
-      /*
-       create table "UseDrfPref" (
-       "id" integer primary key autoincrement,
-       "version" integer not null,
-       "InterSpecUser_id" bigint,
-       "MatchField" integer not null,
-       "Flags" integer not null,
-       "DrfIndex" bigint not null,
-       "Criteria" text not null,
-       constraint "fk_UseDrfPref_InterSpecUser" foreign key ("InterSpecUser_id") references "InterSpecUser" ("id") on delete cascade deferrable initially deferred
-       )
-       */
-      
       const char *sql_statement = nullptr;
       
       sql_statement = R"Delim(create table "UseDrfPref" (
@@ -255,35 +242,7 @@ namespace DataBaseVersionUpgrade
       ))Delim";
       executeSQL( sql_statement, sqlSession );
       
-      
-      /*
-       create table "DetectorPeakResponse" (
-       "id" integer primary key autoincrement,
-       "version" integer not null,
-       "m_name" varchar(255) not null,
-       "m_description" varchar(255) not null,
-       "m_detectorDiameter" real not null,
-       "m_efficiencyEnergyUnits" real not null,
-       "m_resolutionForm" integer not null,
-       "m_resolutionCoeffs" text not null,
-       "m_efficiencySource" integer not null,
-       "m_efficiencyForm" integer not null,
-       "m_energyEfficiencies" text not null,
-       "m_efficiencyFormula" text not null,
-       "m_expOfLogPowerSeriesCoeffs" text not null,
-       "InterSpecUser_id" integer not null,
-       "Hash" bigint not null,
-       "ParentHash" bigint not null,
-       "m_flags" bigint not null,
-       "m_expOfLogPowerSeriesUncerts" text not null,
-       "m_resolutionUncerts" text not null,
-       "m_lowerEnergy" double precision not null,
-       "m_upperEnergy" double precision not null,
-       "m_createdUtc" bigint not null,
-       "m_lastUsedUtc" bigint not null
-       )
-       */
-      
+
       sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_flags bigint default 0 not null;";
       executeSQL( sql_statement, sqlSession );
       sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_expOfLogPowerSeriesUncerts text default \"\" not null;";

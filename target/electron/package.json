@@ -4,6 +4,10 @@
   "description": "Application for interactive gamma spectroscopy",
   "homepage": "https://github.com/sandialabs/InterSpec",
   "main": "main.js",
+  "repository": {
+    "url": "https://github.com/sandialabs/InterSpec",
+    "type": "git"
+  },
   "scripts": {
     "install": "cmake-js compile",
     "start": "electron ./build_macos/app/",
@@ -18,8 +22,8 @@
   "license": "LGPL-2.1-only",
   "dependencies": {},
   "devDependencies": {
-    "electron": "^6.0.10",
-    "electron-packager": "^14.0.6",
+    "electron": "^7.0.1",
+    "electron-packager": "^14.1.0",
     "node-addon-api": "^1.7.1"
   }
 }

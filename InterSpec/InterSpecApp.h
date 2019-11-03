@@ -90,6 +90,16 @@ public:
   void svlog( const Wt::WString& message,
               const Wt::WString& source,
               int priority = 1 );
+  
+  /* convience overload */
+  void svlog( const char *message,
+              const char *source,
+             int priority = 1 );
+  
+  /* convience overload */
+  void svlog( const std::string& message,
+             const std::string& source,
+             int priority = 1 );
 
   InterSpec *viewer();
 

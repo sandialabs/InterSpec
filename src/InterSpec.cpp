@@ -8057,25 +8057,24 @@ void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
 void InterSpec::doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
                                   vector<boost::function<void(void)> > workers )
 {
-  cout << "In doFinishupSetSpectrumWork" << endl;
   if( !meas || workers.empty() )
     return;
   
   bool modified, modifiedSinceDecode;
-  cout << "About to grab locl" << endl;
+  
   {//begin codeblock to access meas
     std::lock_guard<std::recursive_mutex> scoped_lock( meas->mutex() );
     modified = meas->modified();
     modifiedSinceDecode = meas->modified_since_decode();
   }//end codeblock to access meas
-  cout << "About to do Threadpool" << endl;
+  
   {
     SpecUtilsAsync::ThreadPool pool;
     for( size_t i = 0; i < workers.size(); ++i )
       pool.post( workers[i] );
     pool.join();
   }
-  cout << "About to reset flags" << endl;
+  
   {//begin codeblock to access meas
     std::lock_guard<std::recursive_mutex> scoped_lock( meas->mutex() );
     if( !modified )
@@ -8083,7 +8082,6 @@ void InterSpec::doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
     if( !modifiedSinceDecode )
       meas->reset_modified_since_decode();
   }//end codeblock to access meas
-  cout << "Done In doFinishupSetSpectrumWork" << endl;
 }//void InterSpec::doFinishupSetSpectrumWork( boost::function<void(void)> workers )
 
 

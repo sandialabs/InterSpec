@@ -42,6 +42,8 @@ npm install electron-packager
 
 # And also copy all the InterSpec resources to the 
 # 'app' sub-directory of your build dir
+cmake --build build_dir --target install
+# Or
 ninja -C build_dir install
 
 # Then to actually create the distributable package, run on of the following

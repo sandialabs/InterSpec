@@ -166,7 +166,6 @@ namespace InterSpecServer
                                 Wt::WApplication::ApplicationCreator createApplication )
   {
 //#warning "Need to add a (optional) number that the requestor must provide in the URL in order to be served anything - this should probably be the externalid argument"
-    
     changeToBaseDir( argc, argv );
     const string xml_config_path = getWtConfigXml( argc, argv );
     
@@ -176,7 +175,8 @@ namespace InterSpecServer
       std::cerr << "experimental_startServer: already running" << std::endl;
       return;
     }
-    
+
+    Wt::WString::setDefaultEncoding( Wt::UTF8 );   
 
     //If we are in an Apple Sandbox, we cant write to /tmp (especially done when
     //  spooling files), so we will check if we passed in an argument of a tmp
@@ -250,6 +250,8 @@ namespace InterSpecServer
       name = "\0";
     if( basedir.empty() )
       basedir = ".";
+    
+    Wt::WString::setDefaultEncoding( Wt::UTF8 );
     
     
     ns_server = new Wt::WServer( name, xml_config_path );
