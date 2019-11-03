@@ -352,7 +352,7 @@ function createWindow () {
   //      remote desktop currently), and also I guess should actually do the loadUrl() call
   //      from the setback, but the current way seems to work right now...
   let ses = mainWindow.webContents.session;
-  ses.setProxy( {proxyBypassRules: 'local,<local>,127.0.0.1,http://127.0.0.1,http://<local>,http://localhost'}, 
+  ses.setProxy( {proxyBypassRules: 'local,<local>,127.0.0.1,http://127.0.0.1,http://<local>,http://localhost'} ).then( 
     function(){
     console.log('Bypassing proxy for local');
     setInitialUrl();
