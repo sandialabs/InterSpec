@@ -2,7 +2,7 @@
 # excpet iOS, Android, and Electron, InterSpecExe
 
 cmake_policy(SET CMP0048 NEW)
-project(InterSpec VERSION 1.0.5)
+project(InterSpec VERSION 1.0.6)
 
 cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
 set( CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE )

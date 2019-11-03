@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <cctype>
 #include <algorithm>
 
 #include <Wt/WResource>
@@ -290,7 +291,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   while( UtilityFunctions::safe_get_line(csv, line, 2048) )
   {
     UtilityFunctions::trim(line);
-    if( line.empty() || line[0]=='#' || (!isnumber(line[0]) && line[0]!='+' && line[0]!='-') )
+    if( line.empty() || line[0]=='#' || (!isdigit(line[0]) && line[0]!='+' && line[0]!='-') )
       continue;
     
     vector<string> fields;

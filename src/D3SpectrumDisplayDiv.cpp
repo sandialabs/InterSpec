@@ -838,8 +838,6 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
                                  float neutronCounts,
                                  bool keep_curent_xrange )
 {
-  cout << "D3SpectrumDisplayDiv::setData" << endl;
-  
   m_model->setDataHistogram( data_hist, liveTime, realTime, neutronCounts );
   
   string js;

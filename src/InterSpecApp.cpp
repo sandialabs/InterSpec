@@ -1253,6 +1253,17 @@ void InterSpecApp::svlog( const WString& message, const WString& source, int pri
 }//void svlog(WString&, WString&)
 
 
+void InterSpecApp::svlog( const char *message, const char *source, int priority )
+{
+  svlog( Wt::WString::fromUTF8(message), Wt::WString::fromUTF8(source), priority );
+}
+
+void InterSpecApp::svlog( const std::string& message, const std::string& source, int priority )
+{
+  svlog( Wt::WString::fromUTF8(message), Wt::WString::fromUTF8(source), priority );
+}
+
+
 bool InterSpecApp::isMobile() const
 {
   const WEnvironment &env = environment();
