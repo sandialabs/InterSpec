@@ -1314,7 +1314,25 @@ void SpecFileQueryWidget::init()
 #if( BUILD_AS_ELECTRON_APP )
   //Based see https://jaketrent.com/post/select-directory-in-electron/
   m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
-  
+  WContainerWidget *pathDiv = new WContainerWidget();
+  linelayout->addWidget( pathDiv, 0, 1 );
+
+  //ToDo: make a proper path selecting widget for Electron
+  WPushButton *pickPath = new WPushButton( "Select Path", pathDiv );
+  WText *uploadtext = new WText( "(No Path Selected)", pathDiv );
+  uploadtext->setMargin( 3, Wt::Left );
+string jsfct = "function(s,e){"
+"const { dialog } = require('electron').remote;"
+"let dirs = dialog.showOpenDialogSync(null, {properties: ['openDirectory'] });"
+"if( typeof dirs==='undefined' ) return;"
+"let outputdir = (dirs.length<1) ? '' : dirs[0];"
+"Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputdir );"
++ uploadtext->jsRef() + ".textContent = outputdir.length ? outputdir : '(No Path Selected)';"
+"}";
+  pickPath->clicked().connect( jsfct );
+
+
+  /*
   const string uploadname = id() + "PathPicker";
   const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
   
@@ -1327,6 +1345,7 @@ void SpecFileQueryWidget::init()
                          "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
                      "};"
                      );
+  */
   m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, _1 ) );
 #elif( BUILD_AS_OSX_APP )
   SpecFileQuery::setIsSelectingDirectory( true );
@@ -1867,6 +1886,8 @@ void SpecFileQueryWidget::doPersistCacheChanged()
 #if( BUILD_AS_ELECTRON_APP )
 void SpecFileQueryWidget::newElectronPathSelected( std::string path )
 {
+  if( path == "")
+    return;
   m_basePath = path;
   basePathChanged();
 }
