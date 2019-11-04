@@ -1,0 +1,8 @@
+ToDo:
+ - When taking background off, get 'spectra' is null
+ - When app dies in JS, check if its possible to detect and thus get rid of all the menu stuff, to prevent duplicate menues...
+   - Or maybe there is way to detect in node when a page is about to load, then can call the menu setup stuff
+ - Time startup time compared to before
+ - Combine spectra...
+ - phd format
+ - 

@@ -4,7 +4,7 @@ In order to create the [Electron]([https://electronjs.org/](https://electronjs.o
 
 
 ```bash
-npm install -g cmake-js
+npm install -g cmake-js 
 
 # For macOS only, you may want to define a deployment target
 export MACOSX_DEPLOYMENT_TARGET=10.10
@@ -21,11 +21,15 @@ cmake-js
 cmake-js --CDBOOST_ROOT=/path/to/boost \
          --CDWt_INCLUDE_DIR=/path/to/wt/include \
          --CDCMAKE_BUILD_TYPE="Release" \
+         --CDGOOGLE_MAPS_KEY="..." \
          --out="build_dir"
 
 # If you make changes and want to recompile
 cmake-js build --out="build_dir"
-# Or
+# Or you can use CMake to run the `make` command, which can be useful when
+# the CMake generator isnt a command-line based system like (ex Xcode, MSVC)
+cmake --build build_dir --config Release
+# Or directly use the `make` command like:
 ninja -C build_dir
 
 # To run InterSpec without packaging everything, you
@@ -42,9 +46,12 @@ npm install electron-packager
 
 # And also copy all the InterSpec resources to the 
 # 'app' sub-directory of your build dir
-cmake --build build_dir --target install
+cmake-js build --out=build_dir --target install
+# Or
+cmake --build build_dir --target install --config Release
 # Or
 ninja -C build_dir install
+
 
 # Then to actually create the distributable package, run on of the following
 # (assuming your build directory is 'build_macos', 'build_win', or 'build_linux', 
