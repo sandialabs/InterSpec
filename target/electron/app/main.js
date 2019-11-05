@@ -23,17 +23,9 @@
 
 /* ToDo list (partial):
    - Finish setting up launch_options.json (see get_launch_options())
-   - Setup building/packaging Electron app as a single, or easy set of commands.
-   - Test out opening files (macOS and Windows; somewhat works on mac)
-   - Setup, or figure out, signing app on Windows and macOS
-     - On mac you can 'codesign-electron.sh InterSpec.app' to sign
-   - Handle errors in c++ by sending through IPC socket once its open
+   - Setup, or figure out, signing app on Windows
    - Handle fatal errors with dialog.showErrorBox(...)
    - Catch 'IntializeError' in stderr during startup, and handle
-   - Catch death in C++ code and display an error
-     - Could probably setup general error displaying mechanism of looking if
-       there is a window showing loading.html, and if so, display there, and
-       if not create a dialog.  Needs more thought.
    - Look at creating a backup preferences file, and if the C++ fails to start
      2 or 3 times, go back to the previous preferences file (should be done for
      all targets maybe).

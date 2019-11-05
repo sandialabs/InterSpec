@@ -41,6 +41,8 @@
 #undef require
 #endif
 
+#include <Wt/WString>
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecServer.h"
@@ -244,6 +246,9 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 {
   NSLog(@"Finished Launching");
 
+  
+  Wt::WString::setDefaultEncoding( Wt::UTF8 );
+  
   /*
    //Could maybe get rid of using XIB/NIB by manueally creating a window like:
    NSRect frame = NSMakeRect(0, 0, 300, 300);

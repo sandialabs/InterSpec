@@ -1,3 +1,24 @@
+## v1.0.6 (November 4, 2019)
+This release is mostly stability improvements, small UX improvements, and bug fixes.
+Download Windows, Linux, and macOS binaries from: [https://github.com/sandialabs/InterSpec/releases/tag/v1.0.6](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.6)
+
+* Improvements and fixes:
+- For Windows and Linux made running application more robust by compiling the InterSpec C++ code to a node.js module, rather than a separate executable that had to be run by, and communicate with node.js.  
+  - Updated to using [Electron](https://electronjs.org/) v7.0.1.
+- Fixed a few potential JS issues when starting up that could prevent app from fully loading.
+- Added checking for a file 'do_restore' in the applications OS-provided data directory; if it exists, it will be deleted, and `InterSpec` will try to load were you left off in your last session.  When the app successfully fully loads, the file will be written again.  If the file doesnt exist when the application is started, the previous app state will not be restored.
+- On the "Peak Manager" tab you can export the currently fit peaks as a CSV file.  Now, if you open up a different spectrum file, you can drag the previously exported CSV file onto the app, and the peaks defined in that file will be fit for.  Additionally there is a new options (Help -> Options-> Ask to Propagate Peaks) you can enable so that when you load a new spectrum from the same detector as your current one, peaks will be propagated (and re-fit) from the old spectrum to the new one.  In both cases a dialog showing the newly fit peaks will be presented to the user so they can select which peaks to keep.  These feature are useful if you frequently deal with spectra from the same detector with similar isotopes.
+- Improved suggesting peak assignments for single and double escape peaks from the right-click "Change Nuclide" sub-menu.  Further improvements are expected in the future.
+- Fix potential issue if google maps widget was shown more than once in a session.
+- Fix a few issues assigning x-rays or reactions to peaks.
+- Increase peak label sizes.
+- Added a "Feature Marker" widget that allows easier, and more complete, selecting to show escape peak lines, Compton Edge, Compton Scatter and sum-peaks.
+- Fix a few more instances of trouble loading files when there name/path contained some non-ASCII characters.
+- Many smaller fixes and improvements.
+- Added some less-common spectrum file formats and N42 variants.
+
+
+
 ## v1.0.5 (August 23, 2019)
 This release is mostly small bug fixes, improvements, and the addition of the **Flux Tool**.
 Download Windows, Linux, and macOS binaries from: [https://github.com/sandialabs/InterSpec/releases/tag/v1.0.5](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.5)

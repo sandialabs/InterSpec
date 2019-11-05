@@ -1131,7 +1131,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_deleteBtn->clicked().connect( boost::bind( &GadrasDetSelect::removeDirectory, parentSelect, this ) );
   
   
-//If we wanted to actually select directories, could do similar to file query widget...
+//If we wanted to actually select directories, could do similar to file query widget... which webkitdirectory no longer seems to work, so see file query widget use of electrons dialog
 //#if( BUILD_AS_ELECTRON_APP )
 //  m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
 //  const string uploadname = id() + "PathPicker";
