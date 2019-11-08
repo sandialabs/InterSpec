@@ -3161,9 +3161,12 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
   
   m_lineColor = parent.lineColor();
   
+  m_userLabel = parent.m_userLabel;
   m_useForCalibration = parent.m_useForCalibration;
   m_useForShieldingSourceFit = parent.m_useForShieldingSourceFit;
   m_useForDetectorResponseFit = parent.m_useForDetectorResponseFit;
+  
+  
   
   for( CoefficientType t = CoefficientType(0);
       t < NumCoefficientTypes; t = CoefficientType(t+1) )
