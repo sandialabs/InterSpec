@@ -808,8 +808,11 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
   if( m_peakModel )
   {
     std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
-    vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-    js = PeakDef::peak_json( inpeaks );
+    if( peaks )
+    {
+      vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+      js = PeakDef::peak_json( inpeaks );
+    }
   }
   
   if( js.empty() )
@@ -874,7 +877,7 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
       js = data + m_jsgraph + ".setSpectrumData(data_" + id() + ", " + resetDomain + ", 'FOREGROUND', 0, 1 );";
     }
   } else {
-    //js = m_jsgraph + ".removeSpectrumData(" + resetDomain + ", 'FOREGROUND' );";
+    //js = m_jsgraph + ".removeSpectrumDataByType(" + resetDomain + ", 'FOREGROUND' );";
     js = m_jsgraph + ".setData(null,true);";
     
   }//if ( data_hist )
@@ -1237,7 +1240,7 @@ void D3SpectrumDisplayDiv::updateBackground()
       js = data + m_jsgraph + ".setSpectrumData(data_" + id() + ", false, 'BACKGROUND', 1, -1);";
     }
   } else {
-    js = m_jsgraph + ".removeSpectrumData(false, 'BACKGROUND' );";
+    js = m_jsgraph + ".removeSpectrumDataByType(false, 'BACKGROUND' );";
   }//if ( background )
   
   if( isRendered() )
@@ -1273,7 +1276,7 @@ void D3SpectrumDisplayDiv::updateSecondData()
       js = data + m_jsgraph + ".setSpectrumData(data_" + id() + ", false, 'SECONDARY', 2, 1);";
     }
   } else {
-    js = m_jsgraph + ".removeSpectrumData(false, 'SECONDARY' );";
+    js = m_jsgraph + ".removeSpectrumDataByType(false, 'SECONDARY' );";
   }//if ( hist )
   
   if( isRendered() )
