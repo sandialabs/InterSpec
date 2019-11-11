@@ -71,7 +71,7 @@
       </dict>
     </array>
 	<key>CFBundleExecutable</key>
-	<string>${EXECUTABLE_NAME}</string>
+	<string>InterSpec</string>
 	<key>CFBundleIconFile</key>
 	<string>InterSpec</string>
 	<key>CFBundleIdentifier</key>
