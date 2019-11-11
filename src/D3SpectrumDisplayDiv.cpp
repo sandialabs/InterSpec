@@ -214,7 +214,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   initChangeableCssRules();
   
   wApp->require( resource_base + "d3.v3.min.js" );
-  wApp->require( resource_base + "c.min.js" );
   wApp->require( resource_base + "SpectrumChartD3.js" );
   
   
@@ -235,8 +234,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 
 void D3SpectrumDisplayDiv::defineJavaScript()
 {
-  
-  
   string options = "{title: '', showAnimation: true, animationDuration: 200";
   options += ", xlabel: '" + m_xAxisTitle + "'";
   options += ", ylabel: '" + m_yAxisTitle + "'";

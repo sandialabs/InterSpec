@@ -57,8 +57,7 @@ install( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../data
 )
 install( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources DESTINATION ${PROJECT_BINARY_DIR}/app/ )
 
-install( FILES ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/c.min.js
-        ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/d3.v3.min.js
+install( FILES ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/d3.v3.min.js
         ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/SpectrumChartD3.css
         ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/SpectrumChartD3.js
         ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/SpectrumChartD3StandAlone.css
@@ -70,7 +69,7 @@ install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/app/loading.html
         DESTINATION ${PROJECT_BINARY_DIR}/app/ 
 )
 
-#Need to get {d3.v3.min.js, c.min.js, SpectrumChartD3.js, SpectrumChartD3.css} and related into InterSpec_resources as well.
+#Need to get {d3.v3.min.js, SpectrumChartD3.js, SpectrumChartD3.css} and related into InterSpec_resources as well.
 #  SHould be workin, but on Windows it doesnt look like it at the moment.
 
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandia.decay.nocoinc.min.xml
