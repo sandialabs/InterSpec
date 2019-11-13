@@ -581,7 +581,6 @@ if( USE_SPECTRUM_CHART_D3 )
   list( APPEND sources
     src/D3SpectrumDisplayDiv.cpp
     external_libs/SpecUtils/d3_resources/d3.v3.min.js
-    external_libs/SpecUtils/d3_resources/c.min.js
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
     external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css)
@@ -591,7 +590,7 @@ if( USE_SPECTRUM_CHART_D3 )
   include(cmake/DeployJsAndCss.cmake)
 
 
-  set( JS_RESOURCES_TO_COPY "SpectrumChartD3.js" "d3.v3.min.js" "c.min.js" )
+  set( JS_RESOURCES_TO_COPY "SpectrumChartD3.js" "d3.v3.min.js" )
   foreach(_file ${JS_RESOURCES_TO_COPY})
     deploy_js_resource( "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}"
        "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}" )
