@@ -534,7 +534,7 @@ class DateLengthCalculator : public WContainerWidget
           throw runtime_error( "End date must be later than start date" );
         
         const int days = m_begindate->date().daysTo(m_enddate->date());
-        duration = 24*3600*days*PhysicalUnits::second;
+        duration = 24.0*3600.0*days*PhysicalUnits::second;
         const string datestr = PhysicalUnits::printToBestTimeUnits( duration, 2 );
         m_duration->setText( datestr );
         
@@ -592,7 +592,7 @@ class DateLengthCalculator : public WContainerWidget
     
     int days = m_begindate->date().daysTo(m_enddate->date());
     days = abs(days);
-    string datestr = PhysicalUnits::printToBestTimeUnits( 24*3600*days*PhysicalUnits::second, 2 );
+    string datestr = PhysicalUnits::printToBestTimeUnits( 24.0*3600.0*days*PhysicalUnits::second, 2 );
     m_duration->setText( datestr );
     
     updateInfo();

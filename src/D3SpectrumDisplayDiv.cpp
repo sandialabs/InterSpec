@@ -234,8 +234,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
 
 void D3SpectrumDisplayDiv::defineJavaScript()
 {
-  
-  
   string options = "{title: '', showAnimation: true, animationDuration: 200";
   options += ", xlabel: '" + m_xAxisTitle + "'";
   options += ", ylabel: '" + m_yAxisTitle + "'";
