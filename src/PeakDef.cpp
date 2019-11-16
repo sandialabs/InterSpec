@@ -2249,53 +2249,82 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 		answer << q << "forCalibration" << q << ":" << (p.useForCalibration() ? "true" : "false")
 			<< "," << q << "forSourceFit" << q << ":" << (p.useForShieldingSourceFit() ? "true" : "false");
 
+    /*
 		const char *gammaTypeVal = 0;
-		switch (p.sourceGammaType())
+		switch( p.sourceGammaType() )
 		{
-		case PeakDef::NormalGamma:       gammaTypeVal = "NormalGamma";       break;
-		case PeakDef::AnnihilationGamma: gammaTypeVal = "AnnihilationGamma"; break;
-		case PeakDef::SingleEscapeGamma: gammaTypeVal = "SingleEscapeGamma"; break;
-		case PeakDef::DoubleEscapeGamma: gammaTypeVal = "DoubleEscapeGamma"; break;
-		case PeakDef::XrayGamma:         gammaTypeVal = "XrayGamma";         break;
+		  case PeakDef::NormalGamma:       gammaTypeVal = "NormalGamma";       break;
+		  case PeakDef::AnnihilationGamma: gammaTypeVal = "AnnihilationGamma"; break;
+		  case PeakDef::SingleEscapeGamma: gammaTypeVal = "SingleEscapeGamma"; break;
+		  case PeakDef::DoubleEscapeGamma: gammaTypeVal = "DoubleEscapeGamma"; break;
+		  case PeakDef::XrayGamma:         gammaTypeVal = "XrayGamma";         break;
 		}//switch( p.sourceGammaType() )
 
-		if (p.parentNuclide() || p.xrayElement() || p.reaction())
+		if( p.parentNuclide() || p.xrayElement() || p.reaction() )
 			answer << "," << q << "sourceType" << q << ":" << q << gammaTypeVal << q;
-
-		if (p.parentNuclide())
+    */
+    
+    const auto srcTypeJSON = [q]( const PeakDef::SourceGammaType gamtype ) -> std::string{
+      const char *type = "";
+      switch( gamtype )
+      {
+        case NormalGamma:       return ""; break;
+        case AnnihilationGamma: type = "annih."; break;
+        case XrayGamma:         type = "x-ray";  break;
+        case DoubleEscapeGamma: type = "D.E.";   break;
+        case SingleEscapeGamma: type = "S.E.";   break;
+      }//switch( p.sourceGammaType() )
+      
+      return string(",") + q + "type" + q + ":" + q + type + q;
+    };//srcTypeJSON lamda
+    
+    
+		if( p.parentNuclide() )
 		{
 			const SandiaDecay::Transition *trans = p.nuclearTransition();
 			const SandiaDecay::RadParticle *decayPart = p.decayParticle();
 
 			answer << "," << q << "nuclide" << q << ": { " << q << "name" << q << ": " << q << p.parentNuclide()->symbol << q;
-			if (trans && decayPart)
+			if( trans && decayPart )
 			{
 				string transistion_parent, decay_child;
 				const SandiaDecay::Nuclide *trans_parent = trans->parent;
 				transistion_parent = trans_parent->symbol;
-				if (trans->child)
+				if( trans->child )
 					decay_child = trans->child->symbol;
 
 				answer << "," << q << "decayParent" << q << ":" << q << transistion_parent << q;
 				answer << "," << q << "decayChild" << q << ":" << q << decay_child << q;
-				answer << "," << q << "DecayGammaEnergy" << q << ":" << decayPart->energy << "";
-			}//if( m_transition )
+				answer << "," << q << "energy" << q << ":" << decayPart->energy << "";
+        answer << srcTypeJSON( p.sourceGammaType() );
+			}else if( p.sourceGammaType() == AnnihilationGamma )
+      {
+        answer << "," << q << "energy" << q << ":511.006";
+        answer << srcTypeJSON( p.sourceGammaType() );
+      }//if( m_transition )
 
 			answer << "}";
 		}//if( m_parentNuclide )
 
-
-		if (p.xrayElement())
+		if( p.xrayElement() )
 		{
-			answer << "," << q << "xray" << q << ": {" << q << "element" << q << ":" << q << p.xrayElement() << q
-				<< "," << q << "energy" << q << ":" << p.xrayEnergy() << "}";
+			answer << "," << q << "xray" << q
+        << ":{"
+             << q << "name" << q << ":" << q << p.xrayElement() << q << ","
+             << q << "energy" << q << ":" << p.xrayEnergy()
+             << srcTypeJSON( p.sourceGammaType() )
+        << "}";
 		}//if( m_xrayElement )
 
 
-		if (p.reaction())
+		if( p.reaction() )
 		{
-			answer << "," << q << "reaction" << q << ":{" << q << "name" << q << ":" << q << p.reaction()->name() << q << "," << q << "energy" << q << ":"
-				<< p.reactionEnergy() << "}";
+			answer << "," << q << "reaction" << q
+        << ":{"
+             << q << "name" << q << ":" << q << p.reaction()->name() << q << ","
+             << q << "energy" << q << ":" << p.reactionEnergy()
+             << srcTypeJSON( p.sourceGammaType() )
+        << "}";
 		}//if( m_reaction )
 
 		answer << "}";
