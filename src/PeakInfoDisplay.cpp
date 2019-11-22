@@ -32,20 +32,26 @@
 #include <stdexcept>
 
 #include <Wt/WText>
+#include <Wt/WTable>
 #include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WAnchor>
 #include <Wt/WServer>
+#include <Wt/WSvgImage>
+#include <Wt/WComboBox>
 #include <Wt/WLineEdit>
+#include <Wt/WTableCell>
 #include <Wt/WTabWidget>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
-#include <Wt/WBorderLayout>
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
 #include <Wt/WItemDelegate>
+#include <Wt/WDoubleSpinBox>
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
@@ -61,6 +67,7 @@
 #else
 #include "InterSpec/SpectrumDisplayDiv.h"
 #endif
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
@@ -370,6 +377,322 @@ void PeakInfoDisplay::enablePeakSearchButton( bool enable )
 
 void PeakInfoDisplay::createNewPeak()
 {
+  std::shared_ptr<const Measurement> meas = m_viewer->displayedHistogram(SpectrumType::kForeground);
+  
+  if( !meas || meas->num_gamma_channels() < 7 )
+  {
+    passMessage( "A foreground spectrum must be loaded to add a peak.",
+                "", WarningWidget::WarningMsgHigh );
+    return;
+  }//if( we dont have a valid foreground )
+  
+  float xmin = static_cast<float>( m_spectrumDisplayDiv->xAxisMinimum() );
+  float xmax = static_cast<float>( m_spectrumDisplayDiv->xAxisMaximum() );
+
+  const size_t nbin = meas->num_gamma_channels();
+  xmin = std::max( xmin, meas->gamma_channel_lower(0) );
+  xmax = std::min( xmax, meas->gamma_channel_upper(nbin-1) );
+  
+  const float minfwhm = 0.05f, maxfwhm = 450.0f;  //reasonable range of peak widths
+  
+  //To get the width,
+  //  1) see if there is a peak above and below the current one, if so interpolate
+  //  2) see if DRF contains FWHM
+  //  3) see if there is a peak above or below, and scale by sqrt
+  //  4) Guess based on number of bins.
+  auto estimateFWHM = [this,nbin,minfwhm,maxfwhm]( const float energy ) -> float {
+    const auto peaks = m_model->peakVec();
+    const auto lb = std::lower_bound( begin(peaks), end(peaks), PeakDef(energy,1.0,1.0), &PeakDef::lessThanByMean );
+    const auto ub = lb==end(peaks) ? end(peaks) : lb + 1;
+    if( lb!=end(peaks) && ub!=end(peaks) && lb->gausPeak() && ub->gausPeak() )
+      return static_cast<float>( lb->fwhm() + (ub->fwhm() - lb->fwhm())*(energy - lb->mean()) / (ub->mean() - lb->mean()) );
+    
+    std::shared_ptr<SpecMeas> specmeas = m_viewer->measurment(SpectrumType::kForeground);
+    std::shared_ptr<DetectorPeakResponse> drf = specmeas ? specmeas->detector() : nullptr;
+    if( drf && drf->hasResolutionInfo() )
+      return std::min( maxfwhm, std::max(minfwhm,drf->peakResolutionFWHM(energy)) );
+    
+    if( peaks.empty() )
+    {
+      try
+      {
+        const string datadir = InterSpec::staticDataDirectory();
+        string drf_dir = UtilityFunctions::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
+        if( nbin <= 2049 )
+          drf_dir = UtilityFunctions::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
+        
+        drf = make_shared<DetectorPeakResponse>();
+        drf->fromGadrasDirectory( drf_dir );
+        
+        return std::min( maxfwhm, std::max(minfwhm,drf->peakResolutionFWHM(energy)) );
+      }catch(...)
+      {
+        if( nbin <= 2049 )
+          return std::min( maxfwhm, std::max(minfwhm,2.634f*17.5f*sqrt(energy/661.0f)) );
+        return std::min( maxfwhm, std::max(minfwhm,2.634f*0.67f*sqrt(energy/661.0f)) );
+      }
+    }//if( peaks.empty() )
+  
+    const PeakDef &refpeak = (lb!=end(peaks) ? *lb : (peaks.front().mean() > energy) ? peaks.front() : peaks.back());
+    const double ref_width = refpeak.gausPeak() ? refpeak.fwhm() : 0.25f*refpeak.roiWidth();
+    const double ref_energy = refpeak.gausPeak() ? refpeak.mean() : 0.5*(refpeak.upperX() + refpeak.lowerX());
+    
+    return std::min( maxfwhm, std::max(minfwhm,static_cast<float>( ref_width*sqrt(energy/ref_energy) )) );
+  };//estimateFWHM lambda
+  
+  
+  // Now create a dialog where user can specify the mean, sigma, roi range, and roi polynomial order...
+  const float initialEnergy = 0.5f*(xmin + xmax);
+  const float initialFWHM = estimateFWHM(initialEnergy);
+  const double initialArea = std::max(10.0,0.2*meas->gamma_integral(initialEnergy-initialFWHM, initialEnergy+initialFWHM));
+  
+  shared_ptr<PeakDef> candidatePeak = make_shared<PeakDef>(initialEnergy,initialFWHM/2.634,initialArea);
+  
+  int roiLowBin, roiHighBin;
+  estimatePeakFitRange( *candidatePeak, meas, roiLowBin, roiHighBin );
+  //I think we are garunteed the bins to be in range, but we'll enforce this JIC
+  const size_t roiLowerChannel = static_cast<size_t>( std::max(roiLowBin,1) );
+  const size_t roiUpperChannel = std::min( static_cast<size_t>(roiHighBin), meas->num_gamma_channels()-1 );
+  
+  const double initialRoiLower = meas->gamma_channel_lower( roiLowerChannel );
+  const double initialRoiUpper = meas->gamma_channel_upper( roiUpperChannel );
+  candidatePeak->continuum()->setRange( initialRoiLower, initialRoiUpper );
+  
+  const float minEnergy = meas->gamma_channel_lower(0);
+  const float maxEnergy = meas->gamma_channel_upper(nbin-1);
+  
+  AuxWindow *window = new AuxWindow( "Add Peak",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::PhoneModal | AuxWindowProperties::DisableCollapse) );
+  window->rejectWhenEscapePressed();
+  
+  WTable *table = new WTable( window->contents() );
+  
+  WLabel *label = new WLabel( "Peak Mean", table->elementAt(0,0) );
+  
+  WDoubleSpinBox *energySB = new WDoubleSpinBox( table->elementAt(0,1) );
+  //energySB->setSuffix( "keV" );
+  energySB->setRange( minEnergy, maxEnergy );
+  energySB->setValue( initialEnergy );
+  
+  
+  label = new WLabel( "Peak FWHM", table->elementAt(1,0) );
+  WDoubleSpinBox *fwhmSB = new WDoubleSpinBox( table->elementAt(1,1) );
+  //fwhmSB->setSuffix( "keV" );
+  fwhmSB->setRange( meas->gamma_channel_lower(0), meas->gamma_channel_upper(nbin-1) );
+  fwhmSB->setRange( minfwhm, maxfwhm );
+  fwhmSB->setValue( initialFWHM );
+  
+
+  label = new WLabel( "Peak Amp.", table->elementAt(2,0) );
+  WDoubleSpinBox *areaSB = new WDoubleSpinBox( table->elementAt(2,1) );
+  areaSB->setRange( 0, meas->gamma_channels_sum(0, nbin-1) );
+  areaSB->setValue( initialArea );
+  
+  label = new WLabel( "ROI Lower", table->elementAt(3,0) );
+  WDoubleSpinBox *roiLowerSB = new WDoubleSpinBox( table->elementAt(3,1) );
+  roiLowerSB->setRange( minEnergy, maxEnergy );
+  roiLowerSB->setValue( initialRoiLower );
+  
+  label = new WLabel( "ROI Upper", table->elementAt(4,0) );
+  WDoubleSpinBox *roiUpperSB = new WDoubleSpinBox( table->elementAt(4,1) );
+  roiUpperSB->setRange( minEnergy, maxEnergy );
+  roiUpperSB->setValue( initialRoiUpper );
+  
+  
+  label = new WLabel( "Continuum", table->elementAt(5,0) );
+  WComboBox *contType = new WComboBox( table->elementAt(5,1) );
+  contType->addItem( "None" );
+  contType->addItem( "Constant" );
+  contType->addItem( "Linear" );
+  contType->addItem( "Quadratic" );
+  contType->addItem( "Global Cont." );
+  contType->setCurrentIndex( 2 );
+  
+  WText *chart = new WText( "", Wt::XHTMLUnsafeText, window->contents() );
+  //chart->addStyleClass( "DrfPeakChart" );
+  
+  //Make sepearte lambdas for changing each quantitiy
+  
+  auto updateCandidatePeakPreview = [=](){
+    
+    std::shared_ptr<const Measurement> meas = m_viewer->displayedHistogram(SpectrumType::kForeground);
+    
+    if( !meas )
+    {
+      chart->setText( "No foreground spectrum" );
+      return;
+    }
+
+    auto peaks = std::make_shared< std::deque<std::shared_ptr<const PeakDef> > >();
+    peaks->push_back( candidatePeak );
+      
+    const bool compact = false;
+    const int width_px = 500;
+    const int height_px = 350;
+    const double roiWidth = candidatePeak->upperX() - candidatePeak->lowerX();
+    const double lower_energy = candidatePeak->lowerX() - roiWidth;
+    const double upper_energy = candidatePeak->upperX() + roiWidth;
+    std::shared_ptr<const ColorTheme> theme = m_viewer->getColorTheme();
+    const std::vector<std::shared_ptr<const ReferenceLineInfo>> reflines;
+      
+    std::shared_ptr<Wt::WSvgImage> preview
+        = PeakSearchGuiUtils::renderChartToSvg( meas, peaks, reflines, lower_energy,
+                                                upper_energy, width_px, height_px, theme, compact );
+      
+    if( preview )
+    {
+      stringstream strm;
+      preview->write( strm );
+      chart->setText( strm.str() );
+    }else
+    {
+      chart->setText( "Error rendering preview" );
+    }
+
+  };//updateCandidatePeak lambda
+
+  auto roiTypeChanged = [=](){
+    switch( contType->currentIndex() )
+    {
+      case 0: //None
+        candidatePeak->continuum()->setType( PeakContinuum::OffsetType::NoOffset );
+        break;
+        
+      case 1:  //constant
+        candidatePeak->continuum()->calc_linear_continuum_eqn( meas, candidatePeak->lowerX(), candidatePeak->upperX(), 2 );
+        candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Constant );
+        break;
+        
+      case 2: //linear
+        candidatePeak->continuum()->calc_linear_continuum_eqn( meas, candidatePeak->lowerX(), candidatePeak->upperX(), 2 );
+        candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Linear );
+        break;
+        
+      case 3: //quadratic
+        candidatePeak->continuum()->calc_linear_continuum_eqn( meas, candidatePeak->lowerX(), candidatePeak->upperX(), 2 );
+        candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Quardratic );
+        break;
+        
+      case 4: //global
+      {
+        std::shared_ptr<const Measurement> gcontinuum = candidatePeak->continuum()->externalContinuum();
+        if( !gcontinuum )
+          gcontinuum = estimateContinuum( meas );
+        candidatePeak->continuum()->setType( PeakContinuum::OffsetType::External );
+        candidatePeak->continuum()->setExternalContinuum( gcontinuum );
+      }
+        break;
+    }//switch( contType->currentIndex() )
+    
+    updateCandidatePeakPreview();
+  };//roiTypeChanged
+  
+  
+  auto meanChanged = [=](){
+    const double oldmean = candidatePeak->mean();
+    
+    if( WValidator::State::Valid != energySB->validate() )
+      energySB->setValue( oldmean );
+    
+    const double newmean = energySB->value();
+    const double change = newmean - oldmean;
+    
+    const double newLowerX = candidatePeak->lowerX() + change;
+    const double newUpperX = candidatePeak->upperX() + change;
+    roiLowerSB->setValue( newLowerX );
+    roiUpperSB->setValue( newUpperX );
+    
+    candidatePeak->setMean( newmean );
+    candidatePeak->continuum()->setRange( newLowerX, newUpperX );
+    roiTypeChanged();
+  };//meanChanged
+  
+  auto fwhmChanged = [=](){
+    const double oldFWHM = candidatePeak->fwhm();
+    
+    if( WValidator::State::Valid != fwhmSB->validate() )
+      candidatePeak->setSigma( oldFWHM/2.634 );
+    
+    const double newFWHM = fwhmSB->value();
+    candidatePeak->setSigma( newFWHM/2.634 );
+    
+    updateCandidatePeakPreview();
+  };
+  
+  auto ampChanged = [=](){
+    const double oldAmp = candidatePeak->amplitude();
+    
+    if( WValidator::State::Valid != areaSB->validate() )
+      areaSB->setValue( oldAmp );
+    
+    const double newAmp = areaSB->value();
+    candidatePeak->setAmplitude( newAmp );
+    
+    updateCandidatePeakPreview();
+  };
+
+  
+  auto roiRangeChanged = [=](){
+    if( WValidator::State::Valid != roiLowerSB->validate() )
+      roiLowerSB->setValue( candidatePeak->lowerX() );
+    
+    if( WValidator::State::Valid != roiUpperSB->validate() )
+      roiUpperSB->setValue( candidatePeak->upperX() );
+    
+    double roiLower = roiLowerSB->value();
+    double roiUpper = roiUpperSB->value();
+    if( roiLower >= roiUpper )
+    {
+      roiLowerSB->setValue( roiUpper );
+      roiUpperSB->setValue( roiLower );
+      std::swap( roiLower, roiUpper );
+    }
+    
+    if( candidatePeak->mean() < roiLower )
+    {
+      energySB->setValue( roiLower );
+      candidatePeak->setMean( roiLower );
+    }
+    
+    if( candidatePeak->mean() > roiUpper )
+    {
+      energySB->setValue( roiUpper );
+      candidatePeak->setMean( roiUpper );
+    }
+    
+    candidatePeak->continuum()->setRange( roiLower, roiUpper );
+    
+    roiTypeChanged();
+  };//roiRangeChanged
+  
+  
+  
+  energySB->changed().connect( std::bind(meanChanged) );
+  fwhmSB->changed().connect( std::bind(fwhmChanged) );
+  areaSB->changed().connect( std::bind(ampChanged) );
+  roiLowerSB->changed().connect( std::bind(roiRangeChanged) );
+  roiUpperSB->changed().connect( std::bind(roiRangeChanged) );
+  contType->changed().connect( std::bind(roiTypeChanged) );
+  
+  WPushButton *closeButton = window->addCloseButtonToFooter("Cancel");
+  closeButton->clicked().connect( window, &AuxWindow::hide );
+  WPushButton *doAdd = new WPushButton( "Add" , window->footer() );
+  
+  doAdd->clicked().connect( std::bind( [=](){
+    m_viewer->addPeak( *candidatePeak, false );
+    window->hide();
+  }) );
+  
+  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+
+  roiTypeChanged();
+  updateCandidatePeakPreview();
+  
+  window->show();
+  window->centerWindow();
+  
+  
+  /*
   double width = 5.0;
   double amplitude = m_spectrumDisplayDiv->yAxisMaximum();
 
@@ -383,9 +706,7 @@ void PeakInfoDisplay::createNewPeak()
   if( amplitude <= 0.0 )
     amplitude = 1000.0;
 
-  double xmin = m_spectrumDisplayDiv->xAxisMinimum();
-  double xmax = m_spectrumDisplayDiv->xAxisMaximum();
-
+  
   std::shared_ptr<const Measurement> data = m_spectrumDisplayDiv->data();
   if( !data )
   {
@@ -412,11 +733,7 @@ void PeakInfoDisplay::createNewPeak()
     passMessage( "Error adding peak", "", WarningWidget::WarningMsgHigh );
     return;
   }
-  
-  //There is a slight issue here that this new peak will not drawn, since the
-  //  chart doesnt know it needs to be repainted..., if we want to avoid this
-  //  we can do something like:
-//  m_spectrumDisplayDiv->refresh();
+   */
 }//void createNewPeak()
 
 
@@ -683,9 +1000,8 @@ void PeakInfoDisplay::init()
     m_deletePeak->hide();
   }else
   {
-    WPushButton *addPeak = new WPushButton( "Add", buttonDiv );
-    HelpSystem::attachToolTipOn( addPeak,"Add a new peak for manual editing; peak will "
-                                 "have initial energy near left side of plot. Peak parameters can be editted by double-clicking on the quantity in the <b>Peak Manager</b> tab.", showToolTipInstantly , HelpSystem::Top );
+    WPushButton *addPeak = new WPushButton( "Add...", buttonDiv );
+    HelpSystem::attachToolTipOn( addPeak, "Manually add a new peak.", showToolTipInstantly, HelpSystem::Top );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
     addPeak->setIcon( "InterSpec_resources/images/plus_min_white.png" );
     
