@@ -827,7 +827,7 @@ ostream &operator<<( std::ostream &stream, const PeakContinuum &cont )
       stream << "Globally defined continuum";
     break;
     case PeakContinuum::Constant:   case PeakContinuum::Linear:
-    case PeakContinuum::Quardratic: case PeakContinuum::Cubic:
+    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
       stream << "Polynomial continuum with values {";
       for( size_t i = 0; i < cont.m_values.size(); ++i )
         stream << (i?", ":"") << cont.m_values[i];
@@ -1382,7 +1382,7 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
     case NoOffset:   type = "NoOffset";   break;
     case Constant:   type = "Constant";   break;
     case Linear:     type = "Linear";     break;
-    case Quardratic: type = "Quardratic"; break;
+    case Quadratic:  type = "Quardratic"; break;  //Note mispelling of "Quardratic" is left for backwards compatibility (InterSpec v1.0.6 and before), but should eventually be fixed...
     case Cubic:      type = "Cubic";      break;
     case External:   type = "External";   break;
   }//switch( m_type )
@@ -1507,8 +1507,9 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     m_type = Constant;
   else if( compare(node->value(),node->value_size(),"Linear",6,false) )
     m_type = Linear;
-  else if( compare(node->value(),node->value_size(),"Quardratic",10,false) )
-    m_type = Quardratic;
+  else if( compare(node->value(),node->value_size(),"Quardratic",10,false)
+           || compare(node->value(),node->value_size(),"Quadratic",9,false) )
+    m_type = Quadratic;
   else if( compare(node->value(),node->value_size(),"Cubic",5,false) )
     m_type = Cubic;
   else if( compare(node->value(),node->value_size(),"External",8,false) )
@@ -2133,13 +2134,13 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 	  case PeakContinuum::NoOffset:   answer << "NoOffset";   break;
 	  case PeakContinuum::Constant:   answer << "Constant";   break;
 	  case PeakContinuum::Linear:     answer << "Linear";     break;
-	  case PeakContinuum::Quardratic: answer << "Quardratic"; break;
+	  case PeakContinuum::Quadratic:  answer << "Quadratic";  break;
 	  case PeakContinuum::Cubic:      answer << "Cubic";      break;
 	  case PeakContinuum::External:   answer << "External";   break;
 	}//switch( continuum->type() )
 	answer << q << "," << q << "lowerEnergy" << q << ":" << continuum->lowerEnergy()
 		<< "," << q << "upperEnergy" << q << ":" << continuum->upperEnergy();
-
+  
   switch( continuum->type() )
   {
     case PeakContinuum::NoOffset:
@@ -2147,7 +2148,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       
     case PeakContinuum::Constant:
     case PeakContinuum::Linear:
-    case PeakContinuum::Quardratic:
+    case PeakContinuum::Quadratic:
     case PeakContinuum::Cubic:
     {
       answer << "," << q << "referenceEnergy" << q << ":" << continuum->referenceEnergy();
@@ -3231,7 +3232,7 @@ bool PeakContinuum::defined() const
     case Cubic:
       if( m_values[3] != 0.0)
         return true;
-    case Quardratic:
+    case Quadratic:
       if( m_values[2] != 0.0)
         return true;
     case Linear:
@@ -3443,7 +3444,7 @@ void PeakContinuum::setParameters( double referenceEnergy,
       throw runtime_error( "PeakContinuum::setParameters invalid m_type" );
       
     case Constant:   case Linear:
-    case Quardratic: case Cubic:
+    case Quadratic: case Cubic:
     break;
   };//switch( m_type )
   
@@ -3507,7 +3508,7 @@ void PeakContinuum::setParameters( double referenceEnergy,
       throw runtime_error( "PeakContinuum::setParameters invalid m_type" );
       
     case Constant:   case Linear:
-    case Quardratic: case Cubic:
+    case Quadratic: case Cubic:
       break;
   };//switch( m_type )
   
@@ -3553,7 +3554,7 @@ bool PeakContinuum::isPolynomial() const
     case NoOffset:   case External:
       return false;
     case Constant:   case Linear:
-    case Quardratic: case Cubic:
+    case Quadratic: case Cubic:
       return true;
     break;
   }//switch( m_type )
@@ -3573,7 +3574,7 @@ void PeakContinuum::setType( PeakContinuum::OffsetType type )
       m_uncertainties.clear();
       m_fitForValue.clear();
       m_externalContinuum.reset();
-      m_lowerEnergy = m_upperEnergy = m_refernceEnergy = 0.0;
+      //m_lowerEnergy = m_upperEnergy = m_refernceEnergy = 0.0;
     break;
       
     case Constant:
@@ -3590,7 +3591,7 @@ void PeakContinuum::setType( PeakContinuum::OffsetType type )
       m_externalContinuum.reset();
     break;
       
-    case Quardratic:
+    case Quadratic:
       m_values.resize( 3, 0.0 );
       m_uncertainties.resize( 3, 0.0 );
       m_fitForValue.resize( 3, true );
@@ -3639,7 +3640,7 @@ double PeakContinuum::offset_integral( const double x0, const double x1 ) const
     case NoOffset:
       return 0.0;
     case Constant:   case Linear:
-    case Quardratic: case Cubic:
+    case Quadratic: case Cubic:
       return offset_eqn_integral( &(m_values[0]),
                                  m_type, x0, x1, m_refernceEnergy );
     case External:
@@ -3711,7 +3712,7 @@ double PeakContinuum::offset_eqn_integral( const double *coefs,
                            " called for polynomial backgrounds" );
       
     case Constant:   case Linear:
-    case Quardratic: case Cubic:
+    case Quadratic: case Cubic:
     break;
   };//enum OffsetType
     
@@ -3742,7 +3743,7 @@ void PeakContinuum::translate_offset_polynomial( double *new_coefs,
     case External:
       throw runtime_error( "translate_offset_polynomial invalid offset type" );
       
-    case Quardratic:
+    case Quadratic:
     case Cubic:
       throw runtime_error( "translate_offset_polynomial does not yet support "
                            "quadratic or cubic polynomials" );

@@ -358,7 +358,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
           {
             peak.setContinuum( p.continuum() );
             //ToDo: determine if we need to make the continuum quadratic or higher...
-            //peak.setType( OffsetType::Quardratic );
+            //peak.setType( OffsetType::Quadratic );
           }//if( ROI bounds are about same as another continuum )
         }//for( loop over peaks previously found to see if we should share continuum )
       }//if( new peak has a defined energy range )
@@ -1356,7 +1356,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         case PeakContinuum::NoOffset:   return WString( "None" );
         case PeakContinuum::Constant:   return WString( "Constant" );
         case PeakContinuum::Linear:     return WString( "Linear" );
-        case PeakContinuum::Quardratic: return WString( "Quadratic" );
+        case PeakContinuum::Quadratic:  return WString( "Quadratic" );
         case PeakContinuum::Cubic:      return WString( "Cubic" );
         case PeakContinuum::External:   return WString( "Global Cont." );
       }//switch( peak->offsetType() )

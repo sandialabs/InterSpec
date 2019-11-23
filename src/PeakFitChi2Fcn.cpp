@@ -951,7 +951,7 @@ MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<cons
       throw runtime_error( "MultiPeakFitChi2Fcn: invalid offset type" );
     break;
     case PeakContinuum::Constant:   case PeakContinuum::Linear:
-    case PeakContinuum::Quardratic: case PeakContinuum::Cubic:
+    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
       m_numOffset = static_cast<int>(m_offsetType);
     break;
   }//switch( m_offsetType )
@@ -1319,7 +1319,7 @@ void LinearProblemSubSolveChi2Fcn::init( std::shared_ptr<const Measurement> data
   switch( m_offsetType )
   {
     case PeakContinuum::Constant: case PeakContinuum::Linear:
-    case PeakContinuum::Quardratic: case PeakContinuum::Cubic:
+    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
     break;
     case PeakContinuum::NoOffset: case PeakContinuum::External:
       throw runtime_error( "LinearProblemSubSolveChi2Fcn: invalid offset" );

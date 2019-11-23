@@ -839,7 +839,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   if( intputSharesContinuum )
     offsetType = answer[0]->continuum()->type();
   else if( nPeaks > 3 && (end_channel - start_channel) > 20 )  //20 is a WAG
-    offsetType = PeakContinuum::Quardratic;
+    offsetType = PeakContinuum::Quadratic;
   
   PeakContinuum::eqn_from_offsets( start_channel, end_channel, start_range,
                                   dataH, nSideBinsToAverage, p1, p0 );
@@ -895,7 +895,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
         //        inputPrams.Add( "P1",  p1, std::max( fabs(0.1*p1), 10.0 ) );
         inputPrams.Add( "P1",  p1 );
       
-      if( offsetType >= PeakContinuum::Quardratic )
+      if( offsetType >= PeakContinuum::Quadratic )
         inputPrams.Add( "P2",  0.0 );
       if( offsetType >= PeakContinuum::Cubic )
         inputPrams.Add( "P3",  0.0 );
@@ -1064,7 +1064,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
       inputPrams.Add( "P0",  p0, std::max( fabs(0.1*p0), 10.0 ) );
     if( offsetType >= PeakContinuum::Linear )
       inputPrams.Add( "P1",  p1, std::max( fabs(0.1*p1), 10.0 ) );
-    if( offsetType >= PeakContinuum::Quardratic )
+    if( offsetType >= PeakContinuum::Quadratic )
       inputPrams.Add( "P2",  0.0, 1.0 );
     if( offsetType >= PeakContinuum::Cubic )
       inputPrams.Add( "P3",  0.0, 0.25 );
@@ -2476,9 +2476,9 @@ void fit_peak_for_user_click( PeakShrdVec &results,
   //The below should probably go off the number of bins in the ROI
   PeakContinuum::OffsetType offsetType;
   if( highres )
-    offsetType = (nFitPeaks < 3) ? PeakContinuum::Linear : PeakContinuum::Quardratic;
+    offsetType = (nFitPeaks < 3) ? PeakContinuum::Linear : PeakContinuum::Quadratic;
   else
-    offsetType = (nFitPeaks < 2) ? PeakContinuum::Linear : PeakContinuum::Quardratic;
+    offsetType = (nFitPeaks < 2) ? PeakContinuum::Linear : PeakContinuum::Quadratic;
   
   for( size_t i = 0; i < coFitPeaks.size(); ++i )
     offsetType = std::max( offsetType, coFitPeaks[i]->continuum()->type() );
@@ -5913,7 +5913,7 @@ bool chi2_significance_test( PeakDef peak,
                 if( highres )
                 {
                   if( currentgroup.size() > 2 )
-                    type = PeakContinuum::Quardratic;
+                    type = PeakContinuum::Quadratic;
                   if( currentgroup.size() > 4 )
                     type = PeakContinuum::Cubic;
                 }else
@@ -5941,13 +5941,13 @@ bool chi2_significance_test( PeakDef peak,
             if( highres )
             {
               if( currentgroup.size() > 2 )
-                type = PeakContinuum::Quardratic;
+                type = PeakContinuum::Quadratic;
               if( currentgroup.size() > 4 )
                 type = PeakContinuum::Cubic;
             }else
             {
               if( currentgroup.size() == 2 )
-                type = PeakContinuum::Quardratic;
+                type = PeakContinuum::Quadratic;
               if( currentgroup.size() > 2 )
                 type = PeakContinuum::Cubic;
             }
@@ -6238,7 +6238,7 @@ bool chi2_significance_test( PeakDef peak,
                 inputPrams.Add( "P0",  0.5*( (*x_start) + (*(x_end-1)) ) );
               if( type >= PeakContinuum::Linear )
                 inputPrams.Add( "P1",  0.0 );
-              if( type >= PeakContinuum::Quardratic )
+              if( type >= PeakContinuum::Quadratic )
                 inputPrams.Add( "P2",  0.0 );
               if( type >= PeakContinuum::Cubic )
                 inputPrams.Add( "P3",  0.0 );
