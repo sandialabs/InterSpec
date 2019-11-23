@@ -394,12 +394,12 @@ void PeakEdit::init()
   {
     switch ( t )
     {
-      case PeakContinuum::NoOffset: m_continuumType->addItem( "None" );         break;
-      case PeakContinuum::External: m_continuumType->addItem( "Global Cont." ); break;
-      case PeakContinuum::Constant: m_continuumType->addItem( "Constant" );     break;
-      case PeakContinuum::Linear:   m_continuumType->addItem( "Linear" );       break;
-      case PeakContinuum::Quardratic: m_continuumType->addItem( "Quadratic" );  break;
-      case PeakContinuum::Cubic:    m_continuumType->addItem( "Cubic" );        break;
+      case PeakContinuum::NoOffset:  m_continuumType->addItem( "None" );         break;
+      case PeakContinuum::External:  m_continuumType->addItem( "Global Cont." ); break;
+      case PeakContinuum::Constant:  m_continuumType->addItem( "Constant" );     break;
+      case PeakContinuum::Linear:    m_continuumType->addItem( "Linear" );       break;
+      case PeakContinuum::Quadratic: m_continuumType->addItem( "Quadratic" );  break;
+      case PeakContinuum::Cubic:     m_continuumType->addItem( "Cubic" );        break;
     }//switch ( t )
   }//for( loop over PeakContinuum::OffsetType )
 
@@ -1423,7 +1423,7 @@ void PeakEdit::contnuumTypeChanged()
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial4)->setHidden( true );
     break;
   
-    case PeakContinuum::Quardratic:
+    case PeakContinuum::Quadratic:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial1)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial2)->setHidden( false );
@@ -1529,7 +1529,7 @@ void PeakEdit::skewTypeChanged()
                 break;
                 
               case PeakContinuum::Constant: case PeakContinuum::Linear:
-              case PeakContinuum::Quardratic: case PeakContinuum::Cubic:
+              case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
 //                contArea = m_currentPeak.offset_integral( lowe, upe );
                 contArea = continuum->offset_integral( lowe, upe );
                 break;
@@ -1885,7 +1885,7 @@ void PeakEdit::apply()
         break;
       }//
       
-      case PeakContinuum::Quardratic:
+      case PeakContinuum::Quadratic:
       case PeakContinuum::Cubic:
         break;
     }//switch( offset )

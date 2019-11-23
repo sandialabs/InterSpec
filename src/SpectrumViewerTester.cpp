@@ -1119,7 +1119,7 @@ string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak )
     case PeakContinuum::NoOffset:   strm << "None</td></tr>\n";      break;
     case PeakContinuum::Constant:   strm << "Constant</td></tr>\n";  break;
     case PeakContinuum::Linear:     strm << "Linear</td></tr>\n";    break;
-    case PeakContinuum::Quardratic: strm << "Quadratic</td></tr>\n"; break;
+    case PeakContinuum::Quadratic:  strm << "Quadratic</td></tr>\n"; break;
     case PeakContinuum::Cubic:      strm << "Cubic</td></tr>\n";     break;
     case PeakContinuum::External:   strm << "Global</td></tr>\n";    break;
   }//switch( peak.continuum()->type() )

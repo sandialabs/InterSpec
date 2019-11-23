@@ -65,7 +65,7 @@ struct PeakContinuum
     NoOffset,
     Constant = 1,  //purposely set to be the size of the expected num paramters
     Linear,
-    Quardratic,
+    Quadratic,
     Cubic,
     External
   };//enum OffsetType

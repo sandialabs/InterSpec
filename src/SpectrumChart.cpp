@@ -3987,7 +3987,7 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
     break;
       
     case PeakContinuum::Constant:   case PeakContinuum::Linear:
-    case PeakContinuum::Quardratic: case PeakContinuum::Cubic:
+    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
     case PeakContinuum::External:
     {
       vector<WPointF> path;

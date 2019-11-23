@@ -570,7 +570,7 @@ void PeakInfoDisplay::createNewPeak()
         
       case 3: //quadratic
         candidatePeak->continuum()->calc_linear_continuum_eqn( meas, candidatePeak->lowerX(), candidatePeak->upperX(), 2 );
-        candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Quardratic );
+        candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Quadratic );
         break;
         
       case 4: //global
