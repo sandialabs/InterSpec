@@ -377,6 +377,11 @@ void PeakInfoDisplay::enablePeakSearchButton( bool enable )
 
 void PeakInfoDisplay::createNewPeak()
 {
+  /* ToDo:
+   - PeakSearchGuiUtils::renderChartToSvg() seems to give a chart with a kinda large right margin; should look at.
+   - Associating peak with nuclide.  Deal with?
+   - Color?
+   */
   std::shared_ptr<const Measurement> meas = m_viewer->displayedHistogram(SpectrumType::kForeground);
   
   if( !meas || meas->num_gamma_channels() < 7 )
@@ -385,6 +390,8 @@ void PeakInfoDisplay::createNewPeak()
                 "", WarningWidget::WarningMsgHigh );
     return;
   }//if( we dont have a valid foreground )
+  
+  const bool isPhone = m_viewer->isPhone();
   
   float xmin = static_cast<float>( m_spectrumDisplayDiv->xAxisMinimum() );
   float xmax = static_cast<float>( m_spectrumDisplayDiv->xAxisMaximum() );
@@ -405,7 +412,10 @@ void PeakInfoDisplay::createNewPeak()
     const auto lb = std::lower_bound( begin(peaks), end(peaks), PeakDef(energy,1.0,1.0), &PeakDef::lessThanByMean );
     const auto ub = lb==end(peaks) ? end(peaks) : lb + 1;
     if( lb!=end(peaks) && ub!=end(peaks) && lb->gausPeak() && ub->gausPeak() )
+    {
+      //Linearly interpolate between peaks ... should probably upgrade to interpolating based on sqrt(energy) between them.
       return static_cast<float>( lb->fwhm() + (ub->fwhm() - lb->fwhm())*(energy - lb->mean()) / (ub->mean() - lb->mean()) );
+    }
     
     std::shared_ptr<SpecMeas> specmeas = m_viewer->measurment(SpectrumType::kForeground);
     std::shared_ptr<DetectorPeakResponse> drf = specmeas ? specmeas->detector() : nullptr;
@@ -462,45 +472,79 @@ void PeakInfoDisplay::createNewPeak()
   const float maxEnergy = meas->gamma_channel_upper(nbin-1);
   
   AuxWindow *window = new AuxWindow( "Add Peak",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::PhoneModal | AuxWindowProperties::DisableCollapse) );
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   
   WTable *table = new WTable( window->contents() );
+  table->addStyleClass( "AddPeakTbl" );
+  table->setHeaderCount( 1, Wt::Orientation::Vertical );
   
-  WLabel *label = new WLabel( "Peak Mean", table->elementAt(0,0) );
+  if( !wApp->styleSheet().isDefined("AddPeakTblCell") )
+    wApp->styleSheet().addRule( ".AddPeakTbl > tbody > tr > td", "padding-left: 10px; vertical-align: middle;", "AddPeakTblCell" );
   
-  WDoubleSpinBox *energySB = new WDoubleSpinBox( table->elementAt(0,1) );
-  //energySB->setSuffix( "keV" );
+  if( isPhone && !wApp->styleSheet().isDefined("AddPeakTblMbl") )
+    wApp->styleSheet().addRule( ".AddPeakTbl", "width: 100%; margin: 10px;", "AddPeakTblMbl" );
+  
+  //WGridLayout *layout = window->stretcher();
+  
+  
+  WLabel *label = new WLabel( "Peak Mean" );
+  table->elementAt(0,0)->addWidget( label );
+  //layout->addWidget( label, 0, 0 );
+  
+  WDoubleSpinBox *energySB = new WDoubleSpinBox();
+  table->elementAt(0,1)->addWidget( energySB );
+  //layout->addWidget( energySB, 0, 1 );
   energySB->setRange( minEnergy, maxEnergy );
   energySB->setValue( initialEnergy );
   
   
-  label = new WLabel( "Peak FWHM", table->elementAt(1,0) );
-  WDoubleSpinBox *fwhmSB = new WDoubleSpinBox( table->elementAt(1,1) );
-  //fwhmSB->setSuffix( "keV" );
+  label = new WLabel( "Peak FWHM" );
+  table->elementAt(1,0)->addWidget( label );
+  //layout->addWidget( label, 1, 0 );
+  
+  WDoubleSpinBox *fwhmSB = new WDoubleSpinBox();
+  table->elementAt(1,1)->addWidget( fwhmSB );
+  //layout->addWidget( fwhmSB, 1, 1 );
   fwhmSB->setRange( meas->gamma_channel_lower(0), meas->gamma_channel_upper(nbin-1) );
   fwhmSB->setRange( minfwhm, maxfwhm );
   fwhmSB->setValue( initialFWHM );
   
 
-  label = new WLabel( "Peak Amp.", table->elementAt(2,0) );
-  WDoubleSpinBox *areaSB = new WDoubleSpinBox( table->elementAt(2,1) );
+  label = new WLabel( "Peak Amp." );
+  table->elementAt(2,0)->addWidget( label );
+  //layout->addWidget( label, 2, 0 );
+  WDoubleSpinBox *areaSB = new WDoubleSpinBox();
+  table->elementAt(2,1)->addWidget( areaSB );
+  //layout->addWidget( areaSB, 2, 1 );
   areaSB->setRange( 0, meas->gamma_channels_sum(0, nbin-1) );
   areaSB->setValue( initialArea );
   
-  label = new WLabel( "ROI Lower", table->elementAt(3,0) );
-  WDoubleSpinBox *roiLowerSB = new WDoubleSpinBox( table->elementAt(3,1) );
+  label = new WLabel( "ROI Lower" );
+  table->elementAt(3,0)->addWidget( label );
+  //layout->addWidget( label, 3, 0 );
+  WDoubleSpinBox *roiLowerSB = new WDoubleSpinBox();
+  table->elementAt(3,1)->addWidget( roiLowerSB );
+  //layout->addWidget( roiLowerSB, 3, 1 );
   roiLowerSB->setRange( minEnergy, maxEnergy );
   roiLowerSB->setValue( initialRoiLower );
   
-  label = new WLabel( "ROI Upper", table->elementAt(4,0) );
-  WDoubleSpinBox *roiUpperSB = new WDoubleSpinBox( table->elementAt(4,1) );
+  label = new WLabel( "ROI Upper" );
+  table->elementAt(4,0)->addWidget( label );
+  //layout->addWidget( label, 4, 0 );
+  WDoubleSpinBox *roiUpperSB = new WDoubleSpinBox();
+  table->elementAt(4,1)->addWidget( roiUpperSB );
+  //layout->addWidget( roiUpperSB, 4, 1 );
   roiUpperSB->setRange( minEnergy, maxEnergy );
   roiUpperSB->setValue( initialRoiUpper );
   
   
-  label = new WLabel( "Continuum", table->elementAt(5,0) );
-  WComboBox *contType = new WComboBox( table->elementAt(5,1) );
+  label = new WLabel( "Continuum" );
+  table->elementAt(5,0)->addWidget( label );
+  //layout->addWidget( label, 5, 0 );
+  WComboBox *contType = new WComboBox();
+  table->elementAt(5,1)->addWidget( contType );
+  //layout->addWidget( contType, 5, 1 );
   contType->addItem( "None" );
   contType->addItem( "Constant" );
   contType->addItem( "Linear" );
@@ -508,12 +552,72 @@ void PeakInfoDisplay::createNewPeak()
   contType->addItem( "Global Cont." );
   contType->setCurrentIndex( 2 );
   
-  WText *chart = new WText( "", Wt::XHTMLUnsafeText, window->contents() );
-  //chart->addStyleClass( "DrfPeakChart" );
+  auto fitCell = table->elementAt(6,0);
+  fitCell->setColumnSpan( 2 );
+  fitCell->setVerticalAlignment( Wt::AlignmentFlag::AlignBottom );
+  //layout->addWidget( fitDiv, 0, 6, 1, 2 );
+  WPushButton *fitBtn = new WPushButton( "Fit", fitCell );
+  WCheckBox *fitEnergy = new WCheckBox( "Energy", fitCell );
+  WCheckBox *fitFWHM = new WCheckBox( "FWHM", fitCell );
+  WCheckBox *fitAmplitude = new WCheckBox( "Amp.", fitCell );
+  fitEnergy->setMargin(3,Wt::Left);
+  fitFWHM->setMargin(3,Wt::Left);
+  fitAmplitude->setMargin(3,Wt::Left);
   
-  //Make sepearte lambdas for changing each quantitiy
+  WFont fitCbFont;
+  fitCbFont.setWeight( WFont::Weight::NormalWeight );
+  fitCbFont.setSize( WFont::Size::Smaller );
+  
+  fitEnergy->decorationStyle().setFont( fitCbFont );
+  fitFWHM->decorationStyle().setFont( fitCbFont );
+  fitAmplitude->decorationStyle().setFont( fitCbFont );
+
+  
+  fitEnergy->setChecked( false );
+  fitFWHM->setChecked( true );
+  fitAmplitude->setChecked( true );
+  
+  WText *chart = new WText( "", Wt::XHTMLUnsafeText );
+  chart->setInline( false );
+  //chart->addStyleClass( "DrfPeakChart" );
+  table->elementAt(0,2)->addWidget( chart );
+  table->elementAt(0,2)->setRowSpan( 7 );
+  if( isPhone )
+  {
+    table->elementAt(0,2)->setVerticalAlignment( Wt::AlignmentFlag::AlignMiddle );
+    table->elementAt(0,2)->setContentAlignment( Wt::AlignmentFlag::AlignCenter );
+  }
+  //layout->addWidget( chart, 0, 2, 7, 1 );
+  //layout->addWidget( new WContainerWidget(), 6, 0 );
+  //layout->setRowStretch( 6, 1 );
+  
+  
+  
+  WText *msg = new WText( "For more advanced options, see the <em>Peak Editor</em> after adding." );
+  msg->decorationStyle().setFont( fitCbFont );
+  if( isPhone )
+  {
+    table->elementAt(7,0)->addWidget( msg );
+    table->elementAt(7,0)->setColumnSpan( 3 );
+  }else
+  {
+    window->footer()->addWidget( msg );
+    msg->setFloatSide( Wt::Side::Left );
+  }
+  
   
   auto updateCandidatePeakPreview = [=](){
+    /** Setting the width makes the AuxWindow 517 px wide
+     
+     */
+    const int ww = m_viewer->renderedWidth();
+    const int wh = m_viewer->renderedHeight();
+    
+    if( ww < 350 )
+    {
+      chart->setText( "Screen to small for preview." );
+      return;
+    }
     
     std::shared_ptr<const Measurement> meas = m_viewer->displayedHistogram(SpectrumType::kForeground);
     
@@ -525,16 +629,16 @@ void PeakInfoDisplay::createNewPeak()
 
     auto peaks = std::make_shared< std::deque<std::shared_ptr<const PeakDef> > >();
     peaks->push_back( candidatePeak );
-      
+    
     const bool compact = false;
-    const int width_px = 500;
-    const int height_px = 350;
+    const int width_px = isPhone ? (ww - 250) : std::min(550,ww-250);
+    const int height_px = std::min(350,wh-50);
     const double roiWidth = candidatePeak->upperX() - candidatePeak->lowerX();
     const double lower_energy = candidatePeak->lowerX() - roiWidth;
     const double upper_energy = candidatePeak->upperX() + roiWidth;
     std::shared_ptr<const ColorTheme> theme = m_viewer->getColorTheme();
     const std::vector<std::shared_ptr<const ReferenceLineInfo>> reflines;
-      
+    
     std::shared_ptr<Wt::WSvgImage> preview
         = PeakSearchGuiUtils::renderChartToSvg( meas, peaks, reflines, lower_energy,
                                                 upper_energy, width_px, height_px, theme, compact );
@@ -580,8 +684,8 @@ void PeakInfoDisplay::createNewPeak()
           gcontinuum = estimateContinuum( meas );
         candidatePeak->continuum()->setType( PeakContinuum::OffsetType::External );
         candidatePeak->continuum()->setExternalContinuum( gcontinuum );
-      }
         break;
+      }
     }//switch( contType->currentIndex() )
     
     updateCandidatePeakPreview();
@@ -665,6 +769,34 @@ void PeakInfoDisplay::createNewPeak()
     roiTypeChanged();
   };//roiRangeChanged
   
+  auto doFit = [=](){
+    std::shared_ptr<const Measurement> meas = m_viewer->displayedHistogram(SpectrumType::kForeground);
+    
+    if( !meas )
+      return;
+    
+    candidatePeak->setFitFor( PeakDef::CoefficientType::Mean, fitEnergy->isChecked() );
+    candidatePeak->setFitFor( PeakDef::CoefficientType::Sigma, fitFWHM->isChecked() );
+    candidatePeak->setFitFor( PeakDef::CoefficientType::GaussAmplitude, fitAmplitude->isChecked() );
+    
+    vector<PeakDef> input_peaks( 1, *candidatePeak ), results;
+    const double stat_threshold  = 0.0, hypothesis_threshold = 0.0;
+    
+    fitPeaks( input_peaks, stat_threshold, hypothesis_threshold, meas, results, std::vector<PeakDef>{}, false );
+    
+    if( results.empty() )
+    {
+      passMessage( "Fit Failed.", "", WarningWidget::WarningMsgLow );
+    }else
+    {
+      *candidatePeak = results[0];
+      energySB->setValue( candidatePeak->mean() );
+      fwhmSB->setValue( candidatePeak->fwhm() );
+      areaSB->setValue( candidatePeak->amplitude() );
+    }
+    
+    updateCandidatePeakPreview();
+  };//doFit
   
   
   energySB->changed().connect( std::bind(meanChanged) );
@@ -673,6 +805,8 @@ void PeakInfoDisplay::createNewPeak()
   roiLowerSB->changed().connect( std::bind(roiRangeChanged) );
   roiUpperSB->changed().connect( std::bind(roiRangeChanged) );
   contType->changed().connect( std::bind(roiTypeChanged) );
+  fitBtn->clicked().connect( std::bind(doFit) );
+  
   
   WPushButton *closeButton = window->addCloseButtonToFooter("Cancel");
   closeButton->clicked().connect( window, &AuxWindow::hide );
@@ -689,51 +823,8 @@ void PeakInfoDisplay::createNewPeak()
   updateCandidatePeakPreview();
   
   window->show();
-  window->centerWindow();
-  
-  
-  /*
-  double width = 5.0;
-  double amplitude = m_spectrumDisplayDiv->yAxisMaximum();
-
-  if( m_model->npeaks() )
-  {
-    const PeakDef &firstPeak = m_model->peak( 0 );
-    amplitude = firstPeak.peakArea();
-    width = firstPeak.gausPeak() ? firstPeak.sigma() : 0.25*firstPeak.roiWidth();
-  }//if( m_model->npeaks() )
-
-  if( amplitude <= 0.0 )
-    amplitude = 1000.0;
-
-  
-  std::shared_ptr<const Measurement> data = m_spectrumDisplayDiv->data();
-  if( !data )
-  {
-    passMessage( "A foreground spectrum must be loaded to add a peak.",
-                 "", WarningWidget::WarningMsgHigh );
-    return;
-  }
-  
-  const size_t nbin = data->num_gamma_channels();
-  xmin = std::max( xmin, static_cast<double>(data->gamma_channel_lower(0)) );
-  xmax = std::min( xmax, static_cast<double>(data->gamma_channel_upper(nbin-1)) );
-
-  try
-  {
-    const double energy = ceil( xmin + 0.01*(xmax - xmin) );
-    m_viewer->addPeak( PeakDef( energy, width, amplitude ), false );
-
-    passMessage( "Newly created peak assigned initial mean of "
-                 + std::to_string(energy)
-                 + " keV; please edit peak.",
-                "", WarningWidget::WarningMsgInfo );
-  }catch( std::exception &e )
-  {
-    passMessage( "Error adding peak", "", WarningWidget::WarningMsgHigh );
-    return;
-  }
-   */
+  window->resizeToFitOnScreen();
+  window->centerWindowHeavyHanded();
 }//void createNewPeak()
 
 
