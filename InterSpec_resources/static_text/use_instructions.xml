@@ -243,7 +243,7 @@ the XHTML message for that entry.
 
 
 <message id='3desktop-mouse-interactions-energyslider-desc'>
-<center> From <b>View</b> &rarr; &quot;<b>Chart Options</b>&quot; select &quot;<b>Show Energy Slider</b>&quot;.</center>
+<center> From <b>View</b> menu select &quot;<b>Show Energy Slider</b>&quot;.</center>
 <div>This is an easy to use way to adjust spectrum energy range.</div>
 <div><b>InterSpec</b> will remember if you want the energy slider chart showing.</div>
 </message>
