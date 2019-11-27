@@ -5634,10 +5634,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_toolTabsVisibleItems[1]->triggered().connect( boost::bind( &InterSpec::setToolTabsVisible, this, false ) );
 
   
-  if (isPhone())
+  if( isPhone() )
   {
-      //hide Dock mode on small phone screens
-      m_toolTabsVisibleItems[0]->setHidden(true);
+    //hide Dock mode on small phone screens
+    m_toolTabsVisibleItems[0]->setHidden(true);
   } //isPhone
     
   m_toolTabsVisibleItems[1]->setHidden(true);
@@ -5645,11 +5645,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addSeparator();
 
   PopupDivMenu *chartmenu = m_displayOptionsPopupDiv->addPopupMenuItem( "Chart Options" , "InterSpec_resources/images/spec_settings_small.png");
-  
-  addPeakLabelSubMenu( chartmenu ); //add Peak menu
-  
-  chartmenu->addSeparator();
-  
   
   const bool logypref = m_user->preferenceValue<bool>( "LogY" );
   m_logYItems[0] = chartmenu->addMenuItem( "Log Y Scale" );
@@ -5683,27 +5678,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   //InterSpecUser::associateWidget( m_user, "ShowHorizontalGridlines", Wt::WCheckBox *cb, this, false );
   
 #if( USE_SPECTRUM_CHART_D3 )
-  const bool showSlider = InterSpecUser::preferenceValue<bool>( "ShowXAxisSlider", this );
-  m_spectrum->showXAxisSliderChart( showSlider );
-  m_showXAxisSliderItems[0] = chartmenu->addMenuItem( "Show Energy Slider" , "");
-  m_showXAxisSliderItems[1] = chartmenu->addMenuItem( "Hide Energy Slider" , "");
-  m_showXAxisSliderItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, true ) );
-  m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
-  m_showXAxisSliderItems[0]->setHidden( showSlider );
-  m_showXAxisSliderItems[1]->setHidden( !showSlider );
-  
-  
-  const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
-  m_spectrum->showYAxisScalers( showScalers );
-  
-  m_showYAxisScalerItems[0] = chartmenu->addMenuItem( "Show Y-Axis Scalers" , "");
-  m_showYAxisScalerItems[1] = chartmenu->addMenuItem( "Hide Y-Axis Scalers" , "");
-  m_showYAxisScalerItems[0]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, true ) );
-  m_showYAxisScalerItems[1]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, false ) );
-  m_showYAxisScalerItems[0]->setHidden( showScalers );
-  m_showYAxisScalerItems[1]->setHidden( !showScalers );
-  
-  
   if( isPhone() )
   {
     m_compactXAxisItems[0] = m_compactXAxisItems[1] = nullptr;
@@ -5737,13 +5711,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   
   chartmenu->addSeparator();
 
-  m_backgroundSubItems[0] = chartmenu->addMenuItem( "Background Subtract" );
-  m_backgroundSubItems[1] = chartmenu->addMenuItem( "Un-Background Subtract" );
-  m_backgroundSubItems[0]->triggered().connect( boost::bind( &InterSpec::setBackgroundSub, this, true ) );
-  m_backgroundSubItems[1]->triggered().connect( boost::bind( &InterSpec::setBackgroundSub, this, false ) );
-  m_backgroundSubItems[0]->disable();
-  m_backgroundSubItems[1]->hide();
-  
   PopupDivMenuItem *item = chartmenu->addMenuItem( "Show Spectrum Legend" );
   m_spectrum->legendDisabled().connect( item, &PopupDivMenuItem::show );
   m_spectrum->legendEnabled().connect( item,  &PopupDivMenuItem::hide );
@@ -5762,6 +5729,40 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_timeSeries->legendEnabled().connect( item,  &PopupDivMenuItem::hide );
   item->triggered().connect( boost::bind( &SpectrumDisplayDiv::enableLegend, m_timeSeries, false ) );
   item->hide();
+  
+  addPeakLabelSubMenu( m_displayOptionsPopupDiv ); //add Peak menu
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  const bool showSlider = InterSpecUser::preferenceValue<bool>( "ShowXAxisSlider", this );
+  m_spectrum->showXAxisSliderChart( showSlider );
+  m_showXAxisSliderItems[0] = m_displayOptionsPopupDiv->addMenuItem( "Show Energy Slider" , "");
+  m_showXAxisSliderItems[1] = m_displayOptionsPopupDiv->addMenuItem( "Hide Energy Slider" , "");
+  m_showXAxisSliderItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, true ) );
+  m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
+  m_showXAxisSliderItems[0]->setHidden( showSlider );
+  m_showXAxisSliderItems[1]->setHidden( !showSlider );
+  
+  
+  const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
+  m_spectrum->showYAxisScalers( showScalers );
+  
+  m_showYAxisScalerItems[0] = m_displayOptionsPopupDiv->addMenuItem( "Show Y-Axis Scalers" , "");
+  m_showYAxisScalerItems[1] = m_displayOptionsPopupDiv->addMenuItem( "Hide Y-Axis Scalers" , "");
+  m_showYAxisScalerItems[0]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, true ) );
+  m_showYAxisScalerItems[1]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, false ) );
+  m_showYAxisScalerItems[0]->setHidden( showScalers );
+  m_showYAxisScalerItems[1]->setHidden( !showScalers );
+  
+  m_displayOptionsPopupDiv->addSeparator();
+#endif  //#if( USE_SPECTRUM_CHART_D3 )
+  
+  m_backgroundSubItems[0] = m_displayOptionsPopupDiv->addMenuItem( "Background Subtract" );
+  m_backgroundSubItems[1] = m_displayOptionsPopupDiv->addMenuItem( "Un-Background Subtract" );
+  m_backgroundSubItems[0]->triggered().connect( boost::bind( &InterSpec::setBackgroundSub, this, true ) );
+  m_backgroundSubItems[1]->triggered().connect( boost::bind( &InterSpec::setBackgroundSub, this, false ) );
+  m_backgroundSubItems[0]->disable();
+  m_backgroundSubItems[1]->hide();
+  
   
 #if( USE_GOOGLE_MAP )
   m_mapMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Map","InterSpec_resources/images/map_small.png" );
