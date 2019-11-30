@@ -37,6 +37,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
 
@@ -525,7 +526,7 @@ namespace SpecFileQuery
         
       case EnergyCalibrationType:
       {
-        const auto type = Measurement::EquationType(m_discreteOption);
+        const auto type = SpecUtils::EnergyCalType(m_discreteOption);
         for( const auto cal : meas.energy_cal_types )
           if( cal == type )
             return true;
@@ -924,13 +925,13 @@ namespace SpecFileQuery
         break;
         
       case EnergyCalibrationType:
-        switch( Measurement::EquationType(m_discreteOption) )
+        switch( SpecUtils::EnergyCalType(m_discreteOption) )
         {
-          case Measurement::EquationType::Polynomial: summary += "polynomial"; break;
-          case Measurement::EquationType::FullRangeFraction: summary += "full range fraction"; break;
-          case Measurement::EquationType::LowerChannelEdge: summary += "lower channel energy"; break;
-          case Measurement::EquationType::InvalidEquationType:
-          case Measurement::EquationType::UnspecifiedUsingDefaultPolynomial:
+          case SpecUtils::EnergyCalType::Polynomial: summary += "polynomial"; break;
+          case SpecUtils::EnergyCalType::FullRangeFraction: summary += "full range fraction"; break;
+          case SpecUtils::EnergyCalType::LowerChannelEdge: summary += "lower channel energy"; break;
+          case SpecUtils::EnergyCalType::InvalidEquationType:
+          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
             summary += "unknown";
             break;
         }
@@ -1066,13 +1067,13 @@ namespace SpecFileQuery
         
       case EnergyCalibrationType:
       {
-        switch( m_discreteOption )
+        switch( static_cast<SpecUtils::EnergyCalType>(m_discreteOption) )
         {
-          case Measurement::EquationType::Polynomial:
-          case Measurement::EquationType::FullRangeFraction:
-          case Measurement::EquationType::LowerChannelEdge:
-          case Measurement::EquationType::UnspecifiedUsingDefaultPolynomial:
-          case Measurement::EquationType::InvalidEquationType:
+          case SpecUtils::EnergyCalType::Polynomial:
+          case SpecUtils::EnergyCalType::FullRangeFraction:
+          case SpecUtils::EnergyCalType::LowerChannelEdge:
+          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+          case SpecUtils::EnergyCalType::InvalidEquationType:
             break;
           default:
             throw runtime_error( "Invalid energy calibration type (programming error)" );
@@ -1260,7 +1261,7 @@ namespace SpecFileQuery
     return strm.str();
   }
   
-  std::ostream &SpecLogicTest::print_equation( vector<boost::any> fields, std::ostream &strm )
+  std::ostream &SpecLogicTest::print_equation( std::vector<boost::any> fields, std::ostream &strm )
   {
     for( size_t i = 0; i < fields.size(); ++i )
     {

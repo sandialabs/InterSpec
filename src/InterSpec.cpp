@@ -8567,7 +8567,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       const vector<bool> use_gamma( m_dataMeasurement->detector_names().size(), true );
       const size_t index = m_dataMeasurement->suggested_gamma_binning_index( sample_numbers, use_gamma );
       auto meas = m_dataMeasurement->measurements().at(index);
-      if( meas && meas->energy_calibration_model() == Measurement::EquationType::UnspecifiedUsingDefaultPolynomial )
+      if( meas && meas->energy_calibration_model() == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
       {
         passMessage( "Warning, could not find the energy calibration, so using a default one", "", WarningWidget::WarningMsgMedium );
       }

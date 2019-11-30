@@ -30,6 +30,12 @@
 #include <sstream>
 #include <vector>
 
+#define BOOST_UBLAS_TYPE_CHECK 0
+#include <boost/numeric/ublas/lu.hpp>
+#include <boost/numeric/ublas/matrix.hpp>
+#include <boost/numeric/ublas/triangular.hpp>
+
+
 //Minuit2 includes
 #include "Minuit2/FCNBase.h"
 #include "Minuit2/MnMinos.h"
@@ -67,23 +73,160 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/Recalibrator.h"
-#include "InterSpec/WarningWidget.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/InterSpecApp.h"
+#include "SandiaDecay/SandiaDecay.h"
+#include "InterSpec/WarningWidget.h"
+#include "InterSpec/SpectraFileModel.h"
+#include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/EnergyCalibration.h"
 #if ( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #else
 #include "InterSpec/SpectrumDisplayDiv.h"
 #endif
 #include "InterSpec/IsotopeSelectionAids.h"
-#include "InterSpec/HelpSystem.h"
 
-#include "SandiaDecay/SandiaDecay.h"
 
 using namespace Wt;
 using namespace std;
+
+
+namespace
+{
+  
+  template<class T>
+  bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
+                     boost::numeric::ublas::matrix<T> &inverse )
+  {
+    using namespace boost::numeric;
+    ublas::matrix<T> A( input );
+    ublas::permutation_matrix<std::size_t> pm( A.size1() );
+    const size_t res = lu_factorize(A, pm);
+    if( res != 0 )
+      return false;
+    inverse.assign( ublas::identity_matrix<T>( A.size1() ) );
+    lu_substitute(A, pm, inverse);
+    return true;
+  }//matrix_invert
+  
+  
+  /** Fits polynomial energy equation based on peaks with assigned
+   nuclide-photopeaks.
+   
+   @param peakinfos Relevant information collected from peaks.
+   @param fitfor Whether to fit for each coefficient.  This vector must be sized
+          for the number of coefficients in the calabration equation (e.g.,
+          calibration order).  A true value for an index indicates fit for the
+          coefficient.  If any value is false (i.e. dont fit for that parameter)
+          then the 'coefs' parameter must be exactly the same size as this vector
+          and the value at the corresponding index will be used for that parameter.
+   @param coefs Provides the fit coeficients for the energy calibration. Also,
+          if any parameter is not being fit for than this vector also provides
+          its (fixed) value, and this vector must be same size as the 'fitfor'
+          vector.
+   @param coefs_uncert The uncertainties on the fit parameters.
+   @returns Chi2 of the found solution.
+   
+   Throws exception on error.
+   */
+  double fit_energy_cal_poly( const std::vector<Recalibrator::RecalPeakInfo> &peakinfos,
+                                      const vector<bool> fitfor,
+                                      vector<float> &coefs,
+                                      vector<float> &coefs_uncert )
+  {
+    const size_t npeaks = peakinfos.size();
+    const size_t fitorder = static_cast<size_t>( std::count(begin(fitfor),end(fitfor),true) );
+    
+    if( npeaks < 1 )
+      throw runtime_error( "Must have at least one peak" );
+    
+    if( fitorder < 1 )
+      throw runtime_error( "Must fit for at least one coefficient" );
+    
+    if( fitorder > npeaks )
+      throw runtime_error( "Must have at least as many peaks as coefficients fitting for" );
+    
+    if( coefs.size() != fitfor.size() )
+      throw runtime_error( "You must supply input coefficient when any of the coefficients are fixed" );
+    
+    //Energy = P0 + P1*x + P2*x^2 + P3*x^3, where x is bin number
+    //  However, some of the coeffeicents may not be being fit for.
+    vector<float> mean_bin( npeaks ), true_energies( npeaks ), energy_uncerts( npeaks );
+    for( size_t i = 0; i < npeaks; ++i )
+    {
+      mean_bin[i] = peakinfos[i].peakMeanBinNumber;
+      true_energies[i] = peakinfos[i].photopeakEnergy;
+      energy_uncerts[i] = true_energies[i] * peakinfos[i].peakMeanUncert / std::max(peakinfos[i].peakMean,1.0);
+    }
+    
+    //General Linear Least Squares fit
+    //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+    //Implementation is quite inneficient
+    //Energy_i = P0 + P1*pow(i,1) + P2*pow(i,2) + P3*pow(i,3)
+    using namespace boost::numeric;
+    
+    ublas::matrix<double> A( npeaks, fitorder );
+    ublas::vector<double> b( npeaks );
+    
+    for( size_t row = 0; row < npeaks; ++row )
+    {
+      double data_y = true_energies[row];
+      const double data_y_uncert = fabs( energy_uncerts[row] );
+      
+      for( size_t col = 0, coef_index = 0; coef_index < fitfor.size(); ++coef_index )
+      {
+        if( fitfor[coef_index] )
+        {
+          assert( col < fitorder );
+          A(row,col) = std::pow( mean_bin[row], double(coef_index)) / data_y_uncert;
+          ++col;
+        }else
+        {
+          data_y -= coefs[coef_index] * std::pow( mean_bin[row], double(coef_index));
+        }
+      }//
+      
+      b(row) = data_y / data_y_uncert;
+    }//for( int col = 0; col < order; ++col )
+    
+    const ublas::matrix<double> A_transpose = ublas::trans( A );
+    const ublas::matrix<double> alpha = prod( A_transpose, A );
+    ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+    const bool success = matrix_invert( alpha, C );
+    if( !success )
+      throw runtime_error( "Trouble inverting least linear squares matrix" );
+    
+    const ublas::vector<double> beta = prod( A_transpose, b );
+    const ublas::vector<double> a = prod( C, beta );
+    
+    coefs.resize( fitfor.size(), 0.0 );
+    coefs_uncert.resize( fitfor.size(), 0.0 );
+    
+    for( size_t col = 0, coef_index = 0; coef_index < fitfor.size(); ++coef_index )
+    {
+      if( fitfor[coef_index] )
+      {
+        assert( col < fitorder );
+        coefs[coef_index] = static_cast<float>( a(col) );
+        coefs_uncert[coef_index] = static_cast<float>( std::sqrt( C(col,col) ) );
+        ++col;
+      }
+    }//for( int coef = 0; coef < order; ++coef )
+    
+    double chi2 = 0;
+    for( size_t bin = 0; bin < npeaks; ++bin )
+    {
+      double y_pred = 0.0;
+      for( size_t i = 0; i < fitfor.size(); ++i )
+        y_pred += coefs[i] * std::pow( mean_bin[bin], double(i) );
+      chi2 += std::pow( (y_pred - true_energies[bin]) / energy_uncerts[bin], 2.0 );
+    }//for( int bin = 0; bin < nbin; ++bin )
+    
+    return chi2;
+  }//double fit_fwhm_least_linear_squares(...)
+}//namespace
 
 
 Recalibrator::Recalibrator(
@@ -109,7 +252,7 @@ Recalibrator::Recalibrator(
     m_revert( 0 ),
     m_acceptText( 0 ),
     m_acceptButtonDiv( 0 ),
-    m_coeffEquationType( Measurement::InvalidEquationType ),
+    m_coeffEquationType( SpecUtils::EnergyCalType::InvalidEquationType ),
     m_devPairs( nullptr ),
     m_layout( nullptr )
 {
@@ -560,18 +703,18 @@ WContainerWidget* Recalibrator::getFooter()
 void Recalibrator::shiftPeaksForEnergyCalibration( PeakModel *peakmodel,
                                                    const std::vector<float> &new_pars,
                                                    const std::vector< std::pair<float,float> > &new_devpairs,
-                                                   Measurement::EquationType new_eqn_type,
+                                                   SpecUtils::EnergyCalType new_eqn_type,
                                                    std::shared_ptr<SpecMeas> meas,
                                                    const SpectrumType spectype,
                                                    std::vector<float> old_pars,
                                                    const std::vector< std::pair<float,float> > &old_devpairs,
-                                                   Measurement::EquationType old_eqn_type )
+                                                   SpecUtils::EnergyCalType old_eqn_type )
 {
   
-  if( old_eqn_type==Measurement::EquationType::LowerChannelEdge
-     || old_eqn_type==Measurement::EquationType::InvalidEquationType
-     || new_eqn_type==Measurement::EquationType::LowerChannelEdge
-     || new_eqn_type==Measurement::EquationType::InvalidEquationType )
+  if( old_eqn_type==SpecUtils::EnergyCalType::LowerChannelEdge
+     || old_eqn_type==SpecUtils::EnergyCalType::InvalidEquationType
+     || new_eqn_type==SpecUtils::EnergyCalType::LowerChannelEdge
+     || new_eqn_type==SpecUtils::EnergyCalType::InvalidEquationType )
   {
     //ToDo: We can only currently handle Polynomial or Full Range Fraction
     //      calibrations.  This could be fixed.
@@ -655,7 +798,7 @@ void Recalibrator::startConvertToPolynomial()
     return;
   }
   
-  if( displ_foreground->energy_calibration_model() != Measurement::LowerChannelEdge )
+  if( displ_foreground->energy_calibration_model() != SpecUtils::EnergyCalType::LowerChannelEdge )
   {
     passMessage( "Foreground calibration is not specified by lower channel - wont convert to polynomial.", "", WarningWidget::WarningMsgHigh );
     return;
@@ -731,15 +874,15 @@ void Recalibrator::finishConvertToPolynomial( const bool followThrough )
   //      number of channels, we will get an exception.  Should handle this
   //      correctly...
   if( foreground )
-    foreground->recalibrate_by_eqn( coefs, devpairs, Measurement::EquationType::Polynomial );
+    foreground->recalibrate_by_eqn( coefs, devpairs, SpecUtils::EnergyCalType::Polynomial );
   
   std::shared_ptr<SpecMeas> background = m_hostViewer->measurment(kBackground);
   if( background )
-    background->recalibrate_by_eqn( coefs, devpairs, Measurement::EquationType::Polynomial );
+    background->recalibrate_by_eqn( coefs, devpairs, SpecUtils::EnergyCalType::Polynomial );
   
   std::shared_ptr<SpecMeas> secondary = m_hostViewer->measurment(kSecondForeground);
   if( secondary )
-    secondary->recalibrate_by_eqn( coefs, devpairs, Measurement::EquationType::Polynomial );
+    secondary->recalibrate_by_eqn( coefs, devpairs, SpecUtils::EnergyCalType::Polynomial );
   
   if( foreground )
     m_hostViewer->displayForegroundData( true );
@@ -779,7 +922,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
   const DeviationPairVec &olddevpairs = disp_foreground->deviation_pairs();
   
   const vector< float > originalPars = disp_foreground->calibration_coeffs();
-  const Measurement::EquationType old_calib_type = disp_foreground->energy_calibration_model();
+  const SpecUtils::EnergyCalType old_calib_type = disp_foreground->energy_calibration_model();
   
   if( action == ApplyRecal )
   {
@@ -871,9 +1014,9 @@ void Recalibrator::engageRecalibration( RecalAction action )
     vector<float> poly = eqn;
     
     vector<float> frfcoef = eqn;
-    if( m_coeffEquationType == Measurement::Polynomial
-       || m_coeffEquationType == Measurement::UnspecifiedUsingDefaultPolynomial )
-      frfcoef = polynomial_coef_to_fullrangefraction( frfcoef, nbin );
+    if( m_coeffEquationType == SpecUtils::EnergyCalType::Polynomial
+       || m_coeffEquationType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+      frfcoef = SpecUtils::polynomial_coef_to_fullrangefraction( frfcoef, nbin );
     
     bool valid = checkFullRangeFractionCoeffsValid( frfcoef, devpairs, nbin );
     
@@ -898,16 +1041,16 @@ void Recalibrator::engageRecalibration( RecalAction action )
   
   switch( m_coeffEquationType )
   {
-    case Measurement::Polynomial:
-    case Measurement::UnspecifiedUsingDefaultPolynomial:
-    case Measurement::FullRangeFraction:
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+    case SpecUtils::EnergyCalType::FullRangeFraction:
     {
       //Recalibrate the foreground
       if( !!foreground && m_applyTo[kForeground]->isChecked() )
       {
         const vector<float> origeqn = disp_foreground->calibration_coeffs();
         const vector< pair<float,float> > origdevpars = disp_foreground->deviation_pairs();
-        const Measurement::EquationType origtype = disp_foreground->energy_calibration_model();
+        const SpecUtils::EnergyCalType origtype = disp_foreground->energy_calibration_model();
         
         foreground->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType,
                                       displayed_detectors, false );
@@ -983,8 +1126,8 @@ void Recalibrator::engageRecalibration( RecalAction action )
     }//case Polynomial, FullRangeFraction:
 
 
-    case Measurement::LowerChannelEdge:
-    case Measurement::InvalidEquationType:
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
     {
       passMessage( "Recalibration can only be done for polynomial or full range"
                    " fraction calibrated spectrums", "engageRecalibration",
@@ -1073,23 +1216,23 @@ void Recalibrator::recalibrateByPeaks()
       throw std::runtime_error( "ErrorMsgNot enough binns for rebinning" );
 
     const size_t nbin = binning->size();
-    const Measurement::EquationType calibration_type = displ_meas->energy_calibration_model();
+    const SpecUtils::EnergyCalType calibration_type = displ_meas->energy_calibration_model();
 
     vector<float> calib_coefs = displ_meas->calibration_coeffs();
 
     switch( calibration_type )
     {
-      case Measurement::Polynomial:
-      case Measurement::UnspecifiedUsingDefaultPolynomial:
-//        calib_coefs = polynomial_coef_to_fullrangefraction( calib_coefs, nbin );
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+//        calib_coefs = SpecUtils::polynomial_coef_to_fullrangefraction( calib_coefs, nbin );
       break;
 
-      case Measurement::FullRangeFraction:
-//        calib_coefs = fullrangefraction_coef_to_polynomial( calib_coefs );
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+//        calib_coefs = SpecUtils::fullrangefraction_coef_to_polynomial( calib_coefs );
       break;
 
-      case Measurement::LowerChannelEdge:
-      case Measurement::InvalidEquationType:
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+      case SpecUtils::EnergyCalType::InvalidEquationType:
       {
         passMessage( "Changing calibration to be full width fraction, "
                      "some information will be lost.",
@@ -1113,16 +1256,16 @@ void Recalibrator::recalibrateByPeaks()
           const DeviationPairVec &devpairs = displ_foreground->deviation_pairs();
         
           if( m_applyTo[kForeground]->isChecked() )
-            foreground->rebin_by_eqn( poly_eqn, devpairs, Measurement::Polynomial );
+            foreground->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
 
           if( !!second && m_applyTo[kSecondForeground]->isChecked() )
-            second->rebin_by_eqn( poly_eqn, devpairs, Measurement::Polynomial );
+            second->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
 
           if( !!back && m_applyTo[kBackground]->isChecked() )
-            back->rebin_by_eqn( poly_eqn, devpairs, Measurement::Polynomial );
+            back->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
 
-          m_coeffEquationType = Measurement::FullRangeFraction;
-          calib_coefs = polynomial_coef_to_fullrangefraction( poly_eqn, nbin );
+          m_coeffEquationType = SpecUtils::EnergyCalType::FullRangeFraction;
+          calib_coefs = SpecUtils::polynomial_coef_to_fullrangefraction( poly_eqn, nbin );
         }//if( !!foreground )
         
         break;
@@ -1148,16 +1291,16 @@ void Recalibrator::recalibrateByPeaks()
           peakInfo.peakMeanUncert = 0.5;
         
         peakInfo.photopeakEnergy = wantedEnergy;
-        if( m_coeffEquationType == Measurement::FullRangeFraction )
+        if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
         {
-          peakInfo.peakMeanBinNumber = find_bin_fullrangefraction( peak.mean(),
+          peakInfo.peakMeanBinNumber = SpecUtils::find_bin_fullrangefraction( peak.mean(),
                                            calib_coefs, nbin,
                                            displ_meas->deviation_pairs(),
                                            0.001f );
         }else
         {
-          const vector<float> fwfcoef = polynomial_coef_to_fullrangefraction( calib_coefs, nbin );
-          peakInfo.peakMeanBinNumber = find_bin_fullrangefraction( peak.mean(),
+          const vector<float> fwfcoef = SpecUtils::polynomial_coef_to_fullrangefraction( calib_coefs, nbin );
+          peakInfo.peakMeanBinNumber = SpecUtils::find_bin_fullrangefraction( peak.mean(),
                                                                   fwfcoef, nbin,
                                                                   displ_meas->deviation_pairs(),
                                                                   0.001f );
@@ -1195,7 +1338,7 @@ void Recalibrator::recalibrateByPeaks()
 
     string name = "0";
     double delta = 1.0/pow( static_cast<double>(nbin), 0.0 );
-    if( m_coeffEquationType == Measurement::FullRangeFraction )  //set delats to 0.5 keV for middle bin
+    if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )  //set delats to 0.5 keV for middle bin
       delta = 0.5;
 
     if( m_fitFor[0]->isChecked() )
@@ -1205,7 +1348,7 @@ void Recalibrator::recalibrateByPeaks()
 
     name = "1";
     delta = 1.0/pow( static_cast<double>(data->GetNbinsX()), 1.0 );
-    if( m_coeffEquationType == Measurement::FullRangeFraction )
+    if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
       delta = 1.0;
 
     if( m_fitFor[1]->isChecked() )
@@ -1219,7 +1362,7 @@ void Recalibrator::recalibrateByPeaks()
 
     name = "2";
     delta = 1.0/pow( static_cast<double>(data->GetNbinsX()), 2.0 );
-    if( m_coeffEquationType == Measurement::FullRangeFraction )
+    if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
       delta = 0.1;
 
     if( m_fitFor[2]->isChecked() )
@@ -1282,9 +1425,55 @@ void Recalibrator::recalibrateByPeaks()
     const vector<double> parValues = fitPrams.Params();
     const vector<double> parErrors = fitPrams.Errors();
 
-//    for( int i = 0; i < parValues.size(); ++i )
-//      cerr << "parValues[" << i << "]=" << parValues[1] << endl;
 
+    
+    //ToDo: if no non-linear deviation pairs
+    try
+    {
+      const size_t num_gui_pars = sizeof(m_fitFor) / sizeof(m_fitFor[0]);
+      //Just in case of future changes we should consider.
+      static_assert( (sizeof(m_fitFor) / sizeof(m_fitFor[0]))==3, "Expected 3 GUI fit parameters." );
+      
+      
+      //We can currently only so this if there are no non-linear devication pairs...
+      vector<float> lls_fit_coefs = calib_coefs, lls_fit_coefs_uncert;
+      lls_fit_coefs.resize( num_gui_pars, 0.0f );
+      vector<bool> fitfor( lls_fit_coefs.size(), false );
+
+      for( size_t i = 0; i < calib_coefs.size() && i < num_gui_pars; ++i )
+      {
+        fitfor[i] = m_fitFor[i]->isChecked();
+      }
+      
+      const double chi2 = fit_energy_cal_poly( peakInfos, fitfor, lls_fit_coefs, lls_fit_coefs_uncert );
+      
+      stringstream msg;
+      msg << "\nfit_energy_cal_poly gave chi2=" << chi2 << " with coefs={";
+      for( size_t i = 0; i < lls_fit_coefs.size(); ++i )
+        msg << lls_fit_coefs[i] << "+-" << lls_fit_coefs_uncert[i] << ", ";
+      msg << "}\n";
+      cout << msg.str() << endl;
+      
+    }catch( std::exception &e )
+    {
+      cerr << "fit_energy_cal_poly threw: " << e.what() << endl;
+    }
+    stringstream mmsg;
+    mmsg << "Minuit fit gave pars={";
+    for( int i = 0; i < parValues.size(); ++i )
+      mmsg << parValues[i] << "+-" << parErrors[i] << ", ";
+    mmsg << "}\n";
+    cout << mmsg.str() << endl;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     for( size_t i = 0; i < parValues.size(); ++i )
       if( IsInf(parValues[i]) || IsNan(parValues[i]) )
         throw runtime_error( "Invalid calibration parameter from fit :(" );
@@ -1354,8 +1543,8 @@ void Recalibrator::refreshRecalibrator()
   // able to see peaks anyway
   if( !foreground || !displ_foreground || !dataBinning
       || dataBinning->size() < 16 || (!!foreground
-        && (displ_foreground->energy_calibration_model()==Measurement::LowerChannelEdge
-            || displ_foreground->energy_calibration_model()==Measurement::InvalidEquationType)) )
+        && (displ_foreground->energy_calibration_model()==SpecUtils::EnergyCalType::LowerChannelEdge
+            || displ_foreground->energy_calibration_model()==SpecUtils::EnergyCalType::InvalidEquationType)) )
   {
     m_fitCoefButton->disable();
     m_applyToLabel->hide();
@@ -1370,7 +1559,7 @@ void Recalibrator::refreshRecalibrator()
     
     if( dataBinning && foreground
         && dataBinning->size() >= 16
-        && displ_foreground->energy_calibration_model()==Measurement::LowerChannelEdge )
+        && displ_foreground->energy_calibration_model()==SpecUtils::EnergyCalType::LowerChannelEdge )
     {
       m_convertToPolynomialLabel->show();
       m_convertToPolynomial->show();
@@ -1439,20 +1628,20 @@ void Recalibrator::refreshRecalibrator()
   
   vector< float > equationCoefficients = displ_foreground->calibration_coeffs();
   m_coeffEquationType = m_originalCal[kForeground].type;
-  if( m_coeffEquationType == Measurement::UnspecifiedUsingDefaultPolynomial )
-    m_coeffEquationType = Measurement::Polynomial;
+  if( m_coeffEquationType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+    m_coeffEquationType = SpecUtils::EnergyCalType::Polynomial;
   
   switch( m_coeffEquationType )
   {
     // Note: fall-through intentional
-  case Measurement::Polynomial:
-  case Measurement::UnspecifiedUsingDefaultPolynomial:
-  case Measurement::FullRangeFraction:
+  case SpecUtils::EnergyCalType::Polynomial:
+  case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+  case SpecUtils::EnergyCalType::FullRangeFraction:
     break;
 
-  case Measurement::LowerChannelEdge:
+  case SpecUtils::EnergyCalType::LowerChannelEdge:
     //Note: we will never make it here!
-  case Measurement::InvalidEquationType:
+  case SpecUtils::EnergyCalType::InvalidEquationType:
     equationCoefficients.resize( 3 ); // Third degree polynomial *wonk*
     if( binning.size() != 0 )
     {
@@ -1470,8 +1659,8 @@ void Recalibrator::refreshRecalibrator()
 
   // Find how much the things should tick by as a base
   double tickLevel[3];
-  if( m_coeffEquationType == Measurement::Polynomial
-      || m_coeffEquationType == Measurement::UnspecifiedUsingDefaultPolynomial )
+  if( m_coeffEquationType == SpecUtils::EnergyCalType::Polynomial
+      || m_coeffEquationType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
   {
     tickLevel[0] = 1.0;
     tickLevel[1] = 1.0 / nbin;
@@ -1511,21 +1700,21 @@ void Recalibrator::refreshRecalibrator()
 
   switch( m_coeffEquationType )
   {
-    case Measurement::Polynomial:
-    case Measurement::UnspecifiedUsingDefaultPolynomial:
-    case Measurement::InvalidEquationType:
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
       offsetExp    << " keV";
       linearExp    << " <sup>keV</sup>/<sub>chnl</sub>";
       quadraticExp << " <sup>keV</sup>/<sub>chnl<sup>2</sup></sub>";
     break;
 
-    case Measurement::FullRangeFraction:
+    case SpecUtils::EnergyCalType::FullRangeFraction:
       offsetExp    << " keV";
       linearExp    << " <sup>keV</sup>/<sub>FWF</sub>";
       quadraticExp << " <sup>keV</sup>/<sub>FWF<sup>2</sup></sub>";
     break;
 
-    case Measurement::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
     break;
       offsetExp    << " keV";
       linearExp    << " keV";
@@ -1715,7 +1904,7 @@ Wt::Signal<> &DeviationPairDisplay::changed()
 Recalibrator::PolyCalibCoefMinFcn::PolyCalibCoefMinFcn(
                      const vector<RecalPeakInfo> &peakInfo,
                      const size_t nbin,
-                     Measurement::EquationType eqnType,
+                     SpecUtils::EnergyCalType eqnType,
                      const std::vector< std::pair<float,float> > &devpair )
   : ROOT::Minuit2::FCNBase(),
     m_nbin( nbin ),
@@ -1725,12 +1914,12 @@ Recalibrator::PolyCalibCoefMinFcn::PolyCalibCoefMinFcn(
 {
   switch( m_eqnType )
   {
-    case Measurement::Polynomial:
-    case Measurement::FullRangeFraction:
-    case Measurement::UnspecifiedUsingDefaultPolynomial:
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       break;
-    case Measurement::LowerChannelEdge:
-    case Measurement::InvalidEquationType:
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
       throw runtime_error( "PolyCalibCoefMinFcn can only wotrk with Full "
                           "Range Fraction and Polynomial binnings" );
       break;
@@ -1766,11 +1955,11 @@ double Recalibrator::PolyCalibCoefMinFcn::operator()( const vector<double> &coef
     float_coef.push_back( static_cast<float>(d) );
   }
 
-//  if( m_eqnType == Measurement::FullRangeFraction )
+//  if( m_eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
 //    float_coef = fullrangefraction_coef_to_polynomial( float_coef, m_nbin );
-  if( m_eqnType == Measurement::Polynomial
-      || m_eqnType == Measurement::UnspecifiedUsingDefaultPolynomial )
-    float_coef = polynomial_coef_to_fullrangefraction( float_coef, m_nbin );
+  if( m_eqnType == SpecUtils::EnergyCalType::Polynomial
+      || m_eqnType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+    float_coef = SpecUtils::polynomial_coef_to_fullrangefraction( float_coef, m_nbin );
 
   
   for( const float d : float_coef )
@@ -1790,15 +1979,15 @@ double Recalibrator::PolyCalibCoefMinFcn::operator()( const vector<double> &coef
 //    return 99999999.0;
 //  }
   
-  const float nearend = fullrangefraction_energy( m_nbin-2, float_coef, m_nbin, m_devpair );
-  const float end = fullrangefraction_energy( m_nbin-1, float_coef, m_nbin, m_devpair );
-  const float begin = fullrangefraction_energy( 0, float_coef, m_nbin, m_devpair );
-  const float nearbegin = fullrangefraction_energy( 1, float_coef, m_nbin, m_devpair );
+  const float nearend = SpecUtils::fullrangefraction_energy( m_nbin-2, float_coef, m_nbin, m_devpair );
+  const float end = SpecUtils::fullrangefraction_energy( m_nbin-1, float_coef, m_nbin, m_devpair );
+  const float begin = SpecUtils::fullrangefraction_energy( 0, float_coef, m_nbin, m_devpair );
+  const float nearbegin = SpecUtils::fullrangefraction_energy( 1, float_coef, m_nbin, m_devpair );
   
-//  const float nearend = bin_number_to_energy_polynomial( m_nbin-2, float_coef, m_nbin );
-//  const float end = bin_number_to_energy_polynomial( m_nbin-1, float_coef, m_nbin );
-//  const float begin = bin_number_to_energy_polynomial( 0, float_coef, m_nbin );
-//  const float nearbegin = bin_number_to_energy_polynomial( 1, float_coef, m_nbin );
+//  const float nearend = SpecUtils::bin_number_to_energy_polynomial( m_nbin-2, float_coef, m_nbin );
+//  const float end = SpecUtils::bin_number_to_energy_polynomial( m_nbin-1, float_coef, m_nbin );
+//  const float begin = SpecUtils::bin_number_to_energy_polynomial( 0, float_coef, m_nbin );
+//  const float nearbegin = SpecUtils::bin_number_to_energy_polynomial( 1, float_coef, m_nbin );
   
   if( (nearend >= end) || (begin >= nearbegin) )
   {
@@ -1810,8 +1999,8 @@ double Recalibrator::PolyCalibCoefMinFcn::operator()( const vector<double> &coef
   
   for( const RecalPeakInfo &info : m_peakInfo )
   {
-//    const double predictedMean = bin_number_to_energy_polynomial( info.peakMeanBinNumber, float_coef, m_nbin );
-    const double predictedMean = fullrangefraction_energy( info.peakMeanBinNumber, float_coef, m_nbin, m_devpair );
+//    const double predictedMean = SpecUtils::bin_number_to_energy_polynomial( info.peakMeanBinNumber, float_coef, m_nbin );
+    const double predictedMean = SpecUtils::fullrangefraction_energy( info.peakMeanBinNumber, float_coef, m_nbin, m_devpair );
     double uncert = ((info.peakMeanUncert<=0.0) ? 1.0 : info.peakMeanUncert );
     chi2 += pow(predictedMean - info.photopeakEnergy, 2.0 ) / (uncert*uncert);
   }//for( const &RecalPeakInfo info : peakInfo )
@@ -1828,7 +2017,7 @@ double Recalibrator::PolyCalibCoefMinFcn::operator()( const vector<double> &coef
 
 void Recalibrator::CalibrationInformation::reset()
 {
-  type = Measurement::InvalidEquationType;
+  type = SpecUtils::EnergyCalType::InvalidEquationType;
   coefficients.clear();
   deviationpairs.clear();
   sample_numbers.clear();
@@ -1987,13 +2176,13 @@ bool Recalibrator::checkFullRangeFractionCoeffsValid( const std::vector<float> &
                                               const std::vector< std::pair<float,float> > &devpairs,
                                               size_t nbin )
 {
-  return MeasurementInfo::calibration_is_valid( Measurement::FullRangeFraction,
+  return SpecUtils::calibration_is_valid( SpecUtils::EnergyCalType::FullRangeFraction,
                                               eqn, devpairs, nbin );
 
-//  const float nearend   = fullrangefraction_energy( nbin-2, eqn, nbin, devpairs );
-//  const float end       = fullrangefraction_energy( nbin-1, eqn, nbin, devpairs );
-//  const float begin     = fullrangefraction_energy( 0,      eqn, nbin, devpairs );
-//  const float nearbegin = fullrangefraction_energy( 1,      eqn, nbin, devpairs );
+//  const float nearend   = SpecUtils::fullrangefraction_energy( nbin-2, eqn, nbin, devpairs );
+//  const float end       = SpecUtils::fullrangefraction_energy( nbin-1, eqn, nbin, devpairs );
+//  const float begin     = SpecUtils::fullrangefraction_energy( 0,      eqn, nbin, devpairs );
+//  const float nearbegin = SpecUtils::fullrangefraction_energy( 1,      eqn, nbin, devpairs );
 //  return !( (nearend >= end) || (begin >= nearbegin) );
 }//checkFullRangeFractionCoeffsValid
 
@@ -2027,22 +2216,22 @@ void Recalibrator::GraphicalRecalConfirm::apply()
   
   float shift = finalE - startE;
   vector<float> eqn = displ_foreground->calibration_coeffs();
-  Measurement::EquationType eqnType = displ_foreground->energy_calibration_model();
+  SpecUtils::EnergyCalType eqnType = displ_foreground->energy_calibration_model();
   DeviationPairVec deviationPairs = displ_foreground->deviation_pairs();
   const DeviationPairVec origdev = deviationPairs;
   const size_t nbin = foreground->num_gamma_channels();
   
   switch( eqnType )
   {
-    case Measurement::Polynomial:
-    case Measurement::UnspecifiedUsingDefaultPolynomial:
-      eqnType = Measurement::FullRangeFraction;
-      eqn = polynomial_coef_to_fullrangefraction( eqn, nbin );
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      eqnType = SpecUtils::EnergyCalType::FullRangeFraction;
+      eqn = SpecUtils::polynomial_coef_to_fullrangefraction( eqn, nbin );
     break;
-    case Measurement::FullRangeFraction:
+    case SpecUtils::EnergyCalType::FullRangeFraction:
     break;
-    case Measurement::LowerChannelEdge:
-    case Measurement::InvalidEquationType:
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
       throw runtime_error( "You cannot recalibrate spectrums with an unknown "
                            "calibration or one defined by lower bin energees" );
   }//switch( eqnType )
@@ -2056,9 +2245,9 @@ void Recalibrator::GraphicalRecalConfirm::apply()
   
   if( preserveLast )
   {
-    const float lowbin = find_bin_fullrangefraction( m_lastEnergy, orig_eqn,
+    const float lowbin = SpecUtils::find_bin_fullrangefraction( m_lastEnergy, orig_eqn,
                                                   nbin, deviationPairs, 0.001f );
-    const float upbin = find_bin_fullrangefraction( startE, orig_eqn,
+    const float upbin = SpecUtils::find_bin_fullrangefraction( startE, orig_eqn,
                                                   nbin, deviationPairs, 0.001f );
     
     //From a quick empiracal test (so by no means definitive), the below
@@ -2081,7 +2270,7 @@ void Recalibrator::GraphicalRecalConfirm::apply()
       {
         //From a quick empiracal test (so by no means definitive), the below
         //  behaves well for the case deviation pairs are defined.
-        const float binnum = find_bin_fullrangefraction( startE, eqn, nbin,
+        const float binnum = SpecUtils::find_bin_fullrangefraction( startE, eqn, nbin,
                                                         deviationPairs, 0.001f );
         const float binfrac = binnum / nbin;
         eqn[1] += (shift / binfrac);
@@ -2102,7 +2291,7 @@ void Recalibrator::GraphicalRecalConfirm::apply()
           //We are going to to find the bin number startE cooresponds to, then
           //  find the energy this would have cooresponded to if there were no
           //  deviation pairs, then we will add a deviation
-          const float bin = find_bin_fullrangefraction( startE, orig_eqn, nbin,
+          const float bin = SpecUtils::find_bin_fullrangefraction( startE, orig_eqn, nbin,
                                                         deviationPairs, 0.001f );
           
           float originalE = 0.0;
@@ -2122,7 +2311,7 @@ void Recalibrator::GraphicalRecalConfirm::apply()
     }//switch( type )
   }//if( preserveLast ) / else
   
-//  if( eqnType == Measurement::Polynomial || eqnType == Measurement::UnspecifiedUsingDefaultPolynomial )
+//  if( eqnType == SpecUtils::EnergyCalType::Polynomial || eqnType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
 //    eqn = fullrangefraction_coef_to_polynomial( eqn, nbin );
   
   bool valid = checkFullRangeFractionCoeffsValid( eqn, deviationPairs, nbin );
@@ -2262,13 +2451,13 @@ PreserveCalibWindow::PreserveCalibWindow(
   
   switch( m_type )
   {
-    case Measurement::Polynomial:
-    case Measurement::FullRangeFraction:
-    case Measurement::UnspecifiedUsingDefaultPolynomial:
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       break;
       
-    case Measurement::LowerChannelEdge:
-    case Measurement::InvalidEquationType:
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
       throw runtime_error( "PreserveCalibWindow: invalid type" );
     break;
   }//switch( m_devPairs )
@@ -2293,26 +2482,26 @@ PreserveCalibWindow::PreserveCalibWindow(
   
   switch( eqnnewmeas->energy_calibration_model() )
   {
-    case Measurement::Polynomial:
-    case Measurement::UnspecifiedUsingDefaultPolynomial:
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       msg += "Polynomial";
       break;
-    case Measurement::FullRangeFraction: msg += "FRF"; break;
-    case Measurement::LowerChannelEdge:
-    case Measurement::InvalidEquationType:
+    case SpecUtils::EnergyCalType::FullRangeFraction: msg += "FRF"; break;
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
       break;
   }//switch( newmeas->energy_calibration_model() )
   
   msg += ")</th><th>New (";
   switch( eqnoldmeas->energy_calibration_model() )
   {
-    case Measurement::Polynomial:
-    case Measurement::UnspecifiedUsingDefaultPolynomial:
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       msg += "Polynomial";
       break;
-    case Measurement::FullRangeFraction: msg += "FRF"; break;
-    case Measurement::LowerChannelEdge:
-    case Measurement::InvalidEquationType:
+    case SpecUtils::EnergyCalType::FullRangeFraction: msg += "FRF"; break;
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
       break;
   }//switch( oldmeas->energy_calibration_model() )
   msg += ")</th></tr>";
@@ -2409,11 +2598,11 @@ bool PreserveCalibWindow::candidate( std::shared_ptr<SpecMeas> newmeas,
   
   const vector<float> &oldcoefs = eqnoldmeas->calibration_coeffs();
   const vector< pair<float,float> > &olddevpairs = eqnoldmeas->deviation_pairs();
-  const Measurement::EquationType oldtype = eqnoldmeas->energy_calibration_model();
+  const SpecUtils::EnergyCalType oldtype = eqnoldmeas->energy_calibration_model();
   
   const vector<float> &newcoefs = eqnnewmeas->calibration_coeffs();
   const vector< pair<float,float> > &newdevpairs = eqnnewmeas->deviation_pairs();
-  const Measurement::EquationType newtype = eqnnewmeas->energy_calibration_model();
+  const SpecUtils::EnergyCalType newtype = eqnnewmeas->energy_calibration_model();
 
   if( oldcoefs.size() != newcoefs.size() )
     return true;
@@ -2488,7 +2677,7 @@ void PreserveCalibWindow::doRecalibration()
   
   const vector<float> oldcoefs = eqnmeas->calibration_coeffs();
   const vector< pair<float,float> > olddevpairs = eqnmeas->deviation_pairs();
-  const Measurement::EquationType oldtype = eqnmeas->energy_calibration_model();
+  const SpecUtils::EnergyCalType oldtype = eqnmeas->energy_calibration_model();
   
   const vector<string> detectors = viewer->displayed_detector_names();
   meas->recalibrate_by_eqn( m_coeffs, m_devPairs, m_type, detectors, false );
@@ -2975,19 +3164,19 @@ void Recalibrator::MultiFileCalibFit::doFit()
     }
     
     const size_t nbin = binning->size();
-    const Measurement::EquationType calibration_type = eqnmeas->energy_calibration_model();
+    const SpecUtils::EnergyCalType calibration_type = eqnmeas->energy_calibration_model();
     
     vector<float> calib_coefs = eqnmeas->calibration_coeffs();
     
     switch( calibration_type )
     {
-      case Measurement::Polynomial:
-      case Measurement::FullRangeFraction:
-      case Measurement::UnspecifiedUsingDefaultPolynomial:
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
         break;
         
-      case Measurement::LowerChannelEdge:
-      case Measurement::InvalidEquationType:
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+      case SpecUtils::EnergyCalType::InvalidEquationType:
       {
         passMessage( "Invalid starting calibration type: unknown or lower bin "
                      "edge energy not allowed", "", WarningWidget::WarningMsgHigh );
@@ -3013,16 +3202,16 @@ void Recalibrator::MultiFileCalibFit::doFit()
         peakInfo.peakMeanUncert = 0.5;
         
       peakInfo.photopeakEnergy = wantedEnergy;
-      if( m_calibrator->m_coeffEquationType == Measurement::FullRangeFraction )
+      if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
       {
-        peakInfo.peakMeanBinNumber = find_bin_fullrangefraction( peak.mean(),
+        peakInfo.peakMeanBinNumber = SpecUtils::find_bin_fullrangefraction( peak.mean(),
                                                                   calib_coefs, nbin,
                                                                   eqnmeas->deviation_pairs(),
                                                                   0.001f );
       }else
       {
-        const vector<float> fwfcoef = polynomial_coef_to_fullrangefraction( calib_coefs, nbin );
-        peakInfo.peakMeanBinNumber = find_bin_fullrangefraction( peak.mean(),
+        const vector<float> fwfcoef = SpecUtils::polynomial_coef_to_fullrangefraction( calib_coefs, nbin );
+        peakInfo.peakMeanBinNumber = SpecUtils::find_bin_fullrangefraction( peak.mean(),
                                                                   fwfcoef, nbin,
                                                                   eqnmeas->deviation_pairs(),
                                                                   0.001f );
@@ -3035,7 +3224,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
       peakInfos.push_back( peakInfo );
     }//for( int col = 0; col < numModelCol; ++col )
     
-  
+    
     PolyCalibCoefMinFcn chi2Fcn( peakInfos,
                                 binning->size(),
                                 m_calibrator->m_coeffEquationType,
@@ -3050,7 +3239,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
     
     string name = "0";
     double delta = 1.0/pow( static_cast<double>(nbin), 0.0 );
-    if( m_calibrator->m_coeffEquationType == Measurement::FullRangeFraction )
+    if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
       delta = 0.5;
     
     if( m_fitFor[0]->isChecked() )
@@ -3060,7 +3249,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
     
     name = "1";
     delta = 1.0/pow( static_cast<double>(data->GetNbinsX()), 1.0 );
-    if( m_calibrator->m_coeffEquationType == Measurement::FullRangeFraction )
+    if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
       delta = 1.0;
     
     if( m_fitFor[1]->isChecked() )
@@ -3074,7 +3263,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
     
     name = "2";
     delta = 1.0/pow( static_cast<double>(data->GetNbinsX()), 2.0 );
-    if( m_calibrator->m_coeffEquationType == Measurement::FullRangeFraction )
+    if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
       delta = 0.1;
     
     if( m_fitFor[2]->isChecked() )
@@ -3137,9 +3326,6 @@ void Recalibrator::MultiFileCalibFit::doFit()
     const vector<double> parValues = fitPrams.Params();
     const vector<double> parErrors = fitPrams.Errors();
     
-    //    for( int i = 0; i < parValues.size(); ++i )
-    //      cerr << "parValues[" << i << "]=" << parValues[1] << endl;
-    
     for( size_t i = 0; i < parValues.size(); ++i )
       if( IsInf(parValues[i]) || IsNan(parValues[i]) )
         throw runtime_error( "Invalid calibration parameter from fit :(" );
@@ -3158,14 +3344,14 @@ void Recalibrator::MultiFileCalibFit::doFit()
     for( const double d : parValues )
       float_coef.push_back( static_cast<float>(d) );
     
-    if( m_calibrator->m_coeffEquationType == Measurement::Polynomial
-       || m_calibrator->m_coeffEquationType == Measurement::UnspecifiedUsingDefaultPolynomial )
-      float_coef = polynomial_coef_to_fullrangefraction( float_coef, nbin );
+    if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::Polynomial
+       || m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+      float_coef = SpecUtils::polynomial_coef_to_fullrangefraction( float_coef, nbin );
     
     stringstream msg;
     for( const RecalPeakInfo &info : peakInfos )
     {
-      const double predictedMean = fullrangefraction_energy( info.peakMeanBinNumber, float_coef, nbin, eqnmeas->deviation_pairs() );
+      const double predictedMean = SpecUtils::fullrangefraction_energy( info.peakMeanBinNumber, float_coef, nbin, eqnmeas->deviation_pairs() );
       double uncert = ((info.peakMeanUncert<=0.0) ? 1.0 : info.peakMeanUncert );
       double chi2 = pow(predictedMean - info.photopeakEnergy, 2.0 ) / (uncert*uncert);
       
@@ -3242,7 +3428,7 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
       
       vector<float> oldcalibpars;
       DeviationPairVec devpairs;
-      Measurement::EquationType oldEqnType;
+      SpecUtils::EnergyCalType oldEqnType;
       
       std::shared_ptr<SpecMeas> fore = viewer->measurment(kForeground);
       std::shared_ptr<SpecMeas> back = viewer->measurment(kBackground);

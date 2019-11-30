@@ -31,6 +31,7 @@
 
 #include <Wt/WSignal>
 
+#include "SpecUtils/EnergyCalibration.h"
 #include "SpecUtils/SpectrumDataStructs.h"
 
 
@@ -212,10 +213,10 @@ public:
   //  SpecMeas object.
   void shiftPeaksForRecalibration( std::vector<float> old_pars,
                     const std::vector< std::pair<float,float> > &old_devpairs,
-                    Measurement::EquationType old_eqn_type,
+                    SpecUtils::EnergyCalType old_eqn_type,
                     std::vector<float> new_pars,
                     const std::vector< std::pair<float,float> > &new_devpairs,
-                    Measurement::EquationType new_eqn_type );
+                    SpecUtils::EnergyCalType new_eqn_type );
   
   //translatePeakForCalibrationChange(...): translates a peaks definition from
   //  one calibration to another.
@@ -227,10 +228,10 @@ public:
   static void translatePeakForCalibrationChange( PeakDef &peak,
                     std::vector<float> old_pars,
                     const std::vector< std::pair<float,float> > &old_devpairs,
-                    Measurement::EquationType old_eqn_type,
+                    SpecUtils::EnergyCalType old_eqn_type,
                     std::vector<float> new_pars,
                     const std::vector< std::pair<float,float> > &new_devpairs,
-                    Measurement::EquationType new_eqn_type,
+                    SpecUtils::EnergyCalType new_eqn_type,
                     const size_t nbins,
                     const bool translate_continuum );
   

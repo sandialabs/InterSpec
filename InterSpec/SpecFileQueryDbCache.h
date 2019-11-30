@@ -36,6 +36,7 @@
 #include <Wt/Dbo/Dbo>
 #include <Wt/Dbo/WtSqlTraits>
 
+#include "SpecUtils/EnergyCalibration.h"
 #include "SpecUtils/SpectrumDataStructs.h"
 
 //Forward declarations and Wt::Dbo::overhead ish. 
@@ -74,12 +75,12 @@ namespace Wt {
     };
     
     template<>
-    struct sql_value_traits<std::set<Measurement::EquationType>, void>
+    struct sql_value_traits<std::set<SpecUtils::EnergyCalType>, void>
     {
       static const bool specialized = true;
       static std::string type(SqlConnection *conn, int size);
-      static void bind(const std::set<Measurement::EquationType> &v, SqlStatement *statement, int column, int size);
-      static bool read(std::set<Measurement::EquationType> &v, SqlStatement *statement, int column, int size);
+      static void bind(const std::set<SpecUtils::EnergyCalType> &v, SqlStatement *statement, int column, int size);
+      static bool read(std::set<SpecUtils::EnergyCalType> &v, SqlStatement *statement, int column, int size);
     };
     
     template<>
@@ -201,7 +202,7 @@ struct SpecFileInfoToQuery
   bool contained_neutron;
   bool contained_dev_pairs;
   bool contained_gps;
-  std::set<Measurement::EquationType> energy_cal_types;
+  std::set<SpecUtils::EnergyCalType> energy_cal_types;
   std::set<float> individual_spectrum_live_time;
   std::set<float> individual_spectrum_real_time;
   size_t number_of_samples;
