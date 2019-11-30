@@ -5153,59 +5153,59 @@ double evaluate_polynomial( const double x,
 }//
       
       
-        double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
+double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
                                  const int polynomial_order,
                                  std::vector<double> &poly_coeffs,
                                  std::vector<double> &coeff_uncerts )
-        {
-          //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-          //Implementation is quite inneficient
-          using namespace boost::numeric;
-          const int poly_terms = polynomial_order + 1;
-          ublas::matrix<double> A( nbin, poly_terms );
-          ublas::vector<double> b( nbin );
-          
-          for( size_t row = 0; row < nbin; ++row )
-          {
-            const double uncert = (data[row] > 0.0 ? sqrt( data[row] ) : 1.0);
-            b(row) = (data[row] > 0.0 ? sqrt( data[row] ) : 0.0);
-            for( int col = 0; col < poly_terms; ++col )
-              A(row,col) = std::pow( double(x[row]), double(col)) / uncert;
-          }//for( int col = 0; col < poly_terms; ++col )
-          
-          const ublas::matrix<double> A_transpose = ublas::trans( A );
-          const ublas::matrix<double> alpha = prod( A_transpose, A );
-          ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-          const bool success = matrix_invert( alpha, C );
-          if( !success )
-            throw runtime_error( "fit_to_polynomial(...): trouble inverting matrix" );
-          
-          const ublas::vector<double> beta = prod( A_transpose, b );
-          const ublas::vector<double> a = prod( C, beta );
-          
-          poly_coeffs.resize( poly_terms );
-          coeff_uncerts.resize( poly_terms );
-          for( int coef = 0; coef < poly_terms; ++coef )
-          {
-            poly_coeffs[coef] = a(coef);
-            coeff_uncerts[coef] = std::sqrt( C(coef,coef) );
-          }//for( int coef = 0; coef < poly_terms; ++coef )
-          
-          double chi2 = 0;
-          for( size_t bin = 0; bin < nbin; ++bin )
-          {
-            double y_pred = 0.0;
-            for( int i = 0; i < poly_terms; ++i )
-              y_pred += a(i) * std::pow( double(x[bin]), double(i) );
-            const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
-            chi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
-          }//for( int bin = 0; bin < nbin; ++bin )
-          
-          return chi2;
-        }//double fit_to_polynomial(...)
+{
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation is quite inneficient
+  using namespace boost::numeric;
+  const int poly_terms = polynomial_order + 1;
+  ublas::matrix<double> A( nbin, poly_terms );
+  ublas::vector<double> b( nbin );
+  
+  for( size_t row = 0; row < nbin; ++row )
+  {
+    const double uncert = (data[row] > 0.0 ? sqrt( data[row] ) : 1.0);
+    b(row) = (data[row] > 0.0 ? sqrt( data[row] ) : 0.0);
+    for( int col = 0; col < poly_terms; ++col )
+      A(row,col) = std::pow( double(x[row]), double(col)) / uncert;
+  }//for( int col = 0; col < poly_terms; ++col )
+  
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  const ublas::matrix<double> alpha = prod( A_transpose, A );
+  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+  const bool success = matrix_invert( alpha, C );
+  if( !success )
+    throw runtime_error( "fit_to_polynomial(...): trouble inverting matrix" );
+  
+  const ublas::vector<double> beta = prod( A_transpose, b );
+  const ublas::vector<double> a = prod( C, beta );
+  
+  poly_coeffs.resize( poly_terms );
+  coeff_uncerts.resize( poly_terms );
+  for( int coef = 0; coef < poly_terms; ++coef )
+  {
+    poly_coeffs[coef] = a(coef);
+    coeff_uncerts[coef] = std::sqrt( C(coef,coef) );
+  }//for( int coef = 0; coef < poly_terms; ++coef )
+  
+  double chi2 = 0;
+  for( size_t bin = 0; bin < nbin; ++bin )
+  {
+    double y_pred = 0.0;
+    for( int i = 0; i < poly_terms; ++i )
+      y_pred += a(i) * std::pow( double(x[bin]), double(i) );
+    const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
+    chi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
+  }//for( int bin = 0; bin < nbin; ++bin )
+  
+  return chi2;
+}//double fit_to_polynomial(...)
         
         
-        double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
+double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
                                   const int polynomial_order,
                                   const double ref_energy,
                                   const vector<double> &means,
@@ -5217,184 +5217,184 @@ double evaluate_polynomial( const double x,
                                   std::vector<double> &continuum_coeffs,
                                   std::vector<double> &amplitudes_uncerts,
                                   std::vector<double> &continuum_coeffs_uncerts )
-        {
-          if( sigmas.size() != means.size() )
-            throw runtime_error( "fit_amp_and_offset: invalid input" );
-          
-          //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-          //Implementation is quite inneficient
-          using namespace boost::numeric;
-          const size_t npeaks = sigmas.size();
-          const size_t npoly = static_cast<size_t>( polynomial_order + 1 );
-          const int nfit_terms = npoly + npeaks;
-          ublas::matrix<double> A( nbin, nfit_terms );
-          ublas::vector<double> b( nbin );
-          
-          //  cerr << endl << "Input: " << ref_energy << ", ";
-          //  for( size_t i = 0; i < npeaks; ++i )
-          //    cerr << "{" << means[i] << ", " << sigmas[i] << "}, ";
-          //  cerr << endl << endl;
-          
-          for( size_t row = 0; row < nbin; ++row )
-          {
-            double dataval = data[row];
-            const double x0 = x[row];
-            const double x1 = x[row+1];
-            const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
-            
+{
+  if( sigmas.size() != means.size() )
+    throw runtime_error( "fit_amp_and_offset: invalid input" );
+  
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation is quite inneficient
+  using namespace boost::numeric;
+  const size_t npeaks = sigmas.size();
+  const size_t npoly = static_cast<size_t>( polynomial_order + 1 );
+  const int nfit_terms = npoly + npeaks;
+  ublas::matrix<double> A( nbin, nfit_terms );
+  ublas::vector<double> b( nbin );
+  
+  //  cerr << endl << "Input: " << ref_energy << ", ";
+  //  for( size_t i = 0; i < npeaks; ++i )
+  //    cerr << "{" << means[i] << ", " << sigmas[i] << "}, ";
+  //  cerr << endl << endl;
+  
+  for( size_t row = 0; row < nbin; ++row )
+  {
+    double dataval = data[row];
+    const double x0 = x[row];
+    const double x1 = x[row+1];
+    const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+    
 #if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
-            //I havent actually reasoned through the algorithm to see if this is the
-            //  correct way to subtract off fixed ampluitude peaks.
-            for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
-              dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
+    //I havent actually reasoned through the algorithm to see if this is the
+    //  correct way to subtract off fixed ampluitude peaks.
+    for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
+      dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
 #endif
-            
-            b(row) = ((dataval > 0.0 ? dataval : 0.0) / uncert);
-            
-            for( size_t col = 0; col < npoly; ++col )
-            {
-              const double exp = col + 1.0;
-              const double x0cont = x0 - ref_energy;
-              const double x1cont = x1 - ref_energy;
-              A(row,col) = (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp)) / uncert;
-            }//for( int order = 0; order < maxorder; ++order )
-            
-            for( size_t i = 0; i < npeaks; ++i )
-            {
-              const size_t col = npoly + i;
-              A(row,col) = PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 ) / uncert;
-            }
-          }//for( size_t row = 0; row < nbin; ++row )
-          
-          //  cerr << "B={";
-          //  for( int i = 0; i < nbin; ++i )
-          //    cerr << b(i) << ",";
-          //  cerr << "};" << endl;
-          //  cerr << "A={" << endl;
-          //  for( int row = 0; row < nbin; ++row )
-          //  {
-          //    for( int col = 0; col < (npeaks+npoly); ++col )
-          //      cerr << A(row,col) << ",";
-          //    cerr << endl;
-          //  }
-          //  cerr  << "};" << endl;
-          
-          const ublas::matrix<double> A_transpose = ublas::trans( A );
-          const ublas::matrix<double> alpha = prod( A_transpose, A );
-          ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-          
-          bool success = false;
-          
-          try
-          {
-            success = matrix_invert( alpha, C );
-          }catch( std::exception &e )
-          {
-            cerr << "fit_amp_and_offset(...): caught: " << e.what() << endl;
-            cerr << "For means = {";
-            for( double m : means )
-              cerr << m << ", ";
-            cerr << "}, sigmas={";
-            for( double m : sigmas )
-              cerr << m << ", ";
-            cerr << "}" << endl;
-            
-            printf( "b=" );
-            for( size_t row = 0; row < b.size(); ++row )
-              printf( "%.2f, ", b(row) );
-            printf( "\n" );
-            
-            printf( "Alpha=\n" );
-            for( size_t row = 0; row < alpha.size1(); ++row )
-            {
-              for( size_t col = 0; col < alpha.size2(); ++col )
-                printf( "%12.2f, ", alpha(row,col) );
-              printf( "\n" );
-            }
-            printf( "\n" );
-            
-            
-            printf( "\nC=\n" );
-            for( size_t row = 0; row < C.size1(); ++row )
-            {
-              for( size_t col = 0; col < C.size2(); ++col )
-                printf( "%12.2f, ", C(row,col) );
-              printf( "\n" );
-            }
-            printf( "\n\n\n" );
-          }//try / catch
-          
-          if( !success )
-          {
-            cerr << "For means = {";
-            for( double m : means )
-              cerr << m << ", ";
-            cerr << "}, sigmas={";
-            for( double m : sigmas )
-              cerr << m << ", ";
-            cerr << "}" << endl;
-            throw runtime_error( "fit_amp_and_offset(...): trouble inverting matrix" );
-          }
-          
-          const ublas::vector<double> beta = prod( A_transpose, b );
-          const ublas::vector<double> a = prod( C, beta );
-          
-          continuum_coeffs.resize( npoly );
-          continuum_coeffs_uncerts.resize( npoly );
-          for( size_t coef = 0; coef < npoly; ++coef )
-          {
-            continuum_coeffs[coef] = a(coef);
-            continuum_coeffs_uncerts[coef] = std::sqrt( C(coef,coef) );
-          }//for( int coef = 0; coef < poly_terms; ++coef )
-          
-          amplitudes.resize( npeaks );
-          amplitudes_uncerts.resize( npeaks );
-          
-          for( size_t i = 0; i < npeaks; ++i )
-          {
-            const size_t coef = npoly + i;
-            amplitudes[i] = a(coef);
-            amplitudes_uncerts[i] = std::sqrt( C(coef,coef) );
-            //    cerr << "fit_amp_and_offset: peak " << i << " amplitude "
-            //         << amplitudes[i] << " +- " << amplitudes_uncerts[i] << endl;
-          }//for( size_t i = 0; i < npeaks; ++i )
-          
-          double chi2 = 0;
-          for( size_t bin = 0; bin < nbin; ++bin )
-          {
-            const double x0 = x[bin];
-            const double x1 = x[bin+1];
-            
-            double y_pred = 0.0;
-            for( size_t col = 0; col < npoly; ++col )
-            {
-              const double exp = col + 1.0;
-              const double x0cont = x0 - ref_energy;
-              const double x1cont = x1 - ref_energy;
-              y_pred += a(col) * (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp));
-            }//for( int order = 0; order < maxorder; ++order )
-            
-            if( y_pred < 0.0 )
-              y_pred = 0.0;
-            
-            for( size_t i = 0; i < npeaks; ++i )
-            {
-              const size_t col = npoly + i;
-              y_pred += a(col) * PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 );
-            }
-            
+    
+    b(row) = ((dataval > 0.0 ? dataval : 0.0) / uncert);
+    
+    for( size_t col = 0; col < npoly; ++col )
+    {
+      const double exp = col + 1.0;
+      const double x0cont = x0 - ref_energy;
+      const double x1cont = x1 - ref_energy;
+      A(row,col) = (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp)) / uncert;
+    }//for( int order = 0; order < maxorder; ++order )
+    
+    for( size_t i = 0; i < npeaks; ++i )
+    {
+      const size_t col = npoly + i;
+      A(row,col) = PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 ) / uncert;
+    }
+  }//for( size_t row = 0; row < nbin; ++row )
+  
+  //  cerr << "B={";
+  //  for( int i = 0; i < nbin; ++i )
+  //    cerr << b(i) << ",";
+  //  cerr << "};" << endl;
+  //  cerr << "A={" << endl;
+  //  for( int row = 0; row < nbin; ++row )
+  //  {
+  //    for( int col = 0; col < (npeaks+npoly); ++col )
+  //      cerr << A(row,col) << ",";
+  //    cerr << endl;
+  //  }
+  //  cerr  << "};" << endl;
+  
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  const ublas::matrix<double> alpha = prod( A_transpose, A );
+  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+  
+  bool success = false;
+  
+  try
+  {
+    success = matrix_invert( alpha, C );
+  }catch( std::exception &e )
+  {
+    cerr << "fit_amp_and_offset(...): caught: " << e.what() << endl;
+    cerr << "For means = {";
+    for( double m : means )
+      cerr << m << ", ";
+    cerr << "}, sigmas={";
+    for( double m : sigmas )
+      cerr << m << ", ";
+    cerr << "}" << endl;
+    
+    printf( "b=" );
+    for( size_t row = 0; row < b.size(); ++row )
+      printf( "%.2f, ", b(row) );
+    printf( "\n" );
+    
+    printf( "Alpha=\n" );
+    for( size_t row = 0; row < alpha.size1(); ++row )
+    {
+      for( size_t col = 0; col < alpha.size2(); ++col )
+        printf( "%12.2f, ", alpha(row,col) );
+      printf( "\n" );
+    }
+    printf( "\n" );
+    
+    
+    printf( "\nC=\n" );
+    for( size_t row = 0; row < C.size1(); ++row )
+    {
+      for( size_t col = 0; col < C.size2(); ++col )
+        printf( "%12.2f, ", C(row,col) );
+      printf( "\n" );
+    }
+    printf( "\n\n\n" );
+  }//try / catch
+  
+  if( !success )
+  {
+    cerr << "For means = {";
+    for( double m : means )
+      cerr << m << ", ";
+    cerr << "}, sigmas={";
+    for( double m : sigmas )
+      cerr << m << ", ";
+    cerr << "}" << endl;
+    throw runtime_error( "fit_amp_and_offset(...): trouble inverting matrix" );
+  }
+  
+  const ublas::vector<double> beta = prod( A_transpose, b );
+  const ublas::vector<double> a = prod( C, beta );
+  
+  continuum_coeffs.resize( npoly );
+  continuum_coeffs_uncerts.resize( npoly );
+  for( size_t coef = 0; coef < npoly; ++coef )
+  {
+    continuum_coeffs[coef] = a(coef);
+    continuum_coeffs_uncerts[coef] = std::sqrt( C(coef,coef) );
+  }//for( int coef = 0; coef < poly_terms; ++coef )
+  
+  amplitudes.resize( npeaks );
+  amplitudes_uncerts.resize( npeaks );
+  
+  for( size_t i = 0; i < npeaks; ++i )
+  {
+    const size_t coef = npoly + i;
+    amplitudes[i] = a(coef);
+    amplitudes_uncerts[i] = std::sqrt( C(coef,coef) );
+    //    cerr << "fit_amp_and_offset: peak " << i << " amplitude "
+    //         << amplitudes[i] << " +- " << amplitudes_uncerts[i] << endl;
+  }//for( size_t i = 0; i < npeaks; ++i )
+  
+  double chi2 = 0;
+  for( size_t bin = 0; bin < nbin; ++bin )
+  {
+    const double x0 = x[bin];
+    const double x1 = x[bin+1];
+    
+    double y_pred = 0.0;
+    for( size_t col = 0; col < npoly; ++col )
+    {
+      const double exp = col + 1.0;
+      const double x0cont = x0 - ref_energy;
+      const double x1cont = x1 - ref_energy;
+      y_pred += a(col) * (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp));
+    }//for( int order = 0; order < maxorder; ++order )
+    
+    if( y_pred < 0.0 )
+      y_pred = 0.0;
+    
+    for( size_t i = 0; i < npeaks; ++i )
+    {
+      const size_t col = npoly + i;
+      y_pred += a(col) * PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 );
+    }
+    
 #if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
-            for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
-              y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
+    for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
+      y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
 #endif
-            
-            //    cerr << "bin " << bin << " predicted " << y_pred << " data=" << data[bin] << endl;
-            const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
-            chi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
-          }//for( int bin = 0; bin < nbin; ++bin )
-          
-          return chi2;
-        }//double fit_amp_and_offset(...)
+    
+    //    cerr << "bin " << bin << " predicted " << y_pred << " data=" << data[bin] << endl;
+    const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
+    chi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
+  }//for( int bin = 0; bin < nbin; ++bin )
+  
+  return chi2;
+}//double fit_amp_and_offset(...)
         
         
         

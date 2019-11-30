@@ -41,6 +41,7 @@
 #include "InterSpec/SpecFileQuery.h"
 //#include "InterSpec/InterSpecApp.h" //for passMessage debugging
 #include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
 
 
@@ -119,7 +120,7 @@ namespace Wt {
 //How to specialize types for storing in the database.  If we want to get rid of
 //  bitely and store each field in the table manually, we need to specialize:
 //  bool, set<float>, size_t, set<size_t>
-//  set<Measurement::EquationType>, set<string>.
+//  set<SpecUtils::EnergyCalType>, set<string>.
 //DetectorAnalysis can probably be serialized to XML to store in a text field.
 
     std::string sql_value_traits<size_t>::type(SqlConnection *conn, int size)
@@ -282,7 +283,7 @@ namespace Wt {
     }
     
     
-    std::string sql_value_traits<std::set<Measurement::EquationType>>::type(SqlConnection *conn, int size)
+    std::string sql_value_traits<std::set<SpecUtils::EnergyCalType>>::type(SqlConnection *conn, int size)
     {
 #if( USE_TEXT_FOR_BLOB )
       return conn->textType(-1);
@@ -290,11 +291,11 @@ namespace Wt {
       return conn->blobType();
 #endif
     }
-    void sql_value_traits<std::set<Measurement::EquationType>>::bind(const std::set<Measurement::EquationType> &v, SqlStatement *statement, int column, int size)
+    void sql_value_traits<std::set<SpecUtils::EnergyCalType>>::bind(const std::set<SpecUtils::EnergyCalType> &v, SqlStatement *statement, int column, int size)
     {
       bind_pod_set( v, statement, column, size );
     }
-    bool sql_value_traits<std::set<Measurement::EquationType>>::read(std::set<Measurement::EquationType> &v, SqlStatement *statement, int column, int size)
+    bool sql_value_traits<std::set<SpecUtils::EnergyCalType>>::read(std::set<SpecUtils::EnergyCalType> &v, SqlStatement *statement, int column, int size)
     {
       return read_pod_set( v, statement, column, size );
     }

@@ -38,7 +38,9 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
+#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/RowStretchTreeView.h"
+
 
 //Forward Declarations
 class PeakDef;
@@ -112,7 +114,7 @@ protected:
   Recalibrator *m_calibrator;
   std::shared_ptr<SpecMeas> m_newmeas;
   std::vector<float> m_coeffs;
-  Measurement::EquationType m_type;
+  SpecUtils::EnergyCalType m_type;
   std::vector< std::pair<float,float> > m_devPairs;
   const SpectrumType m_newtype, m_oldtype;
 };//class PreserveCalibWindow
@@ -175,12 +177,12 @@ public:
                                       PeakModel *peakmodel,
                                       const std::vector<float> &new_pars,
                                       const std::vector< std::pair<float,float> > &new_devpairs,
-                                      Measurement::EquationType new_eqn_type,
+                                      SpecUtils::EnergyCalType new_eqn_type,
                                       std::shared_ptr<SpecMeas> meas,
                                       const SpectrumType spectype,
                                       std::vector<float> old_pars,
                                       const std::vector< std::pair<float,float> > &old_devpairs,
-                                      Measurement::EquationType old_eqn_type );
+                                      SpecUtils::EnergyCalType old_eqn_type );
 
   static bool checkFullRangeFractionCoeffsValid( const std::vector<float> &pars,
                           const std::vector< std::pair<float,float> > &devpairs,
@@ -282,7 +284,7 @@ protected:
   // and the ints for the scientific notation
   int m_coeffExps[3];
 
-  Measurement::EquationType m_coeffEquationType;
+  SpecUtils::EnergyCalType m_coeffEquationType;
 
   //The following will be set to a negative number when they arent defined
 //  double m_offsetUncert, m_linearUncert, m_quadraticUncert;
@@ -304,7 +306,7 @@ protected:
   {
     void reset();
     CalibrationInformation();
-    Measurement::EquationType type;
+    SpecUtils::EnergyCalType type;
     std::vector<float> coefficients;
     std::vector< std::pair<float,float> > deviationpairs;
     
@@ -316,9 +318,7 @@ protected:
   
   CalibrationInformation m_originalCal[3];
   
-protected:
-
-
+public:
   struct RecalPeakInfo
   {
     double peakMean;
@@ -327,13 +327,14 @@ protected:
     double photopeakEnergy;
   };//struct RecalPeakInfo
 
+protected:
   class PolyCalibCoefMinFcn
       : public ROOT::Minuit2::FCNBase
   {
   public:
     PolyCalibCoefMinFcn( const std::vector<RecalPeakInfo> &peakInfo,
                          const size_t nbin,
-                         Measurement::EquationType eqnType,
+                         SpecUtils::EnergyCalType eqnType,
                          const std::vector< std::pair<float,float> > &devpair );
     virtual ~PolyCalibCoefMinFcn();
     virtual double Up() const;
@@ -341,7 +342,7 @@ protected:
 
   protected:
     size_t m_nbin;
-    Measurement::EquationType m_eqnType;
+    SpecUtils::EnergyCalType m_eqnType;
     std::vector<RecalPeakInfo> m_peakInfo;
     std::vector< std::pair<float,float> > m_devpair;
   };//class PolyCalibCoefMinFcn
@@ -394,7 +395,7 @@ protected:
     Wt::WLineEdit *m_coefvals[3];
     Wt::WPushButton *m_use, *m_cancel, *m_fit;
     Wt::WTextArea *m_fitSumary;
-    Measurement::EquationType m_eqnType;
+    SpecUtils::EnergyCalType m_eqnType;
     double m_calVal[3], m_calUncert[3];
   };//class MultiFileCalibFit
   

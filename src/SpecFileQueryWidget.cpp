@@ -75,6 +75,7 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/SpecFileQueryWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -261,10 +262,10 @@ namespace
               //The below switch must match whats in JS - a little brittle, bu oh well for now
               switch( val )
               {
-                case 0: val = static_cast<int>(Measurement::EquationType::Polynomial); break;
-                case 1: val = static_cast<int>(Measurement::EquationType::FullRangeFraction); break;
-                case 2: val = static_cast<int>(Measurement::EquationType::LowerChannelEdge); break;
-                case 3: val = static_cast<int>(Measurement::EquationType::UnspecifiedUsingDefaultPolynomial); break;
+                case 0: val = static_cast<int>(SpecUtils::EnergyCalType::Polynomial); break;
+                case 1: val = static_cast<int>(SpecUtils::EnergyCalType::FullRangeFraction); break;
+                case 2: val = static_cast<int>(SpecUtils::EnergyCalType::LowerChannelEdge); break;
+                case 3: val = static_cast<int>(SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial); break;
                 default:
                   throw runtime_error( "Unknown EnergyCalibrationType value type" );
               }//switch( val )
@@ -601,11 +602,11 @@ namespace
             row[f] += (row[f].size() ? ";" : "");
             switch( caltype )
             {
-              case Measurement::EquationType::Polynomial:          row[f] += "polynomial"; break;
-              case Measurement::EquationType::FullRangeFraction:   row[f] += "full range fraction"; break;
-              case Measurement::EquationType::LowerChannelEdge:    row[f] += "lower channel energy"; break;
-              case Measurement::EquationType::InvalidEquationType:
-              case Measurement::EquationType::UnspecifiedUsingDefaultPolynomial:
+              case SpecUtils::EnergyCalType::Polynomial:          row[f] += "polynomial"; break;
+              case SpecUtils::EnergyCalType::FullRangeFraction:   row[f] += "full range fraction"; break;
+              case SpecUtils::EnergyCalType::LowerChannelEdge:    row[f] += "lower channel energy"; break;
+              case SpecUtils::EnergyCalType::InvalidEquationType:
+              case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
                 row[f] += "unknown";
                 break;
             }//switch( m->energy_calibration_model() )

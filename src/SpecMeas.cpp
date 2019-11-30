@@ -41,6 +41,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/EnergyCalibration.h"
 #include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -1587,10 +1588,10 @@ void shiftPeaksHelper( std::map<std::set<int>, std::shared_ptr< std::deque< std:
                        set< std::shared_ptr<const PeakContinuum> > &shiftedContinuums,
                        const std::vector<float> &old_pars,
                        const std::vector< std::pair<float,float> > &old_devpairs,
-                       const Measurement::EquationType old_eqn_type,
+                       const SpecUtils::EnergyCalType old_eqn_type,
                        const std::vector<float> &new_pars,
                        const std::vector< std::pair<float,float> > &new_devpairs,
-                       const Measurement::EquationType new_eqn_type,
+                       const SpecUtils::EnergyCalType new_eqn_type,
                        const size_t nbins )
 {
   typedef std::shared_ptr<const PeakDef> PeakPtr;
@@ -1638,10 +1639,10 @@ void shiftPeaksHelper( std::map<std::set<int>, std::shared_ptr< std::deque< std:
 
 void SpecMeas::shiftPeaksForRecalibration( std::vector<float> old_pars,
                                 const std::vector< std::pair<float,float> > &old_devpairs,
-                                Measurement::EquationType old_eqn_type,
+                                SpecUtils::EnergyCalType old_eqn_type,
                                 std::vector<float> new_pars,
                                 const std::vector< std::pair<float,float> > &new_devpairs,
-                                Measurement::EquationType new_eqn_type )
+                                SpecUtils::EnergyCalType new_eqn_type )
 {
   typedef std::shared_ptr<const PeakDef> PeakPtr;
   
@@ -1670,10 +1671,10 @@ void SpecMeas::shiftPeaksForRecalibration( std::vector<float> old_pars,
 void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
                                           std::vector<float> old_pars,
                                           const std::vector< std::pair<float,float> > &old_devpairs,
-                                          Measurement::EquationType old_eqn_type,
+                                          SpecUtils::EnergyCalType old_eqn_type,
                                           std::vector<float> new_pars,
                                           const std::vector< std::pair<float,float> > &new_devpairs,
-                                          Measurement::EquationType new_eqn_type,
+                                          SpecUtils::EnergyCalType new_eqn_type,
                                           const size_t nbins,
                                           const bool translate_continuum )
 {
@@ -1685,17 +1686,17 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   if( old_pars.size() < 2 || new_pars.size() < 2 )
     throw runtime_error( "translatePeakForCalibrationChange: invalid num coefs" );
   
-  if( old_eqn_type==Measurement::LowerChannelEdge
-      || old_eqn_type==Measurement::InvalidEquationType
-      || new_eqn_type==Measurement::LowerChannelEdge
-      || new_eqn_type==Measurement::InvalidEquationType )
+  if( old_eqn_type==SpecUtils::EnergyCalType::LowerChannelEdge
+      || old_eqn_type==SpecUtils::EnergyCalType::InvalidEquationType
+      || new_eqn_type==SpecUtils::EnergyCalType::LowerChannelEdge
+      || new_eqn_type==SpecUtils::EnergyCalType::InvalidEquationType )
     throw runtime_error( "translatePeakForCalibrationChange() can only handle"
                          " Polynomial or FullRangeFraction Calibrations" );
   
-  if( old_eqn_type == Measurement::Polynomial || old_eqn_type == Measurement::UnspecifiedUsingDefaultPolynomial )
-      old_pars = polynomial_coef_to_fullrangefraction( old_pars, nbins );
-  if( new_eqn_type == Measurement::Polynomial || new_eqn_type == Measurement::UnspecifiedUsingDefaultPolynomial )
-      new_pars = polynomial_coef_to_fullrangefraction( new_pars, nbins );
+  if( old_eqn_type == SpecUtils::EnergyCalType::Polynomial || old_eqn_type == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+      old_pars = SpecUtils::polynomial_coef_to_fullrangefraction( old_pars, nbins );
+  if( new_eqn_type == SpecUtils::EnergyCalType::Polynomial || new_eqn_type == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+      new_pars = SpecUtils::polynomial_coef_to_fullrangefraction( new_pars, nbins );
   
   
   if( !peak.gausPeak() )
@@ -1706,12 +1707,12 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
     const float oldMean = static_cast<float>(peak.mean());
     const float oldlow = static_cast<float>(peak.lowerX());
     const float oldhigh = static_cast<float>(peak.upperX());
-    const float meanbin = find_bin_fullrangefraction( oldMean, old_pars, nbins, old_devpairs, 0.001f );
-    const float lowbin = find_bin_fullrangefraction( oldlow, old_pars, nbins, old_devpairs, 0.001f );
-    const float highbin = find_bin_fullrangefraction( oldhigh, old_pars, nbins, old_devpairs, 0.001f );
-    const float newMean = fullrangefraction_energy( meanbin, new_pars, nbins, new_devpairs );
-    const float newLower = fullrangefraction_energy( lowbin, new_pars, nbins, new_devpairs );
-    const float newUpper = fullrangefraction_energy( highbin, new_pars, nbins, new_devpairs );
+    const float meanbin = SpecUtils::find_bin_fullrangefraction( oldMean, old_pars, nbins, old_devpairs, 0.001f );
+    const float lowbin = SpecUtils::find_bin_fullrangefraction( oldlow, old_pars, nbins, old_devpairs, 0.001f );
+    const float highbin = SpecUtils::find_bin_fullrangefraction( oldhigh, old_pars, nbins, old_devpairs, 0.001f );
+    const float newMean = SpecUtils::fullrangefraction_energy( meanbin, new_pars, nbins, new_devpairs );
+    const float newLower = SpecUtils::fullrangefraction_energy( lowbin, new_pars, nbins, new_devpairs );
+    const float newUpper = SpecUtils::fullrangefraction_energy( highbin, new_pars, nbins, new_devpairs );
     
     peak.continuum()->setRange( newLower, newUpper );
     peak.set_coefficient( newMean, PeakDef::Mean );
@@ -1721,16 +1722,16 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   
   const float oldMean = static_cast<float>(peak.mean());
   const float oldSigma = static_cast<float>(peak.sigma());
-  const float oldbin = find_bin_fullrangefraction( oldMean, old_pars,
+  const float oldbin = SpecUtils::find_bin_fullrangefraction( oldMean, old_pars,
                                                   nbins, old_devpairs, 0.001f );
-  const float newMean = fullrangefraction_energy( oldbin, new_pars, nbins, new_devpairs );
+  const float newMean = SpecUtils::fullrangefraction_energy( oldbin, new_pars, nbins, new_devpairs );
   
-  const float oldneg2sigmabin = find_bin_fullrangefraction( oldMean - 2.0*oldSigma,
+  const float oldneg2sigmabin = SpecUtils::find_bin_fullrangefraction( oldMean - 2.0*oldSigma,
                                       old_pars, nbins, old_devpairs, 0.001f );
-  const float oldpos2sigmabin = find_bin_fullrangefraction( oldMean + 2.0*oldSigma,
+  const float oldpos2sigmabin = SpecUtils::find_bin_fullrangefraction( oldMean + 2.0*oldSigma,
                                       old_pars, nbins, old_devpairs, 0.001f );
-  const float newneg2sigma = fullrangefraction_energy( oldneg2sigmabin, new_pars, nbins, new_devpairs );
-  const float newpos2sigma = fullrangefraction_energy( oldpos2sigmabin, new_pars, nbins, new_devpairs );
+  const float newneg2sigma = SpecUtils::fullrangefraction_energy( oldneg2sigmabin, new_pars, nbins, new_devpairs );
+  const float newpos2sigma = SpecUtils::fullrangefraction_energy( oldpos2sigmabin, new_pars, nbins, new_devpairs );
   
   float strech = 0.25f*(newpos2sigma - newneg2sigma) / oldSigma;
   
@@ -1745,7 +1746,7 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   }//if( IsNan(strech) || IsInf(strech) )
   
 #if( PERFORM_DEVELOPER_CHECKS )
-  const float newbin = find_bin_fullrangefraction( newMean, new_pars,
+  const float newbin = SpecUtils::find_bin_fullrangefraction( newMean, new_pars,
                                                   nbins, new_devpairs, 0.001 );
   if( fabs(newbin - oldbin) > 0.025 )  //0.025 arbitrary
   {
@@ -1799,15 +1800,15 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   if( continuum->energyRangeDefined() )
   {
     const float oldLowEnergy = static_cast<float>(continuum->lowerEnergy());
-    const float oldlowbin = find_bin_fullrangefraction( oldLowEnergy, old_pars,
+    const float oldlowbin = SpecUtils::find_bin_fullrangefraction( oldLowEnergy, old_pars,
                                                        nbins, old_devpairs, 0.001 );
-    const float new_lowenergy = fullrangefraction_energy( oldlowbin, new_pars, nbins, new_devpairs );
+    const float new_lowenergy = SpecUtils::fullrangefraction_energy( oldlowbin, new_pars, nbins, new_devpairs );
     
     
     const float oldHighEnergy = static_cast<float>(continuum->upperEnergy());
-    const float oldhighbin = find_bin_fullrangefraction( oldHighEnergy, old_pars,
+    const float oldhighbin = SpecUtils::find_bin_fullrangefraction( oldHighEnergy, old_pars,
                                                         nbins, old_devpairs, 0.001 );
-    const float new_highenergy = fullrangefraction_energy( oldhighbin, new_pars,
+    const float new_highenergy = SpecUtils::fullrangefraction_energy( oldhighbin, new_pars,
                                                           nbins, new_devpairs );
     
     strech = (new_highenergy - new_lowenergy) / (oldHighEnergy - oldLowEnergy);
@@ -1818,9 +1819,9 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   {
     const double oldref = continuum->referenceEnergy();
     
-    const float oldrefbin = find_bin_fullrangefraction( oldref, old_pars,
+    const float oldrefbin = SpecUtils::find_bin_fullrangefraction( oldref, old_pars,
                                                        nbins, old_devpairs, 0.001 );
-    const float newref = fullrangefraction_energy( oldrefbin, new_pars, nbins, new_devpairs );
+    const float newref = SpecUtils::fullrangefraction_energy( oldrefbin, new_pars, nbins, new_devpairs );
     
     if( !continuum->energyRangeDefined() )
       strech = static_cast<float>( newref / oldref );

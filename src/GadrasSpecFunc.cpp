@@ -33,6 +33,7 @@
 
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/GadrasSpecFunc.h"
+#include "SpecUtils/EnergyCalibration.h"
 #include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/MassAttenuationTool.h"
 
@@ -358,7 +359,7 @@ float GadrasScatterTable::getContinuum( std::vector<float> &answer,
   //C	Attenuate the continuum for HPGe with thin dead layer.
   //
   
-  rebin_by_lower_edge( orig_binning, f, output_binning, answer );
+  SpecUtils::rebin_by_lower_edge( orig_binning, f, output_binning, answer );
   
   for( size_t i = 0; i < answer.size(); ++i)
     answer[i] /= 3.7E10f;
