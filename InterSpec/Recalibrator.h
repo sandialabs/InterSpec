@@ -30,16 +30,12 @@
 #include <time.h>
 #include <utility>
 
+#include <Wt/WLayout>
 #include <Wt/WContainerWidget>
 #include <Wt/WAbstractItemModel>
-#include <Wt/WLayout>
-
-#include "Minuit2/FCNBase.h"
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
-#include "SpecUtils/EnergyCalibration.h"
-#include "InterSpec/RowStretchTreeView.h"
 
 
 //Forward Declarations
@@ -52,6 +48,8 @@ class D3SpectrumDisplayDiv;
 #else
 class SpectrumDisplayDiv;
 #endif
+class RowStretchTreeView;
+namespace SpecUtils{ enum class EnergyCalType : int; }
 
 namespace Wt
 {
@@ -158,6 +156,11 @@ public:
   //  makes the backup copies of the data so you can undo, and clears out
   //  the information about the last calibration (m_lastGraphicalRecal,...)
   void refreshRecalibrator();
+  
+  /** Sets the displayed coefficients labels for all orders of equation based
+   on m_coeffExps
+   */
+  void updateCoefExpLabels();
   
   void engageRecalibration( RecalAction action );
   
@@ -328,24 +331,6 @@ public:
   };//struct RecalPeakInfo
 
 protected:
-  class PolyCalibCoefMinFcn
-      : public ROOT::Minuit2::FCNBase
-  {
-  public:
-    PolyCalibCoefMinFcn( const std::vector<RecalPeakInfo> &peakInfo,
-                         const size_t nbin,
-                         SpecUtils::EnergyCalType eqnType,
-                         const std::vector< std::pair<float,float> > &devpair );
-    virtual ~PolyCalibCoefMinFcn();
-    virtual double Up() const;
-    virtual double operator()( const std::vector<double> &x ) const;
-
-  protected:
-    size_t m_nbin;
-    SpecUtils::EnergyCalType m_eqnType;
-    std::vector<RecalPeakInfo> m_peakInfo;
-    std::vector< std::pair<float,float> > m_devpair;
-  };//class PolyCalibCoefMinFcn
 
   
   class GraphicalRecalConfirm : public AuxWindow

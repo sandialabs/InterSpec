@@ -1707,9 +1707,9 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
     const float oldMean = static_cast<float>(peak.mean());
     const float oldlow = static_cast<float>(peak.lowerX());
     const float oldhigh = static_cast<float>(peak.upperX());
-    const float meanbin = SpecUtils::find_bin_fullrangefraction( oldMean, old_pars, nbins, old_devpairs, 0.001f );
-    const float lowbin = SpecUtils::find_bin_fullrangefraction( oldlow, old_pars, nbins, old_devpairs, 0.001f );
-    const float highbin = SpecUtils::find_bin_fullrangefraction( oldhigh, old_pars, nbins, old_devpairs, 0.001f );
+    const float meanbin = SpecUtils::find_fullrangefraction_channel( oldMean, old_pars, nbins, old_devpairs, 0.001f );
+    const float lowbin = SpecUtils::find_fullrangefraction_channel( oldlow, old_pars, nbins, old_devpairs, 0.001f );
+    const float highbin = SpecUtils::find_fullrangefraction_channel( oldhigh, old_pars, nbins, old_devpairs, 0.001f );
     const float newMean = SpecUtils::fullrangefraction_energy( meanbin, new_pars, nbins, new_devpairs );
     const float newLower = SpecUtils::fullrangefraction_energy( lowbin, new_pars, nbins, new_devpairs );
     const float newUpper = SpecUtils::fullrangefraction_energy( highbin, new_pars, nbins, new_devpairs );
@@ -1722,13 +1722,13 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   
   const float oldMean = static_cast<float>(peak.mean());
   const float oldSigma = static_cast<float>(peak.sigma());
-  const float oldbin = SpecUtils::find_bin_fullrangefraction( oldMean, old_pars,
+  const float oldbin = SpecUtils::find_fullrangefraction_channel( oldMean, old_pars,
                                                   nbins, old_devpairs, 0.001f );
   const float newMean = SpecUtils::fullrangefraction_energy( oldbin, new_pars, nbins, new_devpairs );
   
-  const float oldneg2sigmabin = SpecUtils::find_bin_fullrangefraction( oldMean - 2.0*oldSigma,
+  const float oldneg2sigmabin = SpecUtils::find_fullrangefraction_channel( oldMean - 2.0*oldSigma,
                                       old_pars, nbins, old_devpairs, 0.001f );
-  const float oldpos2sigmabin = SpecUtils::find_bin_fullrangefraction( oldMean + 2.0*oldSigma,
+  const float oldpos2sigmabin = SpecUtils::find_fullrangefraction_channel( oldMean + 2.0*oldSigma,
                                       old_pars, nbins, old_devpairs, 0.001f );
   const float newneg2sigma = SpecUtils::fullrangefraction_energy( oldneg2sigmabin, new_pars, nbins, new_devpairs );
   const float newpos2sigma = SpecUtils::fullrangefraction_energy( oldpos2sigmabin, new_pars, nbins, new_devpairs );
@@ -1746,7 +1746,7 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   }//if( IsNan(strech) || IsInf(strech) )
   
 #if( PERFORM_DEVELOPER_CHECKS )
-  const float newbin = SpecUtils::find_bin_fullrangefraction( newMean, new_pars,
+  const float newbin = SpecUtils::find_fullrangefraction_channel( newMean, new_pars,
                                                   nbins, new_devpairs, 0.001 );
   if( fabs(newbin - oldbin) > 0.025 )  //0.025 arbitrary
   {
@@ -1800,13 +1800,13 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   if( continuum->energyRangeDefined() )
   {
     const float oldLowEnergy = static_cast<float>(continuum->lowerEnergy());
-    const float oldlowbin = SpecUtils::find_bin_fullrangefraction( oldLowEnergy, old_pars,
+    const float oldlowbin = SpecUtils::find_fullrangefraction_channel( oldLowEnergy, old_pars,
                                                        nbins, old_devpairs, 0.001 );
     const float new_lowenergy = SpecUtils::fullrangefraction_energy( oldlowbin, new_pars, nbins, new_devpairs );
     
     
     const float oldHighEnergy = static_cast<float>(continuum->upperEnergy());
-    const float oldhighbin = SpecUtils::find_bin_fullrangefraction( oldHighEnergy, old_pars,
+    const float oldhighbin = SpecUtils::find_fullrangefraction_channel( oldHighEnergy, old_pars,
                                                         nbins, old_devpairs, 0.001 );
     const float new_highenergy = SpecUtils::fullrangefraction_energy( oldhighbin, new_pars,
                                                           nbins, new_devpairs );
@@ -1819,7 +1819,7 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   {
     const double oldref = continuum->referenceEnergy();
     
-    const float oldrefbin = SpecUtils::find_bin_fullrangefraction( oldref, old_pars,
+    const float oldrefbin = SpecUtils::find_fullrangefraction_channel( oldref, old_pars,
                                                        nbins, old_devpairs, 0.001 );
     const float newref = SpecUtils::fullrangefraction_energy( oldrefbin, new_pars, nbins, new_devpairs );
     
