@@ -38,6 +38,7 @@ class InterSpec;
 namespace Wt
 {
   class WText;
+  class WImage;
   class WDoubleSpinBox;
 }//namespace Wt
 
@@ -82,6 +83,7 @@ protected:
   Wt::WText *m_secondaryLiveTimeScale;
   Wt::WText *m_backgroundLiveTimeScale;
   Wt::WText *m_sigmaAboveBackground;
+  Wt::WImage *m_nsigmaHelp;
 };//class GammaCountDialog
 
 

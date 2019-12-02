@@ -30,6 +30,7 @@
 
 #include <Wt/WText>
 #include <Wt/WLabel>
+#include <Wt/WImage>
 #include <Wt/WGridLayout>
 #include <Wt/WApplication>
 #include <Wt/WSelectionBox>
@@ -40,18 +41,17 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SpectrumChart.h"
 #include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/GammaCountDialog.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
 #include "SpecUtils/SpectrumDataStructs.h"
-#include "InterSpec/HelpSystem.h"
 
 using namespace std;
 using namespace Wt;
-
 
 
 GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
@@ -68,7 +68,8 @@ GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
     m_backgroundGammaCount( NULL ),
     m_secondaryLiveTimeScale( NULL ),
     m_backgroundLiveTimeScale( NULL ),
-    m_sigmaAboveBackground( NULL )
+    m_sigmaAboveBackground( NULL ),
+    m_nsigmaHelp( NULL )
 {
   init();
   handleEnergyRangeChange();
@@ -144,6 +145,8 @@ void GammaCountDialog::init()
   m_secondaryLiveTimeScale  = new WText( "", XHTMLUnsafeText );
   m_backgroundLiveTimeScale = new WText( "", XHTMLUnsafeText );
   m_sigmaAboveBackground    = new WText( "", XHTMLUnsafeText );
+  m_nsigmaHelp              = new WImage();
+  
 //  m_sigmaAboveBackground->setHiddenKeepsGeometry(true);
   m_lowerEnergy->setRange( 0.0, 10000.0 );
   m_upperEnergy->setRange( 0.0, 10000.0 );
@@ -159,6 +162,18 @@ void GammaCountDialog::init()
     m_lowerEnergy->setRange( xlow, 2.0*xhigh );
     m_upperEnergy->setRange( xlow, 2.0*xhigh );
   }//if( hist )
+  
+  m_nsigmaHelp->setImageLink(Wt::WLink("InterSpec_resources/images/help.png") );
+  m_nsigmaHelp->setStyleClass("helpIconTitleBar");
+  m_nsigmaHelp->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+  m_nsigmaHelp->setHidden( true );
+  
+  const char *tooltip = "The number of sigma difference is calculated by dividing the"
+                        " difference between the foreground and the (scaled) background,"
+                        " divided by the uncertainty. The uncertainty is calculated by"
+                        " summing the statistical uncertainties of the foreground and background in"
+                        " quadrature, then taking the squareroot";
+  HelpSystem::attachToolTipOn( m_nsigmaHelp, tooltip, true, HelpSystem::Right );
 
   WLabel *label = NULL;
   WText *text = NULL;
@@ -206,8 +221,9 @@ void GammaCountDialog::init()
   layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
   layout->addWidget( m_backgroundGammaCount, row, 1, 1, 2, AlignLeft );
     
-  layout->addWidget( m_sigmaAboveBackground, ++row, 0, 1, 3, AlignCenter );
-    
+  layout->addWidget( m_sigmaAboveBackground, ++row, 0, 1, 2, AlignCenter );
+  layout->addWidget( m_nsigmaHelp, row, 2, 1, 1, AlignRight );
+  
   layout->addWidget( m_backgroundLiveTimeScale, ++row, 0, 1, 3, AlignCenter );
   m_backgroundLiveTimeScale->setStyleClass("line-above");
     
@@ -365,7 +381,8 @@ void GammaCountDialog::handleEnergyRangeChange()
       upEnergy = std::max( upEnergy, higheste );
     }else
     {
-        m_sigmaAboveBackground->setText("");
+      m_sigmaAboveBackground->setText("");
+      m_nsigmaHelp->hide();
     }
 
     if( secondary )
@@ -402,8 +419,8 @@ void GammaCountDialog::setUnceraintyText( std::shared_ptr<const Measurement> for
 {
   if( !foreground || !background )
   {
-//    m_sigmaAboveBackground->setText( "" );
     m_sigmaAboveBackground->setText("");
+    m_nsigmaHelp->hide();
     return;
   }//if( !foreground || !background )
   
@@ -411,8 +428,10 @@ void GammaCountDialog::setUnceraintyText( std::shared_ptr<const Measurement> for
   const double nback = gamma_integral( background, minEnergy, maxEnergy );
   const double scaleback = nback * backSF;
   const double backsigma = sqrt(nback);
+  const double forsigma = sqrt(nfore);
   const double backscalesigma = backSF * backsigma;
-  const double nsigma = fabs(nfore - scaleback) / backscalesigma;
+  const double total_back_fore_sigma = sqrt(backscalesigma*backscalesigma + forsigma*forsigma);
+  const double nsigma = fabs(nfore - scaleback) / total_back_fore_sigma;
   const bool isneg = (scaleback > nfore);
   
   char onstack[32];
@@ -435,14 +454,15 @@ void GammaCountDialog::setUnceraintyText( std::shared_ptr<const Measurement> for
 #endif
   txt += (isneg ? " below background." : " above background.");
   
-  if (nback==0)
+  if( nback == 0 )
   {
-      m_sigmaAboveBackground->setText("");
-  } //nback==0
-  else
+    //Shouldnt normally happen
+    m_sigmaAboveBackground->setText("");
+    m_nsigmaHelp->hide();
+  }else
   {
-      m_sigmaAboveBackground->setText( txt );
-//      m_sigmaAboveBackground->show();
+    m_sigmaAboveBackground->setText( txt );
+    m_nsigmaHelp->show();
   }
 }//void GammaCountDialog::setUnceraintyText(...)
 
