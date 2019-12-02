@@ -2549,7 +2549,7 @@ PreserveCalibWindow::PreserveCalibWindow(
   }
 
   msg += ", but with a different calibration.</div>"
-         "<table class=\"RecalibCoefTable\"><tr><th></th><th>Previous (";
+  "<table class=\"RecalibCoefTable\"><tr><th style=\"padding-right: 5px;\">Order</th><th style=\"padding-right: 5px;\">Previous (";
   
   switch( eqnnewmeas->energy_calibration_model() )
   {
@@ -2577,8 +2577,7 @@ PreserveCalibWindow::PreserveCalibWindow(
   }//switch( oldmeas->energy_calibration_model() )
   msg += ")</th></tr>";
   
-  
-  
+
   const vector<float> &newcoefs = eqnnewmeas->calibration_coeffs();
   const size_t ncoefs = std::max( newcoefs.size(), m_coeffs.size() );
   
