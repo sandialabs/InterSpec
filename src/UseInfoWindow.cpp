@@ -60,7 +60,9 @@
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/DbFileBrowser.h"
 #include "SpecUtils/UtilityFunctions.h"
+#include "InterSpec/RowStretchTreeView.h"
 
 
 using namespace Wt;
@@ -134,11 +136,14 @@ namespace
 
 
 UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
-                              InterSpec* viewer ):
-  AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                              InterSpec* viewer )
+: AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
                          | AuxWindowProperties::EnableResize
                          | AuxWindowProperties::DisableCollapse) ),
   m_session(),
+#if( USE_DB_TO_STORE_SPECTRA )
+  m_snapshotModel( nullptr ),
+#endif
   m_tableSample( nullptr ),
   m_messageModelSample( nullptr ),
   m_viewer( viewer ),
@@ -224,12 +229,10 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   {
 #if( USE_DB_TO_STORE_SPECTRA )
     Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
-    SpecMeasManager* manager = m_viewer->fileManager();
-    WContainerWidget *bottom = new WContainerWidget();
-    m_snapshotModel = new SnapshotFactory( manager, m_viewer, "", (SpectrumType)0,
-                                           std::shared_ptr<SpectraFileHeader>(),
-                                           spectrumLayout, 0, bottom );
-    spectrumLayout->addWidget( bottom, spectrumLayout->rowCount()+1 , 0, AlignRight );
+    SpecMeasManager *manager = m_viewer->fileManager();
+    
+    m_snapshotModel = new SnapshotBrowser( manager, m_viewer, SpectrumType::kForeground, nullptr );
+    spectrumLayout->addWidget( m_snapshotModel, 0, 0 );
 #endif
     
     ///-----Sample -----

@@ -59,264 +59,288 @@ using namespace std;
 using namespace Wt;
 
 
-DbFileBrowser::DbFileBrowser( SpecMeasManager *manager, InterSpec *viewer , std::string uuid, SpectrumType type, std::shared_ptr<SpectraFileHeader> header)
+DbFileBrowser::DbFileBrowser( SpecMeasManager *manager, InterSpec *viewer, SpectrumType type, std::shared_ptr<SpectraFileHeader> header)
 : AuxWindow( "Previously Stored States",
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) )
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                                             | AuxWindowProperties::DisableCollapse
+                                             | AuxWindowProperties::EnableResize) ),
+  m_factory( nullptr )
+{
+  WGridLayout *layout = stretcher();
+  layout->setContentsMargins(0, 0, 0, 0);
+  
+  try
   {
-    int width = 500, height = 475;
-    width = std::min( width, static_cast<int>(0.95*viewer->renderedWidth()) );
-    height = std::min( height, static_cast<int>(0.95*viewer->renderedHeight()) );
-    
-    resize( WLength(width), WLength(height) );
-    rejectWhenEscapePressed();
-      
-    WGridLayout* layout = new WGridLayout();
-    WContainerWidget *container = WDialog::contents();
-    container->setLayout( layout );
-    container->setOverflow( WContainerWidget::OverflowHidden );
-    layout->setContentsMargins(0, 0, 0, 0);
+    m_factory = new SnapshotBrowser( manager, viewer, type, header, footer(), nullptr );
+    layout->addWidget( m_factory, 0, 0 );
+    m_factory->finished().connect( this, &AuxWindow::hide );
+  }catch( ... )
+  {
+    //In case something goes wrong inside SnapshotBrowser, we delete this window
+    AuxWindow::deleteAuxWindow(this);
+    return;
+  }
+  
+  WPushButton *cancel = addCloseButtonToFooter();
+  cancel->clicked().connect( this, &AuxWindow::hide );
+  
+  rejectWhenEscapePressed();
+  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
 
-      try {
-        new SnapshotFactory( manager, viewer, uuid, type, header, layout, this, NULL);
-    }
-    catch (...)
-    {
-        //In case something goes wrong inside SnapshotFactory, we delete this window
-        AuxWindow::deleteAuxWindow(this);
-        return;
-    }
-      
-    resizeToFitOnScreen();
-    centerWindow();
-    show();
-  }//DbFileBrowser
+  const int width = std::min( 500, static_cast<int>(0.95*viewer->renderedWidth()) );
+  const int height = std::min( 475, static_cast<int>(0.95*viewer->renderedHeight()) );
+  resize( WLength(width), WLength(height) );
+  
+  centerWindow();
+  show();
+}//DbFileBrowser
 
 /*
-SnapshotFactory is the refactored class to create the UI for loading snapshot/spectra
+SnapshotBrowser is the refactored class to create the UI for loading snapshot/spectra
 */
-SnapshotFactory::SnapshotFactory( SpecMeasManager *manager, InterSpec *viewer , std::string uuid, SpectrumType type, std::shared_ptr<SpectraFileHeader> header, WGridLayout* layout, AuxWindow* window, WContainerWidget* footer)
-:m_manager( manager ),
-m_viewer( viewer ),
-m_loadSnapshotButton( 0 ),
-m_loadSpectraButton( 0 ),
-m_buttonGroup( 0 ),
-m_window (window),
-m_footer (footer),
-m_uuid (uuid),
-m_type (type),
-m_header (header)
+SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
+                                  InterSpec *viewer,
+                                  const SpectrumType type,
+                                  std::shared_ptr<SpectraFileHeader> header,
+                                  Wt::WContainerWidget *buttonBar,
+                                  Wt::WContainerWidget *parent )
+  : WContainerWidget( parent ),
+    m_manager( manager ),
+    m_viewer( viewer ),
+    m_loadSnapshotButton( nullptr ),
+    m_loadSpectraButton( nullptr ),
+    m_deleteButton( nullptr ),
+    m_renameButton( nullptr ),
+    m_buttonGroup( nullptr ),
+    m_buttonbox( nullptr ),
+    m_snapshotTable( nullptr ),
+    m_descriptionLabel( nullptr ),
+    m_timeLabel( nullptr ),
+    m_relatedSpectraLayout( nullptr ),
+    m_type( type ),
+    m_header( header ),
+    m_size( 0 )
 {
-  if (m_window)
+  WContainerWidget *footer = buttonBar;
+  if( !footer )
+    footer = new WContainerWidget();
+  
+  WGridLayout *layout = new WGridLayout();
+  setLayout( layout );
+  
+  //We have to create a independant Dbo::Session for this class since the
+  //  m_viewer->m_user.session() could be used in other threads, messing
+  //  things up (Dbo::Session is not thread safe).
+  m_session.reset( new DataBaseUtils::DbSession( *m_viewer->sql() ) );
+  
+  int row=0;
+  if( m_header && !m_header->m_uuid.empty() )
   {
-    WPushButton *cancel = m_window->addCloseButtonToFooter();
-    cancel->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, m_window ) );
-  }
+    layout->addWidget(new WText("It looks like you have previously loaded and modifed this spectrum file, would you like to resume your previous work?"), 0, 0);
+    row++;
+  } //!m_uuid.empty()
   
-  if (m_window) {
-    m_window->rejectWhenEscapePressed();
-    m_window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, m_window ) );
-  }
-
-  
-    //We have to create a independant Dbo::Session for this class since the
-    //  m_viewer->m_user.session() could be used in other threads, messing
-    //  things up (Dbo::Session is not thread safe).
-    m_session.reset( new DataBaseUtils::DbSession( *m_viewer->sql() ) );
+  try
+  {
+    Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
+    WContainerWidget* tablecontainer = new WContainerWidget();
     
-    int row=0;
-    if (!m_uuid.empty())
-    {
-        layout->addWidget(new WText("It looks like you have previously loaded and modifed this spectrum file, would you like to resume your previous work?"), 0, 0);
-        row++;
-    } //!m_uuid.empty()
+    //With m_snapshotTable being a WTree, we cant implement double clicking on
+    //  an item to open it right away.  If we use a WTreeView, then we should
+    //  be able to do that...
+    m_snapshotTable = new WTree();
+    WGridLayout* tablelayout = new WGridLayout();
+    tablelayout->setContentsMargins(2, 2, 2, 2);
+    tablelayout->setRowStretch(0, 1);
+    tablelayout->setColumnStretch(0, 1);
+    tablelayout->addWidget(m_snapshotTable, 0, 0);
+    tablecontainer->setLayout( tablelayout );
+    tablecontainer->setMargin(0);
+    tablecontainer->setOffsets(0);
     
-    try
+    //        m_snapshotTable->resize(400,WLength(WLength::Auto));
+    
+    m_snapshotTable->itemSelectionChanged().connect(boost::bind( &SnapshotBrowser::selectionChanged, this ) );
+    
+    Wt::WTreeNode *root = new Wt::WTreeNode("Root");
+    root->expand();
+    
+    m_snapshotTable->setTreeRoot(root);
+    m_snapshotTable->setSelectionMode(Wt::SingleSelection);
+    m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
+    
+    
+    Dbo::Transaction transaction( *m_session->session() );
+    Dbo::collection< Dbo::ptr<UserState> > query;
+    
+    if( m_header && !m_header->m_uuid.empty())
+    { //uuid filter for snapshots with foreground uuid
+      const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
+      query = m_session->session()->query<Dbo::ptr<UserState> >(
+                       "SELECT DISTINCT A FROM UserState A JOIN UserFileInDb B "
+                         "ON (A.ForegroundId = B.id OR A.BackgroundId = B.id OR A.SecondForegroundId = B.id) "
+                         "AND B.UUID = ? "
+                         "LEFT JOIN UserState C "
+                         "ON (C.ForegroundId = B.id OR C.BackgroundId = B.id OR C.SecondForegroundId = B.id) "
+                         "AND C.SnapshotTagParent_id = A.id")
+                      .bind(m_header->m_uuid)
+                      .where(stateQueryTxt)
+                      .bind( user.id() )
+                      .bind(int(UserState::kUserSaved));
+    }else
     {
-        Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
-        WContainerWidget* tablecontainer = new WContainerWidget();
+      //No related hash/uuid filtering
+      const char *stateQueryTxt = "InterSpecUser_id = ? AND StateType = ? AND SnapshotTagParent_id IS NULL";
+      query = m_session->session()->find<UserState>()
+      .where( stateQueryTxt )
+      .bind( user.id() ).bind(int(UserState::kUserSaved));
+    } //uuid filter for snapshots with foreground uuid
+    
+    m_size = query.size(); //save for future query
+    
+    if (m_size==0) {
+      if( m_header && !m_header->m_uuid.empty() )
+      {
+        layout->addWidget(new WLabel("No saved application states"), row++, 0);
+      }else
+      {
+        //This prevents the case where the checkIfPreviouslyOpened() is true,
+        //  but the previous opened file is a kEndofSessionTemp, so will not
+        //  show in the dialog.
+        throw "Nothing to display";
+      }//m_uuid.empty()
+    } //m_size==0
+    
+    for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshotIterator = query.begin();
+        snapshotIterator != query.end(); ++snapshotIterator )
+    {
+      Wt::WTreeNode *snapshotNode = new Wt::WTreeNode((*snapshotIterator)->name, 0, root);
       
-      //With m_snapshotTable being a WTree, we cant implement double clicking on
-      //  an item to open it right away.  If we use a WTreeView, then we should
-      //  be able to do that...
-        m_snapshotTable = new WTree();
-        WGridLayout* tablelayout = new WGridLayout();
-        tablelayout->setContentsMargins(2, 2, 2, 2);
-        tablelayout->setRowStretch(0, 1);
-        tablelayout->setColumnStretch(0, 1);
-        tablelayout->addWidget(m_snapshotTable, 0, 0);
-        tablecontainer->setLayout( tablelayout );
-        tablecontainer->setMargin(0);
-        tablecontainer->setOffsets(0);
-        
-//        m_snapshotTable->resize(400,WLength(WLength::Auto));
-        
-        m_snapshotTable->itemSelectionChanged().connect(boost::bind( &SnapshotFactory::selectionChanged, this ) );
-        
-        Wt::WTreeNode *root = new Wt::WTreeNode("Root");
-        root->expand();
+      //m_snapshotTable->doubleClicked
       
-        m_snapshotTable->setTreeRoot(root);
-        m_snapshotTable->setSelectionMode(Wt::SingleSelection);
-        m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
+      snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
+      snapshotNode->setToolTip((*snapshotIterator)->serializeTime.toString() + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
       
+      //Add to lookup table (the HEAD)
+      m_UserStateLookup[snapshotNode]=*snapshotIterator;
+      
+      //If not root, then return how many versions
+      typedef Dbo::collection< Dbo::ptr<UserState> > Snapshots;
+      typedef Snapshots::iterator SnapshotIter;
+      Snapshots snapshots;
+      
+      if( *snapshotIterator )
+      {
+        //Create HEAD
+        Wt::WTreeNode *versionNode = new Wt::WTreeNode("HEAD", new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png"), snapshotNode);
         
-        Dbo::Transaction transaction( *m_session->session() );
-        Dbo::collection< Dbo::ptr<UserState> > query;
+        versionNode->setToolTip((*snapshotIterator)->serializeTime.toString() + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
         
-        if (m_uuid.empty())
-        { //No related hash/uuid filtering
-            const char *stateQueryTxt = "InterSpecUser_id = ? AND StateType = ? AND SnapshotTagParent_id IS NULL";
-            query = m_session->session()->find<UserState>()
-            .where( stateQueryTxt )
-            .bind( user.id() ).bind(int(UserState::kUserSaved));
-        } //No related hash/uuid filtering
-        else
-        {  //uuid filter for snapshots with foreground uuid
-            const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
-            query = m_session->session()->query<Dbo::ptr<UserState> >("SELECT DISTINCT A FROM \
-                    UserState A JOIN \
-                    UserFileInDb B \
-                       ON (A.ForegroundId = B.id OR A.BackgroundId = B.id OR A.SecondForegroundId = B.id) \
-                          AND B.UUID = ? \
-                       LEFT JOIN UserState C \
-                          ON (C.ForegroundId = B.id OR C.BackgroundId = B.id OR C.SecondForegroundId = B.id) \
-                             AND C.SnapshotTagParent_id = A.id").bind(m_uuid).where(stateQueryTxt).bind( user.id() ).bind(int(UserState::kUserSaved));
-        } //uuid filter for snapshots with foreground uuid
+        versionNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
         
-        m_size = query.size(); //save for future query
+        //Add to lookup table (also the HEAD)
+        m_UserStateLookup[versionNode]=*snapshotIterator;
+        addSpectraNodes(snapshotIterator, versionNode);
         
-        if (m_size==0) {
-            if (!m_uuid.empty())
-            {     //This prevents the case where the checkIfPreviouslyOpened() is true, but the previous opened file is a kEndofSessionTemp, so will not show in the dialog.
-                throw "Nothing to display";
-            } //!m_uuid.empty()
-            else
-            {
-                layout->addWidget(new WLabel("No saved application states"), row++, 0);
-            } //m_uuid.empty()
-        } //m_size==0
+        snapshots = m_session->session()->find<UserState>()
+        .where( "SnapshotTagParent_id = ? AND StateType = ? " )
+        .bind( (*snapshotIterator).id() ).bind(int(UserState::kUserSaved)).orderBy( "id desc" );
         
-        for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshotIterator = query.begin();
-            snapshotIterator != query.end(); ++snapshotIterator )
+        for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator = snapshots.begin();
+            versionIterator != snapshots.end(); ++versionIterator )
         {
-            Wt::WTreeNode *snapshotNode = new Wt::WTreeNode((*snapshotIterator)->name, 0, root);
+          versionNode = new Wt::WTreeNode((*versionIterator)->name, new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png"), snapshotNode);
+          versionNode->setToolTip((*versionIterator)->serializeTime.toString()  + (((*versionIterator)->description).empty()?"":(" -- " + (*versionIterator)->description)));
           
-          //m_snapshotTable->doubleClicked
+          versionNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
           
-            snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
-            snapshotNode->setToolTip((*snapshotIterator)->serializeTime.toString() + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
-            
-            //Add to lookup table (the HEAD)
-            m_UserStateLookup[snapshotNode]=*snapshotIterator;
-            
-            //If not root, then return how many versions
-            typedef Dbo::collection< Dbo::ptr<UserState> > Snapshots;
-            typedef Snapshots::iterator SnapshotIter;
-            Snapshots snapshots;
-            
-            if (*snapshotIterator)
-            {
-                //Create HEAD
-                Wt::WTreeNode *versionNode = new Wt::WTreeNode("HEAD", new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png"), snapshotNode);
-                
-                versionNode->setToolTip((*snapshotIterator)->serializeTime.toString()  + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
-                
-                versionNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
-                
-                //Add to lookup table (also the HEAD)
-                m_UserStateLookup[versionNode]=*snapshotIterator;
-                addSpectraNodes(snapshotIterator, versionNode);
-                
-                snapshots = m_session->session()->find<UserState>()
-                .where( "SnapshotTagParent_id = ? AND StateType = ? " )
-                .bind( (*snapshotIterator).id() ).bind(int(UserState::kUserSaved)).orderBy( "id desc" );
-                
-                for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator = snapshots.begin();
-                    versionIterator != snapshots.end(); ++versionIterator )
-                {
-                    versionNode = new Wt::WTreeNode((*versionIterator)->name, new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png"), snapshotNode);
-                    versionNode->setToolTip((*versionIterator)->serializeTime.toString()  + (((*versionIterator)->description).empty()?"":(" -- " + (*versionIterator)->description)));
-                    
-                    versionNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
-                    
-                    m_UserStateLookup[versionNode]=*versionIterator;
-                    
-                    addSpectraNodes(versionIterator, versionNode);
-                } //for
-            } //*snapshotIterator
-            
-            if (!m_uuid.empty())
-                snapshotNode->expand();
+          m_UserStateLookup[versionNode]=*versionIterator;
+          
+          addSpectraNodes(versionIterator, versionNode);
         } //for
-        
-        transaction.commit();
-        tablecontainer->setOverflow(Wt::WContainerWidget::OverflowAuto);
-        layout->addWidget( tablecontainer, ++row, 0 );
-        layout->setRowStretch( row, 1 );
-        
-        m_timeLabel = new WText();
-        layout->addWidget(m_timeLabel, ++row,0);
-        
-        m_descriptionLabel = new WText();
-        layout->addWidget(m_descriptionLabel, ++row,0);
-        layout->columnStretch(1);
-        
-        m_buttonbox = new WGroupBox( "Open Related Spectrum As:" );
-        m_buttonbox->setOffsets(10);
-        m_buttonGroup = new WButtonGroup( m_buttonbox );
-        
-        for( int i = 0; i < 3; ++i )
-        {
-            const char *name = "";
-            switch( SpectrumType(i) )
-            {
-                case kForeground:       name = "Foreground";      break;
-                case kSecondForeground: name = "Second Spectrum"; break;
-                case kBackground:       name = "Background";      break;
-            }//switch( SpectrumType(i) )
-            
-            WRadioButton *button = new WRadioButton( name, m_buttonbox );
-            button->setMargin( 10, Wt::Right );
-            button->setInline(false);
-            m_buttonGroup->addButton( button, i );
-        }//for( int i = 0; i < 3; ++i )
-        
-        m_buttonGroup->setSelectedButtonIndex( 0 );
-        m_buttonbox->setHidden(true);
-        layout->addWidget( m_buttonbox, ++row, 0  );
-        
+      } //*snapshotIterator
       
-        //      m_deleteButton = new WPushButton( "Delete", footer() );
-        //      m_deleteButton->setHidden(true); //temporary as we figure this out
-        //      m_deleteButton->setIcon( "InterSpec_resources/images/minus_min.png" );
-        //
-        //      if (!m_viewer->isMobile())
-        //      {
-        //          m_deleteButton->addStyleClass("FloatLeft");
-        //      } //!mobile
-        
-        //      m_deleteButton->clicked().connect( this, &SnapshotFactory::deleteSelected );
-        //      m_deleteButton->setDefault(true);
-        //      m_deleteButton->disable();
-        m_loadSpectraButton = new WPushButton( "Load Spectrum Only", m_window?m_window->footer():m_footer );
-        m_loadSpectraButton->clicked().connect( boost::bind( &SnapshotFactory::loadSpectraSelected, this));
-        m_loadSpectraButton->disable();
-        
-        m_loadSnapshotButton = new WPushButton( "Load Application State", m_window?m_window->footer():m_footer);
-        m_loadSnapshotButton->clicked().connect( boost::bind(&SnapshotFactory::loadSnapshotSelected, this));
-        m_loadSnapshotButton->setDefault(true);
-        //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.png" );
-        m_loadSnapshotButton->disable();
-      
-    }catch( std::exception &e )
+      if( m_header && !m_header->m_uuid.empty())
+        snapshotNode->expand();
+    } //for
+    
+    transaction.commit();
+    tablecontainer->setOverflow(Wt::WContainerWidget::OverflowAuto);
+    layout->addWidget( tablecontainer, ++row, 0 );
+    layout->setRowStretch( row, 1 );
+    
+    m_timeLabel = new WText();
+    layout->addWidget(m_timeLabel, ++row,0);
+    
+    m_descriptionLabel = new WText();
+    layout->addWidget(m_descriptionLabel, ++row,0);
+    layout->columnStretch(1);
+    
+    m_buttonbox = new WGroupBox( "Open Related Spectrum As:" );
+    m_buttonbox->setOffsets(10);
+    m_buttonGroup = new WButtonGroup( m_buttonbox );
+    
+    for( int i = 0; i < 3; ++i )
     {
-        passMessage( (string("Error creating database spectrum file browser: ") + e.what()).c_str(),
-                    "", WarningWidget::WarningMsgHigh );
-        cerr << "\n\nSnapshotModel caught: " << e.what() << endl << endl;
-    }//try / catch
-}//SnapshotFactory
+      const char *name = "";
+      switch( SpectrumType(i) )
+      {
+        case kForeground:       name = "Foreground";      break;
+        case kSecondForeground: name = "Second Spectrum"; break;
+        case kBackground:       name = "Background";      break;
+      }//switch( SpectrumType(i) )
+      
+      WRadioButton *button = new WRadioButton( name, m_buttonbox );
+      button->setMargin( 10, Wt::Right );
+      button->setInline(false);
+      m_buttonGroup->addButton( button, i );
+    }//for( int i = 0; i < 3; ++i )
+    
+    m_buttonGroup->setSelectedButtonIndex( 0 );
+    m_buttonbox->setHidden(true);
+    layout->addWidget( m_buttonbox, ++row, 0  );
+    
+    
+    m_deleteButton = new WPushButton( "", footer );
+    m_deleteButton->setHidden(true);
+    m_deleteButton->setIcon( "InterSpec_resources/images/minus_min.png" );
+    m_deleteButton->addStyleClass("FloatLeft");
+    m_deleteButton->clicked().connect( this, &SnapshotBrowser::startDeleteSelected );
+    
+    //m_renameButton
+    
+    //m_renameButton
+    m_loadSpectraButton = new WPushButton( "Load Spectrum Only", footer );
+    m_loadSpectraButton->clicked().connect( boost::bind( &SnapshotBrowser::loadSpectraSelected, this));
+    m_loadSpectraButton->disable();
+    
+    m_loadSnapshotButton = new WPushButton( "Load App. State", footer);
+    m_loadSnapshotButton->clicked().connect( boost::bind(&SnapshotBrowser::loadSnapshotSelected, this));
+    m_loadSnapshotButton->setDefault(true);
+    //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.png" );
+    m_loadSnapshotButton->disable();
+    
+    if( !buttonBar )
+      layout->addWidget( footer, layout->rowCount()+1 , 0, AlignRight );
+  }catch( std::exception &e )
+  {
+    if( !buttonBar )
+      delete footer;
+    
+    passMessage( (string("Error creating database spectrum file browser: ") + e.what()).c_str(),
+                "", WarningWidget::WarningMsgHigh );
+    cerr << "\n\nSnapshotModel caught: " << e.what() << endl << endl;
+  }//try / catch
+}//SnapshotBrowser
 
-void SnapshotFactory::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator, Wt::WTreeNode *versionNode)
+
+Wt::Signal<> &SnapshotBrowser::finished()
+{
+  return m_finished;
+}
+
+
+void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator, Wt::WTreeNode *versionNode)
 {
     //add in foreground/background/2ndfore
     typedef Dbo::collection< Dbo::ptr<UserFileInDb> > Spectras;
@@ -352,7 +376,7 @@ void SnapshotFactory::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
                 //nothing found, so just return
                 continue;
             }
-            if (!m_uuid.empty() && (*spectraIterator)->uuid==m_uuid)
+            if( m_header && !m_header->m_uuid.empty() && (*spectraIterator)->uuid==m_header->m_uuid)
             {
                 //bold the spectra that is pulled in
                 pre = "<b>";
@@ -366,7 +390,7 @@ void SnapshotFactory::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
             
             Wt::WTreeNode *spectraNode = new Wt::WTreeNode(pre + " " + (*spectraIterator)->filename + " <i>(" + descriptionText(spectratype)+")</i>" + post, icon, versionNode);
             
-            if (!m_uuid.empty())
+            if( m_header && !m_header->m_uuid.empty() )
             {
                 //disable all child spectra tree nodes, so the user can only select the snapshot
                 spectraNode->disable();
@@ -379,10 +403,10 @@ void SnapshotFactory::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
         } //iterate through the spectra contained in this snapshot
     } //for( int i = 0; i < 3; i++ ) -- loop through spectrumtype
     
-} //void SnapshotFactory::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator, Wt::WTreeNode *versionNode)
+} //void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator, Wt::WTreeNode *versionNode)
 
 //Updates the buttons when a row is selected
-void SnapshotFactory::selectionChanged()
+void SnapshotBrowser::selectionChanged()
 {
     std::set<Wt::WTreeNode *> sets = m_snapshotTable->selectedNodes();
 
@@ -393,7 +417,7 @@ void SnapshotFactory::selectionChanged()
     { //UserState clicked
         m_buttonbox->disable();
         m_buttonbox->hide();
-//        m_deleteButton->enable();
+        m_deleteButton->show();
         m_loadSnapshotButton->enable();
         m_loadSpectraButton->disable();
         m_descriptionLabel->setText("<i>"+m_UserStateLookup[selectedTreeNode]->description+"</i>");
@@ -405,6 +429,7 @@ void SnapshotFactory::selectionChanged()
         m_buttonbox->enable();
 //        m_deleteButton->enable();
         m_loadSpectraButton->enable();
+      m_deleteButton->hide();
         m_loadSnapshotButton->disable();
         m_descriptionLabel->setText("<i>"+m_UserFileInDbLookup[selectedTreeNode]->description+"</i>");
         m_timeLabel->setText("<b>"+m_UserFileInDbLookup[selectedTreeNode]->serializeTime.toString()+"</b>");
@@ -416,17 +441,25 @@ void SnapshotFactory::selectionChanged()
         m_buttonbox->disable();
 //        m_deleteButton->disable();
         m_loadSnapshotButton->disable();
+      m_deleteButton->hide();
         m_loadSpectraButton->disable();
         m_descriptionLabel->setText("");
         m_timeLabel->setText("");
     } //some node not found
     
-    if (!m_uuid.empty() ||  !m_viewer->measurment( kForeground ) ) {
-        m_buttonbox->hide(); //make sure it is hidden if no uuid selected
-    } //!m_uuid.empty()
-} //void SnapshotFactory::selectionChanged()
+    if( (m_header && !m_header->m_uuid.empty()) ||  !m_viewer->measurment( kForeground ) )
+    {
+      m_buttonbox->hide(); //make sure it is hidden if no uuid selected
+    }//!m_uuid.empty()
+} //void SnapshotBrowser::selectionChanged()
 
-std::shared_ptr<SpecMeas> SnapshotFactory::retrieveMeas( const int dbid )
+
+void SnapshotBrowser::startDeleteSelected()
+{
+  //deleteSelected();
+}//void startDeleteSelected()
+
+std::shared_ptr<SpecMeas> SnapshotBrowser::retrieveMeas( const int dbid )
   {
     std::shared_ptr<SpecMeas> snapshotmeas;
     if( dbid < 0 )
@@ -459,7 +492,7 @@ std::shared_ptr<SpecMeas> SnapshotFactory::retrieveMeas( const int dbid )
   //
   // Delete a saved spectrum
   //
-//  void SnapshotFactory::deleteSelected()
+//  void SnapshotBrowser::deleteSelected()
 //  {
 
 //currently disabled deleting
@@ -494,7 +527,7 @@ std::shared_ptr<SpecMeas> SnapshotFactory::retrieveMeas( const int dbid )
 //    }//if( dbfile.id() >= 0 )
 //  } // deleteSelected()
 
-void SnapshotFactory::loadSnapshotSelected()
+void SnapshotBrowser::loadSnapshotSelected()
 {
       std::set<Wt::WTreeNode *> sets = m_snapshotTable->selectedNodes();
       
@@ -504,6 +537,7 @@ void SnapshotFactory::loadSnapshotSelected()
         if (!m_UserStateLookup[selectedTreeNode])
         {
             m_loadSnapshotButton->disable();
+          m_deleteButton->hide();
             return;
         }//if( !indices.size() )
         Dbo::ptr<UserState> dbstate = m_UserStateLookup[selectedTreeNode];
@@ -523,8 +557,7 @@ void SnapshotFactory::loadSnapshotSelected()
         {
             passMessage( "Error loading from the database",
                         "", WarningWidget::WarningMsgHigh );
-            if (m_window)
-                AuxWindow::deleteAuxWindow(m_window);
+            m_finished.emit();
             return;
         }//if( !selected )
         
@@ -542,11 +575,12 @@ void SnapshotFactory::loadSnapshotSelected()
             passMessage( "Failed to load state", "", WarningWidget::WarningMsgHigh );
             cerr << "DbStateBrowser::loadSelected() caught: " << e.what() << endl;
         }//try / catch
-      if (m_window)
-          AuxWindow::deleteAuxWindow(m_window);
-  }//void loadSnapshotSelected()
+  
+  m_finished.emit();
+}//void loadSnapshotSelected()
 
-void SnapshotFactory::loadSpectraSelected()
+
+void SnapshotBrowser::loadSpectraSelected()
 {
     std::set<Wt::WTreeNode *> sets = m_snapshotTable->selectedNodes();
     
@@ -576,12 +610,11 @@ void SnapshotFactory::loadSpectraSelected()
     {
         passMessage( "Error loading from the database",
                     "", WarningWidget::WarningMsgHigh );
-        if (m_window)
-            AuxWindow::deleteAuxWindow(m_window);
+        m_finished.emit();
         return;
     }//if( !selected )
 
-    if (m_uuid.empty())
+    if( !m_header || m_header->m_uuid.empty() )
     {
         
         int snapshot_id = -1;
@@ -620,8 +653,7 @@ void SnapshotFactory::loadSpectraSelected()
                     }//if( snapshot_id )
                     
                     passMessage("Already opened","",WarningWidget::WarningMsgInfo);
-                    if (m_window)
-                        AuxWindow::deleteAuxWindow(m_window);
+                    m_finished.emit();
                     return;
                 } //measurement == m_viewer->measurment(type)
                 break;
@@ -660,9 +692,7 @@ void SnapshotFactory::loadSpectraSelected()
                 {
                     measurement = header->parseFile();
                     m_manager->displayFile( row, measurement, kForeground, false, false, false );
-                    if (m_window)
-                        AuxWindow::deleteAuxWindow(m_window);
-                    
+                    m_finished.emit();
                     return;
                 }//if( entry.id() == dbfile.id() )
             }//for( int row = 0; row < m_model->rowCount(); ++row )
@@ -684,7 +714,7 @@ void SnapshotFactory::loadSpectraSelected()
             m_header->setDbEntry( dbfile );
         }//if( dbfile->userHasModified )
     }
-    if (m_window)
-        AuxWindow::deleteAuxWindow(m_window);
+  
+  m_finished.emit();
 }//void loadSpectraSelected
 

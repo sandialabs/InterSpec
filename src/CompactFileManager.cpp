@@ -302,8 +302,10 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
             layout2->addWidget(button,0,0);
 #if( USE_DB_TO_STORE_SPECTRA )
             WPushButton *button2 = new WPushButton( "Previous...");
-            button2->clicked().connect(  boost::bind(
-                                      &SpecMeasManager::browseDatabaseSpectrumFiles, m_hostViewer->fileManager(), "", (SpectrumType)0, std::shared_ptr<SpectraFileHeader>() ) );
+            button2->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
+                                                     m_hostViewer->fileManager(),
+                                                     SpectrumType::kForeground,
+                                                     std::shared_ptr<SpectraFileHeader>() ) );
             layout2->addWidget(button2,0,1);
 #endif
             layout2->setColumnStretch(0, 1);
@@ -369,8 +371,10 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 #if( USE_DB_TO_STORE_SPECTRA )
       WContainerWidget *buttons = new WContainerWidget( this );
       WPushButton *button = new WPushButton( "Prev. Saved Spectra", buttons );
-        button->clicked().connect( boost::bind(
-                                &SpecMeasManager::browseDatabaseSpectrumFiles,fileManager,"", (SpectrumType)0, std::shared_ptr<SpectraFileHeader>()) );
+        button->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
+                                               fileManager,
+                                               SpectrumType::kForeground,
+                                               std::shared_ptr<SpectraFileHeader>()) );
 #endif
       break;
     }//case Tabbed:

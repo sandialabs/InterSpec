@@ -36,51 +36,75 @@ namespace Wt
 }//namespace Wt
 
 /**
- Refactored class holding all the UI components to show the snapshot/spectra (used in both load dialog and welcome dialog
+ Widget to hold all the UI components to show the snapshot/spectra (used in both
+ load dialog and welcome dialog).
+ 
+ ToDo:
+   - make this class inherit from WContainerWidget
+   - add signals when there is an error, or a selection is made
+   - Implement deleting a snapshot and renaming it
+ 
  */
-class SnapshotFactory
+class SnapshotBrowser : public Wt::WContainerWidget
 {
 public:
-    SnapshotFactory(SpecMeasManager *manager, InterSpec *viewer , std::string uuid,  SpectrumType type, std::shared_ptr<SpectraFileHeader> header, Wt::WGridLayout* layout,AuxWindow* window, Wt::WContainerWidget* footer);
-    void loadSnapshotSelected();
-    void loadSpectraSelected();
-    int size() {return m_size; };
+  SnapshotBrowser( SpecMeasManager *manager,
+                   InterSpec *viewer,
+                   const SpectrumType type,
+                   std::shared_ptr<SpectraFileHeader> header,
+                   Wt::WContainerWidget *buttonBar = nullptr,
+                   Wt::WContainerWidget *parent = nullptr );
+  
+   Wt::Signal<> &finished();
+  
+  void loadSnapshotSelected();
+  void loadSpectraSelected();
+  int size() { return m_size; };
 protected:
-    void selectionChanged();
-    std::map < Wt::WTreeNode *, Wt::Dbo::ptr < UserState > > m_UserStateLookup;
-    std::map < Wt::WTreeNode *, Wt::Dbo::ptr < UserFileInDb > > m_UserFileInDbLookup;
-    
-    void addSpectraNodes(Wt::Dbo::collection< Wt::Dbo::ptr<UserState> >::const_iterator versionIterator, Wt::WTreeNode *versionNode);
-    
-    std::shared_ptr<DataBaseUtils::DbSession> m_session;
-    SpecMeasManager  *m_manager;
-    InterSpec   *m_viewer;
-    Wt::WPushButton  *m_loadSnapshotButton;
-    Wt::WPushButton  *m_loadSpectraButton;
-    //  Wt::WPushButton  *m_deleteButton;
-    Wt::WButtonGroup *m_buttonGroup;
-    Wt::WGroupBox    *m_buttonbox;
-    Wt::WTree        *m_snapshotTable;
-    Wt::WText       *m_descriptionLabel;
-    Wt::WText       *m_timeLabel;
-    Wt::WGridLayout* m_relatedSpectraLayout;
-    AuxWindow * m_window; //only set if in an auxwindow
-    Wt::WContainerWidget* m_footer;
-    std::string m_uuid;
-    SpectrumType m_type;
-    std::shared_ptr<SpectraFileHeader> m_header;
-    std::shared_ptr<SpecMeas> retrieveMeas( const int dbid );
-    int m_size; //size of snapshots populated
-};
+  void selectionChanged();
+  void startDeleteSelected();
+  
+  std::map < Wt::WTreeNode *, Wt::Dbo::ptr < UserState > > m_UserStateLookup;
+  std::map < Wt::WTreeNode *, Wt::Dbo::ptr < UserFileInDb > > m_UserFileInDbLookup;
+  
+  void addSpectraNodes(Wt::Dbo::collection< Wt::Dbo::ptr<UserState> >::const_iterator versionIterator, Wt::WTreeNode *versionNode);
+  
+  std::shared_ptr<SpecMeas> retrieveMeas( const int dbid );
+  
+  std::shared_ptr<DataBaseUtils::DbSession> m_session;
+  SpecMeasManager  *m_manager;
+  InterSpec   *m_viewer;
+  Wt::WPushButton  *m_loadSnapshotButton;
+  Wt::WPushButton  *m_loadSpectraButton;
+  Wt::WPushButton  *m_deleteButton;
+  Wt::WPushButton  *m_renameButton;
+  Wt::WButtonGroup *m_buttonGroup;
+  Wt::WGroupBox    *m_buttonbox;
+  Wt::WTree        *m_snapshotTable;
+  Wt::WText       *m_descriptionLabel;
+  Wt::WText       *m_timeLabel;
+  Wt::WGridLayout* m_relatedSpectraLayout;
+  SpectrumType m_type;
+  std::shared_ptr<SpectraFileHeader> m_header;
+  int m_size; //size of snapshots populated
+  
+  Wt::Signal<> m_finished;
+};//class SnapshotBrowser
 
 
 /**
- Main class to load snapshot/spectra.  Uses SnapshotFactory to fill in the UI
+ Main class to load snapshot/spectra.  Uses SnapshotBrowser to fill in the UI
  */
 class DbFileBrowser : public AuxWindow
 {
 public:
-  DbFileBrowser( SpecMeasManager *manager, InterSpec *viewer , std::string uuid,  SpectrumType type, std::shared_ptr<SpectraFileHeader> header);
+  DbFileBrowser( SpecMeasManager *manager,
+                 InterSpec *viewer,
+                 SpectrumType type,
+                 std::shared_ptr<SpectraFileHeader> header );
+  
+protected:
+  SnapshotBrowser *m_factory;
 };
 
 #endif //DbFileBrowser_h

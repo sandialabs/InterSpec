@@ -314,7 +314,7 @@ public:
                       const std::vector< Wt::WCheckBox * > cbs,
                                AuxWindow *window );
   void startStoreSpectraAsInDb();
-  void browseDatabaseSpectrumFiles(std::string uuid, SpectrumType type, std::shared_ptr<SpectraFileHeader> header);
+  void browseDatabaseSpectrumFiles( SpectrumType type, std::shared_ptr<SpectraFileHeader> header );
 #endif
   
 #if( !ANDROID && !IOS )

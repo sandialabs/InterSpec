@@ -40,6 +40,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WCssDecorationStyle>
 
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UseInfoWindow.h"
