@@ -375,7 +375,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
 #if( !USE_DB_TO_STORE_SPECTRA )
     tabW->setCurrentIndex( sampleIndex );
 #else
-    if( m_snapshotModel->size() == 0 )
+    if( !m_snapshotModel->numSnaphots() )
       tabW->setCurrentIndex( sampleIndex );
 #endif
   } //try
@@ -621,7 +621,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   {
     msg += "<div align=\"left\">";
 #if( USE_DB_TO_STORE_SPECTRA )
-    if( m_snapshotModel && m_snapshotModel->size()==0 )
+    if( m_snapshotModel && !m_snapshotModel->numSnaphots() )
       msg += "You can start by opening an example spectra below, or you can use the <em>Import Spectra</em> tab to load external files."
       "<br />";
     else

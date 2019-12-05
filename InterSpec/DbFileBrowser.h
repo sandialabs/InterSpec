@@ -59,10 +59,15 @@ public:
   
   void loadSnapshotSelected();
   void loadSpectraSelected();
-  int size() { return m_size; };
+
+  int numSnaphots() const;
+  
 protected:
   void selectionChanged();
   void startDeleteSelected();
+  void startEditSelected();
+  
+  void deleteSelected();
   
   std::map < Wt::WTreeNode *, Wt::Dbo::ptr < UserState > > m_UserStateLookup;
   std::map < Wt::WTreeNode *, Wt::Dbo::ptr < UserFileInDb > > m_UserFileInDbLookup;
@@ -73,22 +78,24 @@ protected:
   
   std::shared_ptr<DataBaseUtils::DbSession> m_session;
   SpecMeasManager  *m_manager;
-  InterSpec   *m_viewer;
+  InterSpec        *m_viewer;
   Wt::WPushButton  *m_loadSnapshotButton;
   Wt::WPushButton  *m_loadSpectraButton;
-  Wt::WPushButton  *m_deleteButton;
+  //Wt::WPushButton  *m_deleteButton;
   Wt::WPushButton  *m_renameButton;
   Wt::WButtonGroup *m_buttonGroup;
   Wt::WGroupBox    *m_buttonbox;
   Wt::WTree        *m_snapshotTable;
-  Wt::WText       *m_descriptionLabel;
-  Wt::WText       *m_timeLabel;
-  Wt::WGridLayout* m_relatedSpectraLayout;
-  SpectrumType m_type;
+  Wt::WText        *m_descriptionLabel;
+  Wt::WText        *m_timeLabel;
+  Wt::WGridLayout  *m_relatedSpectraLayout;
+  SpectrumType     m_type;
   std::shared_ptr<SpectraFileHeader> m_header;
-  int m_size; //size of snapshots populated
   
   Wt::Signal<> m_finished;
+  AuxWindow *m_editWindow;
+  
+  int m_nrows;
 };//class SnapshotBrowser
 
 
