@@ -814,7 +814,7 @@ void  SpecMeasManager::startSpectrumManager()
     
 #if( USE_DB_TO_STORE_SPECTRA )
     Wt::WPushButton* importButton = new Wt::WPushButton( "Previous...", uploadDiv );
-    importButton->clicked().connect( boost::bind(  &SpecMeasManager::browseDatabaseSpectrumFiles, this, "", (SpectrumType)0, std::shared_ptr<SpectraFileHeader>()) );
+    importButton->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles, this, (SpectrumType)0, std::shared_ptr<SpectraFileHeader>()) );
     HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTipInstantly , HelpSystem::Bottom);
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
     importButton->setMargin(2,Wt::Left);
@@ -3487,7 +3487,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
         
       WServer::instance()->post( sessionID,
                                   boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                              this, header->m_uuid, type, header) );
+                                              this, type, header) );
 
         
       /*
@@ -3834,9 +3834,9 @@ void SpecMeasManager::uploadSpectrum() {
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-void SpecMeasManager::browseDatabaseSpectrumFiles(std::string uuid,  SpectrumType type, std::shared_ptr<SpectraFileHeader> header)
+void SpecMeasManager::browseDatabaseSpectrumFiles( SpectrumType type, std::shared_ptr<SpectraFileHeader> header )
 {
-  new DbFileBrowser( this, m_viewer , uuid, type , header);
+  new DbFileBrowser( this, m_viewer, type, header );
 }//void browseDatabaseSpectrumFiles()
 
 

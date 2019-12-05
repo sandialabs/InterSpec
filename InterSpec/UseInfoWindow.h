@@ -28,19 +28,26 @@
 #include <string>
 #include <functional>
 
-#include <Wt/WMenu>
 #include <Wt/WString>
 #include <Wt/WMenuItem>
-#include <Wt/WPushButton>
 #include <Wt/WContainerWidget>
-#include <Wt/WStandardItemModel>
-#include <Wt/WMessageResourceBundle>
 
 #include "InterSpec/AuxWindow.h"
-#include "InterSpec/DbFileBrowser.h"
-#include "InterSpec/InterSpec.h"
-#include "InterSpec/RowStretchTreeView.h"
 
+namespace Wt
+{
+  class WMenu;
+  class WStandardItemModel;
+  class WMessageResourceBundle;
+}
+
+class InterSpec;
+class RowStretchTreeView;
+#if( USE_DB_TO_STORE_SPECTRA )
+class SnapshotBrowser;
+#endif
+
+namespace DataBaseUtils{ class DbSession; }
 
 class SideMenuItem : public Wt::WMenuItem
 {
@@ -84,10 +91,10 @@ public:
     
 protected:
   
-  std::shared_ptr<DataBaseUtils::DbSession>            m_session;
+  std::shared_ptr<DataBaseUtils::DbSession>           m_session;
   
 #if( USE_DB_TO_STORE_SPECTRA )
-  SnapshotFactory                                     *m_snapshotModel;
+  SnapshotBrowser                                     *m_snapshotModel;
 #endif
   
   //Sample
