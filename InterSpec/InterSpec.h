@@ -975,9 +975,25 @@ public:
   void osThemeChange( std::string name );
 #endif
   
+#if( USE_DB_TO_STORE_SPECTRA )
+  /** Returns the database index of the current UserState.
+   If the app state is not based off of one saved to the database, will return -1
+   (e.g., user has not loaded current app state form database, and has not
+   selected "Store As...").
+   */
+  int currentAppStateDbId();
+  
+  /** Disasociates apps current state from any state saved to the database.
+   Doesnt remove state from database, or change the spectrum or any thing, just
+   disables the tagging or saving over current state in the database.
+   */
+  void resetCurrentAppStateDbId();
+#endif
+  
 protected:
   
 #if( USE_DB_TO_STORE_SPECTRA )
+  /** Enables or disables menu items related to saving state. */
   void updateSaveWorkspaceMenu();
 #endif
   

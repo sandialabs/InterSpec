@@ -3503,6 +3503,20 @@ void InterSpec::updateSaveWorkspaceMenu()
   m_createTag->setDisabled(true);
 }//void updateSaveWorkspaceMenu()
 
+
+int InterSpec::currentAppStateDbId()
+{
+  return m_currentStateID;
+}//int currentAppStateDbId()
+
+
+void InterSpec::resetCurrentAppStateDbId()
+{
+  m_currentStateID = -1;
+  updateSaveWorkspaceMenu();
+}//void resetCurrentAppStateDbId()
+//m_currentStateID
+
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 

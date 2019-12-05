@@ -22,6 +22,7 @@
  */
 #include "InterSpec_config.h"
 
+#include <Wt/WImage>
 #include <Wt/Dbo/ptr>
 #include <Wt/WGroupBox>
 #include <Wt/WComboBox>
@@ -109,7 +110,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_viewer( viewer ),
     m_loadSnapshotButton( nullptr ),
     m_loadSpectraButton( nullptr ),
-    m_deleteButton( nullptr ),
+    //m_deleteButton( nullptr ),
     m_renameButton( nullptr ),
     m_buttonGroup( nullptr ),
     m_buttonbox( nullptr ),
@@ -119,7 +120,9 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_relatedSpectraLayout( nullptr ),
     m_type( type ),
     m_header( header ),
-    m_size( 0 )
+    m_finished( this ),
+    m_editWindow( nullptr ),
+    m_nrows( 0 )
 {
   WContainerWidget *footer = buttonBar;
   if( !footer )
@@ -133,12 +136,12 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   //  things up (Dbo::Session is not thread safe).
   m_session.reset( new DataBaseUtils::DbSession( *m_viewer->sql() ) );
   
-  int row=0;
+  int row = 0;
   if( m_header && !m_header->m_uuid.empty() )
   {
-    layout->addWidget(new WText("It looks like you have previously loaded and modifed this spectrum file, would you like to resume your previous work?"), 0, 0);
-    row++;
-  } //!m_uuid.empty()
+    auto txt = new WText("It looks like you have previously loaded and modifed this spectrum file, would you like to resume your previous work?");
+    layout->addWidget( txt, row++, 0);
+  }//if( we want to load a specific state )
   
   try
   {
@@ -149,7 +152,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     //  an item to open it right away.  If we use a WTreeView, then we should
     //  be able to do that...
     m_snapshotTable = new WTree();
-    WGridLayout* tablelayout = new WGridLayout();
+    WGridLayout *tablelayout = new WGridLayout();
     tablelayout->setContentsMargins(2, 2, 2, 2);
     tablelayout->setRowStretch(0, 1);
     tablelayout->setColumnStretch(0, 1);
@@ -158,11 +161,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     tablecontainer->setMargin(0);
     tablecontainer->setOffsets(0);
     
-    //        m_snapshotTable->resize(400,WLength(WLength::Auto));
+    //m_snapshotTable->resize(400,WLength(WLength::Auto));
     
     m_snapshotTable->itemSelectionChanged().connect(boost::bind( &SnapshotBrowser::selectionChanged, this ) );
     
-    Wt::WTreeNode *root = new Wt::WTreeNode("Root");
+    Wt::WTreeNode *root = new Wt::WTreeNode( "Root" );
     root->expand();
     
     m_snapshotTable->setTreeRoot(root);
@@ -196,20 +199,21 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       .bind( user.id() ).bind(int(UserState::kUserSaved));
     } //uuid filter for snapshots with foreground uuid
     
-    m_size = query.size(); //save for future query
+    m_nrows = query.size(); //save for future query
     
-    if (m_size==0) {
+    if( m_nrows == 0 )
+    {
       if( m_header && !m_header->m_uuid.empty() )
       {
-        layout->addWidget(new WLabel("No saved application states"), row++, 0);
+        layout->addWidget( new WLabel("No saved application states"), row++, 0 );
       }else
       {
         //This prevents the case where the checkIfPreviouslyOpened() is true,
         //  but the previous opened file is a kEndofSessionTemp, so will not
         //  show in the dialog.
-        throw "Nothing to display";
+        throw std::runtime_error( "Nothing to display" );
       }//m_uuid.empty()
-    } //m_size==0
+    }//if( m_nrows == 0 )
     
     for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshotIterator = query.begin();
         snapshotIterator != query.end(); ++snapshotIterator )
@@ -218,8 +222,38 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       
       //m_snapshotTable->doubleClicked
       
+      WContainerWidget *rowDiv = nullptr;
+      if( buttonBar && snapshotNode->label() && snapshotNode->label()->parent() )
+        rowDiv = dynamic_cast<WContainerWidget *>( snapshotNode->label()->parent() );
+      
+      if( rowDiv )  //Always seems to be true for Wt 3.1.4
+      {
+        WImage *delBtn = new WImage( "InterSpec_resources/images/minus_min_black.svg", rowDiv );
+        delBtn->resize( WLength(16), WLength(16) );
+        delBtn->addStyleClass( "DelSnapshotBtn" );
+        delBtn->clicked().connect( this, &SnapshotBrowser::startDeleteSelected );
+        
+        
+        WImage *editBtn = new WImage( "InterSpec_resources/images/edit_black.svg", rowDiv );
+        editBtn->resize( WLength(16), WLength(16) );
+        editBtn->addStyleClass( "DelSnapshotBtn" );
+        editBtn->clicked().connect( this, &SnapshotBrowser::startEditSelected );
+        
+        if( !wApp->styleSheet().isDefined("snapshotbtn") )
+        {
+          wApp->styleSheet().addRule( ".DelSnapshotBtn", "float: right; background: none; display: none; cursor: pointer; opacity: 0.4; margin-top: 1px; margin-left: 1px; margin-right: 2px", "snapshotbtn" );
+          wApp->styleSheet().addRule( ".DelSnapshotBtn:hover", "opacity: 1;" );
+          wApp->styleSheet().addRule( ".Wt-selected .DelSnapshotBtn", "display: inline;" );
+        }
+      }else
+      {
+        //In case Wt changes in new versions
+        cerr << "\n\nsnapshotNode->label()->parent() Is Not a WContainerWidget\n\n" << endl;
+      }//if( rowDiv )
+      
       snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
-      snapshotNode->setToolTip((*snapshotIterator)->serializeTime.toString() + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
+      snapshotNode->setToolTip((*snapshotIterator)->serializeTime.toString()
+                               + (((*snapshotIterator)->description).empty() ? "" : (" -- " + (*snapshotIterator)->description)));
       
       //Add to lookup table (the HEAD)
       m_UserStateLookup[snapshotNode]=*snapshotIterator;
@@ -243,20 +277,28 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
         addSpectraNodes(snapshotIterator, versionNode);
         
         snapshots = m_session->session()->find<UserState>()
-        .where( "SnapshotTagParent_id = ? AND StateType = ? " )
-        .bind( (*snapshotIterator).id() ).bind(int(UserState::kUserSaved)).orderBy( "id desc" );
+                             .where( "SnapshotTagParent_id = ? AND StateType = ? " )
+                             .bind( snapshotIterator->id() )
+                             .bind(int(UserState::kUserSaved))
+                             .orderBy( "id desc" );
         
         for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator = snapshots.begin();
             versionIterator != snapshots.end(); ++versionIterator )
         {
-          versionNode = new Wt::WTreeNode((*versionIterator)->name, new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png"), snapshotNode);
-          versionNode->setToolTip((*versionIterator)->serializeTime.toString()  + (((*versionIterator)->description).empty()?"":(" -- " + (*versionIterator)->description)));
+          const Wt::WString &name = (*versionIterator)->name;
+          auto icon = new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png");
+          versionNode = new Wt::WTreeNode( name, icon, snapshotNode );
           
-          versionNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
+          auto tooltip = (*versionIterator)->serializeTime.toString()
+                         + (((*versionIterator)->description).empty() ? "" : (" -- " + (*versionIterator)->description));
+          versionNode->setToolTip( tooltip );
           
-          m_UserStateLookup[versionNode]=*versionIterator;
+          //versionNode->setChildCountPolicy( Wt::WTreeNode::Enabled );
+          versionNode->setChildCountPolicy( Wt::WTreeNode::Disabled );
           
-          addSpectraNodes(versionIterator, versionNode);
+          m_UserStateLookup[versionNode] = *versionIterator;
+          
+          addSpectraNodes( versionIterator, versionNode );
         } //for
       } //*snapshotIterator
       
@@ -301,11 +343,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     layout->addWidget( m_buttonbox, ++row, 0  );
     
     
-    m_deleteButton = new WPushButton( "", footer );
-    m_deleteButton->setHidden(true);
-    m_deleteButton->setIcon( "InterSpec_resources/images/minus_min.png" );
-    m_deleteButton->addStyleClass("FloatLeft");
-    m_deleteButton->clicked().connect( this, &SnapshotBrowser::startDeleteSelected );
+    //m_deleteButton = new WPushButton( "", footer );
+    //m_deleteButton->setHidden(true);
+    //m_deleteButton->setIcon( "InterSpec_resources/images/minus_min.png" );
+    //m_deleteButton->addStyleClass("FloatLeft");
+    //m_deleteButton->clicked().connect( this, &SnapshotBrowser::startDeleteSelected );
     
     //m_renameButton
     
@@ -342,67 +384,69 @@ Wt::Signal<> &SnapshotBrowser::finished()
 
 void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator, Wt::WTreeNode *versionNode)
 {
-    //add in foreground/background/2ndfore
-    typedef Dbo::collection< Dbo::ptr<UserFileInDb> > Spectras;
-    typedef Spectras::iterator SpectraIter;
-   
-    for( int i = 0; i < 3; i++ )
-    { //loop through each spectrumtype because sometimes there can be one spectra that is in multiple types
-        Spectras spectras =  m_session->session()->find< UserFileInDb >().where( " id = ? OR id = ? OR id = ?" ).bind((*versionIterator)->foregroundId).bind((*versionIterator)->backgroundId).bind((*versionIterator)->secondForegroundId);
-        
-        string pre = "";
-        string post = "";
-        SpectrumType spectratype = SpectrumType(i);
-
-        for( Dbo::collection< Dbo::ptr<UserFileInDb> >::const_iterator spectraIterator = spectras.begin();
-            spectraIterator != spectras.end(); ++spectraIterator )
-        {
-            Wt::WIconPair *icon = NULL;
-            if ((*versionIterator)->foregroundId==spectraIterator->id() && spectratype==kForeground)
-            {
-                icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
-                
-            } //foreground
-            else if ((*versionIterator)->backgroundId==spectraIterator->id() && spectratype==kBackground)
-            {
-                icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
-            } //background
-            else if ((*versionIterator)->secondForegroundId==spectraIterator->id() && spectratype==kSecondForeground)
-            {
-                icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
-            } //second foreground
-            else
-            {
-                //nothing found, so just return
-                continue;
-            }
-            if( m_header && !m_header->m_uuid.empty() && (*spectraIterator)->uuid==m_header->m_uuid)
-            {
-                //bold the spectra that is pulled in
-                pre = "<b>";
-                post = "</b>";
-            } //!m_uuid.empty() && (*spectraIterator)->uuid==m_uuid
-            else
-            { //default look is not bolded
-                pre = "";
-                post = "";
-            } //default look is not bolded
-            
-            Wt::WTreeNode *spectraNode = new Wt::WTreeNode(pre + " " + (*spectraIterator)->filename + " <i>(" + descriptionText(spectratype)+")</i>" + post, icon, versionNode);
-            
-            if( m_header && !m_header->m_uuid.empty() )
-            {
-                //disable all child spectra tree nodes, so the user can only select the snapshot
-                spectraNode->disable();
-            } //!m_uuid.empty()
-            
-            spectraNode->setToolTip((*spectraIterator)->serializeTime.toString()  + (((*spectraIterator)->description).empty()?"":(" -- " + (*spectraIterator)->description)));
-            //Add to lookup table (also the HEAD)
-            m_UserFileInDbLookup[spectraNode]=*spectraIterator;
-            break;
-        } //iterate through the spectra contained in this snapshot
-    } //for( int i = 0; i < 3; i++ ) -- loop through spectrumtype
+  //add in foreground/background/2ndfore
+  typedef Dbo::collection< Dbo::ptr<UserFileInDb> > Spectras;
+  typedef Spectras::iterator SpectraIter;
+  
+  for( int i = 0; i < 3; i++ )
+  {
+    //loop through each spectrumtype because sometimes there can be one spectra that is in multiple types
+    Spectras spectras = m_session->session()->find< UserFileInDb >()
+                                  .where( " id = ? OR id = ? OR id = ?")
+                                  .bind( (*versionIterator)->foregroundId )
+                                  .bind( (*versionIterator)->backgroundId )
+                                  .bind( (*versionIterator)->secondForegroundId );
     
+    string pre = "";
+    string post = "";
+    SpectrumType spectratype = SpectrumType(i);
+    
+    for( Dbo::collection< Dbo::ptr<UserFileInDb> >::const_iterator spectraIterator = spectras.begin();
+        spectraIterator != spectras.end(); ++spectraIterator )
+    {
+      Wt::WIconPair *icon = NULL;
+      if ((*versionIterator)->foregroundId==spectraIterator->id() && spectratype==kForeground)
+      {
+        icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
+      }else if ((*versionIterator)->backgroundId==spectraIterator->id() && spectratype==kBackground)
+      {
+        icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
+      }else if ((*versionIterator)->secondForegroundId==spectraIterator->id() && spectratype==kSecondForeground)
+      {
+        icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
+      }else
+      {
+        //nothing found, so just return
+        continue;
+      }
+      
+      if( m_header && !m_header->m_uuid.empty() && (*spectraIterator)->uuid==m_header->m_uuid)
+      {
+        //bold the spectra that is pulled in
+        pre = "<b>";
+        post = "</b>";
+      } //!m_uuid.empty() && (*spectraIterator)->uuid==m_uuid
+      else
+      { //default look is not bolded
+        pre = "";
+        post = "";
+      } //default look is not bolded
+      
+      Wt::WTreeNode *spectraNode = new Wt::WTreeNode(pre + " " + (*spectraIterator)->filename + " <i>(" + descriptionText(spectratype)+")</i>" + post, icon, versionNode);
+      
+      if( m_header && !m_header->m_uuid.empty() )
+      {
+        //disable all child spectra tree nodes, so the user can only select the snapshot
+        spectraNode->disable();
+      } //!m_uuid.empty()
+      
+      spectraNode->setToolTip((*spectraIterator)->serializeTime.toString()  + (((*spectraIterator)->description).empty()?"":(" -- " + (*spectraIterator)->description)));
+      //Add to lookup table (also the HEAD)
+      m_UserFileInDbLookup[spectraNode]=*spectraIterator;
+      break;
+    } //iterate through the spectra contained in this snapshot
+  } //for( int i = 0; i < 3; i++ ) -- loop through spectrumtype
+  
 } //void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator, Wt::WTreeNode *versionNode)
 
 //Updates the buttons when a row is selected
@@ -417,31 +461,44 @@ void SnapshotBrowser::selectionChanged()
     { //UserState clicked
         m_buttonbox->disable();
         m_buttonbox->hide();
-        m_deleteButton->show();
+        //m_deleteButton->show();
         m_loadSnapshotButton->enable();
         m_loadSpectraButton->disable();
         m_descriptionLabel->setText("<i>"+m_UserStateLookup[selectedTreeNode]->description+"</i>");
         m_timeLabel->setText("<b>"+m_UserStateLookup[selectedTreeNode]->serializeTime.toString()+"</b>");
+      
+      if( m_editWindow )
+      {
+        bool isDelDialog = (m_editWindow->windowTitle().toUTF8().find("Delete") != string::npos);
+        AuxWindow::deleteAuxWindow(m_editWindow);
+        m_editWindow = nullptr;
+        if( isDelDialog )
+          startDeleteSelected();
+        //else //is edit dialog, in which case just delete the dialog
+      }
     } //UserState clicked
     else if (m_UserFileInDbLookup[selectedTreeNode])
     { //UserFileDB clicked
-        m_buttonbox->show();
-        m_buttonbox->enable();
-//        m_deleteButton->enable();
-        m_loadSpectraButton->enable();
-      m_deleteButton->hide();
-        m_loadSnapshotButton->disable();
-        m_descriptionLabel->setText("<i>"+m_UserFileInDbLookup[selectedTreeNode]->description+"</i>");
-        m_timeLabel->setText("<b>"+m_UserFileInDbLookup[selectedTreeNode]->serializeTime.toString()+"</b>");
-        
+      m_buttonbox->show();
+      m_buttonbox->enable();
+      m_loadSpectraButton->enable();
+      //m_deleteButton->hide();
+      m_loadSnapshotButton->disable();
+      m_descriptionLabel->setText("<i>"+m_UserFileInDbLookup[selectedTreeNode]->description+"</i>");
+      m_timeLabel->setText("<b>"+m_UserFileInDbLookup[selectedTreeNode]->serializeTime.toString()+"</b>");
+      
+      if( m_editWindow )
+      {
+        AuxWindow::deleteAuxWindow(m_editWindow);
+        m_editWindow = nullptr;
+      }
     } //UserFileDB clicked
     else
     { //some node not found
         m_buttonbox->hide();
         m_buttonbox->disable();
-//        m_deleteButton->disable();
         m_loadSnapshotButton->disable();
-      m_deleteButton->hide();
+      //m_deleteButton->hide();
         m_loadSpectraButton->disable();
         m_descriptionLabel->setText("");
         m_timeLabel->setText("");
@@ -456,8 +513,71 @@ void SnapshotBrowser::selectionChanged()
 
 void SnapshotBrowser::startDeleteSelected()
 {
-  //deleteSelected();
+  const set<WTreeNode *> &selection = m_snapshotTable->selectedNodes();
+  if( selection.empty() )
+  {
+    if( m_editWindow )
+    {
+      AuxWindow::deleteAuxWindow(m_editWindow);
+      m_editWindow = nullptr;
+    }
+    return;
+  }//if( selection.size() != 1 )
+  
+  const char *title = "Confirm Delete";
+  if( m_editWindow )
+    AuxWindow::deleteAuxWindow( m_editWindow );
+  
+  m_editWindow = new AuxWindow( title,
+                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+  
+  WTreeNode *node = *begin(selection);
+  WText *label = node->label();
+  const string name = label ? label->text().toUTF8() : string("");
+  
+  WText *txt = new WText( "<div style=\"white-space:nowrap;\">Are you sure you want to delete:</div>"
+                         "<div style=\"white-space:nowrap;text-align:center;\"><span style=\"font-weight:bold;\">" + name + "</span>?</div>" );
+  m_editWindow->contents()->addWidget( txt );
+  m_editWindow->contents()->setPadding( 12, Wt::Side::Left | Wt::Side::Right );
+  m_editWindow->contents()->setPadding( 18, Wt::Side::Top | Wt::Side::Bottom );
+  
+  WContainerWidget *foot = m_editWindow->footer();
+  
+  WPushButton *cancel = new WPushButton( "No", foot );
+  cancel->addStyleClass( "DialogClose" );
+  cancel->setFloatSide( Wt::Side::Right );
+  
+  WPushButton *yes = new WPushButton( "Yes", foot );
+  yes->addStyleClass( "DialogClose" );
+  yes->setFloatSide( Wt::Side::Right );
+  
+  cancel->clicked().connect( m_editWindow, &AuxWindow::hide );
+  yes->clicked().connect( this, &SnapshotBrowser::deleteSelected );
+  
+  //Need to update text when selection changes, currently relying on modal underlay to protect against this.
+  //m_snapshotTable->itemSelectionChanged().connect(<#WObject *target#>, <#WObject::Method method#>)
+  
+  auto deleter = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, m_editWindow ) );
+  m_editWindow->finished().connect( std::bind( [deleter,this](){ deleter(); m_editWindow = nullptr; } ) );
+  
+  m_editWindow->show();
+  m_editWindow->centerWindow();
 }//void startDeleteSelected()
+
+
+void SnapshotBrowser::startEditSelected()
+{
+  if( m_editWindow )
+  {
+    
+  }else
+  {
+    
+  }
+}//void startEditSelected()
+
+
 
 std::shared_ptr<SpecMeas> SnapshotBrowser::retrieveMeas( const int dbid )
   {
@@ -489,43 +609,61 @@ std::shared_ptr<SpecMeas> SnapshotBrowser::retrieveMeas( const int dbid )
     return snapshotmeas;
   }//std::shared_ptr<SpecMeas> retrieveMeas( const int dbid )
   
-  //
-  // Delete a saved spectrum
-  //
-//  void SnapshotBrowser::deleteSelected()
-//  {
 
-//currently disabled deleting
-      
-//    WModelIndexSet indices = m_spectraTable->selectedIndexes();
-//    if( !indices.size() )
-//    {
-//      m_deleteButton->disable();
-//      return;
-//    }//if( !indices.size() )
-//    
-//    WModelIndex index = *indices.begin();
-//    
-//    Dbo::ptr<UserFileInDb> dbfile = m_model->stableResultRow( index.row() );
-//    
-//    //Now we have to make 'dbfile' be associated with same session of
-//    //  m_viewer->m_user.session()
-//    if( dbfile.id() >= 0 )
-//    {
-//      std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-//      DataBaseUtils::DbTransaction transaction( *sql );
-//      dbfile = sql->session()->find< UserFileInDb >()
-//                               .where( "id = ?").bind( dbfile.id() );
-//
-//      //This will now remove the dbfile from the assigned and loaded states (if it the same)
-//      m_manager->removeSpecMeas(dbfile);
-//        
-//      dbfile.remove();
-//      transaction.commit();
-//      m_model->reload();
-//
-//    }//if( dbfile.id() >= 0 )
-//  } // deleteSelected()
+void SnapshotBrowser::deleteSelected()
+{
+  const set<WTreeNode *> &selection = m_snapshotTable->selectedNodes();
+  if( selection.empty() )
+  {
+    //m_deleteButton->disable();
+    passMessage( "No state selected to delete", "", WarningWidget::WarningMsgMedium );
+    return;
+  }//if( !indices.size() )
+  
+  WTreeNode * const node = *begin(selection);
+  
+  Wt::Dbo::ptr<UserState> state;
+  
+  if( m_UserStateLookup.count(node) )
+    state = m_UserStateLookup[node];
+  
+  if( !state )
+  {
+    passMessage( "Invalid state selected", "", WarningWidget::WarningMsgMedium );
+    return;
+  }
+  
+  try
+  {
+    if( m_viewer->currentAppStateDbId() == state.id() )
+      m_viewer->resetCurrentAppStateDbId();
+    
+    {
+      Dbo::Transaction transaction( *m_session->session() );
+      state.reread();  //is this actually necassary?
+      state.remove();
+    }
+    string name;
+    if( node->label() )
+      name = node->label()->text().toUTF8();
+    
+    m_UserStateLookup.erase( m_UserStateLookup.find(node) );
+    m_snapshotTable->treeRoot()->removeChildNode(node);
+    m_nrows -= 1;
+    
+    passMessage( "Snapshot '" + name + "' removed from database.", "", WarningWidget::WarningMsgInfo );
+  }catch( ... )
+  {
+    passMessage( "Error removing snapshot from database.", "", WarningWidget::WarningMsgHigh );
+  }
+  
+  if( m_editWindow )
+  {
+    AuxWindow::deleteAuxWindow(m_editWindow);
+    m_editWindow = nullptr;
+  }//if( m_editWindow )
+}//void deleteSelected()
+
 
 void SnapshotBrowser::loadSnapshotSelected()
 {
@@ -537,7 +675,7 @@ void SnapshotBrowser::loadSnapshotSelected()
         if (!m_UserStateLookup[selectedTreeNode])
         {
             m_loadSnapshotButton->disable();
-          m_deleteButton->hide();
+          //m_deleteButton->hide();
             return;
         }//if( !indices.size() )
         Dbo::ptr<UserState> dbstate = m_UserStateLookup[selectedTreeNode];
@@ -718,3 +856,8 @@ void SnapshotBrowser::loadSpectraSelected()
   m_finished.emit();
 }//void loadSpectraSelected
 
+
+int SnapshotBrowser::numSnaphots() const
+{
+  return m_nrows;
+};
