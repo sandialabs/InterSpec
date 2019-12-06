@@ -203,13 +203,22 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     {
       if( m_header && !m_header->m_uuid.empty() )
       {
-        layout->addWidget( new WLabel("No saved application states"), row++, 0 );
-      }else
-      {
         //This prevents the case where the checkIfPreviouslyOpened() is true,
         //  but the previous opened file is a kEndofSessionTemp, so will not
         //  show in the dialog.
-        throw std::runtime_error( "Nothing to display" );
+        
+        //XXX - I really dont like how this is currently handled.
+        //      Right now NOT throwing a std::exception, so it doesnt get caught
+        //      by this try/catch block, so I'm not really sure if all resources
+        //      get cleaned up.
+        //    - We should allow asking user if they want to load an end of
+        //      session state (there auto store session preference should cover this)
+        //    - this is all a mess!
+        
+        throw "Nothing to display";
+      }else
+      {
+        layout->addWidget( new WLabel("No saved application states"), row++, 0 );
       }//m_uuid.empty()
     }//if( m_nrows == 0 )
     
