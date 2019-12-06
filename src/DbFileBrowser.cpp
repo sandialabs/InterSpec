@@ -22,45 +22,43 @@
  */
 #include "InterSpec_config.h"
 
+#include <Wt/WTree>
 #include <Wt/WImage>
+#include <Wt/WLabel>
 #include <Wt/Dbo/ptr>
+#include <Wt/WLineEdit>
+#include <Wt/WMenuItem>
 #include <Wt/WGroupBox>
-#include <Wt/WComboBox>
+#include <Wt/WTextArea>
+#include <Wt/WTreeNode>
+#include <Wt/WIconPair>
+#include <Wt/WTabWidget>
+#include <Wt/WModelIndex>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WButtonGroup>
 #include <Wt/WRadioButton>
-#include <Wt/WEnvironment>
-#include <Wt/Dbo/QueryModel>
-#include <Wt/WStringListModel>
-#include <Wt/WLabel>
-#include <Wt/WTabWidget>
-#include <Wt/WMenuItem>
-#include <Wt/WStandardItem>
-#include <Wt/WHBoxLayout>
-#include <Wt/WModelIndex>
-#include <Wt/WTree>
-#include <Wt/WTree>
-#include <Wt/WTreeNode>
-#include <Wt/WIconPair>
+
 
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DbFileBrowser.h"
 #include "InterSpec/DataBaseUtils.h"
-#include "InterSpec/InterSpec.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "InterSpec/InterSpecApp.h"
-#include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/RowStretchTreeView.h"
-#include "InterSpec/UseInfoWindow.h"
+
 
 using namespace std;
 using namespace Wt;
 
 
-DbFileBrowser::DbFileBrowser( SpecMeasManager *manager, InterSpec *viewer, SpectrumType type, std::shared_ptr<SpectraFileHeader> header)
+DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
+                              InterSpec *viewer,
+                              SpectrumType type,
+                              std::shared_ptr<SpectraFileHeader> header)
 : AuxWindow( "Previously Stored States",
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
                                              | AuxWindowProperties::DisableCollapse
@@ -251,12 +249,13 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
         cerr << "\n\nsnapshotNode->label()->parent() Is Not a WContainerWidget\n\n" << endl;
       }//if( rowDiv )
       
-      snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
+      //snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
+      snapshotNode->setChildCountPolicy(Wt::WTreeNode::Disabled);
       snapshotNode->setToolTip((*snapshotIterator)->serializeTime.toString()
                                + (((*snapshotIterator)->description).empty() ? "" : (" -- " + (*snapshotIterator)->description)));
       
       //Add to lookup table (the HEAD)
-      m_UserStateLookup[snapshotNode]=*snapshotIterator;
+      m_UserStateLookup[snapshotNode] = *snapshotIterator;
       
       //If not root, then return how many versions
       typedef Dbo::collection< Dbo::ptr<UserState> > Snapshots;
@@ -270,10 +269,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
         
         versionNode->setToolTip((*snapshotIterator)->serializeTime.toString() + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
         
-        versionNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
+        //versionNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
+        versionNode->setChildCountPolicy(Wt::WTreeNode::Disabled);
         
         //Add to lookup table (also the HEAD)
-        m_UserStateLookup[versionNode]=*snapshotIterator;
+        m_UserStateLookup[versionNode] = *snapshotIterator;
         addSpectraNodes(snapshotIterator, versionNode);
         
         snapshots = m_session->session()->find<UserState>()
@@ -452,63 +452,71 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
 //Updates the buttons when a row is selected
 void SnapshotBrowser::selectionChanged()
 {
-    std::set<Wt::WTreeNode *> sets = m_snapshotTable->selectedNodes();
-
-    //Only one row selected
-    Wt::WTreeNode * selectedTreeNode = *sets.begin();
+  std::set<Wt::WTreeNode *> sets = m_snapshotTable->selectedNodes();
+  
+  //Only one row selected
+  Wt::WTreeNode * selectedTreeNode = *sets.begin();
+  
+  Wt::Dbo::ptr<UserState> userstate;
+  Wt::Dbo::ptr<UserFileInDb> dbfile;
+  const auto statepos = m_UserStateLookup.find(selectedTreeNode);
+  if( statepos != end(m_UserStateLookup) )
+    userstate = statepos->second;
+  
+  const auto filepos = m_UserFileInDbLookup.find(selectedTreeNode);
+  if( filepos != end(m_UserFileInDbLookup) )
+    dbfile = filepos->second;
+  
+  if( userstate ) //UserState clicked
+  {
+    m_buttonbox->disable();
+    m_buttonbox->hide();
+    //m_deleteButton->show();
+    m_loadSnapshotButton->enable();
+    m_loadSpectraButton->disable();
+    m_descriptionLabel->setText("<i>"+ userstate->description + "</i>");
+    m_timeLabel->setText("<b>" + userstate->serializeTime.toString() + "</b>");
     
-    if (m_UserStateLookup[selectedTreeNode])
-    { //UserState clicked
-        m_buttonbox->disable();
-        m_buttonbox->hide();
-        //m_deleteButton->show();
-        m_loadSnapshotButton->enable();
-        m_loadSpectraButton->disable();
-        m_descriptionLabel->setText("<i>"+m_UserStateLookup[selectedTreeNode]->description+"</i>");
-        m_timeLabel->setText("<b>"+m_UserStateLookup[selectedTreeNode]->serializeTime.toString()+"</b>");
-      
-      if( m_editWindow )
-      {
-        bool isDelDialog = (m_editWindow->windowTitle().toUTF8().find("Delete") != string::npos);
-        AuxWindow::deleteAuxWindow(m_editWindow);
-        m_editWindow = nullptr;
-        if( isDelDialog )
-          startDeleteSelected();
-        //else //is edit dialog, in which case just delete the dialog
-      }
-    } //UserState clicked
-    else if (m_UserFileInDbLookup[selectedTreeNode])
-    { //UserFileDB clicked
-      m_buttonbox->show();
-      m_buttonbox->enable();
-      m_loadSpectraButton->enable();
-      //m_deleteButton->hide();
-      m_loadSnapshotButton->disable();
-      m_descriptionLabel->setText("<i>"+m_UserFileInDbLookup[selectedTreeNode]->description+"</i>");
-      m_timeLabel->setText("<b>"+m_UserFileInDbLookup[selectedTreeNode]->serializeTime.toString()+"</b>");
-      
-      if( m_editWindow )
-      {
-        AuxWindow::deleteAuxWindow(m_editWindow);
-        m_editWindow = nullptr;
-      }
-    } //UserFileDB clicked
-    else
-    { //some node not found
-        m_buttonbox->hide();
-        m_buttonbox->disable();
-        m_loadSnapshotButton->disable();
-      //m_deleteButton->hide();
-        m_loadSpectraButton->disable();
-        m_descriptionLabel->setText("");
-        m_timeLabel->setText("");
-    } //some node not found
-    
-    if( (m_header && !m_header->m_uuid.empty()) ||  !m_viewer->measurment( kForeground ) )
+    if( m_editWindow )
     {
-      m_buttonbox->hide(); //make sure it is hidden if no uuid selected
-    }//!m_uuid.empty()
-} //void SnapshotBrowser::selectionChanged()
+      bool isDelDialog = (m_editWindow->windowTitle().toUTF8().find("Delete") != string::npos);
+      AuxWindow::deleteAuxWindow(m_editWindow);
+      m_editWindow = nullptr;
+      if( isDelDialog )
+        startDeleteSelected();
+      //else //is edit dialog, in which case just delete the dialog
+    }
+  }else if( dbfile ) //UserFileDB clicked
+  {
+    m_buttonbox->show();
+    m_buttonbox->enable();
+    m_loadSpectraButton->enable();
+    //m_deleteButton->hide();
+    m_loadSnapshotButton->disable();
+    m_descriptionLabel->setText("<i>" + dbfile->description + "</i>");
+    m_timeLabel->setText("<b>" + dbfile->serializeTime.toString() + "</b>");
+    
+    if( m_editWindow )
+    {
+      AuxWindow::deleteAuxWindow(m_editWindow);
+      m_editWindow = nullptr;
+    }
+  }else //some node not found
+  {
+    m_buttonbox->hide();
+    m_buttonbox->disable();
+    m_loadSnapshotButton->disable();
+    //m_deleteButton->hide();
+    m_loadSpectraButton->disable();
+    m_descriptionLabel->setText("");
+    m_timeLabel->setText("");
+  } //some node not found
+  
+  if( (m_header && !m_header->m_uuid.empty()) ||  !m_viewer->measurment( kForeground ) )
+  {
+    m_buttonbox->hide(); //make sure it is hidden if no uuid selected
+  }//!m_uuid.empty()
+}//void selectionChanged()
 
 
 void SnapshotBrowser::startDeleteSelected()
@@ -568,13 +576,116 @@ void SnapshotBrowser::startDeleteSelected()
 
 void SnapshotBrowser::startEditSelected()
 {
-  if( m_editWindow )
+  if( !m_session )
   {
-    
-  }else
-  {
-    
+    passMessage( "No active database session", "", WarningWidget::WarningMsgHigh );
+    return;
   }
+  
+  const set<WTreeNode *> &selection = m_snapshotTable->selectedNodes();
+  if( selection.empty() )
+  {
+    if( m_editWindow )
+    {
+      AuxWindow::deleteAuxWindow(m_editWindow);
+      m_editWindow = nullptr;
+    }
+    return;
+  }//if( selection.size() != 1 )
+  
+  WTreeNode *node = *begin(selection);
+  Wt::Dbo::ptr<UserState> state;
+  const auto pos = m_UserStateLookup.find(node);
+  if( pos != end(m_UserStateLookup) )
+   state = pos->second;
+  
+  if( !state )  //shouldnt ever happend
+  {
+    passMessage( "Invalid state selected", "", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  const char *title = "Edit Title/Description";
+  if( m_editWindow )
+    AuxWindow::deleteAuxWindow( m_editWindow );
+  
+  m_editWindow = new AuxWindow( title,
+                               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+  
+  m_editWindow->setWidth( std::min(425, std::max(m_viewer->renderedWidth(), 250)) );
+  m_editWindow->setHeight( std::min(250, std::max(m_viewer->renderedHeight(), 150)) );
+  
+  WGridLayout *layout = m_editWindow->stretcher();
+  
+  WLabel *label = new WLabel( "Name" );
+  WLineEdit *nameEdit = new WLineEdit();
+  nameEdit->setEmptyText( "(Name to store under)" );
+  nameEdit->setText( state->name );
+  layout->addWidget( label, 0, 0 );
+  layout->addWidget( nameEdit,  0, 1 );
+  
+  label = new WLabel( "Desc." );
+  WTextArea *description = new WTextArea();
+  description->setEmptyText( "(Optional description)" );
+  description->setText( state->description );
+  layout->addWidget( label, 1, 0 );
+  layout->addWidget( description, 1, 1 );
+  
+  layout->setColumnStretch( 1, 1 );
+  layout->setRowStretch( 1, 1 );
+  
+  WContainerWidget *foot = m_editWindow->footer();
+  
+  WPushButton *cancel = new WPushButton( "Cancel", foot );
+  cancel->addStyleClass( "DialogClose" );
+  cancel->setFloatSide( Wt::Side::Right );
+  
+  WPushButton *yes = new WPushButton( "Accept", foot );
+  yes->addStyleClass( "DialogClose" );
+  yes->setFloatSide( Wt::Side::Right );
+  
+  cancel->clicked().connect( m_editWindow, &AuxWindow::hide );
+  yes->clicked().connect( std::bind([=](){
+    if( nameEdit->text().toUTF8().empty() ) //should happen
+    {
+      passMessage( "You must enter a name", "", WarningWidget::WarningMsgHigh );
+      return;
+    }
+    
+    try
+    {
+      DataBaseUtils::DbTransaction transaction( *m_session );
+      state.modify()->name = nameEdit->text();
+      state.modify()->description = description->text();
+      transaction.commit();
+      if( node->label() )
+        node->label()->setText( nameEdit->text() );
+      m_descriptionLabel->setText( "<i>" + description->text().toUTF8() + "</i>" );
+    }catch( ... )
+    {
+      passMessage( "Error modifying state - probably not changed", "", WarningWidget::WarningMsgHigh );
+    }//try /catch
+    
+    m_editWindow->hide();
+  }) );
+  
+  //Need to update text when selection changes, currently relying on modal underlay to protect against this.
+  //m_snapshotTable->itemSelectionChanged().connect(<#WObject *target#>, <#WObject::Method method#>)
+  
+  yes->setDisabled( true );
+  auto haschanged = [=](){
+    yes->setEnabled( !nameEdit->text().toUTF8().empty() && (nameEdit->text()!=state->name || description->text()!=state->description) );
+  };
+  
+  nameEdit->textInput().connect( std::bind(haschanged) );
+  description->textInput().connect( std::bind(haschanged) );
+  
+  auto deleter = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, m_editWindow ) );
+  m_editWindow->finished().connect( std::bind( [deleter,this](){ deleter(); m_editWindow = nullptr; } ) );
+  
+  m_editWindow->show();
+  m_editWindow->centerWindow();
 }//void startEditSelected()
 
 
@@ -624,8 +735,9 @@ void SnapshotBrowser::deleteSelected()
   
   Wt::Dbo::ptr<UserState> state;
   
-  if( m_UserStateLookup.count(node) )
-    state = m_UserStateLookup[node];
+  const auto statepos = m_UserStateLookup.find(node);
+  if( statepos != end(m_UserStateLookup) )
+    state = statepos->second;
   
   if( !state )
   {
@@ -639,9 +751,10 @@ void SnapshotBrowser::deleteSelected()
       m_viewer->resetCurrentAppStateDbId();
     
     {
-      Dbo::Transaction transaction( *m_session->session() );
+      DataBaseUtils::DbTransaction transaction( *m_session );
       state.reread();  //is this actually necassary?
       state.remove();
+      transaction.commit();
     }
     string name;
     if( node->label() )
@@ -667,52 +780,58 @@ void SnapshotBrowser::deleteSelected()
 
 void SnapshotBrowser::loadSnapshotSelected()
 {
-      std::set<Wt::WTreeNode *> sets = m_snapshotTable->selectedNodes();
-      
-      //Only one row selected
-      Wt::WTreeNode * selectedTreeNode = *sets.begin();
-      
-        if (!m_UserStateLookup[selectedTreeNode])
-        {
-            m_loadSnapshotButton->disable();
-          //m_deleteButton->hide();
-            return;
-        }//if( !indices.size() )
-        Dbo::ptr<UserState> dbstate = m_UserStateLookup[selectedTreeNode];
-        
-        //Now we have to make 'dbfile' be associated with same session of
-        //  m_viewer->m_user.session()  {I dont know what would happen otherwise)
-        if( dbstate.id() >= 0 )
-        {
-            std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
-            DataBaseUtils::DbTransaction transaction( *sql );
-            dbstate = sql->session()->find< UserState >()
-            .where( "id = ?").bind( dbstate.id() );
-            transaction.commit();
-        }//if( dbfile.id() >= 0 )
-        
-        if( !dbstate || dbstate.id() < 0 )
-        {
-            passMessage( "Error loading from the database",
-                        "", WarningWidget::WarningMsgHigh );
-            m_finished.emit();
-            return;
-        }//if( !selected )
-        
-        try
-        {
-            m_viewer->loadStateFromDb( dbstate );
-            
-            WString msg = "Snapshot '";
-            msg += dbstate.get()->name;
-            msg += "' loaded";
-            passMessage( msg.toUTF8(), "", WarningWidget::WarningMsgInfo );
-            
-        }catch( std::exception &e )
-        {
-            passMessage( "Failed to load state", "", WarningWidget::WarningMsgHigh );
-            cerr << "DbStateBrowser::loadSelected() caught: " << e.what() << endl;
-        }//try / catch
+  std::set<Wt::WTreeNode *> sets = m_snapshotTable->selectedNodes();
+  
+  //Only one row selected
+  Wt::WTreeNode * selectedTreeNode = *sets.begin();
+  
+  Dbo::ptr<UserState> dbstate;
+  const auto statepos = m_UserStateLookup.find(selectedTreeNode);
+  if( statepos != end(m_UserStateLookup) )
+    dbstate = statepos->second;
+  
+  if( !dbstate )
+  {
+    m_loadSnapshotButton->disable();
+    //m_deleteButton->hide();
+    return;
+  }//if( !indices.size() )
+  
+  
+  
+  //Now we have to make 'dbfile' be associated with same session of
+  //  m_viewer->m_user.session()  {I dont know what would happen otherwise)
+  if( dbstate.id() >= 0 )
+  {
+    std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
+    DataBaseUtils::DbTransaction transaction( *sql );
+    dbstate = sql->session()->find< UserState >()
+    .where( "id = ?").bind( dbstate.id() );
+    transaction.commit();
+  }//if( dbfile.id() >= 0 )
+  
+  if( !dbstate || dbstate.id() < 0 )
+  {
+    passMessage( "Error loading from the database",
+                "", WarningWidget::WarningMsgHigh );
+    m_finished.emit();
+    return;
+  }//if( !selected )
+  
+  try
+  {
+    m_viewer->loadStateFromDb( dbstate );
+    
+    WString msg = "Snapshot '";
+    msg += dbstate.get()->name;
+    msg += "' loaded";
+    passMessage( msg.toUTF8(), "", WarningWidget::WarningMsgInfo );
+    
+  }catch( std::exception &e )
+  {
+    passMessage( "Failed to load state", "", WarningWidget::WarningMsgHigh );
+    cerr << "DbStateBrowser::loadSelected() caught: " << e.what() << endl;
+  }//try / catch
   
   m_finished.emit();
 }//void loadSnapshotSelected()
