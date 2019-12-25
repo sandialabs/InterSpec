@@ -273,7 +273,8 @@ namespace
     }
   };//struct csv_reader
   
-
+  
+#if( !USE_SPECTRUM_CHART_D3 )
   //DeleteOnClosePopupMenu is a PopupDivMenu that deletes itself on close.
   //  Necassary because (with Wt 3.3.4 at least) using the aboutToHide() signal
   //  to delete the menu causes a crash.
@@ -292,7 +293,7 @@ namespace
         delete this;
     }
   };//class PeakRangePopupMenu
-
+#endif
   
   //Returns -1 if you shouldnt add the peak to the hint peaks
   int add_hint_peak_pos( const std::shared_ptr<const PeakDef> &peak,
@@ -803,7 +804,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this, _1, _2, _3, _4 ) );
   
 //  m_spectrum->controlKeyDragged().connect( boost::bind( &InterSpec::findPeakFromUserRange, this, _1, _2 ) );
+#if( USE_SPECTRUM_CHART_D3 )
+#else
   m_spectrum->controlKeyDragged().connect( boost::bind( &InterSpec::userAskedToFitPeaksInRange, this, _1, _2, _3, _4 ) );
+#endif
   
   m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this, _1, _2 ) );
   m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this, _1 ) );
@@ -1753,7 +1757,7 @@ void InterSpec::addPeakFromRightClick()
     for( auto p : answer )
       orig_answer.push_back( make_shared<PeakDef>( *p ) );
     
-    findPeaksInUserRange( x0, x1, int(answer.size()), method, dataH,
+    findPeaksInUserRange( x0, x1, int(answer.size()), method, true, dataH,
                         m_dataMeasurement->detector(), answer, fitChi2 );
   
     std::vector<PeakDef> newRoiPeaks;
@@ -9445,7 +9449,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
 }//void setHintPeaks(...)
 
 
-
+#if( !USE_SPECTRUM_CHART_D3 )
 void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
 {
   if( !m_dataMeasurement || nPeaks < 1 )
@@ -9516,8 +9520,6 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
 }//void findPeakFromControlDrag( )
 
 
-
-
 void InterSpec::userAskedToFitPeaksInRange( double x0, double x1,
                                 int pageLeft, int pagetop )
 {
@@ -9560,6 +9562,8 @@ void InterSpec::userAskedToFitPeaksInRange( double x0, double x1,
     menu->popup( WPoint(pageLeft-30,pagetop-30) );
   }
 }//void userAskedToFitPeaksInRange(...)
+#endif //!USE_SPECTRUM_CHART_D3
+
 
 /*
  //Depreciated 20150204 by wcjohns in favor of calling 

@@ -880,9 +880,11 @@ public:
   // while.
   //void findPeakFromUserRange( double x0, double x1 );
   
+#if( !USE_SPECTRUM_CHART_D3 )
   void userAskedToFitPeaksInRange( double x0, double x1,
                                    int lastPageLeft, int lastPageTop );
   void findPeakFromControlDrag( double x0, double x1, int nPeaks );
+#endif  //!USE_SPECTRUM_CHART_D3
   
   void excludePeaksFromRange( double x0, double x1 );
   
@@ -1359,6 +1361,10 @@ protected:
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  D3SpectrumDisplayDiv *spectrum(){ return m_spectrum; }
+#endif
 #endif
 };//class InterSpec
 
