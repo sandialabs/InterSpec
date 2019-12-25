@@ -72,7 +72,7 @@ public:
   Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &chartClicked();
   Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &rightClicked();
   Wt::Signal<double/*keV*/,double/*counts*/> &doubleLeftClick();
-  Wt::Signal<double/*keV start*/,double/*keV end*/,int/*last pageX*/,int/*last pageY*/> &controlKeyDragged();
+  Wt::Signal<double/*keV start*/,double/*keV end*/> &controlKeyDragged();
   Wt::Signal<double/*keV start*/,double/*keV end*/> &shiftKeyDragged();
   
   Wt::Signal<double /*new roi lower energy*/,
@@ -81,6 +81,11 @@ public:
              double /*new roi upper px*/,
              double /*original roi lower energy*/,
              bool /*isFinalRange*/> &roiDragUpdate();
+  
+  Wt::Signal<double /*lower energy*/,
+             double /*upper energy*/,
+             int    /*num peaks to force*/,
+             bool /*isFinalRange*/> &fitRoiDragUpdate();
   
   Wt::Signal<double,SpectrumType> &yAxisScaled();
   
@@ -329,7 +334,6 @@ protected:
   // JSignals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
   //  where x is in energy, and y is in counts.
-  boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_controlKeyDraggJS;
   boost::scoped_ptr<Wt::JSignal<double, double> > m_shiftKeyDraggJS;
   boost::scoped_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
   boost::scoped_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
@@ -343,6 +347,7 @@ protected:
    */
   boost::scoped_ptr<Wt::JSignal<double,double,double,double> > m_xRangeChangedJS;
   boost::scoped_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_roiDraggedJS;
+  boost::scoped_ptr<Wt::JSignal<double,double,int,bool,double,double> > m_fitRoiDragJS;
   boost::scoped_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
   
   boost::scoped_ptr<Wt::JSignal<> > m_legendClosedJS;
@@ -353,7 +358,7 @@ protected:
   Wt::Signal<> m_legendEnabledSignal;
   Wt::Signal<> m_legendDisabledSignal;
   Wt::Signal<double/*xlow*/,double/*xhigh*/> m_xRangeChanged;
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_controlKeyDragg;
+  Wt::Signal<double,double> m_controlKeyDragg;
   Wt::Signal<double,double> m_shiftKeyDragg;
   Wt::Signal<double,double> m_shiftAltKeyDragg;
   Wt::Signal<double,double> m_rightMouseDragg;
@@ -368,10 +373,14 @@ protected:
              double /*original roi lower energy*/,
              bool /*isFinalRange*/> m_roiDrag;
   
+  Wt::Signal<double /*lower energy*/,
+             double /*upper energy*/,
+             int /*force n peaks*/,
+             bool /*isFinalRange*/> m_fitRoiDrag;
+  
   Wt::Signal<double,SpectrumType> m_yAxisScaled;
   
   // Signal Callbacks
-  void chartControlKeyDragCallback( double x0, double x1, int pageX, int pageY );
   void chartShiftKeyDragCallback( double x0, double x1 );
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
@@ -382,6 +391,10 @@ protected:
                                double new_lower_px, double new_upper_px,
                                double original_lower_energy,
                                bool isfinal );
+  void chartFitRoiDragCallback( double lower_energy, double upper_energy,
+                                int npeaks, bool isfinal,
+                                double window_xpx, double window_ypx );
+  
   
   void yAxisScaled( const double scale, const std::string &spectrum );
   

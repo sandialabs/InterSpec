@@ -255,7 +255,8 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       }else
       {
         //In case Wt changes in new versions
-        cerr << "\n\nsnapshotNode->label()->parent() Is Not a WContainerWidget\n\n" << endl;
+        if( buttonBar && snapshotNode->label() )
+          cerr << "\n\nsnapshotNode->label()->parent() Is Not a WContainerWidget\n\n" << endl;
       }//if( rowDiv )
       
       //snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);

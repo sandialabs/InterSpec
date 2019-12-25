@@ -98,6 +98,11 @@
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/GammaXsGui.h"
 
+#if( USE_SPECTRUM_CHART_D3 )
+#include "InterSpec/D3SpectrumDisplayDiv.h"
+#endif
+
+
 //#include <Wt/Dbo/WtSqlTraits>
 
 #if( ALLOW_URL_TO_FILESYSTEM_MAP )
@@ -1963,7 +1968,12 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
     lowerx = lowerx + lowerXChangeFrac*energydelta;
     upperx = upperx + upperXChangeFrac*energydelta;
     
+#if( USE_SPECTRUM_CHART_D3 )
+    D3SpectrumDisplayDiv *specchart = m_viewer->spectrum();
+    specchart->chartFitRoiDragCallback( lowerx, upperx, npeaks, true, -1, -1 );
+#else
     m_viewer->findPeakFromControlDrag( lowerx, upperx, npeaks );
+#endif
     
     vector<PeakDef> foundpeaks, refitOrigPeaks, allPostFitPeaks;
     for( const PeakModel::PeakShrdPtr &peak : *peakModel->peaks() )

@@ -3,60 +3,33 @@
 #include <memory>
 #include <vector>
 #include <utility>
-#include <boost/foreach.hpp>
-#include <boost/math/constants/constants.hpp>
 
-#include <boost/version.hpp>
-#if(BOOST_VERSION >= 104800)
-#include <boost/timer/timer.hpp>
-#endif
-
-#include <Wt/WPen>
-#include <Wt/WText>
 #include <Wt/WLabel>
-#include <Wt/WBreak>
+#include <Wt/WPoint>
 #include <Wt/WServer>
 #include <Wt/WLength>
-#include <Wt/WSpinBox>
-#include <Wt/WIconPair>
-#include <Wt/WCheckBox>
-#include <Wt/WGridLayout>
 #include <Wt/WJavaScript>
-#include <Wt/WMessageBox>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
-#include <Wt/WRadioButton>
-#include <Wt/WButtonGroup>
 #include <Wt/WStringStream>
-#include <Wt/WBorderLayout>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/WContainerWidget>
-#include <Wt/Chart/WDataSeries>
-#include <Wt/Chart/WAbstractChart>
-
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
-#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PopupDiv.h"
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SpectrumChart.h"
 #include "SpecUtils/UtilityFunctions.h"
-#include "InterSpec/CanvasForDragging.h"
-#include "InterSpec/SpectrumDataModel.h"
-#include "InterSpec/D3SpectrumDisplayDiv.h"
-#include "SpecUtils/SpectrumDataStructs.h"
-#include "InterSpec/MassAttenuationTool.h"
-#include "InterSpec/DecayDataBaseServer.h"
 #include "SpecUtils/D3SpectrumExport.h"
-
+#include "InterSpec/SpectrumDataModel.h"
+#include "SpecUtils/SpectrumDataStructs.h"
+#include "InterSpec/D3SpectrumDisplayDiv.h"
 
 using namespace Wt;
 using namespace std;
-
-#define foreach         BOOST_FOREACH
-#define reverse_foreach BOOST_REVERSE_FOREACH
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
@@ -69,7 +42,27 @@ namespace
     
     return val ? t : f;
   };
-}
+  
+  //DeleteOnClosePopupMenu is a PopupDivMenu that deletes itself on close.
+  //  Necassary because (with Wt 3.3.4 at least) using the aboutToHide() signal
+  //  to delete the menu causes a crash.
+  class DeleteOnClosePopupMenu : public PopupDivMenu
+  {
+    bool m_deleteWhenHidden;
+  public:
+    DeleteOnClosePopupMenu( WPushButton *p, const PopupDivMenu::MenuType t )
+    : PopupDivMenu( p, t ), m_deleteWhenHidden( false ) {}
+    virtual ~DeleteOnClosePopupMenu(){}
+    void markForDelete(){ m_deleteWhenHidden = true; }
+    virtual void setHidden( bool hidden, const WAnimation &a = WAnimation() )
+    {
+      PopupDivMenu::setHidden( hidden, a );
+      if( hidden && m_deleteWhenHidden )
+        delete this;
+    }
+  };//class PeakRangePopupMenu
+  
+}//namespace
 
 WT_DECLARE_WT_MEMBER
 (SvgToPngDownload, Wt::JavaScriptFunction, "SvgToPngDownload",
@@ -298,9 +291,6 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     m_xRangeChangedJS.reset( new JSignal<double,double,double,double>( this, "xrangechanged", true ) );
     m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this, _1, _2, _3, _4 ) );
     
-    m_controlKeyDraggJS.reset( new JSignal<double,double,int,int>( this, "controlkeydragged", true ) );
-    m_controlKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartControlKeyDragCallback, this, _1, _2, _3, _4 ) );
-    
     m_shiftKeyDraggJS.reset( new JSignal<double,double>( this, "shiftkeydragged", true ) );
     m_shiftKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftKeyDragCallback, this, _1, _2 ) );
     
@@ -321,6 +311,9 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     
     m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
     m_roiDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRoiDragedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+    
+    m_fitRoiDragJS.reset( new JSignal<double,double,int,bool,double,double>( this, "fitRoiDrag", true ) );
+    m_fitRoiDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartFitRoiDragCallback, this, _1, _2, _3, _4, _5, _6 ) );
     
     m_yAxisDraggedJS.reset( new Wt::JSignal<double,std::string>( this, "yscaled", true ) );
     m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this, _1, _2 ) );
@@ -484,6 +477,12 @@ Wt::Signal<double,double,double,double,double,bool> &D3SpectrumDisplayDiv::roiDr
   return m_roiDrag;
 }
 
+Wt::Signal<double, double, int, bool> &D3SpectrumDisplayDiv::fitRoiDragUpdate()
+{
+  return m_fitRoiDrag;
+}
+
+
 Wt::Signal<double,SpectrumType> &D3SpectrumDisplayDiv::yAxisScaled()
 {
   return m_yAxisScaled;
@@ -494,7 +493,7 @@ Wt::Signal<double,double> &D3SpectrumDisplayDiv::doubleLeftClick()
   return m_doubleLeftClick;
 }
 
-Wt::Signal<double,double,int,int> &D3SpectrumDisplayDiv::controlKeyDragged()
+Wt::Signal<double,double> &D3SpectrumDisplayDiv::controlKeyDragged()
 {
   return m_controlKeyDragg;
 }
@@ -1486,13 +1485,6 @@ bool D3SpectrumDisplayDiv::yAxisScalersIsVisible() const
 }//void xAxisSliderChartIsVisible() const;
 
 
-
-void D3SpectrumDisplayDiv::chartControlKeyDragCallback( double x0, double x1, int pageX, int pageY )
-{
-  cout << "chartControlKeyDragCallback" << endl;
-  m_controlKeyDragg.emit( x0, x1, pageX, pageY );
-}//void D3SpectrumDisplayDiv::chartControlKeyDragCallback(...)
-
 void D3SpectrumDisplayDiv::chartShiftKeyDragCallback( double x0, double x1 )
 {
   cout << "chartShiftKeyDragCallback" << endl;
@@ -1685,6 +1677,312 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
   m_roiDrag.emit( new_lower_energy, new_upper_energy, new_lower_px, new_upper_px,
                   original_lower_energy,  isfinal );
 }//chartRoiDragedCallback(...)
+
+
+void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double upper_energy,
+                                                    int nForcedPeaks, bool isfinal,
+                                                    double window_xpx, double window_ypx )
+{
+  /* ToDo:
+     - try to use RSP if available (need to figure out how to get it here).
+     - Put all of this in a seperate function to post to the Wt Worker pool, and then push results
+     - maybe keep state between calls to speed up subsequent calls
+     - Really punish peaks being close together with no dip in-between to avoid the tendancy to fit lots of peaks.
+   */
+  
+  if( !m_model || !m_model->getData() )
+  {
+    doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
+    return;
+  }
+  
+  
+  if( upper_energy < lower_energy )
+    std::swap( lower_energy, upper_energy );
+  
+  
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+  InterSpec *viewer = app ? app->viewer() : nullptr;
+  std::shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment(SpectrumType::kForeground) : nullptr;
+  std::shared_ptr<const DetectorPeakResponse> detector = meas ? meas->detector() : nullptr;
+  
+  std::shared_ptr<Measurement> foreground = m_model->getData();
+  
+  const size_t nchan = foreground->num_gamma_channels();
+  const bool isHpge = (nchan > 4094);
+  const float erange = upper_energy - lower_energy;
+  const float midenergy = 0.5f*(lower_energy + upper_energy);
+  
+  
+  auto fcnworker = [=](){
+    try
+    {
+      const auto start_cpu_time = UtilityFunctions::get_cpu_time();
+      const auto start_wall_time = UtilityFunctions::get_wall_time();
+      
+      float min_sigma_width_kev, max_sigma_width_kev;
+      expected_peak_width_limits( midenergy, isHpge, min_sigma_width_kev, max_sigma_width_kev );
+      
+      if( erange < min_sigma_width_kev )
+        throw runtime_error( "to small range" );
+      
+      int nPeaks = 1;
+      const size_t start_channel = foreground->find_gamma_channel(lower_energy);
+      const size_t end_channel = foreground->find_gamma_channel(upper_energy);
+      const auto derivative_peaks = secondDerivativePeakCanidatesWithROI( foreground, start_channel, end_channel );
+      const size_t ncandidates = derivative_peaks.size();
+      nPeaks = static_cast<int>( ncandidates );
+      nPeaks = std::max( nPeaks, 1 );
+      nPeaks = std::min( nPeaks, static_cast<int>(2*erange/min_sigma_width_kev) );
+      //Always allow for fitting at least three different number of peaks, even if only single core.
+      // But note! Results are currently dependant on how many cores the users computer has!
+      //  (I dont like this, in principle - need to do some benchmarking to see how long things
+      //   take (on low end devices) to see if we can make the same for all devices)
+      const size_t ncores = static_cast<size_t>( std::max(3, SpecUtilsAsync::num_physical_cpu_cores()) );
+      
+      vector<int> npeakstry;
+      
+      if( nForcedPeaks > 0 && nForcedPeaks < 10 )
+      {
+        npeakstry.push_back( nForcedPeaks );
+      }else
+      {
+        if( nPeaks > 1 && ncores > 1 )
+          npeakstry.push_back( nPeaks - 1 );
+        
+        npeakstry.push_back( nPeaks );
+        
+        if( npeakstry.size() < ncores && ((erange/(nPeaks + 1)) > min_sigma_width_kev) )
+          npeakstry.push_back( nPeaks + 1 );
+        
+        if( (npeakstry.size() < ncores) && nPeaks > 2 )
+          npeakstry.push_back( nPeaks - 2 );
+        
+        //if( npeakstry.size() < ncores && ((erange/(nPeaks + 2)) > min_sigma_width_kev) )
+        //  npeakstry.push_back( nPeaks + 2 );
+        
+        //if( (npeakstry.size() < ncores) && nPeaks > 3 )
+        //  npeakstry.push_back( nPeaks - 3 );
+        
+        //if( npeakstry.size() < ncores  && ((erange/(nPeaks + 3)) > min_sigma_width_kev)  )
+        //  npeakstry.push_back( nPeaks + 3 );
+      }//if( npeaks > 0 && npeaks < 10 )
+      
+      vector<double> chi2s( npeakstry.size() );
+      vector<vector<std::shared_ptr<const PeakDef> > > results( npeakstry.size() );
+      
+      auto worker = [&chi2s, &results, &npeakstry, ncandidates, isfinal,
+                     nForcedPeaks, lower_energy, upper_energy, foreground, detector]( const size_t index ){
+        std::vector<std::shared_ptr<PeakDef> > newpeaks;
+        const auto method = (static_cast<size_t>(npeakstry[index])==ncandidates)
+        ? MultiPeakInitialGuesMethod::FromDataInitialGuess
+        :  MultiPeakInitialGuesMethod::UniformInitialGuess;
+        
+        //Note: InterSpec::findPeakFromControlDrag(...) tries all methods, e.g.,
+        //for( MultiPeakInitialGuesMethod method = MultiPeakInitialGuesMethod(0);
+        //    method < FromInputPeaks;
+        //    method = MultiPeakInitialGuesMethod(method+1) )
+        //{
+        //  ...
+        //}
+        //(we should do this, at least when the number of peaks is forced, however
+        // then we could run into an issue of for the final fit, we could get a
+        // slightly different answer since this (currently) will always force a
+        // number of peaks)
+        
+        
+        //This next function call duplicates a lot of work between threads - may
+        //  be a place that can be optimized if it turns out to be needed.
+        findPeaksInUserRange( lower_energy, upper_energy, npeakstry[index], method,
+                             (isfinal || nForcedPeaks>0), foreground, detector, newpeaks, chi2s[index] );
+        
+        //Note: InterSpec::findPeakFromControlDrag(...) adjusts Chi2 as:
+        //const size_t nbin = end_channel - start_channel;
+        //const double dof = (nbin + 3*npeakstry[index]);
+        //const double chi2Dof = chi2s[index] / dof;
+        //for( size_t i = 0; i < newpeaks.size(); ++i )
+        //  newpeaks[i]->set_coefficient( chi2Dof, PeakDef::Chi2DOF );
+        //(havent checked if this is necassary)
+        
+        for( const auto &p : newpeaks )
+          results[index].push_back( p );
+      };//worker
+      
+      SpecUtilsAsync::ThreadPool pool;
+      for( size_t index = 0; index < npeakstry.size(); ++index )
+        pool.post( [worker,index](){ worker(index); } );
+      
+      pool.join();
+      
+      const auto stop_cpu_time = UtilityFunctions::get_cpu_time();
+      const auto stop_wall_time = UtilityFunctions::get_wall_time();
+      
+      cout << "Peak fitting took " << (stop_cpu_time-start_cpu_time)
+      << " cpu seconds, and " << (stop_wall_time-start_wall_time)
+      << " wall seconds" << endl;
+      
+      //pick the best chi2, but have some weighting to preffer less numbers of peaks
+      size_t best_choice = 0;
+      for( size_t i = 0; i < chi2s.size(); ++i )
+      {
+        cout << "npeakstry=" << npeakstry[i] << " had chi2=" << chi2s[i] << endl;
+        
+        if( results[i].empty() )
+          continue;
+        
+        const int npeaksdiff = npeakstry[i] - npeakstry[best_choice];
+        
+        //Require at least 5% better chi2 for each peak you want to add
+        //  - this was completely drawn from the air - needs actual testing/optimizing.
+        if( (std::max(0.25,(1.0 - 0.05*npeaksdiff)*chi2s[i])) < chi2s[best_choice] )
+          best_choice = i;
+      }//for( loop over results to find best number of peaks )
+      
+      if( results[best_choice].empty() )
+        throw runtime_error( "Failed to fit for peaks." );
+      
+      WApplication::UpdateLock lock( app );
+      
+      if( !lock )
+      {
+        cerr << "Failed to get WApplication::UpdateLock in D3SpectrumDisplayDiv::chartFitRoiDragCallback(...)" << endl;
+        return;
+      }
+      
+      if( isfinal )
+      {
+        deque< PeakModel::PeakShrdPtr > preaddpeaks, postaddpeaks;
+        if( m_peakModel->peaks() ) //should always be true, but JIC
+          preaddpeaks = *m_peakModel->peaks();
+        
+        std::vector<PeakDef> peaks_to_add;
+        for( auto p : results[best_choice] )
+          peaks_to_add.push_back( *p );
+        m_peakModel->addPeaks( peaks_to_add );
+        
+        if( m_peakModel->peaks() ) //should always be true, but JIC
+          postaddpeaks = *m_peakModel->peaks();
+        
+        vector< PeakModel::PeakShrdPtr > added_peaks;
+        for( const auto &p : postaddpeaks )
+        {
+          if( !std::count(begin(preaddpeaks), end(preaddpeaks), p) )
+            added_peaks.push_back( p );
+        }
+        
+        // If the coordinates of the event that triggered this fitting are on the page
+        // (i.e. at least one not negative), then pop-up a menu to allow the user to
+        //  select number of peaks.
+        if( window_xpx >= 0 || window_ypx >= 0 )
+        {
+          DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu( nullptr, PopupDivMenu::TransientMenu );
+          menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
+          menu->setPositionScheme( Wt::Absolute );
+          
+          PopupDivMenuItem *item = nullptr, *selecteditem = nullptr;
+          const bool ismobile = false; //isMobile();
+          if( ismobile )
+            item = menu->addPhoneBackItem( NULL );
+          
+          item = menu->addMenuItem( "Peaks To Keep In ROI:" );
+          item->disable();
+          item->setSelectable( false );
+          menu->addSeparator();
+          
+          const vector<const char *> numnames{ "Cancel", "Single Peak", "Two Peaks",
+            "Three Peaks", "Four Peaks", "Five Peaks", "Six Peaks", "Seven Peaks",
+            "Eight Peaks", "Nine Peaks", "Ten Peaks", "Eleven Peaks"
+          };
+          
+          for( size_t i = 0; i < (peaks_to_add.size() + 3); ++i )
+          {
+            string name = ((i < numnames.size()) ? std::string(numnames[i]) : (std::to_string(i) + " Peaks"));
+            if( i == npeakstry[best_choice] )
+              name = "Keep " + name;
+            item = menu->addMenuItem( name );
+            if( i == npeakstry[best_choice] )
+            {
+              item->setFocus();
+              item->decorationStyle().font().setWeight( Wt::WFont::Weight::Bold );
+              //item->decorationStyle().setBackgroundColor(<#WColor color#>)
+              selecteditem = item;
+            }
+            
+            
+            item->triggered().connect( std::bind( [=](){
+              menu->setHidden( true );
+              
+              if( i == npeakstry[best_choice] )
+                return;
+              
+              for( const auto &p : added_peaks )
+              {
+                try{
+                  m_peakModel->removePeak( p );
+                }catch(std::exception &e){
+                  cerr << "Unexpected error removing peaks - must not be a valid peak any more..." << endl;
+                }
+              }//for( const auto &p : added_peaks )
+              
+              if( i > 0 )
+                chartFitRoiDragCallback( lower_energy, upper_energy, static_cast<int>(i), true, window_xpx, window_ypx );
+            }) );
+          }
+          
+          if( selecteditem )
+            menu->select( selecteditem );
+          
+          if( ismobile )
+          {
+            menu->addStyleClass( " Wt-popupmenu Wt-outset" );
+            menu->showFromMouseOver();
+          }else
+          {
+            menu->addStyleClass( " Wt-popupmenu Wt-outset NumPeakSelect" );
+            menu->popup( WPoint(window_xpx-30,window_ypx-30) );
+            //menu->popup( WPoint(200,200) );
+          }
+        }
+        
+        //pop-up the menu to let the user select how many peaks... see comments bellow
+        m_controlKeyDragg.emit( lower_energy, upper_energy );
+      }else
+      {
+        std::vector<std::shared_ptr<const PeakDef> > peaks( begin(results[best_choice]), end(results[best_choice]) );
+        const string roiJson = PeakDef::gaus_peaks_to_json( peaks );
+        doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
+      }
+      
+      m_fitRoiDrag.emit( lower_energy, upper_energy, nForcedPeaks, isfinal );
+      app->triggerUpdate();
+    }catch( std::exception &e )
+    {
+      WApplication::UpdateLock lock( app );
+      
+      if( !lock )
+      {
+        cerr << "Failed to get WApplication::UpdateLock in (2) D3SpectrumDisplayDiv::chartFitRoiDragCallback(...)" << endl;
+        return;
+      }
+      
+      cerr << "Caught exception: " << e.what() << endl;
+      
+      PeakDef tmppeak(midenergy, 0.5*erange, 0);
+      std::shared_ptr<PeakContinuum> cont = tmppeak.continuum();
+      cont->calc_linear_continuum_eqn( foreground, lower_energy, upper_energy, 0 );
+      
+      std::vector<std::shared_ptr<const PeakDef> > peaks{ make_shared<const PeakDef>(tmppeak) };
+      const string roiJson = PeakDef::gaus_peaks_to_json( peaks );
+      
+      doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
+      m_fitRoiDrag.emit( lower_energy, upper_energy, nForcedPeaks, isfinal );
+      app->triggerUpdate();
+    }//try / catch
+  };//fcnworker
+  
+  Wt::WServer::instance()->post( wApp->sessionId(), fcnworker );
+}//void chartFitRoiDragCallback(...)
+
 
 
 void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &spectrum )
