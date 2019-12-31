@@ -49,7 +49,6 @@
 #include "testing/developcode.h"
 #endif
 
-
 //Forward declaration
 Wt::WApplication *createApplication( const Wt::WEnvironment &env );
 

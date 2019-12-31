@@ -215,6 +215,10 @@ private:
 class MultiPeakFitChi2Fcn
 : public ROOT::Minuit2::FCNBase
 {
+  public:
+  static std::atomic<size_t> sm_ncalls;
+  static std::atomic<bool> sm_call_opt_integrate;
+  
   //This class is intended to fit for multiple peaks in a user defined region
   //  of the data, ignoring all other peaks.
   //  It currently does two things PeakFitChi2Fcn does not:
@@ -230,6 +234,7 @@ public:
   virtual double Up() const;
   virtual double operator()( const std::vector<double>& params ) const;
   virtual double DoEval( const double *x, bool punish_to_close ) const;
+  double DoEval( const double *x, bool punish_to_close, std::vector<PeakDef> &peaks ) const;
   
   void parametersToPeaks( std::vector<PeakDef> &peaks, const double *x,
                           const double *errors = 0 ) const;
@@ -251,6 +256,11 @@ protected:
   std::vector<double> m_binLowerEdge, m_binUpperEdge, m_dataCounts;
   PeakContinuum::OffsetType m_offsetType;
   std::shared_ptr<const Measurement> m_data;
+  
+  //If sm_call_opt_integrate is true, then will re-use the following peaks to
+  //  avoid alocation overhead and such - currently only for developemtn
+  //  (looks to speed things up by maybe 8% or so?)
+  mutable std::vector<PeakDef> m_workingpeaks;
 };//class MultiPeakFitChi2Fcn
 
 

@@ -57,6 +57,10 @@ static_assert( int(PeakFitChi2Fcn::LandauSigma)      == int(PeakDef::LandauSigma
 static_assert( int(PeakFitChi2Fcn::Chi2DOF)          == int(PeakDef::Chi2DOF), "PeakFitChi2Fcn::Chi2DOF != PeakDef::Chi2DOF" );
 
 
+std::atomic<size_t> MultiPeakFitChi2Fcn::sm_ncalls( 0 );
+std::atomic<bool> MultiPeakFitChi2Fcn::sm_call_opt_integrate( false );
+
+  
 namespace
 {
   template<class T>
@@ -986,6 +990,8 @@ double MultiPeakFitChi2Fcn::operator()( const std::vector<double>& params ) cons
 {
   assert( params.size() == static_cast<size_t>(m_numOffset + 3*m_npeak) );
   
+  if( sm_call_opt_integrate )
+    return DoEval( &(params[0]), true, m_workingpeaks );
   return DoEval( &(params[0]), true );
 }
 
@@ -1164,6 +1170,7 @@ double MultiPeakFitChi2Fcn::evalRelBinRange( const int beginRelBin,
 //      chi2 += fabs(nfitpeak + ncontinuim);
 //  }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
   
+  
   for( int relbin = beginRelBin; relbin < endRelBin; ++relbin )
   {
     const double xbinlow = m_binLowerEdge[relbin];
@@ -1179,6 +1186,8 @@ double MultiPeakFitChi2Fcn::evalRelBinRange( const int beginRelBin,
     const double nabove = (ndata - ncontinuim - nfitpeak);
     chi2 += nabove*nabove / datauncert;
   }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
+  
+  
   
   return chi2;
 }//double MultiPeakFitChi2Fcn::evalRelBinRange
@@ -1252,6 +1261,8 @@ double MultiPeakFitChi2Fcn::evalMultiPeakInsentive(
 
 double MultiPeakFitChi2Fcn::DoEval( const double *x, bool punish_to_close ) const
 {
+  ++sm_ncalls;
+  
   double chi2 = 0.0;
   vector<PeakDef> peaks( m_npeak );
   
@@ -1275,6 +1286,33 @@ double MultiPeakFitChi2Fcn::DoEval( const double *x, bool punish_to_close ) cons
   return chi2;
 }//double DoEval( const double *x ) const
 
+
+double MultiPeakFitChi2Fcn::DoEval( const double *x, bool punish_to_close, std::vector<PeakDef> &peaks ) const
+{
+  ++sm_ncalls;
+  
+  double chi2 = 0.0;
+  peaks.resize( m_npeak );
+  
+  const size_t npars = static_cast<size_t>(m_numOffset + 3*m_npeak);
+  for( size_t i = 0; i < npars; ++i )
+    if( IsNan(x[i]) || IsInf(x[i]) )
+      return DBL_MAX;
+  
+  parametersToPeaks( peaks, x );
+  
+  std::sort( peaks.begin(), peaks.end(), &PeakDef::lessThanByMean );
+  
+  chi2 += evalRelBinRange( 0, m_nbin, peaks );
+  
+  if( punish_to_close )
+    chi2 += evalMultiPeakInsentive( peaks );
+  
+  if( IsInf(chi2) || IsNan(chi2) )
+    return DBL_MAX;
+  
+  return chi2;
+}//double DoEval( const double *x ) const
 
 
 LinearProblemSubSolveChi2Fcn::LinearProblemSubSolveChi2Fcn(

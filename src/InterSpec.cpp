@@ -1757,7 +1757,7 @@ void InterSpec::addPeakFromRightClick()
     for( auto p : answer )
       orig_answer.push_back( make_shared<PeakDef>( *p ) );
     
-    findPeaksInUserRange( x0, x1, int(answer.size()), method, true, dataH,
+    findPeaksInUserRange( x0, x1, int(answer.size()), method, dataH,
                         m_dataMeasurement->detector(), answer, fitChi2 );
   
     std::vector<PeakDef> newRoiPeaks;

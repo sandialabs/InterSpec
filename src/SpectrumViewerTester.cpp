@@ -116,9 +116,9 @@
 using namespace Wt;
 using namespace std;
 
-const double SpectrumViewerTester::sm_mean_max_nsigma_diff      = 0.1;
-const double SpectrumViewerTester::sm_amplitude_max_frac_diff   = 0.05;
-const double SpectrumViewerTester::sm_width_max_frac_diff       = 0.05;
+double SpectrumViewerTester::sm_mean_max_nsigma_diff      = 0.1;
+double SpectrumViewerTester::sm_amplitude_max_frac_diff   = 0.05;
+double SpectrumViewerTester::sm_width_max_frac_diff       = 0.05;
 const double SpectrumViewerTester::sm_lower_roi_max_nsigma_diff = 0.1;
 const double SpectrumViewerTester::sm_upper_roi_max_nsigma_diff = 0.1;
 const double SpectrumViewerTester::sm_multipeakfit_nominal_weight = 0.5;

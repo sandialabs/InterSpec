@@ -224,7 +224,6 @@ enum MultiPeakInitialGuesMethod
 //  the range x0 to x1
 void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuesMethod method,
-                          const bool beThorough,
                           std::shared_ptr<const Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
                           std::vector<std::shared_ptr<PeakDef> > &answer,
