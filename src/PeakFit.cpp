@@ -804,7 +804,6 @@ std::vector< std::vector<PeakDef> > causilyDisconnectedPeaks( const double x0,
 
 void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuesMethod method,
-                          const bool beThorough,
                           std::shared_ptr<const Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
                           vector<std::shared_ptr<PeakDef> > &answer,
@@ -1131,19 +1130,15 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   ROOT::Minuit2::MnMinimize fitter( chi2fcn, inputParamState, strategy );
   
   unsigned int maxFcnCall = 5000;
-  const double tolerance = beThorough ? 0.5 : 0.75*nPeaks;
+  const double tolerance = 0.5; //beThorough ? 0.5 : 0.75*nPeaks;
   
   ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
-  
   //cout << "minimum.NFcn()=" << minimum.NFcn() << endl;
   
-  if( beThorough )
-  {
-    if( !minimum.IsValid() )
-      minimum = fitter( maxFcnCall, tolerance );
-    if( !minimum.IsValid() )
-      minimum = fitter( maxFcnCall, tolerance );
-  }//if( beThorough )
+  if( !minimum.IsValid() )
+    minimum = fitter( maxFcnCall, tolerance );
+  if( !minimum.IsValid() )
+    minimum = fitter( maxFcnCall, tolerance );
   
   const ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
   const vector<double> values = fitParams.Params();

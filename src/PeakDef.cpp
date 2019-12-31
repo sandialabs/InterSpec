@@ -52,6 +52,119 @@ const int PeakContinuum::sm_xmlSerializationVersion = 0;
 
 namespace
 {
+  /** The boost::math::erf() function implementation extracted for double
+   precision (53 bit mantessa), and the polynomial equations explicitly written
+   out - seems to be ~3 times as fast as calling boost::math::erf(...) itself.
+   */
+  double boost_erf_imp( double z )
+  {
+    if(z < 0)
+      return -boost_erf_imp( -z );
+    
+    if( z < 0.5 )
+    {
+      if( z < 1e-10 )
+      {
+        return z * 1.125f + z * 0.003379167095512573896158903121545171688;
+      }else
+      {
+        const double zz = z * z;
+        const double P_eval = (((zz*-0.000322780120964605683831 + -0.00772758345802133288487)*zz + -0.0509990735146777432841)*zz + -0.338165134459360935041)*zz + 0.0834305892146531832907;
+        const double Q_eval = (((zz*0.000370900071787748000569 + 0.00858571925074406212772)*zz + 0.0875222600142252549554)*zz + 0.455004033050794024546)*zz + 1.0;
+        
+        return z * (1.044948577880859375f + P_eval / Q_eval);
+      }
+    }else if( z < 5.8f )
+    {
+      if(z < 1.5f)
+      {
+        static const double Y = 0.405935764312744140625f;
+        static const double P[] = { -0.098090592216281240205, 0.178114665841120341155,
+          0.191003695796775433986, 0.0888900368967884466578, 0.0195049001251218801359,
+          0.00180424538297014223957
+        };
+        static const double Q[] = { 1.0, 1.84759070983002217845,
+          1.42628004845511324508, 0.578052804889902404909, 0.12385097467900864233,
+          0.0113385233577001411017, 0.337511472483094676155e-5
+        };
+        
+        const double zarg = z - 0.5;
+        const double P_eval = ((((zarg*P[5] + P[4])*zarg + P[3])*zarg + P[2])*zarg + P[1])*zarg + P[0];
+        const double Q_eval = (((((Q[6]*zarg + Q[5])*zarg + Q[4])*zarg + Q[3])*zarg + Q[2])*zarg + Q[1])*zarg + Q[0];
+        
+        return 1 - (Y + P_eval / Q_eval) * (exp(-z * z) / z);
+      }else if(z < 2.5f)
+      {
+        static const double Y = 0.50672817230224609375f;
+        static const double P[] = { -0.0243500476207698441272, 0.0386540375035707201728,
+          0.04394818964209516296, 0.0175679436311802092299, 0.00323962406290842133584,
+          0.000235839115596880717416
+        };
+        static const double Q[] = { 1.0, 1.53991494948552447182, 0.982403709157920235114,
+          0.325732924782444448493, 0.0563921837420478160373, 0.00410369723978904575884
+        };
+        
+        const double zarg = z - 1.5;
+        const double P_eval = ((((zarg*P[5] + P[4])*zarg + P[3])*zarg + P[2])*zarg + P[1])*zarg + P[0];
+        const double Q_eval = ((((zarg*Q[5] + Q[4])*zarg + Q[3])*zarg + Q[2])*zarg + Q[1])*zarg + Q[0];
+        
+        return 1 - (Y + P_eval / Q_eval) * (exp(-z * z) / z);
+      }
+      else if(z < 4.5f)
+      {
+        static const double Y = 0.5405750274658203125f;
+        static const double P[] = { 0.00295276716530971662634, 0.0137384425896355332126,
+          0.00840807615555585383007, 0.00212825620914618649141, 0.000250269961544794627958,
+          0.113212406648847561139e-4
+        };
+        static const double Q[] = { 1.0, 1.04217814166938418171,
+          0.442597659481563127003, 0.0958492726301061423444, 0.0105982906484876531489,
+          0.000479411269521714493907
+        };
+        
+        const double zarg = z - 3.5;
+        const double P_eval = ((((zarg*P[5] + P[4])*zarg + P[3])*zarg + P[2])*zarg + P[1])*zarg + P[0];
+        const double Q_eval = ((((zarg*Q[5] + Q[4])*zarg + Q[3])*zarg + Q[2])*zarg + Q[1])*zarg + Q[0];
+        
+        return 1 - (Y + P_eval / Q_eval) * (exp(-z * z) / z);
+      }else
+      {
+        static const double Y = 0.5579090118408203125f;
+        static const double P[] = { 0.00628057170626964891937, 0.0175389834052493308818,
+          -0.212652252872804219852, -0.687717681153649930619, -2.5518551727311523996,
+          -3.22729451764143718517, -2.8175401114513378771
+        };
+        static const double Q[] = { 1.0, 2.79257750980575282228, 11.0567237927800161565,
+          15.930646027911794143, 22.9367376522880577224, 13.5064170191802889145,
+          5.48409182238641741584
+        };
+        
+        const double zarg = 1.0 / z;
+        const double P_eval = (((((P[6]*zarg + P[5])*zarg + P[4])*zarg + P[3])*zarg + P[2])*zarg + P[1])*zarg + P[0];
+        const double Q_eval = (((((Q[6]*zarg + Q[5])*zarg + Q[4])*zarg + Q[3])*zarg + Q[2])*zarg + Q[1])*zarg + Q[0];
+        
+        return 1 - (Y + P_eval / Q_eval) * (exp(-z * z) / z);
+      }
+    }
+    
+    return 1;
+  }//double boost_erf_imp( double z )
+  
+  
+  /*
+  double erf_approx( const double x )
+  {
+    //https://stackoverflow.com/questions/457408/is-there-an-easily-available-implementation-of-erf-for-python#answer-457805
+    // Error is less than 1.5 * 10-7 for all inputs
+    // (originally from Handbook of Mathematical Functions)
+    const double sign = (x >= 0) ? 1 : -1;
+    x = fabs(x);
+    const double t = 1.0/(1.0 + 0.3275911*x);
+    const double y = 1.0 - (((((1.061405429 * t + -1.453152027) * t) + 1.421413741) * t + -0.284496736) * t + 0.254829592) * t * std::exp(-x * x);
+    return sign * y;
+  }
+   */
+  
   //clones 'source' into the document that 'result' is a part of.
   //  'result' is cleared and set lexically equal to 'source'.
   void clone_node_deep( const ::rapidxml::xml_node<char> *source,
@@ -3296,6 +3409,7 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
 }//double gauss_integral( const double x0, const double x1 ) const;
 
 
+
 double PeakDef::offset_integral( const double x0, const double x1 ) const
 {
   return m_continuum->offset_integral( x0, x1 );
@@ -3384,8 +3498,6 @@ double PeakDef::skew_integral( const double x0, const double x1 ) const
   return area;
 }//double skew_integral( const double x0, const double x1 ) const
 
-
-
 double PeakDef::gaus_integral( const double peak_mean, const double peak_sigma,
                                const double peak_amplitude,
                                const double x0, const double x1 )
@@ -3393,21 +3505,12 @@ double PeakDef::gaus_integral( const double peak_mean, const double peak_sigma,
   if( peak_sigma==0.0 || peak_amplitude==0.0 )
     return 0.0;
 
-  //Since the data is only float accuracy, there is no reason to calculate
-  //  things past 9 digits (the erf function does hit the profiler pretty
-  //  decently while fitting for peaks)
-  using boost::math::policies::digits10;
-  typedef boost::math::policies::policy<digits10<9> > my_pol_9;
+  const double sqrt2 = boost::math::constants::root_two<double>();  //M_SQRT2 (but need to use '#define _USE_MATH_DEFINES' before #include <cmath>)
   
-  const double sqrt2 = boost::math::constants::root_two<double>();
+  const double erflowarg = (x0 - peak_mean)/(sqrt2*peak_sigma);
+  const double erfhigharg = (x1 - peak_mean)/(sqrt2*peak_sigma);
   
-  const double range = x1 - x0;
-  const double erflowarg = (x0-peak_mean)/(sqrt2*peak_sigma);
-  const double erfhigharg = (x0+range-peak_mean)/(sqrt2*peak_sigma);
-  const double cdflow = 0.5*( 1.0 + boost::math::erf( erflowarg, my_pol_9() ) );
-  const double cdhigh = 0.5*( 1.0 + boost::math::erf( erfhigharg, my_pol_9() ) );
-
-  return peak_amplitude * (cdhigh - cdflow);
+  return 0.5 * peak_amplitude * (boost_erf_imp(erfhigharg) - boost_erf_imp(erflowarg));
 }//double gaus_integral(...)
 
 
@@ -3699,36 +3802,50 @@ void PeakContinuum::eqn_from_offsets( size_t lowchannel,
   }
 }//eqn_from_offsets(...)
 
-
 double PeakContinuum::offset_eqn_integral( const double *coefs,
-                                           PeakContinuum::OffsetType type,
-                                           double x0, double x1,
-                                           const double peak_mean )
+                                          PeakContinuum::OffsetType type,
+                                          double x0, double x1,
+                                          const double peak_mean )
 {
+  double answer = 0.0;
+  x0 -= peak_mean;
+  x1 -= peak_mean;
+  
+  //Explicitly evaluating the ppolynomial speeds up peak fitting by about a factor of two - suprising!
+  //const int maxorder = static_cast<int>( type );
+  //for( int order = 0; order < maxorder; ++order )
+  //{
+  //  const double exp = order + 1.0;
+  //  answer += (coefs[order]/exp) * (std::pow(x1,exp) - std::pow(x0,exp));
+  //}//for( int order = 0; order < maxorder; ++order )
+  
   switch( type )
   {
     case NoOffset: case External:
       throw runtime_error( "PeakContinuum::offset_eqn_integral(...) may only be"
-                           " called for polynomial backgrounds" );
+                          " called for polynomial backgrounds" );
       
-    case Constant:   case Linear:
-    case Quadratic: case Cubic:
-    break;
+    case Cubic:
+      answer += 0.25*coefs[3]*(x1*x1*x1*x1 - x0*x0*x0*x0);
+      //fallthrough intentional
+      
+    case Quadratic:
+      answer += 0.333333333333333*coefs[2]*(x1*x1*x1 - x0*x0*x0);
+      //fallthrough intentional
+      
+    case Linear:
+      answer += 0.5*coefs[1]*(x1*x1 - x0*x0);
+      //fallthrough intentional
+      
+    case Constant:
+      answer += coefs[0]*(x1 - x0);
+      break;
   };//enum OffsetType
-    
-  x0 -= peak_mean;
-  x1 -= peak_mean;
-  
-  double answer = 0.0;
-  const int maxorder = static_cast<int>( type );
-  for( int order = 0; order < maxorder; ++order )
-  {
-    const double exp = order + 1.0;
-    answer += (coefs[order]/exp) * (std::pow(x1,exp) - std::pow(x0,exp));
-  }//for( int order = 0; order < maxorder; ++order )
   
   return std::max( answer, 0.0 );
 }//offset_eqn_integral(...)
+
+
 
 
 void PeakContinuum::translate_offset_polynomial( double *new_coefs,

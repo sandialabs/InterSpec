@@ -189,9 +189,9 @@ protected:
   int m_picHeight;
 
 public:
-  static const double sm_mean_max_nsigma_diff;
-  static const double sm_amplitude_max_frac_diff;
-  static const double sm_width_max_frac_diff;
+  static double sm_mean_max_nsigma_diff;
+  static double sm_amplitude_max_frac_diff;
+  static double sm_width_max_frac_diff;
   static const double sm_lower_roi_max_nsigma_diff;
   static const double sm_upper_roi_max_nsigma_diff;
   static const double sm_multipeakfit_nominal_weight;

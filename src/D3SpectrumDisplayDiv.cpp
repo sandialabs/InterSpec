@@ -1794,7 +1794,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
         //This next function call duplicates a lot of work between threads - may
         //  be a place that can be optimized if it turns out to be needed.
         findPeaksInUserRange( lower_energy, upper_energy, npeakstry[index], method,
-                             (isfinal || nForcedPeaks>0), foreground, detector, newpeaks, chi2s[index] );
+                             foreground, detector, newpeaks, chi2s[index] );
         
         //Note: InterSpec::findPeakFromControlDrag(...) adjusts Chi2 as:
         //const size_t nbin = end_channel - start_channel;

@@ -540,8 +540,8 @@ public:
   
   //gauss_integral(): gives the area of the Gaussian and Skew (if applicable)
   //  components of the peak, between x0 and x1.
-  //  Results have approximately 9 decimal digits of accuracy.
   double gauss_integral( const double x0, const double x1 ) const;
+  
   
   //offset_integral(): gives area of the continuum component between x0 and x1.
   double offset_integral( const double x0, const double x1 ) const;
