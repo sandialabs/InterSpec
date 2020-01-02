@@ -229,17 +229,23 @@ public:
   MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<const Measurement> data,
                       PeakContinuum::OffsetType offsetType,
                       const int lowerbin, const int upperbin );
+  
   MultiPeakFitChi2Fcn &operator=( const MultiPeakFitChi2Fcn &rhs );
+  
   
   virtual double Up() const;
   virtual double operator()( const std::vector<double>& params ) const;
-  virtual double DoEval( const double *x, bool punish_to_close ) const;
-  double DoEval( const double *x, bool punish_to_close, std::vector<PeakDef> &peaks ) const;
+  virtual double DoEval( const double *x ) const;
+  double DoEval( const double *x, std::vector<PeakDef> &peaks ) const;
   
   void parametersToPeaks( std::vector<PeakDef> &peaks, const double *x,
                           const double *errors = 0 ) const;
   
+  double dof() const;
   int nbin() const;
+  
+  void set_reldiff_punish_start( double reldiff_punish_start );
+  void set_reldiff_punish_weight( double reldiff_punish_weight );
   
   //evalRelBinRange(...): returns chi2 of peaks for the data range.
   //  Note that bin numbers are internal bin numbers (so from 0 to nbin())
@@ -256,6 +262,27 @@ protected:
   std::vector<double> m_binLowerEdge, m_binUpperEdge, m_dataCounts;
   PeakContinuum::OffsetType m_offsetType;
   std::shared_ptr<const Measurement> m_data;
+  
+  /* How close peaks have to be together before you start applying a wieght
+   to the chi2 to punish this - this keeps ROIs with more than one peak from
+   collapsing to have multiple peaks located at the same mean and width.
+   
+   The Default value of 1.25 is good for situations where the user explicitly
+   specifies how many peaks are in a ROI.
+   A value of around 2.35482 is better when the number of peaks is being guessed
+   in the fit.
+   */
+  double m_reldiff_punish_start;
+  
+  /* The weight to apply for punishment of near-by peaks.
+   Default value of 2.0.
+   A negative or zero value turns off this punishment.
+   
+   ToDo: Currently when this weight "turns on", the chi2 is very discontinous,
+         need to define a much more reasonable weighting factor.
+   */
+  double m_reldiff_punish_weight;
+  
   
   //If sm_call_opt_integrate is true, then will re-use the following peaks to
   //  avoid alocation overhead and such - currently only for developemtn
