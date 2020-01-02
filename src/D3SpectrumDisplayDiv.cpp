@@ -25,6 +25,7 @@
 #include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/D3SpectrumExport.h"
 #include "InterSpec/SpectrumDataModel.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
@@ -1768,15 +1769,20 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
         //  npeakstry.push_back( nPeaks + 3 );
       }//if( npeaks > 0 && npeaks < 10 )
       
+      std::sort( begin(npeakstry), end(npeakstry) );
+      
       vector<double> chi2s( npeakstry.size() );
       vector<vector<std::shared_ptr<const PeakDef> > > results( npeakstry.size() );
       
-      auto worker = [&chi2s, &results, &npeakstry, ncandidates, isfinal,
+      //cout << "ncandidates=" << ncandidates << endl;
+      
+      auto worker = [&chi2s, &results, &npeakstry, ncandidates,
                      nForcedPeaks, lower_energy, upper_energy, foreground, detector]( const size_t index ){
         std::vector<std::shared_ptr<PeakDef> > newpeaks;
         const auto method = (static_cast<size_t>(npeakstry[index])==ncandidates)
         ? MultiPeakInitialGuesMethod::FromDataInitialGuess
         :  MultiPeakInitialGuesMethod::UniformInitialGuess;
+        
         
         //Note: InterSpec::findPeakFromControlDrag(...) tries all methods, e.g.,
         //for( MultiPeakInitialGuesMethod method = MultiPeakInitialGuesMethod(0);
@@ -1817,26 +1823,35 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       const auto stop_cpu_time = UtilityFunctions::get_cpu_time();
       const auto stop_wall_time = UtilityFunctions::get_wall_time();
       
-      cout << "Peak fitting took " << (stop_cpu_time-start_cpu_time)
-      << " cpu seconds, and " << (stop_wall_time-start_wall_time)
-      << " wall seconds" << endl;
+      //Peak fitting can take up to a third of a second or so
+      //cout << "Peak fitting took " << (stop_cpu_time-start_cpu_time)
+      //     << " cpu seconds, and " << (stop_wall_time-start_wall_time)
+      //     << " wall seconds" << endl;
       
       //pick the best chi2, but have some weighting to preffer less numbers of peaks
       size_t best_choice = 0;
       for( size_t i = 0; i < chi2s.size(); ++i )
       {
-        cout << "npeakstry=" << npeakstry[i] << " had chi2=" << chi2s[i] << endl;
-        
         if( results[i].empty() )
           continue;
         
         const int npeaksdiff = npeakstry[i] - npeakstry[best_choice];
         
-        //Require at least 5% better chi2 for each peak you want to add
+        //Require at least 10% better chi2 for each peak you want to add
         //  - this was completely drawn from the air - needs actual testing/optimizing.
-        if( (std::max(0.25,(1.0 - 0.05*npeaksdiff)*chi2s[i])) < chi2s[best_choice] )
+        const double weight = std::max(0.25,(1.0 - 0.10*npeaksdiff));
+        //cout << "npeakstry=" << npeakstry[i] << " had chi2=" << chi2s[i]
+        //     << ", npeaksdiff=" << npeaksdiff << ", weight=" << weight
+        //     << ", chi2s[" << best_choice << "]=" << chi2s[best_choice]
+        //     << " npeakstry[" << best_choice << "]=" << npeakstry[best_choice]
+        //     << endl;
+        
+        
+        if( chi2s[i] < weight*chi2s[best_choice] )
           best_choice = i;
       }//for( loop over results to find best number of peaks )
+      
+      //cout << "Chose " << npeakstry[best_choice] << " peaks" << endl;
       
       if( results[best_choice].empty() )
         throw runtime_error( "Failed to fit for peaks." );
@@ -1857,7 +1872,22 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : results[best_choice] )
-          peaks_to_add.push_back( *p );
+        {
+          PeakDef peak = *p;
+          
+          //Assign nuclide from reference lines
+          if( viewer )
+          {
+            const bool showingEscape = viewer->showingFeatureMarker(InterSpec::FeatureMarkerType::EscapePeakMarker);
+            const auto refwidget = viewer->referenceLinesWidget();
+            const bool colorFromRefLines = viewer->colorPeaksBasedOnReferenceLines();
+            PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
+                            foreground, refwidget, colorFromRefLines, showingEscape );
+          }//if( viewer )
+          
+          peaks_to_add.emplace_back( std::move(peak) );
+        }//for( loop over fit peaks and add them to peaks_to_add and assign nuclides )
+        
         m_peakModel->addPeaks( peaks_to_add );
         
         if( m_peakModel->peaks() ) //should always be true, but JIC

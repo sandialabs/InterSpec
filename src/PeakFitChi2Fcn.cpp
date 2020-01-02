@@ -924,7 +924,9 @@ MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<cons
     m_upperbin( upperbin ),
     m_numOffset( 0 ),
     m_offsetType( offsetType ),
-    m_data( data )
+    m_data( data ),
+    m_reldiff_punish_start( 1.25 ),
+    m_reldiff_punish_weight( 2.0 )
 {
   m_rangeLow = data->GetBinLowEdge( m_lowerbin );
   m_highRange = data->GetBinLowEdge( m_upperbin )
@@ -975,6 +977,8 @@ MultiPeakFitChi2Fcn &MultiPeakFitChi2Fcn::operator=( const MultiPeakFitChi2Fcn &
   m_binUpperEdge = rhs.m_binUpperEdge;
   m_dataCounts = rhs.m_dataCounts;
   m_nbin = rhs.m_nbin;
+  m_reldiff_punish_start = rhs.m_reldiff_punish_start;
+  m_reldiff_punish_weight = rhs.m_reldiff_punish_weight;
   
   return *this;
 }//operator=
@@ -991,8 +995,8 @@ double MultiPeakFitChi2Fcn::operator()( const std::vector<double>& params ) cons
   assert( params.size() == static_cast<size_t>(m_numOffset + 3*m_npeak) );
   
   if( sm_call_opt_integrate )
-    return DoEval( &(params[0]), true, m_workingpeaks );
-  return DoEval( &(params[0]), true );
+    return DoEval( &(params[0]), m_workingpeaks );
+  return DoEval( &(params[0]) );
 }
 
 
@@ -1198,11 +1202,28 @@ int MultiPeakFitChi2Fcn::nbin() const
   return m_nbin;
 }
 
+double MultiPeakFitChi2Fcn::dof() const
+{
+  return 1.0*m_nbin - 2.0*m_npeak - (m_offsetType - 1);
+}
+
+
+void MultiPeakFitChi2Fcn::set_reldiff_punish_start( double reldiff_punish_start )
+{
+  m_reldiff_punish_start = reldiff_punish_start;
+}//
+
+
+void MultiPeakFitChi2Fcn::set_reldiff_punish_weight( double reldiff_punish_weight )
+{
+  m_reldiff_punish_weight = reldiff_punish_weight;
+}//
+
 double MultiPeakFitChi2Fcn::evalMultiPeakInsentive(
                                       const std::vector<PeakDef> &peaks ) const
 {
   double chi2 = 0.0;
-  const double punishment_chi2 = 2.0*m_nbin;
+  const double punishment_chi2 = m_reldiff_punish_weight * m_nbin;
   
   //punish if the peaks are too close.
   for( size_t i = 1; i < peaks.size(); ++i )
@@ -1214,7 +1235,7 @@ double MultiPeakFitChi2Fcn::evalMultiPeakInsentive(
       double reldist = dist / sigma;
       if( reldist < 0.01 || IsInf(reldist) || IsNan(reldist) )
         reldist = 0.01;
-      if( reldist < 1.25 )
+      if( reldist < m_reldiff_punish_start )
         chi2 += (punishment_chi2 / reldist);
     }//for( size_t j = 0; j < i; ++j )
   }//for( size_t i = 1; i < peaks.size(); ++i )
@@ -1259,7 +1280,7 @@ double MultiPeakFitChi2Fcn::evalMultiPeakInsentive(
 }//evalMultiPealInsentive(...)
 
 
-double MultiPeakFitChi2Fcn::DoEval( const double *x, bool punish_to_close ) const
+double MultiPeakFitChi2Fcn::DoEval( const double *x ) const
 {
   ++sm_ncalls;
   
@@ -1277,7 +1298,7 @@ double MultiPeakFitChi2Fcn::DoEval( const double *x, bool punish_to_close ) cons
   
   chi2 += evalRelBinRange( 0, m_nbin, peaks );
   
-  if( punish_to_close )
+  if( m_reldiff_punish_weight > 0.0 )
     chi2 += evalMultiPeakInsentive( peaks );
   
   if( IsInf(chi2) || IsNan(chi2) )
@@ -1287,7 +1308,7 @@ double MultiPeakFitChi2Fcn::DoEval( const double *x, bool punish_to_close ) cons
 }//double DoEval( const double *x ) const
 
 
-double MultiPeakFitChi2Fcn::DoEval( const double *x, bool punish_to_close, std::vector<PeakDef> &peaks ) const
+double MultiPeakFitChi2Fcn::DoEval( const double *x, std::vector<PeakDef> &peaks ) const
 {
   ++sm_ncalls;
   
@@ -1305,7 +1326,7 @@ double MultiPeakFitChi2Fcn::DoEval( const double *x, bool punish_to_close, std::
   
   chi2 += evalRelBinRange( 0, m_nbin, peaks );
   
-  if( punish_to_close )
+  if( m_reldiff_punish_weight > 0.0 )
     chi2 += evalMultiPeakInsentive( peaks );
   
   if( IsInf(chi2) || IsNan(chi2) )

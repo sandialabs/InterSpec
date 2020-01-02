@@ -846,6 +846,8 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   
   MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel+1, end_channel+1 );
   
+  //chi2fcn.set_reldiff_punish_start( 2.35482 );
+  
   vector<PeakDef> inpeaks;
   double conteqn[2] = { p0, p1 };
   double initial_cont_area = PeakContinuum::offset_eqn_integral( conteqn, offsetType, start_range, end_range, start_range );
@@ -975,8 +977,9 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     case FromDataInitialGuess:
     {
       typedef std::shared_ptr<PeakDef> PeakPtr;
+      
       const vector<PeakPtr> derivative_peaks
-      = secondDerivativePeakCanidatesWithROI( dataH, start_channel, end_channel );
+           = secondDerivativePeakCanidatesWithROI( dataH, start_channel, end_channel );
       
       map<double,PeakPtr> candidates;
       for( const PeakPtr &p : derivative_peaks )
@@ -1144,13 +1147,22 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   const vector<double> values = fitParams.Params();
   const vector<double> errors = fitParams.Errors();
   
-  chi2 = chi2fcn.DoEval( &(values[0]), false );
+  //Turn off punishment for peaks being to close
+  chi2fcn.set_reldiff_punish_weight( 0.0 );
   
+  chi2 = chi2fcn.DoEval( &(values[0]) );
+  const double dof = chi2fcn.dof();
+  
+  const double chi2Dof = chi2 / dof;
   vector<PeakDef> peaks;
   chi2fcn.parametersToPeaks( peaks, &values[0], &errors[0] );
   
   for( int i = 0; i < nPeaks; ++i )
-    answer.emplace_back( std::make_shared<PeakDef>(peaks[i]) );
+  {
+    auto p = std::make_shared<PeakDef>( peaks[i] );
+    p->set_coefficient( chi2Dof, PeakDef::Chi2DOF );
+    answer.emplace_back( std::move(p) );
+  }
 }//void findPeaksInUserRange( double x0, double x1, int nPeaks )
 
 
@@ -4360,7 +4372,6 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 }//searchForPeakFromUser(...)
 
 
-
 std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std::shared_ptr<const Measurement> dataH,
                                                           size_t start_channel,
                                                           size_t end_channel )
@@ -4411,15 +4422,9 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
   const int order = highres ? 3 : 2;
   const size_t side_bins = highres ? 4 : std::max( size_t(5), static_cast<size_t>( 0.022f*midenergy/midbinwidth + 0.5f ) );
   
-  //XXX: the below 1.5 is empiracally found, I'm not entirely sure where
-  //     comes from...and infact might be higher
-  const double amp_fake_factor = 1.5;
   
   vector<float> second_deriv;
   smoothSpectrum( dataH, static_cast<int>(side_bins), order, 2, second_deriv );
-  
-  const vector<float> &energies = *dataH->gamma_channel_energies();
-  
   
   //Since the peak resolution changes a lot for low-resolution spectra, if
   //  side_bins is to large, it will wipe out low energy features, meaning we
@@ -4468,6 +4473,12 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
   }
 #endif
   
+  //XXX: the below 1.5 is empiracally found, I'm not entirely sure where
+  //     comes from...and infact might be higher
+  const double amp_fake_factor = 1.5;
+  
+
+  const vector<float> &energies = *dataH->gamma_channel_energies();
   
   size_t minbin = 0, firstzero = 0, secondzero = 0;
   float secondsum = 0.0f, minval = 9999999999.9f;
