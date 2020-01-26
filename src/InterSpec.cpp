@@ -828,14 +828,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_menuDiv->hide();
 #endif
   
-  if( m_user->preferenceValue<bool>( "StartDocked" ) && !isPhone() )
+  if( !isPhone() )
   {
     setToolTabsVisible( true );
   }else
   {
     //Disallow showing tool tabs when on a phone
-    if( !isPhone() )
-      m_toolTabsVisibleItems[0]->setHidden(false);
     m_toolTabsVisibleItems[1]->setHidden(true);
     
     //Add Ref photopeaks, etc. to tool menu
@@ -3410,15 +3408,34 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           switch( datatype )
           {
             case UserOption::String:
-            case UserOption::Decimal:
-            case UserOption::Integer:  
+            {
+              std::string value = obj.get("value");
+              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
+                                                 boost::any(value), this, wApp );
               break;
+            }//case UserOption::Boolean:
+              
+            case UserOption::Decimal:
+            {
+              double value = obj.get("value");
+              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
+                                                 boost::any(value), this, wApp );
+              break;
+            }//case UserOption::Boolean:
+              
+            case UserOption::Integer:
+            {
+              int value = obj.get("value");
+              InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
+                                                 boost::any(value), this, wApp );
+              break;
+            }//case UserOption::Boolean:
+              
             case UserOption::Boolean:
             {
               bool value = obj.get("value");
-              //cerr << "Pushing value for " << name.toUTF8() << endl;
               InterSpecUser::pushPreferenceValue( m_user, name.toUTF8(),
-                                                  value, this, wApp );
+                                                  boost::any(value), this, wApp );
             }//case UserOption::Boolean:
           }//switch( datatype )
         }//for( size_t i = 0; i < userOptions.size(); ++i )
@@ -3446,7 +3463,6 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         cerr << "loadStateFromDb(): Caught exception to set hte color them" << endl;
       }//try / catch to load ColorTheme.
     }//if( its reasonable we might have color theme information )
-    
     
 //  int showingMarkers;        //bitwise or of FeatureMarkers
 //  int showingWindows;
@@ -5675,6 +5691,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_logYItems[0]->triggered().connect( boost::bind( &InterSpec::setLogY, this, true  ) );
   m_logYItems[1]->triggered().connect( boost::bind( &InterSpec::setLogY, this, false ) );
   m_spectrum->setYAxisLog( logypref );
+  std::function<void (boost::any)> logy_fcn = [=](boost::any value){
+    this->setLogY( boost::any_cast<bool>(value) );
+  };
+  InterSpecUser::associateFunction( m_user, "LogY", logy_fcn, this );
 
   
   const bool verticleLines = InterSpecUser::preferenceValue<bool>( "ShowVerticalGridlines", this );
@@ -5686,6 +5706,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_verticalLinesItems[1]->setHidden( !verticleLines );
   m_spectrum->showVerticalLines( verticleLines );
   m_timeSeries->showVerticalLines( verticleLines );
+  std::function<void (boost::any)> vl_fcn = [=](boost::any value){
+    this->setVerticalLines( boost::any_cast<bool>(value) );
+  };
+  InterSpecUser::associateFunction( m_user, "ShowVerticalGridlines", vl_fcn, this );
   
   const bool horizontalLines = InterSpecUser::preferenceValue<bool>( "ShowHorizontalGridlines", this );
   m_horizantalLinesItems[0] = chartmenu->addMenuItem( "Show Horizontal Lines" , "InterSpec_resources/images/sc_togglegridhorizontal.png");
@@ -5696,7 +5720,11 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_horizantalLinesItems[1]->setHidden( !horizontalLines );
   m_spectrum->showHorizontalLines( horizontalLines );
   m_timeSeries->showHorizontalLines( horizontalLines );
-  //InterSpecUser::associateWidget( m_user, "ShowHorizontalGridlines", Wt::WCheckBox *cb, this, false );
+  std::function<void (boost::any)> hl_fcn = [=](boost::any value){
+    this->setHorizantalLines( boost::any_cast<bool>(value) );
+  };
+  InterSpecUser::associateFunction( m_user, "ShowHorizontalGridlines", hl_fcn, this );
+  
   
 #if( USE_SPECTRUM_CHART_D3 )
   if( isPhone() )
@@ -5712,6 +5740,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     m_compactXAxisItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, false ) );
     m_compactXAxisItems[0]->setHidden( makeCompact );
     m_compactXAxisItems[1]->setHidden( !makeCompact );
+    std::function<void (boost::any)> cxa_fcn = [=](boost::any value){
+      this->setXAxisCompact( boost::any_cast<bool>(value) );
+    };
+    InterSpecUser::associateFunction( m_user, "CompactXAxis", cxa_fcn, this );
   }
 #endif
   
@@ -5762,6 +5794,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
   m_showXAxisSliderItems[0]->setHidden( showSlider );
   m_showXAxisSliderItems[1]->setHidden( !showSlider );
+  std::function<void (boost::any)> xas_fcn = [=](boost::any value){
+    this->setXAxisSlider( boost::any_cast<bool>(value) );
+  };
+  InterSpecUser::associateFunction( m_user, "ShowXAxisSlider", xas_fcn, this );
   
   
   const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
@@ -5773,6 +5809,13 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_showYAxisScalerItems[1]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, false ) );
   m_showYAxisScalerItems[0]->setHidden( showScalers );
   m_showYAxisScalerItems[1]->setHidden( !showScalers );
+  m_showYAxisScalerItems[(showScalers ? 1 : 0)]->disable();
+  
+  std::function<void (boost::any)> fcnt = [=](boost::any value){
+    this->setShowYAxisScalers( boost::any_cast<bool>(value) );
+  };
+  
+  InterSpecUser::associateFunction( m_user, "ShowYAxisScalers", fcnt, this );
   
   m_displayOptionsPopupDiv->addSeparator();
 #endif  //#if( USE_SPECTRUM_CHART_D3 )
@@ -6173,14 +6216,26 @@ void InterSpec::setXAxisCompact( bool compact )
 
 void InterSpec::setShowYAxisScalers( bool show )
 {
-  InterSpecUser::setPreferenceValue<bool>( m_user, "ShowYAxisScalers", show, this );
+  const bool hasSecond = (m_secondDataMeasurement || m_backgroundMeasurement);
   
-  if( m_showYAxisScalerItems[0] )
-    m_showYAxisScalerItems[0]->setHidden( show );
-  if( m_showYAxisScalerItems[1] )
-    m_showYAxisScalerItems[1]->setHidden( !show );
+  assert( m_showYAxisScalerItems[0] );
+  assert( m_showYAxisScalerItems[1] );
+  
+  m_showYAxisScalerItems[0]->setHidden( show );
+  m_showYAxisScalerItems[0]->setDisabled( !show && !hasSecond );
+  
+  m_showYAxisScalerItems[1]->setHidden( !show );
+  m_showYAxisScalerItems[1]->setDisabled( show && !hasSecond );
   
   m_spectrum->showYAxisScalers( show );
+  
+  try
+  {
+    InterSpecUser::setPreferenceValue<bool>( m_user, "ShowYAxisScalers", show, this );
+  }catch( std::exception &e )
+  {
+    cerr << "InterSpec::setShowYAxisScalers: Got exception setting pref: " << e.what() << endl;
+  }
 }//void setShowYAxisScalers( bool show )
 
 
@@ -6354,18 +6409,20 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   PopupDivMenu *subPopup = m_helpMenuPopup->addPopupMenuItem( "Options", "InterSpec_resources/images/cog_small.png" );
     
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
-    
+  
+  const bool autoStore = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
   WCheckBox *cb = new WCheckBox( " Automatically store session" );
-  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this, false );
+  cb->setChecked( autoStore );
   item = subPopup->addWidget( cb );
   HelpSystem::attachToolTipOn( item, "Automatically stores app state", showToolTipInstantly );
+  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this, false );
+  
 
-  if (!isMobile())
+  if( !isMobile() )
   {
-    WCheckBox* checkbox = new WCheckBox( " Instant tooltips" );
-    
-    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this, false );
+    WCheckBox *checkbox = new WCheckBox( " Instant tooltips" );
     item = subPopup->addWidget( checkbox );
+    checkbox->setChecked( showToolTipInstantly );
     HelpSystem::attachToolTipOn( item,
                                 "Instant tooltips show up immediately and is helpful for beginners "
                                 "to understand how to use InterSpec.  Advanced users are recommended"
@@ -6373,12 +6430,13 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                 " delay." , true, HelpSystem::Right, HelpSystem::CanDelayShowing );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-  } //!isMobile()
+    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this, false );
+  }//if( !isMobile() )
   
   {//begin add "AskPropagatePeaks" to menu
-    WCheckBox* checkbox = new WCheckBox( " Ask to Propagate Peaks" );
-    
-    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this, false );
+    const bool doPropogate = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+    WCheckBox *checkbox = new WCheckBox( " Ask to Propagate Peaks" );
+    checkbox->setChecked( doPropogate );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item,
                                  "When loading spectra from the same detector,"
@@ -6389,6 +6447,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                  true, HelpSystem::Right, HelpSystem::CanDelayShowing );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
+    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this, false );
   }//end add "AskPropagatePeaks" to menu
   
     //High Bandwidth interactions
@@ -8399,6 +8458,20 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     case kBackground:
       displayBackgroundData();
   };//switch( spec_type )
+  
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  if( !sameSpec )
+  {
+    const bool enableScaler = (m_secondDataMeasurement || m_backgroundMeasurement);
+    const int windex_0 = m_spectrum->yAxisScalersIsVisible() ? 0 : 1;
+    const int windex_1 = m_spectrum->yAxisScalersIsVisible() ? 1 : 0;
+    m_showYAxisScalerItems[windex_0]->hide();
+    m_showYAxisScalerItems[windex_0]->enable();
+    m_showYAxisScalerItems[windex_1]->show();
+    m_showYAxisScalerItems[windex_1]->setDisabled( !enableScaler );
+  }//if( !sameSpec )
+#endif
   
   //Making fcn call take current data as a argument so that if this way a
   //  recalibration happens (which will change m_spectrum->data()), then the
@@ -10485,6 +10558,12 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_backgroundSubItems[0]->disable();
     m_backgroundSubItems[0]->show();
     m_backgroundSubItems[1]->hide();
+    
+#if( USE_SPECTRUM_CHART_D3 )
+    m_showYAxisScalerItems[0]->setDisabled( m_showYAxisScalerItems[0]->isVisible() );
+    m_showYAxisScalerItems[1]->setDisabled( m_showYAxisScalerItems[1]->isVisible() );
+#endif
+    
     m_spectrum->setData( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0, false );
     m_peakModel->setPeakFromSpecMeas( m_dataMeasurement, m_displayedSamples );
     return;

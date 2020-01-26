@@ -377,15 +377,7 @@ Recalibrator::Recalibrator(
   WGridLayout * tempLayout = new WGridLayout();
   setRecalibratorLayout(tempLayout);
 
-  Recalibrator::LayoutStyle style = kWide;
-  try
-  {
-    if( !m_hostViewer->m_user->preferenceValue<bool>( "StartDocked" ) )
-      style = kTall;
-  } catch( std::exception & )
-  {
-  }
-  
+  const Recalibrator::LayoutStyle style = m_hostViewer->isPhone() ? kTall : kWide;
   
   initWidgets( style );
 } // Recalibrator::Recalibrator(...)

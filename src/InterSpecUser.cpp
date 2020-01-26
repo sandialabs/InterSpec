@@ -62,6 +62,7 @@
 #include "rapidxml/rapidxml_utils.hpp"
 
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -205,6 +206,83 @@ namespace
     }
     return option;
   }//UserOption *parseUserOption( rapidxml::xml_node<char> *node )
+  
+  
+  /** Compares two boost::any objects to check if their underlying type is
+   the same, and if so, if their values are equal.
+   
+   Currently only supports underlying types of std::string, bool, int, double
+   to coorespond to UserOption::DataType.
+   
+   Throws exception if types are not supported.
+   */
+  bool boost_any_equal( const boost::any& lhs, const boost::any& rhs )
+  {
+   
+    if( lhs.type() == typeid(std::string) )
+    {
+      if( rhs.type() != typeid(std::string) )
+        return false;
+      
+      return boost::any_cast<std::string>(lhs) == boost::any_cast<std::string>(rhs);
+    }//if( string )
+    
+    
+    if( lhs.type() == typeid(double) || lhs.type() == typeid(float) )
+    {
+      if( rhs.type() != typeid(double) && rhs.type() != typeid(float) )
+        return false;
+      
+      double lhsval, rhsval;
+      if( lhs.type() == typeid(double) )
+        lhsval = boost::any_cast<double>(lhs);
+      else
+        lhsval = boost::any_cast<float>(lhs);
+      
+      if( rhs.type() == typeid(double) )
+        rhsval = boost::any_cast<double>(rhs);
+      else
+        rhsval = boost::any_cast<float>(rhs);
+      
+      return lhsval == rhsval;
+    }//if( double or float )
+    
+    if( lhs.type() == typeid(int) || lhs.type() == typeid(unsigned int) || lhs.type() == typeid(long long) )
+    {
+      if( rhs.type() != typeid(int) && rhs.type() != typeid(unsigned int) && rhs.type() != typeid(long long) )
+        return false;
+      
+      int64_t lhsval, rhsval;
+      if( lhs.type() == typeid(int) )
+        lhsval = boost::any_cast<int>(lhs);
+      else if( lhs.type() == typeid(unsigned int) )
+        lhsval = boost::any_cast<unsigned int>(lhs);
+      else
+        lhsval = boost::any_cast<long long>(lhs);
+      
+      if( rhs.type() == typeid(int) )
+        rhsval = boost::any_cast<int>(rhs);
+      else if( rhs.type() == typeid(unsigned int) )
+        rhsval = boost::any_cast<unsigned int>(rhs);
+      else
+        rhsval = boost::any_cast<long long>(rhs);
+      
+      return lhsval == rhsval;
+    }
+    
+    if( lhs.type() == typeid(bool) )
+    {
+      if( rhs.type() != typeid(bool) )
+        return false;
+      
+      return boost::any_cast<bool>(lhs) == boost::any_cast<bool>(rhs);
+    }//if( string )
+    
+    cerr << "boost_any_equal: unimplemented type encountered" << endl;
+    
+    throw std::runtime_error("boost_any_equal: unimplemented type encountered");
+  }//boost_any_equal
+
 }//namespace
 
 
@@ -237,59 +315,162 @@ UserState::UserState()
 {
 }
 
+boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec *viewer )
+{
+  using namespace Wt;
+  
+  //This next line is the only reason InterSpec.h needs to be included
+  //  above
+  
+  Dbo::ptr<InterSpecUser> &user = userFromViewer(viewer);
+  std::shared_ptr<DataBaseUtils::DbSession> sql = sqlFromViewer(viewer);
+  
+  if( !user || !sql )
+    throw std::runtime_error( "preferenceValueAny(...): invalid usr or sql ptr" );
+  
+  PreferenceMap::const_iterator pos;
+  const PreferenceMap &prefs = user->m_preferences;
+  
+  if( user->m_deviceType & PhoneDevice )
+  {
+    pos = prefs.find( name + "_phone" );
+    if( pos != prefs.end() )
+      return pos->second;
+  }//if( user->m_deviceType & PhoneDevice )
+  
+  if( user->m_deviceType & TabletDevice )
+  {
+    pos = prefs.find( name + "_tablet" );
+    if( pos != prefs.end() )
+      return pos->second;
+  }//if( user->m_deviceType & TabletDevice )
+  
+  pos = prefs.find( name );
+  if( pos != prefs.end() )
+    return pos->second;
+  
+  UserOption *option = getDefaultUserPreference( name, user->m_deviceType );
+  option->m_user = user;
+  
+  DataBaseUtils::DbTransaction transaction( *sql );
+  boost::any value;
+  try
+  {
+    sql->session()->add( option );
+    value = option->value();
+    user->m_preferences[name] = value;
+  }catch( std::exception &e )
+  {
+    transaction.rollback();
+    throw e;
+  }//try / catch
+  
+  transaction.commit();
+  
+  return value;
+}//boost::any preferenceValue( const std::string &name, InterSpec *viewer );
+
+
+boost::any InterSpecUser::preferenceValueAny( const std::string &name ) const
+{
+  PreferenceMap::const_iterator pos;
+  
+  if( m_deviceType & PhoneDevice )
+  {
+    pos = m_preferences.find( name  + "_phone" );
+    if( pos != m_preferences.end() )
+      return pos->second;
+  }//if( user->m_deviceType & PhoneDevice )
+  
+  if( m_deviceType & TabletDevice )
+  {
+    pos = m_preferences.find( name  + "_tablet" );
+    if( pos != m_preferences.end() )
+      return pos->second;
+  }//if( user->m_deviceType & TabletDevice )
+  
+  pos = m_preferences.find( name );
+  if( pos == m_preferences.end() )
+    throw std::runtime_error( "No preference value for " + name + ", try"
+                             " calling other InterSpecUser::preferenceValue(...) function" );
+  return pos->second;
+}//boost::any preferenceValueAny( const std::string &name ) const;
+
+
 
 void InterSpecUser::pushPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                         const std::string &name, bool value,
+                                         const std::string &name,
+                                         boost::any valueAny,
                                          InterSpec *viewer,
                                          Wt::WApplication *app )
 {
   if( !app || !viewer || !user )
     throw runtime_error( "pushPreferenceValue(): Invlaid input" );
   
-  const bool oldValue = user->preferenceValue<bool>( name );
-  if( oldValue == value )
+  const boost::any oldValueAny = user->preferenceValueAny( name );
+  
+  if( boost_any_equal(oldValueAny, valueAny) )
+  {
+    //cerr << "Preference '" << name << "' is equal before and after - not changing." << endl;
     return;
-  
-  
-  int nchanged = 0;
-  const vector<string> &widgets = user->m_preferenceWidgets[name];
-  for( size_t i = 0; i < widgets.size(); ++i )
-  {
-    WWidget *widget = app->findWidget( widgets[i] );
-    WCheckBox *cb = dynamic_cast<WCheckBox *>( widget );
-    if( cb )
-    {
-      if( oldValue != cb->isChecked() )
-        value = !value;
-      
-      cb->setChecked( value );
-      if( value )
-        cb->checked().emit();
-      else
-        cb->unChecked().emit();
-      ++nchanged;
-    }else
-    {
-      cerr << "Unable to find checkbox widget '" << widgets[i]
-           << "', WWidget=" << widget << endl;
-    }//if( cb )
-  }//for( size_t i = 0; i < widgets.size(); ++i )
-
-  if( !nchanged )
-  {
-    //We didnt find the widget associated with this preference (it may have been
-    //  in a pop-up window somewhere, or it may not be a simple widget like a
-    //  checkbox), so we will set the preference value, but we are not setting
-    //  the widgets into the correct state.
-    //ToDo: instead of associateWidget(...) we need a associateFunction( function<void(bool)> )
-    //      that can handle these other cases... but there will then be life-cycle issues and
-    //      such if not careful.
-    
-    cerr << "Didnt change any prefs for " << name << " so doing it manually" << endl;
-    std::shared_ptr<DataBaseUtils::DbSession> sql = viewer->sql();
-    setPreferenceValue<bool>( user, name, value, viewer );
   }
+  
+  if( valueAny.type() == typeid(std::string) )
+  {
+    setPreferenceValue<std::string>( user, name, boost::any_cast<std::string>(valueAny), viewer );
+  }else if( valueAny.type() == typeid(double) )
+  {
+    setPreferenceValue<double>( user, name, boost::any_cast<double>(valueAny), viewer );
+  }else if( valueAny.type() == typeid(float) )
+  {
+    setPreferenceValue<double>( user, name, boost::any_cast<float>(valueAny), viewer );
+  }else if( valueAny.type() == typeid(int) )
+  {
+    setPreferenceValue<int>( user, name, boost::any_cast<int>(valueAny), viewer );
+  }else if( valueAny.type() == typeid(unsigned int) )
+  {
+    setPreferenceValue<int>( user, name, boost::any_cast<unsigned int>(valueAny), viewer );
+  }else if( valueAny.type() == typeid(long long) )
+  {
+    setPreferenceValue<int>( user, name, boost::any_cast<long long>(valueAny), viewer );
+  }else if( valueAny.type() == typeid(bool) )
+  {
+    setPreferenceValue<bool>( user, name, boost::any_cast<bool>(valueAny), viewer );
+  }else
+  {
+    throw std::runtime_error( "pushPreferenceValue(...): invalid type: "
+                             + std::string(valueAny.type().name()) );
+  }
+  
+
+  auto fctniter = user->m_preferenceFunctions.find(name);
+  
+  if( fctniter != end(user->m_preferenceFunctions) )
+  {
+    for( auto &fcn : fctniter->second )
+    {
+      //cerr << "pushPreferenceValue: Calling function for pref '" << name << "'" << endl;
+      fcn( valueAny );
+    }//
+  }//if( there are any function to call )
 }//void InterSpecUser::pushPreferenceValue(...)
+
+
+
+void InterSpecUser::associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
+                              const std::string &name,
+                              std::function<void(boost::any)> fcn,
+                              InterSpec *viewer )
+{
+  boost::any value = preferenceValueAny( name, viewer );
+  
+  if( fcn )
+  {
+    vector<function<void(boost::any)> > &fctns = user->m_preferenceFunctions[name];
+    fctns.push_back( fcn );
+    fcn( value );
+  }
+}//associateFunction
 
 
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
@@ -298,16 +479,51 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                      InterSpec *viewer,
                                      bool reverseValue )
 {
+  //We need to emit the checked() and unChecked() signals so that any side-effect
+  //  can happen from the change.  For actually changing the state of the widget
+  //  we can safely do this (incase 'cb' gets deleted at some point) using
+  //  WApplication::bind, but to call the emit functions I couldnt think of a
+  //  safe way to do this, other than searching the widget tree and making sure
+  //  that we can find the widget (hence, know it hasnt been deleted) before
+  //  de-referening the 'cb' passed into this function; this is a bit of a hack
+  //  but it works for now.
+  const string cbid = cb->id();
+  
   const bool value = preferenceValue<bool>( name, viewer );
-  vector<string> &v = user->m_preferenceWidgets[name];
-  if( cb->objectName().empty() )
-    cb->setObjectName( name + std::to_string(v.size()) );
-  v.push_back( cb->objectName() );
-
   if( !reverseValue )
     cb->setChecked( value );
   else
     cb->setChecked( !value );
+  
+  boost::function<void()> setchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb, true ) );
+  boost::function<void()> setunchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb, false ) );
+  
+  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
+    const bool value = boost::any_cast<bool>(valueAny);
+    const bool setCbChecked = reverseValue ? !value : value;
+    if( setCbChecked )
+      setchecked();
+    else
+      setunchecked();
+    
+    auto w = wApp->domRoot()->findById(cbid);
+    if( !w && wApp->domRoot2() )
+      w = wApp->domRoot2()->findById(cbid);
+    
+    if( w )
+    {
+      if( value )
+        cb->checked().emit();
+      else
+        cb->unChecked().emit();
+    }else
+    {
+      cerr << "Couldnt find widget with cbid='" << cbid << "', so wont call any side-effect functions for pref '"
+           << name << "'" << endl;
+    }
+  };//fcn
+  
+  InterSpecUser::associateFunction( user, name, fcn, viewer );
   
   cb->checked().connect( boost::bind( &InterSpecUser::setPreferenceValue<bool>, user, name, !reverseValue, viewer ) );
   cb->unChecked().connect( boost::bind( &InterSpecUser::setPreferenceValue<bool>, user, name, reverseValue, viewer ) );
@@ -320,22 +536,63 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                             Wt::WRadioButton *falseButton,
                             InterSpec *viewer )
 {
-  const bool value = preferenceValue<bool>( name, viewer );
-  vector<string> &v = user->m_preferenceWidgets[name];
-  if( trueButton->objectName().empty() )
-    trueButton->setObjectName( name + std::to_string(v.size()) );
-  if( falseButton->objectName().empty() )
-    falseButton->setObjectName( name + std::to_string(v.size()) );
+  const string trueid = trueButton->id();
+  const string falseid = falseButton->id();
   
-  v.push_back( trueButton->objectName() );
-  v.push_back( falseButton->objectName() );
+  const bool value = preferenceValue<bool>( name, viewer );
   
   trueButton->setChecked( value );
   falseButton->setChecked( !value );
   
+  //We will use WApllication::bind to create functions that will check and uncheck
+  //  the widgets; this should be safe if the widgets are deleted,
+  boost::function<void()> setTrueChecked = wApp->bind( boost::bind( &Wt::WRadioButton::setChecked, trueButton, true ) );
+  boost::function<void()> setTrueUnchecked = wApp->bind( boost::bind( &Wt::WRadioButton::setChecked, trueButton, false ) );
+  
+  boost::function<void()> setFalseChecked = wApp->bind( boost::bind( &Wt::WRadioButton::setChecked, falseButton, true ) );
+  boost::function<void()> setFalseUnchecked = wApp->bind( boost::bind( &Wt::WRadioButton::setChecked, falseButton, false ) );
+  
+  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
+    const bool value = boost::any_cast<bool>(valueAny);
+    
+    if( value )
+    {
+      setTrueChecked();
+      setFalseUnchecked();
+    }else
+    {
+      setTrueUnchecked();
+      setFalseChecked();
+    }
+    
+    //So far this is the best way I have found to check that the widget hasnt
+    //  been deleted... I'm sure there is a better way.
+    auto truew = wApp->domRoot()->findById(trueid);
+    if( !truew && wApp->domRoot2() )
+      truew = wApp->domRoot2()->findById(trueid);
+    
+    auto falsew = wApp->domRoot()->findById(falseid);
+    if( !falsew && wApp->domRoot2() )
+      falsew = wApp->domRoot2()->findById(falseid);
+    
+    if( truew && value )
+      trueButton->checked().emit();
+    else if( falsew && !value )
+      falseButton->checked().emit();
+    else
+    {
+      cerr << "Couldnt find WRadioButton with trueid='" << trueid << "' and/or falseid='"
+           << falseid << "', so wont call any side-effect functions" << endl;
+    }
+  };//fcn
+  
+  InterSpecUser::associateFunction( user, name, fcn, viewer );
+  
   trueButton->checked().connect( boost::bind( &InterSpecUser::setPreferenceValue<bool>, user, name, true, viewer ) );
   falseButton->checked().connect( boost::bind( &InterSpecUser::setPreferenceValue<bool>, user, name, false, viewer ) );
-}
+}//InterSpecUser::associateWidget(...)
+
+
 
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                           const std::string &name,
@@ -344,21 +601,31 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
 {
   const double value = preferenceValue<double>( name, viewer );
   
-  if( false )
-  {
-    //Changing the name of a WAbstractSpinBox causes a JS exception on the
-    //  client side, for some reason (bug in Wt?)
-    vector<string> &v = user->m_preferenceWidgets[name];
-    if( sb->objectName().empty() )
-      sb->setObjectName( name + std::to_string(v.size()) );
-    v.push_back( sb->objectName() );
-    cerr << "Setting for object " << sb->objectName() << endl;
-  }
-  
   sb->setValue( value );
   sb->valueChanged().connect(
                       boost::bind( &InterSpecUser::setPreferenceValue<double>,
                                    user, name, _1, viewer ) );
+  
+  const string sbid = sb->id();
+  
+  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
+    const double value = boost::any_cast<double>(valueAny);
+  
+    auto w = wApp->domRoot()->findById(sbid);
+    if( !w && wApp->domRoot2() )
+      w = wApp->domRoot2()->findById(sbid);
+    
+    if( w )
+    {
+      sb->setValue( value );
+      sb->valueChanged().emit( value );
+    }else
+    {
+      cerr << "Couldnt find WDoubleSpinBox with id='" << sbid << "', so wont call any side-effect functions" << endl;
+    }
+  };//fcn
+  
+  InterSpecUser::associateFunction( user, name, fcn, viewer );
 }//void associateWidget(...)
 
 
@@ -369,27 +636,32 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
 {
   const int value = preferenceValue<int>( name, viewer );
   
-  if( false )
-  {
-    //Changing the name of a WAbstractSpinBox causes a JS exception on the
-    //  client side, for some reason (bug in Wt?)
-    vector<string> &v = user->m_preferenceWidgets[name];
-    if( sb->objectName().empty() )
-      sb->setObjectName( name + std::to_string(v.size()) );
-    v.push_back( sb->objectName() );
-    cerr << "Setting for object " << sb->objectName() << endl;
-  }
-  
-  
-//  vector<string> &v = user->m_preferenceWidgets[name];
-//  if( sb->objectName().empty() )
-//    sb->setObjectName( name + std::to_string(v.size()) );
-//  v.push_back( sb->objectName() );
-  
   sb->setValue( value );
+  
   sb->valueChanged().connect(
-                        boost::bind( &InterSpecUser::setPreferenceValue<int>,
+                             boost::bind( &InterSpecUser::setPreferenceValue<int>,
                                          user, name, _1, viewer ) );
+  
+  const string sbid = sb->id();
+  
+  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
+    const int value = boost::any_cast<int>(valueAny);
+    
+    auto w = wApp->domRoot()->findById(sbid);
+    if( !w && wApp->domRoot2() )
+      w = wApp->domRoot2()->findById(sbid);
+    
+    if( w )
+    {
+      sb->setValue( value );
+      sb->valueChanged().emit( value );
+    }else
+    {
+      cerr << "Couldnt find WSpinBox with id='" << sbid << "', so wont call any side-effect functions" << endl;
+    }
+  };//fcn
+  
+  InterSpecUser::associateFunction( user, name, fcn, viewer );
 }//void InterSpecUser::associateWidget(...)
 
 
@@ -1156,6 +1428,8 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const string value = boost::any_cast<string>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
+          InterSpecUser::pushPreferenceValue( user, option->m_name,
+                                             boost::any(value), viewer, wApp );
           break;
         }//case String
           
@@ -1163,6 +1437,8 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const double value = boost::any_cast<double>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
+          InterSpecUser::pushPreferenceValue( user, option->m_name,
+                                             boost::any(value), viewer, wApp );
           break;
         }//case Decimal
           
@@ -1170,6 +1446,8 @@ void InterSpecUser::restoreUserPrefsFromXml(
         {
           const int value = boost::any_cast<int>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
+          InterSpecUser::pushPreferenceValue( user, option->m_name,
+                                              boost::any(value), viewer, wApp );
           break;
         }//case Integer
           
@@ -1178,7 +1456,7 @@ void InterSpecUser::restoreUserPrefsFromXml(
           const bool value = boost::any_cast<bool>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
           InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                              value, viewer, wApp );
+                                              boost::any(value), viewer, wApp );
           break;
         }//case Boolean
       }//switch( datatype )

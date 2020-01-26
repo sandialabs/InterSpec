@@ -309,10 +309,11 @@ energy calibration coefficients, or fit for them using the nuclides associated w
 
 <message id='8desktop-mouse-interactions-scale-y-desc'>
 <center>Scale the amplitude of background and/or secondary spectra relative to the foreground
-by selecting <b>View</b> &rarr; &quot;<b>Chart Options</b>&quot; &rarr; &quot;<b>Show Y-Axis Scalers</b>&quot;.
+by selecting <b>View</b> &rarr; &quot;<b>Show Y-Axis Scalers</b>&quot;.
 </center>
 <p>To restore the background or secondary spectrum to being live-time normalized, click the &quot;Normalize&quot; button on the &quot;Spectrum Files&quot; tab.</p>
-<p><b>InterSpec</b> will remember if you want these sliders showing when there is a background or secondary spectrum.</p>
+<p><b>InterSpec</b> will remember if you want these sliders showing when there is a background or secondary spectrum,
+but menu items will be disabled if no background or secondary spectrum is loaded.</p>
 </message>
 
 
