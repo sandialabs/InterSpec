@@ -16,6 +16,7 @@ For executable installation:
 
 A brief getting started guide can be found in [brief_ana_overview_InterSpec_Oct2018.pdf](https://sandialabs.github.io/InterSpec/tutorials/brief_analysis_intro/brief_ana_overview_InterSpec_Oct2018.pdf); a more comprehensive tutorial is planned for the future.
 
+Release notes, tutorials, and example problems can be found at [https://sandialabs.github.io/InterSpec/releases/](https://sandialabs.github.io/InterSpec/releases/).
 
 ## Some Screen Shots
 ![W187 peak fit example](/docs/imgs/overview_W187.png?raw=true "Easy to use user interface.")
