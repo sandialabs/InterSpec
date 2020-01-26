@@ -3,9 +3,6 @@
  <pref name="VersionAgreedToUseTerms" type="Integer">0</pref>
  <pref name="LoadPrevStateOnStart" type="Boolean">true</pref>
  <pref name="PromptStateLoadOnStart" type="Boolean">true</pref>
- <pref name="StartDocked" type="Boolean">true</pref>
- <pref name="StartDocked_phone" type="Boolean">false</pref>
- <pref name="StartDocked_tablet" type="Boolean">true</pref>
  <pref name="ShowSplashScreen" type="Boolean">true</pref>
  <pref name="PopupBlockNotificationInfo" type="Boolean">false</pref>
  <pref name="PopupBlockNotificationLow" type="Boolean">false</pref>

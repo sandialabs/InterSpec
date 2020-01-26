@@ -15,6 +15,17 @@
       </li>
       <li><b>Chart Options</b>: Detailed below, but this sub-menu lets you configure how spectra are displayed.
       </li>
+      <li><b>Peak Labels</b>: These options allow you to display labels on the spectrum for <em>peak energies</em>, <em>nuclides assigned to peaks</em>, and/or <em>custom user labels</em> (which can be set using the <em>Peak Editor</em>).
+      </li>
+      <li><b>Show Energy Slider</b>:  Selecting this option will show a smaller version of the spectrum that allows positioning or resizing a box to define what energy range is shown on the primary spectrum.  <b>InterSpec</b> remembers if you want this chart shown or not.
+      </li>
+      <li><b>Show Y-Axis Scalers</b>: Selecting this option will show some slider bars to the right of the screen to allow re-scaling the background or secondary spectrum, relative to the foreground spectrum.  This can be useful comparing spectra of sources with different intensities, or from different detectors.  The scale bars are only shown, and menu items enabled if there is a background and/or secondary spectrum. <b>InterSpec</b> remembers if you want these scalers shown or not.
+      </li>
+      <li><b>Background Subtract</b>: makes it so the displayed foreground and secondary spectra have the background subtracted from them.
+          This can occasionally be useful for highlighting small features above background to non-specialists.
+          However, it is highly recomended to not generally use background subtraction as it strictly reduces information available to your eyes,
+          and can often times introduce non-physical artifacts to the spectrum or peak continuums.
+      </li>
       <li><b>Show 3D View</b>: This item is only enabled for search mode or passthrough data (e.g., files where spectra are taken at regular intervals).
         When enabled, this item will show a 3D view of your data with axis of time, energy, and counts.
       </li>
@@ -39,24 +50,9 @@
     <ul>
       <li><b>Log/Linear</b>: makes the y-axis (i.e., the counts-axis) either log or linear scale.  Default is log-scale as it is generally most useful.
       </li>
-      <li><b>Peak Labels</b>: These options allow you to display labels on the spectrum for <em>peak energies</em>, <em>nuclides assigned to peaks</em>, and/or <em>custom user labels</em> (which can be set using the <em>Peak Editor</em>).
-      </li>
       <li><b>Vertical</b> and <b>Horizontal Lines</b>: light-colored rectilinear lines drawn on the spectrum to help judge energies of spectrum features.
       </li>
-
-      <li><b>Show Energy Slider</b>:  Selecting this option will show a smaller version of the spectrum that allows positioning or resizing a box to define what energy range is shown on the primary spectrum.  <b>InterSpec</b> remembers if you want this chart shown or not.
-      </li>
-
-      <li><b>Show Y-Axis Scalers</b>: Selecting this option will show some slider bars to the right of the screen to allow re-scaling the background or secondary spectrum, relative to the foreground spectrum.  This can be useful comparing spectra of sources with different intensities, or from different detectors.  The scale bars are only shown if there is a background and/or secondary spectrum. <b>InterSpec</b> remembers if you want these scalers shown or not.
-      </li>
-
       <li><b>Compact X-axis</b>: Selecting this option repositions the &quot;Energy (keV)&quot; label on the spectrum to take up less vertical space.  Useful for smaller screens.
-      </li>
-
-      <li><b>Background Subtract</b>: makes it so the displayed foreground and secondary spectra have the background subtracted from them.
-        This can occasionally be useful for highlighting small features above background to non-specialists.
-        However, it is highly recomended to not generally use background subtraction as it strictly reduces information available to your eyes,
-        and can often times introduce non-physical artifacts to the spectrum.
       </li>
 
       <li><b>Show Spectrum Legend</b> This option is only visible if you have closed the legend in the spectrum.

@@ -212,7 +212,7 @@ public:
   static std::shared_ptr<DataBaseUtils::DbSession> sqlFromViewer( InterSpec *viewer );
   
   
-  //preferenceValue(...): Retrieves preference value.  If value has not
+  //preferenceValueAny(...): Retrieves preference value.  If value has not
   //  been previously set, will return default value as well as adding this
   //  value to to the users preferences.  If no preference by the passed in name
   //  is found, nor one with a default value, a runtime_error will be thrown.
@@ -221,6 +221,9 @@ public:
   //  The InterSpec is necessary in order to add the default value to the
   //  database in the case the user doesnt already have a preference by the 
   //  given name, but that preference does exist in the default values.
+  static boost::any preferenceValueAny( const std::string &name, InterSpec *viewer );
+  
+  /** Convienince function to call for #preferenceValueAny */
   template<typename T>
   static T preferenceValue( const std::string &name,
                             InterSpec *viewer );
@@ -228,6 +231,8 @@ public:
   //preferenceValue(...): similar to above, but if user doesnt already have a
   //  value for the desired preference, an exception will be thrown, even if
   //  a value would exist in the default values file. Can be called at any time.
+  boost::any preferenceValueAny( const std::string &name ) const;
+  
   template<typename T>
   T preferenceValue( const std::string &name ) const;
   
@@ -241,31 +246,57 @@ public:
                                   InterSpec *viewer );
  
   
-  //setPreferenceValue(): Sets preference value for named preference to both
-  //  the InterSpecUser in memorry and the database, as well as any widgets
-  //  associated with this preference set through associateWidget(...).  Also,
-  //  it will make an attempt to emit a signal as if the user had changed
-  //  the value.
+  /** Sets the in-memmory, and in-database values of the named preference to the
+   value passed in.  Will also call any functions associated with the named
+   preference set by #associateFunction, which typically will take care of
+   setting GUI widget states to coorespond to the new preference value, as well
+   as any other necassary internal states.
+   
+   @param name The preference name to be set.
+   @param value New value of the preference.  May be cast via boost::any_cast
+          to std::string, int, double, or bool according to the value type of
+          the preference.
+   */
   static void pushPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                   const std::string &name, bool value,
+                                   const std::string &name, boost::any value,
                                    InterSpec *viewer,
                                    Wt::WApplication *app );
   
-  //associateWidget(...): hooks up the necessary signals so that the database
-  //  values will stay inline with what the user enters.
-  //  The WCheckBox version also changes the widgets name
-  //  (WWidget::setObjectName), to a unique name, which is recorded for later
-  //  widget retrival so pushPreferenceValue(...) can be called for it.
+  /** Associate a function with a named preference, such that the function will
+   get called by #pushPreferenceValue whenever application state is changed.
+   
+   The function accepts a single argument that can be cast, via boost::any_cast
+   to a an int, double, std::string, or bool, according to datatype of the
+   preference.  The function should set all widgets to the appropriate state,
+   and take care of calling any relevant side-effects (e.g., set any variables
+   within the InterSpec class that effect application behaviour).  You should
+   also appropriately guard the function from calling any methods on a widget
+   that has gotten deleted.
+   
+   You may set multiple functions for each named preference.
+   */
+  static void associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
+                                const std::string &name,
+                                std::function<void(boost::any)> fcn,
+                                InterSpec *viewer );
+  
+  /** Hooks up the necassary signals so that the database values will stay
+   inline with what the user enters via the GUI.  Also, when
+   #pushPreferenceValue function is called, the widget state will be set
+   appropriately, and signal emitted as-if the user had changed things via the
+   GUI.
+   
+   Note: call this function after the widget has been added to the widget tree,
+   as its #WWebWidget::id may change; currently the id is used to make sure
+   the widget passed in hasnt been deleted, so if the id changes, then during
+   a call to #pushPreferenceValue, then it will be thought the widget was
+   deleted.
+   */
   static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                const std::string &name,
                                Wt::WCheckBox *cb,
                                InterSpec *viewer,
                                bool reverseValue = false );
-  //static void associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
-  //                            const std::string &name,
-  //                            std::function<void(bool)> toggle,
-  //                            InterSpec *viewer );
-  
   static void associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                               const std::string &name,
                               Wt::WRadioButton *trueButton,
@@ -279,6 +310,7 @@ public:
                                const std::string &name,
                                Wt::WDoubleSpinBox *spinner,
                                InterSpec *viewer );
+  
   
   
   //startingNewSession(): increments access counts, and updates previous and
@@ -370,8 +402,8 @@ protected:
                                                const int type );
  
   typedef std::map<std::string,boost::any> PreferenceMap;
-  typedef std::map<std::string,std::vector<std::string> > PreferenceWidgetMap;
- 
+  typedef std::map<std::string,std::vector<std::function<void(boost::any)> > > PreferenceFunctionMap;
+  
   std::string m_userName;
   int m_deviceType;
   int m_accessCount;
@@ -382,7 +414,9 @@ protected:
   boost::posix_time::time_duration m_totalTimeInApp;
   
   mutable PreferenceMap m_preferences;
-  mutable PreferenceWidgetMap m_preferenceWidgets;
+  mutable PreferenceFunctionMap m_preferenceFunctions;
+  
+  
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> >         m_userFiles;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> >           m_dbPreferences;
   Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > m_shieldSrcModels;
@@ -955,60 +989,12 @@ const boost::posix_time::ptime &InterSpecUser::currentAccessStartUTC() const
   return m_currentAccessStartUTC;
 }
 
+
 template<typename T>
 T InterSpecUser::preferenceValue( const std::string &name,
                                   InterSpec *viewer )
 {
-  using namespace Wt;
-  
-  //This next line is the only reason InterSpec.h needs to be included
-  //  above
-  
-  Dbo::ptr<InterSpecUser> &user = userFromViewer(viewer);
-  std::shared_ptr<DataBaseUtils::DbSession> sql = sqlFromViewer(viewer);
-  
-  if( !user || !sql )
-    throw std::runtime_error( "preferenceValue(...): invalid usr or sql ptr" );
-  
-  PreferenceMap::const_iterator pos;
-  const PreferenceMap &prefs = user->m_preferences;
-  
-  if( user->m_deviceType & PhoneDevice )
-  {
-    pos = prefs.find( name + "_phone" );
-    if( pos != prefs.end() )
-      return boost::any_cast<T>( pos->second );
-  }//if( user->m_deviceType & PhoneDevice )
-
-  if( user->m_deviceType & TabletDevice )
-  {
-    pos = prefs.find( name + "_tablet" );
-    if( pos != prefs.end() )
-      return boost::any_cast<T>( pos->second );
-  }//if( user->m_deviceType & TabletDevice )
-
-  pos = prefs.find( name );
-  if( pos != prefs.end() )
-    return boost::any_cast<T>( pos->second );
-  
-  UserOption *option = getDefaultUserPreference( name, user->m_deviceType );
-  option->m_user = user;
-  
-  DataBaseUtils::DbTransaction transaction( *sql );
-  boost::any value;
-  try
-  {
-    sql->session()->add( option );
-    value = option->value();
-    user->m_preferences[name] = value;
-  }catch( std::exception &e )
-  {
-    transaction.rollback();
-    throw e;
-  }//try / catch
-  
-  transaction.commit();
-  
+  boost::any value = InterSpecUser::preferenceValueAny( name, viewer );
   return boost::any_cast<T>( value );
 }//preferenceValue(...)
 
@@ -1016,27 +1002,7 @@ T InterSpecUser::preferenceValue( const std::string &name,
 template<typename T>
 T InterSpecUser::preferenceValue( const std::string &name ) const
 {
-  PreferenceMap::const_iterator pos;
-  
-  if( m_deviceType & PhoneDevice )
-  {
-    pos = m_preferences.find( name  + "_phone" );
-    if( pos != m_preferences.end() )
-      return boost::any_cast<T>( pos->second );
-  }//if( user->m_deviceType & PhoneDevice )
-  
-  if( m_deviceType & TabletDevice )
-  {
-    pos = m_preferences.find( name  + "_tablet" );
-    if( pos != m_preferences.end() )
-      return boost::any_cast<T>( pos->second );
-  }//if( user->m_deviceType & TabletDevice )
-  
-  pos = m_preferences.find( name );
-  if( pos == m_preferences.end() )
-    throw std::runtime_error( "No preference value for " + name + ", try"
-                             " calling other InterSpecUser::preferenceValue(...) function" );
-  return boost::any_cast<T>( pos->second );
+  return boost::any_cast<T>( preferenceValueAny(name) );
 }//preferenceValue(...)
 
 
