@@ -53,11 +53,13 @@ public:
   
   const SandiaDecay::Nuclide *nuclide() const;
   
-  /*sets the starting nuclide for the decay chain
-   params:
-   nuc = the nuclide in question
+  /** Set the starting nuclide for the decay chain.
+   @param nuc The nuclide to show decay for
+   @param useCurrie Wether to use curries or bequerels for displaying activity
+          related quatities, like specific activity; this value should come from
+          what the user has entered the nuclide activity as, or similar
    */
-  void setNuclide( const SandiaDecay::Nuclide *nuc );
+  void setNuclide( const SandiaDecay::Nuclide *nuc, const bool useCurrie );
   
   //delete the more infor dialog dialog
   void deleteMoreInfoDialog();
@@ -135,8 +137,10 @@ protected:
 
   int m_axisBuffer;
   std::vector<std::string> m_infoText;
-  const SandiaDecay::Nuclide * m_nuclide;
+  const SandiaDecay::Nuclide *m_nuclide;
 
+  bool m_useCurrie;
+  
   AuxWindow *m_moreInfoDialog;
   Wt::JSignal<std::string> m_tapnhold;
 

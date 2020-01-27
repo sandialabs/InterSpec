@@ -1845,7 +1845,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   const SandiaDecay::Nuclide *nuc = db->nuclide( z, a );
   if( nuc )
     nuclide.display->clicked().connect(
-         boost::bind(&DecayChainChart::setNuclide, m_decayChainChart, nuc) );
+         boost::bind(&DecayChainChart::setNuclide, m_decayChainChart, nuc, useCurrie) );
 
   
   nuclide.display->doubleClicked().connect(
@@ -1886,7 +1886,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
 
   setTimeLimitToDisplay();
 
-  m_decayChainChart->setNuclide(db->nuclide(z, a, iso));
+  m_decayChainChart->setNuclide( db->nuclide(z, a, iso), useCurrie );
 
   refreshDecayDisplay();
 }//void addNuclide(..)
@@ -1909,15 +1909,15 @@ void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
     return;
   }//if( to_be_removed < 0 )
 
-  if (to_be_removed == m_nuclides.size() - 1)
+  if( to_be_removed == (m_nuclides.size() - 1) )
   {
     if (m_nuclides.size() == 1)
-      m_decayChainChart->setNuclide(NULL);
+      m_decayChainChart->setNuclide( nullptr, true );
     else
     {
       const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
       const DecayActivityDiv::Nuclide nuc = m_nuclides[m_nuclides.size() - 2];
-      m_decayChainChart->setNuclide(db->nuclide(nuc.z, nuc.a, nuc.iso));
+      m_decayChainChart->setNuclide( db->nuclide(nuc.z, nuc.a, nuc.iso), nuc.useCurrie );
     }
   }
 
@@ -1938,7 +1938,7 @@ void DecayActivityDiv::clearAllNuclides()
 
   setTimeLimitToDisplay();
   
-  m_decayChainChart->setNuclide(NULL);
+  m_decayChainChart->setNuclide(nullptr,true);
 
   deleteMoreInfoDialog();
   
