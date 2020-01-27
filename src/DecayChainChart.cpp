@@ -175,7 +175,8 @@ namespace
 DecayChainChart::DecayChainChart(  Wt::WContainerWidget *parent )
   : Wt::WPaintedWidget( parent ),
     m_axisBuffer( 22 ),
-    m_nuclide( NULL ),
+    m_nuclide( nullptr ),
+    m_useCurrie( true ),
     m_moreInfoDialog( NULL ),
     m_tapnhold( this, "tapnhold" )
 {
@@ -288,12 +289,12 @@ void DecayChainChart::displayTextInfo(vector<string> info)
   m_infoText = info;
   update();
 }
-/*sets the starting nuclide for the decay chain
-  params:
-    nuc = the nuclide in question
-*/
-void DecayChainChart::setNuclide( const SandiaDecay::Nuclide *nuc )
+
+
+void DecayChainChart::setNuclide( const SandiaDecay::Nuclide *nuc, const bool useCurrie )
 {
+  m_useCurrie = useCurrie;
+  
   if( nuc == m_nuclide )
     return;
   
@@ -560,6 +561,14 @@ void DecayChainChart::paintEvent( WPaintDevice *paintDevice )
       information.push_back("Half Life: " + hl );
     }
     
+    
+    if( !IsInf(nuc->halfLife) )
+    {
+      const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
+      const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, m_useCurrie );
+      information.push_back("Specific Act: " + sa );
+    }//if( not stable )
+    
     //the non metastable child (if any)
     const SandiaDecay::Nuclide * metaChild = NULL;
     
@@ -590,10 +599,14 @@ void DecayChainChart::paintEvent( WPaintDevice *paintDevice )
       char anStr[64], amStr[64];
       snprintf( anStr, sizeof(anStr), "Atomic Number: %i", metaChild->atomicNumber );
       snprintf( amStr, sizeof(amStr), "Atomic Mass: %.f", metaChild->atomicMass );
-      string hl = PhysicalUnits::printToBestTimeUnits( metaChild->halfLife );
+      const string hl = PhysicalUnits::printToBestTimeUnits( metaChild->halfLife );
       
       information.push_back( "Half Life: " + hl );
-
+      
+      const double metaSpecificActivity = metaChild->activityPerGram() / PhysicalUnits::gram;
+      const string metaSA = PhysicalUnits::printToBestSpecificActivityUnits( metaSpecificActivity, 3, m_useCurrie );
+      information.push_back("Specific Act: " + metaSA );
+      
       for(const SandiaDecay::Transition * transition : metaChild->decaysToChildren)
       {
         if( transition->child )

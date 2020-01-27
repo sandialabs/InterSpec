@@ -156,7 +156,9 @@ namespace PhysicalUnits
                                    const bool useRemPerHr = true,
                                    const double remPerHrDefinition = rem/hour );
   
-
+  std::string printToBestSpecificActivityUnits( double activityPerMass,
+                                                const int numSignificantFigures = 3,
+                                                const bool useCurie = true );
   
   //stringToTimeDuration(...): Takes a user string, and attempts to interpret
   //  if as a time duration. Takes for example '5.2 y', '52.3 s', '00:01:2.1',

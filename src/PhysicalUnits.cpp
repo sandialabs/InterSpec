@@ -397,6 +397,131 @@ string printToBestDoseUnits( double dose, const int maxNpostDecimal,
 }//string printToBestDoseUnits(...)
 
 
+std::string printToBestSpecificActivityUnits( double actPerMass,
+                                               const int numSignificantFigures,
+                                               const bool useCurie )
+{
+  //This is something barely more than a minimum viable function for printing
+  //  out specific activity.  Issues remaining that should be checked at least
+  //  are:
+  //  - The activity units are modified first before mass units (e.g., kCi/g
+  //    output instead of Ci/kg).  Is this the convention people normally use?
+  //    Or is there a standardized convention for this?
+  //  - Rounding has only kinda been tested on macOS, and not Linux or Windows
+  //  - The mega, giga, and tera activity prefixes are currently fully spelled
+  //    out, and all other prefixes us just one letter abreviations (k, m, u, n,
+  //    p) - this should probably be made consistent.
+  //  - Could use some better tests implemented.
+  
+  char formatflag[64], buffer[64];
+  string numerator_unitstr = useCurie ? "Ci" : "Bq";
+  string denominator_unitstr = "g";
+  
+  actPerMass /= (useCurie ? curie : becquerel);
+  actPerMass *= gram;
+  
+  //Get the exponent
+  double order = std::floor( std::log10(actPerMass) );
+  
+  //Define some ranges on power of 10 of the input were we will try to adjust
+  //  to reasonable units.  Outside this range we'll use scientific notation and
+  //  Ci/g or Bq/g.
+  const int min_order_adjust = -15;
+  const int max_order_adjust = 15;
+  
+  double value = actPerMass;
+  
+  if( order <= min_order_adjust )
+  {
+    //Do nothing, we will put value in scientific notation in Ci/g
+  }else if( order < -10 )
+  {
+    numerator_unitstr = "p" + numerator_unitstr;
+    value /= 1.0E-12;
+  }else if( order < -7 )
+  {
+    numerator_unitstr = "n" + numerator_unitstr;
+    value /= 1.0E-9;
+  }else if( order < -4 )
+  {
+    numerator_unitstr = "u" + numerator_unitstr;
+    value /= 1.0E-6;
+  }else if( order < 0 )
+  {
+    numerator_unitstr = "m" + numerator_unitstr;
+    value /= 1.0E-3;
+  }else if( order < 3 )
+  {
+    
+  }else if( order < 6 )
+  {
+    numerator_unitstr = "k" + numerator_unitstr;
+    value /= 1.0E3;
+  }else if( order < 9 )
+  {
+    numerator_unitstr = "mega-" + numerator_unitstr;
+    value /= 1.0E6;
+  }else if( order < 12 )
+  {
+    numerator_unitstr = "giga-" + numerator_unitstr;
+    value /= 1.0E9;
+  }else if( order < max_order_adjust )
+  {
+    numerator_unitstr = "tera-" + numerator_unitstr;
+    value /= 1.0E12;
+  }
+  
+  order = std::floor( std::log10(value) );
+  
+  if( order <= min_order_adjust )
+  {
+    //Do nothing, we will put value in scientific notation in Ci/g
+  }else if( order < 0 )
+  {
+    denominator_unitstr = "kg";
+    value /= 1.0E-3;
+  }else if( order < 3 )
+  {
+    
+  }else if( order < 6 )
+  {
+    denominator_unitstr = "mg";
+    value /= 1.0E3;
+  }else if( order < 9 )
+  {
+    denominator_unitstr = "ug";
+    value /= 1.0E6;
+  }else if( order < 12 )
+  {
+    denominator_unitstr = "ng";
+    value /= 1.0E9;
+  }else if( order < max_order_adjust )
+  {
+    denominator_unitstr = "pg";
+    value /= 1.0E12;
+  }
+  
+  if( order > min_order_adjust && order < max_order_adjust )
+  {
+    order = std::ceil( std::fabs(std::log10(value)) );
+    const int ndecimals = std::max( numSignificantFigures - static_cast<int>(order), 0 );
+    snprintf( formatflag, sizeof(formatflag), "%%.%if %s/%s",
+              ndecimals, numerator_unitstr.c_str(), denominator_unitstr.c_str() );
+  }else
+  {
+    value = actPerMass;
+    numerator_unitstr = useCurie ? "Ci" : "Bq";
+    denominator_unitstr = "g";
+    snprintf( formatflag, sizeof(formatflag), "%%.%ig %s/%s",
+             numSignificantFigures, numerator_unitstr.c_str(), denominator_unitstr.c_str() );
+  }
+  
+  snprintf( buffer, sizeof(buffer), formatflag, value );
+  
+  return buffer;
+}//printToBestSpecificActivityUnits(...)
+  
+  
 double stringToTimeDuration( std::string str, double second_def )
 {
   return stringToTimeDurationPossibleHalfLife( str, -1.0, second_def );
