@@ -858,7 +858,6 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   switch( method )
   {
     case UniformInitialGuess:
-    case MonteCarloInitialGuess:
     {
       inpeaks.clear();
       for( int i = 0; i < nPeaks; ++i )
@@ -868,12 +867,6 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
         const double amp = totalpeakarea / nPeaks;
         double mean = x0 + (i+0.5)*(x1-x0)/nPeaks;
         double sigma = 0.25*fabs(x1-x0) / nPeaks;
-        
-        if( method == MonteCarloInitialGuess )
-        {
-          const double d = double(rand()) / double(RAND_MAX);
-          mean = start_range + d * (end_range - start_range);
-        }//if( method == MonteCarloInitialGuess )
         
         if( detector && detector->hasResolutionInfo() )
           sigma = detector->peakResolutionSigma( mean );
@@ -976,25 +969,44 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
       
     case FromDataInitialGuess:
     {
+#define USE_QUICK_PEAK_CANDIDATE 1
+      
+#if( USE_QUICK_PEAK_CANDIDATE )
+      intputSharesContinuum = false;
+      std::vector< std::tuple<float,float,float> > candidates;  //{mean,sigma,area}
+      secondDerivativePeakCanidates( dataH, start_channel, end_channel, candidates );
+      std::sort( begin(candidates), end(candidates),
+                []( const tuple<float,float,float> &lhs, const tuple<float,float,float> &rhs) -> bool {
+                  return std::get<2>(lhs) > std::get<2>(rhs);
+      } );
+#else
       typedef std::shared_ptr<PeakDef> PeakPtr;
-      
       const vector<PeakPtr> derivative_peaks
-           = secondDerivativePeakCanidatesWithROI( dataH, start_channel, end_channel );
-      
+        = secondDerivativePeakCanidatesWithROI( dataH, start_channel, end_channel );
       map<double,PeakPtr> candidates;
       for( const PeakPtr &p : derivative_peaks )
         candidates[-p->amplitude()] = p;
+#endif
       
+    
       double avrg_width = 0.0, avrg_amp = 0.0;
-      for( map<double,PeakPtr>::iterator i = candidates.begin();
-          int(inpeaks.size()) < nPeaks && i != candidates.end(); ++i )
+      for( auto i = begin(candidates); int(inpeaks.size()) < nPeaks && i != end(candidates); ++i )
       {
+#if( USE_QUICK_PEAK_CANDIDATE )
+        if( get<0>(*i) >= x0 && get<0>(*i) <= x1 )
+        {
+          avrg_width += get<1>(*i);
+          avrg_amp += get<2>(*i);
+          inpeaks.emplace_back( get<0>(*i), get<1>(*i), get<2>(*i) );
+        }//if( i->second.mean() >= x0 && i->second.mean() <= x1 )
+#else
         if( i->second->mean() >= x0 && i->second->mean() <= x1 )
         {
           avrg_width += i->second->sigma();
           avrg_amp += i->second->amplitude();
           inpeaks.push_back( *(i->second) );
         }//if( i->second.mean() >= x0 && i->second.mean() <= x1 )
+#endif
       }//for(...)
       
       if( inpeaks.size() )
@@ -1164,6 +1176,279 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     answer.emplace_back( std::move(p) );
   }
 }//void findPeaksInUserRange( double x0, double x1, int nPeaks )
+
+
+
+
+
+void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
+                          MultiPeakInitialGuesMethod method,
+                          std::shared_ptr<const Measurement> dataH,
+                          std::shared_ptr<const DetectorPeakResponse> detector,
+                          vector<std::shared_ptr<PeakDef> > &answer,
+                          double &chi2 )
+{
+  //Current (main) problems with the results of this function
+  //  --Results can be catostropically wrong, depending on exact input range
+  
+  if( method != FromInputPeaks )
+    answer.clear();
+  chi2 = std::numeric_limits<double>::max();
+  
+  if( !dataH || nPeaks<=0 )
+    return;
+  
+  if( x1 < x0 )
+    std::swap( x0, x1 );
+  
+  //Lets estimate initial peak parameters
+  const size_t start_channel      = dataH->find_gamma_channel( x0 );
+  const size_t end_channel        = dataH->find_gamma_channel( x1 );
+  const double areaarea    = dataH->gamma_channels_sum( start_channel, end_channel );
+  //const double start_range = dataH->gamma_channel_lower( start_channel );
+  //const double end_range   = dataH->gamma_channel_upper( end_channel ) - DBL_EPSILON;
+  
+  bool intputSharesContinuum = (method==FromInputPeaks);
+  for( size_t i = 0; i < answer.size(); ++i )
+    intputSharesContinuum &= (answer[i]->continuum()==answer[0]->continuum());
+  
+  const size_t roiNumChan = end_channel - start_channel;
+  PeakContinuum::OffsetType offsetType = PeakContinuum::Linear;
+  if( intputSharesContinuum )
+    offsetType = answer[0]->continuum()->type();
+  else if( nPeaks > 2 && roiNumChan > 20 && nPeaks < 4 && roiNumChan < 40 )  //20 is a WAG
+    offsetType = PeakContinuum::Quadratic;
+  else if( nPeaks >= 4 || roiNumChan >= 40 )
+    offsetType = PeakContinuum::Cubic;
+  
+  //MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel+1, end_channel+1 );
+  //chi2fcn.set_reldiff_punish_start( 2.35482 );
+  
+  LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, x0, x1 );
+  
+  
+  const bool isHpge = (dataH->num_gamma_channels() > 4094);
+  
+  float minw_lower, maxw_lower, minw_upper, maxw_upper;
+  expected_peak_width_limits( x0, isHpge, minw_lower, maxw_lower );
+  expected_peak_width_limits( x1, isHpge, minw_upper, maxw_upper );
+  
+  float minsigma = std::min( minw_lower, minw_upper );
+  float maxsigma = std::min( maxw_lower, maxw_upper );
+  
+  if( detector && detector->hasResolutionInfo() )
+  {
+    minsigma = std::min( minw_lower, detector->peakResolutionSigma(x0) );
+    minsigma = std::min( minw_lower, detector->peakResolutionSigma(x1) );
+    maxsigma = std::min( maxw_lower, detector->peakResolutionSigma(x0) );
+    maxsigma = std::min( maxw_lower, detector->peakResolutionSigma(x1) );
+  }
+  
+  
+  /*
+   Want to fit for a number of peaks in the given range.
+   All peaks should share a common polynomial continuum.
+   Widths of the peaks are tied together
+   
+   parameters:
+   mean0     {mean of first peak}
+   mean1     {mean of second peak}
+   ...
+   meanN     {mean of N'th peak}
+   width0    {if npeaks==1, width of that peak; else width at m_lowerROI}
+   widthFcn  {multiple of width0, plus fraction of total range time widthFcn}
+   */
+
+  vector<PeakDef> inpeaks;
+  
+  switch( method )
+  {
+    case UniformInitialGuess:
+    {
+      inpeaks.clear();
+      
+      for( int i = 0; i < nPeaks; ++i )
+      {
+        PeakDef peak;
+        
+        const double amp = areaarea / nPeaks;
+        double mean = x0 + (i+0.5)*(x1-x0)/nPeaks;
+        double sigma = 0.25*fabs(x1-x0) / nPeaks;
+      
+        if( detector && detector->hasResolutionInfo() )
+          sigma = detector->peakResolutionSigma( mean );
+        
+        peak.setAmplitude( amp );
+        peak.setMean( mean );
+        peak.setSigma( sigma );
+        
+        inpeaks.push_back( peak );
+        //inpeaks.emplace_back( std::move(peak) );
+      }//for( int i = 0; i < nPeaks; ++i )
+      
+      break;
+    }//case UniformInitialGuess:
+      
+    case FromDataInitialGuess:
+    {
+#if( USE_QUICK_PEAK_CANDIDATE )
+      intputSharesContinuum = false;
+      std::vector< std::tuple<float,float,float> > candidates;  //{mean,sigma,area}
+      secondDerivativePeakCanidates( dataH, start_channel, end_channel, candidates );
+      std::sort( begin(candidates), end(candidates),
+                []( const tuple<float,float,float> &lhs, const tuple<float,float,float> &rhs) -> bool {
+                  return std::get<2>(lhs) > std::get<2>(rhs);
+                } );
+#else
+      typedef std::shared_ptr<PeakDef> PeakPtr;
+      const vector<PeakPtr> derivative_peaks
+      = secondDerivativePeakCanidatesWithROI( dataH, start_channel, end_channel );
+      map<double,PeakPtr> candidates;
+      for( const PeakPtr &p : derivative_peaks )
+        candidates[-p->amplitude()] = p;
+#endif
+      
+    
+      double avrg_width = 0.0, avrg_amp = 0.0;
+      
+      for( auto i = begin(candidates); int(inpeaks.size()) < nPeaks && i != end(candidates); ++i )
+      {
+#if( USE_QUICK_PEAK_CANDIDATE )
+        if( get<0>(*i) >= x0 && get<0>(*i) <= x1 )
+        {
+          avrg_width += get<1>(*i);
+          avrg_amp += get<2>(*i);
+          inpeaks.emplace_back( get<0>(*i), get<1>(*i), get<2>(*i) );
+        }//if( i->second.mean() >= x0 && i->second.mean() <= x1 )
+#else
+        if( i->second->mean() >= x0 && i->second->mean() <= x1 )
+        {
+          avrg_width += i->second->sigma();
+          avrg_amp += i->second->amplitude();
+          inpeaks.push_back( *(i->second) );
+        }//if( i->second.mean() >= x0 && i->second.mean() <= x1 )
+#endif
+      }//for(...)
+      
+      if( inpeaks.size() )
+      {
+        avrg_width /= inpeaks.size();
+        avrg_amp /= inpeaks.size();
+      }else
+      {
+        avrg_width = 0.25*( fabs(x0 - x1) );
+        avrg_amp = 0.5*dataH->gamma_channels_sum( start_channel, end_channel );
+      }//if( inpeaks ) / else
+      
+      for( int i = int(inpeaks.size()); i < nPeaks; ++i )
+      {
+        PeakDef peak;
+        const double amp = areaarea / nPeaks;
+        const double mean = x0 + (x1-x0)/(1+inpeaks.size());
+        double sigma = avrg_width;
+        if( detector && detector->hasResolutionInfo() )
+          sigma = detector->peakResolutionSigma( mean );
+        
+        peak.setMean( mean );
+        peak.setSigma( sigma );
+        peak.setAmplitude( amp );
+        
+        inpeaks.push_back( peak );
+      }//for( int i = int(inpeaks.size()); i < nPeaks; ++i )
+      
+      break;
+    }//case FromDataInitialGuess:
+      
+    case FromInputPeaks:
+    {
+      if( answer.size() != static_cast<size_t>(nPeaks) )
+        throw runtime_error( "findPeaksInUserRange: invalid input for "
+                            "method=FromInputPeaks" );
+      for( size_t i = 0; i < answer.size(); ++i )
+        inpeaks.push_back( *answer[i] );
+      
+      answer.clear();
+      break;
+    }//case FromInputPeaks:
+  }//switch( method )
+  
+  assert( !inpeaks.empty() );
+  
+  /*
+   Want to fit for a number of peaks in the given range.
+   All peaks should share a common polynomial continuum.
+   Widths of the peaks are tied together
+   
+   parameters:
+   mean0     {mean of first peak}
+   mean1     {mean of second peak}
+   ...
+   meanN     {mean of N'th peak}
+   width0    {if npeaks==1, width of that peak; else width at m_lowerROI}
+   widthFcn  {multiple of width0, plus fraction of total range time widthFcn}
+   */
+  
+  
+  
+  ROOT::Minuit2::MnUserParameters inputPrams;
+  for( size_t i = 0; i < inpeaks.size(); ++i )
+  {
+    char name[64];
+    snprintf( name, sizeof(name), "Mean%i", static_cast<int>(i) );
+    const double mean = inpeaks[i].mean();
+    
+    if( !inpeaks[i].fitFor(PeakDef::Mean) )
+      inputPrams.Add( name, mean );
+    else
+      inputPrams.Add( name, mean, 0.1*(x1-x0), x0, x1 );
+  }//for( const PeakDefShrdPtr &peak : inpeaks )
+  
+  const float sigma0 = static_cast<float>( inpeaks[0].sigma() );
+  inputPrams.Add( "Sigma0", std::min(std::max(sigma0,minsigma), maxsigma), 0.2*(maxsigma - minsigma), minsigma, maxsigma );
+  
+  if( nPeaks > 1 )
+    inputPrams.Add( "SigmaFcn", 0.0, 0.001, -0.10, 0.10 );
+  
+  
+  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
+  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+  ROOT::Minuit2::MnMinimize fitter( chi2fcn, inputParamState, strategy );
+  
+  unsigned int maxFcnCall = 5000;
+  const double tolerance = 0.5; //beThorough ? 0.5 : 0.75*nPeaks;
+  
+  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
+  //cout << "minimum.NFcn()=" << minimum.NFcn() << endl;
+  
+  if( !minimum.IsValid() )
+    minimum = fitter( maxFcnCall, tolerance );
+  if( !minimum.IsValid() )
+    minimum = fitter( maxFcnCall, tolerance );
+  
+  const ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
+  const vector<double> values = fitParams.Params();
+  const vector<double> errors = fitParams.Errors();
+  
+  //Turn off punishment for peaks being to close
+  //chi2fcn.set_reldiff_punish_weight( 0.0 );
+  
+  chi2 = chi2fcn.DoEval( &(values[0]) );
+  const double dof = chi2fcn.dof();
+  
+  const double chi2Dof = chi2 / dof;
+  vector<PeakDef> peaks;
+  chi2fcn.parametersToPeaks( peaks, &values[0], &errors[0] );
+  
+  for( int i = 0; i < nPeaks; ++i )
+  {
+    auto p = std::make_shared<PeakDef>( peaks[i] );
+    p->set_coefficient( chi2Dof, PeakDef::Chi2DOF );
+    answer.emplace_back( std::move(p) );
+  }
+}//void findPeaksInUserRange( double x0, double x1, int nPeaks )
+
+
+
 
 
 void smoothSpectrum( const std::vector<float> &spectrum, const int side_bins,
@@ -4372,6 +4657,343 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 }//searchForPeakFromUser(...)
 
 
+void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> data,
+                                   size_t start_channel,
+                                   size_t end_channel,
+                                   std::vector< std::tuple<float,float,float> > &results )
+{
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
+  //If we're debuging things, lets make sure we printout information from just
+  //  one function call contiguously to the log.
+  static std::mutex s_fcnmutex;
+  std::lock_guard<std::mutex> lock( s_fcnmutex );
+  
+  ofstream ouputfile( "secondDerivativePeakCanidates.txt", ios::app );
+  //  ostream &debugstrm = cout;
+  ostream &debugstrm = ouputfile;
+#endif
+  
+  results.clear();
+  
+  if( !data->num_gamma_channels() )
+    return;
+  
+  const size_t nchannel = data->num_gamma_channels();
+  const bool highres = (nchannel > 3000);
+  
+  if( start_channel >= nchannel )
+    start_channel = 0;
+  if( end_channel <= start_channel || end_channel >= (nchannel-1) )
+    end_channel = nchannel - 2;
+  
+  const double threshold_FOM = 1.3;
+  //const double range_nsigma_thresh = highres ? 5.0 : 2.75;
+  const float pos_sum_threshold_sf = -0.01f;
+  //We will let one bin fluctate negative to avoid fluctations near threshold_FOM
+  //Untested for HPGe data.
+  //  Currently (20141209) for low res data, this should be kept the same as
+  //  in find_roi_for_2nd_deriv_candidate(...) {although all this is under
+  //  development}.
+  const size_t nFluxuate = highres ? 2 : 2;
+  assert( nFluxuate >= 1 );
+  
+  
+  //XXX: using middle energy range so peak finding will always be consistent
+  //     despite intput range
+  //     Should keep consistent with find_roi_for_2nd_deriv_candidate()
+  const size_t midbin = data->num_gamma_channels() / 2;// (start_channel + end_channel) / 2;
+  const float midenergy = data->gamma_channel_center( midbin );
+  const float midbinwidth = data->gamma_channel_width( midbin );
+  
+  const int order = highres ? 3 : 2;
+  const size_t side_bins = highres ? 4 : std::max( size_t(5), static_cast<size_t>( 0.022f*midenergy/midbinwidth + 0.5f ) );
+  
+  
+  vector<float> second_deriv;
+  smoothSpectrum( data, static_cast<int>(side_bins), order, 2, second_deriv );
+  
+  //Since the peak resolution changes a lot for low-resolution spectra, if
+  //  side_bins is to large, it will wipe out low energy features, meaning we
+  //  wont detect low energy peaks
+  //Note this code should be kept the same as in
+  //  find_roi_for_2nd_deriv_candidate(...) while all of this is in development
+  if( !highres && side_bins > 5 && nchannel >= 512
+     && start_channel < (nchannel/15) )
+  {
+    //We should also have a minbimum statistics requirment here.
+    const size_t index = std::max( (nchannel/15), side_bins );
+    vector<float> second_deriv_lower;
+    smoothSpectrum( data, 4, order, 2, second_deriv_lower );
+    
+    for( size_t i = 0; i < (index-side_bins); ++i )
+      second_deriv[i] = second_deriv_lower[i];
+    
+    //transition over 'side_bins' between the smoothings.
+    for( size_t i = 0; i < side_bins; ++i )
+    {
+      const float factor = float(i+1) / float(side_bins+1);
+      const size_t current = index - side_bins + i;
+      second_deriv[current] = factor*second_deriv[current]
+      + (1.0f-factor)*second_deriv_lower[current];
+    }
+    
+  }//if( !highres )
+  
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
+  {
+    static std::mutex secondderivfilelock;
+    std::lock_guard<std::mutex> lock( secondderivfilelock );
+    ofstream secondderiv( "secondderiv.csv" );
+    secondderiv << "Energy,Counts" << endl;
+    const size_t nchannel = dataH->gamma_counts()->size();
+    for( size_t bin = 0; bin < nchannel; ++bin )
+      secondderiv << dataH->gamma_channel_lower(bin) << "," << second_deriv[bin] << endl;
+    vector<float> smoothed;
+    smoothSpectrum( dataH, side_bins, order, 0, smoothed );
+    ofstream smoothedfile( "smoothed.csv" );
+    smoothedfile << "Energy,Counts" << endl;
+    for( size_t bin = 0; bin < nchannel; ++bin )
+      smoothedfile << dataH->gamma_channel_lower(bin) << "," << smoothed[bin] << endl;
+    DebugLog(debugstrm) << "Made smoothed.csv and secondderiv.csv" << "\n";
+    //    cerr << "side_bins=" << side_bins << ", order=" << order << endl;
+  }
+#endif
+  
+  //XXX: the below 1.5 is empiracally found, I'm not entirely sure where
+  //     comes from...and infact might be higher
+  const double amp_fake_factor = 1.5;
+  
+  
+  const vector<float> &energies = *data->gamma_channel_energies();
+  
+  size_t minbin = 0, firstzero = 0, secondzero = 0;
+  float secondsum = 0.0f, minval = 9999999999.9f;
+  
+  for( size_t channel = start_channel; channel <= end_channel; ++channel )
+  {
+    const float secondDeriv = second_deriv[channel]; //Not dividing by binwidth^2 here,
+    
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 3 )
+    DebugLog(debugstrm) << dataH->gamma_channel_lower(channel) << ": secondDeriv=" << secondDeriv
+    << ", secondsum=" << secondsum << ", minval=" << minval << ", firstzero="
+    << firstzero << ", channel=" << channel << "\n";
+#endif
+    
+    bool secondSumPositive = true;
+    float positivesum = 0.0f;
+    for( size_t i = 0; i < nFluxuate; ++i )
+    {
+      if( (channel+i) <= end_channel )
+      {
+        const bool above = (second_deriv[channel+i] > 0.0f);
+        if( above )
+          positivesum += second_deriv[channel+i];
+        secondSumPositive &= above;
+      }
+    }
+    
+    //Rather than using 'pos_sum_threshold_sf*secondsum', it might be better to
+    //  use something invlolving sqrt(secondsum) since this makes a bit more
+    //  sense.
+    //Also, positivesum can probably also thresholded off of some sort of more
+    //  absolute quantity
+    secondSumPositive &= (positivesum > pos_sum_threshold_sf*secondsum);
+    
+    if( secondSumPositive && (minval < 99999999999.9)
+       && (secondsum!=0.0) && (firstzero>0)
+       && ((channel-firstzero)>2) )
+    {
+      secondzero = channel;
+      
+      const double mean = data->gamma_channel_center(minbin);
+      const double sigma = 0.5*(data->gamma_channel_center(secondzero)
+                                - data->gamma_channel_center(firstzero));
+      
+      const double deriv_sigma = 0.5*( secondzero - firstzero );
+      const double part = sqrt( 2.0 / ( boost::math::constants::pi<double>() *
+                                       boost::math::constants::e<double>() ) )
+      / ( deriv_sigma * deriv_sigma );
+      const double amplitude = -amp_fake_factor * secondsum / part;
+      
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 2 )
+      DebugLog(debugstrm) << "firstzero=" << dataH->gamma_channel_center(firstzero)
+      << ", secondzero=" << dataH->gamma_channel_center(secondzero) << "\n";
+#endif
+      
+      const float lowerEnengy = static_cast<float>( mean - 3.0*sigma );
+      const float upperEnergy = static_cast<float>( mean + 3.0*sigma );
+      
+      double data_area = data->gamma_integral( lowerEnengy, upperEnergy );
+      double est_sigma = sqrt( std::max(data_area,1.0) );
+      
+      //In principle we would want to use the (true) continuums area to derive
+      //  the est_sigma from, but for practical purposes I think this can give
+      //  us false positives fairly often
+      
+      const double figure_of_merit = 0.68*amplitude / est_sigma;
+      
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 2 )
+      //double cont_area = peak->offset_integral( lowerEnengy, upperEnergy );
+      //double new_amp = data_area - cont_area;
+      //DebugLog(debugstrm) << "mean=" << mean << ", amplitude=" << amplitude
+      //<< ", sigma=" << peak->sigma()
+      //<< ", lowerEnengy=" << lowerEnengy << ", upperEnergy=" << upperEnergy
+      //<< ", cont_area=" << cont_area << ", data_area=" << data_area
+      //<< ", new_amp=" << new_amp << ", FOM=" << figure_of_merit << "\n"
+      //<< "\n";
+#endif
+      
+      if( figure_of_merit > threshold_FOM )
+      {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 2 )
+        DebugLog(debugstrm) << "Candidate a peak with mean=" << peak->mean()
+        << ", width=" << sigma
+        << ", amplitude=" << amplitude
+        << ", new_amp=" << new_amp
+        << ", ROI start=" << lowerEnengy << ", ROI end=" << upperEnergy
+        << ", cont_area=" << cont_area
+        << ", figure_of_merit=" << figure_of_merit
+        << "\n\tKeeping" << "\n";
+#endif
+        
+        bool passescuts = true;
+        if( !highres && energies[minbin] < 130.0f )
+        {
+          //look 2 sigma forward and make sure the data has dropped enough
+          const size_t p2sigmbin = data->find_gamma_channel( mean + 1.5*sigma );
+          const float p2binlower = data->gamma_channel_lower( p2sigmbin );
+          const float p2binupper = data->gamma_channel_upper( p2sigmbin );
+          
+          const double p2gausheight = PeakDef::gaus_integral( mean, sigma, amplitude, p2binlower, p2binupper );
+          const float p2contents = data->gamma_channel_content( p2sigmbin );
+          
+          const float meanbinlower = data->gamma_channel_lower( minbin );
+          const float meanbinupper = data->gamma_channel_upper( minbin );
+          const double meangausheight = PeakDef::gaus_integral( mean, sigma, amplitude, meanbinlower, meanbinupper );
+          const float meancontents = data->gamma_channel_content( minbin );
+          const double expecteddiff = meangausheight - p2gausheight;
+          const float actualdiff = meancontents - p2contents;
+          
+          //We dont expect the continuum to be changing rate of any more than
+          //  1/2 the rate of peaks (this rate made up from my head, so take
+          //  it with a grain of salt).  Should incorporate stat uncertainites
+          //  here as well!
+          passescuts = (actualdiff > 0.45*expecteddiff);
+          
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
+          if( !passescuts )
+            DebugLog(debugstrm) << "Failing candidate peak, mean: " << mean
+            << ", meancontents=" << meancontents
+            << ", p2contents=" << p2contents << ", actualdiff="
+            << actualdiff << ", expecteddiff=" << expecteddiff << "\n";
+#endif
+        }//if( !highres && energies[minbin] < 130.0f )
+        
+        if( !highres && passescuts )
+        {
+          //For really wide peaks, we'll let there be a bit more fluxuation,
+          //  since sometimes
+          size_t nflux = max( nFluxuate, ((secondzero-firstzero)/side_bins) + 1 );
+          
+          //Look forward and backwards to see if the sum of the second
+          //  derivative, while positive, is roughly comparable to the negative
+          //  sum.  We expect the positive-summs on either side of the negative
+          //  region to add up to about the same area as the negative region.
+          float nextpositivesum = 0.0;
+          for( size_t i = channel; i <= end_channel; ++i )
+          {
+            bool secondSumNegative = true;
+            for( size_t j = 0; j < nflux && ((i+j) < end_channel); ++j )
+              secondSumNegative &= (second_deriv[i+j] < 0.0f);
+            if( secondSumNegative )
+              break;
+            nextpositivesum += second_deriv[i];
+          }//for( size_t i = 0; i <= end_channel; ++i )
+          
+          
+          float prevpositivesum = 0.0;
+          for( size_t i = firstzero; i > 0; --i )
+          {
+            bool secondSumNegative = true;
+            for( size_t j = 0; j < nflux && ((i-j) > 0); ++j )
+              secondSumNegative &= (second_deriv[i-j] < 0.0f);
+            if( secondSumNegative )
+              break;
+            prevpositivesum += second_deriv[i];
+          }//for( size_t i = 0; i <= end_channel; ++i )
+          
+          //If the current candidate peak is a result of compton backscatter,
+          //  then it is likely the next positive region will be large, while
+          //  the previous positive region will be small (we expect them to be
+          //  about equal, and sum to be equal in magnitide to the negative
+          //  region).
+          const float nextratio = (-nextpositivesum/secondsum);
+          const float prevratio = (-prevpositivesum/secondsum);
+          passescuts = (nextratio < 4.0 || prevratio > 0.2)
+          && ((nextratio+prevratio)>0.3);
+          
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
+          if( !passescuts )
+            DebugLog(debugstrm) << "Failing candidate peak, mean=" << peak->mean()
+            << ", prevsumratios=" << (-prevpositivesum/secondsum)
+            << ", possumratios=" << (-nextpositivesum/secondsum)
+            << ", ((secondzero-firstzero)/side_bins)=" << ((secondzero-firstzero)/side_bins)
+            << "\n";
+#endif
+        }//if( !highres )
+        
+        if( passescuts )
+          results.push_back( std::tuple<float,float,float>{mean, sigma, amplitude} );
+      }//if( region we were just in passed_threshold )
+      
+      secondsum = 0.0;
+      minval = 9999999999.9f;
+      minbin = secondzero = firstzero = 0;
+    }else
+    {
+      bool belowzero = true, goingnegative = true, abovezero = true;
+      for( size_t i = 0; i < nFluxuate; ++i )
+      {
+        if( (channel+i+1) < nchannel )
+          goingnegative &= (second_deriv[channel+i+1] < 0.0f);
+        if( channel >= i )
+        {
+          belowzero &= (second_deriv[channel-i] <= 0.0f);
+          abovezero &= (second_deriv[channel-i] > 0.0f);
+        }
+      }//for( size_t i = 0; i < nFluxuate; ++i )
+      
+      if( channel /*&& (firstzero==0)*/ && !firstzero && goingnegative )
+      {
+        firstzero = channel;
+        minbin = channel;
+        minval = secondDeriv;
+        
+        for( size_t i = 1; i < nFluxuate; ++i )
+          if( channel >= i )
+            secondsum += second_deriv[channel-i];
+      }else if( secondSumPositive )
+      {
+        secondsum = 0.0;
+        minval = 9999999999.9f;
+        minbin = secondzero = firstzero = 0;
+      }
+      
+      if( firstzero > 0 )
+      {
+        secondsum += secondDeriv;
+        
+        if( secondDeriv < minval )
+        {
+          minbin = channel;
+          minval = secondDeriv;
+        }
+      }//if( firstzero > 0 )
+    }//if( we are out of region of interest) / else( in region of )
+  }//for( loop over bins )
+}//secondDerivativePeakCanidates(...)
+
+
 std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std::shared_ptr<const Measurement> dataH,
                                                           size_t start_channel,
                                                           size_t end_channel )
@@ -5231,13 +5853,44 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     throw runtime_error( "fit_amp_and_offset: invalid input" );
   
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //
   //Implementation is quite inneficient
+  //
+  //Current implemementation is not necassarily numerically the most accurate or
+  //  the best when there are near degeneracies.  Should switch to using SVD for
+  //  solving.
+  //
+  //When uncertainties are not needed (e.g., while fitting means), could save
+  //  maybe a factor of three or so in computations.
+  //
+  //Could use Eigen and do things a bit better, see
+  // https://eigen.tuxfamily.org/dox/group__LeastSquares.html
+  //
+  
+  
+//For experimentation to see how much all the allocations are actually slowing
+//  things done - horribly thread un-safe, and will explode if used from GUI!
+#define TRIAL_MINIMIZE_MATRIX_ALLOCATIONS 0
+  
+  
   using namespace boost::numeric;
   const size_t npeaks = sigmas.size();
   const size_t npoly = static_cast<size_t>( polynomial_order + 1 );
   const int nfit_terms = npoly + npeaks;
+  
+#if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
+#warning "TRIAL_MINIMIZE_MATRIX_ALLOCATIONS Is enabled - this will blow up if making an InterSpec GUI"
+  static ublas::matrix<double> A( nbin, nfit_terms );
+  static ublas::vector<double> b( nbin );
+  
+  if( A.size1() != nbin || A.size2() != nfit_terms )
+    A.resize( nbin, nfit_terms, false );
+  if( b.size() != nbin )
+    b.resize( nbin, false );
+#else
   ublas::matrix<double> A( nbin, nfit_terms );
   ublas::vector<double> b( nbin );
+#endif
   
   //  cerr << endl << "Input: " << ref_energy << ", ";
   //  for( size_t i = 0; i < npeaks; ++i )
@@ -5288,15 +5941,58 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //  }
   //  cerr  << "};" << endl;
   
+#if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  static ublas::matrix<double> alpha;
+  
+  if( alpha.size1() != A.size2() )
+    alpha.resize( A.size2(), A.size2(), false );
+  
+  prod( A_transpose, A, alpha );
+  
+  static ublas::matrix<double> C;
+  if( C.size1() != alpha.size1() || C.size2() != alpha.size2() )
+    C.resize( alpha.size1(), alpha.size2(), false );
+#else
   const ublas::matrix<double> A_transpose = ublas::trans( A );
   const ublas::matrix<double> alpha = prod( A_transpose, A );
   ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+#endif
   
   bool success = false;
   
   try
   {
+    //See http://viennacl.sourceforge.net/doc/least-squares_8cpp-example.html#a8 for example
+    //  of better solving things follwing the below commented out lines
+    //typedef boost::numeric::ublas::matrix<double>              MatrixType;
+    //typedef boost::numeric::ublas::vector<double>              VectorType;
+    //boost::numeric::ublas::range ublas_range(0, 3);
+    //boost::numeric::ublas::matrix_range<MatrixType> ublas_R(ublas_A, ublas_range, ublas_range);
+    //boost::numeric::ublas::vector_range<VectorType> ublas_b2(ublas_b, ublas_range);
+    //boost::numeric::ublas::inplace_solve(ublas_R, ublas_b2, boost::numeric::ublas::upper_tag());
+
+#if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
+    static boost::numeric::ublas::matrix<double> local_alpha;
+    if( local_alpha.size1() != alpha.size1() || local_alpha.size2() != alpha.size2() )
+      local_alpha.resize( alpha.size1(), alpha.size2());
+    local_alpha.assign( alpha );
+    
+    ublas::permutation_matrix<std::size_t> pm( local_alpha.size1() );
+    //if( pm.size() != local_alpha.size1() )
+    //  pm.resize( local_alpha.size1(), false );
+    
+    const size_t res = boost::numeric::ublas::lu_factorize(local_alpha, pm);
+    //const size_t res = boost::numeric::ublas::axpy_lu_factorize(local_alpha, pm);  //sometimes faster?
+    success = (res == 0);
+    if( success )
+    {
+      C.assign( boost::numeric::ublas::identity_matrix<double>( local_alpha.size1() ) );
+      lu_substitute(local_alpha, pm, C);
+    }
+#else
     success = matrix_invert( alpha, C );
+#endif
   }catch( std::exception &e )
   {
     cerr << "fit_amp_and_offset(...): caught: " << e.what() << endl;

@@ -3763,11 +3763,6 @@ void InterSpec::showLicenseAndDisclaimersWindow( const bool is_awk,
   m_licenseWindow = new LicenseAndDisclaimersWindow( is_awk, renderedWidth(), renderedHeight() );
   
   m_licenseWindow->finished().connect( std::bind([this,finished_callback](){
-    
-    //#warning "Setting VersionAgreedToUseTerms to zero for debugging"
-    //InterSpecUser::setPreferenceValue( m_user, "VersionAgreedToUseTerms", 0, this );
-    InterSpecUser::setPreferenceValue( m_user, "VersionAgreedToUseTerms", COMPILE_DATE_AS_INT, this );
-    
     deleteLicenseAndDisclaimersWindow();
     
     if( finished_callback )
@@ -5639,7 +5634,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( USE_SPECTRUM_CHART_D3 )
   //Not sure _why_ this next statement is needed, but it is, or else the
   //  spectrum chart shows up with no data
-  m_spectrum->updateData();
+  m_spectrum->scheduleUpdateForeground();
 #endif
 }//void setToolTabsVisible( bool showToolTabs )
 
@@ -7793,6 +7788,8 @@ double InterSpec::liveTime( const std::set<int> &samplenums ) const
 }//double liveTime( const std::set<int> &samplenums );
 */
 
+
+
 void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
                                                 const SpectrumType type )
 {
@@ -7846,6 +7843,7 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
       displayBackgroundData();
     break;
   }//switch( type )
+  
   
   //Right now, we will only search for hint peaks for foreground
 #if( !ANDROID && !IOS )
@@ -8453,8 +8451,12 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #if( USE_DB_TO_STORE_SPECTRA )
       m_saveStateAs->setDisabled( !m_dataMeasurement );
 #endif
+      displayForegroundData( false );
+      displayTimeSeriesData( true );
+      
     case kSecondForeground:
       displaySecondForegroundData();
+      
     case kBackground:
       displayBackgroundData();
   };//switch( spec_type )
@@ -9114,11 +9116,6 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
   
   if( m_detectorToShowMenu && m_detectorToShowMenu->parentItem() )
     m_detectorToShowMenu->parentItem()->setDisabled( det_nums.empty() );
-  
-  const bool keep_current_energy_range = false;
-  displayForegroundData( keep_current_energy_range );
-
-  displayTimeSeriesData( true );
 }//bool updateGuiForPrimarySpecChange( const std::string &filename )
 
 

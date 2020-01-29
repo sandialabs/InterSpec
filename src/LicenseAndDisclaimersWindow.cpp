@@ -51,6 +51,35 @@ using namespace Wt;
 using namespace std;
 
 
+
+//The below YEAR MONTH DAY macros are taken from
+//http://bytes.com/topic/c/answers/215378-convert-__date__-unsigned-int
+//  and I believe to be public domain code
+#define YEAR ((((__DATE__ [7] - '0') * 10 + (__DATE__ [8] - '0')) * 10 \
++ (__DATE__ [9] - '0')) * 10 + (__DATE__ [10] - '0'))
+#define MONTH (__DATE__ [2] == 'n' && __DATE__ [1] == 'a' ? 0 \
+: __DATE__ [2] == 'b' ? 1 \
+: __DATE__ [2] == 'r' ? (__DATE__ [0] == 'M' ? 2 : 3) \
+: __DATE__ [2] == 'y' ? 4 \
+: __DATE__ [2] == 'n' ? 5 \
+: __DATE__ [2] == 'l' ? 6 \
+: __DATE__ [2] == 'g' ? 7 \
+: __DATE__ [2] == 'p' ? 8 \
+: __DATE__ [2] == 't' ? 9 \
+: __DATE__ [2] == 'v' ? 10 : 11)
+#define DAY ((__DATE__ [4] == ' ' ? 0 : __DATE__ [4] - '0') * 10 \
++ (__DATE__ [5] - '0'))
+
+/** \brief Macro to embed compile date (as an decimal int) in ISO format into
+ the program
+ 
+ example: Will evaluate to 20120122 for jan 22nd, 2012.
+ */
+#define COMPILE_DATE_AS_INT (YEAR*10000 + (MONTH+1)*100 + DAY)
+
+//Or could just use: __DATE__
+
+
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int screen_width, int screen_height )
 : AuxWindow("Disclaimers, Licenses, Credit, and Contact",
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)

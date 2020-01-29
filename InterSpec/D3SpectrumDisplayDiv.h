@@ -106,10 +106,10 @@ public:
                      float realTime,
                      float neutronCounts );
   
-  //updateData(): updates the data JSON for the D3 spectrum on the JS side
-  void updateData();
-  void updateBackground();
-  void updateSecondData();
+  void scheduleUpdateForeground();
+  void scheduleUpdateBackground();
+  void scheduleUpdateSecondData();
+  
   
   /** Schedules the foreground peaks to be re-loaded to the client during the
    next call to #render (which Wt takes care of calling).
@@ -271,6 +271,12 @@ public:
   
 protected:
 
+  //updates the data JSON for the D3 spectrum on the JS side
+  void renderForegroundToClient();
+  void renderBackgroundToClient();
+  void renderSecondDataToClient();
+  
+  
   void defineJavaScript();
   
   void initUserTools();
@@ -295,10 +301,15 @@ protected:
   /** Flags */
   enum D3RenderActions
   {
-    UpdateForegroundPeaks = 0x01
+    UpdateForegroundPeaks = 0x01,
     
-    //ToDo: upgrade setting forground/background/secondary and maybe a few other
-    //      things to this mechanism.
+    UpdateForegroundSpectrum = 0x02,
+    UpdateBackgroundSpectrum = 0x04,
+    UpdateSecondarySpectrum = 0x08,
+    
+    ResetXDomain = 0x10
+    
+    //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   
   Wt::WFlags<D3RenderActions> m_renderFlags;
