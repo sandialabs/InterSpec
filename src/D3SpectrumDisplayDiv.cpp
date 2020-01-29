@@ -596,6 +596,15 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( renderFull )
     defineJavaScript();
   
+  if( m_renderFlags.testFlag(UpdateForegroundSpectrum) )
+    renderForegroundToClient();
+  
+  if( m_renderFlags.testFlag(UpdateBackgroundSpectrum) )
+    renderBackgroundToClient();
+  
+  if( m_renderFlags.testFlag(UpdateSecondarySpectrum) )
+    renderSecondDataToClient();
+  
   if( m_renderFlags.testFlag(UpdateForegroundPeaks) )
     setForegroundPeaksToClient();
   
@@ -838,52 +847,25 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
                                  float neutronCounts,
                                  bool keep_curent_xrange )
 {
+  const float oldBackSF = m_model->backgroundScaledBy();
+  const float oldSecondSF = m_model->secondDataScaledBy();
+  
   m_model->setDataHistogram( data_hist, liveTime, realTime, neutronCounts );
   
-  string js;
-  const string resetDomain = keep_curent_xrange ? "false" : "true";
+  if( !keep_curent_xrange )
+    m_renderFlags |= ResetXDomain;
   
-  // Set the data for the chart
-  if ( data_hist ) {
-    // Create the measurement array (should only have one measurement)
-    std::ostringstream ostr;
-    std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
-    std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> foregroundData;
-    D3SpectrumExport::D3SpectrumOptions foregroundOptions;
-    
-    // Set options for the spectrum
-    foregroundOptions.line_color = m_foregroundLineColor.isDefault() ? string("black") : m_foregroundLineColor.cssText();
-    foregroundOptions.peak_color = m_defaultPeakColor.isDefault() ? string("blue") : m_defaultPeakColor.cssText();
-    foregroundOptions.spectrum_type = kForeground;
-    foregroundOptions.display_scale_factor = displayScaleFactor( kForeground );
-    
-    // Set the peak data for the spectrum
-    if ( m_peakModel ) {
-      std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
-      vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks );
-    }
-    
-    measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(data_hist.get(),foregroundOptions) );
-    
-    // Set the data on the JS side
-    if ( D3SpectrumExport::write_and_set_data_for_chart(ostr, id(), measurements) ) {
-      string data = ostr.str();
-      size_t index = data.find( "spec_chart_" );
-      data = data.substr( 0, index );
-      js = data + m_jsgraph + ".setSpectrumData(data_" + id() + ", " + resetDomain + ", 'FOREGROUND', 0, 1 );";
-    }
-  } else {
-    //js = m_jsgraph + ".removeSpectrumDataByType(" + resetDomain + ", 'FOREGROUND' );";
-    js = m_jsgraph + ".setData(null,true);";
-    
-  }//if ( data_hist )
+  scheduleUpdateForeground();
   
+  //If the background or secondary data spectrum scale factors changed, we need
+  //  to update those to the client as well.
+  const float newBackSF = m_model->backgroundScaledBy();
+  if( m_model->getBackground() && (fabs(newBackSF-oldBackSF)>0.000001f*std::max(newBackSF,oldBackSF)) )
+    scheduleUpdateBackground();
   
-  if( isRendered() )
-    doJavaScript( js );
-  else
-    m_pendingJs.push_back( js );
+  const float newSecondSF = m_model->secondDataScaledBy();
+  if( m_model->getSecondData() && (fabs(newSecondSF-oldSecondSF)>0.000001f*std::max(newSecondSF,oldSecondSF)) )
+    scheduleUpdateSecondData();
 }//void setData( std::shared_ptr<Measurement> data_hist )
 
 
@@ -970,15 +952,14 @@ void D3SpectrumDisplayDiv::setDisplayScaleFactor( const float sf,
       
     case kSecondForeground:
       m_model->setSecondDataScaleFactor( sf );
-      updateSecondData();
+      scheduleUpdateSecondData();
       break;
       
     case kBackground:
       m_model->setBackgroundDataScaleFactor( sf );
-      updateBackground();
+      scheduleUpdateBackground();
       break;
   }//switch( spectrum_type )
-  
 }//void setDisplayScaleFactor(...)
 
 
@@ -1014,7 +995,7 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> backgroun
     m_model->setBackgroundSubtract( false );
   }
   
-  updateBackground();
+  scheduleUpdateBackground();
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
@@ -1026,7 +1007,7 @@ void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist,
 {
   m_model->setSecondDataHistogram( hist, liveTime, realTime, neutronCounts, ownAxis );
   
-  updateSecondData();
+  scheduleUpdateSecondData();
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> background );
 
 
@@ -1190,18 +1171,79 @@ void D3SpectrumDisplayDiv::setHighlightRegionsToClient()
 }//void setHighlightRegionsToClient()
 
 
-void D3SpectrumDisplayDiv::updateData()
+void D3SpectrumDisplayDiv::scheduleUpdateForeground()
 {
-  const std::shared_ptr<Measurement> data = m_model->getData();
-  if ( data )
-    setData( data,
-             m_model->dataLiveTime(),
-             m_model->dataRealTime(),
-             m_model->dataNeutronCounts(),
-             true );
+  m_renderFlags |= UpdateForegroundSpectrum;
+  scheduleRender();
+}
+
+
+void D3SpectrumDisplayDiv::scheduleUpdateBackground()
+{
+  m_renderFlags |= UpdateBackgroundSpectrum;
+  scheduleRender();
+}
+
+
+void D3SpectrumDisplayDiv::scheduleUpdateSecondData()
+{
+  m_renderFlags |= UpdateSecondarySpectrum;
+  scheduleRender();
+}
+
+
+void D3SpectrumDisplayDiv::renderForegroundToClient()
+{
+  const std::shared_ptr<Measurement> data_hist = m_model->getData();
+  
+  string js;
+  
+  const string resetDomain = m_renderFlags.testFlag(ResetXDomain) ? "true" : "false";
+  
+  // Set the data for the chart
+  if ( data_hist ) {
+    // Create the measurement array (should only have one measurement)
+    std::ostringstream ostr;
+    std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
+    std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> foregroundData;
+    D3SpectrumExport::D3SpectrumOptions foregroundOptions;
+    
+    // Set options for the spectrum
+    foregroundOptions.line_color = m_foregroundLineColor.isDefault() ? string("black") : m_foregroundLineColor.cssText();
+    foregroundOptions.peak_color = m_defaultPeakColor.isDefault() ? string("blue") : m_defaultPeakColor.cssText();
+    foregroundOptions.spectrum_type = kForeground;
+    foregroundOptions.display_scale_factor = displayScaleFactor( kForeground );
+    
+    // Set the peak data for the spectrum
+    if ( m_peakModel ) {
+      std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
+      vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks );
+    }
+    
+    measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(data_hist.get(),foregroundOptions) );
+    
+    // Set the data on the JS side
+    if ( D3SpectrumExport::write_and_set_data_for_chart(ostr, id(), measurements) ) {
+      string data = ostr.str();
+      size_t index = data.find( "spec_chart_" );
+      data = data.substr( 0, index );
+      js = data + m_jsgraph + ".setSpectrumData(data_" + id() + ", " + resetDomain + ", 'FOREGROUND', 0, 1 );";
+    }
+  } else {
+    //js = m_jsgraph + ".removeSpectrumDataByType(" + resetDomain + ", 'FOREGROUND' );";
+    js = m_jsgraph + ".setData(null,true);";
+  }//if ( data_hist ) / else
+  
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::updateData()
 
-void D3SpectrumDisplayDiv::updateBackground()
+
+void D3SpectrumDisplayDiv::renderBackgroundToClient()
 {
   string js;
   const std::shared_ptr<Measurement> background = m_model->getBackground();
@@ -1246,7 +1288,8 @@ void D3SpectrumDisplayDiv::updateBackground()
     m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::updateBackground()
 
-void D3SpectrumDisplayDiv::updateSecondData()
+
+void D3SpectrumDisplayDiv::renderSecondDataToClient()
 {
   string js;
   const std::shared_ptr<Measurement> hist = m_model->getSecondData();
@@ -1263,6 +1306,7 @@ void D3SpectrumDisplayDiv::updateSecondData()
     secondaryOptions.line_color = m_secondaryLineColor.isDefault() ? string("steelblue") : m_secondaryLineColor.cssText();
     secondaryOptions.spectrum_type = kSecondForeground;
     secondaryOptions.display_scale_factor = displayScaleFactor( kSecondForeground );
+    
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(hist.get(), secondaryOptions) );
     
     // Set the data on the JS side
@@ -1286,19 +1330,19 @@ void D3SpectrumDisplayDiv::updateSecondData()
 void D3SpectrumDisplayDiv::setForegroundSpectrumColor( const Wt::WColor &color )
 {
   m_foregroundLineColor = color.isDefault() ? WColor( 0x00, 0x00, 0x00 ) : color;
-  updateData();
+  scheduleUpdateForeground();
 }
 
 void D3SpectrumDisplayDiv::setBackgroundSpectrumColor( const Wt::WColor &color )
 {
   m_backgroundLineColor = color.isDefault() ? WColor(0x00,0xff,0xff) : color;
-  updateBackground();
+  scheduleUpdateBackground();
 }
 
 void D3SpectrumDisplayDiv::setSecondarySpectrumColor( const Wt::WColor &color )
 {
   m_secondaryLineColor = color.isDefault() ? WColor(0x00,0x80,0x80) : color;
-  updateSecondData();
+  scheduleUpdateSecondData();
 }
 
 void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
@@ -1389,7 +1433,10 @@ void D3SpectrumDisplayDiv::setChartBackgroundColor( const Wt::WColor &color )
 void D3SpectrumDisplayDiv::setDefaultPeakColor( const Wt::WColor &color )
 {
   m_defaultPeakColor = color.isDefault() ? WColor(0,51,255,155) : color;
-  updateData();
+  
+  //The default peak color is specified as part of the foreground JSON, so we
+  //  need to reload the foreground to client to update the color.
+  scheduleUpdateForeground();
 }
 
 
@@ -1406,7 +1453,8 @@ void D3SpectrumDisplayDiv::saveChartToPng( const std::string &filename )
 {
   LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsSvgToPngDownload);
   
-  doJavaScript( "Wt.WT.SvgToPngDownload('" + id() + "','" + filename +"');" );
+  if( isRendered() )
+    doJavaScript( "Wt.WT.SvgToPngDownload('" + id() + "','" + filename +"');" );
 }//void saveChartToPng( const std::string &name )
 
 
@@ -1718,8 +1766,8 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   auto fcnworker = [=](){
     try
     {
-      const auto start_cpu_time = UtilityFunctions::get_cpu_time();
-      const auto start_wall_time = UtilityFunctions::get_wall_time();
+      //const auto start_cpu_time = UtilityFunctions::get_cpu_time();
+      //const auto start_wall_time = UtilityFunctions::get_wall_time();
       
       float min_sigma_width_kev, max_sigma_width_kev;
       expected_peak_width_limits( midenergy, isHpge, min_sigma_width_kev, max_sigma_width_kev );
@@ -1730,8 +1778,14 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       int nPeaks = 1;
       const size_t start_channel = foreground->find_gamma_channel(lower_energy);
       const size_t end_channel = foreground->find_gamma_channel(upper_energy);
-      const auto derivative_peaks = secondDerivativePeakCanidatesWithROI( foreground, start_channel, end_channel );
-      const size_t ncandidates = derivative_peaks.size();
+      
+      std::vector< std::tuple<float,float,float> > candidate_peaks;
+      secondDerivativePeakCanidates( foreground, start_channel, end_channel, candidate_peaks );
+      const size_t ncandidates = candidate_peaks.size();
+      
+      //const auto derivative_peaks = secondDerivativePeakCanidatesWithROI( foreground, start_channel, end_channel );
+      //const size_t ncandidates = derivative_peaks.size();
+      
       nPeaks = static_cast<int>( ncandidates );
       nPeaks = std::max( nPeaks, 1 );
       nPeaks = std::min( nPeaks, static_cast<int>(2*erange/min_sigma_width_kev) );
@@ -1801,6 +1855,9 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
         //  be a place that can be optimized if it turns out to be needed.
         findPeaksInUserRange( lower_energy, upper_energy, npeakstry[index], method,
                              foreground, detector, newpeaks, chi2s[index] );
+        
+        //findPeaksInUserRange_linsubsolve( lower_energy, upper_energy, npeakstry[index], method,
+        //                     foreground, detector, newpeaks, chi2s[index] );
         
         //Note: InterSpec::findPeakFromControlDrag(...) adjusts Chi2 as:
         //const size_t nbin = end_channel - start_channel;

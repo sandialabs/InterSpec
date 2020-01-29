@@ -83,7 +83,7 @@ int main( int argc, char **argv )
   
   std::cout << std::showbase << std::hex << "Running with Wt version "
             << WT_VERSION << ", from executable compiled on "
-            << std::dec << COMPILE_DATE_AS_INT << std::endl;
+            << __DATE__ << std::endl;
   
 #if( PERFORM_DEVELOPER_CHECKS )
   std::cout << "Developer tests are being performed" << std::endl;

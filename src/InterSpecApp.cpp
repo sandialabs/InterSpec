@@ -720,26 +720,6 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     }// if( not in IE ) / else
   };//auto showWelcomeCallback
   
-  
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-  //  Check if user has awknowledged to terms, if not, show terms window
-  //
-  //Need to check if this is the latest version of InterSpec this user has used;
-  //  if not, need to set "HasAgreedToUseTerms" to false.
-  //
-  //However: https://developer.apple.com/app-store/review/guidelines/#hardware-compatibility
-  // states: "(vi) They may not present a license screen at launch, require license keys, or implement their own copy protection."
-  // so for macOS we wont show this window, but instead put a link to it in UseInfoWindow.
-  // So I guess it doesnt make sense to do it for the other native builds (I dont
-  // believe there is anythng requiring us to force us to show this splash screen
-  // its just what other similar apps do, but I guess not required...)
-  const int previousAgreedVersion = InterSpecUser::preferenceValue<int>( "VersionAgreedToUseTerms" , m_viewer );
-  
-  if( previousAgreedVersion != COMPILE_DATE_AS_INT )
-  {
-    m_viewer->showLicenseAndDisclaimersWindow( true, showWelcomeCallback );
-  }else
-#endif
   if( !loadedSpecFile )
   {
     showWelcomeCallback();
