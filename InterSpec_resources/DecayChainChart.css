@@ -1,0 +1,74 @@
+.DecayChainChart
+{
+  
+}
+
+.DecayChainChartTable td, .DecayChainChartTable th
+{
+  border: 1px solid black;
+  padding: 4px;
+}
+
+.DecayChainChartIsotope
+{
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+
+/* .ParentDecaysContent{ border: 1px solid red; } */
+/* .ParentDecayNuc{ border: 1px solid #73AD21; } */
+/* .ParentDecayNuc.HasIso{ background: green; } */
+
+/* .ParentDecayNuc.IsTargetNuc{ color: blue; } */
+
+
+/* Below here is the D3 based elements */
+.DecayChartNuc
+{
+  cursor: pointer;
+}
+
+.DecayChartNucRect
+{
+  
+}
+
+txt.DecayChartNuc
+{
+  
+}
+
+rect.DecayChartNuc
+{
+  
+}
+
+.DecayChartNuc.primary
+{
+  
+}
+
+.DecayChartNuc.MultiIso
+{
+  
+}
+
+rect.DecayChartNuc.selected
+{
+  fill: red;
+}
+
+rect.DecayChartNuc.MousedOver
+{
+  stroke-width: 2px;
+}
+
+.DecayChartNucTxt.MousedOver
+{
+  font-weight: bold;
+}
