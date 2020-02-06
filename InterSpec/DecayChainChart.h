@@ -68,6 +68,22 @@ public:
   //  changed
   Wt::Signal<const SandiaDecay::Nuclide *> &nuclideChanged();
 
+  /** Returns lines of information for a nuclide to display to the user.
+   
+   @param infoNuclide The nuclide to produce information about.  Will also
+   display information for all the isomer
+   @param parentNuclide The ultimate parent nuclide the user was originally
+   interested in (e.g. the nuclide the decay chain is drawn for); is
+   used to give the branching ratio that the infoNuclide is decayed
+   through.
+   @param includeDaughterIsomerics Wether to also include information for
+   isomeric daughters of this nuclide.
+   @param useCurrie Wether to use Ci or Bq for displaying specific activities.
+   */
+  static std::vector<std::string> getTextInfoForNuclide( const SandiaDecay::Nuclide *infoNuclide,
+                                                        const SandiaDecay::Nuclide *parentNuclide,
+                                                        const bool includeDaughterIsomerics,
+                                                        const bool useCurrie );
   
 protected:
   /*gets the x coordinate to put the box
@@ -130,13 +146,24 @@ protected:
     params:
       info = the informational text
   */
-  void displayTextInfo(std::vector<std::string> info);
+  void displayTextInfo( const SandiaDecay::Nuclide *nuc );
+  
+  /** Shows a pop-up displaying all nuclides that decay through the specified
+   nuclide.
+   */
+  void showPossibleParents( const SandiaDecay::Nuclide *nuc );
   
   //make a dialog
   void makeDialog( const std::string &csvIsotopeNames );
 
   int m_axisBuffer;
-  std::vector<std::string> m_infoText;
+  
+  /** The nuclide the user clicked on that we will display additional
+   information about.
+  */
+  const SandiaDecay::Nuclide *m_infoNuclide;
+  
+  /** The nuclide to show decay information for. */
   const SandiaDecay::Nuclide *m_nuclide;
 
   bool m_useCurrie;
