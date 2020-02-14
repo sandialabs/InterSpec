@@ -54,7 +54,7 @@ namespace
     
     //using phrase_parse inst of split_to_floats adds about 6.1 kb to binary
     //  size on 64 bit OSX MinSizeRel
-    //    bool success = UtilityFunctions::split_to_floats( line.c_str(), line.size(), energies );
+    //    bool success = SpecUtils::split_to_floats( line.c_str(), line.size(), energies );
     return qi::phrase_parse( str.c_str(), str.c_str()+str.size(),
                             (*qi::float_) % qi::eol, qi::space, res );
   }//split_space_delim_flts(...)

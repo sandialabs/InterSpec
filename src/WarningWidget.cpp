@@ -47,10 +47,10 @@
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/WarningWidget.h"
-#include "SpecUtils/UtilityFunctions.h"
 #if ( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #else
@@ -374,9 +374,9 @@ void WarningWidget::addMessage( const Wt::WString &msg, const Wt::WString &src, 
     
     //Replace all single backslashes with a double backslash 
     //  -Assumes user has not already escaped the string
-    UtilityFunctions::ireplace_all( val, "\\\\", "[%%%%%%%%]" );
-    UtilityFunctions::ireplace_all( val, "\\", "\\\\" );
-    UtilityFunctions::ireplace_all( val, "[%%%%%%%%]", "\\\\\\\\" );
+    SpecUtils::ireplace_all( val, "\\\\", "[%%%%%%%%]" );
+    SpecUtils::ireplace_all( val, "\\", "\\\\" );
+    SpecUtils::ireplace_all( val, "[%%%%%%%%]", "\\\\\\\\" );
 
     //Replace single quotes within the string - double should be fine to leave
     boost::replace_all(val, "'", "\\'");

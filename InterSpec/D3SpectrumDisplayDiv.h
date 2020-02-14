@@ -13,8 +13,8 @@
 #include <Wt/WSignal>
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 static_assert( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE, "RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE must be enabled when USE_SPECTRUM_CHART_D3 is enabled" );
 

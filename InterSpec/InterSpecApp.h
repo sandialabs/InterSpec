@@ -117,13 +117,13 @@ public:
   //  it might not be the same as where Apache is configured to use.
   //  The answer returned by this function comes from first checking the CGI
   //  environemnt parameters, and then falling back to
-  //  UtilityFunctions::temp_dir() if CGI doesnt specify temp directory
+  //  SpecUtils::temp_dir() if CGI doesnt specify temp directory
   //  locations.
   //  The actual answer returned is actually the result cached from the first
   //  call to this function where WApplication::instance() was non-null; the
   //  InterSpecApp constructor calls this function so the proper directory
   //  can be resolved at any future point.  Calls before a InterSpecApp
-  //  is created may return just the result of UtilityFunctions::temp_dir().
+  //  is created may return just the result of SpecUtils::temp_dir().
   //This function is necassarry as essentually a workaround for FCGI deployment.
   //Note that currently this function requires locking a mutex, as well as some
   //  other not-super-fast actions.

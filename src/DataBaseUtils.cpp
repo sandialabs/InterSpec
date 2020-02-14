@@ -353,7 +353,7 @@ Wt::Dbo::SqlConnection *getDatabaseConnection()
     
     //will throw runtime_error upon failure
     std::vector<char> data;
-    UtilityFunctions::load_file_data( DATABASE_PASSWORD_FILE, data );
+    SpecUtils::load_file_data( DATABASE_PASSWORD_FILE, data );
     
     rapidxml::xml_document<char> doc;
     const int flags = rapidxml::parse_normalize_whitespace

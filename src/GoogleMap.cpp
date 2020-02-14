@@ -42,9 +42,9 @@
 #include <Wt/Http/Response>
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/GoogleMap.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 using namespace Wt;
 using namespace std;

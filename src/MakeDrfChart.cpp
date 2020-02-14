@@ -35,7 +35,6 @@
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
-//#include "SpecUtils/UtilityFunctions.h"
 
 using namespace std;
 using namespace Wt;

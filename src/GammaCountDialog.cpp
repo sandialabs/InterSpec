@@ -39,16 +39,15 @@
 #include <Wt/WContainerWidget>
 
 
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 using namespace std;
 using namespace Wt;
@@ -406,7 +405,7 @@ void GammaCountDialog::handleEnergyRangeChange()
     m_upperEnergy->setRange( lowEnergy-10.0, upEnergy );
   }catch( std::exception &e )
   {
-    cerr << endl << SRC_LOCATION << "\n\tCaught:" << e.what() << endl << endl;
+    cerr << "\nGammaCountDialog::handleEnergyRangeChange()\n\tCaught:" << e.what() << endl << endl;
   }
 }//void handleEnergyRangeChange()
 

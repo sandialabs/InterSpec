@@ -13,7 +13,7 @@
 
 #include <Wt/WSignal>
 
-#include "SpecUtils/SpectrumDataStructs.h"
+#include "SpecUtils/SpecFile.h"
 
 class QLPeakDef;
 class QLPeakModel;

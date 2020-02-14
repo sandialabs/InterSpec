@@ -45,9 +45,9 @@
 #include "InterSpec/PeakEdit.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/TerminalModel.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 /*
@@ -658,7 +658,7 @@ TerminalModel::InputType TerminalModel::inputType(const std::string& input)
 // Evalutes inputted string into a result string
 std::string TerminalModel::evaluate(std::string input)
 {
-    UtilityFunctions::trim(input);
+    SpecUtils::trim(input);
     
     if (!input.empty()) {
         const TerminalModel::InputType type = inputType(input);             // Get input-type of user's input
@@ -1413,7 +1413,7 @@ std::string TerminalModel::variableMapStr( const std::string& args )
 {
     std::ostringstream os;
     std::string arguments (args);
-    UtilityFunctions::trim(arguments);
+    SpecUtils::trim(arguments);
     
     if (arguments.empty() || arguments.find_first_not_of(' ') == std::string::npos) {              // Print out all m_variables if the argument is empty
         os << "VariableMap = {";
@@ -1439,7 +1439,7 @@ std::string TerminalModel::clearVar( const std::string& args )
 {
     std::ostringstream os;
     std::string arguments (args);
-    UtilityFunctions::trim(arguments);
+    SpecUtils::trim(arguments);
     
     if ( arguments.empty() )
         return "Error: Please enter a variable to be removed.";
@@ -1626,8 +1626,8 @@ std::string TerminalModel::setNuclide( const std::string& arguments )
     try { nuclideReference->setNuclideAndAge( nuclide, age ); }   // not sure if this method throws an error, so just being on the safe side
     catch ( const std::exception& e ) { return std::string("Error: ") + e.what(); }
     
-    return std::string("Setting nuclide (") + UtilityFunctions::trim_copy(nuclide) + ") and age ("
-           + (argumentContainsAge ? UtilityFunctions::trim_copy(age) : std::string("default")) + ")";
+    return std::string("Setting nuclide (") + SpecUtils::trim_copy(nuclide) + ") and age ("
+           + (argumentContainsAge ? SpecUtils::trim_copy(age) : std::string("default")) + ")";
 }
 
 // Command: peak_area - does the work of double-clicking a peak inside the spectrum

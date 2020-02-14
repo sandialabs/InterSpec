@@ -66,8 +66,12 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WStandardItemModel>
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
@@ -75,11 +79,8 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
-#include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
@@ -136,7 +137,7 @@ namespace
           {
             auto ptt = boost::posix_time::from_time_t( time_t(val) );
             ptt += boost::posix_time::seconds( 60*m_timeZoneOffset );
-            valstr = UtilityFunctions::to_common_string(ptt, true);
+            valstr = SpecUtils::to_common_string(ptt, true);
           }
           
           text->setText( WString::fromUTF8( valstr ) );
@@ -547,7 +548,7 @@ void RelEffFile::initDetectors()
 #endif
   
 #ifdef _WIN32
-  const std::wstring wpathstr = UtilityFunctions::convert_from_utf8_to_utf16(pathstr);
+  const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(pathstr);
   std::ifstream input( wpathstr.c_str(), ios::in | ios::binary );
 #else
   std::ifstream input( pathstr.c_str(), ios::in | ios::binary );
@@ -559,12 +560,12 @@ void RelEffFile::initDetectors()
   {
     vector<vector<float>> detcoefs;
     string line;
-    while( UtilityFunctions::safe_get_line( input, line, 2048 ) )
+    while( SpecUtils::safe_get_line( input, line, 2048 ) )
     {
-      UtilityFunctions::trim( line );
+      SpecUtils::trim( line );
       
-      if( UtilityFunctions::istarts_with( line, "#credit:") )
-        credits.push_back( UtilityFunctions::trim_copy(line.substr(8)) );
+      if( SpecUtils::istarts_with( line, "#credit:") )
+        credits.push_back( SpecUtils::trim_copy(line.substr(8)) );
       
       if( line.empty() || line[0]=='#' )
         continue;
@@ -576,7 +577,7 @@ void RelEffFile::initDetectors()
         detcoefs.push_back( det->efficiencyExpOfLogsCoeffs() );
         m_responses.push_back( det );
       }
-    }//while( UtilityFunctions::safe_get_line( input, line ) )
+    }//while( SpecUtils::safe_get_line( input, line ) )
     
     if( m_responses.empty() )
     {
@@ -763,7 +764,7 @@ void RelEffDetSelect::docreate()
   string pathstr;
   vector<string> paths;
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  pathstr = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
+  pathstr = SpecUtils::append_path( InterSpec::staticDataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
 #elif( !defined(IOS) )
   try
   {
@@ -780,7 +781,7 @@ void RelEffDetSelect::docreate()
   try
   {
     const string userDir = InterSpec::writableDataDirectory();
-    const vector<string> tsv_files = UtilityFunctions::recursive_ls( userDir, ".tsv");
+    const vector<string> tsv_files = SpecUtils::recursive_ls( userDir, ".tsv");
     for( const auto &p : tsv_files )
       pathstr += (pathstr.empty() ? "" : ";") + p;
   }catch( std::exception & )
@@ -789,7 +790,7 @@ void RelEffDetSelect::docreate()
   }
 #endif
   
-  UtilityFunctions::split( paths, pathstr, "\r\n;" );
+  SpecUtils::split( paths, pathstr, "\r\n;" );
   
   if( paths.empty() )
     new RelEffFile( "", this, m_detectorEdit, m_files );
@@ -877,10 +878,9 @@ void GadrasDetSelect::docreate()
     //ToDo: do more testing and use only the Android implementation
 #if( ANDROID )
     const string basestr = InterSpec::writableDataDirectory();
-    const vector<string> subdirs = UtilityFunctions::ls_directories_in_directory( basestr );
-    for( const string &subdir : subdirs )
+    const vector<string> subdirs = SpecUtils::ls_directories_in_directory( basestr );
+    for( const string &subdirpath : subdirs )
     {
-      const string subdirpath = UtilityFunctions::append_path(basestr, subdir);
       auto subsubdirs = GadrasDirectory::recursive_list_gadras_drfs(subdirpath);
       if( subsubdirs.size() )
         pathstr += (pathstr.empty() ? "" : ";") + subdirpath;
@@ -893,7 +893,7 @@ void GadrasDetSelect::docreate()
     {
       const boost::filesystem::path &p = itr->path();
       const string pstr = p.string<string>();
-      if( UtilityFunctions::is_directory( pstr ) )
+      if( SpecUtils::is_directory( pstr ) )
       {
         auto subdirs = GadrasDirectory::recursive_list_gadras_drfs(pstr);
         if( subdirs.size() )
@@ -907,7 +907,7 @@ void GadrasDetSelect::docreate()
   }//try / catch
 #endif
   
-  UtilityFunctions::split( paths, pathstr, "\r\n;" );
+  SpecUtils::split( paths, pathstr, "\r\n;" );
   
   //Make sure we always at least have the default generic detectors available.
   bool hasGeneric = false;
@@ -916,7 +916,7 @@ void GadrasDetSelect::docreate()
   
   if( !hasGeneric )
   {
-    const string drfpaths = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
+    const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
     paths.push_back( drfpaths );
   }
   
@@ -935,7 +935,7 @@ void GadrasDetSelect::docreate()
     }
     
 #if( !defined(WIN32) )
-    if( UtilityFunctions::istarts_with( path, "C:\\" ) )
+    if( SpecUtils::istarts_with( path, "C:\\" ) )
       dir->hide();
 #endif
   }
@@ -1163,8 +1163,8 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   bool isInDataDir = false;
   string dirCononical = directory;
   string appDataDir = InterSpec::writableDataDirectory();
-  if( UtilityFunctions::make_canonical_path(appDataDir)
-     && UtilityFunctions::make_canonical_path(dirCononical)
+  if( SpecUtils::make_canonical_path(appDataDir)
+     && SpecUtils::make_canonical_path(dirCononical)
      && appDataDir.size()>2 && dirCononical.size()>2 )
   {
     while( !isInDataDir && (dirCononical.size()+1) >= appDataDir.size() )
@@ -1173,13 +1173,13 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
       {
         isInDataDir = true;
         dirCononical = directory;
-        UtilityFunctions::make_canonical_path(dirCononical);
+        SpecUtils::make_canonical_path(dirCononical);
         dirCononical = fs_relative( appDataDir, dirCononical );
-        dirCononical = UtilityFunctions::append_path( "{AppDataDir}", dirCononical );
+        dirCononical = SpecUtils::append_path( "{AppDataDir}", dirCononical );
       }else
       {
-        dirCononical = UtilityFunctions::parent_path(dirCononical);
-        UtilityFunctions::make_canonical_path( dirCononical ); //to make sure we get ending / or \ right
+        dirCononical = SpecUtils::parent_path(dirCononical);
+        SpecUtils::make_canonical_path( dirCononical ); //to make sure we get ending / or \ right
       }
     }
   }
@@ -1321,7 +1321,7 @@ std::shared_ptr<DetectorPeakResponse> GadrasDirectory::parseDetector( string pat
 {
   try
   {
-    const string name = UtilityFunctions::filename( path );
+    const string name = SpecUtils::filename( path );
     auto drf = make_shared<DetectorPeakResponse>( name, "" );
     drf->fromGadrasDirectory( path );
     
@@ -1338,21 +1338,20 @@ std::shared_ptr<DetectorPeakResponse> GadrasDirectory::parseDetector( string pat
 vector<string> GadrasDirectory::recursive_list_gadras_drfs( const string &sourcedir )
 {
   vector<string> files;
-  if( !UtilityFunctions::is_directory( sourcedir ) )
+  if( !SpecUtils::is_directory( sourcedir ) )
     return files;
   
-  const string csv_file = UtilityFunctions::append_path( sourcedir, "Efficiency.csv");
-  const string dat_file = UtilityFunctions::append_path( sourcedir, "Detector.dat");
+  const string csv_file = SpecUtils::append_path( sourcedir, "Efficiency.csv");
+  const string dat_file = SpecUtils::append_path( sourcedir, "Detector.dat");
   
-  if( UtilityFunctions::is_file(csv_file) && UtilityFunctions::is_file(dat_file) )
+  if( SpecUtils::is_file(csv_file) && SpecUtils::is_file(dat_file) )
     files.push_back( sourcedir );
   
   //ToDo: Maybe we should use the Android implemenatation always.
 #if( ANDROID )
-  const vector<string> subdirs = UtilityFunctions::ls_directories_in_directory( sourcedir );
-  for( const string &subdir : subdirs )
+  const vector<string> subdirs = SpecUtils::ls_directories_in_directory( sourcedir );
+  for( const string &subdirpath : subdirs )
   {
-    const string subdirpath = UtilityFunctions::append_path(sourcedir, subdir);
     auto subsubdirs = recursive_list_gadras_drfs( subdirpath );
     files.insert( end(files), begin(subsubdirs), end(subsubdirs) );
   }//for( const string &subdir : subdirs )
@@ -1374,7 +1373,7 @@ using namespace boost::filesystem;
   {
     const boost::filesystem::path &p = itr->path();
     const string pstr = p.string<string>();
-    if( UtilityFunctions::is_directory( pstr ) )
+    if( SpecUtils::is_directory( pstr ) )
     {
       auto subdirs = recursive_list_gadras_drfs(pstr);
       files.insert( end(files), begin(subdirs), end(subdirs) );
@@ -1396,7 +1395,7 @@ void GadrasDirectory::initDetectors()
   
   const std::string basedir = directory();
   
-  if( !UtilityFunctions::is_directory( basedir ) )
+  if( !SpecUtils::is_directory( basedir ) )
   {
     m_msg->setText( "<span style=\"color:red;\">Not a valid directory.</span>" );
     m_msg->show();
@@ -1404,7 +1403,7 @@ void GadrasDirectory::initDetectors()
     m_detectorSelect->setCurrentIndex( 0 );
     m_detectorSelect->disable();
     return;
-  }//if( !UtilityFunctions::is_directory( basedir ) )
+  }//if( !SpecUtils::is_directory( basedir ) )
   
   m_detectorSelect->disable();
   this->disable();
@@ -2286,7 +2285,7 @@ void DetectorEdit::init()
         m_drfTypeMenu->select( 4 );
         try
         {
-          const double start_time = UtilityFunctions::get_wall_time();
+          const double start_time = SpecUtils::get_wall_time();
           for( int row = 0; row < m_model->rowCount(); ++row )
           {
             Wt::Dbo::ptr<DetectorPeakResponse> drf = m_model->resultRow(row);
@@ -2301,7 +2300,7 @@ void DetectorEdit::init()
             //On a quick test, it took about 25ms when the very first row
             //  matched the detector; even if we loop through all rows, it
             //  takes about the same amount of time
-            const double now_time = UtilityFunctions::get_wall_time();
+            const double now_time = SpecUtils::get_wall_time();
             if( (now_time-start_time) > 0.25 )
               break;
           }//for( loop over previous DRFs )
@@ -2573,7 +2572,7 @@ void DetectorEdit::updateChart()
       }//no ResolutionInfo
     }catch( std::exception &e )
     {
-      cerr << SRC_LOCATION << "\n\tCaught: " << e.what() << endl;
+      cerr << "DetectorEdit::updateChart()\n\tCaught: " << e.what() << endl;
     }//try / catch
   }//if( hasEfficiency )
 } //DetectorEdit::updateChart()
@@ -2582,7 +2581,7 @@ void DetectorEdit::updateChart()
 std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const std::string filename )
 {
 #ifdef _WIN32
-  const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
   ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
 #else
   ifstream csvfile( filename.c_str(), ios_base::binary | ios_base::in );
@@ -2598,10 +2597,10 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
   bool foundMeV = false, foundKeV = false;
   //ToDo: Need to implement getting lines safely where a quoted field may span
   //      several lines.
-  while( UtilityFunctions::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
+  while( SpecUtils::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
   {
-    foundKeV |= UtilityFunctions::icontains( line, "kev" );
-    foundMeV |= UtilityFunctions::icontains( line, "mev" );
+    foundKeV |= SpecUtils::icontains( line, "kev" );
+    foundMeV |= SpecUtils::icontains( line, "mev" );
     
     vector<string> fields;
     split_escaped_csv( fields, line );
@@ -2617,15 +2616,15 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
     if( fields.size() < 16 )
       continue;
     
-    if( !UtilityFunctions::iequals( fields[3], "c0")
-       || !UtilityFunctions::iequals( fields[4], "c1")
-       || !UtilityFunctions::iequals( fields[5], "c2")
-       || !UtilityFunctions::iequals( fields[6], "c3")
-       || !UtilityFunctions::icontains( fields[15], "radius") )
+    if( !SpecUtils::iequals_ascii( fields[3], "c0")
+       || !SpecUtils::iequals_ascii( fields[4], "c1")
+       || !SpecUtils::iequals_ascii( fields[5], "c2")
+       || !SpecUtils::iequals_ascii( fields[6], "c3")
+       || !SpecUtils::icontains( fields[15], "radius") )
       continue;
     
     //Okay, next line should be
-    if( !UtilityFunctions::safe_get_line(csvfile, line, 2048) )
+    if( !SpecUtils::safe_get_line(csvfile, line, 2048) )
       throw runtime_error( "Couldnt get next line" );
     
     split_escaped_csv( fields, line );
@@ -2667,15 +2666,15 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
       
       std::regex range_expression( rng_exprsn_txt );
       
-      while( UtilityFunctions::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
+      while( SpecUtils::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
       {
-        if( UtilityFunctions::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
+        if( SpecUtils::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
         {
-          const bool isSqrt = UtilityFunctions::icontains( line, "sqrt(" );  //Else contains "GadrasEqn"
+          const bool isSqrt = SpecUtils::icontains( line, "sqrt(" );  //Else contains "GadrasEqn"
           const auto form = isSqrt ? DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial : DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
           int nlinecheck = 0;
-          while( UtilityFunctions::safe_get_line(csvfile, line, 2048)
-                && !UtilityFunctions::icontains(line, "Values")
+          while( SpecUtils::safe_get_line(csvfile, line, 2048)
+                && !SpecUtils::icontains(line, "Values")
                 && (++nlinecheck < 15) )
           {
           }
@@ -2683,7 +2682,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
           vector<string> fwhm_fields;
           split_escaped_csv( fwhm_fields, line );
           
-          if( fwhm_fields.size() > 1 && UtilityFunctions::icontains(fwhm_fields[0], "Values") )
+          if( fwhm_fields.size() > 1 && SpecUtils::icontains(fwhm_fields[0], "Values") )
           {
             try
             {
@@ -2795,7 +2794,7 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
   const string csvFileName = m_efficiencyCsvUpload->spoolFileName();
 
 #ifdef _WIN32
-  const std::wstring wcsvFileName = UtilityFunctions::convert_from_utf8_to_utf16(csvFileName);
+  const std::wstring wcsvFileName = SpecUtils::convert_from_utf8_to_utf16(csvFileName);
   ifstream csvfile( wcsvFileName.c_str(), ios_base::binary | ios_base::in );
 #else
   ifstream csvfile( csvFileName.c_str(), ios_base::binary|ios_base::in );
@@ -2811,7 +2810,7 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
     {
       const string dotDatFileName = m_detectorDotDatUpload->spoolFileName();
 #ifdef _WIN32
-      const std::wstring wdotDatFileName = UtilityFunctions::convert_from_utf8_to_utf16(dotDatFileName);
+      const std::wstring wdotDatFileName = SpecUtils::convert_from_utf8_to_utf16(dotDatFileName);
       ifstream datfile( wdotDatFileName.c_str(), ios_base::binary|ios_base::in );
 #else
       ifstream datfile( dotDatFileName.c_str(), ios_base::binary|ios_base::in );
@@ -2835,7 +2834,7 @@ void DetectorEdit::fileUploadedCallback( const UploadCallbackReason context )
   }//try / catch
   
   string csvOrigName = m_efficiencyCsvUpload->clientFileName().toUTF8();
-  if( UtilityFunctions::iends_with( csvOrigName, ".csv" ) )
+  if( SpecUtils::iends_with( csvOrigName, ".csv" ) )
     csvOrigName = csvOrigName.substr(0, csvOrigName.size()-4);
   if( det )
     det->setName( csvOrigName );
@@ -3143,36 +3142,36 @@ vector<pair<string,string>> DetectorEdit::avaliableGadrasDetectors() const
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   const string datadir = InterSpec::staticDataDirectory();
-  const string drfpaths = UtilityFunctions::append_path( datadir, "GenericGadrasDetectors" )
-                          + ";" + UtilityFunctions::append_path( datadir, "OUO_GadrasDetectors" );
+  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
+                          + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
 #else
   const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", m_interspec );
 #endif
   
   vector<string> paths;
-  UtilityFunctions::split( paths, drfpaths, "\r\n;" );
+  SpecUtils::split( paths, drfpaths, "\r\n;" );
   
   for( std::string path : paths )
   {
-    UtilityFunctions::trim( path );
-    const vector<string> csvs = UtilityFunctions::recursive_ls( path, "Efficiency.csv" ); //ending string is case-insensitive
+    SpecUtils::trim( path );
+    const vector<string> csvs = SpecUtils::recursive_ls( path, "Efficiency.csv" ); //ending string is case-insensitive
     
     for( const std::string &csv : csvs )
     {
-      const string parent = UtilityFunctions::parent_path(csv);
-      vector<string> files = UtilityFunctions::ls_files_in_directory(parent);
+      const string parent = SpecUtils::parent_path(csv);
+      vector<string> files = SpecUtils::ls_files_in_directory(parent);
       bool found_dat = false;
       for( size_t i = 0; !found_dat && i < files.size(); ++i )
-        found_dat = UtilityFunctions::iends_with( files[i], "Detector.dat" );
+        found_dat = SpecUtils::iends_with( files[i], "Detector.dat" );
       if( found_dat )
       {
         try
         {
           //fs_relative probably shouldnt throw, but JIC.
           //fs_relative( const std::string &from_path, const std::string &to_path )
-          string displayname = UtilityFunctions::fs_relative( path, parent );
+          string displayname = SpecUtils::fs_relative( path, parent );
           if( displayname.empty() || displayname == "." )
-            displayname = UtilityFunctions::filename(parent);
+            displayname = SpecUtils::filename(parent);
           
           answer.push_back( make_pair(parent, displayname) );
         }catch(...)
@@ -3211,20 +3210,20 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
   
   string concat_filenames;
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  concat_filenames = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
+  concat_filenames = SpecUtils::append_path( InterSpec::staticDataDirectory(), "OUO_lanl_simplemass_detectors.tsv" );
 #else
   if( interspec )
     concat_filenames = InterSpecUser::preferenceValue<string>( "RelativeEffDRFPaths", interspec );
 #endif
   
   vector<string> paths;
-  UtilityFunctions::split( paths, concat_filenames, "\r\n;" );
+  SpecUtils::split( paths, concat_filenames, "\r\n;" );
   
   
   for( const string &filename : paths )
   {
 #ifdef _WIN32
-    const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
     std::ifstream input( wfilename.c_str() );
 #else
     std::ifstream input( filename.c_str() );
@@ -3234,13 +3233,13 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
       continue;
   
     string line;
-    while( UtilityFunctions::safe_get_line( input, line, 2048 ) )
+    while( SpecUtils::safe_get_line( input, line, 2048 ) )
     {
-      UtilityFunctions::trim( line );
+      SpecUtils::trim( line );
       if( line.empty() || line[0]=='#' || line.size() < smname.size() )
         continue;
       
-      if( UtilityFunctions::icontains( line, smname ) )
+      if( SpecUtils::icontains( line, smname ) )
       {
         auto det = RelEffFile::parseDetector( line );
         
@@ -3250,7 +3249,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
           return det;
         }
       }//if( thisname == smname )
-    }//while( UtilityFunctions::safe_get_line( input, line ) )
+    }//while( SpecUtils::safe_get_line( input, line ) )
   }//for( const string &filename : paths )
   
   throw runtime_error( "Coudlnt find detector '" + smname + " in relative efficiency files" );
@@ -3361,30 +3360,30 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector( const s
   //  and Efficiency.csv.
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   const string datadir = InterSpec::staticDataDirectory();
-  const string drfpaths = UtilityFunctions::append_path( datadir, "GenericGadrasDetectors" )
-                          + ";" + UtilityFunctions::append_path( datadir, "OUO_GadrasDetectors" );
+  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
+                          + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
 #else
   const string drfpaths = InterSpecUser::preferenceValue<string>( "GadrasDRFPath", interspec );
 #endif
   
   
   vector<string> paths;
-  UtilityFunctions::split( paths, drfpaths, "\r\n;" );
+  SpecUtils::split( paths, drfpaths, "\r\n;" );
   for( string basepath : paths )
   {
-    UtilityFunctions::trim( basepath );
-    const string path = UtilityFunctions::append_path(basepath, currentDetName);
-    if( !UtilityFunctions::is_directory(path) )
+    SpecUtils::trim( basepath );
+    const string path = SpecUtils::append_path(basepath, currentDetName);
+    if( !SpecUtils::is_directory(path) )
       continue;
     
     string thiscsv, thisdat;
-    const vector<string> files = UtilityFunctions::ls_files_in_directory( path );
+    const vector<string> files = SpecUtils::ls_files_in_directory( path );
     for( size_t i = 0; (thiscsv.empty() || thisdat.empty()) && i < files.size(); ++i )
     {
       //We will be loose with upper/lower case
-      if( UtilityFunctions::iends_with(files[i], "Efficiency.csv") )
+      if( SpecUtils::iends_with(files[i], "Efficiency.csv") )
         thiscsv = files[i];
-      else if( UtilityFunctions::iends_with(files[i], "Detector.dat") )
+      else if( SpecUtils::iends_with(files[i], "Detector.dat") )
         thisdat = files[i];
     }//for( size_t i = 0; i < files.size(); ++i )
     
@@ -3393,7 +3392,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector( const s
       auto det = initAGadrasDetectorFromDirectory( path, interspec );
       if( det )
       {
-        if( UtilityFunctions::icontains( basepath, "GenericGadrasDetectors") )
+        if( SpecUtils::icontains( basepath, "GenericGadrasDetectors") )
           det->setDrfSource( DetectorPeakResponse::DrfSource::DefaultGadrasDrf );
         else
           det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedGadrasDrf );
@@ -3411,18 +3410,18 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetectorFromDirec
 {
   auto det = std::make_shared<DetectorPeakResponse>();
 
-  if( !UtilityFunctions::is_directory(path) )
+  if( !SpecUtils::is_directory(path) )
     throw runtime_error( "'" + path + "' is not a directory" );
   
   //Lets be lienient on upper vs lower case.
   string thiscsv, thisdat;
-  const vector<string> files = UtilityFunctions::ls_files_in_directory( path );
+  const vector<string> files = SpecUtils::ls_files_in_directory( path );
   for( size_t i = 0; (thiscsv.empty() || thisdat.empty()) && i < files.size(); ++i )
   {
     //We will be loose with upper/lower case
-    if( UtilityFunctions::iends_with(files[i], "Efficiency.csv") )
+    if( SpecUtils::iends_with(files[i], "Efficiency.csv") )
       thiscsv = files[i];
-    else if( UtilityFunctions::iends_with(files[i], "Detector.dat") )
+    else if( SpecUtils::iends_with(files[i], "Detector.dat") )
       thisdat = files[i];
   }//for( size_t i = 0; i < files.size(); ++i )
   
@@ -3433,7 +3432,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetectorFromDirec
     throw runtime_error( "Could not find a Detector.dat file in '" + path + "'" );
   
 #ifdef _WIN32
-  const std::wstring wthiscsv = UtilityFunctions::convert_from_utf8_to_utf16(thiscsv);
+  const std::wstring wthiscsv = SpecUtils::convert_from_utf8_to_utf16(thiscsv);
   ifstream effstrm( wthiscsv.c_str(), ios_base::binary|ios_base::in );
 #else
   ifstream effstrm( thiscsv.c_str(), ios_base::binary|ios_base::in );
@@ -3443,7 +3442,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetectorFromDirec
     throw runtime_error( "Could not open '" + thiscsv + "'" );
 
 #ifdef _WIN32
-  const std::wstring wthisdat = UtilityFunctions::convert_from_utf8_to_utf16(thisdat);
+  const std::wstring wthisdat = SpecUtils::convert_from_utf8_to_utf16(thisdat);
   ifstream datstrm( wthisdat.c_str(), ios_base::binary|ios_base::in );
 #else
   ifstream datstrm( thisdat.c_str(), ios_base::binary|ios_base::in );
@@ -3453,7 +3452,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetectorFromDirec
     throw runtime_error( "Could not open '" + thisdat + "'" );
 
   det->fromGadrasDefinition( effstrm, datstrm );
-  det->setName( UtilityFunctions::filename( UtilityFunctions::parent_path(thiscsv) ) );
+  det->setName( SpecUtils::filename( SpecUtils::parent_path(thiscsv) ) );
 
   return det;
 }//std::shared_ptr<DetectorPeakResponse> initAGadrasDetectorFromDirectory()

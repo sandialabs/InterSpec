@@ -38,10 +38,9 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 using namespace std;
 

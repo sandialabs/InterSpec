@@ -51,12 +51,12 @@
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayChainChart.h"
 #include "InterSpec/DecayActivityDiv.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 using namespace std;
@@ -192,6 +192,12 @@ namespace
     const SandiaDecay::Nuclide *m_nuclide;
     
   public:
+    enum class DecayChainType
+    {
+      DecayFrom,
+      DecayThrough
+    };
+    
     DecayChainChartD3( WContainerWidget *parent = nullptr )
     : WContainerWidget( parent ),
     m_useCurrie( true ),
@@ -222,13 +228,24 @@ namespace
     }//render(...)
     
     
-    void setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurrie )
+    void setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurrie, const DecayChainType decayType )
     {
       m_nuclide = nuc;
       m_useCurrie = useCurrie;
       
-      setJsonForDecaysThrough( nuc );
+      switch( decayType )
+      {
+        case DecayChainType::DecayFrom:
+          setJsonForDecaysFrom( nuc );
+          break;
+          
+        case DecayChainType::DecayThrough:
+          setJsonForDecaysThrough( nuc );
+          break;
+      }//switch( decayType )
+      
     }//void setNuclide(...)
+    
     
     
     void jsonInfoForNuclide( const SandiaDecay::Nuclide * const nuc, Wt::WStringStream &js )
@@ -275,11 +292,36 @@ namespace
       js << "]}";
     }//void jsonInfoForNuclide(...)
     
+    
+    void setJsonForDecaysFrom( const SandiaDecay::Nuclide * const nuclide )
+    {
+      if( !nuclide )
+      {
+        doJavaScript( jsRef() + ".chart.setDecayData([],true);" );
+        return;
+      }
+     
+      vector<const SandiaDecay::Nuclide *> descendants = nuclide->descendants();
+      
+      WStringStream js;
+      js << "[";
+      for( size_t i = 0; i < descendants.size(); ++i )
+      {
+        js << std::string(i ? "," : "");
+        jsonInfoForNuclide( descendants[i], js );
+      }
+      js << "]";
+      
+      cout << "JSON=" << js.str() << endl;
+      
+      doJavaScript( jsRef() + ".chart.setDecayData('" + js.str() + "',true);" );
+    }//void setJsonForDecaysFrom( const SandiaDecay::Nuclide * const nuclide )
+    
     void setJsonForDecaysThrough( const SandiaDecay::Nuclide * const nuclide )
     {
       if( !nuclide )
       {
-        doJavaScript( jsRef() + ".chart.setDecayData([]);" );
+        doJavaScript( jsRef() + ".chart.setDecayData([],false);" );
         return;
       }
       
@@ -302,7 +344,7 @@ namespace
       
       cout << "JSON=" << js.str() << endl;
       
-      doJavaScript( jsRef() + ".chart.setDecayData('" + js.str() + "');" );
+      doJavaScript( jsRef() + ".chart.setDecayData('" + js.str() + "',true);" );
     }//void setJsonForDecaysThrough( const SandiaDecay::Nuclide * const nuc )
     
     
@@ -311,7 +353,14 @@ namespace
     {
       m_jsLoaded = true;
       
-      string options = "{}";
+      InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+      const bool isMobile = app && app->isMobile();
+      
+      
+      string options = string("{")
+      + " isMobile: " + string( isMobile ? "true" : "false")
+      + ", isDecayChain: false"
+      + "}";
       setJavaScriptMember( "chart", "new DecayChainChart(" + jsRef() + "," + options + ");");
       setJavaScriptMember( "wtResize", "function(self, w, h, layout){ " + jsRef() + ".chart.handleResize();}" );
       
@@ -335,6 +384,12 @@ DecayChainChart::DecayChainChart(  Wt::WContainerWidget *parent )
     m_tapnhold( this, "tapnhold" )
 {
   wApp->useStyleSheet( "InterSpec_resources/DecayChainChart.css" );
+  
+  
+  //DecayChainChartD3
+  //DecayChainChartD3 *w = new DecayChainChartD3();
+  //w->setNuclide( nuclide, m_useCurrie, DecayChainChartD3::DecayChainType::DecayThrough );
+  
   
   addStyleClass( "DecayChainChart" );
   m_tapnhold.connect( this, &DecayChainChart::makeDialog );
@@ -448,111 +503,20 @@ void DecayChainChart::displayTextInfo( const SandiaDecay::Nuclide *nuc )
 
 
 
-
-
-
-
-
-
-
-
-
 void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
 {
   if( !nuclide )
     return;
 
-  //If we arent using D3SpectrumDisplayDiv, we might not have d3.v3.min.js
-#if( !USE_SPECTRUM_CHART_D3 )
-  return;
-#endif
-
-  
-
-  //Should do this in D3/SVG instead of html!
-  
-  //Atomic mass will be on x-axis, and atomic number on y-axis
-  set<short int> massnums, atomicnums;
-  vector<const SandiaDecay::Nuclide *> forebearers = nuclide->forebearers();
-  
-  //Get rid of elements above Californium since they arent typically encountered
-  forebearers.erase(
-    std::remove_if( begin(forebearers), end(forebearers),
-                                    [](const SandiaDecay::Nuclide *nuc) -> bool { return nuc->atomicNumber>98;} ),
-                     end(forebearers) );
-  
-  for( const auto nuc : forebearers )
-  {
-    massnums.insert( nuc->massNumber );
-    atomicnums.insert( nuc->atomicNumber );
-  }//for( const auto nuc : forebearers )
-  
-  //Nuclide::forebearers() will always return a vector with atleast itself in it
-  assert( massnums.size() > 0 && atomicnums.size() > 0 );
-  
-  const double nummass = massnums.size();
-  const double numanum = atomicnums.size();
-  
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
   InterSpec *interspec = app ? app->viewer() : nullptr;
   if( !interspec )  //shouldnt ever happen, but jic
     return;
   
-  /*
-  const double maxw = std::max( interspec->renderedWidth()-30.0, 350.0 );
-  const double maxh = std::max( interspec->renderedHeight()-50.0, 350.0 );
-  
-  const double wantedw = 50*(1 + nummass);
-  const double wantedh = 30*(1 + numanum);
-  
-  
-  WContainerWidget *content = new WContainerWidget();
-  content->addStyleClass( "ParentDecaysContent" );
-  content->setPositionScheme( Wt::PositionScheme::Relative );
-  content->setOffsets( 0 );
-  content->setWidth( WLength(100,WLength::Percentage) );
-  content->setHeight( WLength(100,WLength::Percentage) );
-  content->setOverflow(Wt::WContainerWidget::OverflowHidden, Wt::Vertical | Wt::Horizontal);
-  
-  for( const SandiaDecay::Nuclide * const nuc : forebearers )
-  {
-    const bool isIso = (nuc->isomerNumber > 0);
-    const auto numIso = std::count_if( begin(forebearers), end(forebearers),
-      [nuc](const SandiaDecay::Nuclide *l) -> bool{
-      return l->atomicNumber==nuc->atomicNumber && l->massNumber==nuc->massNumber;
-    } );
-    
-    if( isIso && numIso>1 )
-      continue;
-    
-    WText *txt = new WText( nuc->symbol, content );
-    txt->setInline( false );
-    txt->addStyleClass( "ParentDecayNuc" );
-    if( numIso > 1 )
-      txt->addStyleClass( "HasIso" );
-    if( nuc == nuclide )
-      txt->addStyleClass( "IsTargetNuc" );
-    
-    txt->setPositionScheme( Wt::PositionScheme::Absolute );
-    
-    //We will have mass go from larger on left to smallest (e.g., our target nuclide) on right.
-    //  Atomic numbers will go from largest on top, to smallest on bottom.
-    const auto massindex = massnums.size() - std::distance( begin(massnums), massnums.find(nuc->massNumber) ) - 1;
-    const auto anindex = atomicnums.size() - std::distance( begin(atomicnums), atomicnums.find( nuc->atomicNumber ) ) - 1;
-    
-    const double wmargin = 50.0 / (nummass+1);
-    const double hmargin = 40.0 / (1 + numanum);
-    
-    double left = wmargin + (100.0*massindex)/(nummass+1.0);
-    double top = hmargin + (100.0*anindex)/(numanum+1.0);
-    
-    txt->setOffsets( WLength( left, WLength::Percentage), Wt::Side::Left );
-    txt->setOffsets( WLength( top,WLength::Percentage), Wt::Side::Top );
-  }//for( const SandiaDecay::Nuclide *nuc : forebearers )
-  
-  
   deleteMoreInfoDialog();
-  */
+  
+  const double ww = 0.8*interspec->renderedWidth();
+  const double wh = 0.65*interspec->renderedHeight();
   
   Wt::WFlags<AuxWindowProperties> windowProp
     = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
@@ -561,14 +525,11 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
       | AuxWindowProperties::EnableResize;
   
   m_moreInfoDialog = new AuxWindow( "Decays Through " + nuclide->symbol, windowProp );
-  //m_moreInfoDialog->contents()->addWidget( content );
-  //m_moreInfoDialog->contents()->setMinimumSize( 200, 100 );
-  //m_moreInfoDialog->contents()->resize( std::min(std::max(200.0,wantedw),maxw), std::min(std::max(100.0,wantedh),maxh) );
-  
   DecayChainChartD3 *w = new DecayChainChartD3();
-  w->setNuclide( nuclide, m_useCurrie );
+  w->setNuclide( nuclide, m_useCurrie, DecayChainChartD3::DecayChainType::DecayThrough );
   m_moreInfoDialog->stretcher()->addWidget( w, 0, 0  );
-  m_moreInfoDialog->setMinimumSize( 350, 250 );
+  
+  m_moreInfoDialog->resizeWindow( std::max( 800, static_cast<int>(std::min(ww,1.3*wh) ) ), std::max( 600, static_cast<int>(wh) ) );
   
   
   m_moreInfoDialog->rejectWhenEscapePressed();
@@ -596,6 +557,7 @@ void DecayChainChart::setNuclide( const SandiaDecay::Nuclide *nuc, const bool us
   m_nuclideChanged.emit( m_nuclide );
 }//void setNuclide(...)
 
+
 Wt::Signal<const SandiaDecay::Nuclide *> &DecayChainChart::nuclideChanged()
 {
   return m_nuclideChanged;
@@ -610,7 +572,7 @@ const SandiaDecay::Nuclide *DecayChainChart::nuclide() const
 void DecayChainChart::makeDialog( const std::string &csvIsotopeNames )
 {
   vector<string> isotopenames;
-  UtilityFunctions::split( isotopenames, csvIsotopeNames, "," );
+  SpecUtils::split( isotopenames, csvIsotopeNames, "," );
   
   std::vector<std::string> types;
   std::vector<double> energies;
@@ -761,11 +723,17 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
     if( transition->child )
     {
       snprintf( buffer, sizeof(buffer),
-               "Decays to %s by %s decay, with branching ratio %.5f",
+               "Decays to %s by %s decay, BR %.5f",
                transition->child->symbol.c_str(),
                SandiaDecay::to_str( transition->mode ),
                transition->branchRatio );
-      information.push_back( buffer );
+      
+      //strip off dangling zeros...
+      string val = buffer;
+      while( val.length() > 2 && val[val.length()-1]=='0' && val[val.length()-2]!='.' )
+        val = val.substr(0,val.length()-1);
+      
+      information.push_back( val );
       
       if( nuc->massNumber == transition->child->massNumber
          && nuc->atomicNumber == transition->child->atomicNumber )
@@ -805,7 +773,7 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
       if( transition->child )
       {
         snprintf( buffer, sizeof(buffer),
-                 "Decays to %s by %s decay, with branching ratio %.5f",
+                 "Decays to %s by %s decay, BR %.5f",
                  transition->child->symbol.c_str(),
                  SandiaDecay::to_str( transition->mode ),
                  transition->branchRatio );

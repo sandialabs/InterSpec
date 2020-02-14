@@ -32,10 +32,11 @@
 
 #include "rapidxml/rapidxml.hpp"
 
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 using namespace std;
@@ -255,7 +256,7 @@ std::string ReactionGamma::gammas( const string &name,
   string reactionNames;
   answer.clear();
 
-  if( UtilityFunctions::icontains(name,"ann") )
+  if( SpecUtils::icontains(name,"ann") )
   {
     assert( m_reactions[AnnihilationReaction].size() > 0 );
     const Reaction *rcnt = m_reactions[AnnihilationReaction][0];
@@ -268,7 +269,7 @@ std::string ReactionGamma::gammas( const string &name,
     answer.push_back( rcnanswer );
     
     return "Annihilation";
-  }//if( UtilityFunctions::icontains(name,"ann") )
+  }//if( SpecUtils::icontains(name,"ann") )
   
   const string::size_type open_paren = name.find( '(' );
   const string::size_type close_paren = name.find( ')', open_paren );
@@ -286,11 +287,11 @@ std::string ReactionGamma::gammas( const string &name,
   string first_rctn = name.substr( open_paren+1, comma_pos-open_paren-1 );
   string second_rctn = name.substr( comma_pos+1, close_paren-comma_pos-1 );
 
-  UtilityFunctions::trim( label );
-  UtilityFunctions::trim( first_rctn );
-  UtilityFunctions::trim( second_rctn );
-  UtilityFunctions::to_lower( first_rctn );
-  UtilityFunctions::to_lower( second_rctn );
+  SpecUtils::trim( label );
+  SpecUtils::trim( first_rctn );
+  SpecUtils::trim( second_rctn );
+  SpecUtils::to_lower_ascii( first_rctn );
+  SpecUtils::to_lower_ascii( second_rctn );
 
   const bool is_isotope = (label.find_first_of("0123456789")!=string::npos);
 
@@ -634,7 +635,7 @@ void ReactionGamma::init( const string &input )
   using namespace rapidxml;
 
   vector<char> inputdata;
-  UtilityFunctions::load_file_data( input.c_str(), inputdata );
+  SpecUtils::load_file_data( input.c_str(), inputdata );
 
   xml_document<char> document;
   document.parse<parse_normalize_whitespace | parse_trim_whitespace>( &inputdata.front() );

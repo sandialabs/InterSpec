@@ -37,9 +37,9 @@
 #include <Wt/WRegExpValidator>
 
 #include "InterSpec/AuxWindow.h"
+#include "SpecUtils/StringALgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/ActivityConverter.h"
 
 using namespace Wt;
@@ -144,7 +144,7 @@ void ActivityConverter::convert()
   try {
     Wt::WString value = m_input->text();
     std::string val = value.toUTF8();
-    UtilityFunctions::trim( val );
+    SpecUtils::trim( val );
     double dbvalue = PhysicalUnits::stringToActivity(val);
     bool curie = false;
     if (val.find("Ci")!= std::string::npos || val.find("ci")!= std::string::npos) {

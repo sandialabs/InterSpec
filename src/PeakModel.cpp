@@ -50,15 +50,17 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/SpecMeas.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakModel.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"  //Only for ALLOW_PEAK_COLOR_DELEGATE
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectrumDataModel.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 
 using namespace std;
@@ -213,8 +215,8 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   //Info that will be parsed is based on PeakModel::PeakCsvResource::handleRequest(...)
   //  with a few small accommodations for how other programs may save peak CSVs.
   
-  using UtilityFunctions::trim_copy;
-  using UtilityFunctions::to_lower_copy;
+  using SpecUtils::trim_copy;
+  using SpecUtils::to_lower_ascii_copy;
   
   typedef boost::tokenizer<boost::escaped_list_separator<char> > Tokeniser;
   boost::escaped_list_separator<char> separator("\\",",\t", "\"");
@@ -229,9 +231,9 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   string line;
   
   //Get first non-empty, non-comment ('#') line.
-  while( UtilityFunctions::safe_get_line(csv, line, 2048) )
+  while( SpecUtils::safe_get_line(csv, line, 2048) )
   {
-    UtilityFunctions::trim(line);
+    SpecUtils::trim(line);
     if( !line.empty() && line[0]!='#' )
       break;
   }
@@ -249,7 +251,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     vector<string> headers;
     Tokeniser t( line, separator );
     for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
-      headers.push_back( to_lower_copy( trim_copy(*it) ) );
+      headers.push_back( to_lower_ascii_copy( trim_copy(*it) ) );
     
     const auto centroid_pos = std::find( begin(headers), end(headers), "centroid");
     const auto net_area_pos = std::find( begin(headers), end(headers), "net_area");
@@ -288,16 +290,16 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   
   vector<PeakDef> answer;
   
-  while( UtilityFunctions::safe_get_line(csv, line, 2048) )
+  while( SpecUtils::safe_get_line(csv, line, 2048) )
   {
-    UtilityFunctions::trim(line);
+    SpecUtils::trim(line);
     if( line.empty() || line[0]=='#' || (!isdigit(line[0]) && line[0]!='+' && line[0]!='-') )
       continue;
     
     vector<string> fields;
     Tokeniser t( line, separator );
     for( Tokeniser::iterator it = t.begin(); it != t.end(); ++it )
-      fields.push_back( to_lower_copy( trim_copy(*it) ) );
+      fields.push_back( to_lower_ascii_copy( trim_copy(*it) ) );
     
     const int nfields = static_cast<int>( fields.size() );
     
@@ -368,7 +370,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     {
       throw runtime_error( "Invalid value on line '" + line + "', " + string(e.what()) );
     }//try / catch to parse a line into a peak
-  }//while( UtilityFunctions::safe_get_line(csv, line, 2048) )
+  }//while( SpecUtils::safe_get_line(csv, line, 2048) )
   
   
   if( answer.empty() )
@@ -458,7 +460,7 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
       }else if( peak.reaction() )
       {
         nuclide = peak.reaction()->name();
-        UtilityFunctions::ireplace_all( nuclide, ",", " " );
+        SpecUtils::ireplace_all( nuclide, ",", " " );
       }else if( peak.xrayElement() )
       {
         nuclide = peak.xrayElement()->symbol + "-xray";
@@ -527,7 +529,7 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
       numstr = " " + numstr;
     
     specfilename = "  ";
-    UtilityFunctions::ireplace_all( specfilename, ",", "-" );
+    SpecUtils::ireplace_all( specfilename, ",", "-" );
     
     string live_time_str;
     if( live_time > 0.0f )
@@ -539,7 +541,7 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
     string datestr, timestr;
     if( !meastime.is_special() )
     {
-      const string tstr = UtilityFunctions::to_common_string( meastime, true );
+      const string tstr = SpecUtils::to_common_string( meastime, true );
       const auto pos = tstr.find(' ');
       if( pos != string::npos )
       {
@@ -758,7 +760,7 @@ bool PeakModel::isWithinRange( const PeakDef &peak ) const
 
   if( !xaxis )
   {
-    cerr << SRC_LOCATION << "\n\tThere is no xaxis!" << endl;
+    cerr << "PeakModel::isWithinRange(...)\n\tThere is no xaxis!" << endl;
     return false;
   }
 
@@ -1113,7 +1115,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
   if( m_sortedPeaks.size() != m_peaks->size() )
   {
     stringstream msg;
-    msg << SRC_LOCATION << "\n\tm_sortedPeaks.size()=" << m_sortedPeaks.size()
+    msg << "PeakModel::data(...)\n\tm_sortedPeaks.size()=" << m_sortedPeaks.size()
          << ", m_peaks->size()=" << m_peaks->size();
     cerr << endl << msg.str() << endl << endl;
     throw std::runtime_error( msg.str() );
@@ -1381,13 +1383,13 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
   if( !db )
     return NoSourceChange;
   
-  UtilityFunctions::to_lower( label );
+  SpecUtils::to_lower_ascii( label );
   
   const bool hadSource = (peak.parentNuclide() || peak.xrayElement() || peak.reaction() );
   
   if( label.empty()
-     || UtilityFunctions::contains( label, "none" )
-     || UtilityFunctions::contains( label, "undef" )
+     || SpecUtils::contains( label, "none" )
+     || SpecUtils::contains( label, "undef" )
      || label == "na" )
   {
     const bool use = peak.useForShieldingSourceFit();
@@ -1657,7 +1659,7 @@ bool PeakModel::setData( const WModelIndex &index,
       case kContinuumArea: case kContinuumType:
       case kNumColumns: case kDifference:
       default:
-        cerr << SRC_LOCATION << "\n\tUn Supported column" << endl;
+        cerr << "PeakModel::setData(...)\n\tUn Supported column" << endl;
         return false;
     }//switch( section )
 
@@ -1678,7 +1680,7 @@ bool PeakModel::setData( const WModelIndex &index,
           dbl_val = std::stod( txt_val.toUTF8() );
         }catch(...)
         {
-          cerr << SRC_LOCATION << "\n\tUnable to convert '" << txt_val
+          cerr << "PeakModel::setData(...)\n\tUnable to convert '" << txt_val
                << "' to a dbl" << endl;
           return false;
         }//try / catch
@@ -1800,7 +1802,7 @@ bool PeakModel::setData( const WModelIndex &index,
         const SandiaDecay::Element *el = new_peak.xrayElement();
         const ReactionGamma::Reaction *rctn = new_peak.reaction();
         
-        string text = UtilityFunctions::to_lower_copy( txt_val.narrow() );
+        string text = SpecUtils::to_lower_ascii_copy( txt_val.narrow() );
 
         PeakDef::SourceGammaType srcType;
         PeakDef::gammaTypeFromUserInput( text, srcType );
@@ -1812,7 +1814,7 @@ bool PeakModel::setData( const WModelIndex &index,
                  && (text.find("ev") != string::npos) )
           unit = 0.001;
 
-        UtilityFunctions::trim( text );
+        SpecUtils::trim( text );
         stringstream convertstr( text );
 
         double energy = -999.0;
@@ -1979,8 +1981,8 @@ bool PeakModel::setData( const WModelIndex &index,
       case kPeakLineColor:
       {
         const string css_color = txt_val.toUTF8();
-        if( UtilityFunctions::iequals(css_color, "none")
-            || UtilityFunctions::iequals(css_color, "na")
+        if( SpecUtils::iequals_ascii(css_color, "none")
+            || SpecUtils::iequals_ascii(css_color, "na")
             || css_color.empty() )
           new_peak.setLineColor( Wt::WColor() );
         else
@@ -2035,7 +2037,7 @@ bool PeakModel::setData( const WModelIndex &index,
     return true;
   }catch( std::exception &e )
   {
-    cerr << SRC_LOCATION << "\n\tUnexpected exception: " << e.what() << endl;
+    cerr << "PeakModel::setData(...)\n\tUnexpected exception: " << e.what() << endl;
   }
   return false;
 }//bool setData(...)

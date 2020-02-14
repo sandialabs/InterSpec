@@ -74,12 +74,12 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/Recalibrator.h"
 #include "InterSpec/InterSpecApp.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/RowStretchTreeView.h"
 #if ( USE_SPECTRUM_CHART_D3 )
@@ -1665,10 +1665,10 @@ void Recalibrator::recalibrateByPeaks()
     string exceptionmsg = e.what();
     string msg = "Failed calibration by fitting peak means.";
     
-    if( UtilityFunctions::starts_with( exceptionmsg, "ErrorMsg" ) )
+    if( SpecUtils::starts_with( exceptionmsg, "ErrorMsg" ) )
       msg = exceptionmsg.substr(8);
     
-    cerr << SRC_LOCATION << "\n\tCaught: " << exceptionmsg << endl;
+    cerr << "Recalibrator::recalibrateByPeaks():\n\tCaught: " << exceptionmsg << endl;
     passMessage( msg, "", WarningWidget::WarningMsgHigh );
   }//try / catch
 
@@ -3511,10 +3511,10 @@ void Recalibrator::MultiFileCalibFit::doFit()
     string exceptionmsg = e.what();
     string msg = "Failed calibration by fitting peak means.";
     
-    if( UtilityFunctions::starts_with( exceptionmsg, "ErrorMsg" ) )
+    if( SpecUtils::starts_with( exceptionmsg, "ErrorMsg" ) )
       msg = exceptionmsg.substr(8);
     
-    cerr << SRC_LOCATION << "\n\tCaught: " << exceptionmsg << endl;
+    cerr << "Recalibrator::MultiFileCalibFit::doFit(): \n\tCaught: " << exceptionmsg << endl;
     passMessage( msg, "", WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void doFit()

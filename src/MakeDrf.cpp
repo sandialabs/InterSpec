@@ -56,8 +56,11 @@
 
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/SpecMeas.h"
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/MakeDrfFit.h"
@@ -69,7 +72,6 @@
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -88,7 +90,7 @@ namespace
   {
     cout << "Will try to find '" << srcname << "' from " << filename << endl;
 #ifdef _WIN32
-    const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
     ifstream file( wfilename.c_str(), ios::in | ios::binary );
 #else
     ifstream file( filename.c_str(), ios::in | ios::binary );
@@ -96,16 +98,16 @@ namespace
     if( !file )
       return false;
    
-    UtilityFunctions::trim( srcname );
+    SpecUtils::trim( srcname );
     
     string line;
-    while( UtilityFunctions::safe_get_line( file, line) )
+    while( SpecUtils::safe_get_line( file, line) )
     {
       vector<string> fields;
-      UtilityFunctions::split( fields, line, " \t" );
+      SpecUtils::split( fields, line, " \t" );
       if( fields.size() < 3 )
         continue;
-      if( !UtilityFunctions::iequals(fields[0], srcname) )
+      if( !SpecUtils::iequals_ascii(fields[0], srcname) )
         continue;
       try
       {
@@ -115,13 +117,13 @@ namespace
         continue;
       }
       
-      activityDate = UtilityFunctions::time_from_string( fields[2] .c_str());
+      activityDate = SpecUtils::time_from_string( fields[2] .c_str());
       comments = "";
       for( size_t i = 3; i < fields.size(); ++i )
         comments += ((i==3) ? "" : " ") + fields[i];
       
       return true;
-    }//while( UtilityFunctions::safe_get_line( file, line) )
+    }//while( SpecUtils::safe_get_line( file, line) )
     
     return false;
   }//source_info_from_lib_file(...)
@@ -207,7 +209,7 @@ namespace
       }
       
       const char * const extension = (m_pcf ? ".pcf" : ".n42");
-      if( !UtilityFunctions::iequals( UtilityFunctions::file_extension(filename), extension ) )
+      if( !SpecUtils::iequals_ascii( SpecUtils::file_extension(filename), extension ) )
         filename += extension;
       
       suggestFileName( filename, WResource::Attachment );
@@ -559,7 +561,7 @@ namespace
       
       
       string filename = m_meas->filename();
-      filename = UtilityFunctions::filename( filename );
+      filename = SpecUtils::filename( filename );
       if( m_meas->sample_numbers().size()==1 && !title.empty() )
       {
         title = filename + (filename.empty() ? "" : ": ") + title;
@@ -746,8 +748,8 @@ namespace
             if( samples.size() == 1 )
             {
               is_background |= (m->source_type()==Measurement::SourceType::Background);
-              is_background |= UtilityFunctions::icontains( spectitle, "back" );
-              is_background |= UtilityFunctions::icontains( spectitle, "bgr" );
+              is_background |= SpecUtils::icontains( spectitle, "back" );
+              is_background |= SpecUtils::icontains( spectitle, "bgr" );
             }//if( samples.size() == 1 )
             
             size_t pos = spectitle.find( "@" );
@@ -759,7 +761,7 @@ namespace
               string dist = spectitle.substr( pos+1 );
               try
               {
-                UtilityFunctions::trim( dist );
+                SpecUtils::trim( dist );
                 pos = dist.find( ',' ); //ToDo: make finding the end of the distnace more robust - like with a regex
                 if( pos != string::npos )
                   dist = dist.substr(0, pos);
@@ -780,12 +782,12 @@ namespace
             
             for( string remark : remarks )
             {
-              if( !UtilityFunctions::istarts_with(remark, "Source:") )
+              if( !SpecUtils::istarts_with(remark, "Source:") )
                 continue;
               
               remark = remark.substr(7);
               
-              UtilityFunctions::trim( remark );
+              SpecUtils::trim( remark );
               
               //Look for a string like "Age= 13y 5d 3s something something something"
               std::smatch mtch;
@@ -822,7 +824,7 @@ namespace
                 {
                   shielding = remark.substr(openCurlyPos+1, closeCurlyPos-openCurlyPos-1);
                   remark = remark.substr(0,openCurlyPos);
-                  UtilityFunctions::trim(remark);
+                  SpecUtils::trim(remark);
                 }
               }//if( source had shielding defined )
               
@@ -868,13 +870,13 @@ namespace
                 try
                 {
                   string activitystr = remark.substr(commapos+1);
-                  UtilityFunctions::trim( activitystr );
+                  SpecUtils::trim( activitystr );
                   
                   //search for a positive decimal number foloowed by some letters; take fir occirance
                   std::smatch mtch;
                   std::regex expr( "(\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?)\\s*([a-zA-Z \\-]+)" );
                   if( std::regex_search( activitystr, mtch, expr ) )
-                    activitystr = UtilityFunctions::trim_copy( mtch[0] );
+                    activitystr = SpecUtils::trim_copy( mtch[0] );
                   
                   activity = PhysicalUnits::stringToActivity( activitystr );
                 }catch( std::exception & )
@@ -887,14 +889,14 @@ namespace
               {
                 //- Check for "*Source.lib" file in application directory,
                 //  and if found, scan through for the source identified in previous line, and put in date
-                vector<string> base_paths{ InterSpec::staticDataDirectory(), UtilityFunctions::get_working_path() };
+                vector<string> base_paths{ InterSpec::staticDataDirectory(), SpecUtils::get_working_path() };
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
                 try{ base_paths.push_back( InterSpec::writableDataDirectory() ); } catch(...){}
 #endif
                 vector<string> source_lib_files;
                 for( const string &path : base_paths )
                 {
-                  const vector<string> files = UtilityFunctions::recursive_ls(path, "Source.lib" );
+                  const vector<string> files = SpecUtils::recursive_ls(path, "Source.lib" );
                   source_lib_files.insert( end(source_lib_files), begin(files), end(files) );
                 }
                 
@@ -934,7 +936,7 @@ namespace
                 try
                 {
                   vector<float> an_ad;
-                  UtilityFunctions::split_to_floats( shielding, an_ad );
+                  SpecUtils::split_to_floats( shielding, an_ad );
                   if( an_ad.size() >= 2 && an_ad[0] >= 1.0f && an_ad[0] <= 100.0f
                      && an_ad[1] >= 0.0f && an_ad[1] <= 500.0f )
                   {
@@ -1671,8 +1673,8 @@ void MakeDrf::startSaveAs()
     
     string drfname = name->text().toUTF8();
     string drfdescrip = description->text().toUTF8();
-    UtilityFunctions::trim( drfname );
-    UtilityFunctions::trim( drfdescrip );
+    SpecUtils::trim( drfname );
+    SpecUtils::trim( drfdescrip );
     
     auto drf = make_shared<DetectorPeakResponse>( drfname, drfdescrip );
     
@@ -2315,11 +2317,11 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
       auto peakdequ = std::make_shared<std::deque< std::shared_ptr<const PeakDef> > >( peaks.begin(), peaks.end() );
     
       //Takes between 5 and 500ms for a HPGe detector
-      const double start_time = UtilityFunctions::get_wall_time();
+      const double start_time = SpecUtils::get_wall_time();
       vector<float> fwhm_coefs, fwhm_coefs_uncert;
       const double chi2 = MakeDrfFit::performResolutionFit( peakdequ, num_gamma_channels, fnctnlForm, sqrtEqnOrder, fwhm_coefs, fwhm_coefs_uncert );
     
-      const double end_time = UtilityFunctions::get_wall_time();
+      const double end_time = SpecUtils::get_wall_time();
     
       assert( fwhm_coefs.size() == fwhm_coefs_uncert.size() );
       cout << "Fit FWHM: {";
@@ -2422,11 +2424,11 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
     try
     {
       //Takes between 5 and 500ms for a HPGe detector
-      const double start_time = UtilityFunctions::get_wall_time();
+      const double start_time = SpecUtils::get_wall_time();
       vector<float> result, uncerts;
       const double chi2 = MakeDrfFit::performEfficiencyFit( data, nfitpars, result, uncerts );
       
-      const double end_time = UtilityFunctions::get_wall_time();
+      const double end_time = SpecUtils::get_wall_time();
       
       assert( result.size() == uncerts.size() );
       cout << "Fit Eff: {";
@@ -2610,7 +2612,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         
         for( const string &remark : m->remarks() )
         {
-          if( !UtilityFunctions::icontains(remark, "Source:") )
+          if( !SpecUtils::icontains(remark, "Source:") )
             newremarks.push_back( remark );
         }//for( MakeDrfSrcDef *source : sample->sources() )
         
@@ -2634,18 +2636,18 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
           if( std::regex_match( title, mtch, expr ) )
           {
             size_t distpos = title.find( mtch[1].str() );
-            title = UtilityFunctions::trim_copy( title.substr(0,distpos) )
+            title = SpecUtils::trim_copy( title.substr(0,distpos) )
                     + " @ " + PhysicalUnits::printToBestLengthUnits(distance)
-                    + " " + UtilityFunctions::trim_copy( title.substr(distpos+mtch[1].str().size()) );
+                    + " " + SpecUtils::trim_copy( title.substr(distpos+mtch[1].str().size()) );
             //the last space we added is sometimes a waste, and results in something like 'U232 @ 33.33 cm , H=100 cm'
           }else
           {
             //Todo, should check if there is a '@' sybmol in the string anywhere
-            title = UtilityFunctions::trim_copy(title)
+            title = SpecUtils::trim_copy(title)
                     + " @ " + PhysicalUnits::printToBestLengthUnits(distance);
           }
           
-          UtilityFunctions::trim( title );
+          SpecUtils::trim( title );
           answer->set_title( title, m );
         }//if( distance > 0.0 )
         
@@ -2684,10 +2686,10 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   
   //ToDo: implement proper reading in of escaped fields, including new lines in
   //      DetectorEdit, then get rid of the below.
-  UtilityFunctions::ireplace_all( drfname, "\r", " ");
-  UtilityFunctions::ireplace_all( drfname, "\n", " ");
-  UtilityFunctions::ireplace_all( drfdescription, "\r", " ");
-  UtilityFunctions::ireplace_all( drfdescription, "\n", " ");
+  SpecUtils::ireplace_all( drfname, "\r", " ");
+  SpecUtils::ireplace_all( drfname, "\n", " ");
+  SpecUtils::ireplace_all( drfdescription, "\r", " ");
+  SpecUtils::ireplace_all( drfdescription, "\n", " ");
   
   const double effChi2 = m_effEqnChi2;
   const double fwhmChi2 = m_fwhmEqnChi2;
@@ -2739,7 +2741,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   
 
   out << "# Detector Response Function generated by InterSpec "
-  << UtilityFunctions::to_iso_string( boost::posix_time::second_clock::local_time() )
+  << SpecUtils::to_iso_string( boost::posix_time::second_clock::local_time() )
   << endline << endline;
   
   out << "# Name,";
@@ -2856,7 +2858,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
          ",DetectionEfficiency,DetectionEfficiencyUncert,GeometryFactor" << endline;
   for( MakeDrfChart::DataPoint d: data )
   {
-    UtilityFunctions::ireplace_all( d.source_information, ",", " ");
+    SpecUtils::ireplace_all( d.source_information, ",", " ");
     
     const double deteff = d.peak_area / d.source_count_rate;
     const double deteffUncert = deteff * sqrt( pow(d.peak_area_uncertainty/d.peak_area,2)

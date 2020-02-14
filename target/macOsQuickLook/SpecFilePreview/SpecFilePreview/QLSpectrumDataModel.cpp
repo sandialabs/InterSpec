@@ -17,9 +17,9 @@
 #include <Wt/WAbstractItemModel>
 
 #include "QLSpectrumChart.h"
+#include "SpecUtils/SpecFile.h"
 #include "QLSpectrumDataModel.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
+
 
 #define foreach         BOOST_FOREACH
 #define reverse_foreach BOOST_REVERSE_FOREACH

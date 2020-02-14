@@ -38,12 +38,12 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
-#include "InterSpec/InterSpecApp.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 using namespace std;
 
@@ -1435,51 +1435,51 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
   
   type = PeakDef::NormalGamma;
   
-  if( UtilityFunctions::icontains( txt, "s.e." ) )
+  if( SpecUtils::icontains( txt, "s.e." ) )
   {
     type = PeakDef::SingleEscapeGamma;
-    UtilityFunctions::ireplace_all( txt, "s.e.", "" );
+    SpecUtils::ireplace_all( txt, "s.e.", "" );
   }
   
-  if( UtilityFunctions::icontains( txt, "single escape" ) )
+  if( SpecUtils::icontains( txt, "single escape" ) )
   {
     type = PeakDef::SingleEscapeGamma;
-    UtilityFunctions::ireplace_all( txt, "single escape", "" );
+    SpecUtils::ireplace_all( txt, "single escape", "" );
   }
   
-  if( UtilityFunctions::icontains( txt, "se " ) && txt.size() > 5 )
+  if( SpecUtils::icontains( txt, "se " ) && txt.size() > 5 )
   {
     type = PeakDef::SingleEscapeGamma;
-    UtilityFunctions::ireplace_all( txt, "se ", "" );
+    SpecUtils::ireplace_all( txt, "se ", "" );
   }
   
-  if( UtilityFunctions::icontains( txt, "d.e." ) )
+  if( SpecUtils::icontains( txt, "d.e." ) )
   {
     type = PeakDef::DoubleEscapeGamma;
-    UtilityFunctions::ireplace_all( txt, "d.e.", "" );
+    SpecUtils::ireplace_all( txt, "d.e.", "" );
   }
   
-  if( UtilityFunctions::icontains( txt, "double escape" ) )
+  if( SpecUtils::icontains( txt, "double escape" ) )
   {
     type = PeakDef::DoubleEscapeGamma;
-    UtilityFunctions::ireplace_all( txt, "double escape", "" );
+    SpecUtils::ireplace_all( txt, "double escape", "" );
   }
   
-  if( UtilityFunctions::icontains( txt, "de " ) && txt.size() > 5 )
+  if( SpecUtils::icontains( txt, "de " ) && txt.size() > 5 )
   {
     type = PeakDef::DoubleEscapeGamma;
-    UtilityFunctions::ireplace_all( txt, "de ", "" );
+    SpecUtils::ireplace_all( txt, "de ", "" );
   }
   
-  if( UtilityFunctions::icontains( txt, "x-ray" )
-      || UtilityFunctions::icontains( txt, "xray" )
-     || UtilityFunctions::icontains( txt, "x ray" ) )
+  if( SpecUtils::icontains( txt, "x-ray" )
+      || SpecUtils::icontains( txt, "xray" )
+     || SpecUtils::icontains( txt, "x ray" ) )
   {
     
     type = PeakDef::XrayGamma;
-    UtilityFunctions::ireplace_all( txt, "xray", "" );
-    UtilityFunctions::ireplace_all( txt, "x-ray", "" );
-    UtilityFunctions::ireplace_all( txt, "x ray", "" );
+    SpecUtils::ireplace_all( txt, "xray", "" );
+    SpecUtils::ireplace_all( txt, "x-ray", "" );
+    SpecUtils::ireplace_all( txt, "x ray", "" );
   }
   
   
@@ -1690,7 +1690,7 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     if( !node || !node->value() )
       throw runtime_error( "Continuum didnt have Coefficient Values" );
     
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), contents );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), contents );
     m_values.resize( contents.size() );
     for( size_t i = 0; i < contents.size(); ++i )
       m_values[i] = contents[i]; 
@@ -1700,7 +1700,7 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     if( !node || !node->value() )
       throw runtime_error( "Continuum didnt have Coefficient Uncertainties" );  
     
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), contents );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), contents );
     m_uncertainties.resize( contents.size() );
     for( size_t i = 0; i < contents.size(); ++i )
       m_uncertainties[i] = contents[i]; 
@@ -1710,7 +1710,7 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     if( !node || !node->value() )
       throw runtime_error( "Continuum didnt have Coefficient Fittable" );  
     
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), contents );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), contents );
     m_fitForValue.resize( contents.size() );
     for( size_t i = 0; i < contents.size(); ++i )
       m_fitForValue[i] = (contents[i] > 0.5f); 
@@ -2265,6 +2265,8 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
 #if( SpecUtils_ENABLE_D3_CHART )
 std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const PeakDef> > &peaks)
 {
+  //Need to check all numbers to make sure not inf or nan
+  
 	stringstream answer;
 	if (peaks.empty())
 		return answer.str();
@@ -2272,6 +2274,14 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 	std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
 	if (!continuum)
 		throw runtime_error("gaus_peaks_to_json: invalid continuum");
+  
+  
+  if( IsInf(continuum->lowerEnergy()) || IsNan(continuum->lowerEnergy()) )
+    throw runtime_error( "Continuum lower energy is invalid" );
+  
+  if( IsInf(continuum->upperEnergy()) || IsNan(continuum->upperEnergy()) )
+    throw runtime_error( "Continuum upper energy is invalid" );
+  
 	const char *q = "\""; // for creating valid json format
 
 	answer << "{" << q << "type" << q << ":" << q;
@@ -2297,15 +2307,23 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     case PeakContinuum::Quadratic:
     case PeakContinuum::Cubic:
     {
+      if( IsInf(continuum->referenceEnergy()) || IsNan(continuum->referenceEnergy()) )
+        throw runtime_error( "Continuum reference energy is invalid" );
+      
       answer << "," << q << "referenceEnergy" << q << ":" << continuum->referenceEnergy();
       const vector<double> &values = continuum->parameters();
       const vector<double> &uncerts = continuum->unertainties();
       answer << "," << q << "coeffs" << q << ":[";
       for (size_t i = 0; i < values.size(); ++i)
+      {
+        if( IsInf(values[i]) || IsNan(values[i]) )
+          throw runtime_error( "Continuum coef is invalid" );
+        
         answer << (i ? "," : "") << values[i];
+      }
       answer << "]," << q << "coeffUncerts" << q << ":[";
       for (size_t i = 0; i < uncerts.size(); ++i)
-        answer << (i ? "," : "") << uncerts[i];
+        answer << (i ? "," : "") << ((IsInf(uncerts[i]) || IsNan(uncerts[i])) ? -1.0 : uncerts[i]); //we'll let uncertainties slide since we dont use them
       answer << "]";
       
       answer << "," << q << "fitForCoeff" << q << ":[";
@@ -2388,8 +2406,14 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 		for (PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
 			t < PeakDef::NumCoefficientTypes; t = PeakDef::CoefficientType(t + 1))
 		{
-			answer << q << PeakDef::to_string(t) << q << ":[" << p.coefficient(t)
-				<< "," << p.uncertainty(t) << "," << (p.fitFor(t) ? "true" : "false")
+      double coef = p.coefficient(t), uncert = p.uncertainty(t);
+      if( IsInf(coef) || IsNan(coef) )
+        throw runtime_error( "Peak ceoff is inf or nan" );
+      if( IsInf(uncert) || IsNan(uncert) )
+        uncert = 0.0;
+      
+			answer << q << PeakDef::to_string(t) << q << ":[" << coef
+				<< "," << uncert << "," << (p.fitFor(t) ? "true" : "false")
 				<< "],";
 		}//for(...)
 
@@ -2442,7 +2466,8 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
 				answer << "," << q << "decayParent" << q << ":" << q << transistion_parent << q;
 				answer << "," << q << "decayChild" << q << ":" << q << decay_child << q;
-				answer << "," << q << "energy" << q << ":" << decayPart->energy << "";
+        const float energy = (IsInf(decayPart->energy) || IsNan(decayPart->energy)) ? 0.0f : decayPart->energy;
+        answer << "," << q << "energy" << q << ":" << energy << "";
         answer << srcTypeJSON( p.sourceGammaType() );
 			}else if( p.sourceGammaType() == AnnihilationGamma )
       {
@@ -2455,10 +2480,12 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
 		if( p.xrayElement() )
 		{
+      const float energy = (IsInf(p.xrayEnergy()) || IsNan(p.xrayEnergy())) ? 0.0f : p.xrayEnergy();
+        
 			answer << "," << q << "xray" << q
         << ":{"
              << q << "name" << q << ":" << q << p.xrayElement() << q << ","
-             << q << "energy" << q << ":" << p.xrayEnergy()
+             << q << "energy" << q << ":" << energy
              << srcTypeJSON( p.sourceGammaType() )
         << "}";
 		}//if( m_xrayElement )
@@ -2466,10 +2493,12 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
 		if( p.reaction() )
 		{
+      const float energy = (IsInf(p.reactionEnergy()) || IsNan(p.reactionEnergy())) ? 0.0f : p.reactionEnergy();
+      
 			answer << "," << q << "reaction" << q
         << ":{"
              << q << "name" << q << ":" << q << p.reaction()->name() << q << ","
-             << q << "energy" << q << ":" << p.reactionEnergy()
+             << q << "energy" << q << ":" << energy
              << srcTypeJSON( p.sourceGammaType() )
         << "}";
 		}//if( m_reaction )

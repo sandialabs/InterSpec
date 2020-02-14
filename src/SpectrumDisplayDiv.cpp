@@ -56,15 +56,14 @@
 
 
 #include "InterSpec/PeakDef.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/SpectrumChart.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 

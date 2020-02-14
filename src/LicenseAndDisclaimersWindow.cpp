@@ -42,9 +42,9 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UseInfoWindow.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
 using namespace Wt;
@@ -91,7 +91,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
     rejectWhenEscapePressed();
   
   const string docroot = wApp->docRoot();
-  m_resourceBundle.use( UtilityFunctions::append_path(docroot,"InterSpec_resources/static_text/copyright_and_about") ,false);
+  m_resourceBundle.use( SpecUtils::append_path(docroot,"InterSpec_resources/static_text/copyright_and_about") ,false);
   
   double width = 0.5*screen_width, height = 0.8*screen_height;
 
@@ -248,7 +248,7 @@ void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *pare
 {
   //const string approot = wApp->appRoot();  //looks to be blank if CWD
   const string docroot = wApp->docRoot();
-  const string license_file = UtilityFunctions::append_path(docroot, "InterSpec_resources/static_text/lgpl-2.1.txt" );
+  const string license_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/lgpl-2.1.txt" );
   
   bool error_reading = false;
   string license_content;
@@ -256,7 +256,7 @@ void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *pare
   try
   {
 #ifdef _WIN32
-    const std::wstring wlicense_file = UtilityFunctions::convert_from_utf8_to_utf16(license_file);
+    const std::wstring wlicense_file = SpecUtils::convert_from_utf8_to_utf16(license_file);
     ifstream stream( wlicense_file.c_str(), ios::in | ios::binary );
 #else
     ifstream stream( license_file.c_str(), ios::in | ios::binary );
@@ -328,11 +328,11 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     string datadir = Wt::Utils::htmlEncode( viewer->writableDataDirectory() );
     string staticdir = Wt::Utils::htmlEncode( viewer->staticDataDirectory() );
     
-    //UtilityFunctions::is_absolute_path( staticdir )
+    //SpecUtils::is_absolute_path( staticdir )
     try
     {
-      UtilityFunctions::make_canonical_path( datadir );
-      UtilityFunctions::make_canonical_path( staticdir );
+      SpecUtils::make_canonical_path( datadir );
+      SpecUtils::make_canonical_path( staticdir );
     }catch( std::exception &e )
     {
       cerr << "Failed to make_canonical_path for either '" << datadir
@@ -341,8 +341,8 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     
     
 #ifdef _WIN32
-    UtilityFunctions::ireplace_all( datadir, "/", "\\" );
-    UtilityFunctions::ireplace_all( staticdir, "/", "\\" );
+    SpecUtils::ireplace_all( datadir, "/", "\\" );
+    SpecUtils::ireplace_all( staticdir, "/", "\\" );
 #endif
     
     const string style = "font-family: monospace;"

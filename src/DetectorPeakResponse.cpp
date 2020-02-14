@@ -44,11 +44,12 @@
 
 #include "mpParser.h"
 
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakModel.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -165,8 +166,8 @@ namespace
 FormulaWrapper::FormulaWrapper( const std::string &fcnstr, const bool isMev )
   : m_fcnstr( fcnstr ), m_var_name( "x" )
 {
-  UtilityFunctions::to_lower( m_fcnstr );
-  UtilityFunctions::erase_any_character( m_fcnstr, "\t\n\r" );
+  SpecUtils::to_lower_ascii( m_fcnstr );
+  SpecUtils::erase_any_character( m_fcnstr, "\t\n\r" );
   
   
   m_parser.reset( new mup::ParserX() );
@@ -256,7 +257,7 @@ FormulaWrapper::~FormulaWrapper()
 std::string FormulaWrapper::find_variable_name( std::string eqn )
 {
   //Make case-insensitive
-  UtilityFunctions::to_lower( eqn );
+  SpecUtils::to_lower_ascii( eqn );
   
   //Get rid of whitespaces
   //eqn.erase( std::remove_if(eqn.begin(), eqn.end(), boost::algorithm::is_any_of(" \t\n\r") ), eqn.end());
@@ -588,10 +589,10 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
   string line;
   std::vector<EnergyEfficiencyPair> energyEfficiencies;
   
-  while( UtilityFunctions::safe_get_line( input, line ) )
+  while( SpecUtils::safe_get_line( input, line ) )
   {
     ++linen;
-    UtilityFunctions::trim( line );
+    SpecUtils::trim( line );
 
     if( line.empty() || line[0] == '#' )
       continue;
@@ -606,7 +607,7 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     }//if( !isdigit(line[0]) )
 
     vector<float> fields;
-    const bool ok = UtilityFunctions::split_to_floats( line.c_str(),
+    const bool ok = SpecUtils::split_to_floats( line.c_str(),
                                                        line.size(), fields );
     
     if( (fields.size() < 2) || !ok )
@@ -630,7 +631,7 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     if( linen > 5000 || energyEfficiencies.size() > 3000 )
       throw runtime_error( "Efficiency CSV files can have a max of 5000 total lines or 3000 energy efficiency pairs" );
     
-  }//while( UtilityFunctions::safe_get_line(input) )
+  }//while( SpecUtils::safe_get_line(input) )
 
   
   if( energyEfficiencies.size() < 2 )
@@ -733,14 +734,14 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   m_resolutionCoeffs.resize( 3, 0.0 );
 
   string line;
-  while( UtilityFunctions::safe_get_line( detDatFile, line ) )
+  while( SpecUtils::safe_get_line( detDatFile, line ) )
   {
     vector<string> parts;
-    UtilityFunctions::trim( line );
+    SpecUtils::trim( line );
     if( line.empty() || !isdigit(line[0]) )
       continue;
 
-    UtilityFunctions::split( parts, line, " \t" );
+    SpecUtils::split( parts, line, " \t" );
     
     try
     {
@@ -763,7 +764,7 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
       cerr << "\nError reading line \"" << line << "\"" << endl;
       continue;
     }
-  }//while( UtilityFunctions::safe_get_line( detDatFile, line ) )
+  }//while( SpecUtils::safe_get_line( detDatFile, line ) )
   
   if( detWidth<=0.0 || heightToWidth<=0.0 )
     throw runtime_error( "Couldnt find detector dimensions in the Detector.dat file" );
@@ -794,15 +795,15 @@ void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
   //We will go through a little bit of trouble to not be case-sensitive
   //  For efficiency since some of the Detector.dat files that come with
   //  GADRAS are all uppercase.
-  const vector<string> files = UtilityFunctions::ls_files_in_directory( dir );
+  const vector<string> files = SpecUtils::ls_files_in_directory( dir );
   for( size_t i = 0; (eff_file.empty() || dat_file.empty()) && i < files.size(); ++i )
   {
     const auto &file = files[i];
-    auto filename = UtilityFunctions::filename(file);
-    if( UtilityFunctions::iequals( filename, "Efficiency.csv") )
-      eff_file = UtilityFunctions::append_path( dir, filename );
-    else if( UtilityFunctions::iequals( filename, "Detector.dat") )
-      dat_file = UtilityFunctions::append_path( dir, filename );
+    auto filename = SpecUtils::filename(file);
+    if( SpecUtils::iequals_ascii( filename, "Efficiency.csv") )
+      eff_file = SpecUtils::append_path( dir, filename );
+    else if( SpecUtils::iequals_ascii( filename, "Detector.dat") )
+      dat_file = SpecUtils::append_path( dir, filename );
   }
   
   if( dat_file.empty() )
@@ -812,8 +813,8 @@ void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
     throw runtime_error( "Directory '" + dir + "' did not contain a Efficiency.csv file." );
   
 #ifdef _WIN32
-  const std::wstring weff_file = UtilityFunctions::convert_from_utf8_to_utf16(eff_file);
-  const std::wstring wdat_file = UtilityFunctions::convert_from_utf8_to_utf16(dat_file);
+  const std::wstring weff_file = SpecUtils::convert_from_utf8_to_utf16(eff_file);
+  const std::wstring wdat_file = SpecUtils::convert_from_utf8_to_utf16(dat_file);
   ifstream csv( weff_file.c_str(), ios_base::binary|ios_base::in );
   ifstream datFile( wdat_file.c_str(), ios_base::binary|ios_base::in );
 #else
@@ -1169,14 +1170,14 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   m_resolutionCoeffs.clear();
   node = parent->first_node( "ResolutionCoefficients", 22 );
   if( node && node->value() )
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), m_resolutionCoeffs );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), m_resolutionCoeffs );
   
   m_energyEfficiencies.clear();
   node = parent->first_node( "EnergyEfficiencies", 18 );
   if( node && node->value() )
   {
     vector<float> values;
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), values );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), values );
     if( (values.size()%2) != 0 )
       throw runtime_error( "DetectorPeakResponse: invalid number of energy efficiency pairs" );
     
@@ -1195,7 +1196,7 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( node && node->value() )
   {
     m_efficiencyFormula = node->value();
-    UtilityFunctions::trim( m_efficiencyFormula );
+    SpecUtils::trim( m_efficiencyFormula );
     
     if( m_efficiencyFormula.size() )
     {
@@ -1217,7 +1218,7 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   m_expOfLogPowerSeriesCoeffs.clear();
   node = parent->first_node( "ExpOfLogPowerSeriesCoeffs", 25 );
   if( node && node->value() )
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesCoeffs );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesCoeffs );
   
   
   node = parent->first_node( "Hash", 4 );

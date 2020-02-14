@@ -17,8 +17,8 @@
 
 #include "QLPeakDef.h"
 #include "QLSpecMeas.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
 
 
 using namespace Wt;
@@ -151,7 +151,7 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
       //We'll assume a perfect convertion of int<-->float, which if the input
       //  data is well formed, should be true
       std::vector<float> contents;
-      UtilityFunctions::split_to_floats( samples_node->value(), samples_node->value_size(), contents );
+      SpecUtils::split_to_floats( samples_node->value(), samples_node->value_size(), contents );
       set<int> samplenums;
       for( const float t : contents )
         samplenums.insert( samplenums.end(), static_cast<int>(t) );
@@ -212,8 +212,8 @@ void QLSpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
         throw runtime_error( "Did not find PeakIds under PeakSet" );
       
       std::vector<int> samplenumvec, peakids;
-      UtilityFunctions::split_to_ints( samples_node->value(), samples_node->value_size(), samplenumvec );
-      UtilityFunctions::split_to_ints( peakid_node->value(), peakid_node->value_size(), peakids );
+      SpecUtils::split_to_ints( samples_node->value(), samples_node->value_size(), samplenumvec );
+      SpecUtils::split_to_ints( peakid_node->value(), peakid_node->value_size(), peakids );
       set<int> samplenums;
       for( const float t : samplenumvec )
         samplenums.insert( samplenums.end(), static_cast<int>(t) );
@@ -269,7 +269,7 @@ void QLSpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *i
   if( node && node->value() )
   {
     std::vector<float> contents;
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), contents );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), contents );
     for( const float t : contents )
       m_displayedSampleNumbers->insert( static_cast<int>(t) );
   }//if( node )

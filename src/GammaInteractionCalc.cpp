@@ -56,8 +56,10 @@
 #include "Minuit2/MnMigrad.h"
 #include "Minuit2/MnMinimize.h"
 
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/Integrate.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DetectorEdit.h"
@@ -65,7 +67,6 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "SpecUtils/SpecUtilsAsync.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -723,7 +724,7 @@ void PointSourceShieldingChi2Fcn::fittingIsStarting( const size_t deadlineMs )
     m_guiUpdateInfo->m_bestChi2 = std::numeric_limits<double>::max();
     m_guiUpdateInfo->m_num_fcn_calls = 0;
     m_guiUpdateInfo->m_bestParameters.clear();
-    m_guiUpdateInfo->m_lastGuiUpdateTime = UtilityFunctions::get_wall_time();
+    m_guiUpdateInfo->m_lastGuiUpdateTime = SpecUtils::get_wall_time();
     m_guiUpdateInfo->m_fitStartTime = m_guiUpdateInfo->m_lastGuiUpdateTime.load();
     m_guiUpdateInfo->m_currentTime = m_guiUpdateInfo->m_lastGuiUpdateTime.load();
   }
@@ -1392,7 +1393,7 @@ double PointSourceShieldingChi2Fcn::DoEval( const std::vector<double> &x ) const
       
       std::lock_guard<std::mutex> scoped_lock( m_guiUpdateInfo->m_guiUpdaterMutex );
       const double lastUpdateTime = m_guiUpdateInfo->m_lastGuiUpdateTime;
-      const double currentTime = UtilityFunctions::get_wall_time();
+      const double currentTime = SpecUtils::get_wall_time();
       if( (currentTime - lastUpdateTime) > 0.001*m_guiUpdateFrequencyMs.load() )
       {
         m_guiUpdateInfo->m_lastGuiUpdateTime = currentTime;
@@ -1692,7 +1693,7 @@ vector< pair<double,double> > PointSourceShieldingChi2Fcn::observedPeakEnergyWid
       energie_widths.push_back( make_pair( energy, sigma ) );
     }catch( std::exception & )
     {
-      cerr << SRC_LOCATION << "\n\tIssue here" << endl;
+      cerr << "PointSourceShieldingChi2Fcn::observedPeakEnergyWidths(...)\n\tIssue here" << endl;
     }
   }//for( const PeakDef &peak : peaks )
 
@@ -1882,7 +1883,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
       float thick = static_cast<float>( thickness( materialN, x ) );
 
       //I think this next step isnt even needed, but just to make sure...
-      if( UtilityFunctions::iequals( material->name, "void") )
+      if( SpecUtils::iequals_ascii( material->name, "void") )
         thick = 0.0;
 
       att_coef_fcn = boost::bind( &transmition_coefficient_material,
@@ -2146,7 +2147,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
 //      boost::function<void()> worker = boost::bind( &PointSourceShieldingChi2Fcn::selfShieldingIntegration, boost::ref(calculator) );
 //      workers.push_back( worker );
 //    }//for( size_t i = 0; i < calculators.size(); ++i )
-//    UtilityFunctions::do_asyncronous_work( workers, false );
+//    SpecUtils::do_asyncronous_work( workers, false );
 
     if( info )
       info->push_back( "Self Attenuating Source Info (after accounting for "

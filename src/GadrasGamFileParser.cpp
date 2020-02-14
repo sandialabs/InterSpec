@@ -28,12 +28,13 @@
 #include <cstdio>
 #include <stdexcept>
 
-#include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/GadrasGamFileParser.h"
 
 using namespace std;
 
-//std::istream& UtilityFunctions::safe_get_line(std::istream& is, std::string& t)
+//std::istream& SpecUtils::safe_get_line(std::istream& is, std::string& t)
 
 GadrasGamFile::GadrasGamFile()
 {
@@ -45,11 +46,11 @@ GadrasGamFile::GadrasGamFile()
 void GadrasGamFile::parse_data( std::istream &strm )
 {
   string line;
-  if( !UtilityFunctions::safe_get_line( strm, line) )
+  if( !SpecUtils::safe_get_line( strm, line) )
     throw runtime_error( "GadrasGamFile::parse_data(): Invalid input." );
   
   vector<string> fields;
-  UtilityFunctions::split( fields, line, " \t" );
+  SpecUtils::split( fields, line, " \t" );
   if( fields.size() < 2 )
     throw runtime_error( "Invalid first line" );
   
@@ -66,13 +67,13 @@ void GadrasGamFile::parse_data( std::istream &strm )
      LargestDimension = 2.200E+00
      Data =
      */
-    if( !UtilityFunctions::safe_get_line(strm, line) || !UtilityFunctions::starts_with(line, "DataType ") )
+    if( !SpecUtils::safe_get_line(strm, line) || !SpecUtils::starts_with(line, "DataType ") )
       throw runtime_error( "GadrasGamFile::parse_data(): Invalid second line." );
-    if( !UtilityFunctions::safe_get_line( strm, line) || !UtilityFunctions::starts_with(line, "Geometry ") )
+    if( !SpecUtils::safe_get_line( strm, line) || !SpecUtils::starts_with(line, "Geometry ") )
       throw runtime_error( "GadrasGamFile::parse_data(): Invalid third line." );
-    if( !UtilityFunctions::safe_get_line( strm, line) || !UtilityFunctions::starts_with(line, "LargestDimension ") )
+    if( !SpecUtils::safe_get_line( strm, line) || !SpecUtils::starts_with(line, "LargestDimension ") )
       throw runtime_error( "GadrasGamFile::parse_data(): Invalid fourth line." );
-    if( !UtilityFunctions::safe_get_line( strm, line) || !UtilityFunctions::starts_with(line, "Data ") )
+    if( !SpecUtils::safe_get_line( strm, line) || !SpecUtils::starts_with(line, "Data ") )
       throw runtime_error( "GadrasGamFile::parse_data(): Invalid fifth line." );
   }else
   {
@@ -81,7 +82,7 @@ void GadrasGamFile::parse_data( std::istream &strm )
   }
   
   int photon_lines, photon_groups, neutron_groups;
-  if( !UtilityFunctions::safe_get_line( strm, line ) )
+  if( !SpecUtils::safe_get_line( strm, line ) )
     throw runtime_error( "GadrasGamFile::parse_data(): Must have at least two lines." );
   
   if( line.find("! photon lines, photon groups, neutron groups") == string::npos )
@@ -103,7 +104,7 @@ void GadrasGamFile::parse_data( std::istream &strm )
   
   for( int i = 0; i < photon_lines; ++i )
   {
-    if( !UtilityFunctions::safe_get_line( strm, line) )
+    if( !SpecUtils::safe_get_line( strm, line) )
       throw runtime_error( "GadrasGamFile::parse_data(): Claimed wrong number of photon lines." );
     
     if( !i )
@@ -116,7 +117,7 @@ void GadrasGamFile::parse_data( std::istream &strm )
     }//if( !i )
     
     vector<float> linevaleus;
-    const bool splitres = UtilityFunctions::split_to_floats( line.c_str(), line.size(), linevaleus );
+    const bool splitres = SpecUtils::split_to_floats( line.c_str(), line.size(), linevaleus );
     if( !splitres || (linevaleus.size() != 4) )
       throw runtime_error( "GadrasGamFile::parse_data(): Failed to parse 4 gamma line values." );
     
@@ -146,7 +147,7 @@ void GadrasGamFile::parse_data( std::istream &strm )
   m_photon_group_flux.resize( photon_groups );
   for( int i = 0; i < photon_groups; ++i )
   {
-    if( !UtilityFunctions::safe_get_line( strm, line) )
+    if( !SpecUtils::safe_get_line( strm, line) )
       throw runtime_error( "GadrasGamFile::parse_data(): Claimed wrong number of photon groups." );
     
     if( !i )
@@ -159,7 +160,7 @@ void GadrasGamFile::parse_data( std::istream &strm )
     }//if( !i )
     
     vector<float> linevaleus;
-    const bool splitres = UtilityFunctions::split_to_floats( line.c_str(), line.size(), linevaleus );
+    const bool splitres = SpecUtils::split_to_floats( line.c_str(), line.size(), linevaleus );
     if( !splitres || (linevaleus.size() != 2) )
       throw runtime_error( "GadrasGamFile::parse_data(): Failed to parse 2 gamma group values." );
     
@@ -173,7 +174,7 @@ void GadrasGamFile::parse_data( std::istream &strm )
   m_neutron_group_flux.resize( neutron_groups );
   for( int i = 0; i < neutron_groups; ++i )
   {
-    if( !UtilityFunctions::safe_get_line( strm, line) )
+    if( !SpecUtils::safe_get_line( strm, line) )
       throw runtime_error( "GadrasGamFile::parse_data(): Claimed wrong number of neutron groups." );
     
     if( !i )
@@ -186,7 +187,7 @@ void GadrasGamFile::parse_data( std::istream &strm )
     }//if( !i )
     
     vector<float> linevaleus;
-    const bool splitres = UtilityFunctions::split_to_floats( line.c_str(), line.size(), linevaleus );
+    const bool splitres = SpecUtils::split_to_floats( line.c_str(), line.size(), linevaleus );
     if( !splitres || (linevaleus.size() != 2) )
       throw runtime_error( "GadrasGamFile::parse_data(): Failed to parse 2 neutron group values." );
     

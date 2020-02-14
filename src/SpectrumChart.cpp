@@ -65,17 +65,18 @@ typedef Wt::Chart::WCartesianChart ChartRenderHelper_t;
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "SpecUtils/SpecFile.h"
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
-#include "InterSpec/SpecMeas.h"
+#include "SpecUtils/StringAlgo.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/SpectrumDataModel.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/ReferenceLineInfo.h"
-#include "InterSpec/InterSpecApp.h"
-#include "InterSpec/InterSpec.h"
+
 #include "InterSpec/CanvasForDragging.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "js/SpectrumChart.js"
 
 using namespace std;
@@ -2133,8 +2134,7 @@ void SpectrumChart::setXAxisUnits( SpectrumChart::XAxisUnits units )
   else if( m_overlayCanvas )
     wApp->doJavaScript( "$('#c" + m_overlayCanvas->id() + "').data('xunit',null);" );
   else
-    cerr << SRC_LOCATION
-         << "\n\tSpectrumChart::setXAxisUnits(...): overlayCanvas not set"
+    cerr << "SpectrumChart::setXAxisUnits(...)\n\tSpectrumChart::setXAxisUnits(...): overlayCanvas not set"
          << endl;
 }//setXAxisUnits( SpectrumChart::XAxisUnits units )
 
@@ -3422,7 +3422,7 @@ void SpectrumChart::paintTextInMiddleOfChart( WPainter &painter ) const
     {
       text = m_textInMiddleOfChart.toUTF8();
       vector<string> words, lines;
-      UtilityFunctions::split( words, text, " \t" );
+      SpecUtils::split( words, text, " \t" );
       string line;
       for( const string &word : words )
       {
@@ -4243,7 +4243,7 @@ bool SpectrumChart::gausPeakDrawRange( int &minrow, int &maxrow,
     return (minrow < maxrow);
   }catch(...)
   {
-    cerr << "Shouldnt have caught errror ar " << SRC_LOCATION << endl;
+    cerr << "Shouldnt have caught errror in SpectrumChart::gausPeakDrawRange(...)" << endl;
     return false;
   }
     
@@ -4356,7 +4356,7 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
 #endif
   }catch( std::exception &e )
   {
-    cerr << "Caught exception: " << SRC_LOCATION << "\n\t" << e.what() << endl;
+    cerr << "Caught exception: SpectrumChart::drawIndependantGausPeak(...)" << "\n\t" << e.what() << endl;
   }
   
   
@@ -4699,7 +4699,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
             peak_yval[j][row-minrow] += y;
         }catch(...)
         {
-          cerr << "Caught exception: " << SRC_LOCATION << endl;  //I dont think this will happen, but JIC
+          cerr << "Caught exception: SpectrumChart::paintGausPeaks(...)" << endl;  //I dont think this will happen, but JIC
         }
       }//for( size_t i = 0; i < peaks.size(); ++i )
     }//for( int row = minrow; row <= maxrow; ++row )
@@ -4821,7 +4821,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
         start_point = mapToDevice( xstart, ystart );
       }catch(...)
       {
-        cerr << "Caught exception: " << SRC_LOCATION << endl;
+        cerr << "Caught exception: in SpectrumChart::paintGausPeaks() from gausPeakBinValue" << endl;
       }
       
       WPainterPath path( start_point );
@@ -5879,7 +5879,7 @@ void SpectrumChart::setScrollingParent( Wt::WContainerWidget *parent )
   if( m_overlayCanvas )
     m_overlayCanvas->setScrollingParent( parent );
   else
-    cerr << SRC_LOCATION << "\n\tWarning, calling this funtion has no effect\n";
+    cerr << "SpectrumChart::setScrollingParent(...)\n\tWarning, calling this funtion has no effect\n";
 }//void setScrollingParent( Wt::WContainerWidget *parent )
 
 

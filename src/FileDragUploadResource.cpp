@@ -44,7 +44,7 @@
 #include <Wt/Chart/WAbstractChart>
 
 #include "InterSpec/InterSpecApp.h"
-#include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/Filesystem.h"
 #if( !ANDROID && !IOS )
 #include "InterSpec/FileDragUploadResource.h"
 #endif
@@ -72,7 +72,7 @@ FileDragUploadResource::~FileDragUploadResource()
   beingDeleted();
   for( size_t i = 0; i < m_spooledFiles.size(); ++i )
   {
-    const bool success = UtilityFunctions::remove_file( m_spooledFiles[i] );
+    const bool success = SpecUtils::remove_file( m_spooledFiles[i] );
     if( !success )
       cerr << "Warning, could not delete file '" << m_spooledFiles[i] << "'" << endl;
   }
@@ -124,9 +124,9 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
 
   if( datalen )
   {
-    const string temp_name = UtilityFunctions::temp_file_name( wApp->sessionId(), InterSpecApp::tempDirectory() );
+    const string temp_name = SpecUtils::temp_file_name( wApp->sessionId(), InterSpecApp::tempDirectory() );
 #ifdef _WIN32
-    const wstring wtemp_name = UtilityFunctions::convert_from_utf8_to_utf16(temp_name);
+    const wstring wtemp_name = SpecUtils::convert_from_utf8_to_utf16(temp_name);
     ofstream spool_file( wtemp_name.c_str(), ios::binary|ios::out );
 #else
     ofstream spool_file( temp_name.c_str(), ios::binary|ios::out );

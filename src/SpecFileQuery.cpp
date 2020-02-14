@@ -33,10 +33,12 @@
 #include <boost/regex.hpp>
 
 #include "InterSpec/SpecMeas.h"
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/SpecFileQuery.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/SpecUtilsAsync.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
@@ -227,27 +229,27 @@ namespace SpecFileQuery
     switch( t )
     {
       case TextIsExact:
-        return UtilityFunctions::iequals( teststr, ss );
+        return SpecUtils::iequals_ascii( teststr, ss );
         
       case TextNotEqual:
-        return !UtilityFunctions::iequals( teststr, ss );
+        return !SpecUtils::iequals_ascii( teststr, ss );
         
       case TextIsContained:
-        return UtilityFunctions::icontains( teststr, ss );
+        return SpecUtils::icontains( teststr, ss );
         
       case TextDoesNotContain:
-        return !UtilityFunctions::icontains( teststr, ss );
+        return !SpecUtils::icontains( teststr, ss );
         
       case TextStartsWith:
-        return UtilityFunctions::istarts_with( teststr, ss );
+        return SpecUtils::istarts_with( teststr, ss );
         
       case TextDoesNotStartWith:
-        return !UtilityFunctions::istarts_with( teststr, ss );
+        return !SpecUtils::istarts_with( teststr, ss );
         
       case TextEndsWith:
-        return UtilityFunctions::iends_with( teststr, ss );
+        return SpecUtils::iends_with( teststr, ss );
       case TextDoesNotEndWith:
-        return !UtilityFunctions::iends_with( teststr, ss );
+        return !SpecUtils::iends_with( teststr, ss );
         
       case TextRegex:
       {
@@ -266,7 +268,7 @@ namespace SpecFileQuery
   
   bool SpecTest::test_date( const std::string &teststr, const NumericFieldMatchType &t, const boost::posix_time::ptime &dt )
   {
-    auto testdate = UtilityFunctions::time_from_string(teststr.c_str());
+    auto testdate = SpecUtils::time_from_string(teststr.c_str());
     if( testdate.is_special() )
       return false;
     
@@ -329,7 +331,7 @@ namespace SpecFileQuery
     switch( m_searchField )
     {
       case ParentPath:
-        return test_string( UtilityFunctions::parent_path(meas.filename), m_stringSearchType, m_searchString );
+        return test_string( SpecUtils::parent_path(meas.filename), m_stringSearchType, m_searchString );
         
       case Filename:
         return test_string( meas.filename, m_stringSearchType, m_searchString );
@@ -446,7 +448,7 @@ namespace SpecFileQuery
             //  ex "found Am-241, Th 232" would fail for looking for Th232, but
             //  its better than nothing for now
             vector<string> fields;
-            UtilityFunctions::split( fields, res[i].nuclide_, " \t\n,;" );
+            SpecUtils::split( fields, res[i].nuclide_, " \t\n,;" );
             
             
             for( size_t j = 0; !found_nuclide && j < fields.size(); ++j )
@@ -947,7 +949,7 @@ namespace SpecFileQuery
         break;
         
       case StartTime:
-        summary += " is " + string(to_string(m_compareType)) + " " + UtilityFunctions::to_iso_string(m_time);
+        summary += " is " + string(to_string(m_compareType)) + " " + SpecUtils::to_iso_string(m_time);
         break;
         
       case NumFileDataFields:
@@ -1176,7 +1178,7 @@ namespace SpecFileQuery
     switch( m_testType )
     {
       case TestType::Date:
-        return "Event XML with comparing '" + m_test_label + "' " + to_string(m_dateTestType) + " '" + UtilityFunctions::to_common_string(m_test_time,true) + "'";
+        return "Event XML with comparing '" + m_test_label + "' " + to_string(m_dateTestType) + " '" + SpecUtils::to_common_string(m_test_time,true) + "'";
         break;
         
       case TestType::String:

@@ -64,9 +64,9 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 #if( ALLOW_SAVE_TO_DB_COMPRESSION )
@@ -104,7 +104,7 @@ namespace Wt
       if( dynamic_cast<Wt::Dbo::backend::Firebird *>(conn) )
         return "blob";
 #endif
-      cerr << "\n\n\n" << SRC_LOCATION << "\n\tWarning, urogognized DB type\n";
+      cerr << "\n\n\nInterSpecUser.cpp:\n\tWarning, urogognized DB type\n";
       return conn->blobType();
     }
     
@@ -670,7 +670,7 @@ void UserFileInDbData::setFileData( const std::string &path,
 {
   fileData.clear();
 #ifdef _WIN32
-  const std::wstring wpath = UtilityFunctions::convert_from_utf8_to_utf16(path);
+  const std::wstring wpath = SpecUtils::convert_from_utf8_to_utf16(path);
   std::ifstream file( wpath.c_str() );
 #else
   std::ifstream file( path.c_str() );
@@ -1157,10 +1157,10 @@ void InterSpecUser::initFromDefaultValues( Wt::Dbo::ptr<InterSpecUser> user,
                          " there is no active transaction." );
   }
   
-  const string filename = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
+  const string filename = SpecUtils::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
   
   std::vector<char> data;
-  UtilityFunctions::load_file_data( filename.c_str(), data );
+  SpecUtils::load_file_data( filename.c_str(), data );
     
   rapidxml::xml_document<char> doc;
   const int flags = rapidxml::parse_normalize_whitespace
@@ -1203,7 +1203,7 @@ void InterSpecUser::initFromDefaultValues( Wt::Dbo::ptr<InterSpecUser> user,
     transaction.commit();
   }catch( std::exception &e )
   {
-    cerr << "\n\n" << SRC_LOCATION << "\t" << e.what() << endl;
+    cerr << "\n\nInterSpecUser::initFromDefaultValues(...)\t" << e.what() << endl;
     user.modify()->m_preferences.clear();
     transaction.rollback();
     throw e;
@@ -1295,10 +1295,10 @@ UserOption *InterSpecUser::getDefaultUserPreference( const std::string &name,
   const char *nameptr = name.c_str();
   const size_t namelen = name.length();
   
-  const string filename = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
+  const string filename = SpecUtils::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
   
   std::vector<char> data;
-  UtilityFunctions::load_file_data( filename.c_str(), data );
+  SpecUtils::load_file_data( filename.c_str(), data );
   
   rapidxml::xml_document<char> doc;
   const int flags = rapidxml::parse_normalize_whitespace

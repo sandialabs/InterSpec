@@ -29,6 +29,7 @@
 #include <Wt/WText>
 #include <Wt/WTree>
 #include <Wt/WTimer>
+#include <Wt/WImage>
 #include <Wt/WString>
 #include <Wt/WTemplate>
 #include <Wt/WTreeNode>
@@ -39,14 +40,15 @@
 #include <Wt/WGridLayout>
 #include <Wt/Json/Object>
 #include <Wt/Json/Parser>
-#include <Wt/WImage>
 #include <Wt/WContainerWidget>
 #include <Wt/WMessageResourceBundle>
 
-#include "InterSpec/HelpSystem.h"
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
-#include "SpecUtils/UtilityFunctions.h"
 
 #if( USE_OSX_NATIVE_MENU )
 #include "InterSpec/PopupDiv.h"
@@ -222,11 +224,11 @@ namespace HelpSystem
     //"help-xml-tablet"
     
     const string docroot = wApp->docRoot();
-    const std::string help_json = UtilityFunctions::append_path(docroot,"InterSpec_resources/static_text/help.json");
+    const std::string help_json = SpecUtils::append_path(docroot,"InterSpec_resources/static_text/help.json");
     
     
 #ifdef _WIN32
-    const std::wstring whelp_json = UtilityFunctions::convert_from_utf8_to_utf16(help_json);
+    const std::wstring whelp_json = SpecUtils::convert_from_utf8_to_utf16(help_json);
     ifstream helpinfo( whelp_json.c_str() );
 #else
     ifstream helpinfo( help_json.c_str() );
@@ -536,7 +538,7 @@ namespace HelpSystem
     auto pos = m_contentLookup.find( tag );
     if( pos != end(m_contentLookup) )
       filepath = pos->second;
-    UtilityFunctions::trim( filepath );
+    SpecUtils::trim( filepath );
     
     if( filepath.empty() )
     {
@@ -571,11 +573,11 @@ namespace HelpSystem
       //ToDo: should remove leading and trailing quotes I guess...
       
       const string docroot = wApp->docRoot();
-      filepath = UtilityFunctions::append_path( "InterSpec_resources/static_text", filepath );
-      filepath = UtilityFunctions::append_path(docroot, filepath);
+      filepath = SpecUtils::append_path( "InterSpec_resources/static_text", filepath );
+      filepath = SpecUtils::append_path(docroot, filepath);
       
 #ifdef _WIN32
-      const std::wstring wfilepath = UtilityFunctions::convert_from_utf8_to_utf16(filepath);
+      const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
       ifstream infile( wfilepath.c_str() );
 #else
       ifstream infile( filepath.c_str() );
@@ -646,10 +648,10 @@ namespace HelpSystem
       //This is a hack to keep help topics we arent using from showing - eh,
       //  not to clean, but whatever for now
       const string idstr = identifier.toUTF8();
-      if( !USE_TERMINAL_WIDGET && UtilityFunctions::icontains(idstr,"terminal-dialog") )
+      if( !USE_TERMINAL_WIDGET && SpecUtils::icontains(idstr,"terminal-dialog") )
       {
         continue;
-      }else if( !USE_SPECRUM_FILE_QUERY_WIDGET && UtilityFunctions::icontains(idstr,"spectrum-file-query") )
+      }else if( !USE_SPECRUM_FILE_QUERY_WIDGET && SpecUtils::icontains(idstr,"spectrum-file-query") )
       {
         continue;
       }
@@ -672,10 +674,10 @@ namespace HelpSystem
         typedef const boost::iterator_range<std::string::const_iterator> StringRange;
         std::string str1(keywordstr.toUTF8());
         std::string str2(searchTxt);
-        UtilityFunctions::trim(str2);
+        SpecUtils::trim(str2);
         
         vector< std::string > searchWords;
-        UtilityFunctions::split( searchWords, str2, " ," ); //split search terms
+        SpecUtils::split( searchWords, str2, " ," ); //split search terms
         
         bool childHide=false;
         for( size_t i = 0; i < searchWords.size(); ++i )

@@ -109,6 +109,8 @@
 
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/PeakFit.h"
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/FluxTool.h"
 #include "InterSpec/PeakEdit.h"
@@ -121,6 +123,8 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/HelpSystem.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
@@ -142,7 +146,6 @@
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/ActivityConverter.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/CanvasForDragging.h"
@@ -153,7 +156,6 @@
 #include "InterSpec/FeatureMarkerWidget.h"
 #endif
 #include "InterSpec/MassAttenuationTool.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
@@ -862,23 +864,23 @@ void InterSpec::setStaticDataDirectory( const std::string &dir )
 {
   std::lock_guard<std::mutex> lock( sm_staticDataDirectoryMutex );
   
-  if( !UtilityFunctions::is_directory(dir) )
+  if( !SpecUtils::is_directory(dir) )
     throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " is not a directory." );
   
   sm_staticDataDirectory = dir;
 
 #ifdef _WIN32
-  MassAttenuation::set_data_directory( UtilityFunctions::convert_from_utf8_to_utf16(dir) );
+  MassAttenuation::set_data_directory( SpecUtils::convert_from_utf8_to_utf16(dir) );
 #else
   MassAttenuation::set_data_directory( dir );
 #endif
-  const string rctn_xml_file = UtilityFunctions::append_path( dir, "sandia.reactiongamma.xml" );
-  if( !UtilityFunctions::is_file(rctn_xml_file) )
+  const string rctn_xml_file = SpecUtils::append_path( dir, "sandia.reactiongamma.xml" );
+  if( !SpecUtils::is_file(rctn_xml_file) )
     throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " does not contain a sandia.reactiongamma.xml file." );
   ReactionGammaServer::set_xml_file_location( rctn_xml_file );
   
-  const string decay_xml_file = UtilityFunctions::append_path( dir, "sandia.decay.xml" );
-  if( !UtilityFunctions::is_file(decay_xml_file) )
+  const string decay_xml_file = SpecUtils::append_path( dir, "sandia.decay.xml" );
+  if( !SpecUtils::is_file(decay_xml_file) )
     throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " does not contain a sandia.decay.xml file." );
   DecayDataBaseServer::setDecayXmlFile( decay_xml_file );
 }//void setStaticDataDirectory( const std::string &dir )
@@ -895,14 +897,14 @@ void InterSpec::setWritableDataDirectory( const std::string &dir )
 {
   std::lock_guard<std::mutex> lock( sm_writableDataDirectoryMutex );
   
-  if( !dir.empty() && !UtilityFunctions::is_directory(dir) )
+  if( !dir.empty() && !SpecUtils::is_directory(dir) )
     throw runtime_error( "InterSpec::setWritableDataDirectory(): " + dir + " is not a directory." );
   
   //Set the serial to module database file, if the user has one in thier
   //  application data directory.
   //Currently this is being done in the target specific code; it should all be
   //  moved here probably.
-  //const vector<string> serial_db = UtilityFunctions::ls_files_in_directory( dir, "serial_to_model.csv" );
+  //const vector<string> serial_db = SpecUtils::ls_files_in_directory( dir, "serial_to_model.csv" );
   //if( !serial_db.empty() )
   //  SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
   
@@ -1096,7 +1098,7 @@ string InterSpec::print_d3_json() const
   string peakstring;
   
   // Update time
-  ostr << "{\n\t" << q << "updateTime" << q << ":" << q << UtilityFunctions::to_iso_string(boost::posix_time::second_clock::local_time()) << q;
+  ostr << "{\n\t" << q << "updateTime" << q << ":" << q << SpecUtils::to_iso_string(boost::posix_time::second_clock::local_time()) << q;
   
   // spectrum values
   ostr << ",\n\t" << q << "spectra" << q << ": [";
@@ -3636,9 +3638,9 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
   }
   
   if( (m_currentColorThemeCssFile != cssfile)
-      && !UtilityFunctions::iequals(theme->nonChartAreaTheme, "default") )
+      && !SpecUtils::iequals_ascii(theme->nonChartAreaTheme, "default") )
   {
-    if( UtilityFunctions::is_file(cssfile) )
+    if( SpecUtils::is_file(cssfile) )
     {
       wApp->useStyleSheet( cssfile );
       m_currentColorThemeCssFile = cssfile;
@@ -3656,7 +3658,7 @@ void InterSpec::osThemeChange( std::string name )
 {
   cout << "InterSpec::osThemeChange('" << name << "');" << endl;
   
-  UtilityFunctions::to_lower(name);
+  SpecUtils::to_lower_ascii(name);
   if( name != "light" && name != "dark" && name != "default" && name != "no-preference" && name != "no-support" )
   {
     cerr << "InterSpec::osThemeChange('" << name << "'): unknown OS theme." << endl;
@@ -3679,7 +3681,7 @@ void InterSpec::osThemeChange( std::string name )
     if( name == "dark" )
     {
       //Check to see if we already have dark applied
-      if( m_colorTheme && UtilityFunctions::icontains( m_colorTheme->theme_name.toUTF8(), "Dark") )
+      if( m_colorTheme && SpecUtils::icontains( m_colorTheme->theme_name.toUTF8(), "Dark") )
         return;
      
       cerr << "Will set to dark" << endl;
@@ -3687,7 +3689,7 @@ void InterSpec::osThemeChange( std::string name )
     }else if( name == "light" || name == "default" || name == "no-preference" || name == "no-support" )
     {
       //Check to see if we already have light applied
-      if( m_colorTheme && UtilityFunctions::icontains( m_colorTheme->theme_name.toUTF8(), "Default") )
+      if( m_colorTheme && SpecUtils::icontains( m_colorTheme->theme_name.toUTF8(), "Default") )
         return;
       
       cerr << "Will set to default" << endl;
@@ -3932,7 +3934,7 @@ void InterSpec::logMessage( const Wt::WString& message, const Wt::WString& sourc
     std::lock_guard<std::mutex> file_gaurd( s_message_mutex );
     ofstream output( "interspec_messages_to_users.txt", ios::out | ios::app );
     const boost::posix_time::ptime now = WDateTime::currentDateTime().toPosixTime();
-    output << "Message " << UtilityFunctions::to_iso_string( now ) << " ";
+    output << "Message " << SpecUtils::to_iso_string( now ) << " ";
     if( !source.empty() )
       output << "[" << source.toUTF8() << ", " << priority << "]: ";
     else
@@ -3948,7 +3950,7 @@ void InterSpec::logMessage( const Wt::WString& message, const Wt::WString& sourc
   }else
   {
     const boost::posix_time::ptime now = WDateTime::currentDateTime().toPosixTime();
-    cerr << "Message " << UtilityFunctions::to_iso_string( now ) << " ";
+    cerr << "Message " << SpecUtils::to_iso_string( now ) << " ";
     if( !source.empty() )
       cerr << "[" << source.toUTF8() << ", " << priority << "]: ";
     else
@@ -4017,7 +4019,7 @@ void InterSpec::showPeakInfoWindow()
 {
   if( m_toolsTabs )
   {
-    cerr << SRC_LOCATION << "\n\tTemporary hack - we dont want to show the"
+    cerr << "nterSpec::showPeakInfoWindow()\n\tTemporary hack - we dont want to show the"
          << " peak info window when tool tabs are showing since things get funky"
          << endl;
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
@@ -4121,21 +4123,21 @@ void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   if( forTesting )
   {
-    string filepath = UtilityFunctions::append_path(TEST_SUITE_BASE_DIR, "analysis_tests");
+    string filepath = SpecUtils::append_path(TEST_SUITE_BASE_DIR, "analysis_tests");
     
-    if( !UtilityFunctions::is_directory( filepath ) )
+    if( !SpecUtils::is_directory( filepath ) )
       throw runtime_error( "CWD didnt contain a 'analysis_tests' folder as expected" );
     
     const boost::posix_time::ptime localtime = boost::posix_time::second_clock::local_time();
     
-    string timestr = UtilityFunctions::to_iso_string( localtime );
+    string timestr = SpecUtils::to_iso_string( localtime );
     string::size_type period_pos = timestr.find_last_of( '.' );
     timestr.substr( 0, period_pos );
     
-    filepath = UtilityFunctions::append_path( filepath, (name.toUTF8() + "_" + timestr + ".n42") );
+    filepath = SpecUtils::append_path( filepath, (name.toUTF8() + "_" + timestr + ".n42") );
     
 #ifdef _WIN32
-    const std::wstring wfilepath = UtilityFunctions::convert_from_utf8_to_utf16(filepath);
+    const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
     ofstream output( wfilepath.c_str(), ios::binary|ios::out );
 #else
     ofstream output( filepath.c_str(), ios::binary|ios::out );
@@ -4267,7 +4269,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     }
     
     const boost::posix_time::ptime localtime = boost::posix_time::second_clock::local_time();
-    const string timestr = UtilityFunctions::to_iso_string( localtime );
+    const string timestr = SpecUtils::to_iso_string( localtime );
     
     const char *val = n42doc->allocate_string( timestr.c_str(), timestr.size()+1 );
     xml_node<char> *node = n42doc->allocate_node( node_element, "TestSaveDateTime", val );
@@ -4342,7 +4344,7 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     if( backsample_node && backsample_node->value_size() )
     {
       std::vector<int> results;
-      const bool success = UtilityFunctions::split_to_ints(
+      const bool success = SpecUtils::split_to_ints(
                                       backsample_node->value(),
                                       backsample_node->value_size(), results );
       if( !success )
@@ -4451,10 +4453,10 @@ namespace
 
 void InterSpec::startN42TestStates()
 {
-  const std::string path_to_tests = UtilityFunctions::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
+  const std::string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
   
   const vector<string> files
-                  = UtilityFunctions::recursive_ls( path_to_tests, ".n42" );
+                  = SpecUtils::recursive_ls( path_to_tests, ".n42" );
   
   if( files.empty() )
   {
@@ -4473,7 +4475,7 @@ void InterSpec::startN42TestStates()
   for( const string &p : files )
   {
     string name = p;
-    if( UtilityFunctions::starts_with(name, "analysis_tests/" ) )
+    if( SpecUtils::starts_with(name, "analysis_tests/" ) )
       name = name.substr(15);
     filesbox->addItem( name );
   }
@@ -4508,7 +4510,7 @@ void InterSpec::loadN42TestState( const std::string &filename )
     return;
   
 #ifdef _WIN32
-  const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
   ifstream input( wfilename.c_str(), ios::in | ios::binary );
 #else
   ifstream input( filename.c_str(), ios::in | ios::binary );
@@ -4988,40 +4990,40 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   
   item = subPopup->addMenuItem( "Ba-133 (16k channel)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                         UtilityFunctions::append_path(docroot, "example_spectra/ba133_source_640s_20100317.n42"),
+                                         SpecUtils::append_path(docroot, "example_spectra/ba133_source_640s_20100317.n42"),
                                          kForeground, k2006Icd1Parser ) );
   if( isMobile )
     item = subPopup->addMenuItem( "Passthrough (16k channel)" );
   else
     item = subPopup->addMenuItem( "Passthrough (16k bin ICD1, 8 det., 133 samples)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                         UtilityFunctions::append_path(docroot, "example_spectra/passthrough.n42"),
+                                         SpecUtils::append_path(docroot, "example_spectra/passthrough.n42"),
                                          kForeground, k2006Icd1Parser ) );
   
   item = subPopup->addMenuItem( "Background (16k bin N42)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                         UtilityFunctions::append_path(docroot, "example_spectra/background_20100317.n42"),
+                                         SpecUtils::append_path(docroot, "example_spectra/background_20100317.n42"),
                                          kBackground, k2006Icd1Parser ) );
   //If its a mobile device, we'll give a few more spectra to play with
   if( isMobile )
   {
     item = subPopup->addMenuItem( "Ba-133 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           UtilityFunctions::append_path(docroot, "example_spectra/Ba133LowResNoCalib.spe"),
+                                           SpecUtils::append_path(docroot, "example_spectra/Ba133LowResNoCalib.spe"),
                                            kForeground, kIaeaParser ) );
     
     item = subPopup->addMenuItem( "Co-60 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           UtilityFunctions::append_path(docroot, "example_spectra/Co60LowResNoCalib.spe"),
+                                           SpecUtils::append_path(docroot, "example_spectra/Co60LowResNoCalib.spe"),
                                            kForeground, kIaeaParser ) );
     
     item = subPopup->addMenuItem( "Cs-137 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           UtilityFunctions::append_path(docroot, "example_spectra/Cs137LowResNoCalib.spe"),
+                                           SpecUtils::append_path(docroot, "example_spectra/Cs137LowResNoCalib.spe"),
                                            kForeground, kIaeaParser ) );
     item = subPopup->addMenuItem( "Th-232 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           UtilityFunctions::append_path(docroot, "example_spectra/Th232LowResNoCalib.spe"),
+                                           SpecUtils::append_path(docroot, "example_spectra/Th232LowResNoCalib.spe"),
                                            kForeground, kIaeaParser ) );
   }//if( isMobile )
   
@@ -6549,7 +6551,7 @@ const std::set<int> &InterSpec::displayedSamples( SpectrumType type ) const
     }//case kBackground:
   }//switch( type )
 
-  throw runtime_error( SRC_LOCATION + " - Serious Badness" );
+  throw runtime_error( "InterSpec::displayedSamples(...) - Serious Badness" );
 
   return empty;  //keep compiler from complaining
 }//const std::set<int> &displayedSamples( SpectrumType spectrum_type ) const
@@ -6699,14 +6701,14 @@ void InterSpec::saveChartToPng( const bool spectrum )
 {
   std::shared_ptr<const SpecMeas> spec = measurment(kForeground);
   string filename = (spec ? spec->filename() : string("spectrum"));
-  const string ext = UtilityFunctions::file_extension(filename);
+  const string ext = SpecUtils::file_extension(filename);
   if( !ext.empty() && (ext.size() <= filename.size()) )
     filename = filename.substr(0,filename.size()-ext.size());
   if( filename.empty() )
     filename = "spectrum";
   if( !spectrum )
     filename += "_timechart";
-  std::string timestr = UtilityFunctions::to_iso_string( boost::posix_time::second_clock::local_time() );
+  std::string timestr = SpecUtils::to_iso_string( boost::posix_time::second_clock::local_time() );
   auto ppos = timestr.find('.');
   if( ppos != string::npos )
     timestr = timestr.substr(0,ppos);
@@ -7154,7 +7156,7 @@ void InterSpec::fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
   try
   {
     //materialDB can get destructed if the session ends immediately....
-    const string materialfile = UtilityFunctions::append_path(sm_staticDataDirectory, "MaterialDataBase.txt" );
+    const string materialfile = SpecUtils::append_path(sm_staticDataDirectory, "MaterialDataBase.txt" );
     materialDB->parseGadrasMaterialFile( materialfile, db, false );
     
     WServer::instance()->post( sessionid, update );
@@ -8802,12 +8804,12 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
   try
   {
     if( displayFileName.empty() )
-      displayFileName = UtilityFunctions::filename(path);
+      displayFileName = SpecUtils::filename(path);
     
     if( !m_fileManager )  //shouldnt ever happen.
       throw runtime_error( "Internal logic error, no valid m_fileManager" );
     
-    if( !UtilityFunctions::is_file(path) )
+    if( !SpecUtils::is_file(path) )
       throw runtime_error( "Could not access file '" + path + "'" );
   
     auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
@@ -8867,15 +8869,15 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
     //        const int nsec = fileinfo.m_utcRequestTime.secsTo( WDateTime::currentDateTime() );
     
     string username = fileinfo.m_userName.toUTF8();
-    UtilityFunctions::ireplace_all( username, "_phone", "" );
-    UtilityFunctions::ireplace_all( username, "_tablet", "" );
-    UtilityFunctions::ireplace_all( username, "_mobile", "" );
+    SpecUtils::ireplace_all( username, "_phone", "" );
+    SpecUtils::ireplace_all( username, "_tablet", "" );
+    SpecUtils::ireplace_all( username, "_mobile", "" );
     
     const bool sameUser = (username.empty() ? true
                            : (m_user->m_userName == username) );
     
     if( !fileinfo.m_foregroundFilePath.empty()
-       && UtilityFunctions::is_file(fileinfo.m_foregroundFilePath.toUTF8())
+       && SpecUtils::is_file(fileinfo.m_foregroundFilePath.toUTF8())
        //            && fileinfo.m_utcRequestTime.isValid()
        //            && nsec < 300 && nsec >= 0
        && !fileinfo.m_fufilled
@@ -8896,10 +8898,10 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
           SpectrumType type = iter->first;
           const string filepath = iter->second;
           
-          if( filepath.empty() || !UtilityFunctions::is_file(filepath) )
+          if( filepath.empty() || !SpecUtils::is_file(filepath) )
             continue;
           
-          const string displayName = UtilityFunctions::filename( filepath );
+          const string displayName = SpecUtils::filename( filepath );
           
           try
           {
@@ -8911,13 +8913,13 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
               //This is a hack to allow opening zip files on iOS.
               //  Currently the selection GUI looks horrible, and the spectrum
               //  is always loaded as foreground.
-              const string extension = UtilityFunctions::file_extension(filepath);
-              bool iszip = UtilityFunctions::iequals(extension, ".zip");
+              const string extension = SpecUtils::file_extension(filepath);
+              bool iszip = SpecUtils::iequals_ascii(extension, ".zip");
               
               if( !iszip ) //check for zip files magic number to more-confirm
               {
 #ifdef _WIN32
-                const std::wstring wfilepath = UtilityFunctions::convert_from_utf8_to_utf16(filepath);
+                const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
                 ifstream test( wfilepath.c_str() );
 #else
                 ifstream test( filepath.c_str() );
@@ -9059,7 +9061,7 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
       name = det_names.at(index);
     }catch(...)
     {
-      cerr << SRC_LOCATION << "\n\tSerious logic error = please fix" << endl;
+      cerr << "InterSpec::updateGuiForPrimarySpecChange(...)\n\tSerious logic error = please fix" << endl;
       continue;
     }
 
@@ -9215,7 +9217,7 @@ void InterSpec::disableSmoothChartOperations()
 
 void InterSpec::overlayCanvasJsExceptionCallback( const std::string &message )
 {
-  if( UtilityFunctions::starts_with( message, "[initCanvasForDragging exception]" ) )
+  if( SpecUtils::starts_with( message, "[initCanvasForDragging exception]" ) )
   {
 #if( !USE_SPECTRUM_CHART_D3 )
     m_spectrum->disableOverlayCanvas();
@@ -9888,9 +9890,9 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
       DetectorPeakResponse *detPtr = new DetectorPeakResponse();
       detector.reset( detPtr );
     
-      string drf_dir = UtilityFunctions::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
+      string drf_dir = SpecUtils::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
       if( data && (data->num_gamma_channels() <= 2049) )
-        drf_dir = UtilityFunctions::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/NaI 1x1" );
+        drf_dir = SpecUtils::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/NaI 1x1" );
       
       detPtr->fromGadrasDirectory( drf_dir );
     }//if( !detector || !detector->isValid() )
@@ -9928,7 +9930,7 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
   }//for( PeakModel::PeakShrdPtr peak : *all_peaks )
   
   threadpool.join();
-//  UtilityFunctions::do_asyncronous_work( workers, false );
+//  SpecUtils::do_asyncronous_work( workers, false );
 
     
   for( size_t resultnum = 0; resultnum < rownums.size(); ++resultnum )

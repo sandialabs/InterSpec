@@ -47,19 +47,19 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 using namespace Wt;
@@ -749,8 +749,8 @@ public:
           {
             const string &parttype = refline->particlestrs[i];
             
-            if( !UtilityFunctions::icontains(parttype,"gamma")
-               && !UtilityFunctions::icontains(parttype,"xray") )
+            if( !SpecUtils::icontains(parttype,"gamma")
+               && !SpecUtils::icontains(parttype,"xray") )
               continue;
             
             const double refenergy = refline->energies[i];
@@ -1021,8 +1021,8 @@ public:
           continue;
         
         const string &parttype = refline->particlestrs[i];
-        if( !UtilityFunctions::icontains(parttype,"gamma")
-           && !UtilityFunctions::icontains(parttype,"xray") )
+        if( !SpecUtils::icontains(parttype,"gamma")
+           && !SpecUtils::icontains(parttype,"xray") )
           continue;
         
         double sf = 1.0;
@@ -1234,7 +1234,7 @@ public:
             if( m_viewer->colorPeaksBasedOnReferenceLines()
                && ((l->nuclide && (l->nuclide==newpeak->parentNuclide()))
                || (l->element && (l->element==newpeak->xrayElement()))
-               || (newpeak->reaction() && l->reactionsTxt.size() && UtilityFunctions::icontains(l->reactionsTxt, newpeak->reaction()->name()))
+               || (newpeak->reaction() && l->reactionsTxt.size() && SpecUtils::icontains(l->reactionsTxt, newpeak->reaction()->name()))
                || isBackgroundNuc()) )
             {
               newpeak->setLineColor( l->lineColor );
@@ -1319,8 +1319,8 @@ public:
           const string &parttype = ref->particlestrs[i];
           //SandiaDecay::to_str(SandiaDecay::BetaParticle)
           
-          if( !UtilityFunctions::icontains(parttype,"gamma")
-             && !UtilityFunctions::icontains(parttype,"xray") )
+          if( !SpecUtils::icontains(parttype,"gamma")
+             && !SpecUtils::icontains(parttype,"xray") )
             continue;
           
           double sf = 1.0;
@@ -1385,7 +1385,7 @@ public:
           if( (diff_from_assigned < 0.001)
              && ((p->parentNuclide() && (ref->nuclide==p->parentNuclide()))
                  || (p->xrayElement() && (ref->element==p->xrayElement()))
-                 || (p->reaction() && ref->reactionsTxt.size() && UtilityFunctions::icontains(ref->reactionsTxt, p->reaction()->name()))
+                 || (p->reaction() && ref->reactionsTxt.size() && SpecUtils::icontains(ref->reactionsTxt, p->reaction()->name()))
              ))
           {
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1735,7 +1735,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
               //if( pos != string::npos )
               //{
               //  string iso = isotope.substr(0,pos);
-              //  UtilityFunctions::trim( iso );
+              //  SpecUtils::trim( iso );
               //  thisnuclide = db->nuclide( iso );
               //}else
               //{

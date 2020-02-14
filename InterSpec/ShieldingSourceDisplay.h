@@ -38,7 +38,6 @@
 #include <Wt/WAbstractItemModel>
 #include <Wt/Chart/WCartesianChart>
 
-#include "SpecUtils/SpectrumDataStructs.h"
 
 //Forward declarations
 class PeakDef;

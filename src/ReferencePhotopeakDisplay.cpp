@@ -49,6 +49,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DetectorEdit.h"
@@ -58,7 +59,6 @@
 #include "InterSpec/SpectrumChart.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -884,7 +884,7 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
       {}
       
       if( isotopeLabel.size() && reactions.empty()
-          && !UtilityFunctions::icontains( isotopeLabel, "background") )
+          && !SpecUtils::icontains( isotopeLabel, "background") )
       {
         passMessage( isotopeLabel +
                      " is not a valid isotope, element, or reaction", "",
@@ -995,8 +995,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
         nuc = NULL;
         el = NULL;
         //XXX - should use regex below to properly escape Fe(n,n')
-        UtilityFunctions::ireplace_all( reactions, "'", "" );
-//        UtilityFunctions::replace_all( reactions, "'", "\'" );
+        SpecUtils::ireplace_all( reactions, "'", "" );
+//        SpecUtils::replace_all( reactions, "'", "\'" );
       }
     }catch( std::exception &e )
     {
@@ -1004,7 +1004,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     }//try / catch
   }//if( isotxt.find("(") != string::npos )
   
-  bool isBackground = UtilityFunctions::icontains( isotxt, "background" );
+  bool isBackground = SpecUtils::icontains( isotxt, "background" );
   
   const bool showGammaChecked = (!m_showGammas || m_showGammas->isChecked());
   const bool showXrayChecked = (!m_showXrays || m_showXrays->isChecked());
@@ -1586,7 +1586,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
     throw runtime_error( "Failed to open gamma XS data file" );
   }catch( std::exception &e )
   {
-    cerr << SRC_LOCATION << ": caught error " << e.what() << endl;
+    cerr << "ReferencePhotopeakDisplay::updateDisplayChange(): caught error " << e.what() << endl;
 #if( PERFORM_DEVELOPER_CHECKS )
     char msg[512];
     snprintf( msg, sizeof(msg), "Error caclulating attenuation: %s", e.what() );

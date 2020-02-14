@@ -64,9 +64,12 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WStandardItemModel>
 
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
@@ -74,7 +77,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "SpecUtils/UtilityFunctions.h"
+
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/SpecFileQueryWidget.h"
@@ -102,7 +105,7 @@ namespace
   bool file_smaller_than( const std::string &path, void *maxsizeptr )
   {
     const size_t *maxsize = (const size_t *)maxsizeptr;
-    if( UtilityFunctions::file_size(path) > (*maxsize) )
+    if( SpecUtils::file_size(path) > (*maxsize) )
       return false;
     
     return true;
@@ -193,7 +196,7 @@ namespace
               if( !from_string(operator_str, type) )
                 throw runtime_error( "Couldnt not map '" + Wt::Utils::htmlEncode(operator_str) + "' to a NumericFieldMatchType." );
               
-              const boost::posix_time::ptime test_time = UtilityFunctions::time_from_string( value_str.c_str() );
+              const boost::posix_time::ptime test_time = SpecUtils::time_from_string( value_str.c_str() );
               if( test_time.is_special() )
                 throw runtime_error( "Could not convert string '" + Wt::Utils::htmlEncode(value_str) + "' to a time" );
               
@@ -344,7 +347,7 @@ namespace
             if( !from_string(operator_str, matchtype) ) //shouldnt ever happen!
               throw runtime_error( "Could not map '" + operator_str + "' to a NumericFieldMatchType for time comparison" );
             
-            boost::posix_time::ptime comptime = UtilityFunctions::time_from_string( value_str.c_str() );
+            boost::posix_time::ptime comptime = SpecUtils::time_from_string( value_str.c_str() );
             if( comptime.is_special() ) //Can definetly happen!
               throw runtime_error( "The string '" + value_str + "' is not a valid date/time string." );
             
@@ -477,14 +480,14 @@ namespace
         case FileDataField::ParentPath:
           try
           {
-            row[f] = UtilityFunctions::fs_relative( base_search_dir, UtilityFunctions::parent_path(meas.filename) );
+            row[f] = SpecUtils::fs_relative( base_search_dir, SpecUtils::parent_path(meas.filename) );
           }catch(...)
           {
 #if( PERFORM_DEVELOPER_CHECKS )
             log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected exception getting relative path between fi" );
 #endif
-            row[f] = UtilityFunctions::parent_path(meas.filename);
-            if( UtilityFunctions::starts_with(row[f], base_search_dir.c_str()) )
+            row[f] = SpecUtils::parent_path(meas.filename);
+            if( SpecUtils::starts_with(row[f], base_search_dir.c_str()) )
               row[f] = row[f].substr(base_search_dir.size());
           }
           break;
@@ -717,7 +720,7 @@ namespace
           for( const auto &st : meas.start_times )
           {
             const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
-            row[f] += (row[f].size()?";":"") + UtilityFunctions::to_iso_string( epoch + boost::posix_time::seconds(st) );
+            row[f] += (row[f].size()?";":"") + SpecUtils::to_iso_string( epoch + boost::posix_time::seconds(st) );
             if( row[f].size() > max_cell_size )
               break;
           }
@@ -749,12 +752,12 @@ namespace
     //      quote things when saving to CSV.  Oh well for now.
     for( string &col : row )
     {
-      UtilityFunctions::ireplace_all(col,",", " ");
-      UtilityFunctions::ireplace_all(col, "\"", "&quot;");
+      SpecUtils::ireplace_all(col,",", " ");
+      SpecUtils::ireplace_all(col, "\"", "&quot;");
       
       if( col.size() > max_cell_size )
       {
-        UtilityFunctions::utf8_limit_str_size( col, max_cell_size-5 ); //count '\n' as twoa characters for windows
+        SpecUtils::utf8_limit_str_size( col, max_cell_size-5 ); //count '\n' as twoa characters for windows
         col += "\n...";
       }
     }//for( string &col : row )
@@ -850,7 +853,7 @@ protected:
       {
         case FileDataField::ParentPath:  //be lazy and just use full file path
         case Filename:
-          lesthan = (UtilityFunctions::filename(lhs[m_column]) < UtilityFunctions::filename(rhs[m_column]));
+          lesthan = (SpecUtils::filename(lhs[m_column]) < SpecUtils::filename(rhs[m_column]));
           break;
           
         case DetectorName: case SerialNumber: case Manufacturer:
@@ -930,8 +933,8 @@ protected:
           const string lhsstr = ((lhssemi==string::npos) ? lhs[m_column] : lhs[m_column].substr(0,lhssemi));
           const string rhsstr = ((rhssemi==string::npos) ? rhs[m_column] : rhs[m_column].substr(0,lhssemi));
           
-          const boost::posix_time::ptime l = UtilityFunctions::time_from_string( lhsstr.c_str() );
-          const boost::posix_time::ptime r = UtilityFunctions::time_from_string( rhsstr.c_str() );
+          const boost::posix_time::ptime l = SpecUtils::time_from_string( lhsstr.c_str() );
+          const boost::posix_time::ptime r = SpecUtils::time_from_string( rhsstr.c_str() );
           
           lesthan = (l < r);
           
@@ -1076,7 +1079,7 @@ public:
     if( col == FileDataField::Filename )
     {
       if( role == DisplayRole )
-        return WString::fromUTF8(UtilityFunctions::filename(fields[col]));
+        return WString::fromUTF8(SpecUtils::filename(fields[col]));
       if( role == UserRole )
         return WString::fromUTF8(fields[col]);
       return boost::any();
@@ -1297,7 +1300,7 @@ void SpecFileQueryWidget::init()
       if( defpath == "None" )
         defpath = "";
       
-      if( !UtilityFunctions::is_directory( defpath ) )
+      if( !SpecUtils::is_directory( defpath ) )
         defpath = "";
       
       if( maxsize < 1 || maxsize > 2048 )
@@ -1636,20 +1639,20 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
   string filters = "[";
   
   vector<string> jsonfilenames;
-  const string default_file = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "file_query_event_xml_fields.json" );
+  const string default_file = SpecUtils::append_path( InterSpec::staticDataDirectory(), "file_query_event_xml_fields.json" );
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__)) ) )
   try
   {
     //writableDataDirectory or make_canonical_path may throw
-    const string user_file = UtilityFunctions::append_path( InterSpec::writableDataDirectory(), "file_query_event_xml_fields.json" );
+    const string user_file = SpecUtils::append_path( InterSpec::writableDataDirectory(), "file_query_event_xml_fields.json" );
     string user_file_cpy = user_file;
     string default_file_cpy = default_file;
   #if( SpecUtils_NO_BOOST_LIB || BOOST_VERSION >= 104500 )
-    UtilityFunctions::make_canonical_path( user_file_cpy );
-    UtilityFunctions::make_canonical_path( default_file_cpy );
+    SpecUtils::make_canonical_path( user_file_cpy );
+    SpecUtils::make_canonical_path( default_file_cpy );
   #endif
-    if( UtilityFunctions::is_file(user_file) && (user_file_cpy!=default_file_cpy) )
+    if( SpecUtils::is_file(user_file) && (user_file_cpy!=default_file_cpy) )
       jsonfilenames.push_back( user_file );
   }catch( std::exception & )
   {
@@ -1657,13 +1660,13 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
   }
 #endif
   
-  if( jsonfilenames.empty() && UtilityFunctions::is_file(default_file) )
+  if( jsonfilenames.empty() && SpecUtils::is_file(default_file) )
     jsonfilenames.push_back( default_file );
   
   for( const string jsonfilename : jsonfilenames )
   {
 #ifdef _WIN32
-    const std::wstring wjsonfilename = UtilityFunctions::convert_from_utf8_to_utf16(jsonfilename);
+    const std::wstring wjsonfilename = SpecUtils::convert_from_utf8_to_utf16(jsonfilename);
     ifstream inputjsonfile( wjsonfilename.c_str() );
 #else
     ifstream inputjsonfile( jsonfilename.c_str() );
@@ -1671,7 +1674,7 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
   
     if( !inputjsonfile.is_open() )
     {
-      if( !jsonfilename.empty() && !UtilityFunctions::icontains(jsonfilename,"ouo") )
+      if( !jsonfilename.empty() && !SpecUtils::icontains(jsonfilename,"ouo") )
         passMessage( "Unable to open JSON file '" + jsonfilename + "' defining fields to search in Event XML.",
                    "", WarningWidget::WarningMsgHigh );
       continue;
@@ -1701,7 +1704,7 @@ std::string SpecFileQueryWidget::prepareEventXmlFilters()
     inputjsonfile.read( &jsonsourcestr[0], filelen );
   
     //Allow a comment section at the beggining of the file, e.g., /*....*/
-    UtilityFunctions::trim( jsonsourcestr );
+    SpecUtils::trim( jsonsourcestr );
     if( jsonsourcestr.size() > 4 && jsonsourcestr[0]=='/' && jsonsourcestr[0]=='*' )
     {
       auto pos = jsonsourcestr.find("*/");
@@ -1912,7 +1915,7 @@ void SpecFileQueryWidget::basePathChanged()
 
   const std::string basepath = baseDirectory();
 
-  if( basepath.empty() || !UtilityFunctions::is_directory( basepath ) )
+  if( basepath.empty() || !SpecUtils::is_directory( basepath ) )
   {
     m_numberResults->setText( "Not a valid base directory" );
 #if( !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
@@ -2016,7 +2019,7 @@ void SpecFileQueryWidget::basePathChanged()
                                            database ) );
   }else
   {
-    cerr << SRC_LOCATION << "\n\tWarning: couldnt get WServer to post to - not good" << endl << endl;
+    cerr << "SpecFileQueryWidget::basePathChanged()\n\tWarning: couldnt get WServer to post to - not good" << endl << endl;
   }//if( server ) / else
 }//void basePathChanged()
 
@@ -2032,18 +2035,18 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
 {
   vector<string> files;
 
-  UtilityFunctions::file_match_function_t filterfcn = extfilter ? &maybe_spec_file : &file_smaller_than;
+  SpecUtils::file_match_function_t filterfcn = extfilter ? &maybe_spec_file : &file_smaller_than;
 
   try
   {
 
 #if( USE_DIRECTORY_ITERATOR_METHOD )
-    double updatetime = UtilityFunctions::get_wall_time();
+    double updatetime = SpecUtils::get_wall_time();
     const bool docache = (database && database->caching_enabled());
 
     size_t nfiles = 0;
 #ifdef _WIN32
-    const wstring wsrcdir = UtilityFunctions::convert_from_utf8_to_utf16( srcdir );
+    const wstring wsrcdir = SpecUtils::convert_from_utf8_to_utf16( srcdir );
     boost::filesystem::recursive_directory_iterator diriter( wsrcdir, boost::filesystem::symlink_option::recurse );
 #else
     boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::symlink_option::recurse );
@@ -2057,7 +2060,7 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
 
 #ifdef _WIN32
       const wstring wfilename = diriter->path().string<std::wstring>();
-      const string filename = UtilityFunctions::convert_from_utf16_to_utf8( wfilename );
+      const string filename = SpecUtils::convert_from_utf16_to_utf8( wfilename );
 #else
       string filename = diriter->path().string<std::string>();
 #endif
@@ -2088,7 +2091,7 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
           resvedpath = diriter->path().parent_path() / resvedpath;
         resvedpath = boost::filesystem::canonical( resvedpath );
         auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
-        if( UtilityFunctions::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
+        if( SpecUtils::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
           diriter.no_push();  //Dont recurse down into directories
       }//if( is_simlink_dir && recursive )
 
@@ -2101,7 +2104,7 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
         ++nfiles;
         if( (nfiles % 500) == 0 )
         {
-          const double nowtime = UtilityFunctions::get_wall_time();
+          const double nowtime = SpecUtils::get_wall_time();
           if( (nowtime - updatetime) > 1.0 )
           {
             updatetime = nowtime;
@@ -2128,9 +2131,9 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
         nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
 #else
     if( recursive )
-      files = UtilityFunctions::recursive_ls( srcdir, filterfcn, (void *)&maxsize );
+      files = SpecUtils::recursive_ls( srcdir, filterfcn, (void *)&maxsize );
     else
-      files = UtilityFunctions::ls_files_in_directory( srcdir, filterfcn, (void *)&maxsize );
+      files = SpecUtils::ls_files_in_directory( srcdir, filterfcn, (void *)&maxsize );
 
     const size_t nfiles = files.size();
 
@@ -2230,7 +2233,7 @@ SpecFileQuery::SpecLogicTest SpecFileQueryWidget::queryFromJson( const std::stri
   
   try
   {
-    if( UtilityFunctions::istarts_with(queryJson, "empty") )
+    if( SpecUtils::istarts_with(queryJson, "empty") )
       throw runtime_error( "<p>Unable to translate query into test logic.</p>"
                             "<p>Please take a screenshot of query and send to "
                             "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a></p>" );
@@ -2463,14 +2466,14 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
   const bool extfilter = (options & FilterByFilename);
   const bool filterUnique = (options & FilterDuplicates);
   
-  const double starttime = UtilityFunctions::get_wall_time();
-  const double startcpu = UtilityFunctions::get_cpu_time();
+  const double starttime = SpecUtils::get_wall_time();
+  const double startcpu = SpecUtils::get_cpu_time();
   
   stringstream description;
   boost::posix_time::ptime utctime = boost::posix_time::second_clock::universal_time();
   boost::posix_time::ptime localtime = boost::posix_time::second_clock::local_time();
-  description << "Search performed at " << UtilityFunctions::to_extended_iso_string( localtime )
-              << " local (" << UtilityFunctions::to_extended_iso_string( utctime )
+  description << "Search performed at " << SpecUtils::to_extended_iso_string( localtime )
+              << " local (" << SpecUtils::to_extended_iso_string( utctime )
               << " UTC)\r\n";
   if( recursive )
     description << "Recursive" << " search of \"" << basedir << "\"\r\n";
@@ -2502,8 +2505,8 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     result = std::make_shared< vector<vector<string> > >();
     
     
-    typedef vector<string>(*ls_fcn_t)( const string &, UtilityFunctions::file_match_function_t, void * );
-    UtilityFunctions::file_match_function_t filterfcn = extfilter ? &maybe_spec_file : &file_smaller_than;
+    typedef vector<string>(*ls_fcn_t)( const string &, SpecUtils::file_match_function_t, void * );
+    SpecUtils::file_match_function_t filterfcn = extfilter ? &maybe_spec_file : &file_smaller_than;
     
     
 #if( USE_DIRECTORY_ITERATOR_METHOD )
@@ -2513,9 +2516,9 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
                                                       this, 0, 0, "", result, widgetDeleted ) );
 #else
-    ls_fcn_t lsfcn = &UtilityFunctions::recursive_ls;
+    ls_fcn_t lsfcn = &SpecUtils::recursive_ls;
     if( !recursive )
-      lsfcn = &UtilityFunctions::ls_files_in_directory;
+      lsfcn = &SpecUtils::ls_files_in_directory;
     
     const vector<string> files = lsfcn( basedir, filterfcn, (void *)&maxsize );
     const int nfiles = static_cast<int>( files.size() );
@@ -2530,7 +2533,7 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
 #endif //USE_DIRECTORY_ITERATOR_METHOD
     
     int nupdates_sent = 0;
-    double lastupdate = UtilityFunctions::get_wall_time();
+    double lastupdate = SpecUtils::get_wall_time();
     
     //We could choose something like 100 for nfile_at_a_time with the only
     //  dowsides being N42 files would parse any faster due to not enough
@@ -2550,7 +2553,7 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     std::mutex result_mutex;
     
 #ifdef _WIN32
-    const std::wstring wbasedir = UtilityFunctions::convert_from_utf8_to_utf16( basedir );
+    const std::wstring wbasedir = SpecUtils::convert_from_utf8_to_utf16( basedir );
     boost::filesystem::recursive_directory_iterator diriter( wbasedir, boost::filesystem::symlink_option::recurse );
 #else
     boost::filesystem::recursive_directory_iterator diriter( basedir, boost::filesystem::symlink_option::recurse );
@@ -2564,7 +2567,7 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
       
 #ifdef _WIN32
       const wstring wfilename = diriter->path().string<std::wstring>();
-      const std::string filename = UtilityFunctions::convert_from_utf16_to_utf8( wfilename );
+      const std::string filename = SpecUtils::convert_from_utf16_to_utf8( wfilename );
 #else
       string filename = diriter->path().string<std::string>();
 #endif
@@ -2595,7 +2598,7 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
           resvedpath = diriter->path().parent_path() / resvedpath;
         resvedpath = boost::filesystem::canonical( resvedpath );
         auto pcanon = boost::filesystem::canonical( diriter->path().parent_path() );
-        if( UtilityFunctions::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
+        if( SpecUtils::starts_with( pcanon.string<string>(), resvedpath.string<string>().c_str() ) )
           diriter.no_push();  //Dont recurse down into directories
       }//if( is_simlink_dir && recursive )
       
@@ -2606,7 +2609,7 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
         {
           pool.join();
           
-          const double now = UtilityFunctions::get_wall_time();
+          const double now = SpecUtils::get_wall_time();
           if( now > (lastupdate + 1.0) || !nupdates_sent )
           {
             ++nupdates_sent;
@@ -2665,7 +2668,7 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
         if( testres[j].size() )
           result->push_back( testres[j] );
       
-      const double now = UtilityFunctions::get_wall_time();
+      const double now = SpecUtils::get_wall_time();
       if( now > (lastupdate + 2.0) || !nupdates_sent )
       {
         ++nupdates_sent;
@@ -2679,13 +2682,13 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
 #endif //USE_DIRECTORY_ITERATOR_METHOD
   }catch( ... )
   {
-    const double total_clock_time = (UtilityFunctions::get_wall_time() - starttime);
+    const double total_clock_time = (SpecUtils::get_wall_time() - starttime);
     WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::finishUpdate, this, result, description.str(), total_clock_time, true, widgetDeleted ) );
   }
   
-  const double total_clock_time = (UtilityFunctions::get_wall_time() - starttime);
-  const double finishtime = UtilityFunctions::get_wall_time();
-  const double finishcpu = UtilityFunctions::get_cpu_time();
+  const double total_clock_time = (SpecUtils::get_wall_time() - starttime);
+  const double finishtime = SpecUtils::get_wall_time();
+  const double finishcpu = SpecUtils::get_cpu_time();
   
   description << "Search took " << (finishtime - starttime) << " wall seconds and " << (finishcpu - startcpu) << " cpu seconds \r\n";
   description << "There were " << (num_files_pass+result->size()) << " files that satisfied the test conditions\r\n";
@@ -2729,8 +2732,8 @@ void SpecFileQueryWidget::openSelectedFilesParentDir()
   boost::any fnany = m_resultmodel->data( findex, Wt::UserRole );
   std::string filenameandy = asString(fnany).toUTF8();
   
-  const string parentdir = UtilityFunctions::parent_path(filenameandy);
-  if( !UtilityFunctions::is_directory(parentdir) )
+  const string parentdir = SpecUtils::parent_path(filenameandy);
+  if( !SpecUtils::is_directory(parentdir) )
     return;
   
 #if( BUILD_AS_ELECTRON_APP )
@@ -2741,9 +2744,9 @@ void SpecFileQueryWidget::openSelectedFilesParentDir()
   //For windows need to ecape '\'.
 
 #if( defined(WIN32) )
-  //UtilityFunctions::ireplace_all( filenameandy, "\\\\", "[%%%%%%%%]" );
-  UtilityFunctions::ireplace_all( filenameandy, "\\", "\\\\" );
-  //UtilityFunctions::ireplace_all( filenameandy, "[%%%%%%%%]", "\\\\\\\\" );
+  //SpecUtils::ireplace_all( filenameandy, "\\\\", "[%%%%%%%%]" );
+  SpecUtils::ireplace_all( filenameandy, "\\", "\\\\" );
+  //SpecUtils::ireplace_all( filenameandy, "[%%%%%%%%]", "\\\\\\\\" );
   //ToDo: Check into compilation optimization 
   //      Add time it took for a search to result text
 #endif
@@ -2778,7 +2781,7 @@ void SpecFileQueryWidget::loadSelected()
   boost::any fnany = m_resultmodel->data( findex, Wt::UserRole );
   const std::string filenameandy = asString(fnany).toUTF8();
   
-  if( !UtilityFunctions::is_file(filenameandy) )
+  if( !SpecUtils::is_file(filenameandy) )
   {
     passMessage( "Sorry, '" + filenameandy + "' file appears to no longer be accessable", "", WarningWidget::WarningMsgHigh );
     m_resultview->setSelectedIndexes( WModelIndexSet() );
