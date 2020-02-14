@@ -48,10 +48,10 @@
 #include <Wt/WAbstractItemModel>
 
 #include "InterSpec/SpecMeas.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 
 //The basic goal of the classes in this file is to a way to manage user

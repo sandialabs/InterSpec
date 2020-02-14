@@ -42,7 +42,7 @@
 #include <Wt/WCssDecorationStyle>
 #include <Wt/Chart/WAbstractChart>
 
-#include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "js/CanvasForDragging.js"
 
@@ -114,7 +114,7 @@ bool operator>>( std::istream &is, OverlayDragEvent& t )
   
   if( fieldstrs.size() != 15 )
   {
-    cerr << SRC_LOCATION
+    cerr << "CanvasForDragging operator>>:"
          << "\n\tbool operator>>( std::istream &is, OverlayDragEvent& t ):\n\t"
          << "Recieved an input with " << fieldstrs.size() << " fields; I expected 15"
          << endl;
@@ -168,12 +168,11 @@ bool operator>>( std::istream &is, OverlayDragEvent& t )
   string arg;
   is >> arg;
   vector<string> fields;
-  UtilityFunctions::split( fields, arg, "&" );
+  SpecUtils::split( fields, arg, "&" );
   
   if( fields.size() != 15 )
   {
-    cerr << SRC_LOCATION
-    << "\n\tbool operator>>( std::istream &is, OverlayDragEvent& t ):\n\t"
+    cerr << "\nbool CanvasForDragging::operator>>( std::istream &is, OverlayDragEvent& t ):\n\t"
     << "Recieved an input with " << fields.size() << " fields; I expected 15"
     << endl;
     return !!is;
@@ -225,7 +224,7 @@ bool operator>>( std::istream &is, OverlayDragEvent& t )
   }catch(...)
   {
     cerr << endl
-    << SRC_LOCATION
+    << "CanvasForDragging.cpp"
     << "\n\tbool operator>>( std::istream &is, OverlayDragEvent& t ):\n\t"
     << "There was an error converting the stream to a OverlayDragEvent.\n"
     << "String from client: '" << arg << "'\n"

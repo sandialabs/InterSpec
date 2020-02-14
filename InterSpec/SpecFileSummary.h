@@ -30,8 +30,6 @@
 #include <memory>
 
 #include "InterSpec/AuxWindow.h"
-#include "SpecUtils/SpectrumDataStructs.h"
-
 
 /*
  * This class gives a summary of file parameters.  Currently MeasurementInfo

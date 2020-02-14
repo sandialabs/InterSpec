@@ -41,9 +41,10 @@
 
 #include "QLSpecMeas.h"
 #include "QLSpectrumChart.h"
+#include "SpecUtils/SpecFile.h"
 #include "QLSpectrumDataModel.h"
 #include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
+
 
 using namespace std;
 using namespace Wt;

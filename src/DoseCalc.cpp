@@ -36,7 +36,6 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/GadrasSpecFunc.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 

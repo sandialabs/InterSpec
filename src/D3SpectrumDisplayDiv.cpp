@@ -14,19 +14,21 @@
 #include <Wt/WStringStream>
 #include <Wt/WContainerWidget>
 
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/D3SpectrumExport.h"
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
 using namespace Wt;
@@ -1036,7 +1038,7 @@ const string D3SpectrumDisplayDiv::yAxisTitle() const
 void D3SpectrumDisplayDiv::setXAxisTitle( const std::string &title )
 {
   m_xAxisTitle = title;
-  UtilityFunctions::ireplace_all( m_xAxisTitle, "'", "&#39;" );
+  SpecUtils::ireplace_all( m_xAxisTitle, "'", "&#39;" );
   
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setXAxisTitle('" + title + "');" );
@@ -1046,7 +1048,7 @@ void D3SpectrumDisplayDiv::setXAxisTitle( const std::string &title )
 void D3SpectrumDisplayDiv::setYAxisTitle( const std::string &title )
 {
   m_yAxisTitle = title;
-  UtilityFunctions::ireplace_all( m_yAxisTitle, "'", "&#39;" );
+  SpecUtils::ireplace_all( m_yAxisTitle, "'", "&#39;" );
   
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setYAxisTitle('" + title + "');" );
@@ -1766,8 +1768,8 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   auto fcnworker = [=](){
     try
     {
-      //const auto start_cpu_time = UtilityFunctions::get_cpu_time();
-      //const auto start_wall_time = UtilityFunctions::get_wall_time();
+      //const auto start_cpu_time = SpecUtils::get_cpu_time();
+      //const auto start_wall_time = SpecUtils::get_wall_time();
       
       float min_sigma_width_kev, max_sigma_width_kev;
       expected_peak_width_limits( midenergy, isHpge, min_sigma_width_kev, max_sigma_width_kev );
@@ -1877,8 +1879,8 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       
       pool.join();
       
-      const auto stop_cpu_time = UtilityFunctions::get_cpu_time();
-      const auto stop_wall_time = UtilityFunctions::get_wall_time();
+      const auto stop_cpu_time = SpecUtils::get_cpu_time();
+      const auto stop_wall_time = SpecUtils::get_wall_time();
       
       //Peak fitting can take up to a third of a second or so
       //cout << "Peak fitting took " << (stop_cpu_time-start_cpu_time)

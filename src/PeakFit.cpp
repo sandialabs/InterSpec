@@ -59,10 +59,9 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "SpecUtils/SpecUtilsAsync.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
@@ -625,7 +624,7 @@ coeffs( bins_left + bins_right + 1, 0.0 )
   if( num_left<0 || num_right<0
      || ld>polynomial_order
      || (num_left+num_right)<polynomial_order )
-    throw runtime_error( SRC_LOCATION + string("\n\tInvalid Input") );
+    throw runtime_error( "SavitzyGolayCoeffs(...)\n\tInvalid Input" );
   
   matrix<double> a(polynomial_order+1, polynomial_order+1);
   
@@ -647,7 +646,7 @@ coeffs( bins_left + bins_right + 1, 0.0 )
   const size_t res = lu_factorize(a,pm);
   if( res != 0 )
   {
-    cerr << SRC_LOCATION << "\n\tFailed to invert Matrix" << endl;
+    cerr << "SavitzyGolayCoeffs(...)\n\tFailed to invert Matrix" << endl;
     throw std::runtime_error( "Failed to invert Matrix" );
   }//if( res != 0 )
   
@@ -690,7 +689,7 @@ void SavitzyGolayCoeffs::smooth( const float *input,
   const int nCoeffs = static_cast<int>( coeffs.size() );
   
   if( nSamples < nCoeffs || nSamples==0 )
-    throw runtime_error( string(SRC_LOCATION) + "\n\tInvalid input size" );
+    throw runtime_error( "SavitzyGolayCoeffs::smooth(...)\n\tInvalid input size" );
   
   for( int pos = 0; pos < nSamples; ++pos )
   {
@@ -1581,7 +1580,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
   
   threadpool.join();
   //  const bool phys_cores_only = false;
-  //  UtilityFunctions::do_asyncronous_work( fit_jobs, phys_cores_only );
+  //  SpecUtils::do_asyncronous_work( fit_jobs, phys_cores_only );
   
   
   //put the fit peaks back into 'input_peaks' so we can return all the peaks
@@ -1610,7 +1609,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
   
   if( migration )
   {
-    cerr << SRC_LOCATION << "\n\tWarning: Migration happened!" << endl;
+    cerr << "fitPeaksInRange(...)\n\tWarning: Migration happened!" << endl;
     
     return fitPeaksInRange( x0, x1, ncausality,
                            stat_threshold, hypothesis_threshold,
@@ -5654,12 +5653,12 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     return;
   }catch( std::exception &e )
   {
-    cerr << SRC_LOCATION << "\n\tSerious programming logic error: caught"
+    cerr << "fitPeaks(...)\n\tSerious programming logic error: caught"
          << " exception where I really shouldnt have.  what()=" << e.what()
          << endl;
   }catch(...)
   {
-    cerr << SRC_LOCATION << "\n\tSerious programming logic error: caught"
+    cerr << "fitPeaks(...)\n\tSerious programming logic error: caught"
          << " unknown exception where I really shouldnt have." << endl;
   }//try/catch()
         
@@ -8783,13 +8782,13 @@ bool chi2_significance_test( PeakDef peak,
           double nom, nip, nim, sp, sm, plocha = 0;
           double m0low=0,m1low=0,m2low=0,l0low=0,l1low=0,detlow,av,men;
           if (sigma < 1) {
-            cerr << SRC_LOCATION << "\n\t"
+            cerr << "findPeaksByRelaxation(...)\n\t"
             << "Invalid sigma, must be greater than or equal to 1" << endl;
             return fPositionX;
           }
           
           if(threshold<=0 || threshold>=100){
-            cerr << SRC_LOCATION << "\n\t"
+            cerr << "findPeaksByRelaxation(...)\n\t"
             << "Invalid threshold, must be positive and less than 100"
             << endl;
             return fPositionX;
@@ -8797,13 +8796,13 @@ bool chi2_significance_test( PeakDef peak,
           
           j = (int) (5.0 * sigma + 0.5);
           if (j >= PEAK_WINDOW / 2) {
-            cerr << SRC_LOCATION << "\n\tToo large sigma" << endl;
+            cerr << "findPeaksByRelaxation(...)\n\tToo large sigma" << endl;
             return fPositionX;
           }
           
           if (markov == true) {
             if (averWindow <= 0) {
-              cerr << SRC_LOCATION << "\n\t"
+              cerr << "findPeaksByRelaxation(...)\n\t"
               << "Averanging window must be positive" << endl;
               return fPositionX;
             }
@@ -8811,7 +8810,7 @@ bool chi2_significance_test( PeakDef peak,
           
           if(backgroundRemove == true){
             if(ssize < 2 * numberIterations + 1){
-              cerr << SRC_LOCATION << "\n\t"
+              cerr << "findPeaksByRelaxation(...)\n\t"
               << "Too large clipping window" << endl;
               return fPositionX;
             }
@@ -9206,7 +9205,7 @@ bool chi2_significance_test( PeakDef peak,
           delete [] working_space;
           
           if(peak_index == fMaxPeaks)
-            cerr << SRC_LOCATION << "\n\tPeak buffer full" << endl;
+            cerr << "findPeaksByRelaxation(...)\n\tPeak buffer full" << endl;
           
           fPositionX.resize( peak_index );
           

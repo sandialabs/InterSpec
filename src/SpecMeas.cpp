@@ -38,11 +38,12 @@
 #include <Wt/WIOService>
 
 #include "InterSpec/PeakDef.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
-#include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/EnergyCalibration.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace Wt;
@@ -491,7 +492,7 @@ void SpecMeas::save2012N42FileInSlaveThread( std::shared_ptr<SpecMeas> info,
   }else
   {
     //Probably wont ever get here - but just incase
-    cerr << SRC_LOCATION << "\n\tWarning: couldnt get WServer - not good" << endl << endl;
+    cerr << "SpecMeas::save2012N42FileInSlaveThread(...)\n\tWarning: couldnt get WServer - not good" << endl << endl;
     worker();
   }//if( server ) / else
 }//save2012N42FileInSlaveThread(...)
@@ -502,7 +503,7 @@ bool SpecMeas::save2012N42File( const std::string &filename )
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
 #ifdef _WIN32
-  const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
   ofstream ofs( wfilename.c_str(), ios::binary|ios::out );
 #else
   ofstream ofs( filename.c_str(), ios::binary|ios::out );
@@ -708,7 +709,7 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
       //We'll assume a perfect convertion of int<-->float, which if the input
       //  data is well formed, should be true
       std::vector<float> contents;
-      UtilityFunctions::split_to_floats( samples_node->value(), samples_node->value_size(), contents );
+      SpecUtils::split_to_floats( samples_node->value(), samples_node->value_size(), contents );
       set<int> samplenums;
       for( const float t : contents )
         samplenums.insert( samplenums.end(), static_cast<int>(t) );
@@ -769,8 +770,8 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
         throw runtime_error( "Did not find PeakIds under PeakSet" );
       
       std::vector<int> samplenumvec, peakids;
-      UtilityFunctions::split_to_ints( samples_node->value(), samples_node->value_size(), samplenumvec );
-      UtilityFunctions::split_to_ints( peakid_node->value(), peakid_node->value_size(), peakids );
+      SpecUtils::split_to_ints( samples_node->value(), samples_node->value_size(), samplenumvec );
+      SpecUtils::split_to_ints( peakid_node->value(), peakid_node->value_size(), peakids );
       set<int> samplenums;
       for( const float t : samplenumvec )
         samplenums.insert( samplenums.end(), static_cast<int>(t) );
@@ -979,11 +980,11 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
         case PeakDef::XrayGamma:         label += " xray";   break;
       }//switch( peak.sourceGammaType() )
       
-      UtilityFunctions::ireplace_all( label, "\r\n", " " );
-      UtilityFunctions::ireplace_all( label, "\r", " " );
-      UtilityFunctions::ireplace_all( label, "\n", " " );
-      UtilityFunctions::ireplace_all( label, "\"", "&quot;" );
-      UtilityFunctions::ireplace_all( label, "  ", " " );
+      SpecUtils::ireplace_all( label, "\r\n", " " );
+      SpecUtils::ireplace_all( label, "\r", " " );
+      SpecUtils::ireplace_all( label, "\n", " " );
+      SpecUtils::ireplace_all( label, "\"", "&quot;" );
+      SpecUtils::ireplace_all( label, "  ", " " );
       
       if( label.size() && label[0]==' ' )
         label = label.substr( 1, label.size() - 1 );
@@ -1018,7 +1019,7 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   if( node && node->value() )
   {
     std::vector<float> contents;
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), contents );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), contents );
     for( const float t : contents )
       m_displayedSampleNumbers->insert( static_cast<int>(t) );
   }//if( node )
@@ -1187,7 +1188,7 @@ bool SpecMeas::load_N42_file( const std::string &filename )
   try
   {
     std::vector<char> data;
-    UtilityFunctions::load_file_data( filename.c_str(), data );
+    SpecUtils::load_file_data( filename.c_str(), data );
     
 #if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
     const bool loaded = SpecMeas::load_N42_from_data( &data.front(), (&data.front()) + data.size() );
@@ -1369,7 +1370,7 @@ SpectrumType SpecMeas::displayType() const
 {
   if( !m_displayType )
   {
-    cerr << SRC_LOCATION << "\n\tThere is a serious error here - definetly need"
+    cerr << "SpecMeas::displayType()\n\tThere is a serious error here - definetly need"
          << " investigating!!!" << endl;
     return kForeground;
   }
@@ -1513,14 +1514,14 @@ void SpecMeas::displayedSpectrumChangedCallback( SpectrumType type,
 
 DetectorType SpecMeas::guessDetectorTypeFromFileName( std::string name )
 {
-  UtilityFunctions::to_lower( name );
-  const bool detective = UtilityFunctions::contains( name, "detective" );
-  const bool ex = (UtilityFunctions::contains( name, "detectiveex" )
-                      || UtilityFunctions::contains( name, "detective-ex" )
-                      || UtilityFunctions::contains( name, "detective ex" ) );
-  const bool oneHundred = UtilityFunctions::contains( name, "100" );
-  const bool ex100 = UtilityFunctions::contains( name, "ex-100" );
-  const bool micro = UtilityFunctions::contains( name, "micro" );
+  SpecUtils::to_lower_ascii( name );
+  const bool detective = SpecUtils::contains( name, "detective" );
+  const bool ex = (SpecUtils::contains( name, "detectiveex" )
+                      || SpecUtils::contains( name, "detective-ex" )
+                      || SpecUtils::contains( name, "detective ex" ) );
+  const bool oneHundred = SpecUtils::contains( name, "100" );
+  const bool ex100 = SpecUtils::contains( name, "ex-100" );
+  const bool micro = SpecUtils::contains( name, "micro" );
   
   if( (detective && oneHundred) || ex100 )
     return kDetectiveEx100Detector;
@@ -1533,22 +1534,22 @@ DetectorType SpecMeas::guessDetectorTypeFromFileName( std::string name )
   
   //Note: identiFINDER-NG are much more common that first generation
   //      identiFINDERs, so well just always assume the its an NG
-  if( UtilityFunctions::contains( name, "identifinder" ) )
+  if( SpecUtils::contains( name, "identifinder" ) )
   {
-    if( UtilityFunctions::contains( name, "labr" ) )
+    if( SpecUtils::contains( name, "labr" ) )
       return kIdentiFinderLaBr3Detector;
     return kIdentiFinderNGDetector; //kIdentiFinderDetector;
-  }//if( UtilityFunctions::contains( name, "identifinder" ) )
+  }//if( SpecUtils::contains( name, "identifinder" ) )
   
-//  if( UtilityFunctions::contains( name, "identifinder" )
-//      && UtilityFunctions::contains( name, "ng" ) )
+//  if( SpecUtils::contains( name, "identifinder" )
+//      && SpecUtils::contains( name, "ng" ) )
 //    return kIdentiFinderNGDetector;
   
-  if( UtilityFunctions::contains( name, "gr135" )
-     || UtilityFunctions::contains( name, "gr-135" ) )
+  if( SpecUtils::contains( name, "gr135" )
+     || SpecUtils::contains( name, "gr-135" ) )
     return kGR135Detector;
   
-  if( UtilityFunctions::contains( name, "falcon" ) )
+  if( SpecUtils::contains( name, "falcon" ) )
      return kFalcon5000;
   
   

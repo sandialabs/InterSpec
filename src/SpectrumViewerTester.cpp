@@ -58,11 +58,14 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakEdit.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/InterSpec.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/Recalibrator.h"
 #include "InterSpec/DetectorEdit.h"
@@ -73,13 +76,11 @@
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpectrumChart.h"
-#include "InterSpec/InterSpec.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecFileSummary.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/ActivityConverter.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LocalTimeDelegate.h"
@@ -88,7 +89,6 @@
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
 #include "InterSpec/MassAttenuationTool.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #if( !ANDROID && !IOS )
@@ -319,8 +319,8 @@ void SpectrumViewerTester::doOfflineTesting()
   snprintf( basedir, sizeof(basedir), "automated_test_%s", todaystr );
   
 
-  if( !UtilityFunctions::is_directory(basedir) )
-    UtilityFunctions::create_directory( basedir );
+  if( !SpecUtils::is_directory(basedir) )
+    SpecUtils::create_directory( basedir );
   
   int nStatesTested = 0;
   vector<string> medResRultFiles, highResResultFiles;

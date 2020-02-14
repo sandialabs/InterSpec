@@ -31,8 +31,8 @@
 #include <Wt/WEnvironment>
 
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/SerialToDetectorModel.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
@@ -136,7 +136,7 @@ void getUtf8Args( int &argc, char ** &argv )
   {
     printf("Argument: %d: %ws\n", i, argvw[i]);
   
-    const std::string asutf8 = UtilityFunctions::convert_from_utf16_to_utf8( argvw[i] );
+    const std::string asutf8 = SpecUtils::convert_from_utf16_to_utf8( argvw[i] );
     argv[i] = (char *)malloc( sizeof(char)*(asutf8.size()+1) );
     strcpy( argv[i], asutf8.c_str() );
   }//for( int i = 0; i < argc; ++i)
@@ -157,7 +157,7 @@ void processCustomArgs( int argc, char **argv )
       try
       {
         InterSpec::setWritableDataDirectory( argv[i+1] );
-        const std::vector<std::string> serial_db = UtilityFunctions::ls_files_in_directory( argv[i+1], "serial_to_model.csv" );
+        const std::vector<std::string> serial_db = SpecUtils::ls_files_in_directory( argv[i+1], "serial_to_model.csv" );
         if( !serial_db.empty() )
         {
           SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
@@ -179,7 +179,7 @@ void processCustomArgs( int argc, char **argv )
     const char * const searchdirs[] = { "data", "data_ouo" };
     for( const char *dir : searchdirs )
     {
-      const std::vector<std::string> serial_db = UtilityFunctions::ls_files_in_directory( dir, "serial_to_model.csv" );
+      const std::vector<std::string> serial_db = SpecUtils::ls_files_in_directory( dir, "serial_to_model.csv" );
       if( !serial_db.empty() )
       {
         SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );

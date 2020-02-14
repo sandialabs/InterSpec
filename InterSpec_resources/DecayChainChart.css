@@ -3,6 +3,11 @@
   
 }
 
+.DecayChainInstructions
+{
+  
+}
+
 .DecayChainChartTable td, .DecayChainChartTable th
 {
   border: 1px solid black;
@@ -71,4 +76,9 @@ rect.DecayChartNuc.MousedOver
 .DecayChartNucTxt.MousedOver
 {
   font-weight: bold;
+}
+
+.NucInfoTxt
+{
+  
 }

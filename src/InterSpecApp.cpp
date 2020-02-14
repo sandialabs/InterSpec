@@ -66,6 +66,8 @@
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -73,7 +75,6 @@
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
 
 #if( BUILD_AS_ELECTRON_APP )
@@ -215,7 +216,7 @@ bool InterSpecApp::checkExternalTokenFromUrl()
   const Http::ParameterMap &parmap = environment().getParameterMap();
   for( const Http::ParameterMap::value_type &p : parmap )
   {
-    if( UtilityFunctions::iequals(p.first, "externalid") && !p.second.empty() )
+    if( SpecUtils::iequals_ascii(p.first, "externalid") && !p.second.empty() )
       m_externalToken = p.second.front();
   }//for( const Http::ParameterMap::value_type &p : parmap )
   
@@ -455,7 +456,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //  ToDo: after a little more testing enable always testing the request is
     //        from 127.0.0.1, AND for Electron version of app that that the 
     //        value of "externalid" in the URL matches InterSpecServer::external_id()
-    //UtilityFunctions::icontains( environment().clientAddress(), "127.0.0.1" )
+    //SpecUtils::icontains( environment().clientAddress(), "127.0.0.1" )
     
     const string filename = uri_decode( specfileiter->second[0] );
     loadedSpecFile = m_viewer->userOpenFileFromFilesystem( filename );
@@ -795,8 +796,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 std::string InterSpecApp::getUserNameFromEnvironment() const
 {
   string remoteUser = environment().getCgiValue( "REMOTE_USER" );
-  UtilityFunctions::ireplace_all( remoteUser, " ", "" );
-  UtilityFunctions::to_lower( remoteUser );
+  SpecUtils::ireplace_all( remoteUser, " ", "" );
+  SpecUtils::to_lower_ascii( remoteUser );
   return remoteUser;
 }//std::string getUserNameFromEnvironment() const
 
@@ -825,13 +826,13 @@ std::string InterSpecApp::tempDirectory()
     
     //Must not be spcified as a CGI value, lets just go with what the operating
     //  system says
-    if( s_tempDir.empty() || !UtilityFunctions::is_directory(s_tempDir) )
-      s_tempDir = UtilityFunctions::temp_dir();
+    if( s_tempDir.empty() || !SpecUtils::is_directory(s_tempDir) )
+      s_tempDir = SpecUtils::temp_dir();
     
     return s_tempDir;
   }//if( app )
   
-  return UtilityFunctions::temp_dir();
+  return SpecUtils::temp_dir();
 }//void tempDirectory()
 
 

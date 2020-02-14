@@ -98,23 +98,25 @@
 #endif
 
 
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/RowStretchTreeView.h"
-#include "SpecUtils/SpectrumDataStructs.h"
+
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include "InterSpec/DbFileBrowser.h"
@@ -200,7 +202,7 @@ namespace
           m_dialog->hide();
         }catch( exception &e )
         {
-          cerr << "\n\n" << SRC_LOCATION <<"\n\tCaught: " << e.what() << "\n\n";
+          cerr << "\n\nPreviousDbEntry::dorevert()\n\tCaught: " << e.what() << "\n\n";
           passMessage( "Error displaying previous measurment, things may not"
                       " be as expected" , "", WarningWidget::WarningMsgHigh );
         }//try / catch
@@ -926,8 +928,8 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     
     const string fileInZip = Wt::asString(index.data()).toUTF8();
     
-    const string tmppath = UtilityFunctions::temp_dir();
-    string tmpfile = UtilityFunctions::temp_file_name( "", tmppath );
+    const string tmppath = SpecUtils::temp_dir();
+    string tmpfile = SpecUtils::temp_file_name( "", tmppath );
     
     ifstream zipfilestrm( spoolName.c_str(), ios::in | ios::binary );
     
@@ -941,7 +943,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     
     {
 #ifdef _WIN32
-      const std::wstring wtmpfile = UtilityFunctions::convert_from_utf8_to_utf16(tmpfile);
+      const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(tmpfile);
       ofstream tmpfilestrm( wtmpfile.c_str(), ios::out | ios::binary );
 #else
       ofstream tmpfilestrm( tmpfile.c_str(), ios::out | ios::binary );
@@ -951,7 +953,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     
     handleFileDrop( fileInZip, tmpfile, type );
     
-    UtilityFunctions::remove_file( tmpfile );
+    SpecUtils::remove_file( tmpfile );
   }catch( std::exception & )
   {
     passMessage( "Error extracting file from zip", "", 2 );
@@ -1066,7 +1068,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       maxnumchars = std::max( maxnumchars, n.size() );
       
       if( n.size() >= 4
-          && UtilityFunctions::iequals(n.substr(n.size()-4), ".zip" ) )
+          && SpecUtils::iequals_ascii(n.substr(n.size()-4), ".zip" ) )
         continue;
       if( n.size() < 1 )
         continue;
@@ -1098,8 +1100,8 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
 /*
       //const string fileInZip = selection->itemText(0).toUTF8();
       const string fileInZip = filenames[0]; //Wt::asString(model->data(0, 0)).toUTF8();
-      const string tmppath = UtilityFunctions::temp_dir();
-      string tmpfile = UtilityFunctions::temp_file_name( fileInZip, tmppath );
+      const string tmppath = SpecUtils::temp_dir();
+      string tmpfile = SpecUtils::temp_file_name( fileInZip, tmppath );
       
       ofstream tmpfilestrm( tmpfile.c_str(), ios::out | ios::binary );
       size_t nbytes = 0;
@@ -1113,7 +1115,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       {
       }
       
-      UtilityFunctions::remove_file( tmpfile.string<string>() );
+      SpecUtils::remove_file( tmpfile.string<string>() );
       
       delete window;
       
@@ -1231,7 +1233,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( !m_viewer->isMobile() && m_viewer->renderedWidth() > 400 && m_viewer->renderedHeight() > 250 )
     w->resize( 400, 250 );
   
-  // const string filename = UtilityFunctions::filename(displayName);
+  // const string filename = SpecUtils::filename(displayName);
   
   //Check if ICD2 file
   if( std::find( boost::begin(data), boost::end(data), uint8_t(60)) != boost::end(data) )
@@ -1240,12 +1242,12 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     datastr.resize( boost::size(data) + 1, '\0' );
     memcpy( &(datastr[0]), (const char *)&data[0], boost::size(data) );
     
-    if( UtilityFunctions::icontains( datastr, "n42ns:")
-       || UtilityFunctions::icontains( datastr, "AnalysisResults" )
-       || UtilityFunctions::icontains( datastr, "AlarmInformation" )
-       || UtilityFunctions::icontains( datastr, "DNDOARSchema" )
-       || UtilityFunctions::icontains( datastr, "DNDOEWSchema" )
-       || UtilityFunctions::icontains( datastr, "DNDOARSchema" ) )
+    if( SpecUtils::icontains( datastr, "n42ns:")
+       || SpecUtils::icontains( datastr, "AnalysisResults" )
+       || SpecUtils::icontains( datastr, "AlarmInformation" )
+       || SpecUtils::icontains( datastr, "DNDOARSchema" )
+       || SpecUtils::icontains( datastr, "DNDOEWSchema" )
+       || SpecUtils::icontains( datastr, "DNDOARSchema" ) )
     {
       WText *t = new WText( "This looks to be an N42 ICD2 file that contains analysis results rather than raw spectra.<br />"
                             "If you believe this to be a legitimate spectrum file, please email it to <a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a> to support this file type." );
@@ -1422,7 +1424,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   
   if( currdata
-      //&& UtilityFunctions::icontains( UtilityFunctions::file_extension(displayName), "csv" )
+      //&& SpecUtils::icontains( SpecUtils::file_extension(displayName), "csv" )
       && header_contains("Centroid")
       && header_contains("Net_Area")
       && header_contains("FWHM") )
@@ -1470,7 +1472,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 {
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   if( name.length() > 4
-     && UtilityFunctions::iequals( name.substr(name.length()-4), ".zip")
+     && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
     return;
 #endif
@@ -1514,7 +1516,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string errormsg )
 {
   //make sure we dont display the whole path
-  string lastpart = UtilityFunctions::filename(filename);
+  string lastpart = SpecUtils::filename(filename);
   if( lastpart.empty() )
     lastpart = filename;
   if( lastpart.size() > 12 )
@@ -1699,8 +1701,8 @@ void SpecMeasManager::loadSelected( const SpectrumType type,
 
   if( !meas )
   {
-    cerr << SRC_LOCATION << "\n\tSerious error, couldnt parse file" << endl;
-    passMessage( "Couldn't parse file!", SRC_LOCATION, 3 );
+    cerr << "SpecMeasManager::loadSelected(...)\n\tSerious error, couldnt parse file" << endl;
+    passMessage( "Couldn't parse file!", "", 3 );
     return;
   }//if( !meas )
 
@@ -1730,7 +1732,7 @@ void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
   
   if( row < 0 )
   {
-    cerr << SRC_LOCATION << "\n\tError uploading file "
+    cerr << "SpecMeasManager::finishQuickUpload(...)\n\tError uploading file "
          << upload->clientFileName() << endl;
     return;
   } // if( row < 0 )
@@ -1828,7 +1830,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     
     //Make sure the calbration ID isnt too long
     string label = *iter;
-    UtilityFunctions::utf8_limit_str_size( label, 15 );
+    SpecUtils::utf8_limit_str_size( label, 15 );
     
     button = new WPushButton( label );
     //layout->addWidget( button, row, col );
@@ -2429,7 +2431,7 @@ void SpecMeasManager::removeSelected()
     
     if( selectedFiles.size() < 1 )
     {
-        cerr << SRC_LOCATION << "\n\tThere are " << selectedFiles.size()
+        cerr << "SpecMeasManager::removeSelected()\n\tThere are " << selectedFiles.size()
         << " selected files" << endl;
         return;
     } // if( selectedFiles.size() != 1 )
@@ -2623,7 +2625,7 @@ std::shared_ptr<SpecMeas>
 
       if( model_row >= (int)sample_numbers.size() )
       {
-        cerr << SRC_LOCATION << endl << "\t"
+        cerr << "SpecMeasManager::selectedToMeasurementInfo()\n\t"
              << "Warning, serious logic error here, please correct" << endl;
         cerr << "sample_numbers.size()=" << sample_numbers.size() << endl;
         cerr << "model_row=" << model_row << endl;
@@ -2726,14 +2728,14 @@ void SpecMeasManager::newFileFromSelection()
     string output( wApp->sessionId()
                                     + "_" + std::to_string(customnum++) );
 
-    output = UtilityFunctions::temp_file_name( output, InterSpecApp::tempDirectory() );
+    output = SpecUtils::temp_file_name( output, InterSpecApp::tempDirectory() );
 
     { // Begin codeblock to write file.
       ofstream ofs( output.generic_string().c_str(), ios::binary|ios::out );
       if( !ofs.is_open() )
       {
         stringstream msg;
-        msg << SRC_LOCATION << ":\n\tCould not spectrum file - " << output;
+        msg << "SpecMeasManager::newFileFromSelection():\n\tCould not spectrum file - " << output;
         throw runtime_error( msg.str() );
       } // if( fileptr == 0 )
 
@@ -2758,7 +2760,7 @@ void SpecMeasManager::newFileFromSelection()
 #endif
     }
 
-    if( !UtilityFunctions::remove_file( output ) )
+    if( !SpecUtils::remove_file( output ) )
     {
       stringstream msg;
       msg << "Failed to remove temporary file: " << output;
@@ -3576,7 +3578,7 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload )
 bool SpecMeasManager::loadFromFileSystem( const string &name, SpectrumType type,
                                        ParserType parseType )
 {
-  const string origName = UtilityFunctions::filename( name );
+  const string origName = SpecUtils::filename( name );
   
   try
   {
@@ -3603,7 +3605,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpectrumType type,
       test.close();
       
       if( iszip
-         /*&& UtilityFunctions::iequals( origName.substr(origName.length()-4), ".zip")*/
+         /*&& SpecUtils::iequals_ascii( origName.substr(origName.length()-4), ".zip")*/
          && handleZippedFile( origName, name, type ) )
       return true;
     }
@@ -3813,8 +3815,7 @@ void SpecMeasManager::cleanupQuickSaveAsDialog( AuxWindow *dialog, WApplication 
     
     app->triggerUpdate();
   }else
-    cerr << endl << SRC_LOCATION
-         << "\n\tFailed to get app lock - not doing anything!\n\n" << endl;
+    cerr << "\nSpecMeasManager::cleanupQuickSaveAsDialog(...)\n\tFailed to get app lock - not doing anything!\n\n" << endl;
 }//void cleanupQuickSaveAsDialog(...)
 
 
@@ -3860,7 +3861,7 @@ void SpecMeasManager::finishStoreAsSpectrumInDb( Wt::WLineEdit *nameWidget,
   std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( meas );
   if( !header )
   {
-    cerr << SRC_LOCATION << "\n\tFailed to save file to DB." << endl;
+    cerr << "SpecMeasManager::finishStoreAsSpectrumInDb(...)\n\tFailed to save file to DB." << endl;
     passMessage( "Error saving to database", "", WarningWidget::WarningMsgHigh );
     return;
   }//if( !header )
@@ -3874,7 +3875,7 @@ void SpecMeasManager::finishStoreAsSpectrumInDb( Wt::WLineEdit *nameWidget,
 
   if( !entry )
   {
-    cerr << SRC_LOCATION << "\n\tFailed to save file to DB, apparently" << endl;
+    cerr << "SpecMeasManager::finishStoreAsSpectrumInDb(...)\n\tFailed to save file to DB, apparently" << endl;
     passMessage( "Error saving to database", "", WarningWidget::WarningMsgHigh );
     return;
   }

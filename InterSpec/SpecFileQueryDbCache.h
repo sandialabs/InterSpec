@@ -36,8 +36,8 @@
 #include <Wt/Dbo/Dbo>
 #include <Wt/Dbo/WtSqlTraits>
 
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/EnergyCalibration.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 //Forward declarations and Wt::Dbo::overhead ish. 
 namespace Wt {

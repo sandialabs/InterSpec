@@ -38,9 +38,10 @@
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/SpecFileQuery.h"
 //#include "InterSpec/InterSpecApp.h" //for passMessage debugging
-#include "SpecUtils/UtilityFunctions.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
 
@@ -95,10 +96,10 @@ namespace
   
   bool xml_files_small_enough( const std::string &filename, void *userdata )
   {
-    if( !UtilityFunctions::iends_with(filename, ".xml") )
+    if( !SpecUtils::iends_with(filename, ".xml") )
       return false;
     
-    const size_t fsize = UtilityFunctions::file_size(filename);
+    const size_t fsize = SpecUtils::file_size(filename);
     if( (fsize < SpecFileQuery::EventXmlTest::sm_min_event_xml_file_size)
        || (fsize > SpecFileQuery::EventXmlTest::sm_max_event_xml_file_size) )
       return false;
@@ -174,7 +175,7 @@ namespace Wt {
     bool do_splitting( const std::string &data, set<float> &v )
     {
       vector<float> valfloats;
-      if( !UtilityFunctions::split_to_floats( data.c_str(), data.size(), valfloats ) )
+      if( !SpecUtils::split_to_floats( data.c_str(), data.size(), valfloats ) )
       {
         cerr << "do_splitting: Failed to split to floats" << endl;
         return false;
@@ -195,7 +196,7 @@ namespace Wt {
     bool do_splitting( const std::string &data, set<T> &v )
     {
       vector<long long> valints;
-      if( !UtilityFunctions::split_to_long_longs( data.c_str(), data.size(), valints ) )
+      if( !SpecUtils::split_to_long_longs( data.c_str(), data.size(), valints ) )
       {
         cerr << "read_pod_set: Failed to split to long long" << endl;
         return false;
@@ -678,7 +679,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
         info.show_in_gui_table = static_cast<bool>( showInGui );
         
         
-      const size_t len = UtilityFunctions::utf8_str_len(info.m_label.c_str(), info.m_label.size());
+      const size_t len = SpecUtils::utf8_str_len(info.m_label.c_str(), info.m_label.size());
       if( len==0 || len > 32 )
         throw runtime_error( "The Event XML query condition '" + info.m_label
                             + "' has an invalid label; must be between 1 and 32 characters." );
@@ -688,11 +689,11 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       if( !type.isNull() && type.type()==Json::StringType )
         typestr = static_cast<const string &>(type);
       
-      if( UtilityFunctions::iequals(typestr, "select") )
+      if( SpecUtils::iequals_ascii(typestr, "select") )
         info.m_type = EventXmlFilterInfo::InputType::Select;
-      else if( UtilityFunctions::iequals(typestr, "text") )
+      else if( SpecUtils::iequals_ascii(typestr, "text") )
         info.m_type = EventXmlFilterInfo::InputType::Text;
-      else if( UtilityFunctions::iequals(typestr, "date") )
+      else if( SpecUtils::iequals_ascii(typestr, "date") )
         info.m_type = EventXmlFilterInfo::InputType::Date;
       else
         throw runtime_error( "The Event XML query condition '" + info.m_label
@@ -717,7 +718,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       if( !placeholder.isNull() && placeholder.type()==Json::StringType )
       {
         info.m_placeholder = Wt::Utils::htmlEncode( static_cast<const string &>(placeholder) );
-        const size_t len = UtilityFunctions::utf8_str_len(info.m_placeholder.c_str(), info.m_placeholder.size());
+        const size_t len = SpecUtils::utf8_str_len(info.m_placeholder.c_str(), info.m_placeholder.size());
         if( len > 64 )
           throw runtime_error( "The Event XML query condition '" + info.m_label
                               + "' has aa placeholder text larger than 64 characters (not allowed)." );
@@ -741,8 +742,8 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
           throw runtime_error( "The Event XML query condition '" + info.m_label
                               + "' has an array entry to 'operators' that is not a string." );
         string strval = static_cast<const string &>(op);
-        UtilityFunctions::trim( strval );
-        UtilityFunctions::to_lower( strval );
+        SpecUtils::trim( strval );
+        SpecUtils::to_lower_ascii( strval );
         
         switch( info.m_type )
         {
@@ -789,8 +790,8 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
               throw runtime_error( "The Event XML query condition '" + info.m_label
                                   + "' has an array entry to 'discreet_options' that is not a string." );
             string strval = Wt::Utils::htmlEncode( static_cast<const string &>(op) );
-            UtilityFunctions::trim( strval );
-            const size_t len = UtilityFunctions::utf8_str_len(strval.c_str(), strval.size());
+            SpecUtils::trim( strval );
+            const size_t len = SpecUtils::utf8_str_len(strval.c_str(), strval.size());
             if( len==0 )
               throw runtime_error( "The Event XML query condition '" + info.m_label
                                   + "' has an empty discreet option (not allowed)." );
@@ -879,11 +880,11 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   reset();
   
   file_path = filepath;
-  is_file = UtilityFunctions::is_file(filepath);
+  is_file = SpecUtils::is_file(filepath);
   if( !is_file )
     return;
   
-  file_size = UtilityFunctions::file_size(filepath);
+  file_size = SpecUtils::file_size(filepath);
   file_path_hash = std::hash<std::string>()(filepath);
   
   MeasurementInfo meas;
@@ -892,7 +893,7 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   {
     //see if "<event>" is in the first 128 bytes.
 #ifdef _WIN32
-    const std::wstring wfilepath = UtilityFunctions::convert_from_utf8_to_utf16( filepath );
+    const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16( filepath );
     ifstream datstrm( wfilepath.c_str(), ios_base::binary|ios_base::in );
 #else
     ifstream datstrm( filepath.c_str(), ios_base::binary|ios_base::in );
@@ -990,8 +991,8 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
   if( xmlfilters.empty() )
     return;
   
-  const auto path = UtilityFunctions::parent_path( filepath );
-  auto candidates = UtilityFunctions::ls_files_in_directory( path, &xml_files_small_enough, nullptr );
+  const auto path = SpecUtils::parent_path( filepath );
+  auto candidates = SpecUtils::ls_files_in_directory( path, &xml_files_small_enough, nullptr );
   
   //Assume all xmlfilters have the same filter.
   //   ToDo: add development check for this
@@ -1000,7 +1001,7 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
   for( const auto &xmlfilename : candidates )
   {
 #ifdef _WIN32
-    const std::wstring wxmlfilename = UtilityFunctions::convert_from_utf8_to_utf16( xmlfilename );
+    const std::wstring wxmlfilename = SpecUtils::convert_from_utf8_to_utf16( xmlfilename );
     ifstream f( wxmlfilename.c_str() );
 #else
     ifstream f( xmlfilename.c_str() );
@@ -1013,7 +1014,7 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
     {
       string start( 128, ' ');
       f.read( &(start[0]), 127 );
-      if( !UtilityFunctions::icontains(start, base_node_test) )
+      if( !SpecUtils::icontains(start, base_node_test) )
         continue;
     }//if( !base_node_test.empty() )
     
@@ -1076,7 +1077,7 @@ SpecFileQueryDbCache::SpecFileQueryDbCache( const bool use_db_caching,
   
   if( m_use_db_caching && !m_using_persist_caching )
   {
-    string db_location = UtilityFunctions::temp_file_name( "interspec_file_query", UtilityFunctions::temp_dir() );
+    string db_location = SpecUtils::temp_file_name( "interspec_file_query", SpecUtils::temp_dir() );
     m_use_db_caching = open_db( db_location, true );
   }//if( m_use_db_caching )
 }//SpecFileQueryDbCache( constructor )
@@ -1100,17 +1101,17 @@ SpecFileQueryDbCache::~SpecFileQueryDbCache()
     m_db.reset();
     
     if( !m_using_persist_caching )
-      UtilityFunctions::remove_file( m_db_location );
+      SpecUtils::remove_file( m_db_location );
   }//if( m_use_db_caching )
 }//~SpecFileQueryDbCache()
 
 
 std::string SpecFileQueryDbCache::construct_persisted_db_filename( std::string persisted_path )
 {
-  UtilityFunctions::make_canonical_path(persisted_path);
+  SpecUtils::make_canonical_path(persisted_path);
   
   const auto path_hash = std::hash<std::string>()( persisted_path );
-  return UtilityFunctions::append_path( persisted_path, "InterSpec_file_query_cache_" + std::to_string(path_hash) + ".sqlite3" );
+  return SpecUtils::append_path( persisted_path, "InterSpec_file_query_cache_" + std::to_string(path_hash) + ".sqlite3" );
 }//std::string construct_persisted_db_filename( std::string basepath )
 
 
@@ -1149,15 +1150,15 @@ bool SpecFileQueryDbCache::open_db( const std::string &path, const bool create_t
 
 bool SpecFileQueryDbCache::init_existing_persisted_db()
 {
-  if( !UtilityFunctions::is_directory( m_fs_path ) )
+  if( !SpecUtils::is_directory( m_fs_path ) )
     return false;
   
-  if( !UtilityFunctions::can_rw_in_directory( m_fs_path ) )
+  if( !SpecUtils::can_rw_in_directory( m_fs_path ) )
     return false;
   
   const string persisted_path = construct_persisted_db_filename(m_fs_path);
   
-  if( !UtilityFunctions::is_file( persisted_path ) )
+  if( !SpecUtils::is_file( persisted_path ) )
     return false;
   
   try
@@ -1197,7 +1198,7 @@ bool SpecFileQueryDbCache::init_existing_persisted_db()
       //  still running.
       
       /*
-       if( UtilityFunctions::file_size( persisted_path ) < 16 * 1024 )
+       if( SpecUtils::file_size( persisted_path ) < 16 * 1024 )
        {
          //Delete the file and create a new one.
        } else
@@ -1378,7 +1379,7 @@ void SpecFileQueryDbCache::cache_results( const std::vector<std::string> &&files
         std::lock_guard<std::mutex> lock( m_db_mutex );
         
         const long long filenamehash = static_cast<long long>( std::hash<std::string>()(filename) );
-        const size_t filesize = UtilityFunctions::file_size(filename);
+        const size_t filesize = SpecUtils::file_size(filename);
         
         Wt::Dbo::Transaction trans( *m_db_session );
         auto results = m_db_session->find<SpecFileInfoToQuery>().where( "file_path_hash = ?" ).bind(filenamehash).resultList();
@@ -1512,14 +1513,14 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
     if( init_existing_persisted_db() )
     {
       if( old_db != m_db_location )
-        UtilityFunctions::remove_file(old_db);
+        SpecUtils::remove_file(old_db);
       return;
     }
     
     const string newfilename = construct_persisted_db_filename( m_fs_path );
-    if( UtilityFunctions::iends_with( newfilename, ".sqlite3" ) //JIC
-        && UtilityFunctions::is_file(newfilename) )
-      UtilityFunctions::remove_file(newfilename);
+    if( SpecUtils::iends_with( newfilename, ".sqlite3" ) //JIC
+        && SpecUtils::is_file(newfilename) )
+      SpecUtils::remove_file(newfilename);
     
     if( m_db && m_db_session )
     {
@@ -1534,9 +1535,9 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
       m_db_session.reset();
       m_db.reset();
 
-      if( UtilityFunctions::is_file(m_db_location) ) //This is being a little over-cautious, but whatever.
+      if( SpecUtils::is_file(m_db_location) ) //This is being a little over-cautious, but whatever.
       {
-        if( !UtilityFunctions::rename_file( m_db_location, newfilename ) )
+        if( !SpecUtils::rename_file( m_db_location, newfilename ) )
         {
           m_db_location = "";
           m_use_db_caching = false;
@@ -1560,7 +1561,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
       }else
       {
         //We can actually fall through here, and a new data base will attempt to be made
-      }//if( UtilityFunctions::is_file(m_db_location) )
+      }//if( SpecUtils::is_file(m_db_location) )
     }//if( had a cache database )
     
     if( open_db( newfilename, true ) )
@@ -1575,12 +1576,12 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
 
   
   //if we're here, we want to stop using a persisted database
-  if( UtilityFunctions::is_file(m_db_location) )
+  if( SpecUtils::is_file(m_db_location) )
   {
     bool create_tables = false;
-    string newname = UtilityFunctions::temp_file_name( "interspec_file_query", UtilityFunctions::temp_dir() );
+    string newname = SpecUtils::temp_file_name( "interspec_file_query", SpecUtils::temp_dir() );
     
-    if( !UtilityFunctions::rename_file(m_db_location, newname) )
+    if( !SpecUtils::rename_file(m_db_location, newname) )
     {
 #if( PERFORM_DEVELOPER_CHECKS )
       char buffer[2048];
@@ -1589,7 +1590,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
       log_developer_error( BOOST_CURRENT_FUNCTION, "Failed to rename persisted file from." );
 #endif
       create_tables = true;
-      newname = UtilityFunctions::temp_file_name( "interspec_file_query", UtilityFunctions::temp_dir() );
+      newname = SpecUtils::temp_file_name( "interspec_file_query", SpecUtils::temp_dir() );
     }
     
     if( open_db(newname, create_tables) )
@@ -1603,7 +1604,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
   }//if( is_file(m_db_location) )
   
   
-  const string newname = UtilityFunctions::temp_file_name( "interspec_file_query", UtilityFunctions::temp_dir() );
+  const string newname = SpecUtils::temp_file_name( "interspec_file_query", SpecUtils::temp_dir() );
   if( open_db(newname, true) )
     return;
   
@@ -1634,7 +1635,7 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
   }
   
   const long long filenamehash = static_cast<long long>( std::hash<std::string>()(filepath) );
-  const size_t filesize = UtilityFunctions::file_size(filepath);
+  const size_t filesize = SpecUtils::file_size(filepath);
   
   try
   {

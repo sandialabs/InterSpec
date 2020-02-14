@@ -34,11 +34,12 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/IsotopeId.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/SpecUtilsAsync.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSelectionAids.h"
@@ -134,10 +135,10 @@ map<const SandiaDecay::Nuclide *, int> characteristics(
   
   {//begin codeblock to read characteristic gammas
     string line;
-    const string filename = UtilityFunctions::append_path( dataDirectory(), "CharacteristicGammas.txt" );
+    const string filename = SpecUtils::append_path( dataDirectory(), "CharacteristicGammas.txt" );
     
 #ifdef _WIN32
-    const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
     ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
 #else
     ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
@@ -145,11 +146,11 @@ map<const SandiaDecay::Nuclide *, int> characteristics(
     
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     
-    while( UtilityFunctions::safe_get_line( characteristicFile, line ) )
+    while( SpecUtils::safe_get_line( characteristicFile, line ) )
     {
       vector<string> fields;
-      UtilityFunctions::trim( line );
-      UtilityFunctions::split( fields, line, " \t" );
+      SpecUtils::trim( line );
+      SpecUtils::split( fields, line, " \t" );
       if( fields.size() != 2 )
         continue;
       
@@ -519,20 +520,20 @@ void findCandidates( vector<string> &suggestednucs,
                                   = std::make_shared<DetectorPeakResponse>();
       detector = detPtr;
       
-      const string basename = UtilityFunctions::append_path( dataDirectory(), "GenericGadrasDetectors" );
+      const string basename = SpecUtils::append_path( dataDirectory(), "GenericGadrasDetectors" );
       
-      string csvfilename = UtilityFunctions::append_path( basename, "HPGe 40%/Efficiency.csv" );
-      string datFilename = UtilityFunctions::append_path( basename, "HPGe 40%/Detector.dat" );
+      string csvfilename = SpecUtils::append_path( basename, "HPGe 40%/Efficiency.csv" );
+      string datFilename = SpecUtils::append_path( basename, "HPGe 40%/Detector.dat" );
       
       if( data->GetNbinsX() <= 2050 )
       {
-        csvfilename = UtilityFunctions::append_path( basename, "NaI 3x3/Efficiency.csv" );
-        datFilename = UtilityFunctions::append_path( basename, "NaI 3x3/Detector.dat" );
+        csvfilename = SpecUtils::append_path( basename, "NaI 3x3/Efficiency.csv" );
+        datFilename = SpecUtils::append_path( basename, "NaI 3x3/Detector.dat" );
       }//if( this is a NaI or other low resolution detector )
       
 #ifdef _WIN32
-      const std::wstring wcsvfilename = UtilityFunctions::convert_from_utf8_to_utf16(csvfilename);
-      const std::wstring wdatFilename = UtilityFunctions::convert_from_utf8_to_utf16(datFilename);
+      const std::wstring wcsvfilename = SpecUtils::convert_from_utf8_to_utf16(csvfilename);
+      const std::wstring wdatFilename = SpecUtils::convert_from_utf8_to_utf16(datFilename);
       ifstream csv( wcsvfilename.c_str(), ios_base::binary|ios_base::in );
       ifstream datFile( wdatFilename.c_str(), ios_base::binary|ios_base::in );
 #else
@@ -630,10 +631,10 @@ void findCharacteristics( vector<string> &characteristicnucs,
   
   //We could probably cache the parsed file into memorry, to save CPU, but
   //  whatever for now.
-  const string filename = UtilityFunctions::append_path( dataDirectory(), "PhotoPeak.lis" );
+  const string filename = SpecUtils::append_path( dataDirectory(), "PhotoPeak.lis" );
 
 #ifdef _WIN32
-  const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
   ifstream input( wfilename.c_str(), ios_base::binary | ios_base::in );
 #else
   ifstream input( filename.c_str(), ios_base::binary | ios_base::in );
@@ -674,7 +675,7 @@ void findCharacteristics( vector<string> &characteristicnucs,
   string line;
   char buff[64];
   
-  while( UtilityFunctions::safe_get_line( input, line ) )
+  while( SpecUtils::safe_get_line( input, line ) )
   {
     //Example lines:
     //    " 2836.35  Al n-gamma          1.851	1.548"
@@ -691,7 +692,7 @@ void findCharacteristics( vector<string> &characteristicnucs,
     try
     {
       string energystr = line.substr( 0, 9 );
-      UtilityFunctions::trim( energystr );
+      SpecUtils::trim( energystr );
       double energy = std::stod( energystr.c_str() );
       
       if( energy < minenergy )
@@ -703,7 +704,7 @@ void findCharacteristics( vector<string> &characteristicnucs,
       const double diff = fabs( mean - energy );
       
       string nucstr = line.substr( 10, 16 );
-      UtilityFunctions::trim( nucstr );
+      SpecUtils::trim( nucstr );
       
       if( nucstr.size() < 2 )
         continue;
@@ -808,7 +809,7 @@ void findCharacteristics( vector<string> &characteristicnucs,
     {
       
     }//try / catch
-  }//while( UtilityFunctions::safe_get_line( input, line ) )
+  }//while( SpecUtils::safe_get_line( input, line ) )
   
   
   for( map<double,vector<string> >::const_iterator i = results.begin();
@@ -1180,20 +1181,20 @@ void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
   for( map<string,int>::iterator i = nsources.begin(); i != nsources.end(); ++i )
   {
     //Not a complete list...
-    if( UtilityFunctions::starts_with(i->first, "K40" )
-        || UtilityFunctions::starts_with(i->first, "U235" )
-        || UtilityFunctions::starts_with(i->first, "Th232" )
-        || UtilityFunctions::starts_with(i->first, "Ra226" )
-        || UtilityFunctions::starts_with(i->first, "U238" )
-        || UtilityFunctions::starts_with(i->first, "F18" )
-        || UtilityFunctions::starts_with(i->first, "Cs137" )
-        || UtilityFunctions::starts_with(i->first, "Co60" )
-        || UtilityFunctions::starts_with(i->first, "Na22" )
-        || UtilityFunctions::starts_with(i->first, "Ba133 " )
-        || UtilityFunctions::starts_with(i->first, "Na22" )
-        || UtilityFunctions::starts_with(i->first, "Pu239" )
-        || UtilityFunctions::starts_with(i->first, "Np239" )
-        || UtilityFunctions::starts_with(i->first, "Pu241" ) )
+    if( SpecUtils::starts_with(i->first, "K40" )
+        || SpecUtils::starts_with(i->first, "U235" )
+        || SpecUtils::starts_with(i->first, "Th232" )
+        || SpecUtils::starts_with(i->first, "Ra226" )
+        || SpecUtils::starts_with(i->first, "U238" )
+        || SpecUtils::starts_with(i->first, "F18" )
+        || SpecUtils::starts_with(i->first, "Cs137" )
+        || SpecUtils::starts_with(i->first, "Co60" )
+        || SpecUtils::starts_with(i->first, "Na22" )
+        || SpecUtils::starts_with(i->first, "Ba133 " )
+        || SpecUtils::starts_with(i->first, "Na22" )
+        || SpecUtils::starts_with(i->first, "Pu239" )
+        || SpecUtils::starts_with(i->first, "Np239" )
+        || SpecUtils::starts_with(i->first, "Pu241" ) )
       i->second += 1;
   }
   

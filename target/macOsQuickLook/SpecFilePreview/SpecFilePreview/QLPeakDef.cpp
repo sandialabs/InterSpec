@@ -13,8 +13,9 @@
 
    
 #include "QLPeakDef.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+
 
 
 using namespace std;
@@ -474,7 +475,7 @@ void QLPeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &c
     if( !node || !node->value() )
       throw runtime_error( "Continuum didnt have Coefficient Values" );
     
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), contents );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), contents );
     m_values.resize( contents.size() );
     for( size_t i = 0; i < contents.size(); ++i )
       m_values[i] = contents[i]; 
@@ -484,7 +485,7 @@ void QLPeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &c
     if( !node || !node->value() )
       throw runtime_error( "Continuum didnt have Coefficient Uncertainties" );  
     
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), contents );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), contents );
     m_uncertainties.resize( contents.size() );
     for( size_t i = 0; i < contents.size(); ++i )
       m_uncertainties[i] = contents[i]; 
@@ -494,7 +495,7 @@ void QLPeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &c
     if( !node || !node->value() )
       throw runtime_error( "Continuum didnt have Coefficient Fittable" );  
     
-    UtilityFunctions::split_to_floats( node->value(), node->value_size(), contents );
+    SpecUtils::split_to_floats( node->value(), node->value_size(), contents );
     m_fitForValue.resize( contents.size() );
     for( size_t i = 0; i < contents.size(); ++i )
       m_fitForValue[i] = (contents[i] > 0.5f); 

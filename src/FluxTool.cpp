@@ -31,11 +31,11 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/HelpSystem.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/RowStretchTreeView.h"
 
 using namespace std;
@@ -538,8 +538,8 @@ namespace FluxToolImp
       auto meas = m_fluxtool->m_interspec->measurment(SpectrumType::kForeground);
       if( meas && !meas->filename().empty() )
       {
-        filename = UtilityFunctions::filename( meas->filename() );
-        const string extension = UtilityFunctions::file_extension( filename );
+        filename = SpecUtils::filename( meas->filename() );
+        const string extension = SpecUtils::file_extension( filename );
         filename = filename.substr( 0, filename.size() - extension.size() );
         if( filename.size() )
           filename += "_";

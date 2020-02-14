@@ -67,11 +67,12 @@
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/GadrasSpecFunc.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -771,7 +772,7 @@ void DoseCalcWidget::init()
   
   try
   {
-    string continuumData = UtilityFunctions::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
+    string continuumData = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
     
     m_scatter.reset( new GadrasScatterTable( continuumData ) );
   }catch( std::exception &e )
@@ -977,7 +978,7 @@ void DoseCalcWidget::init()
         {
           string val = u.first;
           const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
-          UtilityFunctions::ireplace_all( val, "&mu;", (const char *)utf8mu /*"\u03BC"*/ );
+          SpecUtils::ireplace_all( val, "&mu;", (const char *)utf8mu /*"\u03BC"*/ );
           m_doseEnterUnits->addItem( WString::fromUTF8(val) );
         }
         
@@ -1023,7 +1024,7 @@ void DoseCalcWidget::init()
         {
           string val = u.first;
           const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
-          UtilityFunctions::ireplace_all( val, "&mu;", (const char *)utf8mu /*"\u03BC"*/ );
+          SpecUtils::ireplace_all( val, "&mu;", (const char *)utf8mu /*"\u03BC"*/ );
           m_activityEnterUnits->addItem( WString::fromUTF8(val) );
         }
         
@@ -1037,7 +1038,7 @@ void DoseCalcWidget::init()
 
 		    string actstr = "200 &mu;Ci";
 		    const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
-		    UtilityFunctions::ireplace_all(actstr, "&mu;", (char *)utf8mu /*"\u03BC"*/);
+		    SpecUtils::ireplace_all(actstr, "&mu;", (char *)utf8mu /*"\u03BC"*/);
 
         m_activityAnswer->setText( WString::fromUTF8(actstr) );
         m_activityAnswer->addStyleClass( "DoseAnswerTxt" );
@@ -1351,7 +1352,7 @@ double DoseCalcWidget::enteredActivity()
   double activity = 0.0;
   string activitystr = m_activityEnter->text().toUTF8();
   
-  UtilityFunctions::trim( activitystr );
+  SpecUtils::trim( activitystr );
   
   const size_t pos = activitystr.find_first_not_of( "0123456789Ee.-+" );  //a regex would be better
   
@@ -1363,8 +1364,8 @@ double DoseCalcWidget::enteredActivity()
     activity *= PhysicalUnits::sm_activityUnitHtmlNameValues.at(unitsInd).second;
   }else
   {
-    const bool hasb = UtilityFunctions::icontains( activitystr, "b" );
-    const bool hasc = UtilityFunctions::icontains( activitystr, "c" );
+    const bool hasb = SpecUtils::icontains( activitystr, "b" );
+    const bool hasc = SpecUtils::icontains( activitystr, "c" );
     
     if( hasb && hasc )
       throw runtime_error( "Invalid activity string, couldnt determine units" );
@@ -1555,7 +1556,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     try
     {
       string diststr = m_distanceEnter->text().toUTF8();
-      UtilityFunctions::trim( diststr );
+      SpecUtils::trim( diststr );
       if( diststr.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
       {
         diststr += " cm";

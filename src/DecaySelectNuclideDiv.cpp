@@ -46,9 +46,9 @@
 #include <Wt/WRegExpValidator>
 #include <Wt/WDoubleValidator>
 
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DecaySelectNuclideDiv.h"
@@ -359,11 +359,11 @@ void DecaySelectNuclide::currentlySelectedIsotope( int &a, int &z, int &meta )
     const string nucStr    = nucWStr.toUTF8();
     string massStr         = massWStr.toUTF8();
 
-    if( UtilityFunctions::iends_with( massStr, "m" ) )
+    if( SpecUtils::iends_with( massStr, "m" ) )
        meta = 1;
-    else if( UtilityFunctions::iends_with( massStr, "m2" ) )
+    else if( SpecUtils::iends_with( massStr, "m2" ) )
        meta = 2;
-    else if( UtilityFunctions::iends_with( massStr, "m3" ) )
+    else if( SpecUtils::iends_with( massStr, "m3" ) )
       meta = 3;
     else
       meta = 0;
@@ -770,8 +770,8 @@ void SimpleIsotopeNameFilterModel::getAlphaAndNumericSubStrs( std::string label,
                                        std::vector<std::string> &alphastrs,
                                        std::vector<std::string> &numericstrs )
 {
-  UtilityFunctions::erase_any_character( label, " -_,\t<>/?[]{}\\|!@#$%^&*();:\"'~`+=" );
-  UtilityFunctions::to_lower( label );
+  SpecUtils::erase_any_character( label, " -_,\t<>/?[]{}\\|!@#$%^&*();:\"'~`+=" );
+  SpecUtils::to_lower_ascii( label );
 
   const string::size_type len = label.length();
 
@@ -866,13 +866,13 @@ void SimpleIsotopeNameFilterModel::filter( const Wt::WString &text )
 
   for( const SandiaDecay::Element *el : elements )
   {
-    const string name   = UtilityFunctions::to_lower_copy( el->name );
-    const string symbol = UtilityFunctions::to_lower_copy( el->symbol );
+    const string name   = SpecUtils::to_lower_ascii_copy( el->name );
+    const string symbol = SpecUtils::to_lower_ascii_copy( el->symbol );
 
     for( string str : alphastrs )
     {
-      if( UtilityFunctions::starts_with( symbol, str.c_str() )
-          || UtilityFunctions::starts_with( name, str.c_str() ) )
+      if( SpecUtils::starts_with( symbol, str.c_str() )
+          || SpecUtils::starts_with( name, str.c_str() ) )
         candidate_elements.insert( el );
     }//for( const string &str : alphastrs )
   }//for( const SandiaDecay::Element *el : elements )
@@ -900,7 +900,7 @@ void SimpleIsotopeNameFilterModel::filter( const Wt::WString &text )
 
         bool numeric_compat = false;
         for( const string &str : numericstrs )
-          numeric_compat |= UtilityFunctions::contains( std::to_string(nuc->massNumber), str.c_str() );
+          numeric_compat |= SpecUtils::contains( std::to_string(nuc->massNumber), str.c_str() );
 
         if( metalevel > 0 )
           numeric_compat = (numeric_compat && (nuc->isomerNumber==metalevel));

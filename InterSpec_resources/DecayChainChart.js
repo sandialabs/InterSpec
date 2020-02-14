@@ -11,6 +11,8 @@ DecayChainChart = function(elem, options) {
   if( (typeof this.options.leftPad) !== 'number' ) this.options.leftPad = 0;
   if( (typeof this.options.topPad) !== 'number' ) this.options.topPad = 0;
   if( (typeof this.options.rightPad) !== 'number' ) this.options.rightPad = 0;
+  if( (typeof this.options.isMobile) !== 'boolean' ) this.options.isMobile = false;
+  if( (typeof this.options.isDecayChain) !== 'boolean' ) this.options.isDecayChain = true;
 
   this.svg = d3.select(this.area).append("svg");
   
@@ -44,58 +46,51 @@ DecayChainChart = function(elem, options) {
   self.xaxisline = self.xaxis.append("line")
     .attr("stroke-width", 2)
     .attr("stroke", "black");
+  self.xaxisarrow = self.xaxis.append("path").attr("stroke", "none");
   
   self.yaxisline = self.yaxis.append("line")
-  .attr("stroke-width", 2)
-  .attr("stroke", "black");
+    .attr("stroke-width", 2)
+    .attr("stroke", "black");
+  self.yaxisarrow = self.yaxis.append("path").attr("stroke", "none");
   
-  /* this.svg = d3.select(self.chart).select('svg'); */
+  self.instructions = this.chart.append("text");
+  self.instructions.attr("class", "DecayChainInstructions" );
   
-  /*
-   Chart vs. Vis vs. Document Body
-   ___________________________________________
-   | _______________________________________ |
-   ||                                       ||
-   ||             decays <g>                ||
-   ||                                       ||
-   ||                                       ||
-   ||_______________________________________||
-   |                                         |
-   |                svg <svg>                |
-   |_________________________________________|
-   */
+  if( this.options.isMobile )
+  {
+    self.instructions.html(
+      '<tspan x="0">Tap nuclide for more information.</tspan>'
+      + (this.options.isDecay ? '<tspan x="0" dy="1em">Touch nuclide for 1 second for particles it gives off.</tspan>'
+        + '<tspan x="0" dy="1em">Click a different source nuclide above to</tspan>'
+        + '<tspan x="0" dy="1em">change displayed decay chain.</tspan>': '')
+    );
+  }else
+  {
+    self.instructions.html(
+      '<tspan x="0" dy="1em">Click nuclide for more information.</tspan>'
+    + (this.options.isDecay ? '<tspan x="0" dy="1em">Double-click nuclide for particles it gives off.</tspan>'
+      + '<tspan x="0" dy="1em">Click a different source nuclide above to</tspan>'
+      + '<tspan x="0" dy="1em">change displayed decay chain.</tspan>': '')
+    );
+  }
   
-  
-  /*
-  this.yAxisBody = this.decays.append("g")
-  .attr("transform", "translate(0,0)");
-  
-  this.xAxisBody = this.decays.append("g")
-  .attr("transform", "translate(0," + this.size.height + ")")
-  ;
-  */
+  this.chart.append("text").attr("class", "NucInfoTxt").attr("x",0).attr("y",0);
   
   
   /* File out member variables (with dummy values) some functions expect to exist */
   this.data = [];
   this.fontSize = this.fontHeight = 8;
-  
-  //ToDo: add axis elements here, and just resize/position in redraw
-  //this.decays.xaxis
-  
+  this.selectedNuclide = null;
   
   this.handleResize();
 }
 
 
 DecayChainChart.prototype.handleResize = function() {
-  
-  console.log( 'DecayChainChart.prototype.handleResize' );
-
   this.redraw();
 }
 
-DecayChainChart.prototype.setDecayData = function( data ){
+DecayChainChart.prototype.setDecayData = function( data, decayFrom ){
   //console.log( 'data=', data );
   
   try
@@ -143,8 +138,12 @@ DecayChainChart.prototype.setDecayData = function( data ){
   
   
   this.data = filteredData;
+  this.selectedNuclide = null;
+  d3.select(".NucInfoTxt").html('');
+  
   this.redraw();
 }
+
 
 
 DecayChainChart.prototype.redraw = function() {
@@ -272,7 +271,18 @@ DecayChainChart.prototype.redraw = function() {
   x_frac_between = Math.min( Math.max(x_frac_between,0), 1);
   y_frac_between = Math.min( Math.max(y_frac_between,0), 1);
   
-  const font_size = min_font_size + 100*Math.min(x_frac_between,y_frac_between);
+  let font_size = min_font_size + 100*Math.min(x_frac_between,y_frac_between);
+  
+  //We also will reduce the font-size so the X and Y axis labels dont take up more
+  //  than 50% of their space.
+  self.yaxistxt.attr("font-size", Math.min(1.3*font_size,105));
+  self.xaxistxt.attr("font-size", Math.min(1.3*font_size,105));
+  const prelim_xtxtw = self.xaxistxt.node().getBoundingClientRect().width;
+  const prelim_ytxth = self.yaxistxt.node().getBoundingClientRect().height;
+  font_size = Math.max( min_font_size, font_size*Math.min( 1, 0.75*w/prelim_xtxtw ) );
+  font_size = Math.max( min_font_size, font_size*Math.min( 1, 0.75*h/prelim_ytxth ) );
+  
+  
   const font_height = twenty_px_h * font_size / 20;
   
   this.fontSize = font_size;
@@ -311,6 +321,7 @@ DecayChainChart.prototype.redraw = function() {
      return "DecayChartNuc "
             + d.nuclide
             + (d.isPrimaryNuc ? " primary" : "")
+            + ((self.selectedNuclide && d.nuclide==self.selectedNuclide.nuclide) ? " selected" : "");
     } )
   .on("mouseover", function(d) {
     d3.selectAll('.DecayChartNuc').classed('MousedOver',false);
@@ -319,7 +330,7 @@ DecayChainChart.prototype.redraw = function() {
   .on("mouseout",  function(d) {
     d3.selectAll('.DecayChartNuc').classed('MousedOver',false);
   } )
-  .on("click", self.nuclideClicked)
+  .on("click", function(d){ self.nuclideClicked(d); } )
   .on("dblclick", function(d){ console.log( 'dblclick', d ); } ) //we need to call back to c++ here
   ;
   
@@ -356,7 +367,7 @@ DecayChainChart.prototype.redraw = function() {
        .on("mouseout",  function(d) {
          d3.selectAll('.DecayChartNuc').classed('MousedOver',false);
        } )
-       .on("click", self.nuclideClicked)
+       .on("click", function(d){ self.nuclideClicked(d); } )
        .html( labeltxt )
        .attr("font-family", "sans-serif")
        .attr("font-size", function(){ return font_size + "px";} )
@@ -366,8 +377,8 @@ DecayChainChart.prototype.redraw = function() {
   
   
   //Set axis font size and reposition.
-  self.yaxistxt.attr("font-size", Math.min(1.5*font_size,105));
-  self.xaxistxt.attr("font-size", Math.min(1.5*font_size,105));
+  self.yaxistxt.attr("font-size", Math.min(1.3*font_size,105));
+  self.xaxistxt.attr("font-size", Math.min(1.3*font_size,105));
   
   const xtxth = self.xaxistxt.node().getBoundingClientRect().height;
   const xtxtw = self.xaxistxt.node().getBoundingClientRect().width;
@@ -380,29 +391,93 @@ DecayChainChart.prototype.redraw = function() {
   
   const xaxisy = chartheight - 1.2*xtxth;
   const strokew = Math.min( Math.max(font_size/10, 1), 2.25 );
+  const xaxisend = 1.2*ytxtw + 1.3*xtxtw;
+  const yaxisx = 1.2*ytxtw;
+  const yaxisendy = xaxisy - 1.15*ytxth;
   
   self.xaxisline
     .attr("x1", 1.2*ytxtw)
     .attr("y1", xaxisy)
-    .attr("x2", 1.2*ytxtw + 1.3*xtxtw)
+    .attr("x2", xaxisend)
     .attr("y2", xaxisy)
     .attr("stroke-width", strokew);
   
   self.yaxisline
-    .attr("x1", 1.2*ytxtw)
+    .attr("x1", yaxisx)
     .attr("y1", xaxisy)
-    .attr("x2", 1.2*ytxtw)
+    .attr("x2", yaxisx)
     .attr("y2", xaxisy - 1.15*ytxth)
     .attr("stroke-width", strokew);
   
+  const triangleLen = 4 + 2*strokew;
   
+  self.xaxisarrow
+      .attr("fill","black")
+      .attr("d","M" + xaxisend + "," + (xaxisy-0.5*triangleLen)
+         + " L" + (xaxisend + triangleLen) + "," + xaxisy
+         + " L" + xaxisend + "," + (xaxisy+0.5*triangleLen)
+         + " Z");
+         
+  self.yaxisarrow
+         .attr("fill","black")
+         .attr("d","M" + (yaxisx-0.5*triangleLen) + "," + yaxisendy
+         + " L" + yaxisx + "," + (yaxisendy - triangleLen)
+         + " L" + (yaxisx+0.5*triangleLen) + "," + yaxisendy
+         + " Z");
+  
+  let inst_font_size = font_size;
+  self.instructions
+      .attr("font-size", inst_font_size);
+  let txtbb = self.instructions.node().getBoundingClientRect();
+  if( txtbb.width > 0.35*chartwidth || txtbb.height > 0.25chartheight ) {
+    inst_font_size = Math.max( min_font_size, inst_font_size*Math.min( 1, 0.35*w/txtbb.width ) );
+    inst_font_size = Math.max( min_font_size, inst_font_size*Math.min( 1, 0.25*h/txtbb.height ) );
+    self.instructions
+        .attr("font-size", inst_font_size);
+    txtbb = self.instructions.node().getBoundingClientRect();
+  }
+  self.instructions
+      .attr("transform", "translate(" + (chartwidth - txtbb.width - 4) + ", 4)")
+      .style("opacity", (atomicMasses.length===0 ? 0 : 1) );
+  
+  
+  let nucinfo_font_size = font_size;
+  let nucinfo = d3.select(".NucInfoTxt");
+  nucinfo.attr("font-size", nucinfo_font_size );
+  let nucinfobb = nucinfo.node().getBoundingClientRect();
+  if( nucinfobb.width > 0.5*chartwidth || nucinfobb.height > 0.5chartheight ) {
+    nucinfo_font_size = Math.max( min_font_size, nucinfo_font_size*Math.min( 1, 0.5*w/nucinfobb.width ) );
+    nucinfo_font_size = Math.max( min_font_size, nucinfo_font_size*Math.min( 1, 0.5*h/nucinfobb.height ) );
+    nucinfo.attr("font-size", nucinfo_font_size );
+    nucinfobb = nucinfo.node().getBoundingClientRect();
+  }
+  nucinfo.attr("transform", "translate(" + (yaxisx+triangleLen) + ", " + (xaxisy - triangleLen - nucinfobb.height + font_size) + ")");
 }//redraw
 
+
 DecayChainChart.prototype.nuclideClicked = function( d ) {
+  this.selectedNuclide = d;
+  
   console.log( 'nuclideClicked: ' + d.nuclide );
   //d is { nuclide: "Pa230", massNumber: 230, atomicNumber: 91, iso: 0, halfLive: "17.40 d", … }
+  
   d3.selectAll('rect.DecayChartNuc').classed('selected',false);
   d3.selectAll('rect.DecayChartNuc.' + d.nuclide).classed('selected',true);
-  //display text
+  
+  let html = '';
+  
+  (d ? d.txtinfo : []).forEach( function(value,index){
+    html += '<tspan x="0" ' + (index!==0 ? 'dy="1em"' : '') + '>' + value + '</tspan>';
+  } );
+  
+  ((d && d.additionalIsos) ? d.additionalIsos :  []).forEach( function(nuc,index){
+    (nuc ? nuc.txtinfo : []).forEach( function(value,index){
+      html += '<tspan x="0" ' + (index===0 ? 'dy="2em"' : 'dy="1em"') + '>' + value + '</tspan>';
+    } );
+  } );
+  
+  d3.select(".NucInfoTxt").html(html);
+  
+  this.redraw();  //needed to reposition txt location
 }
 

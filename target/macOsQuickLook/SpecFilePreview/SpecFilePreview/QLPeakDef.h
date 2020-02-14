@@ -11,10 +11,10 @@
 #include <utility>
 #include <stdexcept>
 
-#include "SpecUtils/SpectrumDataStructs.h"
 
 //Forward declaration
 class QLPeakDef;
+class Measurement;
 
 namespace rapidxml
 {

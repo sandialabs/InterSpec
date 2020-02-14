@@ -41,14 +41,14 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PeakEdit.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/WarningWidget.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
@@ -630,7 +630,7 @@ void PeakEdit::isotopeChanged()
   PeakDef::SourceGammaType gammaType;
   PeakDef::gammaTypeFromUserInput( txt, gammaType );
   
-  UtilityFunctions::trim( txt );
+  SpecUtils::trim( txt );
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   const SandiaDecay::Nuclide *nuc = db->nuclide( txt );
@@ -662,7 +662,7 @@ void PeakEdit::isotopeChanged()
       setNuclideFields( rctn, m_currentPeak.mean() );
     }else
     {
-      if( txt.empty() || UtilityFunctions::iequals(txt.c_str(), "none") )
+      if( txt.empty() || SpecUtils::iequals_ascii(txt.c_str(), "none") )
       {
         m_photoPeakEnergy->clear();
         m_nuclide->setText("");
@@ -1638,9 +1638,9 @@ bool PeakEdit::nuclideInfoIsDirty() const
   
   //Check to se if an element
   string nuctxt = m_nuclide->text().narrow();
-  UtilityFunctions::ireplace_all( nuctxt, "xray", "" );
-  UtilityFunctions::ireplace_all( nuctxt, "x-ray", "" );
-  UtilityFunctions::trim( nuctxt );
+  SpecUtils::ireplace_all( nuctxt, "xray", "" );
+  SpecUtils::ireplace_all( nuctxt, "x-ray", "" );
+  SpecUtils::trim( nuctxt );
   const SandiaDecay::Element *el = db->element( nuctxt );
   if( el )
   {
@@ -2186,9 +2186,9 @@ void PeakEdit::apply()
       //try for an xray
       if( nuctxt.find_first_of( "0123456789" ) == string::npos )
       {
-        UtilityFunctions::ireplace_all( nuctxt, "xray", "" );
-        UtilityFunctions::ireplace_all( nuctxt, "x-ray", "" );
-        UtilityFunctions::trim( nuctxt );
+        SpecUtils::ireplace_all( nuctxt, "xray", "" );
+        SpecUtils::ireplace_all( nuctxt, "x-ray", "" );
+        SpecUtils::trim( nuctxt );
         const SandiaDecay::Element *el = db->element( nuctxt );
         const SandiaDecay::EnergyIntensityPair *nearpair
                        = PeakDef::findNearestXray( el, energy );

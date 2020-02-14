@@ -46,16 +46,16 @@
 #pragma warning(disable:4244)
 
 #include "InterSpec/SpecMeas.h"
-#include "InterSpec/HelpSystem.h"
-#include "InterSpec/WarningWidget.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
+#include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/CompactFileManager.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #if( !ANDROID && !IOS )
 #include "InterSpec/FileDragUploadResource.h"
 #endif
@@ -541,7 +541,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
 //    fulltxt[iter->first - fulltxt.begin()+1] = ',';
   
   vector<string> sampleranges;
-  UtilityFunctions::split( sampleranges, fulltxt, "," );
+  SpecUtils::split( sampleranges, fulltxt, "," );
 
   std::shared_ptr<SpecMeas> meas = m_hostViewer->measurment( type );
 
@@ -560,7 +560,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
   {
     for( string textStr : sampleranges )
     {
-      UtilityFunctions::trim( textStr );
+      SpecUtils::trim( textStr );
       if( textStr.empty() )
         continue;
 
@@ -620,7 +620,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
     updateDisplayedScaleFactorNumbers( m_hostViewer->displayScaleFactor(type), type );
   }catch( exception &e )
   { 
-    cerr << SRC_LOCATION << "\n\t" << e.what() << endl;
+    cerr << "CompactFileManager::handleUserChangeSampleNum( SpectrumType type )" << "\n\t" << e.what() << endl;
     passMessage( "Error changing to requested sample number(s)",
                  "", WarningWidget::WarningMsgHigh );
 
@@ -706,7 +706,7 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
                                   const set<int> &sample_numbers )
 {
   if( spectrum_type < 0 || spectrum_type >= 3 )
-    throw runtime_error( SRC_LOCATION + " - totally unexpected error" );
+    throw runtime_error( "CompactFileManager::handleDisplayChange() - totally unexpected error" );
 
   if( m_foregroundTitle && (spectrum_type==kForeground) )
     m_foregroundTitle->hide();
@@ -800,7 +800,7 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
           title = str;
 #else
           std::string str = title.toUTF8();
-          UtilityFunctions::utf8_limit_str_size( str, 79 );
+          SpecUtils::utf8_limit_str_size( str, 79 );
           title = str;
 #endif
         }//if( m )
@@ -857,7 +857,7 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
     postMsg << "/" << lastNumber;
     m_displayedPostTexts[spectrum_type]->setText( postMsg.str() );
    
-    const string displaySequence = UtilityFunctions::sequencesToBriefString( sample_numbers );
+    const string displaySequence = SpecUtils::sequencesToBriefString( sample_numbers );
     const bool added = (displaySequence.find(',') != string::npos);
     m_displaySampleNumEdits[spectrum_type]->setText( displaySequence );
     

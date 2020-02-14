@@ -85,6 +85,8 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/InterSpecUser.h"
@@ -93,7 +95,6 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/SpecMeasManager.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -855,7 +856,7 @@ double ShieldingSelect::arealDensity() const
 {
   const WString &text = m_arealDensityEdit->text();
   string txtstr = text.toUTF8();
-  UtilityFunctions::trim( txtstr );
+  SpecUtils::trim( txtstr );
   
   if( txtstr.empty() )
     return 0.0;
@@ -906,7 +907,7 @@ const Material *ShieldingSelect::material( const std::string &text )
   {
     const Material *answer = m_materialDB->material( text );
     
-    cerr << SRC_LOCATION << "\n\tPotential err here, should account for"
+    cerr << "ShieldingSelect::material(...)\n\tPotential err here, should account for"
          << " possibly variaed mass fractions!" << endl;
     
     return answer;
@@ -933,7 +934,7 @@ std::shared_ptr<Material> ShieldingSelect::material()
   if( m_isGenericMaterial )
     return std::shared_ptr<Material>();
 
-  const string text = UtilityFunctions::trim_copy( m_materialEdit->text().toUTF8() );
+  const string text = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
   if( m_currentMaterial && text==m_currentMaterialDescrip )
     return m_currentMaterial;
 
@@ -1347,8 +1348,7 @@ void ShieldingSelect::handleIsotopicChange( double fraction,
   ElementToNuclideMap::iterator isos = m_sourceIsotopes.find(element);
   if( isos == m_sourceIsotopes.end() )
   {
-    cerr << endl << SRC_LOCATION
-         << "\n\tSerious programming error I will ignore"  << endl;
+    cerr << "\nShieldingSelect::handleIsotopicChange(...)\n\tSerious programming error I will ignore"  << endl;
     return;
   }//if( isos == m_sourceIsotopes.end() )
 
@@ -1587,7 +1587,7 @@ void ShieldingSelect::handleIsotopicChange( double fraction,
       {
         if( nonNucSrcFrac > 0.0 )
         {
-          cerr << SRC_LOCATION << ": I dont thing the mass fraction statment is corect!" << endl;
+          cerr << "ShieldingSelect::handleIsotopicChange(...): I dont thing the mass fraction statment is corect!" << endl;
           nfp.second = elMassFrac*(1.0-fraction)*nfp.second/nonNucSrcFrac;
         }else
           nfp.second = 0.0;
@@ -1681,7 +1681,7 @@ void ShieldingSelect::updateMassFractionDisplays( std::shared_ptr<const Material
                      " calculation log before trusting the results.",
                      "",
                      WarningWidget::WarningMsgHigh );
-        cerr << endl << SRC_LOCATION << "\n\tSerious programming error here"
+        cerr << endl << "ShieldingSelect::updateMassFractionDisplays(...)\n\tSerious programming error here"
              << endl << endl;
       }//try/catch
 
@@ -1741,7 +1741,7 @@ void ShieldingSelect::removeUncertFromThickness()
   //  will cause the uncertainty to be removed
   string thickstr = m_thicknessEdit->text().toUTF8();
   
-  UtilityFunctions::trim( thickstr );
+  SpecUtils::trim( thickstr );
   
   if( thickstr.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
   {
@@ -1822,8 +1822,8 @@ void ShieldingSelect::handleToggleGeneric()
     m_thicknessDiv->show();
     m_genericMaterialDiv->hide();
     
-    string aNstr = UtilityFunctions::trim_copy( m_atomicNumberEdit->text().toUTF8() );
-    string aDstr = UtilityFunctions::trim_copy( m_arealDensityEdit->text().toUTF8() );
+    string aNstr = SpecUtils::trim_copy( m_atomicNumberEdit->text().toUTF8() );
+    string aDstr = SpecUtils::trim_copy( m_arealDensityEdit->text().toUTF8() );
     
     if( aNstr.empty() || aDstr.empty()
         || std::atof(aDstr.c_str())<=0.0
@@ -1917,7 +1917,7 @@ void ShieldingSelect::handleMaterialChange()
     
     if( !!newMaterial )
     {
-//      if( UtilityFunctions::iequals(newMaterial->name, "void") )
+//      if( SpecUtils::iequals_ascii(newMaterial->name, "void") )
 //      {
 //        if( m_forFitting )
 //        {
@@ -2078,7 +2078,7 @@ void ShieldingSelect::handleMaterialChange()
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
 #endif
   
-  cerr << "\n" << SRC_LOCATION << "\n\tShould remove this call to "
+  cerr << "\nShieldingSelect::handleMaterialChange()\n\tShould remove this call to "
        << "updateMassFractionDisplays(...) its verified the developer checks always pass\n" << endl;
   updateMassFractionDisplays( newMaterial );
 
@@ -2365,7 +2365,7 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
 {
   if( !peak )
   {  //probably wont ever happen
-    cerr << SRC_LOCATION << "\n\tNot a valid row being added" << endl;
+    cerr << "SourceFitModel::insertPeak(...)\n\tNot a valid row being added" << endl;
     return;
   }//if( !peak )
 
@@ -2484,7 +2484,7 @@ void SourceFitModel::peakModelRowsRemovedCallback( Wt::WModelIndex /*index*/,
 
     if( !peak )
     {  //probably wont ever happen
-      cerr << SRC_LOCATION << "\n\tNot a valid row being removed" << endl;
+      cerr << "SourceFitModel::peakModelRowsRemovedCallback(...)\n\tNot a valid row being removed" << endl;
       continue;
     }//if( !peak )
 
@@ -2529,7 +2529,7 @@ void SourceFitModel::peakModelRowsRemovedCallback( Wt::WModelIndex /*index*/,
     
     if( index == m_nuclides.size() )
     {
-      cerr << SRC_LOCATION << "\n\tSerious logic error, fix this ish" << endl;
+      cerr << "SourceFitModel::peakModelRowsRemovedCallback(...)\n\tSerious logic error, fix this ish" << endl;
       cerr << "m_nuclides.size()=" << m_nuclides.size()
            << ", m_peakModel->npeaks()=" << m_peakModel->npeaks()
            << " nuc->symbol=" << nuc->symbol << endl;
@@ -3237,7 +3237,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       break;
 
       case kIsotopeMass:
-        cerr << SRC_LOCATION << "\n\tYou shouldnt be trying to set kIsotopeMass"
+        cerr << "SourceFitModel::setData(...)\n\tYou shouldnt be trying to set kIsotopeMass"
              << endl;
       break;
 
@@ -3286,7 +3286,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       dataChanged().emit( index, index );
   }catch( exception &e )
   {
-    cerr << SRC_LOCATION << "\n\tWarning: exception caught; what="
+    cerr << "SourceFitModel::setData(...)\n\tWarning: exception caught; what="
          << e.what() << endl;
     return false;
   }//try/catch
@@ -3591,7 +3591,7 @@ void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
     snprintf( buffer, sizeof(buffer), "\x3c\x64\x65\x76\x3E=%.2g\xCF\x83", (sqrt(chi2)/nrow) ); //<dev>=13.2σ
   
     WString text = WString::fromUTF8(buffer);
-    const size_t msglen = UtilityFunctions::utf8_str_len( buffer, strlen(buffer) );
+    const size_t msglen = SpecUtils::utf8_str_len( buffer, strlen(buffer) );
   
     const double rightPadding = static_cast<double>( plotAreaPadding(Right) );
     const double charwidth = 16;
@@ -4378,7 +4378,7 @@ void ShieldingSourceDisplay::handleUserDistanceChange()
   string distanceStr = m_distanceEdit->text().toUTF8();
   
   //Default to cm if no distance is given
-  UtilityFunctions::trim( distanceStr );
+  SpecUtils::trim( distanceStr );
   if( distanceStr.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
   {
     distanceStr += " cm";
@@ -4588,7 +4588,7 @@ void ShieldingSourceDisplay::updateChi2Chart()
     //  event loop).
     if( m_chi2Model->rowCount() )
       m_chi2Model->removeRows( 0, m_chi2Model->rowCount() );
-    cerr << SRC_LOCATION << "\n\tCaught:" << e.what() << endl;
+    cerr << "ShieldingSourceDisplay::updateChi2Chart()\n\tCaught:" << e.what() << endl;
   }
   
   
@@ -4643,7 +4643,7 @@ void ShieldingSourceDisplay::finishModelUpload( AuxWindow *window,
     const std::string filename = upload->spoolFileName();
     
     std::vector<char> data;
-    UtilityFunctions::load_file_data( filename.c_str(), data );
+    SpecUtils::load_file_data( filename.c_str(), data );
     
     rapidxml::xml_document<char> new_doc;
     const int flags = rapidxml::parse_normalize_whitespace
@@ -5649,7 +5649,7 @@ void ShieldingSelect::deSerialize(
         last_frac = fraction;
       }catch( std::exception &e )
       {
-        cerr << SRC_LOCATION << "\n\tCaught: " << e.what()
+        cerr << "ShieldingSelect::deSerialize(...)\n\tCaught: " << e.what()
              << " but continuuing anyway" << endl;
       }//try / catch
     }//for( loop over isotope nodes )
@@ -6442,7 +6442,7 @@ void ShieldingSourceDisplay::removeSourceIsotopesFromShieldings( Wt::WModelIndex
   if( firstRow<0 || firstRow>lastRow || lastRow<0 || lastRow>=nrow )
   {
     stringstream msg;
-    msg << SRC_LOCATION << "\n\tfunction called with invalid argument "
+    msg << "ShieldingSourceDisplay::removeSourceIsotopesFromShieldings(...)\n\tfunction called with invalid argument "
         << "- this is a major logic error I think";
     throw std::runtime_error( msg.str() );
   }//if( invalid row )
@@ -6472,7 +6472,7 @@ void ShieldingSourceDisplay::materialModifiedCallback( ShieldingSelect *select )
 {
   if( !select )
   {
-    cerr << SRC_LOCATION << "\n\tShouldnt be here!" << endl;
+    cerr << "ShieldingSourceDisplay::materialModifiedCallback(...)\n\tShouldnt be here!" << endl;
     return;
   }//if( !select )
 
@@ -6489,7 +6489,7 @@ void ShieldingSourceDisplay::materialChangedCallback( ShieldingSelect *select )
 {
   if( !select )
   {
-    cerr << SRC_LOCATION << "\n\tShouldnt be here!" << endl;
+    cerr << "ShieldingSourceDisplay::materialChangedCallback(...)\n\tShouldnt be here!" << endl;
     return;
   }//if( !select )
 
@@ -6518,7 +6518,7 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   if( !select || select->isGenericMaterial() || !select->material() )
   {
     stringstream msg;
-    msg << SRC_LOCATION << "\n\tShould not be here!";
+    msg << "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here!";
     throw std::runtime_error( msg.str() );
   }//if( !select || select->isGenericMaterial() )
 
@@ -6563,7 +6563,7 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   if( !nuclide )
   {
     stringstream msg;
-    msg << SRC_LOCATION << "\n\tShould not be here! "
+    msg << "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here! "
         << "nuc=" << nuc << " and material=" << material->name;
     throw std::runtime_error( msg.str() );
   }//if( !nuclide )
@@ -6581,7 +6581,7 @@ void ShieldingSourceDisplay::updateActivityOfShieldingIsotope( ShieldingSelect *
   if( row < 0 )
   {
     stringstream msg;
-    msg << SRC_LOCATION << "\n\tShould not be here!";
+    msg << "ShieldingSourceDisplay::updateActivityOfShieldingIsotope(...)\n\tShould not be here!";
     throw std::runtime_error( msg.str() );
   }//if( row < 0 )
 
@@ -6878,7 +6878,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       else
         name = "unspecifiedmat_" + std::to_string(i);
 
-      if( !mat /*|| UtilityFunctions::iequals(mat->name, "void")*/ )
+      if( !mat /*|| SpecUtils::iequals_ascii(mat->name, "void")*/ )
         fitThickness = false;
 
       num_fit_params += fitThickness;
@@ -7247,7 +7247,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         
         if( !origMaterial )
         {
-          cerr << SRC_LOCATION << "\n\tNo match for usrmaterial in origMaterial" << endl;
+          cerr << "ShieldingSourceDisplay::updateGuiWithModelFitResults(...)\n\tNo match for usrmaterial in origMaterial" << endl;
           for( const Material *m : massfracFitMaterials )
           {
             if( m->name == usrmaterial->name )
@@ -7286,7 +7286,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         
         select->updateMassFractionDisplays( usrmaterial );
         
-        cerr << SRC_LOCATION << "\n\tThis whole fitting for mass fractions of "
+        cerr << "ShieldingSourceDisplay::updateGuiWithModelFitResults(...)\n\tThis whole fitting for mass fractions of "
         << "nuclides is sketch: for one thing, I dont like that the "
         << "Material object of ShieldingSourceDisplay is mutable, and it "
         << "appears this is necessary; for another, I feel like just "

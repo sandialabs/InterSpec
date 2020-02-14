@@ -31,14 +31,14 @@
 #include <exception>
 #include <algorithm>
 
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/GadrasSpecFunc.h"
 #include "SpecUtils/EnergyCalibration.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 #include "InterSpec/MassAttenuationTool.h"
 
 #ifdef _WIN32
-#include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/Filesystem.h"
 #endif
 
 using namespace std;
@@ -95,7 +95,7 @@ float TransmissionH( const float E, const float AN, const float AD, const float 
 GadrasScatterTable::GadrasScatterTable( const std::string &datafile )
 {
 #ifdef _WIN32
-  const std::wstring wdatafile = UtilityFunctions::convert_from_utf8_to_utf16(datafile);
+  const std::wstring wdatafile = SpecUtils::convert_from_utf8_to_utf16(datafile);
   ifstream input( wdatafile.c_str(), ios::in | ios::binary );
 #else
   ifstream input( datafile.c_str(), ios::in | ios::binary );

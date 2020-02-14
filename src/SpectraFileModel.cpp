@@ -71,19 +71,20 @@
 #include <Wt/WAbstractItemModel>
 
 #include "InterSpec/PeakDef.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpec.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "SpecUtils/SpectrumDataStructs.h"
-#include "InterSpec/InterSpec.h"
-#include "InterSpec/InterSpecApp.h"
-#include "SpecUtils/UtilityFunctions.h"
 
 #if( SpecUtils_ENABLE_D3_CHART )
 #include "SpecUtils/D3SpectrumExport.h"
@@ -294,7 +295,7 @@ SpectraFileHeader::~SpectraFileHeader()
       
       }catch( std::exception &e )
       {
-        cerr << SRC_LOCATION << "Failed to save file to DB with error: "
+        cerr << "SpectraFileHeader::~SpectraFileHeader(): Failed to save file to DB with error: "
              << e.what() << endl;
       }//try / catch
     }else if( m_user && m_fileDbEntry && m_fileDbEntry.session() && !save )
@@ -311,7 +312,7 @@ SpectraFileHeader::~SpectraFileHeader()
     
     if( fileSystemLocation.size() )
     {
-      const bool status = UtilityFunctions::remove_file( fileSystemLocation );;
+      const bool status = SpecUtils::remove_file( fileSystemLocation );;
       if( !status )
         throw runtime_error( m_fileSystemLocation + " didn't exist to delete" );
     }// if we should delete the file
@@ -701,14 +702,14 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   
 #if( PERFORM_DEVELOPER_CHECKS )
   {//begin code block to do check
-    string filepath = UtilityFunctions::temp_file_name("DevTestSaveToDb", InterSpecApp::tempDirectory() );
+    string filepath = SpecUtils::temp_file_name("DevTestSaveToDb", InterSpecApp::tempDirectory() );
     const string filename = filepath + ".n42";
     
     bool written = false;
     
     {
 #ifdef _WIN32
-      const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(filename);
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
       ofstream output( wfilename.c_str(), ios::binary | ios::out );
 #else
       ofstream output( filename.c_str(), ios::binary | ios::out );
@@ -748,7 +749,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
       }
     }//if( written )
     
-    UtilityFunctions::remove_file( filename );
+    SpecUtils::remove_file( filename );
   }//end code block to do check
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
   
@@ -1038,10 +1039,10 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::initFile(
 
   }catch( const std::exception &e )
   {
-    cerr << SRC_LOCATION << " caught exception:\n\t" << e.what() << endl;
+    cerr << "SpectraFileHeader::initFile(...) caught exception:\n\t" << e.what() << endl;
   }catch(...)
   {
-    cerr << SRC_LOCATION << " caught unknown exception!" << endl;
+    cerr << "SpectraFileHeader::initFile(...) caught unknown exception!" << endl;
   }
 
   return std::shared_ptr<SpecMeas>();
@@ -1053,7 +1054,7 @@ void SpectraFileHeader::errorSavingCallback( std::string fileLocation,
 {
   RecursiveLock lock( m_mutex );
   m_fileSystemLocation = "";
-  cerr << SRC_LOCATION << "\n\tThere was an error saving file to location: "
+  cerr << "SpectraFileHeader::errorSavingCallback(...)\n\tThere was an error saving file to location: "
        << fileLocation << " - will attempt to cache it instead, but this is "
        << "no garuntee" << endl;
 
@@ -1090,16 +1091,16 @@ void SpectraFileHeader::saveToFileSystemImmediately( SpecMeas *meas ) const
 
     if( !m_fileSystemLocation.empty() )
     {
-      UtilityFunctions::remove_file( m_fileSystemLocation );
+      SpecUtils::remove_file( m_fileSystemLocation );
       m_fileSystemLocation = "";
     }//if( !m_fileSystemLocation.empty() )
     
-    const string tempfile = UtilityFunctions::temp_file_name( m_displayName, InterSpecApp::tempDirectory() );
+    const string tempfile = SpecUtils::temp_file_name( m_displayName, InterSpecApp::tempDirectory() );
     m_fileSystemLocation = tempfile;
     
     {
 #ifdef _WIN32
-      const std::wstring wfilename = UtilityFunctions::convert_from_utf8_to_utf16(m_fileSystemLocation);
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(m_fileSystemLocation);
       ofstream output( wfilename.c_str(), ios::binary | ios::out );
 #else
       ofstream output( m_fileSystemLocation.c_str(), ios::binary | ios::out );
@@ -1116,7 +1117,7 @@ void SpectraFileHeader::saveToFileSystemImmediately( SpecMeas *meas ) const
 //#endif
   }catch( std::exception &e )
   {
-    cerr << SRC_LOCATION << "\n\tCaught: " << e.what() << endl;
+    cerr << "SpectraFileHeader::saveToFileSystemImmediately(...)\n\tCaught: " << e.what() << endl;
 
     //XXX - should notify user of the error here?
   }//try / catch
@@ -1164,11 +1165,11 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
     {
       RecursiveLock lock( m_mutex );
       if( !m_fileSystemLocation.empty() )
-        UtilityFunctions::remove_file( m_fileSystemLocation );
+        SpecUtils::remove_file( m_fileSystemLocation );
       m_fileSystemLocation = "";
     }catch(...){}
 
-    const string tempfile = UtilityFunctions::temp_file_name( m_displayName, InterSpecApp::tempDirectory() );
+    const string tempfile = SpecUtils::temp_file_name( m_displayName, InterSpecApp::tempDirectory() );
 
     {
       RecursiveLock lock( m_mutex );
@@ -1188,13 +1189,13 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
 //      WServer::instance()->post( m_app->sessionId(), worker );
 //    }else if( m_candidateForSavingToDb )
 //    {
-//      cerr << "\n\n" << SRC_LOCATION << "\n\tSerious error: m_app is invalid"
+//      cerr << "\n\nSpectraFileHeader::saveToFileSystem(...)\n\tSerious error: m_app is invalid"
 //           << endl << endl;
 //    }//if( m_app ) / else
 //#endif
   }catch( std::exception &e )
   {
-    cerr << SRC_LOCATION << "\n\tCaught: " << e.what() << endl;
+    cerr << "SpectraFileHeader::saveToFileSystem(...)\n\tCaught: " << e.what() << endl;
 
     //XXX - should notify user of the error here?
 
@@ -1203,7 +1204,7 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
 
   if( !success )
   {
-    cerr << SRC_LOCATION << "\n\tWarning, couldnt save temp file "
+    cerr << "SpectraFileHeader::saveToFileSystem(...)\n\tWarning, couldnt save temp file "
          << " - am caching instead" << endl;
     if( info )
     {
@@ -1325,7 +1326,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
 //                SpectraHeaderMaker( info, start, end, m_samples.begin()+pos ) );
     }//for( size_t pos = 0; pos < nstart; pos += meas_per_thread )
 
-//    UtilityFunctions::do_asyncronous_work( workers, false );
+//    SpecUtils::do_asyncronous_work( workers, false );
     pool.join();
   }//if( sample_numbers.size() < 250 ) / else
 
@@ -1337,7 +1338,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
 
   if( m_fileSystemLocation.size() )
   {
-    UtilityFunctions::remove_file( m_fileSystemLocation );
+    SpecUtils::remove_file( m_fileSystemLocation );
     m_fileSystemLocation = "";
   }//if( m_fileSystemLocation.size() )
 
@@ -1363,7 +1364,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
   try
   {
     
-    if( !UtilityFunctions::is_file(filename) )
+    if( !SpecUtils::is_file(filename) )
       throw runtime_error( "" );
   }catch(...)
   {
@@ -1380,7 +1381,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
   if( pos != string::npos )
     orig_file_ending = displayFileName.substr( pos+1 );
 
-  UtilityFunctions::to_lower( orig_file_ending );
+  SpecUtils::to_lower_ascii( orig_file_ending );
 
   std::shared_ptr<SpecMeas> info = initFile( filename, parseType, orig_file_ending );
 
@@ -1431,7 +1432,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::parseFile() const
   if( !success )
   {
     stringstream msg;
-    msg << SRC_LOCATION << ":\n\tfor some reason I couldnt parse "
+    msg << "SpectraFileHeader::parseFile():\n\tfor some reason I couldnt parse "
         << m_fileSystemLocation << " using method using the expected native "
         << "binary method - this is odd and probably an internal logic error, "
         << "please report this error";
@@ -1650,7 +1651,7 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
     //  will point to its parent
     SpectraFileHeader *fileHeader = (SpectraFileHeader *)index.internalPointer();
     if( !fileHeader )
-      throw std::runtime_error( string(SRC_LOCATION) + ": Serious logic"
+      throw std::runtime_error( "SpectraFileModel::data(...): Serious logic"
                                 " error, valid WModelIndex should always have a"
                                 " valid internal pointer when it has a parent" );
 
@@ -1661,7 +1662,7 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
 
     if( !found )
     {
-      cerr << SRC_LOCATION << ":\n\tfailed to find spectra, returning empty answer"
+      cerr << "SpectraFileModel::data(...):\n\tfailed to find spectra, returning empty answer"
            << endl;
       return boost::any();
     }//if( !found )
@@ -1921,7 +1922,7 @@ bool SpectraFileModel::removeRows( int row, int count, const WModelIndex &parent
 {
   if( parent.isValid() )
   {
-    cerr << SRC_LOCATION << ":\n\tyou can only remove SpectraFileHeader rows"
+    cerr << "SpectraFileModel::removeRows(...):\n\tyou can only remove SpectraFileHeader rows"
          << endl;
     return false;
   }//if( parent.isValid() )
@@ -1936,7 +1937,7 @@ bool SpectraFileModel::removeRows( int row, int count, const WModelIndex &parent
 
   if( count <= 0 )
   {
-    cerr << SRC_LOCATION << "\n\t: error, trying to remove zero rows" << endl;
+    cerr << "SpectraFileModel::removeRows(...)\n\t: error, trying to remove zero rows" << endl;
     return false;
   }//if( count <= 0 )
 
@@ -1978,7 +1979,7 @@ WModelIndex SpectraFileModel::parent( const WModelIndex &index ) const
     if( parentPtr == m_spectra[row].get() )
       return createIndex( static_cast<int>(row), 0, (void *)NULL );
 
-  cerr << SRC_LOCATION << ":\n\tfailed to find parent for " << parentPtr << endl;
+  cerr << "SpectraFileModel::parent(...):\n\tfailed to find parent for " << parentPtr << endl;
 
   return WModelIndex();
 }//WModelIndex parent( const WModelIndex &index ) const
@@ -2163,7 +2164,7 @@ void *SpectraFileModel::toRawIndex( const Wt::WModelIndex &index ) const
     }//switch( column )
   }catch(...){ return NULL; }
 
-  cerr << SRC_LOCATION << ":\n\tshouldnt have got here" << endl;
+  cerr << "SpectraFileModel::toRawIndex(...):\n\tshouldnt have got here" << endl;
 
   return NULL;
 }//void *toRawIndex( const Wt::WModelIndex &index ) const

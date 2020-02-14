@@ -56,12 +56,12 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DbFileBrowser.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/RowStretchTreeView.h"
 
 
@@ -172,7 +172,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   layout->setRowStretch( 0, 1 );
   
   const string docroot = wApp->docRoot();
-  const string bundle_file = UtilityFunctions::append_path(docroot, "InterSpec_resources/static_text/use_instructions" );
+  const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/use_instructions" );
   m_resourceBundle.use(bundle_file,false);
   
   initVideoInfoMap();
@@ -996,7 +996,7 @@ void UseInfoWindow::loadSample( const Wt::WModelIndex index )
   SpecMeasManager* manager = m_viewer->fileManager();
   
   const string docroot = wApp->docRoot();
-  string filepath = UtilityFunctions::append_path( docroot, val.toUTF8() );
+  string filepath = SpecUtils::append_path( docroot, val.toUTF8() );
   
   manager->loadFromFileSystem( filepath, kForeground, parserType );
 }//void UseInfoWindow::loadSample( const Wt::WModelIndex index )

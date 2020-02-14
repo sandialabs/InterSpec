@@ -50,14 +50,14 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecFileSummary.h"
-#include "SpecUtils/UtilityFunctions.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 #if( USE_GOOGLE_MAP )
 #include <Wt/WGoogleMap>
@@ -1165,7 +1165,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
     case kTimeStamp:
     {
       const string newDateStr = m_timeStamp->text().toUTF8();
-      boost::posix_time::ptime newDate = UtilityFunctions::time_from_string( newDateStr.c_str() );
+      boost::posix_time::ptime newDate = SpecUtils::time_from_string( newDateStr.c_str() );
 
       if( newDate.is_special() )
       {
@@ -1234,7 +1234,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
       
       
       const string newDateStr = m_gpsTimeStamp->text().toUTF8();
-      boost::posix_time::ptime newDate = UtilityFunctions::time_from_string( newDateStr.c_str() );
+      boost::posix_time::ptime newDate = SpecUtils::time_from_string( newDateStr.c_str() );
       
       if( newDate.is_special() && newDateStr.size() )
       {

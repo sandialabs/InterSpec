@@ -41,9 +41,9 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakModel.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
@@ -549,7 +549,7 @@ boost::any PhotopeakDelegate::editState( WWidget *editor ) const
   WContainerWidget *w = dynamic_cast<WContainerWidget *>(editor);
   if( !w )
   {
-    cerr << SRC_LOCATION << "\n\tLogic error - fix me!" << endl;
+    cerr << "PhotopeakDelegate::editState(...)\n\tLogic error - fix me!" << endl;
     return boost::any();
   }//if( !w )
 
@@ -557,7 +557,7 @@ boost::any PhotopeakDelegate::editState( WWidget *editor ) const
 
   if( !lineEdit )
   {
-    cerr << SRC_LOCATION << "\n\tLogic error - fix me!" << endl;
+    cerr << "PhotopeakDelegate::editState(...)\n\tLogic error - fix me!" << endl;
     return boost::any();
   }//if( !lineEdit )
 
@@ -571,7 +571,7 @@ void PhotopeakDelegate::setEditState( WWidget *editor,
   WContainerWidget *w = dynamic_cast<WContainerWidget *>(editor);
   if( !w )
   {
-    cerr << SRC_LOCATION << "\n\tLogic error - fix me!" << endl;
+    cerr << "PhotopeakDelegate::setEditState(...)\n\tLogic error - fix me!" << endl;
     return;
   }
 
@@ -579,7 +579,7 @@ void PhotopeakDelegate::setEditState( WWidget *editor,
 
   if( !lineEdit )
   {
-    cerr << SRC_LOCATION << "\n\tLogic error - fix me!" << endl;
+    cerr << "PhotopeakDelegate::setEditState(...)\n\tLogic error - fix me!" << endl;
     return;
   }
 
@@ -589,7 +589,7 @@ void PhotopeakDelegate::setEditState( WWidget *editor,
     lineEdit->setText( boost::any_cast<WString>(value) );
   }catch(...)
   {
-    cerr << SRC_LOCATION << "\n\tPossible Logic error - fix me!" << endl;
+    cerr << "PhotopeakDelegate::setEditState(...)\n\tPossible Logic error - fix me!" << endl;
     lineEdit->setText( "" );
   }//try / catch
 }//void setEditState( WWidget *editor, const boost::any& value ) const
@@ -884,14 +884,14 @@ void PeakIsotopeNameFilterModel::getAlphaAndNumericSubStrs( std::string text,
                                        std::vector<std::string> &alphastrs,
                                        std::vector<std::string> &numericstrs )
 {
-  UtilityFunctions::erase_any_character( text, "-_,\t<>/?[]{}\\|!@#$%^&*;:\"'~`+=" );
+  SpecUtils::erase_any_character( text, "-_,\t<>/?[]{}\\|!@#$%^&*;:\"'~`+=" );
   vector<string> fields;
-  UtilityFunctions::split( fields, text, " ()" );
+  SpecUtils::split( fields, text, " ()" );
 
   for( string &label : fields )
   {
-    UtilityFunctions::to_lower( label );
-    UtilityFunctions::trim( label );
+    SpecUtils::to_lower_ascii( label );
+    SpecUtils::trim( label );
 
     if( label.empty() )
       continue;
@@ -1008,11 +1008,11 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
         }//if( start != string::npos )
       }//end code block to find element name
 
-      UtilityFunctions::to_lower( symbol );
+      SpecUtils::to_lower_ascii( symbol );
       for( const string &userstr : alphastrs )
       {
-        if( UtilityFunctions::starts_with( symbol, userstr.c_str() )
-            || (elementName.size() && UtilityFunctions::starts_with( elementName, userstr.c_str() )) )
+        if( SpecUtils::starts_with( symbol, userstr.c_str() )
+            || (elementName.size() && SpecUtils::starts_with( elementName, userstr.c_str() )) )
         {
           for( size_t i = 0; i < userstr.size(); ++i )
             nsame += (int)std::count( symbol.begin(), symbol.end(), userstr[i] );
@@ -1036,7 +1036,7 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
       {
         for( const string &userstr : numericstrs )
         {
-          if( UtilityFunctions::starts_with( numberstr, userstr.c_str() ) )
+          if( SpecUtils::starts_with( numberstr, userstr.c_str() ) )
           {
             nsame += static_cast<int>( userstr.length() );
             numeric_candidate = true;
@@ -1097,8 +1097,8 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
       for( const string &userstr : alphastrs )
       {
         for( const SandiaDecay::Element *el : dbelements )
-          if( (UtilityFunctions::istarts_with( el->symbol, userstr.c_str() )
-               || UtilityFunctions::istarts_with( el->name, userstr.c_str() )) )
+          if( (SpecUtils::istarts_with( el->symbol, userstr.c_str() )
+               || SpecUtils::istarts_with( el->name, userstr.c_str() )) )
             elements.push_back( el );
       }
     }else if( alphastrs.empty() && numericstrs.size() )
@@ -1134,8 +1134,8 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
       {
         for( const SandiaDecay::Element *el : dbelements )
         {
-          if( (UtilityFunctions::istarts_with( el->symbol, alphastr.c_str() )
-               || UtilityFunctions::istarts_with( el->name, alphastr.c_str() )) )
+          if( (SpecUtils::istarts_with( el->symbol, alphastr.c_str() )
+               || SpecUtils::istarts_with( el->name, alphastr.c_str() )) )
           {
             vector<const SandiaDecay::Nuclide *> dbnuclides = db->nuclides( el );
 
@@ -1149,7 +1149,7 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
                 try
                 {
                   const string nucstr = std::to_string( nuclide->massNumber );
-                  if( UtilityFunctions::starts_with( nucstr, numstr.c_str() )
+                  if( SpecUtils::starts_with( nucstr, numstr.c_str() )
                       && (std::find( nuclides.begin(), nuclides.end(), nuclide ) == nuclides.end()) )
                   {
                     bool isSuggested = false;
@@ -1185,7 +1185,7 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
   //  what the user has typed in, will be at the top of the list.  If we dont
   //  do this, then if the user types "Ra226" and hits enter, then "Rn226"
   //  will actually be selected.
-  using UtilityFunctions::levenshtein_distance;
+  using SpecUtils::levenshtein_distance;
   testTxt = text.narrow();
   
   //Sort suggested nuclides

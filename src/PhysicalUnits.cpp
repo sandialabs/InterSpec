@@ -29,8 +29,8 @@
 #include <boost/regex.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SpecUtils/UtilityFunctions.h"
 
 using namespace std;
 
@@ -537,13 +537,13 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
   if( second_def <= 0.0 )
     throw runtime_error( "Second definition must be larger than zero" );
   
-  UtilityFunctions::trim( str );
-  UtilityFunctions::to_lower( str );
+  SpecUtils::trim( str );
+  SpecUtils::to_lower_ascii( str );
   
   while( str.find("+ ") != string::npos )
-    UtilityFunctions::ireplace_all(str, "+ ", "+" );
+    SpecUtils::ireplace_all(str, "+ ", "+" );
   while( str.find("- ") != string::npos )
-    UtilityFunctions::ireplace_all(str, "- ", "-" );
+    SpecUtils::ireplace_all(str, "- ", "-" );
 
   const size_t colonpos = str.find(":");
   if( colonpos != std::string::npos )
@@ -558,7 +558,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
     
     string durstr = str.substr( startpos, endpos-startpos );
     str = str.substr(0,startpos) + str.substr(endpos);
-    UtilityFunctions::trim( str );
+    SpecUtils::trim( str );
     
     boost::posix_time::time_duration dur;
     dur = boost::posix_time::duration_from_string( durstr );
@@ -637,7 +637,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
         if( startpos != string::npos )  //should always be true, but jic
         {
           str.erase( begin(str)+startpos, begin(str)+startpos+fullmatch.size() );
-          UtilityFunctions::trim( str );
+          SpecUtils::trim( str );
           if( !str.empty() )
             time_dur += stringToTimeDurationPossibleHalfLife( str, hl, second_def );
         }
@@ -671,44 +671,44 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
     
     string number = string( matches[1].first, matches[1].second );
     string letters = string( matches[7].first, matches[7].second );
-    UtilityFunctions::trim( number );
-    UtilityFunctions::trim( letters );
-    UtilityFunctions::to_lower( letters );
+    SpecUtils::trim( number );
+    SpecUtils::trim( letters );
+    SpecUtils::to_lower_ascii( letters );
     
     double value;
     if( !(stringstream(number) >> value) )
       throw std::runtime_error( "Unable to convert '" + number + "' to a number" );
     
     double unit = 0.0;
-    if( UtilityFunctions::starts_with(letters, "ps" )
-       || UtilityFunctions::starts_with(letters, "pico" ) )
+    if( SpecUtils::starts_with(letters, "ps" )
+       || SpecUtils::starts_with(letters, "pico" ) )
       unit = second * 1.0E-12;
-    else if( UtilityFunctions::starts_with(letters, "ns" )
-        || UtilityFunctions::starts_with(letters, "nano" ) )
+    else if( SpecUtils::starts_with(letters, "ns" )
+        || SpecUtils::starts_with(letters, "nano" ) )
       unit = second * 1.0E-9;
-    else if( UtilityFunctions::starts_with(letters, "us" )
-        || UtilityFunctions::starts_with(letters, "micro" )
-        || UtilityFunctions::starts_with(letters, "\xc2\xb5" ) )
+    else if( SpecUtils::starts_with(letters, "us" )
+        || SpecUtils::starts_with(letters, "micro" )
+        || SpecUtils::starts_with(letters, "\xc2\xb5" ) )
       unit = second * 1.0E-6;
-    else if( UtilityFunctions::starts_with(letters, "ms" )
-        || UtilityFunctions::starts_with(letters, "mS" )
-        || UtilityFunctions::starts_with(letters, "milli" ) )
+    else if( SpecUtils::starts_with(letters, "ms" )
+        || SpecUtils::starts_with(letters, "mS" )
+        || SpecUtils::starts_with(letters, "milli" ) )
       unit = second * 1.0E-3;
-    else if( UtilityFunctions::starts_with(letters, "s" ) )
+    else if( SpecUtils::starts_with(letters, "s" ) )
       unit = second;
-    else if( letters=="m" || UtilityFunctions::contains(letters, "min" )  )
+    else if( letters=="m" || SpecUtils::contains(letters, "min" )  )
       unit = minute;
     else if( letters=="h"
-             || UtilityFunctions::contains(letters, "hour" )
-             || UtilityFunctions::contains(letters, "hrs" ) )
+             || SpecUtils::contains(letters, "hour" )
+             || SpecUtils::contains(letters, "hrs" ) )
       unit = hour;
-    else if( letters=="d" || UtilityFunctions::contains(letters, "day" ) )
+    else if( letters=="d" || SpecUtils::contains(letters, "day" ) )
       unit = day;
     else if( letters=="y"
-             || UtilityFunctions::contains(letters, "yr" )
-             || UtilityFunctions::contains(letters, "year" ) )
+             || SpecUtils::contains(letters, "yr" )
+             || SpecUtils::contains(letters, "year" ) )
       unit = year;
-    else if( UtilityFunctions::starts_with(letters, "h" ) && (hl > 0.0) )  //the regex hopefully makes sure
+    else if( SpecUtils::starts_with(letters, "h" ) && (hl > 0.0) )  //the regex hopefully makes sure
       unit = hl;
     else
     {
@@ -745,7 +745,7 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
 //  throws std::runtime_error on failure
 double stringToActivity( std::string str, double bq_def )
 {
-  UtilityFunctions::trim( str );
+  SpecUtils::trim( str );
   boost::smatch mtch;
   boost::regex expr( "(" POS_DECIMAL_REGEX ")" "\\s*([a-zA-Z \\-]+)" );
 
@@ -775,26 +775,26 @@ double stringToActivity( std::string str, double bq_def )
     const double value = std::stod( number );
     double unit = 0.0;
 
-    if( UtilityFunctions::istarts_with(letters, "n" ) )
+    if( SpecUtils::istarts_with(letters, "n" ) )
       unit = 1.0E-9;
-    else if( UtilityFunctions::istarts_with(letters, "u" )
-             || UtilityFunctions::istarts_with(letters, "micro" )
-             || UtilityFunctions::starts_with(letters, "\xc2\xb5" ) )
+    else if( SpecUtils::istarts_with(letters, "u" )
+             || SpecUtils::istarts_with(letters, "micro" )
+             || SpecUtils::starts_with(letters, "\xc2\xb5" ) )
       unit = 1.0E-6;
-    else if( UtilityFunctions::starts_with(letters, "m" )
-             || UtilityFunctions::istarts_with(letters, "milli" ) )
+    else if( SpecUtils::starts_with(letters, "m" )
+             || SpecUtils::istarts_with(letters, "milli" ) )
       unit = 1.0E-3;
-    else if( UtilityFunctions::istarts_with(letters, "b" )
-             || UtilityFunctions::istarts_with(letters, "c" ) )
+    else if( SpecUtils::istarts_with(letters, "b" )
+             || SpecUtils::istarts_with(letters, "c" ) )
       unit = 1.0;
-    else if( UtilityFunctions::istarts_with(letters, "k" ) )
+    else if( SpecUtils::istarts_with(letters, "k" ) )
       unit = 1.0E+3;
-    else if( UtilityFunctions::starts_with(letters, "M" )
-             || UtilityFunctions::istarts_with(letters, "mega" ) )
+    else if( SpecUtils::starts_with(letters, "M" )
+             || SpecUtils::istarts_with(letters, "mega" ) )
       unit = 1.0E+6;
-    else if( UtilityFunctions::starts_with(letters, "G" ) )
+    else if( SpecUtils::starts_with(letters, "G" ) )
       unit = 1.0E+9;
-    else if( UtilityFunctions::starts_with(letters, "T" ) )
+    else if( SpecUtils::starts_with(letters, "T" ) )
       unit = 1.0E+12;
 
     //There is no need for a prefix
@@ -806,8 +806,8 @@ double stringToActivity( std::string str, double bq_def )
       //throw runtime_error( msg );
     //}
 
-    const bool hasb = UtilityFunctions::icontains(letters, "b" );
-    const bool hasc = UtilityFunctions::icontains(letters, "c" );
+    const bool hasb = SpecUtils::icontains(letters, "b" );
+    const bool hasc = SpecUtils::icontains(letters, "c" );
 
     if( hasb && !hasc )
      unit *= becquerel;
@@ -869,9 +869,9 @@ double stringToDistance( std::string str, double cm_definition )
   
   string floatstr( matches[1].first, matches[1].second );
   string unitstr( matches[3].first, matches[3].second );
-  UtilityFunctions::trim( floatstr );
-  UtilityFunctions::trim( unitstr );
-  UtilityFunctions::to_lower( unitstr );
+  SpecUtils::trim( floatstr );
+  SpecUtils::trim( unitstr );
+  SpecUtils::to_lower_ascii( unitstr );
 
   double unitval = 0.0;
   if( unitstr == "meter" )       unitval = m;

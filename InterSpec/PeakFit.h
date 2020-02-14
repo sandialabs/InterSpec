@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <deque>
+#include <tuple>
 #include <vector>
 
 #include "Minuit2/FCNBase.h"
@@ -173,6 +174,17 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI(
                                                            size_t start_channel,
                                                            size_t end_channel );
 
+/** Similar to #secondDerivativePeakCanidatesWithROI, but doesnt waste time finding
+ the ROI for each peak.  Provides reults as a tuple of {mean,sigma,area} for
+ each found peak.
+ 
+ Takes about 40% of the time as #secondDerivativePeakCanidatesWithROI
+ */
+void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> data,
+                                    size_t start_channel,
+                                    size_t end_channel,
+                                   std::vector< std::tuple<float,float,float> > &results );
+
 
 //searchForPeakFromUser: looks for a peak near x.  The returned pair contains
 //  peaks that should be added (in .first) and peaks that should be removed
@@ -216,13 +228,20 @@ enum MultiPeakInitialGuesMethod
 {
   UniformInitialGuess,    //With a rough prefit performed
   FromDataInitialGuess,   //Tries to use second derivative
-  MonteCarloInitialGuess, //Feeling lucky?  This just makes initial means random; not really worked on much yet
   FromInputPeaks          //uses peaks populated in 'answer', throws if answer.size!=nPeaks, or if they dont all share a continuum
 };//enum MultiPeakInitialGuesMethod
 
 //findPeaksInUserRange(...): method to simultaneously fit for 'nPeaks' in the
 //  the range x0 to x1
 void findPeaksInUserRange( double x0, double x1, int nPeaks,
+                          MultiPeakInitialGuesMethod method,
+                          std::shared_ptr<const Measurement> dataH,
+                          std::shared_ptr<const DetectorPeakResponse> detector,
+                          std::vector<std::shared_ptr<PeakDef> > &answer,
+                          double &chi2 );
+
+
+void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuesMethod method,
                           std::shared_ptr<const Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,

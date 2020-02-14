@@ -54,12 +54,12 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #if( USE_SPECTRUM_CHART_D3 )
@@ -239,7 +239,7 @@ namespace
       EditWidget *w = dynamic_cast<EditWidget *>(editor);
       if( !w )
       {
-        cerr << SRC_LOCATION << "\n\tLogic error - fix me!" << endl;
+        cerr << "editState():\n\tLogic error - fix me!" << endl;
         return boost::any();
       }//if( !w )
       
@@ -256,7 +256,7 @@ namespace
       EditWidget *w = dynamic_cast<EditWidget *>(editor);
       if( !w )
       {
-        cerr << SRC_LOCATION << "\n\tLogic error - fix me!" << endl;
+        cerr << "setEditState(...)\n\tLogic error - fix me!" << endl;
         return;
       }
       
@@ -265,7 +265,7 @@ namespace
         w->setCssCollor( boost::any_cast<WString>(value) );
       }catch(...)
       {
-        cerr << SRC_LOCATION << "\n\tPossible Logic error - fix me!" << endl;
+        cerr << "setEditState(...)\n\tPossible Logic error - fix me!" << endl;
       }//try / catch
     }//void setEditState( WWidget *editor, const boost::any& value ) const
 
@@ -427,9 +427,9 @@ void PeakInfoDisplay::createNewPeak()
       try
       {
         const string datadir = InterSpec::staticDataDirectory();
-        string drf_dir = UtilityFunctions::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
+        string drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
         if( nbin <= 2049 )
-          drf_dir = UtilityFunctions::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
+          drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
         
         drf = make_shared<DetectorPeakResponse>();
         drf->fromGadrasDirectory( drf_dir );

@@ -39,10 +39,9 @@
 #include <Wt/Chart/WDataSeries>
 #include <Wt/WAbstractItemModel>
 
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/SpectrumDataModel.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 using namespace std;
 using namespace Wt;

@@ -35,12 +35,13 @@
 #include <stdexcept>
 #include <condition_variable>
 
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "SandiaDecay/SandiaDecay.h"
-#include "SpecUtils/UtilityFunctions.h"
 
 using namespace std;
 
@@ -126,7 +127,7 @@ void Material::parseChemicalFormula( string text,
   }//if( densitypos != string::npos )
 
   float totalfraction = 0.0;
-  UtilityFunctions::erase_any_character( text, " \t\n_-,;" );
+  SpecUtils::erase_any_character( text, " \t\n_-,;" );
 
   const string numbers = "0123456789.";
   string::size_type pos = 0;
@@ -373,9 +374,9 @@ const Material *MaterialDB::material( const std::string &name ) const
         thisdescrip = thisname.substr( pos+2, closing - pos - 2 );
     }//if( pos != string::npos )
 
-    if( UtilityFunctions::iequals( thisname, name )
-        || UtilityFunctions::iequals( thissymbol, name )
-        || UtilityFunctions::iequals( thisdescrip, name ) )
+    if( SpecUtils::iequals_ascii( thisname, name )
+        || SpecUtils::iequals_ascii( thissymbol, name )
+        || SpecUtils::iequals_ascii( thisdescrip, name ) )
       return m;
   }//for( const Material *m : m_materials )
 
@@ -427,7 +428,7 @@ void MaterialDB::writeGadrasStyleMaterialFile( ostream &file ) const
   std::unique_lock<std::mutex> lock( m_mutex );
   
   for( const Material *mat : m_materials )
-    if( !UtilityFunctions::iequals(mat->name, "Air") )
+    if( !SpecUtils::iequals_ascii(mat->name, "Air") )
       mat->writeGadrasStyleMaterialFile( file );
 }//void writeGadrasStyleMaterialFile( std::ostream file )
 
@@ -460,7 +461,7 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
   try
   {
 #ifdef _WIN32
-    const std::wstring wfile = UtilityFunctions::convert_from_utf8_to_utf16(file);
+    const std::wstring wfile = SpecUtils::convert_from_utf8_to_utf16(file);
     ifstream is( wfile.c_str(), ios_base::binary|ios_base::in );
 #else
     ifstream is( file.c_str(), ios_base::binary|ios_base::in );
@@ -475,34 +476,34 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
     string line;
     bool has_hit_air = false;
 
-    while( UtilityFunctions::safe_get_line( is, line ) )
+    while( SpecUtils::safe_get_line( is, line ) )
     {
       ++lineNumber;
 
-      UtilityFunctions::trim( line );
+      SpecUtils::trim( line );
 
       if( !has_hit_air )
-        has_hit_air = UtilityFunctions::starts_with(line,"Air");
+        has_hit_air = SpecUtils::starts_with(line,"Air");
 
       if( !has_hit_air )
         continue;
 
-      if( UtilityFunctions::starts_with(line,"!") )
+      if( SpecUtils::starts_with(line,"!") )
       {
         //We dont want to parse the "Notes" section at the bottom of the file
         if( line.find("Notes") != string::npos )
           break;
         continue;
-      }//if( UtilityFunctions::starts_with(line,"!") )
+      }//if( SpecUtils::starts_with(line,"!") )
 
-      if( line.empty() || UtilityFunctions::starts_with(line,"#") )
+      if( line.empty() || SpecUtils::starts_with(line,"#") )
         continue;
 
       //presumably, if we are here, we are at the _start_ of a new material
       material = new Material();
       material->source = Material::kGadras;
       material->name = line;
-      bool gotit = !!UtilityFunctions::safe_get_line( is, line );  //should really test this
+      bool gotit = !!SpecUtils::safe_get_line( is, line );  //should really test this
       if( !gotit )
         throw std::runtime_error( "Unexpected formating A" );
       ++lineNumber;
@@ -512,17 +513,17 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
       if( exclamation_pos != string::npos )
         material->description = line.substr( 0, exclamation_pos );
 
-      UtilityFunctions::safe_get_line( is, line );
+      SpecUtils::safe_get_line( is, line );
       ++lineNumber;
 
       const string::size_type comment_pos = line.find( '!' );
       if( comment_pos != string::npos )
         line = line.substr( 0, comment_pos );
 
-      UtilityFunctions::trim( line );
+      SpecUtils::trim( line );
 
       vector<string> components_something_density;
-      UtilityFunctions::split( components_something_density, line, " \t" );
+      SpecUtils::split( components_something_density, line, " \t" );
       if( components_something_density.size() != 3 )
         throw runtime_error( "Expected 3 fields in line '" + line + "'" );
 
@@ -545,18 +546,18 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
 
 
       int nelement = 0, nisotope = 0;
-      while( UtilityFunctions::safe_get_line( is, line ) )
+      while( SpecUtils::safe_get_line( is, line ) )
       {
         ++lineNumber;
-        UtilityFunctions::trim( line );
-        if( line.empty() || UtilityFunctions::starts_with(line,"#") )
+        SpecUtils::trim( line );
+        if( line.empty() || SpecUtils::starts_with(line,"#") )
           continue;
 
-        if( UtilityFunctions::starts_with(line, "!") )
+        if( SpecUtils::starts_with(line, "!") )
           break;
 
         const string symbol = line;
-        gotit = !!UtilityFunctions::safe_get_line( is, line );  //should really test this
+        gotit = !!SpecUtils::safe_get_line( is, line );  //should really test this
         if( !gotit )
           throw std::runtime_error( "Unexpected formating B" );
         ++lineNumber;
@@ -593,7 +594,7 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
           ++nelement;
           material->elements.push_back( Material::ElementFractionPair(element,mass_fraction) );
         }
-      }//while( UtilityFunctions::safe_get_line( is, line ) )
+      }//while( SpecUtils::safe_get_line( is, line ) )
 
       if( (nexpectedelement + nexpectednuclide) != (nelement + nisotope) )
         throw runtime_error( "Expected and found number of elements+nuclides"
@@ -633,7 +634,7 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
       if( (pos != m_materials.end() &&
           (MaterialDB::less_than_by_name(material,*pos)
              == MaterialDB::less_than_by_name(*pos,material)))
-          || UtilityFunctions::iequals(material->name,"void") )
+          || SpecUtils::iequals_ascii(material->name,"void") )
       {
 /*
         cerr << "Found duplicate material: " << material->name
@@ -663,7 +664,7 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
     msg << "MaterialDB::parseG4MaterialFile(...): Error parsing file  at or "
         << "near line " << lineNumber << ". error=" << e.what();
 
-    cerr << "\n\n" << SRC_LOCATION << "\n\t" << msg.str() << endl << endl;
+    cerr << "\n\nMaterialDB::parseGadrasMaterialFile(...)\n\t" << msg.str() << endl << endl;
     
     m_condition.notify_all();
     
@@ -693,7 +694,7 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
   try
   {
 #ifdef _WIN32
-    const std::wstring wfile = UtilityFunctions::convert_from_utf8_to_utf16(file);
+    const std::wstring wfile = SpecUtils::convert_from_utf8_to_utf16(file);
     ifstream is( file.c_str(), ios_base::binary|ios_base::in );
 #else
     ifstream is( file.c_str(), ios_base::binary|ios_base::in );
@@ -715,18 +716,18 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
 
     bool is_compound = true;
     string line;
-    while( UtilityFunctions::safe_get_line( is, line ) )
+    while( SpecUtils::safe_get_line( is, line ) )
 //    while( getline( is, line ) )
     {
       ++lineNumber;
 
-      if( line.empty() || UtilityFunctions::starts_with(line,"#") )
+      if( line.empty() || SpecUtils::starts_with(line,"#") )
         continue;
 
       vector<string> fields;
       const bool is_material = (isdigit(line[0]) != 0);
-      UtilityFunctions::trim( line );
-      UtilityFunctions::split( fields, line, " \t" );
+      SpecUtils::trim( line );
+      SpecUtils::split( fields, line, " \t" );
 
       if( fields.size() < 2 )
         continue;
@@ -738,11 +739,11 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
 
       bool is_elements_header = false, is_material_header = false;
 
-      if( UtilityFunctions::iequals(fields[1],"Name") )
+      if( SpecUtils::iequals_ascii(fields[1],"Name") )
       {
-        is_elements_header = UtilityFunctions::iequals( fields[0], "Z" );
-        is_material_header = UtilityFunctions::iequals( fields[0], "Ncomp" );
-      }//if( UtilityFunctions::iequals(fields[0],"Name") )
+        is_elements_header = SpecUtils::iequals_ascii( fields[0], "Z" );
+        is_material_header = SpecUtils::iequals_ascii( fields[0], "Ncomp" );
+      }//if( SpecUtils::iequals_ascii(fields[0],"Name") )
 
       if( is_elements_header )
         is_compound = false;
@@ -772,18 +773,18 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
 
         const int ncomp = std::stoi( fields[0] );
         material->name = fields[1];
-        UtilityFunctions::to_lower( material->name );
+        SpecUtils::to_lower_ascii( material->name );
         material->density = static_cast<float>( std::stod(fields[2]) * PhysicalUnits::g/PhysicalUnits::cm3 );
 
         for( int compn = 0; compn < ncomp; ++compn )
         {
 //          if( !getline( is, line ) )
-          if( !UtilityFunctions::safe_get_line( is, line ) )
+          if( !SpecUtils::safe_get_line( is, line ) )
             throw std::runtime_error( "Couldnt read expected number of "
                                       "components of compound "
                                       + material->name );
 
-          UtilityFunctions::trim( line );
+          SpecUtils::trim( line );
           stringstream linestrm( line );
           int z;
           float frac;
@@ -817,7 +818,7 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
         material->elements.push_back( component );
       }//if( is_compound ) / else
 
-      if( UtilityFunctions::istarts_with( material->name, "G4_" ) )
+      if( SpecUtils::istarts_with( material->name, "G4_" ) )
         material->name = material->name.substr( 3 );
 
 
@@ -858,7 +859,7 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
     msg << "MaterialDB::parseG4MaterialFile(...): Error parsing file  at or "
         << "near line " << lineNumber << ". error=" << e.what();
 
-    cerr << "\n\n" << SRC_LOCATION << "\n\t" << msg.str() << endl << endl;
+    cerr << "\n\nMaterialDB::parseG4MaterialFile(...)\n\t" << msg.str() << endl << endl;
 
     m_condition.notify_all();
     
@@ -924,10 +925,10 @@ const Material *MaterialDB::parseChemicalFormula( string text,
 
 bool MaterialDB::less_than_by_name( const Material *lhs, const Material *rhs )
 {
-  string lhsname = UtilityFunctions::to_lower_copy(lhs->name);
-  string rhsname = UtilityFunctions::to_lower_copy(rhs->name);
-  UtilityFunctions::erase_any_character( lhsname, "_- \t " );
-  UtilityFunctions::erase_any_character( rhsname, "_- \t " );
+  string lhsname = SpecUtils::to_lower_ascii_copy(lhs->name);
+  string rhsname = SpecUtils::to_lower_ascii_copy(rhs->name);
+  SpecUtils::erase_any_character( lhsname, "_- \t " );
+  SpecUtils::erase_any_character( rhsname, "_- \t " );
   return (lhsname < rhsname);
 }
 

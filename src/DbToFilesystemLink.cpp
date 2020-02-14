@@ -26,8 +26,8 @@
 #include <string>
 #include <iostream>
 
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/DbToFilesystemLink.h"
-#include "SpecUtils/UtilityFunctions.h"
 
 #include <Wt/Dbo/Dbo>
 #include <Wt/WString>
@@ -48,16 +48,16 @@ namespace DbToFilesystemLink
   
   bool setFileNumToFilePathDBNameBasePath( const std::string &path )
   {
-    if( UtilityFunctions::is_directory( path ) )
+    if( SpecUtils::is_directory( path ) )
     {
-      string newpath = UtilityFunctions::append_path( path, "FileNumToFilePath.sqlite" );
+      string newpath = SpecUtils::append_path( path, "FileNumToFilePath.sqlite" );
       
       {
         std::lock_guard<std::mutex> lock( FileNumToFilePathDBNameMutex );
         FileNumToFilePathDBName = newpath;
       }
       //iOS 10.3 changed permissions model, so as a hack lets write this file so we can set permissions.
-      if( !UtilityFunctions::is_file(newpath) )
+      if( !SpecUtils::is_file(newpath) )
         addFileToOpenToDatabase( "DummyFile" );
     }else
     {
@@ -78,7 +78,7 @@ namespace DbToFilesystemLink
     }
     
     
-    if( !UtilityFunctions::is_file(dbfile) )
+    if( !SpecUtils::is_file(dbfile) )
       throw runtime_error( "Database file '" + dbfile + "' doesnt exist" );
     
     Wt::Dbo::Session session;

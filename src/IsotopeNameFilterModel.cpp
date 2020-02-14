@@ -33,9 +33,9 @@
 #include <Wt/WAbstractItemModel>
 
 #include "InterSpec/PeakDef.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/ReactionGamma.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 
@@ -285,8 +285,8 @@ void IsotopeNameFilterModel::getAlphaAndNumericSubStrs( std::string label,
                                        std::vector<std::string> &alphastrs,
                                        std::vector<std::string> &numericstrs )
 {
-  UtilityFunctions::erase_any_character( label, " -_,\t<>/?[]{}\\|!@#$%^&*();:\"'~`+=" );
-  UtilityFunctions::to_lower( label );
+  SpecUtils::erase_any_character( label, " -_,\t<>/?[]{}\\|!@#$%^&*();:\"'~`+=" );
+  SpecUtils::to_lower_ascii( label );
 
   const string::size_type len = label.length();
 
@@ -360,8 +360,8 @@ void IsotopeNameFilterModel::filter( const Wt::WString &text )
 //  {
 //    specificyXray = (testTxt.find( "xray",pos) != string::npos)
 //                    || (testTxt.find( "x-ray",pos) != string::npos);
-//    UtilityFunctions::replace_all( testTxt, "xray", "" );
-//    UtilityFunctions::replace_all( testTxt, "x-ray", "" );
+//    SpecUtils::replace_all( testTxt, "xray", "" );
+//    SpecUtils::replace_all( testTxt, "x-ray", "" );
 //  }
   
   //Make sure the user isnt typing in a reaction, otherwise we wont get matching
@@ -411,7 +411,7 @@ void IsotopeNameFilterModel::filter( const Wt::WString &text )
   vector<WString> customSuggests;
   for( const std::string &str : m_customPotentials )
   {
-    if( UtilityFunctions::icontains( str, testTxt ) )
+    if( SpecUtils::icontains( str, testTxt ) )
       customSuggests.push_back( str );
   }//for( const std::string &str : m_customPotentials )
   
@@ -420,7 +420,7 @@ void IsotopeNameFilterModel::filter( const Wt::WString &text )
   //  what the user has typed in, will be at the top of the list.  If we dont
   //  do this, then if the user types "Ra226" and hits enter, then "Rn226"
   //  will actually be selected.
-  using UtilityFunctions::levenshtein_distance;
+  using SpecUtils::levenshtein_distance;
   testTxt = text.toUTF8();
   
   //Sort suggested nuclides
@@ -500,13 +500,13 @@ std::set<const SandiaDecay::Element *> IsotopeNameFilterModel::possibleElements(
   
   for( const SandiaDecay::Element *el : elements )
   {
-    const string name   = UtilityFunctions::to_lower_copy( el->name );
-    const string symbol = UtilityFunctions::to_lower_copy( el->symbol );
+    const string name   = SpecUtils::to_lower_ascii_copy( el->name );
+    const string symbol = SpecUtils::to_lower_ascii_copy( el->symbol );
     
     for( string str : alphastrs )
     {
-      if( UtilityFunctions::starts_with( symbol, str.c_str() )
-         || UtilityFunctions::starts_with( name, str.c_str() ) )
+      if( SpecUtils::starts_with( symbol, str.c_str() )
+         || SpecUtils::starts_with( name, str.c_str() ) )
         candidate_elements.insert( el );
     }//for( const string &str : alphastrs )
   }//for( const SandiaDecay::Element *el : elements )
@@ -529,8 +529,8 @@ void IsotopeNameFilterModel::suggestNuclides(
     bool is_exact_element = false;
     if( numericstrs.empty() )
     {
-      const string name   = UtilityFunctions::to_lower_copy( el->name );
-      const string symbol = UtilityFunctions::to_lower_copy( el->symbol );
+      const string name   = SpecUtils::to_lower_ascii_copy( el->name );
+      const string symbol = SpecUtils::to_lower_ascii_copy( el->symbol );
       for( string str : alphastrs )
         is_exact_element |= (symbol==str || name==str);
     }//if( numericstrs.empty() )
@@ -553,7 +553,7 @@ void IsotopeNameFilterModel::suggestNuclides(
         
         bool numeric_compat = false;
         for( const string &str : numericstrs )
-          numeric_compat |= UtilityFunctions::contains( std::to_string(nuc->massNumber), str.c_str() );
+          numeric_compat |= SpecUtils::contains( std::to_string(nuc->massNumber), str.c_str() );
         
         if( metalevel > 0 && metalevel!=nuc->isomerNumber )
           numeric_compat = false;
@@ -613,8 +613,8 @@ std::vector<const ReactionGamma::Reaction *>
   std::string testTxt = text.toUTF8();
   
 
-  if( UtilityFunctions::iequals(testTxt, "a")
-      || UtilityFunctions::istarts_with(testTxt, "an") )
+  if( SpecUtils::iequals_ascii(testTxt, "a")
+      || SpecUtils::istarts_with(testTxt, "an") )
   {
     const vector<const ReactionGamma::Reaction *> &rctns
                                  = reactionDb->reactions(AnnihilationReaction);
@@ -646,8 +646,8 @@ std::vector<const ReactionGamma::Reaction *>
     
   //Now make sure if the user has specified particle types, only show those
   string rctnTxt = text.toUTF8();
-  UtilityFunctions::to_lower( rctnTxt );
-  UtilityFunctions::ireplace_all( rctnTxt, " ", "" );
+  SpecUtils::to_lower_ascii( rctnTxt );
+  SpecUtils::ireplace_all( rctnTxt, " ", "" );
     
   string part1_name, part2_name;
   bool got_part1 = false, got_part2 = false;
@@ -657,7 +657,7 @@ std::vector<const ReactionGamma::Reaction *>
   if( open_paren != string::npos && open_paren<(rctnTxt.size()-1) )
   {
     part1_name = rctnTxt.substr( open_paren+1, 1 );
-    UtilityFunctions::trim( part1_name );
+    SpecUtils::trim( part1_name );
     try
     {
       part1 = ReactionGamma::to_particle( part1_name );
@@ -668,7 +668,7 @@ std::vector<const ReactionGamma::Reaction *>
     if( comma_pos != string::npos && comma_pos<(rctnTxt.size()-1) )
     {
       part2_name = rctnTxt.substr( comma_pos+1, 1 );
-      UtilityFunctions::trim( part2_name );
+      SpecUtils::trim( part2_name );
       try
       {
         part2 = ReactionGamma::to_particle( part2_name );

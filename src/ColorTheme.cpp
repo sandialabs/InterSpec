@@ -40,7 +40,8 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecUser.h"
 
-#include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/StringAlgo.h"
 
 using namespace std;
 using namespace Wt;
@@ -315,13 +316,13 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
     const WString &createdstr = static_cast<const WString &>( base["created"] );
     //For some reason
     //info.creation_time = WDateTime::fromString( createdstr, "yyyy-MM-ddThh:mm:ssZ" );
-    info.creation_time = WDateTime::fromPosixTime( UtilityFunctions::time_from_string( createdstr.toUTF8().c_str() ) );
+    info.creation_time = WDateTime::fromPosixTime( SpecUtils::time_from_string( createdstr.toUTF8().c_str() ) );
   }
   if( base.contains("modified") )
   {
     const WString &modifiedstr = static_cast<const WString &>( base["modified"] );
     //info.modified_time = WDateTime::fromString( modifiedstr, "yyyy-MM-ddThh:mm:ssZ" );
-    info.modified_time = WDateTime::fromPosixTime( UtilityFunctions::time_from_string( modifiedstr.toUTF8().c_str() ) );
+    info.modified_time = WDateTime::fromPosixTime( SpecUtils::time_from_string( modifiedstr.toUTF8().c_str() ) );
   }
   
   
@@ -345,7 +346,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
     }else
       cout << "CssThemeVal is type " << cssThemeVal.type() << endl;
     
-    if( UtilityFunctions::iequals(info.nonChartAreaTheme, "default") )
+    if( SpecUtils::iequals_ascii(info.nonChartAreaTheme, "default") )
       val = "";
     
     info.nonChartAreaTheme = val;

@@ -36,8 +36,8 @@
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/PopupDiv.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
-#include "SpecUtils/UtilityFunctions.h"
 
 #if(USE_OSX_NATIVE_MENU)
 #include "target/osx/NativeMenu.h"
@@ -489,16 +489,16 @@ string resolve_icon_path( string inputIconPath )
     return "";
   
   const std::string docroot = (wApp ? wApp->docRoot() : string());
-  string iconPath = UtilityFunctions::append_path( docroot, inputIconPath );
+  string iconPath = SpecUtils::append_path( docroot, inputIconPath );
   
-  if( !UtilityFunctions::is_file( iconPath ) )
-    iconPath = UtilityFunctions::append_path( UtilityFunctions::get_working_path(), inputIconPath );
+  if( !SpecUtils::is_file( iconPath ) )
+    iconPath = SpecUtils::append_path( SpecUtils::get_working_path(), inputIconPath );
   
-  if( !UtilityFunctions::is_file( iconPath ) )
+  if( !SpecUtils::is_file( iconPath ) )
   {
     cerr << "Couldnt find icon '" << inputIconPath
          << "' in docRoot ('" << docroot << "') or CWD ('"
-         << UtilityFunctions::get_working_path() << "')" << endl;
+         << SpecUtils::get_working_path() << "')" << endl;
     iconPath = "";
   }
   

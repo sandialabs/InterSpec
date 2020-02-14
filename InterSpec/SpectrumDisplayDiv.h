@@ -33,8 +33,6 @@
 #include <Wt/WSignal>
 #include <Wt/WContainerWidget>
 
-#include "SpecUtils/SpectrumDataStructs.h"
-
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
 #include "InterSpec/ReferenceLineInfo.h"
 #endif
@@ -42,8 +40,9 @@
 //Forward declarations
 class SpecMeas;
 class PeakModel;
-class SpectrumChart;
 class InterSpec;
+class Measurement;
+class SpectrumChart;
 class SpectrumDataModel;
 class CanvasForDragging;
 namespace Wt

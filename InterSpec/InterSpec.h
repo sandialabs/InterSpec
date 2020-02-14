@@ -33,10 +33,10 @@
 #include <Wt/Dbo/Dbo>
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/SpecFile.h"
 //Without including InterSpecUser.h here, we get some wierd issues with the
 //  DB optomistic versioning...
 #include "InterSpec/InterSpecUser.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 class PeakDef;
 class PopupDiv;

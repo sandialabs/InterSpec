@@ -31,8 +31,8 @@
 
 #include <Wt/WSignal>
 
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/EnergyCalibration.h"
-#include "SpecUtils/SpectrumDataStructs.h"
 
 
 //Temporary include - only used to get RAPIDXML_USE_SIZED_INPUT_WCJOHNS macro

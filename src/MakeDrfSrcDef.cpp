@@ -41,10 +41,10 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 //#include "InterSpec/IsotopeNameFilterModel.h"
@@ -407,7 +407,7 @@ void MakeDrfSrcDef::handleUserChangedActivityUncertainty()
 void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
 {
   string agestr = m_sourceAgeAtAssay->text().toUTF8();
-  UtilityFunctions::trim( agestr );
+  SpecUtils::trim( agestr );
   
   double age = 0.0;
   if( agestr.empty() || (agestr.find_first_not_of("+-0.")==string::npos) )
@@ -474,7 +474,7 @@ double MakeDrfSrcDef::enteredActivity() const
 {
   string activitystr = m_activityEdit->text().toUTF8();
   
-  UtilityFunctions::trim( activitystr );
+  SpecUtils::trim( activitystr );
   
   return PhysicalUnits::stringToActivity( activitystr );
 }//double enteredActivity()
@@ -530,7 +530,7 @@ double MakeDrfSrcDef::fractionalActivityUncertainty() const
       //  will, check if the uncertainty string is about what we initially set
       //  it to ("0.0 %"), and if so, just return zero.
       const string value = m_activityUncertainty->valueText().toUTF8();
-      if( UtilityFunctions::istarts_with( value, "0.0 ") )
+      if( SpecUtils::istarts_with( value, "0.0 ") )
         return 0.0;
       
       throw runtime_error( "Activity Uncertainty Invalid" );
@@ -556,7 +556,7 @@ double MakeDrfSrcDef::ageAtSpectrumTime() const
     return PeakDef::defaultDecayTime( m_nuclide, nullptr );
   
   string ageAtAssaystr = m_sourceAgeAtAssay->text().toUTF8();
-  UtilityFunctions::trim( ageAtAssaystr );
+  SpecUtils::trim( ageAtAssaystr );
   
   double ageAtAssay = 0.0;
   if( !ageAtAssaystr.empty() && (ageAtAssaystr.find_first_not_of("+-0.")!=string::npos) )

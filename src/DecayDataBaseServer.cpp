@@ -27,8 +27,8 @@
 #include <iostream>
 #include <boost/filesystem.hpp>
 
+#include "SpecUtils/Filesystem.h"
 #include "SandiaDecay/SandiaDecay.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 using namespace std;
@@ -74,7 +74,7 @@ void DecayDataBaseServer::initialize()
   {
     sm_dataBase.reset();
     
-    cerr << SRC_LOCATION << "\n\tError initializing SandiaDecayDataBase!"
+    cerr << "DecayDataBaseServer::initialize()\n\tError initializing SandiaDecayDataBase!"
          << endl << endl;
   }//try/caatch
 }//void initialize()
@@ -104,7 +104,7 @@ void DecayDataBaseServer::setXmlFileDirectory( const std::string &dir )  //assum
 {
   std::lock_guard<std::mutex> lock( sm_dataBaseMutex );
 
-  const string file = UtilityFunctions::append_path( dir, "sandia.decay.xml" );
+  const string file = SpecUtils::append_path( dir, "sandia.decay.xml" );
 
   if( sm_dataBase.initialized() )
   {

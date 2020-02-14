@@ -46,10 +46,10 @@
 #include <Wt/Dbo/WtSqlTraits>
 
 #include "InterSpec/PeakModel.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
-#include "SpecUtils/UtilityFunctions.h"
 
 
 class PeakDef;
@@ -643,7 +643,7 @@ public:
     std::string result;
     Wt::Dbo::field( a, result, dbname );
     
-    UtilityFunctions::split_to_floats( result.c_str(), result.size(), vFloat );
+    SpecUtils::split_to_floats( result.c_str(), result.size(), vFloat );
   } //loadDBToFloatVector(std::vector<float> vFloat, std::string dbname, Action a)
   
   template<class Action>
@@ -676,7 +676,7 @@ public:
     Wt::Dbo::field( a, result, dbname );
     
     std::vector<float> vals;
-    UtilityFunctions::split_to_floats( result.c_str(), result.size(), vals );
+    SpecUtils::split_to_floats( result.c_str(), result.size(), vals );
     
     if( (vals.size()%2) != 0 )
       throw std::runtime_error( dbname + " field of DetectorPeakResponse "
