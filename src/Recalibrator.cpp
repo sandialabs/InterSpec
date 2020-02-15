@@ -928,7 +928,7 @@ void Recalibrator::startConvertToPolynomial()
   
   const vector<bool> useGamma = m_hostViewer->detectors_to_display();
   const set<int> samples = m_hostViewer->displayedSamples(kForeground);
-  ShrdConstFVecPtr dataBinning = m_hostViewer->getBinning( samples, useGamma, foreground );
+  std::shared_ptr<const std::vector<float>> dataBinning = m_hostViewer->getBinning( samples, useGamma, foreground );
   
   if( !dataBinning )
   {
@@ -989,7 +989,7 @@ void Recalibrator::finishConvertToPolynomial( const bool followThrough )
   
 
   vector<float> coefs( 2, 0.0f );
-  DeviationPairVec devpairs;
+  std::vector<std::pair<float,float>> devpairs;
   coefs[1] = displ_foreground->channel_energies()->back() / displ_foreground->num_gamma_channels();
   
   //ToDo: If any of of the SpecMeas objects have Measurements with a differing
@@ -1040,8 +1040,8 @@ void Recalibrator::engageRecalibration( RecalAction action )
 #endif
 
   
-  const DeviationPairVec devpairs = m_devPairs->deviationPairs();
-  const DeviationPairVec &olddevpairs = disp_foreground->deviation_pairs();
+  const std::vector<std::pair<float,float>> devpairs = m_devPairs->deviationPairs();
+  const std::vector<std::pair<float,float>> &olddevpairs = disp_foreground->deviation_pairs();
   
   const vector< float > originalPars = disp_foreground->calibration_coeffs();
   const SpecUtils::EnergyCalType old_calib_type = disp_foreground->energy_calibration_model();
@@ -1131,7 +1131,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
 
   try  //begin check validity of equation {note: not a rigourous check}
   {
-    const ShrdConstFVecPtr &binning = disp_foreground->channel_energies();
+    const std::shared_ptr<const std::vector<float>> &binning = disp_foreground->channel_energies();
     const int nbin = static_cast<int>( binning->size() );
     vector<float> poly = eqn;
     
@@ -1332,7 +1332,7 @@ void Recalibrator::recalibrateByPeaks()
     if( !meas || !displ_meas || !data )
       throw std::runtime_error( "ErrorMsgNo spectrum available for calibration" );
 
-    const ShrdConstFVecPtr &binning = displ_meas->channel_energies();
+    const std::shared_ptr<const std::vector<float>> &binning = displ_meas->channel_energies();
     
     if( !binning || binning->size() < 16 )
       throw std::runtime_error( "ErrorMsgNot enough binns for rebinning" );
@@ -1371,7 +1371,7 @@ void Recalibrator::recalibrateByPeaks()
         {
           std::shared_ptr<SpecMeas> &second = m_hostViewer->m_secondDataMeasurement;
           std::shared_ptr<SpecMeas> &back = m_hostViewer->m_backgroundMeasurement;
-          const DeviationPairVec &devpairs = displ_foreground->deviation_pairs();
+          const std::vector<std::pair<float,float>> &devpairs = displ_foreground->deviation_pairs();
         
           if( m_applyTo[kForeground]->isChecked() )
             foreground->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
@@ -1738,7 +1738,7 @@ void Recalibrator::refreshRecalibrator()
   
   const vector< bool > useGamma = m_hostViewer->detectors_to_display();
   const set<int> samples = m_hostViewer->displayedSamples(kForeground);
-  ShrdConstFVecPtr dataBinning = m_hostViewer->getBinning( samples, useGamma, foreground );
+  std::shared_ptr<const std::vector<float>> dataBinning = m_hostViewer->getBinning( samples, useGamma, foreground );
 
   if( m_convertToPolyDialog )
   {
@@ -2280,8 +2280,8 @@ void Recalibrator::GraphicalRecalConfirm::apply()
   float shift = finalE - startE;
   vector<float> eqn = displ_foreground->calibration_coeffs();
   SpecUtils::EnergyCalType eqnType = displ_foreground->energy_calibration_model();
-  DeviationPairVec deviationPairs = displ_foreground->deviation_pairs();
-  const DeviationPairVec origdev = deviationPairs;
+  std::vector<std::pair<float,float>> deviationPairs = displ_foreground->deviation_pairs();
+  const std::vector<std::pair<float,float>> origdev = deviationPairs;
   const size_t nbin = foreground->num_gamma_channels();
   
   switch( eqnType )
@@ -2494,8 +2494,8 @@ PreserveCalibWindow::PreserveCalibWindow(
     throw runtime_error( "PreserveCalibWindow: invalid input" );
   
   std::shared_ptr<const Measurement> eqnoldmeas, eqnnewmeas;
-  const vector< MeasurementConstShrdPtr > oldmeass = oldmeas->measurements();
-  const vector< MeasurementConstShrdPtr > newmeass = newmeas->measurements();
+  const vector< std::shared_ptr<const Measurement> > oldmeass = oldmeas->measurements();
+  const vector< std::shared_ptr<const Measurement> > newmeass = newmeas->measurements();
   
   for( size_t i = 0; !eqnoldmeas && i < oldmeass.size(); ++i )
     if( oldmeass[i]->num_gamma_channels() )
@@ -2637,8 +2637,8 @@ bool PreserveCalibWindow::candidate( std::shared_ptr<SpecMeas> newmeas,
   
   
   std::shared_ptr<const Measurement> eqnoldmeas, eqnnewmeas;
-  const vector< MeasurementConstShrdPtr > oldmeass = oldmeas->measurements();
-  const vector< MeasurementConstShrdPtr > newmeass = newmeas->measurements();
+  const vector< std::shared_ptr<const Measurement> > oldmeass = oldmeas->measurements();
+  const vector< std::shared_ptr<const Measurement> > newmeass = newmeas->measurements();
   
   for( size_t i = 0; !eqnoldmeas && i < oldmeass.size(); ++i )
     if( oldmeass[i]->num_gamma_channels() )
@@ -2725,7 +2725,7 @@ void PreserveCalibWindow::doRecalibration()
   
   
   std::shared_ptr<const Measurement> eqnmeas;
-  const vector< MeasurementConstShrdPtr > meass = meas->measurements();
+  const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
   
   for( size_t i = 0; !eqnmeas && i < meass.size(); ++i )
     if( meass[i]->num_gamma_channels() )
@@ -3204,7 +3204,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
     
     
     std::shared_ptr<const Measurement> eqnmeas;
-    const vector< MeasurementConstShrdPtr > meass = meas->measurements();
+    const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
     
     for( size_t i = 0; !eqnmeas && i < meass.size(); ++i )
       if( meass[i]->num_gamma_channels() )
@@ -3216,7 +3216,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
       return;
     }//if( !eqnmeas )
     
-    const ShrdConstFVecPtr &binning = eqnmeas->channel_energies();
+    const std::shared_ptr<const std::vector<float>> &binning = eqnmeas->channel_energies();
     
     if( !binning || binning->size() < 16 )
     {
@@ -3567,7 +3567,7 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
       cerr << "\n\nm_calVal={" << m_calVal[0] << ", " << m_calVal[1] << ", " << m_calVal[2] << "}" << endl;
       
       vector<float> oldcalibpars;
-      DeviationPairVec devpairs;
+      std::vector<std::pair<float,float>> devpairs;
       SpecUtils::EnergyCalType oldEqnType;
       
       std::shared_ptr<SpecMeas> fore = viewer->measurment(kForeground);
@@ -3584,7 +3584,7 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
         std::shared_ptr<SpecMeas> meas = viewer->measurment(type);
         if( meas )
         {
-          const vector< MeasurementConstShrdPtr > meass = meas->measurements();
+          const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
           for( size_t j = 0; !eqnmeass[i] && j < meass.size(); ++j )
             if( meass[j]->num_gamma_channels() )
               eqnmeass[i] = meass[j];

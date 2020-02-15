@@ -4182,14 +4182,14 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     const set<int> backgroundsamples = displayedSamples( kBackground );
     set<int> newbacksamples;
     
-    for( const MeasurementConstShrdPtr &p : meas.measurements() )
+    for( const std::shared_ptr<const Measurement> &p : meas.measurements() )
     {
       const int samplenum = p->sample_number();
       if( foregroundsamples.count(samplenum) )
         meas.set_source_type( Measurement::Foreground, p );
       else
         meas.remove_measurment( p, false );
-    }//for( const MeasurementConstShrdPtr &p : meas.measurements() )
+    }//for( const std::shared_ptr<const Measurement> &p : meas.measurements() )
     
     
     std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
@@ -4200,17 +4200,17 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     {
       backgroundpeaks = m_backgroundMeasurement->peaks( backgroundsamples );
       
-      std::vector< MeasurementConstShrdPtr > backgrounds = m_backgroundMeasurement->measurements();
-      for( const MeasurementConstShrdPtr &p : backgrounds )
+      std::vector< std::shared_ptr<const Measurement> > backgrounds = m_backgroundMeasurement->measurements();
+      for( const std::shared_ptr<const Measurement> &p : backgrounds )
       {
         if( !backgroundsamples.count( p->sample_number()) )
           continue;
         
-        MeasurementShrdPtr backmeas = std::make_shared<Measurement>( *p );
+        std::shared_ptr<Measurement> backmeas = std::make_shared<Measurement>( *p );
         meas.add_measurment( backmeas, false );
         meas.set_source_type( Measurement::Background, backmeas );
         newbacksamples.insert( backmeas->sample_number() );
-      }//for( const MeasurementConstShrdPtr &p : m_backgroundMeasurement->measurements() )
+      }//for( const std::shared_ptr<const Measurement> &p : m_backgroundMeasurement->measurements() )
     }//if( !!m_backgroundMeasurement )
  
     //Now remove all peaks not for the currently displayed samples.
@@ -6849,7 +6849,7 @@ void InterSpec::displayOnlySamplesWithinView( GoogleMap *map,
     bool samplewithin = false;
     for( const int detnum : meass->detector_numbers() )
     {
-      MeasurementConstShrdPtr m = meass->measurement( sample, detnum );
+      std::shared_ptr<const Measurement> m = meass->measurement( sample, detnum );
       if( !!m && m->has_gps_info()
          && m->longitude()>=leftlng && m->longitude()<=rightlng
          && m->latitude()>=lowerlat && m->latitude()<=uplat )
@@ -7683,7 +7683,7 @@ float InterSpec::sample_real_time_increment(
   if( !meas )
     return 0.0f;
   
-  const vector<MeasurementConstShrdPtr> &measurement
+  const vector<std::shared_ptr<const Measurement>> &measurement
                                          = meas->sample_measurements( sample );
   float realtime = 0.0f;
   for( const auto &m : measurement )
@@ -7697,7 +7697,7 @@ float InterSpec::sample_real_time_increment(
 /*
   int nback = 0, nnonback = 0;
   double backtime = 0.0, nonbacktime = 0.0;
-  for( const MeasurementConstShrdPtr &m : measurement )
+  for( const std::shared_ptr<const Measurement> &m : measurement )
   {
     if( m->source_type() == Measurement::Background )
     {
@@ -7708,7 +7708,7 @@ float InterSpec::sample_real_time_increment(
       ++nnonback;
       nonbacktime += m->real_time();
     }
-  }//for( const MeasurementConstShrdPtr &m : measurement )
+  }//for( const std::shared_ptr<const Measurement> &m : measurement )
   
   if( nnonback )
     return nonbacktime/nnonback;
@@ -7773,17 +7773,17 @@ double InterSpec::liveTime( const std::set<int> &samplenums ) const
   
   for( int sample : samplenums )
   {
-    const vector<MeasurementConstShrdPtr> measurement
+    const vector<std::shared_ptr<const Measurement>> measurement
     = m_dataMeasurement->sample_measurements( sample );
     
-    for( const MeasurementConstShrdPtr &m : measurement )
+    for( const std::shared_ptr<const Measurement> &m : measurement )
     {
       const int detn = m->detector_number();
       const size_t detpos = std::find(detnumbegin,detnumend,detn) - detnumbegin;
       
       if( detpos < det_use.size() && det_use[detpos] )
         time += m->live_time();
-    }//for( const MeasurementConstShrdPtr &m : measurement )
+    }//for( const std::shared_ptr<const Measurement> &m : measurement )
   }//for( int sample : prev_displayed_samples )
 
   return time;
@@ -7950,7 +7950,7 @@ void InterSpec::findAndSetExcludedSamples( std::set<int> definetly_keep_samples 
 
   for( const int sample : all_samples )
   {
-    vector< MeasurementConstShrdPtr > measurements = m_dataMeasurement->sample_measurements( sample );
+    vector< std::shared_ptr<const Measurement> > measurements = m_dataMeasurement->sample_measurements( sample );
 
     if( definetly_keep_samples.count(sample) > 0 )
       continue;
@@ -7960,7 +7960,7 @@ void InterSpec::findAndSetExcludedSamples( std::set<int> definetly_keep_samples 
       m_excludedSamples.insert( sample );
     }else
     {
-      const MeasurementConstShrdPtr meas = measurements.front();
+      const std::shared_ptr<const Measurement> meas = measurements.front();
       //XXX - Assuming background and calibration statis is the same for all
       //      detectors
       //const bool back = (meas->source_type() == Measurement::Background);
@@ -7987,9 +7987,9 @@ std::set<int> InterSpec::validForegroundSamples() const
   set<int> torm;
   for( const int s : sample_nums )
   {
-    const vector< MeasurementConstShrdPtr > meas
+    const vector< std::shared_ptr<const Measurement> > meas
                                = m_dataMeasurement->sample_measurements(s);
-    for( const MeasurementConstShrdPtr &m : meas )
+    for( const std::shared_ptr<const Measurement> &m : meas )
     {
       if( m->source_type() == Measurement::Background )
         torm.insert( s );
@@ -8210,7 +8210,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 */
     
 /*
-    MeasurementShrdPtr sumspec = meas->sum_measurements( meas->sample_numbers(), vector<bool>(meas->detector_numbers().size(),true) );
+    std::shared_ptr<Measurement> sumspec = meas->sum_measurements( meas->sample_numbers(), vector<bool>(meas->detector_numbers().size(),true) );
     const std::shared_ptr< const std::vector<float> > &counts = sumspec->gamma_channel_contents();
     
     ofstream output( ("/Users/wcjohns/sum_" + meas->filename() + ".txt").c_str() );
@@ -8396,9 +8396,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     //Assume we will use all the detectors (just to determine binning)
     const vector<bool> use_gamma( m_dataMeasurement->detector_names().size(), true );
     
-    ShrdConstFVecPtr binning = getBinning( sample_numbers,
+    std::shared_ptr<const std::vector<float>> binning = getBinning( sample_numbers,
                                            use_gamma, m_dataMeasurement );
-    ShrdConstFVecPtr prev_binning = prev_display ? prev_display->channel_energies() : ShrdConstFVecPtr();
+    std::shared_ptr<const std::vector<float>> prev_binning = prev_display ? prev_display->channel_energies() : std::shared_ptr<const std::vector<float>>();
     
     const bool diff_fore_nchan = ((!prev_binning || !binning) || (prev_binning->size() != binning->size()));
     
@@ -10031,9 +10031,9 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
       continue;
     
     bool isback = false;
-    const vector< MeasurementConstShrdPtr > meas
+    const vector< std::shared_ptr<const Measurement> > meas
                               = m_dataMeasurement->sample_measurements(s);
-    for( const MeasurementConstShrdPtr &m : meas )
+    for( const std::shared_ptr<const Measurement> &m : meas )
       isback |= (m->source_type() == Measurement::Background);
     
     if( isback )
@@ -10302,7 +10302,7 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
 
 
 
-ShrdConstFVecPtr InterSpec::getBinning( std::set<int> sample_numbers,
+std::shared_ptr<const std::vector<float>> InterSpec::getBinning( std::set<int> sample_numbers,
                                               const vector<bool> det_to_use,
                                               std::shared_ptr<const SpecMeas> measurement )
 {
@@ -10319,7 +10319,7 @@ ShrdConstFVecPtr InterSpec::getBinning( std::set<int> sample_numbers,
     return std::shared_ptr< const std::vector<float> >();
   }
   
-  MeasurementConstShrdPtr meas = measurement->measurements()[index];
+  std::shared_ptr<const Measurement> meas = measurement->measurements()[index];
   if( meas )
     return meas->channel_energies();
   
@@ -10575,7 +10575,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   
   vector<bool> use_gamma = detectors_to_display();
 
-  ShrdConstFVecPtr binning = getBinning( m_displayedSamples,
+  std::shared_ptr<const std::vector<float>> binning = getBinning( m_displayedSamples,
                                          use_gamma, m_dataMeasurement );
 
   size_t num_sec_channel = 0, num_back_channel = 0;
@@ -10662,10 +10662,10 @@ void InterSpec::displaySecondForegroundData()
       second_det_use = vector<bool>( secodet.size(), true );
     
 /*
-    ShrdConstFVecPtr data_binning = getBinning( m_displayedSamples, foreground_det_use, m_dataMeasurement );
+    std::shared_ptr<const std::vector<float>> data_binning = getBinning( m_displayedSamples, foreground_det_use, m_dataMeasurement );
     const int nDataBin = static_cast<int>( data_binning ? data_binning->size() : 0 );
 
-    ShrdConstFVecPtr second_binning = getBinning( m_sectondForgroundSampleNumbers, second_det_use, m_secondDataMeasurement );
+    std::shared_ptr<const std::vector<float>> second_binning = getBinning( m_sectondForgroundSampleNumbers, second_det_use, m_secondDataMeasurement );
     const int nSecDataBin = static_cast<int>( second_binning ? second_binning->size() : 0 );
 
     if( nDataBin && (nDataBin != nSecDataBin) )
@@ -10738,10 +10738,10 @@ void InterSpec::displayBackgroundData()
     if( forenameset != backnameset )
       background_det_use = vector<bool>( backdet.size(), true );
     
-//    ShrdConstFVecPtr data_binning = getBinning( m_displayedSamples, foreground_det_use, m_dataMeasurement );
+//    std::shared_ptr<const std::vector<float>> data_binning = getBinning( m_displayedSamples, foreground_det_use, m_dataMeasurement );
 //    const int nDataBin = static_cast<int>( data_binning ? data_binning->size() : 0 );
 
-//    ShrdConstFVecPtr background_binning = getBinning( m_backgroundSampleNumbers, background_det_use, m_backgroundMeasurement );
+//    std::shared_ptr<const std::vector<float>> background_binning = getBinning( m_backgroundSampleNumbers, background_det_use, m_backgroundMeasurement );
 //    const int nBackBin = static_cast<int>( background_binning ? background_binning->size() : 0 );
 
 /*

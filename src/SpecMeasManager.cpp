@@ -2618,7 +2618,7 @@ std::shared_ptr<SpecMeas>
       const vector<int> sample_numbers( sample_numbers_set.begin(), sample_numbers_set.end() );
       const vector<int> &detector_numbers = measurementinfo->detector_numbers();
 
-      vector<MeasurementShrdPtr> meas_to_add;
+      vector<std::shared_ptr<Measurement>> meas_to_add;
 
       const int model_row = (is_sample ? index.row() : 0);
 
@@ -2634,10 +2634,10 @@ std::shared_ptr<SpecMeas>
 
       for( int detector : detector_numbers )
       {
-        MeasurementConstShrdPtr meas = measurementinfo->measurement( sample_numbers[model_row], detector );
+        std::shared_ptr<const Measurement> meas = measurementinfo->measurement( sample_numbers[model_row], detector );
         if( meas )
         {
-          MeasurementShrdPtr meas_copy = std::make_shared<Measurement>( *meas );
+          std::shared_ptr<Measurement> meas_copy = std::make_shared<Measurement>( *meas );
           
           //Add a slightly meaningful title
           const string &oldtitle = meas_copy->title();
@@ -2659,8 +2659,8 @@ std::shared_ptr<SpecMeas>
       } // for( int detector : detector_numbers )
 
 
-      vector<MeasurementConstShrdPtr> newspecMeas = newspec->measurements();
-      for( const MeasurementShrdPtr &meas : meas_to_add )
+      vector<std::shared_ptr<const Measurement>> newspecMeas = newspec->measurements();
+      for( const std::shared_ptr<Measurement> &meas : meas_to_add )
       {
         if( newspecMeas.size() )
         {
@@ -2675,7 +2675,7 @@ std::shared_ptr<SpecMeas>
         } // if( newspecMeas.size() )
 
         newspec->add_measurment( meas, false );
-      } // for( MeasurementConstShrdPtr &meas : meas_to_add )
+      } // for( std::shared_ptr<const Measurement> &meas : meas_to_add )
     } // if( is_measurement  )
   } // for( const WModelIndex &index : selected )
 
@@ -2952,7 +2952,7 @@ void SpecMeasManager::refreshAdditionalInfo( bool clearInfo )
   // If it /isn't/ a clearInfo, there is just one thing selected.
   if( selected && !clearInfo )
   {
-    const vector< MeasurementConstShrdPtr > selectedData = selected->measurements();
+    const vector< std::shared_ptr<const Measurement> > selectedData = selected->measurements();
     // A handful of these assume that the data will be populated for all of the detectors.
     // That is, it will just take the first one out of the detector for the dates, as well
     // as the number of channels.

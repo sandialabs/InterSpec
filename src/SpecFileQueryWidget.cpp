@@ -113,7 +113,7 @@ namespace
   
   bool maybe_spec_file( const std::string &path, void *maxsizeptr )
   {
-    if( likely_not_spec_file( path ) )
+    if( SpecUtils::likely_not_spec_file( path ) )
       return false;
     
     if( maxsizeptr )

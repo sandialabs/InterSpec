@@ -44,8 +44,10 @@
 #include <boost/filesystem.hpp>
 
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DbToFilesystemLink.h"
 
 
@@ -128,7 +130,7 @@ namespace InterSpecServer
     {
       string arg = argv[i];
       
-      if( UtilityFunctions::starts_with(arg, "--basedir=") )
+      if( SpecUtils::starts_with(arg, "--basedir=") )
       {
         std::string workdir = arg.substr( 10 );
         if( workdir.size() && (workdir[0]=='\"' || workdir[0]=='\'') )
@@ -357,7 +359,7 @@ namespace InterSpecServer
       for( const auto &val : jsonfiles )
       {
         const string valstr = val.orIfNull("");
-        if( UtilityFunctions::is_file(valstr) )
+        if( SpecUtils::is_file(valstr) )
           files.push_back(valstr);
         else
           cerr << "File '" << valstr << "' is not a file" << endl;

@@ -544,7 +544,7 @@ void GoogleMap::addMeasurment( std::shared_ptr<const MeasurementInfo> meas,
   std::vector<float> cps;
   cps.reserve( meas->measurements().size() );
   
-  for( const MeasurementConstShrdPtr &m : meas->measurements() )
+  for( const std::shared_ptr<const Measurement> &m : meas->measurements() )
   {
     if( !m->has_gps_info() )
       continue;
@@ -567,11 +567,11 @@ void GoogleMap::addMeasurment( std::shared_ptr<const MeasurementInfo> meas,
     
     string html = "<div clas=\"MapMeasPoint\">";
     
-    const vector<MeasurementConstShrdPtr> samples
+    const vector<std::shared_ptr<const Measurement>> samples
                               = meas->sample_measurements( *vt.second.begin() );
     
     float lt = 0.0f, sumgammas = 0.0f;
-    for( const MeasurementConstShrdPtr &m : samples )
+    for( const std::shared_ptr<const Measurement> &m : samples )
     {
       lt += m->live_time();
       sumgammas += m->gamma_count_sum();

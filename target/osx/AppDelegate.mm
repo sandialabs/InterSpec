@@ -53,7 +53,7 @@
 #include "InterSpec/SpecFileQueryWidget.h"
 #endif
 
-#include "SpecUtils/UtilityFunctions.h"
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SerialToDetectorModel.h"
 
 
@@ -219,7 +219,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   {
     InterSpec::setWritableDataDirectory( datadir.string<std::string>() );
     
-    const std::vector<std::string> serial_db = UtilityFunctions::ls_files_in_directory( datadir.string<std::string>(), "serial_to_model.csv" );
+    const std::vector<std::string> serial_db = SpecUtils::ls_files_in_directory( datadir.string<std::string>(), "serial_to_model.csv" );
     if( !serial_db.empty() )
       SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
     

@@ -148,13 +148,13 @@ SpectraHeader::SpectraHeader()
 }//SpectraHeader default constructor
 
 
-SpectraHeader::SpectraHeader( const std::vector<MeasurementConstShrdPtr> &sample_measurements )
+SpectraHeader::SpectraHeader( const std::vector<std::shared_ptr<const Measurement>> &sample_measurements )
 {
   init( sample_measurements );
 }
 
 
-void SpectraHeader::init( const std::vector<MeasurementConstShrdPtr> &measurements )
+void SpectraHeader::init( const std::vector<std::shared_ptr<const Measurement>> &measurements )
 {
   live_time = real_time = 0.0;
   contained_neutron_ = false;
@@ -163,7 +163,7 @@ void SpectraHeader::init( const std::vector<MeasurementConstShrdPtr> &measuremen
   spectra_type = Measurement::UnknownSourceType;
 
 
-  for( const MeasurementConstShrdPtr &m : measurements )
+  for( const std::shared_ptr<const Measurement> &m : measurements )
   {
     live_time += m->live_time();
     real_time += m->live_time();
@@ -208,7 +208,7 @@ void SpectraHeader::init( const std::vector<MeasurementConstShrdPtr> &measuremen
     speed_ = buffer;
     sample_number = m->sample_number();
     start_time = WDateTime::fromPosixTime( m->start_time() );
-  }//for( MeasurementConstShrdPtr &m : measurements )
+  }//for( std::shared_ptr<const Measurement> &m : measurements )
 
   live_time /= measurements.size();
   real_time /= measurements.size();
@@ -1239,7 +1239,7 @@ struct SpectraHeaderMaker
          ++iter )
     {
       const int sample = *iter;
-      vector< MeasurementConstShrdPtr > measurements
+      vector< std::shared_ptr<const Measurement> > measurements
                                       = m_info->sample_measurements( sample );
       m_headerPos->init( measurements );
       ++m_headerPos;
@@ -1277,7 +1277,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
   {
     for( const int detector : detector_numbers )
     {
-      const MeasurementConstShrdPtr meas = info->measurement( sample, detector );
+      const std::shared_ptr<const Measurement> meas = info->measurement( sample, detector );
       //This next line is not necessary, as long as we properly initialized 'info'
       m_hasNeutronDetector |= (meas && meas->contained_neutron());
       if( meas && (sample == (*sample_numbers.begin())) )
@@ -1292,7 +1292,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
   {
     for( const int sample_number : sample_numbers )
     {
-      vector< MeasurementConstShrdPtr > measurements
+      vector< std::shared_ptr<const Measurement> > measurements
                                       = info->sample_measurements( sample_number );
       m_samples.push_back( SpectraHeader( measurements ) );
     }//for( const int sample_number : sample_numbers )
