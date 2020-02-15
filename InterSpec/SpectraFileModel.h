@@ -86,10 +86,10 @@ class SpectraHeader
 
 public:
   SpectraHeader();
-  SpectraHeader( const std::vector<MeasurementConstShrdPtr> &sample_measurements );
+  SpectraHeader( const std::vector<std::shared_ptr<const Measurement>> &sample_measurements );
   virtual ~SpectraHeader();
 
-  void init( const std::vector<MeasurementConstShrdPtr> &sample_measurements );
+  void init( const std::vector<std::shared_ptr<const Measurement>> &sample_measurements );
 
   float live_time;
   float real_time;

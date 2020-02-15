@@ -459,7 +459,7 @@ SpecMeas::~SpecMeas()
   m_aboutToBeDeleted.emit();
 
 //  bool has_unique = false;
-//  for( const MeasurementShrdPtr &p : measurements_ )
+//  for( const std::shared_ptr<Measurement> &p : measurements_ )
 //  {
 //    if( p && p->gamma_counts_ && p->gamma_counts_.unique() )
 //    {
@@ -922,7 +922,7 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
       detectors[i] = (det_nums.count(detector_numbers_[i]) != 0);
   }//if( det_nums.empty() )
   
-  MeasurementShrdPtr summed = sum_measurements( sample_nums, detectors );
+  std::shared_ptr<Measurement> summed = sum_measurements( sample_nums, detectors );
   if( !summed )
     return MeasurementInfo::write_iaea_spe( output, sample_nums, det_nums );
   

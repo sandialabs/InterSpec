@@ -789,7 +789,7 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
       const std::vector<int> &dets = meas->detector_numbers();
       if( dets.size() == 1 )
       {
-        MeasurementConstShrdPtr m = meas->measurement(displayedNumber, dets[0] );
+        std::shared_ptr<const Measurement> m = meas->measurement(displayedNumber, dets[0] );
         if( m )
         {
           title = WString::fromUTF8(m->title());

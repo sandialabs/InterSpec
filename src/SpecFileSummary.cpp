@@ -897,7 +897,7 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
     m_timeStamp->setText( timeStampStrm.str() );
 
 
-    ShrdConstFVecPtr binning = sample->channel_energies();
+    std::shared_ptr<const std::vector<float>> binning = sample->channel_energies();
 
     if( binning && binning->size() )
     {
@@ -1066,7 +1066,7 @@ void SpecFileSummary::updateDisplayFromMemory()
 
 std::shared_ptr<const Measurement> SpecFileSummary::currentMeasurment() const
 {
-  MeasurementConstShrdPtr sample;
+  std::shared_ptr<const Measurement> sample;
 
   try
   {
@@ -1075,7 +1075,7 @@ std::shared_ptr<const Measurement> SpecFileSummary::currentMeasurment() const
     if( !meas )
       throw runtime_error( "" );
 
-    const vector<MeasurementConstShrdPtr> &measurements = meas->measurements();
+    const vector<std::shared_ptr<const Measurement>> &measurements = meas->measurements();
     const string sampleNumStr = m_displaySampleNumEdit->text().toUTF8();
     size_t sampleNum = 0;
     if( m_displaySampleDiv->isEnabled() && measurements.size()>1 )
@@ -1383,7 +1383,7 @@ void SpecFileSummary::handleSpectrumTypeChanged()
     m_displaySampleNumValidator->setRange( 0, 0 );
   }else
   {
-    const vector<MeasurementConstShrdPtr> &measurements = meas->measurements();
+    const vector<std::shared_ptr<const Measurement>> &measurements = meas->measurements();
 
     if( measurements.size() )
     {
@@ -1459,7 +1459,7 @@ void SpecFileSummary::handleUserIncrementSampleNum( bool increment )
       throw runtime_error("");
     }//if( !meas )
 
-    const vector<MeasurementConstShrdPtr> &measurements = meas->measurements();
+    const vector<std::shared_ptr<const Measurement>> &measurements = meas->measurements();
     if( measurements.size() )
     {
       m_displaySampleNumValidator->setRange( 1, static_cast<int>(measurements.size()) );

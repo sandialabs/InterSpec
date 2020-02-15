@@ -713,7 +713,7 @@ protected:
   void displayBackgroundData();
   void displayTimeSeriesData( bool updateHighlightRegionsDisplay );
 
-  static ShrdConstFVecPtr getBinning( std::set<int> sample_numbers,
+  static std::shared_ptr<const std::vector<float>> getBinning( std::set<int> sample_numbers,
                                       const std::vector<bool> det_to_use,
                                       std::shared_ptr<const SpecMeas> measurement );
 

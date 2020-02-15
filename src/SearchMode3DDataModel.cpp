@@ -318,7 +318,7 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
       {
         for( const int samplenum : thissamplenum )
         {
-          MeasurementConstShrdPtr m = meas->measurement( samplenum, detnum );
+          std::shared_ptr<const Measurement> m = meas->measurement( samplenum, detnum );
           if( m )
             realtime = std::min( realtime, m->real_time() );
         }//for( const int samplenum : thissamplenum )
