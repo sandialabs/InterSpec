@@ -129,6 +129,29 @@
 using namespace Wt;
 using namespace std;
 
+const int ForeBtnInd = 0;//static_cast<int>(SpecUtils::SpectrumType::Foreground);
+const int BackBtnInd = 1;//static_cast<int>(SpecUtils::SpectrumType::Background);
+const int SecondBtnInd = 2;//static_cast<int>(SpecUtils::SpectrumType::SecondForeground);
+
+/*
+int buttonIndex( const SpecUtils::SpectrumType type )
+{
+  switch( type )
+  {
+    case SpecUtils::SpectrumType::Foreground: return 0;
+    case SpecUtils::SpectrumType::Background: return 1;
+    case SpecUtils::SpectrumType::SecondForeground: return 2;
+  }
+  return -1;
+}//buttonIndex
+*/
+
+using SpecUtils::SpectrumType;
+using SpecUtils::SaveSpectrumAsType;
+int toint( const SpectrumType type ){ return static_cast<int>(type); }
+int toint( const SaveSpectrumAsType type ){ return static_cast<int>(type); }
+SpectrumType typeFromInt( int id ){ return SpectrumType(id); }
+
 #if( USE_DB_TO_STORE_SPECTRA )
 namespace
 {
@@ -139,7 +162,7 @@ namespace
     //  have previously used and modified.  This class represents the
     //  previous session with the spectrum
   public:
-    PreviousDbEntry( AuxWindow *dialog, WContainerWidget* container, SpectrumType type,
+    PreviousDbEntry( AuxWindow *dialog, WContainerWidget* container, SpecUtils::SpectrumType type,
                      SpectraFileModel *model, SpecMeasManager *manager,
                      Dbo::ptr<UserFileInDb> dbentry,
                      std::shared_ptr<SpectraFileHeader> header )
@@ -216,7 +239,7 @@ namespace
     }//void dorevert()
     
     AuxWindow *m_dialog;
-    SpectrumType m_type;
+    SpecUtils::SpectrumType m_type;
     SpectraFileModel *m_model;
     SpecMeasManager *m_manager;
     Dbo::ptr<UserFileInDb> m_dbentry;
@@ -242,7 +265,7 @@ namespace
     Wt::Signals::connection m_specChangedConection;
     WFileUpload *m_fileUpload;
     SpecMeasManager *m_manager;
-    SpectrumType m_type;
+    SpecUtils::SpectrumType m_type;
     
   public:
     FileUploadDialog( InterSpec *viewer,
@@ -251,11 +274,11 @@ namespace
                        | AuxWindowProperties::PhoneModal | AuxWindowProperties::DisableCollapse) ),
       m_fileUpload( 0 ),
       m_manager( manager ),
-      m_type( kForeground )
+      m_type( SpectrumType::Foreground )
     {
       setWindowTitle( "Select File To Open" );
       
-      const bool noForeground = !viewer->measurment( kForeground );
+      const bool noForeground = !viewer->measurment( SpectrumType::Foreground );
       
       string instructions;
       if( !viewer->isPhone() )
@@ -292,24 +315,18 @@ namespace
         WRadioButton *foreground = new WRadioButton( "Foreground", buttons );
         foreground->setInline( false );
         foreground->setChecked( true );
-        group->addButton( foreground, 0 );
+        group->addButton( foreground, toint(SpectrumType::Foreground) );
         
         WRadioButton *background = new WRadioButton( "Background", buttons );
         background->setInline( false );
-        group->addButton( background, 1 );
+        group->addButton( background, toint(SpectrumType::Background) );
         
         WRadioButton *secondary = new WRadioButton( "Secondary", buttons );
         secondary->setInline( false );
-        group->addButton( secondary, 2 );
+        group->addButton( secondary, toint(SpectrumType::SecondForeground) );
         
         group->checkedChanged().connect( std::bind( [this,group](){
-          switch( group->checkedId() ) {
-            case 0: m_type = kForeground; break;
-            case 1: m_type = kBackground; break;
-            case 2: m_type = kSecondForeground; break;
-            default:  //shouldnt ever happen
-              break;
-          }
+          m_type = typeFromInt( group->checkedId() );
         } ) );
       }//if( !noForeground )
 
@@ -424,19 +441,19 @@ public:
     WText *uploadText = new WText( "Foreground: " );
     WFileUpload *m_fileUpload = new WFileUpload(  );
     m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
-    m_fileUpload->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager,m_fileUpload, kForeground));
+    m_fileUpload->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload, SpectrumType::Foreground));
     m_fileUpload->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge, _1 ) );
 
     WText *uploadText2 = new WText( "Background: " );
     WFileUpload *m_fileUpload2 = new WFileUpload(  );
     m_fileUpload2->changed().connect( m_fileUpload2, &Wt::WFileUpload::upload );
-    m_fileUpload2->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager,m_fileUpload2, kBackground));
+    m_fileUpload2->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload2, SpectrumType::Background));
     m_fileUpload2->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge, _1 ) );
     
     WText *uploadText3 = new WText( "Secondary Foreground: " );
     WFileUpload *m_fileUpload3 = new WFileUpload(  );
     m_fileUpload3->changed().connect( m_fileUpload3, &Wt::WFileUpload::upload );
-    m_fileUpload3->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager,m_fileUpload3, kSecondForeground));
+    m_fileUpload3->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload3, SpectrumType::SecondForeground));
     m_fileUpload3->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge, _1 ) );
     
     layout->addWidget( uploadText, 0, 0 );
@@ -633,9 +650,9 @@ public:
 //      }//try / catch
 //    }//if( m_snapshot->rowCount() > 0 )
 //    
-//    SpectrumType type = kForeground;
+//    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
 //    if( m_buttonGroup )
-//      type = SpectrumType( m_buttonGroup->checkedId() );
+//      type = SpecUtils::SpectrumType( m_buttonGroup->checkedId() );
 //    
 //    int modelrow = -1;
 //    std::shared_ptr<SpecMeas> measurement;
@@ -750,11 +767,11 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
 {
   wApp->useStyleSheet( "InterSpec_resources/SpecMeasManager.css" );
   
-  for( SaveSpectrumAsType type = SaveSpectrumAsType(0);
-      type < kNumSaveSpectrumAsType;
-      type = SaveSpectrumAsType(type+1) )
+  for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
+      type < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+      type = SpecUtils::SaveSpectrumAsType(static_cast<int>(type)+1) )
   {
-    m_downloadResources[type] = new DownloadSpectrumResource(type, this, this);
+    m_downloadResources[static_cast<int>(type)] = new DownloadSpectrumResource(type, this, this);
   }
   
 //
@@ -768,15 +785,15 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     
   m_sql = viewer->sql();
 
-  for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-       i < kNumSaveSpectrumAsType;
-       i = SaveSpectrumAsType(i+1) )
-    m_specificResources[i] = (SpecificSpectrumResource *)0;
+  for( SpecUtils::SaveSpectrumAsType i = SpecUtils::SaveSpectrumAsType(0);
+      i < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+       i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
+    m_specificResources[static_cast<int>(i)] = (SpecificSpectrumResource *)0;
   
 #if( !ANDROID && !IOS )
-  m_foregroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, kForeground ) );
-  m_secondForegroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, kSecondForeground ) );
-  m_backgroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, kBackground ) );
+  m_foregroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Foreground ) );
+  m_secondForegroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::SecondForeground ) );
+  m_backgroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Background ) );
 #endif
 
 
@@ -816,7 +833,7 @@ void  SpecMeasManager::startSpectrumManager()
     
 #if( USE_DB_TO_STORE_SPECTRA )
     Wt::WPushButton* importButton = new Wt::WPushButton( "Previous...", uploadDiv );
-    importButton->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles, this, (SpectrumType)0, std::shared_ptr<SpectraFileHeader>()) );
+  importButton->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles, this, SpecUtils::SpectrumType(0), std::shared_ptr<SpectraFileHeader>()) );
     HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTipInstantly , HelpSystem::Bottom);
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
     importButton->setMargin(2,Wt::Left);
@@ -870,21 +887,21 @@ SpecMeasManager::~SpecMeasManager()
 
 
 #if( !ANDROID && !IOS )
-FileDragUploadResource *SpecMeasManager::dragNDrop( SpectrumType type )
+FileDragUploadResource *SpecMeasManager::dragNDrop( SpecUtils::SpectrumType type )
 {
   switch( type )
   {
-    case kForeground:
+    case SpectrumType::Foreground:
       return m_foregroundDragNDrop;
-    case kSecondForeground:
+    case SpectrumType::SecondForeground:
       return m_secondForegroundDragNDrop;
-    case kBackground:
+    case SpectrumType::Background:
       return m_backgroundDragNDrop;
   }//switch( type )
 
   throw std::runtime_error( "Seriou problem in SpecMeasManager::dragNDrop(..)" );
   return NULL;
-}//FileDragUploadResource *dragNDrop( SpectrumType type )
+}//FileDragUploadResource *dragNDrop( SpecUtils::SpectrumType type )
 
 FileDragUploadResource *SpecMeasManager::foregroundDragNDrop()
 {
@@ -924,7 +941,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     if( !index.isValid() )
       throw runtime_error( "No file selected" );
     
-    const SpectrumType type = SpectrumType( group->checkedId() );
+    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType( group->checkedId() );
     
     const string fileInZip = Wt::asString(index.data()).toUTF8();
     
@@ -965,7 +982,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
 
 bool SpecMeasManager::handleZippedFile( const std::string &name,
                                         const std::string &spoolName,
-                                        const int spectrum_type )
+                                        const SpecUtils::SpectrumType spectrum_type )
 {
   try
   {
@@ -990,9 +1007,9 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       uncompresssize.push_back( t.second->uncompressed_size );
     }
     
-    const bool validtype = ((spectrum_type==kForeground)
-                             || (spectrum_type==kSecondForeground)
-                             || (spectrum_type==kBackground));
+    const bool validtype = ((spectrum_type==SpectrumType::Foreground)
+                             || (spectrum_type==SpectrumType::SecondForeground)
+                             || (spectrum_type==SpectrumType::Background));
 
     
     string txt;
@@ -1031,25 +1048,25 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     WButtonGroup *group = new WButtonGroup(typecb);
     Wt::WRadioButton *button = new WRadioButton( "Foreground" );
     cblayout->addWidget( button, 0, 0, AlignCenter );
-    group->addButton(button, kForeground);
+    group->addButton(button, toint(SpectrumType::Foreground) );
     button = new WRadioButton("Background", typecb);
     cblayout->addWidget( button, 0, 1, AlignCenter );
-    group->addButton(button, kBackground);
+    group->addButton(button, toint(SpectrumType::Background) );
     button = new Wt::WRadioButton("Secondary", typecb);
     cblayout->addWidget( button, 0, 2, AlignCenter );
-    group->addButton(button, kSecondForeground);
+    group->addButton(button, toint(SpectrumType::SecondForeground) );
     
     if( validtype )
     {
-      group->setCheckedButton( group->button(spectrum_type) );
+      group->setCheckedButton( group->button(toint(spectrum_type)) );
       typecb->hide();
-    }else if( !m_viewer->displayedHistogram(kForeground) )
+    }else if( !m_viewer->displayedHistogram(SpectrumType::Foreground) )
     {
-      group->setCheckedButton( group->button(kForeground) );
+      group->setCheckedButton( group->button(toint(SpectrumType::Foreground)) );
       typecb->hide();
     }else
     {
-      group->setCheckedButton( group->button(kForeground) );
+      group->setCheckedButton( group->button(toint(SpectrumType::Foreground)) );
     }
     
     AuxWindow *window = new AuxWindow( "Uploaded ZIP File Contents",
@@ -1409,7 +1426,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }//if( isgif || isjpg || ispng || isbmp )
 
   //Check if CSV giving peak ROIs.
-  std::shared_ptr<const Measurement> currdata = m_viewer->displayedHistogram(kForeground);
+  auto currdata = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   
   //Case insensitive search of 'term' in the header 'data'
   auto header_contains = [&data]( const std::string &term ) -> bool {
@@ -1468,7 +1485,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
 
 void SpecMeasManager::handleFileDrop( const std::string &name,
                                              const std::string &spoolName,
-                                             SpectrumType type )
+                                             SpecUtils::SpectrumType type )
 {
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   if( name.length() > 4
@@ -1668,19 +1685,19 @@ std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
 } // std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
 
 
-void SpecMeasManager::unDisplay( SpectrumType type )
+void SpecMeasManager::unDisplay( SpecUtils::SpectrumType type )
 {
   std::set<int> displaySampleNums;
   std::shared_ptr<SpecMeas> meas;
   m_viewer->setSpectrum( meas, displaySampleNums, type, false );
   selectionChanged(); // update buttons
-} // void SpecMeasManager::unDisplay( SpectrumType type );
+} // void SpecMeasManager::unDisplay( SpecUtils::SpectrumType type );
 
 
-// The std::shared_ptr<SpecMeas> dummy_ptr keeps the MeasurementInfo
+// The std::shared_ptr<SpecMeas> dummy_ptr keeps the SpecUtils::SpecFile
 // object in memory when SpectraFileHeader isnt caching the spectrum, so
 // its weak_ptr<> can be used in the call to header->parseFile();
-void SpecMeasManager::loadSelected( const SpectrumType type,
+void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
                                     std::shared_ptr<SpecMeas> dummy_ptr,
                                     const bool doPreviousEnergyRangeCheck )
 {
@@ -1689,7 +1706,7 @@ void SpecMeasManager::loadSelected( const SpectrumType type,
 } // void SpecMeasManager::loadSelected(...)
 
 
-void SpecMeasManager::loadSelected( const SpectrumType type,
+void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
                                     const bool doPreviousEnergyRangeCheck )
 {
   std::shared_ptr<SpectraFileHeader> header = selectedFile();
@@ -1719,11 +1736,11 @@ void SpecMeasManager::loadSelected( const SpectrumType type,
 void SpecMeasManager::startQuickUpload()
 {
   new FileUploadDialog( m_viewer, this );
-}//void startQuickUpload( SpectrumType type )
+}//void startQuickUpload( SpecUtils::SpectrumType type )
 
 
 void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
-                                         const SpectrumType type )
+                                         const SpecUtils::SpectrumType type )
 {
   // TODO: The warning messages, and error conditions detected should be greatly improved
 
@@ -1744,7 +1761,7 @@ void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
 void SpecMeasManager::selectEnergyBinning( const string binning,
                                   std::shared_ptr<SpectraFileHeader> header,
                                   std::shared_ptr<SpecMeas> meas,
-                                  const SpectrumType type,
+                                  const SpecUtils::SpectrumType type,
                                   const bool checkIfPreviouslyOpened,
                                   const bool doPreviousEnergyRangeCheck )
 {
@@ -1767,7 +1784,7 @@ void SpecMeasManager::selectEnergyBinning( const string binning,
 
 bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<SpectraFileHeader> header,
                                             std::shared_ptr<SpecMeas> meas,
-                                            const SpectrumType type,
+                                            const SpecUtils::SpectrumType type,
                                             const bool checkIfPreviouslyOpened,
                                             const bool doPreviousEnergyRangeCheck )
 {
@@ -1860,15 +1877,15 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
 
 void SpecMeasManager::displayFile( int row,
                                    std::shared_ptr<SpecMeas> measement_ptr,
-                                   const SpectrumType type,
+                                   const SpecUtils::SpectrumType type,
                                    bool checkIfPreviouslyOpened,
                                    const bool doPreviousEnergyRangeCheck,
                                    const bool checkIfAppropriateForViewing )
 {
   std::shared_ptr<SpecMeas> old_meas = m_viewer->measurment( type );
   std::shared_ptr<SpecMeas>  old_back;
-  if( type == kForeground )
-    old_back = m_viewer->measurment( kBackground );
+  if( type == SpecUtils::SpectrumType::Foreground )
+    old_back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
 
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
@@ -1962,8 +1979,8 @@ void SpecMeasManager::displayFile( int row,
 
   switch( type )
   {
-    case kForeground:
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::Foreground:
+    case SpecUtils::SpectrumType::SecondForeground:
     {
       const int nsamples = header->numSamples();
       const bool passthrough = header->passthrough();
@@ -1976,30 +1993,30 @@ void SpecMeasManager::displayFile( int row,
           const SpectraHeader &spechead = header->m_samples[i];
           switch( spechead.spectra_type )
           {
-            case Measurement::IntrinsicActivity:
+            case SpecUtils::SourceType::IntrinsicActivity:
               //lets try to not show intrinsic activity by default
               ++numIntrinsic;
               intrinsicrow = static_cast<int>( i );
             break;
               
-            case Measurement::Foreground:
+            case SpecUtils::SourceType::Foreground:
               ++numForeground;
               childrow = static_cast<int>( i );
               //i = header->m_samples.size();  //first foreground, terminate loop
             break;
               
-            case Measurement::Background:
+            case SpecUtils::SourceType::Background:
               ++numbackground;
               backrow = static_cast<int>( i );
               if( numForeground )
                 i = header->m_samples.size();  //We have foreground and background, terminate loop
             break;
             
-            case Measurement::Calibration:
+            case SpecUtils::SourceType::Calibration:
               //do nothing
             break;
             
-            case Measurement::UnknownSourceType:
+            case SpecUtils::SourceType::UnknownSourceType:
               if( childrow < 0 )
                 childrow = static_cast<int>( i );
             break;
@@ -2035,7 +2052,7 @@ void SpecMeasManager::displayFile( int row,
 
         //If we have an unambiguos background, and arent currently displaying a background
         //  from this detector, lets load the unambiguos background
-        if( type==kForeground
+        if( type==SpecUtils::SpectrumType::Foreground
            && numbackground == 1 && childrow != backrow
            && (childrow>=0) && (childrow<static_cast<int>(header->m_samples.size()))
            && (backrow>=0) && (backrow<static_cast<int>(header->m_samples.size())) //These two conditions should always be true if first condition is true
@@ -2065,12 +2082,12 @@ void SpecMeasManager::displayFile( int row,
         for( int sample = 0; sample < nspectra_header; ++sample )
         {
           const SpectraHeader &spectra = header->m_samples[sample];
-          const bool back = (spectra.spectra_type == Measurement::Background);
-          const bool calib = (spectra.spectra_type == Measurement::Calibration);
+          const bool back = (spectra.spectra_type == SpecUtils::SourceType::Background);
+          const bool calib = (spectra.spectra_type == SpecUtils::SourceType::Calibration);
 
           ncalibration += calib;
 
-          if( back && (type!=kSecondForeground) )
+          if( back && (type!=SpecUtils::SpectrumType::SecondForeground) )
             background_sample_numbers.insert( spectra.sample_number );
 
           if( back || calib )
@@ -2094,9 +2111,9 @@ void SpecMeasManager::displayFile( int row,
       }// if( passthrough )
 
       break;
-    } // case kForeground: case kSecondForeground:
+    } // case SpecUtils::SpectrumType::Foreground: case SpecUtils::SpectrumType::SecondForeground:
 
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
     {
       int nspectra_header = static_cast<int>( header->m_samples.size() );
 
@@ -2106,7 +2123,7 @@ void SpecMeasManager::displayFile( int row,
         for( int sample = 0; sample < nspectra_header; ++sample )
         {
           const SpectraHeader &spectra = header->m_samples[sample];
-          foundBackground = (spectra.spectra_type == Measurement::Background);
+          foundBackground = (spectra.spectra_type == SpecUtils::SourceType::Background);
           if( foundBackground )
           {
             warningmsgLevel = max( WarningWidget::WarningMsgLow, warningmsgLevel );
@@ -2129,7 +2146,7 @@ void SpecMeasManager::displayFile( int row,
         }//if( !foundBackground )
       } // if( !passthrough && (nsamples > 1) )
       break;
-    } // case kBackground:
+    } // case SpecUtils::SpectrumType::Background:
   } // switch( type )
 
   //Check if we removed any check or background samples, if so do not include
@@ -2168,7 +2185,7 @@ void SpecMeasManager::displayFile( int row,
   {
     m_viewer->setSpectrum( measement_ptr,
                                    background_sample_numbers,
-                                   kBackground, doPreviousEnergyRangeCheck );
+                                   SpecUtils::SpectrumType::Background, doPreviousEnergyRangeCheck );
   }//if( backgroundIndexs.size() )
   
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -2202,9 +2219,9 @@ void SpecMeasManager::displayQuickSaveAsDialog()
   dialog->addStyleClass( "QuickSaveAsDialog" );
 
   std::shared_ptr<const SpecMeas> data, second, background, initial;
-  data       = m_viewer->measurment(kForeground);
-  second     = m_viewer->measurment(kSecondForeground);
-  background = m_viewer->measurment(kBackground);
+  data       = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  second     = m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
+  background = m_viewer->measurment(SpecUtils::SpectrumType::Background);
 
   initial = data;
   if( !initial )
@@ -2233,15 +2250,16 @@ void SpecMeasManager::displayQuickSaveAsDialog()
   const set<int> detnums = m_viewer->displayedDetectorNumbers();
   set<int> samplenums;
   if( data == initial )
-    samplenums = m_viewer->displayedSamples( kForeground );
+    samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
   
-  for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-        i < kNumSaveSpectrumAsType; i = SaveSpectrumAsType(i+1) )
+  for( SpecUtils::SaveSpectrumAsType i = SpecUtils::SaveSpectrumAsType(0);
+      i < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+      i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
   {
-    if( !m_specificResources[i] )
-      m_specificResources[i] = new SpecificSpectrumResource( i, this );
+    if( !m_specificResources[toint(i)] )
+      m_specificResources[toint(i)] = new SpecificSpectrumResource( i, this );
     
-    m_specificResources[i]->setSpectrum( initial, samplenums, detnums );
+    m_specificResources[toint(i)]->setSpectrum( initial, samplenums, detnums );
   }//loop over save as types
   
   const string msgstr = "Please select the file format:";
@@ -2265,14 +2283,17 @@ void SpecMeasManager::displayQuickSaveAsDialog()
       button->setInline( false );
       button->setChecked( true );
       
-      samplenums = m_viewer->displayedSamples( kForeground );
+      samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
       
-      for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-          i < kNumSaveSpectrumAsType; i = SaveSpectrumAsType(i+1) )
+      for( SpecUtils::SaveSpectrumAsType i = SpecUtils::SaveSpectrumAsType(0);
+           i < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+           i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
+      {
         button->clicked().connect(
                           boost::bind( &SpecificSpectrumResource::setSpectrum,
-                                       m_specificResources[i], data,
+                                       m_specificResources[static_cast<int>(i)], data,
                                        samplenums, detnums ) );
+      }
     }//if( data )
     
     if( second )
@@ -2280,13 +2301,16 @@ void SpecMeasManager::displayQuickSaveAsDialog()
       WRadioButton *button = new WRadioButton( "Second Forground", buttons );
       button->setInline( false );
       
-      samplenums = m_viewer->displayedSamples( kSecondForeground );
+      samplenums = m_viewer->displayedSamples( SpectrumType::SecondForeground );
       for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-          i < kNumSaveSpectrumAsType; i = SaveSpectrumAsType(i+1) )
+          i < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+          i = SaveSpectrumAsType(static_cast<int>(i)+1) )
+      {
         button->clicked().connect(
                           boost::bind( &SpecificSpectrumResource::setSpectrum,
-                                       m_specificResources[i], second,
+                                       m_specificResources[toint(i)], second,
                                        samplenums, detnums ) );
+      }
       
       if( !data )
         button->setChecked();
@@ -2298,13 +2322,16 @@ void SpecMeasManager::displayQuickSaveAsDialog()
       WRadioButton *button = new WRadioButton( "Background", buttons );
       button->setInline( false );
       
-      samplenums = m_viewer->displayedSamples( kBackground );
+      samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Background );
       for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-          i < kNumSaveSpectrumAsType; i = SaveSpectrumAsType(i+1) )
+          i < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+          i = SaveSpectrumAsType(toint(i)+1) )
+      {
         button->clicked().connect(
                           boost::bind( &SpecificSpectrumResource::setSpectrum,
-                                       m_specificResources[i], background,
+                                       m_specificResources[toint(i)], background,
                                        samplenums, detnums ) );
+      }
       
       group->addButton( button, -1 );
     } // if( background )
@@ -2314,10 +2341,11 @@ void SpecMeasManager::displayQuickSaveAsDialog()
   linkDiv->setList( true, false );
 
   for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-      i < kNumSaveSpectrumAsType; i = SaveSpectrumAsType(i+1) )
+      i < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+      i = SaveSpectrumAsType(toint(i)+1) )
   {
     const string linktitle = string("As ") + descriptionText(i) + " File";    
-    WAnchor *a = new WAnchor( m_specificResources[i], linktitle, linkDiv );
+    WAnchor *a = new WAnchor( m_specificResources[toint(i)], linktitle, linkDiv );
     a->setTarget( TargetNewWindow );
     a->setInline( false );
     a->setStyleClass( "LoadSpectrumSaveAsLink" );
@@ -2356,12 +2384,12 @@ void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas,
       if( undisplay )
       {
         //also unassign if it was assigned to foreground/2ndf/background
-        if( meas == m_viewer->measurment(kForeground) )
-          unDisplay(kForeground);
-        if( meas== m_viewer->measurment(kSecondForeground) )
-          unDisplay(kSecondForeground);
-        if( meas == m_viewer->measurment(kBackground) )
-          unDisplay(kBackground);
+        if( meas == m_viewer->measurment(SpecUtils::SpectrumType::Foreground) )
+          unDisplay(SpecUtils::SpectrumType::Foreground);
+        if( meas== m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground) )
+          unDisplay(SpecUtils::SpectrumType::SecondForeground);
+        if( meas == m_viewer->measurment(SpecUtils::SpectrumType::Background) )
+          unDisplay(SpecUtils::SpectrumType::Background);
       }//if( undisplay )
       
       if( header->m_aboutToBeDeletedConnection.connected() )
@@ -2393,14 +2421,14 @@ void SpecMeasManager::removeSpecMeas(Dbo::ptr<UserFileInDb> remove )
 
       
       //also unassign if it was assigned to foreground/2ndf/background
-      if (meas==m_viewer->measurment(kForeground))
-        unDisplay(kForeground);
+      if (meas==m_viewer->measurment(SpecUtils::SpectrumType::Foreground))
+        unDisplay(SpecUtils::SpectrumType::Foreground);
 
-      if (meas==m_viewer->measurment(kSecondForeground))
-        unDisplay(kSecondForeground);
+      if (meas==m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground))
+        unDisplay(SpecUtils::SpectrumType::SecondForeground);
       
-      if (meas==m_viewer->measurment(kBackground))
-        unDisplay(kBackground);
+      if (meas==m_viewer->measurment(SpecUtils::SpectrumType::Background))
+        unDisplay(SpecUtils::SpectrumType::Background);
         
         //This seems to cause problems, so taking this out for now
         //removeFromSpectrumInfoCache( meas, false );
@@ -2446,14 +2474,14 @@ void SpecMeasManager::removeSelected()
             removeFromSpectrumInfoCache( meas, false );
             
             //also unassign if it was assigned to foreground/2ndf/background
-            if (meas==m_viewer->measurment(kForeground))
-                unDisplay(kForeground);
+            if (meas==m_viewer->measurment(SpecUtils::SpectrumType::Foreground))
+                unDisplay(SpecUtils::SpectrumType::Foreground);
             
-            if (meas==m_viewer->measurment(kSecondForeground))
-                unDisplay(kSecondForeground);
+            if (meas==m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground))
+                unDisplay(SpecUtils::SpectrumType::SecondForeground);
             
-            if (meas==m_viewer->measurment(kBackground))
-                unDisplay(kBackground);
+            if (meas==m_viewer->measurment(SpecUtils::SpectrumType::Background))
+                unDisplay(SpecUtils::SpectrumType::Background);
         } // if( selectedHeader )
     } //for( vector<std::shared_ptr<SpectraFileHeader> > ::iterator iter = selectedHeaders.begin(); iter!=selectedHeaders.end();iter++)
  
@@ -2539,11 +2567,11 @@ void SpecMeasManager::renameSaveAsFile()
   
   
   for( SaveSpectrumAsType type = SaveSpectrumAsType(0);
-      type < kNumSaveSpectrumAsType;
-      type = SaveSpectrumAsType(type+1) )
+      type < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+      type = SaveSpectrumAsType(static_cast<int>(type)+1) )
   {
     const string name = origName + "." + suggestedNameEnding( type );
-    m_downloadResources[type]->suggestFileName( name, WResource::Attachment );
+    m_downloadResources[toint(type)]->suggestFileName( name, WResource::Attachment );
   }
   
 //    m_saveAsPopup->jsOpen().exec();
@@ -2551,7 +2579,7 @@ void SpecMeasManager::renameSaveAsFile()
 
 
 std::shared_ptr<SpecMeas>
-                     SpecMeasManager::selectedToMeasurementInfo() const
+                     SpecMeasManager::selectedToSpecMeas() const
 {
   std::shared_ptr<SpecMeas> newspec = std::make_shared<SpecMeas>();
   const WModelIndexSet selected = m_treeView->selectedIndexes();
@@ -2618,7 +2646,7 @@ std::shared_ptr<SpecMeas>
       const vector<int> sample_numbers( sample_numbers_set.begin(), sample_numbers_set.end() );
       const vector<int> &detector_numbers = measurementinfo->detector_numbers();
 
-      vector<std::shared_ptr<Measurement>> meas_to_add;
+      vector<std::shared_ptr<SpecUtils::Measurement>> meas_to_add;
 
       const int model_row = (is_sample ? index.row() : 0);
 
@@ -2634,10 +2662,10 @@ std::shared_ptr<SpecMeas>
 
       for( int detector : detector_numbers )
       {
-        std::shared_ptr<const Measurement> meas = measurementinfo->measurement( sample_numbers[model_row], detector );
+        auto meas = measurementinfo->measurement( sample_numbers[model_row], detector );
         if( meas )
         {
-          std::shared_ptr<Measurement> meas_copy = std::make_shared<Measurement>( *meas );
+          auto meas_copy = std::make_shared<SpecUtils::Measurement>( *meas );
           
           //Add a slightly meaningful title
           const string &oldtitle = meas_copy->title();
@@ -2659,8 +2687,8 @@ std::shared_ptr<SpecMeas>
       } // for( int detector : detector_numbers )
 
 
-      vector<std::shared_ptr<const Measurement>> newspecMeas = newspec->measurements();
-      for( const std::shared_ptr<Measurement> &meas : meas_to_add )
+      vector<std::shared_ptr<const SpecUtils::Measurement>> newspecMeas = newspec->measurements();
+      for( const auto &meas : meas_to_add )
       {
         if( newspecMeas.size() )
         {
@@ -2690,14 +2718,14 @@ std::shared_ptr<SpecMeas>
   } // if( warnAboutRebinning )
 
   return newspec;
-} // std::shared_ptr<SpecMeas> SpecMeasManager::selectedToMeasurementInfo()
+} // std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas()
 
 
 void SpecMeasManager::newFileFromSelection()
 {
   try
   {
-    std::shared_ptr<SpecMeas> spec = selectedToMeasurementInfo();
+    std::shared_ptr<SpecMeas> spec = selectedToSpecMeas();
     std::shared_ptr<SpectraFileHeader> header
                                      = addFile( spec->filename(), spec );
     
@@ -2862,7 +2890,7 @@ void SpecMeasManager::selectionChanged()
   {
     m_setAsForeground->enable();
     
-    if( m_viewer->measurment(kForeground) )
+    if( m_viewer->measurment(SpecUtils::SpectrumType::Foreground) )
     {
       m_setAsBackground->enable();
       m_setAsSecForeground->enable();
@@ -2914,21 +2942,21 @@ void SpecMeasManager::selectionChanged()
   m_removeBackButton->hide();
   m_removeFore2Button->hide();
   
-  if( m_viewer->measurment(kForeground)
-      || m_viewer->measurment(kSecondForeground)
-      || m_viewer->measurment(kBackground) )
+  if( m_viewer->measurment(SpecUtils::SpectrumType::Foreground)
+      || m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground)
+      || m_viewer->measurment(SpecUtils::SpectrumType::Background) )
   {
 //    m_unDisplayMenuButton->show();
   }
-  if( m_viewer->measurment(kForeground) ) {
+  if( m_viewer->measurment(SpecUtils::SpectrumType::Foreground) ) {
 //    m_unDisplayPrimaryButton->enable();
     m_removeForeButton->show();
   }
-  if( m_viewer->measurment(kSecondForeground) ) {
+  if( m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground) ) {
 //    m_unDisplaySecondaryButton->enable();
     m_removeFore2Button->show();
   }
-  if( m_viewer->measurment(kBackground) ) {
+  if( m_viewer->measurment(SpecUtils::SpectrumType::Background) ) {
 //    m_unDisplayBackgroundButton->enable();
     m_removeBackButton->show();
   }
@@ -2946,13 +2974,13 @@ WText *messageCombiner( const string& label, const string& value )
 
 void SpecMeasManager::refreshAdditionalInfo( bool clearInfo )
 {
-  std::shared_ptr< SpecMeas > selected = selectedToMeasurementInfo();
+  std::shared_ptr< SpecMeas > selected = selectedToSpecMeas();
 
   vector< string > info;
   // If it /isn't/ a clearInfo, there is just one thing selected.
   if( selected && !clearInfo )
   {
-    const vector< std::shared_ptr<const Measurement> > selectedData = selected->measurements();
+    const vector< std::shared_ptr<const SpecUtils::Measurement> > selectedData = selected->measurements();
     // A handful of these assume that the data will be populated for all of the detectors.
     // That is, it will just take the first one out of the detector for the dates, as well
     // as the number of channels.
@@ -3106,11 +3134,11 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   
   Wt::WPopupMenu *setPopup = new Wt::WPopupMenu();
   m_setAsForeground = setPopup->addItem("Foreground");
-  m_setAsForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, kForeground, true) );
+  m_setAsForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::Foreground, true) );
   m_setAsBackground = setPopup->addItem("Background");
-  m_setAsBackground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, kBackground, true) );
+  m_setAsBackground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::Background, true) );
   m_setAsSecForeground = setPopup->addItem("Secondary Foreground");
-  m_setAsSecForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, kSecondForeground, true ) );
+  m_setAsSecForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::SecondForeground, true ) );
   m_setButton->setMenu(setPopup);
   m_setButton->setHidden( true, WAnimation() );
 //  m_removeFileButton->disable();
@@ -3130,13 +3158,13 @@ WContainerWidget *SpecMeasManager::createButtonBar()
         
     m_saveButton->mouseWentOver().connect( boost::bind( &SpecMeasManager::renameSaveAsFile, this ) );
       
-    for( SaveSpectrumAsType type = SaveSpectrumAsType(0);
-         type < kNumSaveSpectrumAsType;
-         type = SaveSpectrumAsType(type+1) )
+    for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
+        type < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+         type = SpecUtils::SaveSpectrumAsType(static_cast<int>(type)+1) )
     {
       const string descrip = string("As ") + descriptionText(type) + " File";
       WMenuItem *temp = setPopup2->addItem( descrip );
-      temp->setLink( m_downloadResources[type] );
+      temp->setLink( m_downloadResources[toint(type)] );
       temp->setLinkTarget( TargetNewWindow );
     }
       
@@ -3159,19 +3187,19 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   
   m_removeForeButton = new Wt::WPushButton("Foreground",m_newDiv2);
 //      m_removeForeButton->setIcon( "InterSpec_resources/images/minus_min.png" );
-  m_removeForeButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, kForeground) );
+  m_removeForeButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, SpecUtils::SpectrumType::Foreground) );
   m_removeForeButton  ->setHidden( true, WAnimation() );
 //  m_removeForeButton->setHiddenKeepsGeometry( true );
   
   m_removeBackButton = new Wt::WPushButton("Background",m_newDiv2);
 //          m_removeBackButton->setIcon( "InterSpec_resources/images/minus_min.png" );
-  m_removeBackButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, kBackground ) );
+  m_removeBackButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, SpecUtils::SpectrumType::Background ) );
   m_removeBackButton  ->setHidden( true, WAnimation() );
 //  m_removeBackButton->setHiddenKeepsGeometry( true );
   
   m_removeFore2Button = new Wt::WPushButton("Secondary Foreground",m_newDiv2);
 //              m_removeFore2Button->setIcon( "InterSpec_resources/images/minus_min.png" );
-  m_removeFore2Button->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, kSecondForeground ) );
+  m_removeFore2Button->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, SpecUtils::SpectrumType::SecondForeground ) );
   m_removeFore2Button  ->setHidden( true, WAnimation() );
 //  m_removeFore2Button->setHiddenKeepsGeometry( true );
   
@@ -3295,7 +3323,7 @@ void SpecMeasManager::userCanceledResumeFromPreviousOpened( AuxWindow *window,
 
 void SpecMeasManager::createPreviousSpectraDialog( const std::string sessionID,
                                                   std::shared_ptr<SpectraFileHeader> header,
-                                                  const SpectrumType type,
+                                                  const SpecUtils::SpectrumType type,
                                                   const std::vector< Wt::Dbo::ptr<UserFileInDb> > modifiedFiles,
                                                   const std::vector< Wt::Dbo::ptr<UserFileInDb> > unModifiedFiles )
 {
@@ -3353,8 +3381,8 @@ void SpecMeasManager::createPreviousSpectraDialog( const std::string sessionID,
     //        int backid = -1;
     Dbo::ptr<UserFileInDb> dpback;
     std::shared_ptr<SpecMeas>  old_back;
-    if( type == kForeground )
-      old_back = m_viewer->measurment( kBackground );
+    if( type == SpecUtils::SpectrumType::Foreground )
+      old_back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
     //        if( old_back )
     //          backid = m_fileModel->dbEntry( old_back ).id();
     
@@ -3390,7 +3418,7 @@ void postErrorMessage( const string msg, const WarningWidget::WarningMsgLevel le
 
 void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
                                  std::shared_ptr<SpectraFileHeader> header,
-                                 SpectrumType type,
+                                 SpecUtils::SpectrumType type,
                                  std::shared_ptr< std::mutex > mutex,
                                  std::shared_ptr<bool> destructed )
 {
@@ -3533,7 +3561,7 @@ int SpecMeasManager::setFile( const std::string &displayName,
                               const std::string &filename,
                               std::shared_ptr<SpectraFileHeader> &header,
                               std::shared_ptr<SpecMeas> &measurement,
-                              ParserType parser_type )
+                              SpecUtils::ParserType parser_type )
 {
   //We are relying on SpectraFileHeader::setFile(...) to throw an exception
   //  whenever it isnt successful in loading the file, because we want this
@@ -3559,7 +3587,7 @@ int SpecMeasManager::setFile( const std::string &displayName,
 } // int SpecMeasManager::setFile(...)
 
 
-int SpecMeasManager::dataUploaded2( Wt::WFileUpload *upload , SpectrumType type)
+int SpecMeasManager::dataUploaded2( Wt::WFileUpload *upload , SpecUtils::SpectrumType type)
 {
   std::shared_ptr<SpecMeas> measurement;
   int row= dataUploaded( upload, measurement );
@@ -3575,8 +3603,8 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload )
 } // int SpecMeasManager::dataUploaded( Wt::WFileUpload )
 
 
-bool SpecMeasManager::loadFromFileSystem( const string &name, SpectrumType type,
-                                       ParserType parseType )
+bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
+                                         SpecUtils::ParserType parseType )
 {
   const string origName = SpecUtils::filename( name );
   
@@ -3632,7 +3660,7 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload,
   try
   {
     std::shared_ptr<SpectraFileHeader> header;
-    int result = setFile( origName, fileName, header, measurement, kAutoParser );
+    int result = setFile( origName, fileName, header, measurement, SpecUtils::ParserType::kAutoParser );
     WModelIndexSet selected;
     WModelIndex index = m_fileModel->index( result, 0 );
     selected.insert( index );
@@ -3810,8 +3838,11 @@ void SpecMeasManager::cleanupQuickSaveAsDialog( AuxWindow *dialog, WApplication 
     std::shared_ptr<const SpecMeas> dummy;
     
     for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-        i < kNumSaveSpectrumAsType; i = SaveSpectrumAsType(i+1) )
-      m_specificResources[i]->setSpectrum( dummy, set<int>(), set<int>() );
+        i < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+        i = SaveSpectrumAsType(static_cast<int>(i)+1) )
+    {
+      m_specificResources[toint(i)]->setSpectrum( dummy, set<int>(), set<int>() );
+    }
     
     app->triggerUpdate();
   }else
@@ -3835,7 +3866,7 @@ void SpecMeasManager::uploadSpectrum() {
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-void SpecMeasManager::browseDatabaseSpectrumFiles( SpectrumType type, std::shared_ptr<SpectraFileHeader> header )
+void SpecMeasManager::browseDatabaseSpectrumFiles( SpecUtils::SpectrumType type, std::shared_ptr<SpectraFileHeader> header )
 {
   new DbFileBrowser( this, m_viewer, type, header );
 }//void browseDatabaseSpectrumFiles()
@@ -3902,7 +3933,7 @@ void SpecMeasManager::storeSpectraInDb()
 {
   for( int i = 0; i < 3; ++i )
   {
-    const SpectrumType type = SpectrumType( i );
+    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType( i );
     std::shared_ptr<SpecMeas> m = m_viewer->measurment( type );
 
     if( m )
@@ -3922,7 +3953,7 @@ void SpecMeasManager::startStoreSpectraAsInDb()
 {
   for( int i = 2; i >= 0; i-- )
   {
-    const SpectrumType type = SpectrumType(i);
+    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
     std::shared_ptr<SpecMeas> meas = m_viewer->measurment( type );
     if( !meas )
       continue;
@@ -4072,7 +4103,7 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
   
   for( int i = 0; i < 3; ++i )
   {
-    const SpectrumType type = SpectrumType( i );
+    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType( i );
     std::shared_ptr<SpecMeas> m = m_viewer->measurment( type );
     std::shared_ptr<SpectraFileHeader> header= m_fileModel->fileHeader( m );
     Dbo::ptr<UserFileInDb> dbentry = m_fileModel->dbEntry( m );
@@ -4097,7 +4128,7 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
     }//if( !dbentry )
     
     edits.push_back( new WLineEdit() );
-    labels.push_back( new WText( descriptionText( SpectrumType(i) ) ) );
+    labels.push_back( new WText( descriptionText( SpecUtils::SpectrumType(i) ) ) );
     dbs.push_back( dbentry );
     specs.push_back( m );
     

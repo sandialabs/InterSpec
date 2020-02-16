@@ -32,16 +32,17 @@
 #include "InterSpec/AuxWindow.h"
 
 /*
- * This class gives a summary of file parameters.  Currently MeasurementInfo
+ * This class gives a summary of file parameters.  Currently SpecUtils::SpecFile
  * isnt really geared towards keeping this information, so this class is a
  * little lacking...
  *XXX - this class should allow modifying of the spectrum informtion as well
 */
 
 class SpecMeas;
-class Measurement;
 class InterSpec;
 class AnaResultDisplay;
+namespace SpecUtils{ class Measurement; }
+namespace SpecUtils{ enum class SpectrumType : int; }
 
 namespace Wt
 {
@@ -102,14 +103,14 @@ protected:
 
   void handleFieldUpdate( EditableFields field );
 
-  void handleSpectrumChange( SpectrumType type,
+  void handleSpectrumChange( SpecUtils::SpectrumType type,
                             std::shared_ptr<SpecMeas> meas,
                             std::set<int> displaySample );
 
   void reloadCurrentSpectrum();
 
   //currentMeasurment(): returns empty ptr on error
-  std::shared_ptr<const Measurement> currentMeasurment() const;
+  std::shared_ptr<const SpecUtils::Measurement> currentMeasurment() const;
 
 #if( USE_GOOGLE_MAP )
   void showGoogleMap();

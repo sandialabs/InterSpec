@@ -231,7 +231,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
     SpecMeasManager *manager = m_viewer->fileManager();
     
-    m_snapshotModel = new SnapshotBrowser( manager, m_viewer, SpectrumType::kForeground, nullptr );
+    m_snapshotModel = new SnapshotBrowser( manager, m_viewer, SpecUtils::SpectrumType::Foreground, nullptr );
     spectrumLayout->addWidget( m_snapshotModel, 0, 0 );
 #endif
     
@@ -239,7 +239,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     m_messageModelSample = new Wt::WStandardItemModel( 0, 3, this );
     
     WStandardItem *parserType = new WStandardItem();
-    parserType->setData(k2006Icd1Parser); //kIaeaParser
+    parserType->setData(SpecUtils::ParserType::k2006Icd1Parser); //kIaeaParser
     vector<WStandardItem *> message( 3 );
     message[0] = new Wt::WStandardItem("Ba-133 (16k bin N42)");
     message[1] = new Wt::WStandardItem("example_spectra/ba133_source_640s_20100317.n42");
@@ -249,7 +249,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     if( viewer && viewer->isMobile() )
     {
       parserType = new WStandardItem();
-      parserType->setData(k2006Icd1Parser); //kIaeaParser
+      parserType->setData(SpecUtils::ParserType::k2006Icd1Parser); //kIaeaParser
       message[0] = new Wt::WStandardItem("Passthrough (16k bin 1064 meas N42)");
       message[1] = new Wt::WStandardItem("example_spectra/passthrough.n42");
       message[2] = parserType;
@@ -257,7 +257,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     }//if( viewer->isMobile() )
     else {
       parserType = new WStandardItem();
-      parserType->setData(k2006Icd1Parser); //kIaeaParser
+      parserType->setData(SpecUtils::ParserType::k2006Icd1Parser); //kIaeaParser
       message[0] = new Wt::WStandardItem("Passthrough (16k bin ICD1, 8 det., 133 samples)");
       message[1] = new Wt::WStandardItem("example_spectra/passthrough.n42");
       message[2] = parserType;
@@ -265,7 +265,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     }//else
     
     parserType = new WStandardItem();
-    parserType->setData(k2006Icd1Parser); //kIaeaParser
+    parserType->setData(SpecUtils::ParserType::k2006Icd1Parser); //kIaeaParser
     message[0] = new Wt::WStandardItem("Background (16k bin N42)");
     message[1] = new Wt::WStandardItem("example_spectra/background_20100317.n42");
     message[2] = parserType;
@@ -274,28 +274,28 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     if( viewer->isMobile() )
     {
       parserType = new WStandardItem();
-      parserType->setData(kIaeaParser); //k2006Icd1Parser
+      parserType->setData(SpecUtils::ParserType::kIaeaParser); //k2006Icd1Parser
       message[0] = new Wt::WStandardItem("Ba-133 (Low Res, No Calib)");
       message[1] = new Wt::WStandardItem("example_spectra/Ba133LowResNoCalib.spe");
       message[2] = parserType;
       m_messageModelSample->appendRow(message);
       
       parserType = new WStandardItem();
-      parserType->setData(kIaeaParser); //k2006Icd1Parser
+      parserType->setData(SpecUtils::ParserType::kIaeaParser); //k2006Icd1Parser
       message[0] = new Wt::WStandardItem("Co-60 (Low Res, No Calib)");
       message[1] = new Wt::WStandardItem("example_spectra/Co60LowResNoCalib.spe");
       message[2] = parserType;
       m_messageModelSample->appendRow(message);
       
       parserType = new WStandardItem();
-      parserType->setData(kIaeaParser); //k2006Icd1Parser
+      parserType->setData(SpecUtils::ParserType::kIaeaParser); //k2006Icd1Parser
       message[0] = new Wt::WStandardItem("Cs-137 (Low Res, No Calib)");
       message[1] = new Wt::WStandardItem("example_spectra/Cs137LowResNoCalib.spe");
       message[2] = parserType;
       m_messageModelSample->appendRow(message);
       
       parserType = new WStandardItem();
-      parserType->setData(kIaeaParser); //k2006Icd1Parser
+      parserType->setData(SpecUtils::ParserType::kIaeaParser); //k2006Icd1Parser
       message[0] = new Wt::WStandardItem("Th-232 (Low Res, No Calib)");
       message[1] = new Wt::WStandardItem("example_spectra/Th232LowResNoCalib.spe");
       message[2] = parserType;
@@ -991,14 +991,14 @@ void UseInfoWindow::loadSample( const Wt::WModelIndex index )
     return;
   
   WString val = boost::any_cast<WString> (m_messageModelSample->data(index.row(), 1, DisplayRole));
-  ParserType parserType = boost::any_cast<ParserType> (m_messageModelSample->data(index.row(), 2, UserRole));
+  SpecUtils::ParserType parserType = boost::any_cast<SpecUtils::ParserType> (m_messageModelSample->data(index.row(), 2, UserRole));
   
   SpecMeasManager* manager = m_viewer->fileManager();
   
   const string docroot = wApp->docRoot();
   string filepath = SpecUtils::append_path( docroot, val.toUTF8() );
   
-  manager->loadFromFileSystem( filepath, kForeground, parserType );
+  manager->loadFromFileSystem( filepath, SpecUtils::SpectrumType::Foreground, parserType );
 }//void UseInfoWindow::loadSample( const Wt::WModelIndex index )
 
 

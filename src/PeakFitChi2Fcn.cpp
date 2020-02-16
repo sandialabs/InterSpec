@@ -80,8 +80,8 @@ namespace
 
 
 PeakFitChi2Fcn::PeakFitChi2Fcn( const int npeaks,
-                                std::shared_ptr<const Measurement> data,
-                                std::shared_ptr<const Measurement> continium )
+                                std::shared_ptr<const SpecUtils::Measurement> data,
+                                std::shared_ptr<const SpecUtils::Measurement> continium )
   :  m_useReducedChi2( true ),
      m_useMultiPeakPunishment( false ),
      m_lowerbin(-1),
@@ -95,8 +95,8 @@ PeakFitChi2Fcn::PeakFitChi2Fcn( const int npeaks,
 
 PeakFitChi2Fcn::PeakFitChi2Fcn( const int npeaks,
                 const int lowerbin, const int upperbin,
-                std::shared_ptr<const Measurement> data,
-                std::shared_ptr<const Measurement> continium )
+                std::shared_ptr<const SpecUtils::Measurement> data,
+                std::shared_ptr<const SpecUtils::Measurement> continium )
   :  m_useReducedChi2( true ),
      m_useMultiPeakPunishment( false ),
      m_lowerbin(lowerbin),
@@ -489,7 +489,7 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
 
 void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
                       const std::vector<PeakDef> &near_peaks,
-                      std::shared_ptr<const Measurement> data,
+                      std::shared_ptr<const SpecUtils::Measurement> data,
                       PeakFitChi2Fcn::AddPeaksToFitterMethod method )
 {
   if( near_peaks.empty() )
@@ -915,7 +915,7 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
  Amplitude X
  */
 
-MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<const Measurement> data,
+MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<const SpecUtils::Measurement> data,
                       PeakContinuum::OffsetType offsetType,
                       const int lowerbin, const int upperbin )
   : m_npeak( npeaks ),
@@ -1337,7 +1337,7 @@ double MultiPeakFitChi2Fcn::DoEval( const double *x, std::vector<PeakDef> &peaks
 
 LinearProblemSubSolveChi2Fcn::LinearProblemSubSolveChi2Fcn(
           const std::vector< std::shared_ptr<const PeakDef> > &originalPeaks,
-          std::shared_ptr<const Measurement> data,
+          std::shared_ptr<const SpecUtils::Measurement> data,
           const PeakContinuum::OffsetType offsetType,
           const float lowerROI, const float upperROI )
 : ROOT::Minuit2::FCNBase(),
@@ -1353,7 +1353,7 @@ LinearProblemSubSolveChi2Fcn::LinearProblemSubSolveChi2Fcn(
 
 
 LinearProblemSubSolveChi2Fcn::LinearProblemSubSolveChi2Fcn( const size_t npeaks,
-                               std::shared_ptr<const Measurement> data,
+                               std::shared_ptr<const SpecUtils::Measurement> data,
                                const PeakContinuum::OffsetType offsetType,
                                const float lowerROI, const float upperROI )
 : ROOT::Minuit2::FCNBase(),
@@ -1366,7 +1366,7 @@ LinearProblemSubSolveChi2Fcn::LinearProblemSubSolveChi2Fcn( const size_t npeaks,
   init( data );
 }
 
-void LinearProblemSubSolveChi2Fcn::init( std::shared_ptr<const Measurement> data )
+void LinearProblemSubSolveChi2Fcn::init( std::shared_ptr<const SpecUtils::Measurement> data )
 {
   if( !data )
     throw runtime_error( "LinearProblemSubSolveChi2Fcn: invalid data" );

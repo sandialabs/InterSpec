@@ -4327,7 +4327,7 @@ void ShieldingSourceDisplay::backgroundPeakSubChanged()
 {
   if( m_backgroundPeakSub->isChecked() )
   {
-    std::shared_ptr<const SpecMeas> back = m_specViewer->measurment(kBackground);
+    std::shared_ptr<const SpecMeas> back = m_specViewer->measurment(SpecUtils::SpectrumType::Background);
     
     if( !back )
     {
@@ -4931,7 +4931,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     del->disable();
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( kForeground, false );
+    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, false );
     
     size_t nfileprev[2];
     WSelectionBox *selections[2] = { (WSelectionBox *)0, (WSelectionBox *)0 };
@@ -5093,7 +5093,7 @@ Wt::Dbo::ptr<ShieldingSourceModel> ShieldingSourceDisplay::modelInDb()
 
 std::string ShieldingSourceDisplay::defaultModelName() const
 {
-  std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( kForeground );
+  std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( SpecUtils::SpectrumType::Foreground );
   string name;
   if( meas && !meas->filename().empty() )
   {
@@ -5291,7 +5291,7 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
     rapidxml::print(std::back_inserter(model->xmlData), doc, 0);
 
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( kForeground, true );
+    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, true );
     
     if( dbmeas )
       model->filesUsedWith.insert( dbmeas );
@@ -5338,7 +5338,7 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
     m_modelInDb = sql->session()->add( model );
     
     Dbo::ptr<UserFileInDb> dbmeas;
-    dbmeas = m_specViewer->measurmentFromDb( kForeground, false );
+    dbmeas = m_specViewer->measurmentFromDb( SpecUtils::SpectrumType::Foreground, false );
     if( dbmeas )
       m_modelInDb.modify()->filesUsedWith.insert( dbmeas );
     transaction.commit();
@@ -5964,7 +5964,7 @@ void ShieldingSourceDisplay::deSerialize(
   if( !back_sub_node || !back_sub_node->value()
      || !(stringstream(back_sub_node->value()) >> back_sub) )
     throw runtime_error( "Invalid or missing BackgroundPeakSubtraction node" );
-  back_sub = (back_sub && m_specViewer->measurment(kBackground));
+  back_sub = (back_sub && m_specViewer->measurment(SpecUtils::SpectrumType::Background));
   
   if( !dist_node || !dist_node->value() )
     throw runtime_error( "Invalid or missing Distance node" );
@@ -6247,11 +6247,11 @@ void ShieldingSourceDisplay::deSerialize(
 
 
 /*
-void ShieldingSourceDisplay::guessDetectorType( SpectrumType type,
+void ShieldingSourceDisplay::guessDetectorType( SpecUtils::SpectrumType type,
                                                 std::shared_ptr<SpecMeas> measurment,
                                                 std::set<int> sample_numbers )
 {
-  if( type != kForeground )
+  if( type != SpecUtils::SpectrumType::Foreground )
     return;
 
   if( !measurment )
@@ -6707,7 +6707,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   
 
   using GammaInteractionCalc::PointSourceShieldingChi2Fcn;
-  double liveTime = m_specViewer->liveTime(kForeground) * PhysicalUnits::second;
+  double liveTime = m_specViewer->liveTime(SpecUtils::SpectrumType::Foreground) * PhysicalUnits::second;
 
   if( liveTime <= 0.0 )
   {
@@ -6748,8 +6748,8 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
 
   
   std::shared_ptr<const DetectorPeakResponse> detector;
-  if( m_specViewer->measurment(kForeground) )
-    detector = m_specViewer->measurment(kForeground)->detector();
+  if( m_specViewer->measurment(SpecUtils::SpectrumType::Foreground) )
+    detector = m_specViewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
   
   std::shared_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn> answer
     = std::make_shared<GammaInteractionCalc::PointSourceShieldingChi2Fcn>(
@@ -6898,7 +6898,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   
   if( m_backgroundPeakSub->isChecked() )
   {
-    std::shared_ptr<const SpecMeas> back = m_specViewer->measurment(kBackground);
+    std::shared_ptr<const SpecMeas> back = m_specViewer->measurment(SpecUtils::SpectrumType::Background);
     typedef std::shared_ptr<const PeakDef> PeakPtr;
     typedef std::deque< std::shared_ptr<const PeakDef> > PeakDeque;
     std::shared_ptr<const PeakDeque > backpeaks;

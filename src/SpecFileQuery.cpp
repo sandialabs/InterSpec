@@ -384,7 +384,7 @@ namespace SpecFileQuery
           return false;
         
         const vector<string> &remarks = meas.riid_ana.remarks_;
-        const vector<DetectorAnalysisResult> &res = meas.riid_ana.results_;
+        const vector<SpecUtils::DetectorAnalysisResult> &res = meas.riid_ana.results_;
         
         for( const auto &nv : meas.riid_ana.algorithm_component_versions_ )
         {
@@ -403,7 +403,7 @@ namespace SpecFileQuery
         
         for( size_t i = 0; i < res.size(); ++i )
         {
-          const DetectorAnalysisResult &r = res[i];
+          const SpecUtils::DetectorAnalysisResult &r = res[i];
           if( test_string( r.detector_, m_stringSearchType, m_searchString ) )
             return true;
           if( test_string( r.id_confidence_, m_stringSearchType, m_searchString ) )
@@ -429,7 +429,7 @@ namespace SpecFileQuery
         const SandiaDecay::Nuclide * const nuc = db->nuclide( m_searchString );
       
         //const vector<string> &remarks = ana->remarks_;
-        const vector<DetectorAnalysisResult> &res = meas.riid_ana.results_;
+        const vector<SpecUtils::DetectorAnalysisResult> &res = meas.riid_ana.results_;
         
         if( nuc )
         {
@@ -469,7 +469,7 @@ namespace SpecFileQuery
           //Go through here and check if the specified text is contained within nuclide_, nuclide_type_, or remark_
           for( size_t i = 0; i < res.size(); ++i )
           {
-            const DetectorAnalysisResult &r = res[i];
+            const SpecUtils::DetectorAnalysisResult &r = res[i];
             if( test_string( r.nuclide_, m_stringSearchType, m_searchString ) )
               return true;
             if( test_string( r.nuclide_type_, m_stringSearchType, m_searchString ) )
@@ -484,7 +484,7 @@ namespace SpecFileQuery
         
       case DetectionSystemType:
       {
-        const DetectorType type = DetectorType(m_discreteOption);
+        const SpecUtils::DetectorType type = SpecUtils::DetectorType(m_discreteOption);
         return (meas.detector_type == type);
         
         break;
@@ -907,7 +907,7 @@ namespace SpecFileQuery
         break;
         
       case DetectionSystemType:
-        summary += " is a " + detectorTypeToString( DetectorType(m_discreteOption) );
+        summary += " is a " + SpecUtils::detectorTypeToString( SpecUtils::DetectorType(m_discreteOption) );
         break;
         
       case SearchMode:
@@ -1009,20 +1009,35 @@ namespace SpecFileQuery
       {
         //We could check m_discreteOption is
         bool gotit = false;
-        switch( DetectorType(m_discreteOption) )
+        switch( SpecUtils::DetectorType(m_discreteOption) )
         {
-          case kGR135Detector: case kIdentiFinderDetector:
-          case kIdentiFinderNGDetector: case kIdentiFinderLaBr3Detector:
-          case kDetectiveDetector: case kDetectiveExDetector:
-          case kDetectiveEx100Detector: case kDetectiveEx200Detector:
-          case kDetectiveX:
-          case kSAIC8Detector: case kFalcon5000: case kUnknownDetector:
-          case kMicroDetectiveDetector: case kMicroRaiderDetector:
-          case kRadHunterNaI: case kRadHunterLaBr3: case kRsi701: case kRsi705:
-          case kAvidRsi:
-          case kOrtecRadEagleNai: case kOrtecRadEagleCeBr2Inch:
-          case kOrtecRadEagleCeBr3Inch: case kOrtecRadEagleLaBr:
-          case kSam940LaBr3: case kSam940: case kSam945: case kSrpm210:
+          case SpecUtils::DetectorType::kGR135Detector:
+          case SpecUtils::DetectorType::kIdentiFinderDetector:
+          case SpecUtils::DetectorType::kIdentiFinderNGDetector:
+          case SpecUtils::DetectorType::kIdentiFinderLaBr3Detector:
+          case SpecUtils::DetectorType::kDetectiveDetector:
+          case SpecUtils::DetectorType::kDetectiveExDetector:
+          case SpecUtils::DetectorType::kDetectiveEx100Detector:
+          case SpecUtils::DetectorType::kDetectiveEx200Detector:
+          case SpecUtils::DetectorType::kDetectiveX:
+          case SpecUtils::DetectorType::kSAIC8Detector:
+          case SpecUtils::DetectorType::kFalcon5000:
+          case SpecUtils::DetectorType::kUnknownDetector:
+          case SpecUtils::DetectorType::kMicroDetectiveDetector:
+          case SpecUtils::DetectorType::kMicroRaiderDetector:
+          case SpecUtils::DetectorType::kRadHunterNaI:
+          case SpecUtils::DetectorType::kRadHunterLaBr3:
+          case SpecUtils::DetectorType::kRsi701:
+          case SpecUtils::DetectorType::kRsi705:
+          case SpecUtils::DetectorType::kAvidRsi:
+          case SpecUtils::DetectorType::kOrtecRadEagleNai:
+          case SpecUtils::DetectorType::kOrtecRadEagleCeBr2Inch:
+          case SpecUtils::DetectorType::kOrtecRadEagleCeBr3Inch:
+          case SpecUtils::DetectorType::kOrtecRadEagleLaBr:
+          case SpecUtils::DetectorType::kSam940LaBr3:
+          case SpecUtils::DetectorType::kSam940:
+          case SpecUtils::DetectorType::kSam945:
+          case SpecUtils::DetectorType::kSrpm210:
             gotit = true;
             break;
         }

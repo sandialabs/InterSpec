@@ -90,7 +90,7 @@ namespace IsotopeId
     sm_data_dir = dir;
   }
 
-double minDetectableCounts( double energy, double sigma, std::shared_ptr<const Measurement> data )
+double minDetectableCounts( double energy, double sigma, std::shared_ptr<const SpecUtils::Measurement> data )
 {
   //If we are calling this function, we are assuming no peak was detected,
   //  and that the entire contribution to data is background.  We will return
@@ -102,7 +102,7 @@ double minDetectableCounts( double energy, double sigma, std::shared_ptr<const M
 }//double minDetectableCounts(...)
 
 
-double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr<const Measurement> data )
+double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr<const SpecUtils::Measurement> data )
 {
   double contArea = 0.0;
   if( peak->continuum()->defined() )
@@ -199,7 +199,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
                            std::shared_ptr<const DetectorPeakResponse> response,
                            double shielding_an,
                            double shielding_ad,
-                           std::shared_ptr<const Measurement> data,
+                           std::shared_ptr<const SpecUtils::Measurement> data,
                            std::shared_ptr<const PeakDef> test_peak,
                            std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > all_peaks
                           )
@@ -379,7 +379,7 @@ void suggestNuclides(
   PeakToNuclideMatch &answer,
   std::shared_ptr<const PeakDef> peak,
   std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
-  std::shared_ptr<const Measurement> data,
+  std::shared_ptr<const SpecUtils::Measurement> data,
   std::shared_ptr<const DetectorPeakResponse> response )
 {
   //1) check input:
@@ -500,7 +500,7 @@ void findCandidates( vector<string> &suggestednucs,
                     std::shared_ptr<const PeakDef> peak,
                     std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > allpeaks,
                     std::shared_ptr<const DetectorPeakResponse> detector,
-                    std::shared_ptr<const Measurement> data )
+                    std::shared_ptr<const SpecUtils::Measurement> data )
 {
   if( !peak || !allpeaks || !data )
   {
@@ -1030,7 +1030,7 @@ void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const
 }//void peakCandidateSourceFromRefLines(...)
   
 
-void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
+void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> data,
                                std::shared_ptr<const PeakDef> peak,
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > hintpeaks,
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > userpeaks,

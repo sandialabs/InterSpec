@@ -82,6 +82,8 @@ typedef Wt::Chart::WCartesianChart ChartRenderHelper_t;
 using namespace std;
 using namespace Wt;
 
+using SpecUtils::Measurement;
+
 namespace
 {
   const WColor ns_defaultTimeHighlightColors[3] = { {255,255,0,155}, {0,255,255,75}, {0,128,0,75} };
@@ -5430,12 +5432,12 @@ void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
     }//if( not data column )
     
     InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-    std::shared_ptr<SpecMeas> meas = ((app && app->viewer()) ? app->viewer()->measurment( kForeground ) : std::shared_ptr<SpecMeas>());
+    std::shared_ptr<SpecMeas> meas = ((app && app->viewer()) ? app->viewer()->measurment( SpecUtils::SpectrumType::Foreground ) : std::shared_ptr<SpecMeas>());
       
     if( meas && meas->sample_numbers().size() > 1 )
     {
         const std::set<int> total_sample_nums = meas->sample_numbers();
-        const std::set<int> &currentSamples = app->viewer()->displayedSamples( kForeground );
+        const std::set<int> &currentSamples = app->viewer()->displayedSamples( SpecUtils::SpectrumType::Foreground );
         int currentSample = -1;
         
         if( currentSamples.empty() && total_sample_nums.size() )

@@ -44,12 +44,16 @@
 #include "InterSpec/SpecFileQueryDbCache.h"
 
 class InterSpec;
-class Measurement;
+
 class PopupDivMenu;
-class MeasurementInfo;
 class SpecMeasManager;
 class ResultTableModel;
 class RowStretchTreeView;
+
+namespace SpecUtils
+{
+  class SpecFile;
+}
 
 namespace Wt
 {

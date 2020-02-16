@@ -47,6 +47,8 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/SpectraFileModel.h"
 
+namespace SpecUtils{ enum class ParserType : int; }
+namespace SpecUtils{ enum class SpectrumType : int; }
 
 // Some forward declarations
 namespace Wt
@@ -79,6 +81,8 @@ class FileDragUploadResource;
 class DownloadSpectrumResource;
 class SpecificSpectrumResource;
 
+namespace SpecUtils{ enum class SpectrumType : int; }
+
 namespace DataBaseUtils
 {
   class DbSession;
@@ -103,7 +107,7 @@ public:
                const std::string &fileLocation,
                 std::shared_ptr<SpectraFileHeader> &header,
                 std::shared_ptr<SpecMeas> &Measurement,
-                ParserType parseType = kAutoParser );
+                SpecUtils::ParserType parseType = SpecUtils::ParserType::kAutoParser );
 
   static void displayInvalidFileMsg( std::string filename, std::string errormsg );
   
@@ -131,15 +135,15 @@ public:
   //      to not cache files in SpectraHeader (except for its weak_ptr<>).
 
   //Returns the row in m_fileModel of the new file, -1 on error
-  int dataUploaded2( Wt::WFileUpload *upload , SpectrumType type);
+  int dataUploaded2( Wt::WFileUpload *upload , SpecUtils::SpectrumType type);
   int dataUploaded( Wt::WFileUpload *upload );
   int dataUploaded( Wt::WFileUpload *upload,
                     std::shared_ptr<SpecMeas> &meas_ptr );
   
   //loadFromFileSystem(...) loads a file from disk, as if it were uploaded.
   //  Returns whether or not file was loaded
-  bool loadFromFileSystem( const std::string &filename, SpectrumType type,
-                           ParserType parseType = kAutoParser );
+  bool loadFromFileSystem( const std::string &filename, SpecUtils::SpectrumType type,
+                           SpecUtils::ParserType parseType = SpecUtils::ParserType::kAutoParser );
   
   
   void selectionChanged();
@@ -160,17 +164,17 @@ public:
   void removeAllFiles();
   void renameSaveAsFile();
   void newFileFromSelection();
-  std::shared_ptr<SpecMeas> selectedToMeasurementInfo() const;
-  void unDisplay( SpectrumType type );
+  std::shared_ptr<SpecMeas> selectedToSpecMeas() const;
+  void unDisplay( SpecUtils::SpectrumType type );
   
   //the loadSelected() with second argument helps keep from having to parse
   //  the file twice when SpectraHeader is not cacheing the SpecMeas obj.
-  void loadSelected( const SpectrumType type, const bool doPreviousEnergyRangeCheck );
-  void loadSelected( const SpectrumType type, std::shared_ptr<SpecMeas> ptr,
+  void loadSelected( const SpecUtils::SpectrumType type, const bool doPreviousEnergyRangeCheck );
+  void loadSelected( const SpecUtils::SpectrumType type, std::shared_ptr<SpecMeas> ptr,
                      const bool doPreviousEnergyRangeCheck  );
 
   void startQuickUpload();
-  void finishQuickUpload( Wt::WFileUpload *upload, const SpectrumType type );
+  void finishQuickUpload( Wt::WFileUpload *upload, const SpecUtils::SpectrumType type );
 
   
   //handleNonSpectrumFile(): if a file couldnt be parsed, this function will
@@ -184,9 +188,9 @@ public:
   // displayFile(...) displays the file passed in as specified type, if it can.
   //  --if kForground is specified and the measurment contains a background
   //    spectrum then the background will be loaded as well (as seperate graph).
-  //  --if kSecondForeground is specified, then only non-bakcground and
+  //  --if SpecUtils::SpectrumType::SecondForeground is specified, then only non-bakcground and
   //    non-calibration spectra will be displayed.
-  //  --if kBackground is specified and the number of measurments is greater
+  //  --if SpecUtils::SpectrumType::Background is specified and the number of measurments is greater
   //    than 1, the first spectrum in the file will be loaded while warning user
   //For all cases, if the file contains a calibration measurment, it will not be
   //loaded and the user will be notified of this.
@@ -216,7 +220,7 @@ public:
   //      pointer, which would remove need to pass in fileModelRow into this fcn
   void displayFile( int fileModelRow,
                     std::shared_ptr<SpecMeas> measement_ptr,
-                    const SpectrumType type,
+                    const SpecUtils::SpectrumType type,
                     bool checkIfPreviouslyOpened,
                     const bool doPreviousEnergyRangeCheck,
                     const bool checkIfAppropriateForViewing
@@ -283,13 +287,13 @@ public:
   //  destructing.
   void checkIfPreviouslyOpened( const std::string sessionID,
                                 std::shared_ptr<SpectraFileHeader> header,
-                                SpectrumType type,
+                                SpecUtils::SpectrumType type,
                                 std::shared_ptr< std::mutex > mutex,
                                 std::shared_ptr<bool> destructed );
   
   void createPreviousSpectraDialog( const std::string sessionID,
                                     std::shared_ptr<SpectraFileHeader> header,
-                                    const SpectrumType type,
+                                    const SpecUtils::SpectrumType type,
                                     const std::vector< Wt::Dbo::ptr<UserFileInDb> > modifiedFiles,
                                    const std::vector< Wt::Dbo::ptr<UserFileInDb> > unModifiedFiles );
   
@@ -314,14 +318,14 @@ public:
                       const std::vector< Wt::WCheckBox * > cbs,
                                AuxWindow *window );
   void startStoreSpectraAsInDb();
-  void browseDatabaseSpectrumFiles( SpectrumType type, std::shared_ptr<SpectraFileHeader> header );
+  void browseDatabaseSpectrumFiles( SpecUtils::SpectrumType type, std::shared_ptr<SpectraFileHeader> header );
 #endif
   
 #if( !ANDROID && !IOS )
   //Some resources to enable drag-n-drop of spectrum files to various widgets.
   //  Call FileDragUploadResource::addDragNDropToWidget( WWebWidget * ) to
   //  enable a widgets drag-n-drop support.
-  FileDragUploadResource *dragNDrop( SpectrumType type );
+  FileDragUploadResource *dragNDrop( SpecUtils::SpectrumType type );
   FileDragUploadResource *foregroundDragNDrop();
   FileDragUploadResource *secondForegroundDragNDrop();
   FileDragUploadResource *backgroundDragNDrop();
@@ -331,15 +335,16 @@ public:
   //handleZippedFile:  presents the user with a dialog to extract and use one
   //  of the spectrum files in a zip archive.  Returns true if a valid zip file.
   //  'name' is the display name of the original file, while 'spoolName' is
-  //  is the actual file on disk.  If spectrum_type is not kForeground,
-  //  kSecondForeground, or kBackground, then user will be given option of what
+  //  is the actual file on disk.  If spectrum_type is not SpecUtils::SpectrumType::Foreground,
+  //  SpecUtils::SpectrumType::SecondForeground, or SpecUtils::SpectrumType::Background, then user will be given option of what
   //  to open it as.
+  // ToDo: having SpecUtils::SpectrumType potentially be invalid feels very wrong - should fix signature of function up
   bool handleZippedFile( const std::string &name,
                          const std::string &spoolName,
-                         const int spectrum_type );
+                         const SpecUtils::SpectrumType spectrum_type );
   
-  //group should have three buttons coorespnding kForeground, kBackground, and
-  //  kSecondForeground.
+  //group should have three buttons coorespnding SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::Background, and
+  //  SpecUtils::SpectrumType::SecondForeground.
   //if index is valid, open the file that row cooreponds to; if not, will open
   //  the selected row (if none selected open nothin, but that shouldnt ever
   //  happen)
@@ -355,7 +360,7 @@ public:
   //  filesystem URL.  Does not delete the file after opening.
   void handleFileDrop( const std::string &name,
                        const std::string &spoolName,
-                       SpectrumType type );
+                       SpecUtils::SpectrumType type );
 
 protected:
   //Called from inside displayFile(...) to see if there are options for
@@ -367,14 +372,14 @@ protected:
   //Throws excpetion if any input is invalid.
   bool checkForAndPromptUserForDisplayOptions( std::shared_ptr<SpectraFileHeader> header,
                                               std::shared_ptr<SpecMeas> measement_ptr,
-                                              const SpectrumType type,
+                                              const SpecUtils::SpectrumType type,
                                               const bool checkIfPreviouslyOpened,
                                               const bool doPreviousEnergyRangeCheck );
 
   void selectEnergyBinning( const std::string binning,
                             std::shared_ptr<SpectraFileHeader> header,
                             std::shared_ptr<SpecMeas> meas,
-                            const SpectrumType type,
+                            const SpecUtils::SpectrumType type,
                             const bool checkIfPreviouslyOpened,
                             const bool doPreviousEnergyRangeCheck );
   
@@ -427,8 +432,8 @@ protected:
 //  Wt::WPushButton  *m_saveFileAsButton;
 //  PopupDivMenu     *m_saveAsPopup;
   
-  DownloadSpectrumResource *m_downloadResources[kNumSaveSpectrumAsType];
-  SpecificSpectrumResource *m_specificResources[kNumSaveSpectrumAsType];
+  DownloadSpectrumResource *m_downloadResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType)];
+  SpecificSpectrumResource *m_specificResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType)];
   
 #if( !ANDROID && !IOS )
   FileDragUploadResource *m_foregroundDragNDrop;

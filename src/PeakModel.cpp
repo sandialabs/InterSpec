@@ -209,7 +209,7 @@ bool PeakModel::recomendUseForFit( const SandiaDecay::Nuclide *nuc,
 
 
 std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
-                                      std::shared_ptr<const Measurement> meas,
+                                      std::shared_ptr<const SpecUtils::Measurement> meas,
                                       std::istream &csv )
 {
   //Info that will be parsed is based on PeakModel::PeakCsvResource::handleRequest(...)
@@ -433,7 +433,7 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
   {
     const PeakDef &peak = m_model->peak( peakn );
 
-    std::shared_ptr<const Measurement> data = m_model->m_dataModel->getData();
+    std::shared_ptr<const SpecUtils::Measurement> data = m_model->m_dataModel->getData();
     float live_time = 0.0;
     boost::posix_time::ptime meastime;
     double region_area = 0.0, xlow = 0.0, xhigh = 0.0;
@@ -756,7 +756,7 @@ bool PeakModel::isWithinRange( const PeakDef &peak ) const
   if( !m_dataModel )
     return false;
 
-  std::shared_ptr<const Measurement> xaxis = m_dataModel->histUsedForXAxis();
+  std::shared_ptr<const SpecUtils::Measurement> xaxis = m_dataModel->histUsedForXAxis();
 
   if( !xaxis )
   {
@@ -853,7 +853,7 @@ void PeakModel::addPeaks( const vector<PeakDef> &peaks )
 
 void PeakModel::definePeakXRange( PeakDef &peak )
 {
-  std::shared_ptr<const Measurement> data, continuum;
+  std::shared_ptr<const SpecUtils::Measurement> data, continuum;
   std::shared_ptr<PeakContinuum> peakcont = peak.continuum();
   
   if( m_dataModel )
@@ -867,7 +867,7 @@ void PeakModel::definePeakXRange( PeakDef &peak )
   if( !peakcont->energyRangeDefined() && peakcont->isPolynomial() )
   {
     double lowerEnengy, upperEnergy;
-    std::shared_ptr<const Measurement> data;
+    std::shared_ptr<const SpecUtils::Measurement> data;
     if( m_dataModel )
       data = m_dataModel->getData();
     findROIEnergyLimits( lowerEnengy, upperEnergy, peak, data );
@@ -1166,7 +1166,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
             return boost::any();
           
           double contArea = 0.0;
-          std::shared_ptr<const Measurement> dataH = m_dataModel->getData();
+          std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
           
           if( !dataH )
             return boost::any();
@@ -1181,7 +1181,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
             contArea = peak->offset_integral( lowx, upperx );
           }else
           {
-            std::shared_ptr<const Measurement> continuum = m_dataModel->getBackground();
+            std::shared_ptr<const SpecUtils::Measurement> continuum = m_dataModel->getBackground();
             if( continuum )
               contArea = continuum->Integral( lowbin, highbin );
           }//if( peak->continuumDefined() ) / else
@@ -1313,7 +1313,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     {
       if( !m_dataModel )
         return boost::any();
-      std::shared_ptr<const Measurement> dataH = m_dataModel->getData();
+      std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
       double lowx(0.0), upperx(0.0);
       findROIEnergyLimits( lowx, upperx, *peak, dataH );
       if( column == kLowerX )
@@ -1329,7 +1329,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       {
         if( !m_dataModel )
           return boost::any();
-        std::shared_ptr<const Measurement> dataH = m_dataModel->getData();
+        std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
         if( !dataH )
           return boost::any();
         
@@ -1338,7 +1338,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         return peak->offset_integral( lowx, upperx );
       }else
       {
-        std::shared_ptr<const Measurement> continuum;
+        std::shared_ptr<const SpecUtils::Measurement> continuum;
         if( m_dataModel )
           continuum = m_dataModel->getBackground();
         if( !continuum )

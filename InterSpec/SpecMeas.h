@@ -49,11 +49,11 @@ namespace rapidxml
   template<class Ch> class xml_document;
 }
 
-class SpecMeas : public MeasurementInfo
+class SpecMeas : public SpecUtils::SpecFile
 {
 /*
-  This SpecMeas class is the class which hold not just the MeasurementInfo
-  information via inheritance (the MeasurementInfo holds all info that comes
+  This SpecMeas class is the class which hold not just the SpecUtils::SpecFile
+  information via inheritance (the SpecUtils::SpecFile holds all info that comes
   from a measurment file, sucha as a PCF or N42 file), but all the user
   'value added' information, such as peak information, highlighted regions,
   etc.
@@ -131,15 +131,15 @@ public:
   
   
   //guessDetectorTypeFromFileName(...): not called by default
-  static DetectorType guessDetectorTypeFromFileName( std::string name );
+  static SpecUtils::DetectorType guessDetectorTypeFromFileName( std::string name );
   
 
-  std::shared_ptr<Measurement> continuum();
+  std::shared_ptr<SpecUtils::Measurement> continuum();
   bool continuumVisible() const;
   std::shared_ptr<DetectorPeakResponse> detector();
   std::shared_ptr<const DetectorPeakResponse> detector() const;
 
-  SpectrumType displayType() const;
+  SpecUtils::SpectrumType displayType() const;
   const std::set<int> &displayedSampleNumbers() const;
 
   //aboutToBeDeleted(): signal emited right before object destructions - useful
@@ -160,11 +160,11 @@ public:
   void detectorChangedCallback( std::shared_ptr<DetectorPeakResponse> det );
 
 
-  void displayedSpectrumChangedCallback( SpectrumType type,
+  void displayedSpectrumChangedCallback( SpecUtils::SpectrumType type,
                                          std::shared_ptr<SpecMeas> measurment,
                                          std::set<int> sample_numbers );
   virtual void cleanup_after_load( const unsigned int flags
-                                         = MeasurementInfo::StandardCleanup );
+                                         = SpecFile::StandardCleanup );
   
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                                  peaks( const std::set<int> &samplenums );
@@ -203,12 +203,12 @@ public:
                                 std::shared_ptr< PeakDeque > foundPeaks
                                 /*, std::shared_ptr< PeakDeque > intitalPeaks*/ );
   
-  //peaksHaveBeenAdded(): marks this MeasurementInfo object as
+  //peaksHaveBeenAdded(): marks this SpecUtils::SpecFile object as
   void setModified();
 
   //shiftPeaksForRecalibration: shift the peaks for when you apply a
   //  recalibration to the spectrum, for instance after calling
-  //  MeasurementInfo::recalibrate_by_eqn(...).  Note that the PeakModel is not
+  //  SpecFile::recalibrate_by_eqn(...).  Note that the PeakModel is not
   //  notified of the changes, and the shift is applied to all peaks of the
   //  SpecMeas object.
   void shiftPeaksForRecalibration( std::vector<float> old_pars,
@@ -313,7 +313,7 @@ protected:
   std::shared_ptr< SampleNumsToPeakMap > m_peaks;
   std::shared_ptr<DetectorPeakResponse> m_detector;
 
-  std::shared_ptr<SpectrumType> m_displayType;
+  std::shared_ptr<SpecUtils::SpectrumType> m_displayType;
   std::shared_ptr<std::set<int> > m_displayedSampleNumbers;
 
   

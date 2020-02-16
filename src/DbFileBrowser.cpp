@@ -57,7 +57,7 @@ using namespace Wt;
 
 DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
                               InterSpec *viewer,
-                              SpectrumType type,
+                              SpecUtils::SpectrumType type,
                               std::shared_ptr<SpectraFileHeader> header)
 : AuxWindow( "Previously Stored States",
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
@@ -99,7 +99,7 @@ SnapshotBrowser is the refactored class to create the UI for loading snapshot/sp
 */
 SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
                                   InterSpec *viewer,
-                                  const SpectrumType type,
+                                  const SpecUtils::SpectrumType type,
                                   std::shared_ptr<SpectraFileHeader> header,
                                   Wt::WContainerWidget *buttonBar,
                                   Wt::WContainerWidget *parent )
@@ -335,12 +335,12 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     for( int i = 0; i < 3; ++i )
     {
       const char *name = "";
-      switch( SpectrumType(i) )
+      switch( SpecUtils::SpectrumType(i) )
       {
-        case kForeground:       name = "Foreground";      break;
-        case kSecondForeground: name = "Second Spectrum"; break;
-        case kBackground:       name = "Background";      break;
-      }//switch( SpectrumType(i) )
+        case SpecUtils::SpectrumType::Foreground:       name = "Foreground";      break;
+        case SpecUtils::SpectrumType::SecondForeground: name = "Second Spectrum"; break;
+        case SpecUtils::SpectrumType::Background:       name = "Background";      break;
+      }//switch( SpecUtils::SpectrumType(i) )
       
       WRadioButton *button = new WRadioButton( name, m_buttonbox );
       button->setMargin( 10, Wt::Right );
@@ -400,7 +400,7 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
   
   for( int i = 0; i < 3; i++ )
   {
-    //loop through each spectrumtype because sometimes there can be one spectra that is in multiple types
+    //loop through each SpecUtils::SpectrumType because sometimes there can be one spectra that is in multiple types
     Spectras spectras = m_session->session()->find< UserFileInDb >()
                                   .where( " id = ? OR id = ? OR id = ?")
                                   .bind( (*versionIterator)->foregroundId )
@@ -409,19 +409,19 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
     
     string pre = "";
     string post = "";
-    SpectrumType spectratype = SpectrumType(i);
+    SpecUtils::SpectrumType spectratype = SpecUtils::SpectrumType(i);
     
     for( Dbo::collection< Dbo::ptr<UserFileInDb> >::const_iterator spectraIterator = spectras.begin();
         spectraIterator != spectras.end(); ++spectraIterator )
     {
       Wt::WIconPair *icon = NULL;
-      if ((*versionIterator)->foregroundId==spectraIterator->id() && spectratype==kForeground)
+      if ((*versionIterator)->foregroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Foreground)
       {
         icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
-      }else if ((*versionIterator)->backgroundId==spectraIterator->id() && spectratype==kBackground)
+      }else if ((*versionIterator)->backgroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Background)
       {
         icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
-      }else if ((*versionIterator)->secondForegroundId==spectraIterator->id() && spectratype==kSecondForeground)
+      }else if ((*versionIterator)->secondForegroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::SecondForeground)
       {
         icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
       }else
@@ -455,7 +455,7 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
       m_UserFileInDbLookup[spectraNode]=*spectraIterator;
       break;
     } //iterate through the spectra contained in this snapshot
-  } //for( int i = 0; i < 3; i++ ) -- loop through spectrumtype
+  } //for( int i = 0; i < 3; i++ ) -- loop through SpecUtils::SpectrumType
   
 } //void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::const_iterator versionIterator, Wt::WTreeNode *versionNode)
 
@@ -522,7 +522,7 @@ void SnapshotBrowser::selectionChanged()
     m_timeLabel->setText("");
   } //some node not found
   
-  if( (m_header && !m_header->m_uuid.empty()) ||  !m_viewer->measurment( kForeground ) )
+  if( (m_header && !m_header->m_uuid.empty()) ||  !m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
   {
     m_buttonbox->hide(); //make sure it is hidden if no uuid selected
   }//!m_uuid.empty()
@@ -886,9 +886,9 @@ void SnapshotBrowser::loadSpectraSelected()
         
         int snapshot_id = -1;
         
-        SpectrumType type = kForeground;
+        SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
         if( m_buttonbox->isVisible() )
-            type = SpectrumType( m_buttonGroup->checkedId() );
+            type = SpecUtils::SpectrumType( m_buttonGroup->checkedId() );
         
         int modelrow = -1;
         std::shared_ptr<SpecMeas> measurement;
@@ -958,7 +958,7 @@ void SnapshotBrowser::loadSpectraSelected()
                 if( entry && entry.id() == dbfile.id() )
                 {
                     measurement = header->parseFile();
-                    m_manager->displayFile( row, measurement, kForeground, false, false, false );
+                    m_manager->displayFile( row, measurement, SpecUtils::SpectrumType::Foreground, false, false, false );
                     m_finished.emit();
                     return;
                 }//if( entry.id() == dbfile.id() )
@@ -968,7 +968,7 @@ void SnapshotBrowser::loadSpectraSelected()
             {
                 const int modelRow = m_manager->setDbEntry( dbfile, header,
                                                            measurement, true );
-                m_manager->displayFile( modelRow, measurement, kForeground, false, false, false );
+                m_manager->displayFile( modelRow, measurement, SpecUtils::SpectrumType::Foreground, false, false, false );
                 
             }catch( exception &e )
             {

@@ -44,6 +44,8 @@ namespace ROOT
   }//namespace Minuit2
 }//namespace ROOT
 
+namespace SpecUtils{ class Measurement; }
+
 
 typedef std::shared_ptr<const DetectorPeakResponse> DetctorPtr;
 typedef std::vector< std::shared_ptr<const PeakDef> > PeakShrdVec;
@@ -85,7 +87,7 @@ const char *calculateContinuum( float *spectrum, int ssize,
 
 //estimateContinuum(): estimates continuum for the data passed in using
 //  "standard" parameters
-std::shared_ptr<Measurement> estimateContinuum( std::shared_ptr<const Measurement> data );
+std::shared_ptr<SpecUtils::Measurement> estimateContinuum( std::shared_ptr<const SpecUtils::Measurement> data );
 
 std::vector<float> findPeaksByRelaxation( float *source, float *dest, int ssize,
                                           float sigma, double threshold,
@@ -108,7 +110,7 @@ causilyDisconnectedPeaks(  const double ncausality,
 
 
 //Note: smoothSpectrum(...) does not divide by bin widths
-void smoothSpectrum( std::shared_ptr<const Measurement> meas, const int side_bins,
+void smoothSpectrum( std::shared_ptr<const SpecUtils::Measurement> meas, const int side_bins,
                      const int order, const int derivative,
                      std::vector<float> &results );
 void smoothSpectrum( const std::vector<float> &spectrum, const int side_bins,
@@ -142,7 +144,7 @@ void expected_peak_width_limits( const float energy,
 //  isnt negative, or data is invalid.
 void find_roi_for_2nd_deriv_candidate( double &lowerEnengy, double &upperEnergy,
                             const float peakmean,
-                            const std::shared_ptr<const Measurement> &data );
+                            const std::shared_ptr<const SpecUtils::Measurement> &data );
 
 //For meaning of stat_threshold and hypothesis_threshold see notes for
 //  the chi2_significance_test(..) function
@@ -157,7 +159,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
                                       const double stat_threshold,
                                       const double hypothesis_threshold,
                                       std::vector<PeakDef> all_peaks,
-                                      std::shared_ptr<const Measurement> data,
+                                      std::shared_ptr<const SpecUtils::Measurement> data,
                                       const std::vector<PeakDef> &fixedpeaks,
                                       bool isRefit = false );
 
@@ -170,7 +172,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
 //  or a to large of number is specified, then dataH->num_gamma_channels() will
 //  be used.
 std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI(
-                                                          std::shared_ptr<const Measurement> data,
+                                                          std::shared_ptr<const SpecUtils::Measurement> data,
                                                            size_t start_channel,
                                                            size_t end_channel );
 
@@ -180,7 +182,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI(
  
  Takes about 40% of the time as #secondDerivativePeakCanidatesWithROI
  */
-void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> data,
+void secondDerivativePeakCanidates( const std::shared_ptr<const SpecUtils::Measurement> data,
                                     size_t start_channel,
                                     size_t end_channel,
                                    std::vector< std::tuple<float,float,float> > &results );
@@ -195,7 +197,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
 //  search, and tougher quality requirments will be placed on the fit peaks.
 std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                            double pixelPerKev,
-                                           const std::shared_ptr<const Measurement> &data,
+                                           const std::shared_ptr<const SpecUtils::Measurement> &data,
                                            const PeakShrdVec &existing_peaks );
 
 //refitPeaksThatShareROI: intended to refit peaks fit for by
@@ -205,7 +207,7 @@ std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 //  meanSigmaVary is how many sigma we should limit the peak means to. A negative
 //  value means no limit (untested).  Recomend 0.25.
 std::vector< std::shared_ptr<const PeakDef> >
-    refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &dataH,
+    refitPeaksThatShareROI( const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                             const DetctorPtr &detector,
                             const std::vector< std::shared_ptr<const PeakDef> > &inpeaks,
                             const double meanSigmaVary );
@@ -219,7 +221,7 @@ std::vector< std::shared_ptr<const PeakDef> >
 void fitPeaks( const std::vector<PeakDef> &input_peaks,
                       const double stat_threshold,
                       const double hypothesis_threshold,
-                      std::shared_ptr<const Measurement> data,
+                      std::shared_ptr<const SpecUtils::Measurement> data,
                       std::vector<PeakDef> &results,
                       const std::vector<PeakDef> &fixedpeaks,
                       bool amplitudeOnly ) throw();
@@ -235,7 +237,7 @@ enum MultiPeakInitialGuesMethod
 //  the range x0 to x1
 void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuesMethod method,
-                          std::shared_ptr<const Measurement> dataH,
+                          std::shared_ptr<const SpecUtils::Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
                           std::vector<std::shared_ptr<PeakDef> > &answer,
                           double &chi2 );
@@ -243,7 +245,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
 
 void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuesMethod method,
-                          std::shared_ptr<const Measurement> dataH,
+                          std::shared_ptr<const SpecUtils::Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
                           std::vector<std::shared_ptr<PeakDef> > &answer,
                           double &chi2 );
@@ -316,14 +318,14 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
 //set_chi2_dof(): computes and sets the Chi2/Dof for gaussian peaks with index
 // 'startpeakindex' through 'startpeakindex + npeaks'.
 //  Takes into account sharing of ROI between peaks.
-void set_chi2_dof( std::shared_ptr<const Measurement> data,
+void set_chi2_dof( std::shared_ptr<const SpecUtils::Measurement> data,
                    std::vector<PeakDef> &fitpeaks,
                    const size_t startpeakindex, const size_t npeaks );
 
 //chi2_for_region(...): gives the chi2 or a region of data, given
 //  the input peaks.
 double chi2_for_region( const PeakShrdVec &peaks,
-                        const std::shared_ptr<const Measurement> &data,
+                        const std::shared_ptr<const SpecUtils::Measurement> &data,
                         const int lowBin,
                         const int highBin );
 
@@ -340,13 +342,13 @@ bool chi2_significance_test( PeakDef peak,
                              const double stat_threshold,  //this is how large the chi2 without the peak must be, inorder for peak to be necessary - the higher the number this is, the further away from the background the data must be before a peak becomes necaassary
                              const double hypothesis_threshold,  //this says roughly how good a gaussian explains the excess of data over background - higher the number input, the more closer to a gaussian the shape has to be
                              std::vector<PeakDef> other_peaks,
-                             std::shared_ptr<const Measurement> data );
+                             std::shared_ptr<const SpecUtils::Measurement> data );
 
 
 namespace ExperimentalAutomatedPeakSearch
 {
   std::vector<std::shared_ptr<const PeakDef> >
-              search_for_peaks( const std::shared_ptr<const Measurement> meas,
+              search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
                                 std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > origpeaks,
                                 const bool singleThreaded );
 }//namespace ExperimentalAutomatedPeakSearch
@@ -360,15 +362,15 @@ namespace ExperimentalPeakSearch
   
   //search_for_peaks(): a convienience function to call below
   //  search_for_peaks(...) that uses the current best guess of arguments
-  std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> meas,
+  std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
                                          const std::vector<PeakDef> &origpeaks );
   
   
-bool find_spectroscopic_extent( std::shared_ptr<const Measurement> meas,
+bool find_spectroscopic_extent( std::shared_ptr<const SpecUtils::Measurement> meas,
                                size_t &lower_channel,
                                size_t &upper_channel );
 
-std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> meas,
+std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
                                       const double min_chi2_dof_thresh,
                                       const double min_gross_counts_sig_thresh,
                                       const double above_line_chi2_thresh,
@@ -400,7 +402,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
     bool m_inited;
     std::shared_ptr< const std::vector<float> > m_y;
     std::shared_ptr< const std::vector<float> > m_x;
-    std::shared_ptr<const Measurement> m_meas;
+    std::shared_ptr<const SpecUtils::Measurement> m_meas;
     
     std::vector<PeakDef> m_candidates;
     std::vector<PeakDef> m_fixed_peaks;
@@ -442,7 +444,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
     //             candidate peaks.  These peaks will then be included in the fit,
     //             and their properties allowed to vary, but in a more restricted
     //             manor then the new peaks.
-    AutoPeakSearchChi2Fcn( std::shared_ptr<const Measurement> data,
+    AutoPeakSearchChi2Fcn( std::shared_ptr<const SpecUtils::Measurement> data,
                           const std::vector<PeakDef > &fixed_peaks );    
     
     size_t lower_spectrum_channel() const;

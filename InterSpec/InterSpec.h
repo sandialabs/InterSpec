@@ -33,7 +33,7 @@
 #include <Wt/Dbo/Dbo>
 #include <Wt/WContainerWidget>
 
-#include "SpecUtils/SpecFile.h"
+//#include "SpecUtils/SpecFile.h"
 //Without including InterSpecUser.h here, we get some wierd issues with the
 //  DB optomistic versioning...
 #include "InterSpec/InterSpecUser.h"
@@ -81,6 +81,13 @@ namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 class SpectrumViewerTester;
 #endif
+
+namespace SpecUtils{ class SpecFile; }
+namespace SpecUtils{ class Measurement; }
+namespace SpecUtils{ enum class SpectrumType : int; }
+namespace SpecUtils{ enum class DetectorType : int; }
+namespace SpecUtils{ enum class OccupancyStatus : int; }
+
 
 namespace DataBaseUtils
 {
@@ -217,17 +224,17 @@ public:
   //  if the user doesnt cancel the the opening of the file.
   void finishLoadUserFilesystemOpenedFile( std::shared_ptr<SpecMeas> meas,
                                            std::shared_ptr<SpectraFileHeader> header,
-                                           const SpectrumType type );
+                                           const SpecUtils::SpectrumType type );
 
   
   //setSpectrum(...) is intended to be the only place m_dataMeasurement,
   //  m_secondDataMeasurement, or m_backgroundMeasurement are set.
   //  If sample_numbers is empty, then it will default to all sample numbers
-  //  except in the case of a passthrough kForeground, then background and
+  //  except in the case of a passthrough SpecUtils::SpectrumType::Foreground, then background and
   //  calibration samples will not be used (in order to show background/calib
   //  samples in passthrough foreground files, you must explicity pass these
   //  sample numbers in sample_numbers)
-  //If you are passing in a new kForeground spectrum that has the same number
+  //If you are passing in a new SpecUtils::SpectrumType::Foreground spectrum that has the same number
   //  of bins as the previous spectrum, and the new SpecMeas doesnt have a valid
   //  detector, then the new SpecMeas object will be assigned a pointer to the
   //  old detector (they will now share them) - there may be issues with
@@ -237,19 +244,19 @@ public:
   //emits the m_displayedSpectrumChangedSignal
   void setSpectrum( std::shared_ptr<SpecMeas> meas,
                     std::set<int> sample_numbers,
-                    const SpectrumType spec_type,
+                    const SpecUtils::SpectrumType spec_type,
                     const bool checkForPrevioudEnergyCalib );
 
   //reloadCurrentSpectrum(...): reloads the specified spectrum.  This function
   //  is useful when you change teh SpecMeas object (e.x. live or real time),
   //  and would like to propogate this to to the GUI componenets
-  void reloadCurrentSpectrum( SpectrumType spec_type );
+  void reloadCurrentSpectrum( SpecUtils::SpectrumType spec_type );
 
   //loadDetectorToPrimarySpectrum(...): loads a default DetectorType to the meas
   //  object.  If keepMeasModificationStatus is specified true, then the
   //  modified() and modified_since_decode() statuses of meas will not be
   //  altered when the detector is loaded (e.x. will remain unmodified).
-  void loadDetectorToPrimarySpectrum( DetectorType type,
+  void loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
                                       std::shared_ptr<SpecMeas> meas,
                                       const std::string sessionId,
                                       bool keepMeasModificationStatus,
@@ -274,18 +281,18 @@ public:
   
   Wt::WContainerWidget *menuDiv();
 
-  const std::set<int> &displayedSamples( SpectrumType spectrum_type ) const;
+  const std::set<int> &displayedSamples( SpecUtils::SpectrumType spectrum_type ) const;
   std::set<int> validForegroundSamples() const;//forground samples that could possibly be displayed
   
   std::set<int> displayedDetectorNumbers() const;
   
-  std::shared_ptr<SpecMeas> measurment( SpectrumType spectrum_type );
-  std::shared_ptr<const SpecMeas> measurment( SpectrumType spectrum_type ) const;
+  std::shared_ptr<SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type );
+  std::shared_ptr<const SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type ) const;
 
   /** Returns the spectrum displayed on the client side; will return a nullptr
       if the spectrum isnt displayed.
   */
-  std::shared_ptr<const Measurement> displayedHistogram( SpectrumType spectrum_type ) const;
+  std::shared_ptr<const SpecUtils::Measurement> displayedHistogram( SpecUtils::SpectrumType spectrum_type ) const;
 
 #if( IOS )
   void exportSpecFile();
@@ -302,7 +309,7 @@ public:
   //  but the file is already in there, but has been modified in memmorry, then
   //  the file will not be re-saved to the database.
   //  Function wont throw, but may return a null pointer
-  Wt::Dbo::ptr<UserFileInDb> measurmentFromDb( SpectrumType type, bool update );
+  Wt::Dbo::ptr<UserFileInDb> measurmentFromDb( SpecUtils::SpectrumType type, bool update );
   
   //saveStateToDb( entry ): saves the application state to the pointer passed
   //  in.  Note that pointer passed in must be a valid pointer associated with
@@ -398,24 +405,24 @@ public:
   
   //displayScaleFactor(...): the live time scale factor used by to display
   //  the histogram returned by displayedHistogram( spectrum_type ).
-  double displayScaleFactor( SpectrumType spectrum_type ) const;
+  double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
-  //setDisplayScaleFactor(...): sets the display scale factor. SpectrumType
-  //  can not be kForeground (an exception will be thrown).
+  //setDisplayScaleFactor(...): sets the display scale factor. SpecUtils::SpectrumType
+  //  can not be SpecUtils::SpectrumType::Foreground (an exception will be thrown).
   //This will make it so the effective live time of the spectrum will be
   //  'sf' times the original live time of the spectrum.
   void setDisplayScaleFactor( const double sf,
-                              const SpectrumType spectrum_type );
+                              const SpecUtils::SpectrumType spectrum_type );
   
   //changeDisplayedSampleNums(...): called by both changeTimeRange() and
   //  sampleNumbersAddded() when the user wants to change displayed sample numbers
   void changeDisplayedSampleNums( const std::set<int> &samples,
-                                 const SpectrumType type );
+                                 const SpecUtils::SpectrumType type );
 
   
   //liveTime(): returns the live time of the desired spectrum.  Will return 0.0
   //  if not defined.
-  float liveTime( SpectrumType spectrum_type ) const;
+  float liveTime( SpecUtils::SpectrumType spectrum_type ) const;
   
   PopupDivMenu *displayOptionsPopupDiv();
 
@@ -446,7 +453,7 @@ public:
   //  sample numbers of a spectrum is changed.
   //  Note that this signal is _not_ emitted if only the display scale factor
   //  is changed.
-  Wt::Signal<SpectrumType,                //which spectrum changed
+  Wt::Signal<SpecUtils::SpectrumType,                //which spectrum changed
              std::shared_ptr<SpecMeas>, //A pointer to the new spectrum
              std::set<int>               //The sample numbers displayed
              >& displayedSpectrumChanged();
@@ -584,10 +591,10 @@ public:
   void handlePeakInfoClose();
 
 #if( USE_GOOGLE_MAP )
-  void createMapWindow( SpectrumType spectrum_type );
+  void createMapWindow( SpecUtils::SpectrumType spectrum_type );
   void displayOnlySamplesWithinView( GoogleMap *map,
-                                     const SpectrumType targetSamples,
-                                     const SpectrumType fromSamples );
+                                     const SpecUtils::SpectrumType targetSamples,
+                                     const SpecUtils::SpectrumType fromSamples );
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -694,19 +701,19 @@ protected:
                                           );
   
   //timeRegionsToHighlight(): returns the time ranges for the currently set
-  //  sample numbers to display for the SpectrumType indicated.  For
+  //  sample numbers to display for the SpecUtils::SpectrumType indicated.  For
   //  foreground and background the set SpecMeas must be the same as the
   //  foreground, or else an empty result is returned.  Also, if foreground isnt
   //  a passthrough or is missing, an empty result is returned.
   std::vector< std::pair<double,double> > timeRegionsToHighlight(
-                                          const SpectrumType spec_type ) const;
+                                          const SpecUtils::SpectrumType spec_type ) const;
   
   /** Returns the area from m_dataMeasurement that coorespond to being marked,
-      from the detector, as being the SpectrumType specified.  If it cooresponds
+      from the detector, as being the SpecUtils::SpectrumType specified.  If it cooresponds
       to the whole measurement, nothing is returned.
    */
   std::vector< std::pair<double,double> > timeRegionsFromFile(
-                              const Measurement::OccupancyStatus occ_type ) const;
+                              const SpecUtils::OccupancyStatus occ_type ) const;
   
   void displayForegroundData( int first_sample, int last_sample ); //sample numbers are inclusive
   void displaySecondForegroundData();
@@ -722,12 +729,12 @@ protected:
   // displayed.
   //emits the m_displayedSpectrumChangedSignal
   void changeTimeRange( const double t0, const double t1,
-                        const SpectrumType type );
+                        const SpecUtils::SpectrumType type );
   
   //sampleNumbersToDisplayAddded(...): emitted when user control dragg on the
   //  chart to add more time slices
   void sampleNumbersToDisplayAddded( const double t0, const double t1,
-                                     const SpectrumType type );
+                                     const SpecUtils::SpectrumType type );
   
   //detectorsToDisplayChanged(): a callback function for when the user selects a
   //  detector to be displayed or not.
@@ -1048,7 +1055,7 @@ protected:
   Wt::WPushButton *m_mobileForwardButton;
   Wt::WContainerWidget *m_notificationDiv; //has id="qtip-growl-container"
   
-  void handleUserIncrementSampleNum( SpectrumType type, bool increment);
+  void handleUserIncrementSampleNum( SpecUtils::SpectrumType type, bool increment);
 
   
  /* Start widgets this class keeps track of */
@@ -1170,7 +1177,7 @@ protected:
   //m_downloadMenu:
   PopupDivMenu *m_downloadMenu;
   //m_downloadMenus: menu items that allow user to download current showing
-  //  spectrums (kForeground, kSecondForeground, kBackground)
+  //  spectrums (SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::SecondForeground, SpecUtils::SpectrumType::Background)
   PopupDivMenu *m_downloadMenus[3];
 #else
 #define USE_SAVEAS_FROM_MENU 0
@@ -1287,7 +1294,7 @@ protected:
   int m_renderedHeight;
 
   //The below pointers may not be valid, so make sure to check them
-//  std::shared_ptr<SpecMeas> m_measurments[kBackground+1]; - should convert the below to use the following
+//  std::shared_ptr<SpecMeas> m_measurments[SpecUtils::SpectrumType::Background+1]; - should convert the below to use the following
   std::shared_ptr<SpecMeas> m_dataMeasurement;
   std::shared_ptr<SpecMeas> m_secondDataMeasurement;
   std::shared_ptr<SpecMeas> m_backgroundMeasurement;  //If a "passthrough" spectrum is uploaded
@@ -1295,9 +1302,9 @@ protected:
                                            //  time slices are displayed
 
   //TODO: m_displayedSpectrumChangedSignal is kinda heavy duty, I could probably
-  //      due with just emmitting SpectrumType and not sampleNumbers or
+  //      due with just emmitting SpecUtils::SpectrumType and not sampleNumbers or
   //      measurments
-  Wt::Signal<SpectrumType,
+  Wt::Signal<SpecUtils::SpectrumType,
              std::shared_ptr<SpecMeas>/*measurment*/,
              std::set<int> /*sample_numbers*/ > m_displayedSpectrumChangedSignal;
 

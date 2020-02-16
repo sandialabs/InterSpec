@@ -41,10 +41,13 @@
 class SpecMeas;
 class PeakModel;
 class InterSpec;
-class Measurement;
+
 class SpectrumChart;
 class SpectrumDataModel;
 class CanvasForDragging;
+namespace SpecUtils{ class Measurement; }
+namespace SpecUtils{ enum class SpectrumType : int; }
+
 namespace Wt
 {
   class WColor;
@@ -94,29 +97,29 @@ public:
   
   void setPeakModel( PeakModel *model );
   
-  void setData( std::shared_ptr<Measurement> data_hist,
+  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist,
                 float liveTime,
                 float realTime,
                 float neutronCounts,
                 bool keep_curent_xrange );
-  void setSecondData( std::shared_ptr<Measurement> hist,
+  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist,
                       float liveTime,
                       float realTime,
                       float neutronCounts,
                       bool ownAxis );
-  void setBackground( std::shared_ptr<Measurement> background,
+  void setBackground( std::shared_ptr<SpecUtils::Measurement> background,
                       float liveTime,
                       float realTime,
                       float neutronCounts );
 
 
   // These 8 functions retrieve the corresponding info from the model.
-  std::shared_ptr<Measurement> data();
-  std::shared_ptr<const Measurement> data()       const;
-  std::shared_ptr<Measurement> secondData();
-  std::shared_ptr<const Measurement> secondData() const;
-  std::shared_ptr<Measurement> background();
-  std::shared_ptr<const Measurement> background() const;
+  std::shared_ptr<SpecUtils::Measurement> data();
+  std::shared_ptr<const SpecUtils::Measurement> data()       const;
+  std::shared_ptr<SpecUtils::Measurement> secondData();
+  std::shared_ptr<const SpecUtils::Measurement> secondData() const;
+  std::shared_ptr<SpecUtils::Measurement> background();
+  std::shared_ptr<const SpecUtils::Measurement> background() const;
 
   float foregroundLiveTime() const;
   float foregroundRealTime() const;
@@ -127,15 +130,15 @@ public:
   float secondForegroundLiveTime() const;
   float secondForegroundRealTime() const;
   
-  std::shared_ptr<const Measurement> histUsedForXAxis() const;
+  std::shared_ptr<const SpecUtils::Measurement> histUsedForXAxis() const;
 
   //displayScaleFactor():  This is the multiple 
-  float displayScaleFactor( const SpectrumType spectrum_type ) const;
+  float displayScaleFactor( const SpecUtils::SpectrumType spectrum_type ) const;
   
   //setDisplayScaleFactor(): set the effective live time of 'spectrum_type'
   //  to be 'sf' timess the live time of 'spectrum_type'.
   void setDisplayScaleFactor( const float sf,
-                              const SpectrumType spectrum_type );
+                              const SpecUtils::SpectrumType spectrum_type );
   
   
   void visibleRange( double &xmin, double &xmax,
@@ -172,9 +175,9 @@ public:
   void setSecondaryHighlightColor( const Wt::WColor &color );
   
   
-  void clearTimeHighlightRegions( const SpectrumType type );
+  void clearTimeHighlightRegions( const SpecUtils::SpectrumType type );
   void setTimeHighLightRegions( const std::vector< std::pair<double,double> > &p,
-                            const SpectrumType type );
+                            const SpecUtils::SpectrumType type );
   bool removeDecorativeHighlightRegion( size_t regionid );
   size_t addDecorativeHighlightRegion( const float lowerx,
                                     const float upperx,

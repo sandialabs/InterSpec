@@ -845,7 +845,7 @@ public:
   
 /*
   //guessDetectorType(...) not implemented yet
-  void guessDetectorType( SpectrumType type,
+  void guessDetectorType( SpecUtils::SpectrumType type,
                           std::shared_ptr<SpecMeas> measurment,
                           std::set<int> sample_numbers );
 */

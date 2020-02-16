@@ -535,7 +535,7 @@ namespace FluxToolImp
         return;
       
       string filename;
-      auto meas = m_fluxtool->m_interspec->measurment(SpectrumType::kForeground);
+      auto meas = m_fluxtool->m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
       if( meas && !meas->filename().empty() )
       {
         filename = SpecUtils::filename( meas->filename() );
@@ -880,7 +880,7 @@ void FluxToolWidget::refreshPeakTable()
     return;
   }
   
-  auto spec = m_interspec->measurment(SpectrumType::kForeground);
+  auto spec = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   if( !spec )
   {
     m_msg->setText( "No foreground spectrum loaded" );

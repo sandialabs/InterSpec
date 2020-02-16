@@ -48,7 +48,6 @@
 #include <Wt/WAbstractItemModel>
 
 #include "InterSpec/SpecMeas.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/SpecMeasManager.h"
@@ -56,7 +55,7 @@
 
 //The basic goal of the classes in this file is to a way to manage user
 //  uploaded files, with a way to manage them on disk, display summaries of them
-//  on screen, and load them from disk into MeasurementInfo objects if they have
+//  on screen, and load them from disk into SpecUtils::SpecFile objects if they have
 //  been flushed out of memorry.
 
 
@@ -69,7 +68,12 @@ namespace Wt
   class WApplication;
 } // namespace Wt
 
-class SpecMeas;
+namespace SpecUtils{ class SpecFile; }
+namespace SpecUtils{ class Measurement; }
+namespace SpecUtils{ enum class SourceType : int; }
+namespace SpecUtils{ enum class SpectrumType : int; }
+namespace SpecUtils{ enum class SaveSpectrumAsType : int; }
+
 class PopupDiv;
 class PopupDivMenu;
 class InterSpec;
@@ -86,10 +90,10 @@ class SpectraHeader
 
 public:
   SpectraHeader();
-  SpectraHeader( const std::vector<std::shared_ptr<const Measurement>> &sample_measurements );
+  SpectraHeader( const std::vector<std::shared_ptr<const SpecUtils::Measurement>> &sample_measurements );
   virtual ~SpectraHeader();
 
-  void init( const std::vector<std::shared_ptr<const Measurement>> &sample_measurements );
+  void init( const std::vector<std::shared_ptr<const SpecUtils::Measurement>> &sample_measurements );
 
   float live_time;
   float real_time;
@@ -97,7 +101,7 @@ public:
   int  sample_number;
   float gamma_counts_;
   float neutron_counts_;
-  Measurement::SourceType spectra_type;
+  SpecUtils::SourceType spectra_type;
   Wt::WString speed_;
   std::vector<Wt::WString> detector_names;
   std::vector<int> detector_numbers_;
@@ -106,7 +110,7 @@ public:
 };//struct SpectraHeader
 
 
-//SpectraFileHeader should be renamed MeasurementInfoHeader
+//SpectraFileHeader should be renamed SpecFileHeader
 class SpectraFileHeader
 {
   //Holds information about a spectra file, as well as keeps a copy of the
@@ -120,8 +124,8 @@ class SpectraFileHeader
   
   //
   //XXX - should convert shared_ptr<SpecMeas> to
-  //      shared_ptr<const MeasurementInfo> wherever possible, as currently
-  //      all caching mechanisms implicitly rely on MeasurementInfo not being
+  //      shared_ptr<const SpecUtils::SpecFile> wherever possible, as currently
+  //      all caching mechanisms implicitly rely on SpecUtils::SpecFile not being
   //      changed out of this class
 public:
   SpectraFileHeader( Wt::Dbo::ptr<InterSpecUser> user,
@@ -133,8 +137,8 @@ public:
   //setFile thows std::runtime_error(..) on failure.  File passed in does
   //  not need to persist on the file system past calling this function.
   std::shared_ptr<SpecMeas> setFile( const std::string &displayFileName,
-                                       const std::string &fileSystemLocation,
-                                       ParserType parseType = kAutoParser );
+                                     const std::string &fileSystemLocation,
+                                     SpecUtils::ParserType parseType = SpecUtils::ParserType::kAutoParser );
 
   //setMeasurmentInfo(...) takes care of setting all the information,
   //  and serializing the the SpecMeas to a temporary location on file
@@ -287,7 +291,7 @@ public:
 protected:
   //initFile(): will return empty pointers in case of failure. Does not throw.
   std::shared_ptr<SpecMeas> initFile( const std::string &filename,
-                                        const ParserType parseTypeconst,
+                                        const SpecUtils::ParserType parseTypeconst,
                                         std::string orig_file_ending ) throw();
 
 public:
@@ -321,7 +325,7 @@ public:
   //  object to the database (to fill out UserFileInDb::userHasModified).
   mutable bool m_modifiedSinceDecode;
   
-  //If caching is enable the MeasurementInfo object will be kept in memorry
+  //If caching is enable the SpecUtils::SpecFile object will be kept in memorry
   //  even if no where else references the object
   bool m_keepCache;
   mutable std::shared_ptr<SpecMeas> m_cachedMeasurement;
@@ -336,7 +340,7 @@ public:
   //  to the database (user prefernce may be to not)
   bool m_candidateForSavingToDb;
   
-  //This weak pointer tracks if the MeasurementInfo object cooresping to
+  //This weak pointer tracks if the SpecUtils::SpecFile object cooresping to
   //  this SpectraFileHeader exists anywhere in memmory, if so parseFile()
   //  will return this, rather than re-parsing the spectrum
   mutable std::weak_ptr<SpecMeas> m_weakMeasurmentPtr;
@@ -359,7 +363,7 @@ public:
 };//class SpectraFileHeader
 
 
-//SpectraFileModel should be renamed MeasurementInfoModel
+//SpectraFileModel should be renamed SpecFileModel
 class SpectraFileModel : public Wt::WAbstractItemModel
 {
   //This class creates a 2 level model where the first level (labeled
@@ -413,16 +417,16 @@ public:
 
   //fileHeader: a convience function to avoid calling index(...) first.
   //  Results may not be valid pointer
-  std::shared_ptr<SpectraFileHeader> fileHeader( std::shared_ptr< const MeasurementInfo > measinfo );
+  std::shared_ptr<SpectraFileHeader> fileHeader( std::shared_ptr<const SpecUtils::SpecFile> measinfo );
   
 #if( USE_DB_TO_STORE_SPECTRA )
   //dbEntry: a convience function for calling SpectraFileHeader::dbEntry(...)
-  Wt::Dbo::ptr<UserFileInDb> dbEntry( std::shared_ptr< const MeasurementInfo > measinfo );
+  Wt::Dbo::ptr<UserFileInDb> dbEntry( std::shared_ptr<const SpecUtils::SpecFile> measinfo );
 #endif
   
   
   //Following fnct untested wcjohns 20120807
-  Wt::WModelIndex index( std::shared_ptr< const MeasurementInfo > measinfo ) const;
+  Wt::WModelIndex index( std::shared_ptr<const SpecUtils::SpecFile> measinfo ) const;
 
   std::shared_ptr<const SpectraFileHeader> fileHeader( int row ) const;
   int addRow( std::shared_ptr<SpectraFileHeader> fileInfo );
@@ -455,13 +459,13 @@ class DownloadSpectrumResource : public Wt::WResource
   //A simple class to stream a spectrum upon demand for which ever items are
   //  highlighted in the tree view.
 public:
-  DownloadSpectrumResource( SaveSpectrumAsType type,
+  DownloadSpectrumResource( SpecUtils::SaveSpectrumAsType type,
                             SpecMeasManager *display,
                             Wt::WObject *parent = NULL );
   virtual ~DownloadSpectrumResource();
 
 private:
-  SaveSpectrumAsType m_type;
+  SpecUtils::SaveSpectrumAsType m_type;
   SpecMeasManager *m_display;
 
   virtual void handleRequest( const Wt::Http::Request& request,
@@ -476,7 +480,7 @@ public:
   //  to.  Specifying empty detector and sample numbers will default to all
   //  samples/detectors.
   static void handle_resource_request(
-                                SaveSpectrumAsType type,
+                                SpecUtils::SaveSpectrumAsType type,
                                 std::shared_ptr<const SpecMeas> Measurement,
                                 const std::set<int> &samplenums,
                                 const std::set<int> &detectornums,
@@ -492,7 +496,7 @@ class SpecificSpectrumResource : public Wt::WResource
   //A simple class to stream a spectrum upon demand, intendend for use with the
   //  "Save As" dialog.
 public:
-  SpecificSpectrumResource( SaveSpectrumAsType type,
+  SpecificSpectrumResource( SpecUtils::SaveSpectrumAsType type,
                             Wt::WObject *parent = NULL );
   virtual ~SpecificSpectrumResource();
 
@@ -504,7 +508,7 @@ public:
   Wt::Signal<> &downloadComplete();
 private:
   std::set<int> m_samplenums, m_detnums;
-  SaveSpectrumAsType m_type;
+  SpecUtils::SaveSpectrumAsType m_type;
   std::shared_ptr<const SpecMeas> m_spectrum;
 
   virtual void handleRequest( const Wt::Http::Request& request,
@@ -518,8 +522,8 @@ private:
 class DownloadCurrentSpectrumResource : public Wt::WResource
 {
 public:
-  DownloadCurrentSpectrumResource( SpectrumType spectrum,
-                                   SaveSpectrumAsType format,
+  DownloadCurrentSpectrumResource( SpecUtils::SpectrumType spectrum,
+                                   SpecUtils::SaveSpectrumAsType format,
                                    InterSpec *viewer,
                                    Wt::WObject *parent = NULL );
   virtual ~DownloadCurrentSpectrumResource();
@@ -527,8 +531,8 @@ public:
   Wt::Signal<> &downloadStarting();
   Wt::Signal<> &downloadComplete();
 private:
-  SpectrumType m_spectrum;
-  SaveSpectrumAsType m_format;
+  SpecUtils::SpectrumType m_spectrum;
+  SpecUtils::SaveSpectrumAsType m_format;
   InterSpec *m_viewer;
   
   virtual void handleRequest( const Wt::Http::Request& request,

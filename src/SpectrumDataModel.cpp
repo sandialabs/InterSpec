@@ -46,6 +46,8 @@
 using namespace std;
 using namespace Wt;
 
+using SpecUtils::Measurement;
+
 namespace
 {
   const Wt::WColor ns_default_foreground_color( black );

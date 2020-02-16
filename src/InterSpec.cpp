@@ -656,13 +656,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_mobileBackButton = new WPushButton( "", wApp->domRoot() );
     m_mobileBackButton->addStyleClass( "MobilePrevSample btn" );
     m_mobileBackButton->setZIndex( 8388635 );
-    m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, kForeground, false) );
+    m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, SpecUtils::SpectrumType::Foreground, false) );
     m_mobileBackButton->setHidden(true);
       
     m_mobileForwardButton = new WPushButton( "", wApp->domRoot() );
     m_mobileForwardButton->addStyleClass( "MobileNextSample btn" );
     m_mobileForwardButton->setZIndex( 8388635 );
-    m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, kForeground, true) );
+    m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, SpecUtils::SpectrumType::Foreground, true) );
     m_mobileForwardButton->setHidden(true);
   }else
   {
@@ -711,18 +711,18 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_timeSeries->allowArrowToMoveSingleClickRegion( true );
 
   m_timeSeries->xRangeChanged().connect( boost::bind(
-      &InterSpec::changeTimeRange, this, _1, _2, kForeground ) );
+      &InterSpec::changeTimeRange, this, _1, _2, SpecUtils::SpectrumType::Foreground ) );
   
   m_timeSeries->shiftKeyDragged().connect(
       boost::bind( &InterSpec::sampleNumbersToDisplayAddded, this, _1, _2,
-                 kForeground ) );
+                 SpecUtils::SpectrumType::Foreground ) );
   
   m_timeSeries->altKeyDragged().connect( boost::bind(
-      &InterSpec::changeTimeRange, this, _1, _2, kBackground ) );
+      &InterSpec::changeTimeRange, this, _1, _2, SpecUtils::SpectrumType::Background ) );
   
   m_timeSeries->shiftAltKeyDragged().connect(
       boost::bind( &InterSpec::sampleNumbersToDisplayAddded, this, _1, _2,
-                   kBackground ) );
+                   SpecUtils::SpectrumType::Background ) );
   
   
   m_spectrum->setXAxisTitle( "Energy (keV)" );
@@ -1086,13 +1086,13 @@ string InterSpec::print_d3_json() const
   std::ostringstream ostr;
   const char *q = "\"";  // for creating valid json format
     
-  std::shared_ptr<const Measurement> foreground = m_spectrum->data();
-  std::shared_ptr<const Measurement> background = m_spectrum->background();
-  std::shared_ptr<const Measurement> secondary  = m_spectrum->secondData();
+  std::shared_ptr<const SpecUtils::Measurement> foreground = m_spectrum->data();
+  std::shared_ptr<const SpecUtils::Measurement> background = m_spectrum->background();
+  std::shared_ptr<const SpecUtils::Measurement> secondary  = m_spectrum->secondData();
     
-  std::shared_ptr<Measurement> data = m_spectrum->data();
-  std::shared_ptr<Measurement> back = m_spectrum->background();
-  std::shared_ptr<Measurement> second = m_spectrum->secondData();
+  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
+  std::shared_ptr<SpecUtils::Measurement> back = m_spectrum->background();
+  std::shared_ptr<SpecUtils::Measurement> second = m_spectrum->secondData();
     
   typedef deque< PeakModel::PeakShrdPtr > PeakDeque;
   string peakstring;
@@ -1112,7 +1112,7 @@ string InterSpec::print_d3_json() const
     
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "black";
-    options.display_scale_factor = displayScaleFactor(kForeground);
+    options.display_scale_factor = displayScaleFactor(SpecUtils::SpectrumType::Foreground);
     
     std::shared_ptr<const PeakDeque > peaks = m_dataMeasurement->peaks(m_displayedSamples);
     if( peaks )
@@ -1135,7 +1135,7 @@ string InterSpec::print_d3_json() const
     
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "steelblue";
-    options.display_scale_factor = displayScaleFactor(kBackground);
+    options.display_scale_factor = displayScaleFactor(SpecUtils::SpectrumType::Background);
     
     std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_backgroundSampleNumbers);
     if( peaks )
@@ -1159,7 +1159,7 @@ string InterSpec::print_d3_json() const
     
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "green";
-    options.display_scale_factor = displayScaleFactor(kSecondForeground);
+    options.display_scale_factor = displayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
     
     std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_sectondForgroundSampleNumbers);
     if( peaks )
@@ -1221,7 +1221,7 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
 /**
  Calls CompactFileManager's refactored and static method handleUserIncrementSampleNum
  */
-void InterSpec::handleUserIncrementSampleNum( SpectrumType type,
+void InterSpec::handleUserIncrementSampleNum( SpecUtils::SpectrumType type,
                                                       bool increment)
 {
     CompactFileManager::handleUserIncrementSampleNum(type, increment, this, m_fileManager->model(), NULL);
@@ -1594,7 +1594,7 @@ void InterSpec::refitPeakFromRightClick()
   
   std::sort( inputPeak.begin(), inputPeak.end(), &PeakDef::lessThanByMean );
   
-  std::shared_ptr<const Measurement> data = m_spectrum->data();
+  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
   
   if( inputPeak.size() > 1 )
   {
@@ -1653,7 +1653,7 @@ void InterSpec::refitPeakFromRightClick()
 
 void InterSpec::addPeakFromRightClick()
 {
-  std::shared_ptr<const Measurement> dataH = m_spectrum->data();
+  std::shared_ptr<const SpecUtils::Measurement> dataH = m_spectrum->data();
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak
       || m_rightClickEnergy < peak->lowerX()
@@ -1842,7 +1842,7 @@ void InterSpec::addPeakFromRightClick()
 
 void InterSpec::makePeakFromRightClickHaveOwnContinuum()
 {
-  const std::shared_ptr<const Measurement> data = m_spectrum->data();
+  const std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   if( !peak || !data
       || m_rightClickEnergy < peak->lowerX()
@@ -2272,8 +2272,8 @@ void InterSpec::handleRightClick( double energy, double counts,
                        boost::bind(&InterSpec::updateRightClickNuclidesMenu,
                                    this, peak, candidates ) );
             
-            std::shared_ptr<const Measurement> hist = displayedHistogram( kForeground );
-            std::shared_ptr<const SpecMeas> meas = measurment( kForeground );
+            std::shared_ptr<const SpecUtils::Measurement> hist = displayedHistogram( SpecUtils::SpectrumType::Foreground );
+            std::shared_ptr<const SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
             std::shared_ptr<const DetectorPeakResponse> detector;
             if( !!meas )
               detector = meas->detector();
@@ -2564,7 +2564,7 @@ void InterSpec::deleteFeatureMarkerWindow()
 }//void deleteFeatureMarkerWindow()
 #endif //USE_FEATURE_MARKER_WIDGET
 
-Wt::Signal<SpectrumType,std::shared_ptr<SpecMeas>, std::set<int> > &
+Wt::Signal<SpecUtils::SpectrumType,std::shared_ptr<SpecMeas>, std::set<int> > &
                                       InterSpec::displayedSpectrumChanged()
 {
   return m_displayedSpectrumChangedSignal;
@@ -2585,7 +2585,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
     return m_peakModel->addNewPeak( peak );
   
   const bool showingEscape = showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
-  auto foreground = displayedHistogram(kForeground);
+  auto foreground = displayedHistogram(SpecUtils::SpectrumType::Foreground);
   PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
                          foreground, m_referencePhotopeakLines,
                          m_colorPeaksBasedOnReferenceLines, showingEscape );
@@ -2644,13 +2644,13 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     
     const bool forTesting = (entry->stateType == UserState::kForTest);
     
-    std::shared_ptr<const SpecMeas> foreground = measurment( kForeground );
-    std::shared_ptr<const SpecMeas> second = measurment( kSecondForeground );
-    std::shared_ptr<const SpecMeas> background = measurment( kBackground );
+    std::shared_ptr<const SpecMeas> foreground = measurment( SpecUtils::SpectrumType::Foreground );
+    std::shared_ptr<const SpecMeas> second = measurment( SpecUtils::SpectrumType::SecondForeground );
+    std::shared_ptr<const SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
     
-    Dbo::ptr<UserFileInDb> dbforeground = measurmentFromDb( kForeground, true );
-    Dbo::ptr<UserFileInDb> dbsecond     = measurmentFromDb( kSecondForeground, true );
-    Dbo::ptr<UserFileInDb> dbbackground = measurmentFromDb( kBackground, true );
+    Dbo::ptr<UserFileInDb> dbforeground = measurmentFromDb( SpecUtils::SpectrumType::Foreground, true );
+    Dbo::ptr<UserFileInDb> dbsecond     = measurmentFromDb( SpecUtils::SpectrumType::SecondForeground, true );
+    Dbo::ptr<UserFileInDb> dbbackground = measurmentFromDb( SpecUtils::SpectrumType::Background, true );
   
     //JIC, make sure indices have all been assigned to everything.
     m_sql->session()->flush();
@@ -3226,12 +3226,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
               std::inserter( otherSamples, otherSamples.end() ) );
     
-    setSpectrum( foreground, foregroundNums, kForeground, false );
+    setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, false );
     if( foreground )
     {
       //If we dont have a foreground, we probably shouldnt be loading the state, but...
-      setSpectrum( background, backgroundNums, kBackground, false );
-      setSpectrum( second, secondNums, kSecondForeground, false );
+      setSpectrum( background, backgroundNums, SpecUtils::SpectrumType::Background, false );
+      setSpectrum( second, secondNums, SpecUtils::SpectrumType::SecondForeground, false );
     }
     
     //Load the other spectra the user had opened.  Note that they were not
@@ -3281,7 +3281,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     float xmin = entry->energyAxisMinimum;
     float xmax = entry->energyAxisMaximum;
-    std::shared_ptr<const Measurement> hist = m_spectrum->data();
+    std::shared_ptr<const SpecUtils::Measurement> hist = m_spectrum->data();
     
     if( hist && (xmin != xmax) && (xmax > xmin)
         && !IsInf(xmin) && !IsInf(xmax) && !IsNan(xmin) && !IsNan(xmax) )
@@ -4178,18 +4178,18 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     }
 #endif
     
-    const set<int> foregroundsamples = displayedSamples( kForeground );
-    const set<int> backgroundsamples = displayedSamples( kBackground );
+    const set<int> foregroundsamples = displayedSamples( SpecUtils::SpectrumType::Foreground );
+    const set<int> backgroundsamples = displayedSamples( SpecUtils::SpectrumType::Background );
     set<int> newbacksamples;
     
-    for( const std::shared_ptr<const Measurement> &p : meas.measurements() )
+    for( const std::shared_ptr<const SpecUtils::Measurement> &p : meas.measurements() )
     {
       const int samplenum = p->sample_number();
       if( foregroundsamples.count(samplenum) )
-        meas.set_source_type( Measurement::Foreground, p );
+        meas.set_source_type( SpecUtils::SourceType::Foreground, p );
       else
         meas.remove_measurment( p, false );
-    }//for( const std::shared_ptr<const Measurement> &p : meas.measurements() )
+    }//for( const std::shared_ptr<const SpecUtils::Measurement> &p : meas.measurements() )
     
     
     std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
@@ -4200,17 +4200,17 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     {
       backgroundpeaks = m_backgroundMeasurement->peaks( backgroundsamples );
       
-      std::vector< std::shared_ptr<const Measurement> > backgrounds = m_backgroundMeasurement->measurements();
-      for( const std::shared_ptr<const Measurement> &p : backgrounds )
+      std::vector< std::shared_ptr<const SpecUtils::Measurement> > backgrounds = m_backgroundMeasurement->measurements();
+      for( const std::shared_ptr<const SpecUtils::Measurement> &p : backgrounds )
       {
         if( !backgroundsamples.count( p->sample_number()) )
           continue;
         
-        std::shared_ptr<Measurement> backmeas = std::make_shared<Measurement>( *p );
+        std::shared_ptr<SpecUtils::Measurement> backmeas = std::make_shared<SpecUtils::Measurement>( *p );
         meas.add_measurment( backmeas, false );
-        meas.set_source_type( Measurement::Background, backmeas );
+        meas.set_source_type( SpecUtils::SourceType::Background, backmeas );
         newbacksamples.insert( backmeas->sample_number() );
-      }//for( const std::shared_ptr<const Measurement> &p : m_backgroundMeasurement->measurements() )
+      }//for( const std::shared_ptr<const SpecUtils::Measurement> &p : m_backgroundMeasurement->measurements() )
     }//if( !!m_backgroundMeasurement )
  
     //Now remove all peaks not for the currently displayed samples.
@@ -4393,8 +4393,8 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     
     
     std::shared_ptr<SpecMeas> dummy;
-    setSpectrum( dummy, std::set<int>(), kBackground, false );
-    setSpectrum( dummy, std::set<int>(), kSecondForeground, false );
+    setSpectrum( dummy, std::set<int>(), SpecUtils::SpectrumType::Background, false );
+    setSpectrum( dummy, std::set<int>(), SpecUtils::SpectrumType::SecondForeground, false );
     
     string filename = meas->filename();
     if( name && name->value_size() )
@@ -4402,10 +4402,10 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     
     std::shared_ptr<SpectraFileHeader> header;
     header = m_fileManager->addFile( filename, meas );
-    setSpectrum( meas, meas->displayedSampleNumbers(), kForeground, false );
+    setSpectrum( meas, meas->displayedSampleNumbers(), SpecUtils::SpectrumType::Foreground, false );
     
     if( backgroundsamplenums.size() )
-      setSpectrum( meas, backgroundsamplenums, kBackground, false );
+      setSpectrum( meas, backgroundsamplenums, SpecUtils::SpectrumType::Background, false );
     
     const xml_node<char> *sourcefit = InterSpecNode->first_node( "ShieldingSourceFit" );
     if( sourcefit )
@@ -4703,7 +4703,7 @@ void InterSpec::stateSaveAsAction( WLineEdit *nameedit,
   //  SpecMeas
   for( int i = 0; i < 3; i++ )
   {
-    std::shared_ptr<SpecMeas> m = measurment( SpectrumType(i) );
+    std::shared_ptr<SpecMeas> m = measurment( SpecUtils::SpectrumType(i) );
     if( m )
     {
       m_fileManager->removeSpecMeas( m, false );
@@ -4967,7 +4967,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     item = m_fileMenuPopup->addMenuItem( "Previous..." , "InterSpec_resources/images/db_small.png");
     item->triggered().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
                                             m_fileManager,
-                                            SpectrumType::kForeground,
+                                            SpecUtils::SpectrumType::Foreground,
                                             std::shared_ptr<SpectraFileHeader>()) );
     HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTipInstantly );
     
@@ -4991,40 +4991,40 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   item = subPopup->addMenuItem( "Ba-133 (16k channel)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                          SpecUtils::append_path(docroot, "example_spectra/ba133_source_640s_20100317.n42"),
-                                         kForeground, k2006Icd1Parser ) );
+                                         SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::k2006Icd1Parser ) );
   if( isMobile )
     item = subPopup->addMenuItem( "Passthrough (16k channel)" );
   else
     item = subPopup->addMenuItem( "Passthrough (16k bin ICD1, 8 det., 133 samples)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                          SpecUtils::append_path(docroot, "example_spectra/passthrough.n42"),
-                                         kForeground, k2006Icd1Parser ) );
+                                         SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::k2006Icd1Parser ) );
   
   item = subPopup->addMenuItem( "Background (16k bin N42)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                          SpecUtils::append_path(docroot, "example_spectra/background_20100317.n42"),
-                                         kBackground, k2006Icd1Parser ) );
+                                         SpecUtils::SpectrumType::Background, SpecUtils::ParserType::k2006Icd1Parser ) );
   //If its a mobile device, we'll give a few more spectra to play with
   if( isMobile )
   {
     item = subPopup->addMenuItem( "Ba-133 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                            SpecUtils::append_path(docroot, "example_spectra/Ba133LowResNoCalib.spe"),
-                                           kForeground, kIaeaParser ) );
+                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kIaeaParser ) );
     
     item = subPopup->addMenuItem( "Co-60 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                            SpecUtils::append_path(docroot, "example_spectra/Co60LowResNoCalib.spe"),
-                                           kForeground, kIaeaParser ) );
+                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kIaeaParser ) );
     
     item = subPopup->addMenuItem( "Cs-137 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                            SpecUtils::append_path(docroot, "example_spectra/Cs137LowResNoCalib.spe"),
-                                           kForeground, kIaeaParser ) );
+                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kIaeaParser ) );
     item = subPopup->addMenuItem( "Th-232 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                            SpecUtils::append_path(docroot, "example_spectra/Th232LowResNoCalib.spe"),
-                                           kForeground, kIaeaParser ) );
+                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kIaeaParser ) );
   }//if( isMobile )
   
   if( isSupportFile() )
@@ -5045,15 +5045,18 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     //only display when not on desktop.
     m_downloadMenu = m_fileMenuPopup->addPopupMenuItem( "Export File" );
     
-    for( SpectrumType i = SpectrumType(0); i<=kBackground; i = SpectrumType(i+1) )
+    for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0);
+         i <= SpecUtils::SpectrumType::Background;
+         i = SpecUtils::SpectrumType(static_cast<int>(i)+1) )
     {
-      m_downloadMenus[i] = m_downloadMenu->addPopupMenuItem( descriptionText( i ) );
+      m_downloadMenus[static_cast<int>(i)] = m_downloadMenu->addPopupMenuItem( descriptionText( i ) );
       
-      for( SaveSpectrumAsType j = SaveSpectrumAsType(0);
-          j < kNumSaveSpectrumAsType; j = SaveSpectrumAsType(j+1) )
+      for( SpecUtils::SaveSpectrumAsType j = SpecUtils::SaveSpectrumAsType(0);
+          j < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+          j = SpecUtils::SaveSpectrumAsType(static_cast<int>(j)+1) )
       {
         const string desc = descriptionText( j );
-        item = m_downloadMenus[i]->addMenuItem( desc + " File" );
+        item = m_downloadMenus[static_cast<int>(i)]->addMenuItem( desc + " File" );
         DownloadCurrentSpectrumResource *resource
                      = new DownloadCurrentSpectrumResource( i, j, this, item );
         
@@ -5067,7 +5070,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
         //  associated with its anchor, and not connect any server side
         //  triggered() events to it, thus breaking the infiinite cycle - blarg.
         PopupDivMenuItem *fakeitem = new PopupDivMenuItem( "", "" );
-        m_downloadMenus[i]->WPopupMenu::addItem( fakeitem );
+        m_downloadMenus[static_cast<int>(i)]->WPopupMenu::addItem( fakeitem );
         fakeitem->setLink( WLink( resource ) );
         fakeitem->setLinkTarget( TargetNewWindow );
 
@@ -5089,7 +5092,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
         const char *tooltip = 0;
         switch( j )
         {
-           case kTxtSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile:
             tooltip = "A space delimited file will be created with a header of"
                       " things like live time, followed by three columns"
                       " (channel number, lower channel energy, counts). Each"
@@ -5097,7 +5100,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
                       " three line breaks between records.";
             break;
             
-           case kCsvSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile:
             tooltip = "A comma delimietd file will be created with a channel"
                       " lower energy and a counts column.  All records in the"
                       " current spectrum file will be written sequentially,"
@@ -5105,64 +5108,65 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
                       "&quot; header between subsequent records.";
             break;
             
-           case kPcfSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile:
             tooltip = "A binary PCF file will be created which contains all"
                       " records of the current file.";
             break;
             
-           case kXmlSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile:
             tooltip = "A simple spectromiter style 2006 N42 XML file will be"
                       " produced which contains all records in the current file.";
             break;
             
-           case k2012N42SpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile:
             tooltip = "A 2012 N42 XML document will be produced which contains"
                       " all samples of the current spectrum file, as well as"
                       " some additional <code>InterSpec</code> information"
                       " such as the identified peaks and detector response.";
             break;
             
-           case kChnSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:
             tooltip = "A binary integer CHN file will be produced containing a"
                       " single spectrum matching what is currently shown.";
             break;
             
-           case kBinaryIntSpcSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
             tooltip = "A binary floating point SPC file will be produced containing a"
                       " single spectrum matching what is currently shown.";
             break;
-           case kBinaryFloatSpcSpectrumFile:
+           
+          case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
             tooltip = "A binary integer SPC file will be produced containing a"
                       " single spectrum matching what is currently shown.";
             break;
             
-          case kAsciiSpcSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:
             tooltip = "A ascii based SPC file will be produced containing a"
                       " single spectrum matching what is currently shown.";
             break;
           
-          case kExploraniumGr130v0SpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
             tooltip = "A binary Exploranium GR130 file will be produced with"
                       " each record (spectrum) containing 256 channels.";
             break;
             
-          case kExploraniumGr135v2SpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile:
             tooltip = "A binary Exploranium GR135v2 file (includes neutron info)"
                       " will be produced with each record (spectrum) containing"
                       " 1024 channels.";
             break;
           
-          case kIaeaSpeSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile:
             tooltip = "A ASCII based standard file format that will contain a"
                       " single spectrum only.";
             break;
 #if( SpecUtils_ENABLE_D3_CHART )
-          case kD3HtmlSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:
             tooltip = "An HTML file using D3.js to generate a spectrum chart"
                           " that you can optionally interact with and view offline.";
             break;
 #endif //#if( SpecUtils_ENABLE_D3_CHART )
-           case kNumSaveSpectrumAsType:
+           case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:
             break;
         }//switch( j )
         
@@ -5173,9 +5177,9 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
                               HelpSystem::Right, HelpSystem::CanDelayShowing );
       }//for( loop over file types )
       
-      m_downloadMenus[i]->disable();
-      if( m_downloadMenus[i]->parentItem() )
-        m_downloadMenu->setItemHidden( m_downloadMenus[i]->parentItem(), true );
+      m_downloadMenus[static_cast<int>(i)]->disable();
+      if( m_downloadMenus[static_cast<int>(i)]->parentItem() )
+        m_downloadMenu->setItemHidden( m_downloadMenus[static_cast<int>(i)]->parentItem(), true );
     }//for( loop over spectrums )
     
     m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),true); //set as hidden first, will be visible when spectrum is added
@@ -5827,7 +5831,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   
 #if( USE_GOOGLE_MAP )
   m_mapMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Map","InterSpec_resources/images/map_small.png" );
-  m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, kForeground ) );
+  m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, SpecUtils::SpectrumType::Foreground ) );
   m_mapMenuItem->disable();
   HelpSystem::attachToolTipOn( m_mapMenuItem,
                     "Show measurment(s) location on a Google Map. Only enabled"
@@ -6524,37 +6528,37 @@ int InterSpec::paintedHeight() const
 
 
 
-const std::set<int> &InterSpec::displayedSamples( SpectrumType type ) const
+const std::set<int> &InterSpec::displayedSamples( SpecUtils::SpectrumType type ) const
 {
   static const std::set<int> empty;
   switch( type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
     {
       if( !m_dataMeasurement )
         return empty;
       return m_displayedSamples;
-    }//case kForeground:
+    }//case SpecUtils::SpectrumType::Foreground:
 
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
     {
       if( !m_secondDataMeasurement )
         return empty;
       return m_sectondForgroundSampleNumbers;
-    }//case kSecondForeground:
+    }//case SpecUtils::SpectrumType::SecondForeground:
 
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
     {
       if( !m_backgroundMeasurement )
         return empty;
       return m_backgroundSampleNumbers;
-    }//case kBackground:
+    }//case SpecUtils::SpectrumType::Background:
   }//switch( type )
 
   throw runtime_error( "InterSpec::displayedSamples(...) - Serious Badness" );
 
   return empty;  //keep compiler from complaining
-}//const std::set<int> &displayedSamples( SpectrumType spectrum_type ) const
+}//const std::set<int> &displayedSamples( SpecUtils::SpectrumType spectrum_type ) const
 
 
 std::set<int> InterSpec::displayedDetectorNumbers() const
@@ -6577,15 +6581,15 @@ std::set<int> InterSpec::displayedDetectorNumbers() const
 }//std::set<int> displayedDetectorNumbers() const
 
 
-std::shared_ptr<const SpecMeas> InterSpec::measurment( SpectrumType type ) const
+std::shared_ptr<const SpecMeas> InterSpec::measurment( SpecUtils::SpectrumType type ) const
 {
   switch( type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       return m_dataMeasurement;
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       return m_secondDataMeasurement;
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       return m_backgroundMeasurement;
   }//switch( type )
 
@@ -6593,24 +6597,24 @@ std::shared_ptr<const SpecMeas> InterSpec::measurment( SpectrumType type ) const
 }//measurment(...)
 
 
-std::shared_ptr<SpecMeas> InterSpec::measurment( SpectrumType type )
+std::shared_ptr<SpecMeas> InterSpec::measurment( SpecUtils::SpectrumType type )
 {
   switch( type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       return m_dataMeasurement;
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       return m_secondDataMeasurement;
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       return m_backgroundMeasurement;
   }//switch( type )
 
   return std::shared_ptr<SpecMeas>();
-}//std::shared_ptr<SpecMeas> measurment( SpectrumType spectrum_type )
+}//std::shared_ptr<SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type )
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpectrumType type,
+Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType type,
                                                              bool update )
 {
   try
@@ -6641,11 +6645,11 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpectrumType type,
     
     Dbo::ptr<UserFileInDb> dbback;
     
-    if( type == kForeground )
+    if( type == SpecUtils::SpectrumType::Foreground )
     {
       WModelIndex bindex;
       std::shared_ptr<SpectraFileHeader> bheader;
-      std::shared_ptr<SpecMeas> background = measurment( kBackground );
+      std::shared_ptr<SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
       if( background )
          bindex = fileModel->index( background );
       if( bindex.isValid() )
@@ -6662,7 +6666,7 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpectrumType type,
           }catch(...){}
         }
       }//if( bheader )
-    }//if( type == kForeground )
+    }//if( type == SpecUtils::SpectrumType::Foreground )
     
     if( update && savePref )
       header->saveToDatabase( meas );
@@ -6675,31 +6679,31 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpectrumType type,
   }//try / catch
   
   return Wt::Dbo::ptr<UserFileInDb>();
-}//Wt::Dbo::ptr<UserFileInDb> measurmentFromDb( SpectrumType type, bool update );
+}//Wt::Dbo::ptr<UserFileInDb> measurmentFromDb( SpecUtils::SpectrumType type, bool update );
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
-std::shared_ptr<const Measurement> InterSpec::displayedHistogram( SpectrumType spectrum_type ) const
+std::shared_ptr<const SpecUtils::Measurement> InterSpec::displayedHistogram( SpecUtils::SpectrumType spectrum_type ) const
 {
   switch( spectrum_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       return m_spectrum->data();
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       return m_spectrum->secondData();
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       return m_spectrum->background();
 //  m_spectrum->continuum();
   }//switch( spectrum_type )
 
   throw runtime_error( "InterSpec::displayedHistogram(...): invalid input arg" );
 
-  return std::shared_ptr<const Measurement>();
+  return std::shared_ptr<const SpecUtils::Measurement>();
 }//displayedHistogram(...)
 
 
 void InterSpec::saveChartToPng( const bool spectrum )
 {
-  std::shared_ptr<const SpecMeas> spec = measurment(kForeground);
+  std::shared_ptr<const SpecMeas> spec = measurment(SpecUtils::SpectrumType::Foreground);
   string filename = (spec ? spec->filename() : string("spectrum"));
   const string ext = SpecUtils::file_extension(filename);
   if( !ext.empty() && (ext.size() <= filename.size()) )
@@ -6721,36 +6725,36 @@ void InterSpec::saveChartToPng( const bool spectrum )
 }//saveSpectrumToPng()
 
 
-double InterSpec::displayScaleFactor( SpectrumType spectrum_type ) const
+double InterSpec::displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
 {
   return m_spectrum->displayScaleFactor( spectrum_type );
-}//double displayScaleFactor( SpectrumType spectrum_type ) const
+}//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
 
 
 void InterSpec::setDisplayScaleFactor( const double sf,
-                                            const SpectrumType spectrum_type )
+                                            const SpecUtils::SpectrumType spectrum_type )
 {
   m_spectrum->setDisplayScaleFactor( sf, spectrum_type );
-}//void setDisplayScaleFactor( const double sf, SpectrumType spectrum_type );
+}//void setDisplayScaleFactor( const double sf, SpecUtils::SpectrumType spectrum_type );
 
 
-float InterSpec::liveTime( SpectrumType type ) const
+float InterSpec::liveTime( SpecUtils::SpectrumType type ) const
 {
   if( !measurment(type) )
     return 0.0f;
   
   switch( type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       return m_spectrum->foregroundLiveTime();
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       return m_spectrum->secondForegroundLiveTime();
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       return m_spectrum->backgroundLiveTime();
   }//switch( type )
   
   return 0.0f;
-}//float liveTime( SpectrumType type ) const
+}//float liveTime( SpecUtils::SpectrumType type ) const
 
 
 int InterSpec::renderedWidth() const
@@ -6824,8 +6828,8 @@ void InterSpec::createFileParameterWindow()
 
 #if( USE_GOOGLE_MAP )
 void InterSpec::displayOnlySamplesWithinView( GoogleMap *map,
-                                  const SpectrumType targetSamples,
-                                  const SpectrumType fromSamples )
+                                  const SpecUtils::SpectrumType targetSamples,
+                                  const SpecUtils::SpectrumType fromSamples )
 {
   float uplat, leftlng, lowerlat, rightlng;
   map->getMapExtent( uplat, leftlng, lowerlat, rightlng );
@@ -6849,7 +6853,7 @@ void InterSpec::displayOnlySamplesWithinView( GoogleMap *map,
     bool samplewithin = false;
     for( const int detnum : meass->detector_numbers() )
     {
-      std::shared_ptr<const Measurement> m = meass->measurement( sample, detnum );
+      std::shared_ptr<const SpecUtils::Measurement> m = meass->measurement( sample, detnum );
       if( !!m && m->has_gps_info()
          && m->longitude()>=leftlng && m->longitude()<=rightlng
          && m->latitude()>=lowerlat && m->latitude()<=uplat )
@@ -6871,14 +6875,14 @@ void InterSpec::displayOnlySamplesWithinView( GoogleMap *map,
   }//if( sample_numbers.empty() )
   
   
-  if( (fromSamples!=targetSamples) || targetSamples!=kForeground )
+  if( (fromSamples!=targetSamples) || targetSamples!=SpecUtils::SpectrumType::Foreground )
     setSpectrum( meass, sample_numbers, targetSamples, true );
   else
     changeDisplayedSampleNums( sample_numbers, targetSamples );
 }//displayOnlySamplesWithinView(...)
 
 
-void InterSpec::createMapWindow( SpectrumType spectrum_type )
+void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
 {
   std::shared_ptr<const SpecMeas> meas = measurment( spectrum_type );
   
@@ -6895,9 +6899,9 @@ void InterSpec::createMapWindow( SpectrumType spectrum_type )
   const char *label = 0;
   switch( spectrum_type )
   {
-    case kForeground:       label = "Foreground";        break;
-    case kSecondForeground: label = "Second Foreground"; break;
-    case kBackground:       label = "Background";        break;
+    case SpecUtils::SpectrumType::Foreground:       label = "Foreground";        break;
+    case SpecUtils::SpectrumType::SecondForeground: label = "Second Foreground"; break;
+    case SpecUtils::SpectrumType::Background:       label = "Background";        break;
   }//switch( spectrum_type )
   
   window->disableCollapse();
@@ -6926,11 +6930,11 @@ void InterSpec::createMapWindow( SpectrumType spectrum_type )
     menu->setAutoHide( true );
     button->setMenu( menu );
     WMenuItem *item = menu->addItem( "As Foreground" );
-    item->triggered().connect( boost::bind( &InterSpec::displayOnlySamplesWithinView, this, googlemap, kForeground, spectrum_type ) );
+    item->triggered().connect( boost::bind( &InterSpec::displayOnlySamplesWithinView, this, googlemap, SpecUtils::SpectrumType::Foreground, spectrum_type ) );
     item = menu->addItem( "As Background" );
-    item->triggered().connect( boost::bind( &InterSpec::displayOnlySamplesWithinView, this, googlemap, kBackground, spectrum_type ) );
+    item->triggered().connect( boost::bind( &InterSpec::displayOnlySamplesWithinView, this, googlemap, SpecUtils::SpectrumType::Background, spectrum_type ) );
     item = menu->addItem( "As Secondary" );
-    item->triggered().connect( boost::bind( &InterSpec::displayOnlySamplesWithinView, this, googlemap, kSecondForeground, spectrum_type ) );
+    item->triggered().connect( boost::bind( &InterSpec::displayOnlySamplesWithinView, this, googlemap, SpecUtils::SpectrumType::SecondForeground, spectrum_type ) );
   }//if( meas->measurements().size() > 10 )
   
   
@@ -7683,7 +7687,7 @@ float InterSpec::sample_real_time_increment(
   if( !meas )
     return 0.0f;
   
-  const vector<std::shared_ptr<const Measurement>> &measurement
+  const vector<std::shared_ptr<const SpecUtils::Measurement>> &measurement
                                          = meas->sample_measurements( sample );
   float realtime = 0.0f;
   for( const auto &m : measurement )
@@ -7697,9 +7701,9 @@ float InterSpec::sample_real_time_increment(
 /*
   int nback = 0, nnonback = 0;
   double backtime = 0.0, nonbacktime = 0.0;
-  for( const std::shared_ptr<const Measurement> &m : measurement )
+  for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
   {
-    if( m->source_type() == Measurement::Background )
+    if( m->source_type() == SpecUtils::SourceType::Background )
     {
       ++nback;
       backtime += m->real_time();
@@ -7708,7 +7712,7 @@ float InterSpec::sample_real_time_increment(
       ++nnonback;
       nonbacktime += m->real_time();
     }
-  }//for( const std::shared_ptr<const Measurement> &m : measurement )
+  }//for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
   
   if( nnonback )
     return nonbacktime/nnonback;
@@ -7773,17 +7777,17 @@ double InterSpec::liveTime( const std::set<int> &samplenums ) const
   
   for( int sample : samplenums )
   {
-    const vector<std::shared_ptr<const Measurement>> measurement
+    const vector<std::shared_ptr<const SpecUtils::Measurement>> measurement
     = m_dataMeasurement->sample_measurements( sample );
     
-    for( const std::shared_ptr<const Measurement> &m : measurement )
+    for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
     {
       const int detn = m->detector_number();
       const size_t detpos = std::find(detnumbegin,detnumend,detn) - detnumbegin;
       
       if( detpos < det_use.size() && det_use[detpos] )
         time += m->live_time();
-    }//for( const std::shared_ptr<const Measurement> &m : measurement )
+    }//for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurement )
   }//for( int sample : prev_displayed_samples )
 
   return time;
@@ -7793,29 +7797,29 @@ double InterSpec::liveTime( const std::set<int> &samplenums ) const
 
 
 void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
-                                                const SpectrumType type )
+                                                const SpecUtils::SpectrumType type )
 {
   std::shared_ptr<SpecMeas> meas = measurment( type );
   
   if( !meas )
     return;
   
-  std::shared_ptr<const Measurement> prevhist = displayedHistogram(type);
+  std::shared_ptr<const SpecUtils::Measurement> prevhist = displayedHistogram(type);
   
   std::set<int> *sampleset = 0;
   
   switch( type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       sampleset = &m_displayedSamples;
       deletePeakEdit();
     break;
       
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       sampleset = &m_sectondForgroundSampleNumbers;
     break;
       
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       sampleset = &m_backgroundSampleNumbers;
     break;
   }//switch( type )
@@ -7833,15 +7837,15 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
   
   switch( type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       displayForegroundData( true );
     break;
       
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       displaySecondForegroundData();
     break;
       
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       displayBackgroundData();
     break;
   }//switch( type )
@@ -7851,14 +7855,14 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
 #if( !ANDROID && !IOS )
   switch( type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       if( !!m_dataMeasurement
          && !m_dataMeasurement->automatedSearchPeaks(samples) )
         searchForHintPeaks( m_dataMeasurement, samples );
       break;
       
-    case kSecondForeground:
-    case kBackground:
+    case SpecUtils::SpectrumType::SecondForeground:
+    case SpecUtils::SpectrumType::Background:
       break;
   }//switch( spec_type )
 #endif
@@ -7869,7 +7873,7 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
 
 void InterSpec::sampleNumbersToDisplayAddded( const double t0,
                                                    const double t1,
-                                                   const SpectrumType type )
+                                                   const SpecUtils::SpectrumType type )
 {
   std::shared_ptr<SpecMeas> meas = measurment( type );
   
@@ -7911,12 +7915,12 @@ void InterSpec::sampleNumbersToDisplayAddded( const double t0,
 
 
 void InterSpec::changeTimeRange( const double t0, const double t1,
-                                      const SpectrumType type )
+                                      const SpecUtils::SpectrumType type )
 {
   if( !m_dataMeasurement )
     return;
   
-  const bool updateothers = (type==kForeground && !displayedHistogram(kForeground) );
+  const bool updateothers = (type==SpecUtils::SpectrumType::Foreground && !displayedHistogram(SpecUtils::SpectrumType::Foreground) );
   
   std::shared_ptr<SpecMeas> meas = measurment( type );
   const set<int> sampleNums = timeRangeToSampleNumbers( t0, t1 );
@@ -7950,7 +7954,7 @@ void InterSpec::findAndSetExcludedSamples( std::set<int> definetly_keep_samples 
 
   for( const int sample : all_samples )
   {
-    vector< std::shared_ptr<const Measurement> > measurements = m_dataMeasurement->sample_measurements( sample );
+    vector< std::shared_ptr<const SpecUtils::Measurement> > measurements = m_dataMeasurement->sample_measurements( sample );
 
     if( definetly_keep_samples.count(sample) > 0 )
       continue;
@@ -7960,11 +7964,11 @@ void InterSpec::findAndSetExcludedSamples( std::set<int> definetly_keep_samples 
       m_excludedSamples.insert( sample );
     }else
     {
-      const std::shared_ptr<const Measurement> meas = measurements.front();
+      const std::shared_ptr<const SpecUtils::Measurement> meas = measurements.front();
       //XXX - Assuming background and calibration statis is the same for all
       //      detectors
-      //const bool back = (meas->source_type() == Measurement::Background);
-      const bool calib = (meas->source_type() == Measurement::Calibration);
+      //const bool back = (meas->source_type() == SpecUtils::SourceType::Background);
+      const bool calib = (meas->source_type() == SpecUtils::SourceType::Calibration);
 
       if( /*back ||*/ calib )
         m_excludedSamples.insert( sample );
@@ -7987,11 +7991,11 @@ std::set<int> InterSpec::validForegroundSamples() const
   set<int> torm;
   for( const int s : sample_nums )
   {
-    const vector< std::shared_ptr<const Measurement> > meas
+    const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
                                = m_dataMeasurement->sample_measurements(s);
-    for( const std::shared_ptr<const Measurement> &m : meas )
+    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
     {
-      if( m->source_type() == Measurement::Background )
+      if( m->source_type() == SpecUtils::SourceType::Background )
         torm.insert( s );
     }
   }//for( const int s : sample_nums )
@@ -8037,7 +8041,7 @@ void InterSpec::initOsColorThemeChangeDetect()
 #endif
 
 
-void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
+void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
                                                     std::shared_ptr<SpecMeas> meas,
                                                     const string sessionId,
                                                     bool keepModStatus,
@@ -8056,16 +8060,16 @@ void InterSpec::loadDetectorToPrimarySpectrum( DetectorType type,
   
   if( !det )
   {
-    if( type == kUnknownDetector )
+    if( type == SpecUtils::DetectorType::kUnknownDetector )
       return;
     
     try
     {
       switch( type )
       {
-        case kIdentiFinderDetector:
-        case kIdentiFinderNGDetector:
-        case kIdentiFinderLaBr3Detector:
+        case SpecUtils::DetectorType::kIdentiFinderDetector:
+        case SpecUtils::DetectorType::kIdentiFinderNGDetector:
+        case SpecUtils::DetectorType::kIdentiFinderLaBr3Detector:
           det = DetectorEdit::initARelEffDetector( type, this );
         break;
         
@@ -8168,9 +8172,11 @@ void InterSpec::doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
 
 void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
                                     std::set<int> sample_numbers,
-                                  const SpectrumType spec_type,
+                                  const SpecUtils::SpectrumType spec_type,
                                   const bool checkForPrevioudEnergyCalib )
 {
+  const int spectypeindex = static_cast<int>( spec_type );
+  
   vector< boost::function<void(void)> > furtherworkers;
   
   bool wasModified = false, wasModifiedSinceDecode = false;
@@ -8188,7 +8194,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
 /*
     const std::vector<std::string> &names = meas->detector_names();
-    std::vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
+    std::vector< std::shared_ptr<const SpecUtils::Measurement> > meass = meas->measurements();
     
     vector<ofstream> outfiles( names.size() );
     for( size_t i = 0; i < names.size(); ++i )
@@ -8210,7 +8216,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 */
     
 /*
-    std::shared_ptr<Measurement> sumspec = meas->sum_measurements( meas->sample_numbers(), vector<bool>(meas->detector_numbers().size(),true) );
+    std::shared_ptr<SpecUtils::Measurement> sumspec = meas->sum_measurements( meas->sample_numbers(), vector<bool>(meas->detector_numbers().size(),true) );
     const std::shared_ptr< const std::vector<float> > &counts = sumspec->gamma_channel_contents();
     
     ofstream output( ("/Users/wcjohns/sum_" + meas->filename() + ".txt").c_str() );
@@ -8225,10 +8231,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   std::shared_ptr<SpecMeas> previous = measurment(spec_type);
   const set<int> prevsamples = displayedSamples(spec_type);
   const bool sameSpec = (meas==previous);
-  std::shared_ptr<const Measurement> prev_display = m_spectrum->histUsedForXAxis();
+  std::shared_ptr<const SpecUtils::Measurement> prev_display = m_spectrum->histUsedForXAxis();
   
 
-  if( (spec_type == kForeground) && previous && (previous != meas) )
+  if( (spec_type == SpecUtils::SpectrumType::Foreground) && previous && (previous != meas) )
   {
     closeShieldingSourceFitWindow();
     
@@ -8247,16 +8253,16 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       }
     }
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
-  }//if( (spec_type == kForeground) && !!previous && (previous != meas) )
+  }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible() /* && checkForPrevioudEnergyCalib */
-      && m_referencePhotopeakLines  && (spec_type == kForeground) )
+      && m_referencePhotopeakLines  && (spec_type == SpecUtils::SpectrumType::Foreground) )
     m_referencePhotopeakLines->clearAllLines();
   
   string msg;
   switch( spec_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
 #if( USE_DB_TO_STORE_SPECTRA )
       m_currentStateID = -1;
       updateSaveWorkspaceMenu();
@@ -8265,7 +8271,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         deletePeakEdit();
     break;
     
-    case kSecondForeground: case kBackground:
+    case SpecUtils::SpectrumType::SecondForeground: case SpecUtils::SpectrumType::Background:
     break;
   }//switch( spec_type )
 
@@ -8279,22 +8285,24 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }
 
 #if( USE_SAVEAS_FROM_MENU )
-  if( m_downloadMenu && m_downloadMenus[spec_type] )
+  if( m_downloadMenu && m_downloadMenus[spectypeindex] )
   {
-    m_downloadMenus[spec_type]->setDisabled( !meas );
-    WMenuItem *item = m_downloadMenus[spec_type]->parentItem();
+    m_downloadMenus[spectypeindex]->setDisabled( !meas );
+    WMenuItem *item = m_downloadMenus[spectypeindex]->parentItem();
     if( item )
       m_downloadMenu->setItemHidden( item, !meas );
       
     bool allhidden=true;
-    for( SpectrumType i = SpectrumType(0); i<=kBackground; i = SpectrumType(i+1) )
+    for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0);
+         i <= SpecUtils::SpectrumType::Background;
+         i = SpecUtils::SpectrumType(static_cast<int>(i)+1) )
     {
-      if (!m_downloadMenu->isItemHidden( m_downloadMenus[i]->parentItem()))
+      if (!m_downloadMenu->isItemHidden( m_downloadMenus[static_cast<int>(i)]->parentItem()))
       {
         allhidden=false;
         break;
       }//if (!m_downloadMenus[i]->isHidden())
-    }//    for( SpectrumType i = SpectrumType(0); i<=kBackground; i = SpectrumType(i+1) )
+    }//    for( SpecUtils::SpectrumType i = SpecUtils::SpectrumType(0); i<=SpecUtils::SpectrumType::Background; i = SpecUtils::SpectrumType(i+1) )
       
     m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),allhidden);
   }//if( m_downloadMenu && m_downloadMenus[spec_type] )
@@ -8303,7 +8311,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   switch( spec_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       m_detectorChangedConnection.disconnect();
       m_detectorModifiedConnection.disconnect();
       m_displayedSpectrumChanged.disconnect();
@@ -8339,11 +8347,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           }
         }//if( meas->detector() != old_det )
         
-        DetectorType detType = meas->detector_type();
-        if( detType == kUnknownDetector )
+        SpecUtils::DetectorType detType = meas->detector_type();
+        if( detType == SpecUtils::DetectorType::kUnknownDetector )
           detType = SpecMeas::guessDetectorTypeFromFileName( meas->filename() );
       
-        if( !meas->detector() /* && (detType != kUnknownDetector) */ )
+        if( !meas->detector() /* && (detType != SpecUtils::DetectorType::kUnknownDetector) */ )
         {
           boost::function<void()> updateemit
                   = wApp->bind( boost::bind( &InterSpec::emitDetectorChanged,
@@ -8368,14 +8376,14 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         m_shieldingSourceFit->newForegroundSet();
     break;
 
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       m_secondDataMeasurement = meas;
       m_sectondForgroundSampleNumbers = sample_numbers;
       if( meas && m_sectondForgroundSampleNumbers.empty() )
         m_sectondForgroundSampleNumbers = meas->sample_numbers();
     break;
 
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       m_backgroundMeasurement = meas;
       m_backgroundSampleNumbers = sample_numbers;
       if( meas && m_backgroundSampleNumbers.empty() )
@@ -8391,7 +8399,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   //  the background/secondary, and differnet number of bins than previous
   //  foreground, get rid of the background/secondary since the user probably
   //  isnt interested in files from a completely different detector anymore.
-  if( spec_type == kForeground && m_dataMeasurement && !sameSpec )
+  if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpec )
   {
     //Assume we will use all the detectors (just to determine binning)
     const vector<bool> use_gamma( m_dataMeasurement->detector_names().size(), true );
@@ -8412,16 +8420,16 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( diff_fore_nchan && num_sec_channel && (num_sec_channel != num_foreground_channels) )
     {
 #if( USE_SAVEAS_FROM_MENU )
-      m_downloadMenus[kSecondForeground]->setDisabled( true );
-      WMenuItem *item = m_downloadMenus[kSecondForeground]->parentItem();
+      m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->setDisabled( true );
+      WMenuItem *item = m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->parentItem();
       if( item )
         m_downloadMenu->setItemHidden( item, true );
 #endif
       
       m_secondDataMeasurement = std::shared_ptr<SpecMeas>();
-      m_spectrum->setSecondData( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0, false );
+      m_spectrum->setSecondData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
       
-      m_displayedSpectrumChangedSignal.emit( kSecondForeground,
+      m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::SecondForeground,
                                             m_secondDataMeasurement,
                                             std::set<int>() );
     }//if( num_sec_channel )
@@ -8429,26 +8437,26 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( diff_fore_nchan && num_back_channel && num_foreground_channels && (num_back_channel != num_foreground_channels) )
     {
 #if( USE_SAVEAS_FROM_MENU )
-      m_downloadMenus[kBackground]->setDisabled( true );
-      WMenuItem *item = m_downloadMenus[kBackground]->parentItem();
+      m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::Background)]->setDisabled( true );
+      WMenuItem *item = m_downloadMenus[static_cast<int>(SpecUtils::SpectrumType::Background)]->parentItem();
       if( item )
         m_downloadMenu->setItemHidden( item, true );
 #endif
       
       m_backgroundMeasurement = std::shared_ptr<SpecMeas>();
-      m_spectrum->setBackground( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0 );
-      m_displayedSpectrumChangedSignal.emit( kBackground,
+      m_spectrum->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
+      m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background,
                                             m_backgroundMeasurement,
                                             std::set<int>() );
     }//if( nSecondBins )
-  }//if( spec_type == kForeground )
+  }//if( spec_type == SpecUtils::SpectrumType::Foreground )
   
   
   
   //Fall throughs intentional
   switch( spec_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       updateGuiForPrimarySpecChange( sample_numbers );
 #if( USE_DB_TO_STORE_SPECTRA )
       m_saveStateAs->setDisabled( !m_dataMeasurement );
@@ -8456,10 +8464,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       displayForegroundData( false );
       displayTimeSeriesData( true );
       
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       displaySecondForegroundData();
       
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       displayBackgroundData();
   };//switch( spec_type )
   
@@ -8480,13 +8488,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   //Making fcn call take current data as a argument so that if this way a
   //  recalibration happens (which will change m_spectrum->data()), then the
   //  peak fit routine will get the correct data to use.
-  std::function<void(std::shared_ptr<const Measurement>)> propigate_peaks_fcns;
+  std::function<void(std::shared_ptr<const SpecUtils::Measurement>)> propigate_peaks_fcns;
   
   const bool askToPropigatePeaks
           = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
   if( askToPropigatePeaks && checkForPrevioudEnergyCalib
      && !sameSpec && meas && m_dataMeasurement && previous && m_spectrum->data()
-     && spec_type==kForeground
+     && spec_type==SpecUtils::SpectrumType::Foreground
      && previous->instrument_id()==meas->instrument_id()
      && previous->num_gamma_channels()==meas->num_gamma_channels() )
   {
@@ -8508,7 +8516,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       vector<PeakDef> original_peaks;
       
       const std::string sessionid = wApp->sessionId();
-      propigate_peaks_fcns = [=]( std::shared_ptr<const Measurement> data ){
+      propigate_peaks_fcns = [=]( std::shared_ptr<const SpecUtils::Measurement> data ){
         PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
                        PeakSearchGuiUtils::PeakTemplateFitSrc::PreviousSpectrum,
                        sessionid );
@@ -8524,17 +8532,17 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     switch( spec_type )
     {
-      case kForeground:
+      case SpecUtils::SpectrumType::Foreground:
         if( PreserveCalibWindow::candidate(meas,previous) )
           m_preserveCalibWindow = new PreserveCalibWindow( meas, spec_type,
                                          previous, spec_type, m_recalibrator );
       break;
     
-      case kSecondForeground:
-      case kBackground:
+      case SpecUtils::SpectrumType::SecondForeground:
+      case SpecUtils::SpectrumType::Background:
         if( PreserveCalibWindow::candidate(meas,m_dataMeasurement) )
           m_preserveCalibWindow = new PreserveCalibWindow( meas, spec_type,
-                                                m_dataMeasurement, kForeground,
+                                                m_dataMeasurement, SpecUtils::SpectrumType::Foreground,
                                                 m_recalibrator );
       break;
     };//switch( spec_type )
@@ -8545,7 +8553,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       {
         m_preserveCalibWindow->finished().connect( std::bind( [=](){
           deletePreserveCalibWindow();
-          std::shared_ptr<const Measurement> data = m_spectrum->data();
+          std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
           WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
         } ) );
         
@@ -8560,21 +8568,21 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   if( propigate_peaks_fcns )
   {
-    std::shared_ptr<const Measurement> data = m_spectrum->data();
+    std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
     WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
     propigate_peaks_fcns = nullptr;
   }
   
   switch( spec_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       if( !!m_dataMeasurement && ((!m_dataMeasurement)!=(!previous)) )
         doJavaScript( "$('.Wt-domRoot').data('HasForeground',1);" );
       else if( !m_dataMeasurement )
         doJavaScript( "$('.Wt-domRoot').data('HasForeground',0);" );
     break;
     
-    case kSecondForeground: case kBackground:
+    case SpecUtils::SpectrumType::SecondForeground: case SpecUtils::SpectrumType::Background:
       if( !!meas && !m_dataMeasurement )
       {
         passMessage( "You must load a foreground spectrum before viewing a"
@@ -8616,7 +8624,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #if( !ANDROID && !IOS )
   switch( spec_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
     {
       if( m_dataMeasurement )
       {
@@ -8627,8 +8635,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       break;
     }
       
-    case kSecondForeground:
-    case kBackground:
+    case SpecUtils::SpectrumType::SecondForeground:
+    case SpecUtils::SpectrumType::Background:
       break;
   }//switch( spec_type )
 #endif
@@ -8643,7 +8651,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   if( m_mobileBackButton && m_mobileForwardButton )
   {
-    if( !toolTabsVisible() && meas && spec_type==kForeground
+    if( !toolTabsVisible() && meas && spec_type==SpecUtils::SpectrumType::Foreground
         && !meas->passthrough() && (meas->sample_numbers().size()>1) )
     {
       m_mobileBackButton->setHidden(false);
@@ -8658,7 +8666,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   //Check for warnings from parsing the file, and display to user - not
   //  implemented well yet.
-  if( spec_type == kForeground && m_dataMeasurement && !sameSpec )
+  if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpec )
   {
     try
     {
@@ -8674,12 +8682,12 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }
     
     
-  }//if( spec_type == kForeground && m_dataMeasurement && !sameSpec )
+  }//if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpec )
   
   
   //Display a notice to the user about how they can select different portions of
   //  passthrough/search-mode data
-  if( spec_type==kForeground && !!m_dataMeasurement
+  if( spec_type==SpecUtils::SpectrumType::Foreground && !!m_dataMeasurement
       && m_dataMeasurement->passthrough() )
   {
     const bool showToolTipInstantly
@@ -8703,38 +8711,38 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 }//void setSpectrum(...)
 
 
-void InterSpec::reloadCurrentSpectrum( SpectrumType spec_type )
+void InterSpec::reloadCurrentSpectrum( SpecUtils::SpectrumType spec_type )
 {
   std::shared_ptr<SpecMeas> meas;
   std::set<int> sample_numbers;
 
   switch( spec_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       meas = m_dataMeasurement;
       sample_numbers = m_displayedSamples;
     break;
 
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       meas = m_secondDataMeasurement;
       sample_numbers = m_sectondForgroundSampleNumbers;
     break;
 
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       meas = m_backgroundMeasurement;
       sample_numbers = m_backgroundSampleNumbers;
     break;
   }//switch( spec_type )
 
   setSpectrum( meas, sample_numbers, spec_type, false );
-}//void reloadCurrentSpectrum( SpectrumType spec_type )
+}//void reloadCurrentSpectrum( SpecUtils::SpectrumType spec_type )
 
 
 
 void InterSpec::finishLoadUserFilesystemOpenedFile(
                                 std::shared_ptr<SpecMeas> meas,
                                 std::shared_ptr<SpectraFileHeader> header,
-                                const SpectrumType type )
+                                const SpecUtils::SpectrumType type )
 {
   SpectraFileModel *fileModel = m_fileManager->model();
   
@@ -8777,18 +8785,18 @@ void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
   
   WPushButton *button = new WPushButton( "Foreground" );
   button->clicked().connect( dialog, &AuxWindow::hide );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, kForeground ) );
+  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, SpecUtils::SpectrumType::Foreground ) );
   buttonlayout->addWidget( button, 0, 0, AlignMiddle );
   button->setFocus( true );
   
   button = new WPushButton( "Background" );
   button->clicked().connect( dialog, &AuxWindow::hide );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, kBackground ) );
+  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, SpecUtils::SpectrumType::Background ) );
   buttonlayout->addWidget( button, 0, 1, AlignMiddle );
   
   button = new WPushButton( "Secondary" );
   button->clicked().connect( dialog, &AuxWindow::hide );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, kSecondForeground ) );
+  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, SpecUtils::SpectrumType::SecondForeground ) );
   buttonlayout->addWidget( button, 0, 2, AlignMiddle );
   
   dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
@@ -8813,7 +8821,7 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
       throw runtime_error( "Could not access file '" + path + "'" );
   
     auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
-    auto meas = header->setFile( displayFileName, path, kAutoParser );
+    auto meas = header->setFile( displayFileName, path, SpecUtils::ParserType::kAutoParser );
   
     if( !meas )
       throw runtime_error( "Failed to decode file" );
@@ -8837,14 +8845,14 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
       return true;
     }else
     {
-//      return m_fileManager->loadFromFileSystem( path, kForeground, kAutoParser );
+//      return m_fileManager->loadFromFileSystem( path, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kAutoParser );
       cout << "Will load file " << path << " requested to be loaded at "
       << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
       << endl;
       
       SpectraFileModel *fileModel = m_fileManager->model();
       const int row = fileModel->addRow( header );
-      m_fileManager->displayFile( row, meas, kForeground, true, true, true );
+      m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, true );
       return true;
     }
   }catch( std::exception &e )
@@ -8885,17 +8893,17 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
     {
       if( m_fileManager )
       {
-        typedef map<SpectrumType,string> TypeToPathMap;
+        typedef map<SpecUtils::SpectrumType,string> TypeToPathMap;
         TypeToPathMap specToLoadMap;
         
-        specToLoadMap[kForeground] = fileinfo.m_foregroundFilePath.toUTF8();
-        specToLoadMap[kSecondForeground] = fileinfo.m_secondForegroundFilePath.toUTF8();
-        specToLoadMap[kBackground] = fileinfo.m_backgroundFilePath.toUTF8();
+        specToLoadMap[SpecUtils::SpectrumType::Foreground] = fileinfo.m_foregroundFilePath.toUTF8();
+        specToLoadMap[SpecUtils::SpectrumType::SecondForeground] = fileinfo.m_secondForegroundFilePath.toUTF8();
+        specToLoadMap[SpecUtils::SpectrumType::Background] = fileinfo.m_backgroundFilePath.toUTF8();
         
         for( TypeToPathMap::const_iterator iter = specToLoadMap.begin();
             iter != specToLoadMap.end(); ++iter )
         {
-          SpectrumType type = iter->first;
+          SpecUtils::SpectrumType type = iter->first;
           const string filepath = iter->second;
           
           if( filepath.empty() || !SpecUtils::is_file(filepath) )
@@ -8930,14 +8938,15 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
               
               if( iszip )
               {
-                if( fileManager()->handleZippedFile( displayName, filepath, -1 ) )
+                //ToDo: I feel uneasy creating an invalid SpecUtils::SpectrumType, should fix up function call signaure
+                if( fileManager()->handleZippedFile( displayName, filepath, SpecUtils::SpectrumType(-1) ) )
                   return true;
               }//if( iszip )
             }
 #endif
             
             header = std::make_shared<SpectraFileHeader>( m_user, true, this );
-            meas = header->setFile( displayName, filepath, kAutoParser );
+            meas = header->setFile( displayName, filepath, SpecUtils::ParserType::kAutoParser );
             
             
             bool couldBeBackground = askIfBackound;
@@ -8947,7 +8956,7 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
               couldBeBackground = false;
             }else if( askIfBackound )
             {
-              couldBeBackground &= (type == kForeground);
+              couldBeBackground &= (type == SpecUtils::SpectrumType::Foreground);
               couldBeBackground &= (m_dataMeasurement->instrument_id() == meas->instrument_id());
               couldBeBackground &= (m_dataMeasurement->num_gamma_channels() == meas->num_gamma_channels());
             }//if( !m_dataMeasurement || !meas )
@@ -8976,7 +8985,7 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
                          "", WarningWidget::WarningMsgHigh );
           }//try / catch
           
-//          m_fileManager->loadFromFileSystem( fileinfo.m_foregroundFilePath.toUTF8(), kForeground, kAutoParser );
+//          m_fileManager->loadFromFileSystem( fileinfo.m_foregroundFilePath.toUTF8(), SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kAutoParser );
         }//for( loop over files to potentially open )
       }//if( m_fileManager )
       
@@ -9033,9 +9042,9 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
 #endif
   }//if( m_detectorToShowMenu )
   
-  m_timeSeries->clearTimeHighlightRegions( kForeground );
-  m_timeSeries->clearTimeHighlightRegions( kBackground );
-  m_timeSeries->clearTimeHighlightRegions( kSecondForeground );
+  m_timeSeries->clearTimeHighlightRegions( SpecUtils::SpectrumType::Foreground );
+  m_timeSeries->clearTimeHighlightRegions( SpecUtils::SpectrumType::Background );
+  m_timeSeries->clearTimeHighlightRegions( SpecUtils::SpectrumType::SecondForeground );
   m_timeSeries->clearOccupancyRegions();
   
   if( m_displayedSamples.empty() )
@@ -9239,7 +9248,7 @@ void InterSpec::searchForSinglePeak( const double x )
     throw runtime_error( "InterSpec::searchForSinglePeak(...): "
                         "shoudnt be called if peak model isnt set.");
   
-  std::shared_ptr<Measurement> data = m_spectrum->data();
+  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
   
   if( !m_dataMeasurement || !data )
     return;
@@ -9411,7 +9420,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
   std::shared_ptr< vector<std::shared_ptr<const PeakDef> > > searchresults
             = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
   
-  std::weak_ptr<const Measurement> weakdata = m_spectrum->data();
+  std::weak_ptr<const SpecUtils::Measurement> weakdata = m_spectrum->data();
   std::weak_ptr<SpecMeas> spectrum = data;
   
   boost::function<void(void)> callback = wApp->bind(
@@ -9531,7 +9540,7 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
   double chi2[FromInputPeaks];
   vector<std::shared_ptr<PeakDef> > answer[FromInputPeaks];
   
-  std::shared_ptr<const Measurement> dataH = m_spectrum->data();
+  std::shared_ptr<const SpecUtils::Measurement> dataH = m_spectrum->data();
   if( !dataH )
     return;
   
@@ -9646,7 +9655,7 @@ void InterSpec::findPeakFromUserRange( double x0, double x1 )
     throw runtime_error( "SpectrumDisplayDiv::findPeakFromUserRange(...): "
                         "shoudnt be called if peak model isnt set.");
   
-  std::shared_ptr<Measurement> data = m_spectrum->data();
+  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
   
   if( !data )
   {
@@ -9710,7 +9719,7 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   if( peaks_in_range.empty() )
     return;
   
-  std::shared_ptr<const Measurement> data = m_spectrum->data();
+  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
   if( !data )
     return;
   
@@ -9773,7 +9782,7 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   
   
   std::shared_ptr<const DetectorPeakResponse> detector
-                                          = measurment(kForeground)->detector();
+                                          = measurment(SpecUtils::SpectrumType::Foreground)->detector();
   map<std::shared_ptr<const PeakContinuum>,PeakShrdVec > peaksinroi;
   for( PeakDef peak : peaks_to_keep )
     peaksinroi[peak.continuum()].push_back( std::make_shared<PeakDef>(peak) );
@@ -9842,7 +9851,7 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
     throw runtime_error( "SpectrumDisplayDiv::refitPeakAmplitudes(...): "
                          "shoudnt be called if peak model isnt set.");
   
-  std::shared_ptr<const Measurement> data;
+  std::shared_ptr<const SpecUtils::Measurement> data;
   std::shared_ptr<const DetectorPeakResponse> detector;
   std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > all_peaks;
   
@@ -9861,16 +9870,16 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
     
     data = m_spectrum->data();
   
-    if( viewer && viewer->measurment(kForeground) )
+    if( viewer && viewer->measurment(SpecUtils::SpectrumType::Foreground) )
     {
-      detector = viewer->measurment(kForeground)->detector();
+      detector = viewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
       
       if( detector )
       {
         DetectorPeakResponse *resp = new DetectorPeakResponse( *detector );
         detector.reset( resp );
       }//if( detector )
-    }//if( viewer && viewer->measurment(kForeground) )
+    }//if( viewer && viewer->measurment(SpecUtils::SpectrumType::Foreground) )
   
     if( detector && !detector->hasResolutionInfo() )
     {
@@ -10031,10 +10040,10 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
       continue;
     
     bool isback = false;
-    const vector< std::shared_ptr<const Measurement> > meas
+    const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
                               = m_dataMeasurement->sample_measurements(s);
-    for( const std::shared_ptr<const Measurement> &m : meas )
-      isback |= (m->source_type() == Measurement::Background);
+    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
+      isback |= (m->source_type() == SpecUtils::SourceType::Background);
     
     if( isback )
     {
@@ -10144,7 +10153,7 @@ void InterSpec::setChartSpacing()
 
 void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
 {
-  std::shared_ptr<Measurement> gammaH, neutronH;
+  std::shared_ptr<SpecUtils::Measurement> gammaH, neutronH;
 
   bool useAllDetector = true;
   const vector<bool> det_to_use = detectors_to_display();
@@ -10182,8 +10191,8 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
     for( size_t i = 0; i < binning.size(); ++i )
       bin_edges[i] = binning[i].first;
     
-    gammaH      = std::make_shared<Measurement>();
-    neutronH    = std::make_shared<Measurement>();
+    gammaH      = std::make_shared<SpecUtils::Measurement>();
+    neutronH    = std::make_shared<SpecUtils::Measurement>();
     
     gammaH->set_title( "Foreground Gamma" );
     neutronH->set_title( "Neutrons" );
@@ -10262,24 +10271,26 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
     
     const bool keep_current_xrange = false;
     m_timeSeries->setData( gammaH, -1.0, -1.0, -1.0, keep_current_xrange );
-    m_timeSeries->setBackground( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0 );  //we could use this for like the GMTubes or whatever
+    m_timeSeries->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );  //we could use this for like the GMTubes or whatever
     m_timeSeries->setSecondData( neutronH, -1.0, -1.0, -1.0, true );
     
     if( updateHighlightRegionsDisplay )
     {
-      for( SpectrumType t = SpectrumType(0); t <= kBackground; t = SpectrumType(t+1) )
+      for( SpecUtils::SpectrumType t = SpecUtils::SpectrumType(0);
+          t <= SpecUtils::SpectrumType::Background;
+          t = SpecUtils::SpectrumType(static_cast<int>(t)+1) )
       {
         const vector< pair<double,double> > regions = timeRegionsToHighlight( t );
         m_timeSeries->setTimeHighLightRegions( regions, t );
-      }//for( SpectrumType t = SpectrumType(0); t <= kBackground; t = SpectrumType(t+1) )
+      }//for( SpecUtils::SpectrumType t = SpecUtils::SpectrumType(0); t <= SpecUtils::SpectrumType::Background; t = SpecUtils::SpectrumType(t+1) )
       
-      const auto foreFromfile = timeRegionsFromFile( Measurement::OccupancyStatus::Occupied );
+      const auto foreFromfile = timeRegionsFromFile( SpecUtils::OccupancyStatus::Occupied );
       m_timeSeries->setOccupancyRegions( foreFromfile );
     }//if( updateHighlightRegionsDisplay )
   }else
   {
     m_timeSeries->setData( gammaH, -1.0, -1.0, -1.0, false );
-    m_timeSeries->setBackground( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0 );
+    m_timeSeries->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
     m_timeSeries->setSecondData( neutronH, -1.0, -1.0, -1.0, true );
     
     if( !m_timeSeries->isHidden() )
@@ -10290,9 +10301,9 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
 
     if( updateHighlightRegionsDisplay )
     {
-      m_timeSeries->clearTimeHighlightRegions(kForeground);
-      m_timeSeries->clearTimeHighlightRegions(kSecondForeground);
-      m_timeSeries->clearTimeHighlightRegions(kBackground);
+      m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::Foreground);
+      m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::SecondForeground);
+      m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::Background);
       m_timeSeries->clearOccupancyRegions();
     }
   }//if( passthrough ) / else
@@ -10319,7 +10330,7 @@ std::shared_ptr<const std::vector<float>> InterSpec::getBinning( std::set<int> s
     return std::shared_ptr< const std::vector<float> >();
   }
   
-  std::shared_ptr<const Measurement> meas = measurement->measurements()[index];
+  std::shared_ptr<const SpecUtils::Measurement> meas = measurement->measurements()[index];
   if( meas )
     return meas->channel_energies();
   
@@ -10470,7 +10481,7 @@ void InterSpec::refreshDisplayedCharts()
 
 
 vector< pair<double,double> > InterSpec::timeRegionsToHighlight(
-                                                const SpectrumType type ) const
+                                                const SpecUtils::SpectrumType type ) const
 {
   vector< pair<double,double> > timeranges;
   
@@ -10479,7 +10490,7 @@ vector< pair<double,double> > InterSpec::timeRegionsToHighlight(
   
   if( wantedSamples.empty() || !meas || meas!=m_dataMeasurement
      || m_timeSeries->isHidden()
-     || (type==kForeground && wantedSamples==validForegroundSamples()) )
+     || (type==SpecUtils::SpectrumType::Foreground && wantedSamples==validForegroundSamples()) )
     return timeranges;
 
   const vector<pair<float,int> > binning = passthroughTimeToSampleNumber();
@@ -10507,11 +10518,11 @@ vector< pair<double,double> > InterSpec::timeRegionsToHighlight(
 }//timeRegionsToHighlight(...)
 
 
-vector< pair<double,double> > InterSpec::timeRegionsFromFile( const Measurement::OccupancyStatus type ) const
+vector< pair<double,double> > InterSpec::timeRegionsFromFile( const SpecUtils::OccupancyStatus type ) const
 {
   vector< pair<double,double> > timeranges;
   
-  std::shared_ptr<const SpecMeas> meas = measurment( kForeground );
+  std::shared_ptr<const SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
   
   if( !meas || m_timeSeries->isHidden() )
     return timeranges;
@@ -10563,7 +10574,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_showYAxisScalerItems[1]->setDisabled( m_showYAxisScalerItems[1]->isVisible() );
 #endif
     
-    m_spectrum->setData( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0, false );
+    m_spectrum->setData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
     m_peakModel->setPeakFromSpecMeas( m_dataMeasurement, m_displayedSamples );
     return;
   }//if( !m_dataMeasurement )
@@ -10612,7 +10623,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_backgroundSubItems[1]->setHidden( !isSub );
   }//if( m_backgroundSubItems[0]->isHidden() != isSub )
 
-  std::shared_ptr<Measurement> dataH = m_dataMeasurement->sum_measurements( m_displayedSamples, use_gamma );
+  std::shared_ptr<SpecUtils::Measurement> dataH = m_dataMeasurement->sum_measurements( m_displayedSamples, use_gamma );
   
   if( dataH )
     dataH->set_title( "Foreground" );
@@ -10632,7 +10643,7 @@ void InterSpec::displaySecondForegroundData()
     if( !!m_spectrum->secondData() )
     {
       m_sectondForgroundSampleNumbers.clear();
-      m_spectrum->setSecondData( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0, false );
+      m_spectrum->setSecondData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
       if( !m_timeSeries->isHidden() )
         m_timeSeries->hide();
     }//if( !!m_spectrum->secondData() )
@@ -10677,13 +10688,13 @@ void InterSpec::displaySecondForegroundData()
 
       m_secondDataMeasurement = std::shared_ptr<SpecMeas>();
       m_sectondForgroundSampleNumbers.clear();
-      m_spectrum->setSecondData( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0, false );
+      m_spectrum->setSecondData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
 
       return;
     }//if( there was a binning mismatch )
 */
     
-    std::shared_ptr<Measurement> histH;
+    std::shared_ptr<SpecUtils::Measurement> histH;
     if( m_secondDataMeasurement )
       histH = m_secondDataMeasurement->sum_measurements(m_sectondForgroundSampleNumbers, second_det_use );
     if( histH )
@@ -10697,13 +10708,13 @@ void InterSpec::displaySecondForegroundData()
   }else
   {
     m_sectondForgroundSampleNumbers.clear();
-    m_spectrum->setSecondData( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0, false );
+    m_spectrum->setSecondData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
   }//if( m_backgroundMeasurement ) / else
   
   if( !m_timeSeries->isHidden() )
   {
-    vector< pair<double,double> > regions = timeRegionsToHighlight(kSecondForeground);
-    m_timeSeries->setTimeHighLightRegions( regions, kSecondForeground );
+    vector< pair<double,double> > regions = timeRegionsToHighlight(SpecUtils::SpectrumType::SecondForeground);
+    m_timeSeries->setTimeHighLightRegions( regions, SpecUtils::SpectrumType::SecondForeground );
   }
 }//void displaySecondForegroundData()
 
@@ -10752,7 +10763,7 @@ void InterSpec::displayBackgroundData()
           << "not match that of data (" << nDataBin << " bins)";
       passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
       m_backgroundMeasurement = std::shared_ptr<SpecMeas>();
-      m_spectrum->setBackground( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0 );
+      m_spectrum->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
 
       m_backgroundSampleNumbers.clear();
 
@@ -10764,7 +10775,7 @@ void InterSpec::displayBackgroundData()
     if( m_backgroundSampleNumbers.empty() )
       m_backgroundSampleNumbers = m_backgroundMeasurement->sample_numbers();
 
-    std::shared_ptr<Measurement> backgroundH;
+    std::shared_ptr<SpecUtils::Measurement> backgroundH;
     if( m_backgroundMeasurement )
       backgroundH = m_backgroundMeasurement->sum_measurements( m_backgroundSampleNumbers, background_det_use );
     if( backgroundH )
@@ -10779,13 +10790,13 @@ void InterSpec::displayBackgroundData()
 //    if( !m_dataMeasurement )
 //      m_backgroundMeasurement = std::shared_ptr<SpecMeas>();
     m_backgroundSampleNumbers.clear();
-    m_spectrum->setBackground( std::shared_ptr<Measurement>(), -1.0, -1.0, -1.0 );
+    m_spectrum->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
   }//if( m_backgroundMeasurement ) / else
   
   if( !m_timeSeries->isHidden() )
   {
-    vector< pair<double,double> > regions = timeRegionsToHighlight(kBackground);
-    m_timeSeries->setTimeHighLightRegions( regions, kBackground );
+    vector< pair<double,double> > regions = timeRegionsToHighlight(SpecUtils::SpectrumType::Background);
+    m_timeSeries->setTimeHighLightRegions( regions, SpecUtils::SpectrumType::Background );
   }
   
   const bool canSub = (m_dataMeasurement && m_backgroundMeasurement);

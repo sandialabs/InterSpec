@@ -70,6 +70,8 @@
 using namespace Wt;
 using namespace std;
 
+using SpecUtils::Measurement;
+
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
 SpectrumDisplayDiv::SpectrumDisplayDiv( WContainerWidget *parent )
@@ -682,7 +684,7 @@ void SpectrumDisplayDiv::guessAndUpdateDisplayRebinFactor()
   //  server/client interactions) if it is being called due to itself (e.g.
   //  calling setDisplayRebinFactor(...) with a NEW rebin factor causes
   //  the model to change dimensions, which causes the chart to resize).
-  std::shared_ptr<Measurement> axisH = m_model->histUsedForXAxis();
+  auto axisH = m_model->histUsedForXAxis();
 
   if( !axisH || !layoutSizeAware() )
   {
@@ -827,33 +829,33 @@ std::shared_ptr<const Measurement> SpectrumDisplayDiv::histUsedForXAxis() const
 
 
 void SpectrumDisplayDiv::setDisplayScaleFactor( const float sf,
-                                                const SpectrumType spectrum_type )
+                                                const SpecUtils::SpectrumType spectrum_type )
 {
   switch( spectrum_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       throw runtime_error( "setDisplayScaleFactor can not be called for foreground" );
 
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       m_model->setSecondDataScaleFactor( sf );
       break;
       
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       m_model->setBackgroundDataScaleFactor( sf );
       break;
   }//switch( spectrum_type )
 }//void setDisplayScaleFactor(...)
 
 
-float SpectrumDisplayDiv::displayScaleFactor( const SpectrumType spectrum_type ) const
+float SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType spectrum_type ) const
 {
   switch( spectrum_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       return 1.0f;
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       return m_model->secondDataScaledBy();
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       return m_model->backgroundScaledBy();
 //  m_spectrumDiv->continuum();
   }//switch( spectrum_type )
@@ -861,7 +863,7 @@ float SpectrumDisplayDiv::displayScaleFactor( const SpectrumType spectrum_type )
   throw runtime_error( "SpectrumDisplayDiv::displayScaleFactor(...): invalid input arg" );
 
   return 1.0;
-}//double displayScaleFactor( SpectrumType spectrum_type ) const;
+}//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
 
 void SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background,
@@ -917,18 +919,18 @@ void SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist,
 
 
 
-void SpectrumDisplayDiv::clearTimeHighlightRegions( const SpectrumType type )
+void SpectrumDisplayDiv::clearTimeHighlightRegions( const SpecUtils::SpectrumType type )
 {
   SpectrumChart::HighlightRegionType rtype;
   switch( type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       rtype = SpectrumChart::ForegroundHighlight;
       break;
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       rtype = SpectrumChart::BackgroundHighlight;
       break;
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       rtype = SpectrumChart::SecondForegroundHighlight;
       break;
   }//switch( type )
@@ -939,18 +941,18 @@ void SpectrumDisplayDiv::clearTimeHighlightRegions( const SpectrumType type )
 
 
 void SpectrumDisplayDiv::setTimeHighLightRegions( const vector< pair<double,double> > &p,
-                                             const SpectrumType type )
+                                             const SpecUtils::SpectrumType type )
 {
   SpectrumChart::HighlightRegionType rtype;
   switch( type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       rtype = SpectrumChart::ForegroundHighlight;
       break;
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       rtype = SpectrumChart::BackgroundHighlight;
       break;
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       rtype = SpectrumChart::SecondForegroundHighlight;
       break;
   }//switch( type )
@@ -964,7 +966,7 @@ void SpectrumDisplayDiv::clearOccupancyRegions()
 {
   m_chart->clearOccupancyRegions();
   m_chart->update();
-}//void clearTimeUnderlineRegions( const SpectrumType type )
+}//void clearTimeUnderlineRegions( const SpecUtils::SpectrumType type )
 
 
 void SpectrumDisplayDiv::setOccupancyRegions( const std::vector< std::pair<double,double> > &p )

@@ -34,6 +34,9 @@
 
 class SpecMeas;
 class InterSpec;
+namespace SpecUtils{ class Measurement; }
+namespace SpecUtils{ enum class SpectrumType : int; }
+
 
 namespace Wt
 {
@@ -56,16 +59,16 @@ protected:
   void init();
   void emitFinished();
   void handleEnergyRangeChange();
-  void handleSpectrumChange( int type,
+  void handleSpectrumChange( SpecUtils::SpectrumType type,
                              std::shared_ptr<SpecMeas> meas,
                              std::set<int> displaySample );
 
-  static void setGammaCountText( Wt::WText *text, std::shared_ptr<const Measurement> hist,
+  static void setGammaCountText( Wt::WText *text, std::shared_ptr<const SpecUtils::Measurement> hist,
                                  const double scale_factor,
                                  const float minEnergy, const float maxEnergy );
 
-  void setUnceraintyText( std::shared_ptr<const Measurement> foreground,
-                          std::shared_ptr<const Measurement> background,
+  void setUnceraintyText( std::shared_ptr<const SpecUtils::Measurement> foreground,
+                          std::shared_ptr<const SpecUtils::Measurement> background,
                           const double backSF,
                           const float minEnergy, const float maxEnergy );
   

@@ -2146,7 +2146,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
       }//for( size_t i = 0; i < preFitPeaks.size(); ++i )
       
       SpectrumDataModel *model = m_viewer->m_spectrum->m_model;
-      std::shared_ptr<Measurement> axisH = model->histUsedForXAxis();
+      auto axisH = model->histUsedForXAxis();
 
       minx -= 20.0;
       maxx += 20.0;

@@ -229,33 +229,33 @@ namespace
               //The below switch must match whats in JS - a little brittle, bu oh well for now
               switch( val )
               {
-                case 0: val = static_cast<int>(DetectorType::kGR135Detector); break;
-                case 1: val = static_cast<int>(DetectorType::kIdentiFinderDetector); break;
-                case 2: val = static_cast<int>(DetectorType::kIdentiFinderNGDetector); break;
-                case 3: val = static_cast<int>(DetectorType::kIdentiFinderLaBr3Detector); break;
-                case 4: val = static_cast<int>(DetectorType::kDetectiveDetector); break;
-                case 5: val = static_cast<int>(DetectorType::kDetectiveExDetector); break;
-                case 6: val = static_cast<int>(DetectorType::kDetectiveEx100Detector); break;
-                case 7: val = static_cast<int>(DetectorType::kDetectiveEx200Detector); break;
-                case 8: val = static_cast<int>(DetectorType::kSAIC8Detector); break;
-                case 9: val = static_cast<int>(DetectorType::kFalcon5000); break;
-                case 10: val = static_cast<int>(DetectorType::kMicroDetectiveDetector); break;
-                case 11: val = static_cast<int>(DetectorType::kMicroRaiderDetector); break;
-                case 12: val = static_cast<int>(DetectorType::kSam940); break;
-                case 13: val = static_cast<int>(DetectorType::kSam940LaBr3); break;
-                case 14: val = static_cast<int>(DetectorType::kSam945); break;
-                case 15: val = static_cast<int>(DetectorType::kRsi701); break;
-                case 16: val = static_cast<int>(DetectorType::kRsi705); break;
-                case 17: val = static_cast<int>(DetectorType::kAvidRsi); break;
-                case 18: val = static_cast<int>(DetectorType::kRadHunterNaI); break;
-                case 19: val = static_cast<int>(DetectorType::kRadHunterLaBr3); break;
-                case 20: val = static_cast<int>(DetectorType::kOrtecRadEagleNai); break;
-                case 21: val = static_cast<int>(DetectorType::kOrtecRadEagleCeBr2Inch); break;
-                case 22: val = static_cast<int>(DetectorType::kOrtecRadEagleCeBr3Inch); break;
-                case 23: val = static_cast<int>(DetectorType::kOrtecRadEagleLaBr); break;
-                case 24: val = static_cast<int>(DetectorType::kSrpm210); break;
-                case 25: val = static_cast<int>(DetectorType::kDetectiveX); break;
-                case 26: val = static_cast<int>(DetectorType::kUnknownDetector); break;
+                case 0: val = static_cast<int>(SpecUtils::DetectorType::kGR135Detector); break;
+                case 1: val = static_cast<int>(SpecUtils::DetectorType::kIdentiFinderDetector); break;
+                case 2: val = static_cast<int>(SpecUtils::DetectorType::kIdentiFinderNGDetector); break;
+                case 3: val = static_cast<int>(SpecUtils::DetectorType::kIdentiFinderLaBr3Detector); break;
+                case 4: val = static_cast<int>(SpecUtils::DetectorType::kDetectiveDetector); break;
+                case 5: val = static_cast<int>(SpecUtils::DetectorType::kDetectiveExDetector); break;
+                case 6: val = static_cast<int>(SpecUtils::DetectorType::kDetectiveEx100Detector); break;
+                case 7: val = static_cast<int>(SpecUtils::DetectorType::kDetectiveEx200Detector); break;
+                case 8: val = static_cast<int>(SpecUtils::DetectorType::kSAIC8Detector); break;
+                case 9: val = static_cast<int>(SpecUtils::DetectorType::kFalcon5000); break;
+                case 10: val = static_cast<int>(SpecUtils::DetectorType::kMicroDetectiveDetector); break;
+                case 11: val = static_cast<int>(SpecUtils::DetectorType::kMicroRaiderDetector); break;
+                case 12: val = static_cast<int>(SpecUtils::DetectorType::kSam940); break;
+                case 13: val = static_cast<int>(SpecUtils::DetectorType::kSam940LaBr3); break;
+                case 14: val = static_cast<int>(SpecUtils::DetectorType::kSam945); break;
+                case 15: val = static_cast<int>(SpecUtils::DetectorType::kRsi701); break;
+                case 16: val = static_cast<int>(SpecUtils::DetectorType::kRsi705); break;
+                case 17: val = static_cast<int>(SpecUtils::DetectorType::kAvidRsi); break;
+                case 18: val = static_cast<int>(SpecUtils::DetectorType::kRadHunterNaI); break;
+                case 19: val = static_cast<int>(SpecUtils::DetectorType::kRadHunterLaBr3); break;
+                case 20: val = static_cast<int>(SpecUtils::DetectorType::kOrtecRadEagleNai); break;
+                case 21: val = static_cast<int>(SpecUtils::DetectorType::kOrtecRadEagleCeBr2Inch); break;
+                case 22: val = static_cast<int>(SpecUtils::DetectorType::kOrtecRadEagleCeBr3Inch); break;
+                case 23: val = static_cast<int>(SpecUtils::DetectorType::kOrtecRadEagleLaBr); break;
+                case 24: val = static_cast<int>(SpecUtils::DetectorType::kSrpm210); break;
+                case 25: val = static_cast<int>(SpecUtils::DetectorType::kDetectiveX); break;
+                case 26: val = static_cast<int>(SpecUtils::DetectorType::kUnknownDetector); break;
                   
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
@@ -543,7 +543,7 @@ namespace
         {
           if( meas.has_riid_analysis )
           {
-            const DetectorAnalysis &anares = meas.riid_ana;
+            const SpecUtils::DetectorAnalysis &anares = meas.riid_ana;
             for( size_t i = 0; i < anares.remarks_.size() && row[f].size() < max_cell_size; ++i )
             {
               if( anares.remarks_[i].size() )
@@ -579,7 +579,7 @@ namespace
         }//case FileDataField::AnalysisResultNuclide:
           
         case FileDataField::DetectionSystemType:
-          row[f] = detectorTypeToString( meas.detector_type );
+          row[f] = SpecUtils::detectorTypeToString( meas.detector_type );
           break;
           
         case FileDataField::SearchMode:
@@ -2789,7 +2789,7 @@ void SpecFileQueryWidget::loadSelected()
   }
   
   
-  const bool loaded = m_viewer->fileManager()->loadFromFileSystem( filenameandy, kForeground, kAutoParser );
+  const bool loaded = m_viewer->fileManager()->loadFromFileSystem( filenameandy, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kAutoParser );
   
   if( !loaded )
     passMessage( "Sorry, '" + filenameandy + "' can not be displayed", "", WarningWidget::WarningMsgHigh );

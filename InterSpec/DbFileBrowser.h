@@ -35,6 +35,8 @@ namespace Wt
   class WTree;
 }//namespace Wt
 
+namespace SpecUtils{ enum class SpectrumType : int; }
+
 /**
  Widget to hold all the UI components to show the snapshot/spectra (used in both
  load dialog and welcome dialog).
@@ -50,7 +52,7 @@ class SnapshotBrowser : public Wt::WContainerWidget
 public:
   SnapshotBrowser( SpecMeasManager *manager,
                    InterSpec *viewer,
-                   const SpectrumType type,
+                   const SpecUtils::SpectrumType type,
                    std::shared_ptr<SpectraFileHeader> header,
                    Wt::WContainerWidget *buttonBar = nullptr,
                    Wt::WContainerWidget *parent = nullptr );
@@ -89,7 +91,7 @@ protected:
   Wt::WText        *m_descriptionLabel;
   Wt::WText        *m_timeLabel;
   Wt::WGridLayout  *m_relatedSpectraLayout;
-  SpectrumType     m_type;
+  SpecUtils::SpectrumType     m_type;
   std::shared_ptr<SpectraFileHeader> m_header;
   
   Wt::Signal<> m_finished;
@@ -107,7 +109,7 @@ class DbFileBrowser : public AuxWindow
 public:
   DbFileBrowser( SpecMeasManager *manager,
                  InterSpec *viewer,
-                 SpectrumType type,
+                 SpecUtils::SpectrumType type,
                  std::shared_ptr<SpectraFileHeader> header );
   
 protected:

@@ -102,12 +102,12 @@ namespace Wt {
     };
         
     template<>
-    struct sql_value_traits<DetectorAnalysis, void>
+    struct sql_value_traits<SpecUtils::DetectorAnalysis, void>
     {
       static const bool specialized = true;
       static std::string type(SqlConnection *conn, int size);
-      static void bind( const DetectorAnalysis &v, SqlStatement *statement, int column, int size);
-      static bool read( DetectorAnalysis &v, SqlStatement *statement, int column, int size );
+      static void bind( const SpecUtils::DetectorAnalysis &v, SqlStatement *statement, int column, int size);
+      static bool read( SpecUtils::DetectorAnalysis &v, SqlStatement *statement, int column, int size );
     };
     
     template<>
@@ -162,7 +162,7 @@ struct EventXmlFilterInfo
   static std::vector<EventXmlFilterInfo> parseJsonString( const std::string &str );
 };//struct EventXmlFilterInfo
 
-/** Instead of determining query criteria directly from a MeasurementInfo, we
+/** Instead of determining query criteria directly from a SpecUtils::SpecFile, we
  will instead copy all relevant info to a SpecFileInfoToQuery struct, and make
  a decision off of that.  This allows us to cache the relevant information from
  a spectrum file, and save it to a sqlite3 database to greatly speed up future
@@ -194,8 +194,8 @@ struct SpecFileInfoToQuery
   std::string location_name;
   
   bool has_riid_analysis;
-  DetectorAnalysis riid_ana;
-  DetectorType detector_type;
+  SpecUtils::DetectorAnalysis riid_ana;
+  SpecUtils::DetectorType detector_type;
   bool passthrough;
   float total_livetime;
   float total_realtime;

@@ -41,7 +41,7 @@ class PeakDef;
 class PeakModel;
 class InterSpec;
 struct ColorTheme;
-class Measurement;
+namespace SpecUtils{ class Measurement; }
 struct ReferenceLineInfo;
 class ReferencePhotopeakDisplay;
 
@@ -68,7 +68,7 @@ namespace PeakSearchGuiUtils
  @param theme The color theme of plot.  May be nullptr.
  @param compact Whether to plot the chart to maximize plot area.
  */
-std::shared_ptr<Wt::WSvgImage> renderChartToSvg( std::shared_ptr<const Measurement> measurement,
+std::shared_ptr<Wt::WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils::Measurement> measurement,
                                                 std::shared_ptr< std::deque<std::shared_ptr<const PeakDef> > > peaks,
                                                 const std::vector<std::shared_ptr<const ReferenceLineInfo>> &reflines,
                                               double lower_energy, double upper_energy,
@@ -94,7 +94,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer );
   */
 void assign_nuclide_from_reference_lines( PeakDef &peak,
                                           PeakModel *peakModel,
-                                          const std::shared_ptr<const Measurement> &data,
+                                          const std::shared_ptr<const SpecUtils::Measurement> &data,
                                           const ReferencePhotopeakDisplay *refLineDisp,
                                           const bool colorPeaksBasedOnReferenceLines,
                                           const bool showingEscapePeakFeature
@@ -109,7 +109,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
 //  main event loop thread, and is done regardless of succesfulness of the
 //  peak search.  'callback' is intended to be a bound function call to
 //  setPeaksFromSearch(...) or setHintPeaks(...).
-void search_for_peaks_worker( std::weak_ptr<const Measurement> weak_data,
+void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_data,
                              std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existingPeaks,
                                const std::vector<ReferenceLineInfo> displayed,
                                const bool setColorFromRefLine,
@@ -123,7 +123,7 @@ void search_for_peaks_worker( std::weak_ptr<const Measurement> weak_data,
    be changed unless a new peak is a better candidate for it, and there is
    another ref line that explains it.
  */
-void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
+void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
                                  std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > peaks,
                                 const std::vector<ReferenceLineInfo> &displayed,
                                  const bool setColor,
@@ -162,7 +162,7 @@ enum class PeakTemplateFitSrc
  As of 20191028 not particularly well tested.
  */
 void fit_template_peaks( InterSpec *interspec,
-                         std::shared_ptr<const Measurement> data,
+                         std::shared_ptr<const SpecUtils::Measurement> data,
                          std::vector<PeakDef> template_peaks,
                          std::vector<PeakDef> original_peaks,
                          const PeakTemplateFitSrc fitsrc,
