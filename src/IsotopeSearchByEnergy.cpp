@@ -1027,7 +1027,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   workingspace->sortColumn = m_model->sortColumn();
   workingspace->sortOrder = m_model->sortOrder();
   
-  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpectrumType::kForeground );
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
   if( foreground )
   {
     const std::set<int> &samplenums = foreground->displayedSampleNumbers();
@@ -1045,7 +1045,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
                         end(workingspace->automated_search_peaks),
                         begin(*autopeaks), end(*autopeaks) );
     workingspace->detector_response_function = foreground->detector();
-    workingspace->displayed_measurement = m_viewer->displayedHistogram( SpectrumType::kForeground );
+    workingspace->displayed_measurement = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   }//if( foreground )
   
   ++m_currentSearch;

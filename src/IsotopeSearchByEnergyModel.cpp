@@ -238,7 +238,7 @@ namespace
       there is still very much room to come up with somethign better.
    */
   double profile_weight( std::shared_ptr<const DetectorPeakResponse> detector,
-                       const std::shared_ptr<const Measurement> displayed_measurement,
+                        const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                        const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                        const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
                        std::vector<SandiaDecay::EnergyRatePair> srcgammas,
@@ -654,7 +654,7 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
             const vector<double> &windows,
             const double minBR,
             const std::shared_ptr<const DetectorPeakResponse> detector_response_function,
-            const std::shared_ptr<const Measurement> displayed_measurement,
+            const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
             const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
             const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
             std::vector< vector<IsotopeSearchByEnergyModel::IsotopeMatch> > &answer )
@@ -951,7 +951,7 @@ void IsotopeSearchByEnergyModel::xraysWithAllEnergies(
                                                       const std::vector<double> &energies,
                                                       const std::vector<double> &windows,
                                                       const std::shared_ptr<const DetectorPeakResponse> detector_response_function,
-                                                      const std::shared_ptr<const Measurement> displayed_measurement,
+                                                      const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                                       const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                                       const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
                                                       SearchResults &answer )
@@ -1066,7 +1066,7 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
                                                           const std::vector<double> &energies,
                                                           const std::vector<double> &windows,
                                                           const std::shared_ptr<const DetectorPeakResponse> detector_response_function,
-                                                          const std::shared_ptr<const Measurement> displayed_measurement,
+                                                          const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                                           const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                                           const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
                                                           SearchResults &answer )

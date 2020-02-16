@@ -1027,9 +1027,9 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     //Note that event.eventType() may have change (although I dont know how/why)
 //    if( userEvent )
 //    {
-//      std::shared_ptr<const SpecMeas> meas = m_viewer->measurment(kForeground);
-//      std::shared_ptr<const SpecMeas> back = m_viewer->measurment(kBackground);
-//      std::shared_ptr<const SpecMeas> secn = m_viewer->measurment(kSecondForeground);
+//      std::shared_ptr<const SpecMeas> meas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+//      std::shared_ptr<const SpecMeas> back = m_viewer->measurment(SpecUtils::SpectrumType::Background);
+//      std::shared_ptr<const SpecMeas> secn = m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
 //      
 //      if( (meas&&meas->modified())
 //          || (back&&back->modified()) || (secn&&secn->modified())
@@ -1125,9 +1125,9 @@ void InterSpecApp::prepareForEndOfSession()
 
         
       //Make sure there is at least a spectra valid in order to save this state
-      std::shared_ptr<const SpecMeas> foreground = m_viewer->measurment( kForeground );
-      std::shared_ptr<const SpecMeas> second = m_viewer->measurment( kSecondForeground );
-      std::shared_ptr<const SpecMeas> background = m_viewer->measurment( kBackground );
+      std::shared_ptr<const SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+      std::shared_ptr<const SpecMeas> second = m_viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
+      std::shared_ptr<const SpecMeas> background = m_viewer->measurment( SpecUtils::SpectrumType::Background );
         
       if( saveSpectra && saveState && (foreground || second || background))
       {

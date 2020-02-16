@@ -382,7 +382,7 @@ void PeakInfoDisplay::createNewPeak()
    - Associating peak with nuclide.  Deal with?
    - Color?
    */
-  std::shared_ptr<const Measurement> meas = m_viewer->displayedHistogram(SpectrumType::kForeground);
+  auto meas = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   
   if( !meas || meas->num_gamma_channels() < 7 )
   {
@@ -417,7 +417,7 @@ void PeakInfoDisplay::createNewPeak()
       return static_cast<float>( lb->fwhm() + (ub->fwhm() - lb->fwhm())*(energy - lb->mean()) / (ub->mean() - lb->mean()) );
     }
     
-    std::shared_ptr<SpecMeas> specmeas = m_viewer->measurment(SpectrumType::kForeground);
+    std::shared_ptr<SpecMeas> specmeas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
     std::shared_ptr<DetectorPeakResponse> drf = specmeas ? specmeas->detector() : nullptr;
     if( drf && drf->hasResolutionInfo() )
       return std::min( maxfwhm, std::max(minfwhm,drf->peakResolutionFWHM(energy)) );
@@ -619,7 +619,7 @@ void PeakInfoDisplay::createNewPeak()
       return;
     }
     
-    std::shared_ptr<const Measurement> meas = m_viewer->displayedHistogram(SpectrumType::kForeground);
+    auto meas = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     
     if( !meas )
     {
@@ -679,7 +679,7 @@ void PeakInfoDisplay::createNewPeak()
         
       case 4: //global
       {
-        std::shared_ptr<const Measurement> gcontinuum = candidatePeak->continuum()->externalContinuum();
+        auto gcontinuum = candidatePeak->continuum()->externalContinuum();
         if( !gcontinuum )
           gcontinuum = estimateContinuum( meas );
         candidatePeak->continuum()->setType( PeakContinuum::OffsetType::External );
@@ -770,7 +770,7 @@ void PeakInfoDisplay::createNewPeak()
   };//roiRangeChanged
   
   auto doFit = [=](){
-    std::shared_ptr<const Measurement> meas = m_viewer->displayedHistogram(SpectrumType::kForeground);
+    auto meas = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     
     if( !meas )
       return;

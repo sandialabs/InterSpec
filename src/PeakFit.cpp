@@ -66,6 +66,8 @@
 
 using namespace std;
 
+using SpecUtils::Measurement;
+
 template<class T>
 bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
                    boost::numeric::ublas::matrix<T> &inverse )

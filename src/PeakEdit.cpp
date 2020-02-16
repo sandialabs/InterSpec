@@ -56,6 +56,7 @@
 
 using namespace Wt;
 using namespace std;
+using SpecUtils::Measurement;
 
 static_assert( PeakDef::Mean == 0,
                "PeakDef::CoefficientType::Mean typedef value has unexpected value" );
@@ -595,7 +596,7 @@ void PeakEdit::changePeak( const double energy )
   double lowerx(0.0), upperx(0.0);
   if( nearPeak )
     findROIEnergyLimits( lowerx, upperx, *nearPeak,
-                         m_viewer->displayedHistogram(kForeground) );
+                         m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground) );
   
   if( nearPeak && (energy<lowerx || energy>upperx) )
     nearPeak.reset();
@@ -768,7 +769,7 @@ void PeakEdit::refreshPeakInfo()
           
           case PeakDef::DataDefined:
           {
-            std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(kForeground);
+            std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
             row->elementAt(1)->disable();
             row->elementAt(2)->disable();
             
@@ -840,7 +841,7 @@ void PeakEdit::refreshPeakInfo()
                                     : continuum->lowerEnergy();
         }else
         {
-          const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(kForeground);
+          const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
 
           if( data )
           {
@@ -1116,7 +1117,7 @@ void PeakEdit::setNuclideFields( const SandiaDecay::Nuclide *nuclide,
       currentIndex = static_cast<int>( i );
     }
     
-//    m_viewer->measurment(kForeground)->detector()
+//    m_viewer->measurment(SpecUtils::SpectrumType::Foreground)->detector()
     
     char text[128];
     
@@ -1504,7 +1505,7 @@ void PeakEdit::skewTypeChanged()
       {
         //Integrate area between continuum and peak to guess multiple
         double amp = 0.003;
-        std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(kForeground);
+        std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
 //        std::shared_ptr<const Measurement> continuum = m_viewer->continuum();
         
         if( data )
@@ -1705,9 +1706,9 @@ void PeakEdit::refit()
   vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
   vector< std::shared_ptr<const PeakDef> > inpkptrs;
   
-  const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(kForeground);
+  const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   const std::shared_ptr<const Measurement> continuum;
-  std::shared_ptr<const SpecMeas> meas = m_viewer->measurment(kForeground);
+  std::shared_ptr<const SpecMeas> meas = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
   
   
   if( !data || !meas )
@@ -1746,7 +1747,7 @@ void PeakEdit::refit()
   if( (inputPeak.size()>1) && thispeak->continuum()->isPolynomial() && !!data )
   {
     const std::shared_ptr<DetectorPeakResponse> &detector
-                                = m_viewer->measurment(kForeground)->detector();
+                                = m_viewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
     const PeakShrdVec outp = refitPeaksThatShareROI( data, detector, inpkptrs, 0.25 );
     for( size_t i = 0; i < outp.size(); ++i )
       outputPeak.push_back( *outp[i] );
@@ -1796,7 +1797,7 @@ void PeakEdit::refit()
 
 void PeakEdit::setAmplitudeForDataDefinedPeak()
 {
-  std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(kForeground);
+  std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   std::shared_ptr<PeakContinuum> continuum = m_currentPeak.continuum();
   if( !data || !continuum )
     return;
@@ -1864,7 +1865,7 @@ void PeakEdit::apply()
         
         if( !continuum->externalContinuum() )
         {
-          std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram( kForeground );
+          std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
           std::shared_ptr<Measurement> background = estimateContinuum( data );
           continuum->setExternalContinuum( background );
         }//if( !continuum->externalContinuum() )
@@ -2085,7 +2086,7 @@ void PeakEdit::apply()
       {
         if( !continuum->energyRangeDefined() )
         {
-          std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(kForeground);
+          std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
           double lowe, highe;
           findROIEnergyLimits( lowe, highe, m_currentPeak, data );
           continuum->setRange( lowe, highe );

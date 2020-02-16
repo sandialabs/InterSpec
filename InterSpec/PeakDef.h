@@ -40,7 +40,7 @@
 
 //Forward declaration
 class PeakDef;
-class Measurement;
+namespace SpecUtils{ class Measurement; }
 namespace SandiaDecay
 {
   struct Nuclide;
@@ -108,10 +108,10 @@ struct PeakContinuum
   const std::vector<double> &parameters() const { return m_values; }
   const std::vector<double> &unertainties() const { return m_uncertainties; }
   std::vector<bool> fitForParameter() const { return m_fitForValue; }
-  std::shared_ptr<const Measurement> externalContinuum() const { return m_externalContinuum; }
+  std::shared_ptr<const SpecUtils::Measurement> externalContinuum() const { return m_externalContinuum; }
   
   //setGlobalContinuum: throws if not a External OffsetType.
-  void setExternalContinuum( const std::shared_ptr<const Measurement> &data );
+  void setExternalContinuum( const std::shared_ptr<const SpecUtils::Measurement> &data );
  
   //setRange: sets the energy range this continuum is applicable for
   void setRange( const double lowerenergy, const double upperenergy );
@@ -122,7 +122,7 @@ struct PeakContinuum
   //  nSideBinToAverage is the number of bins on each side of x0_bin and x1_bin
   //  that should be used to find data y-hieght for that respective side of
   //  continuum
-  void calc_linear_continuum_eqn( const std::shared_ptr<const Measurement> &data,
+  void calc_linear_continuum_eqn( const std::shared_ptr<const SpecUtils::Measurement> &data,
                                   const double x0, const double x1,
                                   const int nSideBinToAverage );
 
@@ -154,7 +154,7 @@ struct PeakContinuum
   static void eqn_from_offsets( size_t lowchannel,
                                 size_t highchannel,
                                 const double referenceEnergy,
-                                const std::shared_ptr<const Measurement> &data,
+                                const std::shared_ptr<const SpecUtils::Measurement> &data,
                                 const size_t nbinEachSide,
                                 double &m, double &y0 );
   
@@ -218,7 +218,7 @@ protected:
   //  XXX - need to verify when writing a SpecMeas object to a native file, if
   //        multiple peaks share a global continuum, it is only written once in
   //        the file.
-  std::shared_ptr<const Measurement> m_externalContinuum;
+  std::shared_ptr<const SpecUtils::Measurement> m_externalContinuum;
   
   static const int sm_xmlSerializationVersion;
   
@@ -258,28 +258,28 @@ double skewedGaussianIntegral( double x0,  //x-value to start integrating at
 //  This is kinda similar in principle to how PCGAP does it, but with further
 //  modifications, and I'm sure some differences; see,
 //  http://www.inl.gov/technicalpublications/Documents/3318133.pdf
-size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measurement> &data, bool high);
+size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &data, bool high);
 
 
 //findROIEnergyLimits(...): a convience function that calls findROILimit(...)
 //  inorder to set 'lowerEnengy' and 'upperEnergy'.  IF data is an invalid
 //  pointer, then PeakDef::lowerX() and PeakDef::upperX() are used.
 void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
-                         const PeakDef &peak, const std::shared_ptr<const Measurement> &data );
+                         const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &data );
 
 //Returns if area from start2 to end2 is greater than or equal to the
 //  area of (start1 to end1 minus nsigma).
 //Answers the question: is region 2 similar or greater in area as region 1
 bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
                                     const size_t start2, const size_t end2,
-                                    const std::shared_ptr<const Measurement> &dataH,
+                                    const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                                     const double nsigma );
 
 //If a polynomial continuum and the peakdoesnt specify the range, then it
 //  will look at the data histogram for when data starts increasing, and set
 //  this as the limit.
 //Does nothing if the histogram is null.
-void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH,
+void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                           int &xlowbin, int &xhighbin );
 
 
@@ -346,7 +346,7 @@ public:
   //  strait line spanning lowerx and upperx will be used.
   //This usage of PeakDef has not been well tested
   PeakDef( double lowerx, double upperx, double mean,
-            std::shared_ptr<const Measurement> data, std::shared_ptr<const Measurement> background );
+            std::shared_ptr<const SpecUtils::Measurement> data, std::shared_ptr<const SpecUtils::Measurement> background );
 
 //  PeakDef( const PeakDef &rhs );
 //  const PeakDef &operator=( const PeakDef &rhs );
@@ -386,7 +386,7 @@ public:
   /** Returns the area between the continuum and data, everywhere data is above
      continuum in the ROI.
    */
-  double areaFromData( std::shared_ptr<const Measurement> data ) const;
+  double areaFromData( std::shared_ptr<const SpecUtils::Measurement> data ) const;
   
   
   inline double meanUncert() const;

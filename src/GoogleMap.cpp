@@ -531,7 +531,7 @@ void GoogleMap::adjustPanAndZoom()
   m_map->adjustPanAndZoom();
 }
 
-void GoogleMap::addMeasurment( std::shared_ptr<const MeasurementInfo> meas,
+void GoogleMap::addMeasurment( std::shared_ptr<const SpecUtils::SpecFile> meas,
                                const WString &title,
                                const std::set<int> &displayed )
 {
@@ -544,13 +544,13 @@ void GoogleMap::addMeasurment( std::shared_ptr<const MeasurementInfo> meas,
   std::vector<float> cps;
   cps.reserve( meas->measurements().size() );
   
-  for( const std::shared_ptr<const Measurement> &m : meas->measurements() )
+  for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas->measurements() )
   {
     if( !m->has_gps_info() )
       continue;
     
     const pair<float,float> latlon( m->latitude(), m->longitude() );
-    if( m->source_type() != Measurement::IntrinsicActivity )
+    if( m->source_type() != SpecUtils::SourceType::IntrinsicActivity )
     {
       gpss[latlon].insert( m->sample_number() );
       cps.push_back( m->gamma_count_sum() / m->live_time() );
@@ -567,11 +567,11 @@ void GoogleMap::addMeasurment( std::shared_ptr<const MeasurementInfo> meas,
     
     string html = "<div clas=\"MapMeasPoint\">";
     
-    const vector<std::shared_ptr<const Measurement>> samples
+    const vector<std::shared_ptr<const SpecUtils::Measurement>> samples
                               = meas->sample_measurements( *vt.second.begin() );
     
     float lt = 0.0f, sumgammas = 0.0f;
-    for( const std::shared_ptr<const Measurement> &m : samples )
+    for( const std::shared_ptr<const SpecUtils::Measurement> &m : samples )
     {
       lt += m->live_time();
       sumgammas += m->gamma_count_sum();

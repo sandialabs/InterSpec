@@ -119,26 +119,28 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   
   for( int j = 0; j < 3; ++j )
   {
-    SpectrumType type;
+    SpecUtils::SpectrumType type;
     WLabel *label = NULL;
 
     switch( j )
     {
       case 0:
-        type = kForeground;
+        type = SpecUtils::SpectrumType::Foreground;
         label = new WLabel( "Foreground:" );
       break;
       
       case 1:
-        type = kBackground;
+        type = SpecUtils::SpectrumType::Background;
         label = new WLabel( "Background:" );
       break;
       
       case 2:
-        type = kSecondForeground;
+        type = SpecUtils::SpectrumType::SecondForeground;
         label = new WLabel( "Second Foreground:" );
       break;
     }//switch( i )
+    
+    const int typeindex = static_cast<int>(type);
     
     WContainerWidget *wrapper = new WContainerWidget();
     WGridLayout *wrapperLayout = new WGridLayout(wrapper);
@@ -151,37 +153,37 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     label->setInline( false );
     wrapperLayout->addWidget( label,0,0 );
 
-    m_selects[type] = new WComboBox(  );
-    wrapperLayout->addWidget( m_selects[type],1,0 );
-    m_selects[type]->setInline( false );
-    m_selects[type]->addStyleClass( "displaySampleSelect" );
-    m_sampleDivs[type] = new WContainerWidget( );
-    wrapperLayout->addWidget( m_sampleDivs[type],2,0 );
+    m_selects[typeindex] = new WComboBox(  );
+    wrapperLayout->addWidget( m_selects[typeindex],1,0 );
+    m_selects[typeindex]->setInline( false );
+    m_selects[typeindex]->addStyleClass( "displaySampleSelect" );
+    m_sampleDivs[typeindex] = new WContainerWidget( );
+    wrapperLayout->addWidget( m_sampleDivs[typeindex],2,0 );
     wrapperLayout->setRowStretch(2, 1);
-    m_sampleDivs[type]->setStyleClass( "displaySampleDiv" );
+    m_sampleDivs[typeindex]->setStyleClass( "displaySampleDiv" );
 
-    m_prevSampleNumButtons[type] = new WImage( prevArrow, m_sampleDivs[type] );
-    m_prevSampleNumButtons[type]->setHiddenKeepsGeometry( true );
-    m_prevSampleNumButtons[type]->setStyleClass( "displayPrevSample" );
+    m_prevSampleNumButtons[typeindex] = new WImage( prevArrow, m_sampleDivs[typeindex] );
+    m_prevSampleNumButtons[typeindex]->setHiddenKeepsGeometry( true );
+    m_prevSampleNumButtons[typeindex]->setStyleClass( "displayPrevSample" );
     
     
-    m_prevSampleNumButtons[type]->clicked().connect(
+    m_prevSampleNumButtons[typeindex]->clicked().connect(
                  boost::bind( &CompactFileManager::handleUserIncrementSampleNum,
                               this, type, false) );
     
-    if( type==kForeground && (mode==LeftToRight || mode==Tabbed) )
+    if( type==SpecUtils::SpectrumType::Foreground && (mode==LeftToRight || mode==Tabbed) )
     {
       m_foregroundTitle = new WText( "" );
       m_foregroundTitle->addStyleClass( "CompactSpecTitle" );
       m_foregroundTitle->setInline( false );
       m_foregroundTitle->hide();
       wrapperLayout->addWidget( m_foregroundTitle,3,0 );
-    }//( type==kForeground && mode==LeftToRight )
+    }//( type==SpecUtils::SpectrumType::Foreground && mode==LeftToRight )
     
-    if( mode==TopToBottom || type == kForeground )
+    if( mode==TopToBottom || type == SpecUtils::SpectrumType::Foreground )
     {
-      m_scaleValueTxt[type] = nullptr;
-      m_rescaleByLiveTime[type] = nullptr;
+      m_scaleValueTxt[typeindex] = nullptr;
+      m_rescaleByLiveTime[typeindex] = nullptr;
     }else
     {
       WContainerWidget *rowdiv = new WContainerWidget( );
@@ -190,7 +192,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 
       slidelayout->setHorizontalSpacing(10);
       slidelayout->setVerticalSpacing(10);
-      m_scaleValueTxt[type] = new WDoubleSpinBox();
+      m_scaleValueTxt[typeindex] = new WDoubleSpinBox();
 #if (IOS || ANDROID)
       //can't use m_hostViewer->isMobile() here, so use #IOS
       //20150123: on android at least, calling setNativeControl() causes
@@ -198,16 +200,16 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       //  loading the app.
 //      m_scaleValueTxt[type]->setNativeControl(true); //mobile should not show spinner
 #endif
-      m_scaleValueTxt[type]->setSingleStep(0.1);
-      m_scaleValueTxt[type]->setRange( 0.0, 1000000.0 );
-      m_scaleValueTxt[type]->setValidator( dblval );
-      m_scaleValueTxt[type]->addStyleClass( "numberValidator"); //used to detect mobile keyboard
-      m_scaleValueTxt[type]->addStyleClass( "SpecNormTxt" );
-      m_scaleValueTxt[type]->changed().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactor, this, type) );
-      m_scaleValueTxt[type]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type, _1) );
+      m_scaleValueTxt[typeindex]->setSingleStep(0.1);
+      m_scaleValueTxt[typeindex]->setRange( 0.0, 1000000.0 );
+      m_scaleValueTxt[typeindex]->setValidator( dblval );
+      m_scaleValueTxt[typeindex]->addStyleClass( "numberValidator"); //used to detect mobile keyboard
+      m_scaleValueTxt[typeindex]->addStyleClass( "SpecNormTxt" );
+      m_scaleValueTxt[typeindex]->changed().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactor, this, type) );
+      m_scaleValueTxt[typeindex]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type, _1) );
         
     
-      HelpSystem::attachToolTipOn( m_scaleValueTxt[type],
+      HelpSystem::attachToolTipOn( m_scaleValueTxt[typeindex],
                                   "Factor to scale the spectrum by. Entering an"
                                   " empty string will cause spectrum to be live"
                                   " time normalized to foreground spectrum.",
@@ -215,27 +217,27 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       
       WLabel *label = new WLabel( "Scale Factor:" );
       slidelayout->addWidget( label, 0, 0, AlignLeft | AlignMiddle );
-      slidelayout->addWidget( m_scaleValueTxt[type], 0, 1, AlignLeft | AlignMiddle );
+      slidelayout->addWidget( m_scaleValueTxt[typeindex], 0, 1, AlignLeft | AlignMiddle );
       
-      m_rescaleByLiveTime[type] = new WPushButton( "Normalize" );
-      m_rescaleByLiveTime[type]->hide();
-      m_rescaleByLiveTime[type]->clicked().connect( boost::bind( &CompactFileManager::handleRenormalizeByLIveTime, this, type) );
+      m_rescaleByLiveTime[typeindex] = new WPushButton( "Normalize" );
+      m_rescaleByLiveTime[typeindex]->hide();
+      m_rescaleByLiveTime[typeindex]->clicked().connect( boost::bind( &CompactFileManager::handleRenormalizeByLIveTime, this, type) );
       //20190707: making this button visible adds some jitter to the layout, but
       //  since this is a rare-ish action, we'll live with it for now.
-      slidelayout->addWidget( m_rescaleByLiveTime[type], 0, 2, AlignCenter | AlignMiddle );
+      slidelayout->addWidget( m_rescaleByLiveTime[typeindex], 0, 2, AlignCenter | AlignMiddle );
       
       slidelayout->setColumnStretch( 1, 1 );
 //      slidelayout->setRowStretch( 1, 1 );
     
-      m_scaleValueTxt[type]->disable();
-    }//if( type == kForeground )
+      m_scaleValueTxt[typeindex]->disable();
+    }//if( type == SpecUtils::SpectrumType::Foreground )
     
     
-    m_displayedPreTexts[type] = new WText( m_sampleDivs[type] );
-    WLineEdit *edit = new WLineEdit( m_sampleDivs[type] );
+    m_displayedPreTexts[typeindex] = new WText( m_sampleDivs[typeindex] );
+    WLineEdit *edit = new WLineEdit( m_sampleDivs[typeindex] );
     edit->addStyleClass( "displaySampleInput" );
     edit->setValidator( validator );
-    m_displaySampleNumEdits[type] = edit;
+    m_displaySampleNumEdits[typeindex] = edit;
   
     const char *tooltip = "Enter the sample number you'de like displayed here"
                            ". You may enter a range of sample numbers similar"
@@ -245,28 +247,28 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
                                    HelpSystem::Bottom );
     
 
-    m_displaySampleNumEdits[type]->setTextSize( 6 );
-    m_displayedPostTexts[type] = new WText( m_sampleDivs[type] );
-    m_nextSampleNumButtons[type] = new WImage( nextArrow, m_sampleDivs[type] );
-    m_nextSampleNumButtons[type]->addStyleClass( "displayNextSample" );
+    m_displaySampleNumEdits[typeindex]->setTextSize( 6 );
+    m_displayedPostTexts[typeindex] = new WText( m_sampleDivs[typeindex] );
+    m_nextSampleNumButtons[typeindex] = new WImage( nextArrow, m_sampleDivs[typeindex] );
+    m_nextSampleNumButtons[typeindex]->addStyleClass( "displayNextSample" );
     
     
-    m_nextSampleNumButtons[type]->clicked().connect(
+    m_nextSampleNumButtons[typeindex]->clicked().connect(
                  boost::bind( &CompactFileManager::handleUserIncrementSampleNum,
                               this, type, true) );
     
-    m_displaySampleNumEdits[type]->enterPressed().connect(
+    m_displaySampleNumEdits[typeindex]->enterPressed().connect(
                  boost::bind( &CompactFileManager::handleUserChangeSampleNum,
                               this, type ) );
     
-    m_displaySampleNumEdits[type]->blurred().connect(
+    m_displaySampleNumEdits[typeindex]->blurred().connect(
                  boost::bind( &CompactFileManager::handleSampleNumEditBlur,
                               this, type ) );
     
-    m_sampleDivs[type]->setHiddenKeepsGeometry( true );
+    m_sampleDivs[typeindex]->setHiddenKeepsGeometry( true );
 
-    m_selects[type]->setCurrentIndex( -1 );
-    m_selects[type]->activated().connect(
+    m_selects[typeindex]->setCurrentIndex( -1 );
+    m_selects[typeindex]->activated().connect(
                  boost::bind( &CompactFileManager::handleFileChangeRequest,
                               this, _1, type ) );
 
@@ -304,7 +306,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
             WPushButton *button2 = new WPushButton( "Previous...");
             button2->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
                                                      m_hostViewer->fileManager(),
-                                                     SpectrumType::kForeground,
+                                                     SpecUtils::SpectrumType::Foreground,
                                                      std::shared_ptr<SpectraFileHeader>() ) );
             layout2->addWidget(button2,0,1);
 #endif
@@ -373,7 +375,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       WPushButton *button = new WPushButton( "Prev. Saved Spectra", buttons );
         button->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
                                                fileManager,
-                                               SpectrumType::kForeground,
+                                               SpecUtils::SpectrumType::Foreground,
                                                std::shared_ptr<SpectraFileHeader>()) );
 #endif
       break;
@@ -397,20 +399,21 @@ CompactFileManager::~CompactFileManager()
   // no-op
 }
 
-void CompactFileManager::handleFileChangeRequest( int row, SpectrumType type )
+void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumType type )
 {
+  const int typeindex = static_cast<int>( type );
   if( row < 0 || row >= m_files->rowCount() )
   {
-    m_displayedPreTexts[type]->setText( "" );
-    m_displayedPostTexts[type]->setText( "" );
-    m_displaySampleNumEdits[type]->setText( "" );
+    m_displayedPreTexts[typeindex]->setText( "" );
+    m_displayedPostTexts[typeindex]->setText( "" );
+    m_displaySampleNumEdits[typeindex]->setText( "" );
     std::shared_ptr<SpecMeas> blankptr;
     m_fullFileManager->displayFile( -1, blankptr, type, false, true, false );
-    if( m_foregroundTitle && (type==kForeground) )
+    if( m_foregroundTitle && (type==SpecUtils::SpectrumType::Foreground) )
     {
       m_foregroundTitle->setText("");
       m_foregroundTitle->hide();
-    }//if( type == kForeground )
+    }//if( type == SpecUtils::SpectrumType::Foreground )
     return;
   }//if( we should unload current file )
 
@@ -418,7 +421,7 @@ void CompactFileManager::handleFileChangeRequest( int row, SpectrumType type )
   std::shared_ptr<SpecMeas> meas = header->parseFile();
 
   m_fullFileManager->displayFile( row, meas, type, false, true, false );
-}//void handleFileChangeRequest( SpectrumType type );
+}//void handleFileChangeRequest( SpecUtils::SpectrumType type );
 
 /**
  Refactored static method so can be called outside of CompactFileManager
@@ -426,7 +429,7 @@ void CompactFileManager::handleFileChangeRequest( int row, SpectrumType type )
  cfm - optional, if provided, will call handleDisplayChange.  Set to NULL normally if called statically.  Otherwise, CompactFileManager calls will provide it.
  */
 void CompactFileManager::changeToSampleNum( int sampleNum,
-                                            SpectrumType type, InterSpec *hostViewer, CompactFileManager* cfm )
+                                            SpecUtils::SpectrumType type, InterSpec *hostViewer, CompactFileManager* cfm )
 {
   std::shared_ptr<SpecMeas> meas = hostViewer->measurment( type );
 
@@ -457,7 +460,7 @@ void CompactFileManager::changeToSampleNum( int sampleNum,
 
 
 void CompactFileManager::changeToSampleRange( int first, int last,
-                                              SpectrumType type )
+                                              SpecUtils::SpectrumType type )
 {
   std::shared_ptr<SpecMeas> meas = m_hostViewer->measurment( type );
 
@@ -490,37 +493,40 @@ void CompactFileManager::changeToSampleRange( int first, int last,
 }//void changeToSampleRange(...)
 
 
-void CompactFileManager::handleSampleNumEditBlur( SpectrumType type )
+void CompactFileManager::handleSampleNumEditBlur( SpecUtils::SpectrumType type )
 {
-  if( m_previousSampleTxt[type] == m_displaySampleNumEdits[type]->text() )
+  const int typeindex = static_cast<int>( type );
+  if( m_previousSampleTxt[typeindex] == m_displaySampleNumEdits[typeindex]->text() )
     return;
 
   handleUserChangeSampleNum( type );
-}//void handleSampleNumEditBlur( SpectrumType spectrum_type )
+}//void handleSampleNumEditBlur( SpecUtils::SpectrumType spectrum_type )
 
 
-void CompactFileManager::handleSpectrumScale( const double scale, SpectrumType type )
+void CompactFileManager::handleSpectrumScale( const double scale, SpecUtils::SpectrumType type )
 {
+  const int typeindex = static_cast<int>( type );
   switch( type )
   {
-    case SpectrumType::kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       cerr << "CompactFileManager::handleSpectrumScale: cannot handle scaling of foreground - ignoring" << endl;
       return;
       
-    case SpectrumType::kBackground:
-    case SpectrumType::kSecondForeground:
+    case SpecUtils::SpectrumType::Background:
+    case SpecUtils::SpectrumType::SecondForeground:
       m_hostViewer->setDisplayScaleFactor( scale, type );
       updateDisplayedScaleFactorNumbers( scale, type );
-      if( m_rescaleByLiveTime[type] )
-        m_rescaleByLiveTime[type]->show();
+      if( m_rescaleByLiveTime[typeindex] )
+        m_rescaleByLiveTime[typeindex]->show();
       break;
   }//switch( type )
-}//void handleSpectrumScale( const double scale, SpectrumType spectrum_type );
+}//void handleSpectrumScale( const double scale, SpecUtils::SpectrumType spectrum_type );
 
 
-void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
+void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type )
 {
-  const WString text = m_displaySampleNumEdits[type]->text();
+  const int typeindex = static_cast<int>( type );
+  const WString text = m_displaySampleNumEdits[typeindex]->text();
 
   string fulltxt = text.toUTF8();
 
@@ -549,7 +555,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
   {
     passMessage( "Can't change sample numbers, there is no current measurment",
                  "", WarningWidget::WarningMsgHigh );
-    m_displaySampleNumEdits[type]->setText( "" );
+    m_displaySampleNumEdits[typeindex]->setText( "" );
     return;
   }//if( !meas )
 
@@ -620,7 +626,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
     updateDisplayedScaleFactorNumbers( m_hostViewer->displayScaleFactor(type), type );
   }catch( exception &e )
   { 
-    cerr << "CompactFileManager::handleUserChangeSampleNum( SpectrumType type )" << "\n\t" << e.what() << endl;
+    cerr << "CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type )" << "\n\t" << e.what() << endl;
     passMessage( "Error changing to requested sample number(s)",
                  "", WarningWidget::WarningMsgHigh );
 
@@ -633,7 +639,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpectrumType type )
 /**
  Backward compatibility for previous CompactFileManager calls to call the refactored method
  */
-void CompactFileManager::handleUserIncrementSampleNum( SpectrumType type,
+void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType type,
                                                       bool increment )
 {
     handleUserIncrementSampleNum(type, increment, m_hostViewer, m_files, this);
@@ -642,7 +648,7 @@ void CompactFileManager::handleUserIncrementSampleNum( SpectrumType type,
 /**
  Refactored code so can be called statically from outside of CompactFileManager
  */
-void CompactFileManager::handleUserIncrementSampleNum( SpectrumType type,
+void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType type,
                                                        bool increment , InterSpec *hostViewer, SpectraFileModel *files, CompactFileManager* cfm)
 {
   try
@@ -698,49 +704,51 @@ void CompactFileManager::handleUserIncrementSampleNum( SpectrumType type,
   {
     passMessage( "Error advancing spectrum", "",WarningWidget::WarningMsgHigh );
   }//try / catch
-}//void handleUserWantsNextSampleNum( SpectrumType spectrum_type )
+}//void handleUserWantsNextSampleNum( SpecUtils::SpectrumType spectrum_type )
 
 
-void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
+void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_type,
                                   const std::shared_ptr<SpecMeas> meas,
                                   const set<int> &sample_numbers )
 {
-  if( spectrum_type < 0 || spectrum_type >= 3 )
+  const int typeindex = static_cast<int>( spectrum_type );
+  
+  if( typeindex < 0 || typeindex >= 3 )
     throw runtime_error( "CompactFileManager::handleDisplayChange() - totally unexpected error" );
 
-  if( m_foregroundTitle && (spectrum_type==kForeground) )
+  if( m_foregroundTitle && (spectrum_type==SpecUtils::SpectrumType::Foreground) )
     m_foregroundTitle->hide();
   
-  WComboBox *select = m_selects[spectrum_type];
+  WComboBox *select = m_selects[typeindex];
   if( !meas )
   {
     select->setCurrentIndex( select->count()-1 );
-    m_previousSampleTxt[spectrum_type] = "";
-    m_displayedPreTexts[spectrum_type]->setText( "" );
-    m_displayedPostTexts[spectrum_type]->setText( "" );
-    m_displaySampleNumEdits[spectrum_type]->setText( "" );
+    m_previousSampleTxt[typeindex] = "";
+    m_displayedPreTexts[typeindex]->setText( "" );
+    m_displayedPostTexts[typeindex]->setText( "" );
+    m_displaySampleNumEdits[typeindex]->setText( "" );
     updateDisplayedScaleFactorNumbers( 1.0, spectrum_type );
-    if( m_scaleValueTxt[spectrum_type] )
-      m_scaleValueTxt[spectrum_type]->disable();
-    if( m_rescaleByLiveTime[spectrum_type] )
-      m_rescaleByLiveTime[spectrum_type]->hide();
+    if( m_scaleValueTxt[typeindex] )
+      m_scaleValueTxt[typeindex]->disable();
+    if( m_rescaleByLiveTime[typeindex] )
+      m_rescaleByLiveTime[typeindex]->hide();
     
     return;
   }//if( !meas )
 
-  if( m_scaleValueTxt[spectrum_type] )
+  if( m_scaleValueTxt[typeindex] )
   {
-    m_scaleValueTxt[spectrum_type]->enable();
+    m_scaleValueTxt[typeindex]->enable();
   }
   
-  if( m_rescaleByLiveTime[spectrum_type] )
-    m_rescaleByLiveTime[spectrum_type]->hide();
+  if( m_rescaleByLiveTime[typeindex] )
+    m_rescaleByLiveTime[typeindex]->hide();
 
   WModelIndex index = m_files->index( meas );
   if( !index.isValid() )
   {
     select->setCurrentIndex( select->count()-1 );
-    m_previousSampleTxt[spectrum_type] = "";
+    m_previousSampleTxt[typeindex] = "";
     return;
   }//if( !index.isValid() )
 
@@ -753,24 +761,24 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
 
   if( sample_numbers.size() == 0 || total_sample_nums.size() == 0 )
   {
-//    m_sampleDivs[spectrum_type]->hide();
+//    m_sampleDivs[typeindex]->hide();
   }else if( sample_numbers.size() == 1 )
   {
     const int lastNumber = *(total_sample_nums.rbegin());
     const int displayedNumber = *(sample_numbers.begin());
 
-    m_displayedPostTexts[spectrum_type]->show();
-    m_displaySampleNumEdits[spectrum_type]->show();
+    m_displayedPostTexts[typeindex]->show();
+    m_displaySampleNumEdits[typeindex]->show();
     
     const bool hideArrows = (total_sample_nums.size() < 2);
-    m_nextSampleNumButtons[spectrum_type]->setHidden( hideArrows );
-    m_prevSampleNumButtons[spectrum_type]->setHidden( hideArrows );
+    m_nextSampleNumButtons[typeindex]->setHidden( hideArrows );
+    m_prevSampleNumButtons[typeindex]->setHidden( hideArrows );
     
     switch( m_displayMode )
     {
       case TopToBottom:
-        if( m_displayedPreTexts[spectrum_type]->text() != "Sample " )
-          m_displayedPreTexts[spectrum_type]->setText( "Sample " );
+        if( m_displayedPreTexts[typeindex]->text() != "Sample " )
+          m_displayedPreTexts[typeindex]->setText( "Sample " );
       break;
       case LeftToRight: case Tabbed: break;
     }//switch( m_displayMode )
@@ -778,18 +786,18 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
     
     WStringStream postMsg, editVal;
     postMsg << "/" << lastNumber; //(int)total_sample_nums.size();
-    m_displayedPostTexts[spectrum_type]->setText( postMsg.str() );
+    m_displayedPostTexts[typeindex]->setText( postMsg.str() );
     editVal << displayedNumber;
-    m_displaySampleNumEdits[spectrum_type]->setText( editVal.str() );
+    m_displaySampleNumEdits[typeindex]->setText( editVal.str() );
     
     
-    if( spectrum_type == kForeground )
+    if( spectrum_type == SpecUtils::SpectrumType::Foreground )
     {
       WString title;
       const std::vector<int> &dets = meas->detector_numbers();
       if( dets.size() == 1 )
       {
-        std::shared_ptr<const Measurement> m = meas->measurement(displayedNumber, dets[0] );
+        std::shared_ptr<const SpecUtils::Measurement> m = meas->measurement(displayedNumber, dets[0] );
         if( m )
         {
           title = WString::fromUTF8(m->title());
@@ -812,14 +820,14 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
         if( !title.empty() )
           m_foregroundTitle->show();
       }//if( m_foregroundTitle )
-    }//if( spectrum_type == kForeground )
+    }//if( spectrum_type == SpecUtils::SpectrumType::Foreground )
   }else if( total_sample_nums.size() == sample_numbers.size() )
   {
     switch( m_displayMode )
     {
       case TopToBottom:
-        if( m_displayedPreTexts[spectrum_type]->text() != "Sample " )
-          m_displayedPreTexts[spectrum_type]->setText( "Sample " );
+        if( m_displayedPreTexts[typeindex]->text() != "Sample " )
+          m_displayedPreTexts[typeindex]->setText( "Sample " );
         break;
       case LeftToRight: case Tabbed: break;
     }//switch( m_displayMode )
@@ -829,16 +837,16 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
     const int lastNumber = *(sample_numbers.rbegin());
     const int firstNumber = *(sample_numbers.begin());
     snprintf( buffer, sizeof(buffer), "/%i", totalNumber+1 );
-    m_displayedPostTexts[spectrum_type]->setText( buffer );
+    m_displayedPostTexts[typeindex]->setText( buffer );
     if( lastNumber == firstNumber )
       snprintf( buffer, sizeof(buffer), "%i", lastNumber );
     else if( sample_numbers.size() == 2 )
       snprintf( buffer, sizeof(buffer), "%i,%i", firstNumber, lastNumber );
     else
       snprintf( buffer, sizeof(buffer), "%i-%i", firstNumber, lastNumber );
-    m_displaySampleNumEdits[spectrum_type]->setText( buffer );
-    m_nextSampleNumButtons[spectrum_type]->hide();
-    m_prevSampleNumButtons[spectrum_type]->hide();
+    m_displaySampleNumEdits[typeindex]->setText( buffer );
+    m_nextSampleNumButtons[typeindex]->hide();
+    m_prevSampleNumButtons[typeindex]->hide();
   }else
   {
     const int lastNumber = *(total_sample_nums.rbegin());
@@ -846,8 +854,8 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
     switch( m_displayMode )
     {
       case TopToBottom:
-        if( m_displayedPreTexts[spectrum_type]->text() != "Sample " )
-          m_displayedPreTexts[spectrum_type]->setText( "Sample " );
+        if( m_displayedPreTexts[typeindex]->text() != "Sample " )
+          m_displayedPreTexts[typeindex]->setText( "Sample " );
       break;
       case LeftToRight: case Tabbed:
       break;
@@ -855,30 +863,30 @@ void CompactFileManager::handleDisplayChange( SpectrumType spectrum_type,
       
     WStringStream postMsg;
     postMsg << "/" << lastNumber;
-    m_displayedPostTexts[spectrum_type]->setText( postMsg.str() );
+    m_displayedPostTexts[typeindex]->setText( postMsg.str() );
    
     const string displaySequence = SpecUtils::sequencesToBriefString( sample_numbers );
     const bool added = (displaySequence.find(',') != string::npos);
-    m_displaySampleNumEdits[spectrum_type]->setText( displaySequence );
+    m_displaySampleNumEdits[typeindex]->setText( displaySequence );
     
-    m_nextSampleNumButtons[spectrum_type]->setHidden( !added );
-    m_prevSampleNumButtons[spectrum_type]->setHidden( !added );
+    m_nextSampleNumButtons[typeindex]->setHidden( !added );
+    m_prevSampleNumButtons[typeindex]->setHidden( !added );
   }//else if( meas->passthrough() ){...}
   
-  m_previousSampleTxt[spectrum_type]
-                               = m_displaySampleNumEdits[spectrum_type]->text();
+  m_previousSampleTxt[typeindex]
+                               = m_displaySampleNumEdits[typeindex]->text();
   
   const double livetimeSF = m_hostViewer->displayScaleFactor(spectrum_type);
   
   updateDisplayedScaleFactorNumbers( livetimeSF, spectrum_type );
   
-  if( spectrum_type == kForeground )
+  if( spectrum_type == SpecUtils::SpectrumType::Foreground )
   {
-    if( !!m_hostViewer->measurment(kBackground) )
-      updateDisplayedScaleFactorNumbers( m_hostViewer->displayScaleFactor(kBackground), kBackground );
-    if( !!m_hostViewer->measurment(kSecondForeground) )
-      updateDisplayedScaleFactorNumbers( m_hostViewer->displayScaleFactor(kSecondForeground), kSecondForeground );
-  }//if( spectrum_type == kForeground )
+    if( !!m_hostViewer->measurment(SpecUtils::SpectrumType::Background) )
+      updateDisplayedScaleFactorNumbers( m_hostViewer->displayScaleFactor(SpecUtils::SpectrumType::Background), SpecUtils::SpectrumType::Background );
+    if( !!m_hostViewer->measurment(SpecUtils::SpectrumType::SecondForeground) )
+      updateDisplayedScaleFactorNumbers( m_hostViewer->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground), SpecUtils::SpectrumType::SecondForeground );
+  }//if( spectrum_type == SpecUtils::SpectrumType::Foreground )
 }//void handleDisplayChange(...)
 
 
@@ -902,15 +910,15 @@ void CompactFileManager::refreshContents()
         m_selects[i]->addItem( name + " (" + time + ")" );
     }//for( loop over available files )
 
-    m_selects[kForeground]->addItem( "No foreground" );
-    m_selects[kBackground]->addItem( "No background" );
-    m_selects[kSecondForeground]->addItem( "No second foreground" );
+    m_selects[static_cast<int>(SpecUtils::SpectrumType::Foreground)]->addItem( "No foreground" );
+    m_selects[static_cast<int>(SpecUtils::SpectrumType::Background)]->addItem( "No background" );
+    m_selects[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->addItem( "No second foreground" );
 
     // Lastly, select the proper file. If there is no active file in that
     // category, just select the default "No _______" option.
     for( int i = 0; i < 3; ++i )
     {
-      const SpectrumType type = SpectrumType(i);
+      const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
       std::shared_ptr<SpecMeas> meas = m_hostViewer->measurment( type );
       handleDisplayChange( type, meas, m_hostViewer->displayedSamples(type) );
     }//for( int i = 0; i < 3; ++i )
@@ -919,19 +927,21 @@ void CompactFileManager::refreshContents()
 
 
 void CompactFileManager::updateDisplayedScaleFactorNumbers( const double sf,
-                                               const SpectrumType type )
+                                               const SpecUtils::SpectrumType type )
 {
-  if( !m_scaleValueTxt[type] )
+  const int typeindex = static_cast<int>(type);
+  
+  if( !m_scaleValueTxt[typeindex] )
     return;
   
   char buffer[32];
   snprintf( buffer, sizeof(buffer), "%.2f", sf );
-  m_scaleValueTxt[type]->setText( buffer );
+  m_scaleValueTxt[typeindex]->setText( buffer );
 }//void updateDisplayedScaleFactorNumbers(...)
 
 
 //void CompactFileManager::handleSliderChanged( const int slidervalue,
-//                                              const SpectrumType type )
+//                                              const SpecUtils::SpectrumType type )
 //{
 //  bool update = true;
 //  const double multiple = (slidervalue-50.0) / 50.0;
@@ -953,20 +963,22 @@ void CompactFileManager::updateDisplayedScaleFactorNumbers( const double sf,
 //}//void handleSliderChanged(...);
 
 
-void CompactFileManager::handleUserEnterdScaleFactor( const SpectrumType type )
+void CompactFileManager::handleUserEnterdScaleFactor( const SpecUtils::SpectrumType type )
 {
-  if( !m_scaleValueTxt[type] )
+  const int typeindex = static_cast<int>(type);
+  
+  if( !m_scaleValueTxt[typeindex] )
     return;
   
   float sf;
   bool update = true;
   
-  const string val = m_scaleValueTxt[type]->text().toUTF8();
+  const string val = m_scaleValueTxt[typeindex]->text().toUTF8();
   
   if( val.empty() )
   {
     const float lt = m_hostViewer->liveTime(type);
-    const float datalt = m_hostViewer->liveTime(kForeground);
+    const float datalt = m_hostViewer->liveTime(SpecUtils::SpectrumType::Foreground);
     sf = ((lt>0.0f) ? (datalt/lt) : 1.0f);
 //    char buffer[16];
 //    snprintf(buffer, sizeof(buffer), "%.2f", sf );
@@ -981,30 +993,33 @@ void CompactFileManager::handleUserEnterdScaleFactor( const SpectrumType type )
   
   if( update )
   {
-    if( m_rescaleByLiveTime[type] )
-      m_rescaleByLiveTime[type]->show();
+    if( m_rescaleByLiveTime[typeindex] )
+      m_rescaleByLiveTime[typeindex]->show();
     m_hostViewer->setDisplayScaleFactor( sf, type );
   }
-}//void handleUserEnterdScaleFactor( const SpectrumType type )
+}//void handleUserEnterdScaleFactor( const SpecUtils::SpectrumType type )
 
 
 
-void CompactFileManager::handleUserEnterdScaleFactorWheel( const SpectrumType type,  WMouseEvent e )
+void CompactFileManager::handleUserEnterdScaleFactorWheel( const SpecUtils::SpectrumType type,  WMouseEvent e )
 {
   int i = e.wheelDelta();
-  m_scaleValueTxt[type]->setValue(m_scaleValueTxt[type]->value() + m_scaleValueTxt[type]->singleStep()*i);
+  const int typeindex = static_cast<int>(type);
+  m_scaleValueTxt[typeindex]->setValue(m_scaleValueTxt[typeindex]->value() + m_scaleValueTxt[typeindex]->singleStep()*i);
   handleUserEnterdScaleFactor(type);
-}//void handleUserEnterdScaleFactor( const SpectrumType type )
+}//void handleUserEnterdScaleFactor( const SpecUtils::SpectrumType type )
 
 
-void CompactFileManager::handleRenormalizeByLIveTime( const SpectrumType type )
+void CompactFileManager::handleRenormalizeByLIveTime( const SpecUtils::SpectrumType type )
 {
+  const int typeindex = static_cast<int>(type);
+  
   const float lt = m_hostViewer->liveTime(type);
-  const float datalt = m_hostViewer->liveTime(kForeground);
+  const float datalt = m_hostViewer->liveTime(SpecUtils::SpectrumType::Foreground);
   const double sf = ((lt>0.0f && datalt>0.0f) ? (datalt/lt) : 1.0f);
   updateDisplayedScaleFactorNumbers( sf, type );
-  if( m_rescaleByLiveTime[type] )
-    m_rescaleByLiveTime[type]->hide();
+  if( m_rescaleByLiveTime[typeindex] )
+    m_rescaleByLiveTime[typeindex]->hide();
   m_hostViewer->setDisplayScaleFactor( sf, type );
-}//void handleRenormalizeByLIveTime( const SpectrumType type )
+}//void handleRenormalizeByLIveTime( const SpecUtils::SpectrumType type )
 

@@ -37,6 +37,7 @@ class PeakModel;
 class DecayDataBaseServer;
 class DetectorPeakResponse;
 namespace SandiaDecay{ struct Nuclide; }
+namespace SpecUtils{ class Measurement; }
 
 
 namespace IsotopeId
@@ -75,7 +76,7 @@ struct PeakToNuclideMatch
 void suggestNuclides( PeakToNuclideMatch &answer,
                       std::shared_ptr<const PeakDef> peak,
                       std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > all_peaks,
-                      std::shared_ptr<const Measurement> data,
+                      std::shared_ptr<const SpecUtils::Measurement> data,
                       std::shared_ptr<const DetectorPeakResponse> response );
 
   
@@ -84,8 +85,8 @@ void suggestNuclides( PeakToNuclideMatch &answer,
 //  from which we would be able to detect a peak 95% of the time, assuming
 //  simple coutning statistics (for now).
 //See eqns 5.52 through 5.56 in Practical Gamma-ray Spectrometry, by Gilmore.
-double minDetectableCounts( double energy, double det_sigma, std::shared_ptr<const Measurement> data );
-double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr<const Measurement> data );
+double minDetectableCounts( double energy, double det_sigma, std::shared_ptr<const SpecUtils::Measurement> data );
+double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr<const SpecUtils::Measurement> data );
   
 
 //fractionDetectedWeight(...): used by suggestNuclides() to determine the
@@ -95,7 +96,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
                            std::shared_ptr<const DetectorPeakResponse> response,
                            double shielding_an,
                            double shielding_ad,
-                           std::shared_ptr<const Measurement> data,
+                           std::shared_ptr<const SpecUtils::Measurement> data,
                            std::shared_ptr<const PeakDef> test_peak,
                            std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > all_peaks
                           );
@@ -108,7 +109,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
 //  of this, one of the bound arguments of 'doupdate' should be another
 //  shared pointer for 'candidates'.
 //Currently doesnt deal with single or double escape peaks.
-void populateCandidateNuclides( std::shared_ptr<const Measurement> data,
+void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> data,
                                std::shared_ptr<const PeakDef> peak,
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > hintpeaks,
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > userpeaks,
@@ -143,7 +144,7 @@ void findCandidates( std::vector<std::string> &suggestednucs,
                      std::shared_ptr<const PeakDef> peak,
                      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > allpeaks,
                      std::shared_ptr<const DetectorPeakResponse> detector,
-                     std::shared_ptr<const Measurement> data );
+                     std::shared_ptr<const SpecUtils::Measurement> data );
 
 } //namespace IsotopeId
 

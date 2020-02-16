@@ -54,6 +54,8 @@
 
 
 using namespace std;
+using SpecUtils::Measurement;
+
 const int DetectorPeakResponse::sm_xmlSerializationVersion = 0;
 
 namespace

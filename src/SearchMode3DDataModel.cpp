@@ -231,21 +231,21 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
   m_maxCounts = 1.0f;
     
     
-  std::shared_ptr<const SpecMeas> meas = viewer->measurment( kForeground );
+  std::shared_ptr<const SpecMeas> meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
   const set<int> displayed_detectors = viewer->displayedDetectorNumbers();
   const vector<bool> det_to_use = viewer->detectors_to_display();
   const set<int> sample_numbers = meas->sample_numbers();
   const vector<int> sample_numbers_vec( sample_numbers.begin(), sample_numbers.end() );
     
   //foreground_samples: samples the user has summed to display the spectrum of
-  //    const set<int> foreground_samples = viewer->displayedSamples( kForeground );
+  //    const set<int> foreground_samples = viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
   try
   {
     if( !meas || sample_numbers.empty() || displayed_detectors.empty() )
       throw runtime_error( "No data to display" );
     
     const size_t binningIndex = meas->suggested_gamma_binning_index( sample_numbers, det_to_use );
-    std::shared_ptr<Measurement> binning = std::make_shared<Measurement>( *meas->measurements().at(binningIndex) );
+    auto binning = std::make_shared<SpecUtils::Measurement>( *meas->measurements().at(binningIndex) );
     
     if( binning->num_gamma_channels() < 4 )
       throw runtime_error( "Not enough gamma channels to plot" );
@@ -265,9 +265,9 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
         
         //The combine_gamma_channels() and truncate_gamma_channels() functions
         //  are protected for the Measurment class, so we have to do a little
-        //  hack to get around this, by adding binning to a MeasurementInfo
+        //  hack to get around this, by adding binning to a SpecUtils::SpecFile
         //  object, and then calling these functions on that object.
-      MeasurementInfo temp;
+      SpecUtils::SpecFile temp;
       temp.add_measurment( binning, true );
         
       const size_t nchannel = binning->gamma_channel_contents()->size();
@@ -318,7 +318,7 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
       {
         for( const int samplenum : thissamplenum )
         {
-          std::shared_ptr<const Measurement> m = meas->measurement( samplenum, detnum );
+          auto m = meas->measurement( samplenum, detnum );
           if( m )
             realtime = std::min( realtime, m->real_time() );
         }//for( const int samplenum : thissamplenum )
@@ -327,8 +327,7 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
       if( realtime > 1.0E+6f )
         realtime = 0.0f;
         
-      std::shared_ptr<const Measurement> summed
-                = meas->sum_measurements( thissamplenum, det_to_use, binning );
+      auto summed = meas->sum_measurements( thissamplenum, det_to_use, binning );
         
       if( !summed || !summed->gamma_channel_contents()
           || summed->gamma_channel_contents()->size() != nenergies )

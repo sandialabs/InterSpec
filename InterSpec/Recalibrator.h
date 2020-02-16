@@ -50,6 +50,7 @@ class SpectrumDisplayDiv;
 #endif
 class RowStretchTreeView;
 namespace SpecUtils{ enum class EnergyCalType : int; }
+namespace SpecUtils{ enum class SpectrumType : int; }
 
 namespace Wt
 {
@@ -96,9 +97,9 @@ class PreserveCalibWindow : public AuxWindow
 {
 public:
   PreserveCalibWindow( std::shared_ptr<SpecMeas> newmeas,
-                              const SpectrumType newtype,
+                              const SpecUtils::SpectrumType newtype,
                               std::shared_ptr<SpecMeas> oldmeas,
-                              const SpectrumType oldtype,
+                              const SpecUtils::SpectrumType oldtype,
                               Recalibrator *calibrator );
   
   static bool candidate( std::shared_ptr<SpecMeas> newmeas,
@@ -114,7 +115,7 @@ protected:
   std::vector<float> m_coeffs;
   SpecUtils::EnergyCalType m_type;
   std::vector< std::pair<float,float> > m_devPairs;
-  const SpectrumType m_newtype, m_oldtype;
+  const SpecUtils::SpectrumType m_newtype, m_oldtype;
 };//class PreserveCalibWindow
 
 
@@ -164,7 +165,7 @@ public:
   
   void engageRecalibration( RecalAction action );
   
-  void specTypeCheckedCallback( const SpectrumType type, const bool checked );
+  void specTypeCheckedCallback( const SpecUtils::SpectrumType type, const bool checked );
   
   
   void handleGraphicalRecalRequest( double xstart, double xfinish );
@@ -182,7 +183,7 @@ public:
                                       const std::vector< std::pair<float,float> > &new_devpairs,
                                       SpecUtils::EnergyCalType new_eqn_type,
                                       std::shared_ptr<SpecMeas> meas,
-                                      const SpectrumType spectype,
+                                      const SpecUtils::SpectrumType spectype,
                                       std::vector<float> old_pars,
                                       const std::vector< std::pair<float,float> > &old_devpairs,
                                       SpecUtils::EnergyCalType old_eqn_type );

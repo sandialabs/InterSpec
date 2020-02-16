@@ -318,13 +318,13 @@ namespace
     WDoubleSpinBox *m_userBr;
     WPushButton *m_previewBtn;
     WPopupWidget *m_previewPopup;
-    std::shared_ptr<const Measurement> m_summed_meas;
+    std::shared_ptr<const SpecUtils::Measurement> m_summed_meas;
     Wt::Signal<DrfPeak *> m_peakPreviewShow;
     bool m_isBackground;
 
     
     DrfPeak( std::shared_ptr<const PeakDef> peak, double livetime,
-             std::shared_ptr<const Measurement> summed_meas,
+             std::shared_ptr<const SpecUtils::Measurement> summed_meas,
              WContainerWidget *parent = nullptr )
     : WContainerWidget( parent ),
       m_peak( peak ),
@@ -553,7 +553,7 @@ namespace
       {
         for( const string &detname : detnames )
         {
-          shared_ptr<const Measurement> m = m_meas->measurement( sample, detname );
+          shared_ptr<const SpecUtils::Measurement> m = m_meas->measurement( sample, detname );
           if( m && !m->title().empty() )
             title = m->title();
         }//
@@ -683,7 +683,7 @@ namespace
       {
         for( const string &detname : detnames )
         {
-          shared_ptr<const Measurement> m = meas->measurement( sample, detname );
+          shared_ptr<const SpecUtils::Measurement> m = meas->measurement( sample, detname );
           if( m && !m->title().empty() )
             title = m->title();
           if( m && m->num_gamma_channels() > 5 )
@@ -691,7 +691,7 @@ namespace
         }//
       }//for( const int sample : samples )
       
-      std::shared_ptr<const Measurement> summed_meas;
+      std::shared_ptr<const SpecUtils::Measurement> summed_meas;
       if( samples.size()==1 && detnames.size()==1 )
         summed_meas = meas->measurement( *begin(samples), detnames[0] );
       if( !summed_meas )
@@ -747,7 +747,7 @@ namespace
             
             if( samples.size() == 1 )
             {
-              is_background |= (m->source_type()==Measurement::SourceType::Background);
+              is_background |= (m->source_type()==SpecUtils::SourceType::Background);
               is_background |= SpecUtils::icontains( spectitle, "back" );
               is_background |= SpecUtils::icontains( spectitle, "bgr" );
             }//if( samples.size() == 1 )
@@ -1575,7 +1575,7 @@ void MakeDrf::startSaveAs()
     }//if( serial_number.size() )
     
     string model;
-    if( representative_meas->detector_type() == DetectorType::kUnknownDetector )
+    if( representative_meas->detector_type() == SpecUtils::DetectorType::kUnknownDetector )
       model = representative_meas->instrument_model();
     else
       model = detectorTypeToString( representative_meas->detector_type() );
@@ -2530,7 +2530,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
   try
   {
     //Go through and and grab background peaks
-    map<std::shared_ptr<Measurement>,vector<shared_ptr<PeakDef>>> meas_to_peaks;
+    map<std::shared_ptr<SpecUtils::Measurement>,vector<shared_ptr<PeakDef>>> meas_to_peaks;
     
     for( auto w : m_files->children() )
     {
@@ -2561,12 +2561,12 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         
         auto detnames = meas->detector_names();
         vector<bool> detstouse( detnames.size(), true );
-        std::shared_ptr<Measurement> m;
+        std::shared_ptr<SpecUtils::Measurement> m;
         if( detstouse.size() == 1 && samplenums.size()==1 )
         {
           auto origm = meas->measurement( *samplenums.begin(), detnames[0] );
           if( origm )
-            m = make_shared<Measurement>( *origm );
+            m = make_shared<SpecUtils::Measurement>( *origm );
         }
         
         if( !m )
@@ -2576,7 +2576,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         
         answer->add_measurment( m, false );
         
-        const auto srctype = sample->isBackground() ? Measurement::SourceType::Background : Measurement::SourceType::Foreground;
+        const auto srctype = sample->isBackground() ? SpecUtils::SourceType::Background : SpecUtils::SourceType::Foreground;
         answer->set_source_type( srctype, m );
         
         //ToDo: look through remarks for something like "Source:" and remove it.
@@ -2654,7 +2654,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
       }//for( DrfSpecFileSample *sample : sampleWidgets )
     }//for( auto w : m_files->children()  )
     
-    answer->cleanup_after_load( 0x0 /*MeasurementInfo::CleanupAfterLoadFlags::DontChangeOrReorderSamples*/ );
+    answer->cleanup_after_load( 0x0 /*SpecUtils::SpecFile::CleanupAfterLoadFlags::DontChangeOrReorderSamples*/ );
     
     auto newmeasvec = answer->measurements();
     

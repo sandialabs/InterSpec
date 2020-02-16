@@ -46,6 +46,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 using namespace std;
+using SpecUtils::Measurement;
 
 const int PeakDef::sm_xmlSerializationVersion = 0;
 const int PeakContinuum::sm_xmlSerializationVersion = 0;

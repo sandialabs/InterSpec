@@ -459,11 +459,11 @@ namespace Wt {
     }//read( std::set<std::string> )
   
     
-    std::string sql_value_traits<DetectorAnalysis>::type(SqlConnection *conn, int size)
+    std::string sql_value_traits<SpecUtils::DetectorAnalysis>::type(SqlConnection *conn, int size)
     {
       return conn->textType(-1);
     }
-    void sql_value_traits<DetectorAnalysis>::bind( const DetectorAnalysis &v, SqlStatement *statement, int column, int size)
+    void sql_value_traits<SpecUtils::DetectorAnalysis>::bind( const SpecUtils::DetectorAnalysis &v, SqlStatement *statement, int column, int size)
     {
       rapidxml::xml_document<char> xmldoc;
       std::mutex xmldocmutex;
@@ -474,7 +474,7 @@ namespace Wt {
         
       statement->bind(column, xmlstring );
     }
-    bool sql_value_traits<DetectorAnalysis>::read( DetectorAnalysis &v, SqlStatement *statement, int column, int size )
+    bool sql_value_traits<SpecUtils::DetectorAnalysis>::read( SpecUtils::DetectorAnalysis &v, SqlStatement *statement, int column, int size )
     {
       v.reset();
       string xmlstring;
@@ -853,8 +853,8 @@ void SpecFileInfoToQuery::reset()
   location_name.clear();
   
   has_riid_analysis = false;
-  riid_ana = DetectorAnalysis();
-  detector_type = DetectorType::kUnknownDetector;
+  riid_ana = SpecUtils::DetectorAnalysis();
+  detector_type = SpecUtils::DetectorType::kUnknownDetector;
   passthrough = false;
   total_livetime = total_realtime = 0.0f;
   contained_neutron = contained_dev_pairs = contained_gps = false;
@@ -887,8 +887,8 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   file_size = SpecUtils::file_size(filepath);
   file_path_hash = std::hash<std::string>()(filepath);
   
-  MeasurementInfo meas;
-  const bool loaded = meas.load_file(filepath, kAutoParser, filepath);
+  SpecUtils::SpecFile meas;
+  const bool loaded = meas.load_file(filepath, SpecUtils::ParserType::kAutoParser, filepath);
   if( !loaded )
   {
     //see if "<event>" is in the first 128 bytes.

@@ -41,6 +41,8 @@ namespace Wt
 } // namespace Wt
 
 
+namespace SpecUtils{ enum class SpectrumType : int; }
+
 class SpecMeas;
 class InterSpec;
 class SpectraFileModel;
@@ -66,42 +68,42 @@ public:
   ~CompactFileManager();
 
   void refreshContents();
-  void handleDisplayChange( SpectrumType spectrum_type,
+  void handleDisplayChange( SpecUtils::SpectrumType spectrum_type,
                             const std::shared_ptr<SpecMeas> meas,
                             const std::set<int> &sample_numbers );
 
-  void handleUserChangeSampleNum( SpectrumType spectrum_type );
-  void handleUserIncrementSampleNum( SpectrumType spectrum_type, bool increment );
-  static void handleUserIncrementSampleNum( SpectrumType spectrum_type, bool increment, InterSpec *hostViewer, SpectraFileModel *files, CompactFileManager* cfm);
+  void handleUserChangeSampleNum( SpecUtils::SpectrumType spectrum_type );
+  void handleUserIncrementSampleNum( SpecUtils::SpectrumType spectrum_type, bool increment );
+  static void handleUserIncrementSampleNum( SpecUtils::SpectrumType spectrum_type, bool increment, InterSpec *hostViewer, SpectraFileModel *files, CompactFileManager* cfm);
     
-  static void changeToSampleNum( int sampleNum, SpectrumType spectrum_type, InterSpec *hostViewer, CompactFileManager* cfm );
+  static void changeToSampleNum( int sampleNum, SpecUtils::SpectrumType spectrum_type, InterSpec *hostViewer, CompactFileManager* cfm );
 
   void changeToSampleRange( int firstSample, int lastSample,
-                            SpectrumType spectrum_type );
+                            SpecUtils::SpectrumType spectrum_type );
 
-  void handleFileChangeRequest( int row, SpectrumType spectrum_type );
+  void handleFileChangeRequest( int row, SpecUtils::SpectrumType spectrum_type );
 
   //handleSampleNumEditBlur(): load-spuctrum if the desired sample nums changed
-  void handleSampleNumEditBlur( SpectrumType spectrum_type );
+  void handleSampleNumEditBlur( SpecUtils::SpectrumType spectrum_type );
 
   /** Function called when the user scales a chart.  Updates displayed numbers,
    and shows "Normalize" button.
    */
-  void handleSpectrumScale( const double scale, SpectrumType spectrum_type );
+  void handleSpectrumScale( const double scale, SpecUtils::SpectrumType spectrum_type );
   
 protected:
   
   /** Updates the displayed scale factor numbers to user.
    Does not show the "Normalize" button, or notify the parent InterSpec instance.
    */
-  void updateDisplayedScaleFactorNumbers( const double sf, const SpectrumType type );
+  void updateDisplayedScaleFactorNumbers( const double sf, const SpecUtils::SpectrumType type );
   
-//  void handleSliderChanged( const int slidervalue, const SpectrumType type );
-  void handleUserEnterdScaleFactor( const SpectrumType type );
+//  void handleSliderChanged( const int slidervalue, const SpecUtils::SpectrumType type );
+  void handleUserEnterdScaleFactor( const SpecUtils::SpectrumType type );
   
-  void handleUserEnterdScaleFactorWheel( const SpectrumType type, Wt::WMouseEvent e);
+  void handleUserEnterdScaleFactorWheel( const SpecUtils::SpectrumType type, Wt::WMouseEvent e);
   
-  void handleRenormalizeByLIveTime( const SpectrumType type );
+  void handleRenormalizeByLIveTime( const SpecUtils::SpectrumType type );
   
 private:
   Wt::WComboBox *m_selects[3];

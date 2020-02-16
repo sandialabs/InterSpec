@@ -34,10 +34,10 @@
 #include <memory>
 
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecServer.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DbToFilesystemLink.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "target/electron/ElectronUtils.h"
@@ -112,8 +112,8 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
 
   try
   {
-    cwd = UtilityFunctions::get_working_path();
-    relbasedir = basedir; //UtilityFunctions::fs_relative( cwd, basedir );
+    cwd = SpecUtils::get_working_path();
+    relbasedir = basedir; //SpecUtils::fs_relative( cwd, basedir );
     cerr << "cwd='" << cwd << "'" << endl;
     cerr << "relbasedir='" << relbasedir << "'" << endl;
     cerr << "userdatadir='" << userdatadir << "'" << endl;
@@ -131,7 +131,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   {
     //ToDo: refactor this userdatadir stuff into function inside InterSpecServer
     //      or InterSpecApp or something.
-    if( !UtilityFunctions::create_directory(userdatadir) )
+    if( !SpecUtils::create_directory(userdatadir) )
       throw std::runtime_error( "Failed to create directory '" + string(userdatadir) + "' for user data." );
   }catch( std::exception &e )
   {
@@ -141,7 +141,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   
   try
   {
-    const string preffile = UtilityFunctions::append_path( userdatadir, "InterSpecUserData.db" );
+    const string preffile = SpecUtils::append_path( userdatadir, "InterSpecUserData.db" );
     
     cout << "Will set user preferences file to: '" << preffile << "'" << endl;
     DataBaseUtils::setPreferenceDatabaseFile( preffile );
@@ -154,7 +154,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   
   try
   {
-    const auto serial_db = UtilityFunctions::ls_files_in_directory( userdatadir, "serial_to_model.csv" );
+    const auto serial_db = SpecUtils::ls_files_in_directory( userdatadir, "serial_to_model.csv" );
     if( !serial_db.empty() )
       SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
   }catch( std::exception &e )
@@ -199,7 +199,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   
   try
   {
-    InterSpec::setStaticDataDirectory( UtilityFunctions::append_path(relbasedir,"data") );
+    InterSpec::setStaticDataDirectory( SpecUtils::append_path(relbasedir,"data") );
   }catch( std::exception &e )
   {
     cerr << e.what() << endl;

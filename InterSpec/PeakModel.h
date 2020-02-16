@@ -41,6 +41,7 @@
 class SpecMeas;
 class SpectrumDataModel;
 
+namespace SpecUtils{ class Measurement; }
 
 namespace SandiaDecay
 {
@@ -254,7 +255,7 @@ public:
    Throws exception if inputs are invalid, or no peaks present in the file.
    */
   static std::vector<PeakDef> csv_to_candidate_fit_peaks(
-                                                         std::shared_ptr<const Measurement> meas,
+                                                         std::shared_ptr<const SpecUtils::Measurement> meas,
                                                          std::istream &csv );
   
   

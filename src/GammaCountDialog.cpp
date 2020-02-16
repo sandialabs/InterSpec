@@ -150,9 +150,9 @@ void GammaCountDialog::init()
   m_lowerEnergy->setRange( 0.0, 10000.0 );
   m_upperEnergy->setRange( 0.0, 10000.0 );
 
-  std::shared_ptr<const Measurement> hist;
+  std::shared_ptr<const SpecUtils::Measurement> hist;
   if( m_specViewer )
-    hist = m_specViewer->displayedHistogram( kForeground );
+    hist = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   if( hist )
   {
     const int nbin = hist->GetNbinsX();
@@ -297,7 +297,7 @@ void GammaCountDialog::handleEnergyRangeChange()
     }//if( low > high )
     
   
-    std::shared_ptr<const Measurement> hist = m_specViewer->displayedHistogram( kForeground );
+    std::shared_ptr<const SpecUtils::Measurement> hist = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
     if( hist && hist->num_gamma_channels() > 0 )
     {
       const size_t nchannel = hist->num_gamma_channels();
@@ -315,13 +315,13 @@ void GammaCountDialog::handleEnergyRangeChange()
     m_highlightRegionId = m_specViewer->addHighlightedEnergyRange( low, high, color );
 
     //Now need to do all the computations and such
-    std::shared_ptr<const Measurement> primary, secondary, background;
-    primary    = m_specViewer->displayedHistogram( kForeground );
-    secondary  = m_specViewer->displayedHistogram( kSecondForeground );
-    background = m_specViewer->displayedHistogram( kBackground );
+    std::shared_ptr<const SpecUtils::Measurement> primary, secondary, background;
+    primary    = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    secondary  = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
+    background = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Background );
 
-    const double secondarySF = m_specViewer->displayScaleFactor( kSecondForeground );
-    const double backgroundSF = m_specViewer->displayScaleFactor( kBackground );
+    const double secondarySF = m_specViewer->displayScaleFactor( SpecUtils::SpectrumType::SecondForeground );
+    const double backgroundSF = m_specViewer->displayScaleFactor( SpecUtils::SpectrumType::Background );
 
     setGammaCountText( m_primaryGammaCount,    primary, 1.0f, low, high );
     setGammaCountText( m_secondaryGammaCount,  secondary, secondarySF, low, high );
@@ -410,8 +410,8 @@ void GammaCountDialog::handleEnergyRangeChange()
 }//void handleEnergyRangeChange()
 
 
-void GammaCountDialog::setUnceraintyText( std::shared_ptr<const Measurement> foreground,
-                                          std::shared_ptr<const Measurement> background,
+void GammaCountDialog::setUnceraintyText( std::shared_ptr<const SpecUtils::Measurement> foreground,
+                                          std::shared_ptr<const SpecUtils::Measurement> background,
                                           const double backSF,
                                           const float minEnergy,
                                           const float maxEnergy )
@@ -466,7 +466,7 @@ void GammaCountDialog::setUnceraintyText( std::shared_ptr<const Measurement> for
 }//void GammaCountDialog::setUnceraintyText(...)
 
 
-void GammaCountDialog::setGammaCountText( Wt::WText *text, std::shared_ptr<const Measurement> hist,
+void GammaCountDialog::setGammaCountText( Wt::WText *text, std::shared_ptr<const SpecUtils::Measurement> hist,
                                           const double scale_factor,
                                           const float minEnergy,
                                           const float maxEnergy )
@@ -486,14 +486,14 @@ void GammaCountDialog::setGammaCountText( Wt::WText *text, std::shared_ptr<const
     snprintf( buffer, sizeof(buffer), "%.1f", count );
   
   text->setText( buffer );
-}//void setGammaCountText( Wt::WText *text, std::shared_ptr<const Measurement> hist, double minEnergy, double maxEnergy )
+}//void setGammaCountText( Wt::WText *text, std::shared_ptr<const SpecUtils::Measurement> hist, double minEnergy, double maxEnergy )
 
 
 
 
 
 
-void GammaCountDialog::handleSpectrumChange( int /*type*/,
+void GammaCountDialog::handleSpectrumChange( SpecUtils::SpectrumType /*type*/,
                                              std::shared_ptr<SpecMeas> /*meas*/,
                                              std::set<int> /*displaySample*/ )
 {

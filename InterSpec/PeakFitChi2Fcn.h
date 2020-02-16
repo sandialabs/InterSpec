@@ -45,6 +45,7 @@
 #include "Minuit2/MnMigrad.h"
 #include "Minuit2/MnMinimize.h"
 
+namespace SpecUtils{ class Measurement; }
 
 
 class PeakFitChi2Fcn
@@ -93,15 +94,15 @@ public:
 public:
   //Constructor to fit full range of histograms
   PeakFitChi2Fcn( const int npeaks,
-                  std::shared_ptr<const Measurement> data,
-                  std::shared_ptr<const Measurement> continium );
+                  std::shared_ptr<const SpecUtils::Measurement> data,
+                  std::shared_ptr<const SpecUtils::Measurement> continium );
 
   //Constructor to fit partial range of histogram; only bins between lowerbin
   //  and upperbin will contibute to the chi2
   PeakFitChi2Fcn( const int npeaks,
                   const int lowerbin, const int upperbin,
-                  std::shared_ptr<const Measurement> data,
-                  std::shared_ptr<const Measurement> continium );
+                  std::shared_ptr<const SpecUtils::Measurement> data,
+                  std::shared_ptr<const SpecUtils::Measurement> continium );
 
   void useReducedChi2( const bool use = true );        //default is true
   
@@ -162,7 +163,7 @@ public:
   //  defined
   static void addPeaksToFitter( ROOT::Minuit2::MnUserParameters &paramaters,
                                 const std::vector<PeakDef> &near_peaks,
-                                std::shared_ptr<const Measurement> data,
+                                std::shared_ptr<const SpecUtils::Measurement> data,
                                 AddPeaksToFitterMethod method );
   
   static void setSharedIndexToContinuumInfo( double &info, int index );
@@ -181,8 +182,8 @@ protected:
   bool m_useMultiPeakPunishment;
   int m_lowerbin, m_upperbin;
   int m_npeaks;
-  std::shared_ptr<const Measurement> m_data;
-  std::shared_ptr<const Measurement> m_continium;
+  std::shared_ptr<const SpecUtils::Measurement> m_data;
+  std::shared_ptr<const SpecUtils::Measurement> m_continium;
   
 private:
   virtual double DoEval( const double *x ) const;
@@ -226,7 +227,7 @@ class MultiPeakFitChi2Fcn
   //    2) Is optimized for speed of evaluation
 public:
   //Constructor to fit full range of histograms
-  MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<const Measurement> data,
+  MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<const SpecUtils::Measurement> data,
                       PeakContinuum::OffsetType offsetType,
                       const int lowerbin, const int upperbin );
   
@@ -261,7 +262,7 @@ protected:
   double m_rangeLow, m_highRange;
   std::vector<double> m_binLowerEdge, m_binUpperEdge, m_dataCounts;
   PeakContinuum::OffsetType m_offsetType;
-  std::shared_ptr<const Measurement> m_data;
+  std::shared_ptr<const SpecUtils::Measurement> m_data;
   
   /* How close peaks have to be together before you start applying a wieght
    to the chi2 to punish this - this keeps ROIs with more than one peak from
@@ -325,7 +326,7 @@ public:
   //  function will not 'inherit' nuclide ID infor, or fit for values of any
   //  peviously existing peaks.
   LinearProblemSubSolveChi2Fcn( const size_t npeaks,
-                               std::shared_ptr<const Measurement> data,
+                               std::shared_ptr<const SpecUtils::Measurement> data,
                                const PeakContinuum::OffsetType offsetType,
                                const float lowerROI, const float upperROI );
 
@@ -349,7 +350,7 @@ public:
   //        more information on the status of this ability).
   LinearProblemSubSolveChi2Fcn(
         const std::vector< std::shared_ptr<const PeakDef> > &originalPeaks,
-                               std::shared_ptr<const Measurement> data,
+                               std::shared_ptr<const SpecUtils::Measurement> data,
                                const PeakContinuum::OffsetType offsetType,
                                const float lowerROI, const float upperROI );
   
@@ -382,7 +383,7 @@ public:
                               const std::vector<double> &sigmas ) const;
   
 protected:
-  void init( std::shared_ptr<const Measurement> data );
+  void init( std::shared_ptr<const SpecUtils::Measurement> data );
   
 protected:
   size_t m_nbin;

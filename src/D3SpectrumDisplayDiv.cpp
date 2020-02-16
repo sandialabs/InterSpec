@@ -34,6 +34,8 @@
 using namespace Wt;
 using namespace std;
 
+using SpecUtils::Measurement;
+
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
 namespace
@@ -486,7 +488,7 @@ Wt::Signal<double, double, int, bool> &D3SpectrumDisplayDiv::fitRoiDragUpdate()
 }
 
 
-Wt::Signal<double,SpectrumType> &D3SpectrumDisplayDiv::yAxisScaled()
+Wt::Signal<double,SpecUtils::SpectrumType> &D3SpectrumDisplayDiv::yAxisScaled()
 {
   return m_yAxisScaled;
 }
@@ -945,19 +947,19 @@ std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::histUsedForXAxis() cons
 
 
 void D3SpectrumDisplayDiv::setDisplayScaleFactor( const float sf,
-                                               const SpectrumType spectrum_type )
+                                               const SpecUtils::SpectrumType spectrum_type )
 {
   switch( spectrum_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       throw runtime_error( "setDisplayScaleFactor can not be called for foreground" );
       
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       m_model->setSecondDataScaleFactor( sf );
       scheduleUpdateSecondData();
       break;
       
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       m_model->setBackgroundDataScaleFactor( sf );
       scheduleUpdateBackground();
       break;
@@ -965,15 +967,15 @@ void D3SpectrumDisplayDiv::setDisplayScaleFactor( const float sf,
 }//void setDisplayScaleFactor(...)
 
 
-float D3SpectrumDisplayDiv::displayScaleFactor( const SpectrumType spectrum_type ) const
+float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType spectrum_type ) const
 {
   switch( spectrum_type )
   {
-    case kForeground:
+    case SpecUtils::SpectrumType::Foreground:
       return 1.0f;
-    case kSecondForeground:
+    case SpecUtils::SpectrumType::SecondForeground:
       return m_model->secondDataScaledBy();
-    case kBackground:
+    case SpecUtils::SpectrumType::Background:
       return m_model->backgroundScaledBy();
       //  m_spectrumDiv->continuum();
   }//switch( spectrum_type )
@@ -981,7 +983,7 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpectrumType spectrum_type
   throw runtime_error( "D3SpectrumDisplayDiv::displayScaleFactor(...): invalid input arg" );
   
   return 1.0;
-}//double displayScaleFactor( SpectrumType spectrum_type ) const;
+}//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
 
 void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background,
@@ -1213,8 +1215,8 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     // Set options for the spectrum
     foregroundOptions.line_color = m_foregroundLineColor.isDefault() ? string("black") : m_foregroundLineColor.cssText();
     foregroundOptions.peak_color = m_defaultPeakColor.isDefault() ? string("blue") : m_defaultPeakColor.cssText();
-    foregroundOptions.spectrum_type = kForeground;
-    foregroundOptions.display_scale_factor = displayScaleFactor( kForeground );
+    foregroundOptions.spectrum_type = SpecUtils::SpectrumType::Foreground;
+    foregroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );
     
     // Set the peak data for the spectrum
     if ( m_peakModel ) {
@@ -1260,13 +1262,13 @@ void D3SpectrumDisplayDiv::renderBackgroundToClient()
     
     // Set options for the spectrum
     backgroundOptions.line_color = m_backgroundLineColor.isDefault() ? string("green") : m_backgroundLineColor.cssText();
-    backgroundOptions.spectrum_type = kBackground;
-    backgroundOptions.display_scale_factor = displayScaleFactor( kBackground );
+    backgroundOptions.spectrum_type = SpecUtils::SpectrumType::Background;
+    backgroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Background );
     
     // We cant currently access the parent InterSpec class, but if we could, then
     //  we could draw the background peaks by doing something like:
-    //const std::set<int> &backSample = m_interspec->displayedSamples(SpectrumType::kBackground);
-    //std::shared_ptr<SpecMeas> backgroundMeas = m_interspec->measurment(SpectrumType::kBackground);
+    //const std::set<int> &backSample = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+    //std::shared_ptr<SpecMeas> backgroundMeas = m_interspec->measurment(SpecUtils::SpectrumType::Background);
     //std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > > backpeaks = backgroundMeas->peaks( backSample );
     //vector< std::shared_ptr<const PeakDef> > inpeaks( backpeaks->begin(), backpeaks->end() );
     //backgroundOptions.peaks_json = PeakDef::peak_json( inpeaks );
@@ -1306,8 +1308,8 @@ void D3SpectrumDisplayDiv::renderSecondDataToClient()
     
     // Set options for the spectrum
     secondaryOptions.line_color = m_secondaryLineColor.isDefault() ? string("steelblue") : m_secondaryLineColor.cssText();
-    secondaryOptions.spectrum_type = kSecondForeground;
-    secondaryOptions.display_scale_factor = displayScaleFactor( kSecondForeground );
+    secondaryOptions.spectrum_type = SpecUtils::SpectrumType::SecondForeground;
+    secondaryOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::SecondForeground );
     
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(hist.get(), secondaryOptions) );
     
@@ -1754,7 +1756,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
   InterSpec *viewer = app ? app->viewer() : nullptr;
-  std::shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment(SpectrumType::kForeground) : nullptr;
+  std::shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
   std::shared_ptr<const DetectorPeakResponse> detector = meas ? meas->detector() : nullptr;
   
   std::shared_ptr<Measurement> foreground = m_model->getData();
@@ -2076,21 +2078,21 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
 
 void D3SpectrumDisplayDiv::yAxisScaled( const double scale, const std::string &spectrum )
 {
-  SpectrumType type;
+  SpecUtils::SpectrumType type;
 
   //Dont call D3SpectrumDisplayDiv::setDisplayScaleFactor(...) since we dont
   //  have to re-load data to client, but we should keep all the c++ up to date.
   
   if( spectrum == "FOREGROUND" )
   {
-    type = SpectrumType::kForeground;
+    type = SpecUtils::SpectrumType::Foreground;
   }else if( spectrum == "BACKGROUND" )
   {
-    type = SpectrumType::kBackground;
+    type = SpecUtils::SpectrumType::Background;
     m_model->setBackgroundDataScaleFactor( scale );
   }else if( spectrum == "SECONDARY" )
   {
-    type = SpectrumType::kSecondForeground;
+    type = SpecUtils::SpectrumType::SecondForeground;
     m_model->setSecondDataScaleFactor( scale );
   }else
   {

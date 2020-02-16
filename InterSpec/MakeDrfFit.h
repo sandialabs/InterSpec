@@ -32,7 +32,6 @@
 #include "InterSpec/DetectorPeakResponse.h"
 
 class PeakDef;
-class Measurement;
 
 namespace MakeDrfFit
 {

@@ -37,7 +37,7 @@
 #include "InterSpec/AuxWindow.h"
 
 class SrbGoogleMap;
-class MeasurementInfo;
+namespace SpecUtils { class SpecFile; }
 
 class GoogleMap : public Wt::WContainerWidget
 {
@@ -47,10 +47,10 @@ public:
   
   void addMarker( double latitude, double longitude );
   void addInfoBox( double latitude, double longitude, const Wt::WString &html );
-  void addMeasurment( std::shared_ptr<const MeasurementInfo> meas,
+  void addMeasurment( std::shared_ptr<const SpecUtils::SpecFile> meas,
                       const Wt::WString &title,
                       const std::set<int> &displayed );
-  std::string getStaticMapFromMeas( std::shared_ptr<const MeasurementInfo> meas,
+  std::string getStaticMapFromMeas( std::shared_ptr<const SpecUtils::SpecFile> meas,
                              const Wt::WString &title );
   std::string getStaticMap();
   void clearMeasurments();

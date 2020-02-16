@@ -54,8 +54,8 @@
 
 class PeakDef;
 class PeakModel;
-class Measurement;
 class InterSpecUser;
+namespace SpecUtils{ class Measurement; }
 
 namespace rapidxml
 {
@@ -464,7 +464,7 @@ public:
   //Re-computes hash as well.
   //Throws exception on error or failure.
   void fitResolution( PeakInput_t peaks,
-                      const std::shared_ptr<const Measurement> meas,
+                      const std::shared_ptr<const SpecUtils::Measurement> meas,
                       const ResolutionFnctForm fnctnlForm );
   
   //expOfLogPowerSeriesEfficiency(...): evalutaes absolute efficiency for

@@ -86,6 +86,9 @@
 using namespace std;
 using namespace Wt;
 
+using SpecUtils::Measurement;
+using SpecUtils::DetectorType;
+
 const char * const DetectorDisplay::sm_noDetectorTxt
   = "<font style=\"font-weight:100;color:#CFCFCF;\">&lt;click to select&gt;</font>";
 const char * const DetectorDisplay::sm_noDetectorTxtMbl
@@ -1523,7 +1526,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   m_text = new WText( txt, XHTMLUnsafeText, this );
 
   std::shared_ptr<DetectorPeakResponse> detector;
-  auto meas = specViewer->measurment(SpectrumType::kForeground);
+  auto meas = specViewer->measurment(SpecUtils::SpectrumType::Foreground);
   if( meas )
     detector = meas->detector();
   m_currentDetector = detector;
@@ -2081,7 +2084,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_drfTypeStack->setHeight( WLength(185.0) );
   
   
-  auto meas = specViewer->measurment( SpectrumType::kForeground );
+  auto meas = specViewer->measurment( SpecUtils::SpectrumType::Foreground );
   
   if( meas && !meas->instrument_id().empty() )
   {
@@ -2912,7 +2915,7 @@ void DetectorEdit::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResp
 std::shared_ptr<DetectorPeakResponse> DetectorEdit::getUserPrefferedDetector(
                                 std::shared_ptr<DataBaseUtils::DbSession> sql,
                                 Wt::Dbo::ptr<InterSpecUser> user,
-                                std::shared_ptr<const MeasurementInfo> meas )
+                                std::shared_ptr<const SpecUtils::SpecFile> meas )
 {
   std::shared_ptr<DetectorPeakResponse> answer;
   if( !sql || !user || !meas )
@@ -3005,7 +3008,7 @@ void DetectorEdit::setUserPrefferedDetector( std::shared_ptr<DetectorPeakRespons
                                      std::shared_ptr<DataBaseUtils::DbSession> sql,
                                      Wt::Dbo::ptr<InterSpecUser> user,
                                      UseDrfPref::UseDrfType prefType,
-                                     std::shared_ptr<const MeasurementInfo> meas )
+                                     std::shared_ptr<const SpecUtils::SpecFile> meas )
 {
   //Check if there is a UseDrfPref for the measurement.  If so, we will delete
   //  it.  We will then add one to the database.
@@ -3086,7 +3089,7 @@ void DetectorEdit::acceptAndFinish()
   emitChangedSignal();
   emitModifiedSignal();
   
-  auto meas = m_interspec->measurment(SpectrumType::kForeground);
+  auto meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   auto sql = m_interspec->sql();
   auto user = m_interspec->m_user;
   auto drf = m_detector;
@@ -3185,24 +3188,26 @@ vector<pair<string,string>> DetectorEdit::avaliableGadrasDetectors() const
 }//vector<string> avaliableGadrasDetectors() const
 
 
-std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const int typeint, InterSpec *interspec )
+std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const SpecUtils::DetectorType type, InterSpec *interspec )
 {
+  using SpecUtils::DetectorType;
+  
   string smname;
-  switch( typeint )
+  switch( type )
   {
-    case kGR135Detector:             smname = "GR135";             break;
-    case kIdentiFinderDetector:      smname = "IdentiFINDER";      break;
-    case kIdentiFinderNGDetector:    smname = "IdentiFINDER-NGH";  break;
-    case kIdentiFinderLaBr3Detector: smname = "IdentiFINDER-LaBr"; break;
-    case kDetectiveDetector:         smname = "Detective";         break;
-    case kDetectiveExDetector:       smname = "Detetive DX";       break;
-    case kDetectiveEx100Detector:    smname = "Detective EX-100";  break;
-    case kDetectiveEx200Detector:    smname = "Detective EX-200";  break;
-    case kDetectiveX:                smname = "Detective X";       break;
-    case kSAIC8Detector:             smname = "";                  break;
-    case kFalcon5000:                smname = "Falcon 5000";       break;
-    case kUnknownDetector:           smname = "";                  break;
-    case kMicroDetectiveDetector:    smname = "Micro Detective";   break;
+    case DetectorType::kGR135Detector:             smname = "GR135";             break;
+    case DetectorType::kIdentiFinderDetector:      smname = "IdentiFINDER";      break;
+    case DetectorType::kIdentiFinderNGDetector:    smname = "IdentiFINDER-NGH";  break;
+    case DetectorType::kIdentiFinderLaBr3Detector: smname = "IdentiFINDER-LaBr"; break;
+    case DetectorType::kDetectiveDetector:         smname = "Detective";         break;
+    case DetectorType::kDetectiveExDetector:       smname = "Detetive DX";       break;
+    case DetectorType::kDetectiveEx100Detector:    smname = "Detective EX-100";  break;
+    case DetectorType::kDetectiveEx200Detector:    smname = "Detective EX-200";  break;
+    case DetectorType::kDetectiveX:                smname = "Detective X";       break;
+    case DetectorType::kSAIC8Detector:             smname = "";                  break;
+    case DetectorType::kFalcon5000:                smname = "Falcon 5000";       break;
+    case DetectorType::kUnknownDetector:           smname = "";                  break;
+    case DetectorType::kMicroDetectiveDetector:    smname = "Micro Detective";   break;
   }//switch( type )
   
   if( smname.empty() )
@@ -3258,44 +3263,57 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const i
 }//initARelEffDetector( int type )
 
 std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
-                                                            const int typeint, InterSpec *interspec )
+                                                            const SpecUtils::DetectorType type, InterSpec *interspec )
 
 {
+  using SpecUtils::DetectorType;
+  
   string name;
-  switch( typeint )
+  switch( type )
   {
-    case kGR135Detector:             name = "GR135";              break;
-    case kIdentiFinderDetector:      name = "identiFINDER-N";     break;
-    case kIdentiFinderNGDetector:    name = "identiFINDER-NGH";   break;
-    case kIdentiFinderLaBr3Detector: name = "identiFINDER-LaBr3"; break;
-    case kDetectiveDetector:         name = "Detective";          break;
-    case kDetectiveExDetector:       name = "Detective-EX";       break;
-    case kDetectiveEx100Detector:    name = "Detective-EX100";    break;
-    case kDetectiveEx200Detector:    name = "Ortec IDM Portal";   break;
-    case kDetectiveX:                name = "Detective X";        break;
-    case kSAIC8Detector:             name = "";                   break;
-    case kFalcon5000:                name = "Falcon 5000";        break;
-    case kUnknownDetector:           name = "";                   break;
-    case kMicroDetectiveDetector:    name = "MicroDetective";     break;
+    case DetectorType::kGR135Detector:             name = "GR135";              break;
+    case DetectorType::kIdentiFinderDetector:      name = "identiFINDER-N";     break;
+    case DetectorType::kIdentiFinderNGDetector:    name = "identiFINDER-NGH";   break;
+    case DetectorType::kIdentiFinderLaBr3Detector: name = "identiFINDER-LaBr3"; break;
+    case DetectorType::kDetectiveDetector:         name = "Detective";          break;
+    case DetectorType::kDetectiveExDetector:       name = "Detective-EX";       break;
+    case DetectorType::kDetectiveEx100Detector:    name = "Detective-EX100";    break;
+    case DetectorType::kDetectiveEx200Detector:    name = "Ortec IDM Portal";   break;
+    case DetectorType::kDetectiveX:                name = "Detective X";        break;
+    case DetectorType::kSAIC8Detector:             name = "";                   break;
+    case DetectorType::kFalcon5000:                name = "Falcon 5000";        break;
+    case DetectorType::kUnknownDetector:           name = "";                   break;
+    case DetectorType::kMicroDetectiveDetector:    name = "MicroDetective";     break;
       
-    //case kRadHunterNaI:            name = ""; break;
-    //case kRadHunterLaBr3:          name = ""; break;
-    case kRsi701:                    name = "NaI 2x4x16"; break;
-    case kRsi705:                    name = "NaI 2x4x16"; break;
-    case kAvidRsi:                   name = "NaI 2x4x16"; break;
-    case kOrtecRadEagleNai:          name = "RadEagle"; break;
-    //case kOrtecRadEagleCeBr2Inch: name = ""; break;
-    //case kOrtecRadEagleCeBr3Inch: name = ""; break;
-    //case kOrtecRadEagleLaBr: name = ""; break;
-    //case kSam940LaBr3: name = ""; break;
-    case kSam940:                     name = "SAM-945"; break;
-    case kSam945:                     name = "SAM-945"; break;
-    case kSrpm210:                    name = "SRPM-210"; break;
+    //case DetectorType::kRadHunterNaI:            name = ""; break;
+    //case DetectorType::kRadHunterLaBr3:          name = ""; break;
+    case DetectorType::kRsi701:                    name = "NaI 2x4x16"; break;
+    case DetectorType::kRsi705:                    name = "NaI 2x4x16"; break;
+    case DetectorType::kAvidRsi:                   name = "NaI 2x4x16"; break;
+    case DetectorType::kOrtecRadEagleNai:          name = "RadEagle"; break;
+    //case DetectorType::kOrtecRadEagleCeBr2Inch: name = ""; break;
+    //case DetectorType::kOrtecRadEagleCeBr3Inch: name = ""; break;
+    //case DetectorType::kOrtecRadEagleLaBr: name = ""; break;
+    //case DetectorType::kSam940LaBr3: name = ""; break;
+    case DetectorType::kSam940:                     name = "SAM-945"; break;
+    case DetectorType::kSam945:                     name = "SAM-945"; break;
+    case DetectorType::kSrpm210:                    name = "SRPM-210"; break;
+      
+      
+    case DetectorType::kMicroRaiderDetector:
+    case DetectorType::kOrtecRadEagleCeBr2Inch:
+    case DetectorType::kOrtecRadEagleCeBr3Inch:
+    case DetectorType::kOrtecRadEagleLaBr:
+    case DetectorType::kRadHunterLaBr3:
+    case DetectorType::kRadHunterNaI:
+    case DetectorType::kSam940LaBr3:
+      //ToDo: fill in these names
+      break;
   }//switch( type )
   
   if( name.empty() )
     throw runtime_error( "There is no GADRAS detector response function for a "
-                         + detectorTypeToString( DetectorType(typeint) ) );
+                        + SpecUtils::detectorTypeToString(type) );
 
   std::shared_ptr<DetectorPeakResponse> det;
   
@@ -3310,27 +3328,27 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
   
   //We couldnt find an exact match - lets be a little looser
   string dettype, deteff;
-  switch( typeint )
+  switch( type )
   {
-    case kGR135Detector:
+    case DetectorType::kGR135Detector:
       break;
-    case kIdentiFinderDetector:
+    case DetectorType::kIdentiFinderDetector:
       break;
-    case kIdentiFinderNGDetector:
+    case DetectorType::kIdentiFinderNGDetector:
       break;
-    case kOrtecRadEagleNai:
-      break;
-      
-    case kIdentiFinderLaBr3Detector:
+    case DetectorType::kOrtecRadEagleNai:
       break;
       
-    case kDetectiveDetector:
-    case kDetectiveExDetector:
-    case kMicroDetectiveDetector:
+    case DetectorType::kIdentiFinderLaBr3Detector:
       break;
-    case kDetectiveEx100Detector:
+      
+    case DetectorType::kDetectiveDetector:
+    case DetectorType::kDetectiveExDetector:
+    case DetectorType::kMicroDetectiveDetector:
       break;
-    case kFalcon5000:
+    case DetectorType::kDetectiveEx100Detector:
+      break;
+    case DetectorType::kFalcon5000:
       break;
   
     default:

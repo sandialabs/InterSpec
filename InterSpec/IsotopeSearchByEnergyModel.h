@@ -39,8 +39,8 @@
 #include "InterSpec/ReactionGamma.h"
 
 class SpecMeas;
-class Measurement;
 class DetectorPeakResponse;
+namespace SpecUtils{ class Measurement; }
 
 namespace SandiaDecay
 {
@@ -117,7 +117,7 @@ public:
     std::shared_ptr<const DetectorPeakResponse> detector_response_function;
     std::vector<std::shared_ptr<const PeakDef>> user_peaks;
     std::vector<std::shared_ptr<const PeakDef>> automated_search_peaks;
-    std::shared_ptr<const Measurement> displayed_measurement;
+    std::shared_ptr<const SpecUtils::Measurement> displayed_measurement;
     std::shared_ptr<SpecMeas> foreground;
     std::set<int> foreground_samplenums;
     std::vector< std::vector<IsotopeMatch> > matches;
@@ -183,7 +183,7 @@ public:
                                       const std::vector<double> &windows,
                                       const double minbr,
                                       const std::shared_ptr<const DetectorPeakResponse> detector_response_function,
-                                      const std::shared_ptr<const Measurement> displayed_measurement,
+                                      const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                       const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                       const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
                                       SearchResults &answer );
@@ -192,7 +192,7 @@ public:
   static void xraysWithAllEnergies( const std::vector<double> &energies,
                                    const std::vector<double> &windows,
                                    const std::shared_ptr<const DetectorPeakResponse> detector_response_function,
-                                   const std::shared_ptr<const Measurement> displayed_measurement,
+                                   const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                    const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                    const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
                                    SearchResults &answer );
@@ -202,7 +202,7 @@ public:
   static void reactionsWithAllEnergies( const std::vector<double> &energies,
                                        const std::vector<double> &windows,
                                        const std::shared_ptr<const DetectorPeakResponse> detector_response_function,
-                                       const std::shared_ptr<const Measurement> displayed_measurement,
+                                       const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
                                        const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
                                        const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
                                        SearchResults &answer );

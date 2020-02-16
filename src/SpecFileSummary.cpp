@@ -267,7 +267,7 @@ public:
   void updateDisplay( std::shared_ptr<const SpecMeas> meas )
   {
     m_meas = meas;
-    std::shared_ptr<const DetectorAnalysis> ana;
+    std::shared_ptr<const SpecUtils::DetectorAnalysis> ana;
     if( meas )
       ana = meas->detectors_analysis();
     
@@ -316,7 +316,7 @@ public:
     //  widget
     string anastr;
     
-    for( const DetectorAnalysisResult &res : ana->results_ )
+    for( const SpecUtils::DetectorAnalysisResult &res : ana->results_ )
     {
       string result;
       if( res.nuclide_.size() )
@@ -467,12 +467,12 @@ void SpecFileSummary::init()
   spectrumGroupBox->addStyleClass( "SpecSummChoose" );
   m_spectraGroup = new WButtonGroup( this );
   button = new WRadioButton( "Foreground", spectrumGroupBox );
-  m_spectraGroup->addButton( button, kForeground );
+  m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Foreground) );
   button = new WRadioButton( "Secondary", spectrumGroupBox );
-  m_spectraGroup->addButton( button, kSecondForeground );
+  m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::SecondForeground) );
   button = new WRadioButton( "Background", spectrumGroupBox );
-  m_spectraGroup->addButton( button, kBackground );
-  m_spectraGroup->setCheckedButton( m_spectraGroup->button(kForeground) );
+  m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Background) );
+  m_spectraGroup->setCheckedButton( m_spectraGroup->button( static_cast<int>(SpecUtils::SpectrumType::Foreground) ) );
   m_spectraGroup->checkedChanged().connect( this, &SpecFileSummary::handleSpectrumTypeChanged );
   
   
@@ -589,21 +589,23 @@ void SpecFileSummary::init()
   
   addField( m_source, measTable, "Source Type:", 4, 6 );
   
-  for( int i = 0; i <= Measurement::UnknownSourceType; ++i )
+  for( SpecUtils::SourceType i = SpecUtils::SourceType(0);
+       i <= SpecUtils::SourceType::UnknownSourceType;
+       i = SpecUtils::SourceType(static_cast<int>(i)+1) )
   {
     const char *val = "";
     switch( i )
     {
-      case Measurement::IntrinsicActivity: val = "Intrinsic Activity"; break;
-      case Measurement::Calibration:       val = "Calibration";        break;
-      case Measurement::Background:        val = "Background";         break;
-      case Measurement::Foreground:        val = "Foreground";         break;
-      case Measurement::UnknownSourceType: val = "Unknown";            break;
+      case SpecUtils::SourceType::IntrinsicActivity: val = "Intrinsic Activity"; break;
+      case SpecUtils::SourceType::Calibration:       val = "Calibration";        break;
+      case SpecUtils::SourceType::Background:        val = "Background";         break;
+      case SpecUtils::SourceType::Foreground:        val = "Foreground";         break;
+      case SpecUtils::SourceType::UnknownSourceType: val = "Unknown";            break;
       default: break;
     }//switch( i )
     
     m_source->addItem( val );
-  }//for( int i = 0; i <= Measurement::UnknownSourceType; ++i )
+  }//for( int i = 0; i <= SpecUtils::SourceType::UnknownSourceType; ++i )
   
 
   labelHolder = new WContainerWidget();
@@ -819,7 +821,7 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
   char buffer[64];
   try
   {
-    std::shared_ptr<const Measurement> sample = currentMeasurment();
+    std::shared_ptr<const SpecUtils::Measurement> sample = currentMeasurment();
 
     if( !sample )
       throw runtime_error("");
@@ -932,7 +934,7 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
     }//for( size_t i = 0; i < remarks.size(); ++i )
 
     m_title->setText( WString::fromUTF8(sample->title()) );
-    m_source->setCurrentIndex( sample->source_type() );
+    m_source->setCurrentIndex( static_cast<int>(sample->source_type()) );
     
     m_measurmentRemarks->setText( remark );
   }catch(...)
@@ -969,18 +971,18 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
 void SpecFileSummary::updateDisplayFromMemory()
 {
 //  return;
-  const SpectrumType type = SpectrumType(m_spectraGroup->checkedId());
+  const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
 
   std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( type );
   const size_t nspec = (!!meas ? meas->measurements().size() : 0);
 
   m_displaySampleDiv->setHidden( nspec < 2 );
-  const bool hasForeground = !!m_specViewer->measurment(kForeground);
-  const bool hasSecondFore = !!m_specViewer->measurment(kSecondForeground);
-  const bool hasBackground = !!m_specViewer->measurment(kBackground);
-  m_spectraGroup->button(kForeground)->setEnabled( hasForeground );
-  m_spectraGroup->button(kSecondForeground)->setEnabled( hasSecondFore );
-  m_spectraGroup->button(kBackground)->setEnabled( hasBackground );
+  const bool hasForeground = !!m_specViewer->measurment(SpecUtils::SpectrumType::Foreground);
+  const bool hasSecondFore = !!m_specViewer->measurment(SpecUtils::SpectrumType::SecondForeground);
+  const bool hasBackground = !!m_specViewer->measurment(SpecUtils::SpectrumType::Background);
+  m_spectraGroup->button(static_cast<int>(SpecUtils::SpectrumType::Foreground))->setEnabled( hasForeground );
+  m_spectraGroup->button(static_cast<int>(SpecUtils::SpectrumType::SecondForeground))->setEnabled( hasSecondFore );
+  m_spectraGroup->button(static_cast<int>(SpecUtils::SpectrumType::Background))->setEnabled( hasBackground );
   
   
   m_displayedPostText->setText( "of " + std::to_string(nspec) );
@@ -1064,18 +1066,18 @@ void SpecFileSummary::updateDisplayFromMemory()
   updateMeasurmentFieldsFromMemory();
 }//void SpecFileSummary::updateDisplayFromMemory()
 
-std::shared_ptr<const Measurement> SpecFileSummary::currentMeasurment() const
+std::shared_ptr<const SpecUtils::Measurement> SpecFileSummary::currentMeasurment() const
 {
-  std::shared_ptr<const Measurement> sample;
+  std::shared_ptr<const SpecUtils::Measurement> sample;
 
   try
   {
-    const SpectrumType type = SpectrumType(m_spectraGroup->checkedId());
+    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
     std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( type );
     if( !meas )
       throw runtime_error( "" );
 
-    const vector<std::shared_ptr<const Measurement>> &measurements = meas->measurements();
+    const vector<std::shared_ptr<const SpecUtils::Measurement>> &measurements = meas->measurements();
     const string sampleNumStr = m_displaySampleNumEdit->text().toUTF8();
     size_t sampleNum = 0;
     if( m_displaySampleDiv->isEnabled() && measurements.size()>1 )
@@ -1100,9 +1102,9 @@ std::shared_ptr<const Measurement> SpecFileSummary::currentMeasurment() const
 
 void SpecFileSummary::handleFieldUpdate( EditableFields field )
 {
-  const SpectrumType type = SpectrumType(m_spectraGroup->checkedId());
+  const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
   std::shared_ptr<SpecMeas> meas = m_specViewer->measurment( type );
-  std::shared_ptr<const Measurement> sample = currentMeasurment();
+  std::shared_ptr<const SpecUtils::Measurement> sample = currentMeasurment();
 
   if( !sample || !meas )
   {
@@ -1267,9 +1269,9 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
     case kSourceType:
     {
       const int index = m_source->currentIndex();
-      Measurement::SourceType type = Measurement::UnknownSourceType;
+      SpecUtils::SourceType type = SpecUtils::SourceType::UnknownSourceType;
       if( index >= 0 )
-        type = Measurement::SourceType( m_source->currentIndex() );
+        type = SpecUtils::SourceType( m_source->currentIndex() );
       
       meas->set_source_type( type, sample );
       break;
@@ -1345,15 +1347,15 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
 }//void handleFieldUpdate( EditableFields field )
 
 
-void SpecFileSummary::handleSpectrumChange( SpectrumType type,
+void SpecFileSummary::handleSpectrumChange( SpecUtils::SpectrumType type,
                                             std::shared_ptr<SpecMeas> meas,
                                             std::set<int> displaySample )
 {
-  const SpectrumType display_type = SpectrumType(m_spectraGroup->checkedId());
+  const SpecUtils::SpectrumType display_type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
   
   if( type != display_type )
   {
-    WRadioButton *button = m_spectraGroup->button( type );
+    WRadioButton *button = m_spectraGroup->button( static_cast<int>(type) );
     if( button )
       button->setEnabled( !!meas );
   }else
@@ -1366,7 +1368,7 @@ void SpecFileSummary::handleSpectrumChange( SpectrumType type,
 
 void SpecFileSummary::reloadCurrentSpectrum()
 {
-  const SpectrumType type = SpectrumType(m_spectraGroup->checkedId());
+  const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
   m_specViewer->reloadCurrentSpectrum( type );
   m_reloadSpectrum->disable();
 }//void reloadCurrentSpectrum()
@@ -1374,7 +1376,7 @@ void SpecFileSummary::reloadCurrentSpectrum()
 
 void SpecFileSummary::handleSpectrumTypeChanged()
 {
-  const SpectrumType type = SpectrumType(m_spectraGroup->checkedId());
+  const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
 
   std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( type );
   if( !meas )
@@ -1383,7 +1385,7 @@ void SpecFileSummary::handleSpectrumTypeChanged()
     m_displaySampleNumValidator->setRange( 0, 0 );
   }else
   {
-    const vector<std::shared_ptr<const Measurement>> &measurements = meas->measurements();
+    const vector<std::shared_ptr<const SpecUtils::Measurement>> &measurements = meas->measurements();
 
     if( measurements.size() )
     {
@@ -1447,7 +1449,7 @@ void SpecFileSummary::handleAllowModifyStatusChange()
 
 void SpecFileSummary::handleUserIncrementSampleNum( bool increment )
 {
-  const SpectrumType type = SpectrumType(m_spectraGroup->checkedId());
+  const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
 
   std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( type );
 
@@ -1459,7 +1461,7 @@ void SpecFileSummary::handleUserIncrementSampleNum( bool increment )
       throw runtime_error("");
     }//if( !meas )
 
-    const vector<std::shared_ptr<const Measurement>> &measurements = meas->measurements();
+    const vector<std::shared_ptr<const SpecUtils::Measurement>> &measurements = meas->measurements();
     if( measurements.size() )
     {
       m_displaySampleNumValidator->setRange( 1, static_cast<int>(measurements.size()) );

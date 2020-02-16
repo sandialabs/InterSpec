@@ -144,26 +144,26 @@ SpectraHeader::SpectraHeader()
   contained_neutron_ = false;
   sample_number = -1;
   gamma_counts_ = neutron_counts_ = 0.0;
-  spectra_type = Measurement::UnknownSourceType;
+  spectra_type = SpecUtils::SourceType::UnknownSourceType;
 }//SpectraHeader default constructor
 
 
-SpectraHeader::SpectraHeader( const std::vector<std::shared_ptr<const Measurement>> &sample_measurements )
+SpectraHeader::SpectraHeader( const std::vector<std::shared_ptr<const SpecUtils::Measurement>> &sample_measurements )
 {
   init( sample_measurements );
 }
 
 
-void SpectraHeader::init( const std::vector<std::shared_ptr<const Measurement>> &measurements )
+void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Measurement>> &measurements )
 {
   live_time = real_time = 0.0;
   contained_neutron_ = false;
   sample_number = -1;
   gamma_counts_ = neutron_counts_ = 0.0;
-  spectra_type = Measurement::UnknownSourceType;
+  spectra_type = SpecUtils::SourceType::UnknownSourceType;
 
 
-  for( const std::shared_ptr<const Measurement> &m : measurements )
+  for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurements )
   {
     live_time += m->live_time();
     real_time += m->live_time();
@@ -208,7 +208,7 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const Measurement>> 
     speed_ = buffer;
     sample_number = m->sample_number();
     start_time = WDateTime::fromPosixTime( m->start_time() );
-  }//for( std::shared_ptr<const Measurement> &m : measurements )
+  }//for( std::shared_ptr<const SpecUtils::Measurement> &m : measurements )
 
   live_time /= measurements.size();
   real_time /= measurements.size();
@@ -1021,7 +1021,7 @@ void SpectraFileHeader::setKeepCachedInMemmorry( bool cache )
 
 std::shared_ptr<SpecMeas> SpectraFileHeader::initFile(
                                            const std::string &filename,
-                                           const ParserType parseType,
+                                           const SpecUtils::ParserType parseType,
                                            std::string orig_file_ending ) throw()
 {
   try
@@ -1150,7 +1150,7 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
     info = from_mem ? from_mem : measurment;
 
     if( !info )
-      throw runtime_error( "There is no MeasurementInfo anywhere to save" );
+      throw runtime_error( "There is no SpecUtils::SpecFile anywhere to save" );
 
     {
       RecursiveLock lock( m_mutex );
@@ -1239,7 +1239,7 @@ struct SpectraHeaderMaker
          ++iter )
     {
       const int sample = *iter;
-      vector< std::shared_ptr<const Measurement> > measurements
+      vector< std::shared_ptr<const SpecUtils::Measurement> > measurements
                                       = m_info->sample_measurements( sample );
       m_headerPos->init( measurements );
       ++m_headerPos;
@@ -1277,7 +1277,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
   {
     for( const int detector : detector_numbers )
     {
-      const std::shared_ptr<const Measurement> meas = info->measurement( sample, detector );
+      const std::shared_ptr<const SpecUtils::Measurement> meas = info->measurement( sample, detector );
       //This next line is not necessary, as long as we properly initialized 'info'
       m_hasNeutronDetector |= (meas && meas->contained_neutron());
       if( meas && (sample == (*sample_numbers.begin())) )
@@ -1292,7 +1292,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
   {
     for( const int sample_number : sample_numbers )
     {
-      vector< std::shared_ptr<const Measurement> > measurements
+      vector< std::shared_ptr<const SpecUtils::Measurement> > measurements
                                       = info->sample_measurements( sample_number );
       m_samples.push_back( SpectraHeader( measurements ) );
     }//for( const int sample_number : sample_numbers )
@@ -1358,7 +1358,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
 std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
                                    const std::string &displayFileName,
                                    const std::string &filename,
-                                   ParserType parseType )
+                                   SpecUtils::ParserType parseType )
 {
   cerr << "SpectraFileHeader::setFile" << endl;
   try
@@ -1838,7 +1838,7 @@ std::shared_ptr<SpectraFileHeader> SpectraFileModel::fileHeader( int row )
 }
 
 std::shared_ptr<SpectraFileHeader> SpectraFileModel::fileHeader(
-                        std::shared_ptr< const MeasurementInfo > measinfo )
+                        std::shared_ptr<const SpecUtils::SpecFile> measinfo )
 {
   WModelIndex in = index( measinfo );
   if( !in.isValid() )
@@ -1849,7 +1849,7 @@ std::shared_ptr<SpectraFileHeader> SpectraFileModel::fileHeader(
 
 #if( USE_DB_TO_STORE_SPECTRA )
 Wt::Dbo::ptr<UserFileInDb> SpectraFileModel::dbEntry(
-                        std::shared_ptr< const MeasurementInfo > measinfo )
+                        std::shared_ptr<const SpecUtils::SpecFile> measinfo )
 {
   std::shared_ptr<SpectraFileHeader> head = fileHeader( measinfo );
   if( !head )
@@ -1872,7 +1872,7 @@ Wt::WModelIndex SpectraFileModel::index( std::shared_ptr<SpectraFileHeader> head
 }//Wt::WModelIndex index( std::shared_ptr<SpectraFileHeader> header ) const;
 
 
-Wt::WModelIndex SpectraFileModel::index( std::shared_ptr< const MeasurementInfo > measinfo ) const
+Wt::WModelIndex SpectraFileModel::index( std::shared_ptr<const SpecUtils::SpecFile> measinfo ) const
 {
   if( !measinfo )
     return WModelIndex();
@@ -2228,8 +2228,8 @@ Wt::WFlags<Wt::ItemFlag> SpectraFileModel::flags( const WModelIndex &/*index*/ )
 }
 
 DownloadCurrentSpectrumResource::DownloadCurrentSpectrumResource(
-                                  SpectrumType spectrum,
-                                  SaveSpectrumAsType format,
+                                  SpecUtils::SpectrumType spectrum,
+                                  SpecUtils::SaveSpectrumAsType format,
                                   InterSpec *viewer,
                                   Wt::WObject *parent  )
   : WResource( parent ),
@@ -2249,7 +2249,8 @@ void DownloadCurrentSpectrumResource::handleRequest(
                              const Wt::Http::Request& request,
                              Wt::Http::Response& response )
 {
-  if( m_format == k2012N42SpectrumFile || m_format == kXmlSpectrumFile )
+  if( m_format == SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile
+     || m_format == SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile )
     m_viewer->saveShieldingSourceModelToForegroundSpecMeas();
 
   std::shared_ptr<const SpecMeas> measurement
@@ -2265,9 +2266,9 @@ void DownloadCurrentSpectrumResource::handleRequest(
   {
     switch( m_spectrum )
     {
-      case kForeground:       filename = "foreground"; break;
-      case kSecondForeground: filename = "secondary";  break;
-      case kBackground:       filename = "background"; break;
+      case SpecUtils::SpectrumType::Foreground:       filename = "foreground"; break;
+      case SpecUtils::SpectrumType::SecondForeground: filename = "secondary";  break;
+      case SpecUtils::SpectrumType::Background:       filename = "background"; break;
     }//switch( m_spectrum )
   }//if( filename.empty() )
   
@@ -2277,28 +2278,28 @@ void DownloadCurrentSpectrumResource::handleRequest(
   
   switch( m_format )
   {
-    case kTxtSpectrumFile: filename += ".txt"; break;
-    case kCsvSpectrumFile: filename += ".csv"; break;
-    case kPcfSpectrumFile: filename += ".pcf"; break;
-    case kXmlSpectrumFile: filename += ".n42"; break;
-    case k2012N42SpectrumFile: filename += ".n42"; break;
-    case kChnSpectrumFile:     filename += ".chn"; break;
-    case kIaeaSpeSpectrumFile: filename += ".spe"; break;
+    case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile: filename += ".txt"; break;
+    case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile: filename += ".csv"; break;
+    case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile: filename += ".pcf"; break;
+    case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile: filename += ".n42"; break;
+    case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile: filename += ".n42"; break;
+    case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:     filename += ".chn"; break;
+    case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile: filename += ".spe"; break;
 #if( SpecUtils_ENABLE_D3_CHART )
-    case kD3HtmlSpectrumFile:  filename += ".html"; break;
+    case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:  filename += ".html"; break;
 #endif //#if( USE_D3_EXPORTING )
-    case kBinaryIntSpcSpectrumFile:
-    case kBinaryFloatSpcSpectrumFile:
-    case kAsciiSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:
       filename += ".spc";
     break;
       
-    case kExploraniumGr130v0SpectrumFile:
-    case kExploraniumGr135v2SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile:
       filename += ".dat";
     break;
       
-    case kNumSaveSpectrumAsType:
+    case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:
     break;
   }//switch( m_format )
   
@@ -2316,7 +2317,7 @@ void DownloadCurrentSpectrumResource::handleRequest(
 
 
 
-DownloadSpectrumResource::DownloadSpectrumResource( SaveSpectrumAsType type,
+DownloadSpectrumResource::DownloadSpectrumResource( SpecUtils::SaveSpectrumAsType type,
                                                     SpecMeasManager *display,
                                                     Wt::WObject *parent )
   : WResource( parent ),
@@ -2367,7 +2368,7 @@ void DownloadSpectrumResource::handleRequest( const Wt::Http::Request& request,
   
   if( headers.size() > 1 || headers.empty() )
   {
-    measurement = m_display->selectedToMeasurementInfo();
+    measurement = m_display->selectedToSpecMeas();
     handle_resource_request( m_type, measurement, samplenums,
                              detectornums, m_display->viewer(), request, response );
   }else if( headers.size() == 1 )
@@ -2382,7 +2383,7 @@ void DownloadSpectrumResource::handleRequest( const Wt::Http::Request& request,
 
 
 void DownloadSpectrumResource::handle_resource_request(
-                              SaveSpectrumAsType type,
+                              SpecUtils::SaveSpectrumAsType type,
                               std::shared_ptr<const SpecMeas> measurement,
                               const std::set<int> &samplenums,
                               const std::set<int> &detectornums,
@@ -2392,50 +2393,50 @@ void DownloadSpectrumResource::handle_resource_request(
 {
   switch( type )
   {
-    case kTxtSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile:
       response.setMimeType( "application/octet-stream" );
 //      response.setMimeType( "text/plain" );
     break;
 
-    case kCsvSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile:
       response.setMimeType( "application/octet-stream" );
 //      response.setMimeType( "text/csv" );
     break;
 
-    case kPcfSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile:
       response.setMimeType( "application/octet-stream" );
     break;
 
-    case kXmlSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile:
       response.setMimeType( "application/octet-stream" );
 //      response.setMimeType( "application/xml" );
     break;
 
-    case k2012N42SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile:
       response.setMimeType( "application/octet-stream" );
       //      response.setMimeType( "application/xml" );
     break;
       
-    case kChnSpectrumFile:
-    case kBinaryIntSpcSpectrumFile:
-    case kBinaryFloatSpcSpectrumFile:
-    case kAsciiSpcSpectrumFile:
-    case kIaeaSpeSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile:
       response.setMimeType( "application/octet-stream" );
     break;
       
-    case kExploraniumGr130v0SpectrumFile:
-    case kExploraniumGr135v2SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile:
       response.setMimeType( "application/octet-stream" );
     break;
       
 #if( SpecUtils_ENABLE_D3_CHART )
-    case kD3HtmlSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:
       response.setMimeType( "text/html" );
     break;
 #endif //#if( USE_D3_EXPORTING )
       
-    case kNumSaveSpectrumAsType:
+    case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:
     break;
   }//switch( type )
 
@@ -2444,71 +2445,71 @@ void DownloadSpectrumResource::handle_resource_request(
   
   switch( type )
   {
-    case kTxtSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile:
       measurement->write_txt( response.out() );
     break;
 
-    case kCsvSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile:
       measurement->write_csv( response.out() );
     break;
 
-    case kPcfSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile:
       measurement->write_pcf( response.out() );
     break;
 
-    case kXmlSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile:
       measurement->write_2006_N42( response.out() );
     break;
       
-    case k2012N42SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile:
       measurement->write_2012_N42( response.out() );
     break;
       
-    case kChnSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:
       measurement->write_integer_chn( response.out(), samplenums, detectornums );
     break;
       
-    case kBinaryIntSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
       measurement->write_binary_spc( response.out(),
-                                       MeasurementInfo::IntegerSpcType,
+                                       SpecUtils::SpecFile::IntegerSpcType,
                                        samplenums, detectornums );
     break;
       
-    case kBinaryFloatSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
       measurement->write_binary_spc( response.out(),
-                                       MeasurementInfo::FloatSpcType,
+                                       SpecUtils::SpecFile::FloatSpcType,
                                        samplenums, detectornums );
     break;
 
-    case kAsciiSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:
       measurement->write_ascii_spc( response.out(), samplenums, detectornums );
     break;
       
-    case kExploraniumGr130v0SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
       measurement->write_binary_exploranium_gr130v0( response.out() );
       break;
       
-    case kExploraniumGr135v2SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile:
       measurement->write_binary_exploranium_gr135v2( response.out() );
       break;
       
-    case kIaeaSpeSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile:
       measurement->write_iaea_spe( response.out(), samplenums, detectornums );
       break;
       
 #if( SpecUtils_ENABLE_D3_CHART )
-    case kD3HtmlSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:
     {
       //For purposes of development, lets cheat and export everything as it is now
       if( viewer )
       {
-        const SpectrumType types[] = { kForeground, kSecondForeground, kBackground };
+        const SpecUtils::SpectrumType types[] = { SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::SecondForeground, SpecUtils::SpectrumType::Background };
         
-        std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
+        std::vector< std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
         
-        for( SpectrumType type : types )
+        for( SpecUtils::SpectrumType type : types )
         {
-          std::shared_ptr<const Measurement> histogram = viewer->displayedHistogram( type );
+          std::shared_ptr<const SpecUtils::Measurement> histogram = viewer->displayedHistogram( type );
           std::shared_ptr<const SpecMeas> data = viewer->measurment( type );
           
           if( !histogram || !data )
@@ -2521,9 +2522,9 @@ void DownloadSpectrumResource::handle_resource_request(
           D3SpectrumExport::D3SpectrumOptions options;
           switch( type )
           {
-            case kForeground: options.line_color = "black"; break;
-            case kSecondForeground: options.line_color = "steelblue"; break;
-            case kBackground: options.line_color = "green"; break;
+            case SpecUtils::SpectrumType::Foreground: options.line_color = "black"; break;
+            case SpecUtils::SpectrumType::SecondForeground: options.line_color = "steelblue"; break;
+            case SpecUtils::SpectrumType::Background: options.line_color = "green"; break;
           }
           options.display_scale_factor = viewer->displayScaleFactor( type );
           options.spectrum_type = type;
@@ -2536,8 +2537,8 @@ void DownloadSpectrumResource::handle_resource_request(
             options.peaks_json = PeakDef::peak_json( inpeaks );
           }
           
-          measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );
-        }//for( SpectrumType type : types )
+          measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );
+        }//for( SpecUtils::SpectrumType type : types )
         
         write_d3_html( response.out(), measurements, viewer->getD3SpectrumOptions() );
       }//if( viewer )
@@ -2547,13 +2548,13 @@ void DownloadSpectrumResource::handle_resource_request(
       break;
 #endif //#if( USE_D3_EXPORTING )
       
-    case kNumSaveSpectrumAsType:
+    case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:
     break;
   }//switch( type )
 }//void handle_resource_request(...)
 
 
-SpecificSpectrumResource::SpecificSpectrumResource( SaveSpectrumAsType type,
+SpecificSpectrumResource::SpecificSpectrumResource( SpecUtils::SaveSpectrumAsType type,
                                                     Wt::WObject *parent )
   : WResource( parent ),
     m_type( type ),
@@ -2595,26 +2596,26 @@ void SpecificSpectrumResource::setSpectrum( std::shared_ptr<const SpecMeas> spec
 
   switch( m_type )
   {
-    case kTxtSpectrumFile:                name += ".txt";  break;
-    case kCsvSpectrumFile:                name += ".csv";  break;
-    case kPcfSpectrumFile:                name += ".pcf";  break;
-    case kChnSpectrumFile:                name += ".chn";  break;
-    case kXmlSpectrumFile:
-    case k2012N42SpectrumFile:            name += ".n42";  break;
-    case kBinaryIntSpcSpectrumFile:
-    case kBinaryFloatSpcSpectrumFile:
-    case kAsciiSpcSpectrumFile:           name += ".spc";  break;
-    case kExploraniumGr130v0SpectrumFile:
-    case kExploraniumGr135v2SpectrumFile: name += ".dat";  break;
-    case kIaeaSpeSpectrumFile:            name += ".spe";  break;
+    case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile:                name += ".txt";  break;
+    case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile:                name += ".csv";  break;
+    case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile:                name += ".pcf";  break;
+    case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:                name += ".chn";  break;
+    case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile:            name += ".n42";  break;
+    case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:           name += ".spc";  break;
+    case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile: name += ".dat";  break;
+    case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile:            name += ".spe";  break;
 #if( SpecUtils_ENABLE_D3_CHART )
-    case kD3HtmlSpectrumFile:             name += ".html"; break;
+    case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:             name += ".html"; break;
 #endif //#if( USE_D3_EXPORTING )
-    case kNumSaveSpectrumAsType:          break;
+    case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:          break;
   }//switch( m_type )
   
   suggestFileName( name, WResource::Attachment );
-}//void setSpectrum( std::shared_ptr<const MeasurementInfo> spec )
+}//void setSpectrum( std::shared_ptr<const SpecUtils::SpecFile> spec )
 
 
 void SpecificSpectrumResource::handleRequest( const Wt::Http::Request& request,

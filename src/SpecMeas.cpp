@@ -114,12 +114,12 @@ namespace
 }//namespace
 
 SpecMeas::SpecMeas()
-  : MeasurementInfo()
+  : SpecUtils::SpecFile()
 {
   m_peaks.reset( new SampleNumsToPeakMap() );
   
 //  m_detector.reset( new DetectorPeakResponse() );
-  m_displayType.reset( new SpectrumType(kForeground) );
+  m_displayType.reset( new SpecUtils::SpectrumType(SpecUtils::SpectrumType::Foreground) );
   m_displayedSampleNumbers.reset( new set<int>() );
   
   m_fileWasFromInterSpec = false;
@@ -127,7 +127,7 @@ SpecMeas::SpecMeas()
 
 
 SpecMeas::SpecMeas( const SpecMeas &rhs )
-  : MeasurementInfo( rhs )
+  : SpecUtils::SpecFile( rhs )
 {
   assert(0);
 }
@@ -253,7 +253,7 @@ void testPeakMapEqual( const SampleNumsToPeakMap &orig_lhsmap,
 
 void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 {
-  MeasurementInfo::equalEnough( lhs, rhs );
+  SpecFile::equalEnough( lhs, rhs );
   
   char buffer[1024];
   if( (!lhs.m_peaks) != (!rhs.m_peaks) )
@@ -388,7 +388,7 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
   if( &rhs == this )
     return;
 
-  MeasurementInfo::operator=( rhs );
+  SpecFile::operator=( rhs );
 
   if( !m_peaks )
     m_peaks.reset( new SampleNumsToPeakMap );
@@ -459,7 +459,7 @@ SpecMeas::~SpecMeas()
   m_aboutToBeDeleted.emit();
 
 //  bool has_unique = false;
-//  for( const std::shared_ptr<Measurement> &p : measurements_ )
+//  for( const std::shared_ptr<SpecUtils::Measurement> &p : measurements_ )
 //  {
 //    if( p && p->gamma_counts_ && p->gamma_counts_.unique() )
 //    {
@@ -855,7 +855,7 @@ bool SpecMeas::write_2006_N42( std::ostream &ostr ) const
   
   {
     stringstream temporary;
-    MeasurementInfo::write_2006_N42( temporary );
+    SpecFile::write_2006_N42( temporary );
     string content = temporary.str();
     size_t pos = content.find( "</N42InstrumentData>" );
     if( pos == string::npos )
@@ -904,9 +904,9 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
     peakiter = m_peaks->find(sample_nums);
   
   //If we dont have additional peak information to write to the file, we can
-  //  just call MeasurementInfo's version of this function and return.
+  //  just call SpecUtils::SpecFile's version of this function and return.
   if( !m_peaks || peakiter == m_peaks->end() || !peakiter->second || peakiter->second->empty() )
-    return MeasurementInfo::write_iaea_spe( output, sample_nums, det_nums );
+    return SpecFile::write_iaea_spe( output, sample_nums, det_nums );
   
   
   //To convert from peak energy to channel number, we need the same energy
@@ -922,15 +922,15 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
       detectors[i] = (det_nums.count(detector_numbers_[i]) != 0);
   }//if( det_nums.empty() )
   
-  std::shared_ptr<Measurement> summed = sum_measurements( sample_nums, detectors );
+  std::shared_ptr<SpecUtils::Measurement> summed = sum_measurements( sample_nums, detectors );
   if( !summed )
-    return MeasurementInfo::write_iaea_spe( output, sample_nums, det_nums );
+    return SpecFile::write_iaea_spe( output, sample_nums, det_nums );
   
   
-  //Call MeasurementInfo's version of this function, and get rid of last line,
+  //Call SpecUtils::SpecFile's version of this function, and get rid of last line,
   //  then append peak information.
   stringstream strm;
-  if( !MeasurementInfo::write_iaea_spe( strm, sample_nums, det_nums ) )
+  if( !SpecFile::write_iaea_spe( strm, sample_nums, det_nums ) )
     return false;
   
   //Lets get rid of the trailing: "$ENDRECORD:\r\n"
@@ -1025,12 +1025,13 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   }//if( node )
   
   
-  m_displayType.reset( new SpectrumType(kForeground) );
+  m_displayType.reset( new SpecUtils::SpectrumType(SpecUtils::SpectrumType::Foreground) );
   node = interspecnode->first_node( "DisplayType", 11 );
   if( node && node->value() )
   {
-    for( SpectrumType t = SpectrumType(0); 
-         t <= kBackground; t = SpectrumType(t+1) )
+    for( SpecUtils::SpectrumType t = SpecUtils::SpectrumType(0); 
+         t <= SpecUtils::SpectrumType::Background;
+         t = SpecUtils::SpectrumType(static_cast<int>(t)+1) )
     {
       const char *val = descriptionText( t );
       const size_t len = strlen( val );
@@ -1039,7 +1040,7 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
         *m_displayType = t;
         break;
       }
-    }//for( loop over SpectrumType );   
+    }//for( loop over SpecUtils::SpectrumType );   
   }//if( node && node->value() )
   
   
@@ -1141,7 +1142,7 @@ std::shared_ptr< ::rapidxml::xml_document<char> > SpecMeas::create_2012_N42_xml(
   using namespace rapidxml;
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
-  std::shared_ptr< xml_document<char> > doc = MeasurementInfo::create_2012_N42_xml();
+  std::shared_ptr< xml_document<char> > doc = SpecFile::create_2012_N42_xml();
   
   if( !doc )
     return doc;
@@ -1236,7 +1237,7 @@ bool SpecMeas::load_N42_from_data( char *data )
   
   reset();
   
-  if( !is_candidate_n42_file(data) )
+  if( !SpecUtils::is_candidate_n42_file(data) )
     return false;
   
   try
@@ -1288,9 +1289,9 @@ bool SpecMeas::load_N42_from_data( char *data, char *data_end )
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   reset();
   
-  data_end = convert_n42_utf16_xml_to_utf8( data, data_end );
+  data_end = SpecUtils::convert_n42_utf16_xml_to_utf8( data, data_end );
   
-  if( !is_candidate_n42_file(data,data_end) )
+  if( !SpecUtils::is_candidate_n42_file(data,data_end) )
   {
     cout << "is_candidate_n42_file" << endl;
     return false;
@@ -1366,13 +1367,13 @@ void SpecMeas::setDetector( std::shared_ptr<DetectorPeakResponse> det )
   m_detector = det;
 }//void setDetector( std::shared_ptr<const DetectorPeakResponse> );
 
-SpectrumType SpecMeas::displayType() const
+SpecUtils::SpectrumType SpecMeas::displayType() const
 {
   if( !m_displayType )
   {
     cerr << "SpecMeas::displayType()\n\tThere is a serious error here - definetly need"
          << " investigating!!!" << endl;
-    return kForeground;
+    return SpecUtils::SpectrumType::Foreground;
   }
   return *m_displayType;
 }
@@ -1496,7 +1497,7 @@ std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > >
 }//PeakDequeShrdPtr peaks( const std::set<int> samplenums )
 
 
-void SpecMeas::displayedSpectrumChangedCallback( SpectrumType type,
+void SpecMeas::displayedSpectrumChangedCallback( SpecUtils::SpectrumType type,
                                        std::shared_ptr<SpecMeas> measurment,
                                        std::set<int> sample_numbers )
 {
@@ -1512,7 +1513,7 @@ void SpecMeas::displayedSpectrumChangedCallback( SpectrumType type,
   }
 }
 
-DetectorType SpecMeas::guessDetectorTypeFromFileName( std::string name )
+SpecUtils::DetectorType SpecMeas::guessDetectorTypeFromFileName( std::string name )
 {
   SpecUtils::to_lower_ascii( name );
   const bool detective = SpecUtils::contains( name, "detective" );
@@ -1524,21 +1525,21 @@ DetectorType SpecMeas::guessDetectorTypeFromFileName( std::string name )
   const bool micro = SpecUtils::contains( name, "micro" );
   
   if( (detective && oneHundred) || ex100 )
-    return kDetectiveEx100Detector;
+    return SpecUtils::DetectorType::kDetectiveEx100Detector;
   if( detective && ex )
-    return kDetectiveExDetector;
+    return SpecUtils::DetectorType::kDetectiveExDetector;
   if( detective && micro )
-    return kMicroDetectiveDetector;
+    return SpecUtils::DetectorType::kMicroDetectiveDetector;
   if( detective )
-    return kDetectiveDetector;
+    return SpecUtils::DetectorType::kDetectiveDetector;
   
   //Note: identiFINDER-NG are much more common that first generation
   //      identiFINDERs, so well just always assume the its an NG
   if( SpecUtils::contains( name, "identifinder" ) )
   {
     if( SpecUtils::contains( name, "labr" ) )
-      return kIdentiFinderLaBr3Detector;
-    return kIdentiFinderNGDetector; //kIdentiFinderDetector;
+      return SpecUtils::DetectorType::kIdentiFinderLaBr3Detector;
+    return SpecUtils::DetectorType::kIdentiFinderNGDetector; //kIdentiFinderDetector;
   }//if( SpecUtils::contains( name, "identifinder" ) )
   
 //  if( SpecUtils::contains( name, "identifinder" )
@@ -1547,13 +1548,13 @@ DetectorType SpecMeas::guessDetectorTypeFromFileName( std::string name )
   
   if( SpecUtils::contains( name, "gr135" )
      || SpecUtils::contains( name, "gr-135" ) )
-    return kGR135Detector;
+    return SpecUtils::DetectorType::kGR135Detector;
   
   if( SpecUtils::contains( name, "falcon" ) )
-     return kFalcon5000;
+     return SpecUtils::DetectorType::kFalcon5000;
   
   
-  return kUnknownDetector;
+  return SpecUtils::DetectorType::kUnknownDetector;
 }
 
 void SpecMeas::setModified()
@@ -1565,10 +1566,10 @@ void SpecMeas::cleanup_after_load( const unsigned int flags )
 {
   if( m_fileWasFromInterSpec )
   {
-    MeasurementInfo::cleanup_after_load( (flags | MeasurementInfo::DontChangeOrReorderSamples) );
+    SpecFile::cleanup_after_load( (flags | SpecFile::DontChangeOrReorderSamples) );
   }else
   {
-    MeasurementInfo::cleanup_after_load( flags );
+    SpecFile::cleanup_after_load( flags );
   }
 
   //should detect if the detector was loaded, and if not, if we know the type,
@@ -1851,7 +1852,7 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   }else if( !!continuum->externalContinuum() )
   {
     //XXX - each peak will now get their own continuum - a huge waste of memorry!
-    std::shared_ptr<Measurement> newcont( new Measurement( *continuum->externalContinuum() ) );
+    auto newcont = std::make_shared<SpecUtils::Measurement>( *continuum->externalContinuum() );
     newcont->recalibrate_by_eqn( new_pars, new_devpairs, new_eqn_type );
     continuum->setExternalContinuum( newcont );
   }//if( peak.continuum().isPolynomial() ) / else if(

@@ -115,7 +115,7 @@ class PeakSelectorWindow : public AuxWindow
   
   const PeakSelectorWindowReason m_reason;
   const vector<PeakDef> m_orig_peaks;
-  std::shared_ptr<const Measurement> m_data;
+  std::shared_ptr<const SpecUtils::Measurement> m_data;
   const vector<PeakDef> m_final_peaks;
   vector< shared_ptr<const ReferenceLineInfo>> m_displayed;
   vector<WCheckBox *> m_keep_peak_cbs;
@@ -154,7 +154,7 @@ public:
   PeakSelectorWindow( InterSpec *viewer,
                       const PeakSelectorWindowReason reason,
                       const vector<PeakDef> &orig_peaks,
-                      std::shared_ptr<const Measurement> data,
+                      std::shared_ptr<const SpecUtils::Measurement> data,
                       const vector<PeakDef> &final_peaks,
                       const vector<ReferenceLineInfo> &displayed )
   : AuxWindow( "Dummy",
@@ -1511,7 +1511,7 @@ public:
 std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
       assign_nuc_from_ref_lines( PeakDef &peak,
                                  std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > previouspeaks,
-                                 const std::shared_ptr<const Measurement> &data,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
                                  const vector<ReferenceLineInfo> &displayed,
                                  const bool colorPeaksBasedOnReferenceLines,
                                  const bool showingEscapePeakFeature )
@@ -1872,14 +1872,14 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
 void set_peaks_from_search( InterSpec *viewer,
                             vector<ReferenceLineInfo> displayed,
                             std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > peaks,
-                            std::shared_ptr<const Measurement> originaldata,
+                            std::shared_ptr<const SpecUtils::Measurement> originaldata,
                             std::vector<PeakDef> originalPeaks,
                             boost::function<void(void)> guiupdater )
 {
   if( !viewer )
     return;
   
-  shared_ptr<const Measurement> currentdata = viewer->displayedHistogram( SpectrumType::kForeground );
+  auto currentdata = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   
   if( (currentdata != originaldata) || !peaks )
   {
@@ -1946,7 +1946,7 @@ void set_peaks_from_search( InterSpec *viewer,
 namespace PeakSearchGuiUtils
 {
   
-  std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const Measurement> inmeas,
+  std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils::Measurement> inmeas,
                                               std::shared_ptr< std::deque<std::shared_ptr<const PeakDef> > > peaks,
                                               const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
                                               double lowx, double upperx,
@@ -1957,7 +1957,7 @@ namespace PeakSearchGuiUtils
     if( !inmeas )
       return nullptr;
     
-    std::shared_ptr<Measurement> meas = std::make_shared<Measurement>( *inmeas );
+    auto meas = std::make_shared<SpecUtils::Measurement>( *inmeas );
     
     std::shared_ptr<Wt::WSvgImage> img
     = std::make_shared<WSvgImage>( width, height );
@@ -2067,7 +2067,7 @@ void automated_search_for_peaks( InterSpec *viewer,
     return; //shouldnt happen
   
   
-  std::shared_ptr<const Measurement> dataPtr = viewer->displayedHistogram( SpectrumType::kForeground );;
+  auto dataPtr = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );;
   
   if( !dataPtr )
   {
@@ -2141,7 +2141,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   if( !server )
     return;
   
-  std::weak_ptr<const Measurement> weakdata = dataPtr;
+  std::weak_ptr<const SpecUtils::Measurement> weakdata = dataPtr;
   const string seshid = wApp->sessionId();
   
   server->ioService().post( std::bind( [=](){
@@ -2165,7 +2165,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   
   const bool showingEscapePeakFeature = viewer->showingFeatureMarker(InterSpec::FeatureMarkerType::EscapePeakMarker);
   auto peakModel = viewer->peakModel();
-  auto foreground = viewer->displayedHistogram(kForeground);
+  auto foreground = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   const ReferencePhotopeakDisplay *refLineDisp = viewer->referenceLinesWidget();
   
   if( !peakModel || !foreground || !refLineDisp )
@@ -2249,7 +2249,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   
 void assign_nuclide_from_reference_lines( PeakDef &peak,
                                        PeakModel *peakModel,
-                                       const std::shared_ptr<const Measurement> &data,
+                                       const std::shared_ptr<const SpecUtils::Measurement> &data,
                                        const ReferencePhotopeakDisplay *refLineDisp,
                                        const bool setColor,
                                        const bool showingEscapePeakFeature )
@@ -2298,7 +2298,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
 
 
   
-void search_for_peaks_worker( std::weak_ptr<const Measurement> weak_data,
+void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_data,
                                std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > existingPeaks,
                                const vector<ReferenceLineInfo> displayed,
                                const bool setColor,
@@ -2311,7 +2311,7 @@ void search_for_peaks_worker( std::weak_ptr<const Measurement> weak_data,
   if( !server )  //shouldnt ever happen,
     return;
   
-  std::shared_ptr<const Measurement> data = weak_data.lock();
+  std::shared_ptr<const SpecUtils::Measurement> data = weak_data.lock();
   
   if( !data || !resultpeaks )
   {
@@ -2344,7 +2344,7 @@ void search_for_peaks_worker( std::weak_ptr<const Measurement> weak_data,
   
 /**
 */
-void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
+void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurement> &data,
                                   std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
                                   const vector<ReferenceLineInfo> &displayed,
                                   const bool setColor,
@@ -2415,7 +2415,7 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const Measurement> &data,
 }//void assign_srcs_from_ref_lines(...)
   
   
-void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const Measurement> data,
+void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::Measurement> data,
                          std::vector<PeakDef> input_peaks,
                          std::vector<PeakDef> orig_peaks,
                          const PeakTemplateFitSrc fitsrc, const string sessionid )
@@ -2493,7 +2493,7 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const Measurement
     
     //Check if a new spectrum has been loaded while the peaks were being fit.
     //  If so, dont try to propogate the fit peaks.
-    if( !wApp || (interspec->displayedHistogram(kForeground) != data) )
+    if( !wApp || (interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground) != data) )
       return;
     
     vector<ReferenceLineInfo> reflines;

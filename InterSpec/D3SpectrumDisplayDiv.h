@@ -32,6 +32,8 @@ namespace Wt
   class WCssTextRule;
 }//namespace Wt
 
+namespace SpecUtils{ class Measurement; }
+namespace SpecUtils{ enum class SpectrumType : int; }
 
 /**
  ToDo:
@@ -87,21 +89,21 @@ public:
              int    /*num peaks to force*/,
              bool /*isFinalRange*/> &fitRoiDragUpdate();
   
-  Wt::Signal<double,SpectrumType> &yAxisScaled();
+  Wt::Signal<double,SpecUtils::SpectrumType> &yAxisScaled();
   
   void setPeakModel( PeakModel *model );
   
-  void setData( std::shared_ptr<Measurement> data_hist,
+  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist,
                float liveTime,
                float realTime,
                float neutronCounts,
                bool keep_curent_xrange );
-  void setSecondData( std::shared_ptr<Measurement> hist,
+  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist,
                      float liveTime,
                      float realTime,
                      float neutronCounts,
                      bool ownAxis );
-  void setBackground( std::shared_ptr<Measurement> background,
+  void setBackground( std::shared_ptr<SpecUtils::Measurement> background,
                      float liveTime,
                      float realTime,
                      float neutronCounts );
@@ -127,12 +129,12 @@ public:
   
   
   // These 8 functions retrieve the corresponding info from the model.
-  std::shared_ptr<Measurement> data();
-  std::shared_ptr<const Measurement> data()       const;
-  std::shared_ptr<Measurement> secondData();
-  std::shared_ptr<const Measurement> secondData() const;
-  std::shared_ptr<Measurement> background();
-  std::shared_ptr<const Measurement> background() const;
+  std::shared_ptr<SpecUtils::Measurement> data();
+  std::shared_ptr<const SpecUtils::Measurement> data()       const;
+  std::shared_ptr<SpecUtils::Measurement> secondData();
+  std::shared_ptr<const SpecUtils::Measurement> secondData() const;
+  std::shared_ptr<SpecUtils::Measurement> background();
+  std::shared_ptr<const SpecUtils::Measurement> background() const;
   
   float foregroundLiveTime() const;
   float foregroundRealTime() const;
@@ -143,15 +145,15 @@ public:
   float secondForegroundLiveTime() const;
   float secondForegroundRealTime() const;
   
-  std::shared_ptr<const Measurement> histUsedForXAxis() const;
+  std::shared_ptr<const SpecUtils::Measurement> histUsedForXAxis() const;
   
   //displayScaleFactor():  This is the multiple
-  float displayScaleFactor( const SpectrumType spectrum_type ) const;
+  float displayScaleFactor( const SpecUtils::SpectrumType spectrum_type ) const;
   
   //setDisplayScaleFactor(): set the effective live time of 'spectrum_type'
   //  to be 'sf' timess the live time of 'spectrum_type'.
   void setDisplayScaleFactor( const float sf,
-                             const SpectrumType spectrum_type );
+                             const SpecUtils::SpectrumType spectrum_type );
   
   
   void visibleRange( double &xmin, double &xmax,
@@ -389,7 +391,7 @@ protected:
              int /*force n peaks*/,
              bool /*isFinalRange*/> m_fitRoiDrag;
   
-  Wt::Signal<double,SpectrumType> m_yAxisScaled;
+  Wt::Signal<double,SpecUtils::SpectrumType> m_yAxisScaled;
   
   // Signal Callbacks
   void chartShiftKeyDragCallback( double x0, double x1 );

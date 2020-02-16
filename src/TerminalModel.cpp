@@ -512,9 +512,9 @@ TerminalModel::TerminalModel( InterSpec* viewer )
     
     m_viewer = viewer;
     
-    m_foregroundHistogram = m_viewer->displayedHistogram( kForeground );
-    m_backgroundHistogram = m_viewer->displayedHistogram( kBackground );
-    m_secondaryHistogram  = m_viewer->displayedHistogram( kSecondForeground );
+  m_foregroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  m_backgroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+  m_secondaryHistogram  = m_viewer->displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
     
     /* Note: The order you add functions/commands WILL MATTER for how it is displayed in the search menu!
              Commands are listed by the order the addCommand/addFunction methods are called. */
@@ -716,39 +716,39 @@ void TerminalModel::addFunction( mup::ICallback* function, const std::string& ta
 // Updates all the spectra
 void TerminalModel::updateHistograms()
 {
-    m_foregroundHistogram = m_viewer->displayedHistogram( kForeground );
-    m_backgroundHistogram = m_viewer->displayedHistogram( kBackground );
-    m_secondaryHistogram  = m_viewer->displayedHistogram( kSecondForeground );
+    m_foregroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    m_backgroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+    m_secondaryHistogram  = m_viewer->displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
 }
 
 // These methods help extract the live/real time of the foreground, secondary foreground, background
 double TerminalModel::foregroundLiveTime() {
-    m_foregroundHistogram = m_viewer->displayedHistogram( kForeground );
+    m_foregroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
     if (m_foregroundHistogram == nullptr) throw mup::ParserError( "Foreground could not be detected" );
     return m_foregroundHistogram->live_time();
 }
 double TerminalModel::foregroundRealTime() {
-    m_foregroundHistogram = m_viewer->displayedHistogram( kForeground );
+    m_foregroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
     if (m_foregroundHistogram == nullptr) throw mup::ParserError( "Foreground could not be detected" );
     return m_foregroundHistogram->real_time();
 }
 double TerminalModel::secondaryForegroundLiveTime() {
-    m_foregroundHistogram = m_viewer->displayedHistogram( kForeground );
+    m_foregroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
     if (m_secondaryHistogram == nullptr) throw mup::ParserError( "Secondary foreground could not be detected" );
     return m_secondaryHistogram->live_time();
 }
 double TerminalModel::secondaryForegroundRealTime() {
-    m_secondaryHistogram = m_viewer->displayedHistogram( kSecondForeground );
+    m_secondaryHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
     if (m_secondaryHistogram == nullptr) throw mup::ParserError( "Secondary foreground could not be detected" );
     return m_secondaryHistogram->real_time();
 }
 double TerminalModel::backgroundLiveTime() {
-    m_backgroundHistogram = m_viewer->displayedHistogram( kBackground );
+    m_backgroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
     if (m_backgroundHistogram == nullptr) throw mup::ParserError( "Background could not be detected" );
     return m_backgroundHistogram->live_time();
 }
 double TerminalModel::backgroundRealTime() {
-    m_backgroundHistogram = m_viewer->displayedHistogram( kBackground );
+    m_backgroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
     if (m_backgroundHistogram == nullptr) throw mup::ParserError( "Background could not be detected" );
     return m_backgroundHistogram->real_time();
 }
@@ -820,9 +820,9 @@ double TerminalModel::liveTime( const std::string& argument )
 {
     const std::string& arg (argument);
     
-    m_foregroundHistogram = m_viewer->displayedHistogram( kForeground );
-    m_backgroundHistogram = m_viewer->displayedHistogram( kBackground );
-    m_secondaryHistogram = m_viewer->displayedHistogram( kSecondForeground );
+    m_foregroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    m_backgroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+    m_secondaryHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
     
     if ( std::regex_match( arg, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) )    // foreground
         return foregroundLiveTime();
@@ -912,7 +912,7 @@ double TerminalModel::realTimeWithoutArgument()
         throw mup::ParserError( "Multiple spectra detected. Please specify a spectrum to use." );
 }
 
-float TerminalModel::gammaChannel( std::shared_ptr<const Measurement> histogram, const double energy )
+float TerminalModel::gammaChannel( std::shared_ptr<const SpecUtils::Measurement> histogram, const double energy )
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to gather corresponding gamma channel with energy." );
@@ -920,7 +920,7 @@ float TerminalModel::gammaChannel( std::shared_ptr<const Measurement> histogram,
 }
 
 // Gets the gamma channel count of a specific spectrum
-float TerminalModel::gammaChannelContent( std::shared_ptr<const Measurement> histogram, const double energy )
+float TerminalModel::gammaChannelContent( std::shared_ptr<const SpecUtils::Measurement> histogram, const double energy )
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to gather gamma channel count." );
@@ -928,7 +928,7 @@ float TerminalModel::gammaChannelContent( std::shared_ptr<const Measurement> his
 }
 
 // Gets the lower energy of a gamma channel of a specific spectrum
-float TerminalModel::gammaChannelLowerEnergy( std::shared_ptr<const Measurement> histogram, const double channel )
+float TerminalModel::gammaChannelLowerEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel )
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to gather gamma channel lower energy." );
@@ -936,7 +936,7 @@ float TerminalModel::gammaChannelLowerEnergy( std::shared_ptr<const Measurement>
 }
 
 // Gets the central energy of a gamma channel of a specific spectrum
-float TerminalModel::gammaChannelCentralEnergy( std::shared_ptr<const Measurement> histogram, const double channel )
+float TerminalModel::gammaChannelCentralEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel )
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to gather gamma channel central energy." );
@@ -944,14 +944,14 @@ float TerminalModel::gammaChannelCentralEnergy( std::shared_ptr<const Measuremen
 }
 
 // Gets the upper energy of a gamma channel of a specific spectrum
-float TerminalModel::gammaChannelHigherEnergy( std::shared_ptr<const Measurement> histogram, const double channel )
+float TerminalModel::gammaChannelHigherEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel )
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to gather gamma channel lower energy." );
     return histogram->gamma_channel_upper( channel );
 }
 
-float TerminalModel::gammaChannelWidth( std::shared_ptr<const Measurement> histogram, const double channel )
+float TerminalModel::gammaChannelWidth( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel )
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to gather gamma channel lower energy." );
@@ -959,7 +959,7 @@ float TerminalModel::gammaChannelWidth( std::shared_ptr<const Measurement> histo
 }
 
 // Gets the gamma integral of a specific spectrum
-float TerminalModel::gammaIntegral( std::shared_ptr<const Measurement> histogram, double energyLow, double energyHigh )
+float TerminalModel::gammaIntegral( std::shared_ptr<const SpecUtils::Measurement> histogram, double energyLow, double energyHigh )
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to gather gamma channel lower energy." );
@@ -970,7 +970,7 @@ float TerminalModel::gammaIntegral( std::shared_ptr<const Measurement> histogram
 }
 
 // Gets the gamma channel sum of a specific spectrum
-float TerminalModel::gammaSum( std::shared_ptr<const Measurement> histogram, const double startBin, const double endBin )
+float TerminalModel::gammaSum( std::shared_ptr<const SpecUtils::Measurement> histogram, const double startBin, const double endBin )
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to get gamma channel sum." );
@@ -1191,7 +1191,7 @@ double TerminalModel::gammaMaxFor( const std::string& histogram )
     throw mup::ParserError ( "Invalid argument for function 'gammaMaxFor( spectrum )'" );
 }
 
-float TerminalModel::gammaFunctionOneArg( const double energy, float (TerminalModel::*func)(std::shared_ptr<const Measurement> histogram, const double arg) )
+float TerminalModel::gammaFunctionOneArg( const double energy, float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram, const double arg) )
 {
     updateHistograms();
     
@@ -1225,7 +1225,7 @@ float TerminalModel::gammaFunctionOneArg( const double energy, float (TerminalMo
         throw mup::ParserError( "Multiple spectra detected. Please specify a spectrum to use." );
 }
 
-float TerminalModel::gammaFunctionTwoArg( const double arg1, const double arg2, float (TerminalModel::*func)(std::shared_ptr<const Measurement> histogram,
+float TerminalModel::gammaFunctionTwoArg( const double arg1, const double arg2, float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram,
                                                                                                               const double arg1, const double arg2 ) )
 {
     updateHistograms();
@@ -1262,7 +1262,7 @@ float TerminalModel::gammaFunctionTwoArg( const double arg1, const double arg2, 
 }
 
 float TerminalModel::gammaFunctionOneArgFor( const std::string& histogram, const double energy,
-                                            float (TerminalModel::*func)(std::shared_ptr<const Measurement> histogram, const double arg) )
+                                            float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram, const double arg) )
 {
     const std::string& hist (histogram);
     const double energy_value ( energy );
@@ -1286,7 +1286,7 @@ float TerminalModel::gammaFunctionOneArgFor( const std::string& histogram, const
 }
 
 float TerminalModel::gammaFunctionTwoArgFor( const std::string& histogram, const double arg1, const double arg2,
-                             float (TerminalModel::*func)(std::shared_ptr<const Measurement> histogram, const double arg1, const double arg2) )
+                             float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram, const double arg1, const double arg2) )
 {
     const std::string& hist (histogram);
     const double arg_1 ( arg1 );

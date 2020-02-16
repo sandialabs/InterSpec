@@ -53,6 +53,7 @@
 
 //Forward declarations
 class InterSpec;
+namespace SpecUtils{ class Measurement; }
 
 namespace mup
 {
@@ -191,22 +192,22 @@ protected:  // Internal helper methods
     double secondaryForegroundRealTime();
     double backgroundRealTime();
     
-    float gammaFunctionOneArg( const double energy, float (TerminalModel::*func)(std::shared_ptr<const Measurement> histogram, const double arg) );
-    float gammaFunctionTwoArg( const double arg1, const double arg2, float (TerminalModel::*func)(std::shared_ptr<const Measurement> histogram, const double arg1, const double arg2 ) );
+    float gammaFunctionOneArg( const double energy, float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram, const double arg) );
+    float gammaFunctionTwoArg( const double arg1, const double arg2, float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram, const double arg1, const double arg2 ) );
     
     float gammaFunctionOneArgFor( const std::string& histogram, const double arg,
-                                        float (TerminalModel::*func)(std::shared_ptr<const Measurement> histogram, const double arg) );
+                                        float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram, const double arg) );
     float gammaFunctionTwoArgFor( const std::string& histogram, const double arg1, const double arg2,
-                                        float (TerminalModel::*func)(std::shared_ptr<const Measurement> histogram, const double arg1, const double arg2) );
+                                        float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram, const double arg1, const double arg2) );
     
-    float gammaChannel( std::shared_ptr<const Measurement> histogram, const double energy );
-    float gammaChannelContent( std::shared_ptr<const Measurement> histogram, const double energy );
-    float gammaChannelLowerEnergy( std::shared_ptr<const Measurement> histogram, const double channel );
-    float gammaChannelCentralEnergy( std::shared_ptr<const Measurement> histogram, const double channel );
-    float gammaChannelHigherEnergy( std::shared_ptr<const Measurement> histogram, const double channel );
-    float gammaChannelWidth( std::shared_ptr<const Measurement> histogram, const double channel );
-    float gammaIntegral( std::shared_ptr<const Measurement> histogram, const double energyLow, const double energyHigh );  // continous sum (energy)
-    float gammaSum( std::shared_ptr<const Measurement> histogram, const double startBin, const double endBin );            // discrete sum (bins)
+    float gammaChannel( std::shared_ptr<const SpecUtils::Measurement> histogram, const double energy );
+    float gammaChannelContent( std::shared_ptr<const SpecUtils::Measurement> histogram, const double energy );
+    float gammaChannelLowerEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
+    float gammaChannelCentralEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
+    float gammaChannelHigherEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
+    float gammaChannelWidth( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
+    float gammaIntegral( std::shared_ptr<const SpecUtils::Measurement> histogram, const double energyLow, const double energyHigh );  // continous sum (energy)
+    float gammaSum( std::shared_ptr<const SpecUtils::Measurement> histogram, const double startBin, const double endBin );            // discrete sum (bins)
     
     bool energyIsWithinPeak( PeakModel::PeakShrdPtr peak, const double energy );
     
@@ -217,9 +218,9 @@ private:
     VariableMap    m_variables;
     
     InterSpec *m_viewer;
-    std::shared_ptr<const Measurement> m_foregroundHistogram;
-    std::shared_ptr<const Measurement> m_backgroundHistogram;
-    std::shared_ptr<const Measurement> m_secondaryHistogram;
+    std::shared_ptr<const SpecUtils::Measurement> m_foregroundHistogram;
+    std::shared_ptr<const SpecUtils::Measurement> m_backgroundHistogram;
+    std::shared_ptr<const SpecUtils::Measurement> m_secondaryHistogram;
     
     /* To add a new command/function into the Drop-Down helper list:
      FOR COMMANDS ONLY:

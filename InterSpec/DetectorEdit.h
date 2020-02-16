@@ -61,11 +61,9 @@ class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
 class DetectorPeakResponse;
+namespace DataBaseUtils{ class DbSession; }
+namespace SpecUtils{ enum class DetectorType : int; }
 
-namespace DataBaseUtils
-{
-  class DbSession;
-}
 
 class DetectorDisplay : public Wt::WContainerWidget
 {
@@ -172,7 +170,7 @@ public:
   static std::shared_ptr<DetectorPeakResponse> getUserPrefferedDetector(
                                 std::shared_ptr<DataBaseUtils::DbSession> sql,
                                 Wt::Dbo::ptr<InterSpecUser> user,
-                                std::shared_ptr<const MeasurementInfo> meas );
+                                std::shared_ptr<const SpecUtils::SpecFile> meas );
   
   /**
    */
@@ -180,7 +178,7 @@ public:
                                         std::shared_ptr<DataBaseUtils::DbSession> sql,
                                         Wt::Dbo::ptr<InterSpecUser> user,
                                         UseDrfPref::UseDrfType prefType,
-                                        std::shared_ptr<const MeasurementInfo> meas );
+                                        std::shared_ptr<const SpecUtils::SpecFile> meas );
   
   void acceptAndFinish();
   void cancelAndFinish();
@@ -196,7 +194,7 @@ public:
   //  throws exception if there is an error.
   //Type should be a DetectorType enum (just not including that header to save
   //   on deplandcies)
-  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const int type, InterSpec *interspec );
+  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const SpecUtils::DetectorType type, InterSpec *interspec );
   
   /** Looks to path in user prefernce "GadrasDRFPath" for a detector matching specified name.
    Throws exception in error; returned detector should always be valid.
@@ -212,7 +210,7 @@ public:
   //  throws exception if there is an error.
   //Type should be a DetectorType enum (just not including that header to save
   //   on deplandcies)
-  static std::shared_ptr<DetectorPeakResponse> initARelEffDetector( const int type, InterSpec *interspec );
+  static std::shared_ptr<DetectorPeakResponse> initARelEffDetector( const SpecUtils::DetectorType type, InterSpec *interspec );
   
   //Callbacks for when detector is changed or modified
   void gadrasDetectorSelectCallback();
