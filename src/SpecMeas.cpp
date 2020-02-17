@@ -1525,36 +1525,36 @@ SpecUtils::DetectorType SpecMeas::guessDetectorTypeFromFileName( std::string nam
   const bool micro = SpecUtils::contains( name, "micro" );
   
   if( (detective && oneHundred) || ex100 )
-    return SpecUtils::DetectorType::kDetectiveEx100Detector;
+    return SpecUtils::DetectorType::DetectiveEx100;
   if( detective && ex )
-    return SpecUtils::DetectorType::kDetectiveExDetector;
+    return SpecUtils::DetectorType::DetectiveEx;
   if( detective && micro )
-    return SpecUtils::DetectorType::kMicroDetectiveDetector;
+    return SpecUtils::DetectorType::MicroDetective;
   if( detective )
-    return SpecUtils::DetectorType::kDetectiveDetector;
+    return SpecUtils::DetectorType::DetectiveUnknown;
   
   //Note: identiFINDER-NG are much more common that first generation
   //      identiFINDERs, so well just always assume the its an NG
   if( SpecUtils::contains( name, "identifinder" ) )
   {
     if( SpecUtils::contains( name, "labr" ) )
-      return SpecUtils::DetectorType::kIdentiFinderLaBr3Detector;
-    return SpecUtils::DetectorType::kIdentiFinderNGDetector; //kIdentiFinderDetector;
+      return SpecUtils::DetectorType::IdentiFinderLaBr3;
+    return SpecUtils::DetectorType::IdentiFinderNG; //kIdentiFinderDetector;
   }//if( SpecUtils::contains( name, "identifinder" ) )
   
 //  if( SpecUtils::contains( name, "identifinder" )
 //      && SpecUtils::contains( name, "ng" ) )
-//    return kIdentiFinderNGDetector;
+//    return IdentiFinderNG;
   
   if( SpecUtils::contains( name, "gr135" )
      || SpecUtils::contains( name, "gr-135" ) )
-    return SpecUtils::DetectorType::kGR135Detector;
+    return SpecUtils::DetectorType::Exploranium;
   
   if( SpecUtils::contains( name, "falcon" ) )
-     return SpecUtils::DetectorType::kFalcon5000;
+     return SpecUtils::DetectorType::Falcon5000;
   
   
-  return SpecUtils::DetectorType::kUnknownDetector;
+  return SpecUtils::DetectorType::Unknown;
 }
 
 void SpecMeas::setModified()

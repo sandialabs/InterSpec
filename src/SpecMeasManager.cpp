@@ -768,7 +768,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   wApp->useStyleSheet( "InterSpec_resources/SpecMeasManager.css" );
   
   for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
-      type < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+      type < SpecUtils::SaveSpectrumAsType::NumTypes;
       type = SpecUtils::SaveSpectrumAsType(static_cast<int>(type)+1) )
   {
     m_downloadResources[static_cast<int>(type)] = new DownloadSpectrumResource(type, this, this);
@@ -786,7 +786,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_sql = viewer->sql();
 
   for( SpecUtils::SaveSpectrumAsType i = SpecUtils::SaveSpectrumAsType(0);
-      i < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+      i < SpecUtils::SaveSpectrumAsType::NumTypes;
        i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
     m_specificResources[static_cast<int>(i)] = (SpecificSpectrumResource *)0;
   
@@ -2016,7 +2016,7 @@ void SpecMeasManager::displayFile( int row,
               //do nothing
             break;
             
-            case SpecUtils::SourceType::UnknownSourceType:
+            case SpecUtils::SourceType::Unknown:
               if( childrow < 0 )
                 childrow = static_cast<int>( i );
             break;
@@ -2253,7 +2253,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
     samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
   
   for( SpecUtils::SaveSpectrumAsType i = SpecUtils::SaveSpectrumAsType(0);
-      i < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+      i < SpecUtils::SaveSpectrumAsType::NumTypes;
       i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
   {
     if( !m_specificResources[toint(i)] )
@@ -2286,7 +2286,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
       samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
       
       for( SpecUtils::SaveSpectrumAsType i = SpecUtils::SaveSpectrumAsType(0);
-           i < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+           i < SpecUtils::SaveSpectrumAsType::NumTypes;
            i = SpecUtils::SaveSpectrumAsType(static_cast<int>(i)+1) )
       {
         button->clicked().connect(
@@ -2303,7 +2303,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
       
       samplenums = m_viewer->displayedSamples( SpectrumType::SecondForeground );
       for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-          i < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+          i < SaveSpectrumAsType::NumTypes;
           i = SaveSpectrumAsType(static_cast<int>(i)+1) )
       {
         button->clicked().connect(
@@ -2324,7 +2324,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
       
       samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Background );
       for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-          i < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+          i < SaveSpectrumAsType::NumTypes;
           i = SaveSpectrumAsType(toint(i)+1) )
       {
         button->clicked().connect(
@@ -2341,7 +2341,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
   linkDiv->setList( true, false );
 
   for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-      i < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+      i < SaveSpectrumAsType::NumTypes;
       i = SaveSpectrumAsType(toint(i)+1) )
   {
     const string linktitle = string("As ") + descriptionText(i) + " File";    
@@ -2567,7 +2567,7 @@ void SpecMeasManager::renameSaveAsFile()
   
   
   for( SaveSpectrumAsType type = SaveSpectrumAsType(0);
-      type < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+      type < SaveSpectrumAsType::NumTypes;
       type = SaveSpectrumAsType(static_cast<int>(type)+1) )
   {
     const string name = origName + "." + suggestedNameEnding( type );
@@ -2775,7 +2775,7 @@ void SpecMeasManager::newFileFromSelection()
     std::shared_ptr<SpecMeas> measurement;
     try
     {
-      setFile( newspec->filename(), output, header, measurement, K2012ICD1Parser );
+      setFile( newspec->filename(), output, header, measurement, N42_2012 );
     }catch( std::exception &e )
     {
       stringstream msg;
@@ -3159,7 +3159,7 @@ WContainerWidget *SpecMeasManager::createButtonBar()
     m_saveButton->mouseWentOver().connect( boost::bind( &SpecMeasManager::renameSaveAsFile, this ) );
       
     for( SpecUtils::SaveSpectrumAsType type = SpecUtils::SaveSpectrumAsType(0);
-        type < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+        type < SpecUtils::SaveSpectrumAsType::NumTypes;
          type = SpecUtils::SaveSpectrumAsType(static_cast<int>(type)+1) )
     {
       const string descrip = string("As ") + descriptionText(type) + " File";
@@ -3660,7 +3660,7 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload,
   try
   {
     std::shared_ptr<SpectraFileHeader> header;
-    int result = setFile( origName, fileName, header, measurement, SpecUtils::ParserType::kAutoParser );
+    int result = setFile( origName, fileName, header, measurement, SpecUtils::ParserType::Auto );
     WModelIndexSet selected;
     WModelIndex index = m_fileModel->index( result, 0 );
     selected.insert( index );
@@ -3838,7 +3838,7 @@ void SpecMeasManager::cleanupQuickSaveAsDialog( AuxWindow *dialog, WApplication 
     std::shared_ptr<const SpecMeas> dummy;
     
     for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-        i < SaveSpectrumAsType::kNumSaveSpectrumAsType;
+        i < SaveSpectrumAsType::NumTypes;
         i = SaveSpectrumAsType(static_cast<int>(i)+1) )
     {
       m_specificResources[toint(i)]->setSpectrum( dummy, set<int>(), set<int>() );

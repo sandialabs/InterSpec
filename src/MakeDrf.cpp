@@ -1575,7 +1575,7 @@ void MakeDrf::startSaveAs()
     }//if( serial_number.size() )
     
     string model;
-    if( representative_meas->detector_type() == SpecUtils::DetectorType::kUnknownDetector )
+    if( representative_meas->detector_type() == SpecUtils::DetectorType::Unknown )
       model = representative_meas->instrument_model();
     else
       model = detectorTypeToString( representative_meas->detector_type() );

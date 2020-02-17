@@ -590,7 +590,7 @@ void SpecFileSummary::init()
   addField( m_source, measTable, "Source Type:", 4, 6 );
   
   for( SpecUtils::SourceType i = SpecUtils::SourceType(0);
-       i <= SpecUtils::SourceType::UnknownSourceType;
+       i <= SpecUtils::SourceType::Unknown;
        i = SpecUtils::SourceType(static_cast<int>(i)+1) )
   {
     const char *val = "";
@@ -600,12 +600,12 @@ void SpecFileSummary::init()
       case SpecUtils::SourceType::Calibration:       val = "Calibration";        break;
       case SpecUtils::SourceType::Background:        val = "Background";         break;
       case SpecUtils::SourceType::Foreground:        val = "Foreground";         break;
-      case SpecUtils::SourceType::UnknownSourceType: val = "Unknown";            break;
+      case SpecUtils::SourceType::Unknown: val = "Unknown";            break;
       default: break;
     }//switch( i )
     
     m_source->addItem( val );
-  }//for( int i = 0; i <= SpecUtils::SourceType::UnknownSourceType; ++i )
+  }//for( int i = 0; i <= SpecUtils::SourceType::Unknown; ++i )
   
 
   labelHolder = new WContainerWidget();
@@ -1269,7 +1269,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
     case kSourceType:
     {
       const int index = m_source->currentIndex();
-      SpecUtils::SourceType type = SpecUtils::SourceType::UnknownSourceType;
+      SpecUtils::SourceType type = SpecUtils::SourceType::Unknown;
       if( index >= 0 )
         type = SpecUtils::SourceType( m_source->currentIndex() );
       

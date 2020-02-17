@@ -4991,40 +4991,40 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   item = subPopup->addMenuItem( "Ba-133 (16k channel)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                          SpecUtils::append_path(docroot, "example_spectra/ba133_source_640s_20100317.n42"),
-                                         SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::k2006Icd1Parser ) );
+                                         SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::N42_2006 ) );
   if( isMobile )
     item = subPopup->addMenuItem( "Passthrough (16k channel)" );
   else
     item = subPopup->addMenuItem( "Passthrough (16k bin ICD1, 8 det., 133 samples)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                          SpecUtils::append_path(docroot, "example_spectra/passthrough.n42"),
-                                         SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::k2006Icd1Parser ) );
+                                         SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::N42_2006 ) );
   
   item = subPopup->addMenuItem( "Background (16k bin N42)" );
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                          SpecUtils::append_path(docroot, "example_spectra/background_20100317.n42"),
-                                         SpecUtils::SpectrumType::Background, SpecUtils::ParserType::k2006Icd1Parser ) );
+                                         SpecUtils::SpectrumType::Background, SpecUtils::ParserType::N42_2006 ) );
   //If its a mobile device, we'll give a few more spectra to play with
   if( isMobile )
   {
     item = subPopup->addMenuItem( "Ba-133 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                            SpecUtils::append_path(docroot, "example_spectra/Ba133LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kIaeaParser ) );
+                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
     
     item = subPopup->addMenuItem( "Co-60 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                            SpecUtils::append_path(docroot, "example_spectra/Co60LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kIaeaParser ) );
+                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
     
     item = subPopup->addMenuItem( "Cs-137 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                            SpecUtils::append_path(docroot, "example_spectra/Cs137LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kIaeaParser ) );
+                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
     item = subPopup->addMenuItem( "Th-232 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                            SpecUtils::append_path(docroot, "example_spectra/Th232LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kIaeaParser ) );
+                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
   }//if( isMobile )
   
   if( isSupportFile() )
@@ -5052,7 +5052,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
       m_downloadMenus[static_cast<int>(i)] = m_downloadMenu->addPopupMenuItem( descriptionText( i ) );
       
       for( SpecUtils::SaveSpectrumAsType j = SpecUtils::SaveSpectrumAsType(0);
-          j < SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType;
+          j < SpecUtils::SaveSpectrumAsType::NumTypes;
           j = SpecUtils::SaveSpectrumAsType(static_cast<int>(j)+1) )
       {
         const string desc = descriptionText( j );
@@ -5092,7 +5092,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
         const char *tooltip = 0;
         switch( j )
         {
-          case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::Txt:
             tooltip = "A space delimited file will be created with a header of"
                       " things like live time, followed by three columns"
                       " (channel number, lower channel energy, counts). Each"
@@ -5100,7 +5100,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
                       " three line breaks between records.";
             break;
             
-          case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::Csv:
             tooltip = "A comma delimietd file will be created with a channel"
                       " lower energy and a counts column.  All records in the"
                       " current spectrum file will be written sequentially,"
@@ -5108,65 +5108,65 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
                       "&quot; header between subsequent records.";
             break;
             
-          case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::Pcf:
             tooltip = "A binary PCF file will be created which contains all"
                       " records of the current file.";
             break;
             
-          case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::N42_2006:
             tooltip = "A simple spectromiter style 2006 N42 XML file will be"
                       " produced which contains all records in the current file.";
             break;
             
-          case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::N42_2012:
             tooltip = "A 2012 N42 XML document will be produced which contains"
                       " all samples of the current spectrum file, as well as"
                       " some additional <code>InterSpec</code> information"
                       " such as the identified peaks and detector response.";
             break;
             
-          case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::Chn:
             tooltip = "A binary integer CHN file will be produced containing a"
                       " single spectrum matching what is currently shown.";
             break;
             
-          case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
             tooltip = "A binary floating point SPC file will be produced containing a"
                       " single spectrum matching what is currently shown.";
             break;
            
-          case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
             tooltip = "A binary integer SPC file will be produced containing a"
                       " single spectrum matching what is currently shown.";
             break;
             
-          case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::SpcAscii:
             tooltip = "A ascii based SPC file will be produced containing a"
                       " single spectrum matching what is currently shown.";
             break;
           
-          case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
             tooltip = "A binary Exploranium GR130 file will be produced with"
                       " each record (spectrum) containing 256 channels.";
             break;
             
-          case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
             tooltip = "A binary Exploranium GR135v2 file (includes neutron info)"
                       " will be produced with each record (spectrum) containing"
                       " 1024 channels.";
             break;
           
-          case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::SpeIaea:
             tooltip = "A ASCII based standard file format that will contain a"
                       " single spectrum only.";
             break;
 #if( SpecUtils_ENABLE_D3_CHART )
-          case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:
+          case SpecUtils::SaveSpectrumAsType::HtmlD3:
             tooltip = "An HTML file using D3.js to generate a spectrum chart"
                           " that you can optionally interact with and view offline.";
             break;
 #endif //#if( SpecUtils_ENABLE_D3_CHART )
-           case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:
+           case SpecUtils::SaveSpectrumAsType::NumTypes:
             break;
         }//switch( j )
         
@@ -8060,16 +8060,16 @@ void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
   
   if( !det )
   {
-    if( type == SpecUtils::DetectorType::kUnknownDetector )
+    if( type == SpecUtils::DetectorType::Unknown )
       return;
     
     try
     {
       switch( type )
       {
-        case SpecUtils::DetectorType::kIdentiFinderDetector:
-        case SpecUtils::DetectorType::kIdentiFinderNGDetector:
-        case SpecUtils::DetectorType::kIdentiFinderLaBr3Detector:
+        case SpecUtils::DetectorType::IdentiFinder:
+        case SpecUtils::DetectorType::IdentiFinderNG:
+        case SpecUtils::DetectorType::IdentiFinderLaBr3:
           det = DetectorEdit::initARelEffDetector( type, this );
         break;
         
@@ -8092,7 +8092,7 @@ void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
   
   {//begin meas->mutex_ protected codeblock
     std::lock_guard<std::recursive_mutex> scoped_lock( meas->mutex() );
-    if( meas->detector() /*|| meas->detector_type()!=kUnknownDetector*/ )
+    if( meas->detector() /*|| meas->detector_type()!=Unknown*/ )
       return;
     
     const bool wasModified = meas->modified();
@@ -8348,10 +8348,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         }//if( meas->detector() != old_det )
         
         SpecUtils::DetectorType detType = meas->detector_type();
-        if( detType == SpecUtils::DetectorType::kUnknownDetector )
+        if( detType == SpecUtils::DetectorType::Unknown )
           detType = SpecMeas::guessDetectorTypeFromFileName( meas->filename() );
       
-        if( !meas->detector() /* && (detType != SpecUtils::DetectorType::kUnknownDetector) */ )
+        if( !meas->detector() /* && (detType != SpecUtils::DetectorType::Unknown) */ )
         {
           boost::function<void()> updateemit
                   = wApp->bind( boost::bind( &InterSpec::emitDetectorChanged,
@@ -8821,7 +8821,7 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
       throw runtime_error( "Could not access file '" + path + "'" );
   
     auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
-    auto meas = header->setFile( displayFileName, path, SpecUtils::ParserType::kAutoParser );
+    auto meas = header->setFile( displayFileName, path, SpecUtils::ParserType::Auto );
   
     if( !meas )
       throw runtime_error( "Failed to decode file" );
@@ -8845,7 +8845,7 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
       return true;
     }else
     {
-//      return m_fileManager->loadFromFileSystem( path, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kAutoParser );
+//      return m_fileManager->loadFromFileSystem( path, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::Auto );
       cout << "Will load file " << path << " requested to be loaded at "
       << WDateTime::currentDateTime().toString(DATE_TIME_FORMAT_STR)
       << endl;
@@ -8946,7 +8946,7 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
 #endif
             
             header = std::make_shared<SpectraFileHeader>( m_user, true, this );
-            meas = header->setFile( displayName, filepath, SpecUtils::ParserType::kAutoParser );
+            meas = header->setFile( displayName, filepath, SpecUtils::ParserType::Auto );
             
             
             bool couldBeBackground = askIfBackound;
@@ -8985,7 +8985,7 @@ bool InterSpec::loadFileFromDbFilesystemLink( const int id, const bool askIfBack
                          "", WarningWidget::WarningMsgHigh );
           }//try / catch
           
-//          m_fileManager->loadFromFileSystem( fileinfo.m_foregroundFilePath.toUTF8(), SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::kAutoParser );
+//          m_fileManager->loadFromFileSystem( fileinfo.m_foregroundFilePath.toUTF8(), SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::Auto );
         }//for( loop over files to potentially open )
       }//if( m_fileManager )
       

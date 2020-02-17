@@ -107,7 +107,7 @@ public:
                const std::string &fileLocation,
                 std::shared_ptr<SpectraFileHeader> &header,
                 std::shared_ptr<SpecMeas> &Measurement,
-                SpecUtils::ParserType parseType = SpecUtils::ParserType::kAutoParser );
+                SpecUtils::ParserType parseType = SpecUtils::ParserType::Auto );
 
   static void displayInvalidFileMsg( std::string filename, std::string errormsg );
   
@@ -143,7 +143,7 @@ public:
   //loadFromFileSystem(...) loads a file from disk, as if it were uploaded.
   //  Returns whether or not file was loaded
   bool loadFromFileSystem( const std::string &filename, SpecUtils::SpectrumType type,
-                           SpecUtils::ParserType parseType = SpecUtils::ParserType::kAutoParser );
+                           SpecUtils::ParserType parseType = SpecUtils::ParserType::Auto );
   
   
   void selectionChanged();
@@ -432,8 +432,8 @@ protected:
 //  Wt::WPushButton  *m_saveFileAsButton;
 //  PopupDivMenu     *m_saveAsPopup;
   
-  DownloadSpectrumResource *m_downloadResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType)];
-  SpecificSpectrumResource *m_specificResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType)];
+  DownloadSpectrumResource *m_downloadResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes)];
+  SpecificSpectrumResource *m_specificResources[static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes)];
   
 #if( !ANDROID && !IOS )
   FileDragUploadResource *m_foregroundDragNDrop;
