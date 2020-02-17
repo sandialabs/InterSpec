@@ -144,7 +144,7 @@ SpectraHeader::SpectraHeader()
   contained_neutron_ = false;
   sample_number = -1;
   gamma_counts_ = neutron_counts_ = 0.0;
-  spectra_type = SpecUtils::SourceType::UnknownSourceType;
+  spectra_type = SpecUtils::SourceType::Unknown;
 }//SpectraHeader default constructor
 
 
@@ -160,7 +160,7 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Mea
   contained_neutron_ = false;
   sample_number = -1;
   gamma_counts_ = neutron_counts_ = 0.0;
-  spectra_type = SpecUtils::SourceType::UnknownSourceType;
+  spectra_type = SpecUtils::SourceType::Unknown;
 
 
   for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurements )
@@ -2249,8 +2249,8 @@ void DownloadCurrentSpectrumResource::handleRequest(
                              const Wt::Http::Request& request,
                              Wt::Http::Response& response )
 {
-  if( m_format == SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile
-     || m_format == SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile )
+  if( m_format == SpecUtils::SaveSpectrumAsType::N42_2012
+     || m_format == SpecUtils::SaveSpectrumAsType::N42_2006 )
     m_viewer->saveShieldingSourceModelToForegroundSpecMeas();
 
   std::shared_ptr<const SpecMeas> measurement
@@ -2278,28 +2278,28 @@ void DownloadCurrentSpectrumResource::handleRequest(
   
   switch( m_format )
   {
-    case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile: filename += ".txt"; break;
-    case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile: filename += ".csv"; break;
-    case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile: filename += ".pcf"; break;
-    case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile: filename += ".n42"; break;
-    case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile: filename += ".n42"; break;
-    case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:     filename += ".chn"; break;
-    case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile: filename += ".spe"; break;
+    case SpecUtils::SaveSpectrumAsType::Txt: filename += ".txt"; break;
+    case SpecUtils::SaveSpectrumAsType::Csv: filename += ".csv"; break;
+    case SpecUtils::SaveSpectrumAsType::Pcf: filename += ".pcf"; break;
+    case SpecUtils::SaveSpectrumAsType::N42_2006: filename += ".n42"; break;
+    case SpecUtils::SaveSpectrumAsType::N42_2012: filename += ".n42"; break;
+    case SpecUtils::SaveSpectrumAsType::Chn:     filename += ".chn"; break;
+    case SpecUtils::SaveSpectrumAsType::SpeIaea: filename += ".spe"; break;
 #if( SpecUtils_ENABLE_D3_CHART )
-    case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:  filename += ".html"; break;
+    case SpecUtils::SaveSpectrumAsType::HtmlD3:  filename += ".html"; break;
 #endif //#if( USE_D3_EXPORTING )
-    case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
+    case SpecUtils::SaveSpectrumAsType::SpcAscii:
       filename += ".spc";
     break;
       
-    case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
       filename += ".dat";
     break;
       
-    case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:
+    case SpecUtils::SaveSpectrumAsType::NumTypes:
     break;
   }//switch( m_format )
   
@@ -2393,50 +2393,50 @@ void DownloadSpectrumResource::handle_resource_request(
 {
   switch( type )
   {
-    case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::Txt:
       response.setMimeType( "application/octet-stream" );
 //      response.setMimeType( "text/plain" );
     break;
 
-    case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::Csv:
       response.setMimeType( "application/octet-stream" );
 //      response.setMimeType( "text/csv" );
     break;
 
-    case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::Pcf:
       response.setMimeType( "application/octet-stream" );
     break;
 
-    case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::N42_2006:
       response.setMimeType( "application/octet-stream" );
 //      response.setMimeType( "application/xml" );
     break;
 
-    case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::N42_2012:
       response.setMimeType( "application/octet-stream" );
       //      response.setMimeType( "application/xml" );
     break;
       
-    case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::Chn:
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
+    case SpecUtils::SaveSpectrumAsType::SpcAscii:
+    case SpecUtils::SaveSpectrumAsType::SpeIaea:
       response.setMimeType( "application/octet-stream" );
     break;
       
-    case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
       response.setMimeType( "application/octet-stream" );
     break;
       
 #if( SpecUtils_ENABLE_D3_CHART )
-    case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::HtmlD3:
       response.setMimeType( "text/html" );
     break;
 #endif //#if( USE_D3_EXPORTING )
       
-    case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:
+    case SpecUtils::SaveSpectrumAsType::NumTypes:
     break;
   }//switch( type )
 
@@ -2445,60 +2445,60 @@ void DownloadSpectrumResource::handle_resource_request(
   
   switch( type )
   {
-    case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::Txt:
       measurement->write_txt( response.out() );
     break;
 
-    case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::Csv:
       measurement->write_csv( response.out() );
     break;
 
-    case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::Pcf:
       measurement->write_pcf( response.out() );
     break;
 
-    case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::N42_2006:
       measurement->write_2006_N42( response.out() );
     break;
       
-    case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::N42_2012:
       measurement->write_2012_N42( response.out() );
     break;
       
-    case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::Chn:
       measurement->write_integer_chn( response.out(), samplenums, detectornums );
     break;
       
-    case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
       measurement->write_binary_spc( response.out(),
                                        SpecUtils::SpecFile::IntegerSpcType,
                                        samplenums, detectornums );
     break;
       
-    case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
       measurement->write_binary_spc( response.out(),
                                        SpecUtils::SpecFile::FloatSpcType,
                                        samplenums, detectornums );
     break;
 
-    case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::SpcAscii:
       measurement->write_ascii_spc( response.out(), samplenums, detectornums );
     break;
       
-    case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
       measurement->write_binary_exploranium_gr130v0( response.out() );
       break;
       
-    case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
       measurement->write_binary_exploranium_gr135v2( response.out() );
       break;
       
-    case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::SpeIaea:
       measurement->write_iaea_spe( response.out(), samplenums, detectornums );
       break;
       
 #if( SpecUtils_ENABLE_D3_CHART )
-    case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:
+    case SpecUtils::SaveSpectrumAsType::HtmlD3:
     {
       //For purposes of development, lets cheat and export everything as it is now
       if( viewer )
@@ -2548,7 +2548,7 @@ void DownloadSpectrumResource::handle_resource_request(
       break;
 #endif //#if( USE_D3_EXPORTING )
       
-    case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:
+    case SpecUtils::SaveSpectrumAsType::NumTypes:
     break;
   }//switch( type )
 }//void handle_resource_request(...)
@@ -2596,22 +2596,22 @@ void SpecificSpectrumResource::setSpectrum( std::shared_ptr<const SpecMeas> spec
 
   switch( m_type )
   {
-    case SpecUtils::SaveSpectrumAsType::kTxtSpectrumFile:                name += ".txt";  break;
-    case SpecUtils::SaveSpectrumAsType::kCsvSpectrumFile:                name += ".csv";  break;
-    case SpecUtils::SaveSpectrumAsType::kPcfSpectrumFile:                name += ".pcf";  break;
-    case SpecUtils::SaveSpectrumAsType::kChnSpectrumFile:                name += ".chn";  break;
-    case SpecUtils::SaveSpectrumAsType::kXmlSpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::k2012N42SpectrumFile:            name += ".n42";  break;
-    case SpecUtils::SaveSpectrumAsType::kBinaryIntSpcSpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kBinaryFloatSpcSpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kAsciiSpcSpectrumFile:           name += ".spc";  break;
-    case SpecUtils::SaveSpectrumAsType::kExploraniumGr130v0SpectrumFile:
-    case SpecUtils::SaveSpectrumAsType::kExploraniumGr135v2SpectrumFile: name += ".dat";  break;
-    case SpecUtils::SaveSpectrumAsType::kIaeaSpeSpectrumFile:            name += ".spe";  break;
+    case SpecUtils::SaveSpectrumAsType::Txt:                name += ".txt";  break;
+    case SpecUtils::SaveSpectrumAsType::Csv:                name += ".csv";  break;
+    case SpecUtils::SaveSpectrumAsType::Pcf:                name += ".pcf";  break;
+    case SpecUtils::SaveSpectrumAsType::Chn:                name += ".chn";  break;
+    case SpecUtils::SaveSpectrumAsType::N42_2006:
+    case SpecUtils::SaveSpectrumAsType::N42_2012:            name += ".n42";  break;
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
+    case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
+    case SpecUtils::SaveSpectrumAsType::SpcAscii:           name += ".spc";  break;
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
+    case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2: name += ".dat";  break;
+    case SpecUtils::SaveSpectrumAsType::SpeIaea:            name += ".spe";  break;
 #if( SpecUtils_ENABLE_D3_CHART )
-    case SpecUtils::SaveSpectrumAsType::kD3HtmlSpectrumFile:             name += ".html"; break;
+    case SpecUtils::SaveSpectrumAsType::HtmlD3:             name += ".html"; break;
 #endif //#if( USE_D3_EXPORTING )
-    case SpecUtils::SaveSpectrumAsType::kNumSaveSpectrumAsType:          break;
+    case SpecUtils::SaveSpectrumAsType::NumTypes:          break;
   }//switch( m_type )
   
   suggestFileName( name, WResource::Attachment );

@@ -854,7 +854,7 @@ void SpecFileInfoToQuery::reset()
   
   has_riid_analysis = false;
   riid_ana = SpecUtils::DetectorAnalysis();
-  detector_type = SpecUtils::DetectorType::kUnknownDetector;
+  detector_type = SpecUtils::DetectorType::Unknown;
   passthrough = false;
   total_livetime = total_realtime = 0.0f;
   contained_neutron = contained_dev_pairs = contained_gps = false;
@@ -888,7 +888,7 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
   file_path_hash = std::hash<std::string>()(filepath);
   
   SpecUtils::SpecFile meas;
-  const bool loaded = meas.load_file(filepath, SpecUtils::ParserType::kAutoParser, filepath);
+  const bool loaded = meas.load_file(filepath, SpecUtils::ParserType::Auto, filepath);
   if( !loaded )
   {
     //see if "<event>" is in the first 128 bytes.

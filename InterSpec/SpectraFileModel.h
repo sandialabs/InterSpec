@@ -138,7 +138,7 @@ public:
   //  not need to persist on the file system past calling this function.
   std::shared_ptr<SpecMeas> setFile( const std::string &displayFileName,
                                      const std::string &fileSystemLocation,
-                                     SpecUtils::ParserType parseType = SpecUtils::ParserType::kAutoParser );
+                                     SpecUtils::ParserType parseType = SpecUtils::ParserType::Auto );
 
   //setMeasurmentInfo(...) takes care of setting all the information,
   //  and serializing the the SpecMeas to a temporary location on file

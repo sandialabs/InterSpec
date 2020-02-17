@@ -2093,10 +2093,10 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     mainLayout->addWidget( m_defaultForSerialNumber, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have serial number )
   
-  if( meas && (meas->detector_type()!=DetectorType::kUnknownDetector || !meas->instrument_model().empty()) )
+  if( meas && (meas->detector_type()!=DetectorType::Unknown || !meas->instrument_model().empty()) )
   {
     string model;
-    if( meas->detector_type() == DetectorType::kUnknownDetector )
+    if( meas->detector_type() == DetectorType::Unknown )
       model = meas->instrument_model();
     else
       model = detectorTypeToString( meas->detector_type() );
@@ -2946,7 +2946,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::getUserPrefferedDetector(
     if( !pref )
     {
       string model;
-      if( meas->detector_type() == DetectorType::kUnknownDetector )
+      if( meas->detector_type() == DetectorType::Unknown )
         model = meas->instrument_model();
       else
         model = detectorTypeToString( meas->detector_type() );
@@ -3024,7 +3024,7 @@ void DetectorEdit::setUserPrefferedDetector( std::shared_ptr<DetectorPeakRespons
     switch( prefType )
     {
       case UseDrfPref::UseDrfType::UseDetectorModelName:
-        if( meas->detector_type() == DetectorType::kUnknownDetector )
+        if( meas->detector_type() == DetectorType::Unknown )
           criteria = meas->instrument_model();
         else
           criteria = detectorTypeToString( meas->detector_type() );
@@ -3195,19 +3195,19 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const S
   string smname;
   switch( type )
   {
-    case DetectorType::kGR135Detector:             smname = "GR135";             break;
-    case DetectorType::kIdentiFinderDetector:      smname = "IdentiFINDER";      break;
-    case DetectorType::kIdentiFinderNGDetector:    smname = "IdentiFINDER-NGH";  break;
-    case DetectorType::kIdentiFinderLaBr3Detector: smname = "IdentiFINDER-LaBr"; break;
-    case DetectorType::kDetectiveDetector:         smname = "Detective";         break;
-    case DetectorType::kDetectiveExDetector:       smname = "Detetive DX";       break;
-    case DetectorType::kDetectiveEx100Detector:    smname = "Detective EX-100";  break;
-    case DetectorType::kDetectiveEx200Detector:    smname = "Detective EX-200";  break;
-    case DetectorType::kDetectiveX:                smname = "Detective X";       break;
-    case DetectorType::kSAIC8Detector:             smname = "";                  break;
-    case DetectorType::kFalcon5000:                smname = "Falcon 5000";       break;
-    case DetectorType::kUnknownDetector:           smname = "";                  break;
-    case DetectorType::kMicroDetectiveDetector:    smname = "Micro Detective";   break;
+    case DetectorType::Exploranium:       smname = "GR135";             break;
+    case DetectorType::IdentiFinder:      smname = "IdentiFINDER";      break;
+    case DetectorType::IdentiFinderNG:    smname = "IdentiFINDER-NGH";  break;
+    case DetectorType::IdentiFinderLaBr3: smname = "IdentiFINDER-LaBr"; break;
+    case DetectorType::DetectiveUnknown:  smname = "Detective";         break;
+    case DetectorType::DetectiveEx:       smname = "Detetive DX";       break;
+    case DetectorType::DetectiveEx100:    smname = "Detective EX-100";  break;
+    case DetectorType::DetectiveEx200:    smname = "Detective EX-200";  break;
+    case DetectorType::DetectiveX:        smname = "Detective X";       break;
+    case DetectorType::SAIC8:             smname = "";                  break;
+    case DetectorType::Falcon5000:        smname = "Falcon 5000";       break;
+    case DetectorType::Unknown:           smname = "";                  break;
+    case DetectorType::MicroDetective:    smname = "Micro Detective";   break;
   }//switch( type )
   
   if( smname.empty() )
@@ -3271,42 +3271,42 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
   string name;
   switch( type )
   {
-    case DetectorType::kGR135Detector:             name = "GR135";              break;
-    case DetectorType::kIdentiFinderDetector:      name = "identiFINDER-N";     break;
-    case DetectorType::kIdentiFinderNGDetector:    name = "identiFINDER-NGH";   break;
-    case DetectorType::kIdentiFinderLaBr3Detector: name = "identiFINDER-LaBr3"; break;
-    case DetectorType::kDetectiveDetector:         name = "Detective";          break;
-    case DetectorType::kDetectiveExDetector:       name = "Detective-EX";       break;
-    case DetectorType::kDetectiveEx100Detector:    name = "Detective-EX100";    break;
-    case DetectorType::kDetectiveEx200Detector:    name = "Ortec IDM Portal";   break;
-    case DetectorType::kDetectiveX:                name = "Detective X";        break;
-    case DetectorType::kSAIC8Detector:             name = "";                   break;
-    case DetectorType::kFalcon5000:                name = "Falcon 5000";        break;
-    case DetectorType::kUnknownDetector:           name = "";                   break;
-    case DetectorType::kMicroDetectiveDetector:    name = "MicroDetective";     break;
+    case DetectorType::Exploranium:       name = "GR135";              break;
+    case DetectorType::IdentiFinder:      name = "identiFINDER-N";     break;
+    case DetectorType::IdentiFinderNG:    name = "identiFINDER-NGH";   break;
+    case DetectorType::IdentiFinderLaBr3: name = "identiFINDER-LaBr3"; break;
+    case DetectorType::DetectiveUnknown:  name = "Detective";          break;
+    case DetectorType::DetectiveEx:       name = "Detective-EX";       break;
+    case DetectorType::DetectiveEx100:    name = "Detective-EX100";    break;
+    case DetectorType::DetectiveEx200:    name = "Ortec IDM Portal";   break;
+    case DetectorType::DetectiveX:        name = "Detective X";        break;
+    case DetectorType::SAIC8:             name = "";                   break;
+    case DetectorType::Falcon5000:        name = "Falcon 5000";        break;
+    case DetectorType::Unknown:           name = "";                   break;
+    case DetectorType::MicroDetective:    name = "MicroDetective";     break;
       
-    //case DetectorType::kRadHunterNaI:            name = ""; break;
-    //case DetectorType::kRadHunterLaBr3:          name = ""; break;
-    case DetectorType::kRsi701:                    name = "NaI 2x4x16"; break;
-    case DetectorType::kRsi705:                    name = "NaI 2x4x16"; break;
-    case DetectorType::kAvidRsi:                   name = "NaI 2x4x16"; break;
-    case DetectorType::kOrtecRadEagleNai:          name = "RadEagle"; break;
-    //case DetectorType::kOrtecRadEagleCeBr2Inch: name = ""; break;
-    //case DetectorType::kOrtecRadEagleCeBr3Inch: name = ""; break;
-    //case DetectorType::kOrtecRadEagleLaBr: name = ""; break;
-    //case DetectorType::kSam940LaBr3: name = ""; break;
-    case DetectorType::kSam940:                     name = "SAM-945"; break;
-    case DetectorType::kSam945:                     name = "SAM-945"; break;
-    case DetectorType::kSrpm210:                    name = "SRPM-210"; break;
+    //case DetectorType::RadHunterNaI:            name = ""; break;
+    //case DetectorType::RadHunterLaBr3:          name = ""; break;
+    case DetectorType::Rsi701:                    name = "NaI 2x4x16"; break;
+    case DetectorType::Rsi705:                    name = "NaI 2x4x16"; break;
+    case DetectorType::AvidRsi:                   name = "NaI 2x4x16"; break;
+    case DetectorType::OrtecRadEagleNai:          name = "RadEagle"; break;
+    //case DetectorType::OrtecRadEagleCeBr2Inch: name = ""; break;
+    //case DetectorType::OrtecRadEagleCeBr3Inch: name = ""; break;
+    //case DetectorType::OrtecRadEagleLaBr: name = ""; break;
+    //case DetectorType::Sam940LaBr3: name = ""; break;
+    case DetectorType::Sam940:                     name = "SAM-945"; break;
+    case DetectorType::Sam945:                     name = "SAM-945"; break;
+    case DetectorType::Srpm210:                    name = "SRPM-210"; break;
       
       
-    case DetectorType::kMicroRaiderDetector:
-    case DetectorType::kOrtecRadEagleCeBr2Inch:
-    case DetectorType::kOrtecRadEagleCeBr3Inch:
-    case DetectorType::kOrtecRadEagleLaBr:
-    case DetectorType::kRadHunterLaBr3:
-    case DetectorType::kRadHunterNaI:
-    case DetectorType::kSam940LaBr3:
+    case DetectorType::MicroRaider:
+    case DetectorType::OrtecRadEagleCeBr2Inch:
+    case DetectorType::OrtecRadEagleCeBr3Inch:
+    case DetectorType::OrtecRadEagleLaBr:
+    case DetectorType::RadHunterLaBr3:
+    case DetectorType::RadHunterNaI:
+    case DetectorType::Sam940LaBr3:
       //ToDo: fill in these names
       break;
   }//switch( type )
@@ -3330,25 +3330,25 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
   string dettype, deteff;
   switch( type )
   {
-    case DetectorType::kGR135Detector:
+    case DetectorType::Exploranium:
       break;
-    case DetectorType::kIdentiFinderDetector:
+    case DetectorType::IdentiFinder:
       break;
-    case DetectorType::kIdentiFinderNGDetector:
+    case DetectorType::IdentiFinderNG:
       break;
-    case DetectorType::kOrtecRadEagleNai:
-      break;
-      
-    case DetectorType::kIdentiFinderLaBr3Detector:
+    case DetectorType::OrtecRadEagleNai:
       break;
       
-    case DetectorType::kDetectiveDetector:
-    case DetectorType::kDetectiveExDetector:
-    case DetectorType::kMicroDetectiveDetector:
+    case DetectorType::IdentiFinderLaBr3:
       break;
-    case DetectorType::kDetectiveEx100Detector:
+      
+    case DetectorType::DetectiveUnknown:
+    case DetectorType::DetectiveEx:
+    case DetectorType::MicroDetective:
       break;
-    case DetectorType::kFalcon5000:
+    case DetectorType::DetectiveEx100:
+      break;
+    case DetectorType::Falcon5000:
       break;
   
     default:
