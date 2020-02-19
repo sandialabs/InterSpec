@@ -1444,7 +1444,7 @@ void DecayActivityDiv::init()
 
   //////////////////
   // Decay Chain
-  m_decayChainChart = new DecayChainChartD3();
+  m_decayChainChart = new DecayChainChart();
   WGridLayout *decayChainLayout = new WGridLayout();
   WContainerWidget *decayChainDiv = new WContainerWidget();
   decayChainDiv->setMinimumSize( 300, 350 );
@@ -1464,7 +1464,7 @@ void DecayActivityDiv::init()
 
   m_chartTabWidget->addTab( decayChainDiv, "Decay Chain", loadPolicy );
   m_chartTabWidget->currentChanged().connect( m_decayChainChart,
-                                    &DecayChainChartD3::deleteMoreInfoDialog );
+                                    &DecayChainChart::deleteMoreInfoDialog );
   m_decayChainChart->nuclideChanged().connect( this,
                             &DecayActivityDiv::manageActiveDecayChainNucStyling );
 
@@ -1846,9 +1846,9 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   if( nuc )
   {
     nuclide.display->clicked().connect(
-          boost::bind( &DecayChainChartD3::setNuclide,
+          boost::bind( &DecayChainChart::setNuclide,
                        m_decayChainChart, nuc, useCurrie,
-                       DecayChainChartD3::DecayChainType::DecayFrom) );
+                       DecayChainChart::DecayChainType::DecayFrom) );
   }//if( nuc )
   
   nuclide.display->doubleClicked().connect(
@@ -1890,7 +1890,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   setTimeLimitToDisplay();
 
   const auto nucptr = db->nuclide(z, a, iso);
-  m_decayChainChart->setNuclide( nucptr, useCurrie, DecayChainChartD3::DecayChainType::DecayFrom );
+  m_decayChainChart->setNuclide( nucptr, useCurrie, DecayChainChart::DecayChainType::DecayFrom );
 
   refreshDecayDisplay();
 }//void addNuclide(..)
@@ -1916,13 +1916,13 @@ void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
   if( to_be_removed == (m_nuclides.size() - 1) )
   {
     if (m_nuclides.size() == 1)
-      m_decayChainChart->setNuclide( nullptr, true, DecayChainChartD3::DecayChainType::DecayThrough );
+      m_decayChainChart->setNuclide( nullptr, true, DecayChainChart::DecayChainType::DecayThrough );
     else
     {
       const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
       const DecayActivityDiv::Nuclide nuc = m_nuclides[m_nuclides.size() - 2];
       const SandiaDecay::Nuclide * const nucptr = db->nuclide(nuc.z, nuc.a, nuc.iso);
-      m_decayChainChart->setNuclide( nucptr, nuc.useCurrie, DecayChainChartD3::DecayChainType::DecayThrough );
+      m_decayChainChart->setNuclide( nucptr, nuc.useCurrie, DecayChainChart::DecayChainType::DecayThrough );
     }
   }
 
@@ -1943,7 +1943,7 @@ void DecayActivityDiv::clearAllNuclides()
 
   setTimeLimitToDisplay();
   
-  m_decayChainChart->setNuclide( nullptr, true, DecayChainChartD3::DecayChainType::DecayFrom );
+  m_decayChainChart->setNuclide( nullptr, true, DecayChainChart::DecayChainType::DecayFrom );
 
   deleteMoreInfoDialog();
   

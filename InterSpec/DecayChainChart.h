@@ -42,27 +42,35 @@ namespace Wt
 class AuxWindow;
 namespace SandiaDecay{ struct Nuclide; }
 
-//We will eventually remove the non-D3 based implementation, but for the moment
-//  we will leave it in, but keep it seperate.
-#define USE_D3_DECAY_CHAIN_IMP 1
 
-#if( USE_D3_DECAY_CHAIN_IMP )
-/** This class is intended to be the successor to DecayChainChart.
- This class does all the rending using D3, wheres the DecayChainChart
- uses Wt namtive functions.
+/**  Widget that renders the decay chain of a given nuclide.
  
- The hope is to make the charting a little more responsive and interactive.
+ Uses d3.js to render in SVG.  The C++ code takes care of producing the JSON
+ that gets sent to the client side to be rendered.
+ 
+ @TODO Should send the raw nuclide information to client-side to generate
+       the about text when a nuclide is clicked on, instead of doing it
+       in the C++ function #DecayChainChart::getTextInfoForNuclide
+ @TODO Should do all JSON organization in the C++ code, rather than reformatting
+       the isomeric decays client side.
+ @TODO Add branching ratio and decay type next to decay lines
+ @TODO The instruction text, or nuclide info text can overlap with some of the
+       nuclides, for some decay schemes - should fix.
+ @TODO Make static HTML/JS example versions of this widget to include in non-Wt
+       based webpages.
+ @TODO For the "Show decays through ..." button should decide if the text should
+       be underlined, or a box-border drawn around text.
  */
-class DecayChainChartD3 : public Wt::WContainerWidget
+class DecayChainChart : public Wt::WContainerWidget
 {
 public:
   enum class DecayChainType
   {
     DecayFrom,
     DecayThrough
-  };
+  };//enum class DecayChainType
   
-  DecayChainChartD3( WContainerWidget *parent = nullptr );
+  DecayChainChart( WContainerWidget *parent = nullptr );
   
   virtual void doJavaScript( const std::string &js ) override;
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
@@ -86,20 +94,21 @@ public:
    interested in (e.g. the nuclide the decay chain is drawn for); is
    used to give the branching ratio that the infoNuclide is decayed
    through.
-   @param includeDaughterIsomerics Wether to also include information for
-   isomeric daughters of this nuclide.
    @param useCurrie Wether to use Ci or Bq for displaying specific activities.
    */
-  static std::vector<std::string> getTextInfoForNuclide( const SandiaDecay::Nuclide *infoNuclide,
-                                                        const SandiaDecay::Nuclide *parentNuclide,
-                                                        const bool includeDaughterIsomerics,
-                                                        const bool useCurrie );
+  static std::vector<std::string>
+    getTextInfoForNuclide( const SandiaDecay::Nuclide * const infoNuclide,
+                           const SandiaDecay::Nuclide * const parentNuclide,
+                           const bool useCurrie );
   
   void showDecayParticleInfo( const std::string &csvIsotopeNames );
   void showPossibleParents( const SandiaDecay::Nuclide *nuclide );
   void deleteMoreInfoDialog();
   
 protected:
+  /** Called during the first full render of the widget; loads all necassary
+   javascript.
+   */
   void defineJavaScript();
   
   /** Shows the "decay through" decay chart in the m_moreInfoDialog.
@@ -122,7 +131,7 @@ private:
    */
   bool m_jsLoaded;
   
-  /** Stores any JavaScript #DecayChainChartD3::doJavaScript would have done
+  /** Stores any JavaScript #DecayChainChart::doJavaScript would have done
    before widget has been fully rendered, so it can then be exucuted upon
    rendering.
    */
@@ -137,7 +146,7 @@ private:
    */
   AuxWindow *m_moreInfoDialog;
   
-  /** Signal emitted by #DecayChainChartD3::setNuclide when nuclide is actually
+  /** Signal emitted by #DecayChainChart::setNuclide when nuclide is actually
    changed.
    */
   Wt::Signal<const SandiaDecay::Nuclide *> m_nuclideChanged;
@@ -153,125 +162,6 @@ private:
    wants to see what nuclides will decay through the given nuclide.
    */
   Wt::JSignal<std::string> m_showDecaysThrough;
-};//DecayChainChartD3
-
-#else //USE_D3_DECAY_CHAIN_IMP
-
-class DecayChainChart : public Wt::WPaintedWidget
-{
-public:
-  DecayChainChart(  Wt::WContainerWidget *parent = NULL  );
-  virtual ~DecayChainChart();
-  
-  virtual void paintEvent( Wt::WPaintDevice *paintDevice );
-  
-  const SandiaDecay::Nuclide *nuclide() const;
-  
-  /** Set the starting nuclide for the decay chain.
-   @param nuc The nuclide to show decay for
-   @param useCurrie Wether to use curries or bequerels for displaying activity
-          related quatities, like specific activity; this value should come from
-          what the user has entered the nuclide activity as, or similar
-   */
-  void setNuclide( const SandiaDecay::Nuclide *nuc, const bool useCurrie );
-  
-  //delete the more infor dialog dialog
-  void deleteMoreInfoDialog();
-  
-  //nuclideChanged(): emmited in setNuclide(...), and only when nuclide actually
-  //  changed
-  Wt::Signal<const SandiaDecay::Nuclide *> &nuclideChanged();
-
-  
-  
-protected:
-  /*gets the x coordinate to put the box
-    params:
-	x = number atomic mass
-	minx = 0
-	xRange = number of atomic masses
-	windowWidth = width of the panel for the diagram (not the whole available panel)
-  */
-  double getXCoordRect(int x, int minx, int xRange, int windowWidth);
-
-  /*gets the y coordinate to put the box
-    params:
-	y = atomic number
-	minx = minx atomic number
-	xRange = range of atomic numbers
-	windowHeight = height of the panel for the diagram (not the whole available panel)
-  */
-  double getYCoordRect(int y, int miny, int yRange, int windowHeight);
-
-  /*gets the x coordinate to put the arrow on the left side
-    params:
-	x = number atomic mass
-	minx = 0
-	xRange = number of atomic masses
-	windowWidth = width of the panel for the diagram (not the whole available panel)
-  */
-  double getXCoordArrowLeft(int x, int minx, int xRange, int windowWidth);
-
-  /*gets the x coordinate to put the arrow on the right side
-    params:
-	x = number atomic mass
-	minx = 0
-	xRange = number of atomic masses
-	windowWidth = width of the panel for the diagram (not the whole available panel)
-  */
-  double getXCoordArrowRight(int x, int minx, int xRange, int windowWidth);
-
-  /*gets the y coordinate to put the box
-    params:
-	    y = atomic number
-    	minx = minx atomic number
-	    xRange = range of atomic numbers
-	    windowHeight = height of the panel for the diagram (not the whole available panel)
-  */
-  double getYCoordArrow(int y, int miny, int yRange, int windowHeight);
- 
-  /*draws the triangle for the arrow
-    params:
-      parX = location of parent x coordinate
-      parY = location of parent y coordinate
-      childX = location of child x coordinate
-      childY = location of child y coordinate
-      ptr = pointer to array of Wpoints
-  */
-  void getTrianglePts( double parX, double parY,
-                       double childX, double childY, Wt::WPointF ptr[3] );
-
-  /*draws the mouseover text
-    params:
-      info = the informational text
-  */
-  void displayTextInfo( const SandiaDecay::Nuclide *nuc );
-  
-  /** Shows a pop-up displaying all nuclides that decay through the specified
-   nuclide.
-   */
-  void showPossibleParents( const SandiaDecay::Nuclide *nuc );
-  
-  //make a dialog
-  void makeDialog( const std::string &csvIsotopeNames );
-
-  int m_axisBuffer;
-  
-  /** The nuclide the user clicked on that we will display additional
-   information about.
-  */
-  const SandiaDecay::Nuclide *m_infoNuclide;
-  
-  /** The nuclide to show decay information for. */
-  const SandiaDecay::Nuclide *m_nuclide;
-
-  bool m_useCurrie;
-  
-  AuxWindow *m_moreInfoDialog;
-  Wt::JSignal<std::string> m_tapnhold;
-
-  Wt::Signal<const SandiaDecay::Nuclide *> m_nuclideChanged;
-};//class DecayChainChart
-#endif //USE_D3_DECAY_CHAIN_IMP
+};//DecayChainChart
 
 #endif //DecayChainChart_h
