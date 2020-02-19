@@ -44,6 +44,7 @@ class AuxWindow;
 class GoogleMap;
 class PeakModel;
 class MaterialDB;
+class DecayWindow;
 struct ColorTheme;
 class UserFileInDb;
 class Recalibrator;
@@ -681,7 +682,8 @@ protected:
   void createOneOverR2Calculator();
   void createActivityConverter();
   void createFluxTool();
-  void createDecay();
+  void createDecayInfoWindow();
+  void deleteDecayInfoWindow();
   void createFileParameterWindow();
   
   void updateGuiForPrimarySpecChange( std::set<int> display_sample_nums );
@@ -1084,6 +1086,7 @@ protected:
   //  time.  Will be null if no peak editor is open; valid if one is open.
   PeakEditWindow *m_peakEditWindow;
   
+  
   //m_currentToolsTab: used to track which tab is currently showing when the
   //  tools tab is shown.  This variable is necessary so that handleToolTabChanged(...)
   //  can know what tab is being changed from, and not just what tab is being
@@ -1282,6 +1285,11 @@ protected:
   //  and non-null if one is showing.  Is used to ensure only one window is open
   //  at a time.
   UseInfoWindow *m_useInfoWindow;
+  
+  /** Used to make sure only one decay info window is shwoing, and also apply
+   color changes when color theme is updated
+   */
+  DecayWindow *m_decayInfoWindow;
   
   //m_preserveCalibWindow: a pointer to the window that prompts the user if they
   //  would like to use a calibration from a previously used spectrum if the one

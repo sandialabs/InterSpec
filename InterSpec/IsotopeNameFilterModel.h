@@ -42,6 +42,11 @@ namespace SandiaDecay
   class SandiaDecayDataBase;
 }//namespace SandiaDecay
 
+namespace Wt
+{
+  class WSuggestionPopup;
+}
+
 
 class IsotopeNameFilterModel : public  Wt::WAbstractItemModel
 {
@@ -103,6 +108,11 @@ public:
   static void replacerJs( std::string &js );
   static void nuclideNameMatcherJs( std::string &js );
 
+  //WSuggestionPopup refilter popup can fail when the user types in realy fast,
+  //  at least for Wt 3.3.4 (I think this wa fixed in later versions) so here
+  //  we will do a hack to catch this.
+  static void setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup );
+  
   /** By default nuclides are included in suggestions, this function allows
    * disabling/enabling this.
    */

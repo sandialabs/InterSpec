@@ -67,7 +67,7 @@ namespace SandiaDecay
 class InterSpec;
 class CsvDownloadGui;
 class PeakCsvResource;
-class DecayChainChart;
+class DecayChainChartD3;
 class DecayActivityChart;
 class DecayActivityModel;
 class DecaySelectNuclide;
@@ -80,9 +80,24 @@ class DateLengthCalculator;
 
 class DecayActivityDiv : public Wt::WContainerWidget
 {
+public:
+  DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *parent = NULL );
+  virtual ~DecayActivityDiv();
+  
+  void addNuclide( const int z, const int a, const int iso,
+                  const double activity, const bool useCurrie,
+                  const double age );
+  
+  void clearAllNuclides();
+  
+  void setDecayChartTimeRange( double dt );
+  
+  void colorThemeChanged();
+  
+public:
   friend class PeakCsvResource;
   friend class DateLengthCalculator;
-public:
+
   InterSpec *m_viewer;
   
   struct Nuclide
@@ -125,7 +140,7 @@ public:
   DecayActivityChart          *m_decayChart;
   DecayActivityModel          *m_decayModel;
   
-  DecayChainChart             *m_decayChainChart;
+  DecayChainChartD3           *m_decayChainChart;
   
 #if( ADD_PHOTOPEAK_CHART )
   Wt::Chart::WCartesianChart  *m_photoPeakChart;
@@ -166,13 +181,11 @@ public:
 
   //Functions for dealing with adding new nuclides
   void addSelectedNuclide();
-  void addNuclide( const int z, const int a, const int iso,
-                   const double activity, const bool useCurrie,
-                   const double age );
+  
   void addTheNuclide( const NuclideSelectedInfo &nuc );
   
-  void clearAllNuclides();
   void checkTimeRangeValid();
+  
   
   void updateYScale();
 #if( ADD_PHOTOPEAK_CHART )
@@ -231,8 +244,6 @@ public:
 #if( ADD_PHOTOPEAK_CHART )
   void updatePhotopeakSliderEndDateText();
 #endif
-
-  void setDecayChartTimeRange( double dt );
   
 #if( ADD_PHOTOPEAK_CHART )
   void setPhotopeakXScaleRange();
@@ -259,10 +270,6 @@ public:
 
   void showDecayTab();
   void showPhotopeakTab();
-
-public:
-  DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *parent = NULL );
-  virtual ~DecayActivityDiv();
 };//DecayActivityDiv
 
 

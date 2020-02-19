@@ -45,8 +45,10 @@ using namespace Wt;
 using namespace std;
 
 
-Decay::Decay( InterSpec *viewer )
-: AuxWindow( "Nuclide Decay Information", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse) ),
+DecayWindow::DecayWindow( InterSpec *viewer )
+: AuxWindow( "Nuclide Decay Information",
+             //(Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse) ),
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)) ),
   m_activityDiv( 0 )
 {
   WContainerWidget *contentDiv = WDialog::contents();
@@ -68,7 +70,6 @@ Decay::Decay( InterSpec *viewer )
   closeButton->clicked().connect( this, &AuxWindow::hide );
 
   rejectWhenEscapePressed();
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
 
   if( !viewer || !viewer->isPhone() )
     m_activityDiv->setMinimumSize( 450, 500 );
@@ -88,20 +89,20 @@ Decay::Decay( InterSpec *viewer )
 }//Decay constructor
 
 
-Decay::~Decay()
+DecayWindow::~DecayWindow()
 {
   //nothing to do here
 }//Decay destructor
 
 
-void Decay::clearAllNuclides()
+void DecayWindow::clearAllNuclides()
 {
   if( m_activityDiv )
     m_activityDiv->clearAllNuclides();
 }//void Decay::clearAllNuclides()
 
 
-void Decay::addNuclide( const int z, const int a, const int iso,
+void DecayWindow::addNuclide( const int z, const int a, const int iso,
                         const double activity, const bool useCurries,
                         const double age, const double maxtime )
 {
@@ -114,4 +115,9 @@ void Decay::addNuclide( const int z, const int a, const int iso,
 }//void addNuclide(...)
 
 
+void DecayWindow::colorThemeChanged()
+{
+  if( m_activityDiv )
+    m_activityDiv->colorThemeChanged();
+}//void colorThemeChanged()
 
