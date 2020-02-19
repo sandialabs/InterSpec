@@ -52,12 +52,28 @@
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DecaySelectNuclideDiv.h"
+#include "InterSpec/IsotopeNameFilterModel.h"
 
 using namespace Wt;
 using namespace std;
 
 // See also: http://www.webtoolkit.eu/wt/blog/2010/03/02/javascript_that_is_c__
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
+
+namespace
+{
+  template<class T> struct index_compare_assend
+  {
+    index_compare_assend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
+    bool operator()(const size_t a, const size_t b) const
+    {
+      return arr[a] < arr[b];
+    }
+    const T arr;
+  };//struct index_compare
+}
+
+
 
 DecaySelectNuclide::DecaySelectNuclide( const bool phone, Wt::WContainerWidget *parent, AuxWindow *auxWindow )
   : WContainerWidget( parent ),
@@ -218,6 +234,9 @@ void DecaySelectNuclide::init()
   m_isotopeSuggestions->filterModel().connect( m_isoSearchFilterModel,
                                       &SimpleIsotopeNameFilterModel::filter );
 
+  IsotopeNameFilterModel::setQuickTypeFixHackjs( m_isotopeSuggestions );
+  
+  
   m_isotopeSuggestions->forEdit( m_isotopeSearch,
                    WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
   m_isotopeSearch->enterPressed().connect( this,
@@ -813,7 +832,7 @@ void SimpleIsotopeNameFilterModel::filter( const Wt::WString &text )
 
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
 
-  vector<const SandiaDecay::Nuclide *> suggestions;
+  vector<const SandiaDecay::Nuclide *> nuclide_suggestions;
 
   const SandiaDecay::Nuclide *nuc = db->nuclide( text.toUTF8() );
 
@@ -877,19 +896,12 @@ void SimpleIsotopeNameFilterModel::filter( const Wt::WString &text )
     }//for( const string &str : alphastrs )
   }//for( const SandiaDecay::Element *el : elements )
 
-
-  if( numericstrs.empty() )
-  { //If the user hasnt typed in any numbers yet, only suggest nuclides
-    const int nrow = static_cast<int>( candidate_elements.size() );
-
-    beginInsertRows( WModelIndex(), 0, nrow );
-    for( const SandiaDecay::Element *el : candidate_elements )
-      m_candidatesElements.push_back( el );
-    endInsertRows();
-  }else
+  
+  
+  //Go through and find the candidate Nuclides, but make sure they are
+  //  compatible with numericstrs
+  if( !numericstrs.empty() )
   {
-    //Go through and find the candidate Nuclides, but make sure they are
-    //  compatible with numericstrs
     for( const SandiaDecay::Element *el : candidate_elements )
     {
       const vector<const SandiaDecay::Nuclide *> nuclides = db->nuclides( el );
@@ -897,25 +909,80 @@ void SimpleIsotopeNameFilterModel::filter( const Wt::WString &text )
       {
         if( (nuc->halfLife<=0.0) || IsInf(nuc->halfLife) )
           continue;
-
+        
         bool numeric_compat = false;
         for( const string &str : numericstrs )
           numeric_compat |= SpecUtils::contains( std::to_string(nuc->massNumber), str.c_str() );
-
+        
         if( metalevel > 0 )
           numeric_compat = (numeric_compat && (nuc->isomerNumber==metalevel));
         
         if( numeric_compat )
-          suggestions.push_back( nuc );
+          nuclide_suggestions.push_back( nuc );
       }//for( const SandiaDecay::Nuclide *nuc : nuclides )
     }//for( const SandiaDecay::Element *el : candidate_elements )
-
-    const int nrow = static_cast<int>( suggestions.size() );
-    beginInsertRows( WModelIndex(), 0, nrow );
-    m_candidatesNuclides.swap( suggestions );
-    endInsertRows();
-  }//if( numericstrs.empty() )
-
+  }//if( !numericstrs.empty() )
+  
+  
+  if( numericstrs.empty() )
+  {
+    //If the user hasnt typed numbers, only suggest elements
+    nuclide_suggestions.clear();
+  }else
+  {
+    //If the user has typed numbers, only suggest nuclides
+    candidate_elements.clear();
+  }
+  
+  
+  //Sort suggestions by Levenshtein distance, so that way the word closest to
+  //  what the user has typed in, will be at the top of the list.  If we dont
+  //  do this, then if the user types "Ra226" and hits enter, then "Rn226"
+  //  will actually be selected.
+  const std::string usertxt = text.toUTF8();
+    
+  //Sort suggested nuclides
+  vector<unsigned int> distance( nuclide_suggestions.size() );
+  vector<size_t> sort_indices( nuclide_suggestions.size() );
+  for( size_t i = 0; i < nuclide_suggestions.size(); ++i )
+  {
+    sort_indices[i] = i;
+    const string &symbol = nuclide_suggestions[i]->symbol;
+    distance[i] = SpecUtils::levenshtein_distance( usertxt, symbol );
+  }//for( size_t i = 0; i < nuclide_suggestions.size(); ++i )
+  std::stable_sort( sort_indices.begin(), sort_indices.end(),
+                   index_compare_assend<vector<unsigned int>&>(distance) );
+  
+  //Sort suggested elements
+  vector<const SandiaDecay::Element *> suggest_elements( begin(candidate_elements), end(candidate_elements) );
+  
+  distance.resize( suggest_elements.size() );
+  vector<size_t> element_sort_indices( suggest_elements.size() );
+  for( size_t i = 0; i < suggest_elements.size(); ++i )
+  {
+    element_sort_indices[i] = i;
+    const string &symbol = suggest_elements[i]->symbol;
+    const string &name = suggest_elements[i]->name;
+    distance[i] = std::min( SpecUtils::levenshtein_distance( usertxt, symbol ),
+                           SpecUtils::levenshtein_distance( usertxt, name ) );
+  }//for( size_t i = 0; i < suggest_elements.size(); ++i )
+  std::stable_sort( element_sort_indices.begin(), element_sort_indices.end(),
+                   index_compare_assend<vector<unsigned int>&>(distance) );
+  
+  
+  const int nrow = static_cast<int>( candidate_elements.size() + nuclide_suggestions.size() );
+  
+  beginInsertRows( WModelIndex(), 0, nrow );
+  
+  m_candidatesElements.resize( suggest_elements.size() );
+  for( size_t i = 0; i < suggest_elements.size(); ++i )
+    m_candidatesElements[i] = suggest_elements[ element_sort_indices[i] ];
+  
+  m_candidatesNuclides.resize( nuclide_suggestions.size() );
+  for( size_t i = 0; i < nuclide_suggestions.size(); ++i )
+    m_candidatesNuclides[i] = nuclide_suggestions[ sort_indices[i] ];
+  
+  endInsertRows();
 }//void SimpleIsotopeNameFilterModel::filter( const Wt::WString &text )
 
 

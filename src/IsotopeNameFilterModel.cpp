@@ -30,6 +30,7 @@
 #include <boost/any.hpp>
 
 #include <Wt/WString>
+#include <Wt/WSuggestionPopup>
 #include <Wt/WAbstractItemModel>
 
 #include "InterSpec/PeakDef.h"
@@ -801,3 +802,31 @@ void IsotopeNameFilterModel::replacerJs( std::string &js )
       }//function (edit, suggestionText, suggestionValue)
    );//js = INLINE_JAVASCRIPT( ... )
 }//void replacerJs( std::string &js )
+
+
+void IsotopeNameFilterModel::setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup )
+{
+#if( WT_SERIES > 3 || (WT_SERIES==3 && WT_MAJOR>3) || (WT_SERIES==3 && WT_MAJOR==3 && WT_MINOR>4) )
+#warning "You can probably remove IsotopeNameFilterModel::setQuickTypeFixHackjs(...), but you should check this"
+#endif
+  
+  string js = INLINE_JAVASCRIPT(
+    var addTryCatch = function( elid ){
+      var dofix = function(elid){
+        var el = Wt.WT.getElement(elid);
+        var self = el ? jQuery.data(el, 'obj') : null;
+        if( !self ){ //Apparently not immediately available even though m_nuclideSuggest
+                     //  should be in the DOM by the time this JS gets executed.
+          setTimeout( function(){dofix(elid);}, 500 );
+          return;
+        }
+                                    
+        var oldfcn = self.refilter;
+        self.refilter = function(value){ try{ oldfcn(value); }catch(e){ console.log('My refilter caught: ' + e ); } };
+      };
+      dofix(elid);
+    };
+  );
+  
+  popup->doJavaScript( js + " addTryCatch('" + popup->id() + "');" );
+}//void setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup )

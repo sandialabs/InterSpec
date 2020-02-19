@@ -354,11 +354,6 @@ cursor: default;
 
 .photopeakDiv, .decayChainDiv
 {
-/*  margin-right: 12px; */
-
- /* ToDo: this style class hacked to avoid implementing color theme for this widget */
- background: rgb(238,238,238);
- color: black;
 }
 
 .sliderDiv

@@ -434,6 +434,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_referencePhotopeakLinesWindow( 0 ),
     m_licenseWindow( nullptr ),
     m_useInfoWindow( 0 ),
+    m_decayInfoWindow( nullptr ),
     m_preserveCalibWindow( 0 ),
     m_renderedWidth( 0 ),
     m_renderedHeight( 0 ),
@@ -3625,6 +3626,8 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
   
   setReferenceLineColors( theme );
 
+  if( m_decayInfoWindow )
+    m_decayInfoWindow->colorThemeChanged();
   
   string cssfile;
   if( !theme->nonChartAreaTheme.empty() )
@@ -6785,7 +6788,7 @@ void InterSpec::createOneOverR2Calculator()
 
 void InterSpec::createActivityConverter()
 {
-    new ActivityConverter();
+  new ActivityConverter();
 }//void createActivityConverter()
 
 
@@ -6795,9 +6798,13 @@ void InterSpec::createFluxTool()
 }//void createFluxTool()
 
 
-void InterSpec::createDecay()
+void InterSpec::createDecayInfoWindow()
 {
-  Decay *decay = new Decay( this );
+  if( !m_decayInfoWindow )
+  {
+    m_decayInfoWindow = new DecayWindow( this );
+    m_decayInfoWindow->finished().connect( boost::bind( &InterSpec::deleteDecayInfoWindow, this ) );
+  }
   
   if( m_referencePhotopeakLines )
   {
@@ -6805,20 +6812,28 @@ void InterSpec::createDecay()
                           = m_referencePhotopeakLines->currentlyShowingNuclide();
     if( nuc.nuclide )
     {
-      decay->clearAllNuclides();
+      m_decayInfoWindow->clearAllNuclides();
       
       //\todo We could do a little better and check the Shielding/Source Fit
       //  widget and grab those activities (and ages) if they match
       
-      decay->addNuclide( nuc.nuclide->atomicNumber,
+      m_decayInfoWindow->addNuclide( nuc.nuclide->atomicNumber,
                          nuc.nuclide->massNumber,
                          nuc.nuclide->isomerNumber,
                          1.0*PhysicalUnits::microCi, true,
                          0.0, 5.0*nuc.age );
     }//if( nuc.nuclide )
   }//if( m_referencePhotopeakLines )
-  
-}//void createDecay()
+}//void createDecayInfoWindow()
+
+
+void InterSpec::deleteDecayInfoWindow()
+{
+  if( m_decayInfoWindow )
+    AuxWindow::deleteAuxWindow( m_decayInfoWindow );
+  m_decayInfoWindow = nullptr;
+}//void deleteDecayInfoWindow()
+
 
 void InterSpec::createFileParameterWindow()
 {
@@ -7108,7 +7123,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   
   item = popup->addMenuItem( "Nuclide Decay Info" );
   HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTipInstantly );
-  item->triggered().connect( this, &InterSpec::createDecay );
+  item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
 
   
   item = popup->addMenuItem( "Detector Response Select" );

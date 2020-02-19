@@ -30,19 +30,22 @@
 class InterSpec;
 class DecayActivityDiv;
 
-class Decay : public AuxWindow
+class DecayWindow : public AuxWindow
 {
 public:
-  Decay( InterSpec *viewer );
-  virtual ~Decay();
+  DecayWindow( InterSpec *viewer );
+  virtual ~DecayWindow();
   
   void clearAllNuclides();
   void addNuclide( const int z, const int a, const int iso,
                   const double activity, const bool useCurries,
                   const double age, const double maxtime = -1.0 );
+  
+  void colorThemeChanged();
+  
  protected:
   DecayActivityDiv *m_activityDiv;
-};//class Decay
+};//class DecayWindow
 
 
 #endif //DecayWindow_h

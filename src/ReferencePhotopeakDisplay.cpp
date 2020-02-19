@@ -488,32 +488,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
   m_nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
 
-  //WSuggestionPopup refilter popup can fail when the user types in relly fast,
-  //  so here we will do a shitty hack to catch this.
-  string js = INLINE_JAVASCRIPT(
-  var addTryCatch = function( elid )
-  {
-    var dofix = function(elid)
-    {
-      var el = Wt.WT.getElement(elid);
-      var self = el ? jQuery.data(el, 'obj') : null;
-      if( !self )
-      {
-        //Apparently not immediately available even though m_nuclideSuggest
-        //  should be in the DOM by the time this JS gets executed.
-        setTimeout( function(){dofix(elid);}, 100 );
-        return;
-      }
-      
-      var oldfcn = self.refilter;
-      self.refilter = function(value){ try{ oldfcn(value); }catch(e){ console.log('My refilter caught: ' + e ); } };
-    };
-    dofix(elid);
-  };
-  );
-  
-  m_nuclideSuggest->doJavaScript( js + " addTryCatch('" + m_nuclideSuggest->id() + "');" );
-  
+  IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
   
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );
