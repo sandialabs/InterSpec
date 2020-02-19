@@ -1,3 +1,26 @@
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
 
 DecayChainChart = function(elem, options) {
   var self = this;
@@ -18,7 +41,6 @@ DecayChainChart = function(elem, options) {
   if( (typeof this.options.textColor) !== 'string' ) this.options.textColor = "black";
   if( (typeof this.options.backgroundColor) !== 'string' ) this.options.backgroundColor = "rgba(0,0,0,0)";
   if( (typeof this.options.linkColor) !== 'string' ) this.options.linkColor = "blue";
-  
   
   
   this.svg = d3.select(this.area).append("svg");
@@ -493,7 +515,7 @@ DecayChainChart.prototype.redraw = function() {
     .attr("x2", function(d){ return decayLineCoords(d)[2]; })
     .attr("y2", function(d){ return decayLineCoords(d)[3]; })
     .attr("stroke", self.options.lineColor )
-    .attr("stroke-width", function(d){ (d.parent===self.selectedNuclide ? 2 : 1)*strokew;} )
+    .attr("stroke-width", function(d){ return (d.parent===self.selectedNuclide ? 1.35 : 1)*strokew;} )
     ;
   
   decaylines.exit().remove();
@@ -515,6 +537,7 @@ DecayChainChart.prototype.redraw = function() {
              x + circRad*Math.cos(startAngle), y + circRad*Math.sin(startAngle) ].join(" ");
   })
   .attr("stroke", self.options.lineColor)
+  .attr("stroke-width", function(d){ return (d===self.selectedNuclide ? 1.35 : 1)*strokew;} )
   .attr("fill","none")
   .attr("class","iso")
   .attr("marker-end", "url(#decayarrowhead)")
@@ -639,6 +662,10 @@ DecayChainChart.prototype.redraw = function() {
   }
   nucinfo.attr("transform", "translate(" + (yaxisx+triangleLen) + ", " + (xaxisy - triangleLen - nucinfobb.height + font_size) + ")");
   
+  //I cant decide if its better to underline the "Show Decays Through ..." text,
+  //  or draw a box around it; currently underlineing, but I left the box
+  //  implementation commented out in the various lines below.
+  
   if( !this.selectedNuclide && this.showParentsTxt ){
     self.showParentsTxt.remove();
     self.showParentsRect.remove();
@@ -651,7 +678,8 @@ DecayChainChart.prototype.redraw = function() {
         .attr("y", 0 )
         .attr("fill", "#ffffff")  //add fill so mouse over will be active for entire rect area
         .attr("fill-opacity", "0")
-        .attr("stroke", self.options.linkColor)
+        //.attr("stroke", self.options.linkColor)
+        .attr("stroke", "none")
         .attr("class", "ShowDecaysThroughRect" )
         .on("click", function(){ self.emitShowDecaysThrough(); } );
       
@@ -665,22 +693,28 @@ DecayChainChart.prototype.redraw = function() {
     
     self.showParentsTxt
         .html( 'Show Decays Through ' + self.selectedNuclide.nuclide )
-        .attr("font-size", 0.8*inst_font_size );
+        //.attr("font-size", 0.8*inst_font_size )
+        .attr("font-size", 0.9*inst_font_size )
+        .attr("text-decoration", "underline" )
+        ;
         
     const showtxtpbb = self.showParentsTxt.node().getBoundingClientRect();
     const txt_h = showtxtpbb.height;
     const txt_w = showtxtpbb.width;
     const box_x = chartwidth - txtbb.width - 4;
-    const box_y = txtbb.height + 4 + 0.25*txt_h;
+    //const box_y = txtbb.height + 4 + 0.25*txt_h;
+    const box_y = txtbb.height + 4 + 0.15*txt_h;
     
-    self.showParentsTxt.attr("transform", "translate(" + (box_x + 0.375*txt_h)
-        + "," + (box_y + 0.90*txt_h) + ")")
-        
+    //self.showParentsTxt.attr("transform", "translate(" + (box_x + 0.375*txt_h) + "," + (box_y + 0.90*txt_h) + ")");
+    self.showParentsTxt.attr("transform", "translate(" + box_x + "," + (box_y + 0.9*txt_h) + ")")
+    
+    
     self.showParentsRect
         .attr("height", 1.2*txt_h )
         .attr("width", txt_w + 0.75*txt_h )
         .attr("rx", 0.08*1.2*txt_h )
-        .attr("transform", "translate(" + box_x + "," + box_y + ")")
+        //.attr("transform", "translate(" + box_x + "," + box_y + ")")
+        .attr("transform", "translate(" + (box_x - 0.375*txt_h) + "," + box_y + ")")
         ;
   }//if( not selected nuclide && showParentsTxt ) / else...
   

@@ -67,7 +67,7 @@ namespace SandiaDecay
 class InterSpec;
 class CsvDownloadGui;
 class PeakCsvResource;
-class DecayChainChartD3;
+class DecayChainChart;
 class DecayActivityChart;
 class DecayActivityModel;
 class DecaySelectNuclide;
@@ -140,7 +140,7 @@ public:
   DecayActivityChart          *m_decayChart;
   DecayActivityModel          *m_decayModel;
   
-  DecayChainChartD3           *m_decayChainChart;
+  DecayChainChart           *m_decayChainChart;
   
 #if( ADD_PHOTOPEAK_CHART )
   Wt::Chart::WCartesianChart  *m_photoPeakChart;
