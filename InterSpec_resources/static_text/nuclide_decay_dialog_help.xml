@@ -74,22 +74,22 @@ for the decay chart to start at, you can also fill in a minimum age here.</div>
 
 <img src="InterSpec_resources/static_text/images/nuc_decay_chain.png"  class="imageBorder"  style="max-height:300px;clear:both;float:left;margin-right:20px; margin-top:10px;" />
 <div style="display:table-row">
-<h3>Decay Chain</h3>
-
-    <div>
-
-               Example screen shot of the <b>Nuclide Decay Information</b> tool showing the <b>Decay Chain</b> tab.  
-
-			   <div style="padding-top: 10px">
-			   Note: You can <u>click</u> on a nuclide
-to obtain further information about its half life, parents, and decays.  
+  <h3>Decay Chain</h3>
+  <div>
+    Example screen shot of the <b>Nuclide Decay Information</b> tool showing the <b>Decay Chain</b> tab.
+    <div style="padding-top: 10px">
+      You can <u>click</u> on a nuclide to obtain further information about its half life, parents, and decays.
+      This will also create and area in the upper-right of the chart with text similar to
+      &quot;<span style="white-space:nowrap; color: blue;">Show Decays Through &lt;&lt;nuclide&gt;&gt;</span>&quot;
+      that if clicked on will bring up a chart of all nuclides that decay through the selected nuclide.
+    </div>
+    <div style="padding-top: 10px">
+      <u>Double-click</u> on a nuclide will bring up information about the decay products (gamma/beta/alpha)
+      from that nuclide.
+    </div>
+    <div style="padding-top: 10px">
+      If you have selected multiple nuclides in the upper source
+      area, the decay chain shown can be changed by clicking on a different parent nuclide in the upper source area.
+    </div>
+  </div>
 </div>
-<div style="padding-top: 10px">
-<u>Double-click</u> on a nuclide to get information about the decay products (gamma/beta/alpha)
-from that nuclide.  If you have selected multiple nuclides in the upper source
-area, the decay chain can only be shown for one at a time.  <u>Clicking</u> on the icon
-for a different nuclide (in the example shown above, Pu239 instead of U235)
-will display the decay chain for that parent nuclide.
-</div>
-         </div>
-	  </div>

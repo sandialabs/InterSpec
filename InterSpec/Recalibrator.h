@@ -42,6 +42,7 @@
 class PeakDef;
 class Recalibrator;
 class InterSpec;
+class NativeFloatSpinBox;
 class SpectraFileModel;
 #if ( USE_SPECTRUM_CHART_D3 )
 class D3SpectrumDisplayDiv;
@@ -69,7 +70,9 @@ protected:
   DevPair( Wt::WContainerWidget *parent = 0 );
   void setDevPair( const std::pair<float,float> &d );
   std::pair<float,float> devPair() const;
-  Wt::WDoubleSpinBox *m_energy, *m_offset;
+  void visuallyIndicateChanged();
+  //Wt::WDoubleSpinBox *m_energy, *m_offset;
+  NativeFloatSpinBox *m_energy, *m_offset;
   Wt::WContainerWidget *m_delete;
   friend class DeviationPairDisplay;
 };//class DevPair
@@ -83,7 +86,13 @@ public:
   void removeDevPair( DevPair *devpair );
   DevPair *newDevPair( const bool emitChangedNow );
   Wt::Signal<> &changed(); //emits when dev pair is added, deleted, or changed
+  
+  void setInvalidValues();
+  void setValidValues();
+  
 protected:
+  void sortDisplayOrder( const bool indicateVisually );
+  
   void emitChanged();
     
   Wt::Signal<> m_changed;
@@ -158,12 +167,14 @@ public:
   //  the information about the last calibration (m_lastGraphicalRecal,...)
   void refreshRecalibrator();
   
-  /** Sets the displayed coefficients labels for all orders of equation based
-   on m_coeffExps
+  /** Sets the displayed coefficients labels (keV, keV/chnl, etc.) based on
+   m_coeffEquationType.
    */
-  void updateCoefExpLabels();
+  void updateCoefLabels();
   
   void engageRecalibration( RecalAction action );
+  
+  void userChangedDeviationPairs();
   
   void specTypeCheckedCallback( const SpecUtils::SpectrumType type, const bool checked );
   
@@ -206,6 +217,9 @@ public:
   LayoutStyle currentLayoutStyle() const;
     
 protected:
+  /** The number of energy calibration coefficients to display. */
+  static const size_t sm_numCoefs = 3;
+  
   void initWidgets( LayoutStyle style, AuxWindow* parent = NULL);
 
   void recalibrateByPeaks();
@@ -243,7 +257,7 @@ protected:
   PeakModel *m_peakModel;
 
   RowStretchTreeView *m_isotopeView;
-  Wt::WCheckBox *m_fitFor[3];
+  Wt::WCheckBox *m_fitFor[sm_numCoefs];
   Wt::WPushButton *m_fitCoefButton;
 
   class GraphicalRecalConfirm;
@@ -265,7 +279,7 @@ protected:
   
   Wt::WText *m_applyToLabel;
   
-  // Which datafields to apply it to
+  // Which datafields (foreground, background, secondary) to apply it to
   Wt::WCheckBox *m_applyTo[3];
   
   Wt::WText *m_convertToPolynomialLabel;
@@ -277,22 +291,19 @@ protected:
   Wt::WText *m_acceptText;
   Wt::WContainerWidget *m_acceptButtonDiv;
 
-  Wt::WDoubleSpinBox *m_coefficientDisplay[3];
+  NativeFloatSpinBox *m_coefficientDisplay[sm_numCoefs];
   
   // The boxes for the manual recalibration coefficients
   //Wt::WDoubleSpinBox *m_offset, *m_linear, *m_quadratic;
   
   // holders for the exponents
-  Wt::WLabel *m_exponentLabels[3];
+  Wt::WLabel *m_exponentLabels[sm_numCoefs];
   
-  // and the ints for the scientific notation
-  int m_coeffExps[3];
-
   SpecUtils::EnergyCalType m_coeffEquationType;
 
   //The following will be set to a negative number when they arent defined
 //  double m_offsetUncert, m_linearUncert, m_quadraticUncert;
-  double m_uncertainties[3];
+  double m_uncertainties[sm_numCoefs];
 
   DeviationPairDisplay *m_devPairs;
   
@@ -377,12 +388,12 @@ protected:
     
     Recalibrator *m_calibrator;
     MultiFileModel *m_model;
-    Wt::WCheckBox *m_fitFor[3];
-    Wt::WLineEdit *m_coefvals[3];
+    Wt::WCheckBox *m_fitFor[sm_numCoefs];
+    Wt::WLineEdit *m_coefvals[sm_numCoefs];
     Wt::WPushButton *m_use, *m_cancel, *m_fit;
     Wt::WTextArea *m_fitSumary;
     SpecUtils::EnergyCalType m_eqnType;
-    double m_calVal[3], m_calUncert[3];
+    double m_calVal[sm_numCoefs], m_calUncert[sm_numCoefs];
   };//class MultiFileCalibFit
   
   class MultiFileModel : public  Wt::WAbstractItemModel

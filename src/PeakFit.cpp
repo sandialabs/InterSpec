@@ -1637,11 +1637,11 @@ std::shared_ptr<Measurement> estimateContinuum( std::shared_ptr<const Measuremen
   const int direction    = kBackIncreasingWindow; //kBackDecreasingWindow
   const size_t first = 0, last = data->num_gamma_channels();
   const int size = last-first+1;
-  std::shared_ptr<vector<float> > source( new vector<float>(size) );
+  auto source = std::make_shared<vector<float>>(size) ;
   
   for( int i = 0; i < size; ++i )
     source->operator[](i) = data->GetBinContent(i + first);
-  
+
   calculateContinuum( &(source->operator[](0)), size, numIteration, direction,
                      filterOrder, smoothing, smoothWindow, compton );
   std::shared_ptr<Measurement> background( new Measurement() );

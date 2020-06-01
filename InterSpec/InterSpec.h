@@ -407,7 +407,18 @@ public:
   //displayScaleFactor(...): the live time scale factor used by to display
   //  the histogram returned by displayedHistogram( spectrum_type ).
   double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
-
+  
+#if( SpecUtils_ENABLE_D3_CHART )
+  /** Returns the neutron scale factor used for the chart legend.  This is
+   nearly the same as #displayScaleFactor, but divided by live-time ratios
+   and multiplied by real-time ratios.  Will return Inf if invalid or
+   not applicable.
+   
+   \TODO remove this function and the need for if (I thing SpectraFileMo
+   */
+  double neutronDisplayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
+#endif
+  
   //setDisplayScaleFactor(...): sets the display scale factor. SpecUtils::SpectrumType
   //  can not be SpecUtils::SpectrumType::Foreground (an exception will be thrown).
   //This will make it so the effective live time of the spectrum will be

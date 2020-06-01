@@ -2702,7 +2702,7 @@ std::shared_ptr<SpecMeas>
           }
         } // if( newspecMeas.size() )
 
-        newspec->add_measurment( meas, false );
+        newspec->add_measurement( meas, false );
       } // for( std::shared_ptr<const Measurement> &meas : meas_to_add )
     } // if( is_measurement  )
   } // for( const WModelIndex &index : selected )

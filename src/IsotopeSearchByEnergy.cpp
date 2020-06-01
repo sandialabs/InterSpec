@@ -128,6 +128,7 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   layout->addWidget( label, 0, 0, Wt::AlignMiddle );
   
   m_energy = new WDoubleSpinBox();
+  //m_energy->setNativeControl(true);
   layout->addWidget( m_energy, 0, 1, Wt::AlignMiddle );
   label->setBuddy( m_energy );
   m_energy->setMinimum( 0.0 );
@@ -139,6 +140,7 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   label->addStyleClass( "SearchEnergyWindowLabel" );
   layout->addWidget( label, 0, 2, Wt::AlignMiddle );
   m_window = new WDoubleSpinBox();
+  //m_window->setNativeControl(true);
   layout->addWidget( m_window, 0, 3, Wt::AlignMiddle );
   label->setBuddy( m_window );
   
@@ -373,6 +375,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
    buttonDivLayout->addWidget(label,1,0);
 
   m_minBranchRatio = new WDoubleSpinBox();
+  //m_minBranchRatio->setNativeControl(true);
   string tip = "Minimum branching ratio.";
   HelpSystem::attachToolTipOn( m_minBranchRatio, tip, showToolTipInstantly , HelpSystem::Top);
   buttonDivLayout->addWidget(m_minBranchRatio,1,1);

@@ -660,7 +660,7 @@ DecayChainChart.prototype.redraw = function() {
     nucinfo.attr("font-size", nucinfo_font_size );
     nucinfobb = nucinfo.node().getBoundingClientRect();
   }
-  nucinfo.attr("transform", "translate(" + (yaxisx+triangleLen) + ", " + (xaxisy - triangleLen - nucinfobb.height + font_size) + ")");
+  nucinfo.attr("transform", "translate(" + (yaxisx+triangleLen) + ", " + (xaxisy - triangleLen - nucinfobb.height + nucinfo_font_size) + ")");
   
   //I cant decide if its better to underline the "Show Decays Through ..." text,
   //  or draw a box around it; currently underlineing, but I left the box

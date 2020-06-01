@@ -47,6 +47,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakModel.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PhysicalUnits.h"

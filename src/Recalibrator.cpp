@@ -65,6 +65,7 @@
 #include <Wt/WRadioButton>
 #include <Wt/WItemDelegate>
 #include <Wt/WDoubleSpinBox>
+#include <Wt/WDoubleValidator>
 #include <Wt/WCssDecorationStyle>
 
 // Disable streamsize <=> size_t warnings in boost
@@ -122,7 +123,16 @@ namespace
     return true;
   }//matrix_invert
   
-  
+  template<class T> struct index_compare_assend
+  {
+    index_compare_assend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
+    bool operator()(const size_t a, const size_t b) const
+    {
+      return arr[a] < arr[b];
+    }
+    const T arr;
+  };//struct index_compare
+
   /** Fits polynomial energy equation based on peaks with assigned
    nuclide-photopeaks.
    
@@ -353,6 +363,142 @@ namespace
   
 }//namespace
 
+          
+/*
+ Similar to WDoubleSpinBox if you called WDoubleSpinBox::setNativeControl(true),
+ but probably not implemented nearly as well.  This is more an experiment to
+ control formatting and precision, but should be a drop-in replacement for
+ going back to WDoubleSpinBox.
+ (As of Wt 3.3.4, calling setNativeControl causes a client-side exception)
+ */
+class NativeFloatSpinBox : public Wt::WLineEdit
+{
+public:
+  NativeFloatSpinBox( WContainerWidget *parent = 0 )
+    : WLineEdit( parent ),
+      m_value( 0.0f ),
+      m_min( -std::numeric_limits<float>::max() ),
+      m_max( std::numeric_limits<float>::max() )
+  {
+    setAutoComplete( false );
+    setAttributeValue( "type", "number" );
+    setValue( 0.0f );
+          
+    // @TODO: Since #handleChanged is connected first, it will be called last after the subsequent connections.
+    //        Should figure out how to make sure #handleChanged is always called
+    //        first so we can go down to only parsing the text to a float when
+    //        its actually changed, and so we can get rid of m_txt.
+    // Note: boost::signals2 offers call slot groups
+    //       (see https://www.boost.org/doc/libs/1_72_0/doc/html/signals2/tutorial.html#id-1.3.37.4.4.3)
+    //       but Wt::EventSignal doesnt seem to keep this.
+    // Note: if clients of this widget always connect to #valueChanged, instead
+    //       of WFormWidget::change, then this problem also disappears.
+    changed().connect( this, &NativeFloatSpinBox::handleChanged );
+    enterPressed().connect( this, &NativeFloatSpinBox::handleChanged );
+  }
+          
+  virtual ~NativeFloatSpinBox(){};
+  
+  void setValue( const float value )
+  {
+    m_value = value;
+    char buffer[64];
+    snprintf( buffer, sizeof(buffer), "%.6G", value );
+    m_txt = buffer;
+    setValueText( WString::fromUTF8(m_txt) );
+  }
+  
+  void setSingleStep( const float step )
+  {
+    char buffer[64];
+    snprintf( buffer, sizeof(buffer), "%.6G", step );
+    setAttributeValue( "step", buffer );
+  }
+  
+  void setMinimumValue( const float minval )
+  {
+    char buffer[64];
+    snprintf( buffer, sizeof(buffer), "%.6G", minval );
+    setAttributeValue( "min", buffer );
+  }
+  
+  void setMaximumValue( const float maxval )
+  {
+    char buffer[64];
+    snprintf( buffer, sizeof(buffer), "%.6G", maxval );
+    setAttributeValue( "max", buffer );
+  }
+          
+  float value()
+  {
+    updateValueFromText();
+    return m_value;
+  }
+
+  virtual void setPlaceholderText(const WString& placeholder)
+  {
+    //The Wt setPlaceholderText doesnt appear to be working, so manually set
+    //  the attribute value
+    setAttributeValue( "placeholder", placeholder );
+    Wt::WLineEdit::setPlaceholderText( placeholder );
+  }
+          
+  Signal<float> &valueChanged(){ return m_valueChanged; }
+          
+protected:
+  void updateValueFromText()
+  {
+    // Updated m_value only if displayed text has changed from what was used
+    //  to set m_value.
+    //  This is to avoid roundoff errors in float<-->txt.  This whole function
+    //  and m_txt can be removed if we can ensure #handleChanged is always
+    //  called first when the user changes value. (or client code just never
+    //  connects to changed())
+          
+    const string valstr = valueText().toUTF8();
+    if( m_txt == valstr )
+      return;
+    //const float newval = WLocale::currentLocale().toDouble( valueText() );
+          
+    float newval = 0.0f;
+    const int nread = sscanf( valstr.c_str(), "%f", &newval );
+    if( nread != 1 )
+    {
+      if( !placeholderText().empty() && valstr.empty() )
+      {
+        m_txt = "";
+        m_value = 0.0f;
+      }else
+      {
+        setValue( m_value );
+      }
+          
+      return;
+    }//if( failed to read in a value )
+          
+    if( newval < m_min || newval > m_max )
+    {
+      setValue( m_value );
+      return;
+    }
+
+    m_txt = valstr;
+    m_value = newval;
+  }//void updateValueFromText()
+          
+  void handleChanged()
+  {
+    updateValueFromText();
+    m_valueChanged.emit( m_value );
+  }//void handleChanged()
+          
+  float m_value;
+  float m_min, m_max;
+  Signal<float> m_valueChanged;
+    
+  std::string m_txt;
+};//NativeFloatSpinBox
+          
 
 Recalibrator::Recalibrator(
 #if ( USE_SPECTRUM_CHART_D3 )
@@ -433,19 +579,15 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   
   
   // Set up the numeric boxes.
-  const size_t ncoefdisp = sizeof(m_coefficientDisplay)/sizeof(m_coefficientDisplay[0]);
-  for( size_t i = 0; i < ncoefdisp; ++i )
+  WLabel *termlabels[sm_numCoefs] = { nullptr };
+  for( size_t i = 0; i < sm_numCoefs; ++i )
   {
-    m_coefficientDisplay[i] = new WDoubleSpinBox();
+    m_coefficientDisplay[i] = new NativeFloatSpinBox();
     
-    // This needs to be 6 because Wt has some bad code--see WebUtils.C, 180-207, namely
-    //  static const int exp[] = { 1, 10, 100, 1000, 10000, 100000, 1000000 };
-    //  long long i = static_cast<long long>(d * exp[digits] + (d > 0 ? 0.49 : -0.49));
-    // Note: this might be fixed at some point, possibly the next Wt release?
-    m_coefficientDisplay[i]->setDecimals( 6 );
+    //m_coefficientDisplay[i]->setDecimals( 6 );
 
     m_coefficientDisplay[i]->setValue( 0.0 );
-    m_coefficientDisplay[i]->setRange( -1 * ( 2 << 20 ), 2 << 20 );
+    //m_coefficientDisplay[i]->setRange( -1 * ( 2 << 20 ), 2 << 20 );
 
     // The spinboxes are disabled until a file is added~
     m_coefficientDisplay[i]->setDisabled( true );
@@ -453,45 +595,29 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
     m_coefficientDisplay[i]->setMinimumSize( 95.0, WLength(1.0,WLength::FontEm) );
     
     // The buttons should all be enabled if the tick boxes are changed
-    m_coefficientDisplay[i]->changed().connect( std::bind( [this,i](){
-      if( m_coefficientDisplay[i]->value() <= 0.1 || m_coefficientDisplay[i]->value() >= 10.0 )
-      {
-        const double val = pow(10.0, m_coeffExps[i]) * m_coefficientDisplay[i]->value();
-        if( abs(val) < pow( 10.0, -20.0 ) )
-        {
-          m_coeffExps[0] = 0;
-          m_coefficientDisplay[i]->setValue( 0.0 );
-        }else
-        {
-          m_coeffExps[i] = static_cast<int>( floor( log10( abs(val) ) ) );
-          m_coefficientDisplay[i]->setValue( val * pow( 10.0, -m_coeffExps[i] ) );
-        }
-        updateCoefExpLabels();
-      }
-      
-      engageRecalibration( ApplyRecal );
-    } ) );
-  }//for( size_t i = 0; i < ncoefdisp; ++i )
-
-  // Set up the full layout
-  WLabel *offsetLabel = new WLabel( "Offset Term " );
-  m_exponentLabels[0] = new WLabel( "x10<sup>0</sup> keV" );
-
-  WLabel *linearLabel = new WLabel( "Linear Term " );
-  m_exponentLabels[1] = new WLabel( "x10<sup>0</sup> <sup>keV</sup>/<sub>chnl</sub>" );
-
-  WLabel *quadraticLabel = new WLabel( "Quad. Term " );
-  m_exponentLabels[2] = new WLabel( "x10<sup>0</sup> <sup>keV</sup>/<sub>chnl<sup>2</sup></sub>" );
-
-
-  for( size_t i = 0; i < ncoefdisp; ++i )
-  {
+    m_coefficientDisplay[i]->valueChanged().connect( boost::bind( &Recalibrator::engageRecalibration, this, ApplyRecal ) );
+          
+    termlabels[i] = new WLabel();
+    if( i == 0 )
+      termlabels[i]->setText( "Offset Term " );
+    else if( i == 1 )
+      termlabels[i]->setText( "Linear Term " );
+    else if( i == 2 )
+      termlabels[i]->setText( "Quad. Term " );
+    else if( i == 3 )
+      termlabels[i]->setText( "Cubic Term " );
+    else if( i == 4 )
+      termlabels[i]->setText( "Quart. Term " );
+          
+    m_exponentLabels[i] = new WLabel();
+          
     m_fitFor[i] = new WCheckBox( "fit" );
     m_fitFor[i]->setChecked( (i<2) );
     HelpSystem::attachToolTipOn( m_fitFor[i], "Fit for the value of this coefficient when using "
-                            "peaks associated with isotopes, to determine "
-                            "calibration." , showToolTipInstantly );
-  }//for( size_t i = 0; i < ncoefdisp; ++i )
+                                  "peaks associated with isotopes, to determine "
+                                  "calibration." , showToolTipInstantly );
+  }//for( size_t i = 0; i < sm_numCoefs; ++i )
+
 
   m_fitCoefButton = new WPushButton( "Fit Coeffs" );
   m_fitCoefButton->setIcon( "InterSpec_resources/images/ruler_small.png" );
@@ -626,31 +752,19 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   m_revert->clicked().connect( boost::bind( &Recalibrator::engageRecalibration, this, RevertRecal ) );
   
   int row = 0; //keeps track of row for adding widgets to layout
-  m_layout->addWidget( offsetLabel,             row, 0 );
-  m_layout->addWidget( m_coefficientDisplay[0], row, 1 );
-  m_layout->addWidget( m_exponentLabels[0],     row, 2 );
-  m_layout->addWidget( m_fitFor[0],             row, 3, AlignCenter );
-  
-  row++; //1
-  m_layout->addWidget( linearLabel,             row, 0 );
-  m_layout->addWidget( m_coefficientDisplay[1], row, 1 );
-  m_layout->addWidget( m_exponentLabels[1],     row, 2 );
-  m_layout->addWidget( m_fitFor[1],             row, 3, AlignCenter );
-
-  row++; //2
-  m_layout->addWidget( quadraticLabel,          row, 0 );
-  m_layout->addWidget( m_coefficientDisplay[2], row, 1 );
-  m_layout->addWidget( m_exponentLabels[2],     row, 2 );
-  m_layout->addWidget( m_fitFor[2],             row, 3, AlignCenter );
-  
-  
-  offsetLabel->setBuddy( m_coefficientDisplay[0] );
-  linearLabel->setBuddy( m_coefficientDisplay[1] );
-  quadraticLabel->setBuddy( m_coefficientDisplay[2] );
-  
+  for( size_t i = 0; i < sm_numCoefs; ++i )
+  {
+    m_layout->addWidget( termlabels[i],           row, 0 );
+    m_layout->addWidget( m_coefficientDisplay[i], row, 1 );
+    m_layout->addWidget( m_exponentLabels[i],     row, 2 );
+    m_layout->addWidget( m_fitFor[i],             row, 3, AlignCenter );
+    termlabels[i]->setBuddy( m_coefficientDisplay[1] );
+    row++;
+  }
   
   m_devPairs = new DeviationPairDisplay( nullptr );
-  m_devPairs->changed().connect( boost::bind( &Recalibrator::engageRecalibration, this, ApplyRecal ) );
+  //m_devPairs->changed().connect( boost::bind( &Recalibrator::engageRecalibration, this, ApplyRecal ) );
+  m_devPairs->changed().connect( boost::bind( &Recalibrator::userChangedDeviationPairs, this ) );
   
   
   WPushButton *addButton = new WPushButton( "Add Pair" );
@@ -659,46 +773,46 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   
   if( style == kTall )
   {
-    row++; //3
     m_layout->addWidget( m_devPairs, row, 0, 1, 4 );
     m_devPairs->setMinimumSize(WLength::Auto, WLength(150));
     m_devPairs->setMaximumSize(WLength::Auto, WLength(150));
+    row++;
 
-    row++; //4
     m_layout->addWidget(addButton, row, 3, 1, 1 );
     m_devPairs->setStyleClass( "DeviationPairDisplayTall" );
+    row++;
 
-    row++; //5
     m_layout->addWidget( m_isotopeView, row, 0, 1, 4 );
     m_isotopeView->setMinimumSize(WLength::Auto, WLength(150));
     m_layout->setRowStretch( row, 1 );
     m_layout->setColumnStretch( 1, 1 );
+    row++;
 
-    row++; //6
     m_fitCoefButton->setStyleClass( "RecalFitBtn" );
     m_layout->addWidget( m_fitCoefButton, row, 3, 1, 1 );
     m_layout->addWidget( multFiles, row, 2, 1, 1 );
+    row++;
   }//kTall
   
   m_applyTo[ForeIndex]->setStyleClass( "RecalApplyToCbL" );
   m_applyTo[SecondIndex]->setStyleClass( "RecalApplyToCbR" );
   m_applyTo[BackIndex]->setStyleClass( "RecalApplyToCbL" );
 
-  row++; //tall=7, wide=3
-  m_layout->addWidget( m_applyToLabel,               row, 0 );
-  m_layout->addWidget( m_applyTo[ForeIndex],       row, 1 );
+  m_layout->addWidget( m_applyToLabel,         row, 0 );
+  m_layout->addWidget( m_applyTo[ForeIndex],   row, 1 );
   m_layout->addWidget( m_applyTo[SecondIndex], row, 2 );
-
+  row++; //tall=7, wide=3
+          
+  m_layout->addWidget( m_applyTo[BackIndex],   row, 1 );
   row++; //tall=8, wide=4
-  m_layout->addWidget( m_applyTo[BackIndex], row, 1 );
   
   //For some reason if we put m_convertToPolynomialLabel and m_convertToPolynomial
-  //  into their own rows and show/hide them, there are some wierd artificats
+  //  into their own rows and show/hide them, there are some weird artifacts
   //  introduced into the layout, so for now we'll just have things a bit.
-  //row++;
   //m_layout->addWidget( m_convertToPolynomialLabel, row, 0, 1, 3 );
   //row++;
   //m_layout->addWidget( m_convertToPolynomial, row, 0, 1, 3, Wt::AlignCenter | Wt::AlignTop );
+  //row++;
   
   WContainerWidget *polyDiv = new WContainerWidget();
   polyDiv->addWidget( m_convertToPolynomialLabel );
@@ -706,8 +820,8 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   m_convertToPolynomialLabel->hide();
   m_convertToPolynomial->hide();
   
-  row++;
   m_layout->addWidget( polyDiv, row, 0, 1, 3 );
+  row++;
   
   
   multFiles->setIcon( "InterSpec_resources/images/page_white_stack.png" );
@@ -721,10 +835,9 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   {
     m_devPairs->setStyleClass( "DeviationPairDisplayWide" );
     
-    for( int i = 0; i <= row; ++i )
+    for( int i = 0; i < (row-1); ++i )
       m_layout->setRowStretch( row, 1 );
     
-    row++;
     m_layout->addWidget( m_acceptButtonDiv, row, 0, 1, 4 );
     
     m_layout->addWidget( m_isotopeView, 0, 4, row, 1 );
@@ -746,6 +859,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
     multFiles->removeStyleClass( "FloatLeft" );
     m_closeButton->setHidden(true);
     m_revert->removeStyleClass( "RecalCancelbtn" );
+    row++;
   }//if( style == kWide )
   
   if( style == kTall )
@@ -1030,8 +1144,86 @@ void Recalibrator::finishConvertToPolynomial( const bool followThrough )
 }//void finishConvertToPolynomial()
 
 
+void Recalibrator::userChangedDeviationPairs()
+{
+  try  //begin check validity of equation {note: not a rigorous check}
+  {
+    //Lets be optimistic and and assume all will be well
+    m_devPairs->setValidValues();
+          
+    vector<pair<float,float>> devpairs = m_devPairs->deviationPairs();
+    if( devpairs.empty() )
+    {
+      engageRecalibration(ApplyRecal);
+      return;
+    }
+          
+    std::shared_ptr<const SpecUtils::Measurement> disp_foreground
+               = m_hostViewer->displayedHistogram( SpectrumType::Foreground );
+    if( !disp_foreground )
+    {
+      m_devPairs->setDeviationPairs( vector<pair<float,float>>{} );
+      throw std::runtime_error( "You must have a foreground loaded to set deviation pairs." );
+    }
+        
+    auto &channel_counts = disp_foreground->gamma_counts();
+    if( !channel_counts || channel_counts->empty() )
+    {
+      m_devPairs->setDeviationPairs( disp_foreground->deviation_pairs() );
+      throw std::runtime_error( "Foreground does not have a defined spectrum." );
+    }
+    
+    vector<float> frfcoef;
+    const vector<float> eqn = disp_foreground->calibration_coeffs();
+    const size_t nchannel = channel_counts->size();
+    const SpecUtils::EnergyCalType cal_type = disp_foreground->energy_calibration_model();
+          
+    switch( cal_type )
+    {
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        m_devPairs->setDeviationPairs( disp_foreground->deviation_pairs() );
+        throw std::runtime_error( "Deviation pairs can only be defined for polynomial or full range fraction calibrations." );
+        break;
+          
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+          frfcoef = eqn;
+        break;
+          
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        frfcoef = SpecUtils::polynomial_coef_to_fullrangefraction( eqn, nchannel );
+        break;
+    }//switch( calibration type )
+          
+    
+    const bool valid = checkFullRangeFractionCoeffsValid( frfcoef, devpairs, nchannel );
+    
+    if( !valid )
+    {
+      m_devPairs->setInvalidValues();
+      m_revert->setDisabled( false );
+      stringstream msg;
+      msg << "The coeffiecients {" << eqn[0] << ", " << eqn[1] << ", " << eqn[2]
+          << "} are invalid because they will cause higher numbered bins to"
+          << " have lower energy values.";
+
+      throw std::runtime_error( msg.str() );
+    }//if( (nearend >= end) || (begin >= nearbegin) )
+          
+    engageRecalibration(ApplyRecal);
+  }catch( std::exception & e )//end codeblock
+  {
+    passMessage( e.what(), "", WarningWidget::WarningMsgHigh );
+    
+    return;
+  }//try / catch to check validity of equation
+}//void userChangedDeviationPairs()
+
+
 void Recalibrator::engageRecalibration( RecalAction action )
 {
+  cout << "engageRecalibration" << endl;
   std::shared_ptr<SpecMeas> foreground, back, second;
   foreground = m_hostViewer->measurment(SpectrumType::Foreground);
   back       = m_hostViewer->measurment(SpectrumType::Background);
@@ -1135,11 +1327,9 @@ void Recalibrator::engageRecalibration( RecalAction action )
     passMessage( "Calibration only applied to displayed detectors", "", 1 );
 
   // Extract the values, noting the exponents.
-  vector< float > eqn( 3 );
-  eqn[0] = static_cast< float >( pow( 10.0, m_coeffExps[0] ) * m_coefficientDisplay[0]->value() );
-  eqn[1] = static_cast< float >( pow( 10.0, m_coeffExps[1] ) * m_coefficientDisplay[1]->value() );
-  eqn[2] = static_cast< float >( pow( 10.0, m_coeffExps[2] ) * m_coefficientDisplay[2]->value() );
-
+  vector< float > eqn( sm_numCoefs );
+  for( size_t i = 0; i < sm_numCoefs; ++i )
+    eqn[i] = m_coefficientDisplay[i]->value();
 
   try  //begin check validity of equation {note: not a rigourous check}
   {
@@ -1156,6 +1346,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
     
     if( !valid )
     {
+      static_assert( sm_numCoefs >= 3, "" );
       stringstream msg;
       msg << "The coeffiecients {" << eqn[0] << ", " << eqn[1] << ", " << eqn[2]
           << "} are invalid because they will cause higher numbered bins to"
@@ -1254,7 +1445,6 @@ void Recalibrator::engageRecalibration( RecalAction action )
       m_hostViewer->displayForegroundData( keepCurrentEnergyRange );
       m_hostViewer->displaySecondForegroundData();
       m_hostViewer->displayBackgroundData();
- 
 
       break;
     }//case Polynomial, FullRangeFraction:
@@ -1314,11 +1504,10 @@ void Recalibrator::recalibrateByPeaks()
   {
     const size_t npeaks = m_peakModel->npeaks();
 
-
-    const int num_coeff_fit = m_fitFor[0]->isChecked()
-                              + m_fitFor[1]->isChecked()
-                              + m_fitFor[2]->isChecked();
-
+    int num_coeff_fit = 0;
+    for( size_t i = 0; i < sm_numCoefs; ++i )
+      num_coeff_fit += m_fitFor[i]->isChecked();
+              
     if( num_coeff_fit < 1 )
     {
       const char *msg = "You must select at least one coefficient to fit for";
@@ -1396,6 +1585,8 @@ void Recalibrator::recalibrateByPeaks()
 
           m_coeffEquationType = SpecUtils::EnergyCalType::FullRangeFraction;
           calib_coefs = SpecUtils::polynomial_coef_to_fullrangefraction( poly_eqn, nbin );
+          
+          updateCoefLabels();
         }//if( !!foreground )
         
         break;
@@ -1403,7 +1594,7 @@ void Recalibrator::recalibrateByPeaks()
     }//switch( calibration_type )
 
     //TODO: meansFitError will currently contain only values of 1.0, eventually
-    //      will contian the error of the fit mean for that peak
+    //      will contain the error of the fit mean for that peak
     vector<RecalPeakInfo> peakInfos;
 
     for( size_t peakn = 0; peakn < npeaks; ++peakn )
@@ -1460,25 +1651,18 @@ void Recalibrator::recalibrateByPeaks()
     
     try
     {
-      const size_t num_gui_pars = sizeof(m_fitFor) / sizeof(m_fitFor[0]);
-      //Just in case of future changes we should consider.
-      static_assert( (sizeof(m_fitFor) / sizeof(m_fitFor[0]))==3, "Expected 3 GUI fit parameters." );
-      
-      
       //We can currently only so this if there are no non-linear devication pairs...
       vector<float> lls_fit_coefs = calib_coefs, lls_fit_coefs_uncert;
       
       //Convert eqation type to polynomial incase there are any fixed paramters.
       if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
         lls_fit_coefs = SpecUtils::fullrangefraction_coef_to_polynomial(calib_coefs, binning->size() );
-      lls_fit_coefs.resize( num_gui_pars, 0.0f );
+      lls_fit_coefs.resize( sm_numCoefs, 0.0f );
       
       vector<bool> fitfor( lls_fit_coefs.size(), false );
       
-      for( size_t i = 0; i < calib_coefs.size() && i < num_gui_pars; ++i )
-      {
+      for( size_t i = 0; i < calib_coefs.size() && i < sm_numCoefs; ++i )
         fitfor[i] = m_fitFor[i]->isChecked();
-      }
       
       const double chi2 = fit_energy_cal_poly( peakInfos, fitfor,
                                               displ_meas->deviation_pairs(),
@@ -1546,45 +1730,36 @@ void Recalibrator::recalibrateByPeaks()
                                   displ_meas->deviation_pairs() );
       ROOT::Minuit2::MnUserParameters inputPrams;
       
-      if( calib_coefs.size() < 3 )
-        calib_coefs.resize( 3, 0.0 );
+      if( calib_coefs.size() < sm_numCoefs )
+        calib_coefs.resize( sm_numCoefs, 0.0 );
       
       //    for( int i = 0; i < calib_coefs.size(); ++i )
       //      cerr << "initial calib_coefs[" << i << "]=" << calib_coefs[i] << endl;
-      
-      string name = "0";
-      double delta = 1.0/pow( static_cast<double>(nbin), 0.0 );
-      if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )  //set delats to 0.5 keV for middle bin
-        delta = 0.5;
-      
-      if( m_fitFor[0]->isChecked() )
-        inputPrams.Add( name, calib_coefs[0], delta );
-      else
-        inputPrams.Add( name, calib_coefs[0] );
-      
-      name = "1";
-      delta = 1.0/pow( static_cast<double>(data->GetNbinsX()), 1.0 );
-      if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-        delta = 1.0;
-      
-      if( m_fitFor[1]->isChecked() )
+      for( size_t i = 0; i < sm_numCoefs; ++i )
       {
-        inputPrams.Add( name, calib_coefs[1], delta );
-        inputPrams.SetLowerLimit( name, 0.0 );
-      }else
-      {
-        inputPrams.Add( name, calib_coefs[1] );
-      }
-      
-      name = "2";
-      delta = 1.0/pow( static_cast<double>(data->GetNbinsX()), 2.0 );
-      if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-        delta = 0.1;
-      
-      if( m_fitFor[2]->isChecked() )
-        inputPrams.Add( name, calib_coefs[2], delta );
-      else
-        inputPrams.Add( name, calib_coefs[2] );
+        string name = std::to_string( i );
+        double delta = 1.0/pow( static_cast<double>(nbin), static_cast<double>(i) );
+        if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
+        {
+          switch( i )
+          {
+            case 0: delta = 0.5; break;
+            case 1: delta = 1.0; break;
+            default:
+              delta = 1.0 / std::pow( 10.0, static_cast<double>(i-1) );
+              break;
+          }//switch( i )
+        }//if( FullRangeFraction )
+          
+        if( m_fitFor[i]->isChecked() )
+          inputPrams.Add( name, calib_coefs[i], delta );
+        else
+          inputPrams.Add( name, calib_coefs[i] );
+          
+        if( i == 1 && m_fitFor[i]->isChecked() )
+          inputPrams.SetLowerLimit( name, 0.0 );
+      }//for( size_t i = 0; i < sm_numCoefs; ++i )
+          
       
       ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
       ROOT::Minuit2::MnStrategy strategy( 1 ); //0 low, 1 medium, >=2 high
@@ -1611,8 +1786,12 @@ void Recalibrator::recalibrateByPeaks()
         if( !minimum.HasValidCovariance() || !minimum.HasValidParameters() )
         {
           string msg = "Fit for calibration parameters failed.";
-          if( m_fitFor[2] )
-            msg += " you might try not fitting for quadratic term.";
+          bool fithigher = false;
+          for( size_t i = 2; i < sm_numCoefs; ++i )
+            fithigher |= m_fitFor[i]->isChecked();
+          
+          if( fithigher )
+            msg += " you might try not fitting for quadratic or higher terms.";
           passMessage( msg, "", WarningWidget::WarningMsgHigh );
           return;
         }
@@ -1649,27 +1828,18 @@ void Recalibrator::recalibrateByPeaks()
       cout << mmsg.str() << endl;
     }//if( !fit_coefs )
     
-    assert( parValues.size() == 3 );
-    assert( parErrors.size() == 3 );
+    assert( parValues.size() == sm_numCoefs );
+    assert( parErrors.size() == sm_numCoefs );
     
     for( size_t i = 0; i < parValues.size(); ++i )
       if( IsInf(parValues[i]) || IsNan(parValues[i]) )
         throw runtime_error( "Invalid calibration parameter from fit :(" );
     
-    for( int i = 0; i < 3; ++i )
+    for( int i = 0; i < parValues.size(); ++i )
     {
-      if( abs(parValues[i]) < pow( 10.0, -20.0 ) )
-      {
-        m_coeffExps[0] = 0;
-        m_coefficientDisplay[i]->setValue( 0.0 );
-      }else
-      {
-        m_coeffExps[i] = static_cast<int>( floor( log10( abs( parValues[i] ) ) ) );
-        m_coefficientDisplay[i]->setValue( parValues[i] * pow( 10.0, -m_coeffExps[i] ) );
-      }
+      m_coefficientDisplay[i]->setValue( parValues[i] );
       m_uncertainties[i] = parErrors[i];
     }//for( size_t i = 0; i < parValues.size(); ++i )
-    updateCoefExpLabels();
     
     engageRecalibration( ApplyRecal );
   }catch( std::exception &e )
@@ -1687,43 +1857,42 @@ void Recalibrator::recalibrateByPeaks()
 }//void recalibrateByPeaks()
 
 
-void Recalibrator::updateCoefExpLabels()
+void Recalibrator::updateCoefLabels()
 {
-  stringstream offsetExp, linearExp, quadraticExp;
-  offsetExp    << "x10<sup>" << m_coeffExps[0] << "</sup>";
-  linearExp    << "x10<sup>" << m_coeffExps[1] << "</sup>";
-  quadraticExp << "x10<sup>" << m_coeffExps[2] << "</sup>";
-  
-  switch( m_coeffEquationType )
+  for( size_t i = 0; i < sm_numCoefs; ++i )
   {
-    case SpecUtils::EnergyCalType::Polynomial:
-    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-    case SpecUtils::EnergyCalType::InvalidEquationType:
-      offsetExp    << " keV";
-      linearExp    << " <sup>keV</sup>/<sub>chnl</sub>";
-      quadraticExp << " <sup>keV</sup>/<sub>chnl<sup>2</sup></sub>";
+    string txt;
+    switch( m_coeffEquationType )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        if( i == 0 )
+          txt = "keV";
+        else if( i == 1 )
+          txt = "<sup>keV</sup>/<sub>chnl</sub>";
+        else
+          txt = "<sup>keV</sup>/<sub>chnl<sup>" + std::to_string(i) + "</sup></sub>";
       break;
+          
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+        if( i == 0 )
+          txt = "keV";
+        else if( i == 1 )
+          txt = "<sup>keV</sup>/<sub>FWF</sub>";
+        else
+          txt = "<sup>keV</sup>/<sub>FWF<sup>" + std::to_string(i) + "</sup></sub>";
+      break;
+          
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+      break;
+    }//switch( m_coeffEquationType )
       
-    case SpecUtils::EnergyCalType::FullRangeFraction:
-      offsetExp    << " keV";
-      linearExp    << " <sup>keV</sup>/<sub>FWF</sub>";
-      quadraticExp << " <sup>keV</sup>/<sub>FWF<sup>2</sup></sub>";
-      break;
-      
-    case SpecUtils::EnergyCalType::LowerChannelEdge:
-      break;
-      offsetExp    << " keV";
-      linearExp    << " keV";
-      quadraticExp << " keV";
-      break;
-  }//switch( m_coeffEquationType )
-  
-  
-  m_exponentLabels[0]->setText(    offsetExp.str() );
-  m_exponentLabels[1]->setText(    linearExp.str() );
-  m_exponentLabels[2]->setText( quadraticExp.str() );
-};
+    m_exponentLabels[i]->setText( txt );
+  }//for( size_t i = 0; i < sm_numCoefs; ++i )
+};//void updateCoefLabels()
 
+          
 void Recalibrator::refreshRecalibrator()
 {
   //Needed to check, because Recalibrator always exists whether tool tabs are
@@ -1768,7 +1937,7 @@ void Recalibrator::refreshRecalibrator()
   {
     m_fitCoefButton->disable();
     m_applyToLabel->hide();
-    for( int i = 0; i < 3; ++i )
+    for( size_t i = 0; i < sm_numCoefs; ++i )
     {
       m_coefficientDisplay[i]->setValue( 0.0 );
       m_fitFor[i]->hide();
@@ -1798,7 +1967,7 @@ void Recalibrator::refreshRecalibrator()
     m_convertToPolynomial->hide();
     m_fitCoefButton->enable();
     m_applyToLabel->show();
-    for( int i = 0; i < 3; ++i )
+    for( size_t i = 0; i < sm_numCoefs; ++i )
     {
       m_fitFor[i]->show();
       m_applyTo[i]->show();
@@ -1846,7 +2015,7 @@ void Recalibrator::refreshRecalibrator()
   }//for( loop over SpecUtils::SpectrumType );
   
   
-  vector< float > equationCoefficients = displ_foreground->calibration_coeffs();
+  vector<float> equationCoefficients = displ_foreground->calibration_coeffs();
   m_coeffEquationType = m_originalCal[ForeIndex].type;
   if( m_coeffEquationType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
     m_coeffEquationType = SpecUtils::EnergyCalType::Polynomial;
@@ -1854,92 +2023,54 @@ void Recalibrator::refreshRecalibrator()
   switch( m_coeffEquationType )
   {
     // Note: fall-through intentional
-  case SpecUtils::EnergyCalType::Polynomial:
-  case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-  case SpecUtils::EnergyCalType::FullRangeFraction:
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+    case SpecUtils::EnergyCalType::FullRangeFraction:
     break;
 
-  case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
     //Note: we will never make it here!
-  case SpecUtils::EnergyCalType::InvalidEquationType:
-    equationCoefficients.resize( 3 ); // Third degree polynomial *wonk*
-    if( binning.size() != 0 )
-    {
-      equationCoefficients[0] = binning[0];
-      equationCoefficients[1] = ( binning[ binning.size() - 1 ] - binning[0] ) / nbin;
-    }
-    else
-    {
-      equationCoefficients[1] = 0.0;
-    }
-    equationCoefficients[2] = 0.0;
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      equationCoefficients.clear();
+      equationCoefficients.resize( sm_numCoefs, 0.0f );
+      if( binning.size() != 0 )
+      {
+        equationCoefficients[0] = binning[0];
+        equationCoefficients[1] = ( binning[ binning.size() - 1 ] - binning[0] ) / nbin;
+      }
 
     break;
-  } // switch( m_coeffEquationType )
+  }//switch( m_coeffEquationType )
 
-  // Find how much the things should tick by as a base
-  double tickLevel[3];
-  if( m_coeffEquationType == SpecUtils::EnergyCalType::Polynomial
-      || m_coeffEquationType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-  {
-    tickLevel[0] = 1.0;
-    tickLevel[1] = 1.0 / nbin;
-    tickLevel[2] = 1.0 / (nbin * nbin);
-  }else
-  {
-    //FullRangeFraction
-    tickLevel[0] = 1.0;
-    tickLevel[1] = 2.0;
-    tickLevel[2] = 4.0;
-  }
-
-
-  // Update the powers. If they're tiny (error-zone), treat them as zero.
-  if ( equationCoefficients.size() < 1 || abs( equationCoefficients[0] ) < pow( 10.0, -20.0 ) ) {
-    m_coeffExps[0] = 0; // log10( 1.0 ), log10( tickLevel[0] )
-  } else {
-    m_coeffExps[0] = static_cast<int>( floor( log10( abs( equationCoefficients[0] ) ) ) );
-  }
-
-  if ( equationCoefficients.size() < 2 || abs( equationCoefficients[1] ) < pow( 10.0, -20.0 ) ) {
-    m_coeffExps[1] = static_cast<int>( floor( log10( tickLevel[1] ) ) );
-  } else {
-    m_coeffExps[1] = static_cast<int>( floor( log10( abs( equationCoefficients[1] ) ) ) );
-  }
-
-  if ( equationCoefficients.size() < 3 || abs( equationCoefficients[2] ) < pow( 10.0, -20.0 ) ) {
-    m_coeffExps[2] = static_cast<int>( floor( log10( tickLevel[2] ) ) );
-  } else {
-    m_coeffExps[2] = static_cast<int>( floor( log10( abs( equationCoefficients[2] ) ) ) );
-  }
-  
-  
-  updateCoefExpLabels();
+  updateCoefLabels();
   
   // Set up the little tick/spin/whatever boxes
-  //m_coefficientDisplay[0]->setSingleStep( 1.0 );
-  //m_linear->setSingleStep( 1.0 / nbin );
-  //m_quadratic->setSingleStep( 1.0 / ( nbin * nbin ) );
-  for( int i = 0; i < 3; ++i )
+  for( size_t i = 0; i < sm_numCoefs; ++i )
   {
-    m_coefficientDisplay[i]->setSingleStep( tickLevel[i] * pow( 10.0, -m_coeffExps[i] ) );
     m_coefficientDisplay[i]->setDisabled( false );
-  }//for( int i = 0; i < 3; ++i )
-  
-  if( equationCoefficients.size() > 0 )
-    m_coefficientDisplay[0]->setValue( equationCoefficients[0] * pow( 10.0, -m_coeffExps[0] ) );
-  else
-    m_coefficientDisplay[0]->setValue( 0.0 );
-  
-  if( equationCoefficients.size() > 1 )
-    m_coefficientDisplay[1]->setValue( equationCoefficients[1] * pow( 10.0, -m_coeffExps[1] ) );
-  else
-    m_coefficientDisplay[1]->setValue( 0 );
-
-  if( equationCoefficients.size() > 2 )
-    m_coefficientDisplay[2]->setValue( equationCoefficients[2] * pow( 10.0, -m_coeffExps[2] ) );
-  else
-    m_coefficientDisplay[2]->setValue( 0 );
+    const float val = (i < equationCoefficients.size()) ? equationCoefficients[i] : 0.0f;
+    m_coefficientDisplay[i]->setValue( val );
+          
+    float stepsize = 1.0f;
+    switch( m_coeffEquationType )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        stepsize = 1.0f / std::pow(nbin,i);
+      break;
+          
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+        stepsize = 1.0;
+      break;
+          
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        stepsize = 0.0f;
+      break;
+    }//switch( m_coeffEquationType )
+      
+    m_coefficientDisplay[i]->setSingleStep( stepsize );
+  }//for( int i = 0; i < sm_numCoefs; ++i )
   
   m_devPairs->setDeviationPairs( m_originalCal[ForeIndex].deviationpairs );
   
@@ -1952,19 +2083,22 @@ void Recalibrator::refreshRecalibrator()
   
   m_applyTo[SecondIndex]->setDisabled( !second );
   m_applyTo[SecondIndex]->setChecked( !!second);
-}// void refreshRecalibrator( InterSpec *m_hostViewer )
+}//void refreshRecalibrator( InterSpec *m_hostViewer )
 
 
 
 
 DevPair::DevPair( Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
-    m_energy( new WDoubleSpinBox() ),
-    m_offset( new WDoubleSpinBox() ),
+    //m_energy( new WDoubleSpinBox() ),
+    //m_offset( new WDoubleSpinBox() ),
+    m_energy( new NativeFloatSpinBox() ),
+    m_offset( new NativeFloatSpinBox() ),
     m_delete( new WContainerWidget() )
 {
   WGridLayout* layout = new WGridLayout();
   layout->setContentsMargins(0, 0, 0, 0);
+  layout->setVerticalSpacing( 0 );
   
   setLayout(layout);
   setStyleClass( "DevPair" );
@@ -1975,13 +2109,14 @@ DevPair::DevPair( Wt::WContainerWidget *parent )
   layout->setColumnStretch(0, 1);
   layout->setColumnStretch(1, 1);
   layout->setColumnStretch(2, 0);
-  
+          
   m_energy->setStyleClass( "DevEnergy" );
   m_offset->setStyleClass( "DevOffset" );
-  m_energy->setMinimum( -10000.0 );
-  m_energy->setMaximum( 1000000.0 );
-  m_offset->setMinimum( -10000.0 );
-  m_offset->setMaximum( 1000000.0 );
+  m_energy->setPlaceholderText( "Energy (keV)" );
+  m_offset->setPlaceholderText( "Offset (keV)" );
+  m_energy->setValueText( "" );
+  m_offset->setValueText( "" );
+          
   m_delete->addStyleClass( "Wt-icon DeleteDevPair" );
 }//DevPair constructor
 
@@ -1990,13 +2125,36 @@ void DevPair::setDevPair( const std::pair<float,float> &d )
 {
   m_energy->setValue( d.first );
   m_offset->setValue( d.second );
+  
+  auto printval = []( float val ) -> std::string {
+    char buffer[64];
+    const float fraction = val - std::floor(val);
+    if( fraction == 0.0 )
+      snprintf( buffer, sizeof(buffer), "%.0f", val );
+    else if( fraction == 0.1 )
+      snprintf( buffer, sizeof(buffer), "%.1f", val );
+    else
+      snprintf( buffer, sizeof(buffer), "%.2f", val );
+    return buffer;
+  };
+ 
+  m_energy->setText( printval(d.first) );
+  m_offset->setText( printval(d.second) );
 }
 
 
 std::pair<float,float> DevPair::devPair() const
 {
-  return pair<float,float>( float(m_energy->value()), float(m_offset->value()) );
+  const float energy = m_energy->value();
+  const float offset = m_offset->value();
+  return std::make_pair( energy, offset );
 }
+
+
+void DevPair::visuallyIndicateChanged()
+{
+  doJavaScript( "$('#" + id() + "').fadeIn(100).fadeOut(100).fadeIn(100).fadeOut(100).fadeIn(100);" );
+}//void visuallyIndicateChanged();
 
 
 DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
@@ -2005,15 +2163,23 @@ DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
 {
   setStyleClass( "DeviationPairDisplay" );
   WLabel *title = new WLabel( "Deviation Pairs", this );
-  title->setStyleClass( "DevPairTitle" );
+  title->setStyleClass( "Wt-itemview Wt-header Wt-label DevPairTitle" );
   title->setInline( false );
-  WContainerWidget *headerDiv = new WContainerWidget( this );
-  headerDiv->setStyleClass( "DevPairHeader" );
-  WLabel *header = new WLabel( "Energy (keV)", headerDiv );
-  header->setStyleClass(  "DevPairEnergyHeader" );
-  header = new WLabel( "Offset (keV)", headerDiv );
-  header->setStyleClass(  "DevPairOffsetHeader" );
   
+  //WContainerWidget *headerDiv = new WContainerWidget( this );
+  //headerDiv->setStyleClass( "DevPairHeader" );
+  //WLabel *header = new WLabel( "Energy (keV)", headerDiv );
+  //header->setStyleClass(  "DevPairEnergyHeader" );
+  //header = new WLabel( "Offset (keV)", headerDiv );
+  //header->setStyleClass(  "DevPairOffsetHeader" );
+  //
+  //Blah blah blah,
+  //Make header same height as table to the left.
+  //  Replace the "Add Pair" button with a small + button
+  //  Add in a help button.
+  //  When no pairs are present, maybe add some background text of energy and offset.
+          
+          
   m_pairs = new WContainerWidget( this );
   m_pairs->setStyleClass( "DevPairsContainer" ); 
 }//DeviationPairDisplay constructor
@@ -2029,7 +2195,51 @@ void DeviationPairDisplay::setDeviationPairs( vector< pair<float,float> > d )
     DevPair *dev = newDevPair( false );
     dev->setDevPair( d[i] );
   }//for( size_t i = 0; i < d.size(); ++i )
+  
+  sortDisplayOrder(false);
 }//setDeviationPairs(...)
+
+
+void DeviationPairDisplay::sortDisplayOrder( const bool indicateVisually )
+{
+  vector<size_t> sort_indices;
+  vector<DevPair *> displays;
+  
+  vector<float> offsets;
+  const vector<WWidget *> childs = m_pairs->children();
+  for( WWidget *t : childs )
+  {
+    DevPair *p = dynamic_cast<DevPair *>( t );
+    if( p )
+    {
+      const size_t index = sort_indices.size();
+      offsets.push_back( p->devPair().first );
+      displays.push_back( p );
+      sort_indices.push_back( index );
+    }
+  }//for( WWidget *t : childs )
+  
+  std::stable_sort( sort_indices.begin(), sort_indices.end(),
+                    index_compare_assend<vector<float>&>(offsets) );
+
+  bool order_changed = false;
+  for( size_t i = 0; i < sort_indices.size(); ++i )
+    order_changed |= (sort_indices[i] != i );
+  
+  if( !order_changed )
+    return;
+          
+  for( size_t i = 0; i < displays.size(); ++i )
+    m_pairs->removeWidget( displays[i] );
+    
+  for( size_t i = 0; i < displays.size(); ++i )
+  {
+    DevPair *p = displays[ sort_indices[i] ];
+    m_pairs->addWidget( p );
+    if( indicateVisually && (i != sort_indices[i]) )
+      p->visuallyIndicateChanged();
+  }
+}//void sortDisplayOrder()
 
 
 void DeviationPairDisplay::emitChanged()
@@ -2066,18 +2276,36 @@ void DeviationPairDisplay::removeDevPair( DevPair *devpair )
     if( devpair == dynamic_cast<DevPair *>( t ) ) //dynamic_cast prob not necessary
     {
       delete devpair;
+      sortDisplayOrder(false);
       emitChanged();
       return;
     }
   }//for( WWidget *t : childs )
 }//removeDevPair(...)
 
+
+void DeviationPairDisplay::setInvalidValues()
+{
+  addStyleClass( "InvalidDevPairs" );
+}
+
+
+void DeviationPairDisplay::setValidValues()
+{
+  removeStyleClass( "InvalidDevPairs" );
+}
+
+
 DevPair *DeviationPairDisplay::newDevPair( const bool emitChangedNow )
 {
   DevPair *dev = new DevPair( m_pairs );
   dev->m_delete->clicked().connect( boost::bind( &DeviationPairDisplay::removeDevPair, this, dev ) );
+  //dev->m_energy->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
+  //dev->m_offset->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
   dev->m_energy->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
   dev->m_offset->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
+  dev->m_energy->blurred().connect( boost::bind(&DeviationPairDisplay::sortDisplayOrder, this, true) );
+  
   if( emitChangedNow )
     emitChanged();
   return dev;
@@ -3081,10 +3309,9 @@ Recalibrator::MultiFileCalibFit::MultiFileCalibFit( Recalibrator *cal )
   WGroupBox *fitFor = new WGroupBox( "Coefficents to fit for" );
   WGridLayout *fitForLayout = new WGridLayout( fitFor );
   
-  for( int i = 0; i < 3; ++i )
+  for( size_t i = 0; i < sm_numCoefs; ++i )
   {
-    m_calVal[i] = pow( 10.0, m_calibrator->m_coeffExps[i] )
-                       * m_calibrator->m_coefficientDisplay[i]->value();
+    m_calVal[i] = m_calibrator->m_coefficientDisplay[i]->value();
     m_calUncert[i] = -1.0;
     
     WLabel *label = 0;
@@ -3093,6 +3320,8 @@ Recalibrator::MultiFileCalibFit::MultiFileCalibFit( Recalibrator *cal )
       case 0: label = new WLabel( "Offset" ); break;
       case 1: label = new WLabel( "Linear" ); break;
       case 2: label = new WLabel( "Quadratic" ); break;
+      case 3: label = new WLabel( "Quartic" ); break;
+      default: label = new WLabel( std::to_string(i+1) + "th" ); break;
     }//switch( i )
     
     m_coefvals[i] = new WLineEdit();
@@ -3102,7 +3331,7 @@ Recalibrator::MultiFileCalibFit::MultiFileCalibFit( Recalibrator *cal )
     fitForLayout->addWidget( label,         i, 0 );
     fitForLayout->addWidget( m_coefvals[i], i, 1 );
     fitForLayout->addWidget( m_fitFor[i],   i, 2 );
-  }//for( int i = 0; i < 3; ++i )
+  }//for( int i = 0; i < sm_numCoefs; ++i )
   
   fitForLayout->setColumnStretch( 1, 1 );
   m_fitFor[0]->setChecked( true );
@@ -3303,24 +3532,18 @@ void Recalibrator::MultiFileCalibFit::doFit()
     vector<double> parValues, parErrors;
     
     try
-    {
-      const size_t num_gui_pars = sizeof(m_fitFor) / sizeof(m_fitFor[0]);
-      //Just in case of future changes we should consider.
-      static_assert( (sizeof(m_fitFor) / sizeof(m_fitFor[0]))==3, "Expected 3 GUI fit parameters." );
-      
+    { 
       vector<float> lls_fit_coefs = calib_coefs, lls_fit_coefs_uncert;
       
       //Convert eqation type to polynomial incase there are any fixed paramters.
       if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
         lls_fit_coefs = SpecUtils::fullrangefraction_coef_to_polynomial(calib_coefs, binning->size() );
-      lls_fit_coefs.resize( num_gui_pars, 0.0f );
+      lls_fit_coefs.resize( sm_numCoefs, 0.0f );
       
       vector<bool> fitfor( lls_fit_coefs.size(), false );
       
-      for( size_t i = 0; i < calib_coefs.size() && i < num_gui_pars; ++i )
-      {
+      for( size_t i = 0; i < calib_coefs.size() && i < sm_numCoefs; ++i )
         fitfor[i] = m_fitFor[i]->isChecked();
-      }
       
       const double chi2 = fit_energy_cal_poly( peakInfos, fitfor,
                                               eqnmeas->deviation_pairs(),
@@ -3386,43 +3609,28 @@ void Recalibrator::MultiFileCalibFit::doFit()
                                   eqnmeas->deviation_pairs() );
       ROOT::Minuit2::MnUserParameters inputPrams;
       
-      if( calib_coefs.size() < 3 )
-        calib_coefs.resize( 3, 0.0 );
-      
-      string name = "0";
-      double delta = 1.0/pow( static_cast<double>(nbin), 0.0 );
-      if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-        delta = 0.5;
-      
-      if( m_fitFor[0]->isChecked() )
-        inputPrams.Add( name, calib_coefs[0], delta );
-      else
-        inputPrams.Add( name, calib_coefs[0] );
-      
-      name = "1";
-      delta = 1.0/pow( static_cast<double>(data->GetNbinsX()), 1.0 );
-      if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-        delta = 1.0;
-      
-      if( m_fitFor[1]->isChecked() )
+      if( calib_coefs.size() < sm_numCoefs )
+        calib_coefs.resize( sm_numCoefs, 0.0 );
+          
+      for( size_t i = 0; i < sm_numCoefs; ++i )
       {
-        inputPrams.Add( name, calib_coefs[1], delta );
-        inputPrams.SetLowerLimit( name, 0.0 );
-      }else
-      {
-        inputPrams.Add( name, calib_coefs[1] );
-      }
-      
-      name = "2";
-      delta = 1.0/pow( static_cast<double>(data->GetNbinsX()), 2.0 );
-      if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-        delta = 0.1;
-      
-      if( m_fitFor[2]->isChecked() )
-        inputPrams.Add( name, calib_coefs[2], delta );
-      else
-        inputPrams.Add( name, calib_coefs[2] );
-      
+        string name = std::to_string(i);
+        double delta = 1.0/pow( static_cast<double>(nbin), static_cast<double>(i) );
+        if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
+        {
+          if( i == 0 ) delta = 0.5;
+          else if( i == 1 ) delta = 1.0;
+          else delta = 1.0 / std::pow( 10, i-1 );
+        }
+          
+        if( m_fitFor[i]->isChecked() )
+          inputPrams.Add( name, calib_coefs[i], delta );
+        else
+          inputPrams.Add( name, calib_coefs[i] );
+        if( (i == 1) && m_fitFor[i]->isChecked() )
+          inputPrams.SetLowerLimit( name, 0.0 );
+      }//for( size_t i = 0; i < sm_numCoefs; ++i )
+          
       ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
       ROOT::Minuit2::MnStrategy strategy( 1 ); //0 low, 1 medium, >=2 high
       
@@ -3482,10 +3690,10 @@ void Recalibrator::MultiFileCalibFit::doFit()
       if( IsInf(parValues[i]) || IsNan(parValues[i]) )
         throw runtime_error( "Invalid calibration parameter from fit :(" );
     
-    assert( parValues.size() == 3 );
+    assert( parValues.size() == sm_numCoefs );
     
     m_eqnType = calibration_type;
-    for( int i = 0; i < 3; ++i )
+    for( int i = 0; i < sm_numCoefs; ++i )
     {
       m_calVal[i] = parValues[i];
       m_calUncert[i] = parErrors[i];
@@ -3534,7 +3742,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
 
 void Recalibrator::MultiFileCalibFit::updateCoefDisplay()
 {
-  for( int i = 0; i < 3; ++i )
+  for( size_t i = 0; i < sm_numCoefs; ++i )
   {
     char msg[32];
     snprintf( msg, sizeof(msg), "%.4g", m_calVal[i] );
@@ -3552,7 +3760,7 @@ void Recalibrator::MultiFileCalibFit::updateCoefDisplay()
     }//if( uncertainty is available )
     
     m_coefvals[i]->setText( val );
-  }//for( int i = 0; i < 3; ++i )
+  }//for( int i = 0; i < sm_numCoefs; ++i )
 }//void updateCoefDisplay()
 
 
@@ -3568,14 +3776,12 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
     {
       InterSpec *viewer = m_calibrator->m_hostViewer;
       
-      //XXX - the equation could totally be invalid
-      vector<float> eqn;
-      eqn.push_back( m_calVal[0] );
-      eqn.push_back( m_calVal[1] );
-      if( m_calVal[2] != 0.0 )
-        eqn.push_back( m_calVal[2] );
+      // @TODO: the equation could totally be invalid
+      vector<float> eqn( m_calVal, m_calVal + sm_numCoefs );
+      while( !eqn.empty() && eqn.back()==0.0 )
+        eqn.resize( eqn.size()-1 );
       
-      
+      static_assert( sm_numCoefs >= 3, "" );
       cerr << "\n\nm_calVal={" << m_calVal[0] << ", " << m_calVal[1] << ", " << m_calVal[2] << "}" << endl;
       
       vector<float> oldcalibpars;

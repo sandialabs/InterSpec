@@ -1166,12 +1166,7 @@ bool SpecMeas::load_from_N42( std::istream &input )
   {
     ::rapidxml::file<char> input_file( input );
     
-#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
     return SpecMeas::load_N42_from_data( input_file.data(), input_file.data()+input_file.size() );
-#else
-    input_file.check_for_premature_nulls( 2048, ' ' );
-    return SpecMeas::load_N42_from_data( input_file.data() );
-#endif
   }catch( std::exception & )
   {    
     reset();
@@ -1191,12 +1186,7 @@ bool SpecMeas::load_N42_file( const std::string &filename )
     std::vector<char> data;
     SpecUtils::load_file_data( filename.c_str(), data );
     
-#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
     const bool loaded = SpecMeas::load_N42_from_data( &data.front(), (&data.front()) + data.size() );
-#else
-    input_file.check_for_premature_nulls( 2048, ' ' );
-    const bool loaded = SpecMeas::load_N42_from_data( &data.front() );
-#endif
     
     if( !loaded )
       throw runtime_error( "!loaded" );
@@ -1283,7 +1273,7 @@ bool SpecMeas::load_N42_from_data( char *data )
 }//bool load_N42_from_data( char *data )
 
 
-#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
+
 bool SpecMeas::load_N42_from_data( char *data, char *data_end )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
@@ -1344,7 +1334,7 @@ bool SpecMeas::load_N42_from_data( char *data, char *data_end )
   
   return true;
 }//bool load_N42_from_data( char *data )
-#endif  // RAPIDXML_USE_SIZED_INPUT_WCJOHNS
+
       
 
 std::shared_ptr<DetectorPeakResponse> SpecMeas::detector()

@@ -60,6 +60,7 @@ namespace SandiaDecay{ struct Nuclide; }
        based webpages.
  @TODO For the "Show decays through ..." button should decide if the text should
        be underlined, or a box-border drawn around text.
+ @TODO Add a SVG and/or PNG image download option
  */
 class DecayChainChart : public Wt::WContainerWidget
 {

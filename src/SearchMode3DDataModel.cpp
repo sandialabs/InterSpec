@@ -268,7 +268,7 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
         //  hack to get around this, by adding binning to a SpecUtils::SpecFile
         //  object, and then calling these functions on that object.
       SpecUtils::SpecFile temp;
-      temp.add_measurment( binning, true );
+      temp.add_measurement( binning, true );
         
       const size_t nchannel = binning->gamma_channel_contents()->size();
       if( (nchannel % ncombine) != 0 )

@@ -37,6 +37,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/IsotopeId.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/SpecUtilsAsync.h"

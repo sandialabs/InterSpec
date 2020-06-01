@@ -100,12 +100,10 @@ public:
   //load_N42_from_data(...): raw xml file data - must be 0 terminated
   virtual bool load_N42_from_data( char *data );
   
-#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
   /** Loads N42 file from raw XML file data specified by begin and end of data
       (does not need to be null terminated)
    */
   virtual bool load_N42_from_data( char *data, char *data_end );
-#endif
   
   virtual void load_N42_from_doc( rapidxml::xml_document<char> &doc );
   

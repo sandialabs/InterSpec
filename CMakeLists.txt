@@ -74,10 +74,15 @@ IF( WIN32 OR BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP )
 ENDIF( WIN32 OR BUILD_AS_OSX_APP OR BUILD_AS_ELECTRON_APP )
 
 
-IF(NOT CMAKE_BUILD_TYPE)
+IF( NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES )
+    #Default to debug
     SET(CMAKE_BUILD_TYPE Debug CACHE STRING
         "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel."
         FORCE)
+        
+    # Set the possible values of build type for cmake-gui
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+                 "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 ENDIF(NOT CMAKE_BUILD_TYPE)
 
 
@@ -99,8 +104,6 @@ endif(BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
 
 
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-   #get rid of about a million warnings caused by boost foreach
-   add_definitions ("-Wno-unused-local-typedefs")
 #elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 #elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
@@ -573,6 +576,15 @@ IF( USE_SPECRUM_FILE_QUERY_WIDGET )
   endif()
 ENDIF( USE_SPECRUM_FILE_QUERY_WIDGET )
 
+
+#Copy D3 resources into InterSpec_resources directory at compile time
+include(cmake/DeployJsAndCss.cmake)
+
+list( APPEND sources external_libs/SpecUtils/d3_resources/d3.v3.min.js )
+deploy_js_resource( "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/d3.v3.min.js"
+                    "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}" )
+
+
 if( USE_SPECTRUM_CHART_D3 )
   if( NOT RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
     MESSAGE(FATAL_ERROR "You must enable RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE when enabling USE_SPECTRUM_CHART_D3" )
@@ -580,21 +592,13 @@ if( USE_SPECTRUM_CHART_D3 )
 
   list( APPEND sources
     src/D3SpectrumDisplayDiv.cpp
-    external_libs/SpecUtils/d3_resources/d3.v3.min.js
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
     external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css)
   list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h )
 
-  #Copy D3 resources into InterSpec_resources directory at compile time
-  include(cmake/DeployJsAndCss.cmake)
-
-
-  set( JS_RESOURCES_TO_COPY "SpectrumChartD3.js" "d3.v3.min.js" )
-  foreach(_file ${JS_RESOURCES_TO_COPY})
-    deploy_js_resource( "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/${_file}"
-       "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}" )
-  endforeach()
+  deploy_js_resource( "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
+       "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js" )
 
   set( CSS_RESOURCES_TO_COPY "SpectrumChartD3.css" "SpectrumChartD3StandAlone.css" )
   foreach(_file ${CSS_RESOURCES_TO_COPY})
@@ -613,7 +617,8 @@ set( SpecUtils_REBIN_FILES_TO_SINGLE_BINNING ON CACHE BOOL "Set Rebin spectrum t
 set( SpecUtils_NO_BOOST_LIB OFF CACHE BOOL "Use boost for threading primitives in SpecUtils" )
 set( SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "" )
 set( SpecUtils_EXTERNALLY_DEFINED_LOG_MESSAGE ON CACHE BOOL "" )
-set( SpecUtils_BUILD_TEST OFF CACHE BOOL "" )
+set( SpecUtils_BUILD_UNIT_TESTS OFF CACHE BOOL "" )
+set( SpecUtils_BUILD_REGRESSION_TEST OFF CACHE BOOL "" )
 set( SpecUtils_PYTHON_BINDINGS OFF CACHE BOOL "" )
 set( SpecUtils_JAVA_SWIG OFF CACHE BOOL "" )
 set( SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "" )
@@ -815,6 +820,9 @@ else()
   target_link_libraries( InterSpecExe PUBLIC InterSpecLib )
   #set_target_properties( InterSpecExe PROPERTIES SUFFIX "")
   set_target_properties( InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec" )
+
+  add_executable( peakFitTimingDev testing/peakFitTimingDev.cpp )
+  target_link_libraries( peakFitTimingDev PUBLIC InterSpecLib )
 endif( IOS )
 
 set_target_properties( InterSpecLib PROPERTIES PREFIX "" )
@@ -1051,25 +1059,14 @@ set( OTHER_SUPPORT_FILES
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
   )
 
-  FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
-  list( FILTER CSS_FILES EXCLUDE REGEX  ".*SpectrumChartD3.*css")
-  list( APPEND OTHER_SUPPORT_FILES ${CSS_FILES} )
+FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
+list( FILTER CSS_FILES EXCLUDE REGEX  ".*SpectrumChartD3.*css")
+list( APPEND OTHER_SUPPORT_FILES ${CSS_FILES} )
 
-  FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml )
-  list( APPEND OTHER_SUPPORT_FILES ${HELP_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json )
+list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js )
 
-if( USE_SIMPLE_NUCLIDE_ASSIST )
-  list( APPEND OTHER_SUPPORT_FILES "InterSpec_resources/SimpleNuclideAssist.css" )
-endif( USE_SIMPLE_NUCLIDE_ASSIST )
-
-
-if( USE_SEARCH_MODE_3D_CHART )
-  list( APPEND OTHER_SUPPORT_FILES "InterSpec_resources/SearchMode3DChart.css" )
-endif( USE_SEARCH_MODE_3D_CHART )
-
-if( USE_FEATURE_MARKER_WIDGET )
-  list( APPEND OTHER_SUPPORT_FILES "InterSpec_resources/FeatureMarkerWidget.css" )
-endif( USE_FEATURE_MARKER_WIDGET )
+FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml )
+list( APPEND OTHER_SUPPORT_FILES ${HELP_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json )
 
 add_custom_target( interspec_resources SOURCES ${OTHER_SUPPORT_FILES} )
 

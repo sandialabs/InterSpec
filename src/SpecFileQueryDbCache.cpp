@@ -487,7 +487,7 @@ namespace Wt {
         rapidxml::xml_document<char> doc;
         doc.parse<rapidxml::parse_default>( &(xmlstring[0]) );
           
-        setAnalysisInformation( doc.first_node(), v );
+        set_analysis_info_from_n42( doc.first_node(), v );
       }catch(...)
       {
         cerr << "Failed to parse DetectorAnalysis XML: " << xmlstring << endl;

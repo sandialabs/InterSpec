@@ -60,6 +60,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
@@ -2574,7 +2575,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         if( !m )
           continue;  //shouldnt happen
         
-        answer->add_measurment( m, false );
+        answer->add_measurement( m, false );
         
         const auto srctype = sample->isBackground() ? SpecUtils::SourceType::Background : SpecUtils::SourceType::Foreground;
         answer->set_source_type( srctype, m );
