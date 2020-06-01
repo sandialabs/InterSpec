@@ -26,6 +26,7 @@
 #include <mutex>
 #include <cmath>
 #include <memory>
+#include <thread>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -36,7 +37,7 @@
 #include <condition_variable>
 
 #include "SpecUtils/StringAlgo.h"
-#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"

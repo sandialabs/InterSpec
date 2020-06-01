@@ -120,6 +120,11 @@ Wt::WApplication *createApplication( const Wt::WEnvironment &env )
 
 /** Get command line arguments encoded as UTF-8.
     This function just leaks the memory
+ 
+ Note that environment variables are not in UTF-8, we could account for this
+ similar to:
+ wchar_t *wenvstrings = GetEnvironmentStringsW();
+ ...
  */
 void getUtf8Args( int &argc, char ** &argv )
 {
@@ -145,6 +150,7 @@ void getUtf8Args( int &argc, char ** &argv )
   LocalFree(argvw);
 }//void processCustomArgs()
 #endif
+
 
 void processCustomArgs( int argc, char **argv )
 {

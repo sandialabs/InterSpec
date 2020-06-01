@@ -28,7 +28,7 @@
 #include <cstdio>
 #include <stdexcept>
 
-#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/GadrasGamFileParser.h"
 

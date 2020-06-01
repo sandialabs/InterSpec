@@ -2527,6 +2527,7 @@ void DownloadSpectrumResource::handle_resource_request(
             case SpecUtils::SpectrumType::Background: options.line_color = "green"; break;
           }
           options.display_scale_factor = viewer->displayScaleFactor( type );
+          options.neutron_scale_factor = viewer->neutronDisplayScaleFactor( type );
           options.spectrum_type = type;
           const std::set<int> samples = viewer->displayedSamples( type );
           

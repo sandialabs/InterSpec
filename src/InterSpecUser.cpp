@@ -1063,11 +1063,7 @@ std::shared_ptr<SpecMeas> UserFileInDbData::decodeSpectrum() const
           if( end == start )
             throw runtime_error( "data from database wasnt null terminated" );
           
-#if( RAPIDXML_USE_SIZED_INPUT_WCJOHNS )
           loaded = spectrumFile->SpecMeas::load_N42_from_data( (char *)start, (char *)end );
-#else
-          loaded = spectrumFile->SpecMeas::load_N42_from_data( (char *)start );
-#endif
         }
         
         if( !loaded )

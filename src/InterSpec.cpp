@@ -1113,7 +1113,8 @@ string InterSpec::print_d3_json() const
     
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "black";
-    options.display_scale_factor = displayScaleFactor(SpecUtils::SpectrumType::Foreground);
+    options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Foreground);
+    options.neutron_scale_factor = m_spectrum->neutronDisplayScaleFactor( SpecUtils::SpectrumType::Foreground );
     
     std::shared_ptr<const PeakDeque > peaks = m_dataMeasurement->peaks(m_displayedSamples);
     if( peaks )
@@ -1136,7 +1137,9 @@ string InterSpec::print_d3_json() const
     
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "steelblue";
-    options.display_scale_factor = displayScaleFactor(SpecUtils::SpectrumType::Background);
+    options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
+    options.neutron_scale_factor = m_spectrum->neutronDisplayScaleFactor(SpecUtils::SpectrumType::Background);
+    
     
     std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_backgroundSampleNumbers);
     if( peaks )
@@ -1160,7 +1163,8 @@ string InterSpec::print_d3_json() const
     
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "green";
-    options.display_scale_factor = displayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
+    options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
+    options.neutron_scale_factor = m_spectrum->neutronDisplayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
     
     std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_sectondForgroundSampleNumbers);
     if( peaks )
@@ -4191,7 +4195,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
       if( foregroundsamples.count(samplenum) )
         meas.set_source_type( SpecUtils::SourceType::Foreground, p );
       else
-        meas.remove_measurment( p, false );
+        meas.remove_measurement( p, false );
     }//for( const std::shared_ptr<const SpecUtils::Measurement> &p : meas.measurements() )
     
     
@@ -4210,7 +4214,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
           continue;
         
         std::shared_ptr<SpecUtils::Measurement> backmeas = std::make_shared<SpecUtils::Measurement>( *p );
-        meas.add_measurment( backmeas, false );
+        meas.add_measurement( backmeas, false );
         meas.set_source_type( SpecUtils::SourceType::Background, backmeas );
         newbacksamples.insert( backmeas->sample_number() );
       }//for( const std::shared_ptr<const SpecUtils::Measurement> &p : m_backgroundMeasurement->measurements() )
@@ -6734,6 +6738,13 @@ double InterSpec::displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) co
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
 
 
+#if( SpecUtils_ENABLE_D3_CHART )
+double InterSpec::neutronDisplayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
+{
+  return m_spectrum->neutronDisplayScaleFactor( spectrum_type );
+}
+#endif
+
 void InterSpec::setDisplayScaleFactor( const double sf,
                                             const SpecUtils::SpectrumType spectrum_type )
 {
@@ -8656,6 +8667,43 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//switch( spec_type )
 #endif
   
+  
+  //Lets see if there are any parse warnings that we should give to the user.
+  if( meas && !sameSpec )
+  {
+    Wt::WApplication *app = wApp;
+    
+    auto checkForWarnings = [sample_numbers,app,this,meas](){
+      set<string> givenwarnings;
+      for( const auto &msg : meas->parse_warnings() )
+        givenwarnings.insert( msg );
+      
+      // @TODO Check if sample_numbers could be empty if the user wants all samples displayd
+      for( const auto &m : meas->measurements() )
+      {
+        if( !m || !sample_numbers.count(m->sample_number()) )
+          continue;
+        
+        for( const auto &msg : m->parse_warnings() )
+          givenwarnings.insert( msg );
+      }//for( const auto &m : meas->measurements() )
+      
+      if( !givenwarnings.empty() )
+      {
+        WApplication::UpdateLock lock(app);
+        if( lock )
+        {
+          for( const auto &msg : givenwarnings )
+            passMessage( msg, "", WarningWidget::WarningMsgMedium );
+          app->triggerUpdate();
+        }//
+      }//if( !givenwarnings.empty() )
+    };//checkForWarnings lamda
+    
+    furtherworkers.push_back( checkForWarnings );
+  }//if( meas && !sameSpec )
+  
+  
   if( meas && furtherworkers.size() )
   {
     boost::function<void(void)> worker = boost::bind(
@@ -8695,11 +8743,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }catch( std::exception & )
     {
     }
-    
-    
   }//if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpec )
   
-  
+
   //Display a notice to the user about how they can select different portions of
   //  passthrough/search-mode data
   if( spec_type==SpecUtils::SpectrumType::Foreground && !!m_dataMeasurement

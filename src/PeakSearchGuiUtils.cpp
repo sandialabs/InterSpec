@@ -1962,7 +1962,7 @@ namespace PeakSearchGuiUtils
     std::shared_ptr<Wt::WSvgImage> img
     = std::make_shared<WSvgImage>( width, height );
     std::shared_ptr<SpecMeas> specmeas = std::make_shared<SpecMeas>();
-    specmeas->add_measurment( meas, true );
+    specmeas->add_measurement( meas, true );
     if( peaks )
       specmeas->setPeaks( *peaks, specmeas->sample_numbers() );
     

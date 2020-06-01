@@ -54,6 +54,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakModel.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"

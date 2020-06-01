@@ -583,9 +583,10 @@ background: #9B9B9B;
 .DevPairTitle
 {
   font-weight:bold;
-  background:#EEEEEE; 
+  background:#EEEEEE;
   white-space:nowrap;
   text-align: center;
+  height: 20px;
 }
 
 
@@ -596,10 +597,11 @@ background: #9B9B9B;
 
 .DevPairEnergyHeader, .DevPairOffsetHeader
 {
-  font-weight:bold;
+  /* font-weight:bold; */
+  font-size: smaller;
   width: 45%;
   display: inline-block;
-  padding-left: 3px;
+  padding-left: 5px;
 }
 
 .AddDevPair
@@ -610,6 +612,7 @@ background: #9B9B9B;
 {
 /*  width:60px;*/
   margin-left:5px;
+  border-width: 0px;
 }
 
 .DevOffset
@@ -618,11 +621,12 @@ background: #9B9B9B;
   margin-right:4px;
 }
 
+/*
 .DevPairEnergyHeader
 {
   border-right: 1px solid #e1e1e1;
 }
-
+*/
 
 .DevPairsContainer
 {
@@ -631,11 +635,28 @@ background: #9B9B9B;
   overflow-y: auto;
 }
 
+.InvalidDevPairs
+{
+  background: red;
+}
+
 .DevPair
 {
   margin-top: 2px;
-  border: 1px solid #e1e1e1;
+  margin-bottom: 3px;
+  /* border: 1px solid #e1e1e1; */
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  background: rgba(245,245,245,0.5);
+  border-radius: 5px;
 }
+
+/* .DevPair > div > input
+{
+  border: red;
+}
+*/
 
 .MultCalBtnWide {
   margin-left: 3px;
@@ -663,8 +684,15 @@ background: #9B9B9B;
   background-image: url('../InterSpec_resources/images/minus_min.png');
   background-position: 0px center;
   background-repeat: no-repeat;
-  widthL 20px;
   float: right;
+  
+  opacity: 0.8;
+  cursor:pointer;
+}
+
+.DeleteDevPair:hover
+{
+  opacity: 1;
 }
 
 

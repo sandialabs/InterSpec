@@ -26,6 +26,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
+#include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/D3SpectrumExport.h"
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -211,7 +212,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   wApp->useStyleSheet( resource_base + "SpectrumChartD3.css" );
   initChangeableCssRules();
   
-  wApp->require( resource_base + "d3.v3.min.js" );
+  wApp->require( resource_base + "d3.v3.min.js", "d3.v3.js" );
   wApp->require( resource_base + "SpectrumChartD3.js" );
   
   
@@ -967,6 +968,8 @@ void D3SpectrumDisplayDiv::setDisplayScaleFactor( const float sf,
 }//void setDisplayScaleFactor(...)
 
 
+
+
 float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType spectrum_type ) const
 {
   switch( spectrum_type )
@@ -984,6 +987,53 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
   
   return 1.0;
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
+
+
+double D3SpectrumDisplayDiv::neutronDisplayScaleFactor( const SpecUtils::SpectrumType spectrum_type ) const
+{
+  double sf = std::numeric_limits<double>::infinity();
+  shared_ptr<const Measurement> meas;
+  
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      return 1.0;
+      break;
+      
+    case SpecUtils::SpectrumType::SecondForeground:
+      sf = m_model->secondDataScaledBy();
+      meas = m_model->getSecondData();
+      break;
+      
+    case SpecUtils::SpectrumType::Background:
+      sf = m_model->backgroundScaledBy();
+      meas = m_model->getBackground();
+      break;
+  }//switch( spectrum_type )
+  
+  if( !meas || !meas->contained_neutron() )
+    return sf;
+  
+  shared_ptr<const Measurement> data = m_model->getData();
+  
+  if( !data )
+    return sf;
+  
+  //We wont worry if real/live-time is inf/nan since the serialization to JS
+  //  will skip over writing anything to JS anyway.
+  if( meas->real_time() <= 0.0f || meas->live_time() <= 0.0f
+     || data->real_time() <= 0.0f || data->live_time() <= 0.0f )
+    return sf;
+  
+  //Back out the live-time normalization
+  sf *= meas->live_time();
+  sf /= data->live_time();
+  
+  //If we are just live-time normalizing, then sf would be 1.0 here.
+  
+  return sf;
+}//double neutronDisplayScaleFactor
+
 
 
 void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background,
@@ -1216,7 +1266,8 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     foregroundOptions.line_color = m_foregroundLineColor.isDefault() ? string("black") : m_foregroundLineColor.cssText();
     foregroundOptions.peak_color = m_defaultPeakColor.isDefault() ? string("blue") : m_defaultPeakColor.cssText();
     foregroundOptions.spectrum_type = SpecUtils::SpectrumType::Foreground;
-    foregroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );
+    foregroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );  //will always be 1.0f
+    foregroundOptions.neutron_scale_factor = neutronDisplayScaleFactor( SpecUtils::SpectrumType::Background );
     
     // Set the peak data for the spectrum
     if ( m_peakModel ) {
@@ -1264,6 +1315,7 @@ void D3SpectrumDisplayDiv::renderBackgroundToClient()
     backgroundOptions.line_color = m_backgroundLineColor.isDefault() ? string("green") : m_backgroundLineColor.cssText();
     backgroundOptions.spectrum_type = SpecUtils::SpectrumType::Background;
     backgroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Background );
+    backgroundOptions.neutron_scale_factor = neutronDisplayScaleFactor( SpecUtils::SpectrumType::Background );
     
     // We cant currently access the parent InterSpec class, but if we could, then
     //  we could draw the background peaks by doing something like:
@@ -1310,6 +1362,7 @@ void D3SpectrumDisplayDiv::renderSecondDataToClient()
     secondaryOptions.line_color = m_secondaryLineColor.isDefault() ? string("steelblue") : m_secondaryLineColor.cssText();
     secondaryOptions.spectrum_type = SpecUtils::SpectrumType::SecondForeground;
     secondaryOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::SecondForeground );
+    secondaryOptions.neutron_scale_factor = neutronDisplayScaleFactor( SpecUtils::SpectrumType::SecondForeground );
     
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(hist.get(), secondaryOptions) );
     
