@@ -1114,7 +1114,6 @@ string InterSpec::print_d3_json() const
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "black";
     options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Foreground);
-    options.neutron_scale_factor = m_spectrum->neutronDisplayScaleFactor( SpecUtils::SpectrumType::Foreground );
     
     std::shared_ptr<const PeakDeque > peaks = m_dataMeasurement->peaks(m_displayedSamples);
     if( peaks )
@@ -1138,8 +1137,6 @@ string InterSpec::print_d3_json() const
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "steelblue";
     options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
-    options.neutron_scale_factor = m_spectrum->neutronDisplayScaleFactor(SpecUtils::SpectrumType::Background);
-    
     
     std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_backgroundSampleNumbers);
     if( peaks )
@@ -1164,7 +1161,6 @@ string InterSpec::print_d3_json() const
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "green";
     options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
-    options.neutron_scale_factor = m_spectrum->neutronDisplayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
     
     std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_sectondForgroundSampleNumbers);
     if( peaks )
@@ -6737,13 +6733,6 @@ double InterSpec::displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) co
   return m_spectrum->displayScaleFactor( spectrum_type );
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
 
-
-#if( SpecUtils_ENABLE_D3_CHART )
-double InterSpec::neutronDisplayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
-{
-  return m_spectrum->neutronDisplayScaleFactor( spectrum_type );
-}
-#endif
 
 void InterSpec::setDisplayScaleFactor( const double sf,
                                             const SpecUtils::SpectrumType spectrum_type )
