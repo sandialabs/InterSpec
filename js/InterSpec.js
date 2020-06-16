@@ -62,6 +62,7 @@ function()
         var xhr, uploadURL = $(target).data(uid), file = files[dict[uid]];
         if( !uploadURL )
           return;
+  
         if (window.XMLHttpRequest)
           xhr = new XMLHttpRequest();
         else if (window.ActiveXObject)
@@ -69,15 +70,29 @@ function()
         else
           return;
       
-        xhr.open("POST", uploadURL, false);
+        xhr.open("POST", uploadURL, true);
         xhr.setRequestHeader("Content-type", "application/x-spectrum");
         xhr.setRequestHeader("Cache-Control", "no-cache");
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
         xhr.setRequestHeader("X-File-Name", file.name);
+        
+        var errfcn = function () {
+          alert( "Error uploading file:" + "\n\t" + xhr.statusText + "\n\tResponse code " + xhr.status + "\n\t" + xhr.responseText );
+        };
+        
+        xhr.onerror = errfcn;
+        xhr.onload = function(){
+          //console.log( 'xhr.readyState=' + xhr.readyState + ', xhr.status=' + xhr.status );
+          if( (xhr.readyState === 4) && (xhr.status !== 200) )
+            errfcn();
+        };//xhr.onload
+        
+        //xhr.timeout = 5000;
+        //xhr.ontimeout = function () {
+        //  console.error("The request to upload file timed out.");
+        //};
+          
         xhr.send(file);
-      
-        if( xhr.status !== 200 && xhr.responseText )
-          alert( xhr.responseText + "\nResponse code " + xhr.status );
       }
     }catch(error)
     {

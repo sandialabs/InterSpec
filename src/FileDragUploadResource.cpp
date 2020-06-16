@@ -116,7 +116,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
   {
     response.setStatus( 413 );
     const int64_t max_size = wApp->maximumRequestSize();
-    output << "Sorry, the maximum uplaod size is " << max_size /1024 << " kb";
+    output << "Sorry, the maximum upload size is " << max_size/1024 << " kb";
     return;
   }//if( request.tooLarge() )
 
@@ -137,7 +137,6 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       spool_file << request.in().rdbuf();
       spool_file.close();
       const string userName = request.headerValue( "X-File-Name" );
-
       m_spooledFiles.push_back( temp_name );
       if( m_fileDrop )
         m_fileDrop->emit( userName, temp_name );
@@ -147,5 +146,4 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       output << "Coulnt open temporary file on server";
     }//if( spool_file.is_open() ) / else
   }//if( request.contentLength() )
-
 }//void FileDragUploadResource::handleRequest(...)
