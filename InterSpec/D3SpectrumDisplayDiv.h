@@ -150,13 +150,7 @@ public:
   //displayScaleFactor():  This is the multiple
   float displayScaleFactor( const SpecUtils::SpectrumType spectrum_type ) const;
   
-  /** Converts the #displayScaleFactor to be for real time, instead of livetime.
-   
-   Returns Inf if invalid, which indicates to the D3 JS code to use the gamma
-   scale factor.
-   */
-  double neutronDisplayScaleFactor( const SpecUtils::SpectrumType spectrum_type ) const;
-  
+
   //setDisplayScaleFactor(): set the effective live time of 'spectrum_type'
   //  to be 'sf' timess the live time of 'spectrum_type'.
   void setDisplayScaleFactor( const float sf,
