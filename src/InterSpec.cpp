@@ -376,7 +376,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_currentToolsTab( 0 ),
     m_toolsTabs( 0 ),
     m_recalibrator( 0 ),
-    m_calibrateContainer( 0 ),
     m_recalibratorWindow( 0 ),
     m_gammaCountDialog( 0 ),
     m_specFileQueryDialog( 0 ),
@@ -538,7 +537,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->setPlotAreaPadding( 80, 2, 10, 44 );
 #endif
   m_timeSeries = new SpectrumDisplayDiv();
-  m_calibrateContainer = new WContainerWidget();
   
   m_timeSeries->setPlotAreaPadding( 80, 0, 10, 44 );
   
@@ -959,20 +957,11 @@ InterSpec::~InterSpec()
   
   if( m_recalibrator )
   {
-    if( m_toolsTabs && m_toolsTabs->indexOf(m_calibrateContainer)>=0 )
-      m_toolsTabs->removeTab( m_calibrateContainer );
-    
-    if( m_recalibratorWindow )
-      m_recalibratorWindow->stretcher()->removeWidget( m_recalibrator );
+    if( m_toolsTabs && m_toolsTabs->indexOf(m_recalibrator)>=0 )
+      m_toolsTabs->removeTab( m_recalibrator );
     
     delete m_recalibrator;
     m_recalibrator = nullptr;
-    
-    if( m_calibrateContainer )
-    {
-      delete m_calibrateContainer;
-      m_calibrateContainer = nullptr;
-    }//if( m_calibrateContainer )
   }//if( m_recalibrator )
   
   if( m_recalibratorWindow )
@@ -4052,10 +4041,12 @@ void InterSpec::showPeakInfoWindow()
     layout->addWidget( buttons, Wt::WBorderLayout::South );
 
     WContainerWidget* footer = m_peakInfoWindow->footer();
-      
+    
     WPushButton* closeButton = m_peakInfoWindow->addCloseButtonToFooter("Close",true);
     closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_peakInfoWindow ) );
       
+    AuxWindow::addHelpInFooter( m_peakInfoWindow->footer(), "peak-manager" );
+    
     WPushButton *b = new WPushButton( CalibrationTabTitle, footer );
     // b->setIcon(WLink("InterSpec_resources/images/calibrate.png"));
     b->clicked().connect( this, &InterSpec::showRecalibratorWindow );
@@ -5409,8 +5400,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     {
       m_recalibratorWindow->stretcher()->removeWidget( m_recalibrator );
       delete m_recalibratorWindow;
-      m_recalibratorWindow = 0;
-      m_recalibrator->setHidden(true);
+      m_recalibratorWindow = nullptr;
     }//if( m_recalibratorWindow )
     
     m_toolsTabs = new WTabWidget();
@@ -5463,16 +5453,16 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
     
-    WGridLayout *gridLayout = new WGridLayout();
-    m_recalibrator->setRecalibratorLayout(gridLayout);
-    m_recalibrator->setHidden(false);
-    m_recalibrator->setWideLayout(); //do this after unhiding to trigger Recalibrator::refreshRecalibrator();
+    //WGridLayout *gridLayout = new WGridLayout();
+    //m_recalibrator->setRecalibratorLayout(gridLayout);
+    if( m_recalibrator->Recalibrator::currentLayoutStyle() != Recalibrator::LayoutStyle::kWide )
+      m_recalibrator->setWideLayout(); //do this after unhiding to trigger Recalibrator::refreshRecalibrator();
+    else
+      m_recalibrator->refreshRecalibrator();
 
-
-    m_calibrateContainer->clear();
-    m_calibrateContainer->setLayout(gridLayout);
-    m_calibrateContainer->addStyleClass( "RecalibratorWide" );
-    /*WMenuItem * calibTab = */ m_toolsTabs->addTab( m_calibrateContainer, CalibrationTabTitle, TabLoadPolicy );
+    /*WMenuItem * calibTab = */ //m_toolsTabs->addTab( m_calibrateContainer, CalibrationTabTitle, TabLoadPolicy );
+    m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
+    
     //calibTab->setIcon("InterSpec_resources/images/calibrate.png");
 //    const char *tooltip = "Allows user to fit for offset, linear, and/or "
 //                          "quadratic terms. Can also be accessed graphically by "
@@ -5568,7 +5558,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
     m_toolsTabs->removeTab( m_peakInfoDisplay );
-    m_toolsTabs->removeTab( m_calibrateContainer );
+    m_toolsTabs->removeTab( m_recalibrator );
     
     m_isotopeSearch->clearSearchEnergiesOnClient();
     m_isotopeSearchContainer->layout()->removeWidget( m_isotopeSearch );
@@ -6047,40 +6037,29 @@ void InterSpec::handRecalibratorWindowClose()
   if( !m_recalibratorWindow || !m_recalibrator )
     return;
   
-  m_recalibrator->setHidden(true);
-  
-  if( !m_toolsTabs )
-  {
-    m_recalibratorWindow->stretcher()->removeWidget( m_recalibrator );
-    delete m_recalibratorWindow;
-    m_recalibratorWindow = 0;
-    return;
-  }//if( !m_toolsTabs )
-  
-  
   WGridLayout *layout = m_recalibratorWindow->stretcher();
   layout->removeWidget( m_recalibrator );
-
-  WGridLayout * gridLayout = new WGridLayout();
-  m_recalibrator->setRecalibratorLayout(gridLayout);
-  m_calibrateContainer->clear();
-  m_calibrateContainer->setLayout(gridLayout);
-
-  if( m_toolsTabs->indexOf( m_calibrateContainer ) < 0 )
-    m_toolsTabs->addTab( m_calibrateContainer, CalibrationTabTitle, TabLoadPolicy );
   
-  m_currentToolsTab = m_toolsTabs->currentIndex();
+  AuxWindow::deleteAuxWindow( m_recalibratorWindow );
+  m_recalibratorWindow = nullptr;
   
-  m_recalibrator->setWideLayout();
-  delete m_recalibratorWindow;
-  m_recalibratorWindow = NULL;
+  if( m_toolsTabs )
+  {
+    if( m_toolsTabs->indexOf(m_recalibrator) < 0 )
+      m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
+    
+    m_currentToolsTab = m_toolsTabs->currentIndex();
+    
+    if( m_recalibrator->currentLayoutStyle() != Recalibrator::LayoutStyle::kWide )
+      m_recalibrator->setWideLayout();
+    else
+      m_recalibrator->refreshRecalibrator();
+  }//if( m_toolsTabs )
 }//void handRecalibratorWindowClose()
 
 
 void InterSpec::showRecalibratorWindow()
 {
-  m_recalibrator->setHidden(false);
-  
   if( m_recalibratorWindow && !m_toolsTabs )
   {
     m_recalibratorWindow->show();
@@ -6088,42 +6067,31 @@ void InterSpec::showRecalibratorWindow()
     return;
   }
 
-  const int index = (m_toolsTabs ? m_toolsTabs->indexOf( m_calibrateContainer ) : -1);
+  const int index = (m_toolsTabs ? m_toolsTabs->indexOf(m_recalibrator) : -1);
   
-  if( !m_recalibratorWindow || index >= 0 )
+  if( index >= 0 )
+    m_toolsTabs->removeTab( m_recalibrator );
+  
+  if( m_recalibratorWindow )
   {
-    if( index >= 0 )
-    {
-      m_toolsTabs->removeTab( m_calibrateContainer );
-    }//if( index >= 0 )
+    m_recalibratorWindow->stretcher()->removeWidget(m_recalibrator);
+    delete m_recalibratorWindow;
+  }
     
-    if( m_recalibratorWindow )
-      delete m_recalibratorWindow;
-    
-    m_recalibratorWindow = new AuxWindow( "Energy Calibration" );
-    m_recalibratorWindow->rejectWhenEscapePressed();
-    WContainerWidget *container = new WContainerWidget( m_recalibratorWindow->contents() );
-    container->addStyleClass( "RecalibratorTall" );
-    WGridLayout *layout = new WGridLayout();
-    container->setLayout( layout );
-    container->setOverflow( WContainerWidget::OverflowHidden );
-    container->setMinimumSize( WLength::Auto, 600 );
-    
-    m_recalibrator->setRecalibratorLayout( layout );
-    m_recalibrator->setTallLayout(m_recalibratorWindow);
+  m_recalibratorWindow = new AuxWindow( "Energy Calibration" );
+  m_recalibratorWindow->rejectWhenEscapePressed();
+  m_recalibratorWindow->stretcher()->addWidget( m_recalibrator, 0, 0 );
+  m_recalibrator->setTallLayout( m_recalibratorWindow );
    
-    m_recalibratorWindow->footer()->addWidget(m_recalibrator->getFooter());
-    m_recalibratorWindow->setClosable(false);
-    m_recalibratorWindow->finished().connect(boost::bind( &AuxWindow::deleteAuxWindow, m_recalibratorWindow ) );
+  m_recalibratorWindow->setClosable(false);
+  //m_recalibratorWindow->finished().connect(boost::bind( &AuxWindow::deleteAuxWindow, m_recalibratorWindow ) );
+  m_recalibratorWindow->finished().connect( boost::bind( &InterSpec::handRecalibratorWindowClose, this ) );
 
-    m_recalibratorWindow->setHeight( 700 );
-  }//if( m_toolsTabs->removeTab( m_recalibrator ) )
+  m_recalibratorWindow->setHeight( 700 );
   
   m_recalibratorWindow->show();
   m_recalibratorWindow->resizeToFitOnScreen();
   m_recalibratorWindow->centerWindow();
-
-//  m_recalibratorWindow->rejectWhenEscapePressed();
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
@@ -7645,7 +7613,7 @@ void InterSpec::handleToolTabChanged( int tab )
     return;
   
   const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
-  const int calibtab = m_toolsTabs->indexOf(m_calibrateContainer);
+  const int calibtab = m_toolsTabs->indexOf(m_recalibrator);
   const int searchTab = m_toolsTabs->indexOf(m_isotopeSearchContainer);
   
   if( m_referencePhotopeakLines && (tab == refTab) && !isMobile() )

@@ -1366,11 +1366,11 @@ void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
     if( app->isAndroid() )
     {
       image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/qmark.png"), footer);
-      image->setStyleClass("helpButton");
+      image->setStyleClass("FooterHelpBtn");
     }else
     {
       image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), footer);
-      image->setStyleClass("HelpButtonMbl");
+      image->setStyleClass("FooterHelpBtnMbl");
       image->setWidth( 20 );
       image->setHeight( 20 );
     }
@@ -1379,7 +1379,7 @@ void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
   }else
   {
     image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/qmark.png"), footer);
-    image->setStyleClass("helpButton");
+    image->setStyleClass("FooterHelpBtn");
     image->setFloatSide(Left);
   }//isMobile
   

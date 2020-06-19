@@ -439,12 +439,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   }//if( specViewer->isPhone() ) / else
   
   
-  
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
   const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
   
-  //added overflow to prevent scroll bars
-  setOverflow( Wt::WContainerWidget::OverflowHidden );
   WLabel *nucInputLabel = new WLabel( "Nuclide:" );
   nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
   m_nuclideEdit = new WLineEdit( "" );
@@ -713,17 +710,23 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_particleView->setColumnWidth( DecayParticleModel::kParticleType,
                                  WLength(5,WLength::FontEm) );
   
-  if( !isPhone )
-    setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
-    
+  //added overflow to prevent scroll bars
+  //setOverflow( Wt::WContainerWidget::OverflowHidden );
+  //if( !isPhone )
+  //  setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
+      
   WGridLayout *overallLayout = new WGridLayout();
   overallLayout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( overallLayout );
     
   overallLayout->addWidget( inputDiv, 0, 0 );
   overallLayout->addWidget( lowerInput, 1, 0 );
-  overallLayout->addWidget( new WContainerWidget(), 2, 0 );
   overallLayout->addWidget( m_particleView, 0, 1, 3, 1 );
+    
+  auto helpBtn = new WContainerWidget();
+  helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
+  helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "reference-gamma-lines-dialog" ) );
+  overallLayout->addWidget( helpBtn, 2, 0, Wt::AlignLeft | Wt::AlignBottom );
     
   overallLayout->setRowStretch( 2, 1 );
   overallLayout->setColumnStretch( 1, 1 );

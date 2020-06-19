@@ -154,13 +154,6 @@ public:
                 InterSpec *hostViewer,
                 PeakModel *peakModel);
   virtual ~Recalibrator();
-
-  //setRecalibratorLayout(...): Needed to set the layout before it toggles
-  //  wide/tall display layout.
-  //Note that this really doesnt seem like the best solution.  It would be nice
-  //  if we didnt have to externally set the layout for this widget, and instead
-  //  everything was self consistent
-  void setRecalibratorLayout( Wt::WGridLayout *layout );
   
   //refreshRecalibrator(): fills out GUI from values in the data structures,
   //  makes the backup copies of the data so you can undo, and clears out
@@ -181,8 +174,6 @@ public:
   
   void handleGraphicalRecalRequest( double xstart, double xfinish );
   void deleteGraphicalRecalConfirmWindow();
-  
-  WContainerWidget* getFooter();
   
   //currently old_eqn_type and and the new eqn type can only be Polyniomial or
   //  LowerChannelEdge, or an exception will be thrown.
@@ -218,7 +209,7 @@ public:
     
 protected:
   /** The number of energy calibration coefficients to display. */
-  static const size_t sm_numCoefs = 3;
+  static const size_t sm_numCoefs = 4;
   
   void initWidgets( LayoutStyle style, AuxWindow* parent = NULL);
 
@@ -245,6 +236,22 @@ protected:
    */
   void finishConvertToPolynomial( const bool followThrough );
   
+  /** Sets the "Fit Coeffs" button as enabled/disabled based on:
+    - Foreground is displayed and has "Apply to" checkbox checked.
+    - Peaks to use as calibration peaks are present.
+    - At least one term is checked for "fit"
+   */
+  void checkIfCanFitCoefs();
+  
+  /** Enables/disables the "Multi. Files..." button, based on if multiple files are loaded, or multiple spectra from
+   current file have peaks.
+   
+   Since not all loaded files may be in memory, doesnt check for peaks except for in current foreground specral file,
+   and instead assumes if more than one file is loaded, than button should be enabled.  Also doesnt (currently) look
+   that defined peaks are selected to be used for calibration.  E.g., could be tightened up a okay amount.
+   */
+  void checkIfCanMultiFileCal();
+  
   LayoutStyle m_currentLayout;
   
   WContainerWidget *footer;
@@ -260,6 +267,8 @@ protected:
   Wt::WCheckBox *m_fitFor[sm_numCoefs];
   Wt::WPushButton *m_fitCoefButton;
 
+  Wt::WPushButton *m_multiFileButton;
+  
   class GraphicalRecalConfirm;
   friend class GraphicalRecalConfirm;
   
@@ -284,12 +293,16 @@ protected:
   
   Wt::WText *m_convertToPolynomialLabel;
   Wt::WPushButton *m_convertToPolynomial;
+  /** Workaround for apparent bug in (at least) Wt 3.3.4, where #m_convertToPolynomialLabel never actually gets hidden
+   when #WText::hide is called on it - very bizare, so instead will hide this container, which does actually work.
+   */
+  Wt::WContainerWidget *m_polyConverDiv;
+  
   AuxWindow *m_convertToPolyDialog;
   
-  Wt::WPushButton *m_revert, *m_closeButton;
+  Wt::WPushButton *m_revert;
 
   Wt::WText *m_acceptText;
-  Wt::WContainerWidget *m_acceptButtonDiv;
 
   NativeFloatSpinBox *m_coefficientDisplay[sm_numCoefs];
   

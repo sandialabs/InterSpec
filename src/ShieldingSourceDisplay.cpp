@@ -286,9 +286,9 @@ void ShieldingSelect::setClosableAndAddable( bool closeable , WGridLayout* layou
     m_closeIcon = new WPushButton(); //WText();
     m_addIcon = new WPushButton();
     m_closeIcon->setStyleClass( "ShieldingDelete Wt-icon" );
-    m_closeIcon->setIcon("InterSpec_resources/images/minus_min.png");
+    m_closeIcon->setIcon("InterSpec_resources/images/minus_min_black.svg");
     m_addIcon->setStyleClass( "ShieldingAdd Wt-icon" );
-    m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.png");
+    m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.svg");
     
 
 //    m_closeIcon->setToolTip( "Remove this shielding" );

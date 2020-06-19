@@ -26,9 +26,10 @@
 #include <set>
 #include <deque>
 #include <limits>
-#include <iostream>
-#include <sstream>
 #include <vector>
+#include <sstream>
+#include <iostream>
+#include <iostream>
 
 #define BOOST_UBLAS_TYPE_CHECK 0
 #include <boost/numeric/ublas/lu.hpp>
@@ -82,6 +83,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "SpecUtils/EnergyCalibration.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
 #if ( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -302,12 +304,12 @@ namespace
       {
         if( IsInf(d) || IsNan(d) )
         {
-          cerr << "Recalibrator::PolyCalibCoefMinFcn::operator(): "
-          << "invalid input paramater" << endl;
+          fprintf( stderr, "Recalibrator::PolyCalibCoefMinFcn::operator() found invalid input parameter\n" );
           return 99999999.0;
         }
+        
         float_coef.push_back( static_cast<float>(d) );
-      }
+      }//for( const double d : coef )
       
       //  if( m_eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
       //    float_coef = fullrangefraction_coef_to_polynomial( float_coef, m_nbin );
@@ -320,8 +322,7 @@ namespace
       {
         if( IsInf(d) || IsNan(d) )
         {
-          cerr << "Recalibrator::PolyCalibCoefMinFcn::operator(): invalid"
-          " conversion to Polynomial from full width fraction" << endl;
+          fprintf( stderr, "Recalibrator::PolyCalibCoefMinFcn::operator(): invalid conversion from Poly to FWF.\n" );
           return 99999999.0;
         }
       }//for( float d : float_coef )
@@ -333,8 +334,7 @@ namespace
       
       if( (nearend >= end) || (begin >= nearbegin) )
       {
-        cerr << "Got nearend=" << nearend << ", end= " << end
-        << ", begin=" << begin << ", nearbegin" << nearbegin << endl;
+        fprintf( stderr, "Got nearend=%f, end=%f, begin=%f, nearbegin=%f\n", nearend, end, begin, nearbegin );
         return 99999999.0;
       }//if( almostLastEnergy > lastEnergy )
       
@@ -347,7 +347,7 @@ namespace
       
       if( IsInf(chi2) || IsNan(chi2) )
       {
-        cerr << "Recalibrator::PolyCalibCoefMinFcn::operator(): invalid result chi2" << endl;
+        fprintf( stderr, "Recalibrator::PolyCalibCoefMinFcn::operator(): invalid result Chi2\n" );
         return 1000.0;
       }
       
@@ -364,140 +364,7 @@ namespace
 }//namespace
 
           
-/*
- Similar to WDoubleSpinBox if you called WDoubleSpinBox::setNativeControl(true),
- but probably not implemented nearly as well.  This is more an experiment to
- control formatting and precision, but should be a drop-in replacement for
- going back to WDoubleSpinBox.
- (As of Wt 3.3.4, calling setNativeControl causes a client-side exception)
- */
-class NativeFloatSpinBox : public Wt::WLineEdit
-{
-public:
-  NativeFloatSpinBox( WContainerWidget *parent = 0 )
-    : WLineEdit( parent ),
-      m_value( 0.0f ),
-      m_min( -std::numeric_limits<float>::max() ),
-      m_max( std::numeric_limits<float>::max() )
-  {
-    setAutoComplete( false );
-    setAttributeValue( "type", "number" );
-    setValue( 0.0f );
-          
-    // @TODO: Since #handleChanged is connected first, it will be called last after the subsequent connections.
-    //        Should figure out how to make sure #handleChanged is always called
-    //        first so we can go down to only parsing the text to a float when
-    //        its actually changed, and so we can get rid of m_txt.
-    // Note: boost::signals2 offers call slot groups
-    //       (see https://www.boost.org/doc/libs/1_72_0/doc/html/signals2/tutorial.html#id-1.3.37.4.4.3)
-    //       but Wt::EventSignal doesnt seem to keep this.
-    // Note: if clients of this widget always connect to #valueChanged, instead
-    //       of WFormWidget::change, then this problem also disappears.
-    changed().connect( this, &NativeFloatSpinBox::handleChanged );
-    enterPressed().connect( this, &NativeFloatSpinBox::handleChanged );
-  }
-          
-  virtual ~NativeFloatSpinBox(){};
-  
-  void setValue( const float value )
-  {
-    m_value = value;
-    char buffer[64];
-    snprintf( buffer, sizeof(buffer), "%.6G", value );
-    m_txt = buffer;
-    setValueText( WString::fromUTF8(m_txt) );
-  }
-  
-  void setSingleStep( const float step )
-  {
-    char buffer[64];
-    snprintf( buffer, sizeof(buffer), "%.6G", step );
-    setAttributeValue( "step", buffer );
-  }
-  
-  void setMinimumValue( const float minval )
-  {
-    char buffer[64];
-    snprintf( buffer, sizeof(buffer), "%.6G", minval );
-    setAttributeValue( "min", buffer );
-  }
-  
-  void setMaximumValue( const float maxval )
-  {
-    char buffer[64];
-    snprintf( buffer, sizeof(buffer), "%.6G", maxval );
-    setAttributeValue( "max", buffer );
-  }
-          
-  float value()
-  {
-    updateValueFromText();
-    return m_value;
-  }
 
-  virtual void setPlaceholderText(const WString& placeholder)
-  {
-    //The Wt setPlaceholderText doesnt appear to be working, so manually set
-    //  the attribute value
-    setAttributeValue( "placeholder", placeholder );
-    Wt::WLineEdit::setPlaceholderText( placeholder );
-  }
-          
-  Signal<float> &valueChanged(){ return m_valueChanged; }
-          
-protected:
-  void updateValueFromText()
-  {
-    // Updated m_value only if displayed text has changed from what was used
-    //  to set m_value.
-    //  This is to avoid roundoff errors in float<-->txt.  This whole function
-    //  and m_txt can be removed if we can ensure #handleChanged is always
-    //  called first when the user changes value. (or client code just never
-    //  connects to changed())
-          
-    const string valstr = valueText().toUTF8();
-    if( m_txt == valstr )
-      return;
-    //const float newval = WLocale::currentLocale().toDouble( valueText() );
-          
-    float newval = 0.0f;
-    const int nread = sscanf( valstr.c_str(), "%f", &newval );
-    if( nread != 1 )
-    {
-      if( !placeholderText().empty() && valstr.empty() )
-      {
-        m_txt = "";
-        m_value = 0.0f;
-      }else
-      {
-        setValue( m_value );
-      }
-          
-      return;
-    }//if( failed to read in a value )
-          
-    if( newval < m_min || newval > m_max )
-    {
-      setValue( m_value );
-      return;
-    }
-
-    m_txt = valstr;
-    m_value = newval;
-  }//void updateValueFromText()
-          
-  void handleChanged()
-  {
-    updateValueFromText();
-    m_valueChanged.emit( m_value );
-  }//void handleChanged()
-          
-  float m_value;
-  float m_min, m_max;
-  Signal<float> m_valueChanged;
-    
-  std::string m_txt;
-};//NativeFloatSpinBox
           
 
 Recalibrator::Recalibrator(
@@ -506,37 +373,42 @@ Recalibrator::Recalibrator(
 #else
                             SpectrumDisplayDiv *spectrumDisplayDiv,
 #endif
-                            InterSpec *m_hostViewer,
+                            InterSpec *viewer,
                             PeakModel *peakModel)
   : WContainerWidget( 0 ),
     m_spectrumDisplayDiv( spectrumDisplayDiv ),
-    m_hostViewer( m_hostViewer ),
+    m_hostViewer( viewer ),
     m_peakModel( peakModel ),
     m_isotopeView( 0 ),
     m_fitCoefButton( 0 ),
+    m_multiFileButton( nullptr ),
     m_graphicalRecal( 0 ),
     m_applyToLabel( nullptr ),
     m_applyTo{ nullptr },
     m_convertToPolynomialLabel( nullptr ),
     m_convertToPolynomial( nullptr ),
+    m_polyConverDiv( nullptr ),
     m_convertToPolyDialog( nullptr ),
     m_revert( 0 ),
     m_acceptText( 0 ),
-    m_acceptButtonDiv( 0 ),
     m_coeffEquationType( SpecUtils::EnergyCalType::InvalidEquationType ),
     m_devPairs( nullptr ),
     m_layout( nullptr )
 {
   m_uncertainties[0] = m_uncertainties[1] = m_uncertainties[2] = -1.0;
-  
-  //A temporary layout is given to initialize the widgets
-  WGridLayout * tempLayout = new WGridLayout();
-  setRecalibratorLayout(tempLayout);
 
   const Recalibrator::LayoutStyle style = m_hostViewer->isPhone() ? kTall : kWide;
   
   initWidgets( style );
-} // Recalibrator::Recalibrator(...)
+  
+  m_peakModel->rowsInserted().connect( this, &Recalibrator::checkIfCanFitCoefs );
+  m_peakModel->rowsRemoved().connect( this, &Recalibrator::checkIfCanFitCoefs );
+  
+  m_peakModel->rowsInserted().connect( this, &Recalibrator::checkIfCanMultiFileCal );
+  m_peakModel->rowsRemoved().connect( this, &Recalibrator::checkIfCanMultiFileCal );
+  
+  m_peakModel->dataChanged().connect( this, &Recalibrator::checkIfCanFitCoefs );
+}//Recalibrator::Recalibrator(...)
 
 
 Recalibrator::~Recalibrator()
@@ -545,10 +417,6 @@ Recalibrator::~Recalibrator()
 } // Recalibrator::~Recalibrator()
 
 
-void Recalibrator::setRecalibratorLayout(Wt::WGridLayout *layout)
-{
-  m_layout = layout;
-} //  Recalibrator::setRecalibratorLayout(Wt::WGridLayout *layout)
 
 void Recalibrator::setWasGraphicalRecal( int type, float energy )
 {
@@ -561,21 +429,31 @@ void Recalibrator::setWasGraphicalRecal( int type, float energy )
  Passes in the parent when in Tall mode.  Necessary for help feature to know
  who the parent is
 */
-void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* parent)
+void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *parent)
 {
   m_currentLayout = style;
   
+  const char *styleClasses[2] = {"RecalibratorTall", "RecalibratorWide"};
+  const int styleIndToAdd = (style==Recalibrator::LayoutStyle::kTall ?  0 : 1);
+  const int styleIndToRemove = (style==Recalibrator::LayoutStyle::kTall ?  1 : 0);
+  if( !hasStyleClass(styleClasses[styleIndToAdd]) )
+    addStyleClass( styleClasses[styleIndToAdd] );
+  if( hasStyleClass(styleClasses[styleIndToRemove]) )
+    removeStyleClass( styleClasses[styleIndToRemove] );
+          
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_hostViewer );
   
+  if( !m_layout )
+  {
+    m_layout = new WGridLayout();
+    setLayout( m_layout );
+  }
+          
   m_layout->clear();
   if( style == kTall )
-  {
     m_layout->setContentsMargins(9,9,9,9);
-  }
   else
-  {
     m_layout->setContentsMargins(5,3,4,1);
-  }
   
   
   // Set up the numeric boxes.
@@ -613,6 +491,10 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
           
     m_fitFor[i] = new WCheckBox( "fit" );
     m_fitFor[i]->setChecked( (i<2) );
+    
+    m_fitFor[i]->checked().connect( this, &Recalibrator::checkIfCanFitCoefs );
+    m_fitFor[i]->unChecked().connect( this, &Recalibrator::checkIfCanFitCoefs );
+    
     HelpSystem::attachToolTipOn( m_fitFor[i], "Fit for the value of this coefficient when using "
                                   "peaks associated with isotopes, to determine "
                                   "calibration." , showToolTipInstantly );
@@ -702,44 +584,31 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   }//for( loop over SpecUtils::SpectrumType )
   
   
-  m_convertToPolynomialLabel = new WText( "Calibration is specified by channel energy" );
-  m_convertToPolynomialLabel->setInline( false );
-  m_convertToPolynomialLabel->addStyleClass( "RecalConvertToPolyTxt" );
   
-  m_convertToPolynomial = new WPushButton( "Convert To Polynomial..." );
-  m_convertToPolynomial->clicked().connect( this, &Recalibrator::startConvertToPolynomial );
   
-  // Lastly, add in the buttons
-  m_acceptButtonDiv = new WContainerWidget();
+ WContainerWidget *footer = nullptr;
+  if( style == kTall )
+    footer = (parent ? parent->footer() : new WContainerWidget());
+          
+  if( footer )
+    AuxWindow::addHelpInFooter( footer, "energy-calibration-dialog" );
   
-  if (parent)
-    AuxWindow::addHelpInFooter( m_acceptButtonDiv, "energy-calibration-dialog" );
+  m_multiFileButton = new WPushButton( "Mult. Files...", footer );
   
-  WPushButton *multFiles = NULL; //need to reposition depending tall or wide mode
-  
-  if( style == kWide )
+  if( style == kTall )
   {
-    multFiles = new WPushButton("Mult. Files...", m_acceptButtonDiv );
-  }else
-  {
-    multFiles = new WPushButton("Mult. Files...");
-  } //kTall
+    WPushButton *closeBtn = nullptr;
+    if( parent )
+      closeBtn = parent->addCloseButtonToFooter( "Close", false, footer );
+    else
+      closeBtn = new WPushButton( "Close", footer );
+    closeBtn->clicked().connect( m_hostViewer, &InterSpec::handRecalibratorWindowClose );
+    closeBtn->addStyleClass( "RecalCancelbtn" );
+  }//if( style == kTall )
   
-  if (style==kTall && parent)
-  {
-      //add close button if it is in a wide state (AuxWindow)
-      m_closeButton = parent->addCloseButtonToFooter("Close", false, m_acceptButtonDiv);
-  } //kTall
-  else
-  {
-      m_closeButton = new WPushButton( "Close", m_acceptButtonDiv);
-  } //kWide
-    
-  m_closeButton->clicked().connect( m_hostViewer, &InterSpec::handRecalibratorWindowClose );
-  m_closeButton->addStyleClass( "RecalCancelbtn" );
-  
-  m_revert = new WPushButton( "Revert", m_acceptButtonDiv );
-  m_revert->setStyleClass( "RecalCancelbtn" );
+  m_revert = new WPushButton( "Revert", footer );
+  if( style == kTall )
+    m_revert->addStyleClass( "RecalCancelbtn" );
   m_revert->setIcon( "InterSpec_resources/images/arrow_undo.png" );
 
   // And disable all the buttons
@@ -754,11 +623,12 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   int row = 0; //keeps track of row for adding widgets to layout
   for( size_t i = 0; i < sm_numCoefs; ++i )
   {
-    m_layout->addWidget( termlabels[i],           row, 0 );
-    m_layout->addWidget( m_coefficientDisplay[i], row, 1 );
-    m_layout->addWidget( m_exponentLabels[i],     row, 2 );
-    m_layout->addWidget( m_fitFor[i],             row, 3, AlignCenter );
-    termlabels[i]->setBuddy( m_coefficientDisplay[1] );
+    m_layout->addWidget( termlabels[i],           row, 0, Wt::AlignMiddle );
+    m_layout->addWidget( m_coefficientDisplay[i], row, 1, Wt::AlignMiddle );
+    m_layout->addWidget( m_exponentLabels[i],     row, 2, Wt::AlignMiddle );
+    m_layout->addWidget( m_fitFor[i],             row, 3, Wt::AlignCenter | Wt::AlignMiddle );
+    termlabels[i]->setBuddy( m_coefficientDisplay[i] );
+    m_exponentLabels[i]->setBuddy( m_coefficientDisplay[i] );
     row++;
   }
   
@@ -767,19 +637,13 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   m_devPairs->changed().connect( boost::bind( &Recalibrator::userChangedDeviationPairs, this ) );
   
   
-  WPushButton *addButton = new WPushButton( "Add Pair" );
-  addButton->setIcon( "InterSpec_resources/images/plus_min_white.png" );
-  addButton->clicked().connect( boost::bind(&DeviationPairDisplay::newDevPair, m_devPairs, true) );
-  
   if( style == kTall )
   {
+    m_devPairs->addStyleClass( "DevPairDisplayTall" );
+          
     m_layout->addWidget( m_devPairs, row, 0, 1, 4 );
     m_devPairs->setMinimumSize(WLength::Auto, WLength(150));
     m_devPairs->setMaximumSize(WLength::Auto, WLength(150));
-    row++;
-
-    m_layout->addWidget(addButton, row, 3, 1, 1 );
-    m_devPairs->setStyleClass( "DeviationPairDisplayTall" );
     row++;
 
     m_layout->addWidget( m_isotopeView, row, 0, 1, 4 );
@@ -788,9 +652,8 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
     m_layout->setColumnStretch( 1, 1 );
     row++;
 
-    m_fitCoefButton->setStyleClass( "RecalFitBtn" );
     m_layout->addWidget( m_fitCoefButton, row, 3, 1, 1 );
-    m_layout->addWidget( multFiles, row, 2, 1, 1 );
+    m_layout->addWidget( m_multiFileButton, row, 2, 1, 1 );
     row++;
   }//kTall
   
@@ -801,65 +664,86 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow* pare
   m_layout->addWidget( m_applyToLabel,         row, 0 );
   m_layout->addWidget( m_applyTo[ForeIndex],   row, 1 );
   m_layout->addWidget( m_applyTo[SecondIndex], row, 2 );
-  row++; //tall=7, wide=3
+  row++;
           
   m_layout->addWidget( m_applyTo[BackIndex],   row, 1 );
-  row++; //tall=8, wide=4
-  
-  //For some reason if we put m_convertToPolynomialLabel and m_convertToPolynomial
-  //  into their own rows and show/hide them, there are some weird artifacts
-  //  introduced into the layout, so for now we'll just have things a bit.
-  //m_layout->addWidget( m_convertToPolynomialLabel, row, 0, 1, 3 );
-  //row++;
-  //m_layout->addWidget( m_convertToPolynomial, row, 0, 1, 3, Wt::AlignCenter | Wt::AlignTop );
-  //row++;
-  
-  WContainerWidget *polyDiv = new WContainerWidget();
-  polyDiv->addWidget( m_convertToPolynomialLabel );
-  polyDiv->addWidget( m_convertToPolynomial );
-  m_convertToPolynomialLabel->hide();
-  m_convertToPolynomial->hide();
-  
-  m_layout->addWidget( polyDiv, row, 0, 1, 3 );
   row++;
   
+  if( style == kTall )
+  {
+    m_polyConverDiv = new WContainerWidget();
+    m_layout->addWidget( m_polyConverDiv, row, 0, 1, 3 );
+    row++;
+          
+    m_convertToPolynomialLabel = new WText( "Calibration is specified by channel energy" );
+    m_convertToPolynomialLabel->addStyleClass( "RecalConvertToPolyTxt" );
+                        
+    m_convertToPolynomial = new WPushButton( "Convert To Polynomial..." );
+    m_convertToPolynomial->clicked().connect( this, &Recalibrator::startConvertToPolynomial );
+          
+    //m_layout->addWidget( m_convertToPolynomialLabel, row, 0, 1, 3 );
+    //row++;
+    //m_layout->addWidget( m_convertToPolynomial, row, 0, 1, 3, Wt::AlignCenter | Wt::AlignTop );
+    //row++;
+          
+    m_convertToPolynomialLabel->setInline( false );
+    m_polyConverDiv->addWidget( m_convertToPolynomialLabel );
+    m_polyConverDiv->addWidget( m_convertToPolynomial );
+          
+    m_convertToPolynomialLabel->hide();
+    m_convertToPolynomial->hide();
+    m_polyConverDiv->hide();
+  }//if( style == kTall )
   
-  multFiles->setIcon( "InterSpec_resources/images/page_white_stack.png" );
-  if( style == kWide )
-    multFiles->addStyleClass( "MultCalBtnWide" );
+  m_multiFileButton->setIcon( "InterSpec_resources/images/page_white_stack.png" );
+  HelpSystem::attachToolTipOn( m_multiFileButton, "Tool to use peaks from multiple files to fit for calibration",
+                              showToolTipInstantly, HelpSystem::Top );
+  m_multiFileButton->clicked().connect( this, &Recalibrator::createMultifileFitter );
   
-  HelpSystem::attachToolTipOn( multFiles,"Tool to use peaks from multiple files to fit for calibration", showToolTipInstantly, HelpSystem::Top );
-  multFiles->clicked().connect( this, &Recalibrator::createMultifileFitter );
   
   if( style == kWide )
   {
-    m_devPairs->setStyleClass( "DeviationPairDisplayWide" );
+    m_devPairs->addStyleClass( "DevPairDisplayWide" );
     
-    for( int i = 0; i < (row-1); ++i )
-      m_layout->setRowStretch( row, 1 );
+    //for( int i = 0; i < (row-1); ++i )
+    //  m_layout->setRowStretch( i, 1 );
     
-    m_layout->addWidget( m_acceptButtonDiv, row, 0, 1, 4 );
+    //m_layout->addWidget( m_revert,        row, 0, 1,   2, Wt::AlignLeft | Wt::AlignMiddle );
+    //row++;
+            
+    //m_layout->addWidget( new WContainerWidget(), row, 0 );
+    m_layout->addWidget( m_fitCoefButton,  row, 2, 1, 2, Wt::AlignCenter | Wt::AlignBottom );
     
-    m_layout->addWidget( m_isotopeView, 0, 4, row, 1 );
-    m_layout->addWidget( m_devPairs, 0, 5, row, 1 );
+    auto helpBtn = new WContainerWidget();
+    helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
+    helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "energy-calibration-dialog" ) );
+    m_layout->addWidget( helpBtn,  row, 0, Wt::AlignLeft | Wt::AlignBottom );
     
-    WContainerWidget* container = new WContainerWidget();
-    m_fitCoefButton->addStyleClass( "RecalFitBtn" );
-    container->addWidget(m_fitCoefButton);
-    m_layout->addWidget( container, row, 4 , 1 , 1 );
-    
-    container = new WContainerWidget();
-    container->addWidget(addButton);
-    addButton->addStyleClass( "RecalFitBtn" );
-    m_layout->addWidget( container, row, 5, 1, 1);
-
-    m_layout->setColumnStretch( 4, 1 );
-    
-    //remove the floating
-    multFiles->removeStyleClass( "FloatLeft" );
-    m_closeButton->setHidden(true);
-    m_revert->removeStyleClass( "RecalCancelbtn" );
     row++;
+    
+    m_layout->addWidget( m_isotopeView,     0,   4, row, 1 );
+    m_layout->addWidget( m_devPairs,        0,   5, row, 1 );
+          
+    m_layout->addWidget( m_revert,          0, 6 );
+    m_layout->addWidget( m_multiFileButton, 1, 6 );
+    
+    m_polyConverDiv = new WContainerWidget();
+    m_convertToPolynomialLabel = new WText( "Cal. is by channel energy", m_polyConverDiv );
+    m_convertToPolynomialLabel->setInline( false );
+    m_convertToPolynomialLabel->decorationStyle().font().setSize( WLength(60,WLength::Percentage) );
+          
+    m_convertToPolynomial = new WPushButton( "To Polynomial...", m_polyConverDiv );
+    m_convertToPolynomial->clicked().connect( this, &Recalibrator::startConvertToPolynomial );
+    
+    //m_layout->addWidget( m_convertToPolynomialLabel, 2, 6, AlignBottom | AlignCenter );
+    //m_layout->addWidget( m_convertToPolynomial,      3, 6, AlignTop );
+    m_layout->addWidget( m_polyConverDiv, 2, 6, 2, 1 );
+    
+    m_convertToPolynomialLabel->hide();
+    m_convertToPolynomial->hide();
+    m_polyConverDiv->hide();
+          
+    m_layout->setColumnStretch( 4, 1 );
   }//if( style == kWide )
   
   if( style == kTall )
@@ -887,9 +771,9 @@ void Recalibrator::setWideLayout()
 }//void Recalibrator::setWideLayout()
 
 
-void Recalibrator::setTallLayout(AuxWindow* parent)
+void Recalibrator::setTallLayout( AuxWindow *parent )
 {
-  initWidgets( kTall, parent);
+  initWidgets( kTall, parent );
   refreshRecalibrator();
 }//void Recalibrator::setTallLayout()
 
@@ -942,12 +826,6 @@ void Recalibrator::specTypeCheckedCallback( const SpecUtils::SpectrumType type,
   }//
 }//void specTypeCheckedCallback(...)
 
-
-
-WContainerWidget* Recalibrator::getFooter()
-{
-  return m_acceptButtonDiv;
-}
 
 void Recalibrator::shiftPeaksForEnergyCalibration( PeakModel *peakmodel,
                                                    const std::vector<float> &new_pars,
@@ -1144,6 +1022,113 @@ void Recalibrator::finishConvertToPolynomial( const bool followThrough )
 }//void finishConvertToPolynomial()
 
 
+void Recalibrator::checkIfCanFitCoefs()
+{
+  //An incredibly minor optimization: we will only call enable/disable if its different than the current state
+  //  (from a superficial glance at Wt source code I think it effectively does this check anyway to avoid re-rendering
+  //   but I guess I'll just leave this check in for the moment).
+  const bool wasEnabled = m_fitCoefButton->isEnabled();
+  
+  std::shared_ptr<const SpecUtils::Measurement> disp_foreground
+             = m_hostViewer->displayedHistogram(SpectrumType::Foreground);
+  
+  if( !disp_foreground || !m_applyTo[ForeIndex]->isChecked() )
+  {
+    if( wasEnabled )
+      m_fitCoefButton->disable();
+    return;
+  }
+  
+  const SpecUtils::EnergyCalType cal_type = disp_foreground->energy_calibration_model();
+  
+  switch( cal_type )
+  {
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+    break;
+      
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      if( wasEnabled )
+        m_fitCoefButton->disable();
+      return;
+    break;
+  }//switch( cal_type )
+  
+  int num_coeff_fit = 0;
+  for( size_t i = 0; i < sm_numCoefs; ++i )
+    num_coeff_fit += m_fitFor[i]->isChecked();
+  
+  if( !num_coeff_fit )
+  {
+    if( wasEnabled )
+      m_fitCoefButton->disable();
+    return;
+  }
+  
+  int npeaks_use = 0;
+  const size_t npeaks = m_peakModel->npeaks();
+  for( size_t peakn = 0; peakn < npeaks; ++peakn )
+  {
+    const PeakDef &peak = m_peakModel->peak(peakn);
+    npeaks_use += peak.useForCalibration();
+  }//for( loop over peakn )
+  
+  if( !npeaks_use )
+  {
+    if( wasEnabled )
+      m_fitCoefButton->disable();
+    return;
+  }
+  
+  if( !wasEnabled )
+    m_fitCoefButton->enable();
+}//void checkIfCanFitCoefs()
+
+
+void Recalibrator::checkIfCanMultiFileCal()
+{
+  //See notes in #Recalibrator::checkIfCanFitCoefs about this minor optimization
+  const bool wasEnabled = m_multiFileButton->isEnabled();
+  
+  SpectraFileModel *fileModel = m_hostViewer->fileManager()->model();
+  if( !fileModel )
+  {
+    if( wasEnabled )
+      m_multiFileButton->disable();
+    return;
+  }//if( !fileModel )
+  
+  const int nfile = fileModel->rowCount();
+  if( nfile > 1 )
+  {
+    if( !wasEnabled )
+      m_multiFileButton->enable();
+    return;
+  }
+  
+  auto meas = m_hostViewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !meas )
+  {
+    if( wasEnabled )
+      m_multiFileButton->disable();
+    return;
+  }//if( !fileModel )
+  
+  const set<set<int> > peakSamples = meas->sampleNumsWithPeaks();
+  if( peakSamples.size() < 2 )
+  {
+    if( wasEnabled )
+      m_multiFileButton->disable();
+    return;
+  }
+  
+  if( !wasEnabled )
+    m_multiFileButton->enable();
+}//void checkIfCanMultiFileCal()
+
+          
 void Recalibrator::userChangedDeviationPairs()
 {
   try  //begin check validity of equation {note: not a rigorous check}
@@ -1936,6 +1921,8 @@ void Recalibrator::refreshRecalibrator()
             || displ_foreground->energy_calibration_model()==SpecUtils::EnergyCalType::InvalidEquationType)) )
   {
     m_fitCoefButton->disable();
+    m_multiFileButton->disable();
+    
     m_applyToLabel->hide();
     for( size_t i = 0; i < sm_numCoefs; ++i )
     {
@@ -1952,10 +1939,12 @@ void Recalibrator::refreshRecalibrator()
     {
       m_convertToPolynomialLabel->show();
       m_convertToPolynomial->show();
+      m_polyConverDiv->show();
     }else
     {
       m_convertToPolynomialLabel->hide();
       m_convertToPolynomial->hide();
+      m_polyConverDiv->hide();
     }
     
     return;
@@ -1965,6 +1954,7 @@ void Recalibrator::refreshRecalibrator()
   {
     m_convertToPolynomialLabel->hide();
     m_convertToPolynomial->hide();
+    m_polyConverDiv->hide();
     m_fitCoefButton->enable();
     m_applyToLabel->show();
     for( size_t i = 0; i < sm_numCoefs; ++i )
@@ -2083,7 +2073,10 @@ void Recalibrator::refreshRecalibrator()
   
   m_applyTo[SecondIndex]->setDisabled( !second );
   m_applyTo[SecondIndex]->setChecked( !!second);
-}//void refreshRecalibrator( InterSpec *m_hostViewer )
+  
+  checkIfCanFitCoefs();
+  checkIfCanMultiFileCal();
+}//void refreshRecalibrator()
 
 
 
@@ -2161,27 +2154,21 @@ DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_pairs( NULL )
 {
-  setStyleClass( "DeviationPairDisplay" );
+  addStyleClass( "DevPairDisplay" );
   WLabel *title = new WLabel( "Deviation Pairs", this );
   title->setStyleClass( "Wt-itemview Wt-header Wt-label DevPairTitle" );
   title->setInline( false );
+
+  m_pairs = new WContainerWidget(this);
+  m_pairs->setStyleClass( "DevPairsContainer" );
+          
+  auto footer = new WContainerWidget(this);
+  footer->setStyleClass( "DevPairsFooter" );
   
-  //WContainerWidget *headerDiv = new WContainerWidget( this );
-  //headerDiv->setStyleClass( "DevPairHeader" );
-  //WLabel *header = new WLabel( "Energy (keV)", headerDiv );
-  //header->setStyleClass(  "DevPairEnergyHeader" );
-  //header = new WLabel( "Offset (keV)", headerDiv );
-  //header->setStyleClass(  "DevPairOffsetHeader" );
-  //
-  //Blah blah blah,
-  //Make header same height as table to the left.
-  //  Replace the "Add Pair" button with a small + button
-  //  Add in a help button.
-  //  When no pairs are present, maybe add some background text of energy and offset.
-          
-          
-  m_pairs = new WContainerWidget( this );
-  m_pairs->setStyleClass( "DevPairsContainer" ); 
+  auto addBtn = new WContainerWidget( footer );
+  addBtn->addStyleClass( "Wt-icon AddDevPair" );
+  addBtn->clicked().connect( boost::bind(&DeviationPairDisplay::newDevPair, this, true) );
+  addBtn->setToolTip( "Add another deviation pair" );
 }//DeviationPairDisplay constructor
 
 
@@ -3327,7 +3314,7 @@ Recalibrator::MultiFileCalibFit::MultiFileCalibFit( Recalibrator *cal )
     m_coefvals[i] = new WLineEdit();
     m_fitFor[i] = new WCheckBox( "Fit" );
     m_coefvals[i]->disable();
-  
+    
     fitForLayout->addWidget( label,         i, 0 );
     fitForLayout->addWidget( m_coefvals[i], i, 1 );
     fitForLayout->addWidget( m_fitFor[i],   i, 2 );

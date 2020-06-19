@@ -1100,7 +1100,6 @@ protected:
   Wt::WTabWidget *m_toolsTabs;
 
   Recalibrator           *m_recalibrator; // The energy (re)calibrator
-  WContainerWidget       *m_calibrateContainer; //holds the Recalibrator in when tool tabs are shown
   AuxWindow              *m_recalibratorWindow;
   GammaCountDialog       *m_gammaCountDialog;
   AuxWindow              *m_specFileQueryDialog;

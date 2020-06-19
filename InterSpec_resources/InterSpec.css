@@ -220,7 +220,7 @@ width:100%;
 }
 
 
-.helpButton
+.FooterHelpBtn
 {
   margin-top: 2px;
   background: white;
@@ -233,12 +233,37 @@ width:100%;
   border-radius: 4px;
 }
 
-.helpButton:hover
+.FooterHelpBtn:hover
 {
   background: none;
 }
 
+/* A question mark help button suitable for displaying in the content of a tool (e.g., in the tools tabs).
+ When making a content help button, you should also add the .Wt-icon styleclass to help handle color-themeing.
+ */
+.ContentHelpBtn
+{
+  background-image: url('../InterSpec_resources/images/help_minimal.svg');
+  background-repeat: no-repeat;
+  background-position: center;
+  height: 16px;
+  width: 16px;
+  
+  cursor:pointer;
+  opacity: 0.6;
+  padding: 0;
+}
 
+.ContentHelpBtn:hover
+{
+  opacity: 1;
+}
+
+/* Make so .ContentHelpBtn buttons are not shown when in a Wt-dialog since we put a .FooterHelpBtn in the footer of dialog */
+.Wt-dialog .ContentHelpBtn
+{
+  display: none;
+}
 
 .modal-footer 
 {
@@ -515,8 +540,18 @@ background: #9B9B9B;
 
 
 .PeakInfoDisplayButtonDiv {
-  padding-bottom: 2px;
-  padding-left: 5px;
+  padding-left: 3px;
+}
+
+.PeakInfoHlpBtn {
+  margin-right: 5px;
+  position: absolute;
+  left: 1px;
+  bottom: 0px;
+}
+
+.PeakSearchBtn {
+  margin-left: 25px;
 }
 
 .PeakInfoDisplayButtonDiv > button {
@@ -557,28 +592,44 @@ background: #9B9B9B;
 }
 
 
-.DeviationPairDisplay
+.DevPairDisplay
+{
+  border: 2px solid #e1e1e1;
+  
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+
+.DevPairDisplayWide
 {
   margin-left: 5px;
-  border: 2px solid #e1e1e1;
-  width: 20em;
-}
-
-
-.DeviationPairDisplayWide
-{
   width: 220px;
-  border: 2px solid #e1e1e1;
-  overflow-y: auto;
 }
 
-.DeviationPairDisplayTall
+.DevPairDisplayTall
 {
-  width: auto;
   height: 11.65em;
-  border: 1px solid #e1e1e1;
-  overflow-y: auto;
 }
+
+.DevPairsContainer
+{
+  padding: 3px;
+  
+  flex-grow: 1;
+  overflow: auto;
+  min-height: 2em;
+}
+
+.DevPairsFooter
+{
+  border-top: 1px solid #e1e1e1;
+  bottom: 0px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
 
 .DevPairTitle
 {
@@ -592,7 +643,8 @@ background: #9B9B9B;
 
 .DevPairHeader
 {
-  border-bottom: 1px solid #e1e1e1;   
+  border-bottom: 1px solid #e1e1e1;
+  flex-shrink: 0;
 }
 
 .DevPairEnergyHeader, .DevPairOffsetHeader
@@ -604,9 +656,6 @@ background: #9B9B9B;
   padding-left: 5px;
 }
 
-.AddDevPair
-{
-}
 
 .DevOffset, .DevEnergy
 {
@@ -628,11 +677,27 @@ background: #9B9B9B;
 }
 */
 
-.DevPairsContainer
+
+
+.AddDevPair
 {
-/*  border: 1px solid #e1e1e1;*/
-  padding: 3px;
-  overflow-y: auto;
+  margin-left: 2px;
+  margin-top: 1px;
+  margin-bottom: 1px;
+  background-image: url('../InterSpec_resources/images/plus_min_black.svg');
+  background-repeat: no-repeat;
+  background-position: center;
+  height: 18px;
+  width: 19px;
+  opacity: 0.6;
+  cursor:pointer;
+  padding: 0;
+  display: block;
+}
+
+.AddDevPair:hover
+{
+  opacity: 1.0;
 }
 
 .InvalidDevPairs
@@ -658,11 +723,6 @@ background: #9B9B9B;
 }
 */
 
-.MultCalBtnWide {
-  margin-left: 3px;
-  margin-right: 5px;
-}
-
 .PlusIconWhiteBtn, .PlusIconWhiteBtn:hover
 {
   background-image: url('../InterSpec_resources/images/plus_min_white.png');
@@ -681,13 +741,13 @@ background: #9B9B9B;
 
 .DeleteDevPair
 {
-  background-image: url('../InterSpec_resources/images/minus_min.png');
+  background-image: url('../InterSpec_resources/images/minus_min_black.svg');
   background-position: 0px center;
   background-repeat: no-repeat;
   float: right;
   
-  opacity: 0.8;
-  cursor:pointer;
+  opacity: 0.6;
+  cursor: pointer;
 }
 
 .DeleteDevPair:hover
@@ -759,11 +819,6 @@ background: #9B9B9B;
 {
   white-space: nowrap;
   min-width: 275px;
-}
-
-.RecalFitBtn, .RecalFitBtn:hover
-{
-float:right;
 }
 
 .RecalCancelbtn, .RecalCancelbtn:hover
@@ -1085,7 +1140,7 @@ span.MenuLabelSelected
 .ReferencePhotopeakDisplay
 {
   margin-top: 5px;
-  margin-left: 4px;
+  margin-left: 5px;
   margin-right: 4px;
   margin-bottom: 3px;
 }

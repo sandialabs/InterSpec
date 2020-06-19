@@ -412,6 +412,7 @@ set( sources
     src/MakeDrfChart.cpp
     src/MakeDrfFit.cpp
     src/FluxTool.cpp
+    src/NativeFloatSpinBox.cpp
     js/CanvasForDragging.js
     js/SpectrumChart.js
     js/InterSpec.js
@@ -488,6 +489,7 @@ set( headers
     InterSpec/MakeDrfChart.h
     InterSpec/MakeDrfFit.h
     InterSpec/FluxTool.h
+    InterSpec/NativeFloatSpinBox.h
 )
 
 if( USE_DB_TO_STORE_SPECTRA )

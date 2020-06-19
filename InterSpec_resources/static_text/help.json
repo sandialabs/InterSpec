@@ -78,6 +78,18 @@
         "keywords" : "Energy Calibration Tool Calibrate Adjust Offset Peaks Information Offset Linear Quadratic Normalize"
       },
       {
+        "id" : "peak-manager",
+        "title" : "Peak Manager",
+        "help-xml" : "peak_manager_help.xml",
+        "keywords" : "peak edit editor"
+      },
+      {
+        "id" : "compact-file-manager",
+        "title" : "Spectrum File Chooser",
+        "help-xml" : "compact_file_manager_help.xml",
+        "keywords" : "select file foreground background second manager"
+      },
+      {
         "id":"detector-edit-dialog",
         "title":"Detector Select",
         "help-xml":"detector_edit_help.xml",
