@@ -180,6 +180,8 @@ protected:
   
   void useShieldingInfoUserToggled();
   
+  void handleUserChangedShielding();
+  
   void handleUserChangedDistance();
   
   void handleUserChangedActivity();
