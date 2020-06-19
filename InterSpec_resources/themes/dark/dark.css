@@ -194,7 +194,7 @@ ul.SideMenu > li.item:hover  {
   border-color: rgb(136, 136, 136);
 }
 
-.ParticleViewTable, .RecalIsotopeView, .IsotopeSearchResultTable, .DeviationPairDisplayWide {
+.ParticleViewTable, .RecalIsotopeView, .IsotopeSearchResultTable, .DevPairDisplayWide {
   border-color: rgb(136, 136, 136);
 }
 
@@ -211,7 +211,7 @@ ul.SideMenu > li.item:hover  {
   color: black;
 }
 
-.helpButton {
+.FooterHelpBtn {
   background-image: radial-gradient(white 50%, rgb(44,45,48));
 }
 

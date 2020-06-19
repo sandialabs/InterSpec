@@ -47,10 +47,10 @@ namespace Wt
   class WLineEdit;
   class WTreeView;
   class WPushButton;
-  class WDoubleSpinBox;
 }//namespace Wt
 
 class InterSpec;
+class NativeFloatSpinBox;
 class IsotopeSearchByEnergyModel;
 
 
@@ -99,8 +99,8 @@ protected:
     
     Wt::WContainerWidget *m_removeIcn;
     Wt::WContainerWidget *m_addAnotherIcn;
-    Wt::WDoubleSpinBox *m_energy;
-    Wt::WDoubleSpinBox *m_window;
+    NativeFloatSpinBox *m_energy;
+    NativeFloatSpinBox *m_window;
     Wt::Signal<> m_enter, m_changed, m_remove, m_focus, m_addAnother;
   };//class SearchEnergy
   
@@ -188,7 +188,7 @@ protected:
   int m_currentSearch;
   Wt::WText *m_searching;
   Wt::WTreeView *m_results;
-  Wt::WDoubleSpinBox *m_minBranchRatio;
+  NativeFloatSpinBox *m_minBranchRatio;
   Wt::WLineEdit *m_minHalfLife;
   IsotopeSearchByEnergyModel *m_model;
   

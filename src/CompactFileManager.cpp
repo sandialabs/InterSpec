@@ -295,23 +295,29 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
           WContainerWidget* temp = new WContainerWidget();
           temp->addStyleClass( "CompactManagerButtons" );
 
-            WGridLayout* layout2 = new WGridLayout();
-            layout2->setContentsMargins(0,0,0,0);
-            temp->setLayout(layout2);
-            WPushButton *button = new WPushButton(  "Spectrum Manager...");
+          WGridLayout* layout2 = new WGridLayout();
+          layout2->setContentsMargins(0,0,0,0);
+          temp->setLayout(layout2);
+          
+          auto helpBtn = new WContainerWidget();
+          helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
+          helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "compact-file-manager" ) );
+          layout2->addWidget(helpBtn,0,0, Wt::AlignLeft | Wt::AlignBottom );
+          
+          WPushButton *button = new WPushButton(  "Spectrum Manager...");
             //button->setIcon(Wt::WLink("InterSpec_resources/images/computer.png" ));
             button->clicked().connect( m_hostViewer->fileManager(), &SpecMeasManager::startSpectrumManager );
-            layout2->addWidget(button,0,0);
+            layout2->addWidget(button,0,1);
 #if( USE_DB_TO_STORE_SPECTRA )
             WPushButton *button2 = new WPushButton( "Previous...");
             button2->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
                                                      m_hostViewer->fileManager(),
                                                      SpecUtils::SpectrumType::Foreground,
                                                      std::shared_ptr<SpectraFileHeader>() ) );
-            layout2->addWidget(button2,0,1);
+            layout2->addWidget(button2,0,2);
 #endif
-            layout2->setColumnStretch(0, 1);
             layout2->setColumnStretch(1, 1);
+            layout2->setColumnStretch(2, 1);
             layout->addWidget( temp, 1, j, AlignMiddle );
         }
         break;

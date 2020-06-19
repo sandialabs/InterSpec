@@ -1005,8 +1005,14 @@ void PeakInfoDisplay::init()
   buttonDiv->addStyleClass( "PeakInfoDisplayButtonDiv" );
   m_infoLayout->addWidget( buttonDiv, 1, 0 );
 
+  
+  auto helpBtn = new WContainerWidget( buttonDiv );
+  helpBtn->addStyleClass( "Wt-icon ContentHelpBtn PeakInfoHlpBtn" );
+  helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "peak-manager" ) );
+  
+  
   m_searchForPeaks = new WPushButton( "Search for Peaks", buttonDiv );
-  m_searchForPeaks->addStyleClass("FindIcon");
+  m_searchForPeaks->addStyleClass("PeakSearchBtn");
   m_searchForPeaks->setIcon( "InterSpec_resources/images/magnifier.png" );
   
   //m_searchForPeaks->setMargin(WLength(7),Wt::Left);

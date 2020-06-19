@@ -31,7 +31,6 @@
 #include <Wt/WText>
 #include <Wt/WImage>
 #include <Wt/WLabel>
-#include <Wt/WServer>
 #include <Wt/WString>
 #include <Wt/WServer>
 #include <Wt/WLineEdit>
@@ -40,7 +39,6 @@
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
 #include <Wt/WApplication>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
 
@@ -60,6 +58,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/RowStretchTreeView.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
@@ -127,37 +126,26 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   label->addStyleClass( "SearchEnergyLabel" );
   layout->addWidget( label, 0, 0, Wt::AlignMiddle );
   
-  m_energy = new WDoubleSpinBox();
-  //m_energy->setNativeControl(true);
-  layout->addWidget( m_energy, 0, 1, Wt::AlignMiddle );
+  m_energy = new NativeFloatSpinBox();
+  layout->addWidget( m_energy, 0, 1 /*, Wt::AlignMiddle */ );
   label->setBuddy( m_energy );
-  m_energy->setMinimum( 0.0 );
-  m_energy->setMaximum( 1000000.0 );
+  m_energy->setMinimum( 0.0f );
+  m_energy->setMaximum( 1000000.0f );
   m_energy->setTextSize( 5 );
   m_energy->enterPressed().connect( this, &SearchEnergy::emitEnter );
   
   label = new WLabel( "+/-" );
   label->addStyleClass( "SearchEnergyWindowLabel" );
   layout->addWidget( label, 0, 2, Wt::AlignMiddle );
-  m_window = new WDoubleSpinBox();
-  //m_window->setNativeControl(true);
-  layout->addWidget( m_window, 0, 3, Wt::AlignMiddle );
+  m_window = new NativeFloatSpinBox();
+  layout->addWidget( m_window, 0, 3/*, Wt::AlignMiddle*/ );
   label->setBuddy( m_window );
   
-  m_window->setMinimum( 0.0 );
-  m_window->setMaximum( 1000000.0 );
-  m_window->setValue( 10.0 );
+  m_window->setMinimum( 0.0f );
+  m_window->setMaximum( 1000000.0f );
+  m_window->setValue( 10.0f );
   m_window->setTextSize( 7 );
   m_window->enterPressed().connect( this, &SearchEnergy::emitEnter );
-
-//  InterSpecApp *app= dynamic_cast<InterSpecApp *>( wApp );
-//  if( !app && app->isMobile())
-//  {
-//20150123: on android at least, calling setNativeControl() causes
-//  a javascript exception (having to do with the validate)
-//    m_energy->setNativeControl(true); //mobile should not show spinner
-//    m_window->setNativeControl(true); //mobile should not show spinner
-//  } //(isMobile())
   
   label = new WLabel( "keV" );
   label->addStyleClass( "KeVLabel" );
@@ -165,7 +153,7 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   
   m_energy->valueChanged().connect( this, &SearchEnergy::emitChanged );
   m_window->valueChanged().connect( this, &SearchEnergy::emitChanged );
-  m_energy->keyPressed().connect( this, &SearchEnergy::emitChanged );
+  //m_energy->keyPressed().connect( this, &SearchEnergy::emitChanged );
   
   m_energy->focussed().connect( this, &SearchEnergy::emitGotFocus );
   m_window->focussed().connect( this, &SearchEnergy::emitGotFocus );
@@ -323,7 +311,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   searchEnergiesDivLayout->addWidget(buttonDiv,1,0);
   WGridLayout *buttonDivLayout = new WGridLayout();
   buttonDiv->setLayout(buttonDivLayout);
-  buttonDivLayout->setContentsMargins(3, 3, 3, 3);
+  buttonDivLayout->setContentsMargins(1, 3, 0, 0);
 //  buttonDiv->addStyleClass( "SearchEnergiesButtonDiv" );
   
   //XXX - the srcDiv and the searchEnergiesDiv can overlap in the case the
@@ -367,18 +355,23 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   enrgy->disableRemove();
   
   
+  auto helpBtn = new WContainerWidget();
+  helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
+  helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "nuclide-search-dialog" ) );
+  buttonDivLayout->addWidget(helpBtn,1,0, Wt::AlignLeft | Wt::AlignBottom );
+  
   const bool showToolTipInstantly
   = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   WLabel *label = new WLabel( "Min. BR" );
 //  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTipInstantly , HelpSystem::Top);
-   buttonDivLayout->addWidget(label,1,0);
+   buttonDivLayout->addWidget(label,1,1, Wt::AlignMiddle | Wt::AlignRight );
 
-  m_minBranchRatio = new WDoubleSpinBox();
+  m_minBranchRatio = new NativeFloatSpinBox();
   //m_minBranchRatio->setNativeControl(true);
   string tip = "Minimum branching ratio.";
   HelpSystem::attachToolTipOn( m_minBranchRatio, tip, showToolTipInstantly , HelpSystem::Top);
-  buttonDivLayout->addWidget(m_minBranchRatio,1,1);
+  buttonDivLayout->addWidget(m_minBranchRatio,1,2);
 
   m_minBranchRatio->setWidth( 35 );
   m_minBranchRatio->setValue( m_minBr );
@@ -401,7 +394,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
     "</div>";
 //    HelpSystem::attachToolTipOn( label, tip, showToolTipInstantly , HelpSystem::Top);
 
-  buttonDivLayout->addWidget(label,1,2);
+  buttonDivLayout->addWidget(label,1,3, Wt::AlignMiddle | Wt::AlignRight );
   m_minHalfLife = new WLineEdit( "6000 s" );
   HelpSystem::attachToolTipOn( m_minHalfLife, tip, showToolTipInstantly , HelpSystem::Top );
 
@@ -410,7 +403,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minHalfLife->setValidator(validator);
     
     
-  buttonDivLayout->addWidget(m_minHalfLife,1,3);
+  buttonDivLayout->addWidget(m_minHalfLife,1,4);
   m_minHalfLife->setWidth( 55 );
   //XXX should set WRegExpValidator for m_minHalfLife here.
 
@@ -424,8 +417,8 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minHalfLife->blurred().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
 
   
-  m_searching = new WText( "Searching" );
-  buttonDivLayout->addWidget( m_searching, 1, 4, AlignCenter | AlignMiddle );
+  m_searching = new WText( "Searching", helpBtn );
+  //buttonDivLayout->addWidget( m_searching, 1, 4, AlignCenter | AlignMiddle );
   m_searching->addStyleClass( "SearchingEnergiesTxt" );
   enrgy->changed().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
   
