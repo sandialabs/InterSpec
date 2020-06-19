@@ -294,7 +294,12 @@ void MakeDrfSrcDef::create()
   
   cell = m_table->elementAt(sm_shield_material_row,0);
   cell->setColumnSpan( 2 );
+  
   m_shieldingSelect = new ShieldingSelect( m_materialDB, nullptr, m_materialSuggest, false, cell );
+  m_shieldingSelect->materialModified().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
+  m_shieldingSelect->materialChanged().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
+  m_shieldingSelect->addingIsotopeAsSource().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
+  m_shieldingSelect->removingIsotopeAsSource().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
   m_shieldingSelect->hide();
   
   useAgeInfoUserToggled();
@@ -468,6 +473,12 @@ void MakeDrfSrcDef::useShieldingInfoUserToggled()
   m_shieldingSelect->setHidden( !m_useShielding->isChecked() );
   m_updated.emit();
 }//void useShieldingInfoUserToggled()
+
+
+void MakeDrfSrcDef::handleUserChangedShielding()
+{
+  m_updated.emit();
+}
 
 
 double MakeDrfSrcDef::enteredActivity() const
