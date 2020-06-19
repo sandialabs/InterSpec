@@ -2276,32 +2276,8 @@ void DownloadCurrentSpectrumResource::handleRequest(
   if( (pos!=string::npos) && (pos!=0) && ((filename.size()-pos)<=4) )
     filename = filename.substr( 0, pos );
   
-  switch( m_format )
-  {
-    case SpecUtils::SaveSpectrumAsType::Txt: filename += ".txt"; break;
-    case SpecUtils::SaveSpectrumAsType::Csv: filename += ".csv"; break;
-    case SpecUtils::SaveSpectrumAsType::Pcf: filename += ".pcf"; break;
-    case SpecUtils::SaveSpectrumAsType::N42_2006: filename += ".n42"; break;
-    case SpecUtils::SaveSpectrumAsType::N42_2012: filename += ".n42"; break;
-    case SpecUtils::SaveSpectrumAsType::Chn:     filename += ".chn"; break;
-    case SpecUtils::SaveSpectrumAsType::SpeIaea: filename += ".spe"; break;
-#if( SpecUtils_ENABLE_D3_CHART )
-    case SpecUtils::SaveSpectrumAsType::HtmlD3:  filename += ".html"; break;
-#endif //#if( USE_D3_EXPORTING )
-    case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
-    case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
-    case SpecUtils::SaveSpectrumAsType::SpcAscii:
-      filename += ".spc";
-    break;
-      
-    case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
-    case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
-      filename += ".dat";
-    break;
-      
-    case SpecUtils::SaveSpectrumAsType::NumTypes:
-    break;
-  }//switch( m_format )
+  filename += ".";
+  filename += SpecUtils::suggestedNameEnding( m_format );
   
   const set<int> samplenums = m_viewer->displayedSamples(m_spectrum);
   const set<int> detectornums = m_viewer->displayedDetectorNumbers();
@@ -2422,6 +2398,7 @@ void DownloadSpectrumResource::handle_resource_request(
     case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
     case SpecUtils::SaveSpectrumAsType::SpcAscii:
     case SpecUtils::SaveSpectrumAsType::SpeIaea:
+    case SpecUtils::SaveSpectrumAsType::Cnf:
       response.setMimeType( "application/octet-stream" );
     break;
       
@@ -2495,6 +2472,10 @@ void DownloadSpectrumResource::handle_resource_request(
       
     case SpecUtils::SaveSpectrumAsType::SpeIaea:
       measurement->write_iaea_spe( response.out(), samplenums, detectornums );
+      break;
+      
+    case SpecUtils::SaveSpectrumAsType::Cnf:
+      measurement->write_cnf( response.out(), samplenums, detectornums );
       break;
       
 #if( SpecUtils_ENABLE_D3_CHART )
@@ -2594,25 +2575,8 @@ void SpecificSpectrumResource::setSpectrum( std::shared_ptr<const SpecMeas> spec
   if( pos!=string::npos && ((name.size()-pos)==4) )
     name = name.substr( 0, pos );
 
-  switch( m_type )
-  {
-    case SpecUtils::SaveSpectrumAsType::Txt:                name += ".txt";  break;
-    case SpecUtils::SaveSpectrumAsType::Csv:                name += ".csv";  break;
-    case SpecUtils::SaveSpectrumAsType::Pcf:                name += ".pcf";  break;
-    case SpecUtils::SaveSpectrumAsType::Chn:                name += ".chn";  break;
-    case SpecUtils::SaveSpectrumAsType::N42_2006:
-    case SpecUtils::SaveSpectrumAsType::N42_2012:            name += ".n42";  break;
-    case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
-    case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
-    case SpecUtils::SaveSpectrumAsType::SpcAscii:           name += ".spc";  break;
-    case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
-    case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2: name += ".dat";  break;
-    case SpecUtils::SaveSpectrumAsType::SpeIaea:            name += ".spe";  break;
-#if( SpecUtils_ENABLE_D3_CHART )
-    case SpecUtils::SaveSpectrumAsType::HtmlD3:             name += ".html"; break;
-#endif //#if( USE_D3_EXPORTING )
-    case SpecUtils::SaveSpectrumAsType::NumTypes:          break;
-  }//switch( m_type )
+  name += ".";
+  name += SpecUtils::suggestedNameEnding( m_type );
   
   suggestFileName( name, WResource::Attachment );
 }//void setSpectrum( std::shared_ptr<const SpecUtils::SpecFile> spec )

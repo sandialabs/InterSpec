@@ -5154,6 +5154,11 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
             tooltip = "A ASCII based standard file format that will contain a"
                       " single spectrum only.";
             break;
+            
+          case SpecUtils::SaveSpectrumAsType::Cnf:
+            tooltip = "A binary Canberra file format that contains only a single spectrum.";
+            break;
+            
 #if( SpecUtils_ENABLE_D3_CHART )
           case SpecUtils::SaveSpectrumAsType::HtmlD3:
             tooltip = "An HTML file using D3.js to generate a spectrum chart"
