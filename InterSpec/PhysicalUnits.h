@@ -64,7 +64,7 @@ namespace PhysicalUnits
   static const double millibarn = 1.e-3 *barn;
 
   // Angle
-  static const double radian = 1.0, rad = 1.0;
+  static const double radian = 1.0;
   static const double degree = pi*radian, deg =pi*radian;
 
   // Time
@@ -106,11 +106,15 @@ namespace PhysicalUnits
   static const double mCi = 1.0e-3 * curie;
   static const double ci = curie;
   
-  // Dose
-  static const double sievert = joule / kilogram;  //equivalent radiation dose
+  // Equivalent radiation dose
+  static const double sievert = joule / kilogram;
   static const double rem = 0.01*sievert;
-  static const double gray = joule / kilogram;     //absorbed dose
+
+  // Absorbed dose
+  static const double gray = joule / kilogram;
+  static const double rad = 0.01 * gray;
   
+
   // Physical Constants
   static const double c_light   = 2.99792458e+8 * m/second;
   static const double c_squared = c_light * c_light;
@@ -127,9 +131,14 @@ namespace PhysicalUnits
   extern const char * const sm_activityRegex;
   extern const char * const sm_activityUnitOptionalRegex;
 
+  extern const char * const sm_absorbedDoseRegex;
+  extern const char * const sm_equivalentDoseRegex;
+
   extern const char * const sm_timeDurationRegex;
   extern const char * const sm_timeDurationHalfLiveOptionalRegex;
   
+  extern const char * const sm_positiveDecimalRegex;
+
   //printToBest____Units(...): makes an attempt to turn the input into a user
   //  readable string.  The optional defineitions of units are convience
   //  variables for when you're working in units that are not from this
@@ -151,11 +160,21 @@ namespace PhysicalUnits
                                     const int maxNpostDecimal = 2,
                                     const double gram_definition = gram );
   
-  std::string printToBestDoseUnits( double dose,
+  std::string printToBestEquivalentDoseRateUnits( double dosePerTime,
                                    const int maxNpostDecimal = 2,
                                    const bool useRemPerHr = true,
                                    const double remPerHrDefinition = rem/hour );
-  
+
+  std::string printToBestEquivalentDoseUnits( double dose,
+                                            const int maxNpostDecimal = 2,
+                                            const bool use_sievert = true,
+                                            const double sievert_definition = sievert );
+
+  std::string printToBestAbsorbedDoseUnits( double dose,
+                                          const int maxNpostDecimal = 2,
+                                          const bool use_gray = true,
+                                          const double gray_definition = gray );
+
   std::string printToBestSpecificActivityUnits( double activityPerMass,
                                                 const int numSignificantFigures = 3,
                                                 const bool useCurie = true );
@@ -195,6 +214,27 @@ namespace PhysicalUnits
   //Throws std::runtime_exception on failure.
   double stringToDistance( std::string str, double cm_definition = cm );
 
+  /** Converts a string into absorbed dose.
+   
+   Accepted physical units: "gray", "Gy", "rad", "erg" (assumes per gram), "erg/g", "erg per gram"
+   
+   Example inputs: "1.2 gray", "1.23gy", "100 urad", "100 mrad", "100 milli-rad", "100 millirad",
+                   "13 erg/g", "1 gray 1 Gy".
+   
+   Throws std::runtime_exception on failure.
+   */
+  double stringToAbsorbedDose( const std::string &str, const double gray_definition = gray );
+
+  /** Converts a string into equivalent dose.
+   
+   Accepted physical units: "sievert", "Sv", "rem", "roentgen", "r\xC3\xB6entgen"
+   
+   Example inputs: "1.2 sv", "1.23 urem", "100 kilo-rem", "1 gigasv", "1gsv", "1.2mrem", (milli-rem)
+                   "1.2Mrem" (mega-rem)
+   
+   Throws std::runtime_exception on failure.
+   */
+  double stringToEquivalentDose( const std::string &str, const double sievert_def = sievert );
 
 
   //Functions below here were imported 20121014 from some other code I have
@@ -217,7 +257,7 @@ namespace PhysicalUnits
   const UnitNameValuePair &bestActivityUnitHtml( const double activity,
                                                  bool useCurries = true );
   
-  const UnitNameValuePair &bestDoseUnitHtml( const double activity,
+  const UnitNameValuePair &bestDoseUnitHtml( const double dose,
                                                 bool useRem = true );
   UnitNameValuePair bestTimeUnit( const double time );
   UnitNameValuePair bestTimeUnitShortHtml( const double time );
