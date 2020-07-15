@@ -253,7 +253,7 @@ void testPeakMapEqual( const SampleNumsToPeakMap &orig_lhsmap,
 
 void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 {
-  SpecFile::equalEnough( lhs, rhs );
+  SpecFile::equal_enough( lhs, rhs );
   
   char buffer[1024];
   if( (!lhs.m_peaks) != (!rhs.m_peaks) )
@@ -914,15 +914,26 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
   if( sample_nums.empty() )
     sample_nums = sample_numbers_;
   
-  const size_t ndet = detector_numbers_.size();
-  vector<bool> detectors( ndet, true );
-  if( !det_nums.empty() )
-  {
-    for( size_t i = 0; i < ndet; ++i )
-      detectors[i] = (det_nums.count(detector_numbers_[i]) != 0);
-  }//if( det_nums.empty() )
+  vector<string> detnames;
+  assert( detector_numbers_.size() == detector_names_.size() );
   
-  std::shared_ptr<SpecUtils::Measurement> summed = sum_measurements( sample_nums, detectors );
+  if( det_nums.empty() )
+  {
+    detnames = detector_names_;
+  }else
+  {
+    for( const int detnum : det_nums )
+    {
+      const auto pos = std::find( begin(detector_numbers_), end(detector_numbers_), detnum );
+      if( pos != end(detector_numbers_) )
+        detnames.push_back( detector_names_[pos - begin(detector_numbers_)] );
+      else
+        throw runtime_error( "write_iaea_spe: invalid detector number (" + to_string(detnum) +")" );
+    }//for( const int detnum : det_nums )
+  }//if( we want all detectors ) / else
+  
+  
+  std::shared_ptr<SpecUtils::Measurement> summed = sum_measurements( sample_nums, detnames, nullptr );
   if( !summed )
     return SpecFile::write_iaea_spe( output, sample_nums, det_nums );
   
@@ -1843,7 +1854,33 @@ void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
   {
     //XXX - each peak will now get their own continuum - a huge waste of memorry!
     auto newcont = std::make_shared<SpecUtils::Measurement>( *continuum->externalContinuum() );
-    newcont->recalibrate_by_eqn( new_pars, new_devpairs, new_eqn_type );
+    
+    const size_t nchannel = newcont->num_gamma_channels();
+    
+    auto newcal = std::make_shared<SpecUtils::EnergyCalibration>();
+    switch( new_eqn_type )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+        newcal->set_polynomial( nchannel, new_pars, new_devpairs );
+        break;
+        
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        newcal->set_default_polynomial( nchannel, new_pars, new_devpairs );
+      break;
+      
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+        newcal->set_full_range_fraction( nchannel, new_pars, new_devpairs );
+        break;
+        
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        newcal->set_lower_channel_energy( nchannel, new_pars );
+        break;
+      
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        break;
+    }//switch( new_eqn_type )
+    
+    newcont->set_energy_calibration( newcal );
     continuum->setExternalContinuum( newcont );
   }//if( peak.continuum().isPolynomial() ) / else if(
   

@@ -44,11 +44,6 @@ class Recalibrator;
 class InterSpec;
 class NativeFloatSpinBox;
 class SpectraFileModel;
-#if ( USE_SPECTRUM_CHART_D3 )
-class D3SpectrumDisplayDiv;
-#else
-class SpectrumDisplayDiv;
-#endif
 class RowStretchTreeView;
 namespace SpecUtils{ enum class EnergyCalType : int; }
 namespace SpecUtils{ enum class SpectrumType : int; }
@@ -130,10 +125,6 @@ protected:
 
 class Recalibrator : public Wt::WContainerWidget
 {
-#if( !SpecUtils_REBIN_FILES_TO_SINGLE_BINNING )
-#error Recalibrator is currently only setup to work properly when SpecUtils_REBIN_FILES_TO_SINGLE_BINNING is defined
-#endif
-
 public:
   enum LayoutStyle{ kWide, kTall };
   enum RecalAction
@@ -145,14 +136,7 @@ public:
   };//enum RecalAction
   
 public:
-  Recalibrator(
-#if ( USE_SPECTRUM_CHART_D3 )
-                D3SpectrumDisplayDiv *displayDiv,
-#else
-                SpectrumDisplayDiv *displayDiv,
-#endif
-                InterSpec *hostViewer,
-                PeakModel *peakModel);
+  Recalibrator( InterSpec *viewer, PeakModel *peakModel );
   virtual ~Recalibrator();
   
   //refreshRecalibrator(): fills out GUI from values in the data structures,
@@ -255,12 +239,8 @@ protected:
   LayoutStyle m_currentLayout;
   
   WContainerWidget *footer;
-#if ( USE_SPECTRUM_CHART_D3 )
-  D3SpectrumDisplayDiv *m_spectrumDisplayDiv;
-#else
-  SpectrumDisplayDiv *m_spectrumDisplayDiv;
-#endif
-  InterSpec *m_hostViewer;
+
+  InterSpec *m_interspec;
   PeakModel *m_peakModel;
 
   RowStretchTreeView *m_isotopeView;
@@ -306,16 +286,12 @@ protected:
 
   NativeFloatSpinBox *m_coefficientDisplay[sm_numCoefs];
   
-  // The boxes for the manual recalibration coefficients
-  //Wt::WDoubleSpinBox *m_offset, *m_linear, *m_quadratic;
-  
   // holders for the exponents
-  Wt::WLabel *m_exponentLabels[sm_numCoefs];
+  Wt::WLabel *m_termSuffix[sm_numCoefs];
   
   SpecUtils::EnergyCalType m_coeffEquationType;
 
   //The following will be set to a negative number when they arent defined
-//  double m_offsetUncert, m_linearUncert, m_quadraticUncert;
   double m_uncertainties[sm_numCoefs];
 
   DeviationPairDisplay *m_devPairs;
@@ -334,6 +310,12 @@ protected:
   {
     void reset();
     CalibrationInformation();
+    
+    std::map<std::shared_ptr<const SpecUtils::EnergyCalibration>,std::vector<std::shared_ptr<const SpecUtils::Measurement>>> m_cal_to_meas;
+    
+    std::shared_ptr<const SpecUtils::EnergyCalibration> m_display_cal; //needed when shifting peaks back
+    
+    
     SpecUtils::EnergyCalType type;
     std::vector<float> coefficients;
     std::vector< std::pair<float,float> > deviationpairs;
@@ -345,6 +327,7 @@ protected:
   };//struct CalibrationInformation
   
   CalibrationInformation m_originalCal[3];
+  
   
 public:
   struct RecalPeakInfo

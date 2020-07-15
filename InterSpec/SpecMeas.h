@@ -67,6 +67,8 @@ public:
   typedef std::shared_ptr< PeakDeque >                 PeakDequeShrdPtr;
   typedef std::map<std::set<int>, PeakDequeShrdPtr >     SampleNumsToPeakMap;
   
+  //
+  //typedef std::map<std::pair<std::set<int>,std::set<std::string>>, PeakDequeShrdPtr >     SampleNumsToPeakMap;
   
 public:
   //Default constructor for this class

@@ -696,7 +696,7 @@ namespace
       if( samples.size()==1 && detnames.size()==1 )
         summed_meas = meas->measurement( *begin(samples), detnames[0] );
       if( !summed_meas )
-        summed_meas = meas->sum_measurements( samples, meas->detector_numbers() );
+        summed_meas = meas->sum_measurements( samples, meas->detector_names(), nullptr );
       
       //ToDo: inprinciple summed_meas->live_time() should equal livetime; should check
       
@@ -2561,9 +2561,8 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
           continue;
         
         auto detnames = meas->detector_names();
-        vector<bool> detstouse( detnames.size(), true );
         std::shared_ptr<SpecUtils::Measurement> m;
-        if( detstouse.size() == 1 && samplenums.size()==1 )
+        if( detnames.size() == 1 && samplenums.size()==1 )
         {
           auto origm = meas->measurement( *samplenums.begin(), detnames[0] );
           if( origm )
@@ -2571,7 +2570,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         }
         
         if( !m )
-          m = meas->sum_measurements( samplenums, detstouse );
+          m = meas->sum_measurements( samplenums, detnames, nullptr );
         if( !m )
           continue;  //shouldnt happen
         

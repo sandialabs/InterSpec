@@ -1313,7 +1313,7 @@ void PeakContinuum::equalEnough( const PeakContinuum &lhs, const PeakContinuum &
   {
     try
     {
-      Measurement::equalEnough( *lhs.m_externalContinuum, *rhs.m_externalContinuum );
+      Measurement::equal_enough( *lhs.m_externalContinuum, *rhs.m_externalContinuum );
     }catch( std::exception &e )
     {
       snprintf( buffer, sizeof(buffer), "PeakContinuum caught testing external continuum: %s", e.what() );
@@ -1735,10 +1735,8 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
       throw runtime_error( "Spectrum node expected under ExternalContinuum" );
     std::shared_ptr<Measurement> meas = std::make_shared<Measurement>();
     m_externalContinuum = meas;
-    meas->set_2006_N42_spectrum_node_info( node );
-    
-    if( !meas->channel_energies() || meas->channel_energies()->empty() )
-      meas->popuplate_channel_energies_from_coeffs();    
+      
+    meas->set_info_from_2006_N42_spectrum_node( node );
   }//if( node )
 }//void PeakContinuum::fromXml(...)
 

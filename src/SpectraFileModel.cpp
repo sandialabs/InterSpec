@@ -2280,11 +2280,11 @@ void DownloadCurrentSpectrumResource::handleRequest(
   filename += SpecUtils::suggestedNameEnding( m_format );
   
   const set<int> samplenums = m_viewer->displayedSamples(m_spectrum);
-  const set<int> detectornums = m_viewer->displayedDetectorNumbers();
+  const vector<string> detectornames = m_viewer->detectorsToDisplay(m_spectrum);
   
   suggestFileName( filename, WResource::Attachment );
   DownloadSpectrumResource::handle_resource_request( m_format, measurement,
-                                                     samplenums, detectornums, m_viewer,
+                                                     samplenums, detectornames, m_viewer,
                                                      request, response );
   m_downloadComplete.emit();
 }//DownloadCurrentSpectrumResource::handleRequest(...)
@@ -2338,7 +2338,8 @@ void DownloadSpectrumResource::handleRequest( const Wt::Http::Request& request,
       headers.push_back( header );
   }//for( const WModelIndex &index : selected )
 
-  const set<int> samplenums, detectornums;
+  const set<int> samplenums;
+  const vector<string> detectornames;
   
   std::shared_ptr<const SpecMeas> measurement;
   
@@ -2346,14 +2347,14 @@ void DownloadSpectrumResource::handleRequest( const Wt::Http::Request& request,
   {
     measurement = m_display->selectedToSpecMeas();
     handle_resource_request( m_type, measurement, samplenums,
-                             detectornums, m_display->viewer(), request, response );
+                             detectornames, m_display->viewer(), request, response );
   }else if( headers.size() == 1 )
   {
     std::shared_ptr<const SpectraFileHeader> header = headers[0];
     measurement = header->parseFile();
     if( measurement )
       handle_resource_request( m_type, measurement, samplenums,
-                               detectornums, m_display->viewer(), request, response );
+                               detectornames, m_display->viewer(), request, response );
   }
 }//void DownloadSpectrumResource::handleRequest(...)
 
@@ -2362,7 +2363,7 @@ void DownloadSpectrumResource::handle_resource_request(
                               SpecUtils::SaveSpectrumAsType type,
                               std::shared_ptr<const SpecMeas> measurement,
                               const std::set<int> &samplenums,
-                              const std::set<int> &detectornums,
+                              const std::vector<std::string> &detectornames,
                               const InterSpec *viewer,
                               const Wt::Http::Request& /*request*/,
                               Wt::Http::Response& response )
@@ -2419,6 +2420,21 @@ void DownloadSpectrumResource::handle_resource_request(
 
   if( !measurement )
     return;
+  
+  
+  //Convert detector names to detector numbers.
+  set<int> detectornums;
+  const auto &names = measurement->detector_names();
+  const auto &numbers = measurement->detector_numbers();
+  assert( names.size() == numbers.size() );
+  
+  for( const string &n : detectornames )
+  {
+    auto pos = std::find( begin(names), end(names), n );
+    if( pos != end(names) )
+      detectornums.insert( numbers[pos - begin(names)] );
+  }
+  
   
   switch( type )
   {
@@ -2558,11 +2574,11 @@ Wt::Signal<> &SpecificSpectrumResource::downloadComplete()
 
 void SpecificSpectrumResource::setSpectrum( std::shared_ptr<const SpecMeas> spec,
                                            const std::set<int> &samplenums,
-                                           const std::set<int> &detnums )
+                                           const std::vector<string> &detnames )
 {
   m_spectrum = spec;
   m_samplenums = samplenums;
-  m_detnums = detnums;
+  m_detnames = detnames;
   
   if( !spec )
   {
@@ -2586,7 +2602,7 @@ void SpecificSpectrumResource::handleRequest( const Wt::Http::Request& request,
                                Wt::Http::Response& response)
 {
   DownloadSpectrumResource::handle_resource_request( m_type, m_spectrum,
-                                                     m_samplenums, m_detnums,
+                                                     m_samplenums, m_detnames,
                                                     (const InterSpec *) 0 /* Christian: Since we don't require outputting the D3 HTML from here, we set it to 0 */,
                                                      request, response );
   m_downloadComplete.emit();

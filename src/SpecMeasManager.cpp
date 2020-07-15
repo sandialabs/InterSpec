@@ -2247,7 +2247,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
   std::shared_ptr<const SpectraFileHeader> fileHeader
                                   = m_fileModel->fileHeader( fileIndex.row() );
   
-  const set<int> detnums = m_viewer->displayedDetectorNumbers();
+  const vector<string> detnames = m_viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   set<int> samplenums;
   if( data == initial )
     samplenums = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
@@ -2259,7 +2259,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
     if( !m_specificResources[toint(i)] )
       m_specificResources[toint(i)] = new SpecificSpectrumResource( i, this );
     
-    m_specificResources[toint(i)]->setSpectrum( initial, samplenums, detnums );
+    m_specificResources[toint(i)]->setSpectrum( initial, samplenums, detnames );
   }//loop over save as types
   
   const string msgstr = "Please select the file format:";
@@ -2292,7 +2292,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
         button->clicked().connect(
                           boost::bind( &SpecificSpectrumResource::setSpectrum,
                                        m_specificResources[static_cast<int>(i)], data,
-                                       samplenums, detnums ) );
+                                       samplenums, detnames ) );
       }
     }//if( data )
     
@@ -2309,7 +2309,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
         button->clicked().connect(
                           boost::bind( &SpecificSpectrumResource::setSpectrum,
                                        m_specificResources[toint(i)], second,
-                                       samplenums, detnums ) );
+                                       samplenums, detnames ) );
       }
       
       if( !data )
@@ -2330,7 +2330,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
         button->clicked().connect(
                           boost::bind( &SpecificSpectrumResource::setSpectrum,
                                        m_specificResources[toint(i)], background,
-                                       samplenums, detnums ) );
+                                       samplenums, detnames ) );
       }
       
       group->addButton( button, -1 );
@@ -3831,22 +3831,25 @@ void SpecMeasManager::cleanupQuickSaveAsDialog( AuxWindow *dialog, WApplication 
 
   WApplication::UpdateLock lock( app );
 
-  if( lock )
+  if( !lock )
   {
-    dialog->accept();
-    delete dialog;
-    std::shared_ptr<const SpecMeas> dummy;
-    
-    for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
-        i < SaveSpectrumAsType::NumTypes;
-        i = SaveSpectrumAsType(static_cast<int>(i)+1) )
-    {
-      m_specificResources[toint(i)]->setSpectrum( dummy, set<int>(), set<int>() );
-    }
-    
-    app->triggerUpdate();
-  }else
+    //Probably wont ever happen, and if it does, we want to end things anyway.
     cerr << "\nSpecMeasManager::cleanupQuickSaveAsDialog(...)\n\tFailed to get app lock - not doing anything!\n\n" << endl;
+    return;
+  }
+  
+  
+  dialog->accept();
+  delete dialog;
+    
+  for( SaveSpectrumAsType i = SaveSpectrumAsType(0);
+      i < SaveSpectrumAsType::NumTypes;
+      i = SaveSpectrumAsType(static_cast<int>(i)+1) )
+  {
+    m_specificResources[toint(i)]->setSpectrum( nullptr, {}, {} );
+  }
+    
+  app->triggerUpdate();
 }//void cleanupQuickSaveAsDialog(...)
 
 

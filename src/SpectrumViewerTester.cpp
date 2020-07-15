@@ -81,7 +81,7 @@
 #include "InterSpec/SpecFileSummary.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "InterSpec/ActivityConverter.h"
+#include "InterSpec/UnitsConverterTool.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/CanvasForDragging.h"

@@ -1,5 +1,5 @@
-#ifndef ActivityConverter_h
-#define ActivityConverter_h
+#ifndef UnitsConverterTool_h
+#define UnitsConverterTool_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
  
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
@@ -35,11 +35,11 @@ namespace Wt
 }//namespace Wt
 
 
-class ActivityConverter : public AuxWindow
+class UnitsConverterTool : public AuxWindow
 {
 public:
-  ActivityConverter();
-  virtual ~ActivityConverter();
+  UnitsConverterTool();
+  virtual ~UnitsConverterTool();
   
 protected:
   void convert();
@@ -47,7 +47,7 @@ protected:
   Wt::WLineEdit *m_input;
   Wt::WLineEdit *m_output;
   Wt::WText *m_message;
-};//class ActivityConverter
+};//class UnitsConverterTool
 
 
-#endif //ActivityConverter
+#endif //UnitsConverterTool_h

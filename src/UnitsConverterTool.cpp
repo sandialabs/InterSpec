@@ -30,7 +30,6 @@
 #include <Wt/WText>
 #include <Wt/WBreak>
 #include <Wt/WLabel>
-#include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WValidator>
 #include <Wt/WPushButton>
@@ -42,7 +41,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/ActivityConverter.h"
+#include "InterSpec/UnitsConverterTool.h"
 
 using namespace Wt;
 using namespace std;
@@ -52,6 +51,8 @@ namespace
 
 int num_sig_figs( const string &val )
 {
+  // \TODO: this isnt necassilry correct, because it is being used to determine number of places
+  //        after a decimal... we'll worry about this later.
   boost::smatch mtch;
   boost::regex expr( PhysicalUnits::sm_positiveDecimalRegex + string(".*"));
   
@@ -159,7 +160,7 @@ string convertDistance( string val )
 }//namespace
 
 
-ActivityConverter::ActivityConverter()
+UnitsConverterTool::UnitsConverterTool()
   : AuxWindow( "Units Converter",
                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
                | AuxWindowProperties::DisableCollapse
@@ -168,11 +169,11 @@ ActivityConverter::ActivityConverter()
     m_output( NULL ),
     m_message( NULL )
 {
-  addStyleClass( "ActivityConverter" );
+  //addStyleClass( "UnitsConverterTool" );
   
   WGridLayout *layout = stretcher();
   setWidth(400);
-  const char *topMessage = "Convert between radiation related units<br />"
+  const char *topMessage = "Convert between radiation related units.<br />"
                            "Ex: 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8feet, 9milli-sievert";
   WText *message = new WText( topMessage, Wt::XHTMLUnsafeText);
 
@@ -180,7 +181,7 @@ ActivityConverter::ActivityConverter()
 
   WLabel *label = new WLabel( "Input: ");
   layout->addWidget(label,1,0);
-  label->addStyleClass( "ActivityConverterLabel" );
+  //label->addStyleClass( "UnitsConverterToolLabel" );
   
   m_input = new WLineEdit();
   layout->addWidget(m_input,1,1);
@@ -194,27 +195,27 @@ ActivityConverter::ActivityConverter()
   validator->setFlags( Wt::MatchCaseInsensitive );
   m_input->setValidator(validator);
   
-  m_input->addStyleClass( "ActivityConverterInput" );
+  //m_input->addStyleClass( "UnitsConverterToolInput" );
   m_input->setTextSize( 15 );
   m_input->setWidth( WLength(15.0,WLength::FontEm) );
   m_input->setText("5 MBq");
-  //m_input->changed().connect( this, &ActivityConverter::convert ); //the signal is only emitted when the focus is lost
-  m_input->blurred().connect( this, &ActivityConverter::convert );
-  m_input->keyWentUp().connect( this, &ActivityConverter::convert );
-  //m_input->enterPressed().connect( this, &ActivityConverter::convert );
+  //m_input->changed().connect( this, &UnitsConverterTool::convert ); //the signal is only emitted when the focus is lost
+  m_input->blurred().connect( this, &UnitsConverterTool::convert );
+  m_input->keyWentUp().connect( this, &UnitsConverterTool::convert );
+  //m_input->enterPressed().connect( this, &UnitsConverterTool::convert );
   
   //WPushButton *convertButton = new WPushButton("Convert");
   //layout->addWidget(convertButton,1,2);
-  //convertButton->clicked().connect( this, &ActivityConverter::convert );
+  //convertButton->clicked().connect( this, &UnitsConverterTool::convert );
     
   label = new WLabel( "Output: " );
   layout->addWidget(label,2,0);
-  label->addStyleClass( "ActivityConverterLabel" );
+  //label->addStyleClass( "UnitsConverterToolLabel" );
   
   m_output = new WLineEdit( );
   //layout->addWidget(m_output,2,1,1,2);
   layout->addWidget( m_output, 2, 1 );
-  m_output->addStyleClass( "ActivityConverterInput" );
+  //m_output->addStyleClass( "UnitsConverterToolInput" );
   m_output->setTextSize( 15 );
   m_output->setWidth( WLength(15.0,WLength::FontEm) );
   m_output->setEnabled(false);
@@ -249,16 +250,16 @@ ActivityConverter::ActivityConverter()
     titleBar()->hide();
   }
   
-}//ActivityConverter constructor
+}//UnitsConverterTool constructor
 
 
-ActivityConverter::~ActivityConverter()
+UnitsConverterTool::~UnitsConverterTool()
 {
   //nothing to do here
-}//ActivityConverter destructor
+}//UnitsConverterTool destructor
 
 
-void ActivityConverter::convert()
+void UnitsConverterTool::convert()
 {
   try
   {
@@ -318,7 +319,7 @@ void ActivityConverter::convert()
  
     m_output->setText( "" );
     m_message->setText( WString::fromUTF8(errmsg) );
-    m_message->addStyleClass("line-above");
+    //m_message->addStyleClass("line-above");
     m_message->show();
   }//try / catch
-}//void ActivityConverter::convert()
+}//void UnitsConverterTool::convert()

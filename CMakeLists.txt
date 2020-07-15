@@ -83,7 +83,7 @@ IF( NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES )
     # Set the possible values of build type for cmake-gui
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
                  "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
-ENDIF(NOT CMAKE_BUILD_TYPE)
+ENDIF( NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES )
 
 
 if(BUILD_AS_UNIT_TEST_SUITE)
@@ -383,7 +383,7 @@ set( sources
     src/CompactFileManager.cpp
     src/DetectorEdit.cpp
     src/OneOverR2Calc.cpp
-    src/ActivityConverter.cpp
+    src/UnitsConverterTool.cpp
     src/DecayWindow.cpp
     src/DecayActivityDiv.cpp
     src/DecayChainChart.cpp
@@ -460,7 +460,7 @@ set( headers
     InterSpec/CompactFileManager.h
     InterSpec/DetectorEdit.h
     InterSpec/OneOverR2Calc.h
-    InterSpec/ActivityConverter.h
+    InterSpec/UnitsConverterTool.h
     InterSpec/DecayWindow.h
     InterSpec/DecayActivityDiv.h
     InterSpec/DecayChainChart.h
@@ -615,7 +615,7 @@ find_path( WT_RESOURCES_DIRECTORY form.css ${Wt_INCLUDE_DIR}/../share/Wt/resourc
 
 
 #Set SpecUtils compile options
-set( SpecUtils_REBIN_FILES_TO_SINGLE_BINNING ON CACHE BOOL "Set Rebin spectrum to single energy cal" )
+set( SpecUtils_REBIN_FILES_TO_SINGLE_BINNING OFF CACHE BOOL "Set Rebin spectrum to single energy cal" )
 set( SpecUtils_NO_BOOST_LIB OFF CACHE BOOL "Use boost for threading primitives in SpecUtils" )
 set( SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "" )
 set( SpecUtils_EXTERNALLY_DEFINED_LOG_MESSAGE ON CACHE BOOL "" )
