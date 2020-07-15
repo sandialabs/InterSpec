@@ -483,7 +483,7 @@ public:
                                 SpecUtils::SaveSpectrumAsType type,
                                 std::shared_ptr<const SpecMeas> Measurement,
                                 const std::set<int> &samplenums,
-                                const std::set<int> &detectornums,
+                                const std::vector<std::string> &detectornums,
                                 const InterSpec *viewer,
                                 const Wt::Http::Request& request,
                                 Wt::Http::Response& response );
@@ -502,12 +502,13 @@ public:
 
   void setSpectrum( std::shared_ptr<const SpecMeas> spec,
                     const std::set<int> &samplenums,
-                    const std::set<int> &detnums );
+                    const std::vector<std::string> &detnames );
 
   Wt::Signal<> &downloadStarting();
   Wt::Signal<> &downloadComplete();
 private:
-  std::set<int> m_samplenums, m_detnums;
+  std::set<int> m_samplenums;
+  std::vector<std::string> m_detnames;
   SpecUtils::SaveSpectrumAsType m_type;
   std::shared_ptr<const SpecMeas> m_spectrum;
 

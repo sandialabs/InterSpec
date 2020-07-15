@@ -330,7 +330,7 @@ public:
       
       if( res.dose_rate_ > 0.0 )
         result += "<tr><td>Dose</td><td>"
-                  + PhysicalUnits::printToBestDoseUnits( 1.0E-6 * res.dose_rate_*PhysicalUnits::sievert/PhysicalUnits::hour ) + "</td></tr>";
+                  + PhysicalUnits::printToBestEquivalentDoseRateUnits( 1.0E-6 * res.dose_rate_*PhysicalUnits::sievert/PhysicalUnits::hour ) + "</td></tr>";
       if( res.distance_ > 0.0 )
         result += "<tr><td>Distance</td><td>" + PhysicalUnits::printToBestLengthUnits(0.1*res.distance_) + "</td></tr>";
       if( res.activity_ > 0.0 )
@@ -899,25 +899,20 @@ void SpecFileSummary::updateMeasurmentFieldsFromMemory()
     m_timeStamp->setText( timeStampStrm.str() );
 
 
-    std::shared_ptr<const std::vector<float>> binning = sample->channel_energies();
-
-    if( binning && binning->size() )
+    const size_t nchannel = sample->num_gamma_channels();
+    m_numberOfBins->setText( std::to_string(nchannel) );
+    
+    const float min_energy = sample->gamma_energy_min();
+    const float max_energy = sample->gamma_energy_max();
+    
+    if( min_energy != max_energy )
     {
-      const size_t nbin = binning->size();
-      float lowEnergy = binning->at(0);
-      float upperEnergy = binning->at(nbin-1);
-
-      if( nbin > 2 )
-        upperEnergy += (binning->at(nbin-1) - binning->at(nbin-2));
-
-      snprintf( buffer, sizeof(buffer), "%.1f to %.1f", lowEnergy, upperEnergy );
+      snprintf( buffer, sizeof(buffer), "%.1f to %.1f", min_energy, max_energy );
       m_energyRange->setText( buffer );
-      m_numberOfBins->setText( std::to_string(nbin) );
     }else
     {
       m_energyRange->setText( "" );
-      m_numberOfBins->setText( "" );
-    }//if( binning ) / else
+    }//if( defined energy range ) / else
 
     m_detector->setText( sample->detector_name() );
 

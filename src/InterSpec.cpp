@@ -146,12 +146,12 @@
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
-#include "InterSpec/ActivityConverter.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/CanvasForDragging.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
+#include "InterSpec/UnitsConverterTool.h"
 #if( USE_SIMPLE_NUCLIDE_ASSIST )
 #include "InterSpec/FeatureMarkerWidget.h"
 #endif
@@ -576,7 +576,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_warnings = new WarningWidget( m_spectrum, this );
 
   // Set up the floating energy recalibrator.
-  initRecalibrator();
+  m_recalibrator = new Recalibrator( this, m_peakModel );
+  m_spectrum->rightMouseDragg().connect( m_recalibrator, &Recalibrator::handleGraphicalRecalRequest );
+  
 
 #if( USE_SPECTRUM_CHART_D3 )
   const WEnvironment &env = wApp->environment();
@@ -2733,14 +2735,19 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     }
     
     {
-      const vector<bool> dispDet = detectors_to_display();
+      const vector<string> dispDet = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+      const vector<string> det_names = foreground ? foreground->detector_names() : vector<string>();
       const vector<int>  detNums = foreground ? foreground->detector_numbers() : vector<int>();
       
       string &str = (entry.modify()->showingDetectorNumbersCsv);
       str.clear();
-      for( size_t i = 0; i < dispDet.size(); ++i )
-        if( dispDet[i] )
-          str += (str.empty() ? "" : ",") + std::to_string( detNums[i] );
+      for( const auto &det : dispDet )
+      {
+        auto pos = std::find( begin(det_names), end(det_names), det );
+        const auto index = pos - begin(det_names);
+        if( index < detNums.size() )
+          str += (str.empty() ? "" : ",") + to_string(detNums[index]);
+      }
     }
     
     entry.modify()->energyAxisMinimum = m_spectrum->xAxisMinimum();
@@ -3267,7 +3274,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }
     
 //  std::string showingDetectorNumbersCsv;
-//  see:  std::vector<bool> detectors_to_display() const;
+//  see:  std::vector<bool> detectorsToDisplay() const;
     
     float xmin = entry->energyAxisMinimum;
     float xmax = entry->energyAxisMaximum;
@@ -6537,26 +6544,6 @@ const std::set<int> &InterSpec::displayedSamples( SpecUtils::SpectrumType type )
 }//const std::set<int> &displayedSamples( SpecUtils::SpectrumType spectrum_type ) const
 
 
-std::set<int> InterSpec::displayedDetectorNumbers() const
-{
-  set<int> answer;
-  if( !m_dataMeasurement )
-    return answer;
-  
-  const vector<bool> det_use = detectors_to_display();
-  const std::vector<int> &det_nums = m_dataMeasurement->detector_numbers();
-  
-  if( det_use.size() != det_nums.size() )
-    throw runtime_error( "Serious logic error in InterSpec::displayedDetectorNumbers()" );
-  
-  for( size_t i = 0; i < det_nums.size(); ++i )
-    if( det_use[i] )
-      answer.insert( det_nums[i] );
-  
-  return answer;
-}//std::set<int> displayedDetectorNumbers() const
-
-
 std::shared_ptr<const SpecMeas> InterSpec::measurment( SpecUtils::SpectrumType type ) const
 {
   switch( type )
@@ -6759,10 +6746,10 @@ void InterSpec::createOneOverR2Calculator()
 }//void createOneOverR2Calculator()
 
 
-void InterSpec::createActivityConverter()
+void InterSpec::createUnitsConverterTool()
 {
-  new ActivityConverter();
-}//void createActivityConverter()
+  new UnitsConverterTool();
+}//void createUnitsConverterTool()
 
 
 void InterSpec::createFluxTool()
@@ -7086,9 +7073,9 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   
   item->triggered().connect( this, &InterSpec::createOneOverR2Calculator );
 
-  item = popup->addMenuItem( "Activity Converter" );
+  item = popup->addMenuItem( "Units Converter" );
   HelpSystem::attachToolTipOn( item,"Curie to Becquerel converter.", showToolTipInstantly );
-  item->triggered().connect( this, &InterSpec::createActivityConverter );
+  item->triggered().connect( this, &InterSpec::createUnitsConverterTool );
   
   item = popup->addMenuItem( "Flux Tool" );
   HelpSystem::attachToolTipOn( item,"Converts detectred peak counts, to gammas emitted by the source.", showToolTipInstantly );
@@ -7129,15 +7116,6 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 #endif
 }//void InterSpec::addToolsMenu( Wt::WContainerWidget *menuDiv )
 
-
-void InterSpec::initRecalibrator()
-{
-  m_recalibrator = new Recalibrator( m_spectrum, this, m_peakModel );
-
-    //right drag -> calibrate
-    
-    m_spectrum->rightMouseDragg().connect( m_recalibrator, &Recalibrator::handleGraphicalRecalRequest );
-}//void initRecalibrator()
 
 
 void InterSpec::fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
@@ -7667,20 +7645,21 @@ Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorModified(
 }
 
 
-float InterSpec::sample_real_time_increment(
-                                   const std::shared_ptr<const SpecMeas> &meas,
-                                   const int sample,
-                                   const std::set<int> &detector_numbers )
+float InterSpec::sample_real_time_increment( const std::shared_ptr<const SpecMeas> &meas,
+                                             const int sample,
+                                             const std::vector<string> &detector_names )
 {
-  if( !meas )
-    return 0.0f;
-  
-  const vector<std::shared_ptr<const SpecUtils::Measurement>> &measurement
-                                         = meas->sample_measurements( sample );
   float realtime = 0.0f;
-  for( const auto &m : measurement )
+  
+  if( !meas )
+    return realtime;
+  
+  const auto &measurements = meas->sample_measurements( sample );
+  
+  for( const auto &m : measurements )
   {
-    if( detector_numbers.count(m->detector_number()) )
+    const auto pos = std::find( begin(detector_names), end(detector_names), m->detector_name() );
+    if( pos != end(detector_names) )
       realtime = std::max( realtime, m->real_time() );
   }
   return realtime;
@@ -7756,7 +7735,7 @@ double InterSpec::liveTime( const std::set<int> &samplenums ) const
   if( !m_dataMeasurement )
     return 0.0;
   
-  const vector<bool> det_use = detectors_to_display();
+  const vector<bool> det_use = detectorsToDisplay();
   const set<int> sample_numbers = validForegroundSamples();
   
   const vector<int> &detnums = m_dataMeasurement->detector_numbers();
@@ -8218,6 +8197,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   std::shared_ptr<SpecMeas> previous = measurment(spec_type);
   const set<int> prevsamples = displayedSamples(spec_type);
+  const vector<string> prevdets = detectorsToDisplay(spec_type);
   const bool sameSpec = (meas==previous);
   std::shared_ptr<const SpecUtils::Measurement> prev_display = m_spectrum->histUsedForXAxis();
   
@@ -8390,11 +8370,19 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpec )
   {
     //Assume we will use all the detectors (just to determine binning)
-    const vector<bool> use_gamma( m_dataMeasurement->detector_names().size(), true );
+    const vector<string> &detectors = m_dataMeasurement->detector_names();
     
-    std::shared_ptr<const std::vector<float>> binning = getBinning( sample_numbers,
-                                           use_gamma, m_dataMeasurement );
-    std::shared_ptr<const std::vector<float>> prev_binning = prev_display ? prev_display->channel_energies() : std::shared_ptr<const std::vector<float>>();
+    shared_ptr<const vector<float>> binning;
+    try
+    {
+      auto energy_cal = m_dataMeasurement->suggested_sum_energy_calibration( sample_numbers, detectors );
+      if( energy_cal )
+        binning = energy_cal->channel_energies();
+    }catch(...)
+    {
+    }
+    
+    shared_ptr<const vector<float>> prev_binning = prev_display ? prev_display->channel_energies() : nullptr;
     
     const bool diff_fore_nchan = ((!prev_binning || !binning) || (prev_binning->size() != binning->size()));
     
@@ -8414,8 +8402,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         m_downloadMenu->setItemHidden( item, true );
 #endif
       
-      m_secondDataMeasurement = std::shared_ptr<SpecMeas>();
-      m_spectrum->setSecondData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
+      m_secondDataMeasurement = nullptr;
+      m_spectrum->setSecondData( nullptr, -1.0, -1.0, -1.0, false );
       
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::SecondForeground,
                                             m_secondDataMeasurement,
@@ -8691,20 +8679,20 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   //Check for warnings from parsing the file, and display to user - not
   //  implemented well yet.
-  if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpec )
+  if( m_dataMeasurement && (spec_type == SpecUtils::SpectrumType::Foreground) )
   {
+    shared_ptr<const SpecUtils::EnergyCalibration> energy_cal;
     try
     {
-      const vector<bool> use_gamma( m_dataMeasurement->detector_names().size(), true );
-      const size_t index = m_dataMeasurement->suggested_gamma_binning_index( sample_numbers, use_gamma );
-      auto meas = m_dataMeasurement->measurements().at(index);
-      if( meas && meas->energy_calibration_model() == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-      {
-        passMessage( "Warning, could not find the energy calibration, so using a default one", "", WarningWidget::WarningMsgMedium );
-      }
+      energy_cal = m_dataMeasurement->suggested_sum_energy_calibration( sample_numbers,
+                                                             m_dataMeasurement->detector_names() );
     }catch( std::exception & )
     {
     }
+    
+    if( !energy_cal )
+      passMessage( "Warning, no energy calibration for the selected samples",
+                   "", WarningWidget::WarningMsgMedium );
   }//if( spec_type == SpecUtils::SpectrumType::Foreground && m_dataMeasurement && !sameSpec )
   
 
@@ -10032,14 +10020,13 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
     return answer;
   
   const set<int> foregroundSamples = validForegroundSamples();
-  const set<int> disp_det_nums = displayed_detector_numbers();
-  
+  const vector<string> disp_det_names = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   
   float time = 0.0f;
   vector<pair<float,int> > foreground;
   for( const int sample : foregroundSamples )
   {
-    const float thistime = sample_real_time_increment( m_dataMeasurement, sample, disp_det_nums );
+    const float thistime = sample_real_time_increment( m_dataMeasurement, sample, disp_det_names );
     if( thistime <= 0.0 )
       continue;
     foreground.push_back( make_pair(time,sample) );
@@ -10058,7 +10045,7 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
     if( m_excludedSamples.count(s) )
       continue;
     
-    const float thistime = sample_real_time_increment( m_dataMeasurement, s, disp_det_nums );
+    const float thistime = sample_real_time_increment( m_dataMeasurement, s, disp_det_names );
     if( thistime <= 0.0 )
       continue;
     
@@ -10178,17 +10165,9 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
 {
   std::shared_ptr<SpecUtils::Measurement> gammaH, neutronH;
 
-  bool useAllDetector = true;
-  const vector<bool> det_to_use = detectors_to_display();
-
-  const size_t num_det = det_to_use.size();
-  if( !!m_dataMeasurement && num_det != m_dataMeasurement->detector_names().size() )
-    throw runtime_error( "Serious logic error in InterSpec::displayTimeSeriesData" );
-
-  const set<int> disp_det_nums = displayed_detector_numbers();
-
-  for( const bool use : det_to_use )
-    useAllDetector = (useAllDetector && use);
+  const size_t ndet = m_dataMeasurement ? m_dataMeasurement->detector_names().size() : size_t(0);
+  const vector<string> det_to_use = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  const bool useAllDetector = (det_to_use.size() == ndet);
   
   const vector<pair<float,int> > binning = passthroughTimeToSampleNumber();  //last entry, if non-empty, is the right-most edge of the last bin, not its own bin
   const size_t nbins = (binning.size() < 3 ? 0 : (binning.size()-1)); //
@@ -10196,7 +10175,7 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
   if( m_displayedSamples.empty() || !m_dataMeasurement )
     m_displayedSamples = validForegroundSamples();
 
-  if( !!m_dataMeasurement && m_dataMeasurement->passthrough() && nbins >= 3 )
+  if( m_dataMeasurement && m_dataMeasurement->passthrough() && (nbins >= 3) )
   {
     if( m_timeSeries->isHidden() )
     {
@@ -10208,11 +10187,10 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
     if( det_names.size() != det_to_use.size() )
       throw runtime_error( "Inconsistent number of detectors." );
 
-    auto channel_energies = std::make_shared< vector<float> >( binning.size() );
-    vector<float> &bin_edges = *channel_energies;
+    vector<float> channel_energies( binning.size() );
     
     for( size_t i = 0; i < binning.size(); ++i )
-      bin_edges[i] = binning[i].first;
+      channel_energies[i] = binning[i].first;
     
     gammaH      = std::make_shared<SpecUtils::Measurement>();
     neutronH    = std::make_shared<SpecUtils::Measurement>();
@@ -10228,7 +10206,7 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
       const auto time_to_sample = binning[timeslice];
       const int sample_number = time_to_sample.second;
       
-      const float live_time = sample_real_time_increment( m_dataMeasurement, sample_number, disp_det_nums );
+      const float live_time = sample_real_time_increment( m_dataMeasurement, sample_number, det_to_use );
       float num_gamma = 0.0f, num_nuteron = 0.0f;
       
       if( useAllDetector )
@@ -10248,7 +10226,8 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
         for( size_t detind = 0; detind < det_names.size(); ++detind )
         {
           const string &detname = det_names[detind];
-          if( det_to_use[detind] )
+          const auto pos = std::find( begin(det_to_use), end(det_to_use), detname );
+          if( pos != end(det_to_use) )
           {
             const auto m = m_dataMeasurement->measurement( sample_number, detname );
             if( m )
@@ -10261,7 +10240,6 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
         }//for( loop over gamma detectors )
       }//if( use all gamma ) / else
       
-      
       if( live_time > 0.0f )
       {
         num_gamma /= live_time;
@@ -10272,12 +10250,16 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
       (*nuetron_counts)[timeslice] += num_nuteron;
     }//for( const int sample_number : sample_nums )
     
-    gammaH->set_channel_energies( channel_energies );
-    neutronH->set_channel_energies( channel_energies );
     
     gammaH->set_gamma_counts( gamma_counts, 0.0f, 0.0f );
     neutronH->set_gamma_counts( nuetron_counts, 0.0f, 0.0f );
     
+    assert( (nbins+1) == channel_energies.size() );
+    auto newcal = make_shared<SpecUtils::EnergyCalibration>();
+    newcal->set_lower_channel_energy( nbins, std::move(channel_energies) );
+    
+    gammaH->set_energy_calibration( newcal );
+    neutronH->set_energy_calibration( newcal );
     
     //Let
     if( neutronH->gamma_channels_sum(0,nbins) > 0.000001 )
@@ -10335,33 +10317,6 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
 }//void displayTimeSeriesData()
 
 
-
-std::shared_ptr<const std::vector<float>> InterSpec::getBinning( std::set<int> sample_numbers,
-                                              const vector<bool> det_to_use,
-                                              std::shared_ptr<const SpecMeas> measurement )
-{
-  if( !measurement )
-    return std::shared_ptr< const std::vector<float> >();
-  
-  size_t index;
-  try
-  {
-    index = measurement->suggested_gamma_binning_index( sample_numbers, det_to_use );
-  }catch( std::exception &e )
-  {
-    cerr << "InterSpec::getBinning() caught: " << e.what() << endl;
-    return std::shared_ptr< const std::vector<float> >();
-  }
-  
-  std::shared_ptr<const SpecUtils::Measurement> meas = measurement->measurements()[index];
-  if( meas )
-    return meas->channel_energies();
-  
-  return std::shared_ptr< const std::vector<float> >();
-}//getBinning(...)
-
-
-
 std::set<int> InterSpec::sampleRangeToSet( int start_sample,  int end_sample,
                                 std::shared_ptr<const SpecMeas> meas,
                                 const std::set<int> &excluded_samples )
@@ -10401,13 +10356,25 @@ void InterSpec::displayForegroundData( int start_sample,  int end_sample )
 }//void InterSpec::displayForegroundData( int start_sample,  int end_sample )
 
 
-std::vector<bool> InterSpec::detectors_to_display() const
+vector<string> InterSpec::detectorsToDisplay( const SpecUtils::SpectrumType type ) const
 {
-  const size_t ndet = m_dataMeasurement ? m_dataMeasurement->detector_numbers().size() : size_t(0);
-  vector<bool> use_gamma( ndet, true );
+  shared_ptr<const SpecMeas> wanted_meas = measurment(type);
+  if( !wanted_meas )
+    return vector<string>{};
   
-  if( !m_detectorToShowMenu || !ndet )
-    return use_gamma;
+  if( !m_dataMeasurement )
+    return wanted_meas->detector_names();
+  
+  const vector<string> &all_det_names = m_dataMeasurement->detector_names();
+  
+  if( (type != SpecUtils::SpectrumType::Foreground)
+      && (wanted_meas->detector_names() != all_det_names) )
+    return wanted_meas->detector_names();
+  
+  vector<string> detector_names;
+  
+  if( !m_detectorToShowMenu || all_det_names.empty() )
+    return all_det_names;
   
   const vector<WMenuItem *> items = m_detectorToShowMenu->items();
   
@@ -10426,70 +10393,22 @@ std::vector<bool> InterSpec::detectors_to_display() const
       cb = dynamic_cast<WCheckBox *>(items[i]->widget(j));
 #endif
     
-    if( cb && detnum < use_gamma.size() )
-      use_gamma[detnum] = cb->isChecked();
-    else
+    if( cb && detnum < all_det_names.size() )
+    {
+      if( cb->isChecked() )
+        detector_names.push_back( all_det_names[detnum] );
+    }else
+    {
       cerr << "XXX - Failed to get checkbox in menu!" << endl;
+    }
     ++detnum;
   }// for( size_t i = 0; i < items.size(); ++i )
   
-  if( detnum != ndet )
-    throw runtime_error( "InterSpec::detectors_to_display(): "
-                         "serious logic error" );
+  if( detnum != all_det_names.size() )
+    throw runtime_error( "InterSpec::detectorsToDisplay(): serious logic error" );
 
-  return use_gamma;
-}//std::vector<bool> detectors_to_display() const
-
-
-vector<string> InterSpec::detector_names() const
-{
-  if( !m_dataMeasurement )
-    return vector<string>();
-  
-  return m_dataMeasurement->detector_names();
-}//vector<string> detector_names() const
-
-set<int> InterSpec::displayed_detector_numbers() const
-{
-  set<int> answer;
-  
-  if( !m_dataMeasurement )
-    return answer;
-  
-  const vector<int> &numbers = m_dataMeasurement->detector_numbers();
-  const vector<bool> use = detectors_to_display();
-  
-  if( numbers.size() != use.size() )
-    throw runtime_error( "InterSpec::displayed_detector_numbers(): "
-                        "Serious logic error.");
-  
-  for( size_t i = 0; i < numbers.size(); ++i )
-    if( use[i] )
-      answer.insert( numbers[i] );
-  
-  return answer;
-}
-
-vector<string> InterSpec::displayed_detector_names() const
-{
-  vector<string> answer;
-  
-  if( !m_dataMeasurement )
-    return answer;
-  
-  const vector<string> &names = m_dataMeasurement->detector_names();
-  const vector<bool> use = detectors_to_display();
-  
-  if( names.size() != use.size() )
-    throw runtime_error( "InterSpec::displayed_detector_names(): "
-                         "Serious logic error.");
-
-  for( size_t i = 0; i < names.size(); ++i )
-    if( use[i] )
-      answer.push_back( names[i] );
-  
-  return answer;
-}//vector<string> displayed_detector_names() const
+  return detector_names;
+}//std::vector<string> detectorsToDisplay() const
 
 
 void InterSpec::refreshDisplayedCharts()
@@ -10586,7 +10505,18 @@ vector< pair<double,double> > InterSpec::timeRegionsFromFile( const SpecUtils::O
 
 void InterSpec::displayForegroundData( const bool current_energy_range )
 {
-  if( !m_dataMeasurement )
+  auto &meas = m_dataMeasurement;
+  set<int> &sample_nums = m_displayedSamples;
+  const vector<string> detectors = detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+  
+  if( meas && !detectors.empty() && sample_nums.empty() )
+   {
+     sample_nums = validForegroundSamples();
+     if( !meas->passthrough() && (sample_nums.size() > 1) )
+       sample_nums = { *begin(sample_nums) };
+   }
+  
+  if( !meas || detectors.empty() || sample_nums.empty() )
   {
     m_backgroundSubItems[0]->disable();
     m_backgroundSubItems[0]->show();
@@ -10597,42 +10527,26 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_showYAxisScalerItems[1]->setDisabled( m_showYAxisScalerItems[1]->isVisible() );
 #endif
     
-    m_spectrum->setData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
-    m_peakModel->setPeakFromSpecMeas( m_dataMeasurement, m_displayedSamples );
-    return;
-  }//if( !m_dataMeasurement )
-
-  if( m_displayedSamples.empty() )
-    m_displayedSamples = validForegroundSamples();
-
-  m_peakModel->setPeakFromSpecMeas( m_dataMeasurement, m_displayedSamples );
-  
-  vector<bool> use_gamma = detectors_to_display();
-
-  std::shared_ptr<const std::vector<float>> binning = getBinning( m_displayedSamples,
-                                         use_gamma, m_dataMeasurement );
-
-  size_t num_sec_channel = 0, num_back_channel = 0;
-  if( m_secondDataMeasurement )
-    num_sec_channel = m_secondDataMeasurement->num_gamma_channels();
-  if( m_backgroundMeasurement )
-    num_back_channel = m_backgroundMeasurement->num_gamma_channels();
-
-  if( !binning )
-  {
-    size_t num_det_use = 0;
-    for( bool t : use_gamma )
-      num_det_use += t;
-
-    if( num_det_use )
+    if( m_spectrum->data() )
     {
-      const size_t nspectra = num_det_use*m_displayedSamples.size();
-      string msg = "<p>I couldnt determine binning to display the spectrum.</p>";
-      if( nspectra > 1 )
-        msg += "<p>You might try selecting only a single spectra to display in "
+      m_spectrum->setData( nullptr, -1.0f, -1.0f, -1.0f, false );
+      m_peakModel->setPeakFromSpecMeas( nullptr, sample_nums );
+    }
+    return;
+  }//if( !meas )
+
+
+  m_peakModel->setPeakFromSpecMeas( meas, sample_nums );
+
+  const auto energy_cal = meas->suggested_sum_energy_calibration(sample_nums, detectors);
+  if( !energy_cal )
+  {
+    const size_t nspectra = detectors.size() * sample_nums.size();
+    string msg = "<p>I couldnt determine binning to display the spectrum.</p>";
+    if( nspectra > 1 )
+      msg += "<p>You might try selecting only a single spectra to display in "
                "the <b>File manager</b>.</p>";
-      passMessage( msg, "", WarningWidget::WarningMsgHigh );
-    }//if( num_det_use )
+    passMessage( msg, "", WarningWidget::WarningMsgHigh );
   }//if( !binning )
 
 
@@ -10646,8 +10560,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_backgroundSubItems[1]->setHidden( !isSub );
   }//if( m_backgroundSubItems[0]->isHidden() != isSub )
 
-  std::shared_ptr<SpecUtils::Measurement> dataH = m_dataMeasurement->sum_measurements( m_displayedSamples, use_gamma );
-  
+  auto dataH = m_dataMeasurement->sum_measurements( sample_nums, detectors, energy_cal );
   if( dataH )
     dataH->set_title( "Foreground" );
 
@@ -10661,78 +10574,35 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
 
 void InterSpec::displaySecondForegroundData()
 {
-  if( !m_secondDataMeasurement )
+  const auto &meas = m_secondDataMeasurement;
+  std::set<int> &sample_nums = m_sectondForgroundSampleNumbers;
+  const auto disp_dets = detectorsToDisplay( SpecUtils::SpectrumType::SecondForeground );
+  
+  //Note: below will throw exception if 'disp_samples' has any invalid entries
+  shared_ptr<const SpecUtils::EnergyCalibration> energy_cal;
+  if( meas )
+    energy_cal = meas->suggested_sum_energy_calibration( sample_nums, disp_dets );
+  
+  if( !energy_cal || !m_dataMeasurement )
   {
-    if( !!m_spectrum->secondData() )
-    {
-      m_sectondForgroundSampleNumbers.clear();
-      m_spectrum->setSecondData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
-      if( !m_timeSeries->isHidden() )
-        m_timeSeries->hide();
-    }//if( !!m_spectrum->secondData() )
-    
+    //sample_nums.clear();
+    if( m_spectrum->secondData() )
+      m_spectrum->setSecondData( nullptr, -1.0, -1.0, -1.0, false );
     return;
   }//if( !m_secondDataMeasurement )
   
-  
-  if( m_secondDataMeasurement->num_gamma_channels() )
-  {
-    if( !m_secondDataMeasurement->num_measurements() )
-      throw runtime_error( "Serious logic error in"
-                           " InterSpec::displaySecondForegroundData()" );
+  if( !meas->num_measurements() )
+    throw runtime_error( "Serious logic error in InterSpec::displaySecondForegroundData()" );
 
-    vector<bool> foreground_det_use = detectors_to_display();
-  
-    //Lets make sure the second measurment actually has the same detectors
-    //  as the foreground.  If it does, assume we want to display same detectors
-    //  , if not, assume we should display all background detectors
-    const vector<string> foredet = m_dataMeasurement ? m_dataMeasurement->detector_names() : vector<string>();
-    const vector<string> &secodet = m_secondDataMeasurement->detector_names();
-    const set<string> forenameset(foredet.begin(),foredet.end());
-    const set<string> seconameset(secodet.begin(),secodet.end());
+  auto histH = meas->sum_measurements( sample_nums, disp_dets, energy_cal );
+  if( histH )
+    histH->set_title( "Second Foreground" );
     
-    vector<bool> second_det_use = foreground_det_use;
-    if( forenameset != seconameset )
-      second_det_use = vector<bool>( secodet.size(), true );
+  const float lt = histH ? histH->live_time() : -1.0f;
+  const float rt = histH ? histH->real_time() : -1.0f;
+  const float neutronCounts = histH ? histH->neutron_counts_sum() : -1.0f;
     
-/*
-    std::shared_ptr<const std::vector<float>> data_binning = getBinning( m_displayedSamples, foreground_det_use, m_dataMeasurement );
-    const int nDataBin = static_cast<int>( data_binning ? data_binning->size() : 0 );
-
-    std::shared_ptr<const std::vector<float>> second_binning = getBinning( m_sectondForgroundSampleNumbers, second_det_use, m_secondDataMeasurement );
-    const int nSecDataBin = static_cast<int>( second_binning ? second_binning->size() : 0 );
-
-    if( nDataBin && (nDataBin != nSecDataBin) )
-    {
-      stringstream msg;
-      msg << "Binning of second foreground data (" << nSecDataBin << " bins) "
-           << "does not match that of the foreground (" << nDataBin << " bins)";
-      passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
-
-      m_secondDataMeasurement = std::shared_ptr<SpecMeas>();
-      m_sectondForgroundSampleNumbers.clear();
-      m_spectrum->setSecondData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
-
-      return;
-    }//if( there was a binning mismatch )
-*/
-    
-    std::shared_ptr<SpecUtils::Measurement> histH;
-    if( m_secondDataMeasurement )
-      histH = m_secondDataMeasurement->sum_measurements(m_sectondForgroundSampleNumbers, second_det_use );
-    if( histH )
-      histH->set_title( "Second Foreground" );
-    
-    const float lt = histH ? histH->live_time() : 0.0f;
-    const float rt = histH ? histH->real_time() : 0.0f;
-    const float neutronCounts = histH ? histH->neutron_counts_sum() : -1.0f;
-    
-    m_spectrum->setSecondData( histH, lt, rt, neutronCounts, false );
-  }else
-  {
-    m_sectondForgroundSampleNumbers.clear();
-    m_spectrum->setSecondData( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0, false );
-  }//if( m_backgroundMeasurement ) / else
+  m_spectrum->setSecondData( histH, lt, rt, neutronCounts, false );
   
   if( !m_timeSeries->isHidden() )
   {
@@ -10742,79 +10612,37 @@ void InterSpec::displaySecondForegroundData()
 }//void displaySecondForegroundData()
 
 
-
-
 void InterSpec::displayBackgroundData()
 {
-  if( !m_backgroundMeasurement && !m_spectrum->background() )
+  const auto &meas = m_backgroundMeasurement;
+  set<int> &disp_samples = m_backgroundSampleNumbers;
+  
+  const vector<string> disp_dets = detectorsToDisplay( SpecUtils::SpectrumType::Background );
+  
+  //Note: below will throw exception if 'disp_samples' has any invalid entries
+  shared_ptr<const SpecUtils::EnergyCalibration> energy_cal;
+  if( meas )
+    energy_cal = meas->suggested_sum_energy_calibration( disp_samples, disp_dets );
+  
+  if( !energy_cal || !m_dataMeasurement )
   {
     m_backgroundSubItems[0]->disable();
     m_backgroundSubItems[0]->show();
     m_backgroundSubItems[1]->hide();
-    m_backgroundSampleNumbers.clear();
+    //disp_samples.clear();
+    if( m_spectrum->background() )
+      m_spectrum->setBackground( nullptr, -1.0f, -1.0f, -1.0f );
     return;
   }
-
-  if( m_backgroundMeasurement && m_dataMeasurement
-      && m_backgroundMeasurement->num_gamma_channels() )
-  {
-    vector<bool> foreground_det_use = detectors_to_display();
+  
+  auto backgroundH = meas->sum_measurements( disp_samples, disp_dets, energy_cal );
+  if( backgroundH )
+    backgroundH->set_title( "Background" );
     
-    //Lets make sure the background measurment actually has the same detectors
-    //  as the foreground.  If it does, assume we want to display same detectors
-    //  , if not, assume we should display all background detectors
-    const vector<string> &foredet = m_dataMeasurement->detector_names();
-    const vector<string> &backdet = m_backgroundMeasurement->detector_names();
-    const set<string> forenameset(foredet.begin(),foredet.end());
-    const set<string> backnameset(backdet.begin(),backdet.end());
-   
-    vector<bool> background_det_use = foreground_det_use;
-    if( forenameset != backnameset )
-      background_det_use = vector<bool>( backdet.size(), true );
-    
-//    std::shared_ptr<const std::vector<float>> data_binning = getBinning( m_displayedSamples, foreground_det_use, m_dataMeasurement );
-//    const int nDataBin = static_cast<int>( data_binning ? data_binning->size() : 0 );
-
-//    std::shared_ptr<const std::vector<float>> background_binning = getBinning( m_backgroundSampleNumbers, background_det_use, m_backgroundMeasurement );
-//    const int nBackBin = static_cast<int>( background_binning ? background_binning->size() : 0 );
-
-/*
-    if( nDataBin && (nDataBin != nBackBin) )
-    {
-      stringstream msg;
-      msg << "Binning of background data (" << nBackBin << " bins) does "
-          << "not match that of data (" << nDataBin << " bins)";
-      passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
-      m_backgroundMeasurement = std::shared_ptr<SpecMeas>();
-      m_spectrum->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
-
-      m_backgroundSampleNumbers.clear();
-
-      return;
-//      throw runtime_error( "m_dataMeasurement->channel_energies().size() != m_backgroundMeasurement.channel_energies().size()" );
-    }//if( there was a binning mismatch )
-*/
-    
-    if( m_backgroundSampleNumbers.empty() )
-      m_backgroundSampleNumbers = m_backgroundMeasurement->sample_numbers();
-
-    std::shared_ptr<SpecUtils::Measurement> backgroundH;
-    if( m_backgroundMeasurement )
-      backgroundH = m_backgroundMeasurement->sum_measurements( m_backgroundSampleNumbers, background_det_use );
-    if( backgroundH )
-      backgroundH->set_title( "Background" );
-    
-    const float lt = backgroundH ? backgroundH->live_time() : 0.0f;
-    const float rt = backgroundH ? backgroundH->real_time() : 0.0f;
-    const float neutronCounts = backgroundH ? backgroundH->neutron_counts_sum() : -1.0f;
-    m_spectrum->setBackground( backgroundH, lt, rt, neutronCounts );
-  }else
-  {
-//    if( !m_dataMeasurement )
-//      m_backgroundMeasurement = std::shared_ptr<SpecMeas>();
-    m_backgroundSampleNumbers.clear();
-    m_spectrum->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
-  }//if( m_backgroundMeasurement ) / else
+  const float lt = backgroundH ? backgroundH->live_time() : -1.0f;
+  const float rt = backgroundH ? backgroundH->real_time() : -1.0f;
+  const float neutronCounts = backgroundH ? backgroundH->neutron_counts_sum() : -1.0f;
+  m_spectrum->setBackground( backgroundH, lt, rt, neutronCounts );
   
   if( !m_timeSeries->isHidden() )
   {
@@ -10832,7 +10660,4 @@ void InterSpec::displayBackgroundData()
     m_backgroundSubItems[1]->setHidden( !isSub );
   }//if( m_backgroundSubItems[0]->isHidden() != isSub )
 }//void displayBackgroundData()
-
-
-
 

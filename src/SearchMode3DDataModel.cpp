@@ -34,6 +34,7 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/SearchMode3DDataModel.h"
 
 using namespace Wt;
@@ -232,8 +233,7 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
     
     
   std::shared_ptr<const SpecMeas> meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
-  const set<int> displayed_detectors = viewer->displayedDetectorNumbers();
-  const vector<bool> det_to_use = viewer->detectors_to_display();
+  const vector<string> det_to_use = viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   const set<int> sample_numbers = meas->sample_numbers();
   const vector<int> sample_numbers_vec( sample_numbers.begin(), sample_numbers.end() );
     
@@ -241,52 +241,56 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
   //    const set<int> foreground_samples = viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
   try
   {
-    if( !meas || sample_numbers.empty() || displayed_detectors.empty() )
+    if( !meas || sample_numbers.empty() || det_to_use.empty() )
       throw runtime_error( "No data to display" );
     
-    const size_t binningIndex = meas->suggested_gamma_binning_index( sample_numbers, det_to_use );
-    auto binning = std::make_shared<SpecUtils::Measurement>( *meas->measurements().at(binningIndex) );
+    auto energy_cal = meas->suggested_sum_energy_calibration( sample_numbers, det_to_use );
     
-    if( binning->num_gamma_channels() < 4 )
+    if( !energy_cal || energy_cal->num_channels() < 4 )
       throw runtime_error( "Not enough gamma channels to plot" );
     
     const size_t nsamples = sample_numbers.size();
-    size_t nenergies = binning->gamma_channel_contents()->size();
     
+    size_t nenergies = energy_cal->num_channels();
     while( nenergies > m_maxNumChannels )
       nenergies /= 2;
       
-    const size_t ncombine = binning->gamma_channel_contents()->size() / nenergies;
-      
-    if( ncombine > 1 )
+    if( nenergies != energy_cal->num_channels() )
     {
-      cout << "Reducing channels to " << nenergies << " from "
-        << binning->gamma_channel_contents()->size() << endl;
-        
-        //The combine_gamma_channels() and truncate_gamma_channels() functions
-        //  are protected for the Measurment class, so we have to do a little
-        //  hack to get around this, by adding binning to a SpecUtils::SpecFile
-        //  object, and then calling these functions on that object.
-      SpecUtils::SpecFile temp;
-      temp.add_measurement( binning, true );
-        
-      const size_t nchannel = binning->gamma_channel_contents()->size();
-      if( (nchannel % ncombine) != 0 )
-        temp.truncate_gamma_channels( 0, ncombine*nenergies, nchannel, true );
-      temp.combine_gamma_channels( ncombine, nchannel );
-    }
+      const auto &coefs = energy_cal->coefficients();
+      const auto &dev_pairs = energy_cal->deviation_pairs();
       
-    assert( binning->gamma_channel_contents()->size() == nenergies );
+      auto newcal = make_shared<SpecUtils::EnergyCalibration>();
+      switch( energy_cal->type() )
+      {
+        case SpecUtils::EnergyCalType::Polynomial:
+        case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+          newcal->set_polynomial( nenergies, coefs, dev_pairs );
+          break;
+          
+        case SpecUtils::EnergyCalType::FullRangeFraction:
+          newcal->set_full_range_fraction( nenergies, coefs, dev_pairs );
+          break;
+          
+        case SpecUtils::EnergyCalType::LowerChannelEdge:
+          assert( nenergies < coefs.size() );
+          newcal->set_lower_channel_energy( nenergies, vector<float>(begin(coefs),begin(coefs)+nenergies+1) );
+          break;
+        
+        case SpecUtils::EnergyCalType::InvalidEquationType:
+          throw runtime_error( "unexpected logic error" );
+          break;
+      }//switch( energy_cal->type() )
+      
+      energy_cal = newcal;
+    }//if( nenergies != energy_cal->num_channels() )
+    
+      
+    assert( energy_cal->num_channels() == nenergies );
       
     m_minCounts = FLT_MAX;
     m_maxCounts = 0.0f;
     vector<float> newtimes;
-    vector<float> newenergies = (*binning->gamma_channel_energies());
-    if( binning->gamma_channel_energies()->size() == nenergies )
-      newenergies.push_back( 2.0f*newenergies[nenergies-1] - newenergies[nenergies-2] );
-      
-    assert( newenergies.size() >= (nenergies+1) );
-      
     boost::multi_array<float, 2>::extent_gen extentgen;
     m_counts.resize( extentgen[nsamples][nenergies] );
       
@@ -314,20 +318,20 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
         thissamplenum.insert( sample_numbers_vec[sampleNumIndex + i] );
       
       float realtime = FLT_MAX;
-      for( const int detnum : displayed_detectors )
+      for( const string &detnamme : det_to_use )
       {
         for( const int samplenum : thissamplenum )
         {
-          auto m = meas->measurement( samplenum, detnum );
+          auto m = meas->measurement( samplenum, detnamme );
           if( m )
             realtime = std::min( realtime, m->real_time() );
         }//for( const int samplenum : thissamplenum )
-      }//for( const int detnum : displayed_detectors )
+      }//for( const string &detnamme : det_to_use )
         
       if( realtime > 1.0E+6f )
         realtime = 0.0f;
         
-      auto summed = meas->sum_measurements( thissamplenum, det_to_use, binning );
+      auto summed = meas->sum_measurements( thissamplenum, det_to_use, energy_cal );
         
       if( !summed || !summed->gamma_channel_contents()
           || summed->gamma_channel_contents()->size() != nenergies )
@@ -350,13 +354,14 @@ void SearchMode3DDataModel::update( InterSpec *viewer )
       
     newtimes.push_back( cumulativeRealTime );
     
-    if( (newenergies.size() > 1) && (newtimes.size() > 1) )  //probably always true
+    if( (energy_cal->num_channels() > 1) && (newtimes.size() > 1) )  //probably always true
     {
-      beginInsertColumns( WModelIndex(), 0, int(2*newenergies.size()+1) );
+      const auto &new_energies = energy_cal->channel_energies();
+      beginInsertColumns( WModelIndex(), 0, int(2*new_energies->size()+1) );
       beginInsertRows( WModelIndex(), 0, int(2*newtimes.size()+1) );
       
       m_times = newtimes;
-      m_energies = newenergies;
+      m_energies = *new_energies;
   
       endInsertRows();
       endInsertColumns();

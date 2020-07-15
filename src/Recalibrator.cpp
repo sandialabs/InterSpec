@@ -85,11 +85,6 @@
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
-#if ( USE_SPECTRUM_CHART_D3 )
-#include "InterSpec/D3SpectrumDisplayDiv.h"
-#else
-#include "InterSpec/SpectrumDisplayDiv.h"
-#endif
 #include "InterSpec/IsotopeSelectionAids.h"
 
 
@@ -367,17 +362,9 @@ namespace
 
           
 
-Recalibrator::Recalibrator(
-#if ( USE_SPECTRUM_CHART_D3 )
-                            D3SpectrumDisplayDiv *spectrumDisplayDiv,
-#else
-                            SpectrumDisplayDiv *spectrumDisplayDiv,
-#endif
-                            InterSpec *viewer,
-                            PeakModel *peakModel)
+Recalibrator::Recalibrator( InterSpec *viewer, PeakModel *peakModel )
   : WContainerWidget( 0 ),
-    m_spectrumDisplayDiv( spectrumDisplayDiv ),
-    m_hostViewer( viewer ),
+    m_interspec( viewer ),
     m_peakModel( peakModel ),
     m_isotopeView( 0 ),
     m_fitCoefButton( 0 ),
@@ -395,9 +382,10 @@ Recalibrator::Recalibrator(
     m_devPairs( nullptr ),
     m_layout( nullptr )
 {
-  m_uncertainties[0] = m_uncertainties[1] = m_uncertainties[2] = -1.0;
+  for( auto &v : m_uncertainties )
+    v = -1.0;
 
-  const Recalibrator::LayoutStyle style = m_hostViewer->isPhone() ? kTall : kWide;
+  const Recalibrator::LayoutStyle style = m_interspec->isPhone() ? kTall : kWide;
   
   initWidgets( style );
   
@@ -408,6 +396,11 @@ Recalibrator::Recalibrator(
   m_peakModel->rowsRemoved().connect( this, &Recalibrator::checkIfCanMultiFileCal );
   
   m_peakModel->dataChanged().connect( this, &Recalibrator::checkIfCanFitCoefs );
+  
+  
+  // Wt::Signal<SpecUtils::SpectrumType,std::shared_ptr<SpecMeas>,std::set<int>>& m_interspec->displayedSpectrumChanged();
+  
+  
 }//Recalibrator::Recalibrator(...)
 
 
@@ -441,7 +434,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *pare
   if( hasStyleClass(styleClasses[styleIndToRemove]) )
     removeStyleClass( styleClasses[styleIndToRemove] );
           
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_hostViewer );
+  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
   if( !m_layout )
   {
@@ -487,7 +480,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *pare
     else if( i == 4 )
       termlabels[i]->setText( "Quart. Term " );
           
-    m_exponentLabels[i] = new WLabel();
+    m_termSuffix[i] = new WLabel();
           
     m_fitFor[i] = new WCheckBox( "fit" );
     m_fitFor[i]->setChecked( (i<2) );
@@ -602,7 +595,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *pare
       closeBtn = parent->addCloseButtonToFooter( "Close", false, footer );
     else
       closeBtn = new WPushButton( "Close", footer );
-    closeBtn->clicked().connect( m_hostViewer, &InterSpec::handRecalibratorWindowClose );
+    closeBtn->clicked().connect( m_interspec, &InterSpec::handRecalibratorWindowClose );
     closeBtn->addStyleClass( "RecalCancelbtn" );
   }//if( style == kTall )
   
@@ -625,10 +618,10 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *pare
   {
     m_layout->addWidget( termlabels[i],           row, 0, Wt::AlignMiddle );
     m_layout->addWidget( m_coefficientDisplay[i], row, 1, Wt::AlignMiddle );
-    m_layout->addWidget( m_exponentLabels[i],     row, 2, Wt::AlignMiddle );
+    m_layout->addWidget( m_termSuffix[i],         row, 2, Wt::AlignMiddle );
     m_layout->addWidget( m_fitFor[i],             row, 3, Wt::AlignCenter | Wt::AlignMiddle );
     termlabels[i]->setBuddy( m_coefficientDisplay[i] );
-    m_exponentLabels[i]->setBuddy( m_coefficientDisplay[i] );
+    m_termSuffix[i]->setBuddy( m_coefficientDisplay[i] );
     row++;
   }
   
@@ -718,7 +711,6 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *pare
     helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
     helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "energy-calibration-dialog" ) );
     m_layout->addWidget( helpBtn,  row, 0, Wt::AlignLeft | Wt::AlignBottom );
-    
     row++;
     
     m_layout->addWidget( m_isotopeView,     0,   4, row, 1 );
@@ -744,6 +736,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *pare
     m_polyConverDiv->hide();
           
     m_layout->setColumnStretch( 4, 1 );
+    m_layout->setRowStretch( row-1, 1 );
   }//if( style == kWide )
   
   if( style == kTall )
@@ -787,7 +780,7 @@ void Recalibrator::deleteGraphicalRecalConfirmWindow()
   }//if( m_graphicalRecal )
   
   const bool showToolTipInstantly
-      = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_hostViewer );
+      = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   if( showToolTipInstantly )
   {
 #if( USE_SPECTRUM_CHART_D3 )
@@ -816,12 +809,12 @@ void Recalibrator::specTypeCheckedCallback( const SpecUtils::SpectrumType type,
   //  recalibration will always be applied to both if either are selected)
   
   const int typeindex = static_cast<int>(type);
-  std::shared_ptr<SpecMeas> meas = m_hostViewer->measurment(type);
+  std::shared_ptr<SpecMeas> meas = m_interspec->measurment(type);
   
   for( int i = 0; i < 3; ++i )
   {
     const SpecUtils::SpectrumType t = SpecUtils::SpectrumType(i);
-    if( (t != type) && (meas == m_hostViewer->measurment(t)) )
+    if( (t != type) && (meas == m_interspec->measurment(t)) )
       m_applyTo[i]->setChecked( m_applyTo[typeindex]->isChecked() );
   }//
 }//void specTypeCheckedCallback(...)
@@ -883,7 +876,7 @@ void Recalibrator::handleGraphicalRecalRequest( double xstart, double xfinish )
 {
   try
   {
-    if( !m_hostViewer->displayedHistogram(SpectrumType::Foreground) )
+    if( !m_interspec->displayedHistogram(SpectrumType::Foreground) )
       return;
   
     if( m_graphicalRecal )
@@ -916,8 +909,8 @@ void Recalibrator::startConvertToPolynomial()
     return;
   }
   
-  auto foreground = m_hostViewer->measurment(SpectrumType::Foreground);
-  auto displ_foreground = m_hostViewer->displayedHistogram(SpectrumType::Foreground);
+  auto foreground = m_interspec->measurment(SpectrumType::Foreground);
+  auto displ_foreground = m_interspec->displayedHistogram(SpectrumType::Foreground);
   
   if( !foreground || !displ_foreground )
   {
@@ -931,18 +924,20 @@ void Recalibrator::startConvertToPolynomial()
     return;
   }
   
-  const vector<bool> useGamma = m_hostViewer->detectors_to_display();
-  const set<int> samples = m_hostViewer->displayedSamples(SpectrumType::Foreground);
-  std::shared_ptr<const std::vector<float>> dataBinning = m_hostViewer->getBinning( samples, useGamma, foreground );
+  const vector<string> used_dets = m_interspec->detectorsToDisplay(SpectrumType::Foreground);
+  const set<int> samples = m_interspec->displayedSamples(SpectrumType::Foreground);
+  auto energy_cal = foreground->suggested_sum_energy_calibration( samples, used_dets );
   
-  if( !dataBinning )
+  if( !energy_cal )
   {
     passMessage( "Issue getting channel energies of foreground.", "", WarningWidget::WarningMsgHigh );
     return;
   }
 
   
-  m_convertToPolyDialog = new AuxWindow( "Confirm", WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal) | DisableCollapse | SetCloseable | IsAlwaysModal );
+  m_convertToPolyDialog = new AuxWindow( "Confirm",
+                                        WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+                                                | DisableCollapse | SetCloseable | IsAlwaysModal );
   m_convertToPolyDialog->rejectWhenEscapePressed();
   
   m_convertToPolyDialog->setWidth( 300 );
@@ -980,8 +975,11 @@ void Recalibrator::finishConvertToPolynomial( const bool followThrough )
   if( !followThrough )
     return;
   
-  std::shared_ptr<SpecMeas> foreground = m_hostViewer->measurment(SpectrumType::Foreground);
-  auto displ_foreground = m_hostViewer->displayedHistogram(SpectrumType::Foreground);
+  std::shared_ptr<SpecMeas> foreground = m_interspec->measurment(SpectrumType::Foreground);
+  std::shared_ptr<SpecMeas> background = m_interspec->measurment(SpectrumType::Background);
+  std::shared_ptr<SpecMeas> secondary = m_interspec->measurment(SpectrumType::SecondForeground);
+  
+  auto displ_foreground = m_interspec->displayedHistogram(SpectrumType::Foreground);
   
   if( !foreground || !displ_foreground
       || displ_foreground->num_gamma_channels() < 16
@@ -992,31 +990,43 @@ void Recalibrator::finishConvertToPolynomial( const bool followThrough )
     return;
   }
   
-
-  vector<float> coefs( 2, 0.0f );
-  std::vector<std::pair<float,float>> devpairs;
-  coefs[1] = displ_foreground->channel_energies()->back() / displ_foreground->num_gamma_channels();
-  
   //ToDo: If any of of the SpecMeas objects have Measurements with a differing
   //      number of channels, we will get an exception.  Should handle this
   //      correctly...
+  map<pair<size_t,float>,shared_ptr<SpecUtils::EnergyCalibration>> newcals;
+  
+  auto set_cal = [&newcals]( std::shared_ptr<SpecMeas> &meas ){
+    if( !meas )
+      return;
+    for( auto m : meas->measurements() )
+    {
+      const size_t nchannel = m->num_gamma_channels();
+      const float upper_energy = m->gamma_energy_max();
+      if( nchannel < 2 || upper_energy < 1.0f )
+        continue;
+      
+      shared_ptr<SpecUtils::EnergyCalibration> &cal = newcals[{nchannel,upper_energy}];
+      if( !cal )
+      {
+        cal = make_shared<SpecUtils::EnergyCalibration>();
+        cal->set_polynomial( nchannel, {0.0f,upper_energy/nchannel}, {} );
+      }
+      
+      if( cal != m->energy_calibration() )
+        meas->set_energy_calibration( cal, m );
+    }//for( auto m : foreground->measurements() )
+  };//set_cal lamda
+  
+  set_cal( foreground );
+  set_cal( background );
+  set_cal( secondary );
+  
   if( foreground )
-    foreground->recalibrate_by_eqn( coefs, devpairs, SpecUtils::EnergyCalType::Polynomial );
-  
-  std::shared_ptr<SpecMeas> background = m_hostViewer->measurment(SpectrumType::Background);
-  if( background )
-    background->recalibrate_by_eqn( coefs, devpairs, SpecUtils::EnergyCalType::Polynomial );
-  
-  std::shared_ptr<SpecMeas> secondary = m_hostViewer->measurment(SpectrumType::SecondForeground);
+    m_interspec->displayForegroundData( true );
   if( secondary )
-    secondary->recalibrate_by_eqn( coefs, devpairs, SpecUtils::EnergyCalType::Polynomial );
-  
-  if( foreground )
-    m_hostViewer->displayForegroundData( true );
-  if( secondary )
-    m_hostViewer->displaySecondForegroundData();
+    m_interspec->displaySecondForegroundData();
   if( background )
-    m_hostViewer->displayBackgroundData();
+    m_interspec->displayBackgroundData();
   
   refreshRecalibrator();
 }//void finishConvertToPolynomial()
@@ -1030,7 +1040,7 @@ void Recalibrator::checkIfCanFitCoefs()
   const bool wasEnabled = m_fitCoefButton->isEnabled();
   
   std::shared_ptr<const SpecUtils::Measurement> disp_foreground
-             = m_hostViewer->displayedHistogram(SpectrumType::Foreground);
+             = m_interspec->displayedHistogram(SpectrumType::Foreground);
   
   if( !disp_foreground || !m_applyTo[ForeIndex]->isChecked() )
   {
@@ -1092,7 +1102,7 @@ void Recalibrator::checkIfCanMultiFileCal()
   //See notes in #Recalibrator::checkIfCanFitCoefs about this minor optimization
   const bool wasEnabled = m_multiFileButton->isEnabled();
   
-  SpectraFileModel *fileModel = m_hostViewer->fileManager()->model();
+  SpectraFileModel *fileModel = m_interspec->fileManager()->model();
   if( !fileModel )
   {
     if( wasEnabled )
@@ -1108,7 +1118,7 @@ void Recalibrator::checkIfCanMultiFileCal()
     return;
   }
   
-  auto meas = m_hostViewer->measurment(SpecUtils::SpectrumType::Foreground);
+  auto meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   if( !meas )
   {
     if( wasEnabled )
@@ -1144,7 +1154,7 @@ void Recalibrator::userChangedDeviationPairs()
     }
           
     std::shared_ptr<const SpecUtils::Measurement> disp_foreground
-               = m_hostViewer->displayedHistogram( SpectrumType::Foreground );
+               = m_interspec->displayedHistogram( SpectrumType::Foreground );
     if( !disp_foreground )
     {
       m_devPairs->setDeviationPairs( vector<pair<float,float>>{} );
@@ -1210,14 +1220,14 @@ void Recalibrator::engageRecalibration( RecalAction action )
 {
   cout << "engageRecalibration" << endl;
   std::shared_ptr<SpecMeas> foreground, back, second;
-  foreground = m_hostViewer->measurment(SpectrumType::Foreground);
-  back       = m_hostViewer->measurment(SpectrumType::Background);
-  second     = m_hostViewer->measurment(SpectrumType::SecondForeground);
+  foreground = m_interspec->measurment(SpectrumType::Foreground);
+  back       = m_interspec->measurment(SpectrumType::Background);
+  second     = m_interspec->measurment(SpectrumType::SecondForeground);
 
   std::shared_ptr<const SpecUtils::Measurement> disp_foreground, disp_back, disp_second;
-  disp_foreground = m_hostViewer->displayedHistogram( SpectrumType::Foreground );
-  disp_back = m_hostViewer->displayedHistogram( SpectrumType::Background );
-  disp_second = m_hostViewer->displayedHistogram( SpectrumType::SecondForeground );
+  disp_foreground = m_interspec->displayedHistogram( SpectrumType::Foreground );
+  disp_back = m_interspec->displayedHistogram( SpectrumType::Background );
+  disp_second = m_interspec->displayedHistogram( SpectrumType::SecondForeground );
   
   if( !foreground || !foreground->num_gamma_channels()
      || !disp_foreground || !disp_foreground->num_gamma_channels() )
@@ -1257,13 +1267,31 @@ void Recalibrator::engageRecalibration( RecalAction action )
         && second!=foreground && second!=back )
     {
       const CalibrationInformation &info = m_originalCal[SecondIndex];
-      second->shiftPeaksForRecalibration( disp_second->calibration_coeffs(),
-                                          disp_second->deviation_pairs(),
-                                          disp_second->energy_calibration_model(),
-                                          info.coefficients,
-                                          info.deviationpairs,
-                                          info.type );
-      second->recalibrate_by_eqn( info.coefficients, info.deviationpairs, info.type );
+      
+      try
+      {
+        for( const auto &iter : info.m_cal_to_meas )
+        {
+          const shared_ptr<const SpecUtils::EnergyCalibration> &cal = iter.first;
+          for( const shared_ptr<const SpecUtils::Measurement> &m : iter.second )
+            second->set_energy_calibration( cal, m );
+        }
+        
+        //blurg - when we shift the peaks, we have to know from which calibration to which calibration,
+        //  which means we need to consistently define whcih energy calbiration defines the display,
+        //  or at least keep track of it for when we change things.
+        second->shiftPeaksForRecalibration( disp_second->calibration_coeffs(),
+        disp_second->deviation_pairs(),
+        disp_second->energy_calibration_model(),
+        info.coefficients,
+        info.deviationpairs,
+        info.type );
+      }catch( std::exception &e )
+      {
+        
+      }
+      
+      // Fix this for new calibration! //second->recalibrate_by_eqn( info.coefficients, info.deviationpairs, info.type );
     }
     
     if( !!back
@@ -1276,7 +1304,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
                                         info.coefficients,
                                         info.deviationpairs,
                                         info.type );
-      back->recalibrate_by_eqn( info.coefficients, info.deviationpairs, info.type );
+      // Fix this for new calibration! //back->recalibrate_by_eqn( info.coefficients, info.deviationpairs, info.type );
     }
 
     //Have to treat the foreground measurment a bit special since the PeakModel
@@ -1284,7 +1312,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
     if( !!foreground && m_applyTo[ForeIndex]->isChecked() )
     {
       const CalibrationInformation &info = m_originalCal[ForeIndex];
-      foreground->recalibrate_by_eqn( info.coefficients, info.deviationpairs, info.type );
+      // Fix this for new calibration! //foreground->recalibrate_by_eqn( info.coefficients, info.deviationpairs, info.type );
       shiftPeaksForEnergyCalibration( m_peakModel,
                                       info.coefficients, info.deviationpairs, info.type,
                                      foreground, SpectrumType::Foreground,
@@ -1293,24 +1321,33 @@ void Recalibrator::engageRecalibration( RecalAction action )
 
     // Redraw everything
     if( foreground )
-      m_hostViewer->displayForegroundData( true );
+      m_interspec->displayForegroundData( true );
     if( second )
-      m_hostViewer->displaySecondForegroundData();
+      m_interspec->displaySecondForegroundData();
     if( back )
-      m_hostViewer->displayBackgroundData();
+      m_interspec->displayBackgroundData();
 
     refreshRecalibrator();
 
     return;
   }//if( action == RevertRecal )
 
-  
-  bool displayAll = true;
-  for( bool b : m_hostViewer->detectors_to_display() )
-    displayAll = (displayAll && b);
-  if( !displayAll )
-    passMessage( "Calibration only applied to displayed detectors", "", 1 );
+  if( foreground )
+  {
+    const auto &alldets = foreground->detector_names();
+    vector<string> detectors = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+    
+    bool displayAll = true;
+    for( const auto &det : alldets )
+    {
+      auto pos = std::find( begin(detectors), end(detectors), det );
+      displayAll = displayAll && (pos != end(detectors));
+    }
 
+    if( !displayAll )
+      passMessage( "Calibration only applied to displayed detectors", "", 1 );
+  }//if( foreground )
+  
   // Extract the values, noting the exponents.
   vector< float > eqn( sm_numCoefs );
   for( size_t i = 0; i < sm_numCoefs; ++i )
@@ -1347,7 +1384,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
     return;
   }//try / catch to check validity of equation
   
-  vector<string> displayed_detectors = m_hostViewer->displayed_detector_names();
+  vector<string> displayed_detectors = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   
   switch( m_coeffEquationType )
   {
@@ -1362,8 +1399,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
         const vector< pair<float,float> > origdevpars = disp_foreground->deviation_pairs();
         const SpecUtils::EnergyCalType origtype = disp_foreground->energy_calibration_model();
         
-        foreground->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType,
-                                      displayed_detectors, false );
+        // Fix this for new calibration! //foreground->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType, displayed_detectors, false );
         
         if( action == ApplyRecal )
           shiftPeaksForEnergyCalibration( m_peakModel,
@@ -1389,12 +1425,10 @@ void Recalibrator::engageRecalibration( RecalAction action )
 
         if( forenameset == backnameset )
         {
-          second->recalibrate_by_eqn( eqn, devpairs,
-                                    m_coeffEquationType,
-                                    displayed_detectors, false );
+          // Fix this for new calibration! //second->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType, displayed_detectors, false );
         }else
         {
-          second->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType );
+          // Fix this for new calibration! //second->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType );
         }
       }//if( !!second && m_applyTo[SecondIndex]->isChecked() )
       
@@ -1415,21 +1449,19 @@ void Recalibrator::engageRecalibration( RecalAction action )
                                             eqn, devpairs, m_coeffEquationType );
         if( forenameset == backnameset )
         {
-          back->recalibrate_by_eqn( eqn, devpairs,
-                                  m_coeffEquationType,
-                                  displayed_detectors, false  );
+          // Fix this for new calibration! //back->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType, displayed_detectors, false  );
         }else
         {
-          back->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType );
+          // Fix this for new calibration! //back->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType );
         }//if( forenameset == backnameset )
         
       }//if( !!back && m_applyTo[BackIndex]->isChecked() )
       
       
       const bool keepCurrentEnergyRange = true;
-      m_hostViewer->displayForegroundData( keepCurrentEnergyRange );
-      m_hostViewer->displaySecondForegroundData();
-      m_hostViewer->displayBackgroundData();
+      m_interspec->displayForegroundData( keepCurrentEnergyRange );
+      m_interspec->displaySecondForegroundData();
+      m_interspec->displayBackgroundData();
 
       break;
     }//case Polynomial, FullRangeFraction:
@@ -1447,7 +1479,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
 
 
   // Recalibrate for the continuum?
-//  m_hostViewer->displayTimeSeriesData( false ); // This can be removed, right?
+//  m_interspec->displayTimeSeriesData( false ); // This can be removed, right?
   
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1500,7 +1532,6 @@ void Recalibrator::recalibrateByPeaks()
       return;
     }//if( num_coeff_fit < 1 )
 
-    std::shared_ptr<const Measurement> data = m_spectrumDisplayDiv->histUsedForXAxis();
     std::shared_ptr<const SpecMeas> meas;
     std::shared_ptr<const Measurement> displ_meas;
     
@@ -1510,12 +1541,12 @@ void Recalibrator::recalibrateByPeaks()
       if( m_applyTo[i]->isChecked() )
       {
         const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
-        meas = m_hostViewer->measurment(type);
-        displ_meas = m_hostViewer->displayedHistogram(type);
+        meas = m_interspec->measurment(type);
+        displ_meas = m_interspec->displayedHistogram(type);
       }//if( m_applyTo[i]->isChecked() )
     }//for( int i = 0; (!meas || !displ_meas) && (i < 3); ++i )
     
-    if( !meas || !displ_meas || !data )
+    if( !meas || !displ_meas )
       throw std::runtime_error( "ErrorMsgNo spectrum available for calibration" );
 
     const std::shared_ptr<const std::vector<float>> &binning = displ_meas->channel_energies();
@@ -1550,23 +1581,23 @@ void Recalibrator::recalibrateByPeaks()
         poly_eqn[0] = lower_energy - 0.5*channel_width;
         poly_eqn[1] = channel_width;
 
-        std::shared_ptr<SpecMeas> &foreground = m_hostViewer->m_dataMeasurement;
+        std::shared_ptr<SpecMeas> &foreground = m_interspec->m_dataMeasurement;
         std::shared_ptr<const Measurement> displ_foreground
-                                = m_hostViewer->displayedHistogram(SpectrumType::Foreground);
+                                = m_interspec->displayedHistogram(SpectrumType::Foreground);
         if( !!foreground && !!displ_foreground )
         {
-          std::shared_ptr<SpecMeas> &second = m_hostViewer->m_secondDataMeasurement;
-          std::shared_ptr<SpecMeas> &back = m_hostViewer->m_backgroundMeasurement;
+          std::shared_ptr<SpecMeas> &second = m_interspec->m_secondDataMeasurement;
+          std::shared_ptr<SpecMeas> &back = m_interspec->m_backgroundMeasurement;
           const std::vector<std::pair<float,float>> &devpairs = displ_foreground->deviation_pairs();
         
-          if( m_applyTo[ForeIndex]->isChecked() )
-            foreground->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
+          // Fix this for new calibration! //if( m_applyTo[ForeIndex]->isChecked() )
+          // Fix this for new calibration! //  foreground->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
 
-          if( !!second && m_applyTo[SecondIndex]->isChecked() )
-            second->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
+          // Fix this for new calibration! //if( !!second && m_applyTo[SecondIndex]->isChecked() )
+          // Fix this for new calibration! //  second->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
 
-          if( !!back && m_applyTo[BackIndex]->isChecked() )
-            back->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
+          // Fix this for new calibration! //if( !!back && m_applyTo[BackIndex]->isChecked() )
+          // Fix this for new calibration! //  back->rebin_by_eqn( poly_eqn, devpairs, SpecUtils::EnergyCalType::Polynomial );
 
           m_coeffEquationType = SpecUtils::EnergyCalType::FullRangeFraction;
           calib_coefs = SpecUtils::polynomial_coef_to_fullrangefraction( poly_eqn, nbin );
@@ -1873,7 +1904,7 @@ void Recalibrator::updateCoefLabels()
       break;
     }//switch( m_coeffEquationType )
       
-    m_exponentLabels[i]->setText( txt );
+    m_termSuffix[i]->setText( txt );
   }//for( size_t i = 0; i < sm_numCoefs; ++i )
 };//void updateCoefLabels()
 
@@ -1893,30 +1924,35 @@ void Recalibrator::refreshRecalibrator()
   m_lastGraphicalRecalEnergy = -999.0f;
   
   std::shared_ptr<SpecMeas> foreground, background, second;
-  foreground = m_hostViewer->measurment(SpectrumType::Foreground);
-  background = m_hostViewer->measurment(SpectrumType::Background);
-  second     = m_hostViewer->measurment(SpectrumType::SecondForeground);
+  foreground = m_interspec->measurment(SpectrumType::Foreground);
+  background = m_interspec->measurment(SpectrumType::Background);
+  second     = m_interspec->measurment(SpectrumType::SecondForeground);
   
   std::shared_ptr<const Measurement> displ_foreground, displ_background, displ_second;
-  displ_foreground = m_hostViewer->displayedHistogram(SpectrumType::Foreground);
-  displ_background = m_hostViewer->displayedHistogram(SpectrumType::Background);
-  displ_second     = m_hostViewer->displayedHistogram(SpectrumType::SecondForeground);
+  displ_foreground = m_interspec->displayedHistogram(SpectrumType::Foreground);
+  displ_background = m_interspec->displayedHistogram(SpectrumType::Background);
+  displ_second     = m_interspec->displayedHistogram(SpectrumType::SecondForeground);
   
-  const vector< bool > useGamma = m_hostViewer->detectors_to_display();
-  const set<int> samples = m_hostViewer->displayedSamples(SpectrumType::Foreground);
-  std::shared_ptr<const std::vector<float>> dataBinning = m_hostViewer->getBinning( samples, useGamma, foreground );
-
+  const vector<string> detectors = m_interspec->detectorsToDisplay(SpectrumType::Foreground);
+  const set<int> samples = m_interspec->displayedSamples(SpectrumType::Foreground);
+  const auto energy_cal = foreground ? foreground->suggested_sum_energy_calibration(samples, detectors) : nullptr;
+  
   if( m_convertToPolyDialog )
   {
     AuxWindow::deleteAuxWindow( m_convertToPolyDialog );
     m_convertToPolyDialog = nullptr;
   }
   
+  if( energy_cal && displ_foreground )
+  {
+    assert( energy_cal == displ_foreground->energy_calibration() );
+  }
+  
   // Limiting the data binning size protects against rebinning low channel count
   // detectors that it doesnt make sense to recalibrate, because you wouldnt be
   // able to see peaks anyway
-  if( !foreground || !displ_foreground || !dataBinning
-      || dataBinning->size() < 16 || (!!foreground
+  if( !foreground || !displ_foreground || !energy_cal
+      || energy_cal->num_channels() < 16 || (!!foreground
         && (displ_foreground->energy_calibration_model()==SpecUtils::EnergyCalType::LowerChannelEdge
             || displ_foreground->energy_calibration_model()==SpecUtils::EnergyCalType::InvalidEquationType)) )
   {
@@ -1930,12 +1966,12 @@ void Recalibrator::refreshRecalibrator()
       m_fitFor[i]->hide();
       m_applyTo[i]->hide();
       m_coefficientDisplay[i]->hide();
-      m_exponentLabels[i]->hide();
+      m_termSuffix[i]->hide();
     }
     
-    if( dataBinning && foreground
-        && dataBinning->size() >= 16
-        && displ_foreground->energy_calibration_model()==SpecUtils::EnergyCalType::LowerChannelEdge )
+    if( energy_cal && foreground
+        && energy_cal->num_channels() >= 16
+        && energy_cal->type()==SpecUtils::EnergyCalType::LowerChannelEdge )
     {
       m_convertToPolynomialLabel->show();
       m_convertToPolynomial->show();
@@ -1962,7 +1998,7 @@ void Recalibrator::refreshRecalibrator()
       m_fitFor[i]->show();
       m_applyTo[i]->show();
       m_coefficientDisplay[i]->show();
-      m_exponentLabels[i]->show();
+      m_termSuffix[i]->show();
     }
   }//if( m_coefficientDisplay[0]->isHidden() )
   
@@ -1970,8 +2006,14 @@ void Recalibrator::refreshRecalibrator()
   m_applyTo[BackIndex]->enable();
   m_applyTo[SecondIndex]->enable();
 
-  const size_t nbin = dataBinning->size();
-  const vector< float > &binning = *( dataBinning );
+  if( energy_cal )
+  {
+    assert( energy_cal->channel_energies() );
+    assert( energy_cal->channel_energies()->size() > 2 );
+  }//if( energy_cal )
+  
+  const size_t nbin = energy_cal->num_channels();
+  const vector<float> &binning = *energy_cal->channel_energies();
 
   // Store the original information, then create a copy and operate on the copy. Note objects pointed to
   // in other places by m_dataMeasurement etc. may be used by other locations in the code.
@@ -1986,9 +2028,9 @@ void Recalibrator::refreshRecalibrator()
   {
     const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
     
-    std::shared_ptr<SpecMeas> meas = m_hostViewer->measurment(type);
+    std::shared_ptr<SpecMeas> meas = m_interspec->measurment(type);
     std::shared_ptr<const Measurement> displ_meas
-                                       = m_hostViewer->displayedHistogram(type);
+                                       = m_interspec->displayedHistogram(type);
     if( !displ_meas )
     {
       m_originalCal[i].reset();
@@ -1998,9 +2040,8 @@ void Recalibrator::refreshRecalibrator()
       m_originalCal[i].coefficients = displ_meas->calibration_coeffs();
       m_originalCal[i].deviationpairs = displ_meas->deviation_pairs();
       
-      m_originalCal[i].sample_numbers = m_hostViewer->displayedSamples( type );
-      m_originalCal[i].detectors_numbers
-                                    = m_hostViewer->displayedDetectorNumbers();
+      m_originalCal[i].sample_numbers = m_interspec->displayedSamples( type );
+      // Fix this for new calibration! //m_originalCal[i].detectors_numbers = m_interspec->displayedDetectorNumbers();
     }
   }//for( loop over SpecUtils::SpectrumType );
   
@@ -2344,11 +2385,11 @@ Recalibrator::GraphicalRecalConfirm::GraphicalRecalConfirm( double lowe,
 
   finished().connect( cal, &Recalibrator::deleteGraphicalRecalConfirmWindow );
   
-  if( !cal->m_hostViewer->displayedHistogram(SpectrumType::Foreground) )
+  if( !cal->m_interspec->displayedHistogram(SpectrumType::Foreground) )
   {
     throw runtime_error( "You must have a dispayed spectrum to do a recalubration" );
     return;
-  }//if( !spectrum->m_hostViewer->displayedHistogram(SpectrumType::Foreground) )
+  }//if( !spectrum->m_interspec->displayedHistogram(SpectrumType::Foreground) )
   
   WTable *table = new WTable( contents() );
   //    table->setHeaderCount( 1, Wt::Vertical );
@@ -2383,13 +2424,9 @@ Recalibrator::GraphicalRecalConfirm::GraphicalRecalConfirm( double lowe,
   m_typeButtons->setSelectedButtonIndex( kLinear );
   
   
-#if ( USE_SPECTRUM_CHART_D3 )
-  const D3SpectrumDisplayDiv *spectrum = m_calibrator->m_spectrumDisplayDiv;
-#else
-  const SpectrumDisplayDiv *spectrum = m_calibrator->m_spectrumDisplayDiv;
-#endif
-  std::shared_ptr<const Measurement> secondaryH  = spectrum->secondData();
-  std::shared_ptr<const Measurement> backgroundH = spectrum->background();
+  InterSpec *viewer = m_calibrator->m_interspec;
+  std::shared_ptr<const Measurement> secondaryH  = viewer->displayedHistogram(SpecUtils::SpectrumType::SecondForeground);
+  std::shared_ptr<const Measurement> backgroundH = viewer->displayedHistogram(SpecUtils::SpectrumType::Background);
   
   if( secondaryH || backgroundH )
   {
@@ -2412,7 +2449,7 @@ Recalibrator::GraphicalRecalConfirm::GraphicalRecalConfirm( double lowe,
     m_preserveLastCal->setInline( false );
     m_preserveLastCal->setStyleClass( "PreserveLastCalCb" );
     
-    const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", cal->m_hostViewer );
+    const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", cal->m_interspec );
 
     HelpSystem::attachToolTipOn( m_preserveLastCal,"This is only possible if a offset or"
                                 " linear term adjustment was previously"
@@ -2423,9 +2460,18 @@ Recalibrator::GraphicalRecalConfirm::GraphicalRecalConfirm( double lowe,
     m_preserveLastCal->unChecked().connect( buttonBox, &WWidget::enable );
   }//if( preserve last cal possibly )
   
+  const shared_ptr<const SpecMeas> meas = cal->m_interspec->measurment(SpectrumType::Foreground);
+  const vector<string> detectors = cal->m_interspec->detectorsToDisplay(SpectrumType::Foreground);
+  
   bool displayAll = true;
-  for( bool b : cal->m_hostViewer->detectors_to_display() )
-    displayAll = (displayAll && b);
+  if( meas )
+  {
+    for( const string &name : meas->detector_names() )
+    {
+      const auto pos = std::find( begin(detectors), end(detectors), name );
+      displayAll = displayAll && (pos != end(detectors));
+    }
+  }//if( meas )
   
   if( !displayAll )
   {
@@ -2493,7 +2539,7 @@ void Recalibrator::GraphicalRecalConfirm::apply()
   
   //Need to implement recalibrating logic, and also logic to check how long
   //  ago user last calibrated this spectra...
-  InterSpec *viewer = m_calibrator->m_hostViewer;
+  InterSpec *viewer = m_calibrator->m_interspec;
   std::shared_ptr<SpecMeas> foreground = viewer->m_dataMeasurement;
   std::shared_ptr<const Measurement> displ_foreground
                                       = viewer->displayedHistogram(SpectrumType::Foreground);
@@ -2618,9 +2664,8 @@ void Recalibrator::GraphicalRecalConfirm::apply()
     return;
   }//if( (nearend >= end) || (begin >= nearbegin) )
   
-  const vector<string> detectors
-                       = m_calibrator->m_hostViewer->displayed_detector_names();
-  foreground->recalibrate_by_eqn( eqn, deviationPairs, eqnType, detectors, false );
+  const vector<string> detectors = m_calibrator->m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  // Fix this for new calibration! //foreground->recalibrate_by_eqn( eqn, deviationPairs, eqnType, detectors, false );
 
   std::shared_ptr<SpecMeas> background = viewer->m_backgroundMeasurement;
   std::shared_ptr<SpecMeas> secondary = viewer->m_secondDataMeasurement;
@@ -2644,10 +2689,10 @@ void Recalibrator::GraphicalRecalConfirm::apply()
                                               eqn, deviationPairs, eqnType );
 
       
-      if( forenameset == backnameset )
-        background->recalibrate_by_eqn( eqn, deviationPairs, eqnType, detectors, false );
-      else
-        background->recalibrate_by_eqn( eqn, deviationPairs, eqnType );
+      // Fix this for new calibration! //if( forenameset == backnameset )
+      // Fix this for new calibration! //  background->recalibrate_by_eqn( eqn, deviationPairs, eqnType, detectors, false );
+      // Fix this for new calibration! //else
+      // Fix this for new calibration! //  background->recalibrate_by_eqn( eqn, deviationPairs, eqnType );
     }//if( background )
     
     if( secondary && displ_secondary && (secondary != foreground) )
@@ -2662,10 +2707,10 @@ void Recalibrator::GraphicalRecalConfirm::apply()
                                              displ_secondary->energy_calibration_model(),
                                              eqn, deviationPairs, eqnType );
       
-      if( forenameset == seconameset )
-        secondary->recalibrate_by_eqn( eqn, deviationPairs, eqnType, detectors, false );
-      else
-        secondary->recalibrate_by_eqn( eqn, deviationPairs, eqnType );
+      // Fix this for new calibration! //if( forenameset == seconameset )
+      // Fix this for new calibration! //  secondary->recalibrate_by_eqn( eqn, deviationPairs, eqnType, detectors, false );
+      // Fix this for new calibration! //else
+      // Fix this for new calibration! //  secondary->recalibrate_by_eqn( eqn, deviationPairs, eqnType );
     }//if( secondary )
   }
 //  else
@@ -2938,7 +2983,7 @@ bool PreserveCalibWindow::candidate( std::shared_ptr<SpecMeas> newmeas,
 
 void PreserveCalibWindow::doRecalibration()
 {
-  InterSpec *viewer = m_calibrator->m_hostViewer;
+  InterSpec *viewer = m_calibrator->m_interspec;
   std::shared_ptr<SpecMeas> meas = viewer->measurment(m_newtype);
   std::shared_ptr<const Measurement> displ_foreground
                                       = viewer->displayedHistogram(SpectrumType::Foreground);
@@ -2957,6 +3002,7 @@ void PreserveCalibWindow::doRecalibration()
   for( size_t i = 0; !eqnmeas && i < meass.size(); ++i )
     if( meass[i]->num_gamma_channels() )
       eqnmeas = meass[i];
+  
   if( !eqnmeas )
   {
     finished().emit(WDialog::Accepted);
@@ -2968,8 +3014,8 @@ void PreserveCalibWindow::doRecalibration()
   const vector< pair<float,float> > olddevpairs = eqnmeas->deviation_pairs();
   const SpecUtils::EnergyCalType oldtype = eqnmeas->energy_calibration_model();
   
-  const vector<string> detectors = viewer->displayed_detector_names();
-  meas->recalibrate_by_eqn( m_coeffs, m_devPairs, m_type, detectors, false );
+  const vector<string> detectors = viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  // Fix this for new calibration! //meas->recalibrate_by_eqn( m_coeffs, m_devPairs, m_type, detectors, false );
 
   Recalibrator::shiftPeaksForEnergyCalibration( m_calibrator->m_peakModel,
                                                 m_coeffs, m_devPairs, m_type,
@@ -3279,7 +3325,7 @@ Recalibrator::MultiFileCalibFit::MultiFileCalibFit( Recalibrator *cal )
   m_fit( 0 ),
   m_fitSumary( 0 )
 {
-  InterSpec *viewer = m_calibrator->m_hostViewer;
+  InterSpec *viewer = m_calibrator->m_interspec;
   SpectraFileModel *fileModel = viewer->fileManager()->model();
   
   m_model = new MultiFileModel( fileModel, this );
@@ -3420,10 +3466,9 @@ void Recalibrator::MultiFileCalibFit::doFit()
     }//if( num_coeff_fit < 1 )
     
     
-    std::shared_ptr<const Measurement> data = m_calibrator->m_spectrumDisplayDiv->histUsedForXAxis();
-    std::shared_ptr<const SpecMeas> meas = m_calibrator->m_hostViewer->measurment(SpectrumType::Foreground);
+    std::shared_ptr<const SpecMeas> meas = m_calibrator->m_interspec->measurment(SpectrumType::Foreground);
     
-    if( !meas || !data )
+    if( !meas )
     {
       const char *msg = "You need to be displaying a foreground spectrum to do a calibration fit";
       passMessage( msg, "", WarningWidget::WarningMsgHigh );
@@ -3761,7 +3806,7 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
       
     case WDialog::Accepted:
     {
-      InterSpec *viewer = m_calibrator->m_hostViewer;
+      InterSpec *viewer = m_calibrator->m_interspec;
       
       // @TODO: the equation could totally be invalid
       vector<float> eqn( m_calVal, m_calVal + sm_numCoefs );
@@ -3816,7 +3861,7 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
         break;
       }
       
-      vector<string> displayed_detectors = viewer->displayed_detector_names();
+      vector<string> displayed_detectors = viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
       
       
       if( !m_calibrator->m_applyTo[ForeIndex]->isChecked() )
@@ -3848,7 +3893,7 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
         if( !meas )
           continue;
         
-        meas->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
+        // Fix this for new calibration! //meas->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
         cerr << "\n\nRecalled " << header->displayName().toUTF8()
              << " to m_calVal={" << m_calVal[0] << ", " << m_calVal[1]
              << ", " << m_calVal[2] << "}" << endl;
@@ -3873,12 +3918,12 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
           second.reset();
       }//for( size_t i = 0; i < m_peaks.size(); ++i )
       
-      if( fore )
-        fore->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
-      if( back )
-        back->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
-      if( second )
-        second->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
+      // Fix this for new calibration! //if( fore )
+      // Fix this for new calibration! //  fore->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
+      // Fix this for new calibration! //if( back )
+      // Fix this for new calibration! //  back->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
+      // Fix this for new calibration! //if( second )
+      // Fix this for new calibration! //  second->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
       
       viewer->displayForegroundData( true );
       viewer->displaySecondForegroundData();

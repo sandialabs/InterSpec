@@ -215,9 +215,11 @@ protected:
   //  for a peak (thus possibly resulting in a poorly fit peak), we'll keep a
   //  refernce to the original.  This is slightly inefficient, but shouldnt be
   //  to bad.
-  //  XXX - need to verify when writing a SpecMeas object to a native file, if
-  //        multiple peaks share a global continuum, it is only written once in
-  //        the file.
+  //  \TODO: need to verify when writing a SpecMeas object to a native file, if
+  //         multiple peaks share a global continuum, it is only written once in
+  //         the file.
+  //  \TODO: use #Measurement::set_energy_calibration when translating a peaks mean for energy
+  //         calibrations.
   std::shared_ptr<const SpecUtils::Measurement> m_externalContinuum;
   
   static const int sm_xmlSerializationVersion;

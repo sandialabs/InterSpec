@@ -285,7 +285,8 @@ public:
   const std::set<int> &displayedSamples( SpecUtils::SpectrumType spectrum_type ) const;
   std::set<int> validForegroundSamples() const;//forground samples that could possibly be displayed
   
-  std::set<int> displayedDetectorNumbers() const;
+  std::vector<std::string> detectorsToDisplay( const SpecUtils::SpectrumType type ) const;
+
   
   std::shared_ptr<SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type );
   std::shared_ptr<const SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type ) const;
@@ -655,12 +656,7 @@ public:
   //  database after destruction of the InterSpec object)
   std::shared_ptr<DataBaseUtils::DbSession> sql();
   
-  
-  std::vector<bool> detectors_to_display() const;
-  std::vector<std::string> detector_names() const;
-  std::vector<std::string> displayed_detector_names() const;
-  std::set<int> displayed_detector_numbers() const;
-  
+
   //refreshDisplayedCharts(): re-displays the data (foreground, background, 2nd)
   //  keeping the currently displayed energy range.
   //Useful after calibrations.
@@ -681,7 +677,7 @@ protected:
                             std::vector<boost::function<void(void)> > workers );
   
   void createOneOverR2Calculator();
-  void createActivityConverter();
+  void createUnitsConverterTool();
   void createFluxTool();
   void createDecayInfoWindow();
   void deleteDecayInfoWindow();
@@ -697,11 +693,9 @@ protected:
   //  number; this is what is on the x-axis of the time series plot.
   //  Returns the maximum real time of any measurment in the sample, for any of
   //  the specified detecor numbers.
-  static float sample_real_time_increment(
-                                  const std::shared_ptr<const SpecMeas> &meas,
-                                  const int sample,
-                                  const std::set<int> &detector_numbers
-                                          );
+  static float sample_real_time_increment( const std::shared_ptr<const SpecMeas> &meas,
+                                           const int sample,
+                                           const std::vector<std::string> &detector_names );
   
   //timeRegionsToHighlight(): returns the time ranges for the currently set
   //  sample numbers to display for the SpecUtils::SpectrumType indicated.  For
@@ -722,10 +716,6 @@ protected:
   void displaySecondForegroundData();
   void displayBackgroundData();
   void displayTimeSeriesData( bool updateHighlightRegionsDisplay );
-
-  static std::shared_ptr<const std::vector<float>> getBinning( std::set<int> sample_numbers,
-                                      const std::vector<bool> det_to_use,
-                                      std::shared_ptr<const SpecMeas> measurement );
 
   // Inclusive for t0, exclusive for t1, e.g., if you have time slices of 0.1s,
   // and you pass in t0 = 0.1, t1 = 0.2; then only the second time slice will be
@@ -1019,7 +1009,6 @@ protected:
   /** Creates the ColorThemeWidget Window that allows users to alter themes/colors. */
   void showColorThemeWindow();
   
-  void initRecalibrator();
 #if( !ANDROID && !IOS )
   void initDragNDrop();
 #endif //#if( !ANDROID && !IOS )
