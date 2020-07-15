@@ -1225,9 +1225,9 @@ void DoseCalcWidget::runtime_sanity_checks()
                            + "g/cm2}, age=" + PhysicalUnits::printToBestTimeUnits(age)
                            + " and distance=" + PhysicalUnits::printToBestLengthUnits(distance)
                            + ", the sanity check computed "
-                           + PhysicalUnits::printToBestDoseUnits(computed,4)
+                           + PhysicalUnits::printToBestEquivalentDoseRateUnits(computed,4,false)
                            + " but expected "
-                           + PhysicalUnits::printToBestDoseUnits(expected,4)
+                           + PhysicalUnits::printToBestEquivalentDoseRateUnits(expected,4,false)
                            + ".  Not performing further tests.");
   };//check_nuc lambda
   
@@ -1627,7 +1627,7 @@ void DoseCalcWidget::updateResultForGammaSource()
       }
       
       const bool useRemHr = (m_doseAnswerUnits->currentIndex() == 0);
-      const string answerstr = PhysicalUnits::printToBestDoseUnits( dose_from_source, 2, useRemHr );
+      const string answerstr = PhysicalUnits::printToBestEquivalentDoseRateUnits( dose_from_source, 2, !useRemHr );
       m_doseAnswerValue = dose_from_source;
       m_doseAnswer->setText( answerstr );
 

@@ -29,6 +29,7 @@
 #include <boost/regex.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/PhysicalUnits.h"
 
@@ -36,12 +37,21 @@ using namespace std;
 
 namespace PhysicalUnits
 {
+#define MU_CHARACTER_1 "\xCE\xBC"
+#define MU_CHARACTER_2 "\xC2\xB5"
+#define DIAERESIS_O  "\xC3\xB6"
+
 #define POS_DECIMAL_REGEX "\\s*\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
 #define DIST_UNITS_REGEX "(meter|cm|km|mm|um|nm|m|ft|feet|'|inches|inch|in|\")"
+#define METRIC_PREFIX_UNITS "m|M|k|g|G|t|T|u|" MU_CHARACTER_1 "|" MU_CHARACTER_2 "|p|n|milli|micro|pico|nano|kilo|mega|giga|terra"
+
 #define PLUS_MINUS_REGEX "(\\xC2?\\xB1|\\+\\-\\s*|\\-\\+\\s*)"
 #define TIME_UNIT_REGEX "(year|yr|y|day|d|hrs|hour|h|minutes|min|m|second|s|ms|microseconds|us|nanoseconds|ns)"
 #define HALF_LIFE_REGEX "(hl|halflife|halflives|half-life|half-lives|half lives|half life)"
 #define ACTIVITY_UNIT_REGEX "(bq|becquerel|ci|cu|curie|c)"
+#define ABSORBED_DOSE_UNIT_REGEX "(gray|Gy|gy|rad|erg|erg\\/g|erg per gram)"
+#define EQUIVALENT_DOSE_UNIT_REGEX "(sievert|Sv|rem|roentgen|r" DIAERESIS_O "entgen)"
+
 #define DURATION_REGEX "(\\+?\\d+:\\d\\d:\\d+(\\.\\d+)?)"
 #define ISO_8601_DURATION_REGEX "[\\-+]?[Pp](?!$)(\\d+(?:\\.\\d+)?[Yy])?(\\d+(?:\\.\\d+)?[Mm])?(\\d+(?:\\.\\d+)?[Ww])?(\\d+(?:\\.\\d+)?[Dd])?([Tt](?=\\d)(\\d+(?:\\.\\d+)?[Hh])?(\\d+(?:\\.\\d+)?[Mm])?(\\d+(?:\\.\\d+)?[Ss])?)?"
   
@@ -68,13 +78,17 @@ const char * const sm_distanceUncertaintyUnitsOptionalRegex
   "|(" POS_DECIMAL_REGEX DIST_UNITS_REGEX "?\\s*(" PLUS_MINUS_REGEX POS_DECIMAL_REGEX "\\s*" DIST_UNITS_REGEX "?\\s*)?)"
   ")+\\s*$";
   
-  //Non escaped version of regex is: "^(\s*\+?\d+(\.\d*)?(?:[Ee][+-]?\d+)?\s*(?:m|M|k|g|G|t|T|u|p|n|milli|micro|pico|nano|kilo|mega|terra)?[\s-]*([Bb][Qq]|[Bb][Ee][Cc][Qq][Uu][Ee][Rr][Ee][Ll]|[Cc][Ii]|[Cc][Uu]|[Cc][Uu][Rr][Ii][Ee]))?\s*$"
-const char * const sm_activityRegex = "^(\\s*" POS_DECIMAL_REGEX "\\s*(?:(?:m|k|g|t|u|p|n|milli|micro|pico|nano|kilo|mega|terra)?[\\s-]*" ACTIVITY_UNIT_REGEX "))?\\s*$";
+  //Non escaped version of regex is: "^(\s*\+?\d+(\.\d*)?(?:[Ee][+-]?\d+)?\s*(?:m|M|k|g|G|t|T|u|p|n|milli|micro|pico|nano|kilo|mega|giga|terra)?[\s-]*([Bb][Qq]|[Bb][Ee][Cc][Qq][Uu][Ee][Rr][Ee][Ll]|[Cc][Ii]|[Cc][Uu]|[Cc][Uu][Rr][Ii][Ee]))?\s*$"
+const char * const sm_activityRegex = "^(\\s*" POS_DECIMAL_REGEX "\\s*(?:(?:" METRIC_PREFIX_UNITS ")?[\\s-]*" ACTIVITY_UNIT_REGEX "))?\\s*$";
                                        
+
+const char * const sm_absorbedDoseRegex = "^(\\s*" POS_DECIMAL_REGEX "\\s*(?:(?:" METRIC_PREFIX_UNITS ")?[\\s-]*" ABSORBED_DOSE_UNIT_REGEX "))?\\s*$";
+
+const char * const sm_equivalentDoseRegex = "^(\\s*" POS_DECIMAL_REGEX "\\s*(?:(?:" METRIC_PREFIX_UNITS ")?[\\s-]*" EQUIVALENT_DOSE_UNIT_REGEX "))?\\s*$";
 
 const char * const sm_activityUnitOptionalRegex
             = "^(\\s*" POS_DECIMAL_REGEX "\\s*"
-              "(?:(?:m|M|k|g|G|t|T|u|p|n|milli|micro|pico|nano|kilo|mega|terra)?"
+              "(?:(?:" METRIC_PREFIX_UNITS ")?"
               "[\\s-]*"
               "([Bb][Qq]|[Bb][Ee][Cc][Qq][Uu][Ee][Rr][Ee][Ll]|[Cc][Ii]|[Cc][Uu]|[Cc][Uu][Rr][Ii][Ee]))?)?"
               "\\s*$";
@@ -87,7 +101,8 @@ const char * const sm_timeDurationHalfLiveOptionalRegex
      "|(" DURATION_REGEX "\\s*)"
      "|(" POS_DECIMAL_REGEX "\\s*" HALF_LIFE_REGEX "\\s*))+";
 
-  
+const char * const sm_positiveDecimalRegex = POS_DECIMAL_REGEX;
+
 const UnitNameValuePairV sm_activityUnitNameValues{
   {"bq", bq},
   {"kBq", kBq},
@@ -145,6 +160,33 @@ const UnitNameValuePairV sm_doseRateUnitHtmlNameValues{
   {"Sv/hr", sievert/hour}
 };
 
+namespace
+{
+  double metrix_prefix_value( const string &prefix )
+  {
+    if( prefix == "" )
+      return 1.0;
+    if( prefix == "u" || prefix == "micro" || prefix == MU_CHARACTER_1 || prefix == MU_CHARACTER_2 )
+      return 1.0E-6;
+    if( prefix == "m" || prefix == "milli" )
+      return 1.0E-3;
+    if( prefix == "k" || prefix == "kilo" )
+      return 1.0E3;
+    if( prefix == "M" || prefix == "mega" )
+      return 1.0E6;
+    if( prefix == "g" || prefix == "giga" )
+      return 1.0E9;
+    if( prefix == "t" || prefix == "terra" )
+      return 1.0E12;
+    if( prefix == "n" || prefix == "nano" )
+      return 1.0E-9;
+    if( prefix == "p" || prefix == "pico" )
+      return 1.0E-12;
+    
+    throw std::runtime_error( "Unrecognized prefix: '" + prefix + "'" );
+  }//double metrix_prefix_value( const string &prefix )
+
+}//namespace
 
 
 
@@ -363,22 +405,21 @@ std::string printToBestMassUnits( const double mass,
   
   
   
-string printToBestDoseUnits( double dose, const int maxNpostDecimal,
-                             const bool useRemPerHr, const double remPerHrDef )
+string printToBestEquivalentDoseRateUnits( double dose, const int maxNpostDecimal,
+                             const bool useSievert, const double sievertPerHourDefinition )
 {
-  using namespace std;
-  dose *= (rem/hour) / remPerHrDef;
+  dose *= (sievert/hour) / sievertPerHourDefinition;
   
   char formatflag[32], buffer[64];
-  const char *unitstr = useRemPerHr ? "rem/hr" : "sv/hr";
+  const char *unitstr = useSievert ? "sv/hr" : "rem/hr";
   
   snprintf(formatflag, sizeof(formatflag), "%%.%if %%s%s", maxNpostDecimal, unitstr );
   
   
-  if( useRemPerHr )
-    dose /= (rem/hour);
-  else
+  if( useSievert )
     dose /= (sievert/hour);
+  else
+    dose /= (rem/hour);
   
   if( dose < 1.0E-6 )
     snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E9), "n" );
@@ -394,7 +435,67 @@ string printToBestDoseUnits( double dose, const int maxNpostDecimal,
     snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E-6), "M" );
   
   return buffer;
-}//string printToBestDoseUnits(...)
+}//string printToBestEquivalentDoseRateUnits(...)
+
+
+std::string printToBestEquivalentDoseUnits( double dose, const int maxNpostDecimal,
+                                            const bool use_sievert,
+                                            const double sievert_definition )
+{
+  dose *= sievert / sievert_definition;
+  
+  char formatflag[32], buffer[64];
+  const char *unitstr = use_sievert ? "sv" : "rem";
+  
+  snprintf(formatflag, sizeof(formatflag), "%%.%if %%s%s", maxNpostDecimal, unitstr );
+  
+  dose /= (use_sievert ? sievert : rem);
+  
+  if( dose < 1.0E-6 )
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E9), "n" );
+  else if( dose < 1.0E-3 )
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E6), "u" );
+  else if( dose < 1.0 )
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E3), "m" );
+  else if( dose < 1.0E3 )
+    snprintf(buffer, sizeof(buffer), formatflag, dose, "" );
+  else if( dose < 1.0E6 )
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E-3), "k" );
+  else
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E-6), "M" );
+  
+  return buffer;
+}//printToBestEquivalentDoseUnits(...)
+
+
+std::string printToBestAbsorbedDoseUnits( double dose, const int maxNpostDecimal,
+                                          const bool use_gray, const double gray_definition )
+{
+  dose *= gray / gray_definition;
+  
+  char formatflag[32], buffer[64];
+  const char *unitstr = use_gray ? "Gy" : "rad";
+  
+  snprintf(formatflag, sizeof(formatflag), "%%.%if %%s%s", maxNpostDecimal, unitstr );
+  
+  dose /= (use_gray ? gray : rad);
+  
+  if( dose < 1.0E-6 )
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E9), "n" );
+  else if( dose < 1.0E-3 )
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E6), "u" );
+  else if( dose < 1.0 )
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E3), "m" );
+  else if( dose < 1.0E3 )
+    snprintf(buffer, sizeof(buffer), formatflag, dose, "" );
+  else if( dose < 1.0E6 )
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E-3), "k" );
+  else
+    snprintf(buffer, sizeof(buffer), formatflag, (dose*1.0E-6), "M" );
+  
+  return buffer;
+}//printToBestEquivalentDoseUnits(...)
+
 
 
 std::string printToBestSpecificActivityUnits( double actPerMass,
@@ -556,16 +657,19 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
       if( isspace(str[endpos]) )
         break;
     
+    
     string durstr = str.substr( startpos, endpos-startpos );
     str = str.substr(0,startpos) + str.substr(endpos);
-    SpecUtils::trim( str );
     
-    boost::posix_time::time_duration dur;
-    dur = boost::posix_time::duration_from_string( durstr );
-    if( dur.is_special() )
-      throw runtime_error( "stringToTimeDuration(...): couldnt translate '"
-                            + durstr + "' to a format like '23:59:59.000'" );
-    time_dur = (1.0E-6 * dur.total_microseconds() * second_def);
+    time_dur += SpecUtils::delimited_duration_string_to_seconds( str );
+    
+    //SpecUtils::trim( str );
+    //boost::posix_time::time_duration dur;
+    //dur = boost::posix_time::duration_from_string( durstr );
+    //if( dur.is_special() )
+    //  throw runtime_error( "stringToTimeDuration(...): couldnt translate '"
+    //                        + durstr + "' to a format like '23:59:59.000'" );
+    //time_dur = (1.0E-6 * dur.total_microseconds() * second_def);
     if( str.length() )
       time_dur += stringToTimeDurationPossibleHalfLife( str, hl, second_def );
     
@@ -688,7 +792,8 @@ double stringToTimeDurationPossibleHalfLife( std::string str,
       unit = second * 1.0E-9;
     else if( SpecUtils::starts_with(letters, "us" )
         || SpecUtils::starts_with(letters, "micro" )
-        || SpecUtils::starts_with(letters, "\xc2\xb5" ) )
+        || SpecUtils::starts_with(letters, MU_CHARACTER_1 )
+        || SpecUtils::starts_with(letters, MU_CHARACTER_2 ) )
       unit = second * 1.0E-6;
     else if( SpecUtils::starts_with(letters, "ms" )
         || SpecUtils::starts_with(letters, "mS" )
@@ -779,7 +884,8 @@ double stringToActivity( std::string str, double bq_def )
       unit = 1.0E-9;
     else if( SpecUtils::istarts_with(letters, "u" )
              || SpecUtils::istarts_with(letters, "micro" )
-             || SpecUtils::starts_with(letters, "\xc2\xb5" ) )
+             || SpecUtils::starts_with(letters, MU_CHARACTER_1 )
+             || SpecUtils::starts_with(letters, MU_CHARACTER_2 ) )
       unit = 1.0E-6;
     else if( SpecUtils::starts_with(letters, "m" )
              || SpecUtils::istarts_with(letters, "milli" ) )
@@ -917,6 +1023,157 @@ double stringToDistance( std::string str, double cm_definition )
 
   return distance;
 }//double stringToDistance( std::string str )
+
+
+double stringToAbsorbedDose( const std::string &str, const double gray_definition )
+{
+  /*
+  //A poor-persons test for this function:
+  std::cout << "Doses:" << std::endl;
+  const std::vector<std::string> dosestr = {"1 rad", "1.123 gray", "1.1E-3 Gy", "1.1krad", "1urad",
+    "10.2uGy", "10.1gy", "10.2uGy", "1.4gy 20 rad", "8\xCE\xBCgy", "8.1 \xCE\xBCgy", "8\xCE\xBCrad",
+    "1.2 gray", "1.23gy", "100 urad", "100 mrad", "100 milli-rad", "100 millirad", "13 erg/g", "1 gray 1 Gy"
+  };
+  for( const std::string str : dosestr )
+  {
+    const double val = PhysicalUnits::stringToAbsorbedDose( str );
+    std::cout << "\t\"" << str << "\" --> " << PhysicalUnits::printToBestAbsorbedDoseUnits(val,4,true)
+              << " and " << PhysicalUnits::printToBestAbsorbedDoseUnits(val,4,false) << std::endl;
+  }
+  */
+  
+  const string regex_str ="\\s*\\+?(\\d+(\\.\\d*)?(?:[Ee][+\\-]?\\d+)?)"
+                            "\\s*(" METRIC_PREFIX_UNITS ")*?"
+                            "\\s*\\-*\\s*"
+                            ABSORBED_DOSE_UNIT_REGEX
+                            "\\s*(\\d.+)?";
+  
+  boost::smatch matches;
+  boost::regex expression( regex_str, boost::regex::ECMAScript|boost::regex::icase );
+
+  if( !boost::regex_match( str, matches, expression ) )
+  {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "'%s' is not an absorbed dose", str.c_str() );
+    cerr << endl << msg << endl;
+    throw std::runtime_error( msg );
+  }//if( we dont have a match )
+
+  //cout << endl << endl;
+  //for( size_t i = 0; i < matches.size(); ++i )
+  //  cerr << "stringToDistance Match " << i << " is " << string( matches[i].first, matches[i].second ) << endl;
+  
+  string floatstr( matches[1].first, matches[1].second );
+  string prefix( matches[3].first, matches[3].second );
+  string unitstr( matches[4].first, matches[4].second );
+  string trailingstr( matches[5].first, matches[5].second );
+  SpecUtils::trim( floatstr );  //These trims may not be necassary, but whatever
+  SpecUtils::trim( prefix );
+  SpecUtils::trim( unitstr );
+  SpecUtils::to_lower_ascii( unitstr );
+  
+  //cout << "\n\"" << str << "\" : {number->" << floatstr << ", prefix->" << prefix
+  //     << ", unit->" << unitstr << ", trailing->" << trailingstr << "}" << endl;
+  
+  double unitval = 0.0;
+  if( unitstr == "gray" || unitstr == "gy" )     unitval = gray;
+  else if( unitstr == "rad" )                    unitval = rad;
+  else if( SpecUtils::contains(unitstr, "erg") ) unitval = gray * 1.0E-04;
+  else
+    throw runtime_error( "Unexpeced absorbed dose unit: '" + unitstr + "'" );
+
+  double dose = unitval * std::stod( floatstr );  //shouldnt ever throw, right?
+  dose *= metrix_prefix_value( prefix );
+  dose *= (gray_definition / gray);
+
+  //if there are characters past what we needed for a match, maybe they are
+  //  another distance string, lets try to add them on
+  if( trailingstr.length() > 2 )
+  {
+    try
+    {
+      dose += stringToAbsorbedDose( trailingstr, gray_definition );
+    }catch(...)
+    {}
+  }//if( string(matches[4]).length() )
+
+  return dose;
+}//double stringToAbsorbedDose( std::string str, double gray_definition );
+
+
+double stringToEquivalentDose( const std::string &str, const double sievert_definition )
+{
+  /*
+   //A poor-persons test for this function:
+   std::cout << "\n\nEquivalent Doses:" << std::endl;
+   const std::vector<std::string> equivdosestr = { "1.2 sv", "1.23 urem", "100 kilo-rem", "1 gigasv",
+     "1gsv", "1.2mrem", "1.2Mrem"
+   };
+   for( const std::string str : equivdosestr )
+   {
+     const double val = PhysicalUnits::stringToEquivalentDose( str );
+     std::cout << "\t\"" << str << "\" --> " << PhysicalUnits::printToBestEquivalentDoseUnits(val,4,true)
+               << " and " << PhysicalUnits::printToBestEquivalentDoseUnits(val,4,false) << std::endl;
+   }
+   */
+  const string regex_str = "\\s*\\+?(\\d+(\\.\\d*)?(?:[Ee][+\\-]?\\d+)?)"
+                             "\\s*(" METRIC_PREFIX_UNITS ")*?"
+                             "\\s*\\-*\\s*"
+                             EQUIVALENT_DOSE_UNIT_REGEX
+                             "\\s*(\\d.+)?";
+  
+  boost::smatch matches;
+  boost::regex expression( regex_str, boost::regex::ECMAScript|boost::regex::icase );
+
+  if( !boost::regex_match( str, matches, expression ) )
+  {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "'%s' is not an equivalent dose", str.c_str() );
+    cerr << endl << msg << endl;
+    throw std::runtime_error( msg );
+  }//if( we dont have a match )
+
+  //cout << endl << endl;
+  //for( size_t i = 0; i < matches.size(); ++i )
+  //  cerr << "stringToDistance Match " << i << " is " << string( matches[i].first, matches[i].second ) << endl;
+  
+  string floatstr( matches[1].first, matches[1].second );
+  string prefix( matches[3].first, matches[3].second );
+  string unitstr( matches[4].first, matches[4].second );
+  string trailingstr( matches[5].first, matches[5].second );
+  SpecUtils::trim( floatstr );  //These trims may not be necassary, but whatever
+  SpecUtils::trim( prefix );
+  SpecUtils::trim( unitstr );
+  SpecUtils::to_lower_ascii( unitstr );
+  
+  //cout << "\n\"" << str << "\" : {number->" << floatstr << ", prefix->" << prefix
+  //     << ", unit->" << unitstr << ", trailing->" << trailingstr << "}" << endl;
+  
+  double unitval = 0.0;
+  if( unitstr == "sievert" || unitstr == "sv" )
+    unitval = sievert;
+  else if( unitstr == "rem" || SpecUtils::contains(unitstr,"entgen") )
+    unitval = rem;
+  else
+    throw runtime_error( "Unexpeced equivalent dose unit: '" + unitstr + "'" );
+
+  double dose = unitval * std::stod( floatstr );  //shouldnt ever throw, right?
+  dose *= metrix_prefix_value( prefix );
+  dose *= (sievert_definition / sievert);
+
+  //if there are characters past what we needed for a match, maybe they are
+  //  another distance string, lets try to add them on
+  if( trailingstr.length() > 2 )
+  {
+    try
+    {
+      dose += stringToEquivalentDose( trailingstr, sievert_definition );
+    }catch(...)
+    {}
+  }//if( string(matches[4]).length() )
+
+  return dose;
+}//double stringToEquivalentDose( std::string str, double gray_definition )
 
 
 const UnitNameValuePair &bestActivityUnit( const double activity,

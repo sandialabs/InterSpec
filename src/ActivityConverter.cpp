@@ -25,6 +25,8 @@
 #include <string>
 #include <iostream>
 
+#include <boost/regex.hpp>
+
 #include <Wt/WText>
 #include <Wt/WBreak>
 #include <Wt/WLabel>
@@ -37,7 +39,7 @@
 #include <Wt/WRegExpValidator>
 
 #include "InterSpec/AuxWindow.h"
-#include "SpecUtils/StringALgo.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ActivityConverter.h"
@@ -45,8 +47,120 @@
 using namespace Wt;
 using namespace std;
 
+namespace
+{
+
+int num_sig_figs( const string &val )
+{
+  boost::smatch mtch;
+  boost::regex expr( PhysicalUnits::sm_positiveDecimalRegex + string(".*"));
+  
+  if( boost::regex_match( val, mtch, expr ) )
+  {
+    assert( mtch.size() == 5 );
+    //cout << "Matching fields: " << endl;
+    //for( size_t i = 0; i < mtch.size(); ++i )
+    //  cout << "\tField " << i << ": " << string( mtch[i].first, mtch[i].second ) << endl;
+    
+    string numberfield( mtch[1].first, mtch[1].second );
+    auto dec_pos = numberfield.find(".");
+    if( dec_pos == string::npos )
+    {
+      while( numberfield.size() && numberfield.back()=='0' )
+        numberfield = numberfield.substr(0,numberfield.size()-1);
+    }
+    
+    int nnum = 0;
+    for( auto ch : numberfield )
+      nnum += isdigit(ch);
+    
+    return std::min( nnum, 2 );
+  }
+  
+  return 3;
+}//num_sig_figs( const string &val )
+
+
+string convertActivity( const string &val )
+{
+  try
+  {
+    const double dbvalue = PhysicalUnits::stringToActivity(val);
+    
+    boost::smatch mtch;
+    boost::regex expr( string("(") + PhysicalUnits::sm_positiveDecimalRegex + string(")" "\\s*([a-zA-Z \\-]+)") );
+
+    bool input_in_bq = false; // input_in_ci = false;
+      
+    if( boost::regex_match( val, mtch, expr ) )
+    {
+      assert( mtch.size() == 7 );
+      //string number = string( mtch[1].first, mtch[1].second );
+      string letters = string( mtch[6].first, mtch[6].second );
+        
+      //PhysicalUnits::stringToActivity() should make sure is either bq or ci
+      input_in_bq = SpecUtils::icontains(letters, "b" );
+      //input_in_ci = SpecUtils::icontains(letters, "c" );
+    }//if( boost::regex_match( val, mtch, expr ) )
+      
+    return PhysicalUnits::printToBestActivityUnits( dbvalue, num_sig_figs(val), input_in_bq );
+  }catch(...)
+  {
+  }
+  
+  return "";
+}//string convertActivity( string val )
+
+
+string convertAbsorbedDose( const string &val )
+{
+  try
+  {
+    const double dbvalue = PhysicalUnits::stringToAbsorbedDose(val);
+    const bool to_gray = (SpecUtils::icontains(val, "rad") || SpecUtils::icontains(val, "erg"));
+    return PhysicalUnits::printToBestAbsorbedDoseUnits( dbvalue, num_sig_figs(val), to_gray );
+  }catch(...)
+  {
+  }
+  
+  return "";
+}//string convertAbsorbedDose( string val )
+
+
+string convertEquivalentDose( const string &val )
+{
+  try
+  {
+    const double dbvalue = PhysicalUnits::stringToEquivalentDose(val);
+    const bool to_sievert = SpecUtils::icontains(val, "rem");
+    return PhysicalUnits::printToBestEquivalentDoseUnits( dbvalue, num_sig_figs(val), to_sievert );
+  }catch(...)
+  {
+  }
+  
+  return "";
+}//string convertEquivalentDose( string val )
+
+string convertDistance( string val )
+{
+  try
+  {
+    const double dbvalue = PhysicalUnits::stringToDistance(val);
+    //const bool to_metric = (SpecUtils::icontains(val, "ft") || SpecUtils::icontains(val, "feet")
+    //                        || SpecUtils::icontains(val, "in") || SpecUtils::icontains(val, "'")
+    //                        || SpecUtils::icontains(val, "\"") );
+    return PhysicalUnits::printToBestLengthUnits( dbvalue, num_sig_figs(val) );
+  }catch(...)
+  {
+  }
+  
+  return "";
+}//string convertDistance( string val )
+}//namespace
+
+
 ActivityConverter::ActivityConverter()
-  : AuxWindow( "Activity Converter",
+  : AuxWindow( "Units Converter",
                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
                | AuxWindowProperties::DisableCollapse
                | AuxWindowProperties::SetCloseable) ),
@@ -56,26 +170,27 @@ ActivityConverter::ActivityConverter()
 {
   addStyleClass( "ActivityConverter" );
   
-  WText *message = NULL;
   WGridLayout *layout = stretcher();
   setWidth(400);
-  const char *topMessage = "Convert between curie and becquerel (ie. 5 MBq, 2 nCi)";
-  message = new WText( topMessage, Wt::XHTMLUnsafeText);
+  const char *topMessage = "Convert between radiation related units<br />"
+                           "Ex: 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8feet, 9milli-sievert";
+  WText *message = new WText( topMessage, Wt::XHTMLUnsafeText);
 
   layout->addWidget(message,0,0,1,3);
 
-  WLabel *label = new WLabel( "From: ");
+  WLabel *label = new WLabel( "Input: ");
   layout->addWidget(label,1,0);
   label->addStyleClass( "ActivityConverterLabel" );
   
-  m_input = new WLineEdit(  );
-    layout->addWidget(m_input,1,1);
+  m_input = new WLineEdit();
+  layout->addWidget(m_input,1,1);
 
-  const char * const bqexp = "^(\\s*\\+?((\\d+(\\.\\d*)?)|(\\.\\d*))"
-    "(?:[Ee][+\\-]?\\d+)?\\s*"
-    "(b|bq|Bq|k|kB|kBq|M|MB|MBq|G|GB|GBq|T|TB|TBq|c|ci|m|mC|mCi|m|mi|mic|micr|micro|microC|microCi|n|nC|nCi))+\\s*";
-    
-  WRegExpValidator *validator = new WRegExpValidator( bqexp, this );
+  string regex = string("((") + PhysicalUnits::sm_absorbedDoseRegex
+                      + ")|(" + PhysicalUnits::sm_activityRegex
+                      + ")|(" + PhysicalUnits::sm_equivalentDoseRegex
+                      + ")|(" + PhysicalUnits::sm_distanceRegex
+                      + "))";
+  WRegExpValidator *validator = new WRegExpValidator( regex, this );
   validator->setFlags( Wt::MatchCaseInsensitive );
   m_input->setValidator(validator);
   
@@ -83,25 +198,27 @@ ActivityConverter::ActivityConverter()
   m_input->setTextSize( 15 );
   m_input->setWidth( WLength(15.0,WLength::FontEm) );
   m_input->setText("5 MBq");
-  m_input->changed().connect( this, &ActivityConverter::convert );
+  //m_input->changed().connect( this, &ActivityConverter::convert ); //the signal is only emitted when the focus is lost
   m_input->blurred().connect( this, &ActivityConverter::convert );
-  m_input->enterPressed().connect( this, &ActivityConverter::convert );
+  m_input->keyWentUp().connect( this, &ActivityConverter::convert );
+  //m_input->enterPressed().connect( this, &ActivityConverter::convert );
   
-  WPushButton *convertButton = new WPushButton("Convert");
-  layout->addWidget(convertButton,1,2);
-  convertButton->clicked().connect( this, &ActivityConverter::convert );
+  //WPushButton *convertButton = new WPushButton("Convert");
+  //layout->addWidget(convertButton,1,2);
+  //convertButton->clicked().connect( this, &ActivityConverter::convert );
     
-  label = new WLabel( "To: " );
+  label = new WLabel( "Output: " );
   layout->addWidget(label,2,0);
   label->addStyleClass( "ActivityConverterLabel" );
   
   m_output = new WLineEdit( );
-  layout->addWidget(m_output,2,1,1,2);
+  //layout->addWidget(m_output,2,1,1,2);
+  layout->addWidget( m_output, 2, 1 );
   m_output->addStyleClass( "ActivityConverterInput" );
   m_output->setTextSize( 15 );
   m_output->setWidth( WLength(15.0,WLength::FontEm) );
   m_output->setEnabled(false);
-  m_output->setText("135.14 uCi");
+  //m_output->setText("135.14 uCi");
   
   m_message = new WText( "&nbsp", XHTMLUnsafeText );
   m_message->setHeight(WLength(50,WLength::Pixel));
@@ -117,6 +234,8 @@ ActivityConverter::ActivityConverter()
 
   rejectWhenEscapePressed();
   finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+  
+  convert();
   
   show();
   centerWindow();
@@ -141,30 +260,65 @@ ActivityConverter::~ActivityConverter()
 
 void ActivityConverter::convert()
 {
-  try {
-    Wt::WString value = m_input->text();
-    std::string val = value.toUTF8();
+  try
+  {
+    switch( m_input->validate() )
+    {
+      case Wt::WValidator::Invalid:
+        throw std::runtime_error( "Invalid input" );
+        
+      case Wt::WValidator::InvalidEmpty:
+        throw runtime_error( "" );
+        
+      case Wt::WValidator::Valid:
+        break;
+    }//switch( m_input->validate() )
+    
+    std::string val = m_input->text().toUTF8();
     SpecUtils::trim( val );
-    double dbvalue = PhysicalUnits::stringToActivity(val);
-    bool curie = false;
-    if (val.find("Ci")!= std::string::npos || val.find("ci")!= std::string::npos) {
-        curie=false;
-    } else if (val.find("Bq")!= std::string::npos || val.find("bq")!= std::string::npos) {
-        curie=true;
-    } else {
-      //Invalid 
-      throw val;
-    }
-    const string ans = PhysicalUnits::printToBestActivityUnits( dbvalue, 2, curie, PhysicalUnits::becquerel );
-    m_output->setText(Wt::WString::fromUTF8(ans));
+    
+    if( val.empty() )
+      throw runtime_error( "Empty input" );
+    
+    string ans = convertActivity( val );
+    
+    if( ans.empty() )
+      ans = convertAbsorbedDose( val );
+    
+    if( ans.empty() )
+      ans = convertEquivalentDose( val );
+    
+    if( ans.empty() )
+      ans = convertDistance( val );
+    
+    if( ans.empty() )
+    {
+      boost::smatch mtch;
+      boost::regex expr( PhysicalUnits::sm_positiveDecimalRegex );
+      if( !boost::regex_match( val, mtch, expr ) )
+        throw runtime_error( "Couldnt determine units" );
+      throw runtime_error( "Couldnt convert number" );
+    }//if( ans.empty() )
+    
+    m_output->setText( Wt::WString::fromUTF8(ans) );
+    
     //If weve made it this far, we have valid input
     m_message->removeStyleClass("line-above");
     m_message->setText( "&nbsp" );
     m_message->hide();
-  } catch (...) {
-    m_message->setText("Invalid value.  Allowed units: bq, kBq, MBq, GBq, TBq, ci, mCi, microCi, nCi" );
+  }catch( std::exception &e )
+  {
+    string errmsg = e.what();
+    if( !errmsg.empty() )
+      errmsg = "Error: " + errmsg + ".<br />";
+    errmsg += "Allowed activity units: bq, becquerel, ci, curie, gray, Gy, rad, sievert, Sv, rem,"
+              " roentgen, m, meter, ft, inch, and in.<br />"
+              "Allowed (optional) prefixes: n, nano, u, \xc2\xb5, micro, m, milli,"
+              " k, killo, M, mega, G, Giga, T, and Tera";
+ 
+    m_output->setText( "" );
+    m_message->setText( WString::fromUTF8(errmsg) );
     m_message->addStyleClass("line-above");
     m_message->show();
-  }
-
-}
+  }//try / catch
+}//void ActivityConverter::convert()
