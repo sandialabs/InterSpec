@@ -1057,17 +1057,18 @@ std::shared_ptr<Wt::WSvgImage> SpectrumViewerTester::renderChartToSvg( double lo
 
   if( axisH && (fabs(upperx-lowx) < 0.000001) )
   {
-    const int nbin = axisH->GetNbinsX();
-    lowx = axisH->GetBinLowEdge(1);
-    upperx = axisH->GetBinLowEdge(nbin) + axisH->GetBinWidth(nbin);
+    lowx = axisH->gamma_energy_min();
+    upperx = axisH->gamma_energy_max();
   }//if( lowx == upperx )
   
   chart->setXAxisRange( lowx, upperx );
   
   if( axisH )
   {
-    const int displayednbin = axisH->FindFixBin( upperx )
-                              - axisH->FindFixBin( lowx );
+    assert( axisH->find_gamma_channel(upperx) >= axisH->find_gamma_channel(lowx) );
+    
+    const size_t displayednbin = axisH->find_gamma_channel( upperx )
+                              - axisH->find_gamma_channel( lowx );
     const int width = static_cast<int>( img->width().toPixels() )
                       - chart->plotAreaPadding(Left)
                       - chart->plotAreaPadding(Right);
@@ -2153,9 +2154,8 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
       
       if( axisH )
       {
-        const int nbin = axisH->GetNbinsX();
-        const double chartmin = (double) axisH->GetBinLowEdge(1);
-        const double chartmax = (double) (axisH->GetBinLowEdge(nbin) + axisH->GetBinWidth(nbin));
+        const double chartmin = axisH->gamma_energy_min();
+        const double chartmax = axisH->gamma_energy_max();
         
         minx = std::max( minx, chartmin );
         maxx = std::min( maxx, chartmax );

@@ -458,14 +458,13 @@ void PeakInfoDisplay::createNewPeak()
   
   shared_ptr<PeakDef> candidatePeak = make_shared<PeakDef>(initialEnergy,initialFWHM/2.634,initialArea);
   
-  int roiLowBin, roiHighBin;
-  estimatePeakFitRange( *candidatePeak, meas, roiLowBin, roiHighBin );
+  size_t roi_lower_channel, roi_upper_channel;
+  estimatePeakFitRange( *candidatePeak, meas, roi_lower_channel, roi_upper_channel );
   //I think we are garunteed the bins to be in range, but we'll enforce this JIC
-  const size_t roiLowerChannel = static_cast<size_t>( std::max(roiLowBin,1) );
-  const size_t roiUpperChannel = std::min( static_cast<size_t>(roiHighBin), meas->num_gamma_channels()-1 );
+  roi_upper_channel = std::min( roi_upper_channel, meas->num_gamma_channels()-1 );
   
-  const double initialRoiLower = meas->gamma_channel_lower( roiLowerChannel );
-  const double initialRoiUpper = meas->gamma_channel_upper( roiUpperChannel );
+  const double initialRoiLower = meas->gamma_channel_lower( roi_lower_channel );
+  const double initialRoiUpper = meas->gamma_channel_upper( roi_upper_channel );
   candidatePeak->continuum()->setRange( initialRoiLower, initialRoiUpper );
   
   const float minEnergy = meas->gamma_channel_lower(0);

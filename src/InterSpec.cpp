@@ -1691,16 +1691,16 @@ void InterSpec::addPeakFromRightClick()
   
   const double x0 = peak->lowerX();
   const double x1 = peak->upperX();
-  const int lowbin = dataH->FindFixBin(x0);
-  const int highbin = dataH->FindFixBin(x1);
-  const int nbin = highbin - lowbin;
+  const size_t lower_channel = dataH->find_gamma_channel( x0 );
+  const size_t upper_channel = dataH->find_gamma_channel( x1 );
+  const size_t nbin = ((upper_channel > lower_channel) ? (upper_channel-lower_channel) : size_t(0));
   
   double startingChi2, fitChi2;
   
   {//begin codeblock to evaluate startingChi2
     MultiPeakFitChi2Fcn chi2fcn( origRoiPeaks.size(), dataH,
                                 peak->continuum()->type(),
-                                lowbin, highbin );
+                                lower_channel, upper_channel );
     startingChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), origRoiPeaks );
   }//end codeblock to evaluate startingChi2
   
@@ -1758,7 +1758,7 @@ void InterSpec::addPeakFromRightClick()
     
     MultiPeakFitChi2Fcn chi2fcn( newRoiPeaks.size(), dataH,
                                  peak->continuum()->type(),
-                                 lowbin, highbin );
+                                 lower_channel, upper_channel );
     fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
     
     if( fitChi2 < startingChi2 )
@@ -9570,9 +9570,10 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
     //threads.create_thread( fctn );
   }//for( loop over methods )
   
-  const int lowbin = dataH->FindFixBin(x0);
-  const int highbin = dataH->FindFixBin(x1);
-  const int nbin = highbin - lowbin;
+  const size_t lower_channel = dataH->find_gamma_channel(x0);
+  const size_t upper_channel = dataH->find_gamma_channel(x1);
+  const size nchannel = 1 + ((upper_channel > lower_channel)
+                             ? (upper_channel - lower_channel) : size_t(0));
   
   for( auto &thread : thread_grp )
     if( thread.joinable() )
@@ -9584,7 +9585,7 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
       method = MultiPeakInitialGuesMethod(method+1) )
   {
     cerr << "Method " << method << " yeilded chi2=" << chi2[method]
-         << " (" << (chi2[method]/nbin) << " chi2/bin)" << endl;
+         << " (" << (chi2[method]/nchannel) << " chi2/bin)" << endl;
     
     if( bestchi2 < 0 || chi2[method] < chi2[bestchi2] )
       bestchi2 = method;
