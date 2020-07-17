@@ -155,9 +155,8 @@ void GammaCountDialog::init()
     hist = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   if( hist )
   {
-    const int nbin = hist->GetNbinsX();
-    const double xlow = std::min( hist->GetBinLowEdge(1)-10.0, 0.0 );
-    const double xhigh = hist->GetBinLowEdge( nbin ) + hist->GetBinWidth( nbin );
+    const double xlow = std::min( hist->gamma_energy_min() -10.0, 0.0 );
+    const double xhigh = hist->gamma_energy_max();
     m_lowerEnergy->setRange( xlow, 2.0*xhigh );
     m_upperEnergy->setRange( xlow, 2.0*xhigh );
   }//if( hist )

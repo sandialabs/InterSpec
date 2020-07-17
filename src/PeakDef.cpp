@@ -825,9 +825,9 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
     //      //now check from 11.75 to to 16.5 sigma, to see if we should include down
     //      //  to there.
     //      const int start = good_cont_bin;
-    //      const int end = dataH->FindFixBin( mean + direction*16.5*sigma );
+    //      const size_t end_channel = dataH->find_gamma_channel( mean + direction*16.5*sigma );
     //      isNotDecreasing = isStatisticallyGreaterOrEqual( good_cont_bin, lastbin,
-    //                                                      start, end, dataH, 2.0 );
+    //                                                      start, end_channel, dataH, 2.0 );
     //      if( !isNotDecreasing )
     //        lastbin = end;
     //    }
@@ -895,20 +895,21 @@ bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
 
 
 void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH,
-                           int &xlowbin, int &xhighbin )
+                           size_t &lower_channel, size_t &upper_channel )
 {
-  if( !dataH  )
+  const size_t nchannel = dataH ? dataH->num_gamma_channels() : size_t(0);
+  if( !nchannel )
     return;
   
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
   double lowxrange  = continuum->lowerEnergy();
   double highxrange = continuum->upperEnergy();
   
-  const bool definedRange = (lowxrange!=highxrange);
+  const bool definedRange = (lowxrange != highxrange);
   if( definedRange )
   {
-    xlowbin  = max( dataH->FindFixBin( lowxrange ), 1 );
-    xhighbin = min(dataH->FindFixBin( highxrange-0.00001 ), dataH->GetNbinsX());
+    lower_channel  = max( dataH->find_gamma_channel(lowxrange), size_t(0) );
+    upper_channel = min( dataH->find_gamma_channel(highxrange-0.00001), nchannel-1 );
     return;
   }//if( definedRange )
   
@@ -921,8 +922,8 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Meas
     lowxrange  = mean - 4.0*sigma;
     highxrange = mean + 4.0*sigma;
     
-    xlowbin  = max( dataH->FindFixBin( lowxrange ), 1 );
-    xhighbin = min(dataH->FindFixBin( highxrange ), dataH->GetNbinsX());
+    lower_channel = dataH->find_gamma_channel(lowxrange);
+    upper_channel = dataH->find_gamma_channel(highxrange);
     return;
   }//if( peak.m_offsetType == PeakDef::External )
   
@@ -930,15 +931,12 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Meas
   const bool polyContinuum = continuum->isPolynomial();
   if( polyContinuum )
   {
-    const size_t lowerchannel = findROILimit( peak, dataH, false );
-    const size_t upperchannel = findROILimit( peak, dataH, true );
-    
-    xlowbin  = (int)lowerchannel + 1;
-    xhighbin = (int)upperchannel + 1;
+    lower_channel = findROILimit( peak, dataH, false );
+    upper_channel = findROILimit( peak, dataH, true );
   }else
   {
-    xlowbin = max( dataH->FindFixBin( mean - 4.0*sigma ), 1 );
-    xhighbin = min( dataH->FindFixBin( mean + 4.0*sigma ), dataH->GetNbinsX() );
+    lower_channel = dataH->find_gamma_channel( mean - 4.0*sigma );
+    upper_channel = dataH->find_gamma_channel( mean + 4.0*sigma );
   }
   
   if( peak.skewType() == PeakDef::LandauSkew )
@@ -948,18 +946,20 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Meas
     cout << "xlow was " << lowxrange << " now is ";
     lowxrange = min( lowxrange, mean-landau_mode+(0.22278*landau_sigma) - 10.0*landau_sigma );
     cout << lowxrange << endl;
-    xlowbin = max( dataH->FindFixBin( lowxrange ), 1 );
-    xhighbin = min( dataH->FindFixBin( highxrange ), dataH->GetNbinsX() );
+    lower_channel = dataH->find_gamma_channel( lowxrange );
+    upper_channel = dataH->find_gamma_channel( highxrange );
   }//if( we have a landau tail )
   
+  if( lower_channel > upper_channel )
+      std::swap( lower_channel, upper_channel );
+      
   //Lets avoid some wierd going to too small of peak widths
-  const int numfitbin = xhighbin - xlowbin;
+  const size_t numfitbin = upper_channel - lower_channel;
   if( numfitbin <= 9 )  //9 chosen arbitrarily
   {
-    xlowbin -= (10-numfitbin)/2;
-    xhighbin += (10-numfitbin)/2;
+    lower_channel -= (10-numfitbin)/2;
+    upper_channel += (10-numfitbin)/2;
   }//if( numfitbin <= 9 )
-  
 }//void setPeakXLimitsFromData( PeakDef &peak, const std::shared_ptr<const Measurement> &dataH )
 
 

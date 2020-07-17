@@ -2720,17 +2720,18 @@ void SpectrumChart::handleDrag( int _x0, int _y0, int _x1, int _y1,
         //  XXX - This method of controlling this could use improvment as well
         //        as some kind of notification to the user upon failure
         //
-        const int binX0 = xHist->FindFixBin( (float)modelPoint0.x() );
-        const int binX1 = xHist->FindFixBin( (float)modelPoint1.x() );
-        const int dbin = binX1-binX0;
+        
+        const size_t channel_X0 = xHist->find_gamma_channel( (float)modelPoint0.x() );
+        const size_t channel_X1 = xHist->find_gamma_channel( (float)modelPoint1.x() );
+        const size_t dbin = ((channel_X1 > channel_X0) ? (channel_X1 - channel_X0) : size_t(0));
         if( dbin > 3 )
         {
           setXAxisRange( modelPoint0.x(), modelPoint1.x() );
         }else if( dbin > 0 )
         {
           const double delta = modelPoint1.x() - modelPoint0.x();
-          const double mindelta = ( xHist->GetBinWidth( binX0 )
-                                    + xHist->GetBinWidth( binX1 ) ) / 2.0;
+          const double mindelta = 0.5*(xHist->gamma_channel_width(channel_X0)
+                                       + xHist->gamma_channel_width(channel_X1));
           if( delta > mindelta )
             setXAxisRange( modelPoint0.x(), modelPoint1.x() );
         }//if( binX0 != binX1 )
@@ -2849,10 +2850,9 @@ void SpectrumChart::handleDrag( int _x0, int _y0, int _x1, int _y1,
           SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
           std::shared_ptr<Measurement> axisH = (theModel ? theModel->histUsedForXAxis()
                                        : std::shared_ptr<Measurement>());
-          const double hist_min = (axisH ? axisH->GetBinLowEdge(1) : 0.0);
-          const int nbin = (axisH ? axisH->GetNbinsX() : 0);
-          const double hist_max = (axisH ? axisH->GetBinLowEdge(nbin)
-                                           + axisH->GetBinWidth(nbin) : 3000.0);
+          const bool hasSpectrum = (axisH && axisH->num_gamma_channels() > 3);
+          const double hist_min = (hasSpectrum ? axisH->gamma_energy_min() : 0.0f );
+          const double hist_max = (hasSpectrum ? axisH->gamma_energy_max() : 3000.0f);
 
           const double old_xmin = axis(Chart::XAxis).minimum();
           const double old_xmax = axis(Chart::XAxis).maximum();
@@ -2909,24 +2909,24 @@ void SpectrumChart::handleAltDrag( const double dx )
   {
     std::shared_ptr<const Measurement> axisH = theModel->histUsedForXAxis();
 
-    if( axisH )
+    if( axisH
+        && (axisH->energy_calibration_model() != SpecUtils::EnergyCalType::InvalidEquationType) )
     {
       if( dx < 0 )
       {
-        const int bin = axisH->GetNbinsX();
-        const double max = axisH->GetBinLowEdge(bin) + axisH->GetBinWidth(bin);
-        if( newmax > max )
+        const double max_energy = axisH->gamma_energy_max();
+        if( newmax > max_energy )
         {
-          newmax = max;
-          newmin = max - (oldmax-oldmin);
+          newmax = max_energy;
+          newmin = max_energy - (oldmax-oldmin);
         }//if( newmax > max )
       }else
       {
-        const double min = axisH->GetBinLowEdge(1);
-        if( newmin < min )
+        const double min_energy = axisH->gamma_energy_min();
+        if( newmin < min_energy )
         {
-          newmin = min;
-          newmax = min + (oldmax-oldmin);
+          newmin = min_energy;
+          newmax = min_energy + (oldmax-oldmin);
         }//if( newmin < min )
       }//if( dragging to the left ) / else (dragging to the right )
     }//if( axisH )
@@ -4203,11 +4203,10 @@ bool SpectrumChart::gausPeakDrawRange( int &minrow, int &maxrow,
   std::shared_ptr<const Measurement> dataH = th1Model->getData();
   if( dataH )
   {
-    int xlowbin(0), xhighbin(0);
-    estimatePeakFitRange( peak, dataH, xlowbin, xhighbin );
-    minx = dataH->GetBinLowEdge( xlowbin ) + 0.001;
-    maxx = dataH->GetBinLowEdge( xhighbin )
-           + dataH->GetBinWidth( xhighbin ) - 0.0001;
+    size_t lower_channel, upper_channel;
+    estimatePeakFitRange( peak, dataH, lower_channel, upper_channel );
+    minx = dataH->gamma_channel_lower(lower_channel) + 0.001;
+    maxx = dataH->gamma_channel_upper(upper_channel);
   }//if( dataH )
 
   

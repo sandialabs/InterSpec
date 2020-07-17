@@ -282,7 +282,7 @@ bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
 //  this as the limit.
 //Does nothing if the histogram is null.
 void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &dataH,
-                          int &xlowbin, int &xhighbin );
+                          size_t &lower_channel, size_t &upper_channel );
 
 
 class PeakDef

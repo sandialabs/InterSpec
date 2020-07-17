@@ -845,7 +845,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   PeakContinuum::eqn_from_offsets( start_channel, end_channel, start_range,
                                   dataH, nSideBinsToAverage, p1, p0 );
   
-  MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel+1, end_channel+1 );
+  MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel, end_channel );
   
   //chi2fcn.set_reldiff_punish_start( 2.35482 );
   
@@ -1086,7 +1086,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
       inputPrams.Add( "P3",  0.0, 0.25 );
   }//if( intputSharesContinuum ) / else
   
-  const bool isHpge = (dataH->GetNbinsX()>4094);
+  const bool isHpge = (dataH->num_gamma_channels() > 4094);
   
   for( size_t i = 0; i < inpeaks.size(); ++i )
   {
@@ -1213,7 +1213,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   for( size_t i = 0; i < answer.size(); ++i )
     intputSharesContinuum &= (answer[i]->continuum()==answer[0]->continuum());
   
-  const size_t roiNumChan = end_channel - start_channel;
+  const size_t roiNumChan = (end_channel > start_channel) ? end_channel - start_channel : size_t(0);
   PeakContinuum::OffsetType offsetType = PeakContinuum::Linear;
   if( intputSharesContinuum )
     offsetType = answer[0]->continuum()->type();
@@ -1222,7 +1222,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   else if( nPeaks >= 4 || roiNumChan >= 40 )
     offsetType = PeakContinuum::Cubic;
   
-  //MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel+1, end_channel+1 );
+  //MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel, end_channel );
   //chi2fcn.set_reldiff_punish_start( 2.35482 );
   
   LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, x0, x1 );
@@ -1635,17 +1635,20 @@ std::shared_ptr<Measurement> estimateContinuum( std::shared_ptr<const Measuremen
   const bool compton     = false;
   const bool smoothing   = false;
   const int direction    = kBackIncreasingWindow; //kBackDecreasingWindow
-  const size_t first = 0, last = data->num_gamma_channels();
-  const int size = last-first+1;
-  auto source = std::make_shared<vector<float>>(size) ;
   
-  for( int i = 0; i < size; ++i )
-    source->operator[](i) = data->GetBinContent(i + first);
+  const size_t nchannels = data->num_gamma_channels();
+  auto source = std::make_shared<vector<float>>( nchannels ) ;
+  
+  for( size_t i = 0; i < nchannels; ++i )
+    (*source)[i] = data->gamma_channel_content(i);
 
-  calculateContinuum( &(source->operator[](0)), size, numIteration, direction,
+  calculateContinuum( &(source->operator[](0)), nchannels, numIteration, direction,
                      filterOrder, smoothing, smoothWindow, compton );
-  std::shared_ptr<Measurement> background( new Measurement() );
+  auto background = make_shared<Measurement>();
   *background = *data;
+  
+  assert( background->num_gamma_channels() == nchannels );
+  
   background->set_gamma_counts( source, data->live_time(), data->real_time() );
   
   return background;
@@ -1711,29 +1714,29 @@ double chi2_for_region( const PeakShrdVec &peaks,
       }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
     }else
     {
-      map<int,double> predicted;
+      map<size_t,double> predicted;
       
       for( const PeakShrdPtr &peak : peaks )
       {
-        int xlowbin, xhighbin;
-        estimatePeakFitRange( *peak, data, xlowbin, xhighbin );
-        for( int bin = xlowbin; bin <= xhighbin; ++bin )
+        size_t lower_channel, upper_channel;
+        estimatePeakFitRange( *peak, data, lower_channel, upper_channel );
+        for( size_t channel = lower_channel; channel <= upper_channel; ++channel )
         {
-          if( !predicted.count(bin) )
-            predicted[bin] = 0.0;
-          const double xbinlow = data->GetBinLowEdge(bin);
-          const double xbinup = xbinlow + data->GetBinWidth(bin);
+          if( !predicted.count(channel) )
+            predicted[channel] = 0.0;
+          const double xbinlow = data->gamma_channel_lower(channel);
+          const double xbinup = data->gamma_channel_upper(channel);
           const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
-          predicted[bin] += ncontinuum + peak->gauss_integral( xbinlow, xbinup );
+          predicted[channel] += ncontinuum + peak->gauss_integral( xbinlow, xbinup );
           if( peak->skewType() == PeakDef::LandauSkew )
-            predicted[bin] += peak->skew_integral( xbinlow, xbinup );
+            predicted[channel] += peak->skew_integral( xbinlow, xbinup );
         }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
       }//for( const PeakShrdPtr &peak : peaks )
       
-      for( map<int,double>::iterator i = predicted.begin(); i != predicted.end(); ++i )
+      for( map<size_t,double>::iterator i = predicted.begin(); i != predicted.end(); ++i )
       {
         const double peakarea = i->second;
-        const double ndata = data->GetBinContent( i->first );
+        const double ndata = data->gamma_channel_content( i->first );
         const double uncert = ndata > 0.0 ? sqrt(ndata) : 1.0;
         const double chi = (ndata-peakarea)/uncert;
         chi2 += chi*chi;
@@ -1771,8 +1774,8 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     
     LinearProblemSubSolveChi2Fcn chi2Fcn( inpeaks, dataH, origCont->type(), lx, ux );
     
-    const int midbin = dataH->FindFixBin( lx + 0.5*range );
-    double minsigma = dataH->GetBinWidth( midbin );
+    const int mid_channel = dataH->find_gamma_channel( lx + 0.5*range );
+    double minsigma = dataH->gamma_channel_width( mid_channel );
     if( detector && detector->hasResolutionInfo() )
       minsigma = 0.75*detector->peakResolutionSigma( origCont->lowerEnergy() );
     
@@ -1850,11 +1853,11 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     
     //now we need to go through and make sure the peaks we're adding are both
     //  significant, and improve the chi2/dof from before the fit.
-    const int lowBin = dataH->FindFixBin( lx );
-    const int upBin = dataH->FindFixBin( ux );
-    const int nbin = upBin - lowBin;
-    const double prechi2Dof = chi2_for_region( inpeaks, dataH, lowBin, upBin ) / nbin;
-    const double postchi2Dof = chi2_for_region( answer, dataH, lowBin, upBin ) / nbin;
+    const size_t lower_channel = dataH->find_gamma_channel( lx );
+    const size_t upper_channel = dataH->find_gamma_channel( ux );
+    const size_t nbin = (upper_channel > lower_channel) ? (upper_channel - lower_channel) : size_t(0);
+    const double prechi2Dof = chi2_for_region( inpeaks, dataH, lower_channel, upper_channel ) / nbin;
+    const double postchi2Dof = chi2_for_region( answer, dataH, lower_channel, upper_channel ) / nbin;
     
     if( ntimesmessages++ < 4 )
     {
@@ -5472,7 +5475,6 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     //  ignore it or throw an exception.
     
     double lowx( 0.0 ), highx( 0.0 );
-    int lowbin(0), highbin(0);
     
     {
       const PeakDef &lowgaus = near_peaks.front();
@@ -5480,8 +5482,6 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
       double dummy = 0.0;
       findROIEnergyLimits( lowx, dummy, lowgaus, data );
       findROIEnergyLimits( dummy, highx, highgaus, data );
-      lowbin   = data->FindFixBin( lowx );
-      highbin  = data->FindFixBin( highx );
     }
     
     const int npeaks = static_cast<int>( near_peaks.size() + fixedpeaks.size() );
@@ -6365,7 +6365,7 @@ bool chi2_significance_test( PeakDef peak,
                 
                 PeakDef peak( mean, sigma, amplitude );
                 
-                size_t lowerbin, upperbin;
+                size_t lower_channel, upper_channel;
                 double lowerEnengy = -999.9, upperEnergy = -999.9;
                 
                 //Set the ROI width here according to the second derivative.
@@ -6385,7 +6385,7 @@ bool chi2_significance_test( PeakDef peak,
                   while( j > 0 && second_deriv[j] > 0.0 )
                     --j;
                   
-                  lowerbin = ((i + j) / 2) + ((i+j)%2);
+                  lower_channel = ((i + j) / 2) + ((i+j)%2);
                   
                   i = secondzero+1;
                   while( i < nchannel && second_deriv[i] > 0.0 )
@@ -6395,9 +6395,9 @@ bool chi2_significance_test( PeakDef peak,
                   while( i < nchannel && second_deriv[i] < 0.0 )
                     ++i;
                   
-                  upperbin = i-1;
-                  lowerEnengy = 0.5*(energies[lowerbin] + energies[lowerbin+1]);
-                  upperEnergy = 0.5*(energies[upperbin] + energies[upperbin+1]);
+                  upper_channel = i-1;
+                  lowerEnengy = 0.5*(energies[lower_channel] + energies[lower_channel+1]);
+                  upperEnergy = 0.5*(energies[upper_channel] + energies[upper_channel+1]);
                 }else
                 {
                   /*
@@ -6412,8 +6412,8 @@ bool chi2_significance_test( PeakDef peak,
                    */
                   
                   findROIEnergyLimits( lowerEnengy, upperEnergy, peak, m_meas );
-                  lowerbin = m_meas->FindFixBin( lowerEnengy );
-                  upperbin = m_meas->FindFixBin( upperEnergy );
+                  lower_channel = m_meas->find_gamma_channel( lowerEnengy );
+                  upper_channel = m_meas->find_gamma_channel( upperEnergy );
                 }//if( highres ) / else
                 
                 //Clamp the ROI to not get riducuolouse
@@ -6425,7 +6425,8 @@ bool chi2_significance_test( PeakDef peak,
                 //      continuum->calc_linear_continuum_eqn( dataH, lowerEnengy, upperEnergy, 1 );
                 
                 double data_area = 0.0;
-                for( size_t i = lowerbin; i <= upperbin; ++i )
+                assert( upper_channel < channel_counts.size() );
+                for( size_t i = lower_channel; i <= upper_channel; ++i )
                   data_area += channel_counts[i];
                 
                 double est_sigma = sqrt( std::max(data_area,1.0) );
@@ -6740,7 +6741,8 @@ bool chi2_significance_test( PeakDef peak,
                 sigma += (pars[i] * std::pow( energy, static_cast<double>(i) ));
             }
             
-            sigma = max( sigma, (double)m_meas->GetBinWidth( m_meas->FindFixBin(energy) ) );
+            const size_t channel = m_meas->find_gamma_channel(energy);
+            sigma = max( sigma, (double)m_meas->gamma_channel_width(channel) );
             
             return sigma;
           }//double peak_sigma(...)
@@ -6932,11 +6934,11 @@ bool chi2_significance_test( PeakDef peak,
               for( const float *x = x_start; x != x_end; ++x )
                 datasum += *x;
               
-              const int lowerbin = m_meas->FindFixBin( *x_start );
-              const int upperbin = lowerbin + nregionbin;
+              const size_t lower_channel = m_meas->find_gamma_channel( *x_start );
+              const size_t upper_channel = lowerbin + nregionbin;
               const int npeak = static_cast<int>( means.size() );
               const PeakContinuum::OffsetType type = cont->type();
-              MultiPeakFitChi2Fcn chifcn( npeak, m_meas, type, lowerbin, upperbin );
+              MultiPeakFitChi2Fcn chifcn( npeak, m_meas, type, lower_channel, upper_channel );
               
               
               ROOT::Minuit2::MnUserParameters inputPrams;
@@ -7539,7 +7541,8 @@ bool chi2_significance_test( PeakDef peak,
               {
                 
                 deltae = 0.25*chi2fcn.peak_sigma(energy,rescoef);
-                const float binwidth = meas->GetBinWidth( meas->FindFixBin(energy) );
+                const size_t channel = meas->find_gamma_channel(energy);
+                const float binwidth = meas->gamma_channel_width(channel);
                 if( deltae < binwidth )
                   deltae = 1.5*binwidth;
                 

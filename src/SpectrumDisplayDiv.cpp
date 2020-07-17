@@ -724,13 +724,13 @@ void SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
                         - m_chart->plotAreaPadding(Left)
                         - m_chart->plotAreaPadding(Right);
       
-      float nbin = static_cast<float>( data_hist->GetNbinsX() );
+      float nbin = static_cast<float>( data_hist->num_gamma_channels() );
       if( keep_curent_xrange )
       {
         const float lowerx = static_cast<float>( m_chart->axis(Chart::XAxis).minimum() );
         const float upperx = static_cast<float>( m_chart->axis(Chart::XAxis).maximum() );
         const size_t lowerbin = data_hist->find_gamma_channel( lowerx );
-		const size_t upperbin = data_hist->find_gamma_channel( upperx );
+		    const size_t upperbin = data_hist->find_gamma_channel( upperx );
         nbin = static_cast<float>(upperbin - lowerbin);
       }//if( keep_curent_xrange )
       

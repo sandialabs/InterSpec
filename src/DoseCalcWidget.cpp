@@ -83,6 +83,8 @@
 using namespace Wt;
 using namespace std;
 
+#define MU_CHARACTER "\xCE\xBC"
+
 namespace
 {
   void right_select_item( WMenu *menu, WMenuItem *item )
@@ -1853,12 +1855,16 @@ void DoseCalcWidget::updateStayTime()
     map<double,pair<string,string> > ref_doses;
     
     using PhysicalUnits::rem;
+    
+    //https://en.wikipedia.org/wiki/Banana_equivalent_dose
+    //ref_doses[0.000010*rem]  = make_pair( "10 " MU_CHARACTER "rem", "Eating one banana" );
+    
     //http://www.nrc.gov/about-nrc/radiation/around-us/doses-daily-lives.html
     ref_doses[0.0015*rem] = make_pair( "1.5 mrem", "Dental X-Ray" );
     //Flight from NY to LA 2 to 5 mrem
     //Chest xray 10 mrem
     ref_doses[0.620*rem]  = make_pair( "620 mrem", "Typ. Yearly Background" );
-    
+  
     //National Council on Radiation Protection (NCRP) dose guidlines for civilian radiation workers  (wcjohns did not verify)
     ref_doses[5.0*rem]    = make_pair( "5 rem",    "Annual Occ. Limit" );
     ref_doses[10.0*rem]   = make_pair( "10 rem",   "Save Valuable Property" );

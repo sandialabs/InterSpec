@@ -1884,8 +1884,8 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       
       pool.join();
       
-      const auto stop_cpu_time = SpecUtils::get_cpu_time();
-      const auto stop_wall_time = SpecUtils::get_wall_time();
+      //const auto stop_cpu_time = SpecUtils::get_cpu_time();
+      //const auto stop_wall_time = SpecUtils::get_wall_time();
       
       //Peak fitting can take up to a third of a second or so
       //cout << "Peak fitting took " << (stop_cpu_time-start_cpu_time)
@@ -1953,7 +1953,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
         }//for( loop over fit peaks and add them to peaks_to_add and assign nuclides )
         
         m_peakModel->addPeaks( peaks_to_add );
-        
+          
         if( m_peakModel->peaks() ) //should always be true, but JIC
           postaddpeaks = *m_peakModel->peaks();
         
@@ -2007,13 +2007,18 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
               menu->setHidden( true );
               
               if( i == npeakstry[best_choice] )
+              {
+                //m_peakModel->addPeaks( peaks_to_add );
                 return;
+              }
               
               for( const auto &p : added_peaks )
               {
-                try{
+                try
+                {
                   m_peakModel->removePeak( p );
-                }catch(std::exception &e){
+                }catch(std::exception &e)
+                {
                   cerr << "Unexpected error removing peaks - must not be a valid peak any more..." << endl;
                 }
               }//for( const auto &p : added_peaks )
@@ -2021,7 +2026,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
               if( i > 0 )
                 chartFitRoiDragCallback( lower_energy, upper_energy, static_cast<int>(i), true, window_xpx, window_ypx );
             }) );
-          }
+          }//for( size_t i = 0; i < (peaks_to_add.size() + 3); ++i )
           
           if( selecteditem )
             menu->select( selecteditem );

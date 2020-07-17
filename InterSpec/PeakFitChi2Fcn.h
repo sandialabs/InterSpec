@@ -100,7 +100,7 @@ public:
   //Constructor to fit partial range of histogram; only bins between lowerbin
   //  and upperbin will contibute to the chi2
   PeakFitChi2Fcn( const int npeaks,
-                  const int lowerbin, const int upperbin,
+                  const size_t lower_bin, const size_t upper_bin,
                   std::shared_ptr<const SpecUtils::Measurement> data,
                   std::shared_ptr<const SpecUtils::Measurement> continium );
 
@@ -180,7 +180,7 @@ public:
 protected:
   bool m_useReducedChi2;
   bool m_useMultiPeakPunishment;
-  int m_lowerbin, m_upperbin;
+  size_t m_lower_channel, m_upper_channel;
   int m_npeaks;
   std::shared_ptr<const SpecUtils::Measurement> m_data;
   std::shared_ptr<const SpecUtils::Measurement> m_continium;
@@ -229,7 +229,7 @@ public:
   //Constructor to fit full range of histograms
   MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<const SpecUtils::Measurement> data,
                       PeakContinuum::OffsetType offsetType,
-                      const int lowerbin, const int upperbin );
+                      const size_t lower_channel, const size_t upper_channel );
   
   MultiPeakFitChi2Fcn &operator=( const MultiPeakFitChi2Fcn &rhs );
   
@@ -250,7 +250,7 @@ public:
   
   //evalRelBinRange(...): returns chi2 of peaks for the data range.
   //  Note that bin numbers are internal bin numbers (so from 0 to nbin())
-  double evalRelBinRange( const int beginRelBin, const int endRelBin,
+  double evalRelBinRange( const size_t beginRelChannel, const size_t endRelChannel,
                           const std::vector<PeakDef> &peaks ) const;
   
   //evalMultiPeakInsentive(...): returns punishment to the chi2 for peaks
@@ -258,7 +258,11 @@ public:
   double evalMultiPeakInsentive( const std::vector<PeakDef> &peaks ) const;
   
 protected:
-  int m_npeak, m_lowerbin, m_upperbin, m_numOffset, m_nbin;
+  int m_npeak;
+  size_t m_lower_channel, m_upper_channel;
+  int m_numOffset;
+  size_t m_nbin;
+  
   double m_rangeLow, m_highRange;
   std::vector<double> m_binLowerEdge, m_binUpperEdge, m_dataCounts;
   PeakContinuum::OffsetType m_offsetType;

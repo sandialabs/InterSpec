@@ -466,13 +466,13 @@ int SpectrumDataModel::findRow( const double x ) const
   if( !xHist )
     return -1;
 
-  const int bin = (int)xHist->FindFixBin( (float)x );
-
+  const size_t channel = xHist->find_gamma_channel( (float)x );
+  
   const int rebin = ( m_rebinFactor > 1 ) ? m_rebinFactor : 1;
   // Note: m_rebinFactor >= 1 always, this is for testing.
 
   // Return either bin - 1 or the inverse of row * rebin + 1.
-  return ( rebin == 1 ) ? ( bin - 1 ) : ( ( bin - 1 ) / rebin );
+  return (rebin == 1) ? channel : (channel / rebin);
 } // int findRow( const double x ) const
 
 
@@ -779,7 +779,7 @@ boost::any SpectrumDataModel::headerData( int section, Orientation orientation, 
     if( m_data && m_addHistIntegralToLegend )
     {
       char buffer[32];
-      snprintf( buffer, sizeof(buffer), " (%.2g counts)", m_data->Integral() );
+      snprintf( buffer, sizeof(buffer), " (%.2g counts)", m_data->gamma_count_sum() );
       return WString(  m_data->title() + buffer );
     }//if( m_data && m_addHistIntegralToLegend )
     
@@ -802,7 +802,7 @@ boost::any SpectrumDataModel::headerData( int section, Orientation orientation, 
     if( m_addHistIntegralToLegend )
     {
       char buffer[32];
-      snprintf( buffer, sizeof(buffer), " (%.2g counts)", (secondDataScaledBy()*m_secondData->Integral()) );
+      snprintf( buffer, sizeof(buffer), " (%.2g counts)", (secondDataScaledBy()*m_secondData->gamma_count_sum()) );
       return WString( title + buffer );
     }//if( m_addHistIntegralToLegend )
 
@@ -816,7 +816,7 @@ boost::any SpectrumDataModel::headerData( int section, Orientation orientation, 
     if( m_addHistIntegralToLegend )
     {
       char buffer[32];
-      snprintf( buffer, sizeof(buffer), " (%.2g counts)", (backgroundScaledBy()*m_background->Integral()) );
+      snprintf( buffer, sizeof(buffer), " (%.2g counts)", (backgroundScaledBy()*m_background->gamma_count_sum()) );
       return WString( m_background->title() + buffer );
     }
     

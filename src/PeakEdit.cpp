@@ -775,9 +775,13 @@ void PeakEdit::refreshPeakInfo()
             
             if( data )
             {
-              int lowbin, upbin;
-              estimatePeakFitRange( m_currentPeak, data, lowbin, upbin );
-              val = data->Integral( lowbin, upbin );
+              size_t lower_channel, upper_channel;
+              estimatePeakFitRange( m_currentPeak, data, lower_channel, upper_channel );
+              val = data->gamma_channels_sum( lower_channel, upper_channel );
+              
+              // \TODO: The next line I think would be equivalent (or maybe more correct) than
+              //        previous line, but I think edge-cases need checking
+              //val = data->gamma_integral( m_currentPeak.lowerX(), m_currentPeak.upperX() );
             }else
             {
               val = 0.0;
@@ -845,13 +849,12 @@ void PeakEdit::refreshPeakInfo()
 
           if( data )
           {
-            const bool upperE = (t==PeakEdit::RangeEndEnergy);
-            int lowbin, upbin;
-            estimatePeakFitRange( m_currentPeak, data, lowbin, upbin );
-            const int bin = upperE ? upbin : lowbin;
-            val = data->GetBinLowEdge( bin );
-            if( upperE )
-              val += data->GetBinWidth( bin );
+            size_t lower_channel, upper_channel;
+            estimatePeakFitRange( m_currentPeak, data, lower_channel, upper_channel );
+            if( t == PeakEdit::RangeEndEnergy )
+              val += data->gamma_channel_upper( upper_channel );
+            else
+              val = data->gamma_channel_lower( lower_channel );
           }//if( data )
         }//if( !m_currentPeak.xRangeDefined() )
       break;
@@ -1804,14 +1807,14 @@ void PeakEdit::setAmplitudeForDataDefinedPeak()
   
   const float roilower = static_cast<float>( continuum->lowerEnergy() );
   const float roiupper = static_cast<float>( continuum->upperEnergy() );
-  const int lowerbin = data->FindFixBin( roilower );
-  const int upperbin = data->FindFixBin( roiupper );
+  const size_t lower_channel = data->find_gamma_channel( roilower );
+  const size_t upper_channel = data->find_gamma_channel( roiupper );
   
   double peaksum = 0.0, datasum = 0.0;
-  for( int bin = lowerbin; bin <= upperbin; ++bin )
+  for( size_t channel = lower_channel; channel <= upper_channel; ++channel )
   {
-    const float lowere = max( data->GetBinLowEdge(bin), roilower );
-    const float uppere = min( lowere+data->GetBinWidth(bin), roiupper );
+    const float lowere = max( data->gamma_channel_lower(channel), roilower );
+    const float uppere = min( data->gamma_channel_upper(channel), roiupper );
     const double dataarea = gamma_integral( data, lowere, uppere );
     const double contarea = continuum->offset_integral( lowere, uppere );
     datasum += max( 0.0, dataarea);

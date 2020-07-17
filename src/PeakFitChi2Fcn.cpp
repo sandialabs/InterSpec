@@ -84,8 +84,8 @@ PeakFitChi2Fcn::PeakFitChi2Fcn( const int npeaks,
                                 std::shared_ptr<const SpecUtils::Measurement> continium )
   :  m_useReducedChi2( true ),
      m_useMultiPeakPunishment( false ),
-     m_lowerbin(-1),
-     m_upperbin(-1),
+     m_lower_channel(0),
+     m_upper_channel(0),
      m_npeaks( npeaks ),
      m_data( data ),
      m_continium( continium )
@@ -94,23 +94,32 @@ PeakFitChi2Fcn::PeakFitChi2Fcn( const int npeaks,
 
 
 PeakFitChi2Fcn::PeakFitChi2Fcn( const int npeaks,
-                const int lowerbin, const int upperbin,
+                const size_t lower_channel, const size_t upper_channel,
                 std::shared_ptr<const SpecUtils::Measurement> data,
                 std::shared_ptr<const SpecUtils::Measurement> continium )
   :  m_useReducedChi2( true ),
      m_useMultiPeakPunishment( false ),
-     m_lowerbin(lowerbin),
-     m_upperbin(upperbin),
+     m_lower_channel( lower_channel ),
+     m_upper_channel( upper_channel ),
      m_npeaks( npeaks ),
      m_data( data ),
      m_continium( continium )
 {
-  if( m_lowerbin != m_upperbin )
+  const size_t nchannel = m_data ? m_data->num_gamma_channels() : size_t(0);
+  if( nchannel < 3 )
+    throw std::runtime_error( "PeakFitChi2Fcn: no spectrum" );
+  
+  if( m_lower_channel >= nchannel )
+    m_lower_channel = nchannel;
+  if( m_upper_channel >= nchannel )
+    m_upper_channel = nchannel;
+  
+  if( m_lower_channel != m_upper_channel )
   {
-    if( m_lowerbin <= 0 )
-      m_lowerbin = 1;
-    if( m_data && ((m_upperbin <= 0) || (m_upperbin > m_data->GetNbinsX())) )
-      m_upperbin = m_data->GetNbinsX();
+    if( m_lower_channel >= nchannel )
+      m_lower_channel = 0;
+    if( m_upper_channel >= nchannel )
+      m_upper_channel = nchannel - 1;
   }
 }
 
@@ -149,8 +158,8 @@ PeakFitChi2Fcn *PeakFitChi2Fcn::Clone() const
   PeakFitChi2Fcn *drone = new PeakFitChi2Fcn( m_npeaks, m_data, m_continium );
   drone->m_useReducedChi2 = m_useReducedChi2;
   drone->m_useMultiPeakPunishment = m_useMultiPeakPunishment;
-  drone->m_lowerbin = m_lowerbin;
-  drone->m_upperbin = m_upperbin;
+  drone->m_lower_channel = m_lower_channel;
+  drone->m_upper_channel = m_upper_channel;
 
   return drone;
 }//PeakFitChi2Fcn *Clone() const
@@ -163,8 +172,8 @@ PeakFitChi2Fcn &PeakFitChi2Fcn::operator=( const PeakFitChi2Fcn &rhs )
 
   m_useReducedChi2 = rhs.m_useReducedChi2;
   m_useMultiPeakPunishment = rhs.m_useMultiPeakPunishment;
-  m_lowerbin = rhs.m_lowerbin;
-  m_upperbin = rhs.m_upperbin;
+  m_lower_channel = rhs.m_lower_channel;
+  m_upper_channel = rhs.m_upper_channel;
   m_npeaks = rhs.m_npeaks;
   m_data = rhs.m_data;
   m_continium = rhs.m_continium;
@@ -340,7 +349,7 @@ void PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
 double PeakFitChi2Fcn::evalMultiPeakPunishment( const vector<const PeakDef *> &peaks ) const
 {
   double chi2 = 0.0;
-  const double punishment_chi2 = static_cast<double>( m_data->GetNbinsX() );
+  const double punishment_chi2 = static_cast<double>( m_data->num_gamma_channels() );
   
   //punish if the peaks are too close.
   for( size_t i = 1; i < peaks.size(); ++i )
@@ -370,9 +379,10 @@ double PeakFitChi2Fcn::evalMultiPeakPunishment( const vector<const PeakDef *> &p
     const double lower_energy = peaks[i]->gausPeak() ? peaks[i]->mean() - 1.75*peaks[i]->sigma() : peaks[i]->lowerX();
     const double upper_energy = peaks[i]->gausPeak() ? peaks[i]->mean() + 1.75*peaks[i]->sigma() : peaks[i]->upperX();
     
-    const int binstart = m_data->FindFixBin( lower_energy );
-    const int binend = m_data->FindFixBin( upper_energy );
-    const double dataarea = m_data->Integral( binstart, binend );
+    //const size_t start_channel = m_data->find_gamma_channel( lower_energy );
+    //const size_t end_channel = m_data->find_gamma_channel( upper_energy );
+    //const double dataarea = m_data->gamma_channels_sum( lower_energy, upper_energy );
+    const double dataarea = m_data->gamma_integral( lower_energy, upper_energy );
     
     if( peaks[i]->amplitude() < 2.0*sqrt(dataarea) )
     {
@@ -392,7 +402,7 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
   assert( m_data );
   if( m_continium )
   {
-    assert( m_data->GetNbinsX() == m_continium->GetNbinsX() );
+    assert( m_data->num_gamma_channels() == m_continium->num_gamma_channels() );
   }
 
   const int nfitpar = m_npeaks * NumFitPars;
@@ -433,31 +443,31 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
     const vector<const PeakDef *> &peaks = vt.second;
     const std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
     
-    std::set<int> binsToEval;
+    std::set<size_t> binsToEval;
     for( const PeakDef *peak : peaks )
     {
-      int xlowbin(0), xhighbin(0);
-      estimatePeakFitRange( *peak, m_data, xlowbin, xhighbin );
+      size_t lower_channel, upper_channel;
+      estimatePeakFitRange( *peak, m_data, lower_channel, upper_channel );
         
-      if( m_lowerbin != m_upperbin )
+      if( m_lower_channel != m_upper_channel )
       {
-        xlowbin = std::max( m_lowerbin, xlowbin );
-        xhighbin = std::min( m_upperbin, xhighbin );
+        lower_channel = std::max( m_lower_channel, lower_channel );
+        upper_channel = std::min( m_upper_channel, upper_channel );
       }//if( m_lowerbin != m_upperbin )
           
-      for( int bin = xlowbin; bin <= xhighbin; ++bin )
-        binsToEval.insert( bin );
+      for( size_t channel = lower_channel; channel <= upper_channel; ++channel )
+        binsToEval.insert( channel );
           
       if( continuum->energyRangeDefined() )
         break;
     }//for( const PeakDef *peak : peaks )
 
-    for( const int bin : binsToEval )
+    for( const size_t channel : binsToEval )
     {
       ++num_effective_bins;
-      const double xbinlow = m_data->GetBinLowEdge(bin);
-      const double xbinup = xbinlow + m_data->GetBinWidth(bin);
-      const double ndata = m_data->GetBinContent(bin);
+      const double xbinlow = m_data->gamma_channel_lower(channel);
+      const double xbinup = m_data->gamma_channel_upper(channel);
+      const double ndata = m_data->gamma_channel_content(channel);
       const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
       
       double nfitpeak = 0.0;
@@ -538,13 +548,11 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
       continue;
     }//if( problem with input peak )
     
-    int lowerbin, upperbin;
-    estimatePeakFitRange( peak, data, lowerbin, upperbin );
-    const double lowerEdgeX = data->GetBinLowEdge( lowerbin );
-    const double lastbinWidth = data->GetBinWidth( upperbin );
-    const double lastBinLowEdge = data->GetBinLowEdge( upperbin );
-    const double upperEdgeX = lastBinLowEdge + lastbinWidth;
-    const double avrgbinwidth = (upperEdgeX - lowerEdgeX) / (1+upperbin-lowerbin);
+    size_t lower_channel, upper_channel;
+    estimatePeakFitRange( peak, data, lower_channel, upper_channel );
+    const double lowerEdgeX = data->gamma_channel_lower(lower_channel);
+    const double upperEdgeX = data->gamma_channel_upper(upper_channel);
+    const double avrgbinwidth = (upperEdgeX - lowerEdgeX) / (1 + upper_channel - lower_channel);
     
     for( PeakDef::CoefficientType type = PeakDef::CoefficientType(0);
         type < PeakDef::NumCoefficientTypes;
@@ -618,7 +626,7 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
           startval = peak.coefficient(type);
           stepsize = 0.1*peak.coefficient(type);
           minval = 5.0;
-          maxval = data->Integral();
+          maxval = data->gamma_count_sum();
           
           if( method == kFitUserIndicatedPeak )
             stepsize = 0.5*startval;
@@ -917,36 +925,44 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
 
 MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<const SpecUtils::Measurement> data,
                       PeakContinuum::OffsetType offsetType,
-                      const int lowerbin, const int upperbin )
+                      const size_t lower_channel, const size_t upper_channel )
   : m_npeak( npeaks ),
-    m_lowerbin( lowerbin ),
-    m_upperbin( upperbin ),
+    m_lower_channel( lower_channel ),
+    m_upper_channel( upper_channel ),
     m_numOffset( 0 ),
     m_offsetType( offsetType ),
     m_data( data ),
     m_reldiff_punish_start( 1.25 ),
     m_reldiff_punish_weight( 2.0 )
 {
-  m_rangeLow = data->GetBinLowEdge( m_lowerbin );
-  m_highRange = data->GetBinLowEdge( m_upperbin )
-                + data->GetBinWidth( m_upperbin );
+  if( !m_data )
+    throw std::runtime_error( "MultiPeakFitChi2Fcn null data passed in" );
   
-  if( m_lowerbin < 1 )
-    m_lowerbin = 1;
-  if( m_upperbin > m_data->GetNbinsX() )
-    m_upperbin = m_data->GetNbinsX();
+  const size_t nchannel = m_data->num_gamma_channels();
+  if( nchannel < 3 )
+    throw std::runtime_error( "MultiPeakFitChi2Fcn no gamma spectrum" );
   
-  m_nbin = 1 + m_upperbin - m_lowerbin;
+  if( m_upper_channel >= nchannel )
+    m_upper_channel = nchannel - 1;
+  if( m_lower_channel >= nchannel )
+    m_lower_channel = nchannel - 1;
+  if( m_lower_channel > m_upper_channel )
+    std::swap( m_lower_channel, m_upper_channel );
+  
+  m_rangeLow = data->gamma_channel_lower(m_lower_channel);
+  m_highRange = data->gamma_channel_upper(m_upper_channel);
+  
+  m_nbin = 1 + m_upper_channel - m_lower_channel;
   m_binLowerEdge.resize( m_nbin );
   m_binUpperEdge.resize( m_nbin );
   m_dataCounts.resize( m_nbin );
   
-  for( int bin = m_lowerbin; bin <= m_upperbin; ++bin )
+  for( size_t channel = m_lower_channel; channel <= m_upper_channel; ++channel )
   {
-    const int i = bin - m_lowerbin;
-    m_binLowerEdge[i] = m_data->GetBinLowEdge( bin );
-    m_binUpperEdge[i] = m_binLowerEdge[i] + m_data->GetBinWidth( bin );
-    m_dataCounts[i] = m_data->GetBinContent( bin );
+    const size_t i = channel - m_lower_channel;
+    m_binLowerEdge[i] = m_data->gamma_channel_lower(channel);
+    m_binUpperEdge[i] = m_data->gamma_channel_upper(channel);
+    m_dataCounts[i] = m_data->gamma_channel_content(channel);
   }//for( int bin = m_lowerbin; bin <= m_upperbin; ++bin )
   
   switch( m_offsetType )
@@ -968,8 +984,8 @@ MultiPeakFitChi2Fcn &MultiPeakFitChi2Fcn::operator=( const MultiPeakFitChi2Fcn &
   if( &rhs == this )
     return *this;
   m_npeak = rhs.m_npeak;
-  m_lowerbin = rhs.m_lowerbin;
-  m_upperbin = rhs.m_upperbin;
+  m_lower_channel = rhs.m_lower_channel;
+  m_upper_channel = rhs.m_upper_channel;
   m_offsetType = rhs.m_offsetType;
   m_data = rhs.m_data;
   m_binLowerEdge = rhs.m_binLowerEdge;
@@ -1078,7 +1094,7 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       peak.setMeanUncert( centroid );
       peak.setAmplitudeUncert( amplitude );
     
-      //XXX - need to set continuum errors here
+      // \TODO: need to set continuum errors here
 //      if( continuum->isPolynomial() )
     }//if( errors )
   }//for( int peakn = 0; peakn < m_npeak; ++peakn )
@@ -1145,13 +1161,17 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
 }//PeakDef parametersToPeaks( const double *x, int peakn )
 
 
-double MultiPeakFitChi2Fcn::evalRelBinRange( const int beginRelBin,
-                                          const int endRelBin,
-                                          const std::vector<PeakDef> &peaks
-                                          ) const
+double MultiPeakFitChi2Fcn::evalRelBinRange( const size_t beginRelChannel,
+                                             const size_t endRelChannel,
+                                             const std::vector<PeakDef> &peaks ) const
 {
   if( peaks.empty() )
     throw runtime_error( "MultiPeakFitChi2Fcn::evalRelBinRange(): empty input" );
+  
+  assert( beginRelChannel < m_binLowerEdge.size() );
+  assert( beginRelChannel < m_binUpperEdge.size() );
+  assert( endRelChannel <= m_binLowerEdge.size() );
+  assert( endRelChannel <= m_binUpperEdge.size() );
   
   double chi2 = 0.0;
   
@@ -1173,24 +1193,21 @@ double MultiPeakFitChi2Fcn::evalRelBinRange( const int beginRelBin,
 //      chi2 += fabs(nfitpeak + ncontinuim);
 //  }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
   
-  
-  for( int relbin = beginRelBin; relbin < endRelBin; ++relbin )
+  for( size_t relchannel = beginRelChannel; relchannel < endRelChannel; ++relchannel )
   {
-    const double xbinlow = m_binLowerEdge[relbin];
-    const double xbinup  = m_binUpperEdge[relbin];
+    const double xbinlow = m_binLowerEdge[relchannel];
+    const double xbinup  = m_binUpperEdge[relchannel];
     double nfitpeak = 0.0;
     for( size_t i = 0; i < peaks.size(); ++i )
       nfitpeak += peaks[i].gauss_integral( xbinlow, xbinup );
     
-    const double ndata = m_dataCounts[relbin];
+    const double ndata = m_dataCounts[relchannel];
     const double ncontinuim = peaks[0].offset_integral( xbinlow, xbinup );
     
     const double datauncert = std::max( ndata, 1.0 );
     const double nabove = (ndata - ncontinuim - nfitpeak);
     chi2 += nabove*nabove / datauncert;
   }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
-  
-  
   
   return chi2;
 }//double MultiPeakFitChi2Fcn::evalRelBinRange
@@ -1246,9 +1263,9 @@ double MultiPeakFitChi2Fcn::evalMultiPeakInsentive(
     const double lower_energy = peaks[i].mean() - 1.75*peaks[i].sigma();
     const double upper_energy = peaks[i].mean() + 1.75*peaks[i].sigma();
     
-//      const int peak_roi_begin = m_data->FindFixBin( lower_energy );
-//      const int peak_roi_end = m_data->FindFixBin( upper_energy );
-//      const double dataarea = m_data->Integral( peak_roi_begin, peak_roi_end );
+//      const size_t peak_roi_begin = m_data->find_gamma_channel( lower_energy );
+//      const size_t peak_roi_end = m_data->find_gamma_channel( upper_energy );
+//      const double dataarea = m_data->gamma_channels_sum( peak_roi_begin, peak_roi_end );
     
     const size_t binstart = lower_bound( m_binLowerEdge.begin(),
                                          m_binLowerEdge.end(), lower_energy )
@@ -1384,25 +1401,26 @@ void LinearProblemSubSolveChi2Fcn::init( std::shared_ptr<const SpecUtils::Measur
     break;
   }//switch( m_offsetType )
   
-  const int lowerbin = data->FindFixBin( m_lowerROI );
-  const int upperbin = data->FindFixBin( m_upperROI );
-  m_nbin = 1 + static_cast<size_t>( upperbin - lowerbin );
+  const size_t lower_channel = data->find_gamma_channel( m_lowerROI );
+  const size_t upper_channel = data->find_gamma_channel( m_upperROI );
+  if( lower_channel > upper_channel )
+    throw runtime_error( "LinearProblemSubSolveChi2Fcn: lower channel above upper channel" );
+  
+  m_nbin = 1 + upper_channel - lower_channel;
   
   if( m_nbin < 3 )
     throw runtime_error( "LinearProblemSubSolveChi2Fcn: invalid bin range" );
   
   m_y.reserve( m_nbin );
   m_x.reserve( m_nbin + 1 );
-  for( int bin = lowerbin; bin <= upperbin; ++bin )
+  for( size_t channel = lower_channel; channel <= upper_channel; ++channel )
   {
-    m_y.push_back( data->GetBinContent(bin) );
-    m_x.push_back( data->GetBinLowEdge(bin) );
+    m_y.push_back( data->gamma_channel_content(channel) );
+    m_x.push_back( data->gamma_channel_lower(channel) );
   }//for( int bin = lowerbin; bin < upperbin; ++bin )
   
-  if( upperbin < data->GetNbinsX() )
-    m_x.push_back( data->GetBinLowEdge(upperbin + 1) );
-  else
-    m_x.push_back( 2.0f*m_x[m_nbin-2] - m_x[m_nbin-3] );
+  //I dont think this next call should ever throw... if so its a programmign error
+  m_x.push_back( data->gamma_channel_lower(upper_channel+1) );
 }//LinearProblemSubSolveChi2Fcn constructor
 
 
@@ -1683,11 +1701,9 @@ double LinearProblemSubSolveChi2Fcn::punishment( const std::vector<PeakDef> &pea
     const double lower_energy = means[i] - 1.75*sigmas[i];
     const double upper_energy = means[i] + 1.75*sigmas[i];
         
-    const size_t binstart = lower_bound( m_x.begin(), m_x.end(), lower_energy )
-                            - m_x.begin();
-    size_t binend = lower_bound( m_x.begin(), m_x.end(), upper_energy )
-                            - m_x.begin();
-	binend = std::min( binend, m_y.size() );
+    const size_t binstart = lower_bound( m_x.begin(), m_x.end(), lower_energy ) - m_x.begin();
+    size_t binend = lower_bound( m_x.begin(), m_x.end(), upper_energy ) - m_x.begin();
+	  binend = std::min( binend, m_y.size() );
 
     double dataarea = 0.0;
     for( size_t bin = binstart; bin < binend; ++bin )

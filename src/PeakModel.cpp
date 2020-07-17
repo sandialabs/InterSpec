@@ -61,6 +61,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"  //Only for ALLOW_PEAK_COLOR_DELEGATE
+#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/SpectrumDataModel.h"
 
 
@@ -765,9 +766,11 @@ bool PeakModel::isWithinRange( const PeakDef &peak ) const
     return false;
   }
 
-  const int nbin = xaxis->GetNbinsX();
-  const double lowerx = xaxis->GetBinLowEdge( 1 );
-  const double upperx = xaxis->GetBinLowEdge(nbin) + xaxis->GetBinWidth(nbin);
+  const auto energycal = xaxis->energy_calibration();
+  assert( energycal );
+  
+  const double lowerx = xaxis->gamma_energy_min();
+  const double upperx = xaxis->gamma_energy_max();
 
   switch( peak.type() )
   {
@@ -1172,9 +1175,6 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
           if( !dataH )
             return boost::any();
           
-          int lowbin, highbin;
-          estimatePeakFitRange( *peak, dataH, lowbin, highbin );
-          
           if( peak->continuum()->defined() )
           {
             double lowx(0.0), upperx(0.0);
@@ -1184,10 +1184,16 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
           {
             std::shared_ptr<const SpecUtils::Measurement> continuum = m_dataModel->getBackground();
             if( continuum )
-              contArea = continuum->Integral( lowbin, highbin );
+            {
+              size_t lower_channel, upper_channel;
+              estimatePeakFitRange( *peak, continuum, lower_channel, upper_channel );
+              contArea = continuum->gamma_channels_sum(lower_channel, upper_channel);
+            }
           }//if( peak->continuumDefined() ) / else
           
-          const double dataArea = dataH->Integral( lowbin, highbin );
+          size_t lower_channel, upper_channel;
+          estimatePeakFitRange( *peak, dataH, lower_channel, upper_channel );
+          const double dataArea = dataH->gamma_channels_sum(lower_channel, upper_channel);
           
           return (dataArea - contArea);
         }//case PeakDef::DataDefined:
@@ -1345,9 +1351,9 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         if( !continuum )
           return WString( "" );
         
-        int lowbin, highbin;
-        estimatePeakFitRange( *peak, continuum, lowbin, highbin );
-        const double area = continuum->Integral( lowbin, highbin );
+        size_t lower_channel, upper_channel;
+        estimatePeakFitRange( *peak, continuum, lower_channel, upper_channel );
+        const double area = continuum->gamma_channels_sum( lower_channel, upper_channel );
         return area;
       }//if( peak->continuum()->defined() ) / else
     }//case kContinuumArea:
