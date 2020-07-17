@@ -34,6 +34,6 @@
  <pref name="ColorThemeIndex" type="Integer">-1</pref>
  <pref name="ShowXAxisSlider" type="Boolean">false</pref>
  <pref name="CompactXAxis" type="Boolean">false</pref>
- <pref name="ShowYAxisScalers" type="Boolean">false</pref>
+ <pref name="ShowYAxisScalers" type="Boolean">true</pref>
  <pref name="AskPropagatePeaks" type="Boolean">false</pref>
 </preferences>

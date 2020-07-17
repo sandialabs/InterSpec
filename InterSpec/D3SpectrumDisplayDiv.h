@@ -93,6 +93,8 @@ public:
   
   void setPeakModel( PeakModel *model );
   
+  /// \TODO: for all setData, setSecondData, and setBackground, get rid of live/real-time arguments
+  ///        and neutron counts.
   void setData( std::shared_ptr<SpecUtils::Measurement> data_hist,
                float liveTime,
                float realTime,
