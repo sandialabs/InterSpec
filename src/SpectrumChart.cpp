@@ -2848,8 +2848,8 @@ void SpectrumChart::handleDrag( int _x0, int _y0, int _x1, int _y1,
         }else
         {
           SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
-          std::shared_ptr<Measurement> axisH = (theModel ? theModel->histUsedForXAxis()
-                                       : std::shared_ptr<Measurement>());
+          std::shared_ptr<const Measurement> axisH = (theModel ? theModel->histUsedForXAxis()
+                                       : std::shared_ptr<const Measurement>());
           const bool hasSpectrum = (axisH && axisH->num_gamma_channels() > 3);
           const double hist_min = (hasSpectrum ? axisH->gamma_energy_min() : 0.0f );
           const double hist_max = (hasSpectrum ? axisH->gamma_energy_max() : 3000.0f);
@@ -3172,7 +3172,7 @@ void SpectrumChart::handleLeftMouseMove( int x, int y, int dt )
   if( !m )
     return;
   
-  std::shared_ptr<Measurement> axisH = m->histUsedForXAxis();
+  std::shared_ptr<const Measurement> axisH = m->histUsedForXAxis();
   if( !!axisH )
   {
     xaxismin = axisH->gamma_energy_min();
@@ -3229,7 +3229,7 @@ void SpectrumChart::handleAltLeftMouseMove( int x, int y, int dt )
   if( !m )
     return;
   
-  std::shared_ptr<Measurement> axisH = m->histUsedForXAxis();
+  std::shared_ptr<const Measurement> axisH = m->histUsedForXAxis();
   if( !!axisH )
   {
     xaxismin = axisH->gamma_energy_min();
@@ -3314,7 +3314,7 @@ void SpectrumChart::setAutoXAxisRange()
   SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model() );
   if( theModel )
   {
-    std::shared_ptr<Measurement> axisH = theModel->histUsedForXAxis();
+    std::shared_ptr<const Measurement> axisH = theModel->histUsedForXAxis();
     if( axisH )
     {
       float xmin = min( 0.0f, axisH->gamma_energy_min() );

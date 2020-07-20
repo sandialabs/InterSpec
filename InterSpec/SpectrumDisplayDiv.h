@@ -97,28 +97,18 @@ public:
   
   void setPeakModel( PeakModel *model );
   
-  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist,
-                float liveTime,
-                float realTime,
-                float neutronCounts,
+  void setData( std::shared_ptr<const SpecUtils::Measurement> data_hist,
                 bool keep_curent_xrange );
-  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist,
-                      float liveTime,
-                      float realTime,
-                      float neutronCounts,
-                      bool ownAxis );
-  void setBackground( std::shared_ptr<SpecUtils::Measurement> background,
-                      float liveTime,
-                      float realTime,
-                      float neutronCounts );
+  void setSecondData( std::shared_ptr<const SpecUtils::Measurement> hist, bool ownAxis );
+  void setBackground( std::shared_ptr<const SpecUtils::Measurement> background );
 
 
   // These 8 functions retrieve the corresponding info from the model.
-  std::shared_ptr<SpecUtils::Measurement> data();
+  //std::shared_ptr<SpecUtils::Measurement> data();
   std::shared_ptr<const SpecUtils::Measurement> data()       const;
-  std::shared_ptr<SpecUtils::Measurement> secondData();
+  //std::shared_ptr<SpecUtils::Measurement> secondData();
   std::shared_ptr<const SpecUtils::Measurement> secondData() const;
-  std::shared_ptr<SpecUtils::Measurement> background();
+  //std::shared_ptr<SpecUtils::Measurement> background();
   std::shared_ptr<const SpecUtils::Measurement> background() const;
 
   float foregroundLiveTime() const;

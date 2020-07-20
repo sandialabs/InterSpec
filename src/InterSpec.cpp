@@ -159,6 +159,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/DetectionConfidenceTool.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
@@ -527,11 +528,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_peakModel  = new PeakModel( this );
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum   = new D3SpectrumDisplayDiv();
-  m_peakModel->dataChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsRemoved().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsInserted().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->layoutChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->modelReset().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
 #else
   m_spectrum   = new SpectrumDisplayDiv();
   m_spectrum->setPlotAreaPadding( 80, 2, 10, 44 );
@@ -732,8 +728,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_timeSeries->setYAxisTitle( "Gamma CPS" );
   m_timeSeries->setY2AxisTitle( "Neutron CPS" );
   m_timeSeries->setAutoAdjustDisplayRebinFactor( true );
-  m_spectrum->setXAxisTitle( "Energy (keV)" );
-  m_spectrum->setYAxisTitle( "Counts/Channel" );
 
   m_spectrum->enableLegend( false );
   m_spectrum->showHistogramIntegralsInLegend( true );
@@ -1082,9 +1076,9 @@ string InterSpec::print_d3_json() const
   std::shared_ptr<const SpecUtils::Measurement> background = m_spectrum->background();
   std::shared_ptr<const SpecUtils::Measurement> secondary  = m_spectrum->secondData();
     
-  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
-  std::shared_ptr<SpecUtils::Measurement> back = m_spectrum->background();
-  std::shared_ptr<SpecUtils::Measurement> second = m_spectrum->secondData();
+  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
+  std::shared_ptr<const SpecUtils::Measurement> back = m_spectrum->background();
+  std::shared_ptr<const SpecUtils::Measurement> second = m_spectrum->secondData();
     
   typedef deque< PeakModel::PeakShrdPtr > PeakDeque;
   string peakstring;
@@ -1098,13 +1092,14 @@ string InterSpec::print_d3_json() const
 
   if( data )
   {
-    string title = Wt::WWebWidget::escapeText(data->title()).toUTF8();
-    if( title != data->title() )
-      data->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-    
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "black";
     options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Foreground);
+    
+    //JIC, proper escaping not implemented in SpecUtils yet.
+    string title = Wt::WWebWidget::escapeText(data->title()).toUTF8();
+    if( title != data->title() )
+      options.title = title;
     
     std::shared_ptr<const PeakDeque > peaks = m_dataMeasurement->peaks(m_displayedSamples);
     if( peaks )
@@ -1121,13 +1116,14 @@ string InterSpec::print_d3_json() const
     if( data )
       ostr << ",";
     
-    string title = Wt::WWebWidget::escapeText(back->title()).toUTF8();
-    if( title != back->title() )
-      back->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-    
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "steelblue";
     options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
+    
+    //JIC, proper escaping not implemented in SpecUtils yet.
+    string title = Wt::WWebWidget::escapeText(back->title()).toUTF8();
+    if( title != back->title() )
+      options.title = title;
     
     std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_backgroundSampleNumbers);
     if( peaks )
@@ -1145,13 +1141,14 @@ string InterSpec::print_d3_json() const
     if( data || back )
       ostr << ",";
     
-    string title = Wt::WWebWidget::escapeText(second->title()).toUTF8();
-    if( title != second->title() )
-      second->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-    
     D3SpectrumExport::D3SpectrumOptions options;
     options.line_color = "green";
     options.display_scale_factor = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground);
+    
+    //JIC, proper escaping not implemented in SpecUtils yet.
+    string title = Wt::WWebWidget::escapeText(second->title()).toUTF8();
+    if( title != second->title() )
+      options.title = title;
     
     std::shared_ptr<const PeakDeque > peaks = m_backgroundMeasurement->peaks(m_sectondForgroundSampleNumbers);
     if( peaks )
@@ -6787,6 +6784,12 @@ void InterSpec::createDecayInfoWindow()
 }//void createDecayInfoWindow()
 
 
+void InterSpec::createDetectionConfidenceTool()
+{
+  new DetectionConfidenceWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+}
+
+
 void InterSpec::deleteDecayInfoWindow()
 {
   if( m_decayInfoWindow )
@@ -7085,6 +7088,9 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTipInstantly );
   item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
 
+  item = popup->addMenuItem( "Detection Confidence Tool" );
+  HelpSystem::attachToolTipOn( item, "Provides an upper activity estimate for nuclides" , showToolTipInstantly );
+  item->triggered().connect( this, &InterSpec::createDetectionConfidenceTool );
   
   item = popup->addMenuItem( "Detector Response Select" );
   HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTipInstantly );
@@ -8403,7 +8409,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       m_secondDataMeasurement = nullptr;
-      m_spectrum->setSecondData( nullptr, -1.0, -1.0, -1.0, false );
+      m_spectrum->setSecondData( nullptr, false );
       
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::SecondForeground,
                                             m_secondDataMeasurement,
@@ -8420,7 +8426,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       m_backgroundMeasurement = std::shared_ptr<SpecMeas>();
-      m_spectrum->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
+      m_spectrum->setBackground( nullptr );
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background,
                                             m_backgroundMeasurement,
                                             std::set<int>() );
@@ -9259,7 +9265,7 @@ void InterSpec::searchForSinglePeak( const double x )
     throw runtime_error( "InterSpec::searchForSinglePeak(...): "
                         "shoudnt be called if peak model isnt set.");
   
-  std::shared_ptr<SpecUtils::Measurement> data = m_spectrum->data();
+  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
   
   if( !m_dataMeasurement || !data )
     return;
@@ -10276,9 +10282,9 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
       neutronH.reset();
     
     const bool keep_current_xrange = false;
-    m_timeSeries->setData( gammaH, -1.0, -1.0, -1.0, keep_current_xrange );
-    m_timeSeries->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );  //we could use this for like the GMTubes or whatever
-    m_timeSeries->setSecondData( neutronH, -1.0, -1.0, -1.0, true );
+    m_timeSeries->setData( gammaH, keep_current_xrange );
+    m_timeSeries->setBackground( nullptr );  //we could use this for like the GMTubes or whatever
+    m_timeSeries->setSecondData( neutronH, true );
     
     if( updateHighlightRegionsDisplay )
     {
@@ -10295,9 +10301,9 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
     }//if( updateHighlightRegionsDisplay )
   }else
   {
-    m_timeSeries->setData( gammaH, -1.0, -1.0, -1.0, false );
-    m_timeSeries->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
-    m_timeSeries->setSecondData( neutronH, -1.0, -1.0, -1.0, true );
+    m_timeSeries->setData( gammaH, false );
+    m_timeSeries->setBackground( nullptr );
+    m_timeSeries->setSecondData( neutronH, true );
     
     if( !m_timeSeries->isHidden() )
     {
@@ -10530,7 +10536,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     
     if( m_spectrum->data() )
     {
-      m_spectrum->setData( nullptr, -1.0f, -1.0f, -1.0f, false );
+      m_spectrum->setData( nullptr, false );
       m_peakModel->setPeakFromSpecMeas( nullptr, sample_nums );
     }
     return;
@@ -10565,11 +10571,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   if( dataH )
     dataH->set_title( "Foreground" );
 
-  const float lt = dataH ? dataH->live_time() : 0.0f;
-  const float rt = dataH ? dataH->real_time() : 0.0f;
-  const float sum_neut = dataH ? dataH->neutron_counts_sum() : 0.0f;
-  
-  m_spectrum->setData( dataH, lt, rt, sum_neut, current_energy_range );
+  m_spectrum->setData( dataH, current_energy_range );
 }//void displayForegroundData()
 
 
@@ -10588,7 +10590,7 @@ void InterSpec::displaySecondForegroundData()
   {
     //sample_nums.clear();
     if( m_spectrum->secondData() )
-      m_spectrum->setSecondData( nullptr, -1.0, -1.0, -1.0, false );
+      m_spectrum->setSecondData( nullptr, false );
     return;
   }//if( !m_secondDataMeasurement )
   
@@ -10599,11 +10601,7 @@ void InterSpec::displaySecondForegroundData()
   if( histH )
     histH->set_title( "Second Foreground" );
     
-  const float lt = histH ? histH->live_time() : -1.0f;
-  const float rt = histH ? histH->real_time() : -1.0f;
-  const float neutronCounts = histH ? histH->neutron_counts_sum() : -1.0f;
-    
-  m_spectrum->setSecondData( histH, lt, rt, neutronCounts, false );
+  m_spectrum->setSecondData( histH, false );
   
   if( !m_timeSeries->isHidden() )
   {
@@ -10632,7 +10630,7 @@ void InterSpec::displayBackgroundData()
     m_backgroundSubItems[1]->hide();
     //disp_samples.clear();
     if( m_spectrum->background() )
-      m_spectrum->setBackground( nullptr, -1.0f, -1.0f, -1.0f );
+      m_spectrum->setBackground( nullptr );
     return;
   }
   
@@ -10640,10 +10638,7 @@ void InterSpec::displayBackgroundData()
   if( backgroundH )
     backgroundH->set_title( "Background" );
     
-  const float lt = backgroundH ? backgroundH->live_time() : -1.0f;
-  const float rt = backgroundH ? backgroundH->real_time() : -1.0f;
-  const float neutronCounts = backgroundH ? backgroundH->neutron_counts_sum() : -1.0f;
-  m_spectrum->setBackground( backgroundH, lt, rt, neutronCounts );
+  m_spectrum->setBackground( backgroundH );
   
   if( !m_timeSeries->isHidden() )
   {

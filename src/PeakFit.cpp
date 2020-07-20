@@ -5364,63 +5364,120 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
   return candidates;
 }//secondDerivativePeakCanidatesWithROI( std::shared_ptr<const Measurement> dataH,
 
-void set_chi2_dof( std::shared_ptr<const Measurement> data,
+
+
+void get_chi2_and_dof_for_roi( double &chi2, double &dof,
+                               const std::shared_ptr<const SpecUtils::Measurement> &data,
+                               const vector<PeakDef *> &peaks )
+{
+  dof = chi2 = 0.0;
+  if( peaks.empty() || !data )
+    return;
+  
+  assert( peaks[0] );
+  const std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
+  
+  for( size_t i = 1; i < peaks.size(); ++i )
+  {
+    assert( peaks[i] );
+    assert( continuum == peaks[i]->continuum() );
+  }
+  
+  const double lx = continuum->lowerEnergy();
+  const double ux = continuum->upperEnergy();
+  
+  const size_t startchannel = data->find_gamma_channel( lx + 0.0000001 );
+  const size_t endchannel = data->find_gamma_channel( ux - 0.0000001 );
+  
+  for( size_t channel = startchannel; channel <= endchannel; ++channel )
+  {
+    const double xbinlow = data->gamma_channel_lower( channel );
+    const double xbinup  = data->gamma_channel_upper( channel );
+    double nfitpeak = 0.0;
+    for( size_t i = 0; i < peaks.size(); ++i )
+      nfitpeak += peaks[i]->gauss_integral( xbinlow, xbinup );
+    
+    const double ndata = data->gamma_channel_content( channel );
+    const double ncontinuim = continuum->offset_integral( xbinlow, xbinup );
+    
+    const double datauncert = std::max( ndata, 1.0 );
+    const double nabove = (ndata - ncontinuim - nfitpeak);
+    chi2 += nabove*nabove / datauncert;
+  }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
+  
+
+  int nfitsigma = 0, nfitamp = 0, nfitmean = 0;
+  for( auto p : peaks )
+  {
+    nfitsigma += p->fitFor(PeakDef::CoefficientType::Sigma);
+    nfitmean += p->fitFor(PeakDef::CoefficientType::Mean);
+    nfitamp += p->fitFor(PeakDef::CoefficientType::GaussAmplitude);
+  }
+
+  dof = 1.0*(endchannel - startchannel);// - 2.0 - 1.0*(peaks.size()-1);// - 1.0*continuum->type();
+  
+  //We fit the amplitudes independantly
+  dof -= nfitamp;
+  
+  //The means are kinda, sorta, independent
+  dof -= nfitmean;
+  
+  //We fit with the sigmas tied together, with a max of two parameters to control across the whole
+  //  ROI - actually its a bit more complicated than this, but good enough for right now
+  dof -= std::min( nfitsigma, 2 );
+  
+  for( const bool fit : continuum->fitForParameter() )
+    dof -= (fit ? 1.0 : 0.0);
+  
+  dof -= 1.0;
+  
+  if( dof < 1.0 )
+    dof = 1.0;
+  
+  /// \TODO: (20200718) more accurately calculate the DOF
+  
+  //Note: Previous to 20200718, we used the following formula for DOF... not quite sure why:
+  //  1.0*(endchannel - startchannel) - 2.0 - 1.0*(peaks.size()-1); - 1.0*continuum->type();
+}//get_chi2_and_dof_for_roi(...)
+
+
+
+double set_chi2_dof( std::shared_ptr<const Measurement> data,
                  std::vector<PeakDef> &fitpeaks,
                  const size_t startpeak, const size_t npeaks )
 {
+  double totalDOF = 0;
   //It would be nice to use chi2_for_region(...) to actually compute the chi2
   //  for the region
   
-  map< std::shared_ptr<const PeakContinuum>, vector<size_t> > roigroups;
+  map< std::shared_ptr<const PeakContinuum>, vector<PeakDef *> > roigroups;
   for( size_t i = startpeak; i < npeaks && i < fitpeaks.size(); ++i )
-    if( fitpeaks[i].gausPeak() )
-      roigroups[fitpeaks[i].continuum()].push_back( i );
-  
-  for( map< std::shared_ptr<const PeakContinuum>, vector<size_t> >::const_iterator i = roigroups.begin();
-      i != roigroups.end(); ++i )
   {
-    const vector<size_t> &peakinds = i->second;
-    const std::shared_ptr<const PeakContinuum> continuum = i->first;
+    if( fitpeaks[i].gausPeak() )
+      roigroups[fitpeaks[i].continuum()].push_back( &(fitpeaks[i]) );
+  }
+  
+  for( auto i = begin(roigroups); i != end(roigroups); ++i )
+  {
+    const vector<PeakDef *> &peakptrs = i->second;
+    assert( peakptrs.size() );
     
-    assert( peakinds.size() );
+    double chi2, dof;
+    get_chi2_and_dof_for_roi( chi2, dof, data, peakptrs );
     
-    const double lx = continuum->lowerEnergy();
-    const double ux = continuum->upperEnergy();
-    
-    const size_t startchannel = data->find_gamma_channel( lx + 0.0000001 );
-    const size_t endchannel = data->find_gamma_channel( ux - 0.0000001 );
-    
-    double chi2 = 0.0;
-    for( size_t channel = startchannel; channel <= endchannel; ++channel )
-    {
-      const double xbinlow = data->gamma_channel_lower( channel );
-      const double xbinup  = data->gamma_channel_upper( channel );
-      double nfitpeak = 0.0;
-      for( size_t i = 0; i < peakinds.size(); ++i )
-        nfitpeak += fitpeaks[peakinds[i]].gauss_integral( xbinlow, xbinup );
-      
-      const double ndata = data->gamma_channel_content( channel );
-      const double ncontinuim = continuum->offset_integral( xbinlow, xbinup );
-      
-      const double datauncert = std::max( ndata, 1.0 );
-      const double nabove = (ndata - ncontinuim - nfitpeak);
-      chi2 += nabove*nabove / datauncert;
-    }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
-    
-    double dof = 1.0*(endchannel - startchannel) - 2.0 - 1.0*(peakinds.size()-1) - 1.0*continuum->type();
-    if( dof < 1.0 )
-      dof = 1.0;
-    
+    totalDOF += dof;
     const double chi2Dof = chi2 / dof;
     
-    for( size_t i = 0; i < peakinds.size(); ++i )
+    for( PeakDef * const peak : peakptrs )
     {
-      fitpeaks[peakinds[i]].set_coefficient( chi2Dof, PeakDef::Chi2DOF );
-      fitpeaks[peakinds[i]].set_uncertainty( 0.0, PeakDef::Chi2DOF );
+      peak->set_coefficient( chi2Dof, PeakDef::Chi2DOF );
+      peak->set_uncertainty( 0.0, PeakDef::Chi2DOF );
     }
     
     cout << "Set chi2dof=" << chi2Dof << endl;
   }//for( loop over ROIs )
+      
+  return totalDOF;
 }//void set_chi2_dof( )
 
 

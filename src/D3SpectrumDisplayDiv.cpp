@@ -380,6 +380,12 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
   
   model->setDataModel( m_model );
   m_peakModel = model;
+  
+  m_peakModel->dataChanged().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->rowsRemoved().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->rowsInserted().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->layoutChanged().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->modelReset().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
 }//void setPeakModel( PeakModel *model );
 
 
@@ -846,16 +852,13 @@ void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
 
 
 
-void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
-                                 float liveTime,
-                                 float realTime,
-                                 float neutronCounts,
+void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist,
                                  bool keep_curent_xrange )
 {
   const float oldBackSF = m_model->backgroundScaledBy();
   const float oldSecondSF = m_model->secondDataScaledBy();
   
-  m_model->setDataHistogram( data_hist, liveTime, realTime, neutronCounts );
+  m_model->setDataHistogram( data_hist );
   
   if( !keep_curent_xrange )
     m_renderFlags |= ResetXDomain;
@@ -874,34 +877,16 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
 }//void setData( std::shared_ptr<Measurement> data_hist )
 
 
-std::shared_ptr<Measurement> D3SpectrumDisplayDiv::data()
-{
-  return m_model->getData();
-}//std::shared_ptr<Measurement> data()
-
-
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::data() const
 {
   return m_model->getData();
 }//std::shared_ptr<const Measurement> data() const
 
 
-std::shared_ptr<Measurement> D3SpectrumDisplayDiv::secondData()
-{
-  return m_model->getSecondData();
-}//std::shared_ptr<Measurement> secondData()
-
-
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::secondData() const
 {
   return m_model->getSecondData();
 }//std::shared_ptr<const Measurement> secondData() const
-
-
-std::shared_ptr<Measurement> D3SpectrumDisplayDiv::background()
-{
-  return m_model->getBackground();
-}//std::shared_ptr<Measurement> background()
 
 
 std::shared_ptr<const Measurement> D3SpectrumDisplayDiv::background() const
@@ -989,12 +974,9 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
 
-void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts )
+void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> background )
 {
-  m_model->setBackgroundHistogram( background, liveTime, realTime, neutronCounts );
+  m_model->setBackgroundHistogram( background );
   
   if( !background && m_model->backgroundSubtract() )
   {
@@ -1006,13 +988,9 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> backgroun
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
-void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts,
-                                       bool ownAxis )
+void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> hist, bool ownAxis )
 {
-  m_model->setSecondDataHistogram( hist, liveTime, realTime, neutronCounts, ownAxis );
+  m_model->setSecondDataHistogram( hist, ownAxis );
   
   scheduleUpdateSecondData();
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> background );
@@ -1201,14 +1179,15 @@ void D3SpectrumDisplayDiv::scheduleUpdateSecondData()
 
 void D3SpectrumDisplayDiv::renderForegroundToClient()
 {
-  const std::shared_ptr<Measurement> data_hist = m_model->getData();
+  const std::shared_ptr<const Measurement> data_hist = m_model->getData();
   
   string js;
   
   const string resetDomain = m_renderFlags.testFlag(ResetXDomain) ? "true" : "false";
   
   // Set the data for the chart
-  if ( data_hist ) {
+  if ( data_hist )
+  {
     // Create the measurement array (should only have one measurement)
     std::ostringstream ostr;
     std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
@@ -1222,10 +1201,14 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     foregroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );  //will always be 1.0f
     
     // Set the peak data for the spectrum
-    if ( m_peakModel ) {
+    if ( m_peakModel )
+    {
       std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
-      vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks );
+      if( peaks )
+      {
+        vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+        foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks );
+      }
     }
     
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(data_hist.get(),foregroundOptions) );
@@ -1253,7 +1236,7 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
 void D3SpectrumDisplayDiv::renderBackgroundToClient()
 {
   string js;
-  const std::shared_ptr<Measurement> background = m_model->getBackground();
+  const std::shared_ptr<const Measurement> background = m_model->getBackground();
   
   // Set the data for the chart
   if ( background ) {
@@ -1299,7 +1282,7 @@ void D3SpectrumDisplayDiv::renderBackgroundToClient()
 void D3SpectrumDisplayDiv::renderSecondDataToClient()
 {
   string js;
-  const std::shared_ptr<Measurement> hist = m_model->getSecondData();
+  const std::shared_ptr<const Measurement> hist = m_model->getSecondData();
   
   // Set the data for the chart
   if ( hist ) {
@@ -1691,7 +1674,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       //Need to check that all peaks are Gaussian.
       //  Actually should make sure a ROI can only have data defined or Gausian peaks only (what happens now)
       std::shared_ptr<const DetectorPeakResponse> detector;
-      std::shared_ptr<Measurement> foreground = m_model->getData();
+      std::shared_ptr<const Measurement> foreground = m_model->getData();
       vector<shared_ptr<const PeakDef>> refitpeaks
                   = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, 3.0 );
       
@@ -1762,7 +1745,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   std::shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
   std::shared_ptr<const DetectorPeakResponse> detector = meas ? meas->detector() : nullptr;
   
-  std::shared_ptr<Measurement> foreground = m_model->getData();
+  std::shared_ptr<const Measurement> foreground = m_model->getData();
   
   const size_t nchan = foreground->num_gamma_channels();
   const bool isHpge = (nchan > 4094);

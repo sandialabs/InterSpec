@@ -1,0 +1,57 @@
+
+.DetectionConfidenceTool
+{
+  
+}
+
+.DetectionConfidenceTool .UserInputTable td
+{
+  padding-top:5px;
+  padding-bottom:5px;
+  padding-right:10px;
+}
+
+.DetectionConfidenceTool .UserInputTable td:first-child
+{
+  padding-left:15px;
+}
+
+.MdaErrMsg
+{
+  color: red;
+}
+
+
+.MdaPeaks
+{
+  margin-top: 10px;
+  border: 1px solid #d1d1d1;
+}
+
+.MdaPeakRow
+{
+  padding: 3px;
+  margin: 5px;
+  border: 1px solid #d1d1d1;
+}
+
+.MdaPeakRow .FixedInfo
+{
+  display: inline-block;
+  width: 300px;
+}
+
+.MdaPeakRow .Poisson
+{
+  margin-left: 10px;
+}
+
+
+.MdaResults
+{
+  margin-top: 5px;
+  margin-bottom: 8px;
+  padding: 7px;
+  padding-top: 5px;
+  border: 1px solid #d1d1d1;
+}

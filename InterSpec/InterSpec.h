@@ -680,6 +680,7 @@ protected:
   void createUnitsConverterTool();
   void createFluxTool();
   void createDecayInfoWindow();
+  void createDetectionConfidenceTool();
   void deleteDecayInfoWindow();
   void createFileParameterWindow();
   

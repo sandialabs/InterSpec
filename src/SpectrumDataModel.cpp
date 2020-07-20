@@ -89,11 +89,12 @@ Wt::Signal<SpectrumDataModel::ColumnType> &SpectrumDataModel::dataSet()
   return m_dataSet;
 }//Wt::Signal<ColumnType> &dataSet()
 
-void SpectrumDataModel::setDataHistogram( std::shared_ptr<Measurement> hist,
-                                          float liveTime,
-                                          float realTime,
-                                          float neutronCounts )
+void SpectrumDataModel::setDataHistogram( std::shared_ptr<const Measurement> hist )
 {
+  const float liveTime = hist ? hist->live_time() : -1.0f;
+  const float realTime = hist ? hist->real_time() : -1.0f;
+  const float neutronCounts = hist ? hist->neutron_counts_sum() : -1.0f;
+  
   // Store the data.
   m_data = hist;
   m_dataLiveTime = liveTime;
@@ -135,12 +136,13 @@ void SpectrumDataModel::setDataHistogram( std::shared_ptr<Measurement> hist,
 }//void setDataHistogram( std::shared_ptr<Measurement> hist )
 
 
-void SpectrumDataModel::setSecondDataHistogram( std::shared_ptr<Measurement> hist,
-                                                float liveTime,
-                                                float realTime,
-                                                float neutronCounts,
+void SpectrumDataModel::setSecondDataHistogram( std::shared_ptr<const Measurement> hist,
                                                 bool ownAxis )
 {
+  const float liveTime = hist ? hist->live_time() : -1.0f;
+  const float realTime = hist ? hist->real_time() : -1.0f;
+  const float neutronCounts = hist ? hist->neutron_counts_sum() : -1.0f;
+  
   m_secondDataLiveTime = liveTime;
   m_secondDataRealTime = realTime;
   m_secondDataNeutronCounts = neutronCounts;
@@ -186,11 +188,12 @@ void SpectrumDataModel::setSecondDataHistogram( std::shared_ptr<Measurement> his
 }//void setSecondDataHistogram(...);
 
 
-void SpectrumDataModel::setBackgroundHistogram( std::shared_ptr<Measurement> hist,
-                                                float liveTime,
-                                                float realTime,
-                                                float neutronCounts )
+void SpectrumDataModel::setBackgroundHistogram( std::shared_ptr<const Measurement> hist )
 {
+  const float liveTime = hist ? hist->live_time() : -1.0f;
+  const float realTime = hist ? hist->real_time() : -1.0f;
+  const float neutronCounts = hist ? hist->neutron_counts_sum() : -1.0f;
+  
   m_backgroundLiveTime = liveTime;
   m_backgroundRealTime = realTime;
   m_backgroundNeutronCounts = neutronCounts;
@@ -268,12 +271,12 @@ void SpectrumDataModel::setBackgroundSubtract( const bool subtract )
 
 // The following 8 functions will return empty std::shared_ptr<Measurement> variables if the
 // corresponding data histogram was not set.
-std::shared_ptr<Measurement> SpectrumDataModel::getData()
-{
-  return m_data;
-}
-std::shared_ptr<Measurement> SpectrumDataModel::getSecondData() {  return m_secondData; }
-std::shared_ptr<Measurement> SpectrumDataModel::getBackground() {  return m_background; }
+//std::shared_ptr<Measurement> SpectrumDataModel::getData()
+//{
+//  return m_data;
+//}
+//std::shared_ptr<Measurement> SpectrumDataModel::getSecondData() {  return m_secondData; }
+//std::shared_ptr<Measurement> SpectrumDataModel::getBackground() {  return m_background; }
 
 std::shared_ptr<const Measurement> SpectrumDataModel::getData() const       { return m_data;       }
 std::shared_ptr<const Measurement> SpectrumDataModel::getSecondData() const { return m_secondData; }
@@ -524,7 +527,7 @@ void SpectrumDataModel::setRebinFactor( const int factor )
   if( newFactor != m_rebinFactor )
   {
     int newNRows = 0;
-    std::shared_ptr<Measurement> xHist = histUsedForXAxis();
+    std::shared_ptr<const Measurement> xHist = histUsedForXAxis();
     if( xHist )
       newNRows = static_cast<int>(xHist->num_gamma_channels()) / newFactor;
 
@@ -832,9 +835,9 @@ boost::any SpectrumDataModel::headerData( int section, Orientation orientation, 
 void SpectrumDataModel::reset()
 {
   // Reset all of the data fields
-  setDataHistogram( std::shared_ptr<Measurement>(), 0.0, 0.0, 0.0 );
-  setSecondDataHistogram( std::shared_ptr<Measurement>(), 0.0, 0.0, 0.0, false );
-  setBackgroundHistogram( std::shared_ptr<Measurement>(), 0.0, 0.0, 0.0 );
+  setDataHistogram( nullptr );
+  setSecondDataHistogram( nullptr, false );
+  setBackgroundHistogram( nullptr );
 
   modelReset().emit();
 } // voit SpectrumDataModel::reset()
@@ -912,28 +915,10 @@ vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
 } // vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
 
 
-std::shared_ptr<Measurement> SpectrumDataModel::histUsedForXAxis()
-{
-  // Go through the priorities.
-  if( !!m_data )
-    return m_data;
-  
-/*
-  if( !!m_background )
-    return m_background;
-  // Second data is last because it's probably on another axis.
-  if( !!m_secondData )
-    return m_secondData;
-*/
-  
-  return std::shared_ptr<Measurement>();
-} // std::shared_ptr<Measurement> SpectrumDataModel::histUsedForXAxis()
-
-
 std::shared_ptr<const Measurement> SpectrumDataModel::histUsedForXAxis() const
 {
   // Go through the priorities.
-  if( !!m_data )
+  if( m_data )
     return m_data;
 
 /*
@@ -942,7 +927,7 @@ std::shared_ptr<const Measurement> SpectrumDataModel::histUsedForXAxis() const
   if( !!m_secondData ) return m_secondData;
 */
 
-  return std::shared_ptr<const Measurement>();
+  return nullptr;
 }// std::shared_ptr<const Measurement> SpectrumDataModel::histUsedForXAxis()
 
 

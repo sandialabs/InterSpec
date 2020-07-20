@@ -1,0 +1,124 @@
+#ifndef DetectionConfidenceTool_h
+#define DetectionConfidenceTool_h
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+#include "InterSpec_config.h"
+
+#include <tuple>
+#include <vector>
+
+#include <Wt/WContainerWidget>
+
+#include "InterSpec/AuxWindow.h"
+
+class PeakDef;
+class PeakModel;
+class InterSpec;
+class MaterialDB;
+class ShieldingSelect;
+class DetectorDisplay;
+class D3SpectrumDisplayDiv;
+class DetectionConfidenceTool;
+
+namespace Wt
+{
+  class WText;
+  class WLineEdit;
+  class WSuggestionPopup;
+  class WStandardItemModel;
+  namespace Chart
+  {
+    class WCartesianChart;
+  }
+}//namespace Wt
+
+class DetectionConfidenceWindow : public AuxWindow
+{
+public:
+  DetectionConfidenceWindow( InterSpec *viewer,
+                             MaterialDB *materialDB,
+                             Wt::WSuggestionPopup *materialSuggest );
+  virtual ~DetectionConfidenceWindow();
+  
+protected:
+  DetectionConfidenceTool *m_tool;
+};//class DetectionConfidenceWindow
+
+
+class DetectionConfidenceTool : public Wt::WContainerWidget
+{
+public:
+  DetectionConfidenceTool( InterSpec *viewer,
+                          MaterialDB *materialDB,
+                          Wt::WSuggestionPopup *materialSuggest,
+                          Wt::WContainerWidget *parent = 0 );
+  
+  virtual ~DetectionConfidenceTool();
+  
+  void do_development();
+  
+  void setRefLinesAndGetLineInfo();
+  
+  
+protected:
+  void doCalc();
+  void updateShownPeaks();
+  void computeForAcivity( const double activity,
+                          std::vector<std::shared_ptr<PeakDef>> &peaks,
+                          double &chi2, int &numDOF );
+  void handleInputChange();
+  
+  InterSpec *m_interspec;
+  
+  D3SpectrumDisplayDiv *m_chart;
+  PeakModel *m_peakModel;
+  
+  Wt::WLineEdit *m_nuclideEdit;
+  Wt::WSuggestionPopup *m_nuclideSuggest;
+  DetectorDisplay *m_detectorDisplay;
+  
+  Wt::WLineEdit *m_distanceEdit;
+  
+  MaterialDB *m_materialDB;                 //not owned by this object
+  Wt::WSuggestionPopup *m_materialSuggest;  //not owned by this object
+  ShieldingSelect *m_shieldingSelect;
+  
+  Wt::WLineEdit *m_displayActivity;
+  Wt::WContainerWidget *m_results;
+  Wt::Chart::WCartesianChart *m_chi2Chart;
+  Wt::WStandardItemModel *m_chi2Model;
+  Wt::WText *m_bestChi2Act;
+  Wt::WText *m_upperLimit;
+  
+  Wt::WText *m_errorMsg;
+  
+  std::shared_ptr<SpecMeas> m_our_meas;
+  Wt::WContainerWidget *m_peaks;
+};//class DetectionConfidenceTool
+
+
+
+
+
+#endif //DetectionConfidenceTool_h
