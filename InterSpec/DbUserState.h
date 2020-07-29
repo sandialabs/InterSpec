@@ -11,7 +11,12 @@
 
 #include "InterSpec/SpecMeas.h"
 
-class MeasurementInfo;
+namespace SpecUtils
+{
+  class SpecFile;
+  enum class SpectrumType : int;
+}//namespace SpecUtils
+
 
 namespace DbUserState
 {
@@ -21,7 +26,8 @@ namespace DbUserState
   
   class DataStr : public std::vector<unsigned char>{ public: };
   typedef DataStr SpectrumData_t;
-}
+}//namespace DbUserState
+
 
 namespace Wt
 {
@@ -283,7 +289,7 @@ public:
   //  Will throw FileToLargeForDbException if serialization is larger than
   //  UserFileInDb::sm_maxFileSizeBytes.
   //  Will throw runtime_error if any other issues.
-  void setInformation( const MeasurementInfo &spectrumFile,
+  void setInformation( const SpecUtils::SpecFile &spectrumFile,
                        const SerializedFileFormat format );
   
   //setFileData(...): same as other setFileData(...) function, but instead
@@ -295,7 +301,7 @@ public:
   //decodeSpectrum(): de-serializes data currently in fileData.
   //  Will throw if de-serialization fails, otherwise will always return
   //  a valid SpecMeas object.
-  void decodeSpectrum( std::shared_ptr<MeasurementInfo> &meas ) const;
+  void decodeSpectrum( std::shared_ptr<SpecUtils::SpecFile> &meas ) const;
   
   template<class Action>
   void persist( Action &a )
@@ -321,7 +327,7 @@ public:
   SpectrumData_t m_peaksXml;
 //  int detectorID
   
-  SpectrumType m_spectrumType;
+  SpecUtils::SpectrumType m_spectrumType;
   SpectrumData_t m_displayedSampleNumbers;
   
   template<class Action>
@@ -343,14 +349,14 @@ public:
       std::string type;
       Wt::Dbo::field( a, type, "SpectrumType" );
       
-      if( type == descriptionText(kForeground) )
-        m_spectrumType = kForeground;
-      else if( type == descriptionText(kSecondForeground) )
-        m_spectrumType = kSecondForeground;
-      else if( type == descriptionText(kBackground) )
-        m_spectrumType = kBackground;
+      if( type == SpecUtils::descriptionText(SpecUtils::SpectrumType::Foreground) )
+        m_spectrumType = SpecUtils::SpectrumType::Foreground;
+      else if( type == descriptionText(SpecUtils::SpectrumType::SecondForeground) )
+        m_spectrumType = SpecUtils::SpectrumType::SecondForeground;
+      else if( type == descriptionText(SpecUtils::SpectrumType::Background) )
+        m_spectrumType = SpecUtils::SpectrumType::Background;
       else if( type == "" )
-        m_spectrumType = kForeground;
+        m_spectrumType = SpecUtils::SpectrumType::Foreground;
       else throw std::runtime_error( "Invalid spectrum type in DB: " + type );
     }//if( reading from DB )
     

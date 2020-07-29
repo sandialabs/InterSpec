@@ -236,7 +236,7 @@ DetectionConfidenceWindow::DetectionConfidenceWindow( InterSpec *viewer,
   
   AuxWindow::addHelpInFooter( footer(), "detection-confidence-tool" );
   
-  WContainerWidget *buttonDiv = footer();
+  //WContainerWidget *buttonDiv = footer();
   
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
@@ -248,7 +248,7 @@ DetectionConfidenceWindow::DetectionConfidenceWindow( InterSpec *viewer,
   const int screenW = viewer->renderedWidth();
   const int screenH = viewer->renderedHeight();
   const int width = ((screenW < 906) ? screenW : 0.75*screenW );
-  const int height = ((screenH < 525) ? screenH : 0.8*screenH );
+  const int height = ((screenH < 525) ? screenH : 0.95*screenH );
   resizeWindow( width, height );
   
   resizeToFitOnScreen();
@@ -279,6 +279,13 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
     m_materialSuggest( materialSuggest ),
     m_shieldingSelect( nullptr )
 {
+  /** \TODO:
+   - Put the Chi2 chart to the right of the spectrum, when it should exist
+   - Give the user a choice about using continuum fixed at null hypothesis
+   - Allow combining ROI with neghboring peaks
+   - Have the energy rows fold down to show more information, similar to Steves tool, for each energy
+   - Allow users to select CL, not just 95%
+   */
   wApp->useStyleSheet( "InterSpec_resources/DetectionConfidenceTool.css" );
   
   addStyleClass( "DetectionConfidenceTool" );
@@ -295,7 +302,7 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   
   const int screenW = viewer->renderedWidth();
   const int screenH = viewer->renderedHeight();
-  const int width = ((screenW < 906) ? screenW : 0.75*screenW );
+  const int width = ((screenW < 906) ? screenW : 0.75*screenW ); // maybe cap width off at 1800 px?
   const int height = ((screenH < 525) ? screenH : 0.8*screenH );
   //m_chart->resize( WLength(width-20,WLength::Unit::Pixel), WLength(std::min(0.3*height,300.0),WLength::Unit::Pixel) );
   //m_chart->resize( WLength::Auto, WLength(300,WLength::Unit::Pixel) );
