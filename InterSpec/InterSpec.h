@@ -44,6 +44,9 @@ class AuxWindow;
 class GoogleMap;
 class PeakModel;
 class MaterialDB;
+#if ( USE_SPECTRUM_CHART_D3 )
+class D3TimeChart;
+#endif
 class DecayWindow;
 struct ColorTheme;
 class UserFileInDb;
@@ -136,6 +139,12 @@ public:
   InterSpec( Wt::WContainerWidget *parent = 0 );
 
   virtual ~InterSpec();
+  
+  /** Returns the InterSpec instance cooresponding to the current WApplication instance.
+   Will return nullptr if WApplication::instance() is null (e.g., current thread is not in a
+   WApplication event loop).
+   */
+  static InterSpec *instance();
   
   /** Sets the directory InterSpec "data" files are located, including cross
       sections, materials, detector response functions, nuclear decay info
@@ -448,8 +457,9 @@ public:
   void setOverlayCanvasVisible( bool visible );
 #if( !USE_SPECTRUM_CHART_D3 )
   Wt::JSlot *alignSpectrumOverlayCanvas();  //returns NULL if overlay canvas not enabled
-#endif
   Wt::JSlot *alignTimeSeriesOverlayCanvas();
+#endif
+  
 
   
   //displayedSpectrumChanged(): is a singal emitted whenever a spectrum or
@@ -487,9 +497,9 @@ public:
   //  energy spectrum might).
   void setSpectrumScrollingParent( Wt::WContainerWidget *parent );
   void setScrollY( int scrollY );
-#endif  //#if( !USE_SPECTRUM_CHART_D3 )
   
   void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
+#endif  //#if( !USE_SPECTRUM_CHART_D3 )
   
   //setDisplayedEnergyRange(): sets the displayed energy range that should be
   //  shown.  Range is not checked for validity. E.g. you should not ask to zoom
@@ -1013,12 +1023,14 @@ protected:
   void initDragNDrop();
 #endif //#if( !ANDROID && !IOS )
   
+#if( !USE_SPECTRUM_CHART_D3 )
   //initWindowZoomWatcher(): when the browser emits the window.onresize signal,
   //  force the canvas overlays to re-align themselves.
   //  This is necassary when when the user changes zoom-level.
   //  Only slightly more modern browsers emit this, but its rare enough to not
   //  bother wasting time supporting old browsers.
   void initWindowZoomWatcher();
+#endif
   
   void initHotkeySignal();
   void hotkeyPressed( const unsigned int value );
@@ -1037,10 +1049,12 @@ protected:
   PeakModel *m_peakModel;
 #if ( USE_SPECTRUM_CHART_D3 )
   D3SpectrumDisplayDiv *m_spectrum;
+  D3TimeChart *m_timeSeries;
 #else
   SpectrumDisplayDiv   *m_spectrum;
-#endif
   SpectrumDisplayDiv   *m_timeSeries;
+#endif
+  
   PopupDivMenu *m_detectorToShowMenu;
   Wt::WPushButton *m_mobileMenuButton;
   Wt::WPushButton *m_mobileBackButton;
