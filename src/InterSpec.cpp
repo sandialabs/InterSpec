@@ -163,6 +163,7 @@
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
 #if( USE_SPECTRUM_CHART_D3 )
+#include "InterSpec/D3TimeChart.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #endif
 
@@ -450,18 +451,22 @@ InterSpec::InterSpec( WContainerWidget *parent )
   //  locally
   setLayoutSizeAware( true );
 
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  assert( app );
+  //make it so InterSpec::instance() wont return nullptr for calls from within this constructor
+  app->m_viewer = this;
   
   //for notification div
   m_notificationDiv = new WContainerWidget();
   m_notificationDiv->setStyleClass("qtipDiv");
   m_notificationDiv->setId("qtip-growl-container");
-  wApp->domRoot()->addWidget( m_notificationDiv );
+  app->domRoot()->addWidget( m_notificationDiv );
   
   if( !isMobile() )
     initHotkeySignal();
   
   // Try to grab the username.
-  string username = static_cast<InterSpecApp*>(wApp)->getUserNameFromEnvironment();
+  string username = app->getUserNameFromEnvironment();
 
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   if( username == "" )
@@ -532,13 +537,16 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_peakModel->rowsInserted().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
   m_peakModel->layoutChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
   m_peakModel->modelReset().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  
+  m_timeSeries = new D3TimeChart();
 #else
   m_spectrum   = new SpectrumDisplayDiv();
   m_spectrum->setPlotAreaPadding( 80, 2, 10, 44 );
-#endif
-  m_timeSeries = new SpectrumDisplayDiv();
   
+  m_timeSeries = new SpectrumDisplayDiv();
   m_timeSeries->setPlotAreaPadding( 80, 0, 10, 44 );
+#endif
+  
   
   if( isPhone() )
   {
@@ -580,19 +588,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->rightMouseDragg().connect( m_recalibrator, &Recalibrator::handleGraphicalRecalRequest );
   
 
-#if( USE_SPECTRUM_CHART_D3 )
-  const WEnvironment &env = wApp->environment();
-  const bool isOldIE = (env.agentIsIE() && env.agent()<WEnvironment::IE9);
-  
-  if( isOldIE )
-  {
-    m_timeSeries->connectWtMouseConnections();
-  }else
-  {
-    m_timeSeries->enableOverlayCanvas( false, true, false );
-    m_timeSeries->setIsTimeDisplay();
-  }//if( isOldIE ) / else
-#else
+#if( !USE_SPECTRUM_CHART_D3 )
   const WEnvironment &env = wApp->environment();
   const bool isOldIE = (env.agentIsIE() && env.agent()<WEnvironment::IE9);
 
@@ -680,7 +676,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   
   /* Set the loading indicator so that it's the highest z-index, so always visible  */
-  Wt::WApplication *app = Wt::WApplication::instance();
   WDefaultLoadingIndicator *indicator = new Wt::WDefaultLoadingIndicator();
   indicator->addStyleClass( "LoadingIndicator" );
   app->setLoadingIndicator( indicator );
@@ -704,6 +699,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_layout->addWidget( m_spectrum, m_layout->rowCount(), 0 );
   m_layout->addWidget( m_timeSeries, m_layout->rowCount(), 0 );
   
+#if( USE_SPECTRUM_CHART_D3 )
+  // \TODO: hook up: m_timeSeries->chartDragged()
+  m_timeSeries->setY1AxisTitle( "Gamma CPS" );
+#else
   m_timeSeries->enableLegend( false );
   m_timeSeries->showHistogramIntegralsInLegend( false );
   m_timeSeries->setMouseDragHighlights( true, true );
@@ -724,14 +723,14 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_timeSeries->shiftAltKeyDragged().connect(
       boost::bind( &InterSpec::sampleNumbersToDisplayAddded, this, _1, _2,
                    SpecUtils::SpectrumType::Background ) );
-  
+  m_timeSeries->setYAxisTitle( "Gamma CPS" );
+  m_timeSeries->setAutoAdjustDisplayRebinFactor( true );
+#endif //USE_SPECTRUM_CHART_D3 / else
   
   m_spectrum->setXAxisTitle( "Energy (keV)" );
   m_spectrum->setYAxisTitle( "Counts/Channel" );
   m_timeSeries->setXAxisTitle( "Real Time of Measurement (seconds)" );
-  m_timeSeries->setYAxisTitle( "Gamma CPS" );
   m_timeSeries->setY2AxisTitle( "Neutron CPS" );
-  m_timeSeries->setAutoAdjustDisplayRebinFactor( true );
   m_spectrum->setXAxisTitle( "Energy (keV)" );
   m_spectrum->setYAxisTitle( "Counts/Channel" );
 
@@ -847,7 +846,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   initDragNDrop();
 #endif
   
+#if( !USE_SPECTRUM_CHART_D3 )
   initWindowZoomWatcher();
+#endif
   
 #if( USE_DB_TO_STORE_SPECTRA )
   updateSaveWorkspaceMenu();
@@ -860,6 +861,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
   applyColorTheme( nullptr );
 }//InterSpec( constructor )
 
+InterSpec *InterSpec::instance()
+{
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( !app )
+    return nullptr;
+  return app->viewer();
+}//instance()
 
 void InterSpec::setStaticDataDirectory( const std::string &dir )
 {
@@ -1253,10 +1261,9 @@ void InterSpec::layoutSizeChanged( int w, int h )
   //  so we will force it.
 #if( !USE_SPECTRUM_CHART_D3 )
   m_spectrum->forceOverlayAlign();
-#endif
-  
   if( !m_timeSeries->isHidden() )
     m_timeSeries->forceOverlayAlign();
+#endif
 #endif  //#if( IOS || ANDROID )
 }//void layoutSizeChanged( int w, int h )
 
@@ -1386,17 +1393,15 @@ void InterSpec::initDragNDrop()
 }//void InterSpec::initDragNDrop()
 #endif //#if( !ANDROID && !IOS )
 
-
+#if( !USE_SPECTRUM_CHART_D3 )
 void InterSpec::initWindowZoomWatcher()
 {
   //Look for window.onresize events, and force the JS canvases to re-align....
   string command;
-  
-#if( !USE_SPECTRUM_CHART_D3 )
+
   JSlot *specslot = alignSpectrumOverlayCanvas();
   if( specslot )
     command += specslot->execJs();
-#endif
   
   JSlot *timeslot = alignTimeSeriesOverlayCanvas();
   if( timeslot )
@@ -1415,6 +1420,7 @@ void InterSpec::initWindowZoomWatcher()
     wApp->doJavaScript("$(window).on('resize', function(){setTimeout(function(){" + command + "},500);});");
   }//if( !command.empty() )
 }//void initWindowZoomWatcher()
+#endif
 
 void InterSpec::initHotkeySignal()
 {
@@ -2780,8 +2786,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     if( m_shieldingSourceFit )
       entry.modify()->shownDisplayFeatures |= UserState::kShowingShieldSourceFit;
     
+#if( !USE_SPECTRUM_CHART_D3 )
     if( m_timeSeries->legendIsEnabled() )
       entry.modify()->shownDisplayFeatures |= UserState::kTimeSeriesLegend;
+#endif
     
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
@@ -3316,10 +3324,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     else
       m_spectrum->disableLegend();
     
+#if( !USE_SPECTRUM_CHART_D3 )
     if( (entry->shownDisplayFeatures & UserState::kTimeSeriesLegend) )
       m_timeSeries->enableLegend( false );
     else
       m_timeSeries->disableLegend();
+#endif
     
     
 //  SpectrumSubtractMode backgroundSubMode;
@@ -3606,6 +3616,9 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
   m_spectrum->setChartBackgroundColor( theme->spectrumChartBackground );
   m_spectrum->setTextColor( theme->spectrumChartText );
   
+#if( USE_SPECTRUM_CHART_D3 )
+  m_timeSeries->applyColorTheme( theme );
+#else
   m_timeSeries->setForegroundSpectrumColor( theme->timeChartGammaLine );
   m_timeSeries->setSecondarySpectrumColor( theme->timeChartNeutronLine );
   
@@ -3619,6 +3632,7 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
   m_timeSeries->setSecondaryHighlightColor( theme->timeHistorySecondaryHighlight );
   
   m_timeSeries->setOccupiedTimeSamplesColor( theme->occupancyIndicatorLines );
+#endif //if( USE_SPECTRUM_CHART_D3 ) / else
   
   setReferenceLineColors( theme );
 
@@ -5783,11 +5797,13 @@ void InterSpec::addDisplayMenu( WWidget *parent )
                                          false ) );
   item->hide(); //we are already showing the legend
 
+#if( !USE_SPECTRUM_CHART_D3 )
   item = chartmenu->addMenuItem( "Show Time Legend" );
   m_timeSeries->legendDisabled().connect( item, &PopupDivMenuItem::show );
   m_timeSeries->legendEnabled().connect( item,  &PopupDivMenuItem::hide );
   item->triggered().connect( boost::bind( &SpectrumDisplayDiv::enableLegend, m_timeSeries, false ) );
   item->hide();
+#endif
   
   addPeakLabelSubMenu( m_displayOptionsPopupDiv ); //add Peak menu
   
@@ -7799,8 +7815,13 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
     (*sampleset) = meas->sample_numbers();
   
   //should update the highlighted regions right here
+#if( USE_SPECTRUM_CHART_D3 )
+  cerr << "m_timeSeries->setTimeHighLightRegions(...) Not implemented for D3 chart yet!" << endl;
+#warning "Need to implement setting highlight regions for D3 based chart"
+#else
   vector< pair<double,double> > regions = timeRegionsToHighlight( type );
   m_timeSeries->setTimeHighLightRegions( regions, type );
+#endif
   
   switch( type )
   {
@@ -9053,10 +9074,15 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
 #endif
   }//if( m_detectorToShowMenu )
   
+#if( USE_SPECTRUM_CHART_D3 )
+    cerr << "m_timeSeries->setTimeHighLightRegions(...) Not implemented for D3 chart yet!" << endl;
+#warning "Need to implement clearing highlight regions for D3 based chart"
+#else
   m_timeSeries->clearTimeHighlightRegions( SpecUtils::SpectrumType::Foreground );
   m_timeSeries->clearTimeHighlightRegions( SpecUtils::SpectrumType::Background );
   m_timeSeries->clearTimeHighlightRegions( SpecUtils::SpectrumType::SecondForeground );
   m_timeSeries->clearOccupancyRegions();
+#endif
   
   if( m_displayedSamples.empty() )
     m_displayedSamples = validForegroundSamples();
@@ -9145,8 +9171,8 @@ void InterSpec::setOverlayCanvasVisible( bool visible )
 {
 #if( !USE_SPECTRUM_CHART_D3 )
   m_spectrum->setOverlayCanvasVisible( visible );
-#endif
   m_timeSeries->setOverlayCanvasVisible( visible );
+#endif
 }//void setOverlayCanvasVisible( bool visible )
 
 
@@ -9155,12 +9181,14 @@ Wt::JSlot *InterSpec::alignSpectrumOverlayCanvas()
 {
   return m_spectrum->alignOverlayCanvas();
 }
-#endif
+
 
 Wt::JSlot *InterSpec::alignTimeSeriesOverlayCanvas()
 {
  return m_timeSeries->alignOverlayCanvas();
 }
+#endif
+
 
 size_t InterSpec::addHighlightedEnergyRange( const float lowerEnergy,
                                             const float upperEnergy,
@@ -9185,12 +9213,14 @@ void InterSpec::setScrollY( int scrollY )
 {
   m_spectrum->setScrollY( scrollY );
 }
-#endif  //#if( !USE_SPECTRUM_CHART_D3 )
 
 void InterSpec::setTimeSeriesScrollingParent( WContainerWidget *parent )
 {
   m_timeSeries->setScrollingParent( parent );
 }//void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
+
+#endif  //#if( !USE_SPECTRUM_CHART_D3 )
+
 
 
 void InterSpec::setDisplayedEnergyRange( float lowerEnergy, float upperEnergy )
@@ -9241,8 +9271,8 @@ void InterSpec::overlayCanvasJsExceptionCallback( const std::string &message )
   {
 #if( !USE_SPECTRUM_CHART_D3 )
     m_spectrum->disableOverlayCanvas();
-#endif
     m_timeSeries->disableOverlayCanvas();
+#endif
   }//if( starts_with( message, "[initCanvasForDragging exception]" ) )
 
   const string msg = "There was a problem with the clientside javascript.<br>"
@@ -10164,6 +10194,37 @@ void InterSpec::setChartSpacing()
 
 void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
 {
+#if( USE_SPECTRUM_CHART_D3 )
+  if( m_dataMeasurement && m_dataMeasurement->passthrough() )
+  {
+    if( m_timeSeries->isHidden() )
+    {
+      m_timeSeries->setHidden( false );
+      setChartSpacing();
+    }//if( m_timeSeries->isHidden() )
+    
+    m_timeSeries->setData( m_dataMeasurement );
+    
+#warning "Need to set highlight regions for D3 based chart"
+    cerr << "Need to set highlight regions for D3 based chart" << endl;
+  }else
+  {
+    m_timeSeries->setData( nullptr );
+    
+    if( !m_timeSeries->isHidden() )
+    {
+      m_timeSeries->setHidden( true );
+      setChartSpacing();
+    }//if( !m_timeSeries->isHidden() )
+
+    if( updateHighlightRegionsDisplay )
+    {
+      /// \TODO: set highlight regions
+#warning "Need to clear highlight regions for D3 based chart"
+      cerr << "Need to clear highlight regions for D3 based chart" << endl;
+    }
+  }//if( passthrough ) / else
+#else
   std::shared_ptr<SpecUtils::Measurement> gammaH, neutronH;
 
   const size_t ndet = m_dataMeasurement ? m_dataMeasurement->detector_names().size() : size_t(0);
@@ -10313,8 +10374,7 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
       m_timeSeries->clearOccupancyRegions();
     }
   }//if( passthrough ) / else
-  
-  return;
+#endif
 }//void displayTimeSeriesData()
 
 
@@ -10607,8 +10667,15 @@ void InterSpec::displaySecondForegroundData()
   
   if( !m_timeSeries->isHidden() )
   {
+#if( USE_SPECTRUM_CHART_D3 )
+    cerr << "m_timeSeries->setTimeHighLightRegions(...) Not implemented for D3 chart yet!" << endl;
+#warning "Need to implement setting highlight regions for D3 based chart"
+    //m_timeSeries->setHighlightedIntervals( const std::set<int> &sample_numbers, SpecUtils::SpectrumType type );
+#else
     vector< pair<double,double> > regions = timeRegionsToHighlight(SpecUtils::SpectrumType::SecondForeground);
     m_timeSeries->setTimeHighLightRegions( regions, SpecUtils::SpectrumType::SecondForeground );
+#endif
+    
   }
 }//void displaySecondForegroundData()
 
@@ -10647,8 +10714,14 @@ void InterSpec::displayBackgroundData()
   
   if( !m_timeSeries->isHidden() )
   {
+#if( USE_SPECTRUM_CHART_D3 )
+    cerr << "m_timeSeries->setTimeHighLightRegions(...) Not implemented for D3 chart yet!" << endl;
+#warning "Need to implement setting highlight regions for D3 based chart"
+        //m_timeSeries->setHighlightedIntervals( const std::set<int> &sample_numbers, SpecUtils::SpectrumType type );
+#else
     vector< pair<double,double> > regions = timeRegionsToHighlight(SpecUtils::SpectrumType::Background);
     m_timeSeries->setTimeHighLightRegions( regions, SpecUtils::SpectrumType::Background );
+#endif
   }
   
   const bool canSub = (m_dataMeasurement && m_backgroundMeasurement);

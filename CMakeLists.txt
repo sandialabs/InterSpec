@@ -596,8 +596,13 @@ if( USE_SPECTRUM_CHART_D3 )
     src/D3SpectrumDisplayDiv.cpp
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
     external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
-    external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css)
-  list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h )
+    external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
+    src/D3TimeChart.cpp
+  )
+  
+  list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h InterSpec/D3TimeChart.h )
+
+  list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
 
   deploy_js_resource( "${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
        "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js" )
@@ -1053,7 +1058,7 @@ IF( BUILD_AS_UNIT_TEST_SUITE )
 ENDIF( BUILD_AS_UNIT_TEST_SUITE )
 
 
-set( OTHER_SUPPORT_FILES
+list( APPEND OTHER_SUPPORT_FILES
      ${CMAKE_CURRENT_SOURCE_DIR}/README.md
      ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
