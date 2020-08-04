@@ -828,8 +828,6 @@ else()
   #set_target_properties( InterSpecExe PROPERTIES SUFFIX "")
   set_target_properties( InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec" )
 
-  add_executable( peakFitTimingDev testing/peakFitTimingDev.cpp )
-  target_link_libraries( peakFitTimingDev PUBLIC InterSpecLib )
 endif( IOS )
 
 set_target_properties( InterSpecLib PROPERTIES PREFIX "" )
