@@ -67,11 +67,15 @@ D3TimeChart.prototype.handleResize = function(){
   // ...
   
   // Make sure to update the C++ code of the changed plotting size.
-  //this.WtEmit(this.chart.id, {name: 'timeresized'}, ... );
+    
 }
 
 D3TimeChart.prototype.setData = function( data ){
   //See the c++ function D3TimeChart::setData()
+}
+
+D3TimeChart.prototype.setHighlightRegions = function( regions ){
+  //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
 }
 
 D3TimeChart.prototype.setXAxisTitle = function( title ){

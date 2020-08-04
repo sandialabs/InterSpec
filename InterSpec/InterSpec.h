@@ -707,6 +707,30 @@ protected:
                                            const int sample,
                                            const std::vector<std::string> &detector_names );
   
+#if( USE_SPECTRUM_CHART_D3 )
+  /** Returns the sample numbers marked as Foreground, Background, or Secondary (i.e., intrinsic or
+   known), in the foreground spectrum file.
+   This is used for displaying the highlighted regions on the time series chart.
+   */
+  std::set<int> sampleNumbersForTypeFromForegroundFile(
+                                                    const SpecUtils::SpectrumType spec_type ) const;
+  
+  /** Function to call when the time chart is clicked or tapped on.
+   @param sample_start The starting sample number (as defined by the SpecFile) that was drug.
+   @param sample_end The ending sample number (as defined by the SpecFile) that was drug.
+   @param modifiers The keyoard modifier pressed.  Ex.
+          Shift key means: add specified samples to displayed samples
+          Alt (mac option) key means operation being performed is for the background spectrum
+          Conrol means remove the specified samples from being displayed
+   */
+  void timeChartDragged( const int sample_start, const int sample_end,
+                             Wt::WFlags<Wt::KeyboardModifier> modifiers );
+  
+  /** A simple passthrough to #timeChartDragged to handle when time chart is clicked on or tapped.
+   */
+  void timeChartClicked( const int sample_number, Wt::WFlags<Wt::KeyboardModifier> modifiers );
+  
+#else
   //timeRegionsToHighlight(): returns the time ranges for the currently set
   //  sample numbers to display for the SpecUtils::SpectrumType indicated.  For
   //  foreground and background the set SpecMeas must be the same as the
@@ -721,36 +745,34 @@ protected:
    */
   std::vector< std::pair<double,double> > timeRegionsFromFile(
                               const SpecUtils::OccupancyStatus occ_type ) const;
+    
+  std::set<int> timeRangeToSampleNumbers( double t0, double t1 );
   
-  void displayForegroundData( int first_sample, int last_sample ); //sample numbers are inclusive
-  void displaySecondForegroundData();
-  void displayBackgroundData();
-  void displayTimeSeriesData( bool updateHighlightRegionsDisplay );
-
+  std::vector<std::pair<float,int> > passthroughTimeToSampleNumber() const;
+  
   // Inclusive for t0, exclusive for t1, e.g., if you have time slices of 0.1s,
   // and you pass in t0 = 0.1, t1 = 0.2; then only the second time slice will be
   // displayed.
   //emits the m_displayedSpectrumChangedSignal
   void changeTimeRange( const double t0, const double t1,
-                        const SpecUtils::SpectrumType type );
-  
+                         const SpecUtils::SpectrumType type );
+   
   //sampleNumbersToDisplayAddded(...): emitted when user control dragg on the
   //  chart to add more time slices
   void sampleNumbersToDisplayAddded( const double t0, const double t1,
-                                     const SpecUtils::SpectrumType type );
+                                      const SpecUtils::SpectrumType type );
+#endif //if( USE_SPECTRUM_CHART_D3 ) / else
+  
+  void displaySecondForegroundData();
+  void displayBackgroundData();
+  void displayTimeSeriesData();
+
   
   //detectorsToDisplayChanged(): a callback function for when the user selects a
   //  detector to be displayed or not.
   void detectorsToDisplayChanged();
   
-  //liveTime(): computes the live time that the given sample numbers would have
-  //  with the currently selected detectors
-  //double liveTime( const std::set<int> &samplenums ) const;
   
-  std::set<int> timeRangeToSampleNumbers( double t0, double t1 );
-  
-  std::vector<std::pair<float,int> > passthroughTimeToSampleNumber() const;
-
   //showNewWelcomeDialog(): see notes for showWelcomeDialog().  This function
   //  will eventually replace showWelcomeDialog().
   void showNewWelcomeDialog( bool force = false );
