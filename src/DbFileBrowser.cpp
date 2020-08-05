@@ -72,7 +72,10 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   {
     m_factory = new SnapshotBrowser( manager, viewer, type, header, footer(), nullptr );
     layout->addWidget( m_factory, 0, 0 );
-    m_factory->finished().connect( this, &AuxWindow::hide );
+    
+    auto hider = wApp->bind( boost::bind( &AuxWindow::hide, this ) );
+    
+    m_factory->finished().connect( std::bind( [hider](){hider();} ) );
   }catch( ... )
   {
     //In case something goes wrong inside SnapshotBrowser, we delete this window
@@ -124,11 +127,16 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_editWindow( nullptr ),
     m_nrows( 0 )
 {
+  wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+  
+  addStyleClass( "SnapshotBrowser" );
+  
   WContainerWidget *footer = buttonBar;
   if( !footer )
     footer = new WContainerWidget();
   
   WGridLayout *layout = new WGridLayout();
+  layout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( layout );
   
   //We have to create a independant Dbo::Session for this class since the
@@ -148,12 +156,13 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
     WContainerWidget* tablecontainer = new WContainerWidget();
     
-    //With m_snapshotTable being a WTree, we cant implement double clicking on
-    //  an item to open it right away.  If we use a WTreeView, then we should
-    //  be able to do that...
     m_snapshotTable = new WTree();
+    m_snapshotTable->addStyleClass( "SnapshotTable" );
+
+    
     WGridLayout *tablelayout = new WGridLayout();
-    tablelayout->setContentsMargins(2, 2, 2, 2);
+    //tablelayout->setContentsMargins(2, 2, 2, 2);
+    tablelayout->setContentsMargins(0,0,0,0);
     tablelayout->setRowStretch(0, 1);
     tablelayout->setColumnStretch(0, 1);
     tablelayout->addWidget(m_snapshotTable, 0, 0);
@@ -171,8 +180,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_snapshotTable->setTreeRoot(root);
     m_snapshotTable->setSelectionMode(Wt::SingleSelection);
     m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
-    
-    
+      
     Dbo::Transaction transaction( *m_session->session() );
     Dbo::collection< Dbo::ptr<UserState> > query;
     
@@ -224,14 +232,38 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       }//m_uuid.empty()
     }//if( m_nrows == 0 )
     
+    
+    //Some sudo-styling for if we want to style this - or if we implement this as a WTreeView
+    //  most of this styling comes along much easier (so I think this should be what is done
+    //  sometime in the future).
+    //if( !wApp->styleSheet().isDefined("snapshotrow") )
+    //{
+    //  // We would add these rules to InterSpec.css
+    //  wApp->styleSheet().addRule( "li.SnapshotRow > .Wt-item", "height: 30px; line-height: 30px;", "snapshotrow" );
+    //  wApp->styleSheet().addRule( ".SnapshotRow", "text-overflow: ellipsis; white-space: nowrap; overflow: hidden;" );
+    //  wApp->styleSheet().addRule( ".SnapshotRow .Wt-expand", "height: 30px; padding-top: 5px" );
+    //  wApp->styleSheet().addRule( ".SnapshotRow div.Wt-item.Wt-trunk,"
+    //                              ".Wt-tree.Wt-trunk,"
+    //                              ".Wt-tree .Wt-item.Wt-trunk",
+    //                              "background-image: none !important;" );
+    //  //Make table alternate row colors using:
+    //  wApp->styleSheet().addRule( "ul.Wt-root > li.SnapshotRow", "color: white; background: rgb(41,42,44) !important;" );
+    //  wApp->styleSheet().addRule( "ul.Wt-root > li.SnapshotRow:nth-child(odd)", "background: rgb(30,32,34) !important;" );
+    //}
+    
     for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshotIterator = query.begin();
         snapshotIterator != query.end(); ++snapshotIterator )
     {
       Wt::WTreeNode *snapshotNode = new Wt::WTreeNode((*snapshotIterator)->name, 0, root);
+    
+      //snapshotNode->addStyleClass( "SnapshotRow" );
       
       // We will go-around Wt::WTreeNode API to hack in a way to customize display and options
       //  each row in the table can have by assuming the row is implemented as a WContainerWidget,
       //  which seems to always be true, at least for Wt 3.3.4.
+      // \TODO: sub-class WTreeNode in order to allow customization, which is probably a cleaner
+      //       solution, or we could use a WTreeView instead of WTree, which is probably best
+      //       solution.
       WContainerWidget *rowDiv = nullptr;
       if( snapshotNode->label() )
         rowDiv = dynamic_cast<WContainerWidget *>( snapshotNode->label()->parent() );
@@ -248,11 +280,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       // Add ability to double click on a row to load this state
       if( rowDiv )
       {
-        //rowDiv->doubleClicked().connect( this, &SnapshotBrowser::loadSnapshotSelected );
-        rowDiv->doubleClicked().connect( std::bind([this,snapshotNode](){
+        auto loader = wApp->bind( boost::bind( &SnapshotBrowser::loadSnapshotSelected, this ) );
+        rowDiv->doubleClicked().connect( std::bind([this,loader,snapshotNode](){
           const set<WTreeNode *> sets = m_snapshotTable->selectedNodes();
           if( !sets.empty() && ((*begin(sets)) == snapshotNode) )
-            loadSnapshotSelected();
+            loader();
 #if( PERFORM_DEVELOPER_CHECKS )
           else
             log_developer_error( __func__, "Got double click on SnapshotBrowser state but that wasnt what was selected." );
@@ -277,13 +309,6 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
         editBtn->addStyleClass( "DelSnapshotBtn" );
         editBtn->clicked().connect( this, &SnapshotBrowser::startEditSelected );
         editBtn->doubleClicked().preventPropagation();
-        
-        if( !wApp->styleSheet().isDefined("snapshotbtn") )
-        {
-          wApp->styleSheet().addRule( ".DelSnapshotBtn", "float: right; background: none; display: none; cursor: pointer; opacity: 0.4; margin-top: 1px; margin-left: 1px; margin-right: 2px", "snapshotbtn" );
-          wApp->styleSheet().addRule( ".DelSnapshotBtn:hover", "opacity: 1;" );
-          wApp->styleSheet().addRule( ".Wt-selected .DelSnapshotBtn", "display: inline;" );
-        }
       }//if( buttonBar && rowDiv )
       
       //snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
@@ -348,9 +373,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     layout->setRowStretch( row, 1 );
     
     m_timeLabel = new WText();
+    m_timeLabel->addStyleClass( "SnapshotTime" );
     layout->addWidget(m_timeLabel, ++row,0);
     
     m_descriptionLabel = new WText();
+    m_descriptionLabel->addStyleClass( "SnapshotDesc" );
     layout->addWidget(m_descriptionLabel, ++row,0);
     layout->columnStretch(1);
     
@@ -399,7 +426,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_loadSnapshotButton->disable();
     
     if( !buttonBar )
-      layout->addWidget( footer, layout->rowCount()+1 , 0, AlignRight );
+    {
+      layout->addWidget( footer, layout->rowCount()+1 , 0 );
+      m_loadSpectraButton->setFloatSide( Wt::Side::Right );
+      m_loadSnapshotButton->setFloatSide( Wt::Side::Right );
+    }
   }catch( std::exception &e )
   {
     if( !buttonBar )
@@ -422,7 +453,6 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
 {
   //add in foreground/background/2ndfore
   typedef Dbo::collection< Dbo::ptr<UserFileInDb> > Spectras;
-  typedef Spectras::iterator SpectraIter;
   
   for( int i = 0; i < 3; i++ )
   {
