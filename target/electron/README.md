@@ -32,6 +32,9 @@ cmake --build build_dir --config Release
 # Or directly use the `make` command like:
 ninja -C build_dir
 
+# Make the "app" directory into the build directory
+ninja -C build_dir install
+
 # To run InterSpec without packaging everything, you
 # need to install the Electron package
 npm install electron
