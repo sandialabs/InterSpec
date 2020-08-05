@@ -103,38 +103,6 @@ D3TimeChart.prototype.handleResize = function () {
 
 D3TimeChart.prototype.render = function () {};
 
-D3TimeChart.prototype.setDomain = function (data) {
-  if (!this.isValidData) {
-    console.log("Error: Failed to set domain. Structure of the data is invalid.")
-    this.domain = undefined;
-  } else {
-    var xMax = Number.MIN_SAFE_INTEGER;
-    var xMin = Number.MAX_SAFE_INTEGER;
-    var yMax = Number.MIN_SAFE_INTEGER;
-    var yMin = 0;
-
-    // Find max
-    //iterate over gamma detectors
-    for (var i = 0; i < data.gammaCounts.length; i++) {
-      var cps = data.gammaCounts.counts[i] / data.realTimes[i];
-
-      if (cps > yMax) {
-        yMax = cps;
-      }
-    }
-
-    var cumRealTime = this.computeCumulativeRealTime(data.realTimes);
-
-    xMin = 0 - cumRealTime[0];
-    xMax = cumRealTime[cumRealTime.length - 1] - cumRealTime[0];
-
-    this.domains = {
-      x: [xMin, xMax],
-      y: [yMin, yMax],
-    };
-  }
-};
-
 D3TimeChart.prototype.computeCumulativeRealTime = function (realTimes) {
   var cumRealTime = [];
 
@@ -220,7 +188,51 @@ D3TimeChart.prototype.setData = function (data) {
     console.log(formattedData);
 
     this.data = formattedData;
+
+    this.domains = this.getDomain(data);
   }
+};
+
+D3TimeChart.prototype.getDomain = function (data) {
+  var xMax = Number.MIN_SAFE_INTEGER;
+  var xMin = Number.MAX_SAFE_INTEGER;
+  var yMax = Number.MIN_SAFE_INTEGER;
+  var yMin = 0;
+
+  // Find max
+  // over gamma detectors
+  var nSamples = data.sampleNumbers.length;
+
+  for (var i = 0; i < data.gammaCounts.length; i++) {
+    for (var j = 0; j < nSamples; j++) {
+      var cps = data.gammaCounts[i].counts[j] / data.realTimes[j];
+
+      if (cps > yMax) {
+        yMax = cps;
+      }
+    }
+  }
+
+  // over neutron detectors
+  for (var i = 0; i < data.neutronCounts.length; i++) {
+    for (var j = 0; j < nSamples; j++) {
+      var cps = data.neutronCounts[i].counts[j] / data.realTimes[j];
+
+      if (cps > yMax) {
+        yMax = cps;
+      }
+    }
+  }
+
+  var cumRealTime = this.computeCumulativeRealTime(data.realTimes);
+
+  xMin = 0 - cumRealTime[0];
+  xMax = cumRealTime[cumRealTime.length - 1] - cumRealTime[0];
+
+  return {
+    x: [xMin, xMax],
+    y: [yMin, yMax],
+  };
 };
 
 D3TimeChart.prototype.formatData = function (data) {
