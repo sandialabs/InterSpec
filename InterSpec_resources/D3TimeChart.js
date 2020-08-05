@@ -104,7 +104,8 @@ D3TimeChart.prototype.handleResize = function () {
 D3TimeChart.prototype.render = function () {};
 
 D3TimeChart.prototype.setDomain = function (data) {
-  if (!data || !data.sampleNumbers || data.sampleNumbers.length < 1) {
+  if (!this.isValidData) {
+    console.log("Error: Failed to set domain. Structure of the data is invalid.")
     this.domain = undefined;
   } else {
     var xMax = Number.MIN_SAFE_INTEGER;
@@ -144,14 +145,82 @@ D3TimeChart.prototype.computeCumulativeRealTime = function (realTimes) {
   return cumRealTime;
 };
 
+D3TimeChart.prototype.isValidData = function (data) {
+  if (!data) {
+    return false;
+  }
+
+  // check properties
+  if (
+    !data.hasOwnProperty("sampleNumbers") ||
+    !data.hasOwnProperty("realTimes") ||
+    !data.hasOwnProperty("gammaCounts") ||
+    !data.hasOwnProperty("neutronCounts")
+  ) {
+    return false;
+  }
+
+  // Check data types
+  if (
+    !Array.isArray(data.gammaCounts) ||
+    !Array.isArray(
+      data.neutronCounts ||
+        !Array.isArray(data.sampleNumbers) ||
+        !Array.isArray(data.realTimes)
+    )
+  ) {
+    return false;
+  }
+
+  var nSamples = data.sampleNumbers.length;
+
+  // Check has at least one sample
+  if (nSamples < 1) {
+    return 0;
+  }
+
+  // Check matching lengths
+  if (data.realTimes.length !== nSamples) {
+    return false;
+  }
+
+  data.gammaCounts.forEach(function (detector) {
+    if (
+      !detector.counts ||
+      !Array.isArray(detector.counts) ||
+      detector.counts.length !== nSamples
+    ) {
+      return false;
+    }
+  });
+
+  data.neutronCounts.forEach(function (detector) {
+    if (
+      !detector.counts ||
+      !Array.isArray(detector.counts) ||
+      detector.counts.length !== nSamples
+    ) {
+      return false;
+    }
+  });
+
+  return true;
+};
+
 D3TimeChart.prototype.setData = function (data) {
   //See the c++ function D3TimeChart::setData()
-  console.log(data);
+  if (!this.isValidData(data)) {
+    alert(
+      "Error: Failed to set data-- structure of data is invalid. Aborting..."
+    );
+  } else {
+    console.log(data);
 
-  var formattedData = this.formatData(data);
-  console.log(formattedData);
+    var formattedData = this.formatData(data);
+    console.log(formattedData);
 
-  this.data = formattedData;
+    this.data = formattedData;
+  }
 };
 
 D3TimeChart.prototype.formatData = function (data) {
@@ -232,11 +301,11 @@ D3TimeChart.prototype.formatData = function (data) {
   return { detectors: detectors, samples: samples };
 };
 
-D3TimeChart.prototype.setHighlightRegions = function( regions ){
+D3TimeChart.prototype.setHighlightRegions = function (regions) {
   //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
-}
+};
 
-D3TimeChart.prototype.setXAxisTitle = function( title ){
+D3TimeChart.prototype.setXAxisTitle = function (title) {
   this.options.xtitle = title;
   //redraw x-title
 };
