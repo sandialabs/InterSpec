@@ -88,7 +88,6 @@ D3TimeChart.prototype.handleResize = function () {
   // Need to redraw everything
   // ...
   // Make sure to update the C++ code of the changed plotting size.
-  //this.WtEmit(this.chart.id, {name: 'timeresized'}, ... );
 
   console.log("Resized!");
   console.log(
@@ -233,7 +232,11 @@ D3TimeChart.prototype.formatData = function (data) {
   return { detectors: detectors, samples: samples };
 };
 
-D3TimeChart.prototype.setXAxisTitle = function (title) {
+D3TimeChart.prototype.setHighlightRegions = function( regions ){
+  //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
+}
+
+D3TimeChart.prototype.setXAxisTitle = function( title ){
   this.options.xtitle = title;
   //redraw x-title
 };

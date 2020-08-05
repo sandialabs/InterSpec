@@ -18,7 +18,7 @@
 
 
 //Forward declarations
-class ColorTheme;
+struct ColorTheme;
 
 namespace Wt
 {
@@ -75,18 +75,25 @@ public:
   D3TimeChart( Wt::WContainerWidget *parent = nullptr );
   virtual ~D3TimeChart();
   
+  /** Set the spectrum file to display the time history for.
+   
+   Will remove any existing highlighted intervals.
+   */
   void setData( std::shared_ptr<const SpecUtils::SpecFile> data );
-  void setHighlightedIntervals( const std::set<int> &sample_numbers, SpecUtils::SpectrumType type );
+  
+  
+  void setHighlightedIntervals( const std::set<int> &sample_numbers,
+                                const SpecUtils::SpectrumType type );
   
   void saveChartToPng( const std::string &filename );
-  
+
   /** Signal when the user clicks on the chart.
    Gives the sample numebr user clicked on and a bitwise or of Wt::KeyboardModifiers.
    */
-  Wt::Signal<int/*sample number*/,int/*modifier keys*/> &chartClicked();
+  Wt::Signal<int/*sample number*/,Wt::WFlags<Wt::KeyboardModifier>> &chartClicked();
   
   /** When the user drags on the chart to change the time range the spectrum is displayed for. */
-  Wt::Signal<int/*start sample number*/,int/*end sample number*/,int/*modifier keys*/> &chartDragged();
+  Wt::Signal<int/*start sample number*/,int/*end sample number*/,Wt::WFlags<Wt::KeyboardModifier>> &chartDragged();
   
   /** When the chart is resized; gives new width and height of the chart area (e.g., the area inside
    the axis lines), in pixels.
@@ -99,8 +106,9 @@ public:
   Wt::Signal<int/*start sample number*/,int/*end sample number*/,int/*samples per channel*/> &displayedXRangeChange();
   
   
-  /** Function to show grey vertical lines indicating beggining and end of occupancy*/
-  void setOccupancyStartAndStopSampleNumbers( const int first, const int last );
+  static std::vector<std::pair<int,int>> sampleNumberRangesWithOccupancyStatus(
+                                                const SpecUtils::OccupancyStatus status,
+                                                std::shared_ptr<const SpecUtils::SpecFile> spec );
   
   /** Schedules (re)-rendering data + highlight regions. */
   void scheduleRenderAll();
@@ -159,6 +167,7 @@ protected:
    */
   void initChangeableCssRules();
   
+  void setDataToClient();
   void setHighlightRegionsToClient();
   
   //layoutSizeChanged(...): adjusts display binning if necessary
@@ -214,8 +223,8 @@ protected:
   std::string m_y2AxisTitle;
   
   // Signals to hook C++ code to, to be notified when a user action happens
-  Wt::Signal<int/*sample number*/,int/*modifier keys*/> m_chartClicked;
-  Wt::Signal<int/*start sample number*/,int/*end sample number*/,int/*modifier keys*/> m_chartDragged;
+  Wt::Signal<int/*sample number*/,Wt::WFlags<Wt::KeyboardModifier>> m_chartClicked;
+  Wt::Signal<int/*start sample number*/,int/*end sample number*/,Wt::WFlags<Wt::KeyboardModifier>> m_chartDragged;
   Wt::Signal<double/*chart width px*/,double/*chart height px*/> m_chartResized;
   Wt::Signal<int/*start sample number*/,int/*end sample number*/,int/*samples per channel*/> m_displayedXRangeChange;
   
@@ -241,7 +250,7 @@ protected:
   Wt::WColor m_foregroundHighlightColor;
   Wt::WColor m_backgroundHighlightColor;
   Wt::WColor m_secondaryHighlightColor;
-  Wt::WColor m_occupancyLineColor;
+  Wt::WColor m_occLineColor;
   Wt::WColor m_textColor;
   Wt::WColor m_axisColor;
   Wt::WColor m_chartMarginColor;
