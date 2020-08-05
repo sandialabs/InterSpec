@@ -21,11 +21,11 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-Sample = function (sampleNumber, realTime, gammaCount, neutronCount) {
+Sample = function (sampleNumber, cumRealTime, gammaCPS, neutronCPS) {
   this.sampleNumber = sampleNumber;
-  this.realTime = realTime;
-  this.gammaCount = gammaCount;
-  this.neutronCount = neutronCount;
+  this.cumRealTime = cumRealTime;
+  this.gammaCPS = gammaCPS;
+  this.neutronCPS = neutronCPS;
 };
 
 D3TimeChart = function (elem, options) {
@@ -45,7 +45,15 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
 
-  this.svg = d3.select(this.chart);
+  this.height = undefined;
+  this.width = undefined;
+  this.domains = undefined;
+
+  this.svg = d3.select(this.chart).append("svg");
+
+  this.axisBottomG = this.svg.append("g");
+  this.axisLeftG = this.svg.append("g");
+  this.lineG = this.svg.append("g");
 }; //
 
 /** Function to help emit callbacks back to C++
@@ -81,6 +89,60 @@ D3TimeChart.prototype.handleResize = function () {
   // ...
   // Make sure to update the C++ code of the changed plotting size.
   //this.WtEmit(this.chart.id, {name: 'timeresized'}, ... );
+
+  console.log("Resized!");
+  console.log(
+    "width: " +
+      this.chart.clientWidth +
+      ", " +
+      "height: " +
+      this.chart.clientHeight
+  );
+  this.height = this.chart.clientWidth;
+  this.width = this.chart.clientWidth;
+};
+
+D3TimeChart.prototype.render = function () {};
+
+D3TimeChart.prototype.setDomain = function (data) {
+  if (!data || !data.sampleNumbers || data.sampleNumbers.length < 1) {
+    this.domain = undefined;
+  } else {
+    var xMax = Number.MIN_SAFE_INTEGER;
+    var xMin = Number.MAX_SAFE_INTEGER;
+    var yMax = Number.MIN_SAFE_INTEGER;
+    var yMin = 0;
+
+    // Find max
+    //iterate over gamma detectors
+    for (var i = 0; i < data.gammaCounts.length; i++) {
+      var cps = data.gammaCounts.counts[i] / data.realTimes[i];
+
+      if (cps > yMax) {
+        yMax = cps;
+      }
+    }
+
+    var cumRealTime = this.computeCumulativeRealTime(data.realTimes);
+
+    xMin = 0 - cumRealTime[0];
+    xMax = cumRealTime[cumRealTime.length - 1] - cumRealTime[0];
+
+    this.domains = {
+      x: [xMin, xMax],
+      y: [yMin, yMax],
+    };
+  }
+};
+
+D3TimeChart.prototype.computeCumulativeRealTime = function (realTimes) {
+  var cumRealTime = [];
+
+  realTimes.reduce(function (acc, curr, i) {
+    return (cumRealTime[i] = acc + curr);
+  }, 0);
+
+  return cumRealTime;
 };
 
 D3TimeChart.prototype.setData = function (data) {
@@ -90,23 +152,22 @@ D3TimeChart.prototype.setData = function (data) {
   var formattedData = this.formatData(data);
   console.log(formattedData);
 
-  // this.svg
-  // .selectAll('p')
-  // .data(data.realTimes)
-  // .enter()
-  // .append('p')
-  // .text(d => d)
+  this.data = formattedData;
 };
 
 D3TimeChart.prototype.formatData = function (data) {
   var nSamples = data.sampleNumbers.length;
   var detectors = {};
   var samples = {};
+  var cumRealTime = this.computeCumulativeRealTime(data.realTimes);
 
   if (data.gammaCounts) {
     data.gammaCounts.forEach(function (d) {
       if (!detectors.hasOwnProperty(d.detName)) {
-        detectors[d.detName] = {};
+        detectors[d.detName] = {
+          gammaColor: undefined,
+          neutronColor: undefined,
+        };
       }
       detectors[d.detName].gammaColor = d.color;
 
@@ -115,12 +176,13 @@ D3TimeChart.prototype.formatData = function (data) {
         samples[d.detName] = [];
 
         for (var i = 0; i < nSamples; i++) {
-          var sampleNumber = data.sampleNumbers[i];
-          var realTime = data.realTimes[i];
-          var gammaCount = d.counts[i];
-
           samples[d.detName].push(
-            new Sample(sampleNumber, realTime, gammaCount, null)
+            new Sample(
+              data.sampleNumbers[i],
+              cumRealTime[i],
+              d.counts[i] / data.realTimes[i],
+              null
+            )
           );
         }
       } else {
@@ -128,7 +190,7 @@ D3TimeChart.prototype.formatData = function (data) {
 
         //data already present for this detector, so fill in the gamma counts
         for (var i = 0; i < nSamples; i++) {
-          samples[d.detName][i].gammaCount = d.counts[i];
+          samples[d.detName][i].gammaCPS = d.counts[i] / data.realTimes[i];
         }
       } // if (!samples.hasOwnProperty(d.detName))
     }); // data.gammaCounts.forEach
@@ -137,7 +199,10 @@ D3TimeChart.prototype.formatData = function (data) {
   if (data.neutronCounts) {
     data.neutronCounts.forEach(function (d) {
       if (!detectors.hasOwnProperty(d.detName)) {
-        detectors[d.detName] = {};
+        detectors[d.detName] = {
+          gammaColor: undefined,
+          neutronColor: undefined,
+        };
       }
 
       detectors[d.detName].neutronColor = d.color;
@@ -146,19 +211,20 @@ D3TimeChart.prototype.formatData = function (data) {
         samples[d.detName] = [];
 
         for (var i = 0; i < nSamples; i++) {
-          var sampleNumber = data.sampleNumbers[i];
-          var realTime = data.realTimes[i];
-          var neutronCount = d.counts[i];
-
           samples[d.detName].push(
-            new Sample(samples, realTime, null, gammaCount)
+            new Sample(
+              data.sampleNumbers[i],
+              cumRealTime[i],
+              null,
+              d.counts[i] / data.realTimes[i]
+            )
           );
         }
       } else {
         // if (!samples.hasOwnProperty(d.detName))
 
         for (var i = 0; i < nSamples; i++) {
-          samples[d.detName][i].neutronCount = d.counts[i];
+          samples[d.detName][i].neutronCPS = d.counts[i] / data.realTimes[i];
         }
       } // if (!samples.hasOwnProperty(d.detName))
     }); // data.neutronCounts.forEach
