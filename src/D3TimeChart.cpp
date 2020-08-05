@@ -1,5 +1,6 @@
 #include "InterSpec_config.h"
 
+#include <limits>
 #include <memory>
 #include <vector>
 #include <utility>
@@ -15,10 +16,6 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/D3TimeChart.h"
-#include "SpecUtils/SpecUtilsAsync.h"
-#include "InterSpec/SpectrumDataModel.h"
-#include "InterSpec/PeakSearchGuiUtils.h"
-#include "InterSpec/D3SpectrumDisplayDiv.h"
 
 using namespace Wt;
 using namespace std;
@@ -70,7 +67,7 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_foregroundHighlightColor( 0x00, 0x00, 0x00 ),
   m_backgroundHighlightColor( 0x00, 0x00, 0x00 ),
   m_secondaryHighlightColor( 0x00, 0x00, 0x00 ),
-  m_occupancyLineColor( 0x00, 0x00, 0x00 ),
+  m_occLineColor(),
   m_textColor( 0x00, 0x00, 0x00 ),
   m_axisColor( 0x00, 0x00, 0x00 ),
   m_chartMarginColor( 0x00, 0x00, 0x00 ),
@@ -92,6 +89,7 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
 
 D3TimeChart::~D3TimeChart()
 {
+  // Do we need to cleanup any JS objects here?
 }
 
 
@@ -145,13 +143,40 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
 {
   if( !data || data->sample_numbers().empty() )
   {
+    if( m_highlights.size() )
+    {
+      m_highlights.clear();
+      scheduleHighlightRegionRender();
+    }
+    
     if( m_spec )
       doJavaScript( m_jsgraph + ".setData(null);" );
+    
     m_spec = data;
     return;
   }//if( no data to load );
   
+  if( !m_highlights.empty() )
+  {
+    m_highlights.clear();
+    scheduleHighlightRegionRender();
+  }//if( !m_highlights.empty() )
+  
+  if( m_spec != data )
+    scheduleRenderAll();
+  
   m_spec = data;
+}//void setData(...)
+  
+
+
+void D3TimeChart::setDataToClient()
+{
+  if( !m_spec )
+  {
+    doJavaScript( m_jsgraph +  ".setData( null );" );
+    return;
+  }//if( !m_spec )
   
   /** Description of JSON format sent to client JS charting
    {
@@ -175,7 +200,25 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
      // The neutron counts to plot, similar to gamma, but the field may not exist, or be null, in
      //  which case there will be no neutron counts to plot, and the Y2-axis should disapear.
      neutronCounts: [{detName: 'Aa1n', color: '#145366', counts: [1,0,4,10,12,...]},
-                     {detName: 'VD2n', color: '#ff0000', counts: [8,12,13,19,0,...]}]
+                     {detName: 'VD2n', color: '#ff0000', counts: [8,12,13,19,0,...]}],
+   
+     // The sample number ranges of "occupied" times of the data.  This field may not be present,
+     //  may be null, may be empty array, or have entries as destricbed.
+     occupancies: [{
+                    // The sample number cooresponding to the first occupied sample
+                    // In the previous implementation a vertical line was drawn, on left side of
+                    // sample with the text "occ. start"
+                    startSample: 4,
+        
+                    // The last occupied sample number.  Was previously drawn as a vertical line
+                    //  with text "occ. end"
+                    endSample: 10,
+                   
+                    // Color to draw vertical line and text
+                    color: 'grey'
+                   },
+                   {...}
+                  ]
    }
    */
   
@@ -255,6 +298,7 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
   js << m_jsgraph <<  ".setData( {\n";
   
   
+  
   js << "\t\"realTimes\": [";
   for( size_t i = 0; i < numSamples; ++i )
     js << string(i ? "," : "") << realTimes[i];
@@ -273,7 +317,8 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
         continue;
     
       //For now we'll just make all detector lines the same color (if we are even doing multiple lines)
-      js << string(nwrote++ ? "," : ",\n\t\"gammaCounts\": [" ) << "\n\t\t{\"detName\": \"" << detName << "\", \"color\": \""
+      js << string(nwrote++ ? "," : ",\n\t\"gammaCounts\": [" )
+         << "\n\t\t{\"detName\": \"" << detName << "\", \"color\": \""
          << (m_gammaLineColor.isDefault() ? string("#cfced2") :  m_gammaLineColor.cssText())
          << "\", \"counts\": [";
       
@@ -293,7 +338,8 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
         continue;
     
       //For now we'll just make all detector lines the same color (if we are even doing multiple lines)
-      js << string(nwrote++ ? "," : ",\n\t\"neutronCounts\": [" ) << "\n\t\t{\"detName\": \"" << detName << "\", \"color\": \""
+      js << string(nwrote++ ? "," : ",\n\t\"neutronCounts\": [" ) << "\n\t\t{\"detName\": \""
+         << detName << "\", \"color\": \""
          << (m_neutronLineColor.isDefault() ? string("rgb(0,128,0)") :  m_neutronLineColor.cssText())
          << "\", \"counts\": [";
 
@@ -346,27 +392,118 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
     }//if( haveAnyNeutron )
   }//if( plotDetectorsSeperate ) / else
   
+  auto occRanges = sampleNumberRangesWithOccupancyStatus( SpecUtils::OccupancyStatus::Occupied, m_spec );
+  if( occRanges.size() )
+  {
+    js << ",\n\t\"occupancies\": [";
+    for( size_t i = 0; i < occRanges.size(); ++i )
+    {
+      js << string(i ? ",\n\t\t" : "\n\t\t")
+         << "{ startSample: " << occRanges[i].first
+         << ", endSample: " << occRanges[i].second
+         << ", color: \""
+         << (m_occLineColor.isDefault() ? string("rgb(128,128,128)") :  m_occLineColor.cssText())
+         << "\" }";
+    }//for( size_t i = 0; i < occRanges.size(); ++i )
+    js << "\n\t]";
+  }//if( occRanges.size() )
+  
   js << "\n\t} );";
   
   cout << "\n\nWill set time data with JSON=" + js.str() + "\n\n" << endl;
 
   doJavaScript( js.str() );
-}//void D3TimeChart::setData( std::vector<std::shared_ptr<const SpecUtils::SpecFile>> data )
+}//void setDataToClient()
 
 
-void setHighlightedIntervals( const std::set<int> &sample_numbers, SpecUtils::SpectrumType type )
+void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
+                                           const SpecUtils::SpectrumType type )
 {
-  //ToDo: implement
-}
+  m_highlights.erase( std::remove_if( begin(m_highlights), end(m_highlights),
+    [type](const D3TimeChart::HighlightRegion &region) -> bool {
+      return (region.type == type);
+  }), end(m_highlights) );
+ 
+  if( sample_numbers.empty() )
+  {
+    scheduleHighlightRegionRender();
+    return;
+  }
+  
+  auto interspec = InterSpec::instance();
+  if( !m_spec )
+  {
+    const char *msg = "Time chart passed sample numbers when no data is set - should not happen";
+    if( interspec )
+      interspec->logMessage( msg, "", 3 );
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, msg );
+#endif
+    return;
+  }//if( !m_spec )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( const int sample : sample_numbers )
+  {
+    if( !m_spec->sample_numbers().count(sample) )
+    {
+      log_developer_error( __func__, ("Was passed an invalid samplenumber: "
+                                       + std::to_string(sample)).c_str() );
+    }//if( spec file doesnt have the input sample number )
+  }//for( loop over all incomming sample numbers )
+#endif
+  
+  shared_ptr<const ColorTheme> theme = (interspec ? interspec->getColorTheme() : nullptr);
+  
+  D3TimeChart::HighlightRegion region;
+  region.type = type;
+  switch( type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      region.color = theme ? theme->timeHistoryForegroundHighlight : Wt::WColor(255,255,0,155);
+      break;
+    case SpecUtils::SpectrumType::SecondForeground:
+      region.color = theme ? theme->timeHistoryBackgroundHighlight : Wt::WColor(0,255,255,75);
+      break;
+    case SpecUtils::SpectrumType::Background:
+      region.color = theme ? theme->timeHistorySecondaryHighlight : Wt::WColor(0,128,0,75);
+      break;
+  }//switch( type )
+  
+  int firstInRange = *(sample_numbers.begin());
+  int previous = firstInRange;
+  
+  for( auto iter = begin(sample_numbers); iter != end(sample_numbers); ++iter )
+  {
+    const int thisval = *iter;
+      
+    if( (thisval > (previous+1)) )
+    {
+      region.start_sample_number = firstInRange;
+      region.end_sample_number = previous;
+      m_highlights.push_back( region );
+      
+      firstInRange = thisval;
+    }//if( thisval > (previous+1) )
+      
+    previous = thisval;
+  }//for( loop over smaple_numbers )
+    
+  region.start_sample_number = firstInRange;
+  region.end_sample_number = previous;
+  m_highlights.push_back( region );
+  
+  scheduleHighlightRegionRender();
+}//setHighlightedIntervals(...)
 
 
-Wt::Signal<int,int> &D3TimeChart::chartClicked()
+Wt::Signal<int,Wt::WFlags<Wt::KeyboardModifier>> &D3TimeChart::chartClicked()
 {
   return m_chartClicked;
 }
 
 
-Wt::Signal<int,int,int> &D3TimeChart::chartDragged()
+Wt::Signal<int,int,Wt::WFlags<Wt::KeyboardModifier>> &D3TimeChart::chartDragged()
 {
   return m_chartDragged;
 }
@@ -384,21 +521,88 @@ Wt::Signal<int,int,int> &D3TimeChart::displayedXRangeChange()
 }
 
 
-void D3TimeChart::setOccupancyStartAndStopSampleNumbers( const int first, const int last )
+vector<pair<int,int>> D3TimeChart::sampleNumberRangesWithOccupancyStatus(
+                                                const SpecUtils::OccupancyStatus wanted_occ_status,
+                                                std::shared_ptr<const SpecUtils::SpecFile> spec )
 {
-  // \TODO: implement
-}
+  vector< pair<int,int> > occ_ranges;
+  
+  if( !spec )
+    return occ_ranges;
+  
+  std::set<int> wantedSamples;
+  const set<int> &allsamples = spec->sample_numbers();
+  const vector<string> &detnames = spec->detector_names();
+  
+  bool inWantedRegion = false;
+  int startSample = numeric_limits<int>::min(), prevSample = numeric_limits<int>::min();
+    
+  for( const int sample : allsamples )
+  {
+    bool wantSample = false;
+    for( size_t i = 0; !wantSample && i < detnames.size(); ++i )
+    {
+      auto m = spec->measurement( sample, detnames[i] );
+      wantSample = (m && (m->occupied() == wanted_occ_status));
+    }
+    
+    if( wantSample )
+      wantedSamples.insert( sample );
+    
+    if( wantSample && !inWantedRegion )
+      startSample = sample;
+    else if( inWantedRegion && !wantSample )
+      occ_ranges.push_back( {startSample,prevSample} );
+    
+    prevSample = sample;
+    inWantedRegion = wantSample;
+  }//for( const int sample : allsamples )
+  
+  if( inWantedRegion )
+    occ_ranges.push_back( {startSample,prevSample} );
+
+  if( wantedSamples == spec->sample_numbers() )
+    return {};
+  
+  return occ_ranges;
+}//sampleNumberRangesWithOccupancyStatus(...)
 
 
 void D3TimeChart::setHighlightRegionsToClient()
 {
-  // \TODO: implement
+  auto type_to_str = []( const SpecUtils::SpectrumType type ) -> std::string {
+    switch (type )
+    {
+      case SpecUtils::SpectrumType::Foreground:       return "FOREGROUND";
+      case SpecUtils::SpectrumType::SecondForeground: return "SECONDARY";
+      case SpecUtils::SpectrumType::Background:       return "BACKGROUND";
+    }
+    return "";
+  };//type_to_str
+  
+  
+  WStringStream js;
+  js << m_jsgraph <<  ".setHighlightRegions( [";
+  
+  int nadded = 0;
+  for( const auto &region : m_highlights )
+  {
+    js << string(nadded ? "," : "")
+       << "{startSample: " << region.start_sample_number
+       << ", endSample: " << region.end_sample_number
+       << ", fillColor: \"" << region.color.cssText() << "\""
+       << ", type: \"" << type_to_str(region.type) << "\"}";
+  }//for( loop over highlight regions )
+  js << "] );";
+  
+  cout << "\n\nWill set highlight regions with JSON=" + js.str() + "\n\n" << endl;
+  doJavaScript( js.str() );
 }//setHighlightRegionsToClient()
 
 
 void D3TimeChart::saveChartToPng( const std::string &filename )
 {
-  // \TODO: implement
+  // \TODO: implement - see D3SpectrumDisplayDiv for a starting point, although it isnt finished
 }//void saveChartToPng( const std::string &filename )
 
 
@@ -430,7 +634,7 @@ void D3TimeChart::applyColorTheme( std::shared_ptr<const ColorTheme> theme )
   setChartBackgroundColor( theme->timeChartBackground );
   setChartMarginColor( theme->timeChartMargins );
   setTextColor( theme->timeChartText );
-  m_occupancyLineColor = theme->occupancyIndicatorLines;
+  m_occLineColor = theme->occupancyIndicatorLines;
   m_foregroundHighlightColor = theme->timeHistoryForegroundHighlight;
   m_backgroundHighlightColor = theme->timeHistoryBackgroundHighlight;
   m_secondaryHighlightColor = theme->timeHistorySecondaryHighlight;
@@ -666,7 +870,7 @@ void D3TimeChart::render( Wt::WFlags<Wt::RenderFlag> flags )
     defineJavaScript();
   
   if( m_renderFlags.testFlag(TimeRenderActions::UpdateData) )
-    setData( m_spec );
+    setDataToClient();
   
   if( m_renderFlags.testFlag(TimeRenderActions::UpdateHighlightRegions) )
     setHighlightRegionsToClient();
@@ -677,13 +881,13 @@ void D3TimeChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 
 void D3TimeChart::chartClickedCallback( int sample_number, int modifier_keys )
 {
-  m_chartClicked.emit(sample_number, modifier_keys);
+  m_chartClicked.emit(sample_number, Wt::WFlags<Wt::KeyboardModifier>(Wt::KeyboardModifier(modifier_keys)) );
 }//chartClickedCallback(...)
 
 
 void D3TimeChart::chartDraggedCallback( int first_sample_number, int last_sample_number, int modifier_keys )
 {
-  m_chartDragged.emit( first_sample_number, last_sample_number, modifier_keys );
+  m_chartDragged.emit( first_sample_number, last_sample_number, Wt::WFlags<Wt::KeyboardModifier>(Wt::KeyboardModifier(modifier_keys)) );
 }//chartDraggedCallback(...)
 
 

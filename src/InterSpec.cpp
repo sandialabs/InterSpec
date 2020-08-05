@@ -700,8 +700,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_layout->addWidget( m_timeSeries, m_layout->rowCount(), 0 );
   
 #if( USE_SPECTRUM_CHART_D3 )
-  // \TODO: hook up: m_timeSeries->chartDragged()
   m_timeSeries->setY1AxisTitle( "Gamma CPS" );
+  m_timeSeries->chartDragged().connect( this, &InterSpec::timeChartDragged );
+  m_timeSeries->chartClicked().connect( this, &InterSpec::timeChartClicked );
 #else
   m_timeSeries->enableLegend( false );
   m_timeSeries->showHistogramIntegralsInLegend( false );
@@ -3230,6 +3231,20 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     strm.str( entry->otherSpectraCsvIds );
     std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
               std::inserter( otherSamples, otherSamples.end() ) );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( foreground )
+    {
+      for( const int sample : foregroundNums )
+      {
+        if( !foreground->sample_numbers().count(sample) )
+        {
+          log_developer_error( __func__, ("While loading state found foreground sample not in SpecFile: " + std::to_string(sample)).c_str() );
+        }
+      }
+    }//if( foreground )
+#endif
+    
     
     setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, false );
     if( foreground )
@@ -7706,41 +7721,6 @@ float InterSpec::sample_real_time_increment( const std::shared_ptr<const SpecMea
 }//double sample_real_time_increment()
 
 
-std::set<int> InterSpec::timeRangeToSampleNumbers( double t0, double t1 )
-{
-  //t0 may be the exact lower edge, and t1 may be the exact upper edge, so we
-  //  need to add/subtract a small epsilon so we dont extend into the
-  //  neighboring bins
-  
-  if( t0 > t1 )
-    std::swap( t0, t1 );
-  
-  t0 += 1.0E-6;
-  t1 -= 1.0E-6;
-
-  set<int> answer;
-  
-  if( !m_dataMeasurement )
-    return answer;
-  
-  const vector<pair<float,int> > binning = passthroughTimeToSampleNumber();
-  
-  if( binning.empty() )
-    return answer;
-  
-  size_t startind, endind;
-  for( startind = 0; startind < (binning.size()-1); ++startind )
-    if( binning[startind+1].first > t0 )
-      break;
-  for( endind = startind; endind < (binning.size()-1); ++endind )
-    if( binning[endind+1].first > t1 )
-      break;
-  
-  for( size_t i = startind; i <= endind; ++i )
-    answer.insert( binning[i].second );
-  
-  return answer;
-}//timeRangeToSampleNumbers(...)
 
 
 /*
@@ -7811,14 +7791,15 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
     return;
   
   (*sampleset) = samples;
-  if( sampleset->empty() && !!meas )
+  
+  
+#if( !USE_SPECTRUM_CHART_D3 )
+  // Note 20200803: The display*Data() functions do all this stuff, so not sure why we are reduing
+  //  it here, but to not risk breaking anything for non D3 based time plot, we'll leave it alone,
+  //  but for D3 time plot we wont do it.
+  if( meas && sampleset->empty() )
     (*sampleset) = meas->sample_numbers();
   
-  //should update the highlighted regions right here
-#if( USE_SPECTRUM_CHART_D3 )
-  cerr << "m_timeSeries->setTimeHighLightRegions(...) Not implemented for D3 chart yet!" << endl;
-#warning "Need to implement setting highlight regions for D3 based chart"
-#else
   vector< pair<double,double> > regions = timeRegionsToHighlight( type );
   m_timeSeries->setTimeHighLightRegions( regions, type );
 #endif
@@ -7859,6 +7840,91 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
 }//void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples )
 
 
+#if( USE_SPECTRUM_CHART_D3 )
+
+void InterSpec::timeChartClicked( const int sample_number, Wt::WFlags<Wt::KeyboardModifier> modifiers )
+{
+  timeChartDragged( sample_number, sample_number, modifiers );
+}//void timeChartClicked(...)
+
+
+void InterSpec::timeChartDragged( const int sample_start, const int sample_end,
+                           Wt::WFlags<Wt::KeyboardModifier> modifiers )
+{
+  if( !m_dataMeasurement )
+    return;
+ 
+  enum class ActionType
+  {
+    ChangeSamples,
+    AddSamples,
+    RemoveSamples
+  };
+  
+  ActionType action = ActionType::ChangeSamples;
+  if( modifiers.testFlag(KeyboardModifier::ShiftModifier) )
+    action = ActionType::AddSamples;
+  else if( modifiers.testFlag(KeyboardModifier::ControlModifier) )
+    action = ActionType::RemoveSamples;
+  //else if( modifiers.testFlag(KeyboardModifier::MetaModifier) )//Meta key pressed ("Windows" or "Command" (Mac) key)
+  //  action = ...;
+  
+  const auto type = modifiers.testFlag(KeyboardModifier::AltModifier)
+                                 ? SpecUtils::SpectrumType::Background
+                                 : SpecUtils::SpectrumType::Foreground;
+  
+  const set<int> &all_samples = m_dataMeasurement->sample_numbers();
+  const auto start_iter = all_samples.find( sample_start );
+  auto end_iter = all_samples.find( sample_end );
+  
+  if( start_iter == end(all_samples) || end_iter == end(all_samples) )
+  {
+    passMessage( "Received invalid sample number from time chart (" + std::to_string(sample_start)
+                 + ", " + std::to_string(sample_end) + ") - this shouldnt have happend"
+                 " - not changing sample numbers of spectrum",
+                 "", WarningWidget::WarningMsgHigh );
+    return;
+  }//if( invalid sample numbers )
+  
+  ++end_iter;
+  set<int> interaction_samples;
+  for( auto iter = start_iter; iter != end_iter; ++iter )
+    interaction_samples.insert( *iter );
+  
+  assert( interaction_samples.size() );
+  
+  if( measurment(type) != m_dataMeasurement )
+  {
+    if( action != ActionType::RemoveSamples )
+      setSpectrum( m_dataMeasurement, interaction_samples, type, false );
+    return;
+  }//if( the action isnt for the foreground )
+  
+  std::set<int> dispsamples = displayedSamples(type);
+  
+  switch( action )
+  {
+    case ActionType::ChangeSamples:
+      dispsamples = interaction_samples;
+      break;
+    case ActionType::AddSamples:
+      dispsamples.insert( begin(interaction_samples), end(interaction_samples) );
+      break;
+    case ActionType::RemoveSamples:
+      for( const auto sample : interaction_samples )
+        dispsamples.erase(sample);
+      
+      //If user erased all the samples - then lets go back to displaying all of that type of samples
+      if( dispsamples.empty() )
+        dispsamples = sampleNumbersForTypeFromForegroundFile(type);
+      
+      break;
+  }//switch( action )
+  
+  changeDisplayedSampleNums( dispsamples, type );
+}//void timeChartDragged(...)
+
+#else
 void InterSpec::sampleNumbersToDisplayAddded( const double t0,
                                                    const double t1,
                                                    const SpecUtils::SpectrumType type )
@@ -7928,6 +7994,7 @@ void InterSpec::changeTimeRange( const double t0, const double t1,
   }
   
 }//void changeTimeRange( const double t0, const double t1 )
+#endif // USE_SPECTRUM_CHART_D3 / else
 
 
 
@@ -8459,7 +8526,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       m_saveStateAs->setDisabled( !m_dataMeasurement );
 #endif
       displayForegroundData( false );
-      displayTimeSeriesData( true );
+      displayTimeSeriesData();
       
     case SpecUtils::SpectrumType::SecondForeground:
       displaySecondForegroundData();
@@ -9044,7 +9111,7 @@ void InterSpec::detectorsToDisplayChanged()
   displayBackgroundData();
   displaySecondForegroundData();
   displayForegroundData( true );
-  displayTimeSeriesData( true ); //wcjohns change 20160602 to true, to force an update of highlighted regions, should consider removing the highlight option
+  displayTimeSeriesData();
 }//void detectorsToDisplayChanged()
 
 
@@ -9075,8 +9142,9 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
   }//if( m_detectorToShowMenu )
   
 #if( USE_SPECTRUM_CHART_D3 )
-    cerr << "m_timeSeries->setTimeHighLightRegions(...) Not implemented for D3 chart yet!" << endl;
-#warning "Need to implement clearing highlight regions for D3 based chart"
+  m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Foreground );
+  m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Background );
+  m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::SecondForeground );
 #else
   m_timeSeries->clearTimeHighlightRegions( SpecUtils::SpectrumType::Foreground );
   m_timeSeries->clearTimeHighlightRegions( SpecUtils::SpectrumType::Background );
@@ -10043,82 +10111,6 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
 }//void SpectrumDisplayDiv::guessIsotopesForPeaks()
 
 
-vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
-{
-  std::vector<std::pair<float,int> > answer;
-  
-  if( !m_dataMeasurement )
-    return answer;
-  
-  const set<int> foregroundSamples = validForegroundSamples();
-  const vector<string> disp_det_names = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
-  
-  float time = 0.0f;
-  vector<pair<float,int> > foreground;
-  for( const int sample : foregroundSamples )
-  {
-    const float thistime = sample_real_time_increment( m_dataMeasurement, sample, disp_det_names );
-    if( thistime <= 0.0 )
-      continue;
-    foreground.push_back( make_pair(time,sample) );
-    time += thistime;
-  }//for( const int sample : sample_nums )
-  
-  if( foreground.size() )
-    foreground.push_back( make_pair(time,foreground.back().second + 1) );
-  
-  //
-  float backtime = 0.0f;
-  vector<pair<float,int> > background;
-  const set<int> all_sample_nums = m_dataMeasurement->sample_numbers();
-  for( const int s : all_sample_nums )
-  {
-    if( m_excludedSamples.count(s) )
-      continue;
-    
-    const float thistime = sample_real_time_increment( m_dataMeasurement, s, disp_det_names );
-    if( thistime <= 0.0 )
-      continue;
-    
-    bool isback = false;
-    const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
-                              = m_dataMeasurement->sample_measurements(s);
-    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
-      isback |= (m->source_type() == SpecUtils::SourceType::Background);
-    
-    if( isback )
-    {
-      backtime += thistime;
-      background.push_back( make_pair(backtime,s) );
-    }
-  }//for( const int s : sample_nums )
-  
-  if( !background.empty() && foreground.empty() )
-  {
-    background.push_back( make_pair(backtime,background.back().second + 1) );
-    return background;
-  }
-  if( background.empty() )
-    return foreground;
-  
-  float backscale = 1.0f;
-  if( backtime > 0.1f*time )
-    backscale = ( std::ceil(0.1f*time) ) / backtime;
-  
-  answer.reserve( foreground.size() + background.size() + 1 );
-  
-  float lastt = -backscale*background.back().first;
-  for( size_t i = 0; i < background.size(); ++i )
-  {
-    answer.push_back( make_pair(lastt, background[i].second));
-    lastt = -backscale*background.back().first + backscale*background[i].first;
-  }
-  
-  answer.insert( answer.end(), foreground.begin(), foreground.end() );
-  
-  return answer;
-}//vector<std::pair<float,int> > passthroughTimeToSampleNumber() const
-
 
 void InterSpec::setChartSpacing()
 {
@@ -10192,7 +10184,7 @@ void InterSpec::setChartSpacing()
 }//void setChartSpacing()
 
 
-void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
+void InterSpec::displayTimeSeriesData()
 {
 #if( USE_SPECTRUM_CHART_D3 )
   if( m_dataMeasurement && m_dataMeasurement->passthrough() )
@@ -10205,26 +10197,31 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
     
     m_timeSeries->setData( m_dataMeasurement );
     
-#warning "Need to set highlight regions for D3 based chart"
-    cerr << "Need to set highlight regions for D3 based chart" << endl;
+    const set<int> emptyset;
+    const set<int> &fore   = m_displayedSamples;
+    const set<int> &back   = (m_backgroundMeasurement == m_dataMeasurement)
+                                ? m_backgroundSampleNumbers : emptyset;
+    const set<int> &second = (m_secondDataMeasurement == m_dataMeasurement)
+                                ? m_sectondForgroundSampleNumbers : emptyset;
+  
+    m_timeSeries->setHighlightedIntervals( fore, SpecUtils::SpectrumType::Foreground );
+    m_timeSeries->setHighlightedIntervals( back, SpecUtils::SpectrumType::Background );
+    m_timeSeries->setHighlightedIntervals( second, SpecUtils::SpectrumType::SecondForeground );
   }else
   {
     m_timeSeries->setData( nullptr );
+    m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Foreground );
+    m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Background );
+    m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::SecondForeground );
     
     if( !m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( true );
       setChartSpacing();
     }//if( !m_timeSeries->isHidden() )
-
-    if( updateHighlightRegionsDisplay )
-    {
-      /// \TODO: set highlight regions
-#warning "Need to clear highlight regions for D3 based chart"
-      cerr << "Need to clear highlight regions for D3 based chart" << endl;
-    }
   }//if( passthrough ) / else
 #else
+  
   std::shared_ptr<SpecUtils::Measurement> gammaH, neutronH;
 
   const size_t ndet = m_dataMeasurement ? m_dataMeasurement->detector_names().size() : size_t(0);
@@ -10341,19 +10338,16 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
     m_timeSeries->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );  //we could use this for like the GMTubes or whatever
     m_timeSeries->setSecondData( neutronH, -1.0, -1.0, -1.0, true );
     
-    if( updateHighlightRegionsDisplay )
+    for( SpecUtils::SpectrumType t = SpecUtils::SpectrumType(0);
+        t <= SpecUtils::SpectrumType::Background;
+        t = SpecUtils::SpectrumType(static_cast<int>(t)+1) )
     {
-      for( SpecUtils::SpectrumType t = SpecUtils::SpectrumType(0);
-          t <= SpecUtils::SpectrumType::Background;
-          t = SpecUtils::SpectrumType(static_cast<int>(t)+1) )
-      {
-        const vector< pair<double,double> > regions = timeRegionsToHighlight( t );
-        m_timeSeries->setTimeHighLightRegions( regions, t );
-      }//for( SpecUtils::SpectrumType t = SpecUtils::SpectrumType(0); t <= SpecUtils::SpectrumType::Background; t = SpecUtils::SpectrumType(t+1) )
+      const vector< pair<double,double> > regions = timeRegionsToHighlight( t );
+      m_timeSeries->setTimeHighLightRegions( regions, t );
+    }//for( SpecUtils::SpectrumType t = SpecUtils::SpectrumType(0); t <= SpecUtils::SpectrumType::Background; t = SpecUtils::SpectrumType(t+1) )
       
-      const auto foreFromfile = timeRegionsFromFile( SpecUtils::OccupancyStatus::Occupied );
-      m_timeSeries->setOccupancyRegions( foreFromfile );
-    }//if( updateHighlightRegionsDisplay )
+    const auto foreFromfile = timeRegionsFromFile( SpecUtils::OccupancyStatus::Occupied );
+    m_timeSeries->setOccupancyRegions( foreFromfile );
   }else
   {
     m_timeSeries->setData( gammaH, -1.0, -1.0, -1.0, false );
@@ -10366,13 +10360,10 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
       setChartSpacing();
     }//if( !m_timeSeries->isHidden() )
 
-    if( updateHighlightRegionsDisplay )
-    {
-      m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::Foreground);
-      m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::SecondForeground);
-      m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::Background);
-      m_timeSeries->clearOccupancyRegions();
-    }
+    m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::Foreground);
+    m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::SecondForeground);
+    m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::Background);
+    m_timeSeries->clearOccupancyRegions();
   }//if( passthrough ) / else
 #endif
 }//void displayTimeSeriesData()
@@ -10408,13 +10399,6 @@ std::set<int> InterSpec::sampleRangeToSet( int start_sample,  int end_sample,
   return display_samples;
 }//sampleRangeToSet
 
-
-void InterSpec::displayForegroundData( int start_sample,  int end_sample )
-{
-  m_displayedSamples = sampleRangeToSet( start_sample, end_sample, m_dataMeasurement, m_excludedSamples );
-  const bool keep_current_energy_range = true;
-  displayForegroundData( keep_current_energy_range );
-}//void InterSpec::displayForegroundData( int start_sample,  int end_sample )
 
 
 vector<string> InterSpec::detectorsToDisplay( const SpecUtils::SpectrumType type ) const
@@ -10481,6 +10465,152 @@ void InterSpec::refreshDisplayedCharts()
   if( !!m_backgroundMeasurement )
     displayBackgroundData();
 }//void refreshDisplayedCharts()
+
+#if( USE_SPECTRUM_CHART_D3 )
+std::set<int> InterSpec::sampleNumbersForTypeFromForegroundFile( const SpecUtils::SpectrumType type ) const
+{
+  set<int> dispsamples;
+  if( !m_dataMeasurement )
+    return dispsamples;
+  
+  for( const auto &m : m_dataMeasurement->measurements() )
+  {
+    switch( m->source_type() )
+    {
+      case SpecUtils::SourceType::IntrinsicActivity:
+      case SpecUtils::SourceType::Calibration:
+        if( type == SpecUtils::SpectrumType::SecondForeground )
+          dispsamples.insert( m->sample_number() );
+        break;
+        
+      case SpecUtils::SourceType::Background:
+        if( type == SpecUtils::SpectrumType::Background )
+          dispsamples.insert( m->sample_number() );
+        break;
+      case SpecUtils::SourceType::Foreground:
+      case SpecUtils::SourceType::Unknown:
+        if( type == SpecUtils::SpectrumType::Foreground )
+          dispsamples.insert( m->sample_number() );
+        break;
+    }//switch( m->source_type() )
+  }//for( loop over all measurements )
+  
+  return dispsamples;
+}//set<int> sampleNumbersForType( SpectrumType )
+
+#else
+std::set<int> InterSpec::timeRangeToSampleNumbers( double t0, double t1 )
+{
+  //t0 may be the exact lower edge, and t1 may be the exact upper edge, so we
+  //  need to add/subtract a small epsilon so we dont extend into the
+  //  neighboring bins
+  
+  if( t0 > t1 )
+    std::swap( t0, t1 );
+  
+  t0 += 1.0E-6;
+  t1 -= 1.0E-6;
+
+  set<int> answer;
+  
+  if( !m_dataMeasurement )
+    return answer;
+  
+  const vector<pair<float,int> > binning = passthroughTimeToSampleNumber();
+  
+  if( binning.empty() )
+    return answer;
+  
+  size_t startind, endind;
+  for( startind = 0; startind < (binning.size()-1); ++startind )
+    if( binning[startind+1].first > t0 )
+      break;
+  for( endind = startind; endind < (binning.size()-1); ++endind )
+    if( binning[endind+1].first > t1 )
+      break;
+  
+  for( size_t i = startind; i <= endind; ++i )
+    answer.insert( binning[i].second );
+  
+  return answer;
+}//timeRangeToSampleNumbers(...)
+
+
+vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
+{
+  std::vector<std::pair<float,int> > answer;
+  
+  if( !m_dataMeasurement )
+    return answer;
+  
+  const set<int> foregroundSamples = validForegroundSamples();
+  const vector<string> disp_det_names = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  
+  float time = 0.0f;
+  vector<pair<float,int> > foreground;
+  for( const int sample : foregroundSamples )
+  {
+    const float thistime = sample_real_time_increment( m_dataMeasurement, sample, disp_det_names );
+    if( thistime <= 0.0 )
+      continue;
+    foreground.push_back( make_pair(time,sample) );
+    time += thistime;
+  }//for( const int sample : sample_nums )
+  
+  if( foreground.size() )
+    foreground.push_back( make_pair(time,foreground.back().second + 1) );
+  
+  //
+  float backtime = 0.0f;
+  vector<pair<float,int> > background;
+  const set<int> all_sample_nums = m_dataMeasurement->sample_numbers();
+  for( const int s : all_sample_nums )
+  {
+    if( m_excludedSamples.count(s) )
+      continue;
+    
+    const float thistime = sample_real_time_increment( m_dataMeasurement, s, disp_det_names );
+    if( thistime <= 0.0 )
+      continue;
+    
+    bool isback = false;
+    const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
+                              = m_dataMeasurement->sample_measurements(s);
+    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
+      isback |= (m->source_type() == SpecUtils::SourceType::Background);
+    
+    if( isback )
+    {
+      backtime += thistime;
+      background.push_back( make_pair(backtime,s) );
+    }
+  }//for( const int s : sample_nums )
+  
+  if( !background.empty() && foreground.empty() )
+  {
+    background.push_back( make_pair(backtime,background.back().second + 1) );
+    return background;
+  }
+  if( background.empty() )
+    return foreground;
+  
+  float backscale = 1.0f;
+  if( backtime > 0.1f*time )
+    backscale = ( std::ceil(0.1f*time) ) / backtime;
+  
+  answer.reserve( foreground.size() + background.size() + 1 );
+  
+  float lastt = -backscale*background.back().first;
+  for( size_t i = 0; i < background.size(); ++i )
+  {
+    answer.push_back( make_pair(lastt, background[i].second));
+    lastt = -backscale*background.back().first + backscale*background[i].first;
+  }
+  
+  answer.insert( answer.end(), foreground.begin(), foreground.end() );
+  
+  return answer;
+}//vector<std::pair<float,int> > passthroughTimeToSampleNumber() const
 
 
 vector< pair<double,double> > InterSpec::timeRegionsToHighlight(
@@ -10562,7 +10692,7 @@ vector< pair<double,double> > InterSpec::timeRegionsFromFile( const SpecUtils::O
   
   return timeranges;
 }//timeRegionsFromFile(...)
-
+#endif  //#if( USE_SPECTRUM_CHART_D3 ) / else
 
 void InterSpec::displayForegroundData( const bool current_energy_range )
 {
@@ -10593,6 +10723,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
       m_spectrum->setData( nullptr, -1.0f, -1.0f, -1.0f, false );
       m_peakModel->setPeakFromSpecMeas( nullptr, sample_nums );
     }
+    
     return;
   }//if( !meas )
 
@@ -10630,6 +10761,18 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   const float sum_neut = dataH ? dataH->neutron_counts_sum() : 0.0f;
   
   m_spectrum->setData( dataH, lt, rt, sum_neut, current_energy_range );
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  if( !m_timeSeries->isHidden() )
+  {
+    const auto foregrond = SpecUtils::SpectrumType::Foreground;
+    const set<int> allSamplesThisType = sampleNumbersForTypeFromForegroundFile(foregrond);
+    if( m_sectondForgroundSampleNumbers == allSamplesThisType )
+      m_timeSeries->setHighlightedIntervals( {}, foregrond );
+    else
+      m_timeSeries->setHighlightedIntervals( sample_nums, foregrond );
+  }//if( !m_timeSeries->isHidden() )
+#endif
 }//void displayForegroundData()
 
 
@@ -10668,14 +10811,16 @@ void InterSpec::displaySecondForegroundData()
   if( !m_timeSeries->isHidden() )
   {
 #if( USE_SPECTRUM_CHART_D3 )
-    cerr << "m_timeSeries->setTimeHighLightRegions(...) Not implemented for D3 chart yet!" << endl;
-#warning "Need to implement setting highlight regions for D3 based chart"
-    //m_timeSeries->setHighlightedIntervals( const std::set<int> &sample_numbers, SpecUtils::SpectrumType type );
+    const auto secondary = SpecUtils::SpectrumType::SecondForeground;
+    const set<int> allSamplesThisType = sampleNumbersForTypeFromForegroundFile(secondary);
+    if( m_sectondForgroundSampleNumbers == allSamplesThisType )
+      m_timeSeries->setHighlightedIntervals( {}, secondary );
+    else
+      m_timeSeries->setHighlightedIntervals( m_sectondForgroundSampleNumbers, secondary );
 #else
     vector< pair<double,double> > regions = timeRegionsToHighlight(SpecUtils::SpectrumType::SecondForeground);
     m_timeSeries->setTimeHighLightRegions( regions, SpecUtils::SpectrumType::SecondForeground );
 #endif
-    
   }
 }//void displaySecondForegroundData()
 
@@ -10715,11 +10860,14 @@ void InterSpec::displayBackgroundData()
   if( !m_timeSeries->isHidden() )
   {
 #if( USE_SPECTRUM_CHART_D3 )
-    cerr << "m_timeSeries->setTimeHighLightRegions(...) Not implemented for D3 chart yet!" << endl;
-#warning "Need to implement setting highlight regions for D3 based chart"
-        //m_timeSeries->setHighlightedIntervals( const std::set<int> &sample_numbers, SpecUtils::SpectrumType type );
+    const auto background = SpecUtils::SpectrumType::Background;
+    const set<int> allSamplesThisType = sampleNumbersForTypeFromForegroundFile(background);
+    if( m_backgroundSampleNumbers == allSamplesThisType )
+      m_timeSeries->setHighlightedIntervals( {}, background );
+    else
+      m_timeSeries->setHighlightedIntervals( m_backgroundSampleNumbers, background );
 #else
-    vector< pair<double,double> > regions = timeRegionsToHighlight(SpecUtils::SpectrumType::Background);
+    vector< pair<double,double> > regions = timeRegionsToHighlight();
     m_timeSeries->setTimeHighLightRegions( regions, SpecUtils::SpectrumType::Background );
 #endif
   }
