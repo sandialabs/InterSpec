@@ -124,24 +124,38 @@ D3TimeChart.prototype.render = function () {
 
     var { xScale, yScaleGamma, yScaleNeutron } = this.getScalers();
 
-    // get axes
-    var yAxisLeft = d3.svg.axis().scale(yScaleGamma).ticks(3).orient("left");
-    var yAxisRight = d3.svg.axis().scale(yScaleNeutron).ticks(3).orient("right");
+    var HAS_GAMMA = yScaleGamma ? true : false;
+    var HAS_NEUTRON = yScaleNeutron ? true : false;
 
+    // plot axes
     var xAxis = d3.svg.axis().scale(xScale).ticks(this.data.nSamples);
-
     this.axisBottomG
       .attr(
         "transform",
         "translate(0," + (this.height - this.margin.bottom) + ")"
       )
       .call(xAxis);
-    this.axisLeftG
-      .attr("transform", "translate(" + this.margin.left + ",0)")
-      .call(yAxisLeft);
-    this.axisRightG
-      .attr("transform", "translate(" + (this.width - this.margin.left) + ",0)")
-      .call(yAxisRight);
+
+    if (HAS_GAMMA) {
+      var yAxisLeft = d3.svg.axis().scale(yScaleGamma).ticks(3).orient("left");
+      this.axisLeftG
+        .attr("transform", "translate(" + this.margin.left + ",0)")
+        .call(yAxisLeft);
+    }
+
+    if (HAS_NEUTRON) {
+      var yAxisRight = d3.svg
+        .axis()
+        .scale(yScaleNeutron)
+        .ticks(3)
+        .orient("right");
+      this.axisRightG
+        .attr(
+          "transform",
+          "translate(" + (this.width - this.margin.left) + ",0)"
+        )
+        .call(yAxisRight);
+    }
 
     // label axes:
     this.svg
@@ -171,8 +185,12 @@ D3TimeChart.prototype.render = function () {
       var lineNeutron = "M";
 
       data.forEach(function (d, i) {
-        var y0Gamma = yScaleGamma(d.gammaCPS);
-        var y0Neutron = yScaleNeutron(d.neutronCPS); //neturon
+        if (HAS_GAMMA) {
+          var y0Gamma = yScaleGamma(d.gammaCPS);
+        }
+        if (HAS_NEUTRON) {
+          var y0Neutron = yScaleNeutron(d.neutronCPS); //neturon
+        }
         var x0 = xScale(d.realTimeInterval[1]);
         if (i === 0) {
           lineGamma += `${xScale(d.realTimeInterval[0])},${y0Gamma}H${x0}`;
@@ -183,24 +201,34 @@ D3TimeChart.prototype.render = function () {
         }
 
         if (data[i + 1]) {
-          lineGamma += `V${yScaleGamma(data[i + 1].gammaCPS)}`;
-          lineNeutron += `V${yScaleNeutron(data[i + 1].neutronCPS)}`; //neturon
+          if (HAS_GAMMA) {
+            lineGamma += `V${yScaleGamma(data[i + 1].gammaCPS)}`;
+          }
+          if (HAS_NEUTRON) {
+            lineNeutron += `V${yScaleNeutron(data[i + 1].neutronCPS)}`; //neturon
+          }
         }
       });
-      this.svg
-        .append("g")
-        .append("path")
-        .attr("class", `line det_${detector.detName}`)
-        .style("stroke", this.data.detectors[detector].gammaColor)
-        .style("fill", "none")
-        .attr("d", lineGamma);
-      this.svg
-        .append("g")
-        .append("path")
-        .attr("class", `line det_${detector.detName}`)
-        .style("stroke", this.data.detectors[detector].neutronColor)
-        .style("fill", "none")
-        .attr("d", lineNeutron);
+
+      if (HAS_GAMMA) {
+        this.svg
+          .append("g")
+          .append("path")
+          .attr("class", `line det_${detector.detName}`)
+          .style("stroke", this.data.detectors[detector].gammaColor)
+          .style("fill", "none")
+          .attr("d", lineGamma);
+      }
+
+      if (HAS_NEUTRON) {
+        this.svg
+          .append("g")
+          .append("path")
+          .attr("class", `line det_${detector.detName}`)
+          .style("stroke", this.data.detectors[detector].neutronColor)
+          .style("fill", "none")
+          .attr("d", lineNeutron);
+      }
     }
   }
 };
@@ -210,14 +238,18 @@ D3TimeChart.prototype.getScalers = function () {
     .linear()
     .domain(this.domains.x)
     .range([this.margin.left, this.width - this.margin.right]);
-  var yScaleGamma = d3.scale
-    .linear()
-    .domain(this.domains.yGamma)
-    .range([this.height - this.margin.bottom, this.margin.top]);
-  var yScaleNeutron = d3.scale
-    .linear()
-    .domain(this.domains.yNeutron)
-    .range([this.height - this.margin.bottom, this.margin.top]);
+  var yScaleGamma = this.domains.yGamma
+    ? d3.scale
+        .linear()
+        .domain(this.domains.yGamma)
+        .range([this.height - this.margin.bottom, this.margin.top])
+    : undefined;
+  var yScaleNeutron = this.domains.yNeutron
+    ? d3.scale
+        .linear()
+        .domain(this.domains.yNeutron)
+        .range([this.height - this.margin.bottom, this.margin.top])
+    : undefined;
 
   return {
     xScale: xScale,
@@ -240,7 +272,7 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes) {
   for (var i = 0; i < realTimes.length; i++) {
     if (i === 0) {
       // to handle long lead-in:
-      var leadTime = Math.max(-realTimes[i], -this.leadTime)
+      var leadTime = Math.max(-realTimes[i], -this.leadTime);
       realTimeIntervals[i] = [leadTime, 0];
     } else {
       var prevEndpoint = realTimeIntervals[i - 1][1];
@@ -282,7 +314,7 @@ D3TimeChart.prototype.isValidData = function (data) {
 
   // Check has at least one sample
   if (nSamples < 1) {
-    return 0;
+    return false;
   }
 
   // Check matching lengths
@@ -346,8 +378,6 @@ D3TimeChart.prototype.getDomain = function (data) {
   var yMaxGamma = Number.MIN_SAFE_INTEGER;
   var yMaxNeutron = Number.MIN_SAFE_INTEGER;
 
-  var yMinGamma = 0;
-
   // Find max over gamma detectors
   var nSamples = data.sampleNumbers.length;
 
@@ -372,10 +402,13 @@ D3TimeChart.prototype.getDomain = function (data) {
     }
   }
 
+  var gammaInterval = yMaxGamma > 0 ? [0, yMaxGamma] : undefined;
+  var yNeutronInterval = yMaxNeutron > 0 ? [0, yMaxNeutron] : undefined;
+
   return {
     x: [xMin, xMax],
-    yGamma: [0, yMaxGamma],
-    yNeutron: [0, yMaxNeutron],
+    yGamma: gammaInterval,
+    yNeutron: yNeutronInterval,
   };
 };
 
@@ -388,12 +421,16 @@ D3TimeChart.prototype.formatData = function (data) {
   if (data.gammaCounts) {
     data.gammaCounts.forEach(function (d) {
       if (!detectors.hasOwnProperty(d.detName)) {
+        // if new detector, initialize a new object
         detectors[d.detName] = {
           gammaColor: undefined,
           neutronColor: undefined,
+          isGammaDetector: false,
+          isNeutronDetector: false,
         };
       }
       detectors[d.detName].gammaColor = d.color;
+      detectors[d.detName].isGammaDetector = true;
 
       // if no data already present for this detector, create a new array to start holding the data for that detector and fill in data.
       if (!samples.hasOwnProperty(d.detName)) {
@@ -410,8 +447,6 @@ D3TimeChart.prototype.formatData = function (data) {
           );
         }
       } else {
-        // if (!samples.hasOwnProperty(d.detName))
-
         //data already present for this detector, so fill in the gamma counts
         for (var i = 0; i < nSamples; i++) {
           samples[d.detName][i].gammaCPS = d.counts[i] / data.realTimes[i];
@@ -423,13 +458,17 @@ D3TimeChart.prototype.formatData = function (data) {
   if (data.neutronCounts) {
     data.neutronCounts.forEach(function (d) {
       if (!detectors.hasOwnProperty(d.detName)) {
+        // if new detector, initialize a new object
         detectors[d.detName] = {
           gammaColor: undefined,
           neutronColor: undefined,
+          isGammaDetector: false,
+          isNeutronDetector: false,
         };
       }
 
       detectors[d.detName].neutronColor = d.color;
+      detectors[d.detName].isNeutronDetector = true;
 
       if (!samples.hasOwnProperty(d.detName)) {
         samples[d.detName] = [];
@@ -445,8 +484,6 @@ D3TimeChart.prototype.formatData = function (data) {
           );
         }
       } else {
-        // if (!samples.hasOwnProperty(d.detName))
-
         for (var i = 0; i < nSamples; i++) {
           samples[d.detName][i].neutronCPS = d.counts[i] / data.realTimes[i];
         }
