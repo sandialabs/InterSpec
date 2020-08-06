@@ -45,6 +45,7 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
 
+  this.data = undefined;
   this.height = undefined;
   this.width = undefined;
   this.domains = undefined;
@@ -125,9 +126,9 @@ D3TimeChart.prototype.render = function () {
 
     // get axes
     var yAxisLeft = d3.svg.axis().scale(yScaleGamma).ticks(3).orient("left");
-    var yAxisRight = d3.svg.axis().scale(yScaleNeutron).orient("right");
+    var yAxisRight = d3.svg.axis().scale(yScaleNeutron).ticks(3).orient("right");
 
-    var xAxis = d3.svg.axis().scale(xScale);
+    var xAxis = d3.svg.axis().scale(xScale).ticks(this.data.nSamples);
 
     this.axisBottomG
       .attr(
@@ -238,7 +239,9 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes) {
 
   for (var i = 0; i < realTimes.length; i++) {
     if (i === 0) {
-      realTimeIntervals[i] = [-realTimes[i], 0];
+      // to handle long lead-in:
+      var leadTime = Math.max(-realTimes[i], -this.leadTime)
+      realTimeIntervals[i] = [leadTime, 0];
     } else {
       var prevEndpoint = realTimeIntervals[i - 1][1];
       realTimeIntervals[i] = [prevEndpoint, prevEndpoint + realTimes[i]];
@@ -451,7 +454,7 @@ D3TimeChart.prototype.formatData = function (data) {
     }); // data.neutronCounts.forEach
   } // if (data.neutronCounts)
 
-  return { detectors: detectors, samples: samples };
+  return { nSamples: nSamples, detectors: detectors, samples: samples };
 };
 
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
