@@ -51,10 +51,10 @@ D3TimeChart = function (elem, options) {
   this.leadTime = 2.5;
 
   this.margin = {
-    top: "50",
-    right: "50",
-    bottom: "50",
-    left: "50"
+    top: 50,
+    right: 50,
+    bottom: 50,
+    left: 50
   }
   this.svg = d3.select(this.chart).append("svg");
 
@@ -113,6 +113,11 @@ D3TimeChart.prototype.handleResize = function () {
 D3TimeChart.prototype.render = function () {
   
   if (this.height && this.width && this.data) {
+
+    // remove any existing drawn lines
+    d3.selectAll(".line").remove();
+    d3.selectAll(".axis_label").remove();
+
     this.svg.attr("width", this.width);
     this.svg.attr("height", this.height);
 
@@ -120,7 +125,7 @@ D3TimeChart.prototype.render = function () {
 
     var {xScale, yScaleGamma, yScaleNeutron} = this.getScalers();
     
-    // get y-axis
+    // get axes
     var yAxisLeft = d3.svg.axis().scale(yScaleGamma).ticks(3).orient("left");
     var yAxisRight = d3.svg.axis().scale(yScaleNeutron).orient("right");
     
@@ -129,6 +134,22 @@ D3TimeChart.prototype.render = function () {
     this.axisBottomG.attr("transform", "translate(0," + (this.height - this.margin.bottom) + ")").call(xAxis);
     this.axisLeftG.attr("transform", "translate(" + this.margin.left + ",0)").call(yAxisLeft);
     this.axisRightG.attr("transform", "translate(" + (this.width - this.margin.left) + ",0)").call(yAxisRight);
+
+    // label axes:
+    this.svg.append("text")  
+      .attr("class", "axis_label")           
+      .attr("transform",
+            "translate(" + (this.width/2) + " ," + 
+                           ((this.height - this.margin.bottom) + 30) + ")")
+      .style("text-anchor", "middle")
+      .text("Real Time of Measurement (seconds)");
+
+    this.svg.append("text")
+      .attr("class", "axis_label")             
+      .attr("transform", `translate(15, ${this.height/2}) rotate(-90) `)
+      .style("text-anchor", "middle")
+      .text("CPS");
+
 
     for (detector in this.data.samples) {
       
