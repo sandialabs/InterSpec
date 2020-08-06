@@ -21,6 +21,13 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+/**
+ * Constructor for Sample Objects
+ * @param sampleNumber: integer sample number
+ * @param realTimeInterval: Array of length 2 (i.e. [start_time, end_time])
+ * @param gammaCPS: gamma counts per second
+ * @param neutronCPS: neutron counts per second
+ */
 Sample = function (sampleNumber, realTimeInterval, gammaCPS, neutronCPS) {
   this.sampleNumber = sampleNumber;
   this.realTimeInterval = realTimeInterval;
@@ -28,7 +35,11 @@ Sample = function (sampleNumber, realTimeInterval, gammaCPS, neutronCPS) {
   this.neutronCPS = neutronCPS;
 };
 
+/**
+ * D3TimeChart object constructor.
+ */
 D3TimeChart = function (elem, options) {
+  // this is called when the widget is loaded.
   var self = this;
   this.chart = typeof elem === "string" ? document.getElementById(elem) : elem;
 
@@ -111,6 +122,9 @@ D3TimeChart.prototype.handleResize = function () {
   this.render();
 };
 
+/**
+ * Renders the D3TimeChart. Is called every time a resize occurs
+ */
 D3TimeChart.prototype.render = function () {
   if (this.height && this.width && this.data) {
     // remove any existing drawn lines
@@ -131,9 +145,9 @@ D3TimeChart.prototype.render = function () {
     var nTicksX;
     if (this.width > 850) {
       nTicksX = this.data.nSamples;
-    } else if (this.width > 320) {
+    } else if (this.width > 520) {
       nTicksX = Math.floor(this.data.nSamples / 2);
-    } else if (this.width > 210) {
+    } else if (this.width > 280) {
       nTicksX = Math.floor(this.data.nSamples / 4);
     } else {
       nTicksX = Math.floor(this.data.nSamples / 8);
@@ -169,7 +183,7 @@ D3TimeChart.prototype.render = function () {
         .call(yAxisRight);
     }
 
-    // label axes:
+    // label axes
     this.svg
       .append("text")
       .attr("class", "axis_label")
@@ -191,6 +205,7 @@ D3TimeChart.prototype.render = function () {
       .style("text-anchor", "middle")
       .text("CPS");
 
+      // plot data
     for (detector in this.data.samples) {
       var data = this.data.samples[detector];
       var lineGamma = "M";
@@ -201,7 +216,7 @@ D3TimeChart.prototype.render = function () {
           var y0Gamma = yScaleGamma(d.gammaCPS);
         }
         if (HAS_NEUTRON) {
-          var y0Neutron = yScaleNeutron(d.neutronCPS); //neturon
+          var y0Neutron = yScaleNeutron(d.neutronCPS); 
         }
         var x0 = xScale(d.realTimeInterval[1]);
         if (i === 0) {
@@ -245,6 +260,9 @@ D3TimeChart.prototype.render = function () {
   }
 };
 
+/**
+ * Get scaling functions based on the data domain and element dimensions.
+ */
 D3TimeChart.prototype.getScalers = function () {
   var xScale = d3.scale
     .linear()
@@ -270,14 +288,12 @@ D3TimeChart.prototype.getScalers = function () {
   };
 };
 
+/**
+ * Computes sequential real time intervals for each data point from raw time segments.
+ * @param {number[]} realTimes: realTimes data passed from Wt
+ * @returns an array of length-two arrays which represent time intervals for individual samples. 
+ */
 D3TimeChart.prototype.getRealTimeIntervals = function (realTimes) {
-  var cumRealTime = [];
-
-  var background = realTimes[0];
-
-  realTimes.reduce(function (acc, curr, i) {
-    return (cumRealTime[i] = acc + curr);
-  }, -background);
 
   var realTimeIntervals = [];
 
@@ -295,12 +311,17 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes) {
   return realTimeIntervals;
 };
 
+/**
+ * Basic data validation
+ * @param {Object} data: data Object passed from Wt
+ * @returns a boolean 
+ */
 D3TimeChart.prototype.isValidData = function (data) {
   if (!data) {
     return false;
   }
 
-  // check properties
+  // Check properties
   if (
     !data.hasOwnProperty("sampleNumbers") ||
     !data.hasOwnProperty("realTimes") ||
@@ -334,6 +355,7 @@ D3TimeChart.prototype.isValidData = function (data) {
     return false;
   }
 
+  // Check counts data
   data.gammaCounts.forEach(function (detector) {
     if (
       !detector.counts ||
@@ -357,6 +379,10 @@ D3TimeChart.prototype.isValidData = function (data) {
   return true;
 };
 
+/**
+ * Sets data members of the D3TimeChart object. Is called every time data is set in C++.
+ * @param {Object} data 
+ */
 D3TimeChart.prototype.setData = function (data) {
   //See the c++ function D3TimeChart::setData()
   if (!this.isValidData(data)) {
@@ -377,6 +403,10 @@ D3TimeChart.prototype.setData = function (data) {
   }
 };
 
+/**
+ * Gets data domain
+ * @param {Object} data 
+ */
 D3TimeChart.prototype.getDomain = function (data) {
   var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
 
@@ -424,6 +454,31 @@ D3TimeChart.prototype.getDomain = function (data) {
   };
 };
 
+/**
+ * Formats data to several JSON objects for convenient plotting
+ * e.g.
+ * {
+ *    detectors: { // for detector metadata
+ *                  "det1": {
+ *                            "isGammaDetector": true,
+ *                            "isNeutronDetector": true,
+ *                            "gammaColor": rgb(0,0,0),
+ *                            "neutronColor": rgb(0,128,0)
+ *                          },
+ *                  "det2" : {...}
+ *                  ...
+ *               },
+ * 
+ *    samples: {
+ *                "det1": [{Sample}, {Sample}, {Sample}, ...],
+ *                "det2": [{Sample}, {Sample}, {Sample}, ...],
+ *                ...
+ *             },
+ * 
+ *    nSamples: 10
+ * }
+ * @param {*} data 
+ */
 D3TimeChart.prototype.formatData = function (data) {
   var nSamples = data.sampleNumbers.length;
   var detectors = {};
