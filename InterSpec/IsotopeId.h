@@ -36,8 +36,16 @@ class PeakDef;
 class PeakModel;
 class DecayDataBaseServer;
 class DetectorPeakResponse;
-namespace SandiaDecay{ struct Nuclide; }
-namespace SpecUtils{ class Measurement; }
+namespace SpecUtils
+{
+  class Measurement;
+}
+
+namespace SandiaDecay
+{
+  struct Nuclide;
+  struct EnergyRatePair;
+}
 
 
 namespace IsotopeId

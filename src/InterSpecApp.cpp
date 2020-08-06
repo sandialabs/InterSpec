@@ -76,6 +76,7 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
+#include "InterSpec/DecayDataBaseServer.h"
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"

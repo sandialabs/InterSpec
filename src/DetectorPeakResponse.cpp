@@ -625,7 +625,7 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     }//if( fields.size() < 2 )
     
     EnergyEfficiencyPair point;
-    point.energy = fields[0] * SandiaDecay::keV;
+    point.energy = fields[0] * PhysicalUnits::keV;
     point.efficiency = fields[1] / 100.0; //files have it listed as a percentage
     
     gotline = true;
