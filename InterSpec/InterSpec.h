@@ -47,9 +47,8 @@ class MaterialDB;
 class DecayWindow;
 struct ColorTheme;
 class UserFileInDb;
-class Recalibrator;
-class SrbMySqlUtil;
 class PopupDivMenu;
+class EnergyCalTool;
 class SpectrumChart;
 class UseInfoWindow;
 class WarningWidget;
@@ -67,13 +66,13 @@ class SpectrumDisplayDiv;
 #if ( USE_SPECTRUM_CHART_D3 )
 class D3SpectrumDisplayDiv;
 #endif
-class PreserveCalibWindow;
 #if( USE_FEATURE_MARKER_WIDGET )
 class FeatureMarkerWindow;
 #endif
 class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
+class PreserveEnergyCalWindow;
 class SimpleNuclideAssistPopup;
 class ReferencePhotopeakDisplay;
 class LicenseAndDisclaimersWindow;
@@ -136,6 +135,12 @@ public:
   InterSpec( Wt::WContainerWidget *parent = 0 );
 
   virtual ~InterSpec();
+  
+  /** Returns the InterSpec instance cooresponding to the current WApplication instance.
+   Will return nullptr if WApplication::instance() is null (e.g., current thread is not in a
+   WApplication event loop).
+   */
+  static InterSpec *instance();
   
   /** Sets the directory InterSpec "data" files are located, including cross
       sections, materials, detector response functions, nuclear decay info
@@ -584,8 +589,8 @@ public:
   //  object is modified.
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &detectorModified();
 
-  void showRecalibratorWindow();
-  void handRecalibratorWindowClose();
+  void showEnergyCalWindow();
+  void handEnergyCalWindowClose();
 
   void showWarningsWindow();
   void handleWarningsWindowClose( bool closeWindowTo );
@@ -634,9 +639,9 @@ public:
   //  showing), and sets m_useInfoWindow to null
   void deleteWelcomeCountDialog();
   
-  //deletePreserveCalibWindow(): deletes the currently showing diaolg (if its
+  //deletePreserveEnergyCalWindow(): deletes the currently showing diaolg (if its
   //  showing), and sets m_preserveCalibWindow to null
-  void deletePreserveCalibWindow();
+  void deletePreserveEnergyCalWindow();
   
   //showIEWarningDialog(): returns NULL if user previously specified to not show
   //  again, otherwise it returns the AuxWIndow it is displaying.  The dialog
@@ -684,7 +689,7 @@ protected:
   void createFileParameterWindow();
   
   void updateGuiForPrimarySpecChange( std::set<int> display_sample_nums );
-  void displayForegroundData( const bool keep_current_energy_range );
+  
   static std::set<int> sampleRangeToSet( int start_sample,  int end_sample,
                                          std::shared_ptr<const SpecMeas> meas,
                                          const std::set<int> &excluded_samples );
@@ -712,9 +717,11 @@ protected:
   std::vector< std::pair<double,double> > timeRegionsFromFile(
                               const SpecUtils::OccupancyStatus occ_type ) const;
   
-  void displayForegroundData( int first_sample, int last_sample ); //sample numbers are inclusive
-  void displaySecondForegroundData();
+  
+  void displayForegroundData( const bool keep_current_energy_range );
   void displayBackgroundData();
+  void displaySecondForegroundData();
+  
   void displayTimeSeriesData( bool updateHighlightRegionsDisplay );
 
   // Inclusive for t0, exclusive for t1, e.g., if you have time slices of 0.1s,
@@ -1088,7 +1095,7 @@ protected:
   //  when they are visible
   Wt::WTabWidget *m_toolsTabs;
 
-  Recalibrator           *m_recalibrator; // The energy (re)calibrator
+  EnergyCalTool          *m_recalibrator; // The energy (re)calibrator
   AuxWindow              *m_recalibratorWindow;
   GammaCountDialog       *m_gammaCountDialog;
   AuxWindow              *m_specFileQueryDialog;
@@ -1283,7 +1290,7 @@ protected:
   //m_preserveCalibWindow: a pointer to the window that prompts the user if they
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
-  PreserveCalibWindow *m_preserveCalibWindow;
+  PreserveEnergyCalWindow *m_preserveCalibWindow;
   
   
   //Current width and height are set in layoutSizeChanged(...).
@@ -1359,9 +1366,6 @@ protected:
   static std::mutex sm_writableDataDirectoryMutex;
   static std::string sm_writableDataDirectory;
 #endif  //if( not a webapp )
-
-  
-  friend class Recalibrator; // Recalibrator needs to be able access whatever
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

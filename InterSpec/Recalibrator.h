@@ -95,32 +95,6 @@ protected:
 };//class DeviationPairDisplay
 
 
-//PreserveCalibWindow: propogates calibration from one SpecMeas to
-//  another.
-class PreserveCalibWindow : public AuxWindow
-{
-public:
-  PreserveCalibWindow( std::shared_ptr<SpecMeas> newmeas,
-                              const SpecUtils::SpectrumType newtype,
-                              std::shared_ptr<SpecMeas> oldmeas,
-                              const SpecUtils::SpectrumType oldtype,
-                              Recalibrator *calibrator );
-  
-  static bool candidate( std::shared_ptr<SpecMeas> newmeas,
-                         std::shared_ptr<SpecMeas> oldmeas );
-  
-  virtual ~PreserveCalibWindow();
-  
-  void doRecalibration();
-  
-protected:
-  Recalibrator *m_calibrator;
-  std::shared_ptr<SpecMeas> m_newmeas;
-  std::vector<float> m_coeffs;
-  SpecUtils::EnergyCalType m_type;
-  std::vector< std::pair<float,float> > m_devPairs;
-  const SpecUtils::SpectrumType m_newtype, m_oldtype;
-};//class PreserveCalibWindow
 
 
 class Recalibrator : public Wt::WContainerWidget
@@ -330,13 +304,7 @@ protected:
   
   
 public:
-  struct RecalPeakInfo
-  {
-    double peakMean;
-    double peakMeanUncert;
-    double peakMeanBinNumber;
-    double photopeakEnergy;
-  };//struct RecalPeakInfo
+  
 
 protected:
 

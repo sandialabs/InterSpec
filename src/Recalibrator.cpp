@@ -31,25 +31,6 @@
 #include <iostream>
 #include <iostream>
 
-#define BOOST_UBLAS_TYPE_CHECK 0
-#include <boost/numeric/ublas/lu.hpp>
-#include <boost/numeric/ublas/matrix.hpp>
-#include <boost/numeric/ublas/triangular.hpp>
-
-
-//Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/MnMinos.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/CombinedMinimizer.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnUserParameterState.h"
-
 #include <Wt/WText>
 #include <Wt/WTime>
 #include <Wt/WTable>
@@ -69,11 +50,13 @@
 #include <Wt/WDoubleValidator>
 #include <Wt/WCssDecorationStyle>
 
+
 // Disable streamsize <=> size_t warnings in boost
 #pragma warning(disable:4244)
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/EnergyCal.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -105,20 +88,7 @@ static_assert( BackIndex   == 2, "SpecUtils::SpectrumType has changed and now co
 
 namespace
 {
-  template<class T>
-  bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
-                     boost::numeric::ublas::matrix<T> &inverse )
-  {
-    using namespace boost::numeric;
-    ublas::matrix<T> A( input );
-    ublas::permutation_matrix<std::size_t> pm( A.size1() );
-    const size_t res = lu_factorize(A, pm);
-    if( res != 0 )
-      return false;
-    inverse.assign( ublas::identity_matrix<T>( A.size1() ) );
-    lu_substitute(A, pm, inverse);
-    return true;
-  }//matrix_invert
+  
   
   template<class T> struct index_compare_assend
   {
@@ -130,231 +100,10 @@ namespace
     const T arr;
   };//struct index_compare
 
-  /** Fits polynomial energy equation based on peaks with assigned
-   nuclide-photopeaks.
-   
-   @param peakinfos Relevant information collected from peaks.
-   @param fitfor Whether to fit for each coefficient.  This vector must be sized
-          for the number of coefficients in the calabration equation (e.g.,
-          calibration order).  A true value for an index indicates fit for the
-          coefficient.  If any value is false (i.e. dont fit for that parameter)
-          then the 'coefs' parameter must be exactly the same size as this vector
-          and the value at the corresponding index will be used for that parameter.
-   @param dev_pairs The non-linear deviation pairs.
-   @param coefs Provides the fit coeficients for the energy calibration. Also,
-          if any parameter is not being fit for than this vector also provides
-          its (fixed) value, and this vector must be same size as the 'fitfor'
-          vector.
-   @param coefs_uncert The uncertainties on the fit parameters.
-   @returns Chi2 of the found solution.
-   
-   Throws exception on error.
-   */
-  double fit_energy_cal_poly( const std::vector<Recalibrator::RecalPeakInfo> &peakinfos,
-                              const vector<bool> fitfor,
-                              const std::vector<std::pair<float,float>> &dev_pairs,
-                              vector<float> &coefs,
-                              vector<float> &coefs_uncert )
-  {
-    const size_t npeaks = peakinfos.size();
-    const size_t fitorder = static_cast<size_t>( std::count(begin(fitfor),end(fitfor),true) );
-    
-    if( npeaks < 1 )
-      throw runtime_error( "Must have at least one peak" );
-    
-    if( fitorder < 1 )
-      throw runtime_error( "Must fit for at least one coefficient" );
-    
-    if( fitorder > npeaks )
-      throw runtime_error( "Must have at least as many peaks as coefficients fitting for" );
-    
-    if( coefs.size() != fitfor.size() )
-      throw runtime_error( "You must supply input coefficient when any of the coefficients are fixed" );
-    
-    //Energy = P0 + P1*x + P2*x^2 + P3*x^3, where x is bin number
-    //  However, some of the coeffeicents may not be being fit for.
-    vector<float> mean_bin( npeaks ), true_energies( npeaks ), energy_uncerts( npeaks );
-    for( size_t i = 0; i < npeaks; ++i )
-    {
-      mean_bin[i] = peakinfos[i].peakMeanBinNumber;
-      true_energies[i] = peakinfos[i].photopeakEnergy;
-      energy_uncerts[i] = true_energies[i] * peakinfos[i].peakMeanUncert / std::max(peakinfos[i].peakMean,1.0);
-    }
-    
-    //General Linear Least Squares fit
-    //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-    //Implementation is quite inneficient
-    //Energy_i = P0 + P1*pow(i,1) + P2*pow(i,2) + P3*pow(i,3)
-    using namespace boost::numeric;
-    
-    ublas::matrix<double> A( npeaks, fitorder );
-    ublas::vector<double> b( npeaks );
-    
-    for( size_t row = 0; row < npeaks; ++row )
-    {
-      double data_y = true_energies[row];
-      const double data_y_uncert = fabs( energy_uncerts[row] );
-      
-      data_y -= SpecUtils::correction_due_to_dev_pairs( true_energies[row], dev_pairs );
-      
-      for( size_t col = 0, coef_index = 0; coef_index < fitfor.size(); ++coef_index )
-      {
-        if( fitfor[coef_index] )
-        {
-          assert( col < fitorder );
-          A(row,col) = std::pow( mean_bin[row], double(coef_index)) / data_y_uncert;
-          ++col;
-        }else
-        {
-          data_y -= coefs[coef_index] * std::pow( mean_bin[row], double(coef_index));
-        }
-      }//
-      
-      b(row) = data_y / data_y_uncert;
-    }//for( int col = 0; col < order; ++col )
-    
-    const ublas::matrix<double> A_transpose = ublas::trans( A );
-    const ublas::matrix<double> alpha = prod( A_transpose, A );
-    ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-    const bool success = matrix_invert( alpha, C );
-    if( !success )
-      throw runtime_error( "Trouble inverting least linear squares matrix" );
-    
-    const ublas::vector<double> beta = prod( A_transpose, b );
-    const ublas::vector<double> a = prod( C, beta );
-    
-    coefs.resize( fitfor.size(), 0.0 );
-    coefs_uncert.resize( fitfor.size(), 0.0 );
-    
-    for( size_t col = 0, coef_index = 0; coef_index < fitfor.size(); ++coef_index )
-    {
-      if( fitfor[coef_index] )
-      {
-        assert( col < fitorder );
-        coefs[coef_index] = static_cast<float>( a(col) );
-        coefs_uncert[coef_index] = static_cast<float>( std::sqrt( C(col,col) ) );
-        ++col;
-      }else
-      {
-        coefs_uncert[coef_index] = 0.0;
-      }
-    }//for( int coef = 0; coef < order; ++coef )
-    
-    double chi2 = 0;
-    for( size_t bin = 0; bin < npeaks; ++bin )
-    {
-      double y_pred = 0.0;
-      for( size_t i = 0; i < fitfor.size(); ++i )
-        y_pred += coefs[i] * std::pow( mean_bin[bin], static_cast<double>(i) );
-      y_pred += SpecUtils::deviation_pair_correction( y_pred, dev_pairs );
-      chi2 += std::pow( (y_pred - true_energies[bin]) / energy_uncerts[bin], 2.0 );
-    }//for( int bin = 0; bin < nbin; ++bin )
-    
-    return chi2;
-  }//double fit_energy_cal_poly(...)
   
   
-  /** As an alternative to #fit_energy_cal_poly (for use when, e.g., that fails)
-   This class allows using Minuit to find energy calibration coefficients.
-   This class may eventually go away after #fit_energy_cal_poly is tested enough.
-   */
-  class PolyCalibCoefMinFcn
-    : public ROOT::Minuit2::FCNBase
-  {
-  public:
-    PolyCalibCoefMinFcn( const vector<Recalibrator::RecalPeakInfo> &peakInfo,
-                         const size_t nbin,
-                         SpecUtils::EnergyCalType eqnType,
-                         const std::vector< std::pair<float,float> > &devpair )
-    : ROOT::Minuit2::FCNBase(),
-    m_nbin( nbin ),
-    m_eqnType( eqnType ),
-    m_peakInfo( peakInfo ),
-    m_devpair( devpair )
-    {
-      switch( m_eqnType )
-      {
-        case SpecUtils::EnergyCalType::Polynomial:
-        case SpecUtils::EnergyCalType::FullRangeFraction:
-        case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-          break;
-        case SpecUtils::EnergyCalType::LowerChannelEdge:
-        case SpecUtils::EnergyCalType::InvalidEquationType:
-          throw runtime_error( "PolyCalibCoefMinFcn can only wotrk with Full "
-                              "Range Fraction and Polynomial binnings" );
-          break;
-      }
-    }//PolyCalibCoefMinFcn( constructor )
-    
-    virtual ~PolyCalibCoefMinFcn(){}
-    
-    virtual double Up() const { return 1.0; }
-    
-    virtual double operator()( const std::vector<double> &coef ) const
-    {
-      double chi2 = 0.0;
-      
-      vector<float> float_coef;
-      for( const double d : coef )
-      {
-        if( IsInf(d) || IsNan(d) )
-        {
-          fprintf( stderr, "Recalibrator::PolyCalibCoefMinFcn::operator() found invalid input parameter\n" );
-          return 99999999.0;
-        }
-        
-        float_coef.push_back( static_cast<float>(d) );
-      }//for( const double d : coef )
-      
-      //  if( m_eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
-      //    float_coef = fullrangefraction_coef_to_polynomial( float_coef, m_nbin );
-      if( m_eqnType == SpecUtils::EnergyCalType::Polynomial
-         || m_eqnType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-        float_coef = SpecUtils::polynomial_coef_to_fullrangefraction( float_coef, m_nbin );
-      
-      
-      for( const float d : float_coef )
-      {
-        if( IsInf(d) || IsNan(d) )
-        {
-          fprintf( stderr, "Recalibrator::PolyCalibCoefMinFcn::operator(): invalid conversion from Poly to FWF.\n" );
-          return 99999999.0;
-        }
-      }//for( float d : float_coef )
-      
-      const float nearend = SpecUtils::fullrangefraction_energy( m_nbin-2, float_coef, m_nbin, m_devpair );
-      const float end = SpecUtils::fullrangefraction_energy( m_nbin-1, float_coef, m_nbin, m_devpair );
-      const float begin = SpecUtils::fullrangefraction_energy( 0, float_coef, m_nbin, m_devpair );
-      const float nearbegin = SpecUtils::fullrangefraction_energy( 1, float_coef, m_nbin, m_devpair );
-      
-      if( (nearend >= end) || (begin >= nearbegin) )
-      {
-        fprintf( stderr, "Got nearend=%f, end=%f, begin=%f, nearbegin=%f\n", nearend, end, begin, nearbegin );
-        return 99999999.0;
-      }//if( almostLastEnergy > lastEnergy )
-      
-      for( const Recalibrator::RecalPeakInfo &info : m_peakInfo )
-      {
-        const double predictedMean = SpecUtils::fullrangefraction_energy( info.peakMeanBinNumber, float_coef, m_nbin, m_devpair );
-        double uncert = ((info.peakMeanUncert<=0.0) ? 1.0 : info.peakMeanUncert );
-        chi2 += pow(predictedMean - info.photopeakEnergy, 2.0 ) / (uncert*uncert);
-      }//for( const &RecalPeakInfo info : peakInfo )
-      
-      if( IsInf(chi2) || IsNan(chi2) )
-      {
-        fprintf( stderr, "Recalibrator::PolyCalibCoefMinFcn::operator(): invalid result Chi2\n" );
-        return 1000.0;
-      }
-      
-      return chi2;
-    }
-    
-  protected:
-    size_t m_nbin;
-    SpecUtils::EnergyCalType m_eqnType;
-    std::vector<Recalibrator::RecalPeakInfo> m_peakInfo;
-    std::vector< std::pair<float,float> > m_devpair;
-  };//class PolyCalibCoefMinFcn
+  
+  
   
 }//namespace
 
@@ -595,7 +344,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *pare
       closeBtn = parent->addCloseButtonToFooter( "Close", false, footer );
     else
       closeBtn = new WPushButton( "Close", footer );
-    closeBtn->clicked().connect( m_interspec, &InterSpec::handRecalibratorWindowClose );
+    closeBtn->clicked().connect( m_interspec, &InterSpec::handEnergyCalWindowClose );
     closeBtn->addStyleClass( "RecalCancelbtn" );
   }//if( style == kTall )
   
@@ -1021,12 +770,7 @@ void Recalibrator::finishConvertToPolynomial( const bool followThrough )
   set_cal( background );
   set_cal( secondary );
   
-  if( foreground )
-    m_interspec->displayForegroundData( true );
-  if( secondary )
-    m_interspec->displaySecondForegroundData();
-  if( background )
-    m_interspec->displayBackgroundData();
+  m_interspec->refreshDisplayedCharts();
   
   refreshRecalibrator();
 }//void finishConvertToPolynomial()
@@ -1320,13 +1064,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
     }
 
     // Redraw everything
-    if( foreground )
-      m_interspec->displayForegroundData( true );
-    if( second )
-      m_interspec->displaySecondForegroundData();
-    if( back )
-      m_interspec->displayBackgroundData();
-
+    m_interspec->refreshDisplayedCharts();
     refreshRecalibrator();
 
     return;
@@ -1459,9 +1197,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
       
       
       const bool keepCurrentEnergyRange = true;
-      m_interspec->displayForegroundData( keepCurrentEnergyRange );
-      m_interspec->displaySecondForegroundData();
-      m_interspec->displayBackgroundData();
+      m_interspec->refreshDisplayedCharts();
 
       break;
     }//case Polynomial, FullRangeFraction:
@@ -1581,13 +1317,13 @@ void Recalibrator::recalibrateByPeaks()
         poly_eqn[0] = lower_energy - 0.5*channel_width;
         poly_eqn[1] = channel_width;
 
-        std::shared_ptr<SpecMeas> &foreground = m_interspec->m_dataMeasurement;
+        std::shared_ptr<SpecMeas> foreground = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
         std::shared_ptr<const Measurement> displ_foreground
                                 = m_interspec->displayedHistogram(SpectrumType::Foreground);
-        if( !!foreground && !!displ_foreground )
+        if( foreground && displ_foreground )
         {
-          std::shared_ptr<SpecMeas> &second = m_interspec->m_secondDataMeasurement;
-          std::shared_ptr<SpecMeas> &back = m_interspec->m_backgroundMeasurement;
+          std::shared_ptr<SpecMeas> second = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
+          std::shared_ptr<SpecMeas> back = m_interspec->measurment(SpecUtils::SpectrumType::Background);
           const std::vector<std::pair<float,float>> &devpairs = displ_foreground->deviation_pairs();
         
           // Fix this for new calibration! //if( m_applyTo[ForeIndex]->isChecked() )
@@ -1611,7 +1347,7 @@ void Recalibrator::recalibrateByPeaks()
 
     //TODO: meansFitError will currently contain only values of 1.0, eventually
     //      will contain the error of the fit mean for that peak
-    vector<RecalPeakInfo> peakInfos;
+    vector<EnergyCal::RecalPeakInfo> peakInfos;
 
     for( size_t peakn = 0; peakn < npeaks; ++peakn )
     {
@@ -1621,7 +1357,7 @@ void Recalibrator::recalibrateByPeaks()
       {
         const double wantedEnergy = peak.gammaParticleEnergy();
 
-        RecalPeakInfo peakInfo;
+        EnergyCal::RecalPeakInfo peakInfo;
         peakInfo.peakMean = peak.mean();
         peakInfo.peakMeanUncert = max( peak.meanUncert(), 0.25 );
         if( IsInf(peakInfo.peakMeanUncert) || IsNan(peakInfo.peakMeanUncert) )
@@ -1680,7 +1416,7 @@ void Recalibrator::recalibrateByPeaks()
       for( size_t i = 0; i < calib_coefs.size() && i < sm_numCoefs; ++i )
         fitfor[i] = m_fitFor[i]->isChecked();
       
-      const double chi2 = fit_energy_cal_poly( peakInfos, fitfor,
+      const double chi2 = EnergyCal::fit_energy_cal_poly( peakInfos, fitfor,
                                               displ_meas->deviation_pairs(),
                                               lls_fit_coefs, lls_fit_coefs_uncert );
       
@@ -1736,120 +1472,34 @@ void Recalibrator::recalibrateByPeaks()
     
     if( !fit_coefs )
     {
-      //This Minuit based fitting methodolgy is depreciated I think; the LLS code
-      //  should work better, and seems to be releiabel, but leaving this code
-      //  in for a while as a backup
-      
-      PolyCalibCoefMinFcn chi2Fcn( peakInfos,
-                                  binning->size(),
-                                  m_coeffEquationType,
-                                  displ_meas->deviation_pairs() );
-      ROOT::Minuit2::MnUserParameters inputPrams;
-      
       if( calib_coefs.size() < sm_numCoefs )
         calib_coefs.resize( sm_numCoefs, 0.0 );
-      
-      //    for( int i = 0; i < calib_coefs.size(); ++i )
-      //      cerr << "initial calib_coefs[" << i << "]=" << calib_coefs[i] << endl;
+     
+      vector<bool> fitfor( calib_coefs.size(), false );
       for( size_t i = 0; i < sm_numCoefs; ++i )
+        fitfor[i] = m_fitFor[i]->isChecked();
+      
+      const size_t nchannel = displ_meas->num_gamma_channels();
+      const auto &devpairs = displ_meas->deviation_pairs();
+      
+      std::string warning_msg;
+      std::vector<float> coefs, coefs_uncert;
+      
+      EnergyCal::fit_energy_cal_iterative( peakInfos, nchannel, m_coeffEquationType, fitfor,
+                                          calib_coefs, devpairs, coefs, coefs_uncert, warning_msg );
+      
+      if( warning_msg.size() )
+        passMessage( warning_msg, "", WarningWidget::WarningMsgHigh );
+      
+      parValues.resize( coefs.size() );
+      parErrors.resize( coefs.size() );
+      for( size_t i = 0; i < coefs.size(); ++i )
       {
-        string name = std::to_string( i );
-        double delta = 1.0/pow( static_cast<double>(nbin), static_cast<double>(i) );
-        if( m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-        {
-          switch( i )
-          {
-            case 0: delta = 0.5; break;
-            case 1: delta = 1.0; break;
-            default:
-              delta = 1.0 / std::pow( 10.0, static_cast<double>(i-1) );
-              break;
-          }//switch( i )
-        }//if( FullRangeFraction )
-          
-        if( m_fitFor[i]->isChecked() )
-          inputPrams.Add( name, calib_coefs[i], delta );
-        else
-          inputPrams.Add( name, calib_coefs[i] );
-          
-        if( i == 1 && m_fitFor[i]->isChecked() )
-          inputPrams.SetLowerLimit( name, 0.0 );
-      }//for( size_t i = 0; i < sm_numCoefs; ++i )
-          
-      
-      ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-      ROOT::Minuit2::MnStrategy strategy( 1 ); //0 low, 1 medium, >=2 high
-      
-      const int npars = inputPrams.VariableParameters();
-      const unsigned int maxFcnCall = 200 + 100*npars + 5*npars*npars;
-      const double tolerance = 0.05; //0.05 * peakInfos.size();
-      
-      ROOT::Minuit2::CombinedMinimizer fitter;
-      ROOT::Minuit2::FunctionMinimum minimum
-      = fitter.Minimize( chi2Fcn, inputParamState,
-                        strategy, maxFcnCall, tolerance );
-      
-      //Not sure why Minuit2 doesnt like converging on the minumum verry well, but
-      //  rather than showing the user an error message, we'll give it anither try
-      if( minimum.IsAboveMaxEdm() )
-      {
-        ROOT::Minuit2::MnMigrad fitter( chi2Fcn, inputParamState, strategy );
-        minimum = fitter( maxFcnCall, tolerance );
-      }//if( minimum.IsAboveMaxEdm() )
-      
-      if( !minimum.IsValid() )
-      {
-        if( !minimum.HasValidCovariance() || !minimum.HasValidParameters() )
-        {
-          string msg = "Fit for calibration parameters failed.";
-          bool fithigher = false;
-          for( size_t i = 2; i < sm_numCoefs; ++i )
-            fithigher |= m_fitFor[i]->isChecked();
-          
-          if( fithigher )
-            msg += " you might try not fitting for quadratic or higher terms.";
-          passMessage( msg, "", WarningWidget::WarningMsgHigh );
-          return;
-        }
-        
-        cerr << minimum << endl;
-        stringstream msg;
-        msg << "Warning: calibration coefficient fit results "
-        "may be invalid, please check, and if necessary "
-        "revert this calibration instead.";
-        
-        if( minimum.IsAboveMaxEdm() )
-        {
-          msg << " The estimated distance to optimal calibration parameters is "
-          "too large.";
-          
-          cerr << "EDM=" << minimum.Edm() << ", tolerance=" << tolerance << ", npeaks=" << peakInfos.size() << endl;
-        }
-        if( minimum.HasReachedCallLimit() )
-          msg << " To many calls to chi2 routine were made.";
-        
-        
-        passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
-      }//if( !minimum.IsValid() )
-      
-      const ROOT::Minuit2::MnUserParameters &fitPrams = minimum.UserState().Parameters();
-      parValues = fitPrams.Params();
-      parErrors = fitPrams.Errors();
-      
-      stringstream mmsg;
-      mmsg << "Minuit fit gave pars={";
-      for( int i = 0; i < parValues.size(); ++i )
-        mmsg << parValues[i] << "+-" << parErrors[i] << ", ";
-      mmsg << "}\n";
-      cout << mmsg.str() << endl;
+        parValues[i] = coefs[i];
+        parErrors[i] = coefs_uncert[i];
+      }
     }//if( !fit_coefs )
     
-    assert( parValues.size() == sm_numCoefs );
-    assert( parErrors.size() == sm_numCoefs );
-    
-    for( size_t i = 0; i < parValues.size(); ++i )
-      if( IsInf(parValues[i]) || IsNan(parValues[i]) )
-        throw runtime_error( "Invalid calibration parameter from fit :(" );
     
     for( int i = 0; i < parValues.size(); ++i )
     {
@@ -1869,7 +1519,6 @@ void Recalibrator::recalibrateByPeaks()
     cerr << "Recalibrator::recalibrateByPeaks():\n\tCaught: " << exceptionmsg << endl;
     passMessage( msg, "", WarningWidget::WarningMsgHigh );
   }//try / catch
-
 }//void recalibrateByPeaks()
 
 
@@ -2540,7 +2189,7 @@ void Recalibrator::GraphicalRecalConfirm::apply()
   //Need to implement recalibrating logic, and also logic to check how long
   //  ago user last calibrated this spectra...
   InterSpec *viewer = m_calibrator->m_interspec;
-  std::shared_ptr<SpecMeas> foreground = viewer->m_dataMeasurement;
+  std::shared_ptr<SpecMeas> foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   std::shared_ptr<const Measurement> displ_foreground
                                       = viewer->displayedHistogram(SpectrumType::Foreground);
   if( !foreground || !displ_foreground )
@@ -2667,8 +2316,8 @@ void Recalibrator::GraphicalRecalConfirm::apply()
   const vector<string> detectors = m_calibrator->m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   // Fix this for new calibration! //foreground->recalibrate_by_eqn( eqn, deviationPairs, eqnType, detectors, false );
 
-  std::shared_ptr<SpecMeas> background = viewer->m_backgroundMeasurement;
-  std::shared_ptr<SpecMeas> secondary = viewer->m_secondDataMeasurement;
+  std::shared_ptr<SpecMeas> background = viewer->measurment(SpecUtils::SpectrumType::Background);
+  std::shared_ptr<SpecMeas> secondary = viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
   std::shared_ptr<const Measurement> displ_background
                                       = viewer->displayedHistogram(SpectrumType::Background);
   std::shared_ptr<const Measurement> displ_secondary
@@ -2727,13 +2376,7 @@ void Recalibrator::GraphicalRecalConfirm::apply()
                          foreground, SpectrumType::Foreground, orig_eqn, origdev, eqnType );
   
   // Redraw everything
-  if( viewer->m_dataMeasurement )
-    viewer->displayForegroundData( true );
-  if( viewer->m_secondDataMeasurement )
-    viewer->displaySecondForegroundData();
-  if( viewer->m_backgroundMeasurement )
-    viewer->displayBackgroundData();
-  
+  viewer->refreshDisplayedCharts();
   m_calibrator->refreshRecalibrator();
   m_calibrator->setWasGraphicalRecal( static_cast<int>(type), finalE );
 
@@ -2747,285 +2390,6 @@ void Recalibrator::GraphicalRecalConfirm::setEnergies( double xstart,
   m_finalE->setValue( floor(100.0*xfinish+0.5)/100.0 );
 }//void setEnergies(...)
 
-
-
-PreserveCalibWindow::PreserveCalibWindow(
-                             std::shared_ptr<SpecMeas> newmeas,
-                             const SpecUtils::SpectrumType newtype,
-                             std::shared_ptr<SpecMeas> oldmeas,
-                             const SpecUtils::SpectrumType oldtype,
-                             Recalibrator *calibrator )
-: AuxWindow( "Keep Calibration?",
-             Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal) ),
-  m_calibrator( calibrator ),
-  m_newmeas( newmeas ),
-  m_newtype( newtype ),
-  m_oldtype( oldtype )
-{
-  if( !newmeas || !oldmeas || !calibrator )
-    throw runtime_error( "PreserveCalibWindow: invalid input" );
-  
-  std::shared_ptr<const Measurement> eqnoldmeas, eqnnewmeas;
-  const vector< std::shared_ptr<const Measurement> > oldmeass = oldmeas->measurements();
-  const vector< std::shared_ptr<const Measurement> > newmeass = newmeas->measurements();
-  
-  for( size_t i = 0; !eqnoldmeas && i < oldmeass.size(); ++i )
-    if( oldmeass[i]->num_gamma_channels() )
-      eqnoldmeas = oldmeass[i];
-  for( size_t i = 0; !eqnnewmeas && i < newmeass.size(); ++i )
-    if( newmeass[i]->num_gamma_channels() )
-      eqnnewmeas = newmeass[i];
-  
-  if( !eqnoldmeas || !eqnnewmeas )
-    throw runtime_error( "PreserveCalibWindow: invalid input 2" );
-
-  
-  m_type = eqnoldmeas->energy_calibration_model();
-  m_coeffs = eqnoldmeas->calibration_coeffs();
-  m_devPairs = eqnoldmeas->deviation_pairs();
-  
-  switch( m_type )
-  {
-    case SpecUtils::EnergyCalType::Polynomial:
-    case SpecUtils::EnergyCalType::FullRangeFraction:
-    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-      break;
-      
-    case SpecUtils::EnergyCalType::LowerChannelEdge:
-    case SpecUtils::EnergyCalType::InvalidEquationType:
-      throw runtime_error( "PreserveCalibWindow: invalid type" );
-    break;
-  }//switch( m_devPairs )
-  
-  string msg = "<div>It looks like you have loaded a ";
-  
-  msg += descriptionText(newtype);
-  msg += " spectrum";
-  
-  if( m_newtype == m_oldtype )
-  {
-    msg += " that is from the same detector as the previous spectrum";
-  }else
-  {
-    msg += " that is from the same detector as the ";
-    msg += descriptionText(m_oldtype);
-    msg += " spectrum";
-  }
-
-  msg += ", but with a different calibration.</div>"
-  "<table class=\"RecalibCoefTable\"><tr><th style=\"padding-right: 5px;\">Order</th><th style=\"padding-right: 5px;\">Previous (";
-  
-  switch( eqnnewmeas->energy_calibration_model() )
-  {
-    case SpecUtils::EnergyCalType::Polynomial:
-    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-      msg += "Polynomial";
-      break;
-    case SpecUtils::EnergyCalType::FullRangeFraction: msg += "FRF"; break;
-    case SpecUtils::EnergyCalType::LowerChannelEdge:
-    case SpecUtils::EnergyCalType::InvalidEquationType:
-      break;
-  }//switch( newmeas->energy_calibration_model() )
-  
-  msg += ")</th><th>New (";
-  switch( eqnoldmeas->energy_calibration_model() )
-  {
-    case SpecUtils::EnergyCalType::Polynomial:
-    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-      msg += "Polynomial";
-      break;
-    case SpecUtils::EnergyCalType::FullRangeFraction: msg += "FRF"; break;
-    case SpecUtils::EnergyCalType::LowerChannelEdge:
-    case SpecUtils::EnergyCalType::InvalidEquationType:
-      break;
-  }//switch( oldmeas->energy_calibration_model() )
-  msg += ")</th></tr>";
-  
-
-  const vector<float> &newcoefs = eqnnewmeas->calibration_coeffs();
-  const size_t ncoefs = std::max( newcoefs.size(), m_coeffs.size() );
-  
-  for( size_t i = 0; i < ncoefs; ++i )
-  {
-    char buffer[64];
-    snprintf( buffer, sizeof(buffer), "<tr><td>%i</td>", static_cast<int>(i) );
-    msg += buffer;
-    
-    if( i < m_coeffs.size() )
-    {
-      snprintf( buffer, sizeof(buffer), "<td>%.4g</td>", m_coeffs[i] );
-      msg += buffer;
-    }else
-      msg += "<td></td>";
-    
-    if( i < newcoefs.size() )
-    {
-      snprintf( buffer, sizeof(buffer), "<td>%.4g</td>", newcoefs[i] );
-      msg += buffer;
-    }else
-      msg += "<td></td>";
-    msg += "</tr>";
-  }//for( size_t i = 0; i < ncoefs; ++i )
-  
-  msg += "</table>";
-  
-  msg += "<div style=\"margin-top: 10px;\"><b>"
-         "Would you like to use the previous calibration with the new file?"
-         "</b></div>";
-  
-  new WText( msg, XHTMLUnsafeText, contents() );
-  
-  
-  WContainerWidget *bottom = footer();
-  //bottom->setStyleClass("modal-footer");
-  WPushButton *cancel = new WPushButton( "No", bottom );
-  cancel->clicked().connect( this, &PreserveCalibWindow::emitReject );
-  cancel->setWidth( WLength(47.5,WLength::Percentage) );
-  cancel->setFloatSide(Wt::Left);
-  
-  WPushButton *use = new WPushButton( "Yes", bottom );
-  use->clicked().connect( this, &PreserveCalibWindow::doRecalibration );
-  use->setWidth( WLength(47.5,WLength::Percentage) );
-  use->setFloatSide( Wt::Right );
-  
-  rejectWhenEscapePressed();
-  AuxWindow::disableCollapse();
-  AuxWindow::show();
-  AuxWindow::resize( 400.0, WLength::Auto );
-  AuxWindow::centerWindow();
-}//PreserveCalibWindow
-
-
-PreserveCalibWindow::~PreserveCalibWindow()
-{
-}
-
-
-bool PreserveCalibWindow::candidate( std::shared_ptr<SpecMeas> newmeas,
-                                     std::shared_ptr<SpecMeas> oldmeas )
-{
-  if( !newmeas || !oldmeas || newmeas==oldmeas )
-    return false;
-  
-  
-  std::shared_ptr<const Measurement> eqnoldmeas, eqnnewmeas;
-  const vector< std::shared_ptr<const Measurement> > oldmeass = oldmeas->measurements();
-  const vector< std::shared_ptr<const Measurement> > newmeass = newmeas->measurements();
-  
-  for( size_t i = 0; !eqnoldmeas && i < oldmeass.size(); ++i )
-    if( oldmeass[i]->num_gamma_channels() )
-      eqnoldmeas = oldmeass[i];
-  for( size_t i = 0; !eqnnewmeas && i < newmeass.size(); ++i )
-    if( newmeass[i]->num_gamma_channels() )
-      eqnnewmeas = newmeass[i];
-  
-  if( !eqnoldmeas || !eqnnewmeas )
-    return false;
-  
-  if( newmeas->instrument_id() != oldmeas->instrument_id() )
-    return false;
-  
-  if( newmeas->num_gamma_channels() != oldmeas->num_gamma_channels() )
-    return false;
-  
-  
-  
-  const vector<float> &oldcoefs = eqnoldmeas->calibration_coeffs();
-  const vector< pair<float,float> > &olddevpairs = eqnoldmeas->deviation_pairs();
-  const SpecUtils::EnergyCalType oldtype = eqnoldmeas->energy_calibration_model();
-  
-  const vector<float> &newcoefs = eqnnewmeas->calibration_coeffs();
-  const vector< pair<float,float> > &newdevpairs = eqnnewmeas->deviation_pairs();
-  const SpecUtils::EnergyCalType newtype = eqnnewmeas->energy_calibration_model();
-
-  if( oldcoefs.size() != newcoefs.size() )
-    return true;
-  if( olddevpairs.size() != newdevpairs.size() )
-    return true;
-  if( oldtype != newtype )
-    return true;
-  
-  for( size_t i = 0; i < oldcoefs.size(); ++i )
-  {
-    const float a = oldcoefs[i];
-    const float b = newcoefs[i];
-    const float diff = fabs(a - b);
-    
-    //FLT_EPSILON the minimum positive number such that 1.0 + FLT_EPSILON != 1.0.
-    //FLT_EPSILON==1.19209290E-07F
-    //FLT_MIN==1.17549435E-38F
-    if( (diff > (1.0E-5*std::max(fabs(a),fabs(b))))
-        && diff > (std::pow(1.0E-3f,static_cast<float>(i+1))) )
-      return true;
-  }//for( size_t i = 0; i < oldcoefs.size(); ++i )
-  
-  for( size_t i = 0; i < olddevpairs.size(); ++i )
-  {
-    float a = olddevpairs[i].first;
-    float b = newdevpairs[i].first;
-    float diff = fabs(a - b);
-    
-    if( (diff > (1.0E-5*std::max(fabs(a),fabs(b))))
-       && diff > (std::pow(1.0E-3f,static_cast<float>(i+1))) )
-      return true;
-    
-    a = olddevpairs[i].second;
-    b = newdevpairs[i].second;
-    diff = fabs(a - b);
-    
-    if( (diff > (1.0E-5*std::max(fabs(a),fabs(b))))
-       && diff > (std::pow(1.0E-3f,static_cast<float>(i+1))) )
-      return true;
-  }//for( size_t i = 0; i < olddevpairs.size(); ++i )
-  
-  return false;
-}//candidate(...)
-
-void PreserveCalibWindow::doRecalibration()
-{
-  InterSpec *viewer = m_calibrator->m_interspec;
-  std::shared_ptr<SpecMeas> meas = viewer->measurment(m_newtype);
-  std::shared_ptr<const Measurement> displ_foreground
-                                      = viewer->displayedHistogram(SpectrumType::Foreground);
-
-  
-  if( m_newmeas != meas )
-  {
-    finished().emit(WDialog::Accepted);
-    return;
-  }
-  
-  
-  std::shared_ptr<const Measurement> eqnmeas;
-  const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-  
-  for( size_t i = 0; !eqnmeas && i < meass.size(); ++i )
-    if( meass[i]->num_gamma_channels() )
-      eqnmeas = meass[i];
-  
-  if( !eqnmeas )
-  {
-    finished().emit(WDialog::Accepted);
-    return;
-  }
-  
-  
-  const vector<float> oldcoefs = eqnmeas->calibration_coeffs();
-  const vector< pair<float,float> > olddevpairs = eqnmeas->deviation_pairs();
-  const SpecUtils::EnergyCalType oldtype = eqnmeas->energy_calibration_model();
-  
-  const vector<string> detectors = viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
-  // Fix this for new calibration! //meas->recalibrate_by_eqn( m_coeffs, m_devPairs, m_type, detectors, false );
-
-  Recalibrator::shiftPeaksForEnergyCalibration( m_calibrator->m_peakModel,
-                                                m_coeffs, m_devPairs, m_type,
-                                                meas, m_newtype, oldcoefs, olddevpairs, oldtype );
-  
-  viewer->refreshDisplayedCharts();
-  m_calibrator->refreshRecalibrator();
-  
-  finished().emit(WDialog::Accepted);
-}//void doRecalibration()
 
 
 
@@ -3490,15 +2854,15 @@ void Recalibrator::MultiFileCalibFit::doFit()
     }//if( !eqnmeas )
     
     const std::shared_ptr<const std::vector<float>> &binning = eqnmeas->channel_energies();
+    const size_t nchannel = eqnmeas->num_gamma_channels();
     
-    if( !binning || binning->size() < 16 )
+    if( !binning || nchannel < 16 )
     {
       const char *msg = "The spectrum isnt high enough resolution to fit for a calibration";
       passMessage( msg, "", WarningWidget::WarningMsgHigh );
       return;
     }
     
-    const size_t nbin = binning->size();
     const SpecUtils::EnergyCalType calibration_type = eqnmeas->energy_calibration_model();
     
     vector<float> calib_coefs = eqnmeas->calibration_coeffs();
@@ -3522,7 +2886,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
     
     //TODO: meansFitError will currently contain only values of 1.0, eventually
     //      will contian the error of the fit mean for that peak
-    vector<RecalPeakInfo> peakInfos;
+    vector<EnergyCal::RecalPeakInfo> peakInfos;
     
     for( size_t peakn = 0; peakn < npeaks; ++peakn )
     {
@@ -3530,7 +2894,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
       
       const double wantedEnergy = peak.gammaParticleEnergy();
       
-      RecalPeakInfo peakInfo;
+      EnergyCal::RecalPeakInfo peakInfo;
       peakInfo.peakMean = peak.mean();
       peakInfo.peakMeanUncert = max( peak.meanUncert(), 0.25 );
       if( IsInf(peakInfo.peakMeanUncert) || IsNan(peakInfo.peakMeanUncert) )
@@ -3540,14 +2904,14 @@ void Recalibrator::MultiFileCalibFit::doFit()
       if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
       {
         peakInfo.peakMeanBinNumber = SpecUtils::find_fullrangefraction_channel( peak.mean(),
-                                                                  calib_coefs, nbin,
+                                                                  calib_coefs, nchannel,
                                                                   eqnmeas->deviation_pairs(),
                                                                   0.001f );
       }else
       {
-        const vector<float> fwfcoef = SpecUtils::polynomial_coef_to_fullrangefraction( calib_coefs, nbin );
+        const vector<float> fwfcoef = SpecUtils::polynomial_coef_to_fullrangefraction( calib_coefs, nchannel );
         peakInfo.peakMeanBinNumber = SpecUtils::find_fullrangefraction_channel( peak.mean(),
-                                                                  fwfcoef, nbin,
+                                                                  fwfcoef, nchannel,
                                                                   eqnmeas->deviation_pairs(),
                                                                   0.001f );
       }//if( FullRangeFraction ) / else
@@ -3569,7 +2933,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
       
       //Convert eqation type to polynomial incase there are any fixed paramters.
       if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-        lls_fit_coefs = SpecUtils::fullrangefraction_coef_to_polynomial(calib_coefs, binning->size() );
+        lls_fit_coefs = SpecUtils::fullrangefraction_coef_to_polynomial(calib_coefs, nchannel );
       lls_fit_coefs.resize( sm_numCoefs, 0.0f );
       
       vector<bool> fitfor( lls_fit_coefs.size(), false );
@@ -3577,7 +2941,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
       for( size_t i = 0; i < calib_coefs.size() && i < sm_numCoefs; ++i )
         fitfor[i] = m_fitFor[i]->isChecked();
       
-      const double chi2 = fit_energy_cal_poly( peakInfos, fitfor,
+      const double chi2 = EnergyCal::fit_energy_cal_poly( peakInfos, fitfor,
                                               eqnmeas->deviation_pairs(),
                                               lls_fit_coefs, lls_fit_coefs_uncert );
       
@@ -3606,8 +2970,8 @@ void Recalibrator::MultiFileCalibFit::doFit()
           break;
           
         case SpecUtils::EnergyCalType::FullRangeFraction:
-          lls_fit_coefs = SpecUtils::polynomial_coef_to_fullrangefraction(lls_fit_coefs, binning->size());
-          lls_fit_coefs_uncert = SpecUtils::polynomial_coef_to_fullrangefraction(lls_fit_coefs_uncert, binning->size());
+          lls_fit_coefs = SpecUtils::polynomial_coef_to_fullrangefraction(lls_fit_coefs, nchannel);
+          lls_fit_coefs_uncert = SpecUtils::polynomial_coef_to_fullrangefraction(lls_fit_coefs_uncert, nchannel);
           break;
           
         case SpecUtils::EnergyCalType::InvalidEquationType:
@@ -3634,95 +2998,39 @@ void Recalibrator::MultiFileCalibFit::doFit()
       //This Minuit based fitting methodolgy is depreciated I think; the LLS code
       //  should work better, and seems to be releiabel, but leaving this code
       //  in for a while as a backup
-      
-      PolyCalibCoefMinFcn chi2Fcn( peakInfos,
-                                  binning->size(),
-                                  m_calibrator->m_coeffEquationType,
-                                  eqnmeas->deviation_pairs() );
-      ROOT::Minuit2::MnUserParameters inputPrams;
-      
+      const auto eqntype = m_calibrator->m_coeffEquationType;
+      const auto &devpairs = eqnmeas->deviation_pairs();
       if( calib_coefs.size() < sm_numCoefs )
         calib_coefs.resize( sm_numCoefs, 0.0 );
-          
+      
+      vector<bool> fitfor( calib_coefs.size(), false );
       for( size_t i = 0; i < sm_numCoefs; ++i )
+        fitfor[i] = m_fitFor[i]->isChecked();
+        
+      
+      string warning_msg;
+      vector<float> coefs, coefs_uncert;
+      EnergyCal::fit_energy_cal_iterative( peakInfos, nchannel, eqntype, fitfor, calib_coefs,
+                                 devpairs, coefs, coefs_uncert, warning_msg );
+      
+      if( warning_msg.size() )
+        passMessage( warning_msg, "", WarningWidget::WarningMsgHigh );
+      
+      assert( coefs.size() == coefs_uncert.size() );
+      parValues.resize( coefs.size(), 0.0 );
+      parErrors.resize( coefs_uncert.size(), 0.0 );
+      for( size_t i = 0; i < coefs.size(); ++i )
       {
-        string name = std::to_string(i);
-        double delta = 1.0/pow( static_cast<double>(nbin), static_cast<double>(i) );
-        if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-        {
-          if( i == 0 ) delta = 0.5;
-          else if( i == 1 ) delta = 1.0;
-          else delta = 1.0 / std::pow( 10, i-1 );
-        }
-          
-        if( m_fitFor[i]->isChecked() )
-          inputPrams.Add( name, calib_coefs[i], delta );
-        else
-          inputPrams.Add( name, calib_coefs[i] );
-        if( (i == 1) && m_fitFor[i]->isChecked() )
-          inputPrams.SetLowerLimit( name, 0.0 );
-      }//for( size_t i = 0; i < sm_numCoefs; ++i )
-          
-      ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-      ROOT::Minuit2::MnStrategy strategy( 1 ); //0 low, 1 medium, >=2 high
-      
-      
-      const int npars = inputPrams.VariableParameters();
-      const unsigned int maxFcnCall = 200 + 100*npars + 5*npars*npars;
-      const double tolerance = 0.1;
-      
-      ROOT::Minuit2::CombinedMinimizer fitter;
-      ROOT::Minuit2::FunctionMinimum minimum
-      = fitter.Minimize( chi2Fcn, inputParamState,
-                        strategy, maxFcnCall, tolerance );
-      
-      
-      //Not sure why Minuit2 doesnt like converging on the minumum verry well, but
-      //  rather than showing the user an error message, we'll give it anither try
-      if( minimum.IsAboveMaxEdm() )
-      {
-        ROOT::Minuit2::MnMigrad fitter( chi2Fcn, inputParamState, strategy );
-        minimum = fitter( maxFcnCall, tolerance );
+        parValues[i] = coefs[i];
+        parErrors[i] = coefs_uncert[i];
       }
-      
-      if( !minimum.IsValid() )
-      {
-        if( !minimum.HasValidCovariance() || !minimum.HasValidParameters() )
-        {
-          string msg = "Fit for calibration parameters failed.";
-          if( m_fitFor[2] )
-            msg += " you might try not fitting for quadratic term.";
-          passMessage( msg, "", WarningWidget::WarningMsgHigh );
-          return;
-        }//if( !minimum.HasValidCovariance() || !minimum.HasValidParameters() )
-        
-        cerr << minimum << endl;
-        stringstream msg;
-        msg << "Warning: calibration coefficient fit results "
-        "may be invalid, please check, and if necessary "
-        "cancel this calibration.";
-        
-        if( minimum.IsAboveMaxEdm() )
-          msg << " The estimated distance to optimal calibration parameters is "
-          "too large.";
-        if( minimum.HasReachedCallLimit() )
-          msg << " To many calls to chi2 routine were made.";
-        
-        passMessage( msg.str(), "",WarningWidget::WarningMsgHigh );
-      }//if( !minimum.IsValid() )
-      
-      const ROOT::Minuit2::MnUserParameters &fitPrams = minimum.UserState().Parameters();
-      parValues = fitPrams.Params();
-      parErrors = fitPrams.Errors();
     }//if( !fit_coefs )
-    
-    
     
     for( size_t i = 0; i < parValues.size(); ++i )
       if( IsInf(parValues[i]) || IsNan(parValues[i]) )
         throw runtime_error( "Invalid calibration parameter from fit :(" );
     
-    assert( parValues.size() == sm_numCoefs );
+    assert( parValues.size() >= sm_numCoefs );
     
     m_eqnType = calibration_type;
     for( int i = 0; i < sm_numCoefs; ++i )
@@ -3738,12 +3046,12 @@ void Recalibrator::MultiFileCalibFit::doFit()
     
     if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::Polynomial
        || m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-      float_coef = SpecUtils::polynomial_coef_to_fullrangefraction( float_coef, nbin );
+      float_coef = SpecUtils::polynomial_coef_to_fullrangefraction( float_coef, nchannel );
     
     stringstream msg;
-    for( const RecalPeakInfo &info : peakInfos )
+    for( const EnergyCal::RecalPeakInfo &info : peakInfos )
     {
-      const double predictedMean = SpecUtils::fullrangefraction_energy( info.peakMeanBinNumber, float_coef, nbin, eqnmeas->deviation_pairs() );
+      const double predictedMean = SpecUtils::fullrangefraction_energy( info.peakMeanBinNumber, float_coef, nchannel, eqnmeas->deviation_pairs() );
       double uncert = ((info.peakMeanUncert<=0.0) ? 1.0 : info.peakMeanUncert );
       double chi2 = pow(predictedMean - info.photopeakEnergy, 2.0 ) / (uncert*uncert);
       
@@ -3925,10 +3233,7 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
       // Fix this for new calibration! //if( second )
       // Fix this for new calibration! //  second->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
       
-      viewer->displayForegroundData( true );
-      viewer->displaySecondForegroundData();
-      viewer->displayBackgroundData();
-      
+      viewer->refreshDisplayedCharts();
       m_calibrator->refreshRecalibrator();
       
       cerr << "\nAccepted Recalibrator::MultiFileCalibFit" << endl;

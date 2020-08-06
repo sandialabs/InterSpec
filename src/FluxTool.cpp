@@ -33,6 +33,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/DetectorEdit.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"

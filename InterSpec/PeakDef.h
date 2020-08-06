@@ -34,9 +34,6 @@
 #include <Wt/WColor>
 
 #include "InterSpec/ReactionGamma.h"
-#include "SandiaDecay/SandiaDecay.h"
-#include "InterSpec/DecayDataBaseServer.h"
-
 
 //Forward declaration
 class PeakDef;
@@ -47,6 +44,7 @@ namespace SandiaDecay
   struct Element;
   struct Transition;
   struct RadParticle;
+  struct EnergyIntensityPair;
 }//namespace SandiaDecay
 
 

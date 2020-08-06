@@ -288,7 +288,7 @@ protected:
   float m_safeAreas[4];
 #endif
   
-  
+  friend class InterSpec;
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;
 #endif
