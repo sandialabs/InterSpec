@@ -21,9 +21,9 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-Sample = function (sampleNumber, cumRealTime, gammaCPS, neutronCPS) {
+Sample = function (sampleNumber, realTimeInterval, gammaCPS, neutronCPS) {
   this.sampleNumber = sampleNumber;
-  this.cumRealTime = cumRealTime;
+  this.realTimeInterval = realTimeInterval;
   this.gammaCPS = gammaCPS;
   this.neutronCPS = neutronCPS;
 };
@@ -48,12 +48,19 @@ D3TimeChart = function (elem, options) {
   this.height = undefined;
   this.width = undefined;
   this.domains = undefined;
+  this.leadTime = 2.5;
 
+  this.margin = {
+    top: "50",
+    right: "50",
+    bottom: "50",
+    left: "50"
+  }
   this.svg = d3.select(this.chart).append("svg");
 
-  this.axisBottomG = this.svg.append("g");
-  this.axisLeftG = this.svg.append("g");
-  this.lineG = this.svg.append("g");
+  this.axisBottomG = this.svg.append("g").attr("class", "axis");
+  this.axisLeftG = this.svg.append("g").attr("class", "axis");
+  this.axisRightG = this.svg.append("g").attr("class", "axis");
 }; //
 
 /** Function to help emit callbacks back to C++
@@ -97,20 +104,94 @@ D3TimeChart.prototype.handleResize = function () {
       "height: " +
       this.chart.clientHeight
   );
-  this.height = this.chart.clientWidth;
+  this.height = this.chart.clientHeight;
   this.width = this.chart.clientWidth;
+  
+  this.render()
 };
 
-D3TimeChart.prototype.render = function () {};
+D3TimeChart.prototype.render = function () {
+  
+  if (this.height && this.width && this.data) {
+    this.svg.attr("width", this.width);
+    this.svg.attr("height", this.height);
 
-D3TimeChart.prototype.computeCumulativeRealTime = function (realTimes) {
+    console.log("Rendering!")
+
+    var {xScale, yScaleGamma, yScaleNeutron} = this.getScalers();
+    
+    // get y-axis
+    var yAxisLeft = d3.svg.axis().scale(yScaleGamma).ticks(3).orient("left");
+    var yAxisRight = d3.svg.axis().scale(yScaleNeutron).orient("right");
+    
+    var xAxis = d3.svg.axis().scale(xScale)
+    
+    this.axisBottomG.attr("transform", "translate(0," + (this.height - this.margin.bottom) + ")").call(xAxis);
+    this.axisLeftG.attr("transform", "translate(" + this.margin.left + ",0)").call(yAxisLeft);
+    this.axisRightG.attr("transform", "translate(" + (this.width - this.margin.left) + ",0)").call(yAxisRight);
+
+    for (detector in this.data.samples) {
+      
+      var data = this.data.samples[detector];
+      var lineGamma = 'M';
+      var lineNeutron = 'M';
+
+      
+      data.forEach(function (d, i) {
+        var y0Gamma = yScaleGamma(d.gammaCPS);
+        var y0Neutron = yScaleNeutron(d.neutronCPS); //neturon
+        var x0 = xScale(d.realTimeInterval[1]);
+        if (i === 0) {
+          lineGamma += `${xScale(d.realTimeInterval[0])},${y0Gamma}H${x0}`
+          lineNeutron += `${xScale(d.realTimeInterval[0])},${y0Neutron}H${x0}`
+        } else {
+          lineGamma += `H${x0}`
+          lineNeutron += `H${x0}`
+        }
+        
+        if (data[i + 1]) {
+          lineGamma += `V${yScaleGamma(data[i + 1].gammaCPS)}`
+          lineNeutron += `V${yScaleNeutron(data[i + 1].neutronCPS)}` //neturon
+        }
+      })
+      this.svg.append('g').append("path").attr("class", `line det_${detector.detName}`).style("stroke", this.data.detectors[detector].gammaColor).style("fill", "none").attr("d", lineGamma);
+      this.svg.append('g').append("path").attr("class", `line det_${detector.detName}`).style("stroke", this.data.detectors[detector].neutronColor).style("fill", "none").attr("d", lineNeutron);
+
+    }
+  }
+
+};
+
+D3TimeChart.prototype.getScalers = function() {
+
+  var xScale = d3.scale.linear().domain(this.domains.x).range([this.margin.left, this.width - this.margin.right]);
+  var yScaleGamma = d3.scale.linear().domain(this.domains.yGamma).range([this.height - this.margin.bottom, this.margin.top]);
+  var yScaleNeutron = d3.scale.linear().domain(this.domains.yNeutron).range([this.height - this.margin.bottom, this.margin.top]);
+
+  return {xScale: xScale, yScaleGamma: yScaleGamma, yScaleNeutron: yScaleNeutron};
+}
+
+D3TimeChart.prototype.getRealTimeIntervals = function (realTimes) {
   var cumRealTime = [];
+
+  var background = realTimes[0]
 
   realTimes.reduce(function (acc, curr, i) {
     return (cumRealTime[i] = acc + curr);
-  }, 0);
+  }, -background);
 
-  return cumRealTime;
+  var realTimeIntervals = [];
+
+  for (var i  = 0; i < realTimes.length; i++) {
+    if (i === 0) {
+      realTimeIntervals[i] = [-realTimes[i], 0]
+    } else {
+      var prevEndpoint = realTimeIntervals[i - 1][1];
+      realTimeIntervals[i] = [prevEndpoint, prevEndpoint + realTimes[i]]
+    }
+  }
+
+  return realTimeIntervals;
 };
 
 D3TimeChart.prototype.isValidData = function (data) {
@@ -190,48 +271,52 @@ D3TimeChart.prototype.setData = function (data) {
     this.data = formattedData;
 
     this.domains = this.getDomain(data);
+    console.log("Domains:")
+    console.log(this.domains);
   }
 };
 
 D3TimeChart.prototype.getDomain = function (data) {
-  var xMax = Number.MIN_SAFE_INTEGER;
-  var xMin = Number.MAX_SAFE_INTEGER;
-  var yMax = Number.MIN_SAFE_INTEGER;
-  var yMin = 0;
 
-  // Find max
-  // over gamma detectors
+  var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
+
+  xMin = d3.min(realTimeIntervals, function (d) { return d[0]});
+  xMax = d3.max(realTimeIntervals, function(d) {return d[1]});
+
+  var yMaxGamma = Number.MIN_SAFE_INTEGER;
+  var yMaxNeutron = Number.MIN_SAFE_INTEGER;
+
+  var yMinGamma = 0;
+
+  // Find max over gamma detectors
   var nSamples = data.sampleNumbers.length;
 
   for (var i = 0; i < data.gammaCounts.length; i++) {
     for (var j = 0; j < nSamples; j++) {
       var cps = data.gammaCounts[i].counts[j] / data.realTimes[j];
 
-      if (cps > yMax) {
-        yMax = cps;
+      if (cps > yMaxGamma) {
+        yMaxGamma = cps;
       }
     }
   }
 
-  // over neutron detectors
+  // Find max over neutron detectors
   for (var i = 0; i < data.neutronCounts.length; i++) {
     for (var j = 0; j < nSamples; j++) {
       var cps = data.neutronCounts[i].counts[j] / data.realTimes[j];
 
-      if (cps > yMax) {
-        yMax = cps;
+      if (cps > yMaxNeutron) {
+        yMaxNeutron = cps;
       }
     }
   }
 
-  var cumRealTime = this.computeCumulativeRealTime(data.realTimes);
-
-  xMin = 0 - cumRealTime[0];
-  xMax = cumRealTime[cumRealTime.length - 1] - cumRealTime[0];
 
   return {
     x: [xMin, xMax],
-    y: [yMin, yMax],
+    yGamma: [0, yMaxGamma],
+    yNeutron: [0, yMaxNeutron],
   };
 };
 
@@ -239,7 +324,7 @@ D3TimeChart.prototype.formatData = function (data) {
   var nSamples = data.sampleNumbers.length;
   var detectors = {};
   var samples = {};
-  var cumRealTime = this.computeCumulativeRealTime(data.realTimes);
+  var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
 
   if (data.gammaCounts) {
     data.gammaCounts.forEach(function (d) {
@@ -259,7 +344,7 @@ D3TimeChart.prototype.formatData = function (data) {
           samples[d.detName].push(
             new Sample(
               data.sampleNumbers[i],
-              cumRealTime[i],
+              realTimeIntervals[i],
               d.counts[i] / data.realTimes[i],
               null
             )
@@ -294,7 +379,7 @@ D3TimeChart.prototype.formatData = function (data) {
           samples[d.detName].push(
             new Sample(
               data.sampleNumbers[i],
-              cumRealTime[i],
+              realTimeIntervals[i],
               null,
               d.counts[i] / data.realTimes[i]
             )
