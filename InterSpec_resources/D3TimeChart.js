@@ -127,8 +127,20 @@ D3TimeChart.prototype.render = function () {
     var HAS_GAMMA = yScaleGamma ? true : false;
     var HAS_NEUTRON = yScaleNeutron ? true : false;
 
+    // set different tick counts for different viewport breakpoints
+    var nTicksX;
+    if (this.width > 850) {
+      nTicksX = this.data.nSamples;
+    } else if (this.width > 320) {
+      nTicksX = Math.floor(this.data.nSamples / 2);
+    } else if (this.width > 210) {
+      nTicksX = Math.floor(this.data.nSamples / 4);
+    } else {
+      nTicksX = Math.floor(this.data.nSamples / 8);
+    }
+
     // plot axes
-    var xAxis = d3.svg.axis().scale(xScale).ticks(this.data.nSamples);
+    var xAxis = d3.svg.axis().scale(xScale).ticks(nTicksX);
     this.axisBottomG
       .attr(
         "transform",
@@ -213,8 +225,8 @@ D3TimeChart.prototype.render = function () {
       if (HAS_GAMMA) {
         this.svg
           .append("g")
-          .append("path")
           .attr("class", `line det_${detector.detName}`)
+          .append("path")
           .style("stroke", this.data.detectors[detector].gammaColor)
           .style("fill", "none")
           .attr("d", lineGamma);
@@ -223,8 +235,8 @@ D3TimeChart.prototype.render = function () {
       if (HAS_NEUTRON) {
         this.svg
           .append("g")
-          .append("path")
           .attr("class", `line det_${detector.detName}`)
+          .append("path")
           .style("stroke", this.data.detectors[detector].neutronColor)
           .style("fill", "none")
           .attr("d", lineNeutron);
