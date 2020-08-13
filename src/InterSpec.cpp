@@ -2552,7 +2552,7 @@ void InterSpec::deleteFeatureMarkerWindow()
 }//void deleteFeatureMarkerWindow()
 #endif //USE_FEATURE_MARKER_WIDGET
 
-Wt::Signal<SpecUtils::SpectrumType,std::shared_ptr<SpecMeas>, std::set<int> > &
+Wt::Signal<SpecUtils::SpectrumType,std::shared_ptr<SpecMeas>, std::set<int>, vector<string> > &
                                       InterSpec::displayedSpectrumChanged()
 {
   return m_displayedSpectrumChangedSignal;
@@ -4390,8 +4390,8 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     
     
     std::shared_ptr<SpecMeas> dummy;
-    setSpectrum( dummy, std::set<int>(), SpecUtils::SpectrumType::Background, false );
-    setSpectrum( dummy, std::set<int>(), SpecUtils::SpectrumType::SecondForeground, false );
+    setSpectrum( dummy, {}, SpecUtils::SpectrumType::Background, false );
+    setSpectrum( dummy, {}, SpecUtils::SpectrumType::SecondForeground, false );
     
     string filename = meas->filename();
     if( name && name->value_size() )
@@ -7830,7 +7830,8 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
   }//switch( spec_type )
 #endif
   
-  m_displayedSpectrumChangedSignal.emit( type, meas, (*sampleset) );
+  const auto dets = detectorsToDisplay(type);
+  m_displayedSpectrumChangedSignal.emit( type, meas, (*sampleset), dets );
 }//void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples )
 
 
@@ -8235,7 +8236,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         deletePeakEdit();
     break;
     
-    case SpecUtils::SpectrumType::SecondForeground: case SpecUtils::SpectrumType::Background:
+    case SpecUtils::SpectrumType::SecondForeground:
+    case SpecUtils::SpectrumType::Background:
     break;
   }//switch( spec_type )
 
@@ -8329,7 +8331,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         
         m_detectorChangedConnection = m_detectorChanged.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), _1 ) );
         m_detectorModifiedConnection = m_detectorModified.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), _1 ) );
-        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( boost::bind( &SpecMeas::displayedSpectrumChangedCallback, meas.get(), _1, _2, _3 ) );
+        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( boost::bind( &SpecMeas::displayedSpectrumChangedCallback, meas.get(), _1, _2, _3, _4 ) );
       }//if( meas )
 
       m_dataMeasurement = meas;
@@ -8402,8 +8404,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       m_spectrum->setSecondData( nullptr, -1.0, -1.0, -1.0, false );
       
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::SecondForeground,
-                                            m_secondDataMeasurement,
-                                            std::set<int>() );
+                                             nullptr, {}, {} );
     }//if( num_sec_channel )
     
     if( diff_fore_nchan && num_back_channel && num_foreground_channels && (num_back_channel != num_foreground_channels) )
@@ -8415,11 +8416,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         m_downloadMenu->setItemHidden( item, true );
 #endif
       
-      m_backgroundMeasurement = std::shared_ptr<SpecMeas>();
-      m_spectrum->setBackground( std::shared_ptr<SpecUtils::Measurement>(), -1.0, -1.0, -1.0 );
-      m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background,
-                                            m_backgroundMeasurement,
-                                            std::set<int>() );
+      m_backgroundMeasurement = nullptr;
+      m_spectrum->setBackground( nullptr, -1.0, -1.0, -1.0 );
+      m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background, nullptr, {}, {} );
     }//if( nSecondBins )
   }//if( spec_type == SpecUtils::SpectrumType::Foreground )
   
@@ -8568,7 +8567,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   // Update the recalibrator, as there is new data.
   if( m_recalibrator )
     m_recalibrator->refreshRecalibrator();
-  m_displayedSpectrumChangedSignal.emit( spec_type, meas, sample_numbers );
+  
+  const auto shownDets = detectorsToDisplay(spec_type);
+  m_displayedSpectrumChangedSignal.emit( spec_type, meas, sample_numbers, shownDets );
   
   if( meas )
   {
@@ -9020,6 +9021,15 @@ void InterSpec::detectorsToDisplayChanged()
   displaySecondForegroundData();
   displayForegroundData( true );
   displayTimeSeriesData( true ); //wcjohns change 20160602 to true, to force an update of highlighted regions, should consider removing the highlight option
+  
+  // This function is only called when a checkbox in the "Detectors" sub-menu is changed, so for the
+  //  moment, we will only emit that things changed for the foreground.  In the future we should get
+  //  rid of this sub-menu and handle things correctly.
+  const auto type = SpecUtils::SpectrumType::Foreground;
+  const auto meas = measurment(type);
+  const auto &samples = displayedSamples(type);
+  const auto detectors = detectorsToDisplay(type);
+  m_displayedSpectrumChangedSignal.emit(type,meas,samples,detectors);
 }//void detectorsToDisplayChanged()
 
 

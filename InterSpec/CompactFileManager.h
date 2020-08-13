@@ -70,7 +70,8 @@ public:
   void refreshContents();
   void handleDisplayChange( SpecUtils::SpectrumType spectrum_type,
                             const std::shared_ptr<SpecMeas> meas,
-                            const std::set<int> &sample_numbers );
+                            const std::set<int> &sample_numbers,
+                            const std::vector<std::string> &detectors );
 
   void handleUserChangeSampleNum( SpecUtils::SpectrumType spectrum_type );
   void handleUserIncrementSampleNum( SpecUtils::SpectrumType spectrum_type, bool increment );
@@ -133,7 +134,7 @@ private:
   // A link to the file manager, as that's where everything's stored
   SpectraFileModel *m_files;
   // as well as the host viewer
-  InterSpec *m_hostViewer;
+  InterSpec *m_interspec;
   // and the file manager, which is used for rapid upload/application
   SpecMeasManager *m_fullFileManager;
   

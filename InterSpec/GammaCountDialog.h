@@ -59,9 +59,10 @@ protected:
   void init();
   void emitFinished();
   void handleEnergyRangeChange();
-  void handleSpectrumChange( SpecUtils::SpectrumType type,
-                             std::shared_ptr<SpecMeas> meas,
-                             std::set<int> displaySample );
+  void handleSpectrumChange( const SpecUtils::SpectrumType type,
+                             const std::shared_ptr<SpecMeas> &meas,
+                             const std::set<int> &displaySample,
+                             const std::vector<std::string> &displayedDetectors );
 
   static void setGammaCountText( Wt::WText *text, std::shared_ptr<const SpecUtils::Measurement> hist,
                                  const double scale_factor,

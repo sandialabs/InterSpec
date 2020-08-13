@@ -463,7 +463,8 @@ public:
   //  is changed.
   Wt::Signal<SpecUtils::SpectrumType,                //which spectrum changed
              std::shared_ptr<SpecMeas>, //A pointer to the new spectrum
-             std::set<int>               //The sample numbers displayed
+             std::set<int>,             //The sample numbers displayed
+             std::vector<std::string>   //The detectors displayed
              >& displayedSpectrumChanged();
 
   //overlayCanvasJsExceptionCallback(...) is mostly for debugging and will
@@ -1310,7 +1311,9 @@ protected:
   //      measurments
   Wt::Signal<SpecUtils::SpectrumType,
              std::shared_ptr<SpecMeas>/*measurment*/,
-             std::set<int> /*sample_numbers*/ > m_displayedSpectrumChangedSignal;
+             std::set<int>, /*sample_numbers*/
+             std::vector<std::string> /*detectors*/
+             > m_displayedSpectrumChangedSignal;
 
 
   //Signals for when the current detector is changed or modified

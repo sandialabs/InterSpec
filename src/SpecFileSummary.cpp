@@ -653,7 +653,7 @@ void SpecFileSummary::init()
   overallLayout->setRowStretch( 1, 1 );
   overallLayout->setRowStretch( 2, 1 );
 
-  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &SpecFileSummary::handleSpectrumChange, this, _1, _2, _3 ) );
+  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &SpecFileSummary::handleSpectrumChange, this, _1, _2, _3, _4 ) );
 
 
   m_displayedLiveTime->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedLiveTime) );
@@ -1342,9 +1342,10 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
 }//void handleFieldUpdate( EditableFields field )
 
 
-void SpecFileSummary::handleSpectrumChange( SpecUtils::SpectrumType type,
-                                            std::shared_ptr<SpecMeas> meas,
-                                            std::set<int> displaySample )
+void SpecFileSummary::handleSpectrumChange( const SpecUtils::SpectrumType type,
+                                            const std::shared_ptr<SpecMeas> &meas,
+                                            const std::set<int> &displaySample,
+                                            const std::vector<std::string> &detectors )
 {
   const SpecUtils::SpectrumType display_type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
   

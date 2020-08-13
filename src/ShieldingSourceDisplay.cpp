@@ -97,6 +97,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/IsotopeSelectionAids.h"
@@ -4340,7 +4341,7 @@ void ShieldingSourceDisplay::backgroundPeakSubChanged()
     
     std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks;
     
-    const std::set<int> &displayed = back->displayedSampleNumbers();
+    const set<int> &displayed = m_specViewer->displayedSamples(SpecUtils::SpectrumType::Background);
     peaks = back->peaks( displayed );
     
     if( !peaks || peaks->empty() )
@@ -6905,7 +6906,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     
     if( back )
     {
-      const std::set<int> &displayed = back->displayedSampleNumbers();
+      const auto &displayed = m_specViewer->displayedSamples(SpecUtils::SpectrumType::Background);
       backpeaks = back->peaks( displayed );
     }//if( back )
     

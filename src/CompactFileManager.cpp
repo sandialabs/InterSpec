@@ -71,7 +71,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   : WContainerWidget( parent ),
     m_foregroundTitle( 0 ),
     m_files( fileManager->model() ),
-    m_hostViewer( hostViewer ),
+    m_interspec( hostViewer ),
     m_fullFileManager( fileManager ),
     m_displayMode( mode )
 {
@@ -194,7 +194,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       slidelayout->setVerticalSpacing(10);
       m_scaleValueTxt[typeindex] = new WDoubleSpinBox();
 #if (IOS || ANDROID)
-      //can't use m_hostViewer->isMobile() here, so use #IOS
+      //can't use m_interspec->isMobile() here, so use #IOS
       //20150123: on android at least, calling setNativeControl() causes
       //  a javascript exception (having to do with the validate) when first
       //  loading the app.
@@ -306,12 +306,12 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
           
           WPushButton *button = new WPushButton(  "Spectrum Manager...");
             //button->setIcon(Wt::WLink("InterSpec_resources/images/computer.png" ));
-            button->clicked().connect( m_hostViewer->fileManager(), &SpecMeasManager::startSpectrumManager );
+            button->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
             layout2->addWidget(button,0,1);
 #if( USE_DB_TO_STORE_SPECTRA )
             WPushButton *button2 = new WPushButton( "Previous...");
             button2->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                                     m_hostViewer->fileManager(),
+                                                     m_interspec->fileManager(),
                                                      SpecUtils::SpectrumType::Foreground,
                                                      std::shared_ptr<SpectraFileHeader>() ) );
             layout2->addWidget(button2,0,2);
@@ -396,7 +396,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   m_files->rowsRemoved().connect( this, &CompactFileManager::refreshContents );
   hostViewer->displayedSpectrumChanged().connect(
                           boost::bind( &CompactFileManager::handleDisplayChange,
-                                       this, _1, _2, _3 ) );
+                                       this, _1, _2, _3, _4 ) );
 }//CompactFileManager constructor
 
 
@@ -435,17 +435,23 @@ void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumTy
  cfm - optional, if provided, will call handleDisplayChange.  Set to NULL normally if called statically.  Otherwise, CompactFileManager calls will provide it.
  */
 void CompactFileManager::changeToSampleNum( int sampleNum,
-                                            SpecUtils::SpectrumType type, InterSpec *hostViewer, CompactFileManager* cfm )
+                                            SpecUtils::SpectrumType type,
+                                            InterSpec *viewer,
+                                            CompactFileManager* cfm )
 {
-  std::shared_ptr<SpecMeas> meas = hostViewer->measurment( type );
+  std::shared_ptr<SpecMeas> meas = viewer->measurment( type );
 
   if( meas )
   {
     const set<int> total_sample_nums = meas->sample_numbers();
     if( total_sample_nums.find(sampleNum) == total_sample_nums.end() )
     {
-      if (cfm)
-          cfm->handleDisplayChange( type, meas, hostViewer->displayedSamples(type) );
+      if( cfm )
+      {
+        const auto dets = viewer->detectorsToDisplay(type);
+        const auto &samples = viewer->displayedSamples(type);
+        cfm->handleDisplayChange( type, meas, samples, dets );
+      }
       
       passMessage( "Sample number requested doesnt exist.",
                    "", WarningWidget::WarningMsgHigh );
@@ -455,8 +461,8 @@ void CompactFileManager::changeToSampleNum( int sampleNum,
     
     set<int> sampleNumToLoad;
     sampleNumToLoad.insert( sampleNum );
-    hostViewer->changeDisplayedSampleNums( sampleNumToLoad, type );
-//    m_hostViewer->setSpectrum( meas, sampleNumToLoad, type, false );
+    viewer->changeDisplayedSampleNums( sampleNumToLoad, type );
+//    m_interspec->setSpectrum( meas, sampleNumToLoad, type, false );
   }else
   {
     passMessage( "Cant change sample numbers, there is no current measurment",
@@ -468,7 +474,7 @@ void CompactFileManager::changeToSampleNum( int sampleNum,
 void CompactFileManager::changeToSampleRange( int first, int last,
                                               SpecUtils::SpectrumType type )
 {
-  std::shared_ptr<SpecMeas> meas = m_hostViewer->measurment( type );
+  std::shared_ptr<SpecMeas> meas = m_interspec->measurment( type );
 
   if( meas )
   {
@@ -479,7 +485,10 @@ void CompactFileManager::changeToSampleRange( int first, int last,
     if( firstPos == total_sample_nums.end()
         || lastPos == total_sample_nums.end() )
     {
-      handleDisplayChange( type, meas, m_hostViewer->displayedSamples(type) );
+      const auto dets = m_interspec->detectorsToDisplay(type);
+      const auto &samples = m_interspec->displayedSamples(type);
+      
+      handleDisplayChange( type, meas, samples, dets );
       passMessage( "One of the sample number requested doesnt exist.",
                    "", WarningWidget::WarningMsgHigh );
       return;
@@ -489,8 +498,8 @@ void CompactFileManager::changeToSampleRange( int first, int last,
     if( lastPos != total_sample_nums.end() )
       ++lastPos;
     sampleNumToLoad.insert( firstPos, lastPos );
-    m_hostViewer->changeDisplayedSampleNums( sampleNumToLoad, type );
-//    m_hostViewer->setSpectrum( meas, sampleNumToLoad, type, false );
+    m_interspec->changeDisplayedSampleNums( sampleNumToLoad, type );
+//    m_interspec->setSpectrum( meas, sampleNumToLoad, type, false );
   }else
   {
     passMessage( "Can't change sample numbers, there is no current measurment",
@@ -520,7 +529,7 @@ void CompactFileManager::handleSpectrumScale( const double scale, SpecUtils::Spe
       
     case SpecUtils::SpectrumType::Background:
     case SpecUtils::SpectrumType::SecondForeground:
-      m_hostViewer->setDisplayScaleFactor( scale, type );
+      m_interspec->setDisplayScaleFactor( scale, type );
       updateDisplayedScaleFactorNumbers( scale, type );
       if( m_rescaleByLiveTime[typeindex] )
         m_rescaleByLiveTime[typeindex]->show();
@@ -555,7 +564,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
   vector<string> sampleranges;
   SpecUtils::split( sampleranges, fulltxt, "," );
 
-  std::shared_ptr<SpecMeas> meas = m_hostViewer->measurment( type );
+  std::shared_ptr<SpecMeas> meas = m_interspec->measurment( type );
 
   if( !meas )
   {
@@ -600,8 +609,9 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
           else
             msg << "Sample number " << lastStr << " doesnt exist.";
           passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
-          const set<int> samples = m_hostViewer->displayedSamples(type);
-          handleDisplayChange( type, meas, samples );
+          const auto dets = m_interspec->detectorsToDisplay(type);
+          const set<int> &samples = m_interspec->displayedSamples(type);
+          handleDisplayChange( type, meas, samples, dets );
           return;
         }//if( samples.find(sampleNum) == samples.end() )
 
@@ -617,8 +627,9 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
           stringstream msg;
           msg << "Sample number " << sample << " does not exist in the measurement.";
           passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
-          const set<int> samples = m_hostViewer->displayedSamples(type);
-          handleDisplayChange( type, meas, samples );
+          const auto dets = m_interspec->detectorsToDisplay(type);
+          const set<int> &samples = m_interspec->displayedSamples(type);
+          handleDisplayChange( type, meas, samples, dets );
           return;
         }//if( !samples.count(sample) )
           
@@ -627,9 +638,9 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
       }//if( is sample range ) / else
     }//for( string textStr : sampleranges )
 
-//    m_hostViewer->setSpectrum( meas, sampleNumToLoad, type, false );
-    m_hostViewer->changeDisplayedSampleNums( sampleNumToLoad, type );
-    updateDisplayedScaleFactorNumbers( m_hostViewer->displayScaleFactor(type), type );
+//    m_interspec->setSpectrum( meas, sampleNumToLoad, type, false );
+    m_interspec->changeDisplayedSampleNums( sampleNumToLoad, type );
+    updateDisplayedScaleFactorNumbers( m_interspec->displayScaleFactor(type), type );
   }catch( exception &e )
   { 
     cerr << "CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type )" << "\n\t" << e.what() << endl;
@@ -637,7 +648,12 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
                  "", WarningWidget::WarningMsgHigh );
 
     if( meas )
-      handleDisplayChange( type, meas, m_hostViewer->displayedSamples(type) );
+    {
+      const auto dets = m_interspec->detectorsToDisplay(type);
+      const auto &samples = m_interspec->displayedSamples(type);
+      
+      handleDisplayChange( type, meas, samples, dets );
+    }
 //    m_displaySampleNumEdits[type]->setText( "" );
   }//  try / catch
 }//void handleUserChangeSampleNum(...)
@@ -648,7 +664,7 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
 void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType type,
                                                       bool increment )
 {
-    handleUserIncrementSampleNum(type, increment, m_hostViewer, m_files, this);
+    handleUserIncrementSampleNum(type, increment, m_interspec, m_files, this);
 }
 
 /**
@@ -715,7 +731,8 @@ void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType t
 
 void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_type,
                                   const std::shared_ptr<SpecMeas> meas,
-                                  const set<int> &sample_numbers )
+                                  const set<int> &sample_numbers,
+                                  const std::vector<std::string> &detectors )
 {
   const int typeindex = static_cast<int>( spectrum_type );
   
@@ -882,16 +899,16 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
   m_previousSampleTxt[typeindex]
                                = m_displaySampleNumEdits[typeindex]->text();
   
-  const double livetimeSF = m_hostViewer->displayScaleFactor(spectrum_type);
+  const double livetimeSF = m_interspec->displayScaleFactor(spectrum_type);
   
   updateDisplayedScaleFactorNumbers( livetimeSF, spectrum_type );
   
   if( spectrum_type == SpecUtils::SpectrumType::Foreground )
   {
-    if( !!m_hostViewer->measurment(SpecUtils::SpectrumType::Background) )
-      updateDisplayedScaleFactorNumbers( m_hostViewer->displayScaleFactor(SpecUtils::SpectrumType::Background), SpecUtils::SpectrumType::Background );
-    if( !!m_hostViewer->measurment(SpecUtils::SpectrumType::SecondForeground) )
-      updateDisplayedScaleFactorNumbers( m_hostViewer->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground), SpecUtils::SpectrumType::SecondForeground );
+    if( !!m_interspec->measurment(SpecUtils::SpectrumType::Background) )
+      updateDisplayedScaleFactorNumbers( m_interspec->displayScaleFactor(SpecUtils::SpectrumType::Background), SpecUtils::SpectrumType::Background );
+    if( !!m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground) )
+      updateDisplayedScaleFactorNumbers( m_interspec->displayScaleFactor(SpecUtils::SpectrumType::SecondForeground), SpecUtils::SpectrumType::SecondForeground );
   }//if( spectrum_type == SpecUtils::SpectrumType::Foreground )
 }//void handleDisplayChange(...)
 
@@ -925,8 +942,10 @@ void CompactFileManager::refreshContents()
     for( int i = 0; i < 3; ++i )
     {
       const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
-      std::shared_ptr<SpecMeas> meas = m_hostViewer->measurment( type );
-      handleDisplayChange( type, meas, m_hostViewer->displayedSamples(type) );
+      std::shared_ptr<SpecMeas> meas = m_interspec->measurment( type );
+      const auto &samples = m_interspec->displayedSamples(type);
+      const auto detectors = m_interspec->detectorsToDisplay(type);
+      handleDisplayChange( type, meas, samples, detectors );
     }//for( int i = 0; i < 3; ++i )
   }//if( m_files->rowCount() < 1 ) / else
 }//void refreshContents()
@@ -952,11 +971,11 @@ void CompactFileManager::updateDisplayedScaleFactorNumbers( const double sf,
 //  bool update = true;
 //  const double multiple = (slidervalue-50.0) / 50.0;
 //  
-//  const double oldsf = m_hostViewer->displayScaleFactor(type);
+//  const double oldsf = m_interspec->displayScaleFactor(type);
 //  
 //  double sf = oldsf + (0.25 * multiple * oldsf);
 //  
-//  if( !m_hostViewer->measurment(type) )
+//  if( !m_interspec->measurment(type) )
 //  {
 //    sf = 1.0;
 //    update = false;
@@ -965,7 +984,7 @@ void CompactFileManager::updateDisplayedScaleFactorNumbers( const double sf,
 //  updateDisplayedScaleFactorNumbers( sf, type );
 //  
 //  if( update )
-//    m_hostViewer->setDisplayScaleFactor( sf, type );
+//    m_interspec->setDisplayScaleFactor( sf, type );
 //}//void handleSliderChanged(...);
 
 
@@ -983,15 +1002,15 @@ void CompactFileManager::handleUserEnterdScaleFactor( const SpecUtils::SpectrumT
   
   if( val.empty() )
   {
-    const float lt = m_hostViewer->liveTime(type);
-    const float datalt = m_hostViewer->liveTime(SpecUtils::SpectrumType::Foreground);
+    const float lt = m_interspec->liveTime(type);
+    const float datalt = m_interspec->liveTime(SpecUtils::SpectrumType::Foreground);
     sf = ((lt>0.0f) ? (datalt/lt) : 1.0f);
 //    char buffer[16];
 //    snprintf(buffer, sizeof(buffer), "%.2f", sf );
   }else if( !(stringstream(val) >> sf) )
   {
     update = false;
-    sf = m_hostViewer->displayScaleFactor(type);
+    sf = m_interspec->displayScaleFactor(type);
   }//
   
   updateDisplayedScaleFactorNumbers( sf, type );
@@ -1001,7 +1020,7 @@ void CompactFileManager::handleUserEnterdScaleFactor( const SpecUtils::SpectrumT
   {
     if( m_rescaleByLiveTime[typeindex] )
       m_rescaleByLiveTime[typeindex]->show();
-    m_hostViewer->setDisplayScaleFactor( sf, type );
+    m_interspec->setDisplayScaleFactor( sf, type );
   }
 }//void handleUserEnterdScaleFactor( const SpecUtils::SpectrumType type )
 
@@ -1020,12 +1039,12 @@ void CompactFileManager::handleRenormalizeByLIveTime( const SpecUtils::SpectrumT
 {
   const int typeindex = static_cast<int>(type);
   
-  const float lt = m_hostViewer->liveTime(type);
-  const float datalt = m_hostViewer->liveTime(SpecUtils::SpectrumType::Foreground);
+  const float lt = m_interspec->liveTime(type);
+  const float datalt = m_interspec->liveTime(SpecUtils::SpectrumType::Foreground);
   const double sf = ((lt>0.0f && datalt>0.0f) ? (datalt/lt) : 1.0f);
   updateDisplayedScaleFactorNumbers( sf, type );
   if( m_rescaleByLiveTime[typeindex] )
     m_rescaleByLiveTime[typeindex]->hide();
-  m_hostViewer->setDisplayScaleFactor( sf, type );
+  m_interspec->setDisplayScaleFactor( sf, type );
 }//void handleRenormalizeByLIveTime( const SpecUtils::SpectrumType type )
 

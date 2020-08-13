@@ -1026,7 +1026,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   std::shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
   if( foreground )
   {
-    const std::set<int> &samplenums = foreground->displayedSampleNumbers();
+    const set<int> &samplenums = m_viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
     auto userpeaks = foreground->peaks( samplenums );
     auto autopeaks = foreground->automatedSearchPeaks( samplenums );
     

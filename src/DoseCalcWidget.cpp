@@ -851,7 +851,7 @@ void DoseCalcWidget::init()
   intoTxtLayout->setRowStretch( 0, 10 );
   
   m_menu = new WMenu();
-  m_menu->addStyleClass( (isPhone ? "SideMenuPhone" : "SideMenu") );
+  m_menu->addStyleClass( (isPhone ? "VerticalMenuPhone SideMenuPhone" : "VerticalMenu SideMenu") );
   m_menu->addStyleClass( "DoseCalcSideMenu" );
   
   m_stack = new WStackedWidget();

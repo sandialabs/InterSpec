@@ -44,6 +44,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
+#include "InterSpec/DecayDataBaseServer.h"
 
 using namespace std;
 using SpecUtils::Measurement;

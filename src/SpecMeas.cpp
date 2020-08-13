@@ -43,24 +43,19 @@
 #include "InterSpec/PeakModel.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SandiaDecay/SandiaDecay.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace Wt;
 using namespace std;
 
+const int SpecMeas::sm_specMeasSerializationVersion = 1;
 const int SpecMeas::sm_peakXmlSerializationVersion = 2;
 
 namespace
 {
-  std::string xml_value( const rapidxml::xml_base<char> * const node )
-  {
-    return (node && node->value_size())
-    ? string(node->value(),node->value()+node->value_size())
-    : string("");
-  }//xml_value(...)
-  
-  
   /** source is node to clone, and target is the node that will become
       equivalent of source (its name/attribs/children will become equivalent
       to source node).
@@ -119,8 +114,9 @@ SpecMeas::SpecMeas()
   m_peaks.reset( new SampleNumsToPeakMap() );
   
 //  m_detector.reset( new DetectorPeakResponse() );
-  m_displayType.reset( new SpecUtils::SpectrumType(SpecUtils::SpectrumType::Foreground) );
-  m_displayedSampleNumbers.reset( new set<int>() );
+  m_displayType = make_shared<SpecUtils::SpectrumType>(SpecUtils::SpectrumType::Foreground);
+  m_displayedSampleNumbers = make_shared<set<int>>();
+  m_displayedDetectors = make_shared<vector<string>>();
   
   m_fileWasFromInterSpec = false;
 }
@@ -347,6 +343,36 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
     throw runtime_error( msg.str() );
   }
   
+  if( !!lhs.m_displayedDetectors != !!rhs.m_displayedDetectors )
+  {
+    snprintf( buffer, sizeof(buffer), "SpecMeas: displayed detectors avaialblity for LHS (%s)"
+             " doesnt match RHS (%s)",
+             (!lhs.m_displayedDetectors?"missing":"available"),
+             (!rhs.m_displayedDetectors?"missing":"available") );
+    throw runtime_error(buffer);
+  }
+  
+  if( lhs.m_displayedDetectors )
+  {
+    auto lhsv = *lhs.m_displayedDetectors;
+    auto rhsv = *rhs.m_displayedDetectors;
+    std::sort( begin(lhsv), end(lhsv) );
+    std::sort( begin(rhsv), end(rhsv) );
+    
+    if( lhsv != rhsv )
+    {
+      stringstream msg;
+      msg << "SpecMeas: diplayed detectors of LHS ({";
+      for( string i : lhsv )
+        msg << i << ",";
+      msg << "}) doesnt match RHS ({";
+      for( string i : rhsv )
+        msg << i << ",";
+      msg << "})";
+      throw runtime_error( msg.str() );
+    }
+  }//if( lhs.m_displayedDetectors )
+  
   
   if( (!lhs.m_shieldingSourceModel) != (!rhs.m_shieldingSourceModel) )
   {
@@ -436,7 +462,7 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
 
   *m_displayType = *rhs.m_displayType;
   *m_displayedSampleNumbers = *rhs.m_displayedSampleNumbers;
-  
+  *m_displayedDetectors = *rhs.m_displayedDetectors;
   
   if( rhs.m_shieldingSourceModel && rhs.m_shieldingSourceModel->first_node())
   {
@@ -652,7 +678,7 @@ void SpecMeas::addPeaksToXml( rapidxml::xml_node<char> *peaksnode ) const
     peaksnode->append_attribute( versionatt );
   }else
   {
-    if( xml_value(versionatt) != peakxmlverstr )
+    if( SpecUtils::xml_value_str(versionatt) != peakxmlverstr )
       throw runtime_error( "SpecMeas::addPeaksToXml: Invalid peak XML version" );
   }
   
@@ -675,7 +701,7 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
   
   int version = 1;
   const xml_attribute<char> *version_att = peaksnode->first_attribute("version",7);
-  const std::string versionstr = xml_value( version_att );
+  const std::string versionstr = SpecUtils::xml_value_str( version_att );
   if( versionstr.size() )
   {
     if( !(stringstream(versionstr) >> version) )
@@ -738,7 +764,7 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
       peak->fromXml( peak_node, continuums );
       
       const xml_attribute<char> *idatt = peak_node->first_attribute( "id" );
-      const string peakidstr = xml_value( idatt );
+      const string peakidstr = SpecUtils::xml_value_str( idatt );
       
       if( peakidstr.empty() )
         throw runtime_error( "Peak elements must have a \"id\" attribute." );
@@ -758,7 +784,7 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
         node; node = node->next_sibling("PeakSet",7) )
     {
       PeakDequeShrdPtr peaks = std::make_shared<PeakDeque>();
-      const string srcstr = xml_value( node->first_attribute( "source", 6 ) );
+      const string srcstr = SpecUtils::xml_value_str( node->first_attribute( "source", 6 ) );
       const XmlPeakSource source = xmlPeakSourceFromString( srcstr );
       
       xml_node<char> *samples_node = node->first_node( "SampleNumbers", 13 );
@@ -784,7 +810,7 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
           throw runtime_error( "Could not find peak with id '"
                                + std::to_string(peakid)
                                + "' in the XML for sample numbers '"
-                               + xml_value(samples_node) );
+                               + SpecUtils::xml_value_str(samples_node) );
         peaks->push_back( iter->second );
       }//for( const int peakid : peakids )
       
@@ -1025,16 +1051,49 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
      || !compare( interspecnode->name(), interspecnode->name_size(), "DHS:InterSpec", 13, false ) )
      throw std::logic_error( "SpecMeas::decodeSpecMeasStuffFromXml(...): invalid input" );
   
-  m_displayedSampleNumbers.reset( new set<int>() );
+  int xmlversion = 0;
+  rapidxml::xml_attribute<char> *versionatt = XML_FIRST_ATTRIB(interspecnode,"version");
+  if( versionatt && versionatt->value_size() )
+  {
+    if( !SpecUtils::parse_int( versionatt->value(), versionatt->value_size(), xmlversion ) )
+      throw std::logic_error( "SpecMeas::decodeSpecMeasStuffFromXml: invalid version in XML: '"
+                              + SpecUtils::xml_value_str(versionatt) + "'" );
+  }//if( versionatt )
+  
+  
+  m_displayedSampleNumbers = make_shared<set<int>>();
   const xml_node<char> *node = node = interspecnode->first_node( "DisplayedSampleNumbers", 22 );
   if( node && node->value() )
   {
-    std::vector<float> contents;
-    SpecUtils::split_to_floats( node->value(), node->value_size(), contents );
+    std::vector<int> contents;
+    SpecUtils::split_to_ints( node->value(), node->value_size(), contents );
     for( const float t : contents )
-      m_displayedSampleNumbers->insert( static_cast<int>(t) );
+      m_displayedSampleNumbers->insert( t );
   }//if( node )
   
+  m_displayedDetectors = make_shared<vector<string>>();
+  node = XML_FIRST_NODE(interspecnode,"DisplayedDetectors");
+  if( node )
+  {
+    for( auto d = XML_FIRST_NODE(node,"DetectorName"); d; d = XML_NEXT_TWIN(d) )
+    {
+      string name = SpecUtils::xml_value_str(d);
+      
+      //When serializing we put a quote on either side of the name to make sure we dont have issues
+      //  with empty names or leading/trailing spaces that would get discarded by the XML parser.
+      //Will make these quotes optional, but this isnt really good.
+      if( name.length() && name.front() == '\"' )
+        name = name.substr(1);
+      if( name.length() && name.back() == '\"' )
+        name = name.substr( 0, name.length()-1 );
+      
+      m_displayedDetectors->push_back( name );
+    }
+  }//if( node )
+  
+  //For previous versions assume was using all detectors
+  if( xmlversion < 1 )
+    *m_displayedDetectors = detector_names_;
   
   m_displayType.reset( new SpecUtils::SpectrumType(SpecUtils::SpectrumType::Foreground) );
   node = interspecnode->first_node( "DisplayType", 11 );
@@ -1086,7 +1145,7 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   
   rapidxml::xml_document<char> *doc = interspec_node->document();
   
-  if( !!m_displayedSampleNumbers )
+  if( m_displayedSampleNumbers )
   {
     vector<int> samples( m_displayedSampleNumbers->begin(), m_displayedSampleNumbers->end() );
     stringstream dispSamples;
@@ -1098,10 +1157,36 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
     interspec_node->append_node( node );
     
     return node;
-  }//if( !!m_displayedSampleNumbers )
+  }//if( m_displayedSampleNumbers )
   
   return 0;
 }//appendSampleNumbersToXml(...)
+
+
+rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
+                                        rapidxml::xml_node<char> *interspec_node ) const
+{
+  using namespace rapidxml;
+  
+  if( !m_displayedDetectors )
+    return nullptr;
+  
+  rapidxml::xml_document<char> *doc = interspec_node->document();
+  xml_node<char> *node = doc->allocate_node( node_element, "DisplayedDetectors" );
+  interspec_node->append_node( node );
+  
+  for( string name : *m_displayedDetectors )
+  {
+    //We will avoid issues with blank names, or names starting/ending with spaces the parser may
+    // dicard, by always having names start/end with quotes (maybe not bullet-proof).
+    name = "\"" + name + "\"";
+    auto *value = doc->allocate_string( name.c_str(), name.size() + 1 );
+    auto detnode = doc->allocate_node( node_element, "DetectorName", value, 12, name.size() );
+    node->append_node( detnode );
+  }//for( loop over m_displayedDetectors )
+    
+  return node;
+}//appendDisplayedDetectorsToXml(...)
 
 
 ::rapidxml::xml_node<char> *SpecMeas::appendSpecMeasStuffToXml( 
@@ -1113,7 +1198,17 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   xml_node<char> *interspec_node = doc->allocate_node( node_element, "DHS:InterSpec" );
   RadInstrumentData->append_node( interspec_node );
   
+  
+  const std::string xmlvrsnstr = std::to_string(sm_specMeasSerializationVersion);
+  const char *vrsntxt = doc->allocate_string( xmlvrsnstr.c_str(), xmlvrsnstr.size()+1 );
+  xml_attribute<char> *versionattrib = doc->allocate_attribute("version", vrsntxt );
+  interspec_node->append_attribute( versionattrib );
+  
+  
   appendSampleNumbersToXml( interspec_node );
+  appendDisplayedDetectorsToXml( interspec_node );
+  
+  
   
   if( !!m_displayType )
   {
@@ -1500,13 +1595,14 @@ std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > >
 
 void SpecMeas::displayedSpectrumChangedCallback( SpecUtils::SpectrumType type,
                                        std::shared_ptr<SpecMeas> measurment,
-                                       std::set<int> sample_numbers )
+                                       std::set<int> sample_numbers,
+                                       std::vector<std::string> detectors )
 {
   if( measurment.get() != this )
     return;
 
-  if( (*m_displayedSampleNumbers) != sample_numbers
-      && ((*m_displayType) == type) )
+  if( ((*m_displayType) == type)
+      && (((*m_displayedSampleNumbers) != sample_numbers) || (*m_displayedDetectors != detectors)) )
   {
     modified_ = true;
     *m_displayedSampleNumbers = sample_numbers;

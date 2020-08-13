@@ -1752,7 +1752,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_drfTypeStack->addStyleClass( "UseInfoStack" );
   
   m_drfTypeMenu = new WMenu( m_drfTypeStack, Wt::Vertical );
-  m_drfTypeMenu->addStyleClass( "SideMenu DetEditMenu" );
+  m_drfTypeMenu->addStyleClass( "VerticalMenu SideMenu DetEditMenu" );
   WContainerWidget *menuHolder = new WContainerWidget();
   menuHolder->addWidget( m_drfTypeMenu );
   lowerLayout->addWidget( menuHolder, 0, 0 );
