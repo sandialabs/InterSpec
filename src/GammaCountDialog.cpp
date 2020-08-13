@@ -241,7 +241,7 @@ void GammaCountDialog::init()
 
   m_lowerEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   m_upperEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
-  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &GammaCountDialog::handleSpectrumChange, this, _1, _2, _3) );
+  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &GammaCountDialog::handleSpectrumChange, this, _1, _2, _3, _4) );
   
  
   WPushButton *closeButton = addCloseButtonToFooter();
@@ -492,9 +492,10 @@ void GammaCountDialog::setGammaCountText( Wt::WText *text, std::shared_ptr<const
 
 
 
-void GammaCountDialog::handleSpectrumChange( SpecUtils::SpectrumType /*type*/,
-                                             std::shared_ptr<SpecMeas> /*meas*/,
-                                             std::set<int> /*displaySample*/ )
+void GammaCountDialog::handleSpectrumChange( const SpecUtils::SpectrumType /*type*/,
+                                             const std::shared_ptr<SpecMeas> &/*meas*/,
+                                             const std::set<int> &/*displaySample*/,
+                                             const std::vector<std::string> & /*detectors*/)
 {
   handleEnergyRangeChange();
 }//void handleSpectrumChange(...)

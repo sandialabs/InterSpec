@@ -400,32 +400,21 @@ padding-left:10px;
   border-top: none;
 }
 
-
-
+/* .SideMenu holds all the size information for the elements, while .VerticalMenu holds the styling
+ (color, hover, etc).
+*/
 .SideMenu
 {
-  margin: 0px;
   padding-left: 10px;
   padding-right:10px;
-  list-style-type: none;
-  overflow: auto;
   font-size: 13px;
   width: 12.5em;
 }
 
-
-
-.SideMenu > li 
-{
-}
-
 .SideMenu li
 {
-  vertical-align:middle;
-/*  font-size: small;*/
   font-weight: bold;
   height: 2.5em;
-  color: #ffffff;
   padding-top: 8px;
   padding-bottom: 8px;
   margin-top: 2px;
@@ -435,7 +424,31 @@ padding-left:10px;
   border-radius: 5px;
 }
 
-.SideMenu > .Wt-separator {
+.SideMenu a
+{
+  padding-left: 10px;
+  padding-right: 5px;
+}
+
+
+.VerticalMenu
+{
+  margin: 0px;
+  list-style-type: none;
+  overflow: auto;
+}
+
+.VerticalMenu > li
+{
+}
+
+.VerticalMenu li
+{
+  vertical-align:middle;
+  color: #ffffff;
+}
+
+.VerticalMenu > .Wt-separator {
     height: 0.25em;
     -webkit-border-radius: 0;
     -moz-border-radius: 0;
@@ -444,10 +457,8 @@ padding-left:10px;
     padding-bottom: 0px;
 }
 
-.SideMenu a
+.VerticalMenu a
 {
-  padding-left: 10px;
-  padding-right: 5px;
   cursor:pointer;
 }
 
@@ -470,36 +481,36 @@ ul.Wt-popupmenu > li > a > span > span:hover
 }
 
 
-.SideMenu li.item > a
+.VerticalMenu li.item > a
 {
 color: white;
 }
 
-.SideMenu li.itemselected > a
+.VerticalMenu li.itemselected > a
 {
 color: #E0F5FF;
 }
 
-.SideMenu li :hover
+.VerticalMenu li :hover
 {
   border-color: #eeeeee #eeeeee #dddddd;
 }
 
-.SideMenu li.itemselected
+.VerticalMenu li.itemselected
 {
 background: #C6C6C6;
 }
   
-.SideMenu li.itemselected:hover
+.VerticalMenu li.itemselected:hover
 {
 }
 
-.SideMenu li.item
+.VerticalMenu li.item
 {
 background: #888888;
 }
 
-.SideMenu li.item:hover
+.VerticalMenu li.item:hover
 {
 background: #9B9B9B;
 }
@@ -595,92 +606,6 @@ background: #9B9B9B;
 .RecalibratorTall
 {
 }
-
-
-.DevPairDisplay
-{
-  border: 2px solid #e1e1e1;
-  
-  display: flex;
-  flex-direction: column;
-  flex-wrap: nowrap;
-}
-
-
-.DevPairDisplayWide
-{
-  margin-left: 5px;
-  width: 220px;
-}
-
-.DevPairDisplayTall
-{
-  height: 11.65em;
-}
-
-.DevPairsContainer
-{
-  padding: 3px;
-  
-  flex-grow: 1;
-  overflow: auto;
-  min-height: 2em;
-}
-
-.DevPairsFooter
-{
-  border-top: 1px solid #e1e1e1;
-  bottom: 0px;
-  width: 100%;
-  flex-shrink: 0;
-}
-
-
-.DevPairTitle
-{
-  font-weight:bold;
-  background:#EEEEEE;
-  white-space:nowrap;
-  text-align: center;
-  height: 20px;
-}
-
-
-.DevPairHeader
-{
-  border-bottom: 1px solid #e1e1e1;
-  flex-shrink: 0;
-}
-
-.DevPairEnergyHeader, .DevPairOffsetHeader
-{
-  /* font-weight:bold; */
-  font-size: smaller;
-  width: 45%;
-  display: inline-block;
-  padding-left: 5px;
-}
-
-
-.DevOffset, .DevEnergy
-{
-/*  width:60px;*/
-  margin-left:5px;
-  border-width: 0px;
-}
-
-.DevOffset
-{
-  margin-left:10px;
-  margin-right:4px;
-}
-
-/*
-.DevPairEnergyHeader
-{
-  border-right: 1px solid #e1e1e1;
-}
-*/
 
 
 

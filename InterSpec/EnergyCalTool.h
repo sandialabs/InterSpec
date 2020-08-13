@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <string>
 #include <vector>
 #include <memory>
@@ -33,14 +34,25 @@
 
 #include "InterSpec/AuxWindow.h"
 
+class SpecMeas;
 class AuxWindow;
 class InterSpec;
 class PeakModel;
+class RowStretchTreeView;
 
 namespace Wt
 {
+  class WText;
+  class WCheckBox;
+  class WGridLayout;
+  class WPushButton;
+  class WStackedWidget;
 }//namespace Wt
 
+namespace EnergyCalImp
+{
+  class CalDisplay;
+}
 
 /** This class handles energy calibration by the user.
  
@@ -92,8 +104,8 @@ namespace Wt
 class EnergyCalTool : public Wt::WContainerWidget
 {
 public:
-  EnergyCalTool( InterSpec *viewer, PeakModel *peakModel ) {}
-  virtual ~EnergyCalTool(){ }
+  EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, Wt::WContainerWidget *parent = nullptr );
+  virtual ~EnergyCalTool();
   
   void setWideLayout(){}
   void setTallLayout(AuxWindow* parent){ }
@@ -101,8 +113,60 @@ public:
   enum LayoutStyle{ kWide, kTall };
   LayoutStyle currentLayoutStyle() const{ return LayoutStyle::kWide; }
   
-  void refreshRecalibrator(){}
+  
   void handleGraphicalRecalRequest( double xstart, double xfinish ){}
+  
+  void refreshGuiFromFiles();
+  void refreshRecalibrator(){ refreshGuiFromFiles(); }
+  
+  void fitCoefficientCBChanged();
+  void userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display );
+  void userChangedDeviationPair( EnergyCalImp::CalDisplay *display );
+  
+  void displayedSpectrumChanged( const SpecUtils::SpectrumType type,
+                                 const std::shared_ptr<SpecMeas> &meas,
+                                 const std::set<int> &samples,
+                                 const std::vector<std::string> &detectors );
+  
+  
+  void setShowNoCalInfo( const bool nocal );
+  
+protected:
+  void specTypeToDisplayForChanged();
+  
+  /** \TODO: have #refreshGuiFromFiles only ever get called from #render to avoid current situation
+   of calling refreshGuiFromFiles multiple times for a single render (the looping over files can
+   get expensive probably)
+   
+   virtual void render( WFlags<RenderFlag> flags) override
+  */
+  
+  enum ApplyToCbIndex
+  {
+    ApplyToForeground = 0,
+    ApplyToBackground,
+    ApplyToSecondary,
+    ApplyToDisplayedDetectors,
+    ApplyToAllDetectors,
+    ApplyToDisplayedSamples,
+    ApplyToAllSamples,
+    NumApplyToCbIndex
+  };//enum ApplyToCbIndex
+  
+  void applyToCbChanged( const ApplyToCbIndex index );
+  
+  enum MoreActionsIndex
+  {
+    Linearize,
+    Truncate,
+    CombineChannels,
+    ConvertToFrf,
+    ConvertToPoly,
+    NumMoreActionsIndex
+  };//enum MoreActionsIndex
+  
+  void moreActionBtnClicked( const MoreActionsIndex index );
+  
   
   /*
   static void shiftPeaksForEnergyCalibration(
@@ -119,7 +183,44 @@ public:
     
   }
    */
-};//class DoseCalcWidget
+  InterSpec *m_interspec;
+  PeakModel *m_peakModel;
+  RowStretchTreeView *m_peakTable;  /** \TODO: can maybe remove this memeber variable */
+  
+  /** Menu that lets you choose which spectrum (For., Back, Sec.) to show the detectors to select */
+  Wt::WMenu *m_specTypeMenu;
+  
+  /** Stack that holds the menus that let you select which detector to show calibration info for. */
+  Wt::WStackedWidget *m_specTypeMenuStack;
+  
+  /** The menus that let you select which detector to show calibration info for.
+   These menues are held in the #m_specTypeMenuStack stack.
+   
+   These entries will be nullptr if there is not a SpecFile for its respective {for, back, sec}
+   */
+  Wt::WMenu *m_detectorMenu[3];
+  
+  /** The stack that holds all the calibration info displays for all the spectrum files and
+   detectors (i.e., this stack is shared by all m_detectorMenu[]'s).
+   */
+  Wt::WStackedWidget *m_calInfoDisplayStack;
+  
+  Wt::WText *m_noCalTxt;
+  Wt::WContainerWidget *m_moreActionsColumn;
+  Wt::WContainerWidget *m_applyToColumn;
+  Wt::WContainerWidget *m_detColumn;
+  Wt::WContainerWidget *m_calColumn;
+  Wt::WContainerWidget *m_peakTableColumn;
+  
+  Wt::WGridLayout *m_layout;
+  
+  Wt::WCheckBox *m_applyToCbs[ApplyToCbIndex::NumApplyToCbIndex];
+  
+  Wt::WAnchor *m_moreActions[MoreActionsIndex::NumMoreActionsIndex];
+  
+  std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
+  std::set<int> m_currentSampleNumbers[3];
+};//class EnergyCalTool
 
 #endif //EnergyCalTool_h
 

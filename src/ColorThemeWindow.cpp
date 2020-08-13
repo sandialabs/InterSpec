@@ -174,7 +174,7 @@ m_apply( nullptr )
   m_menu = new WMenu(Wt::Vertical,menuDiv);
   leftMenuDivLayout->addWidget( menuDiv, 0, 0 );
   //m_menu->addStyleClass((m_interspec->isMobile() ? "SideMenuPhone" : "SideMenu")); //defined in InterSpec.css
-  m_menu->addStyleClass( "SideMenu" );
+  m_menu->addStyleClass( "SideMenu VerticalMenu" );
   
   WContainerWidget *adSubDiv = new WContainerWidget();
   leftMenuDivLayout->addWidget( adSubDiv, 1, 0 );

@@ -159,20 +159,20 @@ ul.Wt-tv-root > li:nth-child(odd) {
   background: rgba(110, 110, 110, 0.5) !important;
 }
 
-ul.SideMenu > li.itemselected  {
+ul.VerticalMenu > li.itemselected  {
   background: rgb(175,175,175) !important;
 }
 
-ul.SideMenu > li.itemselected > a {
+ul.VerticalMenu > li.itemselected > a {
   color: rgb(115, 115, 255) !important;
 }
 
 
-ul.SideMenu > li.item {
+ul.VerticalMenu > li.item {
   background: rgb(124,124,124) !important;
 }
 
-ul.SideMenu > li.item:hover  {
+ul.VerticalMenu > li.item:hover  {
   background: rgb(135,135,135) !important;
 }
 
@@ -194,7 +194,7 @@ ul.SideMenu > li.item:hover  {
   border-color: rgb(136, 136, 136);
 }
 
-.ParticleViewTable, .RecalIsotopeView, .IsotopeSearchResultTable, .DevPairDisplayWide {
+.ParticleViewTable, .RecalIsotopeView, .IsotopeSearchResultTable {
   border-color: rgb(136, 136, 136);
 }
 

@@ -139,7 +139,14 @@ public:
   std::shared_ptr<DetectorPeakResponse> detector();
   std::shared_ptr<const DetectorPeakResponse> detector() const;
 
+  /**
+  \deprecated Not consistently used if SpecMeas is used for foreground and background or whatever.
+  */
   SpecUtils::SpectrumType displayType() const;
+  
+  /**
+   \deprecated Not consistently used if SpecMeas is used for foreground and background or whatever.
+   */
   const std::set<int> &displayedSampleNumbers() const;
 
   //aboutToBeDeleted(): signal emited right before object destructions - useful
@@ -162,7 +169,8 @@ public:
 
   void displayedSpectrumChangedCallback( SpecUtils::SpectrumType type,
                                          std::shared_ptr<SpecMeas> measurment,
-                                         std::set<int> sample_numbers );
+                                         std::set<int> sample_numbers,
+                                         std::vector<std::string> detectors  );
   virtual void cleanup_after_load( const unsigned int flags
                                          = SpecFile::StandardCleanup );
   
@@ -247,6 +255,12 @@ public:
   ::rapidxml::xml_node<char> *appendSampleNumbersToXml(
                                     ::rapidxml::xml_node<char> *parent ) const;
   
+  //appendDisplayedDetectorsToXml(...): appends displayed detector names XML to parent, returns
+  //  appended node (or null if !m_displayedSampleNumbers )
+  ::rapidxml::xml_node<char> *appendDisplayedDetectorsToXml(
+                                    ::rapidxml::xml_node<char> *parent ) const;
+  
+  
   //decodeSpecMeasStuffFromXml(...): Parent node should be named "DHS:InterSpec"
   //Throws on error.
   void decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *parent );
@@ -313,8 +327,14 @@ protected:
   std::shared_ptr< SampleNumsToPeakMap > m_peaks;
   std::shared_ptr<DetectorPeakResponse> m_detector;
 
+  /** \TODO: Currently m_displayType, m_displayedSampleNumbers, and m_displayedDetectors track
+   foreground, or background, or secondary, but this doesnt cover case where this SpecMeas is
+   being used for two of these catagories... Should upgrade this mechanism to track all of these
+   cases, or get rid of it totally.
+   */
   std::shared_ptr<SpecUtils::SpectrumType> m_displayType;
   std::shared_ptr<std::set<int> > m_displayedSampleNumbers;
+  std::shared_ptr<std::vector<std::string> > m_displayedDetectors;
 
   
   SampleNumsToPeakMap m_autoSearchPeaks;
@@ -332,6 +352,13 @@ protected:
    analysis results.
    */
   bool m_fileWasFromInterSpec;
+  
+  /** Version of XML serialization of the <DHS:InterSpec> node.
+   Changes:
+   - Added version field to xml 20200807, with initial value 1.  Added <DisplayedDetectors> field.
+   
+   */
+  static const int sm_specMeasSerializationVersion;
   
   static const int sm_peakXmlSerializationVersion;
 };//class SpecMeas

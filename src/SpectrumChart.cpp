@@ -72,6 +72,7 @@ typedef Wt::Chart::WCartesianChart ChartRenderHelper_t;
 #include "InterSpec/AuxWindow.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/ReferenceLineInfo.h"

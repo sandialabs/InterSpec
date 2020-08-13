@@ -1,0 +1,398 @@
+
+.EnergyCalTool
+{
+  
+}
+
+
+.EnergyCalTool .ColHeader
+{
+  font-size: 10pt;
+  text-align: center;
+  font-weight: bold;
+  padding-top: 4px;
+  padding-bottom: 1px;
+  padding-left: 3px;
+  padding-right: 3px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+.EnergyCalTool .CalColumn
+{
+  border-right: 1px solid #e1e1e1;
+}
+
+
+.EnergyCalTool .CalColContent
+{
+  margin-left: 5px;
+  margin-right: 5px;
+  margin-top: 5px;
+}
+
+/*
+.EnergyCalTool .ColFooter
+{
+}
+ */
+
+.EnergyCalTool .MoreActionCol
+{
+  
+}
+
+.EnergyCalTool .ApplyToCol
+{
+  
+}
+
+.EnergyCalTool .DetCol
+{
+}
+
+.EnergyCalTool .PeakTableCol
+{
+  
+}
+
+.EnergyCalTool .PeakTable
+{
+  width: 100%;
+  height: 100%;
+  border: 1px solid #e1e1e1;
+}
+
+
+
+
+.EnergyCalTool .NoCalContentTxt
+{
+  
+}
+
+
+.EnergyCalTool .MoreActionsMenuContent, .EnergyCalTool .ApplyToMenuContent
+{
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+
+.EnergyCalTool .ApplyToItem
+{
+  
+}
+
+
+.CalDisplay .CalType
+{
+  
+}
+
+.EnergyCalTool .CalDisplay .CoefCol
+{
+  
+}
+
+.EnergyCalTool .CoefContent
+{
+  
+}
+
+/*
+.EnergyCalTool .CalSpecMenu
+{
+  list-style-type: none;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border-bottom: 1px solid #e1e1e1;
+  overflow: visible;
+}
+
+.EnergyCalTool .CalSpecMenu li
+{
+  float: left;
+  vertical-align: middle;
+}
+
+.EnergyCalTool .CalSpecMenu li.item
+{
+}
+
+.EnergyCalTool .CalSpecMenu li.itemselected > a
+{
+color: #E0F5FF;
+}
+
+
+
+.EnergyCalTool .CalSpecMenu li a
+{
+  display: block;
+  cursor: pointer;
+}
+*/
+
+.EnergyCalTool .CalSpecMenu
+{
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -ms-flex-wrap: wrap;
+  flex-wrap: wrap;
+  zoom: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  list-style-type: none;
+  background: none;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+.EnergyCalTool .CalSpecMenu li {
+  padding-top: 0;
+  background: none;
+  margin-right: 2px;
+  display: list-item;
+  cursor: pointer;
+  cursor: hand;
+  font-size: small;
+  border: none;
+}
+
+.EnergyCalTool .CalSpecMenu li:first-child {
+  margin-left: 2px;
+}
+
+
+.EnergyCalTool .CalSpecMenu .itemselected a, .EnergyCalTool .CalSpecMenu .itemselected a:hover {
+  background-position: 0%;
+  /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
+  background-color: inherit;
+  border-color: #e1e1e1 #e1e1e1 #EEEEEE #e1e1e1;
+}
+
+.EnergyCalTool .CalSpecMenu a {
+  display: block;
+  background: none;
+  white-space: nowrap;
+  padding: 3px 4px 2px 4px;
+  color: black;
+  border: 1px solid transparent;
+  -moz-border-top-left-radius: .25rem;
+  -webkit-border-top-left-radius: .25rem;
+  border-top-left-radius: .25rem;
+  -moz-border-top-right-radius: .25rem;
+  -webkit-border-top-right-radius: .25rem;
+  border-top-right-radius: .25rem;
+  margin-bottom: -1px;
+}
+
+.EnergyCalTool .CalSpecMenu a:focus, .EnergyCalTool .CalSpecMenu a:hover {
+  text-decoration: none;
+  background: rgba(136, 136, 136, 0.08);
+  border: 1px solid rgba(136, 136, 136, 0.15);
+  /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
+  /*border-bottom: 1px solid white;*/
+  border-bottom: 1px solid rgba(136, 136, 136, 0.4);
+}
+
+
+.EnergyCalTool .CalSpecMenu .itemselected a:focus, .Wt-tabs .itemselected a:hover {
+  /* Get rid of line on selected tab when you mouse over it */
+  border-bottom: 1px solid white;
+}
+
+
+
+/***********************************************/
+.EnergyCalTool .CalSpecStack
+{
+  
+}
+
+.EnergyCalTool .CalStack
+{
+  
+}
+
+
+.EnergyCalTool .DetMenuDiv
+{
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+
+.EnergyCalTool .MoreActionsMenuList, .EnergyCalTool .ApplyToMenuList
+{
+  list-style-type: none;
+  margin-block-start: 0em;
+  margin-block-end: 0em;
+  margin-inline-start: 0px;
+  margin-inline-end: 0px;
+  padding-inline-start: 5px;
+  padding-inline-end: 0px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  
+  font-size: 13px;
+  
+}
+
+
+.DetCalMenu
+{
+  padding-left: 7px;
+  padding-right: 7px;
+  font-size: 13px;
+  width: 7em;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
+.DetCalMenu li, .MoreActionsMenuList li, .ApplyToMenuList li
+{
+  /* font-weight: bold; */
+  height: 1.5em;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  -webkit-border-radius: 2px;
+  -moz-border-radius: 2px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.DetCalMenu li
+{
+  
+}
+
+.MoreActionsMenuList li
+{
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.DetCalMenu a
+{
+}
+
+
+
+.EnergyCalTool .CoefColumn
+{
+  
+}
+
+
+.CoefContent .CoefDisplay
+{
+  white-space: nowrap;
+}
+
+
+.CoefDisplay .CoefLabel
+{
+  display: inline-block;
+  width: 9.5ex;
+}
+
+
+.CoefDisplay .CoefInput
+{
+  width: 8em;
+}
+
+.CoefFit
+{
+  
+}
+
+
+.CalDisplay .DevPairDisplay
+{
+  width: 14em;
+  margin-left: 5px;
+}
+
+.DevPairDisplay
+{
+  border: 1px solid #e1e1e1;
+  
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+
+.DevPairsContainer
+{
+  padding: 3px;
+  
+  flex-grow: 1;
+  overflow: auto;
+  min-height: 2em;
+}
+
+.DevPairsFooter
+{
+  border-top: 1px solid #e1e1e1;
+  bottom: 0px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+
+.DevPairTitle
+{
+  font-weight:bold;
+  background:#EEEEEE;
+  white-space:nowrap;
+  text-align: center;
+  height: 20px;
+}
+
+
+.DevPairHeader
+{
+  border-bottom: 1px solid #e1e1e1;
+  flex-shrink: 0;
+}
+
+
+.DevPairEnergyHeader, .DevPairOffsetHeader
+{
+  /* font-weight:bold; */
+  font-size: smaller;
+  width: 45%;
+  display: inline-block;
+  padding-left: 5px;
+}
+
+
+.DevOffset, .DevEnergy
+{
+/*  width:60px;*/
+  margin-left:5px;
+  border-width: 0px;
+}
+
+.DevOffset
+{
+  margin-left:10px;
+  margin-right:4px;
+}
+
+/*
+.DevPairEnergyHeader
+{
+  border-right: 1px solid #e1e1e1;
+}
+*/
+

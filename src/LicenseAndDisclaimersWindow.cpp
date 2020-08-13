@@ -116,7 +116,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   stack->setTransitionAnimation( animation, true );
   
   m_menu = new WMenu( stack, Wt::Vertical );
-  m_menu->addStyleClass( "SideMenu" );
+  m_menu->addStyleClass( "VerticalMenu SideMenu" );
   
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
   
