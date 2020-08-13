@@ -22,17 +22,44 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 /**
- * Constructor for Sample Objects
- * @param sampleNumber: integer sample number
- * @param realTimeInterval: Array of length 2 (i.e. [start_time, end_time])
- * @param gammaCPS: gamma counts per second
- * @param neutronCPS: neutron counts per second
+ * Constructor for SampleData Objects
+ * @param realTime: value of a time measurement "endpoint" (x)
+ * @param gammaCPS: gamma counts per second (y)
+ * @param neutronCPS: neutron counts per second (y)
  */
-Sample = function (sampleNumber, realTimeInterval, gammaCPS, neutronCPS) {
-  this.sampleNumber = sampleNumber;
-  this.realTimeInterval = realTimeInterval;
+DataPoint = function (realTime, gammaCPS, neutronCPS) {
+  this.realTime = realTime;
   this.gammaCPS = gammaCPS;
   this.neutronCPS = neutronCPS;
+};
+
+DataPoint.prototype.setRealTime = function (realTime) {
+  this.realTime = realTime;
+};
+
+DataPoint.prototype.setGammaCPS = function (gammaCPS) {
+  this.gammaCPS = gammaCPS;
+};
+
+DataPoint.prototype.setNeutronCPS = function (neutronCPS) {
+  this.neutronCPS = neutronCPS;
+};
+
+DetectorMetaData = function (gammaColor, neutronColor) {
+  this.isGammaDetector = gammaColor ? true : false;
+  this.isNeutronDetector = neutronColor ? true : false;
+  this.gammaColor = gammaColor;
+  this.neutronColor = neutronColor;
+};
+
+DetectorMetaData.prototype.setGammaColor = function (gammaColor) {
+  this.gammaColor = gammaColor;
+  this.isGammaDetector = true;
+};
+
+DetectorMetaData.prototype.setNeutronColor = function (neutronColor) {
+  this.neutronColor = neutronColor;
+  this.isNeutronDetector = true;
 };
 
 /**
@@ -45,7 +72,7 @@ D3TimeChart = function (elem, options) {
 
   this.options = options || {};
 
-  if (typeof this.options.xtitle !== "string") this.options.xlabel = "Time (s)";
+  if (typeof this.options.xtitle !== "string") this.options.xtitle = "Time (s)";
   if (typeof this.options.y1title !== "string")
     this.options.y1title = "Gamma CPS";
   if (typeof this.options.y2title !== "string") this.options.y2title = "N CPS";
@@ -56,17 +83,18 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
 
+  console.log(this.options);
+
   this.data = undefined; // formatted data
   this.height = undefined;
   this.width = undefined;
-  this.domains = undefined;
   this.leadTime = 2.5;
 
   this.margin = {
     top: 50,
-    right: 50,
+    right: 60,
     bottom: 50,
-    left: 50,
+    left: 60,
   };
   this.svg = d3.select(this.chart).append("svg");
 
@@ -146,37 +174,106 @@ D3TimeChart.prototype.render = function () {
     this.svg.attr("width", this.width);
     this.svg.attr("height", this.height);
 
+    var HAS_GAMMA = true;
+    var HAS_NEUTRON = false;
+
     var { xScale, yScaleGamma, yScaleNeutron } = this.getScalers();
 
-    var HAS_GAMMA = yScaleGamma ? true : false;
-    var HAS_NEUTRON = yScaleNeutron ? true : false;
+    // plot data
+    for (var detName in this.data.detectors) {
+      var { counts, meta } = this.data.detectors[detName];
 
-    // set different tick counts for different viewport breakpoints
-    var nTicksX;
-    if (this.width > 850) {
-      nTicksX = this.data.nSamples;
-    } else if (this.width > 520) {
-      nTicksX = Math.floor(this.data.nSamples / 2);
-    } else if (this.width > 280) {
-      nTicksX = Math.floor(this.data.nSamples / 4);
-    } else {
-      nTicksX = Math.floor(this.data.nSamples / 8);
+      var lineGamma = d3.svg
+        .line()
+        .x(function (d) {
+          return xScale(d.realTime);
+        })
+        .y(function (d) {
+          return yScaleGamma(d.gammaCPS);
+        });
+      this.svg
+        .append("g")
+        .attr("class", "line det_" + detName)
+        .append("path")
+        .datum(counts)
+        .style("stroke", meta.gammaColor)
+        .style("fill", "none")
+        .attr("d", lineGamma);
+
+      if (meta.isNeutronDetector) {
+        HAS_NEUTRON = true;
+        var lineNeutron = d3.svg
+          .line()
+          .x(function (d) {
+            return xScale(d.realTime);
+          })
+          .y(function (d) {
+            return yScaleNeutron(d.neutronCPS);
+          });
+        this.svg
+          .append("g")
+          .attr("class", "line det_" + detName)
+          .append("path")
+          .datum(counts)
+          .style("stroke", meta.neutronColor)
+          .style("fill", "none")
+          .attr("d", lineNeutron);
+      }
     }
 
-    // plot axes
+    // set different tick counts for different viewport breakpoints
+    var nSamples = this.data.sampleNumbers.length;
+    var nTicksX;
+    if (this.width > 850) {
+      nTicksX = nSamples;
+    } else if (this.width > 520) {
+      nTicksX = Math.floor(nSamples / 2);
+    } else if (this.width > 280) {
+      nTicksX = Math.floor(nSamples / 4);
+    } else {
+      nTicksX = Math.floor(nSamples / 8);
+    }
+
+    // plot axes and labels
     var xAxis = d3.svg.axis().scale(xScale).ticks(nTicksX);
     this.axisBottomG
       .attr(
         "transform",
         "translate(0," + (this.height - this.margin.bottom) + ")"
       )
-      .call(xAxis);
+      .call(xAxis)
+      .append("text")
+      .attr("class", "axis_label")
+      .attr(
+        "transform",
+        `translate(${this.width / 2}, ${
+          this.axisBottomG.node().getBBox().height + 15
+        })`
+      )
+      .style("text-anchor", "middle")
+      .text(this.options.xtitle);
 
     if (HAS_GAMMA) {
-      var yAxisLeft = d3.svg.axis().scale(yScaleGamma).ticks(3).orient("left");
+      var yAxisLeft = d3.svg
+        .axis()
+        .scale(yScaleGamma)
+        .ticks(3)
+        .orient("left")
+        .tickFormat(d3.format(".1g"));
       this.axisLeftG
         .attr("transform", "translate(" + this.margin.left + ",0)")
-        .call(yAxisLeft);
+        .call(yAxisLeft)
+        .append("text")
+        .attr("class", "axis_label")
+        .attr(
+          "transform",
+          `translate(${-this.axisLeftG.node().getBBox().width - 5}, ${
+            this.height / 2
+          }) rotate(-90)`
+        )
+        .style("text-anchor", "middle")
+        .text(this.options.y1title)
+        .attr("font-size", "0.9em");
     }
 
     if (HAS_NEUTRON) {
@@ -190,104 +287,50 @@ D3TimeChart.prototype.render = function () {
           "transform",
           "translate(" + (this.width - this.margin.left) + ",0)"
         )
-        .call(yAxisRight);
-    }
-
-    // label axes
-    this.svg
-      .append("text")
-      .attr("class", "axis_label")
-      .attr(
-        "transform",
-        "translate(" +
-          this.width / 2 +
-          " ," +
-          (this.height - this.margin.bottom + 30) +
-          ")"
-      )
-      .style("text-anchor", "middle")
-      .text("Real Time of Measurement (seconds)");
-
-    this.svg
-      .append("text")
-      .attr("class", "axis_label")
-      .attr("transform", `translate(15, ${this.height / 2}) rotate(-90) `)
-      .style("text-anchor", "middle")
-      .text("CPS");
-
-    // plot data
-    for (detector in this.data.samples) {
-      var data = this.data.samples[detector];
-      var lineGamma = "M";
-      var lineNeutron = "M";
-
-      data.forEach(function (d, i) {
-        if (HAS_GAMMA) {
-          var y0Gamma = yScaleGamma(d.gammaCPS);
-        }
-        if (HAS_NEUTRON) {
-          var y0Neutron = yScaleNeutron(d.neutronCPS);
-        }
-        var x0 = xScale(d.realTimeInterval[1]);
-        if (i === 0) {
-          lineGamma += `${xScale(d.realTimeInterval[0])},${y0Gamma}H${x0}`;
-          lineNeutron += `${xScale(d.realTimeInterval[0])},${y0Neutron}H${x0}`;
-        } else {
-          lineGamma += `H${x0}`;
-          lineNeutron += `H${x0}`;
-        }
-
-        if (data[i + 1]) {
-          if (HAS_GAMMA) {
-            lineGamma += `V${yScaleGamma(data[i + 1].gammaCPS)}`;
-          }
-          if (HAS_NEUTRON) {
-            lineNeutron += `V${yScaleNeutron(data[i + 1].neutronCPS)}`; //neturon
-          }
-        }
-      });
-
-      if (HAS_GAMMA) {
-        this.svg
-          .append("g")
-          .attr("class", `line det_${detector.detName}`)
-          .append("path")
-          .style("stroke", this.data.detectors[detector].gammaColor)
-          .style("fill", "none")
-          .attr("d", lineGamma);
-      }
-
-      if (HAS_NEUTRON) {
-        this.svg
-          .append("g")
-          .attr("class", `line det_${detector.detName}`)
-          .append("path")
-          .style("stroke", this.data.detectors[detector].neutronColor)
-          .style("fill", "none")
-          .attr("d", lineNeutron);
-      }
+        .call(yAxisRight)
+        .append("text")
+        .attr("class", "axis_label")
+        .attr(
+          "transform",
+          `translate(${this.axisRightG.node().getBBox().width + 10}, ${
+            this.height / 2
+          }) rotate(90)`
+        )
+        .style("text-anchor", "middle")
+        .text(this.options.y2title);
     }
   }
 };
 
 /**
  * Get scaling functions based on the data domain and element dimensions.
+ * this.data, this.height, and this.width must be defined
  */
 D3TimeChart.prototype.getScalers = function () {
+  if (!this.data) {
+    console.log(
+      "In D3TimeChart.getScalers: domain not set.\nScalers undefined..."
+    );
+    return {
+      xScale: undefined,
+      yScaleGamma: undefined,
+      yScaleNeutron: undefined,
+    };
+  }
   var xScale = d3.scale
     .linear()
-    .domain(this.domains.x)
+    .domain(this.data.domains.x)
     .range([this.margin.left, this.width - this.margin.right]);
-  var yScaleGamma = this.domains.yGamma
+  var yScaleGamma = this.data.domains.yGamma
     ? d3.scale
         .linear()
-        .domain(this.domains.yGamma)
+        .domain(this.data.domains.yGamma)
         .range([this.height - this.margin.bottom, this.margin.top])
     : undefined;
-  var yScaleNeutron = this.domains.yNeutron
+  var yScaleNeutron = this.data.domains.yNeutron
     ? d3.scale
         .linear()
-        .domain(this.domains.yNeutron)
+        .domain(this.data.domains.yNeutron)
         .range([this.height - this.margin.bottom, this.margin.top])
     : undefined;
 
@@ -445,10 +488,6 @@ D3TimeChart.prototype.setData = function (data) {
 
     this.data = formattedData;
 
-    this.domains = this.getDomain(data);
-    console.log("Domains:");
-    console.log(this.domains);
-
     // if height and width are set, may render directly.
     if (this.height && this.width) {
       this.render();
@@ -456,17 +495,25 @@ D3TimeChart.prototype.setData = function (data) {
   }
 };
 
+D3TimeChart.prototype.max = function (array, accessor) {
+  var data = array;
+  if (accessor) {
+    data = data.map(accessor);
+  }
+  return Math.max(...data);
+};
+
 /**
- * Gets data domain
- * @param {Object} data
+ * Gets data domains.
+ * @param {Object} data: raw data from Wt
  */
-D3TimeChart.prototype.getDomain = function (data) {
+D3TimeChart.prototype.getDomains = function (data) {
   var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
 
-  xMin = d3.min(realTimeIntervals, function (d) {
+  var xMin = d3.min(realTimeIntervals, function (d) {
     return d[0];
   });
-  xMax = d3.max(realTimeIntervals, function (d) {
+  var xMax = d3.max(realTimeIntervals, function (d) {
     return d[1];
   });
 
@@ -509,109 +556,124 @@ D3TimeChart.prototype.getDomain = function (data) {
 
 /**
  * Formats data to several JSON objects for convenient plotting
+ * returns object bundling sampleNumbers, realTimeIntervals, data domain, and detectors data.
  * e.g.
+ * sampleNumbers: [...],
+ * realTimeIntervals: [...],
+ * domains:
  * {
- *    detectors: { // for detector metadata
- *                  "det1": {
- *                            "isGammaDetector": true,
- *                            "isNeutronDetector": true,
- *                            "gammaColor": rgb(0,0,0),
- *                            "neutronColor": rgb(0,128,0)
- *                          },
- *                  "det2" : {...}
- *                  ...
- *               },
- *
- *    samples: {
- *                "det1": [{Sample}, {Sample}, {Sample}, ...],
- *                "det2": [{Sample}, {Sample}, {Sample}, ...],
- *                ...
- *             },
- *
- *    nSamples: 10
+ *    x: [a, b],
+ *    yGamma: [c, d]
+ *    yNeutron: [e, f]
  * }
+ *
+ * detectors:
+ * {
+ *    det1: {
+ *              meta: {
+ *                        "isGammaDetector": true,
+ *                        "isNeutronDetector": true,
+ *                        "gammaColor": rgb(0,0,0),
+ *                        "neutronColor": rgb(0,128,0)
+ *                    },
+ *              counts: [{DataPoint}, {DataPoint}, {DataPoint}, ...]
+ *          },
+ *
+ *    det2: {...},
+ *    ...
+ * }
+ *
  * @param {*} data
  */
 D3TimeChart.prototype.formatData = function (data) {
   var nSamples = data.sampleNumbers.length;
   var detectors = {};
-  var samples = {};
   var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
 
-  if (data.gammaCounts) {
-    data.gammaCounts.forEach(function (d) {
-      if (!detectors.hasOwnProperty(d.detName)) {
-        // if new detector, initialize a new object
-        detectors[d.detName] = {
-          gammaColor: undefined,
-          neutronColor: undefined,
-          isGammaDetector: false,
-          isNeutronDetector: false,
-        };
-      }
-      detectors[d.detName].gammaColor = d.color;
-      detectors[d.detName].isGammaDetector = true;
+  var domains = this.getDomains(data);
 
-      // if no data already present for this detector, create a new array to start holding the data for that detector and fill in data.
-      if (!samples.hasOwnProperty(d.detName)) {
-        samples[d.detName] = [];
+  // format counts data
+  data.gammaCounts.forEach(function (det) {
+    // if new detector, initialize a new object and initialize metadata
+    if (!detectors.hasOwnProperty(det.detName)) {
+      detectors[det.detName] = {};
+      detectors[det.detName].meta = new DetectorMetaData(det.color, undefined);
+    } else {
+      //detector already exists, so set gamma metadata
+      detectors[det.detname].meta.setGammaColor(det.color);
+    }
+
+    // if no data already present for this detector, create a new array to start holding data for that detector and fill in the data.
+    if (!detectors[det.detName].hasOwnProperty("data")) {
+      detectors[det.detName].counts = [];
+
+      for (var i = 0; i < nSamples; i++) {
+        var cps = det.counts[i] / data.realTimes[i];
+        // push line segment start
+        detectors[det.detName].counts.push(
+          new DataPoint(realTimeIntervals[i][0], cps, null)
+        );
+        // push line segment end
+        detectors[det.detName].counts.push(
+          new DataPoint(realTimeIntervals[i][1], cps, null)
+        );
+      }
+    } else {
+      // data is already present for this detector, so only set gamma CPS for each data point.
+      for (var i = 0; i < nSamples; i++) {
+        var cps = det.counts[i] / data.realTimes[i];
+        detectors[det.detName].counts[2 * i].setGammaCPS(cps);
+        detectors[det.detName].counts[2 * i + 1].setGammaCPS(cps);
+      }
+    }
+  }); // data.gammaCounts.forEach
+
+  if (data.hasOwnProperty("neutronCounts")) {
+    data.neutronCounts.forEach(function (det) {
+      // if new detector, initialize a new object and initialize metadata
+      var detName = det.detName;
+      if (!detectors.hasOwnProperty(det.detName)) {
+        detectors[det.detName] = {};
+        detectors[det.detName].meta = new DetectorMetaData(
+          undefined,
+          det.color
+        );
+      } else {
+        // detector already exists, so set neutron metadata
+        detectors[detName].meta.setNeutronColor(det.color);
+      }
+
+      // if no data already present for this detector, create a new array to start holding data for that detector and fill in the data.
+      if (!detectors[det.detName].hasOwnProperty("counts")) {
+        detectors[det.detName].counts = [];
 
         for (var i = 0; i < nSamples; i++) {
-          samples[d.detName].push(
-            new Sample(
-              data.sampleNumbers[i],
-              realTimeIntervals[i],
-              d.counts[i] / data.realTimes[i],
-              null
-            )
+          var cps = det.counts[i] / data.realTimes[i];
+          //push line segment start
+          detectors[det.detName].counts.push(
+            new DataPoint(realTimeIntervals[i][0], null, cps)
+          );
+          detectors[det.detName].counts.push(
+            new DataPoint(realTimeIntervals[i][1], null, cps)
           );
         }
       } else {
-        //data already present for this detector, so fill in the gamma counts
+        // data is already present for this detector, so only set neutron CPS for each data point.
         for (var i = 0; i < nSamples; i++) {
-          samples[d.detName][i].gammaCPS = d.counts[i] / data.realTimes[i];
+          var cps = det.counts[i] / data.realTimes[i];
+          detectors[det.detName].counts[2 * i].setNeutronCPS(cps);
+          detectors[det.detName].counts[2 * i + 1].setNeutronCPS(cps);
         }
-      } // if (!samples.hasOwnProperty(d.detName))
-    }); // data.gammaCounts.forEach
-  } // if (data.gammaCounts)
-
-  if (data.neutronCounts) {
-    data.neutronCounts.forEach(function (d) {
-      if (!detectors.hasOwnProperty(d.detName)) {
-        // if new detector, initialize a new object
-        detectors[d.detName] = {
-          gammaColor: undefined,
-          neutronColor: undefined,
-          isGammaDetector: false,
-          isNeutronDetector: false,
-        };
-      }
-
-      detectors[d.detName].neutronColor = d.color;
-      detectors[d.detName].isNeutronDetector = true;
-
-      if (!samples.hasOwnProperty(d.detName)) {
-        samples[d.detName] = [];
-
-        for (var i = 0; i < nSamples; i++) {
-          samples[d.detName].push(
-            new Sample(
-              data.sampleNumbers[i],
-              realTimeIntervals[i],
-              null,
-              d.counts[i] / data.realTimes[i]
-            )
-          );
-        }
-      } else {
-        for (var i = 0; i < nSamples; i++) {
-          samples[d.detName][i].neutronCPS = d.counts[i] / data.realTimes[i];
-        }
-      } // if (!samples.hasOwnProperty(d.detName))
+      } // if (!detectors[det.detName].hasOwnProperty("data"))
     }); // data.neutronCounts.forEach
-  } // if (data.neutronCounts)
+  } // if (data.hasOwnProperty("neutronCounts"))
 
-  return { nSamples: nSamples, detectors: detectors, samples: samples };
+  return {
+    sampleNumbers: data.sampleNumbers,
+    realTimeIntervals: realTimeIntervals,
+    detectors: detectors,
+    domains: domains,
+  };
 };
 
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
