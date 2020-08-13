@@ -660,22 +660,23 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   
   WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
   
-  m_specTypeMenuStack = new WStackedWidget();
-  m_specTypeMenuStack->addStyleClass( "CalColContent CalSpecStack" );
-  m_specTypeMenuStack->setTransitionAnimation( animation );
   
-  m_specTypeMenu = new WMenu( m_specTypeMenuStack );
-  collayout->addWidget( m_specTypeMenu, 1, 0 );
-  m_specTypeMenu->addStyleClass( "CalSpecMenu" );
-  m_specTypeMenu->itemSelected().connect( this, &EnergyCalTool::specTypeToDisplayForChanged );
+  //m_specTypeMenuStack = new WStackedWidget();
+  //m_specTypeMenuStack->addStyleClass( "CalColContent CalSpecStack" );
+  //m_specTypeMenuStack->setTransitionAnimation( animation );
   
-  collayout->addWidget( m_specTypeMenuStack, 2, 0 );
+  //m_specTypeMenu = new WMenu( m_specTypeMenuStack );
+  //collayout->addWidget( m_specTypeMenu, 1, 0 );
+  //m_specTypeMenu->addStyleClass( "CalSpecMenu" );
+  //m_specTypeMenu->itemSelected().connect( this, &EnergyCalTool::specTypeToDisplayForChanged );
   
-  m_calInfoDisplayStack = new WStackedWidget();
-  m_calInfoDisplayStack->addStyleClass( "CalColContent CalStack" );
-  m_calInfoDisplayStack->setTransitionAnimation( animation );
+  //collayout->addWidget( m_specTypeMenuStack, 2, 0 );
   
+  //m_calInfoDisplayStack = new WStackedWidget();
+  //m_calInfoDisplayStack->addStyleClass( "CalColContent CalStack" );
+  //m_calInfoDisplayStack->setTransitionAnimation( animation );
   
+  /*
   for( int i = 0; i < 3; ++i )
   {
     WContainerWidget *detMenuDiv = new WContainerWidget();
@@ -695,6 +696,7 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
     m_detectorMenu[i] = new WMenu( m_calInfoDisplayStack, detMenuDiv );
     m_detectorMenu[i]->addStyleClass( "VerticalMenu DetCalMenu" );
   }//for( int i = 0; i < 3; ++i )
+   */
   
   
   // Create the "Coefficients" column that show the polynomial/FRF coefficents.
@@ -713,7 +715,7 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   header->addStyleClass( "ColHeader" );
   
   collayout->addWidget( header, 0, 0 );
-  collayout->addWidget( m_calInfoDisplayStack, 1, 0 );
+  //collayout->addWidget( m_calInfoDisplayStack, 1, 0 );
 
   
   // Create the "Cal Peaks" table
@@ -873,7 +875,25 @@ void EnergyCalTool::specTypeToDisplayForChanged()
 }//void specTypeToDisplayForChanged();
 
 
+void EnergyCalTool::displayedSpecChangedCallback( const SpecUtils::SpectrumType,
+                                                  const std::shared_ptr<SpecMeas>,
+                                                  const std::set<int>,
+                                                  const std::vector<std::string> )
+{
+  // \TODO: we could maybe save a little time by inspecting what was changed, but the added
+  //        complexity probably isnt worth it, so we'll skip this.
+  refreshGuiFromFiles();
+}//void displayedSpecChangedCallback(...)
+
+
 void EnergyCalTool::refreshGuiFromFiles()
+{
+  m_renderFlags |= EnergyCalToolRenderFlags::FullGuiUpdate;
+  scheduleRender();
+}//void refreshGuiFromFiles()
+
+
+void EnergyCalTool::doRefreshFromFiles()
 {
   string prevdet[3];
   int previousSpecInd = m_specTypeMenu ? m_specTypeMenu->currentIndex() : 0;
@@ -937,16 +957,23 @@ void EnergyCalTool::refreshGuiFromFiles()
     m_specTypeMenuStack->setTransitionAnimation( animation );
     
     auto detlayout = dynamic_cast<WGridLayout *>( m_detColumn->layout() );
+    auto callayout = dynamic_cast<WGridLayout *>( m_calColumn->layout() );
     assert( detlayout );
+    assert( callayout );
     
     m_specTypeMenu = new WMenu( m_specTypeMenuStack );
     m_specTypeMenu->addStyleClass( "CalSpecMenu" );
     m_specTypeMenu->itemSelected().connect( this, &EnergyCalTool::specTypeToDisplayForChanged );
     detlayout->addWidget( m_specTypeMenu, 1, 0 );
-    
     detlayout->addWidget( m_specTypeMenuStack, 2, 0 );
     
-    //It doesnt look like we need to create a new m_calInfoDisplayStack.
+    if( m_calInfoDisplayStack )
+      delete m_calInfoDisplayStack;
+    m_calInfoDisplayStack = new WStackedWidget();
+    m_calInfoDisplayStack->addStyleClass( "CalColContent CalStack" );
+    m_calInfoDisplayStack->setTransitionAnimation( animation );
+    callayout->addWidget( m_calInfoDisplayStack, 1, 0 );
+    
     const char * const labels[3] = {"For.","Back","Sec."};
     
     /// \TODO: only create these menus when actually needed, so we wont need to
@@ -973,7 +1000,7 @@ void EnergyCalTool::refreshGuiFromFiles()
     setShowNoCalInfo( true );
     return;
   }
-
+  
   if( previousSpecInd < 0 ||  previousSpecInd > 2
      || (previousSpecInd == 1 && !specfiles[1])
      || (previousSpecInd == 2 && !specfiles[2])  )
@@ -1007,6 +1034,7 @@ void EnergyCalTool::refreshGuiFromFiles()
     const vector<string> &detnames = meas->gamma_detector_names();
     
     const set<int> &samples = m_interspec->displayedSamples(type);
+    const vector<string> displayedDets = m_interspec->detectorsToDisplay(type);
     
     for( const int sample : samples )
     {
@@ -1082,7 +1110,7 @@ void EnergyCalTool::refreshGuiFromFiles()
                                     && (!specfiles[2] || (specfiles[0]==specfiles[2]))) );
   m_specTypeMenu->setHidden( showSpecType );
   
-  
+  bool anyApplyToCbShown = false;
   for( ApplyToCbIndex index = static_cast<ApplyToCbIndex>(0);
       index < ApplyToCbIndex::NumApplyToCbIndex;
       index = ApplyToCbIndex(index+1) )
@@ -1092,20 +1120,21 @@ void EnergyCalTool::refreshGuiFromFiles()
     assert( cbparent );
     assert( dynamic_cast<WContainerWidget *>(cbparent) );
     
+    bool hideRow = false;
     switch( index )
     {
       case ApplyToCbIndex::ApplyToForeground:
-        cbparent->setHidden( !specfiles[0] );
+        hideRow = (!specfiles[0] || (!specfiles[1] && !specfiles[2]));
         break;
         
       case ApplyToCbIndex::ApplyToBackground:
         // We'll ignore case where foreground and background is same {SpecFile, Samples, Detectors}
-        cbparent->setHidden( !specfiles[1] );
+        hideRow = !specfiles[1];
         break;
         
       case ApplyToCbIndex::ApplyToSecondary:
         // We'll ignore case where secondary and background is same {SpecFile, Samples, Detectors}
-        cbparent->setHidden( !specfiles[2] );
+        hideRow = !specfiles[2];
         break;
         
       case ApplyToCbIndex::ApplyToDisplayedDetectors:
@@ -1126,7 +1155,7 @@ void EnergyCalTool::refreshGuiFromFiles()
           }//for( const auto &name : meas->gamma_detector_names() )
         }//for( loop over the types of spectrum files )
         
-        cbparent->setHidden( displayingAll );
+        hideRow = displayingAll;
         if( displayingAll )
           cb->setChecked( false );
         
@@ -1143,7 +1172,7 @@ void EnergyCalTool::refreshGuiFromFiles()
         
         const bool dispDetsHid = dispDetsCb->parent()->isHidden();
         
-        cbparent->setHidden( dispDetsHid );
+        hideRow = dispDetsHid;
         if( dispDetsHid )
           cb->setChecked( true );
         
@@ -1179,7 +1208,7 @@ void EnergyCalTool::refreshGuiFromFiles()
         for( const auto &p : undisplayed )
           displayingAll = (displayingAll && p.second.empty());
         
-        cbparent->setHidden( displayingAll );
+        hideRow = displayingAll;
         if( displayingAll )
           cb->setChecked( false );
         
@@ -1195,7 +1224,7 @@ void EnergyCalTool::refreshGuiFromFiles()
         assert( dispSamplesCb->parent() );
         const bool dispSamplesHid = dispSamplesCb->parent()->isHidden();
         
-        cbparent->setHidden( dispSamplesHid );
+        hideRow = dispSamplesHid;
         if( dispSamplesHid )
           cb->setChecked( true );
         
@@ -1210,13 +1239,28 @@ void EnergyCalTool::refreshGuiFromFiles()
         assert( 0 );
         break;
     }//switch( index )
-  
+    
+    cbparent->setHidden( hideRow );
+    
+    if( !hideRow )
+      anyApplyToCbShown = true;
   }//for( loop over ApplyToCbIndex )
   
+  m_applyToColumn->setHidden( !anyApplyToCbShown );
+  
+  bool hideDetCol = true;
+  if( specfiles[0] && specfiles[0]->gamma_detector_names().size() > 1 )
+    hideDetCol = false;
+  if( specfiles[1] && (specfiles[0] != specfiles[1]) )
+    hideDetCol = false;
+  if( specfiles[2] && (specfiles[0] != specfiles[2]) )
+    hideDetCol = false;
+  
+  m_detColumn->setHidden( hideDetCol );
   
   //const int currentwidget = m_detectorMenu[0]->contentsStack()->currentIndex();
   //cout << "currentwidget=" << currentwidget << endl;
-}//void refreshGuiFromFiles()
+}//void doRefreshFromFiles()
 
 
 
@@ -1224,6 +1268,22 @@ void EnergyCalTool::moreActionBtnClicked( const EnergyCalTool::MoreActionsIndex 
 {
   cerr << "moreActionBtnClicked: " << index << endl;
 }//void moreActionBtnClicked( const MoreActionsIndex index )
+
+
+void EnergyCalTool::render( Wt::WFlags<Wt::RenderFlag> flags)
+{
+  //flags.testFlag(RenderFlag::RenderFull) will only be true on initial rending of widget, and
+  //  after that only the RenderFlag::RenderUpdate flag will be set
+  
+  if( flags.testFlag(Wt::RenderFlag::RenderFull)
+      || m_renderFlags.testFlag(EnergyCalToolRenderFlags::FullGuiUpdate) )
+  {
+    doRefreshFromFiles();
+    m_renderFlags.clear( EnergyCalToolRenderFlags::FullGuiUpdate );
+  }
+  
+  WContainerWidget::render(flags);
+}//void render( Wt::WFlags<Wt::RenderFlag> flags)
 
 
 void EnergyCalTool::applyToCbChanged( const EnergyCalTool::ApplyToCbIndex index )

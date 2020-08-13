@@ -569,6 +569,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   //m_spectrum->rightMouseDragg().connect( m_recalibrator, &Recalibrator::handleGraphicalRecalRequest );
   m_recalibrator = new EnergyCalTool( this, m_peakModel );
   m_spectrum->rightMouseDragg().connect( m_recalibrator, &EnergyCalTool::handleGraphicalRecalRequest );
+  displayedSpectrumChanged().connect( m_recalibrator, &EnergyCalTool::displayedSpecChangedCallback );
 
 #if( USE_SPECTRUM_CHART_D3 )
   const WEnvironment &env = wApp->environment();
@@ -5460,23 +5461,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       //refPhotoTab->setIcon("InterSpec_resources/images/reflines.png");
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
-    
-    //WGridLayout *gridLayout = new WGridLayout();
-    //m_recalibrator->setRecalibratorLayout(gridLayout);
-    if( m_recalibrator->currentLayoutStyle() != EnergyCalTool::LayoutStyle::kWide )
-      m_recalibrator->setWideLayout(); //do this after unhiding to trigger Recalibrator::refreshRecalibrator();
-    else
-      m_recalibrator->refreshRecalibrator();
 
-    /*WMenuItem * calibTab = */ //m_toolsTabs->addTab( m_calibrateContainer, CalibrationTabTitle, TabLoadPolicy );
     m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
-    
-    //calibTab->setIcon("InterSpec_resources/images/calibrate.png");
-//    const char *tooltip = "Allows user to fit for offset, linear, and/or "
-//                          "quadratic terms. Can also be accessed graphically by "
-//                          "right-click dragging from original to modified energy.";
-//    HelpSystem::attachToolTipOn( calibTab, tooltip, showToolTipInstantly , HelpSystem::Top);
-    
+        
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
     if( m_timeSeries->isHidden() )
@@ -6057,11 +6044,6 @@ void InterSpec::handEnergyCalWindowClose()
       m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
     
     m_currentToolsTab = m_toolsTabs->currentIndex();
-    
-    if( m_recalibrator->currentLayoutStyle() != EnergyCalTool::LayoutStyle::kWide )
-      m_recalibrator->setWideLayout();
-    else
-      m_recalibrator->refreshRecalibrator();
   }//if( m_toolsTabs )
 }//void handEnergyCalWindowClose()
 
@@ -6071,7 +6053,6 @@ void InterSpec::showEnergyCalWindow()
   if( m_recalibratorWindow && !m_toolsTabs )
   {
     m_recalibratorWindow->show();
-    m_recalibrator->refreshRecalibrator();
     return;
   }
 
@@ -6103,7 +6084,6 @@ void InterSpec::showEnergyCalWindow()
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
-  m_recalibrator->refreshRecalibrator();
 }//void showEnergyCalWindow()
 
 
@@ -7606,7 +7586,6 @@ void InterSpec::handleToolTabChanged( int tab )
   
   if( tab == calibtab )
   {
-    m_recalibrator->refreshRecalibrator();
     if( InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
       passMessage( "You can also recalibrate graphically by right-clicking and "
                    "dragging the spectrum to where you want",
@@ -8565,9 +8544,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   
   // Update the recalibrator, as there is new data.
-  if( m_recalibrator )
-    m_recalibrator->refreshRecalibrator();
-  
   const auto shownDets = detectorsToDisplay(spec_type);
   m_displayedSpectrumChangedSignal.emit( spec_type, meas, sample_numbers, shownDets );
   

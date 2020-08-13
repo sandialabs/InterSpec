@@ -322,7 +322,7 @@ void PreserveEnergyCalWindow::doRecalibration()
   //                                              meas, m_newtype, oldcoefs, olddevpairs, oldtype );
   
   viewer->refreshDisplayedCharts();
-  m_calibrator->refreshRecalibrator();
+  m_calibrator->refreshGuiFromFiles();
   
   finished().emit(WDialog::Accepted);
 }//void doRecalibration()
