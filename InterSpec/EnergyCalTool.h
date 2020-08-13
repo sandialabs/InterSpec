@@ -113,11 +113,17 @@ public:
   enum LayoutStyle{ kWide, kTall };
   LayoutStyle currentLayoutStyle() const{ return LayoutStyle::kWide; }
   
+  void refreshGuiFromFiles();
   
   void handleGraphicalRecalRequest( double xstart, double xfinish ){}
   
-  void refreshGuiFromFiles();
-  void refreshRecalibrator(){ refreshGuiFromFiles(); }
+  
+  
+  void displayedSpecChangedCallback( const SpecUtils::SpectrumType,
+                                     const std::shared_ptr<SpecMeas> meas,
+                                     const std::set<int> samples,
+                                     const std::vector<std::string> detectors );
+  
   
   void fitCoefficientCBChanged();
   void userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display );
@@ -132,14 +138,17 @@ public:
   void setShowNoCalInfo( const bool nocal );
   
 protected:
+  void doRefreshFromFiles();
+  
   void specTypeToDisplayForChanged();
   
-  /** \TODO: have #refreshGuiFromFiles only ever get called from #render to avoid current situation
+  /** Have #refreshGuiFromFiles only ever get called from #render to avoid current situation
    of calling refreshGuiFromFiles multiple times for a single render (the looping over files can
    get expensive probably)
-   
-   virtual void render( WFlags<RenderFlag> flags) override
   */
+  
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags) override;
+  
   
   enum ApplyToCbIndex
   {
@@ -183,6 +192,14 @@ protected:
     
   }
    */
+  
+  enum EnergyCalToolRenderFlags
+  {
+    FullGuiUpdate = 0x1
+  };//EnergyCalToolREnderFlags
+  
+  Wt::WFlags<EnergyCalToolRenderFlags> m_renderFlags;
+  
   InterSpec *m_interspec;
   PeakModel *m_peakModel;
   RowStretchTreeView *m_peakTable;  /** \TODO: can maybe remove this memeber variable */
