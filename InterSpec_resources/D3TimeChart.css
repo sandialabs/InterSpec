@@ -15,3 +15,8 @@
     stroke: rgb(0,0,0)
 
 }
+
+.brush .extent {
+    fill-opacity: .125;
+    shape-rendering: crispEdges;
+}
