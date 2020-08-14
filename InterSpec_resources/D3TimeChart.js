@@ -86,6 +86,7 @@ D3TimeChart = function (elem, options) {
   console.log(this.options);
 
   this.data = undefined; // formatted data
+  this.selectionDomain = undefined;
   this.height = undefined;
   this.width = undefined;
   this.leadTime = 2.5;
@@ -101,6 +102,7 @@ D3TimeChart = function (elem, options) {
   this.axisBottomG = this.svg.append("g").attr("class", "axis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis");
   this.axisRightG = this.svg.append("g").attr("class", "axis");
+  this.brushG = this.linesG.append("g").attr("class", "brush");
 }; //
 
 /** Function to help emit callbacks back to C++
@@ -151,9 +153,293 @@ D3TimeChart.prototype.handleResize = function () {
 };
 
 /**
- * Renders the D3TimeChart.
+ * Draws or updates plots and axes
+ * @param {*} scales : Object of scales with properties xScale, yScaleGamma, yScaleNeutron
+ * @param {*} options : Optional argument to specify render options
  */
-D3TimeChart.prototype.render = function () {
+D3TimeChart.prototype.updateChart = function (scales, options) {
+  var transitions = options && options.transitions ? true : false;
+
+  var { xScale, yScaleGamma, yScaleNeutron } = scales;
+
+  var HAS_GAMMA = true;
+  var HAS_NEUTRON = false;
+
+  // plot data
+  for (var detName in this.data.detectors) {
+    var { counts, meta } = this.data.detectors[detName];
+
+    var lineGamma = d3.svg
+      .line()
+      .x(function (d) {
+        return xScale(d.realTime);
+      })
+      .y(function (d) {
+        return yScaleGamma(d.gammaCPS);
+      });
+
+    var pathGamma = this.linesG.select(".det_" + detName + "_g");
+
+    // if already drawn, just update
+    if (!pathGamma.empty()) {
+      if (transitions) {
+        pathGamma
+          .datum(counts)
+          .transition()
+          .duration(1000)
+          .attr("d", lineGamma);
+      } else {
+        pathGamma.datum(counts).attr("d", lineGamma);
+      }
+    } else {
+      this.linesG
+        .append("path")
+        .attr("class", "line det_" + detName + "_g")
+        .datum(counts)
+        .style("stroke", meta.gammaColor)
+        .style("fill", "none")
+        .attr("d", lineGamma);
+    } // if (!pathGamma.empty())
+
+    if (meta.isNeutronDetector) {
+      HAS_NEUTRON = true;
+
+      var lineNeutron = d3.svg
+        .line()
+        .x(function (d) {
+          return xScale(d.realTime);
+        })
+        .y(function (d) {
+          return yScaleNeutron(d.neutronCPS);
+        });
+
+      var pathNeutron = this.linesG.select(".det_" + detName + "_n");
+
+      // if already drawn, just update
+      if (!pathNeutron.empty()) {
+        if (transitions) {
+          pathNeutron
+            .datum(counts)
+            .transition()
+            .duration(1000)
+            .attr("d", lineNeutron);
+        } else {
+          pathNeutron.datum(counts).attr("d", lineNeutron);
+        }
+      } else {
+        this.linesG
+          .append("path")
+          .attr("class", "line det_" + detName + "_n")
+          .attr("id", "det_" + detName + "_n")
+          .datum(counts)
+          .style("stroke", meta.neutronColor)
+          .style("fill", "none")
+          .attr("d", lineNeutron);
+      } // if (!pathNeutron.empty())
+    }
+  }
+
+  // set different tick counts for different viewport breakpoints
+  var nSamples = this.data.sampleNumbers.length;
+  var nTicksX;
+  if (this.width > 850) {
+    nTicksX = nSamples;
+  } else if (this.width > 520) {
+    nTicksX = Math.floor(nSamples / 2);
+  } else if (this.width > 280) {
+    nTicksX = Math.floor(nSamples / 4);
+  } else {
+    nTicksX = Math.floor(nSamples / 8);
+  }
+
+  // plot axes and labels
+  var xAxis = d3.svg.axis().scale(xScale).ticks(nTicksX);
+
+  // update or create axis
+  if (transitions) {
+    this.axisBottomG
+      .transition()
+      .duration(1000)
+      .attr(
+        "transform",
+        "translate(0," + (this.height - this.margin.bottom) + ")"
+      )
+      .call(xAxis);
+  } else {
+    this.axisBottomG
+      .attr(
+        "transform",
+        "translate(0," + (this.height - this.margin.bottom) + ")"
+      )
+      .call(xAxis);
+  }
+
+  var axisLabelX = this.svg.select("#th_label_x");
+
+  // if already drawn, just update
+  if (!axisLabelX.empty()) {
+    // clear existing transforms
+    axisLabelX.attr("transform", "none");
+
+    // reposition
+    axisLabelX.attr(
+      "transform",
+      `translate(${this.width / 2}, ${
+        this.height -
+        this.margin.bottom +
+        this.axisBottomG.node().getBBox().height +
+        15
+      })`
+    );
+  } else {
+    this.svg
+      .append("text")
+      .attr("class", "axis_label")
+      .attr("id", "th_label_x")
+      .attr(
+        "transform",
+        `translate(${this.width / 2}, ${
+          this.height -
+          this.margin.bottom +
+          this.axisBottomG.node().getBBox().height +
+          15
+        })`
+      )
+      .style("text-anchor", "middle")
+      .text(this.options.xtitle);
+  } // if (!axisLabelX.empty())
+
+  if (HAS_GAMMA) {
+    var yAxisLeft = d3.svg
+      .axis()
+      .scale(yScaleGamma)
+      .ticks(3)
+      .orient("left")
+      .tickFormat(d3.format(".1g"));
+
+    // update or create axis
+    this.axisLeftG
+      .attr("transform", "translate(" + this.margin.left + ",0)")
+      .call(yAxisLeft);
+
+    var axisLabelY1 = this.svg.select("#th_label_y1");
+
+    // if already drawn, just update
+    if (!axisLabelY1.empty()) {
+      // clear existing transforms
+      axisLabelY1.attr("transform", "none");
+
+      // reposition
+      axisLabelY1.attr(
+        "transform",
+        `translate(${
+          this.margin.left - this.axisLeftG.node().getBBox().width - 5
+        }, ${this.height / 2}) rotate(-90)`
+      );
+    } else {
+      this.svg
+        .append("text")
+        .attr("class", "axis_label")
+        .attr("id", "th_label_y1")
+        .attr(
+          "transform",
+          `translate(${
+            this.margin.left - this.axisLeftG.node().getBBox().width - 5
+          }, ${this.height / 2}) rotate(-90)`
+        )
+        .style("text-anchor", "middle")
+        .text(this.options.y1title)
+        .attr("font-size", "0.9em");
+    } // if (!axisLabelY1.empty())
+  } // if (HAS_GAMMA)
+
+  if (HAS_NEUTRON) {
+    var yAxisRight = d3.svg
+      .axis()
+      .scale(yScaleNeutron)
+      .ticks(3)
+      .orient("right");
+
+    // create or update axis
+    this.axisRightG
+      .attr("transform", "translate(" + (this.width - this.margin.left) + ",0)")
+      .call(yAxisRight);
+
+    var axisLabelY2 = this.svg.select("#th_label_y2");
+
+    // if already drawn, just update
+    if (!axisLabelY2.empty()) {
+      // clear existing transforms
+      axisLabelY2.attr("transform", "none");
+
+      // reposition
+      axisLabelY2.attr(
+        "transform",
+        `translate(${
+          this.width -
+          this.margin.left +
+          this.axisRightG.node().getBBox().width +
+          10
+        }, ${this.height / 2}) rotate(90)`
+      );
+    } else {
+      this.svg
+        .append("text")
+        .attr("class", "axis_label")
+        .attr("id", "th_label_y2")
+        .attr(
+          "transform",
+          `translate(${
+            this.width -
+            this.margin.left +
+            this.axisRightG.node().getBBox().width +
+            10
+          }, ${this.height / 2}) rotate(90)`
+        )
+        .style("text-anchor", "middle")
+        .text(this.options.y2title);
+    } // if (!axisLabelY2.empty())
+  } // if (HAS_NEUTRON)
+};
+
+/**
+ * Brush handler to  zoom into a selected domain
+ * @param {} brush : d3 brush
+ */
+D3TimeChart.prototype.handleBrush = function (brush) {
+  if (brush && !brush.empty()) {
+    // update x-domain to the new domain
+    this.selectionDomain = brush.extent();
+
+    var scales = this.getScalers({
+      x: this.selectionDomain,
+      yGamma: this.data.domains.yGamma,
+      yNeutron: this.data.domains.yNeutron,
+    });
+
+    brush.x(scales.xScale); // update xScale
+    this.updateChart(scales, { transitions: true });
+
+    this.brushG.call(brush.clear());
+  }
+};
+
+/**
+ * Double click handler to redraw chart with full (default) domain
+ */
+D3TimeChart.prototype.handleDoubleClick = function () {
+  // clear selection
+  this.selectionDomain = null;
+
+  // redraw with full domain
+  this.render({ transitions: true });
+};
+
+/**
+ * Renders the D3TimeChart.
+ * @param {*} options : Optional argument to specify render options
+ */
+D3TimeChart.prototype.render = function (options) {
   if (!this.data) {
     console.log(
       "Runtime error in D3TimeChart.render: D3TimeChart data is not set.\nDoing nothing..."
@@ -166,239 +452,78 @@ D3TimeChart.prototype.render = function () {
   } else {
     console.log("Rendering...");
 
-    // // remove any existing drawn lines
-    // d3.selectAll(".line").remove();
-    // d3.selectAll(".axis_label").remove();
-
     // set dimensions of svg element and plot
     this.svg.attr("width", this.width);
     this.svg.attr("height", this.height);
+    this.svg.on("dblclick", () => {
+      this.handleDoubleClick();
+    });
 
-    var HAS_GAMMA = true;
-    var HAS_NEUTRON = false;
+    // add a clipPath: everything outside of this area will not be drawn
+    var plotWidth = this.width - this.margin.left - this.margin.right;
+    var plotHeight = this.height - this.margin.top - this.margin.bottom;
 
-    var { xScale, yScaleGamma, yScaleNeutron } = this.getScalers();
+    var clip = this.svg.select("#clip_th");
 
-    // plot data
-    for (var detName in this.data.detectors) {
-      var { counts, meta } = this.data.detectors[detName];
-
-      var lineGamma = d3.svg
-        .line()
-        .x(function (d) {
-          return xScale(d.realTime);
-        })
-        .y(function (d) {
-          return yScaleGamma(d.gammaCPS);
-        });
-
-      var pathGamma = this.linesG.select(".det_" + detName + "_g");
-
-      // if already drawn, just update
-      if (!pathGamma.empty()) {
-        pathGamma.datum(counts).attr("d", lineGamma);
-      } else {
-        this.linesG
-          .append("path")
-          .attr("class", "line det_" + detName + "_g")
-          .datum(counts)
-          .style("stroke", meta.gammaColor)
-          .style("fill", "none")
-          .attr("d", lineGamma);
-      } // if (!pathGamma.empty())
-
-      if (meta.isNeutronDetector) {
-        HAS_NEUTRON = true;
-
-        var lineNeutron = d3.svg
-          .line()
-          .x(function (d) {
-            return xScale(d.realTime);
-          })
-          .y(function (d) {
-            return yScaleNeutron(d.neutronCPS);
-          });
-
-        var pathNeutron = this.linesG.select(".det_" + detName + "_n");
-
-        // if already drawn, just update
-        if (!pathNeutron.empty()) {
-          pathNeutron.datum(counts).attr("d", lineNeutron);
-        } else {
-          this.linesG
-            .append("path")
-            .attr("class", "line det_" + detName + "_n")
-            .attr("id", "det_" + detName + "_n")
-            .datum(counts)
-            .style("stroke", meta.neutronColor)
-            .style("fill", "none")
-            .attr("d", lineNeutron);
-        } // if (!pathNeutron.empty())
-      }
-    }
-
-    // set different tick counts for different viewport breakpoints
-    var nSamples = this.data.sampleNumbers.length;
-    var nTicksX;
-    if (this.width > 850) {
-      nTicksX = nSamples;
-    } else if (this.width > 520) {
-      nTicksX = Math.floor(nSamples / 2);
-    } else if (this.width > 280) {
-      nTicksX = Math.floor(nSamples / 4);
-    } else {
-      nTicksX = Math.floor(nSamples / 8);
-    }
-
-    // plot axes and labels
-    var xAxis = d3.svg.axis().scale(xScale).ticks(nTicksX);
-
-    // update or create axis
-    this.axisBottomG
-      .attr(
-        "transform",
-        "translate(0," + (this.height - this.margin.bottom) + ")"
-      )
-      .call(xAxis);
-
-    var axisLabelX = this.svg.select("#th_label_x");
-
-    // if already drawn, just update
-    if (!axisLabelX.empty()) {
-      // clear existing transforms
-      axisLabelX.attr("transform", "none");
-
-      // reposition
-      axisLabelX.attr(
-        "transform",
-        `translate(${this.width / 2}, ${
-          this.height -
-          this.margin.bottom +
-          this.axisBottomG.node().getBBox().height +
-          15
-        })`
-      );
+    if (!clip.empty()) {
+      // update if already exists
+      clip
+        .select("rect")
+        .attr("width", plotWidth)
+        .attr("height", plotHeight)
+        .attr("x", this.margin.left)
+        .attr("y", this.margin.top - 2); // to account for stroke-width of path
     } else {
       this.svg
-        .append("text")
-        .attr("class", "axis_label")
-        .attr("id", "th_label_x")
-        .attr(
-          "transform",
-          `translate(${this.width / 2}, ${
-            this.height -
-            this.margin.bottom +
-            this.axisBottomG.node().getBBox().height +
-            15
-          })`
-        )
-        .style("text-anchor", "middle")
-        .text(this.options.xtitle);
-    } // if (!axisLabelX.empty())
+        .append("defs")
+        .append("svg:clipPath")
+        .attr("id", "clip_th")
+        .append("svg:rect")
+        .attr("width", plotWidth)
+        .attr("height", plotHeight)
+        .attr("x", this.margin.left)
+        .attr("y", this.margin.top - 2);
+    }
 
-    if (HAS_GAMMA) {
-      var yAxisLeft = d3.svg
-        .axis()
-        .scale(yScaleGamma)
-        .ticks(3)
-        .orient("left")
-        .tickFormat(d3.format(".1g"));
+    this.linesG.attr("clip-path", "url(#clip_th)");
 
-      // update or create axis
-      this.axisLeftG
-        .attr("transform", "translate(" + this.margin.left + ",0)")
-        .call(yAxisLeft);
+    // get scalers
+    var domains = this.selectionDomain
+      ? {
+          x: this.selectionDomain,
+          yGamma: this.data.domains.yGamma,
+          yNeutron: this.data.domains.yNeutron,
+        }
+      : this.data.domains;
 
-      var axisLabelY1 = this.svg.select("#th_label_y1");
+    var scales = this.getScalers(domains);
 
-      // if already drawn, just update
-      if (!axisLabelY1.empty()) {
-        // clear existing transforms
-        axisLabelY1.attr("transform", "none");
+    // Add brush
+    var brushG = this.brushG;
 
-        // reposition
-        axisLabelY1.attr(
-          "transform",
-          `translate(${
-            this.margin.left - this.axisLeftG.node().getBBox().width - 5
-          }, ${this.height / 2}) rotate(-90)`
-        );
-      } else {
-        this.svg
-          .append("text")
-          .attr("class", "axis_label")
-          .attr("id", "th_label_y1")
-          .attr(
-            "transform",
-            `translate(${
-              this.margin.left - this.axisLeftG.node().getBBox().width - 5
-            }, ${this.height / 2}) rotate(-90)`
-          )
-          .style("text-anchor", "middle")
-          .text(this.options.y1title)
-          .attr("font-size", "0.9em");
-      } // if (!axisLabelY1.empty())
-    } // if (HAS_GAMMA)
+    var brush = d3.svg.brush().x(scales.xScale);
 
-    if (HAS_NEUTRON) {
-      var yAxisRight = d3.svg
-        .axis()
-        .scale(yScaleNeutron)
-        .ticks(3)
-        .orient("right");
+    brush.on("brushend", () => {
+      this.handleBrush(brush);
+    });
 
-      // create or update axis
-      this.axisRightG
-        .attr(
-          "transform",
-          "translate(" + (this.width - this.margin.left) + ",0)"
-        )
-        .call(yAxisRight);
+    brushG.call(brush).selectAll("rect").attr("height", this.height);
 
-      var axisLabelY2 = this.svg.select("#th_label_y2");
-
-      // if already drawn, just update
-      if (!axisLabelY2.empty()) {
-        // clear existing transforms
-        console.log("HeERRRE");
-        axisLabelY2.attr("transform", "none");
-
-        // reposition
-        axisLabelY2.attr(
-          "transform",
-          `translate(${
-            this.width -
-            this.margin.left +
-            this.axisRightG.node().getBBox().width +
-            10
-          }, ${this.height / 2}) rotate(90)`
-        );
-      } else {
-        this.svg
-          .append("text")
-          .attr("class", "axis_label")
-          .attr("id", "th_label_y2")
-          .attr(
-            "transform",
-            `translate(${
-              this.width -
-              this.margin.left +
-              this.axisRightG.node().getBBox().width +
-              10
-            }, ${this.height / 2}) rotate(90)`
-          )
-          .style("text-anchor", "middle")
-          .text(this.options.y2title);
-      } // if (!axisLabelY2.empty())
-    } // if (HAS_NEUTRON)
+    this.updateChart(scales, options);
   }
 };
 
 /**
  * Get scaling functions based on the data domain and element dimensions.
  * this.data, this.height, and this.width must be defined
+ * Argument domains must be of form:
+ * {
+ *    x: [a, b],
+ *    yGamma: [c, d],
+ *    yNeutron: [e, f],
+ * }
  */
-D3TimeChart.prototype.getScalers = function () {
+D3TimeChart.prototype.getScalers = function (domains) {
   if (!this.data) {
     console.log(
       "In D3TimeChart.getScalers: domain not set.\nScalers undefined..."
@@ -409,20 +534,22 @@ D3TimeChart.prototype.getScalers = function () {
       yScaleNeutron: undefined,
     };
   }
-  var xScale = d3.scale
-    .linear()
-    .domain(this.data.domains.x)
-    .range([this.margin.left, this.width - this.margin.right]);
-  var yScaleGamma = this.data.domains.yGamma
+  var xScale = domains.x
     ? d3.scale
         .linear()
-        .domain(this.data.domains.yGamma)
+        .domain(domains.x)
+        .range([this.margin.left, this.width - this.margin.right])
+    : undefined;
+  var yScaleGamma = domains.yGamma
+    ? d3.scale
+        .linear()
+        .domain(domains.yGamma)
         .range([this.height - this.margin.bottom, this.margin.top])
     : undefined;
-  var yScaleNeutron = this.data.domains.yNeutron
+  var yScaleNeutron = domains.yNeutron
     ? d3.scale
         .linear()
-        .domain(this.data.domains.yNeutron)
+        .domain(domains.yNeutron)
         .range([this.height - this.margin.bottom, this.margin.top])
     : undefined;
 
@@ -580,19 +707,14 @@ D3TimeChart.prototype.setData = function (data) {
 
     this.data = formattedData;
 
+    // clear selection if there is any
+    this.selectionDomain = null;
+
     // if height and width are set, may render directly.
     if (this.height && this.width) {
       this.render();
     }
   }
-};
-
-D3TimeChart.prototype.max = function (array, accessor) {
-  var data = array;
-  if (accessor) {
-    data = data.map(accessor);
-  }
-  return Math.max(...data);
 };
 
 /**
