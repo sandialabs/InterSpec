@@ -10,3 +10,8 @@
     font-weight: lighter;
     stroke: rgb(0,0,0)
 }
+
+.axis_label {
+    stroke: rgb(0,0,0)
+
+}
