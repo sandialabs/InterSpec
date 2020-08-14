@@ -171,6 +171,8 @@ protected:
     CombineChannels,
     ConvertToFrf,
     ConvertToPoly,
+    //Maybe add sum spectra, although this isnt a energy cal related thing
+    //Revert, and revert back to original calibrations.
     NumMoreActionsIndex
   };//enum MoreActionsIndex
   
@@ -237,6 +239,34 @@ protected:
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];
+  
+  
+  /*
+   We could hook up to SpecMeas::aboutToBeDeleted() to know whene file is about to go-away, but this
+   could be when the file is being cached on disk or, or unloaded.  So maybe a new signal is needed
+   in SpecMeasManager that more properly emits, and tells you whats going on (also, probably need
+   to check that memory is actually reclaimed).
+  struct CalibrationInformation
+  {
+    void reset();
+    CalibrationInformation();
+    
+   //should probably use weak_ptrs below
+    std::map<std::shared_ptr<const SpecUtils::EnergyCalibration>,std::vector<std::shared_ptr<const SpecUtils::Measurement>>> m_cal_to_meas;
+    
+    std::shared_ptr<const SpecUtils::EnergyCalibration> m_display_cal; //needed when shifting peaks back
+    
+    
+    SpecUtils::EnergyCalType type;
+    std::vector<float> coefficients;
+    std::vector< std::pair<float,float> > deviationpairs;
+    
+    std::set<int> sample_numbers;
+    std::set<int> detectors_numbers;
+    
+    //could also hold original SpecMeas::SampleNumsToPeakMap ...
+  };//struct CalibrationInformation
+  */
 };//class EnergyCalTool
 
 #endif //EnergyCalTool_h
