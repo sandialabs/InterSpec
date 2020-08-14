@@ -636,6 +636,24 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
     cb->addStyleClass( "ApplyToItem" );
     cb->setInline( false );
     
+    
+    switch( index )
+    {
+      case ApplyToCbIndex::ApplyToForeground:
+      case ApplyToCbIndex::ApplyToBackground:
+      case ApplyToCbIndex::ApplyToSecondary:
+      case ApplyToCbIndex::ApplyToAllDetectors:
+      case ApplyToCbIndex::ApplyToAllSamples:
+        cb->setChecked( true );
+        break;
+        
+      case ApplyToCbIndex::ApplyToDisplayedDetectors:
+      case ApplyToCbIndex::ApplyToDisplayedSamples:
+      case ApplyToCbIndex::NumApplyToCbIndex:
+        cb->setChecked( false );
+        break;
+    }//switch( index )
+    
     cb->checked().connect( boost::bind( &EnergyCalTool::applyToCbChanged, this, index ) );
     cb->unChecked().connect( boost::bind( &EnergyCalTool::applyToCbChanged, this, index ) );
     
@@ -880,6 +898,10 @@ void EnergyCalTool::displayedSpecChangedCallback( const SpecUtils::SpectrumType,
                                                   const std::set<int>,
                                                   const std::vector<std::string> )
 {
+  /// \TODO: set the various m_applyToCbs if it is a new spectrum being shown.
+  /// \TODO: if this is the first time seeing a SpecMeas, cache all of its energy calibration
+  ///        information
+  
   // \TODO: we could maybe save a little time by inspecting what was changed, but the added
   //        complexity probably isnt worth it, so we'll skip this.
   refreshGuiFromFiles();
@@ -908,9 +930,11 @@ void EnergyCalTool::doRefreshFromFiles()
   for( int i = 0; i < 3; ++i )
     specfiles[i] = m_interspec->measurment( spectypes[i] );
   
+  set<string> specdetnames[3]; //Just the names of gamma detectors with at least 4 channels
   
 /*
   //Delete calibration contents and menu items - we will add in all the current ones below.
+  //  - this appears to not work well - the stacks need replacing...
   for( int i = 0; i < 3; ++i)
   {
     Wt::WMenu *menu = m_detectorMenu[i];
@@ -1010,6 +1034,8 @@ void EnergyCalTool::doRefreshFromFiles()
   
   int nFilesWithCalInfo = 0;
   bool selectedDetToShowCalFor = false;
+  bool hasFRFCal = false, hasPolyCal = false, hasLowerChanCal = false;
+  
   
   for( int i = 0; i < 3; ++i )
   {
@@ -1054,6 +1080,8 @@ void EnergyCalTool::doRefreshFromFiles()
         break;
     }//for( const int sample : samples )
     
+    specdetnames[i] = detectors;
+    
     if( detectors.empty() )
     {
       if( m_specTypeMenu->currentIndex() == i )
@@ -1082,7 +1110,31 @@ void EnergyCalTool::doRefreshFromFiles()
         //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
         item->clicked().connect( boost::bind(&WMenuItem::select, item) );
         
-        calcontent->updateToGui( m->energy_calibration() );
+        shared_ptr<const SpecUtils::EnergyCalibration> energycal = m->energy_calibration();
+        calcontent->updateToGui( energycal );
+        
+        if( energycal )
+        {
+          switch( energycal->type() )
+          {
+            case SpecUtils::EnergyCalType::Polynomial:
+            case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+              hasPolyCal = true;
+              break;
+              
+            case SpecUtils::EnergyCalType::FullRangeFraction:
+              hasFRFCal = true;
+              break;
+              
+            case SpecUtils::EnergyCalType::LowerChannelEdge:
+              hasLowerChanCal = true;
+              break;
+            
+            case SpecUtils::EnergyCalType::InvalidEquationType:
+              break;
+          }//switch( energycal->type() )
+        }//if( energycal )
+        
         
         if( (detname == prevdet[i]) && (i == previousSpecInd) )
         {
@@ -1103,6 +1155,7 @@ void EnergyCalTool::doRefreshFromFiles()
   }
   
   setShowNoCalInfo( !nFilesWithCalInfo );
+  
   
   //DOnt show spectype menu if we dont need to
   const bool showSpecType = ( (nFilesWithCalInfo < 2)
@@ -1249,7 +1302,7 @@ void EnergyCalTool::doRefreshFromFiles()
   m_applyToColumn->setHidden( !anyApplyToCbShown );
   
   bool hideDetCol = true;
-  if( specfiles[0] && specfiles[0]->gamma_detector_names().size() > 1 )
+  if( specfiles[0] && specdetnames[0].size() > 1 )
     hideDetCol = false;
   if( specfiles[1] && (specfiles[0] != specfiles[1]) )
     hideDetCol = false;
@@ -1257,6 +1310,37 @@ void EnergyCalTool::doRefreshFromFiles()
     hideDetCol = false;
   
   m_detColumn->setHidden( hideDetCol );
+  
+  for( MoreActionsIndex index = MoreActionsIndex(0);
+      index < MoreActionsIndex::NumMoreActionsIndex;
+      index = MoreActionsIndex(index + 1) )
+  {
+    Wt::WAnchor *anchor = m_moreActions[index];
+    assert( anchor );
+    auto aparent = anchor->parent();
+    assert( dynamic_cast<WContainerWidget *>(aparent) );
+    
+    switch( index )
+    {
+      case MoreActionsIndex::Linearize:
+      case MoreActionsIndex::Truncate:
+      case MoreActionsIndex::CombineChannels:
+        aparent->setHidden( !specfiles[0] );
+        break;
+        
+      case MoreActionsIndex::ConvertToFrf:
+        aparent->setHidden( hasPolyCal );
+        break;
+        
+      case MoreActionsIndex::ConvertToPoly:
+        aparent->setHidden( hasFRFCal || hasLowerChanCal );
+        break;
+        
+      case MoreActionsIndex::NumMoreActionsIndex:
+        break;
+    }//switch( index )
+  }//for( loop over
+  
   
   //const int currentwidget = m_detectorMenu[0]->contentsStack()->currentIndex();
   //cout << "currentwidget=" << currentwidget << endl;
