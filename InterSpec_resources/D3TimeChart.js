@@ -65,12 +65,12 @@ DetectorMetaData.prototype.setNeutronColor = function (neutronColor) {
 /**
  * Constructor for rudimentary 1-dimensional brush along x direction
  */
-BrushX = function(scale, domain) {
+BrushX = function (scale, domain) {
   this.start = undefined;
   this.end = undefined;
   this.scale = scale;
   this.domain = domain;
-}
+};
 
 /**
  * Sets the x-scale associated with this brush
@@ -79,42 +79,42 @@ BrushX = function(scale, domain) {
 BrushX.prototype.setScale = function (scale) {
   this.scale = scale;
   return this;
-}
+};
 
 /**
  * Returns the x-scale associated with this brush
  */
 BrushX.prototype.getScale = function () {
   return this.scale;
-}
+};
 
 /**
- * Returns true if and only if the brush extent is empty. 
- * When a brush is created, it is initially empty; the brush may also become empty with a single click on the background without moving, or if the extent is cleared. 
+ * Returns true if and only if the brush extent is empty.
+ * When a brush is created, it is initially empty; the brush may also become empty with a single click on the background without moving, or if the extent is cleared.
  * A brush is considered empty if it has zero-width or zero-height. When the brush is empty, its extent is not strictly defined.
  */
 BrushX.prototype.empty = function () {
-  return (!this.start || !this.end || this.start === this.end)
-}
+  return !this.start || !this.end || this.start === this.end;
+};
 
 /**
  * Clears the extent, making the brush extent empty.
  */
-BrushX.prototype.clear = function() {
+BrushX.prototype.clear = function () {
   this.start = undefined;
   this.end = undefined;
-}
+};
 
 /**
  * Sets the scaled start value of the
  * @param {Number} startCoord : d3 mouse x coordinate.
  */
-BrushX.prototype.setStart = function(startCoord) {
+BrushX.prototype.setStart = function (startCoord) {
   if (!this.scale) {
-    console.log("Error: brush scale has not been set!")
+    console.log("Error: brush scale has not been set!");
   }
-  var scaledCoord = this.scale.invert(startCoord)
-  var domain = this.scale.domain()
+  var scaledCoord = this.scale.invert(startCoord);
+  var domain = this.scale.domain();
   if (scaledCoord < domain[0]) {
     scaledCoord = domain[0];
   }
@@ -123,15 +123,19 @@ BrushX.prototype.setStart = function(startCoord) {
   }
   this.start = scaledCoord;
   return this;
-}
+};
 
-BrushX.prototype.setEnd = function(endCoord) {
+BrushX.prototype.getStart = function () {
+  return this.start;
+};
+
+BrushX.prototype.setEnd = function (endCoord) {
   if (!this.scale) {
-    console.log("Error: brush scale has not been set!")
+    console.log("Error: brush scale has not been set!");
   }
 
-  var scaledCoord = this.scale.invert(endCoord)
-  var domain = this.scale.domain()
+  var scaledCoord = this.scale.invert(endCoord);
+  var domain = this.scale.domain();
 
   if (scaledCoord < domain[0]) {
     scaledCoord = domain[0];
@@ -141,19 +145,19 @@ BrushX.prototype.setEnd = function(endCoord) {
   }
   this.end = scaledCoord;
   return this;
-}
+};
 
-BrushX.prototype.extent = function() {
+BrushX.prototype.getEnd = function () {
+  return this.end;
+};
+
+BrushX.prototype.extent = function () {
   if (this.empty()) {
     return null;
   }
 
-  // flip bounds if necessary
-  if (this.start > this.end) {
-    return [this.end, this.start]
-  }
   return [this.start, this.end];
-}
+};
 
 /**
  * D3TimeChart object constructor.
@@ -195,8 +199,11 @@ D3TimeChart = function (elem, options) {
   this.axisBottomG = this.svg.append("g").attr("class", "axis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis");
   this.axisRightG = this.svg.append("g").attr("class", "axis");
-  this.brushG = this.linesG.append("g").attr("class", "brush");
-  this.rect = this.svg.append("g").attr("class", "interaction_area").append("rect");
+  // this.brushG = this.linesG.append("g").attr("class", "brush");
+
+  this.rectG = this.svg.append("g").attr("class", "interaction_area");
+  this.highlightRect = this.rectG.append("rect").attr("class", "selection");
+  this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area
 }; //
 
 /** Function to help emit callbacks back to C++
@@ -501,7 +508,7 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
  * @param {} brush : d3 brush
  */
 D3TimeChart.prototype.handleBrush = function (brush) {
-  if (brush && !brush.empty()) {
+  if (brush && !brush.empty() && (brush.extent()[0] < brush.extent()[1] )) {
     // update x-domain to the new domain
     this.selectionDomain = brush.extent();
 
@@ -512,7 +519,7 @@ D3TimeChart.prototype.handleBrush = function (brush) {
     });
 
     // brush.x(scales.xScale); // update xScale
-    brush.setScale(scales.xScale)
+    brush.setScale(scales.xScale);
     this.updateChart(scales, { transitions: true });
 
     // to clear the drawn rectangle.
@@ -550,23 +557,23 @@ D3TimeChart.prototype.render = function (options) {
 
     var plotWidth = this.width - this.margin.left - this.margin.right;
     var plotHeight = this.height - this.margin.top - this.margin.bottom;
-    
+
     // set dimensions of svg element and plot
     this.svg.attr("width", this.width);
     this.svg.attr("height", this.height);
-    
+
     this.rect
-    .attr("width", plotWidth)
-    .attr("height", plotHeight)
-    .attr("x", this.margin.left)
-    .attr("y", this.margin.top)
-    .attr("fill-opacity", 0)
-    
+      .attr("width", plotWidth)
+      .attr("height", plotHeight)
+      .attr("x", this.margin.left)
+      .attr("y", this.margin.top)
+      .attr("fill-opacity", 0);
+
     this.rect.on("dblclick", () => {
       console.log("doubleclicked!");
       this.handleDoubleClick();
-    });  
-    
+    });
+
     // add a clipPath: everything outside of this area will not be drawn
     var clip = this.svg.select("#clip_th");
 
@@ -592,7 +599,6 @@ D3TimeChart.prototype.render = function (options) {
 
     this.linesG.attr("clip-path", "url(#clip_th)");
 
-
     // get scales
     var domains = this.selectionDomain
       ? {
@@ -604,50 +610,39 @@ D3TimeChart.prototype.render = function (options) {
 
     var scales = this.getScales(domains);
 
+    // add brush-highlight zooming
     var brush = new BrushX();
 
-    brush.setScale(scales.xScale)
+    brush.setScale(scales.xScale);
 
-    var drag = d3.behavior.drag()
+    var drag = d3.behavior
+      .drag()
       .on("dragstart", () => {
         console.log("drag started");
-        var coords = d3.mouse(this.rect.node())
-        console.log(coords)
-        // brushExtext[0] = scales.xScale.invert(coords[0])
-        // console.log(scales.xScale.invert(coords[0]))
+        var coords = d3.mouse(this.rect.node());
+        console.log("mouse coordinates: " + coords);
         brush.setStart(coords[0]);
+        this.mouseDownHighlight(coords[0]);
       })
       .on("drag", () => {
         console.log("dragging");
-        var coords = d3.mouse(this.rect.node())
-        // brushExtext[1] = scales.xScale.invert(coords[0])
-        brush.setEnd(coords[0])
+        brush.setEnd(d3.mouse(this.rect.node())[0]);
         console.log(brush.extent());
+        var width =
+          brush.getScale()(brush.getEnd()) - brush.getScale()(brush.getStart());
+        this.mouseMoveHighlight(width);
       })
       .on("dragend", () => {
         console.log("drag ended");
-        console.log(brush.empty());
-        // var coords = d3.mouse(this.rect.node())
-        // console.log(scales.xScale.invert(coords[0]))
+        console.log("empty: " + brush.empty());
+
         console.log(brush.extent());
         this.handleBrush(brush);
-        brush.clear()
+        brush.clear();
+        this.mouseUpHighlight();
+      });
 
-      })
-
-    this.rect.call(drag)
-
-
-    // // Add brush
-    // var brushG = this.brushG;
-
-    // var brush = d3.svg.brush().x(scales.xScale);
-
-    // brush.on("brushend", () => {
-    //   this.handleBrush(brush);
-    // });
-
-    // brushG.call(brush).selectAll("rect").attr("height", this.height);
+    this.rect.call(drag);
 
     this.updateChart(scales, options);
   }
@@ -731,6 +726,37 @@ D3TimeChart.prototype.render = function (options) {
 //     this.updateChart(scales, options);
 //   }
 // };
+
+/**
+ * Sets initial attributes of a highlight region
+ * @param {Number} mouseX : x-coordinates of pointer in pixels relative to the containing element
+ */
+D3TimeChart.prototype.mouseDownHighlight = function (mouseX) {
+  this.highlightRect
+    .attr("height", this.height - this.margin.top - this.margin.bottom)
+    .attr("x", mouseX)
+    .attr("y", this.margin.top)
+    .attr("width", 0);
+};
+
+/**
+ * Updates width of highlight region on mouse move.
+ * @param {Number} width : width in pixels
+ */
+D3TimeChart.prototype.mouseMoveHighlight = function (width) {
+  if (width > 0) {
+    this.highlightRect.attr("width", width);
+  } else {
+    this.highlightRect.attr("width", 0);
+  }
+};
+
+/**
+ * Clears rectangle dimensions
+ */
+D3TimeChart.prototype.mouseUpHighlight = function () {
+  this.highlightRect.attr("height", 0).attr("width", 0);
+};
 
 /**
  * Get scaling functions based on the data domain and element dimensions.

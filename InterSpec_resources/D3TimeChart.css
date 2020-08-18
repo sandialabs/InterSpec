@@ -16,7 +16,7 @@
 
 }
 
-.brush .extent {
+.interaction_area .selection {
     fill-opacity: .125;
     shape-rendering: crispEdges;
 }
