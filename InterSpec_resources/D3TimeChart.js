@@ -202,7 +202,6 @@ D3TimeChart = function (elem, options) {
 
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
-  // this.hoverToolTip = this.rectG.append("rect").attr("class", "tooltip");
   this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area
 
   this.hoverToolTip = d3
@@ -241,6 +240,33 @@ D3TimeChart.prototype.WtEmit = function (elem, event) {
   Wt.emit.apply(Wt, [elem, event].concat(args));
 };
 
+/**
+ * Sets data members of the D3TimeChart object. Is called every time data is set in C++.
+ * @param {Object} data
+ */
+D3TimeChart.prototype.setData = function (data) {
+  //See the c++ function D3TimeChart::setData()
+  console.log(data);
+  if (!this.isValidData(data)) {
+    console.log(
+      "Runtime error in D3TimeChart.setData: Structure of data is not valid.\nDoing nothing..."
+    );
+  } else {
+    var formattedData = this.formatData(data);
+    console.log(formattedData);
+
+    this.data = formattedData;
+
+    // clear selection if there is any
+    this.selectionDomain = null;
+
+    // if height and width are set, may render directly.
+    if (this.height && this.width) {
+      this.render();
+    }
+  }
+};
+
 D3TimeChart.prototype.handleResize = function () {
   // This function is called when the Wt layout manager resizes the parent <div> element
   // Need to redraw everything
@@ -248,17 +274,120 @@ D3TimeChart.prototype.handleResize = function () {
   // Make sure to update the C++ code of the changed plotting size.
 
   console.log("Resized!");
-  console.log(
-    "width: " +
-      this.chart.clientWidth +
-      ", " +
-      "height: " +
-      this.chart.clientHeight
-  );
   this.height = this.chart.clientHeight;
   this.width = this.chart.clientWidth;
 
   this.render();
+};
+
+/**
+ * Renders the D3TimeChart.
+ * @param {*} options : Optional argument to specify render options
+ */
+D3TimeChart.prototype.render = function (options) {
+  if (!this.data) {
+    console.log(
+      "Runtime error in D3TimeChart.render: D3TimeChart data is not set.\nDoing nothing..."
+    );
+  } else if (!this.height || !this.width) {
+    console.log(
+      "Runtime error in D3TimeChart.render: dimensions of D3TimeChart div element are not set.\nDoing nothing..."
+    );
+    return;
+  } else {
+    console.log("Rendering...");
+
+    var plotWidth = this.width - this.margin.left - this.margin.right;
+    var plotHeight = this.height - this.margin.top - this.margin.bottom;
+
+    // set dimensions of svg element and plot
+    this.svg.attr("width", this.width);
+    this.svg.attr("height", this.height);
+
+    this.rect
+      .attr("width", plotWidth)
+      .attr("height", plotHeight)
+      .attr("x", this.margin.left)
+      .attr("y", this.margin.top)
+      .attr("fill-opacity", 0);
+
+    this.rect.on("dblclick", () => {
+      console.log("doubleclicked!");
+      this.handleDoubleClick();
+    });
+
+    // add a clipPath: everything outside of this area will not be drawn
+    var clip = this.svg.select("#clip_th");
+
+    if (!clip.empty()) {
+      // update if already exists
+      clip
+        .select("rect")
+        .attr("width", plotWidth)
+        .attr("height", plotHeight)
+        .attr("x", this.margin.left)
+        .attr("y", this.margin.top - 2); // to account for stroke-width of path
+    } else {
+      this.svg
+        .append("defs")
+        .append("svg:clipPath")
+        .attr("id", "clip_th")
+        .append("svg:rect")
+        .attr("width", plotWidth)
+        .attr("height", plotHeight)
+        .attr("x", this.margin.left)
+        .attr("y", this.margin.top - 2);
+    }
+
+    this.linesG.attr("clip-path", "url(#clip_th)");
+
+    // get scales
+    var domains = this.selectionDomain
+      ? {
+          x: this.selectionDomain,
+          yGamma: this.data.domains.yGamma,
+          yNeutron: this.data.domains.yNeutron,
+        }
+      : this.data.domains;
+
+    var scales = this.getScales(domains);
+
+    // add brush-highlight zooming
+    var brush = new BrushX();
+
+    brush.setScale(scales.xScale);
+
+    var drag = d3.behavior
+      .drag()
+      .on("dragstart", () => {
+        console.log("drag started");
+        var coords = d3.mouse(this.rect.node());
+        console.log("mouse coordinates: " + coords);
+        brush.setStart(coords[0]);
+        this.mouseDownHighlight(coords[0]);
+      })
+      .on("drag", () => {
+        console.log("dragging");
+        brush.setEnd(d3.mouse(this.rect.node())[0]);
+        console.log(brush.extent());
+        var width =
+          brush.getScale()(brush.getEnd()) - brush.getScale()(brush.getStart());
+        this.mouseMoveHighlight(width);
+      })
+      .on("dragend", () => {
+        console.log("drag ended");
+        console.log("empty: " + brush.empty());
+
+        console.log(brush.extent());
+        this.handleBrush(brush);
+        brush.clear();
+        this.mouseUpHighlight();
+      });
+
+    this.rect.call(drag);
+
+    this.updateChart(scales, options);
+  }
 };
 
 /**
@@ -278,7 +407,6 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
   this.rect
     .on("mouseover", () => {
       console.log("mouseover'd");
-      console.log(xScale.invert(d3.mouse(this.rect.node())[0]));
       this.showToolTip();
     })
     .on("mousemove", () => {
@@ -539,371 +667,7 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
   } // if (HAS_NEUTRON)
 };
 
-/**
- * Brush handler to  zoom into a selected domain
- * @param {} brush : d3 brush
- */
-D3TimeChart.prototype.handleBrush = function (brush) {
-  if (brush && !brush.empty() && brush.extent()[0] < brush.extent()[1]) {
-    // update x-domain to the new domain
-    this.selectionDomain = brush.extent();
-
-    var scales = this.getScales({
-      x: this.selectionDomain,
-      yGamma: this.data.domains.yGamma,
-      yNeutron: this.data.domains.yNeutron,
-    });
-
-    // brush.x(scales.xScale); // update xScale
-    brush.setScale(scales.xScale);
-    this.updateChart(scales, { transitions: true });
-
-    // to clear the drawn rectangle.
-    // this.brushG.call(brush.clear());
-  }
-};
-
-/**
- * Double click handler to redraw chart with full (default) domain
- */
-D3TimeChart.prototype.handleDoubleClick = function () {
-  // clear selection
-  this.selectionDomain = null;
-
-  // redraw with full domain
-  this.render({ transitions: true });
-};
-
-D3TimeChart.prototype.showToolTip = function () {
-  this.hoverToolTip.style("visibility", "visible");
-};
-
-D3TimeChart.prototype.updateToolTip = function (time, data) {
-  this.hoverToolTip.html(this.createToolTipString(time, data));
-};
-
-D3TimeChart.prototype.hideToolTip = function () {
-  this.hoverToolTip.style("visibility", "hidden");
-};
-
-D3TimeChart.prototype.createToolTipString = function (time, data) {
-  var s = `<div>Time: ${time.toPrecision(4)} s</div>`;
-  for (var i = 0; i < data.length; i++) {
-    s += `<div>G CPS: ${data[i].gammaCPS.toPrecision(6)} (${
-      data[i].detName
-    })</div>`;
-    s += `<div>N CPS: ${data[i].neutronCPS.toPrecision(3)} (${
-      data[i].detName
-    })</div>`;
-  }
-  return s;
-};
-
-D3TimeChart.prototype.findDataIndex = function (seconds) {
-  var highIdx = this.data.realTimeIntervals.length - 1;
-  var lowIdx = 0;
-
-  while (lowIdx <= highIdx) {
-    var midIdx = Math.floor((highIdx + lowIdx) / 2);
-    var interval = this.data.realTimeIntervals[midIdx];
-    if (seconds >= interval[0] && seconds <= interval[1]) {
-      return midIdx;
-    } else if (seconds < interval[0]) {
-      highIdx = midIdx - 1;
-    } else if (seconds > interval[1]) {
-      lowIdx = midIdx + 1;
-    }
-  }
-};
-
-/**
- * Renders the D3TimeChart.
- * @param {*} options : Optional argument to specify render options
- */
-D3TimeChart.prototype.render = function (options) {
-  if (!this.data) {
-    console.log(
-      "Runtime error in D3TimeChart.render: D3TimeChart data is not set.\nDoing nothing..."
-    );
-  } else if (!this.height || !this.width) {
-    console.log(
-      "Runtime error in D3TimeChart.render: dimensions of D3TimeChart div element are not set.\nDoing nothing..."
-    );
-    return;
-  } else {
-    console.log("Rendering...");
-
-    var plotWidth = this.width - this.margin.left - this.margin.right;
-    var plotHeight = this.height - this.margin.top - this.margin.bottom;
-
-    // set dimensions of svg element and plot
-    this.svg.attr("width", this.width);
-    this.svg.attr("height", this.height);
-
-    this.rect
-      .attr("width", plotWidth)
-      .attr("height", plotHeight)
-      .attr("x", this.margin.left)
-      .attr("y", this.margin.top)
-      .attr("fill-opacity", 0);
-
-    this.rect.on("dblclick", () => {
-      console.log("doubleclicked!");
-      this.handleDoubleClick();
-    });
-
-    // add a clipPath: everything outside of this area will not be drawn
-    var clip = this.svg.select("#clip_th");
-
-    if (!clip.empty()) {
-      // update if already exists
-      clip
-        .select("rect")
-        .attr("width", plotWidth)
-        .attr("height", plotHeight)
-        .attr("x", this.margin.left)
-        .attr("y", this.margin.top - 2); // to account for stroke-width of path
-    } else {
-      this.svg
-        .append("defs")
-        .append("svg:clipPath")
-        .attr("id", "clip_th")
-        .append("svg:rect")
-        .attr("width", plotWidth)
-        .attr("height", plotHeight)
-        .attr("x", this.margin.left)
-        .attr("y", this.margin.top - 2);
-    }
-
-    this.linesG.attr("clip-path", "url(#clip_th)");
-
-    // get scales
-    var domains = this.selectionDomain
-      ? {
-          x: this.selectionDomain,
-          yGamma: this.data.domains.yGamma,
-          yNeutron: this.data.domains.yNeutron,
-        }
-      : this.data.domains;
-
-    var scales = this.getScales(domains);
-
-    // add brush-highlight zooming
-    var brush = new BrushX();
-
-    brush.setScale(scales.xScale);
-
-    var drag = d3.behavior
-      .drag()
-      .on("dragstart", () => {
-        console.log("drag started");
-        var coords = d3.mouse(this.rect.node());
-        console.log("mouse coordinates: " + coords);
-        brush.setStart(coords[0]);
-        this.mouseDownHighlight(coords[0]);
-      })
-      .on("drag", () => {
-        console.log("dragging");
-        brush.setEnd(d3.mouse(this.rect.node())[0]);
-        console.log(brush.extent());
-        var width =
-          brush.getScale()(brush.getEnd()) - brush.getScale()(brush.getStart());
-        this.mouseMoveHighlight(width);
-      })
-      .on("dragend", () => {
-        console.log("drag ended");
-        console.log("empty: " + brush.empty());
-
-        console.log(brush.extent());
-        this.handleBrush(brush);
-        brush.clear();
-        this.mouseUpHighlight();
-      });
-
-    this.rect.call(drag);
-
-    this.updateChart(scales, options);
-  }
-};
-
-// <<<<<<
-// /**
-//  * Renders the D3TimeChart.
-//  * @param {*} options : Optional argument to specify render options
-//  */
-// D3TimeChart.prototype.render = function (options) {
-//   if (!this.data) {
-//     console.log(
-//       "Runtime error in D3TimeChart.render: D3TimeChart data is not set.\nDoing nothing..."
-//     );
-//   } else if (!this.height || !this.width) {
-//     console.log(
-//       "Runtime error in D3TimeChart.render: dimensions of D3TimeChart div element are not set.\nDoing nothing..."
-//     );
-//     return;
-//   } else {
-//     console.log("Rendering...");
-
-//     // set dimensions of svg element and plot
-//     this.svg.attr("width", this.width);
-//     this.svg.attr("height", this.height);
-//     this.svg.on("dblclick", () => {
-//       this.handleDoubleClick();
-//     });
-
-//     // add a clipPath: everything outside of this area will not be drawn
-//     var plotWidth = this.width - this.margin.left - this.margin.right;
-//     var plotHeight = this.height - this.margin.top - this.margin.bottom;
-
-//     var clip = this.svg.select("#clip_th");
-
-//     if (!clip.empty()) {
-//       // update if already exists
-//       clip
-//         .select("rect")
-//         .attr("width", plotWidth)
-//         .attr("height", plotHeight)
-//         .attr("x", this.margin.left)
-//         .attr("y", this.margin.top - 2); // to account for stroke-width of path
-//     } else {
-//       this.svg
-//         .append("defs")
-//         .append("svg:clipPath")
-//         .attr("id", "clip_th")
-//         .append("svg:rect")
-//         .attr("width", plotWidth)
-//         .attr("height", plotHeight)
-//         .attr("x", this.margin.left)
-//         .attr("y", this.margin.top - 2);
-//     }
-
-//     this.linesG.attr("clip-path", "url(#clip_th)");
-
-//     // get scales
-//     var domains = this.selectionDomain
-//       ? {
-//           x: this.selectionDomain,
-//           yGamma: this.data.domains.yGamma,
-//           yNeutron: this.data.domains.yNeutron,
-//         }
-//       : this.data.domains;
-
-//     var scales = this.getScales(domains);
-
-//     // Add brush
-//     var brushG = this.brushG;
-
-//     var brush = d3.svg.brush().x(scales.xScale);
-
-//     brush.on("brushend", () => {
-//       this.handleBrush(brush);
-//     });
-
-//     brushG.call(brush).selectAll("rect").attr("height", this.height);
-
-//     this.updateChart(scales, options);
-//   }
-// };
-
-/**
- * Sets initial attributes of a highlight region
- * @param {Number} mouseX : x-coordinates of pointer in pixels relative to the containing element
- */
-D3TimeChart.prototype.mouseDownHighlight = function (mouseX) {
-  this.highlightRect
-    .attr("height", this.height - this.margin.top - this.margin.bottom)
-    .attr("x", mouseX)
-    .attr("y", this.margin.top)
-    .attr("width", 0);
-};
-
-/**
- * Updates width of highlight region on mouse move.
- * @param {Number} width : width in pixels
- */
-D3TimeChart.prototype.mouseMoveHighlight = function (width) {
-  if (width > 0) {
-    this.highlightRect.attr("width", width);
-  } else {
-    this.highlightRect.attr("width", 0);
-  }
-};
-
-/**
- * Clears rectangle dimensions
- */
-D3TimeChart.prototype.mouseUpHighlight = function () {
-  this.highlightRect.attr("height", 0).attr("width", 0);
-};
-
-/**
- * Get scaling functions based on the data domain and element dimensions.
- * this.data, this.height, and this.width must be defined
- * Argument domains must be of form:
- * {
- *    x: [a, b],
- *    yGamma: [c, d],
- *    yNeutron: [e, f],
- * }
- */
-D3TimeChart.prototype.getScales = function (domains) {
-  if (!this.data) {
-    console.log(
-      "In D3TimeChart.getScales: domain not set.\nScales undefined..."
-    );
-    return {
-      xScale: undefined,
-      yScaleGamma: undefined,
-      yScaleNeutron: undefined,
-    };
-  }
-  var xScale = domains.x
-    ? d3.scale
-        .linear()
-        .domain(domains.x)
-        .range([this.margin.left, this.width - this.margin.right])
-    : undefined;
-  var yScaleGamma = domains.yGamma
-    ? d3.scale
-        .linear()
-        .domain(domains.yGamma)
-        .range([this.height - this.margin.bottom, this.margin.top])
-    : undefined;
-  var yScaleNeutron = domains.yNeutron
-    ? d3.scale
-        .linear()
-        .domain(domains.yNeutron)
-        .range([this.height - this.margin.bottom, this.margin.top])
-    : undefined;
-
-  return {
-    xScale: xScale,
-    yScaleGamma: yScaleGamma,
-    yScaleNeutron: yScaleNeutron,
-  };
-};
-
-/**
- * Computes sequential real time intervals for each data point from raw time segments.
- * @param {number[]} realTimes: realTimes data passed from Wt
- * @returns an array of length-two arrays which represent time intervals for individual samples.
- */
-D3TimeChart.prototype.getRealTimeIntervals = function (realTimes) {
-  var realTimeIntervals = [];
-
-  for (var i = 0; i < realTimes.length; i++) {
-    if (i === 0) {
-      // to handle long lead-in:
-      var leadTime = Math.max(-realTimes[i], -this.leadTime);
-      realTimeIntervals[i] = [leadTime, 0];
-    } else {
-      var prevEndpoint = realTimeIntervals[i - 1][1];
-      realTimeIntervals[i] = [prevEndpoint, prevEndpoint + realTimes[i]];
-    }
-  }
-
-  return realTimeIntervals;
-};
+// HELPERS, CALLBACKS, AND EVENT HANDLERS //
 
 /**
  * Basic data validation. Data should be object of form:
@@ -1011,84 +775,6 @@ D3TimeChart.prototype.isValidData = function (data) {
   } // if (data.hasOwnProperty("neutronCounts"))
 
   return true;
-};
-
-/**
- * Sets data members of the D3TimeChart object. Is called every time data is set in C++.
- * @param {Object} data
- */
-D3TimeChart.prototype.setData = function (data) {
-  //See the c++ function D3TimeChart::setData()
-  console.log(data);
-  if (!this.isValidData(data)) {
-    console.log(
-      "Runtime error in D3TimeChart.setData: Structure of data is not valid.\nDoing nothing..."
-    );
-  } else {
-    var formattedData = this.formatData(data);
-    console.log(formattedData);
-
-    this.data = formattedData;
-
-    // clear selection if there is any
-    this.selectionDomain = null;
-
-    // if height and width are set, may render directly.
-    if (this.height && this.width) {
-      this.render();
-    }
-  }
-};
-
-/**
- * Gets data domains.
- * @param {Object} data: raw data from Wt
- */
-D3TimeChart.prototype.getDomains = function (data) {
-  var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
-
-  var xMin = d3.min(realTimeIntervals, function (d) {
-    return d[0];
-  });
-  var xMax = d3.max(realTimeIntervals, function (d) {
-    return d[1];
-  });
-
-  var yMaxGamma = Number.MIN_SAFE_INTEGER;
-  var yMaxNeutron = Number.MIN_SAFE_INTEGER;
-
-  // Find max over gamma detectors
-  var nSamples = data.sampleNumbers.length;
-
-  for (var i = 0; i < data.gammaCounts.length; i++) {
-    for (var j = 0; j < nSamples; j++) {
-      var cps = data.gammaCounts[i].counts[j] / data.realTimes[j];
-
-      if (cps > yMaxGamma) {
-        yMaxGamma = cps;
-      }
-    }
-  }
-
-  // Find max over neutron detectors
-  for (var i = 0; i < data.neutronCounts.length; i++) {
-    for (var j = 0; j < nSamples; j++) {
-      var cps = data.neutronCounts[i].counts[j] / data.realTimes[j];
-
-      if (cps > yMaxNeutron) {
-        yMaxNeutron = cps;
-      }
-    }
-  }
-
-  var gammaInterval = yMaxGamma > 0 ? [0, yMaxGamma] : undefined;
-  var yNeutronInterval = yMaxNeutron > 0 ? [0, yMaxNeutron] : undefined;
-
-  return {
-    x: [xMin, xMax],
-    yGamma: gammaInterval,
-    yNeutron: yNeutronInterval,
-  };
 };
 
 /**
@@ -1212,6 +898,250 @@ D3TimeChart.prototype.formatData = function (data) {
     domains: domains,
   };
 };
+
+/**
+ * Gets data domains.
+ * @param {Object} data: raw data from Wt
+ */
+D3TimeChart.prototype.getDomains = function (data) {
+  var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
+
+  var xMin = d3.min(realTimeIntervals, function (d) {
+    return d[0];
+  });
+  var xMax = d3.max(realTimeIntervals, function (d) {
+    return d[1];
+  });
+
+  var yMaxGamma = Number.MIN_SAFE_INTEGER;
+  var yMaxNeutron = Number.MIN_SAFE_INTEGER;
+
+  // Find max over gamma detectors
+  var nSamples = data.sampleNumbers.length;
+
+  for (var i = 0; i < data.gammaCounts.length; i++) {
+    for (var j = 0; j < nSamples; j++) {
+      var cps = data.gammaCounts[i].counts[j] / data.realTimes[j];
+
+      if (cps > yMaxGamma) {
+        yMaxGamma = cps;
+      }
+    }
+  }
+
+  // Find max over neutron detectors
+  for (var i = 0; i < data.neutronCounts.length; i++) {
+    for (var j = 0; j < nSamples; j++) {
+      var cps = data.neutronCounts[i].counts[j] / data.realTimes[j];
+
+      if (cps > yMaxNeutron) {
+        yMaxNeutron = cps;
+      }
+    }
+  }
+
+  var gammaInterval = yMaxGamma > 0 ? [0, yMaxGamma] : undefined;
+  var yNeutronInterval = yMaxNeutron > 0 ? [0, yMaxNeutron] : undefined;
+
+  return {
+    x: [xMin, xMax],
+    yGamma: gammaInterval,
+    yNeutron: yNeutronInterval,
+  };
+};
+
+/**
+ * Get scaling functions based on the data domain and element dimensions.
+ * this.data, this.height, and this.width must be defined
+ * Argument domains must be of form:
+ * {
+ *    x: [a, b],
+ *    yGamma: [c, d],
+ *    yNeutron: [e, f],
+ * }
+ */
+D3TimeChart.prototype.getScales = function (domains) {
+  if (!this.data) {
+    console.log(
+      "In D3TimeChart.getScales: domain not set.\nScales undefined..."
+    );
+    return {
+      xScale: undefined,
+      yScaleGamma: undefined,
+      yScaleNeutron: undefined,
+    };
+  }
+  var xScale = domains.x
+    ? d3.scale
+        .linear()
+        .domain(domains.x)
+        .range([this.margin.left, this.width - this.margin.right])
+    : undefined;
+  var yScaleGamma = domains.yGamma
+    ? d3.scale
+        .linear()
+        .domain(domains.yGamma)
+        .range([this.height - this.margin.bottom, this.margin.top])
+    : undefined;
+  var yScaleNeutron = domains.yNeutron
+    ? d3.scale
+        .linear()
+        .domain(domains.yNeutron)
+        .range([this.height - this.margin.bottom, this.margin.top])
+    : undefined;
+
+  return {
+    xScale: xScale,
+    yScaleGamma: yScaleGamma,
+    yScaleNeutron: yScaleNeutron,
+  };
+};
+
+/**
+ * Computes sequential real time intervals for each data point from raw time segments.
+ * @param {number[]} realTimes: realTimes data passed from Wt
+ * @returns an array of length-two arrays which represent time intervals for individual samples.
+ */
+D3TimeChart.prototype.getRealTimeIntervals = function (realTimes) {
+  var realTimeIntervals = [];
+
+  for (var i = 0; i < realTimes.length; i++) {
+    if (i === 0) {
+      // to handle long lead-in:
+      var leadTime = Math.max(-realTimes[i], -this.leadTime);
+      realTimeIntervals[i] = [leadTime, 0];
+    } else {
+      var prevEndpoint = realTimeIntervals[i - 1][1];
+      realTimeIntervals[i] = [prevEndpoint, prevEndpoint + realTimes[i]];
+    }
+  }
+
+  return realTimeIntervals;
+};
+
+/**
+ * Brush handler to  zoom into a selected domain
+ * @param {} brush : d3 brush
+ */
+D3TimeChart.prototype.handleBrush = function (brush) {
+  if (brush && !brush.empty() && brush.extent()[0] < brush.extent()[1]) {
+    // update x-domain to the new domain
+    this.selectionDomain = brush.extent();
+
+    var scales = this.getScales({
+      x: this.selectionDomain,
+      yGamma: this.data.domains.yGamma,
+      yNeutron: this.data.domains.yNeutron,
+    });
+
+    // brush.x(scales.xScale); // update xScale
+    brush.setScale(scales.xScale);
+    this.updateChart(scales, { transitions: true });
+
+    // to clear the drawn rectangle.
+    // this.brushG.call(brush.clear());
+  }
+};
+
+/**
+ * Double click handler to redraw chart with full (default) domain
+ */
+D3TimeChart.prototype.handleDoubleClick = function () {
+  // clear selection
+  this.selectionDomain = null;
+
+  // redraw with full domain
+  this.render({ transitions: true });
+};
+
+/**
+ * Sets initial attributes of a highlight region
+ * @param {Number} mouseX : x-coordinates of pointer in pixels relative to the containing element
+ */
+D3TimeChart.prototype.mouseDownHighlight = function (mouseX) {
+  this.highlightRect
+    .attr("height", this.height - this.margin.top - this.margin.bottom)
+    .attr("x", mouseX)
+    .attr("y", this.margin.top)
+    .attr("width", 0);
+};
+
+/**
+ * Updates width of highlight region on mouse move.
+ * @param {Number} width : width in pixels
+ */
+D3TimeChart.prototype.mouseMoveHighlight = function (width) {
+  if (width > 0) {
+    this.highlightRect.attr("width", width);
+  } else {
+    this.highlightRect.attr("width", 0);
+  }
+};
+
+/**
+ * Clears rectangle dimensions
+ */
+D3TimeChart.prototype.mouseUpHighlight = function () {
+  this.highlightRect.attr("height", 0).attr("width", 0);
+};
+
+D3TimeChart.prototype.showToolTip = function () {
+  this.hoverToolTip.style("visibility", "visible");
+};
+
+/**
+ * Handler to update tooltip display.
+ * @param {*} time : real time of measurement (x-value)
+ * @param {*} data : Array of data objects, where each object at minimum has fields: {detName, gammaCPS}. Optional fields: neutronCPS
+ *
+ */
+D3TimeChart.prototype.updateToolTip = function (time, data) {
+  this.hoverToolTip.html(this.createToolTipString(time, data));
+};
+
+D3TimeChart.prototype.hideToolTip = function () {
+  this.hoverToolTip.style("visibility", "hidden");
+};
+
+D3TimeChart.prototype.createToolTipString = function (time, data) {
+  var s = `<div>Time: ${time.toPrecision(4)} s</div>`;
+  for (var i = 0; i < data.length; i++) {
+    s += `<div>G CPS: ${data[i].gammaCPS.toPrecision(6)} (${
+      data[i].detName
+    })</div>`;
+
+    if (data[i].neutronCPS) {
+      s += `<div>N CPS: ${data[i].neutronCPS.toPrecision(3)} (${
+        data[i].detName
+      })</div>`;
+    }
+  }
+  return s;
+};
+
+/**
+ * Performs search over data to find interval that the given time belongs to
+ * Returns the index of the match in the data array
+ * @param {} time : realTime of measurement (x-value)
+ */
+D3TimeChart.prototype.findDataIndex = function (time) {
+  var highIdx = this.data.realTimeIntervals.length - 1;
+  var lowIdx = 0;
+
+  while (lowIdx <= highIdx) {
+    var midIdx = Math.floor((highIdx + lowIdx) / 2);
+    var interval = this.data.realTimeIntervals[midIdx];
+    if (time >= interval[0] && time <= interval[1]) {
+      return midIdx;
+    } else if (time < interval[0]) {
+      highIdx = midIdx - 1;
+    } else if (time > interval[1]) {
+      lowIdx = midIdx + 1;
+    }
+  }
+};
+
+// UNIMPLEMENTED
 
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
   //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
