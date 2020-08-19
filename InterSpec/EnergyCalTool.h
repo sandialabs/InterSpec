@@ -99,6 +99,11 @@ namespace EnergyCalImp
    pairs
  - Use multiple files to fit coefficients (useful for lower resolution detectors that measured one
    nuclide at a time).
+ 
+ 
+ Current assumptions made by this tool:
+ - 
+ 
  */
 
 class EnergyCalTool : public Wt::WContainerWidget
@@ -194,6 +199,37 @@ protected:
     
   }
    */
+  
+  
+  /** A struct that indicates what SpecUtils::Measurement's to apply a coefficent change to.
+    \TODO: if (or hopefully when) the InterSpec class allows selecting detectors seperately for
+           foreground/back/sec., we will need to consider upgrading how we indicate things \
+           because there is an edge-case where detectors wanted will differ by sample number
+   */
+  struct MeasToApplyCoefChangeTo
+  {
+    
+    std::shared_ptr<SpecMeas> meas;
+    std::set<int> sample_numbers;
+    std::set<std::string> detectors;
+  };//struct MeasToApplyCoefChangeTo
+  
+  /** Returns which SpecUtils::Measurement need to be updated, based on what files are loaded and
+   what options the user has choosen.
+   */
+  std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo();
+  
+  /** Returns the gamma detector names that are available for display, given the displayed samples.
+   
+   Note: this does not return what is actually displayed, use m_interspec->detectorsToDisplay(type)
+         for that.
+   
+   \TODO: Move this function into a static function that takes a SpecFile as input too, and use
+         within the InterSpec class.  Probably also extend to neutron detector names.
+   */
+  std::set<std::string> gammaDetectorsForDisplayedSamples( const SpecUtils::SpectrumType type );
+  
+  
   
   enum EnergyCalToolRenderFlags
   {

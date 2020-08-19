@@ -397,9 +397,11 @@ public:
     WContainerWidget *coefDiv = new WContainerWidget();
     coefDiv->addStyleClass( "CoefCol" );
     layout->addWidget( coefDiv, 0, 0 );
-    m_type = new WText();
+    
+    m_type = new WText( "&nbsp;", coefDiv );
     m_type->setInline( false );
-    m_type->addStyleClass( "CalType" );
+    m_type->addStyleClass( "CalType Wt-itemview Wt-header Wt-label" );
+    
     m_coefficients = new WContainerWidget( coefDiv );
     m_coefficients->addStyleClass( "CoefContent" );
     
@@ -407,6 +409,41 @@ public:
     layout->addWidget( m_devPairs, 0, 1 );
     //m_devPairs->changed().connect(<#WObject *target#>, <#WObject::Method method#>)
   }//CalDisplay( constructor )
+  
+  
+  shared_ptr<const SpecUtils::EnergyCalibration> lastSetCalibration()
+  {
+    return m_cal;
+  }
+  
+  vector<float> displayedCoefficents()
+  {
+    vector<float> coeffs;
+  
+    const auto existing = m_coefficients->children();
+    for( size_t i = 0; i < existing.size(); ++i )
+    {
+      if( !existing[i] )
+        continue;  //shouldnt happen, but JIC
+      
+      auto ww = dynamic_cast<const CoefDisplay *>( existing[i] );
+      assert( ww );
+      if( !ww )
+        continue;
+    
+      //NativeFloatSpinBox avoids round-off errors, and we will rely on this here.
+      const float dispvalue = ww->m_value->value();
+      coeffs.push_back( dispvalue );
+    }//for( size_t i = 0; i < existing.size(); ++i )
+    
+    //remove trailing zeros
+    while( !coeffs.empty() && coeffs.back()==0.0f )
+      coeffs.resize( coeffs.size() - 1 );
+    
+    
+    return coeffs;
+  }//vector<float> displayedCoefficents() const
+  
   
   void updateToGui( const shared_ptr<const SpecUtils::EnergyCalibration> &cal )
   {
@@ -455,6 +492,7 @@ public:
     
     
     const size_t num_coef_disp = std::max( coeffs.size(), sm_min_coef_display );
+    vector<CoefDisplay *> coef_disps( num_coef_disp, nullptr );
     
     size_t coefnum = 0;
     const auto existing = m_coefficients->children();
@@ -471,6 +509,8 @@ public:
           delete existing[i];
         }else
         {
+          assert( coefnum < coef_disps.size() );
+          coef_disps[coefnum] = ww;
           const float value = (coefnum < coeffs.size()) ? coeffs[coefnum] : 0.0f;
           ww->m_value->setValue( value );
         }
@@ -482,6 +522,7 @@ public:
     for( ; coefnum < num_coef_disp; ++coefnum )
     {
       CoefDisplay *disp = new CoefDisplay( coefnum, m_coefficients );
+      coef_disps[coefnum] = disp;
       const float value = (coefnum < coeffs.size()) ? coeffs[coefnum] : 0.0f;
       disp->m_value->setValue( value );
       disp->m_fit->setChecked( (coefnum < 2) );
@@ -489,8 +530,41 @@ public:
       disp->m_fit->checked().connect( m_tool, &EnergyCalTool::fitCoefficientCBChanged );
       disp->m_fit->unChecked().connect( m_tool, &EnergyCalTool::fitCoefficientCBChanged );
       
-      disp->m_value->valueChanged().connect( boost::bind(&EnergyCalTool::userChangedCoefficient, m_tool,coefnum, this) );
+      disp->m_value->valueChanged().connect( boost::bind(&EnergyCalTool::userChangedCoefficient, m_tool, coefnum, this) );
     }
+    
+    
+    //Set the step size to move the upper range of energy by about 1 keV per step
+    // Set up the little tick/spin/whatever boxes
+    for( size_t i = 0; i < coef_disps.size(); ++i )
+    {
+      CoefDisplay *disp = coef_disps[i];
+      assert( disp );
+      
+      float stepsize = 1.0f;
+      if( m_cal && m_cal->num_channels() > 4 )
+      {
+        const size_t nchannel = m_cal->num_channels();
+        switch( m_cal->type() )
+        {
+          case SpecUtils::EnergyCalType::Polynomial:
+          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+            stepsize = 1.0f / std::pow(nchannel,i);
+            break;
+            
+          case SpecUtils::EnergyCalType::FullRangeFraction:
+            stepsize = 1.0;
+            break;
+            
+          case SpecUtils::EnergyCalType::InvalidEquationType:
+          case SpecUtils::EnergyCalType::LowerChannelEdge:
+            stepsize = 0.0f;
+            break;
+        }//switch( m_coeffEquationType )
+      }//if( valid calibration )
+      
+      disp->m_value->setSingleStep( stepsize );
+    }//for( int i = 0; i < sm_numCoefs; ++i )
   }//updateToGui(...)
   
   
@@ -810,22 +884,434 @@ EnergyCalTool::~EnergyCalTool()
 }
   
 
+set<string> EnergyCalTool::gammaDetectorsForDisplayedSamples( const SpecUtils::SpectrumType type )
+{
+  //We want the names of just the detectors that have gamma calibration information, of the
+  //  currently displayed samples.
+  //  We will assume the first Measurement for a given named detector will have gamma data if
+  //  any of the Measurements from that detector will.
+  //  \TODO: evaluate if that is true.
+  
+  auto meas = m_interspec->measurment( type );
+  
+  if( !meas )
+    return {};
+  
+  const vector<string> &detnames = meas->gamma_detector_names();
+  const vector<string> displayedDets = m_interspec->detectorsToDisplay(type);
+  const set<int> &samples = m_interspec->displayedSamples(type);
+  
+  set<string> detectors, nongammadets;
+  
+  for( const int sample : samples )
+  {
+    for( const string &name : detnames )
+    {
+      if( detectors.count(name) || nongammadets.count(name) )
+        continue;
+      
+      auto m = meas->measurement( sample, name );
+      if( m && (m->num_gamma_channels() > 4) )
+        detectors.insert( name );
+      else if( m && !detectors.count(name) )
+        nongammadets.insert(name);
+    }//for( const string &name : detnames )
+    
+    if( (detectors.size() + nongammadets.size()) == detnames.size() )
+      break;
+  }//for( const int sample : samples )
+  
+  return detectors;
+}//set<string> gammaDetectorsForDisplayedSamples( const SpecUtils::SpectrumType type )
+
+
+vector<EnergyCalTool::MeasToApplyCoefChangeTo> EnergyCalTool::measurementsToApplyCoeffChangeTo()
+{
+  std::vector<MeasToApplyCoefChangeTo> answer;
+  
+  //Lets loop over spectrum types (Foreground, Background, Secondary), and decide if we should apply
+  //  changes to that file, and if so, decide which sample numbers/detectors
+  const SpecUtils::SpectrumType spectypes[3] = {
+    SpecUtils::SpectrumType::Foreground,
+    SpecUtils::SpectrumType::Background,
+    SpecUtils::SpectrumType::SecondForeground
+  };
+  
+  for( const auto spectype : spectypes )
+  {
+    auto meas = m_interspec->measurment( spectype );
+    if( !meas )
+      continue;
+    
+    switch( spectype )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        if( !m_applyToCbs[ApplyToCbIndex::ApplyToForeground]->isChecked() )
+          continue;
+        break;
+        
+      case SpecUtils::SpectrumType::SecondForeground:
+        if( !m_applyToCbs[ApplyToCbIndex::ApplyToSecondary]->isChecked() )
+          continue;
+        break;
+        
+      case SpecUtils::SpectrumType::Background:
+        if( !m_applyToCbs[ApplyToCbIndex::ApplyToBackground]->isChecked() )
+          continue;
+        break;
+    }//switch( spectype )
+    
+    //If we're here, we should apply changes to this spectrum type.
+    
+    //It could be that the background SpecFile is the same as the foreground, so check if we
+    //  already have an entry for this file in answer, and if so, use it.  We dont want duplicate
+    //  entries for SpecFiles since this could cause us to maybe move peaks multiple times or
+    //  something
+    MeasToApplyCoefChangeTo *changes = nullptr;
+    for( size_t i = 0; !changes && i < answer.size(); ++i )
+      changes = (answer[i].meas == meas) ? &(answer[i]) : changes;
+    
+    if( !changes )
+    {
+      //We havent seen this SpecFile yet, create an entry in answer for it
+      answer.emplace_back();
+      changes = &(answer.back()); //C++14 returns a reference to the emplaced object.
+      changes->meas = meas;
+    }
+    
+    assert( changes );
+    
+    //m_applyToCbs[ApplyToCbIndex::ApplyToDisplayedDetectors]->parent()->isHidden();
+    const set<string> detectors = gammaDetectorsForDisplayedSamples(spectype);
+    const vector<string> displayed_dets = m_interspec->detectorsToDisplay(spectype);
+    
+    bool displayingAllDets = true;
+    for( const auto &det : detectors )
+    {
+      if( std::find(begin(displayed_dets), end(displayed_dets), det) == end(displayed_dets) )
+        displayingAllDets = false;
+    }
+    
+    if( displayingAllDets )
+    {
+      //We will insert detector names since different SpecType from the same file could have
+      //  different detector names available.
+      // \TODO: if InterSpec class is upgraded to select detector by SpecType, we will have to
+      //        upgrade this part of the code.
+      for( const auto &det : detectors )
+        changes->detectors.insert( det );
+    }else
+    {
+      const auto applyToAllCb = m_applyToCbs[ApplyToCbIndex::ApplyToAllDetectors];
+      const auto applyToDisplayedCb = m_applyToCbs[ApplyToCbIndex::ApplyToDisplayedDetectors];
+      
+      const bool toAll = (applyToAllCb->parent()
+                          && !applyToAllCb->parent()->isHidden()
+                          && applyToAllCb->isChecked());
+      const bool toDisplayed = (applyToDisplayedCb->parent()
+                                && !applyToDisplayedCb->parent()->isHidden()
+                                && applyToDisplayedCb->isChecked());
+      if( toAll == toDisplayed )
+      {
+        cerr << "EnergyCalTool::measurementsToApplyCoeffChangeTo:"
+                " got (toAll == toDisplayed) which shouldnt have happended" << endl;
+      }
+        
+      if( toAll || (toAll == toDisplayed) )
+      {
+        for( const auto &det : detectors )
+          changes->detectors.insert( det );
+      }else
+      {
+        for( const auto &dispdet : displayed_dets )
+        {
+          if( detectors.count(dispdet) )
+            changes->detectors.insert( dispdet );
+        }
+      }//if( apply to all detectors ) / else ( only displayed detectors )
+    }//if( displayingAllDets ) / else
+    
+    
+    const auto toAllSamplesCb = m_applyToCbs[ApplyToCbIndex::ApplyToAllSamples];
+    const bool onlyDispSamples = (toAllSamplesCb->parent()
+                                  && !toAllSamplesCb->parent()->isHidden()
+                                  && !toAllSamplesCb->isChecked());
+    
+    if( onlyDispSamples )
+    {
+      const set<int> &displayed_samples = m_interspec->displayedSamples(spectype);
+      for( const int sample : displayed_samples )
+        changes->sample_numbers.insert( sample );
+    }else
+    {
+      changes->sample_numbers = meas->sample_numbers();
+    }
+  }//for( const auto spectype : spectypes )
+  
+  
+  return answer;
+}//std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo()
+
 
 void EnergyCalTool::fitCoefficientCBChanged()
 {
   cerr << "fitCoefficientCBChanged()" << endl;
+  //Enable/disable fit based on peaks
 }//void fitCoefficientCBChanged()
 
 
 void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display )
 {
+  using namespace SpecUtils;
+  
+  assert( coefnum < 10 );  //IF we ever allow lower channel energy adjustment this will need to be removed
   cerr << "userChangedCoefficient( " << coefnum << ", " << " )" << endl;
+  
+  vector<float> dispcoefs = display->displayedCoefficents();
+  if( dispcoefs.size() <= coefnum )
+    dispcoefs.resize( coefnum+1, 0.0f );
+  
+  shared_ptr<const EnergyCalibration> disp_prev_cal = display->lastSetCalibration();
+  if( !disp_prev_cal )
+  {
+    cerr << "unexpected error getting updaettd energy calibration coefficents" << endl;
+    return;
+  }
+  
+  vector<float> prevcoefs = disp_prev_cal->coefficients();
+  if( prevcoefs.size() <= coefnum )
+    prevcoefs.resize( coefnum+1, 0.0f );
+  
+  const float delta = dispcoefs[coefnum] - prevcoefs[coefnum];
+  
+  
+  //Create a cache of modified calibration both to save time/memory, but also keep it so previous
+  //  samples that share a energy calibration will continue to do so (if possible based on what user
+  //  wanted calibration applied to)
+  //Note: we could take this oppritunity to share calibration across SpecFile objects by not just
+  //      comparing pointers, but also the actual EnergyCalibration object.  But for now we'll
+  //      skip this to avoid trouble, and it isnt clear that it would actually be overall beneficial
+  map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
+  
+  const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
+  
+  //We will loop over the changes to apply twice.  Once to calculate new calibrations, and make sure
+  //  they are valid, then a second time to actually set them.  If a new calibration is invalid,
+  //  an exception will be thrown so we will catch that.
+  for( const MeasToApplyCoefChangeTo &change : changemeas )
+  {
+    assert( change.meas );
+    
+    string dbgmsg = "For '" + change.meas->filename() + "' will apply changes to Detectors: {";
+    for( auto iter = begin(change.detectors); iter != end(change.detectors); ++iter )
+      dbgmsg += (iter==begin(change.detectors) ? "" : ",") + (*iter);
+    dbgmsg += "} and Samples: {";
+    for( auto iter = begin(change.sample_numbers); iter != end(change.sample_numbers); ++iter )
+      dbgmsg += (iter==begin(change.sample_numbers) ? "" : ",") + std::to_string(*iter);
+    dbgmsg += "}";
+    cout << dbgmsg << endl;
+    
+    try
+    {
+      for( const int sample : change.sample_numbers )
+      {
+        for( const string &detname : change.detectors )
+        {
+          auto m = change.meas->measurement( sample, detname );
+          if( !m || m->num_gamma_channels() <= 4 )
+            continue;
+          
+          const size_t nchannel = m->num_gamma_channels();
+          const auto measoldcal = m->energy_calibration();
+          assert( measoldcal );
+          
+          //If we have already computed the new calibration for a EnergyCalibration object, lets not
+          //  re-due it.
+          if( updated_cals.count(measoldcal) )
+            continue;
+          
+          switch( measoldcal->type() )
+          {
+            case SpecUtils::EnergyCalType::Polynomial:
+            case SpecUtils::EnergyCalType::FullRangeFraction:
+            case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+              break;
+              
+            case SpecUtils::EnergyCalType::LowerChannelEdge:
+            case SpecUtils::EnergyCalType::InvalidEquationType:
+              cerr << "userChangedCoefficient: Found a case of LowerChannelEdge or"
+              " InvalidEquationType in wanted samples/detectors" << endl;
+              continue;
+          }//switch( oldcal->type() )
+          
+          
+          const auto &devpair = measoldcal->deviation_pairs();
+          vector<float> newcoefs = measoldcal->coefficients();
+          if( newcoefs.size() <= coefnum )
+            newcoefs.resize( coefnum + 1, 0.0f );
+          
+          auto newcal = make_shared<EnergyCalibration>();
+          
+          switch( measoldcal->type() )
+          {
+            case EnergyCalType::Polynomial:
+            case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+            {
+              switch( disp_prev_cal->type() )
+              {
+                case EnergyCalType::Polynomial:
+                case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+                  //The Measurement and display coefficents are polynomial
+                  newcoefs[coefnum] += delta;
+                  break;
+                  
+                case EnergyCalType::FullRangeFraction:
+                  //The Measurement is Polynomial, but display widget is FullRangeFraction
+                  //Note: for FRF newcoefs[4] is low-energy coef that doesnt translate to Polynomial
+                  if( coefnum < 4 )
+                    newcoefs[coefnum] += (delta / std::pow(nchannel,coefnum));
+                  break;
+                  
+                case EnergyCalType::LowerChannelEdge:
+                case EnergyCalType::InvalidEquationType:
+                  assert( 0 );
+                  break;
+              }//switch( disp_prev_cal->type() )
+              
+              newcal->set_polynomial( nchannel, newcoefs, devpair );
+              break;
+            }//case Measurements previous calibration is Polynomial
+              
+            case SpecUtils::EnergyCalType::FullRangeFraction:
+            {
+              switch( disp_prev_cal->type() )
+              {
+                case EnergyCalType::Polynomial:
+                case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+                  //The Measurement is FullRangeFraction, but display widget is Polynomial
+                  if( coefnum < 4 )
+                    newcoefs[coefnum] += (delta * std::pow(nchannel,coefnum));
+                  break;
+                  
+                case EnergyCalType::FullRangeFraction:
+                  //The Measurement is FullRangeFraction and so is display widget
+                  newcoefs[coefnum] += delta;
+                  break;
+                  
+                case EnergyCalType::LowerChannelEdge:
+                case EnergyCalType::InvalidEquationType:
+                  break;
+              }//switch( disp_prev_cal->type() )
+              
+              newcal->set_full_range_fraction( nchannel, newcoefs, devpair );
+              break;
+            }//case Measurements previous calibration is FullRangeFraction
+              
+            case SpecUtils::EnergyCalType::LowerChannelEdge:
+            case SpecUtils::EnergyCalType::InvalidEquationType:
+              assert(0);
+              break;
+          }//switch( measoldcal->type() )
+          
+          assert( newcal->type() != EnergyCalType::InvalidEquationType );
+          assert( newcal->type() == measoldcal->type() );
+          
+          updated_cals[measoldcal] = newcal;
+        }//for( const string &detname : change.detectors )
+      }//for( loop over sample numbers )
+    }catch( std::exception &e )
+    {
+      display->updateToGui( disp_prev_cal );
+      
+      string msg = "Calibration change made a energy calibration become invalid";
+      
+      const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+      const auto backgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Background);
+      const auto secgrnd = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
+      if( (backgrnd && (backgrnd != change.meas)) || (secgrnd && (secgrnd != change.meas)) )
+      {
+        if( change.meas == forgrnd )
+          msg += " for the foreground";
+        else if( change.meas == backgrnd )
+          msg += " for the background";
+        else if( change.meas == secgrnd )
+          msg += " for the secondary spectrum";
+      }//if( it is necassry to say which spectrum had the error )
+      
+      msg += ".  Error: ";
+      msg += e.what();
+      
+      m_interspec->logMessage( msg, "", 2 );
+      
+      return;
+    }//try catch
+  }//for( const MeasToApplyCoefChangeTo &change : changemeas )
+  
+  if( updated_cals.find(disp_prev_cal) == end(updated_cals) )
+  {
+    //Shouldnt ever happen; check is for development
+    string msg = "There was an internal error updating energy calibration - energy cal"
+                 " associated with GUI wasnt updated - energy calibation state is suspect";
+    #if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, msg.c_str() );
+    #endif
+
+    m_interspec->logMessage( msg, "", 3 );
+    assert( 0 );
+  }//if( updated_cals.find(disp_prev_cal) == end(updated_cals) )
+  
+  
+  //Now go through and actually set the energy calibrations; they should all be valid an computed.
+  for( const MeasToApplyCoefChangeTo &change : changemeas )
+  {
+    assert( change.meas );
+    
+    for( const int sample : change.sample_numbers )
+    {
+      for( const string &detname : change.detectors )
+      {
+        auto m = change.meas->measurement( sample, detname );
+        if( !m || m->num_gamma_channels() <= 4 )
+          continue;
+        
+        const auto measoldcal = m->energy_calibration();
+        assert( measoldcal );
+        
+        auto iter = updated_cals.find( measoldcal );
+        if( iter == end(updated_cals) )
+        {
+          //Shouldnt ever happen
+          string msg = "There was an internal error updating energy calibration - precomputed"
+                       " calibration couldnt be found - energy calibation will not be fully updated";
+          #if( PERFORM_DEVELOPER_CHECKS )
+            log_developer_error( __func__, msg.c_str() );
+          #endif
+
+          m_interspec->logMessage( msg, "", 3 );
+          assert( 0 );
+          continue;
+        }//if( we havent already computed a new energy cal )
+        
+        assert( iter->second );
+        assert( iter->second->num_channels() == m->num_gamma_channels() );
+        
+        change.meas->set_energy_calibration( iter->second, m );
+      }//for( loop over detector names )
+    }//for( loop over sampel numbers )
+  }//for( loop over SpecFiles for change )
+
+  //Set an undu point for each meas
+  
+  m_interspec->refreshDisplayedCharts();
+  
+  doRefreshFromFiles();
 }//userChangedCoefficient(...)
 
 
 void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display )
 {
   cerr << "userChangedDeviationPair( " << ", " << " )" << endl;
+  
 }//void userChangedDeviationPair( CalDisplay *display )
 
 
@@ -1050,35 +1536,8 @@ void EnergyCalTool::doRefreshFromFiles()
     shared_ptr<const SpecMeas> meas = specfiles[i];
     assert( meas );
     
-    
-    //We want the names of just the detectors that have gamma calibration information, of the
-    //  currently displayed samples.
-    //  We will assume the first Measurement for a given named detector will have gamma data if
-    //  any of the Measurements from that detector will.
-    //  \TODO: evaluate if that is true.
-    set<string> detectors, nongammadets;
-    const vector<string> &detnames = meas->gamma_detector_names();
-    
     const set<int> &samples = m_interspec->displayedSamples(type);
-    const vector<string> displayedDets = m_interspec->detectorsToDisplay(type);
-    
-    for( const int sample : samples )
-    {
-      for( const string &name : detnames )
-      {
-        if( detectors.count(name) || nongammadets.count(name) )
-          continue;
-        
-        auto m = meas->measurement( sample, name );
-        if( m && (m->num_gamma_channels() > 4) )
-          detectors.insert( name );
-        else if( m && !detectors.count(name) )
-          nongammadets.insert(name);
-      }//for( const string &name : detnames )
-      
-      if( (detectors.size() + nongammadets.size()) == detnames.size() )
-        break;
-    }//for( const int sample : samples )
+    const set<string> detectors = gammaDetectorsForDisplayedSamples(type);
     
     specdetnames[i] = detectors;
     
@@ -1157,7 +1616,7 @@ void EnergyCalTool::doRefreshFromFiles()
   setShowNoCalInfo( !nFilesWithCalInfo );
   
   
-  //DOnt show spectype menu if we dont need to
+  //Dont show spectype menu if we dont need to
   const bool showSpecType = ( (nFilesWithCalInfo < 2)
                               || ( (!specfiles[1] || (specfiles[0]==specfiles[1]))
                                     && (!specfiles[2] || (specfiles[0]==specfiles[2]))) );
@@ -1329,11 +1788,11 @@ void EnergyCalTool::doRefreshFromFiles()
         break;
         
       case MoreActionsIndex::ConvertToFrf:
-        aparent->setHidden( hasPolyCal );
+        aparent->setHidden( !hasPolyCal );
         break;
         
       case MoreActionsIndex::ConvertToPoly:
-        aparent->setHidden( hasFRFCal || hasLowerChanCal );
+        aparent->setHidden( !(hasFRFCal || hasLowerChanCal) );
         break;
         
       case MoreActionsIndex::NumMoreActionsIndex:
