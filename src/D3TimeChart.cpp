@@ -1,5 +1,6 @@
 #include "InterSpec_config.h"
 
+#include <tuple>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -12,6 +13,7 @@
 #include <Wt/WContainerWidget>
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorTheme.h"
@@ -181,30 +183,78 @@ void D3TimeChart::setDataToClient()
   /** Description of JSON format sent to client JS charting
    {
      // All arrays of numbers (realTimes, sampleNumbers, and various counts) will be the same length
-     // Time in seconds of each time interval being plotted
+     // Time in seconds of each time interval being plotted.  These numbers specify the length of
+     //  each time interval on the x-axis.
      realTimes: [302.4,0.1,0.1,0.9,1,...],
+   
+     
+     // The start times of each sample is represented as the number of milliseconds since the
+     //  UNIX epoch, like in JavaScript, however, to save space we will define a 'startTimeOffset'
+     //  that will need to be added to each of the actual 'startTimes' to get the final time.  Also,
+     //  note that JS Date assumes UTC time, so make sure when you display the time, its in UTC so
+     //  no timezone offsets get added to it
+     //  'startTimeOffset' and 'startTimes' may not be present if start times are not known.  Also,
+     //  entries in 'startTimes' may be null if start time wasnt available for that sample.
+     startTimeOffset: 1264291704078,
+     startTimes: [0,604800,100,100,900, ...],
    
      // The sample number for each time interval.  These usually be monotonically increasing, but
      //  this isnt garunteed, and the starting value isnt garunteed either.  These values link-up
      //  to the SampleNumber of the SpecFile the data is being loaded from.
      sampleNumbers: [-1,2,3,4,5,...],
    
+     // Array, that if present, will be same length as reaTimes and sampleNumbers, and gives the
+     //  source-type of each sample.  The values in this array coorespond to the numberical values
+     //  of the SpecUtils::SourceType enum, specifically:
+     //    IntrinsicActivity : 0, Calibration : 1, Background : 2, Foreground : 3, Unknown : 4.
+     sourceTypes: [2,3,3,3,2,...],
+   
+     // The GPS coordinates of the timeslice.
+     //  This array will be missing if no GPS goordinates are available, and if there isnt
+     //  coordinates for a given sample, null will be provided.
+     //  In the future may add timestamp as third element of array.
+     gpsCoordinates: [[37.675821,-121.709863],[37.675821,-121.709863],null,[37.675821,-121.709863],
+                      [37.675821,-121.709863],...],
+   
      // The gamma counts to plot.  Usually we will only plot one line, but if it makes sense to
      //  plan ahead now, being able to plot multiple gamma lines would be useful (either stacked, or
      //  all lines just drawn on top of eachother); if there are multiple lines than the mouse going
      //  over a line could maybe pop-up the counts value for that time interval, and detector name
      //  (unless only a single detector, then name isnt necassary).
-     gammaCounts: [{detName: 'Aa1', color: 'rgb(13,55,19)', counts: [1022,974,333,827,921,...]},
-                   {detName: 'Ba1', color: 'green', counts: [55,60,18,99,1000,...]}],
+     //  The live-time array may not be present; if it isnt, then you can assume live-times are
+     //  equal to real times, and use the realTimes array.  If live-time array is present, it will
+     //  be the same length as the counts array; use the live-time to divide the counts by to get
+     //  counts per second for each time interval (live-time is typically a little less than
+     //  real-time, but may be up to like ~90% less in extreme situations).
+     //  Entries in 'counts' and/or 'liveTimes' arrays may be null if that information is not
+     //  available for the corresponding sample number.
+     gammaCounts: [{detName: 'Aa1', color: 'rgb(13,55,19)', counts: [1022,974,333,827,921,...],
+                    liveTimes: [300,0.1,0.1,0.99,0.9,...]},
+                   {detName: 'Ba1', color: 'green', counts: [55,60,18,99,1000,...],
+                    liveTimes: [299,0.092,0.1,1,1,...]}
+                  ],
    
      // The neutron counts to plot, similar to gamma, but the field may not exist, or be null, in
      //  which case there will be no neutron counts to plot, and the Y2-axis should disapear.
-     neutronCounts: [{detName: 'Aa1n', color: '#145366', counts: [1,0,4,10,12,...]},
+     //  Notes under gammaCounts above for the live-times array also apply here
+     neutronCounts: [{detName: 'Aa1n', color: '#145366', counts: [1,0,4,10,12,...],
+                     liveTimes: [300,0.1,0.1,0.1,0.1,...]},
                      {detName: 'VD2n', color: '#ff0000', counts: [8,12,13,19,0,...]}],
    
-     // The sample number ranges of "occupied" times of the data.  This field may not be present,
-     //  may be null, may be empty array, or have entries as destricbed.
+     // The sample number ranges for "occupied" and non-occupied times of the data.
+     //  This field may not be present, may be null, may be empty array, or have entries as
+     //  described.  This field is typically used for describing radiation portal monitor data, and
+     //  will be absent for portable detection systems.
      occupancies: [{
+                    // Says whether this sample range cooresponds to being "occupied" (cooresponding
+                    //  to (SpecUtils::OccupancyStatus::Occupied) or if false, "not occupied"
+                    //  cooresponding to SpecUtils::OccupancyStatus::NotOccupied).  If occupancy
+                    //  status for a sample is unknown or undefined, then that sample will not be
+                    //  included in any of these ranges.
+                    //  Typically non-occupied intervals will also be marked as Background in the
+                    //  'sourceTypes' array, and occupied intervals will be marked as Foreground.
+                    status: true,
+   
                     // The sample number cooresponding to the first occupied sample
                     // In the previous implementation a vertical line was drawn, on left side of
                     // sample with the text "occ. start"
@@ -229,18 +279,29 @@ void D3TimeChart::setDataToClient()
   
   vector<double> realTimes;
   vector<int> sampleNumbers;
+  vector<SpecUtils::SourceType> sourceTypes;
+  vector<std::tuple<double,double,boost::posix_time::ptime>> gpsCoordinates;
+  int64_t startTimesOffset = 0;
+  vector<int64_t> startTimes;
+  bool allUnknownSourceType = true, anyStartTimeKnown = false, haveAnyGps = false;
+  
   map<string,bool> hasGamma, hasNuetron;
-  map<string,vector<double>> gammaCounts, neutronCounts;  //maps from detector name to counts
+  map<string,vector<double>> gammaCounts, neutronCounts, liveTimes;  //maps from detector name to counts
   
   const set<int> &sample_numbers = m_spec->sample_numbers();
   const vector<string> &detNames = m_spec->detector_names();
 
+#define Q_DBL_NaN std::numeric_limits<double>::quiet_NaN()
   
   for( const int sample_num : sample_numbers )
   {
     /// \TODO: check that all Measurements have same real times; right now we'll just use the max
     ///        value for each sample
     float realTime = 0.0f;
+    boost::posix_time::ptime startTime;
+    SpecUtils::SourceType sourcetype = SpecUtils::SourceType::Unknown;
+    tuple<double,double,boost::posix_time::ptime> coords{ Q_DBL_NaN, Q_DBL_NaN, {} };
+    
     sampleNumbers.push_back( sample_num );
     
     for( const string &detName : detNames )
@@ -249,8 +310,9 @@ void D3TimeChart::setDataToClient()
       
       if( !m )
       {
-        gammaCounts[detName].push_back( 0.0 );
-        neutronCounts[detName].push_back( 0.0 );
+        liveTimes[detName].push_back( Q_DBL_NaN );
+        gammaCounts[detName].push_back( Q_DBL_NaN );
+        neutronCounts[detName].push_back( Q_DBL_NaN );
         
         if( !hasGamma.count(detName) )
           hasGamma[detName] = false;
@@ -262,6 +324,8 @@ void D3TimeChart::setDataToClient()
       }//if( !m )
       
       realTime = std::max( realTime, m->real_time() );
+      if( startTime.is_special() )
+        startTime = m->start_time();
       
       auto gammas = m->gamma_counts();
       if( gammas && gammas->size() )
@@ -274,16 +338,60 @@ void D3TimeChart::setDataToClient()
       else if( !hasNuetron.count(detName) )
         hasNuetron[detName] = false;
                
+      if( m->source_type() != SpecUtils::SourceType::Unknown )
+        sourcetype = m->source_type();
+      
       gammaCounts[detName].push_back( m->gamma_count_sum() );
       neutronCounts[detName].push_back( m->neutron_counts_sum() );
+      liveTimes[detName].push_back( m->live_time() );
+      
+      if( m->has_gps_info() )
+      {
+        haveAnyGps = true;
+        std::get<0>(coords) = m->longitude();
+        std::get<1>(coords) = m->latitude();
+        std::get<2>(coords) = m->position_time();
+      }
     }//for( const string &name : m_spec->detector_names() )
     
     realTimes.push_back( realTime );
+    sourceTypes.push_back( sourcetype );
+    allUnknownSourceType = (allUnknownSourceType && (sourcetype == SpecUtils::SourceType::Unknown));
+    
+    if( startTime.is_special() )
+    {
+      startTimes.push_back( std::numeric_limits<int64_t>::min() );
+    }else
+    {
+      anyStartTimeKnown = true;
+       
+      static const boost::posix_time::ptime epoch(boost::gregorian::date(1970,1,1));
+      
+      // std::time_t (what boost uses for seconds type) may be 32-bit, so convert to int64_t to
+      //  avoid overflow.
+      int64_t nmilli = (startTime - epoch).total_seconds();
+      nmilli *= 1000;
+      
+      const double frac = startTime.time_of_day().fractional_seconds()
+                        / static_cast<double>(boost::posix_time::time_duration::ticks_per_second());
+      nmilli += static_cast<int64_t>( std::round(1000*frac) );
+      
+      if( startTimesOffset <= 0 && nmilli > 0 )
+        startTimesOffset = nmilli;
+      
+      startTimes.push_back( nmilli - startTimesOffset );
+    }
+    
+    gpsCoordinates.push_back( coords );
   }//for( loop over sample numbers )
   
   const size_t numSamples = sampleNumbers.size();
   //A quick sanity check all the arrays will be the same length.
   assert( numSamples == realTimes.size() );
+  assert( numSamples == sourceTypes.size() );
+  assert( numSamples == startTimes.size() );
+  assert( numSamples == gpsCoordinates.size() );
+  
   for( const auto &p : gammaCounts )
   {
     assert( p.second.size() == numSamples );
@@ -294,20 +402,94 @@ void D3TimeChart::setDataToClient()
     assert( p.second.size() == numSamples );
   }
   
+  for( const auto &p : liveTimes )
+  {
+    assert( p.second.size() == numSamples );
+  }
+  
+  if( !numSamples )
+  {
+    doJavaScript( m_jsgraph +  ".setData( null );" );
+    return;
+  }//if( !numSamples )
+  
+  const char jssep[] = { '[', ',' };
+  
+  auto printNumberArray = [&jssep]( WStringStream &js, const vector<double> &arr ){
+    
+    if( arr.empty() )
+    {
+      js << "[]";
+      return;
+    }//if( !arr.empty() )
+    
+    for( size_t i = 0; i < arr.size(); ++i )
+    {
+      if( IsNan(arr[i]) )
+        js << jssep[i ? 1 : 0] << "null";
+      else
+        js << jssep[i ? 1 : 0] << arr[i];
+    }//for( loop over realTimes )
+    
+    js << "]";
+  };//printNumberArray
+  
+  
   WStringStream js;
   js << m_jsgraph <<  ".setData( {\n";
   
+  js << "\t\"realTimes\": ";
+  printNumberArray( js, realTimes );
   
+  if( anyStartTimeKnown )
+  {
+    //doubles have 53 bits of integer precision - should be fine
+    js << ",\n\t\"startTimeOffset\": " << startTimesOffset;
+    js << ",\n\t\"startTimes\": ";
+    for( size_t i = 0; i < startTimes.size(); ++i )
+    {
+      js << jssep[i ? 1 : 0];
+      if( startTimes[i] == std::numeric_limits<int64_t>::min() )
+        js << "null";
+      else
+        js << startTimes[i];
+    }
+    js << "]";
+  }//if( anyStartTimeKnown )
   
-  js << "\t\"realTimes\": [";
-  for( size_t i = 0; i < numSamples; ++i )
-    js << string(i ? "," : "") << realTimes[i];
-  js << "],\n\t\"sampleNumbers\": [";
-  for( size_t i = 0; i < numSamples; ++i )
-    js << string(i ? "," : "") << sampleNumbers[i];
+  js << ",\n\t\"sampleNumbers\": ";
+  for( size_t i = 0; i < sampleNumbers.size(); ++i )
+    js << jssep[i ? 1 : 0] << sampleNumbers[i];
   js << "]";
   
-
+  if( !allUnknownSourceType )
+  {
+    js << ",\n\t\"sourceTypes\": ";
+    for( size_t i = 0; i < sourceTypes.size(); ++i )
+      js << jssep[i ? 1 : 0] << static_cast<int>(sourceTypes[i]);
+    js << "]";
+  }//if( !allUnknownSourceType )
+  
+  
+  
+  if( haveAnyGps )
+  {
+    js << ",\n\t\"gpsCoordinates\": ";
+    for( size_t i = 0; i < gpsCoordinates.size(); ++i )
+    {
+      js << jssep[i ? 1 : 0];
+      
+      const auto &coords = gpsCoordinates[i];
+      if( IsNan(std::get<0>(coords)) )
+        js << "null";
+      else
+        js << "[" << std::get<0>(coords) << "," << std::get<1>(coords) << "]";
+    }//for( size_t i = 0; i < gpsCoordinates.size(); ++i )
+    
+    js << "]";
+  }//if( haveAnyGps )
+  
+  
   if( plotDetectorsSeperate )
   {
     int nwrote = 0;
@@ -320,12 +502,17 @@ void D3TimeChart::setDataToClient()
       js << string(nwrote++ ? "," : ",\n\t\"gammaCounts\": [" )
          << "\n\t\t{\"detName\": \"" << detName << "\", \"color\": \""
          << (m_gammaLineColor.isDefault() ? string("#cfced2") :  m_gammaLineColor.cssText())
-         << "\", \"counts\": [";
+         << "\", \"counts\": ";
       
       const auto &counts = gammaCounts[detName];
-      for( size_t i = 0; i < numSamples; ++i )
-        js << string(i ? "," : "") << counts[i];
-      js << "]}";
+      printNumberArray( js, counts );
+      
+      
+      const auto &lts = liveTimes[detName];
+      js << ",\n\t\"liveTimes\": ";
+      printNumberArray( js, lts );
+      
+      js << "}";
     }//for( const auto &detName : detNames )
     
     if( nwrote )
@@ -341,16 +528,16 @@ void D3TimeChart::setDataToClient()
       js << string(nwrote++ ? "," : ",\n\t\"neutronCounts\": [" ) << "\n\t\t{\"detName\": \""
          << detName << "\", \"color\": \""
          << (m_neutronLineColor.isDefault() ? string("rgb(0,128,0)") :  m_neutronLineColor.cssText())
-         << "\", \"counts\": [";
+         << "\", \"counts\": ";
 
       const auto &counts = neutronCounts[detName];
-      for( size_t i = 0; i < numSamples; ++i )
-        js << string(i ? "," : "") << counts[i];
-      js << "]}";
+      printNumberArray( js, counts );
+      
+      js << "}";
     }//for( const auto &detName : detNames )
     
     if( nwrote )
-    js << "]";
+      js << "]";
   }else
   {
     bool haveAnyGamma = false, haveAnyNeutron = false;
@@ -363,16 +550,66 @@ void D3TimeChart::setDataToClient()
     {
       js << ",\n\t\"gammaCounts\": [{\"detName\": \"\", \"color\": \""
          << (m_gammaLineColor.isDefault() ? string("#cfced2") :  m_gammaLineColor.cssText())
-         << "\", \"counts\": [";
+         << "\",\n\t\t\"counts\": [";
       
       for( size_t i = 0; i < numSamples; ++i )
       {
         double sum = 0.0;
+        bool anyNonNan = false;
         for( const auto &p : gammaCounts )
-          sum += p.second[i];
-        js << string(i ? "," : "") << sum;
-      }
-      js << "]}]";
+        {
+          assert( p.second.size() == numSamples );
+          
+          if( !IsNan(p.second[i]) )
+          {
+            anyNonNan = true;
+            sum += p.second[i];
+          }
+        }//for( const auto &p : gammaCounts )
+        
+        double liveTime = 0.0;
+        bool haveLiveTime = false;
+        for( const auto &p : liveTimes )
+        {
+          if( !IsNan(p.second[i]) )
+          {
+            haveLiveTime = true;
+            liveTime += p.second[i];
+          }
+        }
+        
+        
+        js << string(i ? "," : "");
+        if( anyNonNan )
+          js << sum;
+        else
+          js << "null";
+      }//for( size_t i = 0; i < numSamples; ++i )
+      js << "]";
+      
+      js << ",\n\t\t\"liveTimes\": [";
+      for( size_t i = 0; i < numSamples; ++i )
+      {
+        double liveTime = 0.0;
+        bool haveLiveTime = false;
+        for( const auto &p : liveTimes )
+        {
+          if( !IsNan(p.second[i]) )
+          {
+            haveLiveTime = true;
+            liveTime += p.second[i];
+          }
+        }
+        
+        js << string(i ? "," : "");
+        if( haveLiveTime )
+          js << liveTime;
+        else
+          js << "null";
+      }//for( size_t i = 0; i < numSamples; ++i )
+      js << "]";
+      
+      js << "\n\t}]";
     }//if( haveAnyGamma )
     
     if( haveAnyNeutron )
@@ -381,14 +618,35 @@ void D3TimeChart::setDataToClient()
          << (m_neutronLineColor.isDefault() ? string("#cfced2") :  m_neutronLineColor.cssText())
          << "\", \"counts\": [";
       
+      vector<double> neutronLiveTimes( numSamples, std::numeric_limits<double>::quiet_NaN() );
       for( size_t i = 0; i < numSamples; ++i )
       {
+        bool haveNonNan = false;
         double sum = 0.0;
         for( const auto &p : neutronCounts )
-          sum += p.second[i];
-        js << string(i ? "," : "") << sum;
-      }
-      js << "]}]";
+        {
+          if( !IsNan(p.second[i]) )
+          {
+            haveNonNan = true;
+            sum += p.second[i];
+            
+            if( IsNan(neutronLiveTimes[i]) )
+              neutronLiveTimes[i] = 0;
+            if( !IsNan(realTimes[i]) )
+              neutronLiveTimes[i] += realTimes[i];
+          }//if( we have neutron counts )
+        }//for( loop over neutron detectors to sum their counts )
+        js << string(i ? "," : "");
+        if( haveNonNan )
+          js << sum;
+        else
+          js << "null";
+      }//for( loop over samples )
+      
+      js << "],\n\t\t\"liveTimes\": ";
+      printNumberArray( js, neutronLiveTimes );
+      
+      js << "\n\t}]";
     }//if( haveAnyNeutron )
   }//if( plotDetectorsSeperate ) / else
   
