@@ -158,7 +158,6 @@ BrushX.prototype.extent = function () {
 
   return [this.start, this.end];
 };
-
 /**
  * D3TimeChart object constructor.
  */
@@ -203,7 +202,16 @@ D3TimeChart = function (elem, options) {
 
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
+  // this.hoverToolTip = this.rectG.append("rect").attr("class", "tooltip");
   this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area
+
+  this.hoverToolTip = d3
+    .select(this.chart)
+    .append("div")
+    .attr("id", "hover_info")
+    .attr("class", "tooltip")
+    .style("left", `${this.margin.left + 20}px`)
+    .style("top", `${this.margin.top}px`);
 }; //
 
 /** Function to help emit callbacks back to C++
@@ -265,6 +273,34 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
 
   var HAS_GAMMA = true;
   var HAS_NEUTRON = false;
+
+  // add/update hover interaction
+  this.rect
+    .on("mouseover", () => {
+      console.log("mouseover'd");
+      console.log(xScale.invert(d3.mouse(this.rect.node())[0]));
+      this.showToolTip();
+    })
+    .on("mousemove", () => {
+      console.log("mousemove'd");
+      var x = xScale.invert(d3.mouse(this.rect.node())[0]);
+
+      var idx = this.findDataIndex(x);
+      var data = [];
+      for (var detName in this.data.detectors) {
+        var y = this.data.detectors[detName].counts[idx * 2];
+        data.push({
+          detName: detName,
+          gammaCPS: y.gammaCPS,
+          neutronCPS: y.neutronCPS,
+        });
+      }
+      this.updateToolTip(x, data);
+    })
+    .on("mouseout", () => {
+      console.log("mouseout'd");
+      this.hideToolTip();
+    });
 
   // plot data
   for (var detName in this.data.detectors) {
@@ -508,7 +544,7 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
  * @param {} brush : d3 brush
  */
 D3TimeChart.prototype.handleBrush = function (brush) {
-  if (brush && !brush.empty() && (brush.extent()[0] < brush.extent()[1] )) {
+  if (brush && !brush.empty() && brush.extent()[0] < brush.extent()[1]) {
     // update x-domain to the new domain
     this.selectionDomain = brush.extent();
 
@@ -536,6 +572,48 @@ D3TimeChart.prototype.handleDoubleClick = function () {
 
   // redraw with full domain
   this.render({ transitions: true });
+};
+
+D3TimeChart.prototype.showToolTip = function () {
+  this.hoverToolTip.style("visibility", "visible");
+};
+
+D3TimeChart.prototype.updateToolTip = function (time, data) {
+  this.hoverToolTip.html(this.createToolTipString(time, data));
+};
+
+D3TimeChart.prototype.hideToolTip = function () {
+  this.hoverToolTip.style("visibility", "hidden");
+};
+
+D3TimeChart.prototype.createToolTipString = function (time, data) {
+  var s = `<div>Time: ${time.toPrecision(4)} s</div>`;
+  for (var i = 0; i < data.length; i++) {
+    s += `<div>G CPS: ${data[i].gammaCPS.toPrecision(6)} (${
+      data[i].detName
+    })</div>`;
+    s += `<div>N CPS: ${data[i].neutronCPS.toPrecision(3)} (${
+      data[i].detName
+    })</div>`;
+  }
+  return s;
+};
+
+D3TimeChart.prototype.findDataIndex = function (seconds) {
+  var highIdx = this.data.realTimeIntervals.length - 1;
+  var lowIdx = 0;
+
+  while (lowIdx <= highIdx) {
+    var midIdx = Math.floor((highIdx + lowIdx) / 2);
+    var interval = this.data.realTimeIntervals[midIdx];
+    if (seconds >= interval[0] && seconds <= interval[1]) {
+      return midIdx;
+    } else if (seconds < interval[0]) {
+      highIdx = midIdx - 1;
+    } else if (seconds > interval[1]) {
+      lowIdx = midIdx + 1;
+    }
+  }
 };
 
 /**

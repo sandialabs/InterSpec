@@ -20,3 +20,13 @@
     fill-opacity: .125;
     shape-rendering: crispEdges;
 }
+
+#hover_info {
+    padding: 10px;
+    border-radius: 5px;
+    background-color: rgba(245, 245, 245, 0.5);
+    pointer-events: none;
+    position: absolute;
+    font-size: 11px;
+
+}
