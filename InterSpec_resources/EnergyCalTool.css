@@ -7,6 +7,7 @@
 
 .EnergyCalTool .ColHeader
 {
+  white-space: nowrap;
   font-size: 10pt;
   text-align: center;
   font-weight: bold;
@@ -58,8 +59,6 @@
 
 .EnergyCalTool .PeakTable
 {
-  width: 100%;
-  height: 100%;
   border: 1px solid #e1e1e1;
 }
 
@@ -87,7 +86,7 @@
 
 .CalDisplay .CalType
 {
-  
+
 }
 
 .EnergyCalTool .CalDisplay .CoefCol
@@ -349,7 +348,7 @@ color: #E0F5FF;
 }
 
 
-.DevPairTitle
+.DevPairTitle, .CalDisplay .CalType
 {
   font-weight:bold;
   background:#EEEEEE;
