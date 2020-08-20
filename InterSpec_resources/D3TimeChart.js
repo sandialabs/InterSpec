@@ -27,14 +27,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  * @param gammaCPS: gamma counts per second (y)
  * @param neutronCPS: neutron counts per second (y)
  */
-DataPoint = function (realTime, gammaCPS, neutronCPS) {
-  this.realTime = realTime;
+DataPoint = function (time, gammaCPS, neutronCPS) {
+  this.time = time; // realtime or livetime
   this.gammaCPS = gammaCPS;
   this.neutronCPS = neutronCPS;
 };
 
-DataPoint.prototype.setRealTime = function (realTime) {
-  this.realTime = realTime;
+DataPoint.prototype.setTime = function (time) {
+  this.time = time;
 };
 
 DataPoint.prototype.setGammaCPS = function (gammaCPS) {
@@ -267,6 +267,7 @@ D3TimeChart.prototype.setData = function (data) {
   }
 };
 
+
 D3TimeChart.prototype.handleResize = function () {
   // This function is called when the Wt layout manager resizes the parent <div> element
   // Need to redraw everything
@@ -437,7 +438,7 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
     var lineGamma = d3.svg
       .line()
       .x(function (d) {
-        return xScale(d.realTime);
+        return xScale(d.time);
       })
       .y(function (d) {
         return yScaleGamma(d.gammaCPS);
@@ -451,7 +452,7 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
         pathGamma
           .datum(counts)
           .transition()
-          .duration(1000)
+          .duration(500)
           .attr("d", lineGamma);
       } else {
         pathGamma.datum(counts).attr("d", lineGamma);
@@ -472,7 +473,7 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
       var lineNeutron = d3.svg
         .line()
         .x(function (d) {
-          return xScale(d.realTime);
+          return xScale(d.time);
         })
         .y(function (d) {
           return yScaleNeutron(d.neutronCPS);
@@ -486,7 +487,7 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
           pathNeutron
             .datum(counts)
             .transition()
-            .duration(1000)
+            .duration(500)
             .attr("d", lineNeutron);
         } else {
           pathNeutron.datum(counts).attr("d", lineNeutron);
@@ -506,25 +507,24 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
 
   // set different tick counts for different viewport breakpoints
   var nSamples = this.data.sampleNumbers.length;
-  var nTicksX;
-  if (this.width > 850) {
-    nTicksX = nSamples;
-  } else if (this.width > 520) {
-    nTicksX = Math.floor(nSamples / 2);
-  } else if (this.width > 280) {
-    nTicksX = Math.floor(nSamples / 4);
-  } else {
-    nTicksX = Math.floor(nSamples / 8);
-  }
+  // if (this.width > 850) {
+  //   nTicksX = nSamples;
+  // } else if (this.width > 520) {
+  //   nTicksX = Math.floor(nSamples / 2);
+  // } else if (this.width > 280) {
+  //   nTicksX = Math.floor(nSamples / 4);
+  // } else {
+  //   nTicksX = Math.floor(nSamples / 8);
+  // }
 
   // plot axes and labels
-  var xAxis = d3.svg.axis().scale(xScale).ticks(nTicksX);
+  var xAxis = d3.svg.axis().scale(xScale);
 
   // update or create axis
   if (transitions) {
     this.axisBottomG
       .transition()
-      .duration(1000)
+      .duration(500)
       .attr(
         "transform",
         "translate(0," + (this.height - this.margin.bottom) + ")"
@@ -813,6 +813,27 @@ D3TimeChart.prototype.formatData = function (data) {
   var detectors = {};
   var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
 
+  // create occupied array:
+  var occupied;
+  if (data.hasOwnProperty("occupancies")) {
+    var occupied = []
+    for (var i = 0; i < nSamples; i++) {
+
+      occupied[i] = this.isOccupiedSample(data.sampleNumbers[i], data.occupancies);
+    }
+  }
+
+  // create startTimeStamps array:
+  var startTimeStamps;
+  if (data.hasOwnProperty("startTimeOffset") && data.hasOwnProperty("startTimes")) {
+    startTimeStamps = data.startTimes.map(function (startTime) {
+      if (startTime == null) {
+        return null;
+      }
+      return data.startTimeOffset + startTime;
+    })
+  }
+
   var domains = this.getDomains(data);
 
   // format counts data
@@ -825,6 +846,7 @@ D3TimeChart.prototype.formatData = function (data) {
       //detector already exists, so set gamma metadata
       detectors[det.detname].meta.setGammaColor(det.color);
     }
+    // add gamma det livetimes if exists
 
     // if no data already present for this detector, create a new array to start holding data for that detector and fill in the data.
     if (!detectors[det.detName].hasOwnProperty("data")) {
@@ -832,6 +854,10 @@ D3TimeChart.prototype.formatData = function (data) {
 
       for (var i = 0; i < nSamples; i++) {
         var cps = det.counts[i] / data.realTimes[i];
+        var sourceType = data.sourceTypes ? data.sourceTypes[i] : null;
+        var gpsCoordinate = data.gpsCoordinates ? data.gpsCoordinates[i] : null;
+        var startTimeStamp = (data.startTimeOffset && data.startTimes && data.startTimes[i]) ? data.startTimeOffset + data.startTimes[i] : null;
+
         // push line segment start
         detectors[det.detName].counts.push(
           new DataPoint(realTimeIntervals[i][0], cps, null)
@@ -861,10 +887,12 @@ D3TimeChart.prototype.formatData = function (data) {
           undefined,
           det.color
         );
+
       } else {
         // detector already exists, so set neutron metadata
         detectors[detName].meta.setNeutronColor(det.color);
       }
+      // add neutron livetime if exists
 
       // if no data already present for this detector, create a new array to start holding data for that detector and fill in the data.
       if (!detectors[det.detName].hasOwnProperty("counts")) {
@@ -894,6 +922,11 @@ D3TimeChart.prototype.formatData = function (data) {
   return {
     sampleNumbers: data.sampleNumbers,
     realTimeIntervals: realTimeIntervals,
+    occupied: occupied,
+    sourceTypes: data.sourceTypes,
+    startTimeStamps: startTimeStamps,
+    gpsCoordinates: data.gpsCoordinates,
+
     detectors: detectors,
     domains: domains,
   };
@@ -1139,7 +1172,19 @@ D3TimeChart.prototype.findDataIndex = function (time) {
       lowIdx = midIdx + 1;
     }
   }
+  return -1;
 };
+
+D3TimeChart.prototype.isOccupiedSample = function(sampleNumber, occupancies) {
+  // if occupancies.status is undefined, assume it is true...
+  var status = occupancies.hasOwnProperty(status) ? occupancies.status : true; 
+  for (var i = 0; i < occupancies.length; i++) {
+    if ((sampleNumber >= occupancies[i].startSample) && (sampleNumber <= occupancies[i].endSample)) {
+      return !(true ^ status);
+    }
+  }
+  return !(false ^ status);
+}
 
 // UNIMPLEMENTED
 
