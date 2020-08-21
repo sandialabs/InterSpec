@@ -179,8 +179,6 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
 
-  console.log(this.options);
-
   this.data = undefined; // formatted data
   this.selectionDomain = undefined;
   this.height = undefined;
@@ -193,12 +191,20 @@ D3TimeChart = function (elem, options) {
     bottom: 50,
     left: 60,
   };
+
+  this.sourceMap = [
+    "IntrinsicActivity",
+    "Calibration",
+    "Background",
+    "Foreground",
+    "Unknown",
+  ];
+
   this.svg = d3.select(this.chart).append("svg");
   this.linesG = this.svg.append("g").attr("class", "lines");
   this.axisBottomG = this.svg.append("g").attr("class", "axis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis");
   this.axisRightG = this.svg.append("g").attr("class", "axis");
-  // this.brushG = this.linesG.append("g").attr("class", "brush");
 
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
@@ -267,7 +273,6 @@ D3TimeChart.prototype.setData = function (data) {
   }
 };
 
-
 D3TimeChart.prototype.handleResize = function () {
   // This function is called when the Wt layout manager resizes the parent <div> element
   // Need to redraw everything
@@ -313,7 +318,6 @@ D3TimeChart.prototype.render = function (options) {
       .attr("fill-opacity", 0);
 
     this.rect.on("dblclick", () => {
-      console.log("doubleclicked!");
       this.handleDoubleClick();
     });
 
@@ -361,25 +365,17 @@ D3TimeChart.prototype.render = function (options) {
     var drag = d3.behavior
       .drag()
       .on("dragstart", () => {
-        console.log("drag started");
         var coords = d3.mouse(this.rect.node());
-        console.log("mouse coordinates: " + coords);
         brush.setStart(coords[0]);
         this.mouseDownHighlight(coords[0]);
       })
       .on("drag", () => {
-        console.log("dragging");
         brush.setEnd(d3.mouse(this.rect.node())[0]);
-        console.log(brush.extent());
         var width =
           brush.getScale()(brush.getEnd()) - brush.getScale()(brush.getStart());
         this.mouseMoveHighlight(width);
       })
       .on("dragend", () => {
-        console.log("drag ended");
-        console.log("empty: " + brush.empty());
-
-        console.log(brush.extent());
         this.handleBrush(brush);
         brush.clear();
         this.mouseUpHighlight();
@@ -407,27 +403,34 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
   // add/update hover interaction
   this.rect
     .on("mouseover", () => {
-      console.log("mouseover'd");
       this.showToolTip();
     })
     .on("mousemove", () => {
-      console.log("mousemove'd");
       var x = xScale.invert(d3.mouse(this.rect.node())[0]);
 
       var idx = this.findDataIndex(x);
+      var startTimeStamp = this.data.startTimeStamps
+        ? this.data.startTimeStamps[idx]
+        : null;
+      var sourceType = this.data.sourceTypes
+        ? this.data.sourceTypes[idx]
+        : null;
       var data = [];
       for (var detName in this.data.detectors) {
         var y = this.data.detectors[detName].counts[idx * 2];
+
         data.push({
           detName: detName,
           gammaCPS: y.gammaCPS,
           neutronCPS: y.neutronCPS,
+          startTimeStamp: startTimeStamp,
+          sourceType: sourceType,
         });
       }
-      this.updateToolTip(x, data);
+      var optargs = { sourceType: sourceType, startTimeStamp: startTimeStamp };
+      this.updateToolTip(x, data, optargs);
     })
     .on("mouseout", () => {
-      console.log("mouseout'd");
       this.hideToolTip();
     });
 
@@ -449,11 +452,7 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
     // if already drawn, just update
     if (!pathGamma.empty()) {
       if (transitions) {
-        pathGamma
-          .datum(counts)
-          .transition()
-          .duration(500)
-          .attr("d", lineGamma);
+        pathGamma.datum(counts).transition().duration(500).attr("d", lineGamma);
       } else {
         pathGamma.datum(counts).attr("d", lineGamma);
       }
@@ -781,8 +780,12 @@ D3TimeChart.prototype.isValidData = function (data) {
  * Formats data to several JSON objects for convenient plotting
  * returns object bundling sampleNumbers, realTimeIntervals, data domain, and detectors data.
  * e.g.
- * sampleNumbers: [...],
- * realTimeIntervals: [...],
+ * sampleNumbers: [1, 2, 3, ...],
+ * realTimeIntervals: [[a,b], [c,d], ...],
+ * gpsCoordinates: [...], (optional)
+ * occupied: [false, true, true, ...]
+ * sourceTypes: [2, 3, 3, ..]
+ * startTimeStamps: [...]
  * domains:
  * {
  *    x: [a, b],
@@ -811,27 +814,35 @@ D3TimeChart.prototype.isValidData = function (data) {
 D3TimeChart.prototype.formatData = function (data) {
   var nSamples = data.sampleNumbers.length;
   var detectors = {};
-  var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
+  var realTimeIntervals = this.getRealTimeIntervals(
+    data.realTimes,
+    data.sourceTypes
+  );
 
   // create occupied array:
   var occupied;
   if (data.hasOwnProperty("occupancies")) {
-    var occupied = []
+    var occupied = [];
     for (var i = 0; i < nSamples; i++) {
-
-      occupied[i] = this.isOccupiedSample(data.sampleNumbers[i], data.occupancies);
+      occupied[i] = this.isOccupiedSample(
+        data.sampleNumbers[i],
+        data.occupancies
+      );
     }
   }
 
   // create startTimeStamps array:
   var startTimeStamps;
-  if (data.hasOwnProperty("startTimeOffset") && data.hasOwnProperty("startTimes")) {
+  if (
+    data.hasOwnProperty("startTimeOffset") &&
+    data.hasOwnProperty("startTimes")
+  ) {
     startTimeStamps = data.startTimes.map(function (startTime) {
       if (startTime == null) {
         return null;
       }
       return data.startTimeOffset + startTime;
-    })
+    });
   }
 
   var domains = this.getDomains(data);
@@ -844,19 +855,20 @@ D3TimeChart.prototype.formatData = function (data) {
       detectors[det.detName].meta = new DetectorMetaData(det.color, undefined);
     } else {
       //detector already exists, so set gamma metadata
-      detectors[det.detname].meta.setGammaColor(det.color);
+      detectors[det.detName].meta.setGammaColor(det.color);
     }
     // add gamma det livetimes if exists
+    detectors[det.detName].gammaLiveTimes = det.liveTimes;
 
     // if no data already present for this detector, create a new array to start holding data for that detector and fill in the data.
     if (!detectors[det.detName].hasOwnProperty("data")) {
       detectors[det.detName].counts = [];
 
       for (var i = 0; i < nSamples; i++) {
-        var cps = det.counts[i] / data.realTimes[i];
-        var sourceType = data.sourceTypes ? data.sourceTypes[i] : null;
-        var gpsCoordinate = data.gpsCoordinates ? data.gpsCoordinates[i] : null;
-        var startTimeStamp = (data.startTimeOffset && data.startTimes && data.startTimes[i]) ? data.startTimeOffset + data.startTimes[i] : null;
+        // use livetimes for cps if available; realtimes otherwise
+        var cps = det.liveTimes
+          ? det.counts[i] / det.liveTimes[i]
+          : det.counts[i] / data.realTimes[i];
 
         // push line segment start
         detectors[det.detName].counts.push(
@@ -870,7 +882,10 @@ D3TimeChart.prototype.formatData = function (data) {
     } else {
       // data is already present for this detector, so only set gamma CPS for each data point.
       for (var i = 0; i < nSamples; i++) {
-        var cps = det.counts[i] / data.realTimes[i];
+        // use livetimes for cps if available; realtimes otherwise
+        var cps = det.liveTimes
+          ? det.counts[i] / det.liveTimes[i]
+          : det.counts[i] / data.realTimes[i];
         detectors[det.detName].counts[2 * i].setGammaCPS(cps);
         detectors[det.detName].counts[2 * i + 1].setGammaCPS(cps);
       }
@@ -887,19 +902,23 @@ D3TimeChart.prototype.formatData = function (data) {
           undefined,
           det.color
         );
-
       } else {
         // detector already exists, so set neutron metadata
         detectors[detName].meta.setNeutronColor(det.color);
       }
       // add neutron livetime if exists
+      detectors[det.detName].neutronLiveTimes = det.liveTimes;
 
       // if no data already present for this detector, create a new array to start holding data for that detector and fill in the data.
       if (!detectors[det.detName].hasOwnProperty("counts")) {
         detectors[det.detName].counts = [];
 
         for (var i = 0; i < nSamples; i++) {
-          var cps = det.counts[i] / data.realTimes[i];
+          // use livetimes for cps if available; realtimes otherwise
+          var cps = det.liveTimes
+            ? det.counts[i] / det.liveTimes[i]
+            : det.counts[i] / data.realTimes[i];
+
           //push line segment start
           detectors[det.detName].counts.push(
             new DataPoint(realTimeIntervals[i][0], null, cps)
@@ -911,7 +930,10 @@ D3TimeChart.prototype.formatData = function (data) {
       } else {
         // data is already present for this detector, so only set neutron CPS for each data point.
         for (var i = 0; i < nSamples; i++) {
-          var cps = det.counts[i] / data.realTimes[i];
+          // use livetimes for cps if available; realtimes otherwise
+          var cps = det.liveTimes
+            ? det.counts[i] / det.liveTimes[i]
+            : det.counts[i] / data.realTimes[i];
           detectors[det.detName].counts[2 * i].setNeutronCPS(cps);
           detectors[det.detName].counts[2 * i + 1].setNeutronCPS(cps);
         }
@@ -937,7 +959,10 @@ D3TimeChart.prototype.formatData = function (data) {
  * @param {Object} data: raw data from Wt
  */
 D3TimeChart.prototype.getDomains = function (data) {
-  var realTimeIntervals = this.getRealTimeIntervals(data.realTimes);
+  var realTimeIntervals = this.getRealTimeIntervals(
+    data.realTimes,
+    data.sourceTypes
+  );
 
   var xMin = d3.min(realTimeIntervals, function (d) {
     return d[0];
@@ -954,7 +979,9 @@ D3TimeChart.prototype.getDomains = function (data) {
 
   for (var i = 0; i < data.gammaCounts.length; i++) {
     for (var j = 0; j < nSamples; j++) {
-      var cps = data.gammaCounts[i].counts[j] / data.realTimes[j];
+      var cps = data.gammaCounts[i].liveTimes
+        ? data.gammaCounts[i].counts[j] / data.gammaCounts[i].liveTimes[j]
+        : data.gammaCounts[i].counts[j] / data.realTimes[j];
 
       if (cps > yMaxGamma) {
         yMaxGamma = cps;
@@ -965,7 +992,9 @@ D3TimeChart.prototype.getDomains = function (data) {
   // Find max over neutron detectors
   for (var i = 0; i < data.neutronCounts.length; i++) {
     for (var j = 0; j < nSamples; j++) {
-      var cps = data.neutronCounts[i].counts[j] / data.realTimes[j];
+      var cps = data.neutronCounts[i].liveTimes
+        ? data.neutronCounts[i].counts[j] / data.neutronCounts[i].liveTimes[j]
+        : data.neutronCounts[i].counts[j] / data.realTimes[j];
 
       if (cps > yMaxNeutron) {
         yMaxNeutron = cps;
@@ -1035,14 +1064,18 @@ D3TimeChart.prototype.getScales = function (domains) {
  * @param {number[]} realTimes: realTimes data passed from Wt
  * @returns an array of length-two arrays which represent time intervals for individual samples.
  */
-D3TimeChart.prototype.getRealTimeIntervals = function (realTimes) {
+D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
   var realTimeIntervals = [];
 
   for (var i = 0; i < realTimes.length; i++) {
-    if (i === 0) {
+    if (sourceTypes && i === 0 && sourceTypes[i] === 2) {
+      // center so background is not started at 0
       // to handle long lead-in:
       var leadTime = Math.max(-realTimes[i], -this.leadTime);
       realTimeIntervals[i] = [leadTime, 0];
+    } else if (i === 0) {
+      // first point is not background, so don't need to center
+      realTimeIntervals[i] = [0, realTimes[i]];
     } else {
       var prevEndpoint = realTimeIntervals[i - 1][1];
       realTimeIntervals[i] = [prevEndpoint, prevEndpoint + realTimes[i]];
@@ -1126,29 +1159,42 @@ D3TimeChart.prototype.showToolTip = function () {
  * Handler to update tooltip display.
  * @param {*} time : real time of measurement (x-value)
  * @param {*} data : Array of data objects, where each object at minimum has fields: {detName, gammaCPS}. Optional fields: neutronCPS
- *
+ * @param {*} data : Object of optional keyword arguments. Accepted arguments include: startTimeStamp, sourceType
  */
-D3TimeChart.prototype.updateToolTip = function (time, data) {
-  this.hoverToolTip.html(this.createToolTipString(time, data));
+D3TimeChart.prototype.updateToolTip = function (time, data, optargs) {
+  this.hoverToolTip.html(this.createToolTipString(time, data, optargs));
 };
 
 D3TimeChart.prototype.hideToolTip = function () {
   this.hoverToolTip.style("visibility", "hidden");
 };
 
-D3TimeChart.prototype.createToolTipString = function (time, data) {
-  var s = `<div>Time: ${time.toPrecision(4)} s</div>`;
+D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
+  
+  var s =
+    optargs.startTimeStamp != null
+      ? `<div>${new Date(optargs.startTimeStamp).toUTCString()}</div>`
+      : "";
+  s +=
+    optargs.sourceType != null
+      ? `<div>Source: ${this.sourceMap[optargs.sourceType]}</div>`
+      : "";
+  s += `<div>Time: ${time.toPrecision(4)} s</div>`;
+
+  // for each detector, give counts
   for (var i = 0; i < data.length; i++) {
     s += `<div>G CPS: ${data[i].gammaCPS.toPrecision(6)} (${
       data[i].detName
     })</div>`;
 
-    if (data[i].neutronCPS) {
+    if (data[i].neutronCPS != null) {
+      // cps of 0 is still valid to display
       s += `<div>N CPS: ${data[i].neutronCPS.toPrecision(3)} (${
         data[i].detName
       })</div>`;
     }
   }
+
   return s;
 };
 
@@ -1175,16 +1221,19 @@ D3TimeChart.prototype.findDataIndex = function (time) {
   return -1;
 };
 
-D3TimeChart.prototype.isOccupiedSample = function(sampleNumber, occupancies) {
+D3TimeChart.prototype.isOccupiedSample = function (sampleNumber, occupancies) {
   // if occupancies.status is undefined, assume it is true...
-  var status = occupancies.hasOwnProperty(status) ? occupancies.status : true; 
+  var status = occupancies.hasOwnProperty(status) ? occupancies.status : true;
   for (var i = 0; i < occupancies.length; i++) {
-    if ((sampleNumber >= occupancies[i].startSample) && (sampleNumber <= occupancies[i].endSample)) {
+    if (
+      sampleNumber >= occupancies[i].startSample &&
+      sampleNumber <= occupancies[i].endSample
+    ) {
       return !(true ^ status);
     }
   }
   return !(false ^ status);
-}
+};
 
 // UNIMPLEMENTED
 
