@@ -651,7 +651,7 @@ boost::any SpectrumDataModel::displayBinValue( int row,
                 "Gamma bin contents varied from using gamma_integral(...);"
                 " %f (this method) vs %f (summing); xlow=%f, xhigh=%f" ,
                 integral, otherintegral, xmin, xmax );
-      log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+      log_developer_error( __func__, buffer );
     }//if( error is too large )
 #endif
   }//if( hist->channel_energies() == xHist->channel_energies() ) / else

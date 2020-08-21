@@ -595,8 +595,9 @@ void Recalibrator::shiftPeaksForEnergyCalibration( PeakModel *peakmodel,
   
   if( spectype != SpectrumType::Foreground )
   {
-    meas->shiftPeaksForRecalibration( old_pars, old_devpairs, old_eqn_type,
-                                      new_pars, new_devpairs, new_eqn_type );
+    assert( 0 );
+    //meas->shiftPeaksForRecalibration( old_pars, old_devpairs, old_eqn_type,
+    //                                  new_pars, new_devpairs, new_eqn_type );
     return;
   }
   
@@ -611,8 +612,9 @@ void Recalibrator::shiftPeaksForEnergyCalibration( PeakModel *peakmodel,
   
   peakmodel->setPeakFromSpecMeas( std::shared_ptr<SpecMeas>(), set<int>() );
   
-  meas->shiftPeaksForRecalibration( old_pars, old_devpairs, old_eqn_type,
-                                   new_pars, new_devpairs, new_eqn_type );
+  assert( 0 );
+  //meas->shiftPeaksForRecalibration( old_pars, old_devpairs, old_eqn_type,
+  //                                 new_pars, new_devpairs, new_eqn_type );
   
   
   peakmodel->setPeakFromSpecMeas( meas, samples );
@@ -1024,12 +1026,13 @@ void Recalibrator::engageRecalibration( RecalAction action )
         //blurg - when we shift the peaks, we have to know from which calibration to which calibration,
         //  which means we need to consistently define whcih energy calbiration defines the display,
         //  or at least keep track of it for when we change things.
-        second->shiftPeaksForRecalibration( disp_second->calibration_coeffs(),
-        disp_second->deviation_pairs(),
-        disp_second->energy_calibration_model(),
-        info.coefficients,
-        info.deviationpairs,
-        info.type );
+        assert( 0 );
+        //second->shiftPeaksForRecalibration( disp_second->calibration_coeffs(),
+        //disp_second->deviation_pairs(),
+        //disp_second->energy_calibration_model(),
+        //info.coefficients,
+        //info.deviationpairs,
+        //info.type );
       }catch( std::exception &e )
       {
         
@@ -1042,12 +1045,13 @@ void Recalibrator::engageRecalibration( RecalAction action )
         && m_applyTo[BackIndex]->isChecked() && back!=foreground )
     {
       const CalibrationInformation &info = m_originalCal[BackIndex];
-      back->shiftPeaksForRecalibration( disp_back->calibration_coeffs(),
-                                        disp_back->deviation_pairs(),
-                                        disp_back->energy_calibration_model(),
-                                        info.coefficients,
-                                        info.deviationpairs,
-                                        info.type );
+      assert( 0 );
+      //back->shiftPeaksForRecalibration( disp_back->calibration_coeffs(),
+      //                                  disp_back->deviation_pairs(),
+      //                                  disp_back->energy_calibration_model(),
+      //                                  info.coefficients,
+      //                                  info.deviationpairs,
+      //                                  info.type );
       // Fix this for new calibration! //back->recalibrate_by_eqn( info.coefficients, info.deviationpairs, info.type );
     }
 
@@ -1155,11 +1159,12 @@ void Recalibrator::engageRecalibration( RecalAction action )
         const set<string> forenameset( foredet.begin(), foredet.end() );
         const set<string> backnameset( backdet.begin(), backdet.end() );
         
-        if( second != foreground || !m_applyTo[ForeIndex]->isChecked() )
-          second->shiftPeaksForRecalibration( disp_second->calibration_coeffs(),
-                                              disp_second->deviation_pairs(),
-                                              disp_second->energy_calibration_model(),
-                                              eqn, devpairs, m_coeffEquationType );
+        assert( 0 );
+        //if( second != foreground || !m_applyTo[ForeIndex]->isChecked() )
+        //  second->shiftPeaksForRecalibration( disp_second->calibration_coeffs(),
+        //                                      disp_second->deviation_pairs(),
+        //                                      disp_second->energy_calibration_model(),
+        //                                      eqn, devpairs, m_coeffEquationType );
 
         if( forenameset == backnameset )
         {
@@ -1179,12 +1184,13 @@ void Recalibrator::engageRecalibration( RecalAction action )
         const set<string> forenameset( foredet.begin(), foredet.end() );
         const set<string> backnameset( backdet.begin(), backdet.end() );
 
-        if( (back != foreground || !m_applyTo[ForeIndex]->isChecked())
-            && (back != second || !m_applyTo[SecondIndex]->isChecked()) )
-          back->shiftPeaksForRecalibration( disp_back->calibration_coeffs(),
-                                            disp_back->deviation_pairs(),
-                                            disp_back->energy_calibration_model(),
-                                            eqn, devpairs, m_coeffEquationType );
+        assert( 0 );
+        //if( (back != foreground || !m_applyTo[ForeIndex]->isChecked())
+        //    && (back != second || !m_applyTo[SecondIndex]->isChecked()) )
+        //  back->shiftPeaksForRecalibration( disp_back->calibration_coeffs(),
+        //                                    disp_back->deviation_pairs(),
+        //                                    disp_back->energy_calibration_model(),
+        //                                    eqn, devpairs, m_coeffEquationType );
         if( forenameset == backnameset )
         {
           // Fix this for new calibration! //back->recalibrate_by_eqn( eqn, devpairs, m_coeffEquationType, displayed_detectors, false  );
@@ -1229,7 +1235,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
     snprintf( buffer, sizeof(buffer),
               "Gamma sum of foreground changed after calibration, "
               "pre=%1.8e, post=%1.8e", origForSum, newForSum );
-    log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+    log_developer_error( __func__, buffer );
   }
   
   if( fabs(origBackSum-newBackSum) > 1.0E-6*std::max(fabs(origBackSum),fabs(newBackSum)) )
@@ -1237,7 +1243,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
     snprintf( buffer, sizeof(buffer),
              "Gamma sum of background changed after calibration, "
              "pre=%1.8e, post=%1.8e", origBackSum, newBackSum );
-    log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+    log_developer_error( __func__, buffer );
   }
   
   if( fabs(origSecondSum-newSecondSum) > 1.0E-6*std::max(fabs(origSecondSum),fabs(newSecondSum)) )
@@ -1245,7 +1251,7 @@ void Recalibrator::engageRecalibration( RecalAction action )
     snprintf( buffer, sizeof(buffer),
              "Gamma sum of second foreground changed after calibration, "
              "pre=%1.8e, post=%1.8e", origSecondSum, newSecondSum );
-    log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+    log_developer_error( __func__, buffer );
   }
 #endif
 }//void engageRecalibration( RECAL_ACTION action )
@@ -1464,7 +1470,7 @@ void Recalibrator::recalibrateByPeaks()
 #if( PERFORM_DEVELOPER_CHECKS )
       char buffer[512] = { '\0' };
       snprintf( buffer, sizeof(buffer)-1, "fit_energy_cal_poly threw: %s", e.what() );
-      log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+      log_developer_error( __func__, buffer );
 #endif
       fit_coefs = false;
     }//try / catch fit for coefficents using least linear squares
@@ -2332,10 +2338,11 @@ void Recalibrator::GraphicalRecalConfirm::apply()
       const set<string> forenameset(foredet.begin(),foredet.end());
       const set<string> backnameset(backdet.begin(),backdet.end());
       
-      background->shiftPeaksForRecalibration( displ_background->calibration_coeffs(),
-                                              displ_background->deviation_pairs(),
-                                              displ_background->energy_calibration_model(),
-                                              eqn, deviationPairs, eqnType );
+      assert( 0 );
+      //background->shiftPeaksForRecalibration( displ_background->calibration_coeffs(),
+      //                                        displ_background->deviation_pairs(),
+      //                                        displ_background->energy_calibration_model(),
+      //                                        eqn, deviationPairs, eqnType );
 
       
       // Fix this for new calibration! //if( forenameset == backnameset )
@@ -2351,10 +2358,11 @@ void Recalibrator::GraphicalRecalConfirm::apply()
       const set<string> forenameset(foredet.begin(),foredet.end());
       const set<string> seconameset(secodet.begin(),secodet.end());
       
-      secondary->shiftPeaksForRecalibration( displ_secondary->calibration_coeffs(),
-                                             displ_secondary->deviation_pairs(),
-                                             displ_secondary->energy_calibration_model(),
-                                             eqn, deviationPairs, eqnType );
+      assert( 0 );
+      //secondary->shiftPeaksForRecalibration( displ_secondary->calibration_coeffs(),
+      //                                       displ_secondary->deviation_pairs(),
+      //                                       displ_secondary->energy_calibration_model(),
+      //                                       eqn, deviationPairs, eqnType );
       
       // Fix this for new calibration! //if( forenameset == seconameset )
       // Fix this for new calibration! //  secondary->recalibrate_by_eqn( eqn, deviationPairs, eqnType, detectors, false );
@@ -2987,7 +2995,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
 #if( PERFORM_DEVELOPER_CHECKS )
       char buffer[512] = { '\0' };
       snprintf( buffer, sizeof(buffer)-1, "fit_energy_cal_poly threw: %s", e.what() );
-      log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+      log_developer_error( __func__, buffer );
 #endif
       fit_coefs = false;
     }//try / catch fit for coefficents using least linear squares
@@ -3216,8 +3224,9 @@ void Recalibrator::MultiFileCalibFit::handleFinish( WDialog::DialogCode result )
                                             oldcalibpars, devpairs, oldEqnType );
         }else
         {
-          meas->shiftPeaksForRecalibration( oldcalibpars, devpairs, oldEqnType,
-                                           eqn, devpairs, m_eqnType );
+          assert( 0 );
+          //meas->shiftPeaksForRecalibration( oldcalibpars, devpairs, oldEqnType,
+          //                                 eqn, devpairs, m_eqnType );
         }//if( meas == fore ) / else
         
         if( meas == back )

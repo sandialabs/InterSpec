@@ -1220,7 +1220,7 @@ void PopupDivMenuItem::makeTextXHTML()
   char buffer[512];
   snprintf( buffer, sizeof(buffer), "Unable to set menu item to XHTMLText."
            " Text='%s'.", text().toUTF8().c_str() );
-  log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+  log_developer_error( __func__, buffer );
 #endif
 }//void makeTextXHTML()
 

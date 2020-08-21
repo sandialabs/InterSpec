@@ -1034,7 +1034,7 @@ public:
         {
           const string msg = "PeakSelectorWindow::nuclideDesc(): What - this shouldnt happen! - coudlnt find SF for '" + parttype + "'";
 #if( PERFORM_DEVELOPER_CHECKS )
-          log_developer_error( BOOST_CURRENT_FUNCTION, msg.c_str() );
+          log_developer_error( __func__, msg.c_str() );
 #else
           cerr << msg << endl;
 #endif
@@ -1332,7 +1332,7 @@ public:
           {
             const string msg = "PeakSelectorWindow::populateNuclideSelects(): What - this shouldnt happen! - coudlnt find SF for '" + parttype + "'";
 #if( PERFORM_DEVELOPER_CHECKS )
-            log_developer_error( BOOST_CURRENT_FUNCTION, msg.c_str() );
+            log_developer_error( __func__, msg.c_str() );
 #else
             cerr << msg << endl;
 #endif
@@ -1390,7 +1390,7 @@ public:
           {
 #if( PERFORM_DEVELOPER_CHECKS )
             if( currentstr.size() )  //shouldnt ever happen, right?
-              log_developer_error( BOOST_CURRENT_FUNCTION, ("PeakSelectorWindow::populateNuclideSelects(): Found mutliple matches of select strings for a nuclide: '" + string(buffer) + "'").c_str() );
+              log_developer_error( __func__, ("PeakSelectorWindow::populateNuclideSelects(): Found mutliple matches of select strings for a nuclide: '" + string(buffer) + "'").c_str() );
 #endif
             currentstr = buffer;
           }else if( backgroundLineMatchedRef && (diff_from_assigned < 0.1) )
@@ -2287,7 +2287,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
       const char *msg = "assign_nuclide_from_reference_lines(): bad logic getting"
                         " previous peak index";
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+      log_developer_error( __func__, msg );
 #else
       cerr << msg << endl;
 #endif
@@ -2331,7 +2331,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
     msg += "'";
     
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg.c_str() );
+    log_developer_error( __func__, msg.c_str() );
 #else
     cerr << msg << endl;
 #endif
@@ -2392,13 +2392,13 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
         if( res == PeakModel::NoSourceChange )
         {
 #if( PERFORM_DEVELOPER_CHECKS )
-          log_developer_error( BOOST_CURRENT_FUNCTION, "A suggested change to a peak did not result in a change - prob shouldnt have happened." );
+          log_developer_error( __func__, "A suggested change to a peak did not result in a change - prob shouldnt have happened." );
 #endif
         }
       }else
       {
 #if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, "A suggested peak to change was not in the input - logic error!" );
+        log_developer_error( __func__, "A suggested peak to change was not in the input - logic error!" );
 #endif
       }//if( pos != end(*answerpeaks) ) / else
     }//if( addswap )

@@ -1050,7 +1050,7 @@ void InterSpecApp::notify( const Wt::WEvent& event )
 #if( PERFORM_DEVELOPER_CHECKS )
     char message[1024];
     snprintf(message, sizeof(message), "Uncaught exception in event loop: %s", e.what() );
-    log_developer_error( BOOST_CURRENT_FUNCTION, message );
+    log_developer_error( __func__, message );
 #endif
     
   }//try/catch

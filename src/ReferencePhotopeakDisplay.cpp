@@ -1568,7 +1568,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 #if( PERFORM_DEVELOPER_CHECKS )
     char msg[512];
     snprintf( msg, sizeof(msg), "Error caclulating attenuation: %s", e.what() );
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+    log_developer_error( __func__, msg );
 #endif
   }
 
@@ -1711,7 +1711,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       char msg[512];
       snprintf( msg, sizeof(msg), "Missing particlestrs (%s) in particle_sf.", s.c_str() );
 //      throw runtime_error(msg);
-      log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+      log_developer_error( __func__, msg );
     }
   }
 #endif
@@ -2439,7 +2439,7 @@ void ReferencePhotopeakDisplay::userColorSelectCallback( const WColor &color )
   if( color.isDefault() )
   {
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "Was passed an invalid color." );
+    log_developer_error( __func__, "Was passed an invalid color." );
 #endif
     m_userHasPickedColor = false;
     m_colorSelect->setColor( m_currentlyShowingNuclide.lineColor );

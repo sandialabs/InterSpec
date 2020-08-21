@@ -496,7 +496,7 @@ namespace
 //        char buffer[256];
 //        snprintf( buffer, sizeof(buffer), "Found a search_range_rate=%f for nuclide=%s - should not happen.",
 //                  search_range_rate, source_name.c_str() );
-//        log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+//        log_developer_error( __func__, buffer );
 //#endif
 //        continue;
         return -1.0;

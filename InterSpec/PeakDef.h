@@ -285,6 +285,12 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Spec
 
 class PeakDef
 {
+  // If I was to re-write this class from scratch I would define peak mean by channel, and FWHM
+  //  by the fraction of the peak mean, and similarly for the other quantities so that it is
+  //  invariant to the energy calibration - although this isnt without issues.
+  // I would also make the PeakContinuum the primary ROI with a list of peaks beloinging to it,
+  //  instead of the other way around.
+  
 public:
   enum SkewType
   {

@@ -863,7 +863,7 @@ double stringToActivity( std::string str, double bq_def )
       snprintf( buffer, sizeof(buffer),
                "stringToActivity(..) regex yeilds %i matches instead of 6",
                 static_cast<int>(mtch.size()) );
-      log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+      log_developer_error( __func__, buffer );
     }
 #endif
     

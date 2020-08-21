@@ -2064,7 +2064,7 @@ void ShieldingSelect::handleMaterialChange()
         stringstream msg;
         msg << "Failed to get massFractionOfElement " << cb->isotope()->symbol
             << " from " << newMaterial->name;
-        log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
+        log_developer_error( __func__, msg.str().c_str() );
       }//try/catch
       
       if( fabs(cb->massFraction()-massFrac) > 0.00001 )
@@ -2073,7 +2073,7 @@ void ShieldingSelect::handleMaterialChange()
         msg << "Mass cb fraction for " << cb->isotope()->symbol << " in "
             << newMaterial->name << " was " << cb->massFraction()
             << " but was expected to be " << massFrac << " from material.";
-        log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
+        log_developer_error( __func__, msg.str().c_str() );
       }
     }//for( WWidget *child : children )
   }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
@@ -6239,7 +6239,7 @@ void ShieldingSourceDisplay::deSerialize(
   }catch( std::exception &e )
   {
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, ("Failed to get chi2 info during serialization - caught exception: " + string(e.what())).c_str() );
+    log_developer_error( __func__, ("Failed to get chi2 info during serialization - caught exception: " + string(e.what())).c_str() );
 #endif
   }
   
@@ -7069,7 +7069,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
   {
     passMessage( "Programming Logic Error - received model fit results at an invalid time.", "", WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "Programming Logic Error - received model fit results at an invalid time." );
+    log_developer_error( __func__, "Programming Logic Error - received model fit results at an invalid time." );
 #endif
     wApp->triggerUpdate();
     return;
@@ -7081,7 +7081,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     {
       passMessage( "Programming Logic Error - shieldings have changed.", "", WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, "Programming Logic Error - received fit results when model was no longer valid." );
+      log_developer_error( __func__, "Programming Logic Error - received fit results when model was no longer valid." );
 #endif
       m_currentFitFcn.reset();
       return;
@@ -7307,7 +7307,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
                  + "<br />Application state may be suspect!", "",
                  WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, ("Programming Issue - caught exception: " + string(e.what())).c_str() );
+    log_developer_error( __func__, ("Programming Issue - caught exception: " + string(e.what())).c_str() );
 #endif
   }//try / catch
   

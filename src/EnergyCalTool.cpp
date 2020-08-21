@@ -43,6 +43,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "SpecUtils/SpecFile.h"
+#include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
@@ -967,6 +968,9 @@ vector<EnergyCalTool::MeasToApplyCoefChangeTo> EnergyCalTool::measurementsToAppl
     //  already have an entry for this file in answer, and if so, use it.  We dont want duplicate
     //  entries for SpecFiles since this could cause us to maybe move peaks multiple times or
     //  something
+    //  \TODO: if the backgeround and foreground use different detectors (no overlap) or different
+    //         sample numbers (no overlap) should return multiple entries for the SpecFile to handle
+    //         the edge-case correctly
     MeasToApplyCoefChangeTo *changes = nullptr;
     for( size_t i = 0; !changes && i < answer.size(); ++i )
       changes = (answer[i].meas == meas) ? &(answer[i]) : changes;
@@ -1261,10 +1265,27 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   }//if( updated_cals.find(disp_prev_cal) == end(updated_cals) )
   
   
+  const shared_ptr<SpecMeas> foreground = m_interspec->measurment( SpectrumType::Foreground );
+  const set<int> &foresamples = m_interspec->displayedSamples( SpectrumType::Foreground );
+  
+  
   //Now go through and actually set the energy calibrations; they should all be valid an computed.
   for( const MeasToApplyCoefChangeTo &change : changemeas )
   {
     assert( change.meas );
+    const vector<string> detnamesv( begin(change.detectors), end(change.detectors) );
+          
+    // Lets grab the old peaks, as well as the energy calibration that would be used to plot them.
+    //  \TODO: Of course this runs into the problem the peaks are associated with sample numbers,
+    //         and notdetectors currently
+    const set<set<int>> peaksamples = change.meas->sampleNumsWithPeaks();
+    map<set<int>,shared_ptr<deque<shared_ptr<const PeakDef>>>> old_peaks;
+    map<set<int>,shared_ptr<const SpecUtils::EnergyCalibration>> old_peaks_cal;
+    for( const auto &samples : peaksamples )
+    {
+      old_peaks[samples] = change.meas->peaks(samples);
+      old_peaks_cal[samples] = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
+    }
     
     for( const int sample : change.sample_numbers )
     {
@@ -1297,9 +1318,57 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
         
         change.meas->set_energy_calibration( iter->second, m );
       }//for( loop over detector names )
-    }//for( loop over sampel numbers )
+    }//for( loop over sample numbers )
+    
+    
+    //Now we have to adjust the peak positions
+    for( const set<int> &samples : peaksamples )
+    {
+      //If there is any overlap between 'samples' and 'change.sample_numbers', then apply the change
+      //  Note: this isnt correct, but I cant think of a better solution at the moment.
+      shared_ptr<deque<shared_ptr<const PeakDef>>> oldpeaks = old_peaks[samples];
+      shared_ptr<const SpecUtils::EnergyCalibration> oldcal = old_peaks_cal[samples];
+      
+      if( !oldpeaks || oldpeaks->empty()
+          || !oldcal || (oldcal->type() == EnergyCalType::InvalidEquationType) )
+      {
+        cerr << "Failed to get peaks or oldcal!" << endl; //just for development
+        continue;
+      }
+      
+      auto newcal = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
+      
+      if( !newcal || !newcal->valid() )
+      {
+        cerr << "Failed to get newcal for peaks shift!" << endl; //just for development
+        continue;
+      }
+      
+      if( oldcal == newcal )
+      {
+        cerr << __func__ <<  ": oldcal == newcal - skipping shifting peak" << endl;
+        continue;
+      }
+      
+      try
+      {
+        auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, oldcal, newcal );
+        change.meas->setPeaks( newpeaks, samples );
+      }catch( std::exception &e )
+      {
+        string msg = "There was an issue translating peaks for this energy change;"
+                     " not translating peaks.  Error: " + string(e.what());
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, msg.c_str() );
+#endif
+        m_interspec->logMessage( WString::fromUTF8(msg), "", 3 );
+      }//try / catch
+      
+      if( m_peakModel && (change.meas == foreground) && (samples == foresamples) )
+        m_peakModel->setPeakFromSpecMeas(foreground, foresamples);
+    }//for( const set<int> &samples : peaksampels )
   }//for( loop over SpecFiles for change )
-
+  
   //Set an undu point for each meas
   
   m_interspec->refreshDisplayedCharts();

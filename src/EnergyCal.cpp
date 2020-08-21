@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <deque>
 #include <limits>
@@ -53,6 +54,8 @@
 #include "Minuit2/MnUserParameterState.h"
 
 
+#include "InterSpec/PeakDef.h"
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/EnergyCal.h"
 #include "SpecUtils/EnergyCalibration.h"
 
@@ -442,3 +445,210 @@ double EnergyCal::fit_energy_cal_iterative( const std::vector<EnergyCal::RecalPe
   
   return minimum.Fval();
 }//fit_energy_cal_iterative(...)
+
+
+
+deque<shared_ptr<const PeakDef>>
+EnergyCal::translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<const PeakDef>> &inputPeaks,
+                              const std::shared_ptr<const SpecUtils::EnergyCalibration> &old_cal,
+                              const std::shared_ptr<const SpecUtils::EnergyCalibration> &new_cal )
+{
+//#if( PERFORM_DEVELOPER_CHECKS )
+//  const double preGausArea = peak.gauss_integral(peak.lowerX(), peak.upperX() );
+//  const double preContArea = peak.continuum()->offset_integral(peak.lowerX(), peak.upperX());
+//#endif
+  if( !old_cal || !new_cal )
+    throw runtime_error( "translatePeaksForCalibrationChange: null calibration passed in" );
+  
+  if( old_cal->type() == SpecUtils::EnergyCalType::InvalidEquationType )
+    throw runtime_error( "translatePeaksForCalibrationChange: old calibration invalid" );
+  
+  if( new_cal->type() == SpecUtils::EnergyCalType::InvalidEquationType )
+    throw runtime_error( "translatePeaksForCalibrationChange: new calibration invalid" );
+  
+  if( old_cal->num_channels() < 5 )
+    throw runtime_error( "translatePeaksForCalibrationChange: old calibration has less than 5 channels" );
+  
+  if( new_cal->num_channels() < 5 )
+    throw runtime_error( "translatePeaksForCalibrationChange: new calibration has less than 5 channels" );
+  
+  deque<shared_ptr<const PeakDef>> answer;
+  
+  // First go through and map peaks that share a continuum
+  map<shared_ptr<const PeakContinuum>,deque<shared_ptr<const PeakDef>>> conts_to_peaks;
+  for( const auto &p : inputPeaks )
+    conts_to_peaks[p->continuum()].push_back( p );
+  
+  // Incase any peaks use an external continuum, we will only create a single copy of it and use
+  //  for all peaks.
+  std::shared_ptr<SpecUtils::Measurement> data_continuum;
+  
+  for( auto roi : conts_to_peaks )
+  {
+    const shared_ptr<const PeakContinuum> &oldcont = roi.first;
+    const deque<shared_ptr<const PeakDef>> &peaks = roi.second;
+    
+    // Lets first translate the continuum
+    assert( oldcont );
+    auto newcont = make_shared<PeakContinuum>();
+    newcont->setType( oldcont->type() );
+    
+    float strech = 1.0f;
+    if( oldcont->energyRangeDefined() )
+    {
+      const float oldLowEnergy = static_cast<float>( oldcont->lowerEnergy() );
+      const float oldlowbin = old_cal->channel_for_energy( oldLowEnergy );
+      const float new_lowenergy = new_cal->energy_for_channel( oldlowbin );
+      
+      const float oldHighEnergy = static_cast<float>( oldcont->upperEnergy() );
+      const float oldhighbin = old_cal->channel_for_energy( oldHighEnergy );
+      const float new_highenergy = new_cal->energy_for_channel( oldhighbin );
+        
+      strech = (new_highenergy - new_lowenergy) / (oldHighEnergy - oldLowEnergy);
+      newcont->setRange( new_lowenergy, new_highenergy );
+    }//if( peak.continuum().energyRangeDefined() )
+      
+    if( oldcont->isPolynomial() )
+    {
+      const double oldref = oldcont->referenceEnergy();
+      const float oldrefbin = old_cal->channel_for_energy( oldref );
+      const float newref = new_cal->energy_for_channel( oldrefbin );
+        
+      if( !oldcont->energyRangeDefined() )
+        strech = static_cast<float>( newref / oldref );
+        
+      if( IsNan(strech) || IsInf(strech) )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__,
+                              "Found an invalid stretch value when calculated "
+                              "by the reference energy" );
+#endif
+        //strech = newMean / oldMean;
+      }//if( IsNan(strech) || IsInf(strech) )
+ 
+      vector<double> vars = oldcont->parameters();
+      vector<double> uncerts = oldcont->unertainties();
+
+      for( size_t i = 0; i < vars.size(); ++i )
+      {
+        vars[i] = vars[i] / std::pow( strech, static_cast<float>(i+1.0f) );
+        uncerts[i] = uncerts[i] / std::pow( strech, static_cast<float>(i+1.0f) );
+      }//for( size_t i = 0; i < contvars.size(); ++i )
+        
+      newcont->setParameters( newref, vars, uncerts );
+    }else if( oldcont->externalContinuum() )
+    {
+      if( !data_continuum )
+      {
+        data_continuum = std::make_shared<SpecUtils::Measurement>( *oldcont->externalContinuum() );
+        data_continuum->set_energy_calibration( new_cal );
+      }
+      
+      newcont->setExternalContinuum( data_continuum );
+    }//if( peak.continuum().isPolynomial() ) / else if(
+      
+    
+    // Now that we have he continuum modified, lets modify all the peaks for this ROI.
+    for( const shared_ptr<const PeakDef> &oldpeak : peaks )
+    {
+      assert( oldpeak );
+      shared_ptr<PeakDef> newpeak = make_shared<PeakDef>( *oldpeak );
+      newpeak->setContinuum( newcont );
+      
+      if( !oldpeak->gausPeak() )
+      {
+        const float oldMean = static_cast<float>( oldpeak->mean() );
+        const float meanbin = old_cal->channel_for_energy( oldMean );
+        const float newMean = new_cal->energy_for_channel(  meanbin );
+        newpeak->set_coefficient( newMean, PeakDef::Mean );
+        
+        // The new continuums range should have already been set, but if not could do it as:
+        //const float oldlow = static_cast<float>( oldpeak->lowerX() );
+        //const float oldhigh = static_cast<float>( oldpeak->upperX() );
+        //const float lowbin = old_cal->channel_for_energy( oldlow );
+        //const float highbin = old_cal->channel_for_energy( oldhigh );
+        //const float newLower = new_cal->energy_for_channel( lowbin );
+        //const float newUpper = new_cal->energy_for_channel( highbin );
+        //newcont->setRange( newLower, newUpper );
+        
+        answer.push_back( newpeak );
+        continue;
+      }//if( !peak.gausPeak() )
+      
+      
+      const float oldMean = static_cast<float>( oldpeak->mean() );
+      const float oldSigma = static_cast<float>( oldpeak->sigma() );
+      const float meanbin = old_cal->channel_for_energy( oldMean );
+      const float newMean = new_cal->energy_for_channel( meanbin );
+      
+      const float oldneg2sigmabin = old_cal->channel_for_energy( oldMean - 2.0*oldSigma );
+      const float oldpos2sigmabin = old_cal->channel_for_energy( oldMean + 2.0*oldSigma );
+      const float newneg2sigma = new_cal->energy_for_channel( oldneg2sigmabin );
+      const float newpos2sigma = new_cal->energy_for_channel( oldpos2sigmabin );
+      
+      const float strech = 0.25f*(newpos2sigma - newneg2sigma) / oldSigma;
+      
+      if( IsNan(strech) || IsInf(strech) )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        const char * msg = "Found an invalid stretch value when claculated from the"
+        " mean";
+        log_developer_error( __func__, msg );
+#endif
+        throw runtime_error( "translatePeaksForCalibrationChange: found an invalid stretch" );
+      }//if( IsNan(strech) || IsInf(strech) )
+      
+#if( PERFORM_DEVELOPER_CHECKS )
+      const float newbin = new_cal->channel_for_energy( newMean );
+      if( fabs(newbin - meanbin) > 0.025 )  //0.025 arbitrary
+      {
+        stringstream msg;
+        msg.precision( 9 );
+        msg << "When recalibrating from coefs={";
+        for( size_t i = 0; i < old_cal->coefficients().size(); ++i )
+          msg << (i ? ", " : " ") << old_cal->coefficients()[i];
+        msg << " }";
+        if( old_cal->deviation_pairs().size() )
+        {
+          msg << ", devpairs={";
+          for( size_t i = 0; i < old_cal->deviation_pairs().size(); ++i )
+            msg << (i ? ", {" : " {") << old_cal->deviation_pairs()[i].first
+            << "," << old_cal->deviation_pairs()[i].second << "}";
+          msg << "}";
+        }
+        
+        msg << " to {";
+        for( size_t i = 0; i < new_cal->coefficients().size(); ++i )
+          msg << (i ? ", " : " ") << new_cal->coefficients()[i];
+        msg << " }";
+        if( new_cal->deviation_pairs().size() )
+        {
+          msg << ", devpairs={";
+          for( size_t i = 0; i < new_cal->deviation_pairs().size(); ++i )
+            msg << (i ? ", {" : " {") << new_cal->deviation_pairs()[i].first << ","
+            << new_cal->deviation_pairs()[i].second << "}";
+          msg << "}";
+        }
+        msg << ", peak at mean=" << oldMean << ", moved to mean=" << newMean
+        << ", but some error caused it to move from bin " << meanbin << " to "
+        << newbin << ", which shouldnt have happend (should have stayed same "
+        << "bin number).";
+        
+        log_developer_error( __func__, msg.str().c_str() );
+      }//if( fabs(newbin - oldbin) > 0.025 )
+#endif
+      
+      newpeak->setMean( newMean );
+      newpeak->setSigma( strech * oldSigma );
+      newpeak->setMeanUncert( strech * oldpeak->meanUncert() );
+      newpeak->setSigmaUncert( strech * oldpeak->sigmaUncert() );
+      
+      
+      answer.push_back( newpeak );
+    }//for( loop over old peaks )
+  }//for( auto roi : conts_to_peaks )
+  
+  return answer;
+}//translatePeakForCalibrationChange(...)
+

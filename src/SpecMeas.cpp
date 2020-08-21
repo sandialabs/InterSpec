@@ -1552,7 +1552,7 @@ void SpecMeas::setAutomatedSearchPeaks( const std::set<int> &samplenums,
       char msg[512];
       snprintf( msg, sizeof(msg),
                 "sample %i is not a valid sample number", samplenum );
-      log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+      log_developer_error( __func__, msg );
     }//if( invalid sample number )
   }//for( const int samplenum : samplenums )
 #endif
@@ -1681,7 +1681,7 @@ Wt::Signal<> &SpecMeas::aboutToBeDeleted()
 }
 
 
-
+/*
 void shiftPeaksHelper( std::map<std::set<int>, std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > > > &input,
                        map< std::shared_ptr<const PeakDef>, std::shared_ptr<const PeakDef> > &shiftedPeaks,
                        set< std::shared_ptr<const PeakContinuum> > &shiftedContinuums,
@@ -1718,7 +1718,7 @@ void shiftPeaksHelper( std::map<std::set<int>, std::shared_ptr< std::deque< std:
         continue;
       }
       
-      std::shared_ptr<PeakDef> newpeak( new PeakDef(*peak) );
+      auto newpeak = std::make_shared<PeakDef>( *peak );
       
       const bool shiftCont = !shiftedContinuums.count( newpeak->continuum() );
       shiftedContinuums.insert( newpeak->continuum() );
@@ -1734,266 +1734,9 @@ void shiftPeaksHelper( std::map<std::set<int>, std::shared_ptr< std::deque< std:
     peakdeque->swap( newpeaks );
   }//for( SampleNumsToPeakMap::value_type : *m_peaks )
 }//shiftPeaksHelper
+*/
 
 
-void SpecMeas::shiftPeaksForRecalibration( std::vector<float> old_pars,
-                                const std::vector< std::pair<float,float> > &old_devpairs,
-                                SpecUtils::EnergyCalType old_eqn_type,
-                                std::vector<float> new_pars,
-                                const std::vector< std::pair<float,float> > &new_devpairs,
-                                SpecUtils::EnergyCalType new_eqn_type )
-{
-  typedef std::shared_ptr<const PeakDef> PeakPtr;
-  
-  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
-
-  const size_t nbins = num_gamma_channels();
-  if( !nbins )
-    return;
-  
-  map< PeakPtr, PeakPtr > shiftedPeaks;
-  set< std::shared_ptr<const PeakContinuum> > shiftedContinuums;
-  
-  if( !!m_peaks )
-    shiftPeaksHelper( *m_peaks,
-                      shiftedPeaks, shiftedContinuums, old_pars, old_devpairs,
-                     old_eqn_type, new_pars, new_devpairs, new_eqn_type, nbins );
-  shiftPeaksHelper( m_autoSearchPeaks,
-                   shiftedPeaks, shiftedContinuums, old_pars, old_devpairs,
-                   old_eqn_type, new_pars, new_devpairs, new_eqn_type, nbins );
-//  shiftPeaksHelper( m_autoSearchInitialPeaks,
-//                   shiftedPeaks, shiftedContinuums, old_pars, old_devpairs,
-//                   old_eqn_type, new_pars, new_devpairs, new_eqn_type, nbins );
-}//SpecMeas::shiftPeaksForRecalibration(...)
-
-
-void SpecMeas::translatePeakForCalibrationChange( PeakDef &peak,
-                                          std::vector<float> old_pars,
-                                          const std::vector< std::pair<float,float> > &old_devpairs,
-                                          SpecUtils::EnergyCalType old_eqn_type,
-                                          std::vector<float> new_pars,
-                                          const std::vector< std::pair<float,float> > &new_devpairs,
-                                          SpecUtils::EnergyCalType new_eqn_type,
-                                          const size_t nbins,
-                                          const bool translate_continuum )
-{
-//#if( PERFORM_DEVELOPER_CHECKS )
-//  const double preGausArea = peak.gauss_integral(peak.lowerX(), peak.upperX() );
-//  const double preContArea = peak.continuum()->offset_integral(peak.lowerX(), peak.upperX());
-//#endif
-  
-  if( old_pars.size() < 2 || new_pars.size() < 2 )
-    throw runtime_error( "translatePeakForCalibrationChange: invalid num coefs" );
-  
-  if( old_eqn_type==SpecUtils::EnergyCalType::LowerChannelEdge
-      || old_eqn_type==SpecUtils::EnergyCalType::InvalidEquationType
-      || new_eqn_type==SpecUtils::EnergyCalType::LowerChannelEdge
-      || new_eqn_type==SpecUtils::EnergyCalType::InvalidEquationType )
-    throw runtime_error( "translatePeakForCalibrationChange() can only handle"
-                         " Polynomial or FullRangeFraction Calibrations" );
-  
-  if( old_eqn_type == SpecUtils::EnergyCalType::Polynomial || old_eqn_type == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-      old_pars = SpecUtils::polynomial_coef_to_fullrangefraction( old_pars, nbins );
-  if( new_eqn_type == SpecUtils::EnergyCalType::Polynomial || new_eqn_type == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-      new_pars = SpecUtils::polynomial_coef_to_fullrangefraction( new_pars, nbins );
-  
-  
-  if( !peak.gausPeak() )
-  {
-    if( !translate_continuum )
-      return;
-      
-    const float oldMean = static_cast<float>(peak.mean());
-    const float oldlow = static_cast<float>(peak.lowerX());
-    const float oldhigh = static_cast<float>(peak.upperX());
-    const float meanbin = SpecUtils::find_fullrangefraction_channel( oldMean, old_pars, nbins, old_devpairs, 0.001f );
-    const float lowbin = SpecUtils::find_fullrangefraction_channel( oldlow, old_pars, nbins, old_devpairs, 0.001f );
-    const float highbin = SpecUtils::find_fullrangefraction_channel( oldhigh, old_pars, nbins, old_devpairs, 0.001f );
-    const float newMean = SpecUtils::fullrangefraction_energy( meanbin, new_pars, nbins, new_devpairs );
-    const float newLower = SpecUtils::fullrangefraction_energy( lowbin, new_pars, nbins, new_devpairs );
-    const float newUpper = SpecUtils::fullrangefraction_energy( highbin, new_pars, nbins, new_devpairs );
-    
-    peak.continuum()->setRange( newLower, newUpper );
-    peak.set_coefficient( newMean, PeakDef::Mean );
-    return;
-  }//if( !peak.gausPeak() )
-  
-  
-  const float oldMean = static_cast<float>(peak.mean());
-  const float oldSigma = static_cast<float>(peak.sigma());
-  const float oldbin = SpecUtils::find_fullrangefraction_channel( oldMean, old_pars,
-                                                  nbins, old_devpairs, 0.001f );
-  const float newMean = SpecUtils::fullrangefraction_energy( oldbin, new_pars, nbins, new_devpairs );
-  
-  const float oldneg2sigmabin = SpecUtils::find_fullrangefraction_channel( oldMean - 2.0*oldSigma,
-                                      old_pars, nbins, old_devpairs, 0.001f );
-  const float oldpos2sigmabin = SpecUtils::find_fullrangefraction_channel( oldMean + 2.0*oldSigma,
-                                      old_pars, nbins, old_devpairs, 0.001f );
-  const float newneg2sigma = SpecUtils::fullrangefraction_energy( oldneg2sigmabin, new_pars, nbins, new_devpairs );
-  const float newpos2sigma = SpecUtils::fullrangefraction_energy( oldpos2sigmabin, new_pars, nbins, new_devpairs );
-  
-  float strech = 0.25f*(newpos2sigma - newneg2sigma) / oldSigma;
-  
-  if( IsNan(strech) || IsInf(strech) )
-  {
-#if( PERFORM_DEVELOPER_CHECKS )
-    const char * msg = "Found an invalid stretch value when claculated from the"
-                       " mean";
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg );
-#endif
-    return;
-  }//if( IsNan(strech) || IsInf(strech) )
-  
-#if( PERFORM_DEVELOPER_CHECKS )
-  const float newbin = SpecUtils::find_fullrangefraction_channel( newMean, new_pars,
-                                                  nbins, new_devpairs, 0.001 );
-  if( fabs(newbin - oldbin) > 0.025 )  //0.025 arbitrary
-  {
-    stringstream msg;
-    msg.precision( 9 );
-    msg << "When recalibrating from coefs={";
-    for( size_t i = 0; i < old_pars.size(); ++i )
-      msg << (i ? ", " : " ") << old_pars[i];
-    msg << " }";
-    if( old_devpairs.size() )
-    {
-      msg << ", devpairs={";
-      for( size_t i = 0; i < old_devpairs.size(); ++i )
-        msg << (i ? ", {" : " {") << old_devpairs[i].first
-            << "," << old_devpairs[i].second << "}";
-      msg << "}";
-    }
-    
-    msg << " to {";
-    for( size_t i = 0; i < new_pars.size(); ++i )
-      msg << (i ? ", " : " ") << new_pars[i];
-    msg << " }";
-    if( new_devpairs.size() )
-    {
-      msg << ", devpairs={";
-      for( size_t i = 0; i < new_devpairs.size(); ++i )
-        msg << (i ? ", {" : " {") << new_devpairs[i].first << ","
-            << new_devpairs[i].second << "}";
-      msg << "}";
-    }
-    msg << ", peak at mean=" << oldMean << ", moved to mean=" << newMean
-        << ", but some error caused it to move from bin " << oldbin << " to "
-        << newbin << ", which shouldnt have happend (should have stayed same "
-        << "bin number).";
-    
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
-  }//if( fabs(newbin - oldbin) > 0.025 )
-#endif
-  
-  peak.setMean( newMean );
-  peak.setSigma( strech*oldSigma );
-  peak.setMeanUncert( strech*peak.meanUncert() );
-  peak.setSigmaUncert( strech * peak.sigmaUncert() );
-  
-  
-  if( !translate_continuum )
-    return;
-  
-  std::shared_ptr<PeakContinuum> continuum = peak.continuum();
-  
-  if( continuum->energyRangeDefined() )
-  {
-    const float oldLowEnergy = static_cast<float>(continuum->lowerEnergy());
-    const float oldlowbin = SpecUtils::find_fullrangefraction_channel( oldLowEnergy, old_pars,
-                                                       nbins, old_devpairs, 0.001 );
-    const float new_lowenergy = SpecUtils::fullrangefraction_energy( oldlowbin, new_pars, nbins, new_devpairs );
-    
-    
-    const float oldHighEnergy = static_cast<float>(continuum->upperEnergy());
-    const float oldhighbin = SpecUtils::find_fullrangefraction_channel( oldHighEnergy, old_pars,
-                                                        nbins, old_devpairs, 0.001 );
-    const float new_highenergy = SpecUtils::fullrangefraction_energy( oldhighbin, new_pars,
-                                                          nbins, new_devpairs );
-    
-    strech = (new_highenergy - new_lowenergy) / (oldHighEnergy - oldLowEnergy);
-    continuum->setRange( new_lowenergy, new_highenergy );
-  }//if( peak.continuum().energyRangeDefined() )
-  
-  if( continuum->isPolynomial() )
-  {
-    const double oldref = continuum->referenceEnergy();
-    
-    const float oldrefbin = SpecUtils::find_fullrangefraction_channel( oldref, old_pars,
-                                                       nbins, old_devpairs, 0.001 );
-    const float newref = SpecUtils::fullrangefraction_energy( oldrefbin, new_pars, nbins, new_devpairs );
-    
-    if( !continuum->energyRangeDefined() )
-      strech = static_cast<float>( newref / oldref );
-    
-    if( IsNan(strech) || IsInf(strech) )
-    {
-#if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION,
-                          "Found an invalid stretch value when calculated "
-                           "by the reference energy" );
-#endif
-      strech = newMean / oldMean;
-    }//if( IsNan(strech) || IsInf(strech) )
-
-    
-    vector<double> vars = continuum->parameters();
-    vector<double> uncerts = continuum->unertainties();
-
-    for( size_t i = 0; i < vars.size(); ++i )
-    {
-      vars[i] = vars[i] / std::pow( strech, static_cast<float>(i+1.0f) );
-      uncerts[i] = uncerts[i] / std::pow( strech, static_cast<float>(i+1.0f) );
-    }//for( size_t i = 0; i < contvars.size(); ++i )
-    
-    continuum->setParameters( newref, vars, uncerts );
-  }else if( !!continuum->externalContinuum() )
-  {
-    //XXX - each peak will now get their own continuum - a huge waste of memorry!
-    auto newcont = std::make_shared<SpecUtils::Measurement>( *continuum->externalContinuum() );
-    
-    const size_t nchannel = newcont->num_gamma_channels();
-    
-    auto newcal = std::make_shared<SpecUtils::EnergyCalibration>();
-    switch( new_eqn_type )
-    {
-      case SpecUtils::EnergyCalType::Polynomial:
-        newcal->set_polynomial( nchannel, new_pars, new_devpairs );
-        break;
-        
-      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-        newcal->set_default_polynomial( nchannel, new_pars, new_devpairs );
-      break;
-      
-      case SpecUtils::EnergyCalType::FullRangeFraction:
-        newcal->set_full_range_fraction( nchannel, new_pars, new_devpairs );
-        break;
-        
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
-        newcal->set_lower_channel_energy( nchannel, new_pars );
-        break;
-      
-      case SpecUtils::EnergyCalType::InvalidEquationType:
-        break;
-    }//switch( new_eqn_type )
-    
-    newcont->set_energy_calibration( newcal );
-    continuum->setExternalContinuum( newcont );
-  }//if( peak.continuum().isPolynomial() ) / else if(
-  
-  
-  
-#if( PERFORM_DEVELOPER_CHECKS )
-//  if( end == start )
-//    log_developer_error( BOOST_CURRENT_FUNCTION, "data from database wasnt null terminated" );
-#endif
-
-
-  //    if( continuum->defined() )
-  //    {
-  //      const double delta_energy = new_energy-peak.mean();
-  //      peak.offsetConstant -= peak.offsetSlope*delta_energy;
-  //    }//if( continuum->defined() )
-}//translatePeakForCalibrationChange(...)
 
 
 
