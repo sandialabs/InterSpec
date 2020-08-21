@@ -275,7 +275,7 @@ namespace SpecFileQuery
     if( dt.is_special() )
     {
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, "Was passed in a posix_time::ptime that is invalid!");
+      log_developer_error( __func__, "Was passed in a posix_time::ptime that is invalid!");
 #endif
       return false;
     }

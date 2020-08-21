@@ -4172,7 +4172,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
       SpecMeas::equalEnough( meas, *m_dataMeasurement );
     }catch( std::exception &e )
     {
-      log_developer_error( BOOST_CURRENT_FUNCTION, e.what() );
+      log_developer_error( __func__, e.what() );
     }
 #endif
     
@@ -7350,7 +7350,7 @@ void InterSpec::showShieldingSourceFitWindow()
                     "\n\tError Message: " << e.what()
                  << "\n\tModel XML: " << xmlstring;
 #if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, debugmsg.str().c_str() );
+        log_developer_error( __func__, debugmsg.str().c_str() );
 #else
         cerr << debugmsg.str() << endl;
 #endif
@@ -9451,7 +9451,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
   
 #if( PERFORM_DEVELOPER_CHECKS )
   if( !wApp )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "setHintPeaks() being called from not within the event loop!" );
+    log_developer_error( __func__, "setHintPeaks() being called from not within the event loop!" );
 #endif
 
   m_findingHintPeaks = false;

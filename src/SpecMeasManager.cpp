@@ -2744,7 +2744,7 @@ void SpecMeasManager::newFileFromSelection()
     passMessage( msg.str(), "", WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
+    log_developer_error( __func__, msg.str().c_str() );
 #endif
   }
   
@@ -2782,7 +2782,7 @@ void SpecMeasManager::newFileFromSelection()
       msg << "Failed to parse file created from combining multiple spectra: "
           << e.what();
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
+      log_developer_error( __func__, msg.str().c_str() );
 #else
       cerr << msg.str() << endl;
 #endif
@@ -2793,7 +2793,7 @@ void SpecMeasManager::newFileFromSelection()
       stringstream msg;
       msg << "Failed to remove temporary file: " << output;
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
+      log_developer_error( __func__, msg.str().c_str() );
 #else
       cerr << msg.str() << endl;
 #endif

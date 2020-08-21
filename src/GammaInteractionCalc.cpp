@@ -1137,7 +1137,7 @@ double PointSourceShieldingChi2Fcn::activityDefinedFromShielding(
               << src->symbol << ", massFrac=" << massFrac;
           cerr << msg.str() << endl;
 #if( PERFORM_DEVELOPER_CHECKS )
-          log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
+          log_developer_error( __func__, msg.str().c_str() );
 #endif
         }//if( massFrac <= 0.0 )
 */

@@ -293,7 +293,7 @@ void ColorSelect::colorSetCallback( const std::string &val )
   }catch( std::exception & )
   {
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "Invalid CSS color called back " );
+    log_developer_error( __func__, "Invalid CSS color called back " );
 #endif
     setAttributeValue( "value", "#000000" );  //to force a repaint ...
     setAttributeValue( "value", old );

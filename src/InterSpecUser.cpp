@@ -1057,7 +1057,7 @@ std::shared_ptr<SpecMeas> UserFileInDbData::decodeSpectrum() const
           
 #if( PERFORM_DEVELOPER_CHECKS )
           if( end == start )
-            log_developer_error( BOOST_CURRENT_FUNCTION, "data from database wasnt null terminated" );
+            log_developer_error( __func__, "data from database wasnt null terminated" );
 #endif
           
           if( end == start )

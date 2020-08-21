@@ -694,9 +694,9 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   {
     const char *msg = "Trying to save spectrum to database when the user prefence doesnt allow it!";
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+    log_developer_error( __func__, msg );
 #endif
-    cerr << endl << BOOST_CURRENT_FUNCTION << ": " << msg << endl << endl;
+    cerr << endl << __func__ << ": " << msg << endl << endl;
     return;
   }//if( !allowsave )
   
@@ -716,12 +716,12 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
 #endif
       if( !output.is_open() )
       {
-        log_developer_error( BOOST_CURRENT_FUNCTION, "Failed to open temp output file" );
+        log_developer_error( __func__, "Failed to open temp output file" );
       }else
       {
         written = meas->write_2012_N42( output );
         if( !written )
-          log_developer_error( BOOST_CURRENT_FUNCTION, "Failed to write write_2012_N42" );
+          log_developer_error( __func__, "Failed to write write_2012_N42" );
       }
     }
     
@@ -732,7 +732,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
       
       if( !read )
       {
-        log_developer_error( BOOST_CURRENT_FUNCTION, "Failed to re-read in 2012 N42 file" );
+        log_developer_error( __func__, "Failed to re-read in 2012 N42 file" );
       }else
       {
         newmeas.set_filename( meas->filename() );
@@ -743,7 +743,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
           cout << "Saving SpecMeas to file and reading it back in worked" << endl;
         }catch( std::exception &e )
         {
-          log_developer_error( BOOST_CURRENT_FUNCTION,
+          log_developer_error( __func__,
                                ("Failed check comapring re-serialized SpecMeas object: " + string(e.what())).c_str() );
         }
       }

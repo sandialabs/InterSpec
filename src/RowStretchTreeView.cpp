@@ -207,7 +207,7 @@ void RowStretchTreeView::widthChanged( int widthpx, int scrollbarWidth )
     snprintf( errormsg, sizeof(errormsg),
               "Got a new scroll bar width: %i when I had %i",
               int(m_scrollBarWidth), int(scrollbarWidth) );
-    log_developer_error( BOOST_CURRENT_FUNCTION, errormsg );
+    log_developer_error( __func__, errormsg );
 #endif
   }
   

@@ -484,7 +484,7 @@ namespace
           }catch(...)
           {
 #if( PERFORM_DEVELOPER_CHECKS )
-            log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected exception getting relative path between fi" );
+            log_developer_error( __func__, "Unexpected exception getting relative path between fi" );
 #endif
             row[f] = SpecUtils::parent_path(meas.filename);
             if( SpecUtils::starts_with(row[f], base_search_dir.c_str()) )
@@ -1069,7 +1069,7 @@ public:
        && ((col - NumFileDataFields) >= static_cast<int>(m_eventXmlColNames.size())) )
     {
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected (to large of) column requested (larger than ever expected)" );
+      log_developer_error( __func__, "Unexpected (to large of) column requested (larger than ever expected)" );
 #endif
       return boost::any();
     }
@@ -1091,7 +1091,7 @@ public:
     if( col >= static_cast<int>(fields.size()) )
     {
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected (to large of) column requested we dont have data for" );
+      log_developer_error( __func__, "Unexpected (to large of) column requested we dont have data for" );
 #endif
       return boost::any();
     }
@@ -1125,7 +1125,7 @@ public:
       if( index >= static_cast<int>(m_eventXmlColNames.size()) )
       {
 #if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected (to large of) column requested for header data" );
+        log_developer_error( __func__, "Unexpected (to large of) column requested for header data" );
 #endif
         return boost::any();
       }
@@ -1951,7 +1951,7 @@ void SpecFileQueryWidget::basePathChanged()
   }catch(...)
   {
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected error grabbing prefefence value" );
+    log_developer_error( __func__, "Unexpected error grabbing prefefence value" );
 #endif
   }
   
@@ -1974,7 +1974,7 @@ void SpecFileQueryWidget::basePathChanged()
   }catch( ... )
   {
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected error setting prefefence value" );
+    log_developer_error( __func__, "Unexpected error setting prefefence value" );
 #endif
   }
   

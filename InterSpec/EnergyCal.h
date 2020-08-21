@@ -25,11 +25,18 @@
 
 #include "InterSpec_config.h"
 
+#include <deque>
+#include <memory>
 #include <vector>
 #include <utility>
 
-// Forward declarations.
-namespace SpecUtils{ enum class EnergyCalType : int; }
+// Forward declarations
+class PeakDef;
+namespace SpecUtils
+{
+  enum class EnergyCalType : int;
+  struct EnergyCalibration;
+}//namespace SpecUtils
 
 
 namespace EnergyCal
@@ -107,6 +114,25 @@ double fit_energy_cal_iterative( const std::vector<EnergyCal::RecalPeakInfo> &pe
                                  std::vector<float> &coefs,
                                  std::vector<float> &coefs_uncert,
                                  std::string &warning_msg );
+
+
+
+/** Translates the input peaks for a given energy calibration change.
+ 
+ This translation keeps peak features (mean, ROI start and end, FWHM, continuum) at the same channel
+ numbers, but their energies will coorespondingly change.  This is useful for energy calibration
+ changes.  Note that this function accounts for peaks that share a continuum.
+ 
+ Will throw exception on error (an invalid calibration, less than 5 channels, etc), and on success
+ will return a deque of peaks in the same (energy) order as the input, and with same number of
+ entries.
+ */
+std::deque< std::shared_ptr<const PeakDef> >
+translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<const PeakDef>> &inputPeaks,
+                              const std::shared_ptr<const SpecUtils::EnergyCalibration> &old_cal,
+                              const std::shared_ptr<const SpecUtils::EnergyCalibration> &new_cal );
+
+
 
 }//namespace EnergyCal
 
