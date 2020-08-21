@@ -158,6 +158,13 @@ BrushX.prototype.extent = function () {
 
   return [this.start, this.end];
 };
+
+BrushX.prototype.getCenter = function () {
+  if (this.empty()) {
+    return null;
+  }
+  return (this.start +  this.end) / 2
+}
 /**
  * D3TimeChart object constructor.
  */
@@ -782,6 +789,7 @@ D3TimeChart.prototype.isValidData = function (data) {
  * e.g.
  * sampleNumbers: [1, 2, 3, ...],
  * realTimeIntervals: [[a,b], [c,d], ...],
+ * meanIntervalTime: 0.500...
  * gpsCoordinates: [...], (optional)
  * occupied: [false, true, true, ...]
  * sourceTypes: [2, 3, 3, ..]
@@ -815,6 +823,10 @@ D3TimeChart.prototype.formatData = function (data) {
   var nSamples = data.sampleNumbers.length;
   var detectors = {};
   var realTimeIntervals = this.getRealTimeIntervals(
+    data.realTimes,
+    data.sourceTypes
+  );
+  var meanIntervalTime = this.getMeanIntervalTime(
     data.realTimes,
     data.sourceTypes
   );
@@ -944,6 +956,7 @@ D3TimeChart.prototype.formatData = function (data) {
   return {
     sampleNumbers: data.sampleNumbers,
     realTimeIntervals: realTimeIntervals,
+    meanIntervalTime: meanIntervalTime,
     occupied: occupied,
     sourceTypes: data.sourceTypes,
     startTimeStamps: startTimeStamps,
@@ -1085,14 +1098,43 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
   return realTimeIntervals;
 };
 
+D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
+  var n = 0;
+  var acc = 0;
+  for (var i = 0; i < realTimes.length; i++) {
+    if (sourceTypes[i] == 3) {
+      acc += realTimes[i];
+      n += 1;
+    }
+  }
+  return acc / n;
+};
+
 /**
  * Brush handler to  zoom into a selected domain
  * @param {} brush : d3 brush
  */
 D3TimeChart.prototype.handleBrush = function (brush) {
   if (brush && !brush.empty() && brush.extent()[0] < brush.extent()[1]) {
+    // set lower limit on extent size to 2 interval lengths
+    var minExtentLeft = Math.max(
+      brush.getCenter() - this.data.meanIntervalTime,
+      this.data.domains.x[0]
+    );
+    var maxExtentRight = Math.min(
+      brush.getCenter() + this.data.meanIntervalTime,
+      this.data.domains.x[1]
+    );
+
+    var brushWidth = brush.extent()[1] - brush.extent()[0];
+
+    var extent =
+      brushWidth > 2 * this.data.meanIntervalTime
+        ? brush.extent()
+        : [minExtentLeft, maxExtentRight];
+
     // update x-domain to the new domain
-    this.selectionDomain = brush.extent();
+    this.selectionDomain = extent;
 
     var scales = this.getScales({
       x: this.selectionDomain,
@@ -1170,7 +1212,6 @@ D3TimeChart.prototype.hideToolTip = function () {
 };
 
 D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
-  
   var s =
     optargs.startTimeStamp != null
       ? `<div>${new Date(optargs.startTimeStamp).toUTCString()}</div>`
