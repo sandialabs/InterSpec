@@ -134,6 +134,35 @@ translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<const PeakD
 
 
 
+/** Propogates the difference of energy calibration between 'orig_cal' and 'new_cal' to
+ 'other_cal', returning the answer.  E.g., if you map what channels coorispond to what other
+ channels for orig_cal<==>other_cal, then the returned answer gives new_cal<==>answer.
+ 
+ This function is useful when performing energy calibrations on files that have multiple detectors
+ with different energy calibrations.
+ 
+ The reason this is a non-trivial operation is that when you perform a a change in energy
+ calibration to one spectrum, and expect a second spectrum with a different starting energy
+ calibration (maybe higher-order, or more/less-quadratic, etc) to behave similarly (e.g., a peak at
+ 626 keV in boh spectrum to begin with, should end up at 661 keV after the change), what you need to
+ do is ensure the relative channels stay fixed to each other (e.x., channel 5 of spectrum 1 may
+ coorespond to same energy as channel 19.3 of spectrum two, while channel 1024 of spectrum 1
+ cooresponds to the same energy of channel 999 of spectrum two, etc).  That is what this function
+ does.
+ 
+ Throws exception if any input #SpecUtils::EnergyCalibration is null, invalid, or if 'orig_cal'
+ or 'new_cal' are not polynomial or full range fraction, or if applying the difference causes
+ 'other_cal' to become invalid.
+ 
+ @returns a valid #SpecUtils::EnergyCalibration pointer that is the same calibration type, and same
+          number of channels as 'other_cal'.
+ */
+std::shared_ptr<const SpecUtils::EnergyCalibration>
+propogate_energy_cal_change( const std::shared_ptr<const SpecUtils::EnergyCalibration> &orig_cal,
+                             const std::shared_ptr<const SpecUtils::EnergyCalibration> &new_cal,
+                             const std::shared_ptr<const SpecUtils::EnergyCalibration> &other_cal );
+
+
 }//namespace EnergyCal
 
 #endif //EnergyCal_h
