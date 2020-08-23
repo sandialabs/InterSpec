@@ -307,9 +307,9 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
       }//try / catch
     }else
     {
-      cerr << "\tPeak at " << mean << " has fractional error " << fracerror
-      << ", FWHM=" << input[i]->fwhm() << " fit peak width fwhm=" << width
-      << endl;
+      // cerr << "\tPeak at " << mean << " has fractional error " << fracerror
+      // << ", FWHM=" << input[i]->fwhm() << " fit peak width fwhm=" << width
+      // << endl;
       answer.push_back( input[i] );
     }
   }//for( size_t i = 0; i < npeaks; ++i )
