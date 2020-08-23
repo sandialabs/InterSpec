@@ -376,15 +376,23 @@ class CalDisplay : public WContainerWidget
   static const size_t sm_min_coef_display ;
   
   EnergyCalTool *m_tool;
+  const SpecUtils::SpectrumType m_cal_type;
+  const std::string m_det_name;
+  
   WText *m_type;
   WContainerWidget *m_coefficients;
   DeviationPairDisplay *m_devPairs;
   shared_ptr<const SpecUtils::EnergyCalibration> m_cal;
   
 public:
-  CalDisplay( EnergyCalTool *tool, WContainerWidget *parent = nullptr )
+  CalDisplay( EnergyCalTool *tool,
+             const SpecUtils::SpectrumType type,
+             const std::string &detname,
+             WContainerWidget *parent = nullptr )
   : WContainerWidget( parent ),
    m_tool( tool ),
+   m_cal_type( type ),
+   m_det_name( detname ),
    m_type( nullptr ),
    m_coefficients( nullptr ),
    m_devPairs( nullptr )
@@ -412,6 +420,8 @@ public:
     //m_devPairs->changed().connect(<#WObject *target#>, <#WObject::Method method#>)
   }//CalDisplay( constructor )
   
+  SpecUtils::SpectrumType spectrumType() const { return m_cal_type; }
+  const std::string &detectorName() const { return m_det_name; }
   
   shared_ptr<const SpecUtils::EnergyCalibration> lastSetCalibration()
   {
@@ -442,10 +452,14 @@ public:
     while( !coeffs.empty() && coeffs.back()==0.0f )
       coeffs.resize( coeffs.size() - 1 );
     
-    
     return coeffs;
   }//vector<float> displayedCoefficents() const
   
+  
+  std::vector< std::pair<float,float> > displayedDeviationPairs() const
+  {
+    return m_devPairs->deviationPairs();
+  }
   
   void updateToGui( const shared_ptr<const SpecUtils::EnergyCalibration> &cal )
   {
@@ -1069,8 +1083,6 @@ void EnergyCalTool::fitCoefficientCBChanged()
 void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display )
 {
   using namespace SpecUtils;
-  cout << "userChangedCoefficient( " << coefnum << ", " << " )" << endl;
-  
   assert( coefnum < 10 );  //If we ever allow lower channel energy adjustment this will need to be removed
   
   const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
@@ -1099,22 +1111,6 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   
   const size_t dispnchannel = disp_prev_cal->num_channels();
   const auto &disp_dev_pairs = disp_prev_cal->deviation_pairs();
-
-  cout << "prev_disp_coefs={";
-  for( float f: prev_disp_coefs )
-    cout << f << ", ";
-  cout << "}" << endl;
-  
-  cout << "dispcoefs={";
-  for( float f: dispcoefs )
-    cout << f << ", ";
-  cout << "}" << endl;
-  
-  cout << "new_disp_coefs={";
-  for( float f: new_disp_coefs )
-    cout << f << ", ";
-  cout << "}" << endl;
-  
   
   shared_ptr<const EnergyCalibration> new_disp_cal;
   try
@@ -1408,8 +1404,119 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
 
 void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display )
 {
+  using namespace SpecUtils;
+  
   cerr << "userChangedDeviationPair( " << ", " << " )" << endl;
   
+  const shared_ptr<const EnergyCalibration> old_cal = display->lastSetCalibration();
+  //const vector<pair<float,float>> &old_dev_pairs = old_cal->deviation_pairs();
+  const vector<pair<float,float>> new_dev_pairs = display->displayedDeviationPairs();
+  
+  const size_t nchannel = old_cal->num_channels();
+  const vector<float> &coefficients = old_cal->coefficients();
+  
+  const SpectrumType type = display->spectrumType();
+  const std::string &detname = display->detectorName();
+  
+  auto new_cal = make_shared<EnergyCalibration>();
+  
+  try
+  {
+    switch( old_cal->type() )
+    {
+      case EnergyCalType::Polynomial:
+      case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        new_cal->set_polynomial( nchannel, coefficients, new_dev_pairs );
+        break;
+        
+      case EnergyCalType::FullRangeFraction:
+        new_cal->set_full_range_fraction( nchannel, coefficients, new_dev_pairs );
+        break;
+        
+      case EnergyCalType::LowerChannelEdge:
+      case EnergyCalType::InvalidEquationType:
+        throw runtime_error( "Deviation pairs only defined for polynomial and full range fraction"
+                            " calibration types" );
+        break;
+    }//switch( old_cal->type() )
+  }catch( std::exception &e )
+  {
+    display->updateToGui( old_cal );
+    
+    string msg = "Changing the deviation pair made energy calibration become invalid.  Error: ";
+    msg += e.what();
+    m_interspec->logMessage( msg, "", 2 );
+    
+    return;
+  }//try / catch
+  
+  assert( new_cal->valid() );
+  
+  
+  auto specfile = m_interspec->measurment( type );
+  if( !specfile )
+  {
+    //Shouldnt ever happen
+    display->updateToGui( old_cal );
+    m_interspec->logMessage( "Internal error retrieveing correct measurement", "", 2 );
+    return;
+  }
+  
+  size_t num_updated = 0;
+  for( auto &m : specfile->measurements() )
+  {
+    // I'm a little torn if we should update just the one energy calibration, or all occurances of
+    //  the detectors energy calibration.
+    //  Maybe we should update according to the checked GUI, but also restrict on name as well?
+    //auto cal = m->energy_calibration();
+    //if( cal == old_cal )
+    if( m->detector_name() == detname )
+    {
+      specfile->set_energy_calibration( new_cal, m );
+      ++num_updated;
+    }
+  }//for( loop over measurements )
+  
+  if( num_updated == 0 )
+  {
+    display->updateToGui( old_cal );
+    m_interspec->logMessage( "There was an eror setting deviation pairs for this detector.", "", 2 );
+  }
+  
+  const size_t ndets = specfile->gamma_detector_names().size();
+  const size_t nsamples = specfile->sample_numbers().size();
+  
+  if( (ndets > 1) || (nsamples > 1) )
+  {
+    string msg;
+    if( ndets > 1 )
+      msg = "Deviation pairs applied only to the '" + detname + "' detector";
+    if( nsamples > 1 )
+      msg += string(msg.empty() ? "Deviation pairs applied" : ", but") + " to all sample numbers";
+    
+    int nfiles = 0;
+    for( auto t : {0,1,2} )
+      nfiles += (m_interspec->measurment(static_cast<SpectrumType>(t)) != specfile);
+    
+    if( nfiles && !msg.empty() )
+    {
+      switch( type )
+      {
+        case SpectrumType::Foreground:       msg += "of foreground"; break;
+        case SpectrumType::SecondForeground: msg += "of secondary"; break;
+        case SpectrumType::Background:       msg += "of background"; break;
+      }//switch( type )
+    }//if( nfiles )
+  
+    /// \TODO: keep from issuing this message for ever single change!
+    
+    if( !msg.empty() )
+      m_interspec->logMessage( msg, "", 1 );
+  }//if( more than one gamma detector and more than one sample number )
+  
+  m_interspec->refreshDisplayedCharts();
+  
+  doRefreshFromFiles();
 }//void userChangedDeviationPair( CalDisplay *display )
 
 
@@ -1661,7 +1768,7 @@ void EnergyCalTool::doRefreshFromFiles()
         if( !m || (m->num_gamma_channels() <= 4) )
           continue;
         
-        auto calcontent = new EnergyCalImp::CalDisplay( this );
+        auto calcontent = new EnergyCalImp::CalDisplay( this, type, detname );
         WMenuItem *item = detMenu->addItem( WString::fromUTF8(detname), calcontent, WMenuItem::LoadPolicy::PreLoading );
         
         //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
