@@ -56,6 +56,7 @@
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 
+
 using namespace std;
 using namespace Wt;
 
@@ -880,6 +881,7 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   refreshGuiFromFiles();
 }//EnergyCalTool
 
+
 EnergyCalTool::~EnergyCalTool()
 {
 }
@@ -1067,9 +1069,15 @@ void EnergyCalTool::fitCoefficientCBChanged()
 void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display )
 {
   using namespace SpecUtils;
+  cout << "userChangedCoefficient( " << coefnum << ", " << " )" << endl;
   
-  assert( coefnum < 10 );  //IF we ever allow lower channel energy adjustment this will need to be removed
-  cerr << "userChangedCoefficient( " << coefnum << ", " << " )" << endl;
+  assert( coefnum < 10 );  //If we ever allow lower channel energy adjustment this will need to be removed
+  
+  const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  const auto backgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Background);
+  const auto secgrnd = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
+  
+  const set<int> &foresamples = m_interspec->displayedSamples( SpectrumType::Foreground );
   
   vector<float> dispcoefs = display->displayedCoefficents();
   if( dispcoefs.size() <= coefnum )
@@ -1082,20 +1090,79 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
     return;
   }
   
-  vector<float> prevcoefs = disp_prev_cal->coefficients();
-  if( prevcoefs.size() <= coefnum )
-    prevcoefs.resize( coefnum+1, 0.0f );
+  vector<float> prev_disp_coefs = disp_prev_cal->coefficients();
+  if( prev_disp_coefs.size() <= coefnum )
+    prev_disp_coefs.resize( coefnum+1, 0.0f );
   
-  const float delta = dispcoefs[coefnum] - prevcoefs[coefnum];
+  vector<float> new_disp_coefs = prev_disp_coefs;
+  new_disp_coefs[coefnum] = dispcoefs[coefnum];
+  
+  const size_t dispnchannel = disp_prev_cal->num_channels();
+  const auto &disp_dev_pairs = disp_prev_cal->deviation_pairs();
+
+  cout << "prev_disp_coefs={";
+  for( float f: prev_disp_coefs )
+    cout << f << ", ";
+  cout << "}" << endl;
+  
+  cout << "dispcoefs={";
+  for( float f: dispcoefs )
+    cout << f << ", ";
+  cout << "}" << endl;
+  
+  cout << "new_disp_coefs={";
+  for( float f: new_disp_coefs )
+    cout << f << ", ";
+  cout << "}" << endl;
   
   
-  //Create a cache of modified calibration both to save time/memory, but also keep it so previous
+  shared_ptr<const EnergyCalibration> new_disp_cal;
+  try
+  {
+    auto cal = make_shared<EnergyCalibration>();
+    switch( disp_prev_cal->type() )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        cal->set_polynomial( dispnchannel, new_disp_coefs, disp_dev_pairs );
+        break;
+        
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+        cal->set_full_range_fraction( dispnchannel, new_disp_coefs, disp_dev_pairs );
+        break;
+      
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        throw runtime_error( "Invalid calibration type changed?  Something is way wack." );
+        break;
+    }//switch( disp_prev_cal->type() )
+    
+    new_disp_cal = cal;
+  }catch( std::exception &e )
+  {
+    display->updateToGui( disp_prev_cal );
+    
+    string msg = "Calibration change made energy calibration become invalid.  Error: ";
+    msg += e.what();
+    m_interspec->logMessage( msg, "", 2 );
+    
+    return;
+  }//try / catch to create new_disp_cal
+  
+  assert( new_disp_cal && new_disp_cal->valid() );
+  
+  // Create a cache of modified calibration both to save time/memory, but also keep it so previous
   //  samples that share a energy calibration will continue to do so (if possible based on what user
-  //  wanted calibration applied to)
+  //  wanted calibration applied to).  Also, we wont set any new calibrations until we know all
+  //  updated calibrations and peaks are valid
   //Note: we could take this oppritunity to share calibration across SpecFile objects by not just
   //      comparing pointers, but also the actual EnergyCalibration object.  But for now we'll
   //      skip this to avoid trouble, and it isnt clear that it would actually be overall beneficial
   map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
+  
+  // We will store updated peaks and not set any of them until we know all the energy calibrations
+  //  and peak shifts were sucessfully done.
+  map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
   
   const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
   
@@ -1122,105 +1189,58 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
         for( const string &detname : change.detectors )
         {
           auto m = change.meas->measurement( sample, detname );
-          if( !m || m->num_gamma_channels() <= 4 )
-            continue;
+          const auto meas_old_cal = m->energy_calibration();
+          assert( meas_old_cal );
           
-          const size_t nchannel = m->num_gamma_channels();
-          const auto measoldcal = m->energy_calibration();
-          assert( measoldcal );
+          if( !m || m->num_gamma_channels() <= 4 || !meas_old_cal || !meas_old_cal->valid() )
+            continue;
           
           //If we have already computed the new calibration for a EnergyCalibration object, lets not
           //  re-due it.
-          if( updated_cals.count(measoldcal) )
+          if( updated_cals.count(meas_old_cal) )
             continue;
           
-          switch( measoldcal->type() )
+          shared_ptr<const SpecUtils::EnergyCalibration> new_meas_cal;
+          if( meas_old_cal == disp_prev_cal )
           {
-            case SpecUtils::EnergyCalType::Polynomial:
-            case SpecUtils::EnergyCalType::FullRangeFraction:
-            case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-              break;
-              
-            case SpecUtils::EnergyCalType::LowerChannelEdge:
-            case SpecUtils::EnergyCalType::InvalidEquationType:
-              cerr << "userChangedCoefficient: Found a case of LowerChannelEdge or"
-              " InvalidEquationType in wanted samples/detectors" << endl;
-              continue;
-          }//switch( oldcal->type() )
-          
-          
-          const auto &devpair = measoldcal->deviation_pairs();
-          vector<float> newcoefs = measoldcal->coefficients();
-          if( newcoefs.size() <= coefnum )
-            newcoefs.resize( coefnum + 1, 0.0f );
-          
-          auto newcal = make_shared<EnergyCalibration>();
-          
-          switch( measoldcal->type() )
+            new_meas_cal = new_disp_cal;
+          }else if( coefnum == 0 )
           {
-            case EnergyCalType::Polynomial:
-            case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+            auto cal = make_shared<EnergyCalibration>();
+            vector<float> new_coefs = meas_old_cal->coefficients();
+            assert( (new_coefs.size() > coefnum)
+                    && (prev_disp_coefs.size() > coefnum)
+                    && (new_disp_coefs.size() > coefnum) );
+            
+            new_coefs[coefnum] += (new_disp_coefs[coefnum] - prev_disp_coefs[coefnum]);
+            
+            switch( meas_old_cal->type() )
             {
-              switch( disp_prev_cal->type() )
-              {
-                case EnergyCalType::Polynomial:
-                case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-                  //The Measurement and display coefficents are polynomial
-                  newcoefs[coefnum] += delta;
-                  break;
-                  
-                case EnergyCalType::FullRangeFraction:
-                  //The Measurement is Polynomial, but display widget is FullRangeFraction
-                  //Note: for FRF newcoefs[4] is low-energy coef that doesnt translate to Polynomial
-                  if( coefnum < 4 )
-                    newcoefs[coefnum] += (delta / std::pow(nchannel,coefnum));
-                  break;
-                  
-                case EnergyCalType::LowerChannelEdge:
-                case EnergyCalType::InvalidEquationType:
-                  assert( 0 );
-                  break;
-              }//switch( disp_prev_cal->type() )
+              case SpecUtils::EnergyCalType::Polynomial:
+              case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+                cal->set_polynomial( meas_old_cal->num_channels(), new_coefs, meas_old_cal->deviation_pairs() );
+                break;
               
-              newcal->set_polynomial( nchannel, newcoefs, devpair );
-              break;
-            }//case Measurements previous calibration is Polynomial
-              
-            case SpecUtils::EnergyCalType::FullRangeFraction:
-            {
-              switch( disp_prev_cal->type() )
-              {
-                case EnergyCalType::Polynomial:
-                case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-                  //The Measurement is FullRangeFraction, but display widget is Polynomial
-                  if( coefnum < 4 )
-                    newcoefs[coefnum] += (delta * std::pow(nchannel,coefnum));
-                  break;
-                  
-                case EnergyCalType::FullRangeFraction:
-                  //The Measurement is FullRangeFraction and so is display widget
-                  newcoefs[coefnum] += delta;
-                  break;
-                  
-                case EnergyCalType::LowerChannelEdge:
-                case EnergyCalType::InvalidEquationType:
-                  break;
-              }//switch( disp_prev_cal->type() )
-              
-              newcal->set_full_range_fraction( nchannel, newcoefs, devpair );
-              break;
-            }//case Measurements previous calibration is FullRangeFraction
-              
-            case SpecUtils::EnergyCalType::LowerChannelEdge:
-            case SpecUtils::EnergyCalType::InvalidEquationType:
-              assert(0);
-              break;
-          }//switch( measoldcal->type() )
-          
-          assert( newcal->type() != EnergyCalType::InvalidEquationType );
-          assert( newcal->type() == measoldcal->type() );
-          
-          updated_cals[measoldcal] = newcal;
+              case SpecUtils::EnergyCalType::FullRangeFraction:
+                cal->set_full_range_fraction( meas_old_cal->num_channels(), new_coefs, meas_old_cal->deviation_pairs() );
+                break;
+                
+              case SpecUtils::EnergyCalType::LowerChannelEdge:
+                cal->set_lower_channel_energy( meas_old_cal->num_channels(), new_coefs ); //eh, whatever
+                break;
+                
+              case SpecUtils::EnergyCalType::InvalidEquationType:
+                assert( 0 );
+                break;
+            }//switch( meas_old_cal->type() )
+            
+            new_meas_cal = cal;
+          }else
+          {
+            new_meas_cal = EnergyCal::propogate_energy_cal_change( disp_prev_cal, new_disp_cal, meas_old_cal );
+          }
+          assert( new_meas_cal && new_meas_cal->valid() );
+          updated_cals[meas_old_cal] = new_meas_cal;
         }//for( const string &detname : change.detectors )
       }//for( loop over sample numbers )
     }catch( std::exception &e )
@@ -1228,10 +1248,6 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
       display->updateToGui( disp_prev_cal );
       
       string msg = "Calibration change made a energy calibration become invalid";
-      
-      const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
-      const auto backgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Background);
-      const auto secgrnd = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
       if( (backgrnd && (backgrnd != change.meas)) || (secgrnd && (secgrnd != change.meas)) )
       {
         if( change.meas == forgrnd )
@@ -1249,6 +1265,59 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
       
       return;
     }//try catch
+    
+    
+    // Now go through and translate the peaks, but we wont actually update them to the SpecMeas
+    //  until we know we can update all the peaks
+    const set<set<int>> peaksamples = change.meas->sampleNumsWithPeaks();
+    const vector<string> detnamesv( begin(change.detectors), end(change.detectors) );
+    
+    for( const set<int> &samples : peaksamples )
+    {
+      //If there is any overlap between 'samples' and 'change.sample_numbers', then apply the change
+      //  Note: this isnt correct, but I cant think of a better solution at the moment.
+      auto oldpeaks = change.meas->peaks(samples);
+      auto oldcal = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
+      
+      if( !oldpeaks || oldpeaks->empty()
+         || !oldcal || (oldcal->type() == EnergyCalType::InvalidEquationType) )
+      {
+        if( !oldpeaks || !oldcal || !oldcal->valid() )
+          cerr << "Failed to get peaks or oldcal!" << endl; //just for development
+        continue;
+      }
+      
+      auto newcal = updated_cals[oldcal];
+      if( !newcal || !newcal->valid() )
+      {
+        cerr << "Failed to get newcal for peaks shift!" << endl; //just for development, shouldnt happen I dont think
+        continue;
+      }
+      
+      if( oldcal == newcal )
+      {
+        cerr << __func__ <<  ": oldcal == newcal - skipping shifting peak" << endl;
+        continue;
+      }
+      
+      try
+      {
+        auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, oldcal, newcal );
+        updated_peaks[oldpeaks] = newpeaks;
+      }catch( std::exception &e )
+      {
+        display->updateToGui( disp_prev_cal );
+        
+        string msg = "There was an issue translating peaks for this energy change;"
+        " not applying change.  Error: " + string(e.what());
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, msg.c_str() );
+#endif
+        m_interspec->logMessage( WString::fromUTF8(msg), "", 3 );
+        return;
+      }//try / catch
+      
+    }//for( const set<int> &samples : peaksampels )
   }//for( const MeasToApplyCoefChangeTo &change : changemeas )
   
   if( updated_cals.find(disp_prev_cal) == end(updated_cals) )
@@ -1265,28 +1334,12 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   }//if( updated_cals.find(disp_prev_cal) == end(updated_cals) )
   
   
-  const shared_ptr<SpecMeas> foreground = m_interspec->measurment( SpectrumType::Foreground );
-  const set<int> &foresamples = m_interspec->displayedSamples( SpectrumType::Foreground );
-  
-  
-  //Now go through and actually set the energy calibrations; they should all be valid an computed.
+
+  // Now go through and actually set the energy calibrations; they should all be valid and computed,
+  //  as should all the shifted peaks.
   for( const MeasToApplyCoefChangeTo &change : changemeas )
   {
     assert( change.meas );
-    const vector<string> detnamesv( begin(change.detectors), end(change.detectors) );
-          
-    // Lets grab the old peaks, as well as the energy calibration that would be used to plot them.
-    //  \TODO: Of course this runs into the problem the peaks are associated with sample numbers,
-    //         and notdetectors currently
-    const set<set<int>> peaksamples = change.meas->sampleNumsWithPeaks();
-    map<set<int>,shared_ptr<deque<shared_ptr<const PeakDef>>>> old_peaks;
-    map<set<int>,shared_ptr<const SpecUtils::EnergyCalibration>> old_peaks_cal;
-    for( const auto &samples : peaksamples )
-    {
-      old_peaks[samples] = change.meas->peaks(samples);
-      old_peaks_cal[samples] = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
-    }
-    
     for( const int sample : change.sample_numbers )
     {
       for( const string &detname : change.detectors )
@@ -1321,53 +1374,29 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
     }//for( loop over sample numbers )
     
     
-    //Now we have to adjust the peak positions
+    //Now actually set the updated peaks
+    const set<set<int>> peaksamples = change.meas->sampleNumsWithPeaks();
+    
     for( const set<int> &samples : peaksamples )
     {
-      //If there is any overlap between 'samples' and 'change.sample_numbers', then apply the change
-      //  Note: this isnt correct, but I cant think of a better solution at the moment.
-      shared_ptr<deque<shared_ptr<const PeakDef>>> oldpeaks = old_peaks[samples];
-      shared_ptr<const SpecUtils::EnergyCalibration> oldcal = old_peaks_cal[samples];
+      auto oldpeaks = change.meas->peaks(samples);
+      if( !oldpeaks )
+        continue;
       
-      if( !oldpeaks || oldpeaks->empty()
-          || !oldcal || (oldcal->type() == EnergyCalType::InvalidEquationType) )
+      const auto pos = updated_peaks.find(oldpeaks);
+      if( pos == end(updated_peaks) )
       {
-        cerr << "Failed to get peaks or oldcal!" << endl; //just for development
+        if( !oldpeaks->empty() )
+          cerr << "Couldnt find an expected entry in updated_peaks" << endl;
         continue;
       }
-      
-      auto newcal = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
-      
-      if( !newcal || !newcal->valid() )
-      {
-        cerr << "Failed to get newcal for peaks shift!" << endl; //just for development
-        continue;
-      }
-      
-      if( oldcal == newcal )
-      {
-        cerr << __func__ <<  ": oldcal == newcal - skipping shifting peak" << endl;
-        continue;
-      }
-      
-      try
-      {
-        auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, oldcal, newcal );
-        change.meas->setPeaks( newpeaks, samples );
-      }catch( std::exception &e )
-      {
-        string msg = "There was an issue translating peaks for this energy change;"
-                     " not translating peaks.  Error: " + string(e.what());
-#if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( __func__, msg.c_str() );
-#endif
-        m_interspec->logMessage( WString::fromUTF8(msg), "", 3 );
-      }//try / catch
-      
-      if( m_peakModel && (change.meas == foreground) && (samples == foresamples) )
-        m_peakModel->setPeakFromSpecMeas(foreground, foresamples);
+
+      change.meas->setPeaks( pos->second, samples );
+      if( m_peakModel && (change.meas == forgrnd) && (samples == foresamples) )
+        m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
     }//for( const set<int> &samples : peaksampels )
   }//for( loop over SpecFiles for change )
+  
   
   //Set an undu point for each meas
   

@@ -81,6 +81,86 @@ bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
 
 
 
+vector<float> fit_for_poly_coefs( const vector<pair<double,double>> &channels_energies,
+                            const int poly_terms )
+{
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation is quite inneficient
+  using namespace boost::numeric;
+  
+  const size_t npoints = channels_energies.size();
+  ublas::matrix<double> A( npoints, poly_terms );
+  ublas::vector<double> b( npoints );
+  
+  for( size_t row = 0; row < npoints; ++row )
+  {
+    b(row) = channels_energies[row].second;
+    for( int col = 0; col < poly_terms; ++col )
+      A(row,col) = std::pow( channels_energies[row].first, double(col) );
+  }//for( int col = 0; col < poly_terms; ++col )
+  
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  const ublas::matrix<double> alpha = prod( A_transpose, A );
+  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+  const bool success = matrix_invert( alpha, C );
+  if( !success )
+    throw runtime_error( "fit_for_poly_coefs(...): trouble inverting matrix" );
+  
+  const ublas::vector<double> beta = prod( A_transpose, b );
+  const ublas::vector<double> a = prod( C, beta );
+  
+  vector<float> poly_coeffs( poly_terms );
+  for( int coef = 0; coef < poly_terms; ++coef )
+    poly_coeffs[coef] = static_cast<float>( a(coef) );
+  
+  return poly_coeffs;
+}//void fit_for_poly_coefs(...)
+
+
+vector<float> fit_for_fullrangefraction_coefs( const vector<pair<double,double>> &channels_energies,
+                            const size_t nchannels, const int nterms )
+{
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation is quite inneficient
+  using namespace boost::numeric;
+  
+  const int polyterms = std::min( nterms, 5 );
+  const size_t npoints = channels_energies.size();
+  
+  ublas::matrix<double> A( npoints, polyterms );
+  ublas::vector<double> b( npoints );
+  
+  for( size_t row = 0; row < npoints; ++row )
+  {
+    const double x = channels_energies[row].first / nchannels;
+    
+    b(row) = channels_energies[row].second;
+    for( int col = 0; col < std::min(4,polyterms); ++col )
+      A(row,col) = std::pow( x, static_cast<double>(col) );
+    if( polyterms > 4 )
+      A(row,5) = 1.0 / (1.0 + 60.0*x);
+  }//for( int col = 0; col < poly_terms; ++col )
+  
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  const ublas::matrix<double> alpha = prod( A_transpose, A );
+  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+  const bool success = matrix_invert( alpha, C );
+  if( !success )
+    throw runtime_error( "fit_for_fullrangefraction_coefs(...): trouble inverting matrix" );
+  
+  const ublas::vector<double> beta = prod( A_transpose, b );
+  const ublas::vector<double> a = prod( C, beta );
+  
+  vector<float> frf_coeffs( polyterms );
+  for( int coef = 0; coef < polyterms; ++coef )
+    frf_coeffs[coef] = static_cast<float>( a(coef) );
+  
+  return frf_coeffs;
+}//void fit_for_fullrangefraction_coefs(...)
+
+
+
+
 /** As an alternative to #fit_energy_cal_poly (for use when, e.g., that fails)
  This class allows using Minuit to find energy calibration coefficients.
  This class may eventually go away after #fit_energy_cal_poly is tested enough.
@@ -652,3 +732,183 @@ EnergyCal::translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<
   return answer;
 }//translatePeakForCalibrationChange(...)
 
+
+shared_ptr<const SpecUtils::EnergyCalibration>
+EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::EnergyCalibration> &orig_cal,
+                             const shared_ptr<const SpecUtils::EnergyCalibration> &new_cal,
+                             const shared_ptr<const SpecUtils::EnergyCalibration> &other_cal )
+{
+  using namespace SpecUtils;
+  
+  if( !orig_cal || !new_cal || !other_cal
+     || !orig_cal->valid() || !new_cal->valid() || !other_cal->valid()
+     || (orig_cal->type() == EnergyCalType::LowerChannelEdge)
+     || (new_cal->type() == EnergyCalType::LowerChannelEdge) )
+    throw runtime_error( "EnergyCal::propogate_energy_cal_change invalid input" );
+  
+  if( orig_cal == new_cal )
+    return other_cal;
+  
+  auto answer = make_shared<EnergyCalibration>();
+  
+  const vector<float> &prev_disp_coefs = orig_cal->coefficients();
+  const vector<float> &new_disp_coefs = new_cal->coefficients();
+  const vector<float> &other_coeffs = other_cal->coefficients();
+  
+  const size_t orig_num_channel = orig_cal->num_channels();
+  const size_t new_num_channel = orig_cal->num_channels();
+  const size_t other_num_channel = other_cal->num_channels();
+  
+  // \TODO: we currently arent using deviation pairs when converting between channel number and
+  //        energy in this function.  This isnt actually correct; the aprehentions I have are:
+  //        1) I havent tested that with deviation is numerically stable enough.
+  //        2) What if its only deviation pairs that have changed, do we then want to correct for
+  //           this using the coefficients?
+  //        3) I'm not a hundred percent certain we actually want to correct for deviation pairs;
+  //           needs more thought;
+  const vector<pair<float,float>> prev_disp_devs; // = orig_cal->deviation_pairs();
+  const vector<pair<float,float>> new_disp_devs;  // = new_cal->deviation_pairs();
+  const vector<pair<float,float>> other_devs;     // = other_cal->deviation_pairs();
+  
+  // Deal with the easy case of other_cal being lower channel energies.
+  if( other_cal->type() == EnergyCalType::LowerChannelEdge )
+  {
+    const size_t nchannel = other_cal->num_channels();
+    const shared_ptr<const vector<float>> &old_lower_ptr = other_cal->channel_energies();
+    assert( old_lower_ptr && !old_lower_ptr->empty() );
+    
+    const vector<float> &old_lower = *old_lower_ptr;
+    assert( old_lower.size() >= (nchannel + 1) ); //actually should always be equal
+    if( nchannel >= old_lower.size() )
+      throw runtime_error( "EnergyCal::propogate_energy_cal_change: really unexpected programing error" );
+    
+    vector<float> new_lower( nchannel + 1 );
+    for( size_t i = 0; i <= nchannel; ++i )
+    {
+      const double equiv_channel = orig_cal->channel_for_energy( old_lower[i] );
+      new_lower[i] = new_cal->energy_for_channel( equiv_channel );
+    }
+    
+    answer->set_lower_channel_energy( nchannel, std::move(new_lower) );
+    return answer;
+  }//if( other_cal->type() == EnergyCalType::LowerChannelEdge )
+
+  
+  assert( (orig_cal->type() == EnergyCalType::FullRangeFraction)
+          || (orig_cal->type() == EnergyCalType::Polynomial) );
+  assert( (new_cal->type() == EnergyCalType::FullRangeFraction)
+          || (new_cal->type() == EnergyCalType::Polynomial) );
+  assert( (other_cal->type() == EnergyCalType::FullRangeFraction)
+          || (other_cal->type() == EnergyCalType::Polynomial) );
+
+  const double accuracy = 0.00001;
+  const size_t order = std::max( other_coeffs.size(),
+                                 std::max(prev_disp_coefs.size(), new_disp_coefs.size()) );
+  
+  vector<pair<double,double>> channels_energies;  //this gives <channel number,energy it should be>
+  for( size_t i = 0; i < order; ++i )
+  {
+    const size_t display_channel = ((order - i - 1) * orig_num_channel) / (order - 1);
+     
+    double old_disp_energy = std::numeric_limits<double>::quiet_NaN(),
+           new_disp_energy = std::numeric_limits<double>::quiet_NaN(),
+           other_channel = std::numeric_limits<double>::quiet_NaN();
+    
+    switch( orig_cal->type() )
+    {
+      case EnergyCalType::FullRangeFraction:
+      {
+        old_disp_energy = fullrangefraction_energy( display_channel, prev_disp_coefs, orig_num_channel, prev_disp_devs );
+        new_disp_energy = fullrangefraction_energy( display_channel, new_disp_coefs, new_num_channel, new_disp_devs );
+        break;
+      }//case orig_cal was FRF
+        
+      case EnergyCalType::Polynomial:
+      case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      {
+        old_disp_energy = polynomial_energy( display_channel, prev_disp_coefs, prev_disp_devs );
+        new_disp_energy = polynomial_energy( display_channel, new_disp_coefs, new_disp_devs );
+        break;
+      }//case: orig_cal was Poly
+        
+      case EnergyCalType::LowerChannelEdge:
+      case EnergyCalType::InvalidEquationType:
+        assert( 0 );
+        break;
+    }//switch( orig_cal->type() )
+    
+    assert( !IsNan(old_disp_energy) && !IsNan(new_disp_energy) );
+    
+    double check_energy = std::numeric_limits<double>::quiet_NaN();  //Just for development test
+    switch( other_cal->type() )
+    {
+      case EnergyCalType::Polynomial:
+      case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        other_channel = find_polynomial_channel( old_disp_energy, other_coeffs, other_num_channel,
+                                                 other_devs, accuracy );
+        check_energy = polynomial_energy( other_channel, other_coeffs, other_devs );
+        break;
+        
+      case EnergyCalType::FullRangeFraction:
+        other_channel = find_fullrangefraction_channel( old_disp_energy, other_coeffs,
+                                                       other_num_channel, other_devs, accuracy );
+        check_energy = fullrangefraction_energy( other_channel, other_coeffs, other_num_channel,
+                                                 other_devs );
+        break;
+        
+      case EnergyCalType::LowerChannelEdge:
+      case EnergyCalType::InvalidEquationType:
+        assert( 0 );
+        break;
+    }//switch( other_cal->type() )
+    
+    assert( !IsNan(other_channel) && !IsNan(check_energy) );
+    
+    channels_energies.push_back( {other_channel, new_disp_energy} );
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+    const double diff = fabs(check_energy - old_disp_energy);
+    const double max_energy = std::max( fabs(check_energy), fabs(old_disp_energy) );
+    
+    if( diff > (max_energy * 1.0E-5) )
+    {
+      char buffer[256];
+      snprintf( buffer, sizeof(buffer), "Found case going from energy-->channel-->energy"
+               " gave seconf energy too different than initial energy by %f with check_energy=%f"
+               " and old_disp_energy=%f", diff, check_energy, old_disp_energy );
+      log_developer_error( __func__, buffer );
+    }//if( diff is larger than we wanted )
+
+    assert( diff <= max_energy*1.0E-6 );
+#endif
+  }//for( size_t i = 0; i < order; ++i )
+  
+  const auto &dev_pairs = other_cal->deviation_pairs();
+  switch( other_cal->type() )
+  {
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+    {
+      const vector<float> new_other_coefs = fit_for_poly_coefs( channels_energies, order );
+      answer->set_polynomial( other_num_channel, new_other_coefs, dev_pairs );
+      break;
+    }
+      
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+    {
+      const vector<float> new_other_coefs = fit_for_fullrangefraction_coefs( channels_energies,
+                                                                        other_num_channel, order );
+      answer->set_full_range_fraction( other_num_channel, new_other_coefs, dev_pairs );
+      break;
+    }
+      
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      assert( 0 );
+      break;
+  }//switch( other_cal->type() )
+  
+  assert( answer->valid() );
+  
+  return answer;
+}//propogate_energy_cal_change(...)
