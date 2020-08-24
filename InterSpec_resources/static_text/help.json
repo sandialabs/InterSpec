@@ -71,7 +71,7 @@
         "keywords":"Trouble Fitting Peaks For Shielding Nuclide Age Accuracy Reference Photopeaks Tools Materials Calibration Units Spectrum"
       },
       {
-        "id" : "energy-calibration-dialog",
+        "id" : "energy-calibration",
         "title" : "Energy Calibration",
         "help-xml" : "energy_calibration_help.xml",
         "help-xml-mobile":"energy_calibration_mobile_help.xml",

@@ -333,7 +333,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *pare
     footer = (parent ? parent->footer() : new WContainerWidget());
           
   if( footer )
-    AuxWindow::addHelpInFooter( footer, "energy-calibration-dialog" );
+    AuxWindow::addHelpInFooter( footer, "energy-calibration" );
   
   m_multiFileButton = new WPushButton( "Mult. Files...", footer );
   
@@ -458,7 +458,7 @@ void Recalibrator::initWidgets( Recalibrator::LayoutStyle style, AuxWindow *pare
     
     auto helpBtn = new WContainerWidget();
     helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-    helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "energy-calibration-dialog" ) );
+    helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "energy-calibration" ) );
     m_layout->addWidget( helpBtn,  row, 0, Wt::AlignLeft | Wt::AlignBottom );
     row++;
     
@@ -1423,6 +1423,7 @@ void Recalibrator::recalibrateByPeaks()
         fitfor[i] = m_fitFor[i]->isChecked();
       
       const double chi2 = EnergyCal::fit_energy_cal_poly( peakInfos, fitfor,
+                                                displ_meas->num_gamma_channels(),
                                               displ_meas->deviation_pairs(),
                                               lls_fit_coefs, lls_fit_coefs_uncert );
       
@@ -2950,6 +2951,7 @@ void Recalibrator::MultiFileCalibFit::doFit()
         fitfor[i] = m_fitFor[i]->isChecked();
       
       const double chi2 = EnergyCal::fit_energy_cal_poly( peakInfos, fitfor,
+                                              eqnmeas->num_gamma_channels(),
                                               eqnmeas->deviation_pairs(),
                                               lls_fit_coefs, lls_fit_coefs_uncert );
       

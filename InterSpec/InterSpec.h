@@ -105,13 +105,7 @@ namespace Wt
   class WGridLayout;
   class WPopupMenu;
   class WPushButton;
-  class WFileUpload;
-  class WSelectionBox;
   class WSuggestionPopup;
-  class WDoubleSpinBox;
-  class WTree;
-  class WTreeNode;
-  class WCheckBox;
     
   namespace Dbo
   {
@@ -119,8 +113,22 @@ namespace Wt
   }
 }//namespace Wt
 
-
+/** A convience function to call #InterSpec::logMessage
+ 
+ \deprecated Please directly call InterSpec::instance()->logMessage(message,source,priority).
+ */
 void log_error_message( const std::string &message, const std::string &source, const int priority );
+
+
+enum class FeatureMarkerType : int
+{
+  /// \TODO: move this to some other header
+  EscapePeakMarker,
+  ComptonPeakMarker,
+  ComptonEdgeMarker,
+  SumPeakMarker,
+  NumFeatureMarkers
+};//enum FeatureMarkerType
 
 
 class InterSpec : public Wt::WContainerWidget
@@ -434,8 +442,19 @@ public:
   
   PopupDivMenu *displayOptionsPopupDiv();
 
-  
+  /** Emits a message to the user.
+   
+    The priority corresponds to the WarningWidget::WarningMsgLevel enum, namely:
+   - Info: 0
+   - Low: 1
+   - Medium: 2
+   - High: 3
+   - Save: 4
+   
+   \sa log_error_message
+   */
   void logMessage( const Wt::WString& message, const Wt::WString& source, int priority );
+  
   virtual Wt::Signal< Wt::WString, Wt::WString, int > &messageLogged();
   
   void toggleToolTip( const bool sticky );
@@ -823,14 +842,6 @@ public:
 //#endif
   //Tracking of which feature markers are being shown on the c++ side of things
   //  is currently only used for export to the D3 chart...
-  enum FeatureMarkerType
-  {
-    EscapePeakMarker,
-    ComptonPeakMarker,
-    ComptonEdgeMarker,
-    SumPeakMarker,
-    NumFeatureMarkers
-  };//enum FeatureMarkerType
   
   void setFeatureMarkerOption( const FeatureMarkerType option, const bool show );
   bool showingFeatureMarker( const FeatureMarkerType option );
@@ -1218,7 +1229,8 @@ protected:
   Wt::WMenuItem *m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NumItems)];
   
   //Christian (20170425): Featuer marker option helpers for D3.js preferences
-  bool m_featureMarkersShown[NumFeatureMarkers];
+  //  When USE_FEATURE_MARKER_WIDGET is enabled full-time, remove this field
+  bool m_featureMarkersShown[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   
 #if( USE_FEATURE_MARKER_WIDGET )
   /** A window that controls if S.E., D.E., Compton Peak, Compton Edge, or Sum

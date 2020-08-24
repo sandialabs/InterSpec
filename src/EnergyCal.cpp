@@ -159,6 +159,127 @@ vector<float> fit_for_fullrangefraction_coefs( const vector<pair<double,double>>
 }//void fit_for_fullrangefraction_coefs(...)
 
 
+double poly_coef_fcn( size_t order, double channel, size_t nchannel )
+{
+  return pow( channel, static_cast<double>(order) );
+}
+
+double frf_coef_fcn( size_t order, double channel, size_t nchannel )
+{
+  const double x = channel / nchannel;
+  if( order == 4 )
+    return 1.0 / (1.0 + 60.0*x);
+  return pow( x, static_cast<double>(order) );
+}
+
+
+double fit_energy_cal_imp( const std::vector<EnergyCal::RecalPeakInfo> &peakinfos,
+                                      const std::vector<bool> &fitfor,
+                                      const size_t nchannels,
+                                      const std::vector<std::pair<float,float>> &dev_pairs,
+                                      std::vector<float> &coefs,
+                                      std::vector<float> &coefs_uncert,
+                                      std::function<double(size_t,double,size_t)> coeffcn )
+{
+  assert( coeffcn );
+  
+  const size_t npeaks = peakinfos.size();
+  const size_t nparsfit = static_cast<size_t>( std::count(begin(fitfor),end(fitfor),true) );
+  
+  if( npeaks < 1 )
+    throw runtime_error( "Must have at least one peak" );
+  
+  if( nparsfit < 1 )
+    throw runtime_error( "Must fit for at least one coefficient" );
+  
+  if( nparsfit > npeaks )
+    throw runtime_error( "Must have at least as many peaks as coefficients fitting for" );
+  
+  if( (nparsfit != fitfor.size()) && (coefs.size() != fitfor.size()) )
+    throw runtime_error( "You must supply input coefficient when any of the coefficients are fixed" );
+  
+  //Energy = P0 + P1*x + P2*x^2 + P3*x^3, where x is bin number
+  //  However, some of the coeffeicents may not be being fit for.
+  vector<float> mean_bin( npeaks ), true_energies( npeaks ), energy_uncerts( npeaks );
+  for( size_t i = 0; i < npeaks; ++i )
+  {
+    mean_bin[i] = peakinfos[i].peakMeanBinNumber;
+    true_energies[i] = peakinfos[i].photopeakEnergy;
+    energy_uncerts[i] = true_energies[i] * peakinfos[i].peakMeanUncert / std::max(peakinfos[i].peakMean,1.0);
+  }
+  
+  //General Linear Least Squares fit
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation is quite inneficient
+  //Energy_i = P0 + P1*pow(i,1) + P2*pow(i,2) + P3*pow(i,3)  (for polynomial)
+  using namespace boost::numeric;
+  
+  ublas::matrix<double> A( npeaks, nparsfit );
+  ublas::vector<double> b( npeaks );
+  
+  for( size_t row = 0; row < npeaks; ++row )
+  {
+    double data_y = true_energies[row];
+    const double data_y_uncert = fabs( energy_uncerts[row] );
+    
+    data_y -= SpecUtils::correction_due_to_dev_pairs( true_energies[row], dev_pairs );
+    
+    for( size_t col = 0, coef_index = 0; coef_index < fitfor.size(); ++coef_index )
+    {
+      if( fitfor[coef_index] )
+      {
+        assert( col < nparsfit );
+        A(row,col) = coeffcn( coef_index, mean_bin[row], nchannels ) / data_y_uncert; //std::pow( mean_bin[row], double(coef_index)) / data_y_uncert;
+        ++col;
+      }else
+      {
+        data_y -= coefs[coef_index] * coeffcn( coef_index, mean_bin[row], nchannels);
+      }
+    }//
+    
+    b(row) = data_y / data_y_uncert;
+  }//for( int col = 0; col < order; ++col )
+  
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  const ublas::matrix<double> alpha = prod( A_transpose, A );
+  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+  const bool success = matrix_invert( alpha, C );
+  if( !success )
+    throw runtime_error( "Trouble inverting least linear squares matrix" );
+  
+  const ublas::vector<double> beta = prod( A_transpose, b );
+  const ublas::vector<double> a = prod( C, beta );
+  
+  coefs.resize( fitfor.size(), 0.0 );
+  coefs_uncert.resize( fitfor.size(), 0.0 );
+  
+  for( size_t col = 0, coef_index = 0; coef_index < fitfor.size(); ++coef_index )
+  {
+    if( fitfor[coef_index] )
+    {
+      assert( col < nparsfit );
+      coefs[coef_index] = static_cast<float>( a(col) );
+      coefs_uncert[coef_index] = static_cast<float>( std::sqrt( C(col,col) ) );
+      ++col;
+    }else
+    {
+      coefs_uncert[coef_index] = 0.0;
+    }
+  }//for( int coef = 0; coef < order; ++coef )
+  
+  double chi2 = 0;
+  for( size_t bin = 0; bin < npeaks; ++bin )
+  {
+    double y_pred = 0.0;
+    for( size_t i = 0; i < fitfor.size(); ++i )
+      y_pred += coefs[i] * coeffcn( i, mean_bin[bin], nchannels );
+    y_pred += SpecUtils::deviation_pair_correction( y_pred, dev_pairs );
+    chi2 += std::pow( (y_pred - true_energies[bin]) / energy_uncerts[bin], 2.0 );
+  }//for( int bin = 0; bin < nbin; ++bin )
+  
+  return chi2;
+}//double fit_energy_cal_imp
+
 
 
 /** As an alternative to #fit_energy_cal_poly (for use when, e.g., that fails)
@@ -213,26 +334,24 @@ public:
       float_coef.push_back( static_cast<float>(d) );
     }//for( const double d : coef )
     
-    //  if( m_eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
-    //    float_coef = fullrangefraction_coef_to_polynomial( float_coef, m_nbin );
-    if( m_eqnType == SpecUtils::EnergyCalType::Polynomial
-       || m_eqnType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-      float_coef = SpecUtils::polynomial_coef_to_fullrangefraction( float_coef, m_nbin );
-    
-    
-    for( const float d : float_coef )
+    double nearend, end, begin, nearbegin;
+    if( m_eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
     {
-      if( IsInf(d) || IsNan(d) )
-      {
-        fprintf( stderr, "Recalibrator::PolyCalibCoefMinFcn::operator(): invalid conversion from Poly to FWF.\n" );
-        return 99999999.0;
-      }
-    }//for( float d : float_coef )
+      nearend   = SpecUtils::fullrangefraction_energy( m_nbin-2, float_coef, m_nbin, m_devpair );
+      end       = SpecUtils::fullrangefraction_energy( m_nbin-1, float_coef, m_nbin, m_devpair );
+      begin     = SpecUtils::fullrangefraction_energy( 0, float_coef, m_nbin, m_devpair );
+      nearbegin = SpecUtils::fullrangefraction_energy( 1, float_coef, m_nbin, m_devpair );
+    }else
+    {
+      assert( m_eqnType == SpecUtils::EnergyCalType::Polynomial
+             || m_eqnType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial );
+      
+      nearend   = SpecUtils::polynomial_energy( m_nbin-2, float_coef, m_devpair );
+      end       = SpecUtils::polynomial_energy( m_nbin-1, float_coef, m_devpair );
+      begin     = SpecUtils::polynomial_energy( 0, float_coef, m_devpair );
+      nearbegin = SpecUtils::polynomial_energy( 1, float_coef, m_devpair );
+    }//if( FRF ) / else ( Poly )
     
-    const float nearend = SpecUtils::fullrangefraction_energy( m_nbin-2, float_coef, m_nbin, m_devpair );
-    const float end = SpecUtils::fullrangefraction_energy( m_nbin-1, float_coef, m_nbin, m_devpair );
-    const float begin = SpecUtils::fullrangefraction_energy( 0, float_coef, m_nbin, m_devpair );
-    const float nearbegin = SpecUtils::fullrangefraction_energy( 1, float_coef, m_nbin, m_devpair );
     
     if( (nearend >= end) || (begin >= nearbegin) )
     {
@@ -242,7 +361,13 @@ public:
     
     for( const EnergyCal::RecalPeakInfo &info : m_peakInfo )
     {
-      const double predictedMean = SpecUtils::fullrangefraction_energy( info.peakMeanBinNumber, float_coef, m_nbin, m_devpair );
+      double predictedMean;
+      
+      if( m_eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
+        predictedMean = SpecUtils::fullrangefraction_energy( info.peakMeanBinNumber, float_coef, m_nbin, m_devpair );
+      else
+        predictedMean = SpecUtils::polynomial_energy( info.peakMeanBinNumber, float_coef, m_devpair );
+      
       double uncert = ((info.peakMeanUncert<=0.0) ? 1.0 : info.peakMeanUncert );
       chi2 += pow(predictedMean - info.photopeakEnergy, 2.0 ) / (uncert*uncert);
     }//for( const &RecalPeakInfo info : peakInfo )
@@ -254,7 +379,7 @@ public:
     }
     
     return chi2;
-  }
+  }//double operator()
   
 protected:
   size_t m_nbin;
@@ -266,107 +391,28 @@ protected:
 }//namespace
 
 
-double EnergyCal::fit_energy_cal_poly( const std::vector<EnergyCal::RecalPeakInfo> &peakinfos,
-                            const vector<bool> fitfor,
+
+
+
+double EnergyCal::fit_energy_cal_frf( const std::vector<EnergyCal::RecalPeakInfo> &peaks,
+                                      const std::vector<bool> &fitfor,
+                                      const size_t nchannels,
+                                      const std::vector<std::pair<float,float>> &dev_pairs,
+                                      std::vector<float> &coefs,
+                                      std::vector<float> &uncert )
+{
+  return fit_energy_cal_imp( peaks, fitfor, nchannels, dev_pairs, coefs, uncert, &frf_coef_fcn );
+}
+
+
+double EnergyCal::fit_energy_cal_poly( const std::vector<EnergyCal::RecalPeakInfo> &peaks,
+                            const vector<bool> &fitfor,
+                            const size_t nchannels,
                             const std::vector<std::pair<float,float>> &dev_pairs,
                             vector<float> &coefs,
-                            vector<float> &coefs_uncert )
+                            vector<float> &uncert )
 {
-  const size_t npeaks = peakinfos.size();
-  const size_t fitorder = static_cast<size_t>( std::count(begin(fitfor),end(fitfor),true) );
-  
-  if( npeaks < 1 )
-    throw runtime_error( "Must have at least one peak" );
-  
-  if( fitorder < 1 )
-    throw runtime_error( "Must fit for at least one coefficient" );
-  
-  if( fitorder > npeaks )
-    throw runtime_error( "Must have at least as many peaks as coefficients fitting for" );
-  
-  if( coefs.size() != fitfor.size() )
-    throw runtime_error( "You must supply input coefficient when any of the coefficients are fixed" );
-  
-  //Energy = P0 + P1*x + P2*x^2 + P3*x^3, where x is bin number
-  //  However, some of the coeffeicents may not be being fit for.
-  vector<float> mean_bin( npeaks ), true_energies( npeaks ), energy_uncerts( npeaks );
-  for( size_t i = 0; i < npeaks; ++i )
-  {
-    mean_bin[i] = peakinfos[i].peakMeanBinNumber;
-    true_energies[i] = peakinfos[i].photopeakEnergy;
-    energy_uncerts[i] = true_energies[i] * peakinfos[i].peakMeanUncert / std::max(peakinfos[i].peakMean,1.0);
-  }
-  
-  //General Linear Least Squares fit
-  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient
-  //Energy_i = P0 + P1*pow(i,1) + P2*pow(i,2) + P3*pow(i,3)
-  using namespace boost::numeric;
-  
-  ublas::matrix<double> A( npeaks, fitorder );
-  ublas::vector<double> b( npeaks );
-  
-  for( size_t row = 0; row < npeaks; ++row )
-  {
-    double data_y = true_energies[row];
-    const double data_y_uncert = fabs( energy_uncerts[row] );
-    
-    data_y -= SpecUtils::correction_due_to_dev_pairs( true_energies[row], dev_pairs );
-    
-    for( size_t col = 0, coef_index = 0; coef_index < fitfor.size(); ++coef_index )
-    {
-      if( fitfor[coef_index] )
-      {
-        assert( col < fitorder );
-        A(row,col) = std::pow( mean_bin[row], double(coef_index)) / data_y_uncert;
-        ++col;
-      }else
-      {
-        data_y -= coefs[coef_index] * std::pow( mean_bin[row], double(coef_index));
-      }
-    }//
-    
-    b(row) = data_y / data_y_uncert;
-  }//for( int col = 0; col < order; ++col )
-  
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "Trouble inverting least linear squares matrix" );
-  
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
-  
-  coefs.resize( fitfor.size(), 0.0 );
-  coefs_uncert.resize( fitfor.size(), 0.0 );
-  
-  for( size_t col = 0, coef_index = 0; coef_index < fitfor.size(); ++coef_index )
-  {
-    if( fitfor[coef_index] )
-    {
-      assert( col < fitorder );
-      coefs[coef_index] = static_cast<float>( a(col) );
-      coefs_uncert[coef_index] = static_cast<float>( std::sqrt( C(col,col) ) );
-      ++col;
-    }else
-    {
-      coefs_uncert[coef_index] = 0.0;
-    }
-  }//for( int coef = 0; coef < order; ++coef )
-  
-  double chi2 = 0;
-  for( size_t bin = 0; bin < npeaks; ++bin )
-  {
-    double y_pred = 0.0;
-    for( size_t i = 0; i < fitfor.size(); ++i )
-      y_pred += coefs[i] * std::pow( mean_bin[bin], static_cast<double>(i) );
-    y_pred += SpecUtils::deviation_pair_correction( y_pred, dev_pairs );
-    chi2 += std::pow( (y_pred - true_energies[bin]) / energy_uncerts[bin], 2.0 );
-  }//for( int bin = 0; bin < nbin; ++bin )
-  
-  return chi2;
+  return fit_energy_cal_imp( peaks, fitfor, nchannels, dev_pairs, coefs, uncert, &poly_coef_fcn );
 }//double fit_energy_cal_poly(...)
 
 
@@ -870,7 +916,7 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
     const double diff = fabs(check_energy - old_disp_energy);
     const double max_energy = std::max( fabs(check_energy), fabs(old_disp_energy) );
     
-    if( diff > (max_energy * 1.0E-5) )
+    if( (diff > (max_energy * 1.0E-5)) && (diff > 0.00001) )
     {
       char buffer[256];
       snprintf( buffer, sizeof(buffer), "Found case going from energy-->channel-->energy"
@@ -879,7 +925,7 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
       log_developer_error( __func__, buffer );
     }//if( diff is larger than we wanted )
 
-    assert( diff <= max_energy*1.0E-6 );
+    assert( diff <= max_energy*1.0E-6 || (diff < 0.00001) );
 #endif
   }//for( size_t i = 0; i < order; ++i )
   

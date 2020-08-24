@@ -15,6 +15,7 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
+#include "InterSpec/InterSpec.h"  //Only for FeatureMarkerType::NumFeatureMarkers
 
 static_assert( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE, "RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE must be enabled when USE_SPECTRUM_CHART_D3 is enabled" );
 
@@ -31,7 +32,7 @@ namespace Wt
 {
   class WCssTextRule;
 }//namespace Wt
-
+enum class FeatureMarkerType : int;
 namespace SpecUtils{ class Measurement; }
 namespace SpecUtils{ enum class SpectrumType : int; }
 
@@ -227,7 +228,7 @@ public:
   bool backgroundSubtract() const;
   void setBackgroundSubtract( bool subtract );
   
-  void setFeatureMarkerOption( InterSpec::FeatureMarkerType option, bool show );
+  void setFeatureMarkerOption( FeatureMarkerType option, bool show );
   void setComptonPeakAngle( int angle );
   
   void showXAxisSliderChart( const bool show );
@@ -440,7 +441,7 @@ protected:
 #endif
   bool m_showRefLineInfoForMouseOver;
   
-  bool m_showFeatureMarker[InterSpec::NumFeatureMarkers];
+  bool m_showFeatureMarker[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   
   /** Current compton angle used - note there is a bug in the WSpinBox inside
      WMenu (at least in Wt 3.3.4) so this value is likely not valid, and instead

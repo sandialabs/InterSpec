@@ -1,9 +1,18 @@
 
 .EnergyCalTool
 {
-  
+  /* margin-top: 5px; */
+  /* margin-right: 4px; */
+  /* margin-bottom: 3px; */
+  /* padding-left: 5px; */
 }
 
+.EnergyCalTool .ContentHelpBtn
+{
+  position: absolute;
+  margin-left: 5px;
+  bottom: 0px;
+}
 
 .EnergyCalTool .ColHeader
 {
@@ -22,6 +31,7 @@
 .EnergyCalTool .CalColumn
 {
   border-right: 1px solid #e1e1e1;
+  padding-bottom: 3px;
 }
 
 
@@ -98,6 +108,17 @@
 {
   
 }
+
+.EnergyCalTool .BtmBtnDiv
+{
+  
+}
+
+.EnergyCalTool .FitCoefBtn
+{
+  float: right;
+}
+
 
 /*
 .EnergyCalTool .CalSpecMenu
@@ -318,6 +339,7 @@ color: #E0F5FF;
 {
   width: 14em;
   margin-left: 5px;
+  margin-right: 2px;
 }
 
 .DevPairDisplay

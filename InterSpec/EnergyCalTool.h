@@ -49,6 +49,11 @@ namespace Wt
   class WStackedWidget;
 }//namespace Wt
 
+namespace SpecUtils
+{
+  struct EnergyCalibration;
+}
+
 namespace EnergyCalImp
 {
   class CalDisplay;
@@ -122,16 +127,20 @@ public:
   
   void handleGraphicalRecalRequest( double xstart, double xfinish ){}
   
-  
+  void updateFitButtonStatus();
   
   void displayedSpecChangedCallback( const SpecUtils::SpectrumType,
                                      const std::shared_ptr<SpecMeas> meas,
                                      const std::set<int> samples,
                                      const std::vector<std::string> detectors );
   
-  
-  void fitCoefficientCBChanged();
   void userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display );
+  
+  void applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalibration> orig,
+                       std::shared_ptr<const SpecUtils::EnergyCalibration> updated,
+                       const bool isOffsetOnly );
+  
+  
   void userChangedDeviationPair( EnergyCalImp::CalDisplay *display );
   
   void displayedSpectrumChanged( const SpecUtils::SpectrumType type,
@@ -146,6 +155,9 @@ protected:
   void doRefreshFromFiles();
   
   void specTypeToDisplayForChanged();
+  
+  void fitCoefficients();
+  bool canDoEnergyFit();
   
   /** Have #refreshGuiFromFiles only ever get called from #render to avoid current situation
    of calling refreshGuiFromFiles multiple times for a single render (the looping over files can
@@ -176,6 +188,7 @@ protected:
     CombineChannels,
     ConvertToFrf,
     ConvertToPoly,
+    MultipleFilesCal,
     //Maybe add sum spectra, although this isnt a energy cal related thing
     //Revert, and revert back to original calibrations.
     NumMoreActionsIndex
@@ -272,6 +285,10 @@ protected:
   Wt::WCheckBox *m_applyToCbs[ApplyToCbIndex::NumApplyToCbIndex];
   
   Wt::WAnchor *m_moreActions[MoreActionsIndex::NumMoreActionsIndex];
+  
+  
+  Wt::WPushButton *m_fitCalBtn;
+  
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];

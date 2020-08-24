@@ -562,7 +562,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_isotopeSearch = new IsotopeSearchByEnergy( this, m_spectrum );
   m_isotopeSearch->setLoadLaterWhenInvisible(true);
 
-  m_warnings = new WarningWidget( m_spectrum, this );
+  m_warnings = new WarningWidget( this );
 
   // Set up the floating energy recalibrator.
   //m_recalibrator = new Recalibrator( this, m_peakModel );
@@ -997,7 +997,7 @@ InterSpec::~InterSpec()
     m_referencePhotopeakLinesWindow = nullptr;
   }//if( m_referencePhotopeakLinesWindow )
   
-  if( m_warnings )
+  if( m_warnings )  //WarningWidget isnt necassarily parented, so we do have to manually delete it
   {
     if( m_warningsWindow )
       m_warningsWindow->stretcher()->removeWidget( m_warnings );
@@ -1194,10 +1194,10 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
                                  /* showPeakEnergyLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel ),
                                  /* showPeakNuclideLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel ),
                                  /* showPeakNuclideEnergyLabels: */ m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies ),
-                                 /* showEscapePeakMarker: */m_featureMarkersShown[EscapePeakMarker],
-                                 /* showComptonPeakMarker: */m_featureMarkersShown[ComptonPeakMarker],
-                                 /* showComptonEdgeMarker: */m_featureMarkersShown[ComptonEdgeMarker],
-                                 /* showSumPeakMarker: */m_featureMarkersShown[SumPeakMarker],
+                                 /* showEscapePeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)],
+                                 /* showComptonPeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)],
+                                 /* showComptonEdgeMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)],
+                                 /* showSumPeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::SumPeakMarker)],
                                  /* backgroundSubtract: */m_spectrum->backgroundSubtract(),
                                  /* xMin: */xMin, /* xMax: */xMax,
                                  referc_line_json
@@ -2470,9 +2470,9 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
 
 
 
-void InterSpec::setFeatureMarkerOption( const InterSpec::FeatureMarkerType option, const bool show )
+void InterSpec::setFeatureMarkerOption( const FeatureMarkerType option, const bool show )
 {
-  m_featureMarkersShown[option] = show;
+  m_featureMarkersShown[static_cast<int>(option)] = show;
   
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->setFeatureMarkerOption( option, show );
@@ -2504,7 +2504,7 @@ void InterSpec::setFeatureMarkerOption( const InterSpec::FeatureMarkerType optio
 
 bool InterSpec::showingFeatureMarker( const FeatureMarkerType option )
 {
-  return m_featureMarkersShown[option];
+  return m_featureMarkersShown[static_cast<int>(option)];
 }
 
 
@@ -2545,9 +2545,11 @@ void InterSpec::deleteFeatureMarkerWindow()
   m_featureMarkers = nullptr;
   m_featureMarkerMenuItem->setText( "Feature Markers..." );
   
-  for( FeatureMarkerType i = FeatureMarkerType(0); i < FeatureMarkerType::NumFeatureMarkers; i = FeatureMarkerType(i+1) )
+  for( FeatureMarkerType i = FeatureMarkerType(0);
+       i < FeatureMarkerType::NumFeatureMarkers;
+       i = FeatureMarkerType(static_cast<int>(i)+1) )
   {
-    if( m_featureMarkersShown[i] )
+    if( m_featureMarkersShown[static_cast<int>(i)] )
       setFeatureMarkerOption( i, false );
   }
 }//void deleteFeatureMarkerWindow()
