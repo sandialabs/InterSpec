@@ -71,6 +71,10 @@
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
+#if ( USE_SPECTRUM_CHART_D3 )
+#include "InterSpec/D3SpectrumDisplayDiv.h"
+#endif
+
 using namespace std;
 using namespace Wt;
 

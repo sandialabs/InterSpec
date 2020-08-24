@@ -39,6 +39,7 @@
 #include <Wt/WAnimation>
 #include <Wt/WIOService>
 #include <Wt/WTableCell>
+#include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/Chart/WDataSeries>
@@ -458,6 +459,7 @@ public:
     {
       cell = m_table->elementAt(0,keepPeakIndex);
       txt = new WText( "Keep Peak?", cell );
+      txt->setWordWrap( false );
     }
     
     if( peakEnergyIndex >= 0 )
@@ -515,6 +517,7 @@ public:
         }else
         {
           WCheckBox *cb = new WCheckBox( "Keep Peak", cbcell );
+          cb->setWordWrap(false);
           cb->setChecked(true);
           cb->changed().connect( this, &PeakSelectorWindow::keepPeakChanged );
           m_keep_peak_cbs[i] = cb;
@@ -2163,7 +2166,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   //  then create the popup window widget to let the user change things - this
   //  function should also use that same popup window!
   
-  const bool showingEscapePeakFeature = viewer->showingFeatureMarker(InterSpec::FeatureMarkerType::EscapePeakMarker);
+  const bool showingEscapePeakFeature = viewer->showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
   auto peakModel = viewer->peakModel();
   auto foreground = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   const ReferencePhotopeakDisplay *refLineDisp = viewer->referenceLinesWidget();

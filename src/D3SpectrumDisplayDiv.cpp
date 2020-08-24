@@ -222,11 +222,11 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
     m_peakLabelsToShow[label] = false;
   }//for( loop over all labels )
   
-  for( InterSpec::FeatureMarkerType type = InterSpec::FeatureMarkerType(0);
-      type < InterSpec::FeatureMarkerType::NumFeatureMarkers;
-      type = InterSpec::FeatureMarkerType(type + 1) )
+  for( FeatureMarkerType type = FeatureMarkerType(0);
+      type < FeatureMarkerType::NumFeatureMarkers;
+      type = FeatureMarkerType( static_cast<int>(type) + 1) )
   {
-    m_showFeatureMarker[type] = false;
+    m_showFeatureMarker[static_cast<int>(type)] = false;
   }
 }//D3SpectrumDisplayDiv constructor
 
@@ -254,25 +254,25 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", showNuclideNames: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakNuclideLabel]);
   options += ", showNuclideEnergies: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakNuclideEnergies]);
   
-  for( InterSpec::FeatureMarkerType type = InterSpec::FeatureMarkerType(0);
-      type < InterSpec::FeatureMarkerType::NumFeatureMarkers;
-      type = InterSpec::FeatureMarkerType(type + 1) )
+  for( FeatureMarkerType type = FeatureMarkerType(0);
+      type < FeatureMarkerType::NumFeatureMarkers;
+      type = FeatureMarkerType(static_cast<int>(type) + 1) )
   {
     switch( type )
     {
-      case InterSpec::FeatureMarkerType::EscapePeakMarker:
-        options += ", showEscapePeaks:" + jsbool(m_showFeatureMarker[type]);
+      case FeatureMarkerType::EscapePeakMarker:
+        options += ", showEscapePeaks:" + jsbool(m_showFeatureMarker[static_cast<int>(type)]);
         break;
-      case InterSpec::FeatureMarkerType::ComptonPeakMarker:
-        options += ", showComptonPeaks:" + jsbool(m_showFeatureMarker[type]);
+      case FeatureMarkerType::ComptonPeakMarker:
+        options += ", showComptonPeaks:" + jsbool(m_showFeatureMarker[static_cast<int>(type)]);
         break;
-      case InterSpec::FeatureMarkerType::ComptonEdgeMarker:
-        options += ", showComptonPeaks:" + jsbool(m_showFeatureMarker[type]);
+      case FeatureMarkerType::ComptonEdgeMarker:
+        options += ", showComptonPeaks:" + jsbool(m_showFeatureMarker[static_cast<int>(type)]);
         break;
-      case InterSpec::FeatureMarkerType::SumPeakMarker:
-        options += ", showSumPeaks:" + jsbool(m_showFeatureMarker[type]);
+      case FeatureMarkerType::SumPeakMarker:
+        options += ", showSumPeaks:" + jsbool(m_showFeatureMarker[static_cast<int>(type)]);
         break;
-      case InterSpec::FeatureMarkerType::NumFeatureMarkers:
+      case FeatureMarkerType::NumFeatureMarkers:
       default:
         return;
     }//switch( option )
@@ -1466,30 +1466,30 @@ void D3SpectrumDisplayDiv::saveChartToPng( const std::string &filename )
 
 
 
-void D3SpectrumDisplayDiv::setFeatureMarkerOption( InterSpec::FeatureMarkerType option, bool show )
+void D3SpectrumDisplayDiv::setFeatureMarkerOption( FeatureMarkerType option, bool show )
 {
   string js = m_jsgraph;
   
   switch( option )
   {
-    case InterSpec::FeatureMarkerType::EscapePeakMarker:
+    case FeatureMarkerType::EscapePeakMarker:
       js += ".setEscapePeaks";
       break;
-    case InterSpec::FeatureMarkerType::ComptonPeakMarker:
+    case FeatureMarkerType::ComptonPeakMarker:
       js += ".setComptonPeaks";
       break;
-    case InterSpec::FeatureMarkerType::ComptonEdgeMarker:
+    case FeatureMarkerType::ComptonEdgeMarker:
       js += ".setComptonEdge";
       break;
-    case InterSpec::FeatureMarkerType::SumPeakMarker:
+    case FeatureMarkerType::SumPeakMarker:
       js += ".setSumPeaks";
       break;
-    case InterSpec::FeatureMarkerType::NumFeatureMarkers:
+    case FeatureMarkerType::NumFeatureMarkers:
     default:
       return;
   }//switch( option )
   
-  m_showFeatureMarker[option] = show;
+  m_showFeatureMarker[static_cast<int>(option)] = show;
   js += "(" + jsbool(show) + ");";
   
   if( isRendered() )
@@ -1942,7 +1942,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
           //Assign nuclide from reference lines
           if( viewer )
           {
-            const bool showingEscape = viewer->showingFeatureMarker(InterSpec::FeatureMarkerType::EscapePeakMarker);
+            const bool showingEscape = viewer->showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
             const auto refwidget = viewer->referenceLinesWidget();
             const bool colorFromRefLines = viewer->colorPeaksBasedOnReferenceLines();
             PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,

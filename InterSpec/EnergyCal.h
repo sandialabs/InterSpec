@@ -62,6 +62,7 @@ struct RecalPeakInfo
         coefficient.  If any value is false (i.e. dont fit for that parameter)
         then the 'coefs' parameter must be exactly the same size as this vector
         and the value at the corresponding index will be used for that parameter.
+ @param nchannels The number of channels of the spectrum.
  @param dev_pairs The non-linear deviation pairs.
  @param coefs Provides the fit coeficients for the energy calibration. Also,
         if any parameter is not being fit for than this vector also provides
@@ -73,10 +74,23 @@ struct RecalPeakInfo
  Throws exception on error.
  */
 double fit_energy_cal_poly( const std::vector<EnergyCal::RecalPeakInfo> &peakinfos,
-                            const std::vector<bool> fitfor,
+                            const std::vector<bool> &fitfor,
+                            const size_t nchannels,
                             const std::vector<std::pair<float,float>> &dev_pairs,
                             std::vector<float> &coefs,
                             std::vector<float> &coefs_uncert );
+
+/** Analogous to #fit_energy_cal_poly, but for full range fraction.
+ */
+double fit_energy_cal_frf( const std::vector<EnergyCal::RecalPeakInfo> &peakinfos,
+                           const std::vector<bool> &fitfor,
+                           const size_t nchannels,
+                           const std::vector<std::pair<float,float>> &dev_pairs,
+                           std::vector<float> &coefs,
+                           std::vector<float> &coefs_uncert );
+
+/// \TODO: we could probably make a fit_energy_cal_lower_channel_energies that adjusts the offset
+///        and gain equivalents for lower channel energy defined calibrations.
 
 
 /** Uses Minuit2 to fit for calibration coefficients.

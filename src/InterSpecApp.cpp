@@ -625,14 +625,14 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         }
           
         WStringStream js;
-        js << "<div onclick="
+        js << "Resuming where you left off on " << state->name.toUTF8()
+           << "<div onclick="
         "\"Wt.emit('" << id() << "',{name:'clearSession'});"
         "$('.qtip.jgrowl:visible:last').remove();"
         "return false;\" "
         "class=\"clearsession\"><span class=\"clearsessiontxt\">Start Fresh Session</span></div>";
         
-        passMessage( "Resuming where you left off on " + state->name + js.str(),
-                    "", WarningWidget::WarningMsgInfo );
+        WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo );
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
         }
 #endif

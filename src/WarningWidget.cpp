@@ -23,98 +23,106 @@
 
 #include "InterSpec_config.h"
 
-#include <sstream>
 #include <iostream>
 #include <algorithm>
 
-#include <Wt/WLabel>
 #include <Wt/WLink>
 #include <Wt/WText>
-#include <Wt/WTime>
+#include <Wt/Utils>
+#include <Wt/WLabel>
 #include <Wt/WImage>
 #include <Wt/WCheckBox>
 #include <Wt/WGridLayout>
 #include <Wt/WJavaScript>
-#include <Wt/WEnvironment>
 #include <Wt/WApplication>
 #include <Wt/WStandardItem>
+#include <Wt/WStringStream>
 #include <Wt/WContainerWidget>
 #include <Wt/WStandardItemModel>
-#include <Wt/WCssDecorationStyle>
 
 // Disable streamsize <=> size_t warnings in boost
 #pragma warning(disable:4244)
 
-#include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/WarningWidget.h"
-#if ( USE_SPECTRUM_CHART_D3 )
-#include "InterSpec/D3SpectrumDisplayDiv.h"
-#else
-#include "InterSpec/SpectrumDisplayDiv.h"
-#endif
+#include "InterSpec/RowStretchTreeView.h"
 
 using namespace Wt;
 using namespace std;
+
+const char *iconUrl( const WarningWidget::WarningMsgLevel level )
+{
+  switch( level )
+  {
+    case WarningWidget::WarningMsgLevel::WarningMsgInfo:   return "InterSpec_resources/images/information.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgLow:    return "InterSpec_resources/images/bullet_error.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgMedium: return "InterSpec_resources/images/error.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgHigh:   return "InterSpec_resources/images/exclamation.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgSave:   return "InterSpec_resources/images/disk.png";
+  }//switch( WarningMsgLevel(level) )
+  
+  return "";
+}//iconUrl(...)
+
 
 const char *WarningWidget::tostr( const WarningMsgLevel level )
 {
   switch( level )
   {
-
     case WarningWidget::WarningMsgInfo:
-    return "BlockNotificationInfo";
+      return "BlockNotificationInfo";
     case WarningWidget::WarningMsgLow:
-    return "BlockNotificationLow";
+      return "BlockNotificationLow";
     case WarningWidget::WarningMsgMedium:
-    return "BlockNotificationMedium";
+      return "BlockNotificationMedium";
     case WarningWidget::WarningMsgHigh:
-    return "BlockNotificationHigh";
+      return "BlockNotificationHigh";
     case WarningWidget::WarningMsgSave:
-    return "BlockNotificationSave";
+      return "BlockNotificationSave";
   }//switch( i )
   
   throw runtime_error( "WarningWidget::tostr(...): invalid level" );
   return "";
 }//tostr(...)
+
 
 const char *WarningWidget::popupToStr( const WarningMsgLevel level )
 {
   switch( level )
   {
     case WarningWidget::WarningMsgInfo:
-    return "PopupBlockNotificationInfo";
+      return "PopupBlockNotificationInfo";
     case WarningWidget::WarningMsgLow:
-    return "PopupBlockNotificationLow";
+      return "PopupBlockNotificationLow";
     case WarningWidget::WarningMsgMedium:
-    return "PopupBlockNotificationMedium";
+      return "PopupBlockNotificationMedium";
     case WarningWidget::WarningMsgHigh:
-    return "PopupBlockNotificationHigh";
+      return "PopupBlockNotificationHigh";
     case WarningWidget::WarningMsgSave:
-    return "PopupBlockNotificationSave";
+      return "PopupBlockNotificationSave";
   }//switch( i )
   
   throw runtime_error( "WarningWidget::tostr(...): invalid level" );
   return "";
 }//tostr(...)
 
+
 const char *WarningWidget::description( const WarningMsgLevel level )
 {
   switch( level )
   {
     case WarningWidget::WarningMsgInfo:
-    return "info";
+      return "info";
     case WarningWidget::WarningMsgLow:
-    return "low";
+      return "low";
     case WarningWidget::WarningMsgMedium:
-    return "medium";
+      return "medium";
     case WarningWidget::WarningMsgHigh:
-    return "high";
+      return "high";
     case WarningWidget::WarningMsgSave:
-    return "save";
+      return "save";
   }//switch( i )
   
   throw runtime_error( "WarningWidget::description(...): invalid level" );
@@ -122,30 +130,22 @@ const char *WarningWidget::description( const WarningMsgLevel level )
 }//const char *description( const WarningMsgLevel level )
 
 
-WarningWidget::WarningWidget(
-#if ( USE_SPECTRUM_CHART_D3 )
-                             D3SpectrumDisplayDiv *spectrumDisplayDiv,
-#else
-                             SpectrumDisplayDiv *spectrumDisplayDiv,
-#endif
-                             InterSpec *hostViewer,
-                             WContainerWidget *parent )
+WarningWidget::WarningWidget( InterSpec *hostViewer,
+                              WContainerWidget *parent )
 : WContainerWidget( parent ),
-m_spectrumDisplayDiv( spectrumDisplayDiv ),
-m_hostViewer( hostViewer ),
-m_totalMessages(0),
-m_app( wApp ),
-m_layout(NULL),
-m_messageModel(NULL),
-m_tableView(NULL),
-m_description(NULL)
+  m_hostViewer( hostViewer ),
+  m_totalMessages(0),
+  m_layout(NULL),
+  m_messageModel(NULL),
+  m_tableView(NULL),
+  m_description(NULL)
 {
   setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
   m_messageModel = new WStandardItemModel(1,4,this);
   
   // Find which messages should be active.
   for( WarningMsgLevel i = WarningMsgLevel(0);
-       i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
+      i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
     m_active[i] = !m_hostViewer->m_user->preferenceValue<bool>( tostr(i) );
   
   for( WarningMsgLevel i = WarningMsgLevel(0);
@@ -153,20 +153,19 @@ m_description(NULL)
     m_popupActive[i] = !InterSpecUser::preferenceValue<bool>( WarningWidget::popupToStr(i), m_hostViewer );
   
   //Force WarningMsgSave to always be true
-    m_active[WarningMsgSave]=true;
-    m_popupActive[WarningMsgSave]=true;
-    
+  m_active[WarningMsgSave] = true;
+  m_popupActive[WarningMsgSave] = true;
+  
   // Hook it up to the message handler in InterSpec
   hostViewer->messageLogged().connect( this, &WarningWidget::addMessage );
-  
-  //  addMessage( "Welcome to the InterSpec.",
-  //           "", WarningWidget::WarningMsgInfo );
-} // WarningWidget::WarningWidget( SpectrumDisplayDiv * )
+}//WarningWidget::WarningWidget( SpectrumDisplayDiv * )
+
 
 bool WarningWidget::active( WarningWidget::WarningMsgLevel level ) const
 {
   return m_active[level];
 } //bool WarningWidget::active( WarningWidget::WarningMsgLevel level ) const
+
 
 WarningWidget::~WarningWidget()
 {
@@ -312,111 +311,50 @@ void WarningWidget::clearMessages()
 
 }//void WarningWidget::clearMessages()
 
-void WarningWidget::addMessage( const Wt::WString &msg, const Wt::WString &src, int level )
+
+void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
+                                              WarningWidget::WarningMsgLevel level )
 {
-  if( level < 0 || level > WarningMsgSave )
-    level = WarningMsgHigh;
-
-  string prefix;
-  if( level <= WarningMsgInfo )
-    prefix = "InterSpec_resources/images/information.png";
-  else if( level <= WarningMsgLow )
-    prefix = "InterSpec_resources/images/bullet_error.png";
-  else if( level <= WarningMsgMedium )
-    prefix = "InterSpec_resources/images/error.png";
-  else if( level <= WarningMsgHigh )
-    prefix = "InterSpec_resources/images/exclamation.png";
-  else if( level <= WarningMsgSave )
-    prefix = "InterSpec_resources/images/disk.png";
-    
+  //We need the properly escaped string (e.g., not single quotes or unintended backslases), so we
+  //  will use WString::jsStringLiteral(). Note that this will also place a single quote around the
+  //  string.
+  const string val = msg.jsStringLiteral( '\'' );
+  string header, style;
   
-  if( m_active[ level ] )
+  switch( level )
   {
-    m_totalMessages++; //only count if logging
-    
-    vector<WStandardItem*> message;
-    Wt::WStandardItem * msgItem = new Wt::WStandardItem(std::to_string(m_totalMessages));
-    message.push_back(msgItem);
-    
-    msgItem = new Wt::WStandardItem(prefix, WarningWidget::description(WarningWidget::WarningMsgLevel(level)));
-    message.push_back(msgItem);
-    
-    msgItem = new Wt::WStandardItem(msg);
-    message.push_back(msgItem);
-    msgItem = new Wt::WStandardItem(src);
-    message.push_back(msgItem);
-    
-    m_messageModel->appendRow(message);
-  } // if( m_active[ level ] )
-    
-  if (m_popupActive[ level ] )
-  {
-//    //----------------------------------------------------------------------------
-//    //need to escape the ' in the text message
-//    string val = msg.toUTF8();
-//    boost::replace_all(val, "'", "\\'");
-//    
-//    //Create popup notifications
-//    std::stringstream strm;
-//    if( level <= WarningMsgInfo )
-//      strm <<    "new PNotify({text: '"<<val<<"', type:'info', delay:5000, opacity: 0.85});";
-//    else if( level <= WarningMsgLow )
-//      strm <<    "new PNotify({text: '"<<val<<"', type:'notice', delay:5000, opacity: 0.85});";
-//    else if( level <= WarningMsgMedium )
-//      strm <<    "new PNotify({text: '"<<val<<"', type:'notice', delay:5000, opacity: 0.85});";
-//    else
-//      strm <<    "new PNotify({text: '"<<val<<"', type:'error', delay:5000, opacity: 0.85});";
-//    WApplication::instance()->doJavaScript(strm.str());
-//    
-    //----------------------------------------------------------------------------
-    //need to escape the ' in the text message
-    string val = msg.toUTF8();
-    
-    //Replace all single backslashes with a double backslash 
-    //  -Assumes user has not already escaped the string
-    SpecUtils::ireplace_all( val, "\\\\", "[%%%%%%%%]" );
-    SpecUtils::ireplace_all( val, "\\", "\\\\" );
-    SpecUtils::ireplace_all( val, "[%%%%%%%%]", "\\\\\\\\" );
-
-    //Replace single quotes within the string - double should be fine to leave
-    boost::replace_all(val, "'", "\\'");
-    boost::replace_all(val, "\n", "<br />");
-
-    string header;
-    string style;
-    
-    //Create popup notifications
-    std::stringstream strm;
-    if( level <= WarningMsgInfo )
-    {
+    case WarningMsgInfo:
       header = "Info";
       style = "qtip-light";
-    }
-    else if( level <= WarningMsgLow )
-    {
+    break;
+      
+    case WarningMsgLow:
       header = "Notice";
       style = "qtip-plain";
-    }
-    else if( level <= WarningMsgMedium )
-    {
+    break;
+      
+    case WarningMsgMedium:
       header = "Notice";
       style = "qtip-plain";
-    }
-    else if( level <= WarningMsgHigh )
-    {
+    break;
+      
+    case WarningMsgHigh:
       header = "Error";
       style = "qtip-red";
-    }
-    else if( level <= WarningMsgSave )
-    {
-        header = "Save";
-        style = "qtip-green";
-    }
-    
-    strm << "var target = $('.qtip.jgrowl:visible:last'); $(document.body).qtip({ \
+    break;
+      
+    case WarningMsgSave:
+      header = "Save";
+      style = "qtip-green";
+    break;
+  }//switch( level )
+  
+  //Create popup notifications
+  WStringStream strm;
+  strm << "var target = $('.qtip.jgrowl:visible:last'); $(document.body).qtip({ \
       content: { \
-        title:  '<img style=\"vertical-align: middle;\" src=\\' "<<prefix<<"\\'/>&nbsp;&nbsp;"<<header<<"', \
-        text:   '"<<val<<"', \
+        title:  '<img style=\"vertical-align: middle;\" src=\\'" << string(iconUrl(level)) << "\\'/>&nbsp;&nbsp;" << header << "', \
+        text:   "<< val <<", \
         button: true \
       }, \
       position: { \
@@ -438,7 +376,7 @@ void WarningWidget::addMessage( const Wt::WString &msg, const Wt::WString &src, 
       }, \
       style: { \
         width: 250, \
-        classes: 'jgrowl qtip-rounded qtip-shadow "<<style<<"', \
+        classes: 'jgrowl qtip-rounded qtip-shadow "<< style <<"', \
         tip: false \
       }, \
       events: { \
@@ -456,9 +394,46 @@ void WarningWidget::addMessage( const Wt::WString &msg, const Wt::WString &src, 
       } \
   }).removeData('qtip');";
   
-  WApplication::instance()->doJavaScript(strm.str());
+  auto app = WApplication::instance();
+  if( app )
+    app->doJavaScript( strm.str() );
+}//displayPopupMessageUnsafe(...)
+
+
+
+
+void WarningWidget::addMessage( Wt::WString msg, Wt::WString src, int ilevel )
+{
+  if( ilevel < 0 || ilevel > WarningMsgSave )
+    ilevel = WarningMsgHigh;
+
+  const WarningMsgLevel level = WarningMsgLevel(ilevel);
   
-  } //m_popupActive[ level ]
+  //Make sure the text is safe to display
+  if( !Wt::Utils::removeScript(msg) )
+    msg = Wt::Utils::htmlEncode( msg, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
+  
+  if( m_active[ level ] )
+  {
+    m_totalMessages++; //only count if logging
+    
+    vector<WStandardItem*> message;
+    Wt::WStandardItem * msgItem = new Wt::WStandardItem(std::to_string(m_totalMessages));
+    message.push_back(msgItem);
+    
+    msgItem = new Wt::WStandardItem( string(iconUrl(level)), WarningWidget::description(level));
+    message.push_back(msgItem);
+    
+    msgItem = new Wt::WStandardItem(msg);
+    message.push_back(msgItem);
+    msgItem = new Wt::WStandardItem(src);
+    message.push_back(msgItem);
+    
+    m_messageModel->appendRow(message);
+  } // if( m_active[ level ] )
+    
+  if( m_popupActive[level] )
+    displayPopupMessageUnsafe( msg, level );
 } // void WarningWidget::addMessage(...)
 
 void WarningWidget::setActivity( WarningWidget::WarningMsgLevel priority, bool allowed )
