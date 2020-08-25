@@ -2131,7 +2131,7 @@ Recalibrator::GraphicalRecalConfirm::GraphicalRecalConfirm( double lowe,
   
   if( !displayAll )
   {
-    WText *t = new WText( "(Calibration only applied to<br>displayed detectors)",
+    WText *t = new WText( "(Calibration only applied to<br />displayed detectors)",
                          XHTMLUnsafeText, contents() );
     t->setInline( false );
     t->setAttributeValue( "style", "color: #737373; width: auto; text-align: center;" );

@@ -7,6 +7,11 @@
   /* padding-left: 5px; */
 }
 
+.EnergyCalTool.TallEnergyCal
+{
+  overflow: auto;
+}
+
 .EnergyCalTool .ContentHelpBtn
 {
   position: absolute;
@@ -28,10 +33,16 @@
   border-bottom: 1px solid #e1e1e1;
 }
 
+
 .EnergyCalTool .CalColumn
 {
   border-right: 1px solid #e1e1e1;
   padding-bottom: 3px;
+}
+
+.EnergyCalTool.TallEnergyCal .CalColumn
+{
+  margin-bottom: 10px;
 }
 
 
@@ -40,6 +51,13 @@
   margin-left: 5px;
   margin-right: 5px;
   margin-top: 5px;
+}
+
+.EnergyCalTool .DetCol
+{
+  margin-top: 5px;
+  padding-left: 5px;
+  width: 8em;
 }
 
 /*
@@ -111,7 +129,7 @@
 
 .EnergyCalTool .BtmBtnDiv
 {
-  
+  padding-right: 3px;
 }
 
 .EnergyCalTool .FitCoefBtn
@@ -231,7 +249,6 @@ color: #E0F5FF;
 /***********************************************/
 .EnergyCalTool .CalSpecStack
 {
-  
 }
 
 .EnergyCalTool .CalStack
@@ -355,11 +372,30 @@ color: #E0F5FF;
 .DevPairsContainer
 {
   padding: 3px;
+  padding-top: 0px;
   
   flex-grow: 1;
   overflow: auto;
   min-height: 2em;
 }
+
+.DevPair
+{
+  margin-top: 1px;
+  margin-bottom: 4px;
+  /* border: 1px solid #e1e1e1; */
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  background: rgba(245,245,245,0.5);
+  border-radius: 5px;
+}
+
+/* .DevPair > div > input
+{
+  border: red;
+}
+*/
 
 .DevPairsFooter
 {
@@ -370,13 +406,14 @@ color: #E0F5FF;
 }
 
 
-.DevPairTitle, .CalDisplay .CalType
+.DevPairTitle, .CalDisplay .CalType, .DetHdr
 {
   font-weight:bold;
   background:#EEEEEE;
   white-space:nowrap;
   text-align: center;
   height: 20px;
+  margin-bottom: 2px;
 }
 
 

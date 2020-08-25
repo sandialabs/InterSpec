@@ -635,23 +635,7 @@ background: #9B9B9B;
   background: red;
 }
 
-.DevPair
-{
-  margin-top: 2px;
-  margin-bottom: 3px;
-  /* border: 1px solid #e1e1e1; */
-  padding-top: 5px;
-  padding-bottom: 5px;
-  padding-left: 5px;
-  background: rgba(245,245,245,0.5);
-  border-radius: 5px;
-}
 
-/* .DevPair > div > input
-{
-  border: red;
-}
-*/
 
 .PlusIconWhiteBtn, .PlusIconWhiteBtn:hover
 {

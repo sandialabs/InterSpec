@@ -49,11 +49,14 @@ enum AuxWindowProperties
 {
   /** Window can be modal on phones and tablets. Without this all AuxWindows
       are full screen on phones.
+   \TODO: rename this to something like PhoneNotFullScreen
    */
   PhoneModal = 0x01,
   
   /** Window can be modal on tablets.  Without this all AuxWindows
-   are full screen on tablets (unless PhoneModal is set).*/
+   are full screen on tablets (unless PhoneModal is set).
+   \TODO: rename this to something like TabletNotFullScreen
+   */
   TabletModal = 0x02,
   
   /** When set, this window will be modal on PCs (e.g., no interaction with

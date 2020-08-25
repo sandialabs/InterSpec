@@ -379,7 +379,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minBranchRatio->setSingleStep( 0.1 );
   label = new WLabel( "Min. HL" );
  
-  tip = "Minimum half life of nuclides to be searched.<br>"
+  tip = "Minimum half life of nuclides to be searched.<br />"
     "<div>Age can be specified using a combination of time units, "
     "similar to '<b>5.3y 8d 22m</b>'.</div>"
     "<div>"

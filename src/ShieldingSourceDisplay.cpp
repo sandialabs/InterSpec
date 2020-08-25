@@ -4456,7 +4456,7 @@ void ShieldingSourceDisplay::updateChi2Chart()
     checkDistanceAndThicknessConsistent();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br>Chi2 chart not updated."),
+    passMessage( e.what() + string("<br />Chi2 chart not updated."),
                  "", WarningWidget::WarningMsgHigh );
     return;
   }//try / catch
@@ -7545,7 +7545,7 @@ void ShieldingSourceDisplay::startModelFit()
     checkAndWarnZeroMassFraction();
   }catch( std::exception &e )
   {
-    passMessage( e.what() + string("<br>Fit not performed.</br>"),
+    passMessage( e.what() + string("<br />Fit not performed."),
                 "", WarningWidget::WarningMsgHigh );
     return;
   }
@@ -7559,7 +7559,7 @@ void ShieldingSourceDisplay::startModelFit()
     checkDistanceAndThicknessConsistent();
   }catch( exception &e )
   {
-    passMessage( e.what() + string("<br>Fit not performed.</br>"),
+    passMessage( e.what() + string("<br />Fit not performed."),
                  "", WarningWidget::WarningMsgHigh );
     return;
   }//try / catch
@@ -7579,7 +7579,7 @@ void ShieldingSourceDisplay::startModelFit()
     chi2Fcn = shieldingFitnessFcn( shieldings, *inputPrams );
   }catch( std::exception &e )
   {
-    passMessage( e.what() + string("<br>Fit not performed (couldnt make Chi2Fcn).</br>"),
+    passMessage( e.what() + string("<br />Fit not performed (couldnt make Chi2Fcn)."),
                 "", WarningWidget::WarningMsgHigh );
     return;
   }//try / catch

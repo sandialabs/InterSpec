@@ -2034,14 +2034,14 @@ void SpecMeasManager::displayFile( int row,
         }else
         {
           warningmsg << "The uploaded file contained " << nsamples
-                     << " samples<br>";
+                     << " samples<br />";
           
           if( numForeground )
-            warningmsg << "The first foreground sample is being shown.<br>";
+            warningmsg << "The first foreground sample is being shown.<br />";
           else if( childrow == 0 )
-            warningmsg << "The first sample is being shown.<br>";
+            warningmsg << "The first sample is being shown.<br />";
           else
-            warningmsg << "Sample " << header->m_samples[childrow].sample_number << " is being shown.<br>";
+            warningmsg << "Sample " << header->m_samples[childrow].sample_number << " is being shown.<br />";
           
           if( m_viewer->toolTabsVisible() )
             warningmsg << "Use the <b>Spectrum Files</b> tab, or the "
@@ -2100,12 +2100,12 @@ void SpecMeasManager::displayFile( int row,
 
           warningmsgLevel = max( WarningWidget::WarningMsgInfo, warningmsgLevel );
           warningmsg << "The uploaded file contained " << ncalibration
-                       << " calibration samples<br>";
+                       << " calibration samples<br />";
 
 
           if( ncalibration == 1 ) warningmsg << "It";
           else                    warningmsg << "They";
-          warningmsg  << " will not be displayed.<br>"
+          warningmsg  << " will not be displayed.<br />"
                       << "Use the <b>File Manager</b> to change this.";
         } // if( ncalibration > 0 )
       }// if( passthrough )
@@ -2138,8 +2138,8 @@ void SpecMeasManager::displayFile( int row,
         if( !foundBackground )
         {
           warningmsgLevel = max(WarningWidget::WarningMsgHigh, warningmsgLevel );
-          warningmsg << "The uploaded file contained " << nspectra_header << " samples so<br>"
-                     << "am displaying the first one.<br>"
+          warningmsg << "The uploaded file contained " << nspectra_header << " samples so<br />"
+                     << "am displaying the first one.<br />"
                      << "Use the <b>File Manager</b> to change this.";
           selected.clear();
           selected.insert( index.child(0,0) );
@@ -2231,7 +2231,7 @@ void SpecMeasManager::displayQuickSaveAsDialog()
 
   if( !initial )
   {
-    const string msgstr = "There are no spectrums loaded into the viewer<br>"
+    const string msgstr = "There are no spectrums loaded into the viewer<br />"
                           "Please use the <b>File Manager</b> for more options.";
 
     WText *msg = new WText( msgstr, XHTMLUnsafeText, dialog->contents() );

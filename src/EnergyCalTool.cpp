@@ -394,6 +394,7 @@ public:
   CalDisplay( EnergyCalTool *tool,
              const SpecUtils::SpectrumType type,
              const std::string &detname,
+             const bool isWideLayout,
              WContainerWidget *parent = nullptr )
   : WContainerWidget( parent ),
    m_tool( tool ),
@@ -422,8 +423,16 @@ public:
     m_coefficients->addStyleClass( "CoefContent" );
     
     m_devPairs = new DeviationPairDisplay();
-    layout->addWidget( m_devPairs, 0, 1 );
-    //m_devPairs->changed().connect(<#WObject *target#>, <#WObject::Method method#>)
+    if( isWideLayout )
+    {
+      layout->addWidget( m_devPairs, 0, 1 );
+    }else
+    {
+      layout->addWidget( m_devPairs, 1, 0 );
+      m_devPairs->setHeight( 100 );
+    }
+    
+    m_devPairs->changed().connect( std::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this) );
   }//CalDisplay( constructor )
   
   SpecUtils::SpectrumType spectrumType() const { return m_cal_type; }
@@ -543,7 +552,7 @@ public:
     const vector<float> &coeffs = m_cal->coefficients();
     
     m_devPairs->setDeviationPairs( devpairs );
-    m_devPairs->changed().connect( std::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this) );
+    //m_devPairs->changed().connect( std::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this) );
     
     
     const size_t num_coef_disp = std::max( coeffs.size(), sm_min_coef_display );
@@ -635,6 +644,7 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
 : WContainerWidget( parent ),
   m_interspec( viewer ),
   m_peakModel( peakModel ),
+  m_tallLayoutContent( nullptr ),
   m_peakTable( nullptr ),
   m_specTypeMenu( nullptr ),
   m_specTypeMenuStack( nullptr ),
@@ -644,6 +654,7 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   m_moreActionsColumn( nullptr ),
   m_applyToColumn( nullptr ),
   m_detColumn( nullptr ),
+  m_detColLayout( nullptr ),
   m_calColumn( nullptr ),
   m_peakTableColumn( nullptr ),
   m_layout( nullptr ),
@@ -655,21 +666,78 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   
   addStyleClass( "EnergyCalTool" );
   
+  initWidgets( EnergyCalTool::LayoutType::Wide );
+}
+
+
+void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
+{
+  const bool wide = (layoutType == LayoutType::Wide);
+  
+  if( (wide && !m_tallLayoutContent && m_layout) || (!wide && m_tallLayoutContent) )
+    return;
+  
+  if( wide )
+  {
+    removeStyleClass( "TallEnergyCal" );
+    if( m_tallLayoutContent )
+      delete m_tallLayoutContent;
+    m_tallLayoutContent = nullptr;
+    
+    m_layout = new WGridLayout( this );
+  }else
+  {
+    addStyleClass( "TallEnergyCal" );
+    if( m_layout )
+      delete m_layout;
+    
+    m_tallLayoutContent = new WContainerWidget( this );
+    m_layout = new WGridLayout( m_tallLayoutContent );
+  }//if( wide ) / else
+  
+  
+  // \TODO: null out all the other memener variables
+  m_peakTable = nullptr;
+  m_specTypeMenu = nullptr;
+  m_specTypeMenuStack = nullptr;
+  for( auto &m : m_detectorMenu )
+    m = nullptr;
+  m_calInfoDisplayStack = nullptr;
+  m_noCalTxt = nullptr;
+  m_moreActionsColumn = nullptr;
+  m_applyToColumn = nullptr;
+  m_detColumn = nullptr;
+  m_detColLayout = nullptr;
+  m_calColumn = nullptr;
+  m_peakTableColumn = nullptr;
+  for( auto &m : m_applyToCbs )
+    m = nullptr;
+  for( auto &m : m_moreActions )
+    m = nullptr;
+  m_fitCalBtn = nullptr;
+  
+  
+  
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
-  m_layout = new WGridLayout( this );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setVerticalSpacing( 0 );
   m_layout->setHorizontalSpacing( 0 );
   
   m_noCalTxt = new WText( "No spectrum loaded" );
   m_noCalTxt->addStyleClass( "NoCalContentTxt" );
-  m_layout->addWidget( m_noCalTxt, 0, 0, AlignmentFlag::AlignCenter | AlignmentFlag::AlignMiddle );
+  if( wide )
+    m_layout->addWidget( m_noCalTxt, 0, 0, AlignmentFlag::AlignCenter | AlignmentFlag::AlignMiddle );
+  else
+    m_layout->addWidget( m_noCalTxt, 0, 0, 1, 2, AlignmentFlag::AlignCenter | AlignmentFlag::AlignMiddle );
   
   //Create the more actions column...
   m_moreActionsColumn = new WContainerWidget();
   m_moreActionsColumn->addStyleClass( "CalColumn MoreActionCol" );
-  m_layout->addWidget( m_moreActionsColumn, 0, 1 );
+  if( wide )
+    m_layout->addWidget( m_moreActionsColumn, 0, 1 );
+  else
+    m_layout->addWidget( m_moreActionsColumn, 2, 0 );
   
   WGridLayout *collayout = new WGridLayout( m_moreActionsColumn );
   collayout->setContentsMargins( 0, 0, 0, 0 );
@@ -762,8 +830,8 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   
   
   HelpSystem::attachToolTipOn( m_fitCalBtn, "Uses the expected energy of photopeaks "
-  "associated with the fit peaks to fit for the coefficients.  This button is disabled if no"
-  " coefficients are selected to fit for, or less peaks than coefficents are selected",
+  "associated with the fit peaks to fit for the energy coefficients.  This button is disabled if no"
+  " coefficients are selected to fit for, or less peaks than coefficents are selected.",
   showToolTipInstantly );
   
   
@@ -771,7 +839,10 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   // Create the "Apply To" column that determines what to apply changes to
   m_applyToColumn = new WContainerWidget();
   m_applyToColumn->addStyleClass( "CalColumn ApplyToCol" );
-  m_layout->addWidget( m_applyToColumn, 0, 2 );
+  if( wide )
+    m_layout->addWidget( m_applyToColumn, 0, 2 );
+  else
+    m_layout->addWidget( m_applyToColumn, 2, 1 );
   
   collayout = new WGridLayout( m_applyToColumn );
   collayout->setContentsMargins( 0, 0, 0, 0 );
@@ -844,67 +915,16 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
     m_applyToCbs[index] = cb;
   }//for( loop over ApplyToCbIndex )
   
-  
-  // Create the "Detector" column that determines which coefficients to show
-  m_detColumn = new WContainerWidget();
-  m_detColumn->addStyleClass( "CalColumn DetCol" );
-  m_layout->addWidget( m_detColumn, 0, 3 );
-  
-  collayout = new WGridLayout( m_detColumn );
-  collayout->setContentsMargins( 0, 0, 0, 0 );
-  collayout->setVerticalSpacing( 0 );
-  collayout->setHorizontalSpacing( 0 );
-  collayout->setRowStretch( 2, 1 );
-  
-  header = new WText( "Detector" );
-  header->addStyleClass( "ColHeader" );
-  collayout->addWidget( header, 0, 0 );
-  
   WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
-  
-  
-  //m_specTypeMenuStack = new WStackedWidget();
-  //m_specTypeMenuStack->addStyleClass( "CalColContent CalSpecStack" );
-  //m_specTypeMenuStack->setTransitionAnimation( animation );
-  
-  //m_specTypeMenu = new WMenu( m_specTypeMenuStack );
-  //collayout->addWidget( m_specTypeMenu, 1, 0 );
-  //m_specTypeMenu->addStyleClass( "CalSpecMenu" );
-  //m_specTypeMenu->itemSelected().connect( this, &EnergyCalTool::specTypeToDisplayForChanged );
-  
-  //collayout->addWidget( m_specTypeMenuStack, 2, 0 );
-  
-  //m_calInfoDisplayStack = new WStackedWidget();
-  //m_calInfoDisplayStack->addStyleClass( "CalColContent CalStack" );
-  //m_calInfoDisplayStack->setTransitionAnimation( animation );
-  
-  /*
-  for( int i = 0; i < 3; ++i )
-  {
-    WContainerWidget *detMenuDiv = new WContainerWidget();
-    detMenuDiv->addStyleClass( "CalColContent DetMenuDiv" );
-    
-    const char *label = "";
-    switch( i )
-    {
-      case 0: label = "For."; break;
-      case 1: label = "Back"; break;
-      case 2: label = "Sec."; break;
-    }
-    WMenuItem *item = m_specTypeMenu->addItem( label, detMenuDiv, WMenuItem::LoadPolicy::PreLoading );
-    //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
-    
-    m_detectorMenu[i] = new WMenu( m_calInfoDisplayStack, detMenuDiv );
-    m_detectorMenu[i]->addStyleClass( "VerticalMenu DetCalMenu" );
-  }//for( int i = 0; i < 3; ++i )
-   */
-  
+
   
   // Create the "Coefficients" column that show the polynomial/FRF coefficents.
   m_calColumn = new WContainerWidget();
   m_calColumn->addStyleClass( "CalColumn CoefColumn" );
-  m_layout->addWidget( m_calColumn, 0, 4 );
+  if( wide )
+    m_layout->addWidget( m_calColumn, 0, 3 );
+  else
+    m_layout->addWidget( m_calColumn, 1, 0, 1, 2 );
   
   
   collayout = new WGridLayout( m_calColumn );
@@ -913,23 +933,53 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
   
+  if( wide )
+    collayout->setColumnStretch( 1, 1 );
+  
   header = new WText( "Calibration Coefficents" );
   header->addStyleClass( "ColHeader" );
   
-  collayout->addWidget( header, 0, 0 );
+  collayout->addWidget( header, 0, 0, 1, 2 );
   //collayout->addWidget( m_calInfoDisplayStack, 1, 0 );
+  
+  
+  // Create the "Detector" column that determines which coefficients to show
+  m_detColumn = new WContainerWidget();
+  m_detColumn->addStyleClass( "DetCol" );
+  collayout->addWidget( m_detColumn, 1, 0 );
+  
+  m_detColLayout = new WGridLayout( m_detColumn );
+  m_detColLayout->setContentsMargins( 0, 0, 0, 0 );
+  m_detColLayout->setVerticalSpacing( 0 );
+  m_detColLayout->setHorizontalSpacing( 0 );
+  
+  auto detheader = new WText( "Detector" );
+  detheader->setInline( false );
+  detheader->addStyleClass( "DetHdr Wt-itemview Wt-header Wt-label" );
+  //detheader->resize( WLength::Auto, WLength(20,WLength::Unit::Pixel) );
+  //collayout->addWidget( detheader, 0, 0 );
+  m_detColLayout->addWidget( detheader, 0, 0  );
+  m_detColLayout->setRowStretch( 2, 1 );
+  
   
   // Create the "Cal Peaks" table
   m_peakTableColumn = new WContainerWidget();
   m_peakTableColumn->addStyleClass( "CalColumn PeakTableCol" );
-  m_layout->addWidget( m_peakTableColumn, 0, 5 );
-  m_layout->setColumnStretch( 5, 1 );
-  
+  if( wide )
+  {
+    m_layout->addWidget( m_peakTableColumn, 0, 4 );
+    m_layout->setColumnStretch( 4, 1 );
+  }else
+  {
+    m_layout->addWidget( m_peakTableColumn, 3, 0, 1, 2 );
+  }
+
   collayout = new WGridLayout( m_peakTableColumn );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
-  collayout->setRowStretch( 1, 1 );
+  if( wide )
+    collayout->setRowStretch( 1, 1 );
   
   header = new WText( "Calibration Peaks" );
   header->addStyleClass( "ColHeader" );
@@ -963,8 +1013,8 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   m_peakTable->setColumnWidth( PeakModel::kUseForCalibration, WLength(3.7, WLength::FontEm) );
   m_peakTable->setColumnWidth( PeakModel::kMean, WLength(4.5, WLength::FontEm) );
   m_peakTable->setColumnWidth( PeakModel::kIsotope, WLength(4.5, WLength::FontEm) );
-  m_peakTable->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(7.25, WLength::FontEm) );
-  m_peakTable->setColumnWidth( PeakModel::kDifference, WLength(6, WLength::FontEm) );
+  m_peakTable->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(6.25, WLength::FontEm) );
+  m_peakTable->setColumnWidth( PeakModel::kDifference, WLength(5, WLength::FontEm) );
   
   
   
@@ -984,8 +1034,22 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   m_peakModel->layoutChanged().connect( this, &EnergyCalTool::updateFitButtonStatus );
   
   m_interspec->displayedSpectrumChanged().connect( boost::bind( &EnergyCalTool::displayedSpectrumChanged, this, _1, _2, _3, _4 ) );
-  refreshGuiFromFiles();
-}//EnergyCalTool
+  
+  m_renderFlags |= EnergyCalToolRenderFlags::FullGuiUpdate;
+  scheduleRender();
+}//void initWidgets( EnergyCalTool::LayoutType layout )
+
+
+void EnergyCalTool::setWideLayout()
+{
+  initWidgets( EnergyCalTool::LayoutType::Wide );
+}//void setWideLayout()
+
+
+void EnergyCalTool::setTallLayout()
+{
+  initWidgets( EnergyCalTool::LayoutType::Tall );
+}//void setTallLayout()
 
 
 EnergyCalTool::~EnergyCalTool()
@@ -1599,9 +1663,9 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display 
     {
       switch( type )
       {
-        case SpectrumType::Foreground:       msg += "of foreground"; break;
-        case SpectrumType::SecondForeground: msg += "of secondary"; break;
-        case SpectrumType::Background:       msg += "of background"; break;
+        case SpectrumType::Foreground:       msg += " of foreground"; break;
+        case SpectrumType::SecondForeground: msg += " of secondary"; break;
+        case SpectrumType::Background:       msg += " of background"; break;
       }//switch( type )
     }//if( nfiles )
   
@@ -1695,6 +1759,9 @@ bool EnergyCalTool::canDoEnergyFit()
     nPeaksToUse += (p && p->useForCalibration());
   
   if( nPeaksToUse < 1 )
+    return false;
+  
+  if( !m_calInfoDisplayStack )
     return false;
   
   // We are actually going to fit the coefficients for the currently showing CalDisplay, so only
@@ -1972,6 +2039,12 @@ void EnergyCalTool::refreshGuiFromFiles()
 }//void refreshGuiFromFiles()
 
 
+void EnergyCalTool::handleGraphicalRecalRequest( double xstart, double xfinish )
+{
+  
+}//void handleGraphicalRecalRequest( double xstart, double xfinish )
+
+
 void EnergyCalTool::doRefreshFromFiles()
 {
   string prevdet[3];
@@ -2011,12 +2084,16 @@ void EnergyCalTool::doRefreshFromFiles()
   }//for( Wt::WMenu *menu : m_detectorMenu )
 */
   
+  const bool isWide = (m_tallLayoutContent ? false : true);
+  
   //If we try to re-use the menu and stacks, for some reason the calibration coefficents wont show
   //  up if we alter which background/secondary spectra are showing... not sure why, but for the
   //  moment we'll just re-create the menus and stacks... not great, but works, for the moment.
   //
   // We want to preserve wich "Fit" check boxes are set.
   map< pair<SpecUtils::SpectrumType,string>, set<size_t> > set_fit_for_cbs;
+  
+  bool specTypeInForgrndMenu = true;
   
   {//begin codeblock to refresh the stacks
     for( int i = 0; i < 3; ++i )
@@ -2025,6 +2102,8 @@ void EnergyCalTool::doRefreshFromFiles()
       {
         for( WMenuItem *item : m_detectorMenu[i]->items() )
         {
+          /// \TODO: the item text isnt necassarily the detector name - when specTypeInForgrndMenu
+          ///        is true, this breaks down - need to fix this
           const string detname = item->text().toUTF8();
           auto display = dynamic_cast<EnergyCalImp::CalDisplay *>( item->contents() );
           if( display )
@@ -2047,26 +2126,24 @@ void EnergyCalTool::doRefreshFromFiles()
     WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
     
     m_specTypeMenuStack = new WStackedWidget();
-    m_specTypeMenuStack->addStyleClass( "CalColContent CalSpecStack" );
+    m_specTypeMenuStack->addStyleClass( "CalSpecStack" );
     m_specTypeMenuStack->setTransitionAnimation( animation );
     
-    auto detlayout = dynamic_cast<WGridLayout *>( m_detColumn->layout() );
     auto callayout = dynamic_cast<WGridLayout *>( m_calColumn->layout() );
-    assert( detlayout );
     assert( callayout );
     
     m_specTypeMenu = new WMenu( m_specTypeMenuStack );
     m_specTypeMenu->addStyleClass( "CalSpecMenu" );
     m_specTypeMenu->itemSelected().connect( this, &EnergyCalTool::specTypeToDisplayForChanged );
-    detlayout->addWidget( m_specTypeMenu, 1, 0 );
-    detlayout->addWidget( m_specTypeMenuStack, 2, 0 );
+    m_detColLayout->addWidget( m_specTypeMenu, 1, 0 );
+    m_detColLayout->addWidget( m_specTypeMenuStack, 2, 0 );
     
     if( m_calInfoDisplayStack )
       delete m_calInfoDisplayStack;
     m_calInfoDisplayStack = new WStackedWidget();
     m_calInfoDisplayStack->addStyleClass( "CalColContent CalStack" );
     m_calInfoDisplayStack->setTransitionAnimation( animation );
-    callayout->addWidget( m_calInfoDisplayStack, 1, 0 );
+    callayout->addWidget( m_calInfoDisplayStack, 1, 1 );
     
     const char * const labels[3] = {"For.","Back","Sec."};
     
@@ -2076,8 +2153,13 @@ void EnergyCalTool::doRefreshFromFiles()
       if( !specfiles[i] )
         continue;
       
+      const SpecUtils::SpectrumType type = spectypes[i];
+      const set<string> detectors = gammaDetectorsForDisplayedSamples(type);
+      if( detectors.size() > 1 )
+        specTypeInForgrndMenu = false;
+      
       WContainerWidget *detMenuDiv = new WContainerWidget();  //this holds the WMenu for this SpecFile
-      detMenuDiv->addStyleClass( "CalColContent DetMenuDiv" );
+      detMenuDiv->addStyleClass( "DetMenuDiv" );
       
       WMenuItem *item = m_specTypeMenu->addItem( labels[i], detMenuDiv, WMenuItem::LoadPolicy::PreLoading );
       //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
@@ -2104,6 +2186,7 @@ void EnergyCalTool::doRefreshFromFiles()
     previousSpecInd = 0;
   }
   
+  
   int nFilesWithCalInfo = 0;
   bool selectedDetToShowCalFor = false;
   bool hasFRFCal = false, hasPolyCal = false, hasLowerChanCal = false;
@@ -2111,7 +2194,10 @@ void EnergyCalTool::doRefreshFromFiles()
   
   for( int i = 0; i < 3; ++i )
   {
-    Wt::WMenu *detMenu = m_detectorMenu[i];
+    if( !specfiles[i] )
+      continue;
+    
+    Wt::WMenu *detMenu = m_detectorMenu[(specTypeInForgrndMenu ? 0 : i)];
     if( !detMenu )
       continue;
     
@@ -2136,7 +2222,6 @@ void EnergyCalTool::doRefreshFromFiles()
     }
     
     nFilesWithCalInfo += 1;
-    
 
     assert( specItem );
     specItem->setHidden( false );
@@ -2149,8 +2234,24 @@ void EnergyCalTool::doRefreshFromFiles()
         if( !m || (m->num_gamma_channels() <= 4) )
           continue;
         
-        auto calcontent = new EnergyCalImp::CalDisplay( this, type, detname );
-        WMenuItem *item = detMenu->addItem( WString::fromUTF8(detname), calcontent, WMenuItem::LoadPolicy::PreLoading );
+        auto calcontent = new EnergyCalImp::CalDisplay( this, type, detname, isWide );
+        
+        string displayname = detname;
+        
+        if( specTypeInForgrndMenu )
+        {
+          /// \TODO: when specTypeInForgrndMenu is true, we may not match detector name because
+          ///        we are getting the menu item text above and assuming the detector name.
+          ///        should fix this.
+          switch( type )
+          {
+            case SpecUtils::SpectrumType::Foreground:       displayname = "Foreground"; break;
+            case SpecUtils::SpectrumType::SecondForeground: displayname = "Secondary";  break;
+            case SpecUtils::SpectrumType::Background:       displayname = "Background"; break;
+          }//switch( type )
+        }//if( specTypeInForgrndMenu )
+        
+        WMenuItem *item = detMenu->addItem( WString::fromUTF8(displayname), calcontent, WMenuItem::LoadPolicy::PreLoading );
         
         //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
         item->clicked().connect( boost::bind(&WMenuItem::select, item) );
@@ -2158,7 +2259,7 @@ void EnergyCalTool::doRefreshFromFiles()
         shared_ptr<const SpecUtils::EnergyCalibration> energycal = m->energy_calibration();
         calcontent->updateToGui( energycal );
         
-        const auto fitfor_iter = set_fit_for_cbs.find( {type,detname} );
+        const auto fitfor_iter = set_fit_for_cbs.find( {type,displayname} );
         if( fitfor_iter != end(set_fit_for_cbs) )
           calcontent->setFitFor( fitfor_iter->second );
         
@@ -2185,7 +2286,7 @@ void EnergyCalTool::doRefreshFromFiles()
         }//if( energycal )
         
         
-        if( (detname == prevdet[i]) && (i == previousSpecInd) )
+        if( (displayname == prevdet[i]) && (i == previousSpecInd) )
         {
           m_specTypeMenu->select( previousSpecInd );
           detMenu->select( item );
@@ -2206,8 +2307,11 @@ void EnergyCalTool::doRefreshFromFiles()
   setShowNoCalInfo( !nFilesWithCalInfo );
   
   
+  
+  
   //Dont show spectype menu if we dont need to
-  const bool showSpecType = ( (nFilesWithCalInfo < 2)
+  const bool showSpecType = ( specTypeInForgrndMenu
+                              || (nFilesWithCalInfo < 2)
                               || ( (!specfiles[1] || (specfiles[0]==specfiles[1]))
                                     && (!specfiles[2] || (specfiles[0]==specfiles[2]))) );
   m_specTypeMenu->setHidden( showSpecType );
