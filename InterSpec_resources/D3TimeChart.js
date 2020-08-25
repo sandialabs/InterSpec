@@ -163,8 +163,8 @@ BrushX.prototype.getCenter = function () {
   if (this.empty()) {
     return null;
   }
-  return (this.start +  this.end) / 2
-}
+  return (this.start + this.end) / 2;
+};
 /**
  * D3TimeChart object constructor.
  */
@@ -272,6 +272,9 @@ D3TimeChart.prototype.setData = function (data) {
 
     // clear selection if there is any
     this.selectionDomain = null;
+
+    console.log("here");
+    console.log(this.compress(data, 2));
 
     // if height and width are set, may render directly.
     if (this.height && this.width) {
@@ -1274,6 +1277,263 @@ D3TimeChart.prototype.isOccupiedSample = function (sampleNumber, occupancies) {
     }
   }
   return !(false ^ status);
+};
+
+D3TimeChart.prototype.compress = function (data, n) {
+  // Create output array template
+  var out = {
+    gammaCounts: [],
+    realTimes: [],
+    sampleNumbers: [],
+  };
+
+  // init flags
+  var HAS_OCCUPANCY_DATA = false;
+  var HAS_SOURCE_TYPE_DATA = false;
+  var HAS_START_TIME_DATA = false;
+
+  // Add optional fields:
+  if (data.hasOwnProperty("neutronCounts")) {
+    out.neutronCounts = [];
+  }
+
+  if (data.hasOwnProperty("occupancies")) {
+    out.occupancies = data.occupancies;
+    HAS_OCCUPANCY_DATA = true;
+  }
+
+  if (data.hasOwnProperty("sourceTypes")) {
+    out.sourceTypes = [];
+    HAS_SOURCE_TYPE_DATA = true;
+  }
+
+  if (
+    data.hasOwnProperty("startTimeOffset") &&
+    data.hasOwnProperty("startTimes")
+  ) {
+    out.startTimeOffset = data.startTimeOffset;
+    out.startTimes = [];
+    HAS_START_TIME_DATA = true;
+  }
+
+  // iterate over array with window of size n
+  var length = data.sampleNumbers.length;
+
+  // create occupied array:
+  var occupied;
+  if (HAS_OCCUPANCY_DATA) {
+    var occupied = [];
+    for (var i = 0; i < length; i++) {
+      occupied[i] = this.isOccupiedSample(
+        data.sampleNumbers[i],
+        data.occupancies
+      );
+    }
+  }
+
+  // current index of output array
+  var outIdx = 0;
+  // current index of data array
+  var i = 0;
+
+  // data accumulators
+  var detectorsAccumulator = {};
+
+  while (i < length) {
+    if (HAS_START_TIME_DATA) {
+      out.startTimes[outIdx] = data.startTimes[i];
+    }
+    if (HAS_SOURCE_TYPE_DATA) {
+      out.sourceTypes[outIdx] = data.sourceTypes[i];
+    }
+    var j = 0;
+    while (j < n && i + j < length) {
+      if (
+        (!HAS_OCCUPANCY_DATA || occupied[i + j] === occupied[i]) &&
+        (!HAS_SOURCE_TYPE_DATA ||
+          data.sourceTypes[i + j] === data.sourceTypes[i])
+      ) {
+        // aggregation conditions: (occupancy data doesn't exist OR occupancies match) AND (source types data doesn't exist OR sourcetypes match).
+        // aggregate the i + j'th realTime into the value of realTimesAccumulator[outIdx]. This will set the appropriate place inside the output array eventually.
+        if (out.realTimes[outIdx] == null) {
+          out.realTimes[outIdx] = 0;
+        } // if (out.realTimes[outIdx] == null)
+        out.realTimes[outIdx] += data.realTimes[i + j];
+
+        // go into gammaCounts.
+        // For each "detector" of gammaCounts...
+        data.gammaCounts.forEach(function (detector) {
+          // if the detectorsAccumulator doesn't already have that detector's name as a property, then add it to the detectorsAccumulator
+          // And initialize its fields. The fields should contain:
+          // gammaColor (string), gammaCounts (Number[]). Optional: gammaLiveTimes (Number[]), neutronColor (string), neutronCounts (Number[]), neutronLiveTimes(Number[])...
+          if (!detectorsAccumulator.hasOwnProperty(detector.detName)) {
+            detectorsAccumulator[detector.detName] = {};
+          } // if (!detectorsAccumulator.hasOwnProperty(detector.detName))
+
+          // if detector already exist but does not have gamma fields, then add them.
+          if (
+            !detectorsAccumulator[detector.detName].hasOwnProperty(
+              "gammaCounts"
+            )
+          ) {
+            detectorsAccumulator[detector.detName].gammaCounts = [];
+          } // if (!detectorsAccumulator[detector.detName].hasOwnProperty("gammaCounts"))
+
+          if (
+            !detectorsAccumulator[detector.detName].hasOwnProperty("gammaColor")
+          ) {
+            detectorsAccumulator[detector.detName].gammaColor = detector.color;
+          } // if (!detectorsAccumulator[detector.detName].hasOwnProperty("gammaColor"))
+
+          if (
+            detector.hasOwnProperty("liveTimes") &&
+            !detectorsAccumulator[detector.detName].hasOwnProperty(
+              "gammaLiveTimes"
+            )
+          ) {
+            detectorsAccumulator[detector.detName].gammaLiveTimes = [];
+          } // if (detector.hasOwnProperty("liveTimes") && !detectorsAccumulator[detector.detName].hasOwnProperty("gammaLiveTimes"))
+
+          // gammaCounts[outIdx] will begin accumulating. So add to it the i + jth count.
+          if (
+            detectorsAccumulator[detector.detName].gammaCounts[outIdx] == null
+          ) {
+            detectorsAccumulator[detector.detName].gammaCounts[outIdx] = 0;
+          } // if (detectorsAccumulator[detector.detName].gammaCounts[outIdx] == null)
+          detectorsAccumulator[detector.detName].gammaCounts[outIdx] +=
+            detector.counts[i + j];
+
+          // if have liveTimes, it will also begin accumulating, so add to it the i + jth livetime.
+          if (detector.hasOwnProperty("liveTimes")) {
+            if (
+              detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] ==
+              null
+            ) {
+              detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] = 0;
+            } // if (detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] == null)
+            detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] +=
+              detector.liveTimes[i + j];
+          } // (detector.hasOwnProperty("liveTimes"))
+        });
+
+        // do same with neutronCounts
+        if (data.hasOwnProperty("neutronCounts")) {
+          data.neutronCounts.forEach(function (detector) {
+            // if the detectorsAccumulator doesn't already have that detector's name as a property, then add it to the detectorsAccumulator
+            // And initialize its fields. The fields should contain:
+            // gammaColor (string), gammaCounts (Number[]). Optional: gammaLiveTimes (Number[]), neutronColor (string), neutronCounts (Number[]), neutronLiveTimes(Number[])...
+            if (!detectorsAccumulator.hasOwnProperty(detector.detName)) {
+              detectorsAccumulator[detector.detName] = {};
+            }
+            // if detector already exist but does not have neutron fields, then add them.
+            if (
+              !detectorsAccumulator[detector.detName].hasOwnProperty(
+                "neutronCounts"
+              )
+            ) {
+              detectorsAccumulator[detector.detName].neutronCounts = [];
+            }
+
+            if (
+              !detectorsAccumulator[detector.detName].hasOwnProperty(
+                "neutronColor"
+              )
+            ) {
+              detectorsAccumulator[detector.detName].neutronColor =
+                detector.color;
+            }
+
+            if (
+              detector.hasOwnProperty("liveTimes") &&
+              !detectorsAccumulator[detector.detName].hasOwnProperty(
+                "neutronLiveTimes"
+              )
+            ) {
+              detectorsAccumulator[detector.detName].neutronLiveTimes = [];
+            }
+
+            // neutronCounts[outIdx] will begin accumulating. So add to it the i + jth count.
+            if (
+              detectorsAccumulator[detector.detName].neutronCounts[outIdx] ==
+              null
+            ) {
+              detectorsAccumulator[detector.detName].neutronCounts[outIdx] = 0;
+            }
+            detectorsAccumulator[detector.detName].neutronCounts[outIdx] +=
+              detector.counts[i + j];
+
+            // if have liveTimes, it will also begin accumulating, so add to it the i + jth livetime.
+            if (detector.hasOwnProperty("liveTimes")) {
+              if (
+                detectorsAccumulator[detector.detName].neutronLiveTimes[
+                  outIdx
+                ] == null
+              ) {
+                detectorsAccumulator[detector.detName].neutronLiveTimes[
+                  outIdx
+                ] = 0;
+              }
+              detectorsAccumulator[detector.detName].neutronLiveTimes[outIdx] +=
+                detector.liveTimes[i + j];
+            }
+          });
+        } // if (data.hasOwnProperty("neutronCounts"))
+
+        // add to sampleNumbers:
+        if (out.sampleNumbers[outIdx] == null) {
+          out.sampleNumbers[outIdx] = new Set();
+        }
+        out.sampleNumbers[outIdx].add(data.sampleNumbers[i + j]);
+
+        // increment j
+        j += 1;
+
+        // if would reach exit condition, increment i and outIdx appropriately before exiting.
+        if (j >= n || i + j >= length) {
+          i = i + j;
+          outIdx += 1;
+        }
+      } else {
+        // the i + j'th data point cannot be aggregated with the rest... so increment i and outIdx appropriately and break out of the while-loop
+        i = i + j;
+        outIdx += 1;
+        break;
+      } // if ((!HAS_OCCUPANCY_DATA || occupied[i + j] === occupied[i]) && (!HAS_SOURCE_TYPE_DATA || data.sourceTypes[i + j] === data.sourceTypes[i]))
+    } // while (j < n && i + j < length)
+  } // while (i < length)
+
+  // process for output
+  for (var detName in detectorsAccumulator) {
+    //gamma
+    var gammaCount = {
+      detName: detName,
+      color: detectorsAccumulator[detName].gammaColor,
+      counts: detectorsAccumulator[detName].gammaCounts,
+    };
+    // optional fields:
+    if (detectorsAccumulator[detName].hasOwnProperty("gammaLiveTimes")) {
+      gammaCount.liveTimes = detectorsAccumulator[detName].gammaLiveTimes;
+    }
+
+    out.gammaCounts.push(gammaCount);
+
+    //neutron (optional)
+    if (detectorsAccumulator[detName].hasOwnProperty("neutronCounts")) {
+      var neutronCount = {
+        detName: detName,
+        color: detectorsAccumulator[detName].neutronColor,
+        counts: detectorsAccumulator[detName].neutronCounts,
+      };
+
+      if (detectorsAccumulator[detName].hasOwnProperty("neutronLiveTimes")) {
+        neutronCount.liveTimes = detectorsAccumulator[detName].neutronLiveTimes;
+      }
+
+      out.neutronCounts.push(neutronCount);
+    } // if (detectorsAccumulator[detName].hasOwnProperty("neutronCounts"))
+  } // for (var detName in detectorsAccumulator)
+
+  return out;
 };
 
 // UNIMPLEMENTED
