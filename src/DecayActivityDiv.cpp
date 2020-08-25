@@ -2490,9 +2490,10 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
     infostrm << "</div>";
     
       
-    infostrm << "<div style=\"margin-top: 10px;\">The following nuclides are present at " << time/SandiaDecay::second
-      << " seconds:</div>\n"
-    << "<div style=\"margin-left: 20px; max-width: 60ex;\">";
+    infostrm << "<div style=\"margin-top: 10px;\">The following nuclides are present at "
+      << PhysicalUnits::printToBestTimeUnits(time/SandiaDecay::second,4)
+      << " :</div>\n"
+      << "<div style=\"margin-left: 20px; max-width: 60ex;\">";
     
     int nparents = 0;
     for( size_t i = 0; i < activities.size(); ++i )
@@ -2557,10 +2558,10 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
    
   mixtureInfo = "<div class=\"NuclideInfo\">\n"
                 + mixtureInfo + "\n</div>";
-  new WText( mixtureInfo, XHTMLUnsafeText, cont );
+  new WText( mixtureInfo, TextFormat::XHTMLText, cont );
 
-  new WText( "<br><br><H3>Further information about the nuclides:</H3>",
-             XHTMLUnsafeText, cont );
+  new WText( "<br /><br /><H3>Further information about the nuclides:</H3>",
+             TextFormat::XHTMLText, cont );
 
   const int nSolutionNuclides = m_currentMixture->numSolutionNuclides();
 

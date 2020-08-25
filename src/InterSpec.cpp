@@ -3728,8 +3728,8 @@ AuxWindow *InterSpec::showIEWarningDialog()
   contents->setContentAlignment( Wt::AlignCenter );
 
   WText *instructions = new WText(
-          "This webapp has not been tested with Microsoft Internet Explorer, and<br>"
-          " as a result some things will either fail to render or may not even work.<br>"
+          "This webapp has not been tested with Microsoft Internet Explorer, and<br />"
+          " as a result some things will either fail to render or may not even work.<br />"
           "<p>Please consider using a reasonably recent version of Firefox, Chrome, or Safari.</p>"
           , XHTMLUnsafeText, contents );
   instructions->setInline( false );
@@ -5463,7 +5463,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       //refPhotoTab->setIcon("InterSpec_resources/images/reflines.png");
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
-
+    
+    m_recalibrator->setWideLayout();
     m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
         
     m_chartsLayout = new WGridLayout();
@@ -6042,6 +6043,7 @@ void InterSpec::handEnergyCalWindowClose()
   
   if( m_toolsTabs )
   {
+    m_recalibrator->setWideLayout();
     if( m_toolsTabs->indexOf(m_recalibrator) < 0 )
       m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
     
@@ -6069,20 +6071,28 @@ void InterSpec::showEnergyCalWindow()
     delete m_recalibratorWindow;
   }
     
-  m_recalibratorWindow = new AuxWindow( "Energy Calibration" );
+  m_recalibratorWindow = new AuxWindow( "Energy Calibration",
+                                WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                    | AuxWindowProperties::TabletModal );
   m_recalibratorWindow->rejectWhenEscapePressed();
   m_recalibratorWindow->stretcher()->addWidget( m_recalibrator, 0, 0 );
-  m_recalibrator->setTallLayout( m_recalibratorWindow );
+  m_recalibrator->setTallLayout();
    
-  m_recalibratorWindow->setClosable(false);
   //m_recalibratorWindow->finished().connect(boost::bind( &AuxWindow::deleteAuxWindow, m_recalibratorWindow ) );
   m_recalibratorWindow->finished().connect( boost::bind( &InterSpec::handEnergyCalWindowClose, this ) );
 
-  m_recalibratorWindow->setHeight( 700 );
+  if( (m_renderedWidth > 100) && (m_renderedHeight > 100) )
+    m_recalibratorWindow->setMaximumSize( 0.8*m_renderedWidth, 0.8*m_renderedHeight );
+  m_recalibratorWindow->setWidth( 380 );
   
   m_recalibratorWindow->show();
   m_recalibratorWindow->resizeToFitOnScreen();
   m_recalibratorWindow->centerWindow();
+  
+  AuxWindow::addHelpInFooter( m_recalibratorWindow->footer(), "energy-calibration" );
+  Wt::WPushButton *closeButton = m_recalibratorWindow->addCloseButtonToFooter("Close",true);
+  closeButton->clicked().connect( boost::bind( &InterSpec::handEnergyCalWindowClose, this ) );
+  
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
@@ -9229,8 +9239,8 @@ void InterSpec::overlayCanvasJsExceptionCallback( const std::string &message )
     m_timeSeries->disableOverlayCanvas();
   }//if( starts_with( message, "[initCanvasForDragging exception]" ) )
 
-  const string msg = "There was a problem with the clientside javascript.<br>"
-                     "Some or all features may not function corectly.<br>"
+  const string msg = "There was a problem with the clientside javascript.<br />"
+                     "Some or all features may not function corectly.<br />"
                      "&nbsp;&nbsp;&nbsp;&nbsp;Message: '" + message + "'";
   passMessage( msg, "", WarningWidget::WarningMsgHigh );  
 }//void overlayCanvasJsExceptionCallback( const std::string &message )

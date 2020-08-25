@@ -107,7 +107,13 @@ namespace EnergyCalImp
  
  
  Current assumptions made by this tool:
- - 
+ - ...
+ 
+ TODO Tues:
+ - Add a "Only Changed Detector option" to "Apply Changes To" colum
+ - hook up graphical calibration
+ - Implement undu...
+ - Implement more actions...
  
  */
 
@@ -117,15 +123,13 @@ public:
   EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, Wt::WContainerWidget *parent = nullptr );
   virtual ~EnergyCalTool();
   
-  void setWideLayout(){}
-  void setTallLayout(AuxWindow* parent){ }
+  void setWideLayout();
+  void setTallLayout();
   
-  enum LayoutStyle{ kWide, kTall };
-  LayoutStyle currentLayoutStyle() const{ return LayoutStyle::kWide; }
   
   void refreshGuiFromFiles();
   
-  void handleGraphicalRecalRequest( double xstart, double xfinish ){}
+  void handleGraphicalRecalRequest( double xstart, double xfinish );
   
   void updateFitButtonStatus();
   
@@ -152,6 +156,10 @@ public:
   void setShowNoCalInfo( const bool nocal );
   
 protected:
+  enum class LayoutType{ Tall, Wide };
+  void initWidgets( LayoutType layout );
+  
+  
   void doRefreshFromFiles();
   
   void specTypeToDisplayForChanged();
@@ -196,24 +204,6 @@ protected:
   
   void moreActionBtnClicked( const MoreActionsIndex index );
   
-  
-  /*
-  static void shiftPeaksForEnergyCalibration(
-  PeakModel *peakmodel,
-  const std::vector<float> &new_pars,
-  const std::vector< std::pair<float,float> > &new_devpairs,
-  SpecUtils::EnergyCalType new_eqn_type,
-  std::shared_ptr<SpecMeas> meas,
-  const SpecUtils::SpectrumType spectype,
-  std::vector<float> old_pars,
-  const std::vector< std::pair<float,float> > &old_devpairs,
-  SpecUtils::EnergyCalType old_eqn_type )
-  {
-    
-  }
-   */
-  
-  
   /** A struct that indicates what SpecUtils::Measurement's to apply a coefficent change to.
     \TODO: if (or hopefully when) the InterSpec class allows selecting detectors seperately for
            foreground/back/sec., we will need to consider upgrading how we indicate things \
@@ -244,15 +234,19 @@ protected:
   
   
   
+  
   enum EnergyCalToolRenderFlags
   {
     FullGuiUpdate = 0x1
-  };//EnergyCalToolREnderFlags
+  };//EnergyCalToolRenderFlags
   
   Wt::WFlags<EnergyCalToolRenderFlags> m_renderFlags;
   
   InterSpec *m_interspec;
   PeakModel *m_peakModel;
+  
+  WContainerWidget *m_tallLayoutContent;
+  
   RowStretchTreeView *m_peakTable;  /** \TODO: can maybe remove this memeber variable */
   
   /** Menu that lets you choose which spectrum (For., Back, Sec.) to show the detectors to select */
@@ -277,6 +271,7 @@ protected:
   Wt::WContainerWidget *m_moreActionsColumn;
   Wt::WContainerWidget *m_applyToColumn;
   Wt::WContainerWidget *m_detColumn;
+  Wt::WGridLayout *m_detColLayout;
   Wt::WContainerWidget *m_calColumn;
   Wt::WContainerWidget *m_peakTableColumn;
   
