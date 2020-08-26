@@ -187,7 +187,7 @@ D3TimeChart = function (elem, options) {
     this.options.chartLineWidth = 1;
 
   this.data = undefined; // formatted data
-  this.selectionDomain = undefined;
+  this.selection = undefined;
   this.height = undefined;
   this.width = undefined;
   this.leadTime = 2.5;
@@ -278,7 +278,7 @@ D3TimeChart.prototype.setData = function (data) {
 
 
     // clear selection if there is any
-    this.selectionDomain = null;
+    this.selection = null;
 
 
     // if height and width are set, may render directly.
@@ -329,7 +329,7 @@ D3TimeChart.prototype.render = function (options) {
       for (var i = 1; i <= Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth))); i++) {
         // only compress if data doesn't already exist before
         if (this.data[i] == null) {
-          console.log("Compressing")
+          console.log("Compressing!")
           this.data[i] = this.formatData(this.compress(this.rawData, Math.pow(2, i)))
         }
       }
@@ -379,16 +379,18 @@ D3TimeChart.prototype.render = function (options) {
     this.linesG.attr("clip-path", "url(#clip_th)");
 
     // get scales
-    var domains = this.selectionDomain
-      ? {
-          x: this.selectionDomain,
-          yGamma: this.data[this.compressionIndex].domains.yGamma,
-          yNeutron: this.data[this.compressionIndex].domains.yNeutron,
-        }
-      : this.data[this.compressionIndex].domains;
-
+    var domains = this.selection
+    ? {
+      x: this.selection.domain,
+      yGamma: this.data[this.selection.compressionIndex].domains.yGamma,
+      yNeutron: this.data[this.selection.compressionIndex].domains.yNeutron,
+    }
+    : this.data[this.compressionIndex].domains;
+    
     var scales = this.getScales(domains);
 
+    var compressionIndex = this.selection ? this.selection.compressionIndex : this.compressionIndex;
+    
     // add brush-highlight zooming
     var brush = new BrushX();
 
@@ -415,7 +417,7 @@ D3TimeChart.prototype.render = function (options) {
 
     this.rect.call(drag);
 
-    this.updateChart(scales, options);
+    this.updateChart(scales, compressionIndex, options);
   }
 };
 
@@ -424,7 +426,7 @@ D3TimeChart.prototype.render = function (options) {
  * @param {*} scales : Object of scales with properties xScale, yScaleGamma, yScaleNeutron
  * @param {*} options : Optional argument to specify render options
  */
-D3TimeChart.prototype.updateChart = function (scales, options) {
+D3TimeChart.prototype.updateChart = function (scales, compressionIndex, options) {
   var transitions = options && options.transitions ? true : false;
 
   var { xScale, yScaleGamma, yScaleNeutron } = scales;
@@ -440,16 +442,16 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
     .on("mousemove", () => {
       var x = xScale.invert(d3.mouse(this.rect.node())[0]);
 
-      var idx = this.findDataIndex(x);
-      var startTimeStamp = this.data[this.compressionIndex].startTimeStamps
-        ? this.data[this.compressionIndex].startTimeStamps[idx]
+      var idx = this.findDataIndex(x, compressionIndex);
+      var startTimeStamp = this.data[compressionIndex].startTimeStamps
+        ? this.data[compressionIndex].startTimeStamps[idx]
         : null;
-      var sourceType = this.data[this.compressionIndex].sourceTypes
-        ? this.data[this.compressionIndex].sourceTypes[idx]
+      var sourceType = this.data[compressionIndex].sourceTypes
+        ? this.data[compressionIndex].sourceTypes[idx]
         : null;
       var data = [];
-      for (var detName in this.data[this.compressionIndex].detectors) {
-        var y = this.data[this.compressionIndex].detectors[detName].counts[idx * 2];
+      for (var detName in this.data[compressionIndex].detectors) {
+        var y = this.data[compressionIndex].detectors[detName].counts[idx * 2];
 
         data.push({
           detName: detName,
@@ -467,8 +469,8 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
     });
 
   // plot data
-  for (var detName in this.data[this.compressionIndex].detectors) {
-    var { counts, meta } = this.data[this.compressionIndex].detectors[detName];
+  for (var detName in this.data[compressionIndex].detectors) {
+    var { counts, meta } = this.data[compressionIndex].detectors[detName];
 
     var lineGamma = d3.svg
       .line()
@@ -537,7 +539,7 @@ D3TimeChart.prototype.updateChart = function (scales, options) {
   }
 
   // set different tick counts for different viewport breakpoints
-  var nSamples = this.data[this.compressionIndex].sampleNumbers.length;
+  var nSamples = this.data[compressionIndex].sampleNumbers.length;
   // if (this.width > 850) {
   //   nTicksX = nSamples;
   // } else if (this.width > 520) {
@@ -1143,35 +1145,48 @@ D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
  */
 D3TimeChart.prototype.handleBrush = function (brush) {
   if (brush && !brush.empty() && brush.extent()[0] < brush.extent()[1]) {
+    // find appropriate compression level for this range
+    console.log(brush.extent());
+    var leftIndex = this.findDataIndex(brush.extent()[0], 0)
+    var rightIndex = this.findDataIndex(brush.extent()[1], 0)
+    console.log([leftIndex, rightIndex])
+    var nPoints = rightIndex - leftIndex + 1;
+    var plotWidth = this.width - this.margin.left - this.margin.right;
+
+    var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+
+
+
     // set lower limit on extent size to 2 interval lengths
     var minExtentLeft = Math.max(
-      brush.getCenter() - this.data[this.compressionIndex].meanIntervalTime,
-      this.data[this.compressionIndex].domains.x[0]
+      brush.getCenter() - this.data[compressionIndex].meanIntervalTime,
+      this.data[compressionIndex].domains.x[0]
     );
     var maxExtentRight = Math.min(
-      brush.getCenter() + this.data[this.compressionIndex].meanIntervalTime,
-      this.data[this.compressionIndex].domains.x[1]
+      brush.getCenter() + this.data[compressionIndex].meanIntervalTime,
+      this.data[compressionIndex].domains.x[1]
     );
 
     var brushWidth = brush.extent()[1] - brush.extent()[0];
 
     var extent =
-      brushWidth > 2 * this.data[this.compressionIndex].meanIntervalTime
+      brushWidth > 2 * this.data[compressionIndex].meanIntervalTime
         ? brush.extent()
         : [minExtentLeft, maxExtentRight];
 
     // update x-domain to the new domain
-    this.selectionDomain = extent;
+    this.selection ={domain: extent, compressionIndex: compressionIndex};
 
     var scales = this.getScales({
-      x: this.selectionDomain,
-      yGamma: this.data[this.compressionIndex].domains.yGamma,
-      yNeutron: this.data[this.compressionIndex].domains.yNeutron,
+      x: this.selection.domain,
+      yGamma: this.data[compressionIndex].domains.yGamma,
+      yNeutron: this.data[compressionIndex].domains.yNeutron,
     });
 
     // brush.x(scales.xScale); // update xScale
     brush.setScale(scales.xScale);
-    this.updateChart(scales, { transitions: true });
+    var transitions = compressionIndex === this.compressionIndex;
+    this.updateChart(scales, compressionIndex, { transitions: transitions });
 
     // to clear the drawn rectangle.
     // this.brushG.call(brush.clear());
@@ -1182,11 +1197,12 @@ D3TimeChart.prototype.handleBrush = function (brush) {
  * Double click handler to redraw chart with full (default) domain
  */
 D3TimeChart.prototype.handleDoubleClick = function () {
+  var transitions = this.selection.compressionIndex === this.compressionIndex;
   // clear selection
-  this.selectionDomain = null;
+  this.selection = null;
 
   // redraw with full domain
-  this.render({ transitions: true });
+  this.render({ transitions: transitions});
 };
 
 /**
@@ -1270,14 +1286,16 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
  * Performs search over data to find interval that the given time belongs to
  * Returns the index of the match in the data array
  * @param {} time : realTime of measurement (x-value)
+ * @param {} compressionIndex : optional compression index to search over.
  */
-D3TimeChart.prototype.findDataIndex = function (time) {
-  var highIdx = this.data[this.compressionIndex].realTimeIntervals.length - 1;
+D3TimeChart.prototype.findDataIndex = function (time, compressionIndex) {
+  var cIdx = (compressionIndex != null) ? compressionIndex : this.compressionIndex;
+  var highIdx = this.data[cIdx].realTimeIntervals.length - 1;
   var lowIdx = 0;
 
   while (lowIdx <= highIdx) {
     var midIdx = Math.floor((highIdx + lowIdx) / 2);
-    var interval = this.data[this.compressionIndex].realTimeIntervals[midIdx];
+    var interval = this.data[cIdx].realTimeIntervals[midIdx];
     if (time >= interval[0] && time <= interval[1]) {
       return midIdx;
     } else if (time < interval[0]) {
