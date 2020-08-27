@@ -227,8 +227,8 @@ D3TimeChart = function (elem, options) {
     .append("div")
     .attr("id", "hover_info")
     .attr("class", "tooltip")
-    .style("left", `${this.margin.left + 20}px`)
-    .style("top", `${this.margin.top}px`);
+    .style("left", this.margin.left + 20 + "px")
+    .style("top", this.margin.top + "px");
 }; //
 
 /** Function to help emit callbacks back to C++
@@ -378,6 +378,17 @@ D3TimeChart.prototype.render = function (options) {
     }
 
     this.linesG.attr("clip-path", "url(#clip_th)");
+
+    // if have selection, recalculate compression index based on new plotWidth if needed.
+    if (this.selection) {
+      var leftIndex = this.findDataIndex(this.selection.domain[0], 0);
+      var rightIndex = this.findDataIndex(this.selection.domain[1], 0);
+      var nPointsSelection = rightIndex - leftIndex + 1;
+
+      this.selection.compressionIndex = Math.ceil(
+        Math.log2(Math.ceil(nPointsSelection / plotWidth))
+      );
+    }
 
     // get scales
     var domains = this.selection
@@ -594,12 +605,14 @@ D3TimeChart.prototype.updateChart = function (
     // reposition
     axisLabelX.attr(
       "transform",
-      `translate(${this.width / 2}, ${
-        this.height -
-        this.margin.bottom +
-        this.axisBottomG.node().getBBox().height +
-        15
-      })`
+      "translate(" +
+        this.width / 2 +
+        "," +
+        (this.height -
+          this.margin.bottom +
+          this.axisBottomG.node().getBBox().height +
+          15) +
+        ")"
     );
   } else {
     this.svg
@@ -608,12 +621,14 @@ D3TimeChart.prototype.updateChart = function (
       .attr("id", "th_label_x")
       .attr(
         "transform",
-        `translate(${this.width / 2}, ${
-          this.height -
-          this.margin.bottom +
-          this.axisBottomG.node().getBBox().height +
-          15
-        })`
+        "translate(" +
+          this.width / 2 +
+          "," +
+          (this.height -
+            this.margin.bottom +
+            this.axisBottomG.node().getBBox().height +
+            15) +
+          ")"
       )
       .style("text-anchor", "middle")
       .text(this.options.xtitle);
@@ -642,9 +657,11 @@ D3TimeChart.prototype.updateChart = function (
       // reposition
       axisLabelY1.attr(
         "transform",
-        `translate(${
-          this.margin.left - this.axisLeftG.node().getBBox().width - 5
-        }, ${this.height / 2}) rotate(-90)`
+        "translate(" +
+          (this.margin.left - this.axisLeftG.node().getBBox().width - 5) +
+          "," +
+          this.height / 2 +
+          ") rotate(-90)"
       );
     } else {
       this.svg
@@ -653,9 +670,11 @@ D3TimeChart.prototype.updateChart = function (
         .attr("id", "th_label_y1")
         .attr(
           "transform",
-          `translate(${
-            this.margin.left - this.axisLeftG.node().getBBox().width - 5
-          }, ${this.height / 2}) rotate(-90)`
+          "translate(" +
+            (this.margin.left - this.axisLeftG.node().getBBox().width - 5) +
+            "," +
+            this.height / 2 +
+            ") rotate(-90)"
         )
         .style("text-anchor", "middle")
         .text(this.options.y1title)
@@ -685,12 +704,14 @@ D3TimeChart.prototype.updateChart = function (
       // reposition
       axisLabelY2.attr(
         "transform",
-        `translate(${
-          this.width -
-          this.margin.left +
-          this.axisRightG.node().getBBox().width +
-          10
-        }, ${this.height / 2}) rotate(90)`
+        "translate(" +
+          (this.width -
+            this.margin.left +
+            this.axisRightG.node().getBBox().width +
+            10) +
+          "," +
+          this.height / 2 +
+          ") rotate(90)"
       );
     } else {
       this.svg
@@ -699,12 +720,14 @@ D3TimeChart.prototype.updateChart = function (
         .attr("id", "th_label_y2")
         .attr(
           "transform",
-          `translate(${
-            this.width -
-            this.margin.left +
-            this.axisRightG.node().getBBox().width +
-            10
-          }, ${this.height / 2}) rotate(90)`
+          "translate(" +
+            (this.width -
+              this.margin.left +
+              this.axisRightG.node().getBBox().width +
+              10) +
+            "," +
+            this.height / 2 +
+            ") rotate(90)"
         )
         .style("text-anchor", "middle")
         .text(this.options.y2title);
@@ -870,7 +893,6 @@ D3TimeChart.prototype.formatData = function (data) {
     data.sourceTypes
   );
 
-  // TODO: fix to use ES5 (remove use of spread operator)
   // create occupied array:
   var occupied;
   if (data.hasOwnProperty("occupancies")) {
@@ -880,7 +902,7 @@ D3TimeChart.prototype.formatData = function (data) {
         typeof data.sampleNumbers[i] === "number" &&
         isFinite(data.sampleNumbers[i])
           ? data.sampleNumbers[i]
-          : [...data.sampleNumbers[i]][0];
+          : parseInt(data.sampleNumbers[i].keys()[0]);
       occupied[i] = this.isOccupiedSample(sampleNumber, data.occupancies);
     }
   }
@@ -1423,27 +1445,33 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
     : this.compressionIndex;
   var s =
     optargs.startTimeStamp != null
-      ? `<div>${new Date(optargs.startTimeStamp).toUTCString()}</div>`
+      ? "<div>" + new Date(optargs.startTimeStamp).toUTCString() + "</div>"
       : "";
-  s += `<div>Data Compression Level: ${compressionIndex}</div>`;
+  s += "<div>Data Compression Level: " + compressionIndex + "</div>";
 
   s +=
     optargs.sourceType != null
-      ? `<div>Source: ${this.sourceMap[optargs.sourceType]}</div>`
+      ? "<div>Source: " + this.sourceMap[optargs.sourceType] + "</div>"
       : "";
-  s += `<div>Time: ${time.toPrecision(4)} s</div>`;
+  s += "<div>Time: " + time.toPrecision(4) + " s</div>";
 
   // for each detector, give counts
   for (var i = 0; i < data.length; i++) {
-    s += `<div>G CPS: ${data[i].gammaCPS.toPrecision(6)} (${
-      data[i].detName
-    })</div>`;
+    s +=
+      "<div>G CPS: " +
+      data[i].gammaCPS.toPrecision(6) +
+      " (" +
+      data[i].detName +
+      ")</div>";
 
     if (data[i].neutronCPS != null) {
       // cps of 0 is still valid to display
-      s += `<div>N CPS: ${data[i].neutronCPS.toPrecision(3)} (${
-        data[i].detName
-      })</div>`;
+      s +=
+        "<div>N CPS: " +
+        data[i].neutronCPS.toPrecision(3) +
+        " (" +
+        data[i].detName +
+        ")</div>";
     }
   }
 
@@ -1490,7 +1518,6 @@ D3TimeChart.prototype.isOccupiedSample = function (sampleNumber, occupancies) {
   return !(false ^ status);
 };
 
-// TODO: Fix to use ES5 (Set() is from ES6)
 D3TimeChart.prototype.compress = function (data, n) {
   // Create output array template
   var out = {
@@ -1691,11 +1718,11 @@ D3TimeChart.prototype.compress = function (data, n) {
           });
         } // if (data.hasOwnProperty("neutronCounts"))
 
-        // add to sampleNumbers:
+        // add to sampleNumbers. For ES5 compatibility, using object to mimic behavior of a set:
         if (out.sampleNumbers[outIdx] == null) {
-          out.sampleNumbers[outIdx] = new Set();
+          out.sampleNumbers[outIdx] = {};
         }
-        out.sampleNumbers[outIdx].add(data.sampleNumbers[i + j]);
+        out.sampleNumbers[outIdx][data.sampleNumbers[i + j]] = true;
 
         // increment j
         j += 1;
