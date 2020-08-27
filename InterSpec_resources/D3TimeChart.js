@@ -191,6 +191,10 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
 
+  // minimum selection width option. Default used from Spectrum Chart
+  if (typeof this.options.minSelectionWidth !== "number")
+    this.options.minSelectionWidth = 8;
+
   this.data = undefined; // formatted data
   this.selection = undefined;
   this.height = undefined;
@@ -219,6 +223,11 @@ D3TimeChart = function (elem, options) {
   this.axisRightG = this.svg.append("g").attr("class", "axis");
 
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
+  this.highlightText = this.rectG
+    .append("text")
+    .text("Zoom In")
+    .attr("font-size", 11)
+    .attr("font-weight", "bold");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
   this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area
 
@@ -229,6 +238,19 @@ D3TimeChart = function (elem, options) {
     .attr("class", "tooltip")
     .style("left", this.margin.left + 20 + "px")
     .style("top", this.margin.top + "px");
+
+  // // add esc canceling
+  // document.onkeydown = function(evt) {
+  //   evt = evt || window.event;
+  //   if (evt.keyCode == 27) {
+  //       console.log('Esc key pressed.');
+  //       this.escapeKeyPressed = true;
+  //       var event = document.createEvent('DragEvent');
+  //       event.initEvent('dragend', true, true);
+  //       // var evt = new DragEvent("dragend")
+  //       d3.select(".interaction_area").select("rect").node().dispatchEvent(event);
+  //   }
+  // };
 }; //
 
 /** Function to help emit callbacks back to C++
@@ -413,24 +435,43 @@ D3TimeChart.prototype.render = function (options) {
     var drag = d3.behavior
       .drag()
       .on("dragstart", () => {
-        var coords = d3.mouse(this.rect.node());
-        brush.setStart(coords[0]);
-        this.mouseDownHighlight(coords[0]);
+        if (!this.escapeKeyPressed) {
+          var coords = d3.mouse(this.rect.node());
+          brush.setStart(coords[0]);
+          this.mouseDownHighlight(coords[0]);
+          d3.select("body").style("cursor", "move");
+        }
       })
       .on("drag", () => {
-        brush.setEnd(d3.mouse(this.rect.node())[0]);
-
-        // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
-        if (brush.getEnd() < brush.getStart()) {
-          this.handleDragBack(brush);
+        if (this.escapeKeyPressed) {
+          //clear stuff
+          d3.select("body").style("cursor", "auto");
+          brush.clear();
+          this.mouseUpHighlight();
         } else {
-          this.handleDragForward(brush);
+          brush.setEnd(d3.mouse(this.rect.node())[0]);
+
+          // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
+          if (brush.getEnd() < brush.getStart()) {
+            this.handleDragBack(brush);
+          } else {
+            this.handleDragForward(brush);
+          }
         }
       })
       .on("dragend", () => {
-        this.handleBrush(brush);
-        brush.clear();
-        this.mouseUpHighlight();
+        if (this.escapeKeyPressed) {
+          // reset escape key
+          d3.select("body").style("cursor", "auto");
+          brush.clear();
+          this.mouseUpHighlight();
+          this.escapeKeyPressed = false;
+        } else {
+          d3.select("body").style("cursor", "auto");
+          this.handleBrush(brush);
+          brush.clear();
+          this.mouseUpHighlight();
+        }
       });
 
     this.rect.call(drag);
@@ -596,6 +637,24 @@ D3TimeChart.prototype.updateChart = function (
   }
 
   var axisLabelX = this.svg.select("#th_label_x");
+
+  // var axisLabelXTranslation = this.options.compactXAxis
+  //   ? "translate(" +
+  //     this.width / 3 +
+  //     "," +
+  //     (this.height -
+  //       this.margin.bottom +
+  //       this.axisBottomG.node().getBBox().height +
+  //       15) +
+  //     ")"
+  //   : "translate(" +
+  //     this.width / 2 +
+  //     "," +
+  //     (this.height -
+  //       this.margin.bottom +
+  //       this.axisBottomG.node().getBBox().height +
+  //       15) +
+  //     ")";
 
   // if already drawn, just update
   if (!axisLabelX.empty()) {
@@ -1248,6 +1307,13 @@ D3TimeChart.prototype.handleBrush = function (brush) {
     } else {
       // handle drag forward (zoom-in)
 
+      // if drawn window is too small, do nothing
+      var width =
+        brush.getScale()(brush.getEnd()) - brush.getScale()(brush.getStart());
+      if (width < this.options.minSelectionWidth) {
+        return;
+      }
+
       // find appropriate compression level for this range
       var leftIndex = this.findDataIndex(brush.extent()[0], 0);
       var rightIndex = this.findDataIndex(brush.extent()[1], 0);
@@ -1334,6 +1400,7 @@ D3TimeChart.prototype.handleDragForward = function (brush) {
 D3TimeChart.prototype.handleDragBack = function (brush) {
   // clear rectangle if any drawn
   this.highlightRect.attr("width", 0);
+  this.highlightText.attr("visibility", "hidden");
 
   // un-set draggedforward flag. Flag is used to find conditions for redrawing chart at default position (prior to any drag-back zoomout occurring)
   this.draggedForward = false;
@@ -1399,7 +1466,14 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX) {
     .attr("height", this.height - this.margin.top - this.margin.bottom)
     .attr("x", mouseX)
     .attr("y", this.margin.top)
-    .attr("width", 0);
+    .attr("width", 1);
+
+  this.highlightText
+    .attr("x", mouseX - this.highlightText.node().getBBox().width / 2)
+    .attr(
+      "y",
+      (this.height - this.margin.top - this.margin.bottom) / 2 + this.margin.top
+    );
 };
 
 /**
@@ -1409,6 +1483,13 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX) {
 D3TimeChart.prototype.mouseMoveHighlight = function (width) {
   if (width > 0) {
     this.highlightRect.attr("width", width);
+    if (width < this.options.minSelectionWidth) {
+      this.highlightText.style("visibility", "hidden");
+    } else {
+      this.highlightText
+        .attr("transform", `translate(${width / 2}, 0)`)
+        .style("visibility", "visible");
+    }
   } else {
     this.highlightRect.attr("width", 0);
   }
@@ -1419,6 +1500,7 @@ D3TimeChart.prototype.mouseMoveHighlight = function (width) {
  */
 D3TimeChart.prototype.mouseUpHighlight = function () {
   this.highlightRect.attr("height", 0).attr("width", 0);
+  this.highlightText.style("visibility", "hidden");
 };
 
 D3TimeChart.prototype.showToolTip = function () {
