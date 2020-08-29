@@ -910,7 +910,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   for( MoreActionsIndex index = static_cast<MoreActionsIndex>(0);
       index < MoreActionsIndex::NumMoreActionsIndex;
-      index = MoreActionsIndex(index + 1) )
+      index = MoreActionsIndex(static_cast<int>(index) + 1) )
   {
     const char *label = "", *tooltip = nullptr;
     switch( index )
@@ -947,7 +947,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
                   " lower-resolution detectors where each spectrum has a different test source";
         break;
         
-      case NumMoreActionsIndex:
+      case MoreActionsIndex::NumMoreActionsIndex:
         assert(0);
         break;
     }//switch( index )
@@ -955,8 +955,8 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     
     
     WContainerWidget *holder = new WContainerWidget( moreActionsList );
-    m_moreActions[index] = new WAnchor( WLink(), label, holder );
-    m_moreActions[index]->clicked().connect( boost::bind(&EnergyCalTool::moreActionBtnClicked, this, index) );
+    m_moreActions[static_cast<int>(index)] = new WAnchor( WLink(), label, holder );
+    m_moreActions[static_cast<int>(index)]->clicked().connect( boost::bind(&EnergyCalTool::moreActionBtnClicked, this, index) );
     
     if( tooltip )
       HelpSystem::attachToolTipOn( holder, tooltip, showToolTipInstantly );
@@ -3090,9 +3090,9 @@ void EnergyCalTool::doRefreshFromFiles()
   
   for( MoreActionsIndex index = MoreActionsIndex(0);
       index < MoreActionsIndex::NumMoreActionsIndex;
-      index = MoreActionsIndex(index + 1) )
+      index = MoreActionsIndex(static_cast<int>(index) + 1) )
   {
-    Wt::WAnchor *anchor = m_moreActions[index];
+    Wt::WAnchor *anchor = m_moreActions[static_cast<int>(index)];
     assert( anchor );
     auto aparent = anchor->parent();
     assert( dynamic_cast<WContainerWidget *>(aparent) );
@@ -3151,9 +3151,9 @@ void EnergyCalTool::doRefreshFromFiles()
 
 
 
-void EnergyCalTool::moreActionBtnClicked( const EnergyCalTool::MoreActionsIndex index )
+void EnergyCalTool::moreActionBtnClicked( const MoreActionsIndex index )
 {
-  cerr << "moreActionBtnClicked: " << index << endl;
+  cerr << "moreActionBtnClicked: " << static_cast<int>(index) << endl;
 }//void moreActionBtnClicked( const MoreActionsIndex index )
 
 

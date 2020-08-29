@@ -118,6 +118,20 @@ namespace EnergyCalImp
  - Implement more actions...
  */
 
+enum class MoreActionsIndex : int
+{
+  Linearize,
+  Truncate,
+  CombineChannels,
+  ConvertToFrf,
+  ConvertToPoly,
+  MultipleFilesCal,
+  //Maybe add sum spectra, although this isnt a energy cal related thing
+  //Revert, and revert back to original calibrations.
+  NumMoreActionsIndex
+};//enum MoreActionsIndex
+
+
 class EnergyCalTool : public Wt::WContainerWidget
 {
 public:
@@ -220,19 +234,6 @@ protected:
   
   void applyToCbChanged( const ApplyToCbIndex index );
   
-  enum MoreActionsIndex
-  {
-    Linearize,
-    Truncate,
-    CombineChannels,
-    ConvertToFrf,
-    ConvertToPoly,
-    MultipleFilesCal,
-    //Maybe add sum spectra, although this isnt a energy cal related thing
-    //Revert, and revert back to original calibrations.
-    NumMoreActionsIndex
-  };//enum MoreActionsIndex
-  
   void moreActionBtnClicked( const MoreActionsIndex index );
   
   /** A struct that indicates what SpecUtils::Measurement's to apply a coefficent change to.
@@ -310,7 +311,7 @@ protected:
   
   Wt::WCheckBox *m_applyToCbs[ApplyToCbIndex::NumApplyToCbIndex];
   
-  Wt::WAnchor *m_moreActions[MoreActionsIndex::NumMoreActionsIndex];
+  Wt::WAnchor *m_moreActions[static_cast<int>(MoreActionsIndex::NumMoreActionsIndex)];
   
   
   Wt::WPushButton *m_fitCalBtn;

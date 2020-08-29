@@ -221,14 +221,6 @@ table.RecalibCoefTable
   margin-top: 10px;
 }
 
-table.RecalibCoefTable td, table.RecalibCoefTable th
-{
-  border:1px solid black;
-  padding: 2px;
-}
-
-
-
 
 .PopupDivMenuPhone
 {

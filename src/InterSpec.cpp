@@ -143,7 +143,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
-#include "InterSpec/PreserveEnergyCalWindow.h"
+#include "InterSpec/EnergyCalPreserveWindow.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
@@ -3826,14 +3826,14 @@ void InterSpec::deleteWelcomeCountDialog()
 }//void deleteWelcomeCountDialog()
 
 
-void InterSpec::deletePreserveEnergyCalWindow()
+void InterSpec::deleteEnergyCalPreserveWindow()
 {
   if( m_preserveCalibWindow )
   {
     delete m_preserveCalibWindow;
     m_preserveCalibWindow = nullptr;
   }
-}//void deletePreserveEnergyCalWindow()
+}//void deleteEnergyCalPreserveWindow()
 
 
 void InterSpec::setShowIEWarningDialogCookie( bool show )
@@ -8488,22 +8488,22 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   
   
-  deletePreserveEnergyCalWindow();
+  deleteEnergyCalPreserveWindow();
   
   if( checkForPrevioudEnergyCalib && !sameSpec && m_recalibrator && !!meas && !!m_dataMeasurement )
   {
     switch( spec_type )
     {
       case SpecUtils::SpectrumType::Foreground:
-        if( PreserveEnergyCalWindow::candidate(meas,previous) )
-          m_preserveCalibWindow = new PreserveEnergyCalWindow( meas, spec_type,
+        if( EnergyCalPreserveWindow::candidate(meas,previous) )
+          m_preserveCalibWindow = new EnergyCalPreserveWindow( meas, spec_type,
                                          previous, spec_type, m_recalibrator );
       break;
     
       case SpecUtils::SpectrumType::SecondForeground:
       case SpecUtils::SpectrumType::Background:
-        if( PreserveEnergyCalWindow::candidate(meas,m_dataMeasurement) )
-          m_preserveCalibWindow = new PreserveEnergyCalWindow( meas, spec_type,
+        if( EnergyCalPreserveWindow::candidate(meas,m_dataMeasurement) )
+          m_preserveCalibWindow = new EnergyCalPreserveWindow( meas, spec_type,
                                                 m_dataMeasurement, SpecUtils::SpectrumType::Foreground,
                                                 m_recalibrator );
       break;
@@ -8514,7 +8514,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       if( propigate_peaks_fcns )
       {
         m_preserveCalibWindow->finished().connect( std::bind( [=](){
-          deletePreserveEnergyCalWindow();
+          deleteEnergyCalPreserveWindow();
           std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
           WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
         } ) );
@@ -8522,7 +8522,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         propigate_peaks_fcns = nullptr;
       }else
       {
-        m_preserveCalibWindow->finished().connect( this, &InterSpec::deletePreserveEnergyCalWindow );
+        m_preserveCalibWindow->finished().connect( this, &InterSpec::deleteEnergyCalPreserveWindow );
       }//if( propigate_peaks_fcns ) / else
       
     }

@@ -535,7 +535,8 @@ set(sources
     src/EnergyCalTool.cpp
     src/EnergyCal.cpp
     src/EnergyCalGraphical.cpp
-    src/PreserveEnergyCalWindow.cpp
+    src/EnergyCalAddActions.cpp
+    src/EnergyCalPreserveWindow.cpp
     js/CanvasForDragging.js
     js/SpectrumChart.js
     js/InterSpec.js
@@ -615,7 +616,8 @@ set(headers
     InterSpec/EnergyCalTool.h
     InterSpec/EnergyCal.h
     InterSpec/EnergyCalGraphical.h
-    InterSpec/PreserveEnergyCalWindow.h
+    InterSpec/EnergyCalAddActions.h
+    InterSpec/EnergyCalPreserveWindow.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
