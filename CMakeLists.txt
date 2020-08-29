@@ -534,6 +534,7 @@ set(sources
     src/NativeFloatSpinBox.cpp
     src/EnergyCalTool.cpp
     src/EnergyCal.cpp
+    src/EnergyCalGraphical.cpp
     src/PreserveEnergyCalWindow.cpp
     js/CanvasForDragging.js
     js/SpectrumChart.js
@@ -613,6 +614,7 @@ set(headers
     InterSpec/NativeFloatSpinBox.h
     InterSpec/EnergyCalTool.h
     InterSpec/EnergyCal.h
+    InterSpec/EnergyCalGraphical.h
     InterSpec/PreserveEnergyCalWindow.h
 )
 

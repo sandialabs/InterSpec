@@ -405,6 +405,14 @@ color: #E0F5FF;
   flex-shrink: 0;
 }
 
+/*
+.DevPairMsg
+{
+  flex-shrink: 0;
+  background: yellow;
+}
+ */
+
 
 .DevPairTitle, .CalDisplay .CalType, .DetHdr
 {
@@ -454,3 +462,45 @@ color: #E0F5FF;
 }
 */
 
+.DeleteDevPair
+{
+  background-image: url('../InterSpec_resources/images/minus_min_black.svg');
+  background-position: 0px center;
+  background-repeat: no-repeat;
+  float: right;
+  
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.DeleteDevPair:hover
+{
+  opacity: 1;
+}
+
+
+.AddDevPair
+{
+  margin-left: 2px;
+  margin-top: 1px;
+  margin-bottom: 1px;
+  background-image: url('../InterSpec_resources/images/plus_min_black.svg');
+  background-repeat: no-repeat;
+  background-position: center;
+  height: 18px;
+  width: 19px;
+  opacity: 0.6;
+  cursor:pointer;
+  padding: 0;
+  display: block;
+}
+
+.AddDevPair:hover
+{
+  opacity: 1.0;
+}
+
+.InvalidDevPairs
+{
+  background: red;
+}

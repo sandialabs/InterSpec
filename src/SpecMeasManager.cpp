@@ -821,7 +821,7 @@ void  SpecMeasManager::startSpectrumManager()
     
     //WText* spec =
     new WText("Load spectrum from: ", uploadDiv);
-    //spec->setIcon( "InterSpec_resources/images/plus_min_white.png" );
+    //spec->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
     if( m_viewer->isSupportFile() )
     {
       Wt::WPushButton* uploadButton = new Wt::WPushButton("File...",uploadDiv);

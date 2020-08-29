@@ -122,7 +122,7 @@ void DecaySelectNuclide::setNuclideSearchToFocus()
 void DecaySelectNuclide::setAddButtonToAdd()
 {
   m_acceptButton->setText( "Add" );
-  m_acceptButton->setIcon( "InterSpec_resources/images/plus_min_white.png" );
+  m_acceptButton->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
 }
 
 void DecaySelectNuclide::setAddButtonToAccept()
