@@ -39,6 +39,7 @@ class AuxWindow;
 class InterSpec;
 class PeakModel;
 class RowStretchTreeView;
+class EnergyCalGraphicalConfirm;
 
 namespace Wt
 {
@@ -111,10 +112,10 @@ namespace EnergyCalImp
  
  TODO Tues:
  - Add a "Only Changed Detector option" to "Apply Changes To" colum
- - hook up graphical calibration
+ - [implemented but not enabled] By default dont show deviation pairs display unless a detector has
+   them defined; maybe a "+ deviation pairs" button or something incase user wants to show them
  - Implement undu...
  - Implement more actions...
- 
  */
 
 class EnergyCalTool : public Wt::WContainerWidget
@@ -126,10 +127,11 @@ public:
   void setWideLayout();
   void setTallLayout();
   
-  
   void refreshGuiFromFiles();
   
   void handleGraphicalRecalRequest( double xstart, double xfinish );
+  
+  void deleteGraphicalRecalConfirmWindow();
   
   void updateFitButtonStatus();
   
@@ -140,12 +142,32 @@ public:
   
   void userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display );
   
+  /** Applies the change in coeffcients from 'orig' to 'updated' to all the measurements the
+   user has selected in the GUI (e.g., Back/For/Sec, visible detectors, entire file, etc).
+   
+   Only propogates for the coeffcients, not changes to deviation pairs (changes to deviation pairs
+   will cause spectra that dont originally have the 'orig' calibration to have their coefficents
+   altered to account for the change in deviation pairs, which is probably never the wanted
+   behaviour.
+   */
   void applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalibration> orig,
                        std::shared_ptr<const SpecUtils::EnergyCalibration> updated,
                        const bool isOffsetOnly );
   
+  /** Adds a deviation pair from the graphical calibration.  Adds the deviation pair measurements
+   the user has selected in the GUI (e.g., Back/For/Sec, visible detectors, entire file, etc).
+   */
+  void addDeviationPair( const std::pair<float,float> &new_pair );
   
-  void userChangedDeviationPair( EnergyCalImp::CalDisplay *display );
+  
+  /** Callback function that gets called when the user changes the deviation pairs from the gui.
+   
+   @param display The calibration display that got altered.
+   @param devPairFieldType Which part of deviation pair got altered; ss value of enum type
+          #DeviationPairDisplay::UserFieldChanged.
+   
+   */
+  void userChangedDeviationPair( EnergyCalImp::CalDisplay *display, const int devPairFieldType );
   
   void displayedSpectrumChanged( const SpecUtils::SpectrumType type,
                                  const std::shared_ptr<SpecMeas> &meas,
@@ -154,6 +176,15 @@ public:
   
   
   void setShowNoCalInfo( const bool nocal );
+  
+  //setWasGraphicalRecal( int type ): 'type' is of type
+  //  GraphicalRecalConfirm::RecalTypes,
+  void setWasGraphicalRecal( int type, float energy );
+  
+  /** Gives a text summary of what spectra changes will be applied to.
+   Will be blank if unambigous.
+   */
+  std::string applyToSummaryTxt() const;
   
 protected:
   enum class LayoutType{ Tall, Wide };
@@ -284,6 +315,10 @@ protected:
   
   Wt::WPushButton *m_fitCalBtn;
   
+  time_t m_lastGraphicalRecal;  // \TODO: switch this to std::chrono::timepoint
+  int m_lastGraphicalRecalType;
+  float m_lastGraphicalRecalEnergy;
+  EnergyCalGraphicalConfirm *m_graphicalRecal;
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];

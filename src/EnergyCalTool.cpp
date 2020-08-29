@@ -26,6 +26,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <ctime>
 #include <memory>
 #include <iostream>
 
@@ -57,6 +58,7 @@
 #include "InterSpec/SpectraFileModel.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/EnergyCalGraphical.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 
@@ -101,18 +103,32 @@ namespace EnergyCalImp
     std::vector< std::pair<float,float> > deviationPairs() const;
     void removeDevPair( DevPair *devpair );
     DevPair *newDevPair( const bool emitChangedNow );
-    Wt::Signal<> &changed(); //emits when dev pair is added, deleted, or changed
-    
     void setInvalidValues();
     void setValidValues();
+    
+    //void setMsg( const string &msg );
+    
+    enum class UserFieldChanged : int
+    {
+      AddedDeviationPair,
+      RemovedDeviationPair,
+      EnergyChanged,
+      OffsetChanged
+    };//enum UserFieldChanged
+    
+    /** Signal that gets emited when dev pair is added, deleted, or changed.
+     Int argument is of type UserFieldChanged endum
+     */
+    Wt::Signal<int> &changed();
     
   protected:
     void sortDisplayOrder( const bool indicateVisually );
     
-    void emitChanged();
+    void emitChanged( const UserFieldChanged whatChanged );
       
-    Wt::Signal<> m_changed;
+    Wt::Signal<int> m_changed;
     Wt::WContainerWidget *m_pairs;
+    //Wt::WText *m_msg;
   };//class DeviationPairDisplay
 
 
@@ -190,6 +206,7 @@ void DevPair::visuallyIndicateChanged()
 DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_pairs( NULL )
+    //, m_msg( nullptr )
 {
   addStyleClass( "DevPairDisplay" );
   WLabel *title = new WLabel( "Deviation Pairs", this );
@@ -199,6 +216,10 @@ DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
   m_pairs = new WContainerWidget(this);
   m_pairs->setStyleClass( "DevPairsContainer" );
           
+  //m_msg = new WText( "&nbsp;", this );
+  //m_msg->addStyleClass( "DevPairMsg" );
+  //m_msg->setHidden( true );
+  
   auto footer = new WContainerWidget(this);
   footer->setStyleClass( "DevPairsFooter" );
   
@@ -208,6 +229,22 @@ DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
   addBtn->setToolTip( "Add another deviation pair" );
 }//DeviationPairDisplay constructor
 
+/*
+void DeviationPairDisplay::setMsg( const string &msg )
+{
+  if( msg == m_msg->text().toUTF8() )
+    return;
+  
+  const bool wasHidden = m_msg->isHidden();
+  const bool shouldBeHidden = msg.empty();
+  if( wasHidden != shouldBeHidden )
+  {
+    //WAnimation anim (WAnimation::AnimationEffect::Fade | WAnimation::AnimationEffect::SlideInFromBottom, WAnimation::Linear, 200);
+    m_msg->setHidden( shouldBeHidden, anim );
+  }
+  m_msg->setText( WString::fromUTF8(msg) );
+}
+ */
 
 void DeviationPairDisplay::setDeviationPairs( vector< pair<float,float> > d )
 {
@@ -266,9 +303,9 @@ void DeviationPairDisplay::sortDisplayOrder( const bool indicateVisually )
 }//void sortDisplayOrder()
 
 
-void DeviationPairDisplay::emitChanged()
+void DeviationPairDisplay::emitChanged( const UserFieldChanged whatChanged )
 {
-  m_changed.emit();
+  m_changed.emit( static_cast<int>(whatChanged) );
 }
 
 
@@ -279,11 +316,33 @@ vector< pair<float,float> > DeviationPairDisplay::deviationPairs() const
   for( const WWidget *t : childs )
   {
     const DevPair *p = dynamic_cast<const DevPair *>( t );
-    if( p )
-      answer.push_back( p->devPair() );
+    
+    if( !p )
+      continue;
+    
+    // We will only insert a deviation pair if both fields have text entered.
+    if( p->m_energy->text().empty() || p->m_offset->text().empty() )
+      continue;
+    
+    answer.push_back( p->devPair() );
   }//for( WWidget *t : childs )
   
   std::sort( answer.begin(), answer.end() );
+  
+  // The EnergyCalibration code implicitly will add in a {0,0} deviation pair if its needed, so
+  //  might as well just add it in now so it isnt implict to the user
+  //if( (answer.size() == 1) && (answer[0].first > 0.01f) )
+  //  answer.insert( begin(answer), {0.0f,0.0f} );
+  
+  // Remove duplicates, usually {0,0}
+  //const double epsilon = 1.0;
+  //for( size_t i = 1; i < answer.size(); ++i )
+  //{
+  //  const auto &prev = answer[i-1];
+  //  if( (fabs(answer[i].first - prev.first) < epsilon)
+  //      && (fabs(answer[i].second - prev.second) < epsilon) )
+  //    answer.erase( begin(answer) + i );
+  //}
   
   return answer;
 }//deviationPairs()
@@ -297,11 +356,12 @@ void DeviationPairDisplay::removeDevPair( DevPair *devpair )
   const vector<WWidget *> childs = m_pairs->children();
   for( WWidget *t : childs )
   {
-    if( devpair == dynamic_cast<DevPair *>( t ) ) //dynamic_cast prob not necessary
+    auto tt = dynamic_cast<DevPair *>( t ); //dynamic_cast prob not necessary
+    if( devpair == tt )
     {
       delete devpair;
       sortDisplayOrder(false);
-      emitChanged();
+      emitChanged( UserFieldChanged::RemovedDeviationPair );
       return;
     }
   }//for( WWidget *t : childs )
@@ -320,22 +380,24 @@ void DeviationPairDisplay::setValidValues()
 }
 
 
+
 DevPair *DeviationPairDisplay::newDevPair( const bool emitChangedNow )
 {
   DevPair *dev = new DevPair( m_pairs );
   dev->m_delete->clicked().connect( boost::bind( &DeviationPairDisplay::removeDevPair, this, dev ) );
   //dev->m_energy->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
   //dev->m_offset->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
-  dev->m_energy->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
-  dev->m_offset->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
+  dev->m_energy->valueChanged().connect( boost::bind( &DeviationPairDisplay::emitChanged, this, UserFieldChanged::EnergyChanged ) );
+  dev->m_offset->valueChanged().connect( boost::bind( &DeviationPairDisplay::emitChanged, this, UserFieldChanged::OffsetChanged ) );
   dev->m_energy->blurred().connect( boost::bind(&DeviationPairDisplay::sortDisplayOrder, this, true) );
   
   if( emitChangedNow )
-    emitChanged();
+    emitChanged( UserFieldChanged::AddedDeviationPair );
+  
   return dev;
 }//newDevPair()
 
-Wt::Signal<> &DeviationPairDisplay::changed()
+Wt::Signal<int> &DeviationPairDisplay::changed()
 {
   return m_changed;
 }
@@ -388,6 +450,13 @@ class CalDisplay : public WContainerWidget
   WText *m_type;
   WContainerWidget *m_coefficients;
   DeviationPairDisplay *m_devPairs;
+  
+  //I cant decide if I like hiding deviation pair widget when there is none, or not
+#define HIDE_EMPTY_DEV_PAIRS 0
+#if( HIDE_EMPTY_DEV_PAIRS )
+  WPushButton *m_addPairs;
+#endif
+  
   shared_ptr<const SpecUtils::EnergyCalibration> m_cal;
   
 public:
@@ -403,6 +472,9 @@ public:
    m_type( nullptr ),
    m_coefficients( nullptr ),
    m_devPairs( nullptr )
+#if( HIDE_EMPTY_DEV_PAIRS )
+   , m_addPairs( nullptr )
+#endif
   {
     addStyleClass( "CalDisplay" );
     
@@ -423,20 +495,45 @@ public:
     m_coefficients->addStyleClass( "CoefContent" );
     
     m_devPairs = new DeviationPairDisplay();
+    
+#if( HIDE_EMPTY_DEV_PAIRS )
+    m_devPairs->setHidden( true );
+    m_addPairs = new WPushButton( "Add Dev. Pairs" );
+    m_addPairs->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
+    m_addPairs->setHidden( true );
+    m_addPairs->clicked().connect( this, &CalDisplay::showDevPairs );
+#endif
+    
     if( isWideLayout )
     {
       layout->addWidget( m_devPairs, 0, 1 );
+#if( HIDE_EMPTY_DEV_PAIRS )
+      layout->addWidget( m_addPairs, 1, 0, AlignmentFlag::AlignRight );
+      layout->setRowStretch( 0, 1 );
+#endif
     }else
     {
+#if( HIDE_EMPTY_DEV_PAIRS )
+      layout->addWidget( m_addPairs, 1, 0, AlignmentFlag::AlignCenter );
+      layout->addWidget( m_devPairs, 2, 0 );
+#else
       layout->addWidget( m_devPairs, 1, 0 );
+#endif
       m_devPairs->setHeight( 100 );
     }
     
-    m_devPairs->changed().connect( std::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this) );
+    m_devPairs->changed().connect( boost::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this, _1 ) );
   }//CalDisplay( constructor )
   
   SpecUtils::SpectrumType spectrumType() const { return m_cal_type; }
   const std::string &detectorName() const { return m_det_name; }
+  
+    
+  //void setDeviationPairMsg( const std::string &msg )
+  //{
+  //  m_devPairs->setMsg( msg );
+  //}//void setDeviationPairMsg( const std::string &msg )
+  
   
   shared_ptr<const SpecUtils::EnergyCalibration> lastSetCalibration()
   {
@@ -454,6 +551,14 @@ public:
         ww->m_fit->setChecked( fitfor.count(ww->m_order) );
     }//for( auto w : m_coefficients->children() )
   }//void setFitFor( const set<size_t> &fitfor )
+  
+#if( HIDE_EMPTY_DEV_PAIRS )
+  void showDevPairs()
+  {
+    m_addPairs->setHidden( true );
+    m_devPairs->setHidden( false, WAnimation(WAnimation::Fade, WAnimation::Linear, 200) );
+  }
+#endif
   
   
   /// @returns The order coefficents that are checked to be fit for
@@ -509,8 +614,20 @@ public:
     return m_devPairs->deviationPairs();
   }
   
+  void setDeviationPairsInvalid()
+  {
+    m_devPairs->setInvalidValues();
+  }
+  
+  void setDeviationPairsValid()
+  {
+    m_devPairs->setValidValues();
+  }
+  
   void updateToGui( const shared_ptr<const SpecUtils::EnergyCalibration> &cal )
   {
+    const bool hadCal = !!m_cal;
+    
     m_cal = cal;
     
     if( !m_cal )
@@ -518,6 +635,10 @@ public:
       m_type->setText( "No Calibration" );
       m_coefficients->clear();
       m_devPairs->setDeviationPairs( {} );
+#if( HIDE_EMPTY_DEV_PAIRS )
+      m_devPairs->setHidden( true );
+      m_addPairs->setHidden( true );
+#endif
       return;
     }//if( !m_cal )
     
@@ -540,6 +661,10 @@ public:
       case SpecUtils::EnergyCalType::InvalidEquationType:
         m_coefficients->clear();
         m_devPairs->setDeviationPairs( {} );
+#if( HIDE_EMPTY_DEV_PAIRS )
+        m_addPairs->setHidden( true );
+        m_devPairs->setHidden( true );
+#endif
         return;
               
       case SpecUtils::EnergyCalType::Polynomial:
@@ -551,9 +676,19 @@ public:
     const auto &devpairs = m_cal->deviation_pairs();
     const vector<float> &coeffs = m_cal->coefficients();
     
+#if( HIDE_EMPTY_DEV_PAIRS )
+    // Once deviation pairs are showing, we will leave them showing, even if there are no deviation
+    //  pairs; this is because if you click to add deviation pairs, dont add any, then adjust the
+    //  the gain, the deviation pair display getting hidden, causing a layout update, is really
+    //  jarring.
+    const auto anim = hadCal ? WAnimation(WAnimation::Fade, WAnimation::Linear, 200) : WAnimation{};
+    if( m_devPairs->isHidden() && !devpairs.empty() )
+      m_devPairs->setHidden( false, anim );
+    m_addPairs->setHidden( !m_devPairs->isHidden(), anim );
+#endif
+    
     m_devPairs->setDeviationPairs( devpairs );
     //m_devPairs->changed().connect( std::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this) );
-    
     
     const size_t num_coef_disp = std::max( coeffs.size(), sm_min_coef_display );
     vector<CoefDisplay *> coef_disps( num_coef_disp, nullptr );
@@ -660,7 +795,11 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   m_layout( nullptr ),
   m_applyToCbs{ nullptr },
   m_moreActions{ nullptr },
-  m_fitCalBtn( nullptr )
+  m_fitCalBtn( nullptr ),
+  m_lastGraphicalRecal( 0 ),
+  m_lastGraphicalRecalType( EnergyCalGraphicalConfirm::NumRecalTypes ),
+  m_lastGraphicalRecalEnergy( -999.0f ),
+  m_graphicalRecal( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/EnergyCalTool.css" );
   
@@ -676,6 +815,14 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   if( (wide && !m_tallLayoutContent && m_layout) || (!wide && m_tallLayoutContent) )
     return;
+  
+  if( m_graphicalRecal )
+  {
+    AuxWindow::deleteAuxWindow( m_graphicalRecal );
+    m_graphicalRecal = nullptr;
+  }//if( m_graphicalRecal )
+  
+  
   
   if( wide )
   {
@@ -1283,10 +1430,13 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
         for( const string &detname : change.detectors )
         {
           auto m = change.meas->measurement( sample, detname );
+          if( !m || m->num_gamma_channels() <= 4 )
+            continue;
+          
           const auto meas_old_cal = m->energy_calibration();
           assert( meas_old_cal );
           
-          if( !m || m->num_gamma_channels() <= 4 || !meas_old_cal || !meas_old_cal->valid() )
+          if( !meas_old_cal || !meas_old_cal->valid() )
             continue;
           
           //If we have already computed the new calibration for a EnergyCalibration object, lets not
@@ -1491,10 +1641,234 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
 }//applyCalChange(...)
 
 
+void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
+{
+  using namespace SpecUtils;
+  
+  const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  const auto backgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Background);
+  const auto secgrnd = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
+  
+  const set<int> &foresamples = m_interspec->displayedSamples( SpectrumType::Foreground );
+  
+  // We will calculate all new energy calibrations, to make sure we actually can, befor setting them
+  map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
+  
+  // We will also pre-calculate updated peaks
+  map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
+  
+  const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
+  
+  // Do first loop to calculate new calibrations
+  for( const MeasToApplyCoefChangeTo &change : changemeas )
+  {
+    assert( change.meas );
+    
+    try
+    {
+      for( const int sample : change.sample_numbers )
+      {
+        for( const string &detname : change.detectors )
+        {
+          auto m = change.meas->measurement( sample, detname );
+          if( !m || m->num_gamma_channels() <= 4 )
+            continue;
+          
+          const auto old_cal = m->energy_calibration();
+          assert( old_cal );
+          
+          if( !m || (m->num_gamma_channels() <= 4) || !old_cal || !old_cal->valid()
+             || (old_cal->type() == EnergyCalType::LowerChannelEdge) )
+            continue;
+          
+          //If we have already computed the new calibration for a EnergyCalibration object, lets not
+          //  re-due it.
+          if( updated_cals.count(old_cal) )
+            continue;
+          
+          const size_t nchannel = old_cal->num_channels();
+          const vector<float> &coefs = old_cal->coefficients();
+          vector<pair<float,float>> dev_pairs = old_cal->deviation_pairs();
+          if( dev_pairs.empty() )
+            dev_pairs.push_back( {0.0f, 0.0f} );
+          dev_pairs.push_back( new_pair );
+          
+          std::sort( begin(dev_pairs), end(dev_pairs) );
+          
+          shared_ptr<EnergyCalibration> new_cal = make_shared<EnergyCalibration>();
+          
+          switch( old_cal->type() )
+          {
+            case SpecUtils::EnergyCalType::Polynomial:
+            case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+              new_cal->set_polynomial( nchannel, coefs, dev_pairs );
+              break;
+              
+            case SpecUtils::EnergyCalType::FullRangeFraction:
+              new_cal->set_full_range_fraction( nchannel, coefs, dev_pairs );
+              break;
+              
+            case SpecUtils::EnergyCalType::LowerChannelEdge:
+            case SpecUtils::EnergyCalType::InvalidEquationType:
+              assert( 0 );
+              break;
+          }//switch( meas_old_cal->type() )
+          
+          assert( new_cal && new_cal->valid() );
+          updated_cals[old_cal] = new_cal;
+        }//for( const string &detname : change.detectors )
+      }//for( loop over sample numbers )
+    }catch( std::exception &e )
+    {
+      string msg = "Adding deviation pair made energy calibration become invalid";
+      if( (backgrnd && (backgrnd != change.meas)) || (secgrnd && (secgrnd != change.meas)) )
+      {
+        if( change.meas == forgrnd )
+          msg += " for the foreground";
+        else if( change.meas == backgrnd )
+          msg += " for the background";
+        else if( change.meas == secgrnd )
+          msg += " for the secondary spectrum";
+      }//if( it is necassry to say which spectrum had the error )
+      
+      msg += ".  Error: ";
+      msg += e.what();
+      
+      throw runtime_error( msg );
+    }//try catch
+    
+    
+    // Now go through and translate the peaks, but we wont actually update them to the SpecMeas
+    //  until we know we can update all the peaks
+    const set<set<int>> peaksamples = change.meas->sampleNumsWithPeaks();
+    const vector<string> detnamesv( begin(change.detectors), end(change.detectors) );
+    
+    for( const set<int> &samples : peaksamples )
+    {
+      //If there is any overlap between 'samples' and 'change.sample_numbers', then apply the change
+      //  Note: this isnt correct, but I cant think of a better solution at the moment.
+      auto oldpeaks = change.meas->peaks(samples);
+      auto oldcal = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
+      
+      if( !oldpeaks || oldpeaks->empty()
+         || !oldcal || (oldcal->type() == EnergyCalType::InvalidEquationType) )
+      {
+        if( !oldpeaks || !oldcal || !oldcal->valid() )
+          cerr << "Failed to get peaks or oldcal!" << endl; //just for development
+        continue;
+      }
+      
+      auto newcal = updated_cals[oldcal];
+      if( !newcal || !newcal->valid() )
+      {
+        cerr << "Failed to get newcal for peaks shift!" << endl; //just for development, shouldnt happen I dont think
+        continue;
+      }
+      
+      if( oldcal == newcal )
+      {
+        cerr << __func__ <<  ": oldcal == newcal - skipping shifting peak" << endl;
+        continue;
+      }
+      
+      try
+      {
+        auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, oldcal, newcal );
+        updated_peaks[oldpeaks] = newpeaks;
+      }catch( std::exception &e )
+      {
+        string msg = "There was an issue translating peaks for this energy change;"
+        " not applying change.  Error: " + string(e.what());
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, msg.c_str() );
+#endif
+        
+        throw runtime_error( msg );
+      }//try / catch
+      
+    }//for( const set<int> &samples : peaksampels )
+  }//for( const MeasToApplyCoefChangeTo &change : changemeas )
+  
+  
+  // Now go through and actually set the energy calibrations; they should all be valid and computed,
+  //  as should all the shifted peaks.
+  for( const MeasToApplyCoefChangeTo &change : changemeas )
+  {
+    assert( change.meas );
+    for( const int sample : change.sample_numbers )
+    {
+      for( const string &detname : change.detectors )
+      {
+        auto m = change.meas->measurement( sample, detname );
+        if( !m || m->num_gamma_channels() <= 4 )
+          continue;
+        
+        const auto measoldcal = m->energy_calibration();
+        assert( measoldcal );
+        
+        auto iter = updated_cals.find( measoldcal );
+        if( iter == end(updated_cals) )
+        {
+          //Shouldnt ever happen
+          string msg = "There was an internal error updating energy calibration - precomputed"
+          " calibration couldnt be found - energy calibation will not be fully updated";
+#if( PERFORM_DEVELOPER_CHECKS )
+          log_developer_error( __func__, msg.c_str() );
+#endif
+          
+          m_interspec->logMessage( msg, "", 3 );
+          assert( 0 );
+          continue;
+        }//if( we havent already computed a new energy cal )
+        
+        assert( iter->second );
+        assert( iter->second->num_channels() == m->num_gamma_channels() );
+        
+        change.meas->set_energy_calibration( iter->second, m );
+      }//for( loop over detector names )
+    }//for( loop over sample numbers )
+    
+    
+    //Now actually set the updated peaks
+    const set<set<int>> peaksamples = change.meas->sampleNumsWithPeaks();
+    
+    for( const set<int> &samples : peaksamples )
+    {
+      auto oldpeaks = change.meas->peaks(samples);
+      if( !oldpeaks || oldpeaks->empty() )
+        continue;
+      
+      const auto pos = updated_peaks.find(oldpeaks);
+      if( pos == end(updated_peaks) )
+      {
+        if( !oldpeaks->empty() )
+          cerr << "Couldnt find an expected entry in updated_peaks" << endl;
+        continue;
+      }
+      
+      change.meas->setPeaks( pos->second, samples );
+      if( m_peakModel && (change.meas == forgrnd) && (samples == foresamples) )
+        m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+    }//for( const set<int> &samples : peaksampels )
+  }//for( loop over SpecFiles for change )
+  
+  
+  // \TODO: Set an undu point for each measurement, etc.
+  
+  m_interspec->refreshDisplayedCharts();
+  refreshGuiFromFiles();
+}//void addDeviationPair( const std::pair<float,float> &new_pair );
+
+
+
 void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display )
 {
   using namespace SpecUtils;
   assert( coefnum < 10 );  //If we ever allow lower channel energy adjustment this will need to be removed
+  
+  m_lastGraphicalRecal = 0;
+  m_lastGraphicalRecalType = EnergyCalGraphicalConfirm::NumRecalTypes;
+  m_lastGraphicalRecalEnergy = -999.0f;
   
   vector<float> dispcoefs = display->displayedCoefficents();
   if( dispcoefs.size() <= coefnum )
@@ -1563,46 +1937,107 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
 }//userChangedCoefficient(...)
 
 
-void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display )
+void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display, const int fieldTypeChanged )
 {
   using namespace SpecUtils;
   
-  cerr << "userChangedDeviationPair( " << ", " << " )" << endl;
+  const auto field = EnergyCalImp::DeviationPairDisplay::UserFieldChanged( fieldTypeChanged );
+  
+  switch( field )
+  {
+    case EnergyCalImp::DeviationPairDisplay::UserFieldChanged::AddedDeviationPair:
+      return;  //hasnt been filled out yet; no need to do anything
+      
+    case EnergyCalImp::DeviationPairDisplay::UserFieldChanged::RemovedDeviationPair:
+    case EnergyCalImp::DeviationPairDisplay::UserFieldChanged::EnergyChanged:
+    case EnergyCalImp::DeviationPairDisplay::UserFieldChanged::OffsetChanged:
+      break;
+  };//enum UserFieldChanged
+
+  
+  m_lastGraphicalRecal = 0;
+  m_lastGraphicalRecalType = EnergyCalGraphicalConfirm::NumRecalTypes;
+  m_lastGraphicalRecalEnergy = -999.0f;
+  
+  const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  const set<int> &foresamples = m_interspec->displayedSamples( SpectrumType::Foreground );
   
   const shared_ptr<const EnergyCalibration> old_cal = display->lastSetCalibration();
-  //const vector<pair<float,float>> &old_dev_pairs = old_cal->deviation_pairs();
+  const vector<pair<float,float>> old_dev_pairs = old_cal
+                                        ? old_cal->deviation_pairs() : vector<pair<float,float>>{};
   const vector<pair<float,float>> new_dev_pairs = display->displayedDeviationPairs();
   
-  const size_t nchannel = old_cal->num_channels();
-  const vector<float> &coefficients = old_cal->coefficients();
+  // After the user clicks to add a new deviation pair, and then fills in one of the fields, if the
+  //  other field is not yet filled in, then the GUI wont insert that deviation pair; so for this
+  //  case where the deviation pairs havent yet changed, lets skip doing anything yet
+  if( new_dev_pairs.size() == old_dev_pairs.size() )
+  {
+    bool equal = true;
+    for( size_t i = 0; equal && (i < new_dev_pairs.size()); ++i )
+      equal = ( (fabs(new_dev_pairs[i].first - old_dev_pairs[i].first) < 1.0E-4)
+                && (fabs(new_dev_pairs[i].second - old_dev_pairs[i].second) < 1.0E-4) );
+    if( equal )
+      return;
+  }//if( new_dev_pairs.size() == old_dev_pairs.size() )
+  
   
   const SpectrumType type = display->spectrumType();
   const std::string &detname = display->detectorName();
   
-  auto new_cal = make_shared<EnergyCalibration>();
+  auto specfile = m_interspec->measurment( type );
+  if( !specfile )  //Shouldnt ever happen
+  {
+    display->updateToGui( old_cal );
+    m_interspec->logMessage( "Internal error retrieveing correct measurement", "", 2 );
+    return;
+  }
+
+  // We will store updated calibrations and not set any of them until we know they can all be
+  //  sucessfully altered
+  map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> old_to_new_cal;
   
   try
   {
-    switch( old_cal->type() )
+    for( auto &m : specfile->measurements() )
     {
-      case EnergyCalType::Polynomial:
-      case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-        new_cal->set_polynomial( nchannel, coefficients, new_dev_pairs );
-        break;
-        
-      case EnergyCalType::FullRangeFraction:
-        new_cal->set_full_range_fraction( nchannel, coefficients, new_dev_pairs );
-        break;
-        
-      case EnergyCalType::LowerChannelEdge:
-      case EnergyCalType::InvalidEquationType:
-        throw runtime_error( "Deviation pairs only defined for polynomial and full range fraction"
-                            " calibration types" );
-        break;
-    }//switch( old_cal->type() )
+      if( (m->detector_name() != detname) || (m->num_gamma_channels() < 5) )
+        continue;
+      
+      const auto cal = m->energy_calibration();
+      if( !cal || !cal->valid() || (cal->type() == EnergyCalType::LowerChannelEdge) )
+        continue;
+      
+      if( old_to_new_cal.find(cal) != end(old_to_new_cal) )
+        continue;
+      
+      const size_t nchannel = cal->num_channels();
+      const vector<float> &coefficients = cal->coefficients();
+      
+      auto new_cal = make_shared<EnergyCalibration>();
+      switch( cal->type() )
+      {
+        case EnergyCalType::Polynomial:
+        case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+          new_cal->set_polynomial( nchannel, coefficients, new_dev_pairs );
+          break;
+          
+        case EnergyCalType::FullRangeFraction:
+          new_cal->set_full_range_fraction( nchannel, coefficients, new_dev_pairs );
+          break;
+          
+        case EnergyCalType::LowerChannelEdge:
+        case EnergyCalType::InvalidEquationType:
+          assert( 0 );
+          break;
+      }//switch( old_cal->type() )
+      
+      assert( new_cal->valid() );
+      old_to_new_cal[cal] = new_cal;
+    }//for( auto &m : specfile->measurements() )
   }catch( std::exception &e )
   {
     display->updateToGui( old_cal );
+    //display->setDeviationPairsInvalid();
     
     string msg = "Changing the deviation pair made energy calibration become invalid.  Error: ";
     msg += e.what();
@@ -1611,17 +2046,62 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display 
     return;
   }//try / catch
   
-  assert( new_cal->valid() );
+  // We will store updated peaks and not set any of them until we know all the energy calibrations
+  //  and peak shifts were sucessfully done.
+  map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
   
-  
-  auto specfile = m_interspec->measurment( type );
-  if( !specfile )
+  //const vector<string> &detnames = specfile->gamma_detector_names();
+  const vector<string> &detnames = m_interspec->detectorsToDisplay( type );
+  const set<set<int>> samplesWithPeaks = specfile->sampleNumsWithPeaks();
+  for( const set<int> &samples : samplesWithPeaks )
   {
-    //Shouldnt ever happen
-    display->updateToGui( old_cal );
-    m_interspec->logMessage( "Internal error retrieveing correct measurement", "", 2 );
-    return;
-  }
+    try
+    {
+      auto dispcal = specfile->suggested_sum_energy_calibration( samples, detnames );
+      
+      const auto dispcaliter = old_to_new_cal.find(dispcal);
+      if( dispcaliter == end(old_to_new_cal) )
+        continue;
+      
+      bool detInSample = false;
+      for( auto iter = begin(samples); !detInSample && (iter != end(samples)); ++iter )
+      {
+        auto m = specfile->measurement( *iter, detname );
+        detInSample = !!m;
+      }
+      
+      if( !detInSample )
+        continue;
+      
+      // I *think* that applying the update to deviation pairs shouldnt compound when you then apply
+      //  them to another detector since the dispaly energy cal should update, but could there be
+      //  any edge-cases?
+      auto oldpeaks = specfile->peaks(samples);
+      if( !oldpeaks || oldpeaks->empty() )
+        continue;
+      
+    
+      auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, dispcaliter->first,
+                                                                     dispcaliter->second );
+      updated_peaks[oldpeaks] = newpeaks;
+    }catch( std::exception &e )
+    {
+      //display->updateToGui( old_cal );
+      display->setDeviationPairsInvalid();
+      
+      string msg = "There was an issue translating peaks for this deviation pair change;"
+                   " not applying change.  Error: " + string(e.what());
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, msg.c_str() );
+#endif
+      m_interspec->logMessage( msg, "", 2 );
+      
+      return;
+    }//try / catch
+  }//for( const set<int> &samples : samplesWithPeaks )
+  
+  display->setDeviationPairsValid();
+  
   
   size_t num_updated = 0;
   for( auto &m : specfile->measurements() )
@@ -1631,18 +2111,54 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display 
     //  Maybe we should update according to the checked GUI, but also restrict on name as well?
     //auto cal = m->energy_calibration();
     //if( cal == old_cal )
-    if( m->detector_name() == detname )
+    if( (m->detector_name() != detname) || (m->num_gamma_channels() < 5) )
+      continue;
+    
+    const auto cal = m->energy_calibration();
+    if( !cal || !cal->valid() || (cal->type() == EnergyCalType::LowerChannelEdge) )
+      continue;
+    
+    auto calpos = old_to_new_cal.find(cal);
+    if( (calpos == end(old_to_new_cal)) || !calpos->second || !calpos->second->valid() )
     {
-      specfile->set_energy_calibration( new_cal, m );
-      ++num_updated;
-    }
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "Unexpectedly found invalid calibation in old_to_new_cal" );
+#endif
+      continue;
+    }//if( sanity check that new calibration is valid - should always be )
+    
+    specfile->set_energy_calibration( calpos->second, m );
+    ++num_updated;
   }//for( loop over measurements )
   
   if( num_updated == 0 )
   {
     display->updateToGui( old_cal );
     m_interspec->logMessage( "There was an eror setting deviation pairs for this detector.", "", 2 );
+    return;
   }
+  
+  
+  for( const set<int> &samples : samplesWithPeaks )
+  {
+    auto oldpeaks = specfile->peaks(samples);
+    if( !oldpeaks || oldpeaks->empty() )
+      continue;
+    
+    const auto peakpos = updated_peaks.find(oldpeaks);
+    if( peakpos == end(updated_peaks) )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "Unexpectedly coudlnt find peaks in updated_peaks" );
+#endif
+      continue;
+    }//if( sanity check that shouldnt ever happen )
+      
+    
+    specfile->setPeaks( peakpos->second, samples );
+    if( m_peakModel && (specfile == forgrnd) && (samples == foresamples) )
+      m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+  }//for( const set<int> &samples : samplesWithPeaks )
   
   const size_t ndets = specfile->gamma_detector_names().size();
   const size_t nsamples = specfile->sample_numbers().size();
@@ -1670,14 +2186,18 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display 
     }//if( nfiles )
   
     /// \TODO: keep from issuing this message for ever single change!
-    
     if( !msg.empty() )
       m_interspec->logMessage( msg, "", 1 );
-  }//if( more than one gamma detector and more than one sample number )
+    
+    //Calling setDeviationPairMsg(...) is useless because we currently completely replace 
+    //display->setDeviationPairMsg( msg );
+  }else
+  {
+    //display->setDeviationPairMsg( "" );
+  }//if( more than one gamma detector and more than one sample number ) / else
   
   m_interspec->refreshDisplayedCharts();
-  
-  doRefreshFromFiles();
+  refreshGuiFromFiles();
 }//void userChangedDeviationPair( CalDisplay *display )
 
 
@@ -1709,6 +2229,10 @@ void EnergyCalTool::displayedSpectrumChanged( const SpecUtils::SpectrumType type
     cout << "EnergyCalTool::displayedSpectrumChanged: same file and sample numbers" << endl;
   }
 
+  m_lastGraphicalRecal = 0;
+  m_lastGraphicalRecalType = EnergyCalGraphicalConfirm::NumRecalTypes;
+  m_lastGraphicalRecalEnergy = -999.0f;
+  
   m_currentSpecMeas[index] = meas;
   m_currentSampleNumbers[index] = samples;
   
@@ -1725,6 +2249,14 @@ void EnergyCalTool::setShowNoCalInfo( const bool nocal )
   m_calColumn->setHidden( nocal );
   m_peakTableColumn->setHidden( nocal );
 }//void setShowNoCalInfo( const bool nocal )
+
+
+void EnergyCalTool::setWasGraphicalRecal( int type, float energy )
+{
+  time( &m_lastGraphicalRecal );
+  m_lastGraphicalRecalType = type;
+  m_lastGraphicalRecalEnergy = energy;
+}//void setWasGraphicalRecal( int type, double energy )
 
 
 void EnergyCalTool::specTypeToDisplayForChanged()
@@ -2041,8 +2573,100 @@ void EnergyCalTool::refreshGuiFromFiles()
 
 void EnergyCalTool::handleGraphicalRecalRequest( double xstart, double xfinish )
 {
+  try
+  {
+    auto foreground = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const SpecUtils::EnergyCalibration> energycal = foreground
+                                                               ? foreground->energy_calibration()
+                                                               : nullptr;
+    if( !energycal || !energycal->valid()
+        || (energycal->type() == SpecUtils::EnergyCalType::LowerChannelEdge) )
+      return;
   
+    if( m_graphicalRecal )
+    {
+      m_graphicalRecal->setEnergies( xstart, xfinish );
+    }else
+    {
+      m_graphicalRecal = new EnergyCalGraphicalConfirm( xstart, xfinish, this,
+                                    m_lastGraphicalRecal,
+                                    EnergyCalGraphicalConfirm::RecalTypes(m_lastGraphicalRecalType),
+                                    m_lastGraphicalRecalEnergy );
+    
+      m_graphicalRecal->finished().connect( this, &EnergyCalTool::deleteGraphicalRecalConfirmWindow );
+    }
+  }catch( std::runtime_error & )
+  {
+    m_interspec->logMessage( "Internal error doing graphical recal; sorry :(", "", 3 );
+  }
 }//void handleGraphicalRecalRequest( double xstart, double xfinish )
+
+
+void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
+{
+  if( m_graphicalRecal )
+  {
+    AuxWindow::deleteAuxWindow( m_graphicalRecal );
+    m_graphicalRecal = nullptr;
+  }//if( m_graphicalRecal )
+  
+  const bool showToolTipInstantly
+  = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  if( showToolTipInstantly )
+  {
+#if( USE_SPECTRUM_CHART_D3 )
+    m_interspec->logMessage( "If you recalibrate again by ALT+CTRL+DRAG on"
+                            " another portion of the spectrum, you will be given the"
+                            " option of preserving the effects of this calibration"
+                            " as well.", "", 1 );
+#else
+    m_interspec->logMessage( "If you recalibrate again by right-click dragging on"
+                            " another portion of the spectrum, you will be given the"
+                            " option of preserving the effects of this calibration"
+                            " as well.", "", 1 );
+#endif
+  }//if( showToolTipInstantly )
+}//void deleteGraphicalRecalConfirmWindow()
+
+
+string EnergyCalTool::applyToSummaryTxt() const
+{
+  string answer;
+  
+  if( m_applyToColumn->isHidden() )
+    return answer;
+  
+  for( ApplyToCbIndex index = static_cast<ApplyToCbIndex>(0);
+      index < ApplyToCbIndex::NumApplyToCbIndex;
+      index = ApplyToCbIndex(index+1) )
+  {
+    Wt::WCheckBox *cb = m_applyToCbs[index];
+    const auto cbparent = cb->parent();
+    assert( cbparent );
+    assert( dynamic_cast<WContainerWidget *>(cbparent) );
+    
+    if( cbparent->isHidden() || !cb->isChecked() )
+      continue;
+    
+    if( !answer.empty() )
+      answer += ", ";
+    
+    switch( index )
+    {
+      case ApplyToCbIndex::ApplyToForeground:         answer += "foreground"; break;
+      case ApplyToCbIndex::ApplyToBackground:         answer += "background"; break;
+      case ApplyToCbIndex::ApplyToSecondary:          answer += "secondary";  break;
+      case ApplyToCbIndex::ApplyToDisplayedDetectors: answer += "displayed detectors"; break;
+      case ApplyToCbIndex::ApplyToAllDetectors:       answer += "all detectors"; break;
+      case ApplyToCbIndex::ApplyToDisplayedSamples:   answer += "displayed samples"; break;
+      case ApplyToCbIndex::ApplyToAllSamples:         answer += "all samples"; break;
+      case ApplyToCbIndex::NumApplyToCbIndex:
+        break;
+    }//switch( index )
+  }//for( loop over ApplyToCbIndex )
+  
+  return answer;
+}//string applyToSummaryTxt() const
 
 
 void EnergyCalTool::doRefreshFromFiles()

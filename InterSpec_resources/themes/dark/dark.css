@@ -194,7 +194,7 @@ ul.VerticalMenu > li.item:hover  {
   border-color: rgb(136, 136, 136);
 }
 
-.ParticleViewTable, .RecalIsotopeView, .IsotopeSearchResultTable {
+.ParticleViewTable, .IsotopeSearchResultTable {
   border-color: rgb(136, 136, 136);
 }
 

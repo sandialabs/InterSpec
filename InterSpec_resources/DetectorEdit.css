@@ -81,7 +81,8 @@ table.FormulaDrfTbl tr td:first-child
   margin: 0;
   width: 16px;
   height: 16px;
-  background-image: url('../InterSpec_resources/images/plus_min_white.png');
+  background-image: url('../InterSpec_resources/images/plus_min_white.svg');
+  background-size: 16px 16px;
   background-position: 0px center;
   background-repeat: no-repeat;
 }

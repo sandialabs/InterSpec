@@ -1099,7 +1099,7 @@ void PeakInfoDisplay::init()
     WPushButton *addPeak = new WPushButton( "Add...", buttonDiv );
     HelpSystem::attachToolTipOn( addPeak, "Manually add a new peak.", showToolTipInstantly, HelpSystem::Top );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
-    addPeak->setIcon( "InterSpec_resources/images/plus_min_white.png" );
+    addPeak->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
     
     WPushButton *delPeak = new WPushButton( "Delete", buttonDiv );
     HelpSystem::attachToolTipOn( delPeak, "Deletes peak currently being edited.", showToolTipInstantly, HelpSystem::Top  );

@@ -1353,7 +1353,7 @@ void DecayActivityDiv::init()
   m_parentNuclidesDiv->addStyleClass( "m_parentNuclidesDiv" );
   m_nuclidesAddedDiv->addStyleClass( "m_nuclidesAddedDiv" );
 
-  m_createNewNuclideButton->setIcon( "InterSpec_resources/images/plus_min_white.png" );
+  m_createNewNuclideButton->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
   m_createNewNuclideButton->addStyleClass( "m_createNewNuclideButton" );
   
   m_clearNuclidesButton->setIcon( "InterSpec_resources/images/remove_all.png" );
