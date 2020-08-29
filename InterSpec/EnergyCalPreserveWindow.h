@@ -1,5 +1,5 @@
-#ifndef PreserveEnergyCalWindow_h
-#define PreserveEnergyCalWindow_h
+#ifndef EnergyCalPreserveWindow_h
+#define EnergyCalPreserveWindow_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
  
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
@@ -46,10 +46,10 @@ namespace SpecUtils{ enum class SpectrumType : int; }
  Used when loading a new spectrum into InterSpec, and it looks to be the same detector, but a
  different energy calibration.
  */
-class PreserveEnergyCalWindow : public AuxWindow
+class EnergyCalPreserveWindow : public AuxWindow
 {
 public:
-  PreserveEnergyCalWindow( std::shared_ptr<SpecMeas> newmeas,
+  EnergyCalPreserveWindow( std::shared_ptr<SpecMeas> newmeas,
                               const SpecUtils::SpectrumType newtype,
                               std::shared_ptr<SpecMeas> oldmeas,
                               const SpecUtils::SpectrumType oldtype,
@@ -58,17 +58,15 @@ public:
   static bool candidate( std::shared_ptr<SpecMeas> newmeas,
                          std::shared_ptr<SpecMeas> oldmeas );
   
-  virtual ~PreserveEnergyCalWindow();
+  virtual ~EnergyCalPreserveWindow();
   
-  void doRecalibration();
+  void propogateCalibrations();
   
 protected:
   EnergyCalTool *m_calibrator;
   std::shared_ptr<SpecMeas> m_newmeas;
-  std::vector<float> m_coeffs;
-  SpecUtils::EnergyCalType m_type;
-  std::vector< std::pair<float,float> > m_devPairs;
+  std::shared_ptr<SpecMeas> m_oldmeas;
   const SpecUtils::SpectrumType m_newtype, m_oldtype;
-};//class PreserveEnergyCalWindow
+};//class EnergyCalPreserveWindow
 
-#endif //PreserveEnergyCalWindow_h
+#endif //EnergyCalPreserveWindow_h

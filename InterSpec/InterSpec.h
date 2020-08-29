@@ -72,7 +72,7 @@ class FeatureMarkerWindow;
 class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
-class PreserveEnergyCalWindow;
+class EnergyCalPreserveWindow;
 class SimpleNuclideAssistPopup;
 class ReferencePhotopeakDisplay;
 class LicenseAndDisclaimersWindow;
@@ -659,9 +659,9 @@ public:
   //  showing), and sets m_useInfoWindow to null
   void deleteWelcomeCountDialog();
   
-  //deletePreserveEnergyCalWindow(): deletes the currently showing diaolg (if its
+  //deleteEnergyCalPreserveWindow(): deletes the currently showing diaolg (if its
   //  showing), and sets m_preserveCalibWindow to null
-  void deletePreserveEnergyCalWindow();
+  void deleteEnergyCalPreserveWindow();
   
   //showIEWarningDialog(): returns NULL if user previously specified to not show
   //  again, otherwise it returns the AuxWIndow it is displaying.  The dialog
@@ -1303,7 +1303,7 @@ protected:
   //m_preserveCalibWindow: a pointer to the window that prompts the user if they
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
-  PreserveEnergyCalWindow *m_preserveCalibWindow;
+  EnergyCalPreserveWindow *m_preserveCalibWindow;
   
   
   //Current width and height are set in layoutSizeChanged(...).
