@@ -1245,7 +1245,7 @@ set<string> EnergyCalTool::gammaDetectorsForDisplayedSamples( const SpecUtils::S
 }//set<string> gammaDetectorsForDisplayedSamples( const SpecUtils::SpectrumType type )
 
 
-vector<EnergyCalTool::MeasToApplyCoefChangeTo> EnergyCalTool::measurementsToApplyCoeffChangeTo()
+vector<MeasToApplyCoefChangeTo> EnergyCalTool::measurementsToApplyCoeffChangeTo()
 {
   std::vector<MeasToApplyCoefChangeTo> answer;
   

@@ -25,15 +25,9 @@
 
 #include "InterSpec_config.h"
 
-#include <map>
-#include <vector>
-#include <utility>
+#include  <memory>
 
-#include <Wt/WContainerWidget>
-
-#include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
-
 
 //Forward Declarations
 class SpecMeas;
@@ -49,20 +43,19 @@ namespace SpecUtils{ enum class SpectrumType : int; }
 class EnergyCalPreserveWindow : public AuxWindow
 {
 public:
-  EnergyCalPreserveWindow( std::shared_ptr<SpecMeas> newmeas,
-                              const SpecUtils::SpectrumType newtype,
-                              std::shared_ptr<SpecMeas> oldmeas,
-                              const SpecUtils::SpectrumType oldtype,
-                              EnergyCalTool *calibrator );
+  static bool candidate( std::shared_ptr<SpecMeas> newmeas, std::shared_ptr<SpecMeas> oldmeas );
   
-  static bool candidate( std::shared_ptr<SpecMeas> newmeas,
-                         std::shared_ptr<SpecMeas> oldmeas );
+public:
+  EnergyCalPreserveWindow( std::shared_ptr<SpecMeas> newmeas, const SpecUtils::SpectrumType newtype,
+                           std::shared_ptr<SpecMeas> oldmeas, const SpecUtils::SpectrumType oldtype,
+                           EnergyCalTool *calibrator );
   
   virtual ~EnergyCalPreserveWindow();
   
+protected:
   void propogateCalibrations();
   
-protected:
+  
   EnergyCalTool *m_calibrator;
   std::shared_ptr<SpecMeas> m_newmeas;
   std::shared_ptr<SpecMeas> m_oldmeas;
