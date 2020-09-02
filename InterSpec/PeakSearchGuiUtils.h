@@ -129,7 +129,6 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
                                  const bool setColor,
                                 const bool showingEscapePeakFeature );
   
-  
 /** Enum to tell #fit_template_peaks where the candidate peaks to fit are
    comming from.  This info will be propagated through to the GUI and influence
    what the user can do and see.

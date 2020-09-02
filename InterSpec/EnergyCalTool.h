@@ -53,6 +53,7 @@ namespace Wt
 namespace SpecUtils
 {
   struct EnergyCalibration;
+  enum class SpectrumType : int;
 }
 
 namespace EnergyCalImp
@@ -173,10 +174,10 @@ public:
   /** Applies the change in coeffcients from 'orig' to 'updated' to all the measurements the
    user has selected in the GUI (e.g., Back/For/Sec, visible detectors, entire file, etc).
    
-   Only propogates for the coeffcients, not changes to deviation pairs (changes to deviation pairs
-   will cause spectra that dont originally have the 'orig' calibration to have their coefficents
-   altered to account for the change in deviation pairs, which is probably never the wanted
-   behaviour.
+   Only propogates for the coeffcients, not changes to deviation pairs.
+   Changes to deviation pairs will cause spectra that dont originally have the 'orig' calibration to
+   have their coefficents altered to account for the change in deviation pairs, which is probably
+   never the wanted behaviour.
    */
   void applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalibration> orig,
                        std::shared_ptr<const SpecUtils::EnergyCalibration> updated,

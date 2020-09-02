@@ -752,6 +752,7 @@ std::vector<std::unique_ptr<ColorTheme>>  ColorThemeWindow::userDbThemes()
       throw runtime_error("Invalid database ish");
     
     DataBaseUtils::DbTransaction transaction(*sql);
+    user.reread();
     
     const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> > &userthemes = user->colorThemes();
     
@@ -772,9 +773,12 @@ std::vector<std::unique_ptr<ColorTheme>>  ColorThemeWindow::userDbThemes()
     //ToDo: check for duplicate names, and if so, maybe add the date or something
     
     transaction.commit();
-  }catch (...)
+  }catch( Wt::Dbo::Exception &e )
   {
-    cerr << "ColorThemeWindow::userDbThemes(): Caught error searching database for users themes." << endl;
+    cerr << "ColorThemeWindow::userDbThemes(): Caught exception searching database for users themes: " << e.what() << " code=" << e.code() << endl;
+  }catch( std::exception &e )
+  {
+    cerr << "ColorThemeWindow::userDbThemes(): Caught error searching database for users themes: " << e.what() << endl;
   }
   
   return dbthemes;

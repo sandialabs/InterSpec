@@ -60,6 +60,7 @@
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalGraphical.h"
 #include "InterSpec/RowStretchTreeView.h"
+#include "InterSpec/EnergyCalAddActions.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 
 
@@ -626,7 +627,9 @@ public:
   
   void updateToGui( const shared_ptr<const SpecUtils::EnergyCalibration> &cal )
   {
+#if( HIDE_EMPTY_DEV_PAIRS )
     const bool hadCal = !!m_cal;
+#endif
     
     m_cal = cal;
     
@@ -3153,7 +3156,9 @@ void EnergyCalTool::doRefreshFromFiles()
 
 void EnergyCalTool::moreActionBtnClicked( const MoreActionsIndex index )
 {
-  cerr << "moreActionBtnClicked: " << static_cast<int>(index) << endl;
+  const vector<MeasToApplyCoefChangeTo> measToChange = measurementsToApplyCoeffChangeTo();
+
+  new EnergyCalAddActionsWindow( index, measToChange, this );
 }//void moreActionBtnClicked( const MoreActionsIndex index )
 
 

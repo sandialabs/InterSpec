@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <tuple>
 #include <vector>
 #include <memory>
 #include <utility>
@@ -38,17 +39,25 @@ class PeakDef;
 class AuxWindow;
 class EnergyCalTool;
 class SpectraFileModel;
+class SpectraFileHeader;
 class EnergyCalMultiFileModel;
+namespace SpecUtils{ struct EnergyCalibration; }
 
 
 /** Tool to fit peaks from multiple files to come up with the best energy calibration.
  
  Currently, for the case of multiple detectors in the system, this tool just uses the display energy
  calibration for each set of peaks, and assumes it should be the same across all files.  This isnt
- totally correct, but good enough for the majority of use cases problably.
+ totally correct, but good enough for the majority of use cases problably, maybe.
+ 
+ TODO:
+   - Use serial number to help match up candidate files
+   - have answer updated whenever anything changes
+   - add deviation pair editing display
+   - have a model column that gives new energy difference of updated calibration
+   - give total offset before, and with new calibration
  */
 
-/*
 class EnergyCalMultiFile : public Wt::WContainerWidget
 {
 public:
@@ -57,11 +66,14 @@ public:
   
   void doFit();
   
+  void applyCurrentFit();
+  
   void handleFinish( Wt::WDialog::DialogCode result );
 protected:
   void updateCoefDisplay();
   
   EnergyCalTool *m_calibrator;
+  AuxWindow *m_parent;
   EnergyCalMultiFileModel *m_model;
   std::vector<Wt::WCheckBox *> m_fitFor;
   std::vector<Wt::WLineEdit *> m_coefvals;
@@ -71,8 +83,9 @@ protected:
   Wt::WTextArea *m_fitSumary;
   
   
-  std::vector<double> m_calVal;
-  std::vector<double> m_calUncert;
+  std::vector<float> m_calVal;
+  std::vector<float> m_calUncert;
+  std::vector<std::pair<float,float>> m_devPairs;
 };//class EnergyCalMultiFile
 
 
@@ -101,13 +114,17 @@ public:
   void refreshData();
   
 protected:
-  std::vector<std::vector< std::pair<bool,std::shared_ptr<const PeakDef> > > > m_peaks;
+  typedef std::tuple< std::shared_ptr<const SpecUtils::EnergyCalibration>, \
+                      bool, \
+                      std::shared_ptr<const PeakDef>, \
+                      std::shared_ptr<SpectraFileHeader> > PeakInfo_t;
+  
+  std::vector< std::vector<PeakInfo_t> > m_peaks;
   EnergyCalTool *m_calibrator;
   SpectraFileModel *m_fileModel;
   
   friend class EnergyCalMultiFile;
 };//class EnergyCalMultiFileModel
-*/
 
 
 #endif //EnergyCalMultiFile_h

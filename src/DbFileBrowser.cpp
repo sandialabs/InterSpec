@@ -60,8 +60,7 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
                               SpecUtils::SpectrumType type,
                               std::shared_ptr<SpectraFileHeader> header)
 : AuxWindow( "Previously Stored States",
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                             | AuxWindowProperties::DisableCollapse
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
                                              | AuxWindowProperties::EnableResize) ),
   m_factory( nullptr )
 {

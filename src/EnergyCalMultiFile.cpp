@@ -23,6 +23,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <map>
 #include <deque>
 
 #include <Wt/WText>
@@ -40,6 +41,8 @@
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ReactionGamma.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/EnergyCalTool.h"
@@ -55,18 +58,17 @@ using namespace std;
 
 using SpecUtils::Measurement;
 using SpecUtils::SpectrumType;
+using SpecUtils::EnergyCalibration;
 
 namespace
 {
   const size_t ns_min_num_coef = 4;
 }
 
-
-/*
-
 EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
 : WContainerWidget(),
   m_calibrator( cal ),
+  m_parent( parent ),
   m_model( nullptr ),
   m_fitFor(),
   m_coefvals(),
@@ -99,9 +101,6 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   
   for( size_t i = 0; i < ns_min_num_coef; ++i )
   {
-    m_calVal.push_back( -1.0 );
-    m_calUncert.push_back( -1.0 );
-    
     WLabel *label = 0;
     switch( i )
     {
@@ -125,10 +124,7 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
     fitForLayout->addWidget( fitcb,   i, 2 );
   }//for( int i = 0; i < sm_numCoefs; ++i )
   
-  assert( m_calVal.size() == m_calUncert.size() );
-  assert( m_calVal.size() == m_fitFor.size() );
-  assert( m_calVal.size() == m_coefvals.size() );
-                      
+                  
   fitForLayout->setColumnStretch( 1, 1 );
   
   m_fitSumary = new WTextArea();
@@ -203,30 +199,67 @@ EnergyCalMultiFile::~EnergyCalMultiFile()
 
 void EnergyCalMultiFile::doFit()
 {
-  //XXX - The logic of this function is very similar to
-  //      Recalibrator::recalibrateByPeaks() - so a refactoriztion should be
-  //      done
   auto interspec = InterSpec::instance();
   assert( interspec );
   
-  vector< std::shared_ptr<const PeakDef> > peakstouse;
-  for( size_t i = 0; i < m_model->m_peaks.size(); ++i )
+  m_calVal.clear();
+  m_calUncert.clear();
+  m_devPairs.clear();
+  
+  shared_ptr<const SpecMeas> meas = interspec->measurment(SpectrumType::Foreground);
+  shared_ptr<const Measurement> dispmeas = interspec->displayedHistogram(SpectrumType::Foreground);
+  shared_ptr<const EnergyCalibration> disp_cal = dispmeas ? dispmeas->energy_calibration() : nullptr;
+  
+  if( !disp_cal || !disp_cal->valid() || disp_cal->num_channels() < 16 )
   {
-     const vector< pair<bool,std::shared_ptr<const PeakDef> > > &peaks
-                                                          = m_model->m_peaks[i];
-     for( size_t j = 0; j < peaks.size(); ++j )
-     {
-       if( peaks[j].first && peaks[j].second )
-         peakstouse.push_back( peaks[j].second );
-     }//for( size_t j = 0; j < m_peaks.size(); ++j )
-  }//for( size_t i = 0; i < m_peaks.size(); ++i )
+    const char *msg = "You need to be displaying a foreground spectrum to do a calibration fit";
+    interspec->logMessage( msg, "", 3 );
+    return;
+  }
+  
   
   try
   {
-    const size_t npeaks = peakstouse.size();
-    const int num_coeff_fit = m_fitFor[0]->isChecked()
-                              + m_fitFor[1]->isChecked()
-                              + m_fitFor[2]->isChecked();
+    vector<EnergyCal::RecalPeakInfo> peakInfos;
+    
+    for( size_t filenum = 0; filenum < m_model->m_peaks.size(); ++filenum )
+    {
+      const vector<EnergyCalMultiFileModel::PeakInfo_t> &peaks = m_model->m_peaks[filenum];
+      for( size_t j = 0; j < peaks.size(); ++j )
+      {
+        if( get<0>(peaks[j]) && get<1>(peaks[j]) && get<2>(peaks[j]) )
+        {
+          const PeakDef &peak = *get<2>(peaks[j]);
+          const shared_ptr<const EnergyCalibration> &peakcal = get<0>(peaks[j]);
+          const double wantedEnergy = peak.gammaParticleEnergy();
+          
+          EnergyCal::RecalPeakInfo peakInfo;
+          peakInfo.peakMean = peak.mean();
+          peakInfo.peakMeanUncert = max( peak.meanUncert(), 0.25 );
+          if( IsInf(peakInfo.peakMeanUncert) || IsNan(peakInfo.peakMeanUncert) )
+            peakInfo.peakMeanUncert = 0.5;
+          peakInfo.photopeakEnergy = wantedEnergy;
+          peakInfo.peakMeanBinNumber = peakcal->channel_for_energy( peak.mean() );
+          
+          if( IsNan(peakInfo.peakMeanBinNumber) || IsInf(peakInfo.peakMeanBinNumber) )
+            throw runtime_error( "Invalid result from EnergyCalibration::channel_for_energy(...)" );
+          peakInfos.push_back( peakInfo );
+        }//if( energy cal and peak ptrs are valid, and we should use this peak for fitting )
+      }//for( loop over peaks for a file )
+    }//for( int col = 0; col < numModelCol; ++col )
+    
+    
+    const size_t npeaks = peakInfos.size();
+    const size_t ncoeffs = m_fitFor.size();
+    const size_t nchannel = disp_cal->num_channels();
+    
+    int num_coeff_fit = 0;
+    vector<bool> fitfor( ncoeffs, false );
+    for( size_t i = 0; i < m_fitFor.size(); ++i )
+    {
+      fitfor[i] = m_fitFor[i]->isChecked();
+      num_coeff_fit += m_fitFor[i]->isChecked();
+    }
     
     if( num_coeff_fit < 1 )
     {
@@ -243,121 +276,14 @@ void EnergyCalMultiFile::doFit()
     }//if( num_coeff_fit < 1 )
     
     
-    std::shared_ptr<const SpecMeas> meas = m_calibrator->m_interspec->measurment(SpectrumType::Foreground);
-    
-    if( !meas )
-    {
-      const char *msg = "You need to be displaying a foreground spectrum to do a calibration fit";
-      interspec->logMessage( msg, "", 3 );
-      return;
-    }
-    
-    
-    std::shared_ptr<const Measurement> eqnmeas;
-    const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-    
-    for( size_t i = 0; !eqnmeas && i < meass.size(); ++i )
-      if( meass[i]->num_gamma_channels() )
-        eqnmeas = meass[i];
-    if( !eqnmeas )
-    {
-      const char *msg = "You need to be displaying a foreground spectrum to do a calibration fit (unexpected error)";
-      interspec->logMessage( msg, "", 3 );
-      return;
-    }//if( !eqnmeas )
-    
-    const std::shared_ptr<const std::vector<float>> &binning = eqnmeas->channel_energies();
-    const size_t nchannel = eqnmeas->num_gamma_channels();
-    
-    if( !binning || nchannel < 16 )
-    {
-      const char *msg = "The spectrum isnt high enough resolution to fit for a calibration";
-      interspec->logMessage( msg, "", 3 );
-      return;
-    }
-    
-    const SpecUtils::EnergyCalType calibration_type = eqnmeas->energy_calibration_model();
-    
-    vector<float> calib_coefs = eqnmeas->calibration_coeffs();
-    
-    switch( calibration_type )
-    {
-      case SpecUtils::EnergyCalType::Polynomial:
-      case SpecUtils::EnergyCalType::FullRangeFraction:
-      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-        break;
-        
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
-      case SpecUtils::EnergyCalType::InvalidEquationType:
-      {
-        const char *msg = "Invalid starting calibration type: unknown or lower bin edge energy not"
-                          " allowed";
-        interspec->logMessage( msg, "", 3 );
-        return;
-        break;
-      }//case LowerChannelEdge or InvalidEquationType
-    }//switch( calibration_type )
-    
-    //TODO: meansFitError will currently contain only values of 1.0, eventually
-    //      will contian the error of the fit mean for that peak
-    vector<EnergyCal::RecalPeakInfo> peakInfos;
-    
-    for( size_t peakn = 0; peakn < npeaks; ++peakn )
-    {
-      const PeakDef &peak = *peakstouse[peakn];
-      
-      const double wantedEnergy = peak.gammaParticleEnergy();
-      
-      EnergyCal::RecalPeakInfo peakInfo;
-      peakInfo.peakMean = peak.mean();
-      peakInfo.peakMeanUncert = max( peak.meanUncert(), 0.25 );
-      if( IsInf(peakInfo.peakMeanUncert) || IsNan(peakInfo.peakMeanUncert) )
-        peakInfo.peakMeanUncert = 0.5;
-        
-      peakInfo.photopeakEnergy = wantedEnergy;
-      if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-      {
-        peakInfo.peakMeanBinNumber = SpecUtils::find_fullrangefraction_channel( peak.mean(),
-                                                                  calib_coefs, nchannel,
-                                                                  eqnmeas->deviation_pairs(),
-                                                                  0.001f );
-      }else
-      {
-        const vector<float> fwfcoef = SpecUtils::polynomial_coef_to_fullrangefraction( calib_coefs, nchannel );
-        peakInfo.peakMeanBinNumber = SpecUtils::find_fullrangefraction_channel( peak.mean(),
-                                                                  fwfcoef, nchannel,
-                                                                  eqnmeas->deviation_pairs(),
-                                                                  0.001f );
-      }//if( FullRangeFraction ) / else
-        
-      if( IsNan(peakInfo.peakMeanBinNumber)
-          || IsInf(peakInfo.peakMeanBinNumber) )
-        throw runtime_error( "Invalid result fromm "
-                             "find_fullrangefraction_channel(...)" );
-      peakInfos.push_back( peakInfo );
-    }//for( int col = 0; col < numModelCol; ++col )
-    
-    
     bool fit_coefs = false;
-    vector<double> parValues, parErrors;
-    
     try
     {
-      vector<float> lls_fit_coefs = calib_coefs, lls_fit_coefs_uncert;
-      
-      //Convert eqation type to polynomial incase there are any fixed paramters.
-      if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::FullRangeFraction )
-        lls_fit_coefs = SpecUtils::fullrangefraction_coef_to_polynomial(calib_coefs, nchannel );
-      lls_fit_coefs.resize( sm_numCoefs, 0.0f );
-      
-      vector<bool> fitfor( lls_fit_coefs.size(), false );
-      
-      for( size_t i = 0; i < calib_coefs.size() && i < sm_numCoefs; ++i )
-        fitfor[i] = m_fitFor[i]->isChecked();
+      vector<float> lls_fit_coefs( ncoeffs, 0.0f ), lls_fit_coefs_uncert( ncoeffs, 0.0f );
       
       const double chi2 = EnergyCal::fit_energy_cal_poly( peakInfos, fitfor,
-                                              eqnmeas->num_gamma_channels(),
-                                              eqnmeas->deviation_pairs(),
+                                               disp_cal->num_channels(),
+                                               disp_cal->deviation_pairs(),
                                               lls_fit_coefs, lls_fit_coefs_uncert );
       
       stringstream msg;
@@ -367,35 +293,10 @@ void EnergyCalMultiFile::doFit()
       msg << "}\n";
       cout << msg.str() << endl;
       
-      parValues.resize( lls_fit_coefs.size() );
-      parErrors.resize( lls_fit_coefs.size() );
-      for( size_t i = 0; i < lls_fit_coefs.size(); ++i )
-      {
-        parValues[i] = lls_fit_coefs[i];
-        parErrors[i] = lls_fit_coefs_uncert[i];
-      }
-      
-      switch( m_calibrator->m_coeffEquationType )
-      {
-        case SpecUtils::EnergyCalType::Polynomial:
-          break;
-          
-        case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-          m_calibrator->m_coeffEquationType = SpecUtils::EnergyCalType::Polynomial;
-          break;
-          
-        case SpecUtils::EnergyCalType::FullRangeFraction:
-          lls_fit_coefs = SpecUtils::polynomial_coef_to_fullrangefraction(lls_fit_coefs, nchannel);
-          lls_fit_coefs_uncert = SpecUtils::polynomial_coef_to_fullrangefraction(lls_fit_coefs_uncert, nchannel);
-          break;
-          
-        case SpecUtils::EnergyCalType::InvalidEquationType:
-        case SpecUtils::EnergyCalType::LowerChannelEdge:
-          assert( 0 );  //shouldnt ever get here
-          break;
-      }//switch( m_coeffEquationType )
-      
       fit_coefs = true;
+      m_calVal = lls_fit_coefs;
+      m_calUncert = lls_fit_coefs_uncert;
+      m_devPairs = disp_cal->deviation_pairs();
     }catch( std::exception &e )
     {
       cerr << "fit_energy_cal_poly threw: " << e.what() << endl;
@@ -413,60 +314,38 @@ void EnergyCalMultiFile::doFit()
       //This Minuit based fitting methodolgy is depreciated I think; the LLS code
       //  should work better, and seems to be releiabel, but leaving this code
       //  in for a while as a backup
-      const auto eqntype = m_calibrator->m_coeffEquationType;
-      const auto &devpairs = eqnmeas->deviation_pairs();
-      if( calib_coefs.size() < sm_numCoefs )
-        calib_coefs.resize( sm_numCoefs, 0.0 );
-      
-      vector<bool> fitfor( calib_coefs.size(), false );
-      for( size_t i = 0; i < sm_numCoefs; ++i )
-        fitfor[i] = m_fitFor[i]->isChecked();
-        
+      const auto &devpairs = disp_cal->deviation_pairs();
+      vector<float> starting_coefs( ncoeffs, 0.0 );
+      starting_coefs[1] = disp_cal->upper_energy() / disp_cal->num_channels();
       
       string warning_msg;
       vector<float> coefs, coefs_uncert;
-      EnergyCal::fit_energy_cal_iterative( peakInfos, nchannel, eqntype, fitfor, calib_coefs,
-                                 devpairs, coefs, coefs_uncert, warning_msg );
+      EnergyCal::fit_energy_cal_iterative( peakInfos, nchannel,
+                              SpecUtils::EnergyCalType::Polynomial, fitfor, starting_coefs,
+                              devpairs, coefs, coefs_uncert, warning_msg );
       
       if( warning_msg.size() )
-        passMessage( warning_msg, "", WarningWidget::WarningMsgHigh );
+        interspec->logMessage( warning_msg, "", 3 );
       
+      assert( coefs.size() == ncoeffs );
       assert( coefs.size() == coefs_uncert.size() );
-      parValues.resize( coefs.size(), 0.0 );
-      parErrors.resize( coefs_uncert.size(), 0.0 );
+      
       for( size_t i = 0; i < coefs.size(); ++i )
-      {
-        parValues[i] = coefs[i];
-        parErrors[i] = coefs_uncert[i];
-      }
+        if( IsInf(coefs[i]) || IsNan(coefs[i]) )
+          throw runtime_error( "Invalid calibration parameter from fit :(" );
+      
+      fit_coefs = true;
+      m_calVal = coefs;
+      m_calUncert = coefs_uncert;
+      m_devPairs = disp_cal->deviation_pairs();
     }//if( !fit_coefs )
     
-    for( size_t i = 0; i < parValues.size(); ++i )
-      if( IsInf(parValues[i]) || IsNan(parValues[i]) )
-        throw runtime_error( "Invalid calibration parameter from fit :(" );
-    
-    assert( parValues.size() >= sm_numCoefs );
-    
-    m_eqnType = calibration_type;
-    for( int i = 0; i < sm_numCoefs; ++i )
-    {
-      m_calVal[i] = parValues[i];
-      m_calUncert[i] = parErrors[i];
-    }//for( size_t i = 0; i < parValues.size(); ++i )
-    
     //Try to loop over peaks to give chi2 values and such
-    vector<float> float_coef;
-    for( const double d : parValues )
-      float_coef.push_back( static_cast<float>(d) );
-    
-    if( m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::Polynomial
-       || m_calibrator->m_coeffEquationType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-      float_coef = SpecUtils::polynomial_coef_to_fullrangefraction( float_coef, nchannel );
-    
+    //  \TODO: Put this information in the table (e.g., modify EnergyCalMultiFileModel to hold it)
     stringstream msg;
     for( const EnergyCal::RecalPeakInfo &info : peakInfos )
     {
-      const double predictedMean = SpecUtils::fullrangefraction_energy( info.peakMeanBinNumber, float_coef, nchannel, eqnmeas->deviation_pairs() );
+      const double predictedMean = SpecUtils::polynomial_energy( info.peakMeanBinNumber, m_calVal, m_devPairs );
       double uncert = ((info.peakMeanUncert<=0.0) ? 1.0 : info.peakMeanUncert );
       double chi2 = pow(predictedMean - info.photopeakEnergy, 2.0 ) / (uncert*uncert);
       
@@ -490,41 +369,222 @@ void EnergyCalMultiFile::doFit()
       msg = exceptionmsg.substr(8);
     
     cerr << "EnergyCalMultiFile::doFit(): \n\tCaught: " << exceptionmsg << endl;
-    passMessage( msg, "", WarningWidget::WarningMsgHigh );
+    interspec->logMessage(msg, "", 3);
   }//try / catch
 }//void doFit()
 
 
 void EnergyCalMultiFile::updateCoefDisplay()
 {
+  if( m_calVal.empty() )
+  {
+    for( size_t i = 0; i < m_coefvals.size(); ++i )
+      m_coefvals[i]->setText( "--" );
+    return;
+  }
+  
   assert( m_calVal.size() == m_calUncert.size() );
   assert( m_calVal.size() == m_fitFor.size() );
   assert( m_calVal.size() == m_coefvals.size() );
   
   for( size_t i = 0; i < m_calVal.size(); ++i )
   {
-    char msg[32];
-    snprintf( msg, sizeof(msg), "%.4g", m_calVal[i] );
-    
-    WString val(msg);
+    char msg[64] = { '\0' };
     if( m_calUncert[i] > 0.0 )
-    {
-#ifndef WT_NO_STD_WSTRING
-      val += L" \x00B1 ";  //plusminus
-#else
-      val += " +- ";
-#endif
-      snprintf( msg, sizeof(msg), "%.4g", m_calUncert[i] );
-      val += msg;
-    }//if( uncertainty is available )
+      snprintf( msg, sizeof(msg), "%.4g \xC2\xB1 %.4g", m_calVal[i], m_calUncert[i] );
+    else
+      snprintf( msg, sizeof(msg), "%.4g", m_calVal[i] );
     
-    m_coefvals[i]->setText( val );
+    m_coefvals[i]->setText( WString::fromUTF8(msg) );
   }//for( int i = 0; i < sm_numCoefs; ++i )
 }//void updateCoefDisplay()
 
 
+void EnergyCalMultiFile::applyCurrentFit()
+{
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  
+  if( m_calVal.size() < 2 )
+  {
+    viewer->logMessage( "Currently fit calibration is invalid", "", 3 );
+    return;
+  }
+  
+  vector<pair<string,string>> error_msgs;
+  const auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  const auto dispsamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  
+  for( size_t filenum = 0; filenum < m_model->m_peaks.size(); ++filenum )
+  {
+    shared_ptr<SpectraFileHeader> header;
+    const vector<EnergyCalMultiFileModel::PeakInfo_t> &peaks = m_model->m_peaks[filenum];
+    for( size_t j = 0; !header && (j < peaks.size()); ++j )
+    {
+      if( get<0>(peaks[j]) && get<1>(peaks[j]) && get<2>(peaks[j]) && get<3>(peaks[j]) )
+        header = get<3>(peaks[j]);
+    }
+    
+    if( !header )
+      continue;
+    
+    // We will apply the calibrations on a file-by-file level; this has the side-effect that if we
+    //  do run into an issue, that one file wont pick up the change, but all other files will...
+    //  not sure if this is the right way or not.
+    try
+    {
+      shared_ptr<SpecMeas> spec = header->parseFile();
+      if( !spec ) //shouldnt happen
+        continue;
+      
+      set<shared_ptr<const EnergyCalibration>> newcals;
+      map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
+      map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
+      
+      // We will first update the energy calibration for Measurements associated with peaks, since
+      //  this is kinda un-ambigous for how to do it for multi-deector systems.
+      const auto &detnames = spec->gamma_detector_names();
+      const auto peaksets = spec->sampleNumsWithPeaks();
+      for( const set<int> &samples : peaksets )
+      {
+        auto peaks = spec->peaks( samples );
+        if( !peaks || peaks->empty() )
+          continue;
+        
+        auto dispcal = spec->suggested_sum_energy_calibration( samples, detnames );
+        if( !dispcal || !dispcal->valid() )
+          continue;
+        
+        shared_ptr<const EnergyCalibration> newcal;
+        auto calpos = updated_cals.find( dispcal );
+        if( calpos != end(updated_cals) )
+        {
+          newcal = calpos->second;
+        }else
+        {
+          auto cal = make_shared<EnergyCalibration>();
+          cal->set_polynomial( dispcal->num_channels(), m_calVal, m_devPairs );
+          newcal = cal;
+          calpos = updated_cals.insert( {dispcal, newcal} ).first;
+        }
+        
+        
+        for( const int sample : samples )
+        {
+          for( const auto m : spec->sample_measurements(sample) )
+          {
+            auto cal = m ? m->energy_calibration() : nullptr;
+            if( !cal || !cal->valid() || (cal->num_channels() < 5) )
+              continue;
+            
+            if( cal == dispcal )
+            {
+              updated_cals[cal] = newcal;
+              newcals.insert( newcal );
+            }else
+            {
+              auto pos = updated_cals.find( dispcal );
+              if( pos == end(updated_cals) )
+              {
+                auto thisnewcal = EnergyCal::propogate_energy_cal_change( dispcal, newcal, cal );
+                updated_cals[cal] = thisnewcal;
+                newcals.insert( thisnewcal );
+              }
+            }//
+          }//for( const auto m : spec->sample_measurements(sample) )
+        }//for( const int sample : samples )
+        
+        updated_peaks[peaks] = EnergyCal::translatePeaksForCalibrationChange( *peaks, dispcal, newcal );
+      }//for( const set<int> &samples : peaksets )
+      
+      
+      for( shared_ptr<const SpecUtils::Measurement> m : spec->measurements() )
+      {
+        shared_ptr<const EnergyCalibration> oldcal = m ? m->energy_calibration() : nullptr;
+        if( !oldcal || !oldcal->valid() || (oldcal->num_channels() < 5) )
+          continue;
+        
+        auto pos = updated_cals.find( oldcal );
+        if( pos != end(updated_cals) )
+          continue;
+
+        // Uhg, for multi-detector systems, I dont really know what to do, so heres something...
+        //  \TODO: figure out a better way to apply the correct calibration; maybe match up detect
+        //         names or somethign?
+        auto dispcal = spec->suggested_sum_energy_calibration( {m->sample_number()}, detnames );
+        if( !dispcal )
+          dispcal = oldcal;
+        
+        auto newdispcal = make_shared<EnergyCalibration>();
+        newdispcal->set_polynomial( oldcal->num_channels(), m_calVal, m_devPairs);
+        
+        auto newcal = EnergyCal::propogate_energy_cal_change( dispcal, newdispcal, oldcal );
+        updated_cals[oldcal] = newcal;
+        newcals.insert( newcal );
+      }//for( auto m : spec->measurements() )
+      
+      //We have made all the new energy calibrations, and translated all the peaks; lets set them
+      for( shared_ptr<const SpecUtils::Measurement> m : spec->measurements() )
+      {
+        shared_ptr<const EnergyCalibration> oldcal = m ? m->energy_calibration() : nullptr;
+        auto pos = updated_cals.find( oldcal );
+        if( pos != end(updated_cals) )
+          spec->set_energy_calibration( pos->second, m );
+      }//for( auto m : spec->measurements() )
+      
+      
+      for( const set<int> &samples : peaksets )
+      {
+        auto peaks = spec->peaks( samples );
+        if( !peaks || peaks->empty() )
+          continue;
+        auto pos = updated_peaks.find( peaks );
+        if( pos != end(updated_peaks) )
+          spec->setPeaks( pos->second, samples );
+      }//for( const set<int> &samples : peaksets )
+      
+      assert( foreground );
+      //Trigger an update of peak views if we are on the foreground SpecFile
+      if( (spec == foreground) && foreground->peaks(dispsamples) )
+        viewer->peakModel()->setPeakFromSpecMeas(foreground,dispsamples);
+    }catch( std::exception &e )
+    {
+      const string filename = header ? header->displayName().toUTF8() : std::string("unknown");
+      error_msgs.emplace_back( SpecUtils::filename(filename), e.what() );
+    }//try / catch to set the calibrations
+  }//for( loop over files )
+  
+  viewer->refreshDisplayedCharts();
+  m_calibrator->refreshGuiFromFiles();
+  
+  string errmsg;
+  for( size_t i = 0; (i < error_msgs.size()) && (i < 5); ++i )
+  {
+    const string &filename = error_msgs[i].first;
+    const string &msg = error_msgs[i].second;
+    errmsg += "<p>" + error_msgs[i].first + ":"
+              " <span style=\"font-style: italic; font-family: monospace; color: red;\">"
+              + error_msgs[i].second
+              + "</span></p>";
+  }//for( loop over err messages )
+  
+  if( !errmsg.empty() )
+  {
+    errmsg = "There was an error an error changing calibration of "
+             + std::to_string(error_msgs.size()) + " file:\n" + errmsg;
+    viewer->logMessage( WString::fromUTF8(errmsg), "", 3 );
+  }else
+  {
+    viewer->logMessage( "Have updated calibration for all files with any peaks selected.", "", 1 );
+  }
+}//void applyCurrentFit()
+
+
 void EnergyCalMultiFile::handleFinish( WDialog::DialogCode result )
 {
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  
   switch( result )
   {
     case WDialog::Rejected:
@@ -533,135 +593,14 @@ void EnergyCalMultiFile::handleFinish( WDialog::DialogCode result )
       
     case WDialog::Accepted:
     {
-      InterSpec *viewer = m_calibrator->m_interspec;
-      
-      // @TODO: the equation could totally be invalid
-      vector<float> eqn( m_calVal, m_calVal + sm_numCoefs );
-      while( !eqn.empty() && eqn.back()==0.0 )
-        eqn.resize( eqn.size()-1 );
-      
-      static_assert( sm_numCoefs >= 3, "" );
-      cerr << "\n\nm_calVal={" << m_calVal[0] << ", " << m_calVal[1] << ", " << m_calVal[2] << "}" << endl;
-      
-      vector<float> oldcalibpars;
-      std::vector<std::pair<float,float>> devpairs;
-      SpecUtils::EnergyCalType oldEqnType;
-      
-      std::shared_ptr<SpecMeas> fore = viewer->measurment(SpectrumType::Foreground);
-      std::shared_ptr<SpecMeas> back = viewer->measurment(SpectrumType::Background);
-      std::shared_ptr<SpecMeas> second = viewer->measurment(SpectrumType::SecondForeground);
-      std::shared_ptr<const Measurement> displ_foreground
-                                     = viewer->displayedHistogram(SpectrumType::Foreground);
-
-      
-      std::shared_ptr<const Measurement> eqnmeass[3];
-      for( int i = 0; i < 3; ++i )
-      {
-        const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
-        std::shared_ptr<SpecMeas> meas = viewer->measurment(type);
-        if( meas )
-        {
-          const vector< std::shared_ptr<const Measurement> > meass = meas->measurements();
-          for( size_t j = 0; !eqnmeass[i] && j < meass.size(); ++j )
-            if( meass[j]->num_gamma_channels() )
-              eqnmeass[i] = meass[j];
-        }
-      }//for( int i = 0; i < 3; ++i )
-      
-      if( fore && eqnmeass[ForeIndex] )
-      {
-        oldcalibpars = eqnmeass[ForeIndex]->calibration_coeffs();
-        oldEqnType = eqnmeass[ForeIndex]->energy_calibration_model();
-        devpairs = eqnmeass[ForeIndex]->deviation_pairs();
-      }else if( second && eqnmeass[SecondIndex] )
-      {
-        oldcalibpars = eqnmeass[SecondIndex]->calibration_coeffs();
-        oldEqnType = eqnmeass[SecondIndex]->energy_calibration_model();
-        devpairs = eqnmeass[SecondIndex]->deviation_pairs();
-      }else if( back && eqnmeass[BackIndex] )
-      {
-        oldcalibpars = eqnmeass[BackIndex]->calibration_coeffs();
-        oldEqnType = eqnmeass[BackIndex]->energy_calibration_model();
-        devpairs = eqnmeass[BackIndex]->deviation_pairs();
-      }else
-      {
-        break;
-      }
-      
-      vector<string> displayed_detectors = viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
-      
-      
-      if( !m_calibrator->m_applyTo[ForeIndex]->isChecked() )
-        fore.reset();
-      if( !m_calibrator->m_applyTo[BackIndex]->isChecked() )
-        back.reset();
-      if( !m_calibrator->m_applyTo[SecondIndex]->isChecked() )
-        second.reset();
-      
-      //XXX - applying the calibration parameters does not shift peaks!
-      for( size_t i = 0; i < m_model->m_peaks.size(); ++i )
-      {
-        const vector< pair<bool,std::shared_ptr<const PeakDef> > > &peaks
-                                                          = m_model->m_peaks[i];
-        bool used = false;
-        for( size_t j = 0; j < peaks.size(); ++j )
-          used |= peaks[j].first;
-        
-        if( !used )
-          continue;
-        
-        SpectraFileModel *fileModel = viewer->fileManager()->model();
-        std::shared_ptr<SpectraFileHeader> header
-                                = fileModel->fileHeader( static_cast<int>(i) );
-        if( !header )
-          continue;
-        
-        std::shared_ptr<SpecMeas> meas = header->parseFile();
-        if( !meas )
-          continue;
-        
-        // Fix this for new calibration! //meas->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
-        cerr << "\n\nRecalled " << header->displayName().toUTF8()
-             << " to m_calVal={" << m_calVal[0] << ", " << m_calVal[1]
-             << ", " << m_calVal[2] << "}" << endl;
-        
-        if( meas == fore )
-        {
-          fore.reset();
-          Recalibrator::shiftPeaksForEnergyCalibration(
-                                            m_calibrator->m_peakModel,
-                                            eqn, devpairs, m_eqnType,
-                                            meas, SpectrumType::Foreground,
-                                            oldcalibpars, devpairs, oldEqnType );
-        }else
-        {
-          assert( 0 );
-          //meas->shiftPeaksForRecalibration( oldcalibpars, devpairs, oldEqnType,
-          //                                 eqn, devpairs, m_eqnType );
-        }//if( meas == fore ) / else
-        
-        if( meas == back )
-          back.reset();
-        if( meas == second )
-          second.reset();
-      }//for( size_t i = 0; i < m_peaks.size(); ++i )
-      
-      // Fix this for new calibration! //if( fore )
-      // Fix this for new calibration! //  fore->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
-      // Fix this for new calibration! //if( back )
-      // Fix this for new calibration! //  back->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
-      // Fix this for new calibration! //if( second )
-      // Fix this for new calibration! //  second->recalibrate_by_eqn( eqn, devpairs, m_eqnType, displayed_detectors, false );
-      
-      viewer->refreshDisplayedCharts();
-      m_calibrator->refreshRecalibrator();
-      
+      applyCurrentFit(); 
       cerr << "\nAccepted EnergyCalMultiFile" << endl;
       break;
     }//case WDialog::Accepted:
   }//switch( result )
   
-  delete this;
+  if( m_parent )
+    AuxWindow::deleteAuxWindow( m_parent );
 }//void handleFinish(...)
 
 
@@ -671,20 +610,20 @@ EnergyCalMultiFileModel::EnergyCalMultiFileModel( EnergyCalTool *calibrator, Wt:
   m_calibrator( calibrator ),
   m_fileModel( nullptr )
 {
-  refreshData();
-  
   InterSpec *interspec = InterSpec::instance();
   assert( interspec );
   
   SpecMeasManager *measManager = interspec->fileManager();
-  assert( SpecMeasManager );
+  assert( measManager );
   
   m_fileModel = measManager->model();
   assert( m_fileModel );
   
+  refreshData();
+  
   m_fileModel->rowsInserted().connect( boost::bind(&EnergyCalMultiFileModel::refreshData, this) );
   m_fileModel->rowsRemoved().connect( boost::bind(&EnergyCalMultiFileModel::refreshData, this) );
-  
+
   //Should add in a listener here to the PeakModel to see if peaks are
   //  added/removed; this might neccesitate tracking
 }//EnergyCalMultiFileModel constructor
@@ -779,8 +718,10 @@ boost::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, int role
     if( row < 0 || row >= static_cast<int>(m_peaks[filenum].size()) )
       return boost::any();
     
-    const bool checked = m_peaks[filenum][row].first;
-    std::shared_ptr<const PeakDef> peak = m_peaks[filenum][index.row()].second;
+    const PeakInfo_t &info = m_peaks[filenum][row];
+    
+    const bool checked = get<1>(info);
+    shared_ptr<const PeakDef> peak = get<2>(info);
     
     if( !peak )
       return boost::any();
@@ -861,7 +802,7 @@ bool EnergyCalMultiFileModel::setData( const WModelIndex &index, const boost::an
   
   try
   {
-    m_peaks[filenum][row].first = boost::any_cast<bool>( value );
+    get<1>(m_peaks[filenum][row]) = boost::any_cast<bool>( value );
   }catch(...)
   {
     cerr << "Got bad boost::any_cast<bool>( value )" << endl;
@@ -908,14 +849,14 @@ void EnergyCalMultiFileModel::refreshData()
     endRemoveRows();
   }//if( m_peaks.size() )
   
-  vector<std::vector< std::pair<bool,std::shared_ptr<const PeakDef> > > > newdata;
+  vector<vector<PeakInfo_t>> newdata;
   
   const int nfile = m_fileModel->rowCount();
   for( int filenum = 0; filenum < nfile; ++filenum )
   {
-    vector< pair<bool,std::shared_ptr<const PeakDef> > > peaks;
-    std::shared_ptr<SpectraFileHeader> header
-                                           = m_fileModel->fileHeader( filenum );
+    vector<PeakInfo_t> peaks;
+    shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( filenum );
+    
     if( !header )
     {
       newdata.push_back( peaks );
@@ -930,22 +871,30 @@ void EnergyCalMultiFileModel::refreshData()
       continue;
     }//if( !header )
     
-    typedef set<int> IntSet;
+    const auto gammaDetNames = spec->gamma_detector_names();
+    
     typedef std::shared_ptr<const PeakDef> PeakPtr;
-    const set< set<int> > peaksamplenums = spec->sampleNumsWithPeaks();
-    for( const IntSet &samplnums : peaksamplenums )
+    const set<set<int>> peaksamplenums = spec->sampleNumsWithPeaks();
+    for( const set<int> &samplnums : peaksamplenums )
     {
-      std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > measpeaks;
-      measpeaks = spec->peaks( samplnums );
+      shared_ptr<const EnergyCalibration> cal;
+      try
+      {
+        cal = spec->suggested_sum_energy_calibration( samplnums, gammaDetNames );
+      }catch( std::exception &e )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, "Unexpected failure of suggested_sum_energy_calibration" );
+#endif
+        continue;
+      }//try / catch
+      
+      auto measpeaks = spec->peaks( samplnums );
       if( !measpeaks )
         continue;
       
       for( const PeakPtr &peak : *measpeaks )
-      {
-        const bool use = peak->useForCalibration();
-        pair<bool,std::shared_ptr<const PeakDef> > peakpair( use, peak );
-        peaks.push_back( peakpair );
-      }//for( const PeakPtr &peak : peaks )
+        peaks.emplace_back( cal, peak->useForCalibration(), peak, header );
       
       newdata.push_back( peaks );
     }//for( const IntSet &samplnums : peaksamplenums )
@@ -958,6 +907,3 @@ void EnergyCalMultiFileModel::refreshData()
     endInsertRows();
   }//if( newdata.size() )
 }//refreshData()
-
-
-*/

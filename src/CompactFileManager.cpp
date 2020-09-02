@@ -312,8 +312,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
             WPushButton *button2 = new WPushButton( "Previous...");
             button2->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
                                                      m_interspec->fileManager(),
-                                                     SpecUtils::SpectrumType::Foreground,
-                                                     std::shared_ptr<SpectraFileHeader>() ) );
+                                                     SpecUtils::SpectrumType::Foreground ) );
             layout2->addWidget(button2,0,2);
 #endif
             layout2->setColumnStretch(1, 1);
@@ -381,8 +380,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       WPushButton *button = new WPushButton( "Prev. Saved Spectra", buttons );
         button->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
                                                fileManager,
-                                               SpecUtils::SpectrumType::Foreground,
-                                               std::shared_ptr<SpectraFileHeader>()) );
+                                               SpecUtils::SpectrumType::Foreground ) );
 #endif
       break;
     }//case Tabbed:
