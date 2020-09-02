@@ -774,6 +774,30 @@ causilyDisconnectedPeaks(  const double ncausality,
   return answer;
 }//causilyDisconnectedPeaks(...)
 
+      
+void unique_copy_continuum( std::vector<PeakDef> &input_peaks )
+{
+  map<std::shared_ptr<PeakContinuum>,vector<PeakDef>> contToPeaks;
+  for( auto &p : input_peaks )
+    contToPeaks[p.continuum()].push_back( p );
+        
+  for( auto &pp : contToPeaks )
+  {
+    pp.second[0].makeUniqueNewContinuum();
+    auto newcont = pp.second[0].continuum();
+    for( size_t i = 1; i < pp.second.size(); ++i )
+      pp.second[i].setContinuum( newcont );
+  }
+        
+  input_peaks.clear();
+  for( auto &pp : contToPeaks )
+  {
+    for( auto p : pp.second )
+      input_peaks.push_back( p );
+  }
+  std::sort( begin(input_peaks), end(input_peaks), &PeakDef::lessThanByMean );
+}//unique_copy_continuum(...)
+
 
 std::vector< std::vector<PeakDef> > causilyDisconnectedPeaks( const double x0,
                                                              const double x1,
@@ -5435,7 +5459,7 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
   try
   {
     fitpeaks.clear();
-    
+      
     //We have to seperate out non-fgaussian peaks since they cant enter the
     //  fitting methods
     vector<PeakDef> fixedpeaks, near_peaks, datadefined_peaks;
@@ -5470,6 +5494,9 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     if( near_peaks.empty() )
       return;
     
+    unique_copy_continuum( near_peaks );
+    unique_copy_continuum( fixedpeaks );  //prob not necassary, but JIC
+      
     //Need to make sure near_peaks and fixedpeaks are all gaussian (if not
     //  seperate them out, and add them in later).  If fitpeaks is non-gaussian
     //  ignore it or throw an exception.

@@ -2418,6 +2418,8 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
 }//void assign_srcs_from_ref_lines(...)
   
   
+
+
 void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::Measurement> data,
                          std::vector<PeakDef> input_peaks,
                          std::vector<PeakDef> orig_peaks,
@@ -2428,6 +2430,8 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
     cerr << "fit_template_peaks: data is invalid!" << endl; //prob shouldnt ever happen
     return;
   }
+  
+  unique_copy_continuum( input_peaks );
   
   vector<PeakDef> candidate_peaks, data_def_peaks;
   
@@ -2491,6 +2495,12 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
   
   //Make sure peaks are sorted, for good measure
   std::sort( begin(fitpeaks), end(fitpeaks), &PeakDef::lessThanByMean );
+  
+  
+  //Dont show user the dialog if no peaks were found, and we were looking for peaks from previous
+  //  spectrum
+  if( fitpeaks.empty() && (fitsrc == PeakTemplateFitSrc::PreviousSpectrum) )
+    return;
   
   WServer::instance()->post( sessionid, [=](){
     

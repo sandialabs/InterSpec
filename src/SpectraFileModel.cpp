@@ -2401,6 +2401,7 @@ void DownloadSpectrumResource::handle_resource_request(
     case SpecUtils::SaveSpectrumAsType::SpcAscii:
     case SpecUtils::SaveSpectrumAsType::SpeIaea:
     case SpecUtils::SaveSpectrumAsType::Cnf:
+    case SpecUtils::SaveSpectrumAsType::Tka:
       response.setMimeType( "application/octet-stream" );
     break;
       
@@ -2494,6 +2495,11 @@ void DownloadSpectrumResource::handle_resource_request(
     case SpecUtils::SaveSpectrumAsType::Cnf:
       measurement->write_cnf( response.out(), samplenums, detectornums );
       break;
+    
+    case SpecUtils::SaveSpectrumAsType::Tka:
+      measurement->write_tka( response.out(), samplenums, detectornums );
+      break;
+      
       
 #if( SpecUtils_ENABLE_D3_CHART )
     case SpecUtils::SaveSpectrumAsType::HtmlD3:

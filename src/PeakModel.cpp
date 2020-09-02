@@ -609,7 +609,7 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
 
   if( !!meas )
     peaks = meas->peaks( samplenums );
-
+  
   m_measurment = meas;
   
   if( peaks == m_peaks )
