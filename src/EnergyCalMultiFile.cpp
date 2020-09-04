@@ -180,7 +180,7 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   {
     parent->finished().connect( this, &EnergyCalMultiFile::handleFinish );
   
-    const int w = 600 < viewer->renderedHeight() ? 600 : viewer->renderedHeight();
+    const int w = 600 < viewer->renderedWidth() ? 600 : viewer->renderedWidth();
     const int h = static_cast<int>(0.8*viewer->renderedHeight());
     parent->resizeWindow( w, h );
   

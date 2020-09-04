@@ -6405,7 +6405,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   }//if( !isMobile() )
   
   {//begin add "AskPropagatePeaks" to menu
-    const bool doPropogate = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+    const bool doPropogate = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
     WCheckBox *checkbox = new WCheckBox( " Ask to Propagate Peaks" );
     checkbox->setChecked( doPropogate );
     item = subPopup->addWidget( checkbox );

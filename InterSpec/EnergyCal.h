@@ -93,6 +93,19 @@ double fit_energy_cal_frf( const std::vector<EnergyCal::RecalPeakInfo> &peakinfo
 ///        and gain equivalents for lower channel energy defined calibrations.
 
 
+/** Given the lower channel energies, will determine the best polynomial coeffcients to reproduce
+ the binning.
+ 
+ Returns the average absolute value of error (in keV) of each channel.
+ 
+ Throws exception on error.
+ */
+double fit_poly_from_lower_channel_energies( const size_t ncoeffs,
+                                             const std::vector<float> &lower_channel_energies,
+                                             std::vector<float> &coefs );
+
+
+
 /** Uses Minuit2 to fit for calibration coefficients.
  
  

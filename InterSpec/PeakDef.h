@@ -55,7 +55,13 @@ namespace rapidxml
 }//namespace rapidxml
 
 
-
+/**
+ 
+ TODO: When PeakDefs are copied, their continuum still points to the same PeakContinuum object,
+       meaning if the copies modify their continuum, the originals continuum also gets modified.
+       This is currently necassary since multiple PeakDefs can share a PeakContinuum.  To fix this
+       a ROI (e.g., contimuum) should own the peaks, not the other way around
+ */
 struct PeakContinuum
 {
   enum OffsetType
