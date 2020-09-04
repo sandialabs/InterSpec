@@ -139,7 +139,6 @@ enum class MoreActionsIndex : int
  */
 struct MeasToApplyCoefChangeTo
 {
-  
   std::shared_ptr<SpecMeas> meas;
   std::set<int> sample_numbers;
   std::set<std::string> detectors;
