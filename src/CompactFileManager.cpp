@@ -815,31 +815,25 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     if( spectrum_type == SpecUtils::SpectrumType::Foreground )
     {
       WString title;
-      const std::vector<int> &dets = meas->detector_numbers();
-      if( dets.size() == 1 )
+      const vector<string> &dets = meas->detector_names();
+      for( size_t i = 0; title.empty() && (i < dets.size()); ++i )
       {
-        std::shared_ptr<const SpecUtils::Measurement> m = meas->measurement(displayedNumber, dets[0] );
-        if( m )
-        {
-          title = WString::fromUTF8(m->title());
-#ifndef WT_NO_STD_WSTRING
-          std::wstring str = title;
-          if( str.length() > 80 )
-            str = str.substr( 0, 80 );
-          title = str;
-#else
-          std::string str = title.toUTF8();
-          SpecUtils::utf8_limit_str_size( str, 79 );
-          title = str;
-#endif
-        }//if( m )
-      }//if( dets.size() == 1 )
-      
+        auto m = meas->measurement(displayedNumber, dets[i]);
+        if( m && !m->title().empty() )
+          title = WString::fromUTF8( m->title() );
+      }//for( loop over detectors to find title )
+
       if( m_foregroundTitle )
       {
         m_foregroundTitle->setText( title );
         if( !title.empty() )
           m_foregroundTitle->show();
+        
+        if( title.narrow().length() > 70 )
+          m_foregroundTitle->setToolTip( title );
+        else if( !m_foregroundTitle->toolTip().empty() )
+          m_foregroundTitle->setToolTip( "" );
+        
       }//if( m_foregroundTitle )
     }//if( spectrum_type == SpecUtils::SpectrumType::Foreground )
   }else if( total_sample_nums.size() == sample_numbers.size() )

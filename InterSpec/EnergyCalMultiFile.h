@@ -51,11 +51,13 @@ namespace SpecUtils{ struct EnergyCalibration; }
  totally correct, but good enough for the majority of use cases problably, maybe.
  
  TODO:
-   - Use serial number to help match up candidate files
+   - Use serial number to help match up candidate files, and just de-select and collapse nodes not
+     coorisponding to displayed specrum
    - have answer updated whenever anything changes
    - add deviation pair editing display
    - have a model column that gives new energy difference of updated calibration
    - give total offset before, and with new calibration
+   - The view for multi-sample files isnt displaying well
  */
 
 class EnergyCalMultiFile : public Wt::WContainerWidget

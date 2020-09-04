@@ -449,6 +449,7 @@ class CalDisplay : public WContainerWidget
   const std::string m_det_name;
   
   WText *m_type;
+  WText *m_convertMsg;
   WContainerWidget *m_coefficients;
   DeviationPairDisplay *m_devPairs;
   
@@ -471,6 +472,7 @@ public:
    m_cal_type( type ),
    m_det_name( detname ),
    m_type( nullptr ),
+   m_convertMsg( nullptr ),
    m_coefficients( nullptr ),
    m_devPairs( nullptr )
 #if( HIDE_EMPTY_DEV_PAIRS )
@@ -664,6 +666,19 @@ public:
       case SpecUtils::EnergyCalType::InvalidEquationType:
         m_coefficients->clear();
         m_devPairs->setDeviationPairs( {} );
+        if( !m_devPairs->isHidden() )
+          m_devPairs->hide();
+
+        if( !m_convertMsg )
+        {
+          if( auto p = dynamic_cast<WContainerWidget *>( m_type->parent() ) )
+          {
+            m_convertMsg = new WText( "Please convert to Polynomial calibration to edit", p );
+            m_convertMsg->addStyleClass( "ConvertToPolyMsg" );
+            m_convertMsg->setInline( false );
+          }
+        }//if( !m_convertMsg )
+        
 #if( HIDE_EMPTY_DEV_PAIRS )
         m_addPairs->setHidden( true );
         m_devPairs->setHidden( true );
@@ -673,6 +688,13 @@ public:
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::FullRangeFraction:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        if( m_devPairs->isHidden() )
+          m_devPairs->show();
+        if( m_convertMsg )
+        {
+          delete m_convertMsg;
+          m_convertMsg = nullptr;
+        }
         break;
     }//switch( m_cal->type() )
     

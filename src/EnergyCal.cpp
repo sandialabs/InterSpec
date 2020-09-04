@@ -417,6 +417,75 @@ double EnergyCal::fit_energy_cal_poly( const std::vector<EnergyCal::RecalPeakInf
 
 
 
+double EnergyCal::fit_poly_from_lower_channel_energies( const size_t ncoeffs,
+                                             const std::vector<float> &lower_channel_energies,
+                                             std::vector<float> &coefs )
+{
+  if( ncoeffs < 2 )
+    throw runtime_error( "fit_poly_from_lower_channel_energies: You must request at least two coefficients" );
+  
+  if( ncoeffs >= 6 )  //This isnt a programming or math limitation, just a sanity limitation
+    throw runtime_error( "fit_poly_from_lower_channel_energies: You must request less than 6 coefficients" );
+    
+  const size_t nenergies = lower_channel_energies.size();
+  if( nenergies <= 6 )
+    throw runtime_error( "fit_poly_from_lower_channel_energies: Input energies must have at least 6 entries" );
+  
+  for( size_t i = 1; i < nenergies; ++i )
+    if( lower_channel_energies[i-1] >= lower_channel_energies[i] )
+      throw runtime_error( "fit_poly_from_lower_channel_energies: Input energies must be stricktly increasing" );
+  
+  //General Linear Least Squares fit
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation is quite inneficient
+  using namespace boost::numeric;
+  
+  ublas::matrix<double> A( nenergies, ncoeffs );
+  ublas::vector<double> b( nenergies );
+  
+  for( size_t row = 0; row < nenergies; ++row )
+  {
+    //Energy_i = P0 + P1*pow(i,1) + P2*pow(i,2) + P3*pow(i,3)
+    const double uncert = 1.0;
+    for( size_t col = 0; col < ncoeffs; ++col )
+    {
+      if( col == 0 )
+        A(row,col) = 1;
+      else if( col == 1 )
+        A(row,col) = row;
+      else
+        A(row,col) = pow( static_cast<double>(row), static_cast<double>(col) ) / uncert;
+    }
+    b(row) = lower_channel_energies[row] / uncert;
+  }//for( int col = 0; col < order; ++col )
+  
+  const ublas::matrix<double> A_transpose = ublas::trans( A );
+  const ublas::matrix<double> alpha = prod( A_transpose, A ); //alpha is ncoeffs x ncoeffs matrix
+  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
+  const bool success = matrix_invert( alpha, C );
+  if( !success )
+    throw runtime_error( "Trouble inverting least linear squares matrix" );
+  
+  const ublas::vector<double> beta = prod( A_transpose, b );
+  const ublas::vector<double> a = prod( C, beta );
+  
+  coefs.resize( ncoeffs, 0.0 );
+  for( size_t col = 0; col < ncoeffs; ++col )
+    coefs[col] = static_cast<float>( a(col) );
+  
+  double avrgdiffs = 0.0;
+  for( size_t i = 0; i < nenergies; ++i )
+  {
+    double energy = 0.0;
+    for( size_t col = 0; col < ncoeffs; ++col )
+      energy += ( coefs[col] * pow(static_cast<double>(i), static_cast<double>(col)) );
+    avrgdiffs += fabs( energy - lower_channel_energies[i] );
+  }
+  
+  return avrgdiffs / nenergies;
+}//fit_poly_from_lower_channel_energies(...)
+
+
 double EnergyCal::fit_energy_cal_iterative( const std::vector<EnergyCal::RecalPeakInfo> &peakInfo,
                                            const size_t nbin,
                                            const SpecUtils::EnergyCalType eqnType,

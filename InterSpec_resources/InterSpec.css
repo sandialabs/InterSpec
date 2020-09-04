@@ -1093,6 +1093,7 @@ div.displaySampleDiv
 
 .CompactSpecTitle
 {
+  text-overflow: ellipsis;
 }
 
 

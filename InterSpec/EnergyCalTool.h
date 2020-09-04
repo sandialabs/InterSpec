@@ -215,6 +215,12 @@ public:
    */
   std::string applyToSummaryTxt() const;
   
+  /** Returns which SpecUtils::Measurement need to be updated, based on what files are loaded and
+   what options the user has choosen.
+   */
+  std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo();
+  
+  
 protected:
   enum class LayoutType{ Tall, Wide };
   void initWidgets( LayoutType layout );
@@ -250,11 +256,6 @@ protected:
   void applyToCbChanged( const ApplyToCbIndex index );
   
   void moreActionBtnClicked( const MoreActionsIndex index );
-  
-  /** Returns which SpecUtils::Measurement need to be updated, based on what files are loaded and
-   what options the user has choosen.
-   */
-  std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo();
   
   /** Returns the gamma detector names that are available for display, given the displayed samples.
    
