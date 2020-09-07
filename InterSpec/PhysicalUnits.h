@@ -162,8 +162,8 @@ namespace PhysicalUnits
   
   std::string printToBestEquivalentDoseRateUnits( double dosePerTime,
                                    const int maxNpostDecimal = 2,
-                                   const bool useRemPerHr = true,
-                                   const double remPerHrDefinition = rem/hour );
+                                   const bool useSievertPerHr = true,
+                                   const double svPerHrDefinition = sievert/hour );
 
   std::string printToBestEquivalentDoseUnits( double dose,
                                             const int maxNpostDecimal = 2,
