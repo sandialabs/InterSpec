@@ -321,7 +321,7 @@ but menu items will be disabled if no background or secondary spectrum is loaded
 <center>
 <ol>
 <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Left-Click Drag &rarr; <u>Optional</u>: Adjust Quantities</li>
-<li><b>Tools</b> &rarr; <b>Energy Range Count</b></li>
+<li><b>Tools</b> &rarr; <b>Energy Range Sum</b></li>
 </ol>
 </center>
 </message>

@@ -544,10 +544,7 @@ void ConvertToPolyTool::handleFinish( Wt::WDialog::DialogCode result )
             {
               auto m = toapplyto.meas->measurement( sample, detname );
               auto cal = m ? m->energy_calibration() : nullptr;
-              if( !cal
-                 || !cal->valid()
-                 || (cal->num_channels() < 5)
-                 || (cal->type() != EnergyCalType::LowerChannelEdge) )
+              if( !cal || !cal->valid() || (cal->num_channels() < 5) )
                 continue;
               
               const size_t nchannel = cal->num_channels();
@@ -561,7 +558,6 @@ void ConvertToPolyTool::handleFinish( Wt::WDialog::DialogCode result )
                 {
                   case EnergyCalType::Polynomial:
                   case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-                    assert( 0 );
                     continue;
                     
                   case EnergyCalType::FullRangeFraction:

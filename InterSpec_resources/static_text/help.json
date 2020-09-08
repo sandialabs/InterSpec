@@ -145,7 +145,7 @@
       },
       {
         "id":"energy-range-count",
-        "title":"Energy Range Count",
+        "title":"Energy Range Sum",
         "help-xml":"energy_range_count_help.xml",
         "help-xml-mobile":"energy_range_count_mobile_help.xml",
         "keywords":"Energy Range Count Sum Gammas Drag Select Region of Interest ROI"

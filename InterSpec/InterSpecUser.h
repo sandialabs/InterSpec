@@ -1063,10 +1063,35 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
     option = sql->session()->add( newoption );
     transaction.commit();
   }else if( noptions == 1 )
+  {
     option = options.front();
-  else
-    throw std::runtime_error( "Invlaid number of preferences for " + name
-                             + " for user " + user->userName() );
+  }else
+  {
+    //Hmmm, not sure how this happened, but I have made it here for "ColorThemeIndex".
+    //  We will take the first option and
+#if( PERFORM_DEVELOPER_CHECKS )
+    char buffer[1024];
+    snprintf( buffer, sizeof(buffer), "Invalid number of preferences (%i) for %s for user %s; will"
+                                      " remove all of them after the first from the database.",
+              static_cast<int>(noptions), name.c_str(), user->userName().c_str() );
+    log_developer_error( __func__, buffer );
+#endif
+    
+    option = options.front();
+    for( size_t i = 1; i < noptions; ++i )
+    {
+      try
+      {
+        DataBaseUtils::DbTransaction transaction( *sql );
+        options[i].remove();
+      }catch(...)
+      {
+        std::cerr << "Caught excettion removing duplicate preference from database" << std::endl;
+      }
+    }//for( size_t i = 1; i < noptions; ++i )
+    
+    //throw runtime_error( "Invalid number of preferences for " + name + " for user " + user->userName() );
+  }//if( noptions == 0 ) / else / else
   
   std::stringstream valuestrm;
   valuestrm << value;

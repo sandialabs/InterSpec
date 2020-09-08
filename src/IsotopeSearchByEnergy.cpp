@@ -377,6 +377,8 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minBranchRatio->setValue( m_minBr );
   m_minBranchRatio->setRange( 0.0, 1.0 );
   m_minBranchRatio->setSingleStep( 0.1 );
+  label->setBuddy( m_minBranchRatio );
+  
   label = new WLabel( "Min. HL" );
  
   tip = "Minimum half life of nuclides to be searched.<br />"
@@ -405,6 +407,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
     
   buttonDivLayout->addWidget(m_minHalfLife,1,4);
   m_minHalfLife->setWidth( 55 );
+  label->setBuddy( m_minHalfLife );
   //XXX should set WRegExpValidator for m_minHalfLife here.
 
   m_minBranchRatio->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );

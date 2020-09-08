@@ -204,7 +204,7 @@ OneOverR2Calc::OneOverR2Calc()
       setMaximumSize( WLength::Auto, viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
       
       /* ToDo: get safe offsets in c++ land, and then also convert other AuxWindows that are modal on phone to resize correctly. */
-      /* Do same for Gamma XS Calc. And Energy Range Count*/
+      /* Do same for Gamma XS Calc. And Energy Range Sum*/
     }
   }else
   {
