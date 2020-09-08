@@ -46,16 +46,28 @@
 #include "InterSpec/EnergyCalAddActions.h"
 
 // Forward declarations
-class ConvertToPolyTool;
+class ConvertCalTypeTool;
 
 using namespace std;
 using namespace Wt;
 
 
-class ConvertToPolyTool : public WContainerWidget
+class ConvertCalTypeTool : public WContainerWidget
 {
-  EnergyCalTool *m_cal;
-  AuxWindow *m_parent;
+  /** The type of calibration to convert to */
+  const SpecUtils::EnergyCalType m_targetType;
+  
+  /** The type of calibration we are converting from.
+   If input SpecFiles has more than one type than this will be
+   #SpecUtils::EnergyCalType::InvalidEquationType and the ConvertCalTypeTool constuctor will not
+   allow conversion.
+   */
+  SpecUtils::EnergyCalType m_sourceType;
+  
+  EnergyCalTool * const m_cal;
+  AuxWindow * const m_parent;
+  
+  /** Will be non-nullptr only if m_sourceType==SpecUtils::EnergyCalType::LowerChannelEdge: */
   WButtonGroup *m_group;
   WText *m_fitCoefTxt;
   
@@ -63,13 +75,13 @@ class ConvertToPolyTool : public WContainerWidget
   WPushButton *m_accept;
   
 public:
-  ConvertToPolyTool( EnergyCalTool *cal, AuxWindow *parent );
-  ~ConvertToPolyTool();
+  ConvertCalTypeTool( const SpecUtils::EnergyCalType target, EnergyCalTool *cal, AuxWindow *parent );
+  ~ConvertCalTypeTool();
   
   void fromLowerChannelEnergiesOptionChanged();
   void convertLowerChannelEnegies( const size_t ncoeffs, const bool set_cals_to, std::string &msg );
   void handleFinish( Wt::WDialog::DialogCode result );
-};//class ConvertToPolyTool
+};//class ConvertCalTypeTool
 
 
 
@@ -99,11 +111,13 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
       break;
       
     case MoreActionsIndex::ConvertToFrf:
+      AuxWindow::setWindowTitle( "Convert to Full Range Fraction Calibration" );
+      new ConvertCalTypeTool( SpecUtils::EnergyCalType::FullRangeFraction, m_calibrator, this );
       break;
       
     case MoreActionsIndex::ConvertToPoly:
       AuxWindow::setWindowTitle( "Convert to Polynomial Calibration" );
-      new ConvertToPolyTool( m_calibrator, this );
+      new ConvertCalTypeTool( SpecUtils::EnergyCalType::Polynomial, m_calibrator, this );
       break;
       
     case MoreActionsIndex::MultipleFilesCal:
@@ -131,8 +145,11 @@ EnergyCalAddActionsWindow::~EnergyCalAddActionsWindow()
 
 
 
-ConvertToPolyTool::ConvertToPolyTool( EnergyCalTool *cal, AuxWindow *parent )
+ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetType,
+                                      EnergyCalTool *cal, AuxWindow *parent )
   : WContainerWidget(),
+    m_targetType( targetType ),
+    m_sourceType( SpecUtils::EnergyCalType::InvalidEquationType ),
     m_cal( cal ),
     m_parent( parent ),
     m_group( nullptr ),
@@ -140,7 +157,12 @@ ConvertToPolyTool::ConvertToPolyTool( EnergyCalTool *cal, AuxWindow *parent )
     m_cancel( nullptr ),
     m_accept( nullptr )
 {
-  addStyleClass( "ConvertToPolyTool" );
+  using SpecUtils::EnergyCalType;
+  
+  assert( (m_targetType == SpecUtils::EnergyCalType::FullRangeFraction)
+          || (m_targetType == SpecUtils::EnergyCalType::Polynomial) );
+  
+  addStyleClass( "ConvertCalTypeTool" );
   
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
@@ -162,38 +184,43 @@ ConvertToPolyTool::ConvertToPolyTool( EnergyCalTool *cal, AuxWindow *parent )
            || (m->num_gamma_channels() < 5) )
           continue;
         
+        auto type = m->energy_calibration()->type();
+        if( type == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+          type = SpecUtils::EnergyCalType::Polynomial;
+          
         nchannels.insert( m->num_gamma_channels() );
-        caltypes.insert( m->energy_calibration()->type() );
+        caltypes.insert( type );
         coeforder.insert( m->calibration_coeffs().size() );
       }//for( loop over samples )
     }//for( loop over detectors )
   }//for( const auto &m : applicables )
   
-  if( (caltypes.size() != 1)
-     || ((*begin(caltypes)) == SpecUtils::EnergyCalType::Polynomial)
-     || ((*begin(caltypes)) == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial) )
+  if( (caltypes.size() != 1) || ((*begin(caltypes)) == m_targetType) )
   {
     if( parent )
     {
       auto close = parent->addCloseButtonToFooter();
-      close->clicked().connect( boost::bind( &ConvertToPolyTool::handleFinish, this, WDialog::Rejected ) );
-      parent->finished().connect( this, &ConvertToPolyTool::handleFinish );
+      close->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Rejected ) );
+      parent->finished().connect( this, &ConvertCalTypeTool::handleFinish );
     }
     
-    const char *msgtxt = "";
+    string msgtxt = "";
     if( caltypes.empty() )
-      msgtxt = "Conversion would not effect any spectra; try selecting more &quot;Apply Changes To&quot; criteria.";
+      msgtxt = "Conversion would not effect any spectra; try selecting more"
+               " &quot;Apply Changes To&quot; criteria.";
     else if( caltypes.size() == 1 )
-      msgtxt = "All spectra this would be applied to is already polynomial.";
+      msgtxt = "All spectra this would be applied to is already "
+               + string( m_targetType==EnergyCalType::Polynomial ? "polynomial." : "full range fraction.");
     else
-      msgtxt = "There is more than one calibration type of selected source spectra; try restricting &quot;Apply Changes To&quot; criteria.";
+      msgtxt = "There is more than one calibration type of selected source spectra;"
+               " try restricting &quot;Apply Changes To&quot; criteria.";
     
-    WText *msg = new WText( msgtxt, this );
+    WText *msg = new WText( WString::fromUTF8(msgtxt), this );
     msg->addStyleClass( "ConvertToNA" );
     msg->setInline( false );
     
     return;
-  }//if( caltypes.size() != 1 || existing cal if polynomial )
+  }//if( caltypes.size() != 1 || cal is type wanted )
   
   
   string applyToTxt = cal->applyToSummaryTxt();
@@ -206,15 +233,11 @@ ConvertToPolyTool::ConvertToPolyTool( EnergyCalTool *cal, AuxWindow *parent )
   }//if( !applyToTxt.empty() )
   
   
-  const SpecUtils::EnergyCalType origtype = *begin(caltypes);
-  switch( origtype )
+  m_sourceType = *begin(caltypes);
+  switch( m_sourceType )
   {
     case SpecUtils::EnergyCalType::Polynomial:
     case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-    case SpecUtils::EnergyCalType::InvalidEquationType:
-      assert( 0 );
-      break;
-      
     case SpecUtils::EnergyCalType::FullRangeFraction:
     {
       assert( coeforder.size() );
@@ -263,7 +286,7 @@ ConvertToPolyTool::ConvertToPolyTool( EnergyCalTool *cal, AuxWindow *parent )
       m_group->addButton( btn, 3 );
       
       m_group->setSelectedButtonIndex( 0 );
-      m_group->checkedChanged().connect( this, &ConvertToPolyTool::fromLowerChannelEnergiesOptionChanged );
+      m_group->checkedChanged().connect( this, &ConvertCalTypeTool::fromLowerChannelEnergiesOptionChanged );
       
       m_group->setSelectedButtonIndex( 0 );
       WString msgstr = m_group->button(0) ? m_group->button(0)->toolTip() : WString();
@@ -273,7 +296,11 @@ ConvertToPolyTool::ConvertToPolyTool( EnergyCalTool *cal, AuxWindow *parent )
       
       break;
     }//case SpecUtils::EnergyCalType::LowerChannelEdge:
-  }//switch( origtype )
+      
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      assert( 0 );
+    break;
+  }//switch( m_sourceType )
   
   
   WContainerWidget *buttonDiv = nullptr;
@@ -287,12 +314,12 @@ ConvertToPolyTool::ConvertToPolyTool( EnergyCalTool *cal, AuxWindow *parent )
   m_cancel = new WPushButton( "Cancel", buttonDiv );
   m_accept = new WPushButton( "Accept", buttonDiv );
   
-  m_cancel->clicked().connect( boost::bind( &ConvertToPolyTool::handleFinish, this, WDialog::Rejected ) );
-  m_accept->clicked().connect( boost::bind( &ConvertToPolyTool::handleFinish, this, WDialog::Accepted ) );
+  m_cancel->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Rejected ) );
+  m_accept->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Accepted ) );
   
   if( parent )
   {
-    parent->finished().connect( this, &ConvertToPolyTool::handleFinish );
+    parent->finished().connect( this, &ConvertCalTypeTool::handleFinish );
     
     const int w = 600 < viewer->renderedWidth() ? 600 : viewer->renderedWidth();
     //const int h = static_cast<int>(0.8*viewer->renderedHeight());
@@ -303,15 +330,15 @@ ConvertToPolyTool::ConvertToPolyTool( EnergyCalTool *cal, AuxWindow *parent )
     
     parent->centerWindow();
   }//if( parent )
-}//ConvertToPolyTool(...)
+}//ConvertCalTypeTool(...)
   
 
-ConvertToPolyTool::~ConvertToPolyTool()
+ConvertCalTypeTool::~ConvertCalTypeTool()
 {
 }
   
 
-void ConvertToPolyTool::convertLowerChannelEnegies( const size_t ncoeffs,
+void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
                                                     const bool set_cals, string &msgsumm )
 {
   using SpecUtils::EnergyCalibration;
@@ -344,11 +371,30 @@ void ConvertToPolyTool::convertLowerChannelEnegies( const size_t ncoeffs,
         const float chnlwidth = (cal->upper_energy() - cal->lower_energy()) / cal->num_channels();
         
         vector<float> coefs;
-        const double avrgdiff = EnergyCal::fit_poly_from_lower_channel_energies( ncoeffs,
-                                                                          lower_energies, coefs );
+        double avrgdiff = -999;
         
         auto newcal = make_shared<EnergyCalibration>();
-        newcal->set_polynomial( cal->num_channels(), coefs, {} );
+        switch( m_targetType )
+        {
+          case SpecUtils::EnergyCalType::Polynomial:
+          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+            avrgdiff = EnergyCal::fit_poly_from_channel_energies( ncoeffs,
+                                                                        lower_energies, coefs );
+            newcal->set_polynomial( cal->num_channels(), coefs, {} );
+            break;
+            
+          case SpecUtils::EnergyCalType::FullRangeFraction:
+            avrgdiff = EnergyCal::fit_full_range_fraction_from_channel_energies( ncoeffs,
+                                                lower_energies, coefs );
+            newcal->set_full_range_fraction( cal->num_channels(), coefs, {} );
+            break;
+            
+          case SpecUtils::EnergyCalType::LowerChannelEdge:
+          case SpecUtils::EnergyCalType::InvalidEquationType:
+            assert( 0 );
+            break;
+        }//switch( m_targetType )
+        
         updated_cals[cal] = newcal;
         
         if( msgsumm.empty() )
@@ -463,10 +509,10 @@ void ConvertToPolyTool::convertLowerChannelEnegies( const size_t ncoeffs,
       }//for( loop over samples )
     }//for( loop over detectors )
   }//for( loop over applicables )
-}//void ConvertToPolyTool::convertLowerChannelEnegies(...)
+}//void ConvertCalTypeTool::convertLowerChannelEnegies(...)
 
 
-void ConvertToPolyTool::fromLowerChannelEnergiesOptionChanged()
+void ConvertCalTypeTool::fromLowerChannelEnergiesOptionChanged()
 {
   assert( m_group );
   assert( m_fitCoefTxt );
@@ -514,7 +560,7 @@ void ConvertToPolyTool::fromLowerChannelEnergiesOptionChanged()
 }//void fromLowerChannelEnergiesOptionChanged()
 
 
-void ConvertToPolyTool::handleFinish( Wt::WDialog::DialogCode result )
+void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
 {
   using namespace SpecUtils;
   
@@ -524,7 +570,7 @@ void ConvertToPolyTool::handleFinish( Wt::WDialog::DialogCode result )
   switch( result )
   {
     case WDialog::Rejected:
-      cerr << "\nRejected ConvertToPolyTool" << endl;
+      cerr << "\nRejected ConvertCalTypeTool" << endl;
     break;
       
     case WDialog::Accepted:
@@ -558,18 +604,79 @@ void ConvertToPolyTool::handleFinish( Wt::WDialog::DialogCode result )
                 {
                   case EnergyCalType::Polynomial:
                   case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-                    continue;
+                  {
+                    switch( m_targetType )
+                    {
+                      case SpecUtils::EnergyCalType::Polynomial:
+                      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+                        continue;
+                        
+                      case SpecUtils::EnergyCalType::FullRangeFraction:
+                        newcoefs = polynomial_coef_to_fullrangefraction( oldcoefs, nchannel );
+                        break;
+                        
+                      case SpecUtils::EnergyCalType::LowerChannelEdge:
+                        newcoefs = *cal->channel_energies();
+                        break;
+                        
+                      case SpecUtils::EnergyCalType::InvalidEquationType:
+                        assert( 0 );
+                        continue;
+                    }//switch( m_targetType )
+                    break;
+                  }// cal->type() == EnergyCalType::Polynomial
                     
                   case EnergyCalType::FullRangeFraction:
+                  {
+                    switch( m_targetType )
+                    {
+                      case SpecUtils::EnergyCalType::Polynomial:
+                      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+                        newcoefs = fullrangefraction_coef_to_polynomial( oldcoefs, nchannel );
+                        break;
+                        
+                      case SpecUtils::EnergyCalType::FullRangeFraction:
+                        continue;
+                        
+                      case SpecUtils::EnergyCalType::LowerChannelEdge:
+                        newcoefs = *cal->channel_energies();
+                        break;
+                        
+                      case SpecUtils::EnergyCalType::InvalidEquationType:
+                        assert(0);
+                        continue;
+                    }//switch( m_targetType )
                     assert( index == -1 );
-                    newcoefs = fullrangefraction_coef_to_polynomial( oldcoefs, nchannel );
+                    
                     break;
+                  }// cal->type() == EnergyCalType::FullRangeFraction
                     
                   case EnergyCalType::LowerChannelEdge:
+                  {
                     assert( index == 0 || index == 1 );
-                    newcoefs = { cal->lower_energy(),
-                                 (cal->upper_energy() - cal->lower_energy())/nchannel };
+                    switch( m_targetType )
+                    {
+                      case SpecUtils::EnergyCalType::Polynomial:
+                      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+                        newcoefs = { cal->lower_energy(),
+                                     (cal->upper_energy() - cal->lower_energy())/nchannel };
+                        break;
+                        
+                      case SpecUtils::EnergyCalType::FullRangeFraction:
+                        newcoefs = { cal->lower_energy(),
+                                     (cal->upper_energy() - cal->lower_energy()) };
+                        break;
+                        
+                      case SpecUtils::EnergyCalType::LowerChannelEdge:
+                        newcoefs = *cal->channel_energies();
+                        break;
+                        
+                      case SpecUtils::EnergyCalType::InvalidEquationType:
+                        assert(0);
+                        continue;
+                    }//switch( m_targetType )
                     break;
+                  }// cal->type() == EnergyCalType::LowerChannelEdge:
                     
                   case EnergyCalType::InvalidEquationType:
                     assert( 0 );
@@ -578,7 +685,26 @@ void ConvertToPolyTool::handleFinish( Wt::WDialog::DialogCode result )
                 }//switch( cal->type() )
                 
                 auto newcal = make_shared<EnergyCalibration>();
-                newcal->set_polynomial( nchannel, newcoefs, cal->deviation_pairs() );
+                switch( m_targetType )
+                {
+                  case SpecUtils::EnergyCalType::Polynomial:
+                  case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+                    newcal->set_polynomial( nchannel, newcoefs, cal->deviation_pairs() );
+                    break;
+                  
+                  case SpecUtils::EnergyCalType::FullRangeFraction:
+                    newcal->set_full_range_fraction( nchannel, newcoefs, cal->deviation_pairs() );
+                    break;
+                    
+                  case SpecUtils::EnergyCalType::LowerChannelEdge:
+                    newcal->set_lower_channel_energy( nchannel, std::move(newcoefs) );
+                    break;
+                    
+                  case SpecUtils::EnergyCalType::InvalidEquationType:
+                    assert( 0 );
+                    break;
+                }//switch( m_targetType )
+                    
                 pos = updated_cals.insert( {cal,newcal} ).first;
               }//if( we need to create a new calibration )
               
@@ -607,9 +733,9 @@ void ConvertToPolyTool::handleFinish( Wt::WDialog::DialogCode result )
         string dummy;
         const size_t ncoeffs = static_cast<size_t>(index+1);
         convertLowerChannelEnegies( ncoeffs, true, dummy );
-      }//if( convert from FRF or linearize ) / else ( fit polynomial from lower energies )
+      }//if( convert from FRF or linearize ) / else ( fit polynomial/FRF from lower energies )
       
-      cerr << "\nAccepted ConvertToPolyTool" << endl;
+      cerr << "\nAccepted ConvertCalTypeTool" << endl;
       m_cal->refreshGuiFromFiles();
       viewer->refreshDisplayedCharts();
       

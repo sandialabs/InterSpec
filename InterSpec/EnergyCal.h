@@ -96,14 +96,31 @@ double fit_energy_cal_frf( const std::vector<EnergyCal::RecalPeakInfo> &peakinfo
 /** Given the lower channel energies, will determine the best polynomial coeffcients to reproduce
  the binning.
  
- Returns the average absolute value of error (in keV) of each channel.
+ @param ncoeffs The number of coefficents the answer will contain
+ @param lower_channel_energies The lower channel energies to fit to
+ @param coefs The fit coefficients will be placed into this vector
+ @returns the average absolute value of error (in keV) of each channel.
  
  Throws exception on error.
  */
-double fit_poly_from_lower_channel_energies( const size_t ncoeffs,
+double fit_poly_from_channel_energies( const size_t ncoeffs,
+                                       const std::vector<float> &lower_channel_energies,
+                                       std::vector<float> &coefs );
+
+/** Given the lower channel energies, will determine the best full range fraction coeffcients to
+reproduce the binning.
+
+ @param ncoeffs The number of coefficents the answer will contain
+ @param lower_channel_energies The lower channel energies to fit to; assumes the number of gamma
+        channels is one less than the number of entries in this vector.
+ @param coefs The fit coefficients will be placed into this vector
+ @returns the average absolute value of error (in keV) of each channel.
+
+Throws exception on error.
+*/
+double fit_full_range_fraction_from_channel_energies( const size_t ncoeffs,
                                              const std::vector<float> &lower_channel_energies,
                                              std::vector<float> &coefs );
-
 
 
 /** Uses Minuit2 to fit for calibration coefficients.
