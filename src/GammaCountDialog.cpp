@@ -54,7 +54,7 @@ using namespace Wt;
 
 
 GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
-: AuxWindow( "Energy Range Count",
+: AuxWindow( "Energy Range Sum",
              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
               | AuxWindowProperties::SetCloseable
               | AuxWindowProperties::DisableCollapse) ),

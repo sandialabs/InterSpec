@@ -1302,6 +1302,32 @@ void DoseCalcWidget::runtime_sanity_checks()
   areal_density = 10.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
   expected = 134.09E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 111 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  
+  auto checkPrintDose = [=]( double dose, const string answer, const bool useSv ){
+    dose *= useSv ? PhysicalUnits::sievert : PhysicalUnits::rem;
+    dose /= PhysicalUnits::hour;
+    
+    const string value = PhysicalUnits::printToBestEquivalentDoseRateUnits( dose, 2, useSv );
+  
+    if( value != answer )
+      throw runtime_error( "Error printing to dose string; expected '"
+                           + answer + "', but got '" + value + "'" );
+  };//checkPrintDose(...)
+  
+  // The printToBest*(...) functions currently internally use snprintf, with a format flag like
+  //  '%.2f', which behaves a bit different on the different platforms for trailing zeros, so will
+  //  avoid that case for this test - I'm also not sure if rounding is handled different on Windows
+  //  e.g., if “round to nearest and ties to even” or "nearest-even"
+  checkPrintDose( 1.234, "1.23 sv/hr", true );
+  checkPrintDose( 1.234, "1.23 rem/hr", false );
+  checkPrintDose( 8.236, "8.24 sv/hr", true );
+  checkPrintDose( 8.23688E-7, "823.69 nsv/hr", true );
+  checkPrintDose( 8.23688E-5, "82.37 usv/hr", true );
+  checkPrintDose( 8.23688E-2, "82.37 msv/hr", true );
+  checkPrintDose( 8.23688E2, "823.69 sv/hr", true );
+  checkPrintDose( 8.23688E5, "823.69 ksv/hr", true );
+  checkPrintDose( 8.23688E6, "8.24 Msv/hr...", true );
 }//void runtime_sanity_checks()
 
 

@@ -2800,7 +2800,14 @@ void EnergyCalTool::doRefreshFromFiles()
     for( int i = 0; i < 3; ++i )
     {
       if( !specfiles[i] )
+      {
+        //Add a dummy entry into the menu or else the 'm_specTypeMenu->itemAt(i)' call below will
+        //  segfault or not necassarily give the wanted answer.
+        WContainerWidget *detMenuDiv = new WContainerWidget();
+        WMenuItem *item = m_specTypeMenu->addItem( "", detMenuDiv );
+        item->setHidden( true );
         continue;
+      }
       
       const SpecUtils::SpectrumType type = spectypes[i];
       const set<string> detectors = gammaDetectorsForDisplayedSamples(type);

@@ -7086,7 +7086,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   HelpSystem::attachToolTipOn( item,"Allows user to view/edit the file parameters. If ever the application is unable to render activity calculation, use this tool to provide parameters the original file did not provide; <code>InterSpec</code> needs all parameters for activity calculation.", showToolTipInstantly );
   item->triggered().connect( this, &InterSpec::createFileParameterWindow );
 
-  item = popup->addMenuItem( "Energy Range Count" );
+  item = popup->addMenuItem( "Energy Range Sum" );
   HelpSystem::attachToolTipOn( item, "Sums the number of gammas in region of interest (ROI). Can also be accessed by left-click dragging over the ROI while holding both the <kbd><b>ALT</b></kbd> and <kbd><b>SHIFT</b></kbd> keys.", showToolTipInstantly );
   item->triggered().connect( this, &InterSpec::showGammaCountDialog );
   

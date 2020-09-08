@@ -325,7 +325,8 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
   string contents;
   if( viewer )
   {
-    string datadir = Wt::Utils::htmlEncode( viewer->writableDataDirectory() );
+    string datadir;
+    try{ datadir = Wt::Utils::htmlEncode( viewer->writableDataDirectory() ); }catch(...){}
     string staticdir = Wt::Utils::htmlEncode( viewer->staticDataDirectory() );
     
     //SpecUtils::is_absolute_path( staticdir )

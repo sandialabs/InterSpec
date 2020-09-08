@@ -453,6 +453,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
   m_nuclideEdit->setAutoComplete( false );
+  nucInputLabel->setBuddy( m_nuclideEdit );
+  
   
 //  m_nuclideEdit->changed().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
 //  m_nuclideEdit->blurred().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
@@ -504,7 +506,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_ageEdit->setValidator(validator);
   m_ageEdit->setAutoComplete( false );
-
+  ageInputLabel->setBuddy( m_ageEdit );
 
   m_ageEdit->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_ageEdit->blurred().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );

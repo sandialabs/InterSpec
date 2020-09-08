@@ -2128,7 +2128,7 @@ void SpecMeasManager::displayFile( int row,
           {
             warningmsgLevel = max( WarningWidget::WarningMsgLow, warningmsgLevel );
             warningmsg << "File has mutliple spectra, so only the background"
-                          " spectrum was loaded.";
+                          " spectrum has been displayed.";
             selected.clear();
             selected.insert( index.child(sample,0) );
             break;
