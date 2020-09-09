@@ -24,10 +24,15 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include <Wt/WText>
+#include <Wt/WLabel>
+#include <Wt/WTable>
+#include <Wt/WSpinBox>
 #include <Wt/WGroupBox>
+#include <Wt/WTableCell>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WButtonGroup>
@@ -43,6 +48,7 @@
 #include "InterSpec/EnergyCalTool.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/EnergyCalMultiFile.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalAddActions.h"
 
 // Forward declarations
@@ -56,6 +62,8 @@ class ConvertCalTypeTool : public WContainerWidget
 {
   /** The type of calibration to convert to */
   const SpecUtils::EnergyCalType m_targetType;
+ 
+  shared_ptr<vector<MeasToApplyCoefChangeTo>> m_measToChange;
   
   /** The type of calibration we are converting from.
    If input SpecFiles has more than one type than this will be
@@ -75,8 +83,10 @@ class ConvertCalTypeTool : public WContainerWidget
   WPushButton *m_accept;
   
 public:
-  ConvertCalTypeTool( const SpecUtils::EnergyCalType target, EnergyCalTool *cal, AuxWindow *parent );
-  ~ConvertCalTypeTool();
+  ConvertCalTypeTool( const SpecUtils::EnergyCalType target,
+                      shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange,
+                      EnergyCalTool *cal, AuxWindow *parent );
+  virtual ~ConvertCalTypeTool();
   
   void fromLowerChannelEnergiesOptionChanged();
   void convertLowerChannelEnegies( const size_t ncoeffs, const bool set_cals_to, std::string &msg );
@@ -84,6 +94,29 @@ public:
 };//class ConvertCalTypeTool
 
 
+
+class LinearizeCalTool : public WContainerWidget
+{
+  shared_ptr<vector<MeasToApplyCoefChangeTo>> m_measToChange;
+  
+  EnergyCalTool * const m_cal;
+  AuxWindow * const m_parent;
+  
+  /** Number of orignal channels, lower energy, upper energy, number of channels. */
+  map<size_t,tuple<NativeFloatSpinBox *,NativeFloatSpinBox *,WSpinBox *>> m_options;
+  
+  WPushButton *m_cancel;
+  WPushButton *m_accept;
+  
+  bool checkValidInputs();
+  void energyRangeUpdatedCallback();
+  void numberOfChannelsUpdatedCallback();
+public:
+  LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange, EnergyCalTool *cal, AuxWindow *parent );
+  virtual ~LinearizeCalTool();
+  
+  void handleFinish( Wt::WDialog::DialogCode result );
+};//class LinearizeCalTool
 
 
 
@@ -102,6 +135,8 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
   switch( m_actionType )
   {
     case MoreActionsIndex::Linearize:
+      AuxWindow::setWindowTitle( "Linearize Spectrum" );
+      new LinearizeCalTool( m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::Truncate:
@@ -112,12 +147,12 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
       
     case MoreActionsIndex::ConvertToFrf:
       AuxWindow::setWindowTitle( "Convert to Full Range Fraction Calibration" );
-      new ConvertCalTypeTool( SpecUtils::EnergyCalType::FullRangeFraction, m_calibrator, this );
+      new ConvertCalTypeTool( SpecUtils::EnergyCalType::FullRangeFraction, m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::ConvertToPoly:
       AuxWindow::setWindowTitle( "Convert to Polynomial Calibration" );
-      new ConvertCalTypeTool( SpecUtils::EnergyCalType::Polynomial, m_calibrator, this );
+      new ConvertCalTypeTool( SpecUtils::EnergyCalType::Polynomial, m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::MultipleFilesCal:
@@ -146,9 +181,11 @@ EnergyCalAddActionsWindow::~EnergyCalAddActionsWindow()
 
 
 ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetType,
+                                       shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange,
                                       EnergyCalTool *cal, AuxWindow *parent )
   : WContainerWidget(),
     m_targetType( targetType ),
+    m_measToChange( measToChange ),
     m_sourceType( SpecUtils::EnergyCalType::InvalidEquationType ),
     m_cal( cal ),
     m_parent( parent ),
@@ -160,7 +197,10 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
   using SpecUtils::EnergyCalType;
   
   assert( (m_targetType == SpecUtils::EnergyCalType::FullRangeFraction)
-          || (m_targetType == SpecUtils::EnergyCalType::Polynomial) );
+          || (m_targetType == SpecUtils::EnergyCalType::Polynomial)
+          //LowerChannelEdge is untested as of yet, but should work in principle, but why would you do this?
+          //|| (m_targetType == SpecUtils::EnergyCalType::LowerChannelEdge)
+         );
   
   addStyleClass( "ConvertCalTypeTool" );
   
@@ -172,28 +212,30 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
   
   set<size_t> coeforder, nchannels;
   set<SpecUtils::EnergyCalType> caltypes;
-  vector<MeasToApplyCoefChangeTo> applicables = cal->measurementsToApplyCoeffChangeTo();
-  for( const auto &toapplyto : applicables )
+  if( m_measToChange )
   {
-    for( const auto &detname : toapplyto.detectors )
+    for( const auto &toapplyto : *m_measToChange )
     {
-      for( const int sample : toapplyto.sample_numbers )
+      for( const auto &detname : toapplyto.detectors )
       {
-        auto m = toapplyto.meas->measurement( sample, detname );
-        if( !m || !m->energy_calibration() || !m->energy_calibration()->valid()
-           || (m->num_gamma_channels() < 5) )
-          continue;
-        
-        auto type = m->energy_calibration()->type();
-        if( type == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-          type = SpecUtils::EnergyCalType::Polynomial;
+        for( const int sample : toapplyto.sample_numbers )
+        {
+          auto m = toapplyto.meas->measurement( sample, detname );
+          if( !m || !m->energy_calibration() || !m->energy_calibration()->valid()
+             || (m->num_gamma_channels() < 5) )
+            continue;
           
-        nchannels.insert( m->num_gamma_channels() );
-        caltypes.insert( type );
-        coeforder.insert( m->calibration_coeffs().size() );
-      }//for( loop over samples )
-    }//for( loop over detectors )
-  }//for( const auto &m : applicables )
+          auto type = m->energy_calibration()->type();
+          if( type == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+            type = SpecUtils::EnergyCalType::Polynomial;
+          
+          nchannels.insert( m->num_gamma_channels() );
+          caltypes.insert( type );
+          coeforder.insert( m->calibration_coeffs().size() );
+        }//for( loop over samples )
+      }//for( loop over detectors )
+    }//for( const auto &m : applicables )
+  }//if( m_measToChange )
   
   if( (caltypes.size() != 1) || ((*begin(caltypes)) == m_targetType) )
   {
@@ -342,14 +384,18 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
                                                     const bool set_cals, string &msgsumm )
 {
   using SpecUtils::EnergyCalibration;
+  if( !m_measToChange )
+  {
+    assert( 0 );
+    return;
+  }
   
   msgsumm.clear();
   set<shared_ptr<SpecMeas>> shiftedPeaksFor;
   map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
   map<pair<shared_ptr<SpecMeas>,set<int>>, deque<shared_ptr<const PeakDef>>> updated_peaks;
   
-  vector<MeasToApplyCoefChangeTo> applicables = m_cal->measurementsToApplyCoeffChangeTo();
-  for( const auto &toapplyto : applicables )
+  for( const auto &toapplyto : *m_measToChange )
   {
     for( const auto &detname : toapplyto.detectors )
     {
@@ -489,7 +535,7 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
   }//for( const auto &mp : updated_peaks )
   
   
-  for( const auto &toapplyto : applicables )
+  for( const auto &toapplyto : *m_measToChange )
   {
     for( const auto &detname : toapplyto.detectors )
     {
@@ -577,12 +623,17 @@ void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
     {
       const int index = m_group ? m_group->selectedButtonIndex() : -1;
       
+      if( !m_measToChange )
+      {
+        assert( 0 );
+        break;
+      }
+      
       if( index < 2 )
       {
         //Convert from FRF, or linearize spectra that is currently defined by lower energies
         map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
-        vector<MeasToApplyCoefChangeTo> applicables = m_cal->measurementsToApplyCoeffChangeTo();
-        for( const auto &toapplyto : applicables )
+        for( const auto &toapplyto : *m_measToChange )
         {
           for( const auto &detname : toapplyto.detectors )
           {
@@ -746,4 +797,332 @@ void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
   if( m_parent )
     AuxWindow::deleteAuxWindow( m_parent );
 }//void handleFinish(...)
+
+
+
+
+LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange,
+                                    EnergyCalTool *cal, AuxWindow *parent )
+  : WContainerWidget(),
+    m_measToChange( measToChange ),
+    m_cal( cal ),
+    m_parent( parent ),
+    m_options{},
+    m_cancel( nullptr ),
+    m_accept( nullptr )
+{
+  using SpecUtils::EnergyCalType;
+        
+  addStyleClass( "LinearizeCalTool" );
+    
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+    
+  if( parent )
+    parent->stretcher()->addWidget( this, 0, 0  );
+    
+  //Create a mapping that for each unique number of channels, gives the min/max energy of any
+  //  measurements with that energy range
+  map<size_t,std::pair<float,float>> nchannelToRange;
+  if( m_measToChange )
+  {
+    for( const auto &toapplyto : *m_measToChange )
+    {
+      for( const auto &detname : toapplyto.detectors )
+      {
+        for( const int sample : toapplyto.sample_numbers )
+        {
+          auto m = toapplyto.meas->measurement( sample, detname );
+          auto cal = m ? m->energy_calibration() : nullptr;
+          const size_t nchannel = cal ? cal->num_channels() : size_t(0);
+          if( !cal || !cal->valid() || (nchannel < 5) )
+            continue;
+          
+          const float lower = cal->lower_energy();
+          const float upper = cal->upper_energy();
+          
+          const auto pos = nchannelToRange.find(nchannel);
+          if( pos == end(nchannelToRange) )
+          {
+            nchannelToRange.insert( {nchannel,{lower,upper}} );
+          }else
+          {
+            pos->second.first = std::min( pos->second.first, lower );
+            pos->second.second = std::max( pos->second.second, upper );
+          }
+        }//for( loop over samples )
+      }//for( loop over detectors )
+    }//for( const auto &m : applicables )
+  }//if( m_measToChange )
+  
+  if( nchannelToRange.empty() )
+  {
+    if( parent )
+    {
+      auto close = parent->addCloseButtonToFooter();
+      close->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Rejected ) );
+      parent->finished().connect( this, &LinearizeCalTool::handleFinish );
+    }
+    
+    const string msgtxt = "Conversion would not effect any spectra; try selecting more"
+    " &quot;Apply Changes To&quot; criteria.";
+    
+    WText *msg = new WText( WString::fromUTF8(msgtxt), this );
+    msg->addStyleClass( "ConvertToNA" );
+    msg->setInline( false );
+    
+    return;
+  }//if( nchannelToRange.empty() )
+  
+  
+  //Create widgets
+  for( const auto &chanToRange : nchannelToRange )
+  {
+    WTable *table = new WTable( this );
+    table->addStyleClass( "LinearizeInputTbl" );
+    
+    const size_t nchannel = chanToRange.first;
+    const float lower_energy = chanToRange.second.first;
+    const float upper_energy = chanToRange.second.second;
+    
+    const int multiple = (nchannelToRange.size() > 1);
+    if( multiple )
+    {
+      auto cell = table->elementAt(0, 0);
+      cell->setColumnSpan( 2 );
+      string msg = "For " + to_string(nchannel) + " channel spectra:";
+      WText *txt = new WText( WString::fromUTF8(msg), cell );
+      txt->addStyleClass( "NChannelSpecTxt" );
+    }//if( multiple )
+    
+    const int input_nchar = 8;
+    const int input_width_px = 75;
+    
+    auto cell = table->elementAt( 0 + multiple, 0 );
+    auto label = new WLabel( "Lower Energy", cell );
+    label->addStyleClass( "LinearizeLabel" );
+    
+    cell = table->elementAt( 0 + multiple, 1 );
+    NativeFloatSpinBox *lower = new NativeFloatSpinBox( cell );
+    lower->setValue( lower_energy );
+    lower->setRange( -3000.0f, upper_energy );
+    lower->setTextSize( input_nchar ); //doesnt seem to have an effect, but is showing up in the DOM
+    lower->setWidth( input_width_px );
+    lower->valueChanged().connect( this, &LinearizeCalTool::energyRangeUpdatedCallback );
+    label->setBuddy( lower );
+    
+    cell = table->elementAt( 1 + multiple, 0 );
+    label = new WLabel( "Upper Energy", cell );
+    label->addStyleClass( "LinearizeLabel" );
+    
+    cell = table->elementAt( 1 + multiple, 1 );
+    NativeFloatSpinBox *upper = new NativeFloatSpinBox( cell );
+    upper->setValue( upper_energy );
+    upper->setRange( lower_energy, 32000000.0f );
+    upper->setTextSize( input_nchar );  //doesnt seem to have an effect, but is showing up in the DOM
+    upper->setWidth( input_width_px );
+    upper->valueChanged().connect( this, &LinearizeCalTool::energyRangeUpdatedCallback );
+    label->setBuddy( upper );
+    
+    
+    cell = table->elementAt( 2 + multiple, 0);
+    label = new WLabel( "Num Channels", cell );
+    label->addStyleClass( "LinearizeLabel" );
+    
+    cell = table->elementAt( 2 + multiple, 1 );
+    WSpinBox *nchannelSB = new WSpinBox( cell );
+    nchannelSB->setMinimum( 5 );
+    nchannelSB->setMaximum( 65536 );
+    nchannelSB->setValue( static_cast<int>(nchannel) );
+    //nchannelSB->setNativeControl( true );
+    //nchannelSB->removeStyleClass( "Wt-spinbox" ); //
+    nchannelSB->setTextSize( input_nchar );
+    nchannelSB->setWidth( input_width_px - 16 );
+    nchannelSB->valueChanged().connect( this, &LinearizeCalTool::numberOfChannelsUpdatedCallback );
+    label->setBuddy( nchannelSB );
+    
+    m_options[nchannel] = { lower, upper, nchannelSB };
+  }//for( const auto &ranges : nchannelToRange )
+  
+  string applyToTxt = cal->applyToSummaryTxt();
+  if( !applyToTxt.empty() )
+  {
+    applyToTxt = "Changes will be applied to: " + applyToTxt;
+    WText *msg = new WText( applyToTxt, this );
+    msg->addStyleClass( "ConvertToApplieTo" );
+    msg->setInline( false );
+  }//if( !applyToTxt.empty() )
+  
+  WContainerWidget *buttonDiv = nullptr;
+  if( parent )
+    buttonDiv = parent->footer();
+  else
+    buttonDiv = new WContainerWidget( this );
+  
+  //AuxWindow::addHelpInFooter( buttonDiv, "linearize-dialog" );
+  
+  m_cancel = new WPushButton( "Cancel", buttonDiv );
+  m_accept = new WPushButton( "Accept", buttonDiv );
+  
+  m_cancel->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Rejected ) );
+  m_accept->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Accepted ) );
+  
+  if( parent )
+  {
+    parent->finished().connect( this, &LinearizeCalTool::handleFinish );
+    
+    const int w = 600 < viewer->renderedWidth() ? 600 : viewer->renderedWidth();
+    //const int h = static_cast<int>(0.8*viewer->renderedHeight());
+    //parent->resizeWindow( w, h );
+    parent->setWidth( w );
+    
+    parent->rejectWhenEscapePressed();
+    
+    parent->centerWindow();
+  }//if( parent )
+}//ConvertCalTypeTool(...)
+  
+  
+LinearizeCalTool::~LinearizeCalTool()
+{
+    
+}
+
+
+bool LinearizeCalTool::checkValidInputs()
+{
+  // \TODO: indicate to user what is wrong
+  bool allValid = true;
+  
+  for( auto &m : m_options )
+  {
+    const size_t nOrigChann = m.first;
+    const float lower = get<0>(m.second)->value();
+    const float upper = get<1>(m.second)->value();
+    const size_t nCurrentChan = get<2>(m.second)->value();
+    
+    if( nCurrentChan < 5 || lower >= upper )
+    {
+      allValid = false;
+      
+      auto viewer = InterSpec::instance();
+      if( viewer )
+      {
+        string msg = "The input for spectra with " + to_string(nOrigChann)
+                     + " channels are invalid.  You must have at least 6 channels and upper energy"
+                       " must be greater than lower energy";
+        viewer->logMessage( WString::fromUTF8(msg), "", 2 );
+      }
+    }//if( nCurrentChan < 5 || lower >= upper )
+  }//for( auto &m : m_options )
+  
+  return allValid;
+}//void checkValidInputs()
+
+
+void LinearizeCalTool::energyRangeUpdatedCallback()
+{
+  m_accept->setEnabled( checkValidInputs() );
+}//void energyRangeUpdatedCallback()
+  
+  
+void LinearizeCalTool::numberOfChannelsUpdatedCallback()
+{
+  m_accept->setEnabled( checkValidInputs() );
+}//void numberOfChannelsUpdatedCallback()
+  
+  
+void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
+{
+  using namespace SpecUtils;
+  
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  
+  switch( result )
+  {
+    case WDialog::Rejected:
+      cerr << "\nRejected ConvertCalTypeTool" << endl;
+      break;
+      
+    case WDialog::Accepted:
+    {
+      cout << "\nAccepted LinearizeCalTool" << endl;
+      
+      if( !m_measToChange )
+      {
+        assert( 0 );
+        break;
+      }
+      
+      if( !checkValidInputs() || !m_measToChange )
+        break;  //shouldnt ever happen
+      
+      map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
+      for( const auto &toapplyto : *m_measToChange )
+      {
+        for( const auto &detname : toapplyto.detectors )
+        {
+          for( const int sample : toapplyto.sample_numbers )
+          {
+            auto m = toapplyto.meas->measurement( sample, detname );
+            auto cal = m ? m->energy_calibration() : nullptr;
+            const size_t nchannel = cal ? cal->num_channels() : size_t(0);
+            if( !cal || !cal->valid() || (nchannel < 5) )
+              continue;
+            
+            auto pos = updated_cals.find(cal);
+            if( pos == end(updated_cals) )
+            {
+              if( !m_options.count(nchannel) )
+              {
+#if( PERFORM_DEVELOPER_CHECKS )
+                log_developer_error( __func__, "Unexpected failure to find linearization info for"
+                                               " a nchhannel" );
+#endif
+                continue;
+              }//if( !m_options.count(nchannel) )
+              
+              const size_t nchan = static_cast<size_t>( get<2>(m_options[nchannel])->value() );
+              const float lower = get<0>(m_options[nchannel])->value();
+              const float upper = get<1>(m_options[nchannel])->value();
+              
+              auto newcal = make_shared<EnergyCalibration>();
+              
+              try
+              {
+                newcal->set_polynomial( nchan, {lower,(upper-lower)/nchan}, {} );
+              }catch( std::exception &e ) //Shouldnt ever actually happen, but JIC
+              {
+                if( viewer )
+                  viewer->logMessage( "Error creating new cal: " + string(e.what()), "", 3 );
+                continue;
+              }//try / catch to create new calibration
+              
+              pos = updated_cals.insert( {cal,newcal} ).first;
+            }//if( we need to create a new cal )
+            
+            try
+            {
+              toapplyto.meas->rebin_measurement( pos->second, m );
+            }catch( std::exception &e )  //Shouldnt ever actually happen, but JIC
+            {
+              if( viewer )
+                viewer->logMessage( "Error rebinning whiel linearizing: " + string(e.what()), "", 3 );
+            }//try / catch to create new calibration
+          }//for( const int sample : toapplyto.sample_numbers )
+        }//for( const auto &detname : toapplyto.detectors )
+      }//for( const auto &toapplyto : *m_measToChange )
+      
+      m_cal->refreshGuiFromFiles();
+      viewer->refreshDisplayedCharts();
+      
+      break;
+    }//case WDialog::Accepted:
+  }//switch( result )
+  
+  if( m_parent )
+    AuxWindow::deleteAuxWindow( m_parent );
+}//void handleFinish( WDialog::DialogCode result )
+
 

@@ -36,8 +36,15 @@ struct MeasToApplyCoefChangeTo;
 enum class MoreActionsIndex : int;
 
 
-
-/**
+/** This class represents the pop-up window that gets shown when the user clicks one of the
+ "More Actions" links on the "Energy Calibration" tab.
+ 
+ \TODO: The design of this class, or rather the classes it instantiates, are not good.  Basically
+ for each #MoreActionsIndex a different class is created to handle things - but currently there is a
+ kinda loose, poorly defined, ragged, coupling between these classes and #EnergyCalAddActionsWindow
+ which leads to repeated code.  This is a place where a common sub-class for each of the used
+ classes would probably clean things up quite a bit, although the behaviour of #EnergyCalMultiFile
+ does throw things off a little.
  */
 class EnergyCalAddActionsWindow : public AuxWindow
 {

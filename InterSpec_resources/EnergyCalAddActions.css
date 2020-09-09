@@ -11,7 +11,7 @@
 
 .ConvertToApplieTo
 {
-  
+  margin-top: 5px;
 }
 
 .ConvertToMsg
@@ -23,3 +23,31 @@
 {
   
 }
+
+
+.LinearizeCalTool
+{
+  
+}
+
+.LinearizeInputTbl
+{
+  
+}
+
+.LinearizeInputTbl > tbody > tr
+{
+}
+
+.LinearizeInputTbl > tbody > tr > td
+{
+  padding-right: 8px;
+  padding-bottom: 8px;
+}
+
+.NChannelSpecTxt
+{
+  
+}
+
+
