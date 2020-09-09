@@ -54,3 +54,25 @@
 {
   
 }
+
+.TruncateChannelsTool
+{
+  
+}
+
+.TruncateKeepOverflow
+{
+  float: right;
+  margin-right: 25px;
+}
+
+.TruncateApplyTo
+{
+  margin-top: 25px;
+  margin-bottom: 5px;
+}
+
+.TruncateNote
+{
+  font-style: italic;
+}

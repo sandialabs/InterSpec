@@ -31,6 +31,7 @@
 #include <Wt/WLabel>
 #include <Wt/WTable>
 #include <Wt/WSpinBox>
+#include <Wt/WCheckBox>
 #include <Wt/WGroupBox>
 #include <Wt/WTableCell>
 #include <Wt/WGridLayout>
@@ -142,6 +143,36 @@ public:
 };//class CombineChannelsTool
 
 
+class TruncateChannelsTool : public WContainerWidget
+{
+  shared_ptr<vector<MeasToApplyCoefChangeTo>> m_measToChange;
+  
+  EnergyCalTool * const m_cal;
+  AuxWindow * const m_parent;
+  
+  /** number channels: {lower channel, lower energy, upper channel, upper energy}.
+   
+   If mutliple calibrations are defined for a number of channels, then the energies will be nullptr.
+   */
+  map<size_t,tuple<WSpinBox *,WLabel *,WSpinBox *,WLabel *>> m_options;
+  
+  WCheckBox *m_keepOverflow;
+  
+  WPushButton *m_cancel;
+  WPushButton *m_accept;
+  
+  bool validateInput();
+  void userUpdatedChannelCallback( WSpinBox *w );
+public:
+  TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange,
+                       EnergyCalTool *cal, AuxWindow *parent );
+  virtual ~TruncateChannelsTool();
+  
+  void handleFinish( Wt::WDialog::DialogCode result );
+};//class CombineChannelsTool
+
+
+
 
 
 EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex actionType,
@@ -163,6 +194,8 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
       break;
       
     case MoreActionsIndex::Truncate:
+      AuxWindow::setWindowTitle( "Truncate Gamma Channels" );
+      new TruncateChannelsTool( m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::CombineChannels:
@@ -646,6 +679,8 @@ void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
       
     case WDialog::Accepted:
     {
+      cerr << "\nAccepted ConvertCalTypeTool" << endl;
+      
       const int index = m_group ? m_group->selectedButtonIndex() : -1;
       
       if( !m_measToChange )
@@ -811,7 +846,6 @@ void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
         convertLowerChannelEnegies( ncoeffs, true, dummy );
       }//if( convert from FRF or linearize ) / else ( fit polynomial/FRF from lower energies )
       
-      cerr << "\nAccepted ConvertCalTypeTool" << endl;
       m_cal->refreshGuiFromFiles();
       viewer->refreshDisplayedCharts();
       
@@ -1067,7 +1101,7 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
   switch( result )
   {
     case WDialog::Rejected:
-      cerr << "\nRejected ConvertCalTypeTool" << endl;
+      cerr << "\nRejected LinearizeCalTool" << endl;
       break;
       
     case WDialog::Accepted:
@@ -1273,12 +1307,12 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
   switch( result )
   {
     case WDialog::Rejected:
-      cerr << "\nRejected ConvertCalTypeTool" << endl;
+      cerr << "\nRejected CombineChannelsTool" << endl;
       break;
       
     case WDialog::Accepted:
     {
-      cout << "\nAccepted LinearizeCalTool" << endl;
+      cout << "\nAccepted CombineChannelsTool" << endl;
       
       if( !m_measToChange )
       {
@@ -1346,4 +1380,374 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
   if( m_parent )
     AuxWindow::deleteAuxWindow( m_parent );
 }//void handleFinish( Wt::WDialog::DialogCode result )
+
+
+
+TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange,
+                       EnergyCalTool *cal, AuxWindow *parent )
+: WContainerWidget(),
+  m_measToChange( measToChange ),
+  m_cal( cal ),
+  m_parent( parent ),
+  m_options{},
+  m_keepOverflow( nullptr ),
+  m_cancel( nullptr ),
+  m_accept( nullptr )
+{
+  using SpecUtils::EnergyCalType;
+        
+  addStyleClass( "TruncateChannelsTool" );
+    
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+    
+  if( parent )
+    parent->stretcher()->addWidget( this, 0, 0  );
+    
+  //Create a mapping that for each unique number of channels, gives the min/max energy of any
+  //  measurements with that energy range
+  map<size_t,set<shared_ptr<const SpecUtils::EnergyCalibration>>> nChannelToCals;
+  if( m_measToChange )
+  {
+    for( const auto &toapplyto : *m_measToChange )
+    {
+      for( const auto &detname : toapplyto.detectors )
+      {
+        for( const int sample : toapplyto.sample_numbers )
+        {
+          auto m = toapplyto.meas->measurement( sample, detname );
+          auto cal = m ? m->energy_calibration() : nullptr;
+          const size_t nchannel = cal ? cal->num_channels() : size_t(0);
+          if( cal && cal->valid() && (nchannel >= 5) )
+            nChannelToCals[nchannel].insert( cal );
+        }//for( loop over samples )
+      }//for( loop over detectors )
+    }//for( const auto &m : applicables )
+  }//if( m_measToChange )
+  
+  if( nChannelToCals.empty() )
+  {
+    if( parent )
+    {
+      auto close = parent->addCloseButtonToFooter();
+      close->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Rejected ) );
+      parent->finished().connect( this, &TruncateChannelsTool::handleFinish );
+    }
+    
+    const string msgtxt = "Truncations would not effect any spectra; try selecting more"
+    " &quot;Apply Changes To&quot; criteria.";
+    
+    WText *msg = new WText( WString::fromUTF8(msgtxt), this );
+    msg->addStyleClass( "ConvertToNA" );
+    msg->setInline( false );
+    
+    return;
+  }//if( nchannelToRange.empty() )
+  
+  
+  //Create widgets
+  for( const auto &chanToCals : nChannelToCals )
+  {
+    WTable *table = new WTable( this );
+    table->addStyleClass( "LinearizeInputTbl" );
+    
+    const size_t nchannel = chanToCals.first;
+    const set<shared_ptr<const SpecUtils::EnergyCalibration>> &cals = chanToCals.second;
+    
+    const int multiple = (nChannelToCals.size() > 1);
+    if( multiple )
+    {
+      auto cell = table->elementAt(0, 0);
+      cell->setColumnSpan( (cals.size() > 1) ? 2 : 3 );
+      string msg = "For " + to_string(nchannel) + " channel spectra:";
+      WText *txt = new WText( WString::fromUTF8(msg), cell );
+      txt->addStyleClass( "NChannelSpecTxt" );
+    }//if( multiple )
+    
+    size_t maxChann = 1;
+    for( const auto &c : cals )
+      maxChann = std::max( maxChann, c->num_channels() );
+    
+    const int input_nchar = 8;
+    const int input_width_px = 75;
+    
+    auto cell = table->elementAt( 0 + multiple, 0 );
+    auto label = new WLabel( "First Channel To Keep", cell );
+    label->addStyleClass( "LinearizeLabel" );
+    
+    cell = table->elementAt( 0 + multiple, 1 );
+    WSpinBox *lower = new WSpinBox( cell );
+    lower->setValue( 0 );
+    lower->setRange( 0, static_cast<int>(maxChann - 1) );
+    lower->setTextSize( input_nchar ); //doesnt seem to have an effect, but is showing up in the DOM
+    lower->setWidth( input_width_px );
+    lower->valueChanged().connect( boost::bind(&TruncateChannelsTool::userUpdatedChannelCallback, this, lower) );
+    label->setBuddy( lower );
+    
+    cell = table->elementAt( 1 + multiple, 0 );
+    label = new WLabel( "Last Channel To Keep", cell );
+    label->addStyleClass( "LinearizeLabel" );
+    
+    cell = table->elementAt( 1 + multiple, 1 );
+    WSpinBox *upper = new WSpinBox( cell );
+    upper->setValue( static_cast<int>(maxChann - 1) );
+    upper->setRange( 0, static_cast<int>(maxChann - 1) );
+    upper->setTextSize( input_nchar ); //doesnt seem to have an effect, but is showing up in the DOM
+    upper->setWidth( input_width_px );
+    upper->valueChanged().connect( boost::bind(&TruncateChannelsTool::userUpdatedChannelCallback, this, upper) );
+    label->setBuddy( upper );
+    
+    
+    WLabel *lowerEnergy = nullptr, *upperEnergy = nullptr;
+    if( cals.size() == 1 )
+    {
+      cell = table->elementAt( 0 + multiple, 2 );
+      lowerEnergy = new WLabel( "", cell );
+      
+      cell = table->elementAt( 1 + multiple, 2 );
+      upperEnergy = new WLabel( "", cell );
+    }//if( cals.size() == 1 )
+  
+    m_options[nchannel] = { lower, lowerEnergy, upper, upperEnergy };
+  }//for( const auto &ranges : nchannelToRange )
+  
+  m_keepOverflow = new WCheckBox( "Keep overflow counts", this );
+  m_keepOverflow->addStyleClass( "TruncateKeepOverflow" );
+  m_keepOverflow->setToolTip( "If selected, all counts from the discarded channels will be added to"
+                              " either the new first or last channel." );
+  
+  string applyToTxt = cal->applyToSummaryTxt();
+  if( !applyToTxt.empty() )
+  {
+    applyToTxt = "Changes will be applied to: " + applyToTxt;
+    WText *msg = new WText( applyToTxt, this );
+    msg->addStyleClass( "TruncateApplyTo  " );
+    msg->setInline( false );
+  }//if( !applyToTxt.empty() )
+  
+  WText *truncNote = new WText( "Note that the first channel is channel 0.", this );
+  truncNote->addStyleClass( "TruncateNote" );
+  if( applyToTxt.empty() )
+    truncNote->addStyleClass( "TruncateApplyTo" );
+  truncNote->setInline( false );
+  
+  validateInput();
+  
+  WContainerWidget *buttonDiv = nullptr;
+  if( parent )
+    buttonDiv = parent->footer();
+  else
+    buttonDiv = new WContainerWidget( this );
+  
+  //AuxWindow::addHelpInFooter( buttonDiv, "linearize-dialog" );
+  
+  m_cancel = new WPushButton( "Cancel", buttonDiv );
+  m_accept = new WPushButton( "Accept", buttonDiv );
+  
+  m_cancel->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Rejected ) );
+  m_accept->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Accepted ) );
+  
+  if( parent )
+  {
+    const int w = ((600 < viewer->renderedWidth()) ? 600 : viewer->renderedWidth());
+    parent->setWidth( w );
+    parent->rejectWhenEscapePressed();
+    parent->centerWindow();
+    parent->finished().connect( this, &TruncateChannelsTool::handleFinish );
+  }//if( parent )
+}//TruncateChannelsTool constructor
+
+
+TruncateChannelsTool::~TruncateChannelsTool()
+{
+}
+  
+
+bool TruncateChannelsTool::validateInput()
+{
+  bool valid = true;
+  for( const auto &option : m_options )
+  {
+    const size_t nchannel = option.first;
+    WSpinBox *lowerChan = get<0>(option.second);
+    WLabel *lowerEnergy = get<1>(option.second);
+    WSpinBox *upperChan = get<2>(option.second);
+    WLabel *upperEnergy = get<3>(option.second);
+  
+    if( lowerChan->value() < 0 )
+      lowerChan->setValue( 0 );
+    if( lowerChan->value() >= static_cast<int>(nchannel) )
+      lowerChan->setValue( static_cast<int>(nchannel - 1) );
+    
+    if( upperChan->value() < 0 )
+      upperChan->setValue( 0 );
+    if( upperChan->value() >= static_cast<int>(nchannel) )
+      upperChan->setValue( static_cast<int>(nchannel - 1) );
+    
+    if( upperChan->value() < lowerChan->value() )
+    {
+      const int oldlow = lowerChan->value();
+      const int oldup = upperChan->value();
+      lowerChan->setValue( oldup );
+      upperChan->setValue( oldlow );
+    }
+    
+    const int lowchan = lowerChan->value();
+    const int upchan = upperChan->value();
+    
+    assert( lowchan >= 0 );
+    assert( upchan >= 0 );
+    
+    if( (upchan - lowchan) < 6 )
+      valid = false;
+    
+    if( (lowerEnergy || upperEnergy) && m_measToChange )
+    {
+      bool found = false;
+      for( const auto &toapplyto : *m_measToChange )
+      {
+        for( const auto &detname : toapplyto.detectors )
+        {
+          if( found )
+            break;
+          
+          for( const int sample : toapplyto.sample_numbers )
+          {
+            auto m = toapplyto.meas->measurement( sample, detname );
+            auto cal = m ? m->energy_calibration() : nullptr;
+            const size_t thisnchannel = cal ? cal->num_channels() : size_t(0);
+            if( thisnchannel && (thisnchannel == nchannel) )
+            {
+              found = true;
+              const float leftEnergy = cal->energy_for_channel(lowchan);
+              const float rightEnergy = cal->energy_for_channel(upchan + 1);
+              
+              char buffer[128];
+              snprintf( buffer, sizeof(buffer), "%.1f keV", leftEnergy );
+              if( lowerEnergy )
+                lowerEnergy->setText( buffer );
+              
+              snprintf( buffer, sizeof(buffer), "%.1f keV", rightEnergy );
+              if( upperEnergy )
+                upperEnergy->setText( buffer );
+              break;
+            }//if( we found the calibration we want )
+          }//for( loop over samples )
+        }//for( loop over detectors )
+      }//for( const auto &m : applicables )
+    }//if( (lowerChan || upperChan) && m_measToChange )
+  }//for( const auto &option : m_options )
+  
+  if( !valid )
+  {
+    InterSpec *viewer = InterSpec::instance();
+    assert( viewer );
+    viewer->logMessage( "You can not truncate to fewer than 6 channels.", "", 2 );
+  }//if( !valid )
+  
+  return valid;
+}//bool validateInput()
+
+
+void TruncateChannelsTool::userUpdatedChannelCallback( WSpinBox *w )
+{
+  const bool valid = validateInput();
+  m_accept->setEnabled( valid );
+}//void userUpdatedChannelCallback( WSpinBox *w )
+
+
+void TruncateChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
+{
+  using namespace SpecUtils;
+  
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  
+  switch( result )
+  {
+    case WDialog::Rejected:
+      cerr << "\nRejected TruncateChannelsTool" << endl;
+      break;
+      
+    case WDialog::Accepted:
+    {
+      cout << "\nAccepted TruncateChannelsTool" << endl;
+      
+      if( !m_measToChange )
+      {
+        assert( 0 );
+        break;
+      }
+      
+      const bool valid = validateInput();
+      if( !valid )
+      {
+        viewer->logMessage( "Input wasnt valid; not applying changes", "", 2 );
+        break;
+      }
+      
+      const bool keepOverflow = m_keepOverflow->isChecked();
+      
+      map< shared_ptr<const EnergyCalibration>, shared_ptr<const EnergyCalibration> > updated_cals;
+      for( const auto &toapplyto : *m_measToChange )
+      {
+        for( const auto &detname : toapplyto.detectors )
+        {
+          for( const int sample : toapplyto.sample_numbers )
+          {
+            auto m = toapplyto.meas->measurement( sample, detname );
+            auto cal = m ? m->energy_calibration() : nullptr;
+            const size_t nchannel = cal ? cal->num_channels() : size_t(0);
+            if( nchannel < 5 )
+              continue;
+            
+            const auto pos = m_options.find(nchannel);
+            if( pos == end(m_options) )
+            {
+#if( PERFORM_DEVELOPER_CHECKS )
+              log_developer_error( __func__, "Unexpectedly didnt get energy cal for truncating" );
+#endif
+              continue;
+            }//if( insanity happens )
+            
+            WSpinBox *lower = get<0>(pos->second);
+            WSpinBox *upper = get<2>(pos->second);
+            assert( lower );
+            assert( upper );
+            
+            const size_t first = static_cast<size_t>( std::max( lower->value(), 0 ) );
+            const size_t last = static_cast<size_t>( std::max( upper->value(), 0 ) );
+            
+            if( (first == 0) && ((last+1) == static_cast<int>(nchannel)) )
+              continue;
+            
+            try
+            {
+              toapplyto.meas->truncate_gamma_channels( first, last, keepOverflow, m );
+            }catch( std::exception &e )
+            {
+              viewer->logMessage( "Error applying truncation: " + string(e.what()), "", 2 );
+              continue;
+            }
+            
+            auto newcalpos = updated_cals.find( cal );
+            if( newcalpos == end(updated_cals) )
+              updated_cals[cal] = m->energy_calibration();
+            else
+              toapplyto.meas->set_energy_calibration( newcalpos->second, m );
+          }//for( loop over samples )
+        }//for( loop over detectors )
+      }//for( const auto &m : applicables )
+      
+      
+      m_cal->refreshGuiFromFiles();
+      viewer->refreshDisplayedCharts();
+      
+      break;
+    }//case WDialog::Accepted:
+  }//switch( result )
+  
+  if( m_parent )
+    AuxWindow::deleteAuxWindow( m_parent );
+};//handleFinish(...)
 
