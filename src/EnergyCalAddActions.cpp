@@ -112,11 +112,34 @@ class LinearizeCalTool : public WContainerWidget
   void energyRangeUpdatedCallback();
   void numberOfChannelsUpdatedCallback();
 public:
-  LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange, EnergyCalTool *cal, AuxWindow *parent );
+  LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange,
+                    EnergyCalTool *cal, AuxWindow *parent );
   virtual ~LinearizeCalTool();
   
   void handleFinish( Wt::WDialog::DialogCode result );
 };//class LinearizeCalTool
+
+
+class CombineChannelsTool : public WContainerWidget
+{
+  shared_ptr<vector<MeasToApplyCoefChangeTo>> m_measToChange;
+  
+  EnergyCalTool * const m_cal;
+  AuxWindow * const m_parent;
+  
+  WSpinBox *m_ncombine;
+  
+  WPushButton *m_cancel;
+  WPushButton *m_accept;
+  
+  void ncombineUpdatedCallback();
+public:
+  CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange,
+                       EnergyCalTool *cal, AuxWindow *parent );
+  virtual ~CombineChannelsTool();
+  
+  void handleFinish( Wt::WDialog::DialogCode result );
+};//class CombineChannelsTool
 
 
 
@@ -143,6 +166,8 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
       break;
       
     case MoreActionsIndex::CombineChannels:
+      AuxWindow::setWindowTitle( "Combine Gamma Channels" );
+      new CombineChannelsTool( m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::ConvertToFrf:
@@ -1125,4 +1150,200 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
     AuxWindow::deleteAuxWindow( m_parent );
 }//void handleFinish( WDialog::DialogCode result )
 
+
+CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange,
+                       EnergyCalTool *cal, AuxWindow *parent )
+: WContainerWidget(),
+    m_measToChange( measToChange ),
+    m_cal( cal ),
+    m_parent( parent ),
+    m_ncombine( nullptr ),
+    m_cancel( nullptr ),
+    m_accept( nullptr )
+{
+  using SpecUtils::EnergyCalType;
+        
+  addStyleClass( "CombineChannelsTool" );
+    
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+    
+  if( parent )
+    parent->stretcher()->addWidget( this, 0, 0  );
+    
+  size_t maxcombine = 1024;
+  if( m_measToChange )
+  {
+    for( const auto &toapplyto : *m_measToChange )
+    {
+      for( const auto &detname : toapplyto.detectors )
+      {
+        for( const int sample : toapplyto.sample_numbers )
+        {
+          auto m = toapplyto.meas->measurement( sample, detname );
+          auto cal = m ? m->energy_calibration() : nullptr;
+          const size_t nchannel = cal ? cal->num_channels() : size_t(0);
+          if( cal && cal->valid() && (nchannel >= 5) )
+            maxcombine = std::min( maxcombine, nchannel/5 );
+        }//for( const int sample : toapplyto.sample_numbers )
+      }//for( const auto &detname : toapplyto.detectors )
+    }//for( const auto &toapplyto : *m_measToChange )
+  }//if( m_measToChange )
+  
+  //Create widgets
+  WText *txt = new WText( "This will combine the successive subsequent channels together", this );
+  txt->setInline( false );
+  txt->setPadding( 5, Wt::Side::Bottom );
+  
+  WLabel *label = new WLabel( "Number of channels to combine:", this );
+  label->setMargin( 5, Wt::Side::Right );
+  m_ncombine = new WSpinBox( this );
+  m_ncombine->setValue( 1 );
+  m_ncombine->setRange( 1, maxcombine );
+  m_ncombine->valueChanged().connect( this, &CombineChannelsTool::ncombineUpdatedCallback );
+  
+  string applyToTxt = cal->applyToSummaryTxt();
+  if( !applyToTxt.empty() )
+  {
+    applyToTxt = "Changes will be applied to: " + applyToTxt;
+    WText *msg = new WText( applyToTxt, this );
+    msg->addStyleClass( "ConvertToApplieTo" );
+    msg->setInline( false );
+  }//if( !applyToTxt.empty() )
+  
+  WContainerWidget *buttonDiv = nullptr;
+  if( parent )
+    buttonDiv = parent->footer();
+  else
+    buttonDiv = new WContainerWidget( this );
+  
+  //AuxWindow::addHelpInFooter( buttonDiv, "combine-channels-dialog" );
+  
+  m_cancel = new WPushButton( "Cancel", buttonDiv );
+  m_accept = new WPushButton( "Accept", buttonDiv );
+  
+  m_cancel->clicked().connect( boost::bind( &CombineChannelsTool::handleFinish, this, WDialog::Rejected ) );
+  m_accept->clicked().connect( boost::bind( &CombineChannelsTool::handleFinish, this, WDialog::Accepted ) );
+  
+  if( parent )
+  {
+    parent->finished().connect( this, &CombineChannelsTool::handleFinish );
+    
+    const int w = 600 < viewer->renderedWidth() ? 600 : viewer->renderedWidth();
+    //const int h = static_cast<int>(0.8*viewer->renderedHeight());
+    //parent->resizeWindow( w, h );
+    parent->setWidth( w );
+    parent->rejectWhenEscapePressed();
+    parent->centerWindow();
+  }//if( parent )
+}//CombineChannelsTool constructor
+  
+
+
+
+CombineChannelsTool::~CombineChannelsTool()
+{
+}
+
+void CombineChannelsTool::ncombineUpdatedCallback()
+{
+  switch( m_ncombine->validate() )
+  {
+    case Wt::WValidator::Invalid:
+      m_accept->disable();
+      break;
+      
+    case Wt::WValidator::InvalidEmpty:
+      m_ncombine->setValue( 1 );
+      
+    case Wt::WValidator::Valid:
+      m_accept->enable();
+      break;
+  }//switch( m_ncombine->validate() )
+}//void ncombineUpdatedCallback()
+  
+
+void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
+{
+  using namespace SpecUtils;
+  
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  
+  switch( result )
+  {
+    case WDialog::Rejected:
+      cerr << "\nRejected ConvertCalTypeTool" << endl;
+      break;
+      
+    case WDialog::Accepted:
+    {
+      cout << "\nAccepted LinearizeCalTool" << endl;
+      
+      if( !m_measToChange )
+      {
+        assert( 0 );
+        break;
+      }
+      
+      int ncombine = 1;
+      switch( m_ncombine->validate() )
+      {
+        case Wt::WValidator::Invalid:
+        case Wt::WValidator::InvalidEmpty:
+          break;
+          
+        case Wt::WValidator::Valid:
+          ncombine = m_ncombine->value();
+          break;
+      }//switch( m_ncombine->validate() )
+      
+      if( ncombine <= 1 )
+      {
+        viewer->logMessage( "Not combining channels; invalid input", "", 2 );
+        break;
+      }
+      
+      map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
+      for( const auto &toapplyto : *m_measToChange )
+      {
+        for( const auto &detname : toapplyto.detectors )
+        {
+          for( const int sample : toapplyto.sample_numbers )
+          {
+            auto m = toapplyto.meas->measurement( sample, detname );
+            auto oldcal = m ? m->energy_calibration() : nullptr;
+            const size_t nchannel = oldcal ? oldcal->num_channels() : size_t(0);
+            if( !oldcal || !oldcal->valid() || (nchannel < 5) )
+              continue;
+            
+            try
+            {
+              toapplyto.meas->combine_gamma_channels( ncombine, m );
+              
+              // Make sure Measurements that shared a calibration beforehand, also share one now.
+              auto pos = updated_cals.find(oldcal);
+              if( pos == end(updated_cals) )
+                updated_cals[oldcal] = m->energy_calibration();
+              else
+                toapplyto.meas->set_energy_calibration( pos->second, m );
+            }catch( std::exception &e )
+            {
+              viewer->logMessage( "Error combining channels: " + string(e.what()), "", 3 );
+              continue;
+            }//try / catch
+          }//for( const int sample : toapplyto.sample_numbers )
+        }//for( const auto &detname : toapplyto.detectors )
+      }//for( const auto &toapplyto : *m_measToChange )
+      
+      m_cal->refreshGuiFromFiles();
+      viewer->refreshDisplayedCharts();
+      
+      break;
+    }//case WDialog::Accepted:
+  }//switch( result )
+  
+  if( m_parent )
+    AuxWindow::deleteAuxWindow( m_parent );
+}//void handleFinish( Wt::WDialog::DialogCode result )
 
