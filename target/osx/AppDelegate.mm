@@ -308,17 +308,30 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   WKWebViewConfiguration *webConfig = [[WKWebViewConfiguration alloc] init];
   //Setting the config like bellow seems to slow down the rendering.
-  webConfig.applicationNameForUserAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
+  
+  if ([webConfig respondsToSelector:@selector(applicationNameForUserAgent)]) {
+    webConfig.applicationNameForUserAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
+  }
+  
   //webConfig.ignoresViewportScaleLimits = ;  //Not sure what this is for.
-  webConfig.suppressesIncrementalRendering = YES;
+  if ([webConfig respondsToSelector:@selector(suppressesIncrementalRendering)]) {
+    webConfig.suppressesIncrementalRendering = YES;
+  }
   
   WKPreferences *prefs = [webConfig preferences];
-  prefs.javaEnabled = NO;
-  prefs.plugInsEnabled = NO;
-  prefs.javaScriptCanOpenWindowsAutomatically = YES;
-  prefs.javaScriptEnabled = YES;
+  //prefs.javaEnabled = NO;    //default is false anyway, and deprecated in 10.15
+  //prefs.plugInsEnabled = NO; //default is false anyway, and deprecated in 10.15
+  //prefs.javaScriptEnabled = YES; //default is true anyway, and deprecated in 10.15
+  
+  if ([webConfig respondsToSelector:@selector(javaScriptCanOpenWindowsAutomatically)]) {
+    //Does seem to get here for some reason
+    prefs.javaScriptCanOpenWindowsAutomatically = YES;  //default is true in macOS anyway
+  }
+  
   //prefs.minimumFontSize = 6.0;
-  prefs.tabFocusesLinks = NO;
+  if ([webConfig respondsToSelector:@selector(tabFocusesLinks)]) {
+    prefs.tabFocusesLinks = NO;
+  }
   
   //Some additional settings we may want to set:
   //  see more at http://jonathanblog2000.blogspot.com/2016/11/understanding-ios-wkwebview.html
@@ -361,9 +374,12 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   //Set the user agent string so
   NSString *userAgentStr = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
-  [_InterSpecWebView setCustomUserAgent: userAgentStr];
-  _InterSpecWebView.allowsLinkPreview = NO;
-  _InterSpecWebView.allowsBackForwardNavigationGestures = NO;
+  if ([_InterSpecWebView respondsToSelector:@selector(setCustomUserAgent)]) {
+    [_InterSpecWebView setCustomUserAgent: userAgentStr];
+    _InterSpecWebView.allowsLinkPreview = NO;
+  }
+  
+  _InterSpecWebView.allowsBackForwardNavigationGestures = NO;  //default is NO anyway
   
   
   [self setDbDirectory];
