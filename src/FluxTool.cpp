@@ -952,8 +952,9 @@ void FluxToolWidget::refreshPeakTable()
       const double gammaInto4piUncert = cpsUncert / totaleff;
       
       //Flux in g/cm2/s
-      const double flux = gammaInto4pi / (4*M_PI*distance*distance);
-      const double fluxUncert = gammaInto4piUncert / (4*M_PI*distance*distance);
+      const double distance_cm = distance / PhysicalUnits::cm;
+      const double flux = gammaInto4pi / (4*M_PI*distance_cm*distance_cm);
+      const double fluxUncert = gammaInto4piUncert / (4*M_PI*distance_cm*distance_cm);
       
       
       m_data[i][FluxColumns::FluxFluxOnDetCol] = fluxOnDet;
