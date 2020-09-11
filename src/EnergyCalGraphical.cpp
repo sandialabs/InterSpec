@@ -353,7 +353,7 @@ void EnergyCalGraphicalConfirm::apply()
           }
           
           const float offset = finalE - originalE;
-          added_dev_pair = { static_cast<float>(originalE), static_cast<float>(offset) };
+          added_dev_pair = { static_cast<float>(finalE), static_cast<float>(offset) };
         }//if( orig_dev_pairs.empty() )
       
         break;
