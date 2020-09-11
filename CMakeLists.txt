@@ -497,7 +497,6 @@ set(sources
     src/PeakInfoDisplay.cpp
     src/WarningWidget.cpp
     src/SpecMeasManager.cpp
-    src/Recalibrator.cpp
     src/InterSpecUser.cpp
     src/CompactFileManager.cpp
     src/DetectorEdit.cpp
@@ -579,7 +578,6 @@ set(headers
     InterSpec/PeakInfoDisplay.h
     InterSpec/WarningWidget.h
     InterSpec/SpecMeasManager.h
-    InterSpec/Recalibrator.h
     InterSpec/InterSpecUser.h
     InterSpec/CompactFileManager.h
     InterSpec/DetectorEdit.h

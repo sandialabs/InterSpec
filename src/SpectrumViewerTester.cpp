@@ -67,7 +67,6 @@
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/DecayWindow.h"
-#include "InterSpec/Recalibrator.h"
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"

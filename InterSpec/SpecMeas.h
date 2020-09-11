@@ -40,7 +40,6 @@
 
 class PeakDef;
 class PeakModel;
-class Recalibrator;
 struct PeakContinuum;
 class DetectorPeakResponse;
 

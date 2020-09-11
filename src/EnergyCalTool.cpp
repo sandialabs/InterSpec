@@ -2559,7 +2559,7 @@ void EnergyCalTool::fitCoefficients()
     string msg = "Failed calibration by fitting peak means. ";
     msg += e.what();
     
-    cerr << "Recalibrator::recalibrateByPeaks():\n\tCaught: " << msg << endl;
+    cerr << "EnergyCalTool::fitCoefficients():\n\tCaught: " << msg << endl;
     m_interspec->logMessage( msg, "", 3 );
   }//try / catch
 }//void fitCoefficients()
