@@ -110,7 +110,6 @@
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/Recalibrator.h"
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -360,8 +359,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_peakEditWindow( 0 ),
     m_currentToolsTab( 0 ),
     m_toolsTabs( 0 ),
-    m_recalibrator( 0 ),
-    m_recalibratorWindow( 0 ),
+    m_energyCalTool( 0 ),
+    m_energyCalWindow( 0 ),
     m_gammaCountDialog( 0 ),
     m_specFileQueryDialog( 0 ),
     m_shieldingSuggestion( 0 ),
@@ -564,12 +563,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   m_warnings = new WarningWidget( this );
 
-  // Set up the floating energy recalibrator.
-  //m_recalibrator = new Recalibrator( this, m_peakModel );
-  //m_spectrum->rightMouseDragg().connect( m_recalibrator, &Recalibrator::handleGraphicalRecalRequest );
-  m_recalibrator = new EnergyCalTool( this, m_peakModel );
-  m_spectrum->rightMouseDragg().connect( m_recalibrator, &EnergyCalTool::handleGraphicalRecalRequest );
-  displayedSpectrumChanged().connect( m_recalibrator, &EnergyCalTool::displayedSpecChangedCallback );
+  // Set up the energy calibration tool
+  m_energyCalTool = new EnergyCalTool( this, m_peakModel );
+  m_spectrum->rightMouseDragg().connect( m_energyCalTool, &EnergyCalTool::handleGraphicalRecalRequest );
+  displayedSpectrumChanged().connect( m_energyCalTool, &EnergyCalTool::displayedSpecChangedCallback );
 
 #if( USE_SPECTRUM_CHART_D3 )
   const WEnvironment &env = wApp->environment();
@@ -954,20 +951,20 @@ InterSpec::~InterSpec()
     m_peakInfoWindow = nullptr;
   }//if( m_peakInfoWindow )
   
-  if( m_recalibrator )
+  if( m_energyCalTool )
   {
-    if( m_toolsTabs && m_toolsTabs->indexOf(m_recalibrator)>=0 )
-      m_toolsTabs->removeTab( m_recalibrator );
+    if( m_toolsTabs && m_toolsTabs->indexOf(m_energyCalTool)>=0 )
+      m_toolsTabs->removeTab( m_energyCalTool );
     
-    delete m_recalibrator;
-    m_recalibrator = nullptr;
-  }//if( m_recalibrator )
+    delete m_energyCalTool;
+    m_energyCalTool = nullptr;
+  }//if( m_energyCalTool )
   
-  if( m_recalibratorWindow )
+  if( m_energyCalWindow )
   {
-    delete m_recalibratorWindow;
-    m_recalibratorWindow = nullptr;
-  }//if( m_recalibratorWindow )
+    delete m_energyCalWindow;
+    m_energyCalWindow = nullptr;
+  }//if( m_energyCalWindow )
     
   if( m_shieldingSourceFitWindow )
   {
@@ -2826,7 +2823,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     entry.modify()->showingWindows = 0x0;
     //m_warningsWindow
     //m_peakInfoWindow
-    //m_recalibratorWindow
+    //m_energyCalWindow
     //m_shieldingSourceFitWindow
     //m_referencePhotopeakLinesWindow
 //    m_nuclideSearchWindow
@@ -5406,12 +5403,12 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     closeGammaLinesWindow();
     
-    if( m_recalibratorWindow )
+    if( m_energyCalWindow )
     {
-      m_recalibratorWindow->stretcher()->removeWidget( m_recalibrator );
-      delete m_recalibratorWindow;
-      m_recalibratorWindow = nullptr;
-    }//if( m_recalibratorWindow )
+      m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool );
+      delete m_energyCalWindow;
+      m_energyCalWindow = nullptr;
+    }//if( m_energyCalWindow )
     
     m_toolsTabs = new WTabWidget();
     //m_toolsTabs->addStyleClass( "ToolsTabs" );
@@ -5463,8 +5460,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
     
-    m_recalibrator->setWideLayout();
-    m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
+    m_energyCalTool->setWideLayout();
+    m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
         
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -5517,7 +5514,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_nuclideSearchWindow->stretcher()->removeWidget( m_isotopeSearch );
       delete m_nuclideSearchWindow;
       m_nuclideSearchWindow = 0;
-    }//if( m_recalibratorWindow )
+    }//if( m_nuclideSearchWindow )
     
     assert( !m_isotopeSearchContainer );
     
@@ -5555,7 +5552,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
     m_toolsTabs->removeTab( m_peakInfoDisplay );
-    m_toolsTabs->removeTab( m_recalibrator );
+    m_toolsTabs->removeTab( m_energyCalTool );
     
     m_isotopeSearch->clearSearchEnergiesOnClient();
     m_isotopeSearchContainer->layout()->removeWidget( m_isotopeSearch );
@@ -6024,27 +6021,27 @@ void InterSpec::addDetectorMenu( WWidget *menuWidget )
   if( m_detectorToShowMenu->parentItem() )
     m_detectorToShowMenu->parentItem()->disable();
 //  PopupDivMenuItem *item = m_detectorToShowMenu->addMenuItem( "Energy Calibration" );
-//  item->triggered().connect( boost::bind( &WDialog::setHidden, m_recalibratorWindow, false, WAnimation() ) );
+//  item->triggered().connect( boost::bind( &WDialog::setHidden, m_energyCalWindow, false, WAnimation() ) );
 //  item->triggered().connect( boost::bind( &InterSpec::showEnergyCalWindow, this ) );
 }//void addDetectorMenu( WContainerWidget *menuDiv )
 
 
 void InterSpec::handEnergyCalWindowClose()
 {
-  if( !m_recalibratorWindow || !m_recalibrator )
+  if( !m_energyCalWindow || !m_energyCalTool )
     return;
   
-  WGridLayout *layout = m_recalibratorWindow->stretcher();
-  layout->removeWidget( m_recalibrator );
+  WGridLayout *layout = m_energyCalWindow->stretcher();
+  layout->removeWidget( m_energyCalTool );
   
-  AuxWindow::deleteAuxWindow( m_recalibratorWindow );
-  m_recalibratorWindow = nullptr;
+  AuxWindow::deleteAuxWindow( m_energyCalWindow );
+  m_energyCalWindow = nullptr;
   
   if( m_toolsTabs )
   {
-    m_recalibrator->setWideLayout();
-    if( m_toolsTabs->indexOf(m_recalibrator) < 0 )
-      m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
+    m_energyCalTool->setWideLayout();
+    if( m_toolsTabs->indexOf(m_energyCalTool) < 0 )
+      m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
     
     m_currentToolsTab = m_toolsTabs->currentIndex();
   }//if( m_toolsTabs )
@@ -6053,43 +6050,44 @@ void InterSpec::handEnergyCalWindowClose()
 
 void InterSpec::showEnergyCalWindow()
 {
-  if( m_recalibratorWindow && !m_toolsTabs )
+  if( m_energyCalWindow && !m_toolsTabs )
   {
-    m_recalibratorWindow->show();
+    m_energyCalWindow->show();
     return;
   }
 
-  const int index = (m_toolsTabs ? m_toolsTabs->indexOf(m_recalibrator) : -1);
+  const int index = (m_toolsTabs ? m_toolsTabs->indexOf(m_energyCalTool) : -1);
   
   if( index >= 0 )
-    m_toolsTabs->removeTab( m_recalibrator );
+    m_toolsTabs->removeTab( m_energyCalTool );
   
-  if( m_recalibratorWindow )
+  if( m_energyCalWindow )
   {
-    m_recalibratorWindow->stretcher()->removeWidget(m_recalibrator);
-    delete m_recalibratorWindow;
+    m_energyCalWindow->stretcher()->removeWidget(m_energyCalTool);
+    delete m_energyCalWindow;
   }
     
-  m_recalibratorWindow = new AuxWindow( "Energy Calibration",
+  m_energyCalWindow = new AuxWindow( "Energy Calibration",
                                 WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
                                     | AuxWindowProperties::TabletModal );
-  m_recalibratorWindow->rejectWhenEscapePressed();
-  m_recalibratorWindow->stretcher()->addWidget( m_recalibrator, 0, 0 );
-  m_recalibrator->setTallLayout();
+  m_energyCalWindow->rejectWhenEscapePressed();
+  m_energyCalWindow->stretcher()->addWidget( m_energyCalTool, 0, 0 );
+  m_energyCalTool->setTallLayout();
+  m_energyCalTool->show();
    
-  //m_recalibratorWindow->finished().connect(boost::bind( &AuxWindow::deleteAuxWindow, m_recalibratorWindow ) );
-  m_recalibratorWindow->finished().connect( boost::bind( &InterSpec::handEnergyCalWindowClose, this ) );
+  //m_energyCalWindow->finished().connect(boost::bind( &AuxWindow::deleteAuxWindow, m_energyCalWindow ) );
+  m_energyCalWindow->finished().connect( boost::bind( &InterSpec::handEnergyCalWindowClose, this ) );
 
   if( (m_renderedWidth > 100) && (m_renderedHeight > 100) )
-    m_recalibratorWindow->setMaximumSize( 0.8*m_renderedWidth, 0.8*m_renderedHeight );
-  m_recalibratorWindow->setWidth( 380 );
+    m_energyCalWindow->setMaximumSize( 0.8*m_renderedWidth, 0.8*m_renderedHeight );
+  m_energyCalWindow->setWidth( 380 );
   
-  m_recalibratorWindow->show();
-  m_recalibratorWindow->resizeToFitOnScreen();
-  m_recalibratorWindow->centerWindow();
+  m_energyCalWindow->show();
+  m_energyCalWindow->resizeToFitOnScreen();
+  m_energyCalWindow->centerWindow();
   
-  AuxWindow::addHelpInFooter( m_recalibratorWindow->footer(), "energy-calibration" );
-  Wt::WPushButton *closeButton = m_recalibratorWindow->addCloseButtonToFooter("Close",true);
+  AuxWindow::addHelpInFooter( m_energyCalWindow->footer(), "energy-calibration" );
+  Wt::WPushButton *closeButton = m_energyCalWindow->addCloseButtonToFooter("Close",true);
   closeButton->clicked().connect( boost::bind( &InterSpec::handEnergyCalWindowClose, this ) );
   
   
@@ -7583,7 +7581,7 @@ void InterSpec::handleToolTabChanged( int tab )
     return;
   
   const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
-  const int calibtab = m_toolsTabs->indexOf(m_recalibrator);
+  const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
   const int searchTab = m_toolsTabs->indexOf(m_isotopeSearchContainer);
   
   if( m_referencePhotopeakLines && (tab == refTab) && !isMobile() )
@@ -8489,14 +8487,14 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   deleteEnergyCalPreserveWindow();
   
-  if( checkForPrevioudEnergyCalib && !sameSpec && m_recalibrator && !!meas && !!m_dataMeasurement )
+  if( checkForPrevioudEnergyCalib && !sameSpec && m_energyCalTool && !!meas && !!m_dataMeasurement )
   {
     switch( spec_type )
     {
       case SpecUtils::SpectrumType::Foreground:
         if( EnergyCalPreserveWindow::candidate(meas,previous) )
           m_preserveCalibWindow = new EnergyCalPreserveWindow( meas, spec_type,
-                                         previous, spec_type, m_recalibrator );
+                                         previous, spec_type, m_energyCalTool );
       break;
     
       case SpecUtils::SpectrumType::SecondForeground:
@@ -8504,7 +8502,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         if( EnergyCalPreserveWindow::candidate(meas,m_dataMeasurement) )
           m_preserveCalibWindow = new EnergyCalPreserveWindow( meas, spec_type,
                                                 m_dataMeasurement, SpecUtils::SpectrumType::Foreground,
-                                                m_recalibrator );
+                                                m_energyCalTool );
       break;
     };//switch( spec_type )
   
@@ -8525,7 +8523,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       }//if( propigate_peaks_fcns ) / else
       
     }
-  }//if( !sameSpec && m_recalibrator && !!meas )
+  }//if( !sameSpec && m_energyCalTool && !!meas )
   
   if( propigate_peaks_fcns )
   {
@@ -8554,7 +8552,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//switch( spec_type )
   
   
-  // Update the recalibrator, as there is new data.
+  // Update the energy calibration tool, as there is new data.
   const auto shownDets = detectorsToDisplay(spec_type);
   m_displayedSpectrumChangedSignal.emit( spec_type, meas, sample_numbers, shownDets );
   

@@ -393,7 +393,7 @@ public:
     {
       if( IsInf(d) || IsNan(d) )
       {
-        fprintf( stderr, "Recalibrator::PolyCalibCoefMinFcn::operator() found invalid input parameter\n" );
+        fprintf( stderr, "PolyCalibCoefMinFcn::operator() found invalid input parameter\n" );
         return 99999999.0;
       }
       
@@ -440,7 +440,7 @@ public:
     
     if( IsInf(chi2) || IsNan(chi2) )
     {
-      fprintf( stderr, "Recalibrator::PolyCalibCoefMinFcn::operator(): invalid result Chi2\n" );
+      fprintf( stderr, "PolyCalibCoefMinFcn::operator(): invalid result Chi2\n" );
       return 1000.0;
     }
     

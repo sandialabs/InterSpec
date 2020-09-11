@@ -1107,8 +1107,8 @@ protected:
   //  when they are visible
   Wt::WTabWidget *m_toolsTabs;
 
-  EnergyCalTool          *m_recalibrator; // The energy (re)calibrator
-  AuxWindow              *m_recalibratorWindow;
+  EnergyCalTool          *m_energyCalTool;
+  AuxWindow              *m_energyCalWindow;
   GammaCountDialog       *m_gammaCountDialog;
   AuxWindow              *m_specFileQueryDialog;
 
