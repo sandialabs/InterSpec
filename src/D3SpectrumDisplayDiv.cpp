@@ -1060,12 +1060,6 @@ void D3SpectrumDisplayDiv::setYAxisTitle( const std::string &title )
 }//void setYAxisTitle( const std::string &title )
 
 
-float D3SpectrumDisplayDiv::xUnitsPerPixel() const
-{
-  //Christian: We use 0.001 as a placeholder since we don't have reference to SpectrumChart anymore
-  return 0.001;
-}
-
 
 Wt::Signal<double,double> &D3SpectrumDisplayDiv::xRangeChanged()
 {
@@ -2019,7 +2013,8 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
                   m_peakModel->removePeak( p );
                 }catch(std::exception &e)
                 {
-                  cerr << "Unexpected error removing peaks - must not be a valid peak any more..." << endl;
+                  cerr << "Unexpected error removing peaks - must not be a valid peak any more...: " 
+                       << e.what() << endl;
                 }
               }//for( const auto &p : added_peaks )
               

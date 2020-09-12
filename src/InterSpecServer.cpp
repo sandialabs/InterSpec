@@ -167,7 +167,9 @@ namespace InterSpecServer
   void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication )
   {
-//#warning "Need to add a (optional) number that the requestor must provide in the URL in order to be served anything - this should probably be the externalid argument"
+#ifndef _WIN32
+  #warning "Need to add a (optional) number that the requestor must provide in the URL in order to be served anything - this should probably be the externalid argument"
+#endif
     changeToBaseDir( argc, argv );
     const string xml_config_path = getWtConfigXml( argc, argv );
     
@@ -313,7 +315,9 @@ namespace InterSpecServer
   
   void add_allowed_session_token( const char *session_id )
   {
-#warning "Need to make add_session_id() handle more than just single session ID"
+#ifndef _WIN32
+  #warning "Need to make add_session_id() handle more than just single session ID"
+#endif
     lock_guard<mutex> lock(ns_externalid_mutex);
     ns_externalid = session_id;
   }//void interspec_add_allowed_session_token( const char *session_id )
@@ -321,7 +325,9 @@ namespace InterSpecServer
   
   int remove_allowed_session_token( const char *session_token )
   {
-#warning "Need to make interspec_remove_allowed_session_token() take into account if sesion with token had been seen"
+#ifndef _WIN32
+  #warning "Need to make interspec_remove_allowed_session_token() take into account if sesion with token had been seen"
+#endif
     lock_guard<mutex> lock(ns_externalid_mutex);
     if( session_token == ns_externalid )
     {
@@ -340,8 +346,9 @@ namespace InterSpecServer
 
   int open_file_in_session( const char *sessionToken, const char *files_json )
   {
-#warning "Need to actually test interspec_open_file"
-    
+#ifndef _WIN32
+  #warning "Need to actually test interspec_open_file"
+#endif    
     //Are we garunteed to recieve the entire message at once?
     cerr << "Opening files not tested!" << endl;
     

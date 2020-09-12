@@ -1254,7 +1254,7 @@ void DoseCalcWidget::runtime_sanity_checks()
   expected = 25.19E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 23.9 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
-  areal_density = 50.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  areal_density = 50.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
   expected = 2.59E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 0.842 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
@@ -1267,7 +1267,7 @@ void DoseCalcWidget::runtime_sanity_checks()
   expected = 1.86E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 1.8 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
-  areal_density = 2.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  areal_density = 2.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
   expected = 2.34E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 0.78 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
