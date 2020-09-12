@@ -118,11 +118,15 @@ void FeatureMarkerWidget::init()
                                                   FeatureMarkerType::ComptonPeakMarker, false ) );
   
   WContainerWidget *angleDiv = new WContainerWidget( this );
+  angleDiv->addStyleClass( "AngleRow" );
   WLabel *label = new WLabel( "Angle", angleDiv );
   label->setMargin( WLength(1.8,WLength::FontEm), Wt::Left );
   label->setMargin( WLength(0.2,WLength::FontEm), Wt::Right );
   m_comptonAngle = new WSpinBox( angleDiv );
-  m_comptonAngle->setTextSize( 3 );
+  m_comptonAngle->addStyleClass( "AngleInput" );
+
+  //m_comptonAngle->setTextSize( 3 );
+  //m_comptonAngle->setWidth( WLength( 4, WLength::FontEm ) );
   label->setBuddy( m_comptonAngle );
   m_comptonAngle->setRange( 0, 180 );
   m_comptonAngle->setValue( 180 );

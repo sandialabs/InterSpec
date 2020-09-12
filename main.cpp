@@ -118,6 +118,8 @@ Wt::WApplication *createApplication( const Wt::WEnvironment &env )
 #include <stdio.h>
 #include <shellapi.h>
 
+#include "SpecUtils/StringAlgo.h"
+
 /** Get command line arguments encoded as UTF-8.
     This function just leaks the memory
  

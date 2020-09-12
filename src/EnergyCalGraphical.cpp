@@ -384,7 +384,7 @@ void EnergyCalGraphicalConfirm::apply()
         assert( 0 );
         break;
     }//switch( energycal->type() )
-  }catch( std::exception &e )
+  }catch( std::exception & )
   {
     string msg;
     msg = "The coeffiecients {";

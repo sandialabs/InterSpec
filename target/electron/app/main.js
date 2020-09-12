@@ -282,7 +282,7 @@ function createWindow () {
 
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
-  windowPrefs.webPreferences = {nodeIntegration: true, nativeWindowOpen: true };
+  windowPrefs.webPreferences = {nodeIntegration: true, nativeWindowOpen: true, enableRemoteModule: true };
 
   mainWindow = new BrowserWindow( windowPrefs );
   
@@ -364,7 +364,7 @@ function createWindow () {
   
   
   // Open the developer tools.
-  //mainWindow.webContents.openDevTools({mode: "bottom"})
+  // mainWindow.webContents.openDevTools({mode: "bottom"})
 
   // Emitted when the window is closed.
   mainWindow.on('closed', function () {

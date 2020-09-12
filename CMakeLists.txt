@@ -2,7 +2,7 @@
 # excpet iOS, Android, and Electron, InterSpecExe
 
 cmake_policy(SET CMP0048 NEW)
-project(InterSpec VERSION 1.0.6)
+project(InterSpec VERSION 1.0.7)
 
 cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
 set(CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE)
@@ -1114,8 +1114,8 @@ else()
     #set_target_properties( InterSpecExe PROPERTIES SUFFIX "")
     set_target_properties(InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec")
 
-    add_executable(peakFitTimingDev testing/peakFitTimingDev.cpp)
-    target_link_libraries(peakFitTimingDev PUBLIC InterSpecLib)
+#    add_executable(peakFitTimingDev testing/peakFitTimingDev.cpp)
+#    target_link_libraries(peakFitTimingDev PUBLIC InterSpecLib)
 endif(IOS)
 
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")

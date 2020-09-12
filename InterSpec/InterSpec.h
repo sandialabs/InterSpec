@@ -916,9 +916,6 @@ public:
   //  The InterSpec pointer is actually only necessary for the
   //  DetectorPeakResponse.
   void guessIsotopesForPeaks( Wt::WApplication *app );
-
-  //kevPerPixel(): Returns the approximated keV that 1 px covers.
-  float kevPerPixel() const;
   
   bool isSupportFile() const;
     
