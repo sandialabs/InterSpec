@@ -282,7 +282,7 @@ function createWindow () {
 
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
-  windowPrefs.webPreferences = {nodeIntegration: true, nativeWindowOpen: true, enableRemoteModule: true };
+  windowPrefs.webPreferences = {nodeIntegration: true, nativeWindowOpen: true, enableRemoteModule: true, spellcheck: false };
 
   mainWindow = new BrowserWindow( windowPrefs );
   

@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 #include <fstream>
+#include <algorithm>
 
 #include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
@@ -684,15 +685,23 @@ void RelEffDetSelect::saveFilePathToUserPreferences()
   
   auto children = m_files->children();
   
-  string concat_path;
+  vector<string> paths;
   for( auto w : children )
   {
     auto child = dynamic_cast<RelEffFile *>( w );
     const string filepath = child ? child->filepath() : string("");
     if( filepath.size() )
-      concat_path += (concat_path.size() ? ";" : "") + filepath;
+      paths.push_back( filepath );
+      //concat_path += (concat_path.size() ? ";" : "") + filepath;
   }//string concat_path;
   
+  //Make sure we only save unique paths
+  paths.erase( std::unique( begin(paths), end(paths) ), end(paths) );
+
+  string concat_path;
+  for( const auto &filepath : paths )
+    concat_path += (concat_path.size() ? ";" : "") + filepath;
+
   try
   {
     InterSpecUser::setPreferenceValue( m_interspec->m_user, "RelativeEffDRFPaths", concat_path, m_interspec );
@@ -797,6 +806,9 @@ void RelEffDetSelect::docreate()
   
   SpecUtils::split( paths, pathstr, "\r\n;" );
   
+  //Eliminate any duplicate entries in paths
+  paths.erase( std::unique( begin(paths), end(paths) ), end(paths) );
+
   if( paths.empty() )
     new RelEffFile( "", this, m_detectorEdit, m_files );
   
@@ -1749,7 +1761,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   lowerContent->resize( WLength::Auto, WLength(190,WLength::Pixel) );
   
   m_drfTypeStack = new Wt::WStackedWidget();
-  m_drfTypeStack->addStyleClass( "UseInfoStack" );
+  m_drfTypeStack->addStyleClass( "UseInfoStack DetEditContent" );
   
   m_drfTypeMenu = new WMenu( m_drfTypeStack, Wt::Vertical );
   m_drfTypeMenu->addStyleClass( "VerticalMenu SideMenu DetEditMenu" );
@@ -1939,9 +1951,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   //--- 5)  Recent
   //-------------------------------------
   WContainerWidget *recentDiv = new WContainerWidget( );
-  WGridLayout* recentDivLayout = new WGridLayout();
+  WGridLayout* recentDivLayout = new WGridLayout( recentDiv );
   recentDivLayout->setContentsMargins( 0, 0, 0, 0 );
-  recentDiv->setLayout(recentDivLayout);
 
   Dbo::ptr<InterSpecUser> user = m_interspec->m_user;
   
@@ -2059,9 +2070,9 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   recentDivLayout->addWidget( filter, 1, 2 );
   recentDivLayout->setRowStretch( 0, 1 );
-  recentDiv->setOverflow(Wt::WContainerWidget::OverflowHidden);
-  recentDiv->setMaximumSize( WLength::Auto, 180 );
-  
+  //recentDiv->setOverflow(Wt::WContainerWidget::OverflowHidden);
+  //recentDiv->setMaximumSize( WLength::Auto, 180 );
+  recentDiv->setHeight( WLength( 100, WLength::Unit::Percentage ) );
   m_DBtable->sortByColumn( 2, Wt::SortOrder::DescendingOrder );
   
   //--------------------------------------------------------------------------------

@@ -2142,9 +2142,9 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
         nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
 
 #endif
-  } catch( ... )
+  } catch( std::exception &e )
   {
-    std::cerr << "Error in updateNumberFiles; unexpected exception" << std::endl;
+    std::cerr << "Error in updateNumberFiles; unexpected exception: " << e.what() << std::endl;
 
     if( !(*widgetdeleted) )
       WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,

@@ -1151,16 +1151,28 @@ bool SpecFileQueryDbCache::open_db( const std::string &path, const bool create_t
 bool SpecFileQueryDbCache::init_existing_persisted_db()
 {
   if( !SpecUtils::is_directory( m_fs_path ) )
+  {
+    std::cerr << "m_fs_path='" << m_fs_path << "', is not a path" << std::endl;
     return false;
-  
-  if( !SpecUtils::can_rw_in_directory( m_fs_path ) )
-    return false;
-  
+  }
+
+  // The read-only atribute of a Windows directory doesnt mean you cant read/write in that dir
+  //  so we'll just always skip checking if you can RW in a directory, even on POSIX, and 
+  //  instead wait for openeing of the database to fail.
+  //if( !SpecUtils::can_rw_in_directory( m_fs_path ) )
+  //{
+  //  std::cerr << "Can not RW in directory '" << m_fs_path << "'." << std::endl;
+  //  return false;
+  //}
+
   const string persisted_path = construct_persisted_db_filename(m_fs_path);
   
   if( !SpecUtils::is_file( persisted_path ) )
+  {
+    std::cerr << "Persisted db path '" << persisted_path << "' is not a file" << std::endl; 
     return false;
-  
+  }
+
   try
   {
     std::unique_ptr<Wt::Dbo::backend::Sqlite3> db( new Wt::Dbo::backend::Sqlite3(persisted_path) );
@@ -1234,6 +1246,7 @@ bool SpecFileQueryDbCache::init_existing_persisted_db()
     m_db_session.reset();
     m_db.reset();
     //passMessage( "Caught exception initind persisted DB; " + string(e.what()), "", 3 );
+    cerr << "\n\nIn persisting cache, caught: " << e.what() << endl << endl;
   }
   return false;
 }//bool init_existing_persisted_db()
@@ -1547,7 +1560,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
         }//
 
         const string oldloc = m_db_location;
-
+        m_db_location = newfilename;
        
         if( init_existing_persisted_db() )
             return;

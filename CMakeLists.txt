@@ -158,7 +158,7 @@ option(USE_GOOGLE_MAP "Use google maps widget" ON)
 option(
     SpecUtils_REBIN_FILES_TO_SINGLE_BINNING
     "Rebins all spectra in spectrum file to the same energy calibration"
-    ON
+    OFF
 )
 option(
     DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK

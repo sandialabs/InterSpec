@@ -249,6 +249,7 @@ public:
     m_nuclideEdit = new WLineEdit();
     layout->addWidget( m_nuclideEdit, 0, 1 );
     m_nuclideEdit->addStyleClass( "DoseEnterTxt" );
+    m_nuclideEdit->setAttributeValue( "spellcheck", "false" );
     label->setBuddy( m_nuclideEdit );
     
     label = new WLabel( "Age:" );
@@ -1327,7 +1328,7 @@ void DoseCalcWidget::runtime_sanity_checks()
   checkPrintDose( 8.23688E-2, "82.37 msv/hr", true );
   checkPrintDose( 8.23688E2, "823.69 sv/hr", true );
   checkPrintDose( 8.23688E5, "823.69 ksv/hr", true );
-  checkPrintDose( 8.23688E6, "8.24 Msv/hr...", true );
+  checkPrintDose( 8.23688E6, "8.24 Msv/hr", true );
 }//void runtime_sanity_checks()
 
 
