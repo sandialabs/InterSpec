@@ -3,8 +3,16 @@
 }
 
 .FeatureMarkerWidget {
-  width: 9em;
+  width: 9.2em;
   padding-bottom: 6px;
+}
+
+.FeatureMarkerWidget .AngleRow {
+  white-space: nowrap;
+}
+
+.FeatureMarkerWidget .AngleInput {
+  width: 2.1em;
 }
 
 .FeatureMarkerWidget > label {

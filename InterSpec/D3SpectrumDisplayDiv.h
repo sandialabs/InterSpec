@@ -170,8 +170,6 @@ public:
   const std::string yAxisTitle() const;
 
   
-  float xUnitsPerPixel() const;
-  
   void enableLegend( const bool forceMobileStyle );
   void disableLegend();
   bool legendIsEnabled() const;

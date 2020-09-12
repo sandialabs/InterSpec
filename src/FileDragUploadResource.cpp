@@ -49,6 +49,9 @@
 #include "InterSpec/FileDragUploadResource.h"
 #endif
 
+#ifdef _WIN32
+#include "SpecUtils/StringAlgo.h"
+#endif
 
 using namespace Wt;
 using namespace std;

@@ -47,6 +47,10 @@
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
+#ifdef _WIN32
+#include "SpecUtils/StringAlgo.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
