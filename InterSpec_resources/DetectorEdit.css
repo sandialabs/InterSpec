@@ -4,10 +4,13 @@
   font-style: italic;
 }
 
-
-.FormulaDrfTbl
+.DetEditContent
 {
-  width: 100%;
+    overflow-y: auto;
+}
+
+.FormulaDrfTbl {
+    width: 95%;
 }
 
 .FormulaDrfTbl td

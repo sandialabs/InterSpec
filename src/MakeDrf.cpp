@@ -799,7 +799,7 @@ namespace
                 try
                 {
                   age_at_meas = PhysicalUnits::stringToTimeDurationPossibleHalfLife( mtch[2].str(), (nuc ? nuc->halfLife : -1.0) );
-                }catch( std::exception &e )
+                }catch( std::exception & )
                 {
                   cerr << "Failed to convert '" << mtch[2].str() << "' to an age." << endl;
                 }
