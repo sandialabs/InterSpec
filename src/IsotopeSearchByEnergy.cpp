@@ -375,8 +375,8 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 
   m_minBranchRatio->setWidth( 35 );
   m_minBranchRatio->setValue( m_minBr );
-  m_minBranchRatio->setRange( 0.0, 1.0 );
-  m_minBranchRatio->setSingleStep( 0.1 );
+  m_minBranchRatio->setRange( 0.0f, 1.0f );
+  m_minBranchRatio->setSingleStep( 0.1f );
   label->setBuddy( m_minBranchRatio );
   
   label = new WLabel( "Min. HL" );

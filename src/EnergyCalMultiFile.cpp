@@ -881,7 +881,7 @@ void EnergyCalMultiFileModel::refreshData()
       try
       {
         cal = spec->suggested_sum_energy_calibration( samplnums, gammaDetNames );
-      }catch( std::exception &e )
+      }catch( std::exception & )
       {
 #if( PERFORM_DEVELOPER_CHECKS )
         log_developer_error( __func__, "Unexpected failure of suggested_sum_energy_calibration" );

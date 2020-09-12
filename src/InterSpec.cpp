@@ -1266,11 +1266,6 @@ bool InterSpec::isSupportFile() const
 #endif
 }
 
-float InterSpec::kevPerPixel() const
-{
-  return m_spectrum->xUnitsPerPixel();
-}
-
 
 bool InterSpec::isMobile() const
 {
@@ -2741,7 +2736,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       {
         auto pos = std::find( begin(det_names), end(det_names), det );
         const auto index = pos - begin(det_names);
-        if( index < detNums.size() )
+        if( index < static_cast<int>(detNums.size()) )
           str += (str.empty() ? "" : ",") + to_string(detNums[index]);
       }
     }
