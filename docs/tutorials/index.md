@@ -3,7 +3,7 @@
 ## Overview Course Sep 2020
 See:
 * [20200915_InterSpec_intro_part1.pdf](intro_course_Sep2020/20200915_InterSpec_intro_part1.pdf).
-* Part 2 to be added soon
+* [20200915_InterSpec_intro_part2.pdf](intro_course_Sep2020/20200915_InterSpec_intro_part2.pdf).
 
 Data files:
 * All files [spectrum_files.zip](intro_course_Sep2020/spectrum_files.zip)
