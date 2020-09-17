@@ -341,7 +341,7 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
     case SpecUtils::EnergyCalType::FullRangeFraction:
     {
       assert( coeforder.size() );
-      const size_t maxorder = *std::rbegin(coeforder);
+      const size_t maxorder = *coeforder.rbegin();
       const char *msgtxt = "";
       if( maxorder > 4 )
         msgtxt = "Terms past the fourth term will be lost since there is no analougous terms.";
@@ -1000,7 +1000,9 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     nchannelSB->valueChanged().connect( this, &LinearizeCalTool::numberOfChannelsUpdatedCallback );
     label->setBuddy( nchannelSB );
     
-    m_options[nchannel] = { lower, upper, nchannelSB };
+    
+    
+    m_options[nchannel] = std::tuple<NativeFloatSpinBox *,NativeFloatSpinBox *,WSpinBox *>(lower, upper, nchannelSB);
   }//for( const auto &ranges : nchannelToRange )
   
   string applyToTxt = cal->applyToSummaryTxt();
@@ -1508,7 +1510,7 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
       upperEnergy = new WLabel( "", cell );
     }//if( cals.size() == 1 )
   
-    m_options[nchannel] = { lower, lowerEnergy, upper, upperEnergy };
+    m_options[nchannel] = std::tuple<WSpinBox *,WLabel *,WSpinBox *,WLabel *>( lower, lowerEnergy, upper, upperEnergy );
   }//for( const auto &ranges : nchannelToRange )
   
   m_keepOverflow = new WCheckBox( "Keep overflow counts", this );

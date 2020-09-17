@@ -1895,12 +1895,9 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
 void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 {
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
-  if( !peak
-     || m_rightClickEnergy < peak->lowerX()
-     || m_rightClickEnergy > peak->upperX() )
+  if( !peak || m_rightClickEnergy < peak->lowerX() || m_rightClickEnergy > peak->upperX() )
   {
-    passMessage( "There was no ROI to add peak to",
-                "", WarningWidget::WarningMsgInfo );
+    passMessage( "There was no ROI to add peak to", "", WarningWidget::WarningMsgInfo );
     return;
   }//if( !peak )
   
@@ -1919,7 +1916,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   iter = std::find( peaks->begin(), peaks->end(), peak );
   
   if( iter==peaks->end() || (*iter)!=peak )
-    throw runtime_error( "InterSpec::shareContinuumWithNeighboringPeak: "
+    throw runtime_error( "shareContinuumWithNeighboringPeak: "
                          "error searching for peak I should have found" );
   
   if( shareWithLeft )
@@ -1944,8 +1941,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   vector<PeakModel::PeakShrdPtr> &pp = (shareWithLeft ? rightpeaks : leftpeaks);
   vector<PeakModel::PeakShrdPtr> &op = (shareWithLeft ? leftpeaks : rightpeaks);
   
-  for( deque< PeakModel::PeakShrdPtr >::const_iterator iter = peaks->begin();
-       iter != peaks->end(); ++iter )
+  for( auto iter = peaks->begin(); iter != peaks->end(); ++iter )
   {
     if( (*iter)->continuum() == peak->continuum() )
       pp.push_back( *iter );
@@ -1954,10 +1950,8 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   }//for( iterate over peaks )
   
   
-  std::shared_ptr<const PeakContinuum> oldcontinuum
-                           = peaktoshare->continuum();
-  std::shared_ptr<PeakContinuum> continuum
-                           = std::make_shared<PeakContinuum>( *oldcontinuum );
+  std::shared_ptr<const PeakContinuum> oldcontinuum = peaktoshare->continuum();
+  std::shared_ptr<PeakContinuum> continuum = std::make_shared<PeakContinuum>( *oldcontinuum );
   
   const double minx = min( leftpeaks[0]->lowerX(), rightpeaks[0]->lowerX() );
   const double maxx = max( leftpeaks[0]->upperX(), rightpeaks[0]->upperX() );
@@ -1989,6 +1983,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
     addPeak( newpeak, false );
   }//for( PeakModel::PeakShrdPtr &p : leftpeaks )
 
+  
 //Instead of the more computationally expensive stuff (lots of signals get
 //  emmitted, tables re-rendered, and charts re-drawn - although hopefully
 //  mostly lazili) above, you could do the following not very nice const casts
