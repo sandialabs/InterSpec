@@ -41,6 +41,11 @@ class DetectorDisplay;
 class D3SpectrumDisplayDiv;
 class DetectionConfidenceTool;
 
+namespace SandiaDecay
+{
+  struct Nuclide;
+};//namespace SandiaDecay
+
 namespace Wt
 {
   class WText;
@@ -80,21 +85,32 @@ public:
   
   void setRefLinesAndGetLineInfo();
   
+  void scheduleCalcUpdate();
   
 protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+  
+  
   void doCalc();
   void updateShownPeaks();
   void computeForAcivity( const double activity,
                           std::vector<std::shared_ptr<PeakDef>> &peaks,
                           double &chi2, int &numDOF );
   void handleInputChange();
+  void handleNuclideChange();
   
   InterSpec *m_interspec;
+  
+  /** When inputs change will mark the widget that it needs update, and delay computatations until
+   Wt calls render(WFlags).
+   */
+  bool m_needsUpdate;
   
   D3SpectrumDisplayDiv *m_chart;
   PeakModel *m_peakModel;
   
   Wt::WLineEdit *m_nuclideEdit;
+  const SandiaDecay::Nuclide *m_currentNuclide;
   Wt::WSuggestionPopup *m_nuclideSuggest;
   DetectorDisplay *m_detectorDisplay;
   

@@ -49,9 +49,14 @@
 
 .MdaResults
 {
-  margin-top: 5px;
-  margin-bottom: 8px;
-  padding: 7px;
-  padding-top: 5px;
+  margin-top: 0px;
+  margin-bottom: 0px;
+  padding: 0px;
+  padding-top: 0px;
   border: 1px solid #d1d1d1;
+}
+
+.MdaResultTxt
+{
+  white-space: nowrap;
 }

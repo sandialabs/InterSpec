@@ -626,8 +626,7 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
         case PeakDef::GaussAmplitude:
           startval = peak.coefficient(type);
           stepsize = std::max( 0.1*peak.coefficient(type), sqrt(data->gamma_integral( mean-sigma, mean+sigma)) );
-          cerr << "setting minval to 0.0, when it is normally 5.0" << endl;
-          minval = 0.0; //5.0;
+          minval = 0.0;
           maxval = data->gamma_count_sum();
           
           if( method == kFitUserIndicatedPeak )

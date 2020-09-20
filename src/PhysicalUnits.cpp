@@ -1179,8 +1179,10 @@ double stringToEquivalentDose( const std::string &str, const double sievert_defi
 const UnitNameValuePair &bestActivityUnit( const double activity,
                                            bool useCurries )
 {
+  assert( sm_activityUnitNameValues.size() == 9 );
+  
   UnitNameValuePairV::const_iterator begin, end, iter;
-
+  
   if( useCurries )
   {
     begin = sm_activityUnitNameValues.begin() + 5;
@@ -1205,16 +1207,18 @@ const UnitNameValuePair &bestActivityUnit( const double activity,
 const UnitNameValuePair &bestDoseUnitHtml( const double activity,
                                             bool useRem )
 {
+  assert( sm_doseRateUnitHtmlNameValues.size() == 6 );
+  
   UnitNameValuePairV::const_iterator begin, end, iter;
   
   if( useRem )
   {
-    begin = sm_activityUnitNameValues.begin();
+    begin = sm_doseRateUnitHtmlNameValues.begin();
     end = begin + 3;
   }else
   {
-    begin = sm_activityUnitNameValues.begin() +3;
-    end = sm_activityUnitNameValues.end();
+    begin = sm_doseRateUnitHtmlNameValues.begin() + 3;
+    end = sm_doseRateUnitHtmlNameValues.end();
   }//if( useRem ) / else
   
   
@@ -1233,11 +1237,10 @@ const UnitNameValuePair &bestActivityUnitHtml( const double activity,
 {
   const UnitNameValuePair &a = bestActivityUnit( activity, useCurries );
   
-  UnitNameValuePairV::const_iterator begin, end, iter;
-  begin = sm_activityUnitNameValues.begin();
-  end = sm_activityUnitNameValues.end();
+  const auto begin = sm_activityUnitNameValues.begin();
+  const auto end = sm_activityUnitNameValues.end();
   
-  for( iter = begin; iter != end; ++iter )
+  for( auto iter = begin; iter != end; ++iter )
   {
     if( a.first == iter->first )
       return sm_activityUnitHtmlNameValues[iter-begin];

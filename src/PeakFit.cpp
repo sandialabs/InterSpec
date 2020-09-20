@@ -5474,7 +5474,7 @@ double set_chi2_dof( std::shared_ptr<const Measurement> data,
       peak->set_uncertainty( 0.0, PeakDef::Chi2DOF );
     }
     
-    cout << "Set chi2dof=" << chi2Dof << endl;
+    //cout << "Set chi2dof=" << chi2Dof << endl;
   }//for( loop over ROIs )
       
   return totalDOF;

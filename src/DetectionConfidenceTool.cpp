@@ -25,6 +25,8 @@
 
 #include <iostream>
 
+#include <boost/math/tools/roots.hpp>
+#include <boost/math/tools/minima.hpp>
 #include <boost/math/distributions/chi_squared.hpp>
 
 #include <Wt/WText>
@@ -203,6 +205,8 @@ public:
     m_continuum->addItem( "Quadratic" );
     m_continuum->setCurrentIndex( 0 );
     
+    m_use->checked().connect( this, &MdaPeakRow::emitChanged );
+    m_use->unChecked().connect( this, &MdaPeakRow::emitChanged );
     m_roi_start->valueChanged().connect( this, &MdaPeakRow::emitChanged );
     m_roi_end->valueChanged().connect( this, &MdaPeakRow::emitChanged );
     m_continuum->activated().connect( this, &MdaPeakRow::emitChanged );
@@ -269,9 +273,11 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
                                                   WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_interspec( viewer ),
+    m_needsUpdate( true ),
     m_chart( nullptr ),
     m_peakModel( nullptr ),
     m_nuclideEdit( nullptr ),
+    m_currentNuclide( nullptr ),
     m_nuclideSuggest( nullptr ),
     m_detectorDisplay( nullptr ),
     m_distanceEdit( nullptr ),
@@ -342,7 +348,7 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   
   WTable *inputTable = new WTable();
   inputTable->addStyleClass( "UserInputTable" );
-  grid->addWidget( inputTable, 1, 0, AlignLeft );
+  grid->addWidget( inputTable, 1, 0, 1, 2, AlignLeft );
   
   WTableCell *cell = inputTable->elementAt(0, 0);
   WLabel *label = new WLabel( "Distance:", cell );
@@ -369,7 +375,7 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   m_nuclideEdit->setMargin( 1 );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
   m_nuclideEdit->setAutoComplete( false );
-  m_nuclideEdit->changed().connect( boost::bind( &DetectionConfidenceTool::handleInputChange, this ) );
+  m_nuclideEdit->changed().connect( boost::bind( &DetectionConfidenceTool::handleNuclideChange, this ) );
   label->setBuddy( m_nuclideEdit );
   //grid->addWidget( m_nuclideEdit, 2, 1, AlignLeft );
   
@@ -459,13 +465,19 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   m_results = new WContainerWidget();
   m_results->addStyleClass( "MdaResults" );
   m_results->hide();
-  grid->addWidget( m_results, 2, 0 );
+  WGridLayout *resultLayout = new WGridLayout( m_results );
+  resultLayout->setVerticalSpacing( 0 );
+  resultLayout->setHorizontalSpacing( 0 );
+  resultLayout->setContentsMargins( 0, 0, 0, 0 );
+  
+  
+  grid->addWidget( m_results, 0, 1 );
   
   ///////////////////////////////////////////////////////////////////////
   // \TODO: put shart stuff, especially theme, into its own function(s)
-  m_chi2Chart = new Wt::Chart::WCartesianChart( m_results );
+  m_chi2Chart = new Wt::Chart::WCartesianChart();
+  resultLayout->addWidget( m_chi2Chart, 0, 0 );
   m_chi2Chart->setBackground(Wt::WColor(220, 220, 220));
-  m_chi2Chart->setAutoLayoutEnabled();
   m_chi2Chart->setType(Wt::Chart::ScatterPlot);
   m_chi2Model = new WStandardItemModel( m_chart );
   m_chi2Chart->setModel( m_chi2Model );
@@ -480,7 +492,6 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
       m_chi2Chart->setTextPen( txtpen );
       m_chi2Chart->axis(Chart::XAxis).setTextPen( txtpen );
       m_chi2Chart->axis(Chart::YAxis).setTextPen( txtpen );
-      m_chi2Chart->axis(Chart::Y2Axis).setTextPen( txtpen );
     }
         
     if( theme->spectrumChartBackground.isDefault() )
@@ -502,45 +513,64 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
       WPen defpen = m_chi2Chart->axis(Chart::XAxis).pen();
       defpen.setColor( theme->spectrumAxisLines );
       m_chi2Chart->axis(Chart::XAxis).setPen( defpen );
-      m_chi2Chart->axis(Chart::Y1Axis).setPen( defpen );
-      m_chi2Chart->axis(Chart::Y2Axis).setPen( defpen );
+      m_chi2Chart->axis(Chart::YAxis).setPen( defpen );
     }
   }//if( theme )
       
-  m_chi2Chart->setPlotAreaPadding(5, Wt::Top);
-  m_chi2Chart->setPlotAreaPadding(55, Wt::Bottom);
-  m_chi2Chart->setPlotAreaPadding(55, Wt::Left);
-  m_chi2Chart->setPlotAreaPadding(10, Wt::Right);
+  m_chi2Chart->setPlotAreaPadding(45, Wt::Bottom);
+  m_chi2Chart->setPlotAreaPadding(45, Wt::Left);
+  m_chi2Chart->setPlotAreaPadding(0, Wt::Right);
+  m_chi2Chart->setPlotAreaPadding(0, Wt::Top);
+  //m_chi2Chart->axis(Wt::Chart::XAxis).setTitleOffset( 10 );  //Wt 3.3.4 doesnt use this for WCartesianChart
+  //m_chi2Chart->axis(Wt::Chart::YAxis).setTitleOffset( 10 );
+  //m_chi2Chart->setAutoLayoutEnabled( true );
+  
   m_chi2Chart->axis(Wt::Chart::XAxis).setTitle("Activity (" MU_CHARACTER "Ci)");
   
 #define CHI_CHARACTER "\xCF\x87"
 #define SQ_CHARACTER "\xC2\xB2"
-  m_chi2Chart->axis(Wt::Chart::Y1Axis).setTitle( WString::fromUTF8( CHI_CHARACTER SQ_CHARACTER ) );
-      
+  m_chi2Chart->axis(Wt::Chart::YAxis).setTitle( WString::fromUTF8( CHI_CHARACTER SQ_CHARACTER ) );
+  
 #if( WT_VERSION >= 0x3030400 )
-  m_chi2Chart->axis(Wt::Chart::Y1Axis).setTitleOrientation( Wt::Vertical );
+  m_chi2Chart->axis(Wt::Chart::YAxis).setTitleOrientation( Wt::Vertical );
 #endif
+  
+  WFont titlefont( WFont::GenericFamily::SansSerif );
+  titlefont.setSize( WFont::Size::XSmall );
+  m_chi2Chart->axis(Wt::Chart::XAxis).setTitleFont(titlefont);
+  m_chi2Chart->axis(Wt::Chart::YAxis).setTitleFont(titlefont);
+  
+  
+  
       
   m_chi2Chart->setLegendEnabled( false );
-  m_chi2Chart->setHeight( WLength( std::max(250.0,0.35*height),WLength::Unit::Pixel) );
-  m_chi2Chart->setWidth( 0.5*width );
+  //m_chi2Chart->setHeight( WLength( std::max(250.0,0.35*height),WLength::Unit::Pixel) );
+  //m_chi2Chart->setWidth( 0.5*width );
   //////////////////////////////////////////////////////////////////////
-  m_bestChi2Act = new WText( "&nbsp;", m_results );
-  m_bestChi2Act->setInline( false );
+  m_bestChi2Act = new WText( "&nbsp;" );
+  //m_bestChi2Act->setInline( false );
+  m_bestChi2Act->addStyleClass( "MdaResultTxt" );
+  resultLayout->addWidget( m_bestChi2Act, 1, 0 );
   
-  m_upperLimit = new WText( "&nbsp;", m_results );
-  m_upperLimit->setInline( false );
-  //
+  
+  m_upperLimit = new WText( "&nbsp;" );
+  //m_upperLimit->setInline( false );
+  m_upperLimit->addStyleClass( "MdaResultTxt" );
+  resultLayout->addWidget( m_upperLimit, 2, 0 );
+  resultLayout->setRowStretch( 0, 1 );
   
   
   m_errorMsg = new WText("&nbsp;");
   m_errorMsg->addStyleClass( "MdaErrMsg" );
-  grid->addWidget( m_errorMsg, 3, 0 /*, AlignCenter | AlignMiddle */ );
+  grid->addWidget( m_errorMsg, 3, 0, 1, 2 /*, AlignCenter | AlignMiddle */ );
   m_errorMsg->hide();
   
   m_peaks = new WContainerWidget();
-  grid->addWidget( m_peaks, 4, 0 );
+  grid->addWidget( m_peaks, 4, 0, 1, 2 );
   m_peaks->addStyleClass( "MdaPeaks" );
+  
+  grid->setColumnStretch( 0, 1 );
+  //grid->setColumnStretch( 1, 1 );
   
   //grid->setRowResizable( 0, screenH/3 );
   //grid->setColumnStretch( 1, 1 );
@@ -554,6 +584,34 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
 DetectionConfidenceTool::~DetectionConfidenceTool()
 {
 }
+
+
+void DetectionConfidenceTool::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
+  //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
+  
+  if( renderFull || m_needsUpdate )
+    doCalc();
+  
+  m_needsUpdate = false;
+  
+  WContainerWidget::render( flags );
+}//render( flags )
+
+
+void DetectionConfidenceTool::handleNuclideChange()
+{
+  const string isotxt = m_nuclideEdit->text().toUTF8();
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide *nuc = db->nuclide( isotxt );
+
+  if( nuc == m_currentNuclide )
+    return;
+  
+  m_currentNuclide = nuc;
+  handleInputChange();
+}//void handleNuclideChange()
 
 
 void DetectionConfidenceTool::handleInputChange()
@@ -596,11 +654,8 @@ void DetectionConfidenceTool::handleInputChange()
     return;
   }
   
-  const string isotxt = m_nuclideEdit->text().toUTF8();
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  const SandiaDecay::Nuclide *nuc = db->nuclide( isotxt );
 
-  if( !nuc )
+  if( !m_currentNuclide )
   {
     m_errorMsg->setText( "No valid nuclide" );
     m_errorMsg->show();
@@ -626,7 +681,7 @@ void DetectionConfidenceTool::handleInputChange()
   setRefLinesAndGetLineInfo();
   
   string agestr;
-  double age = PeakDef::defaultDecayTime( nuc, &agestr );
+  double age = PeakDef::defaultDecayTime( m_currentNuclide, &agestr );
   
   float shielding_an = 0.0f, shielding_ad = 0.0f, shielding_thickness = 0.0f;
   std::shared_ptr<Material> shielding_material;
@@ -646,10 +701,10 @@ void DetectionConfidenceTool::handleInputChange()
   std::vector<std::tuple<double,double>> lines;
   
   SandiaDecay::NuclideMixture mixture;
-  mixture.addNuclideByActivity( nuc, 1.0E-3 * SandiaDecay::curie );
+  mixture.addNuclideByActivity( m_currentNuclide, 1.0E-3 * SandiaDecay::curie );
 
   const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( age );
-  const double parent_activity = mixture.activity( age, nuc );
+  const double parent_activity = mixture.activity( age, m_currentNuclide );
   
   vector<SandiaDecay::EnergyRatePair> gammas = mixture.gammas( age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
   
@@ -710,17 +765,24 @@ void DetectionConfidenceTool::handleInputChange()
     
     auto row = new MdaPeakRow( energy, countsPerBq , fwhm, roi_start, roi_end, spec, m_peaks );
     row->m_use->setChecked(use);
-    row->m_changed.connect( this, &DetectionConfidenceTool::doCalc );
+    row->m_changed.connect( this, &DetectionConfidenceTool::scheduleCalcUpdate );
   }//for( const auto &line : lines )
   
-  doCalc();
+  scheduleCalcUpdate();
 }//void handleInputChange()
+
+
+void DetectionConfidenceTool::scheduleCalcUpdate()
+{
+  m_needsUpdate = true;
+  scheduleRender();
+}//void scheduleCalcUpdate()
 
 
 void DetectionConfidenceTool::doCalc()
 {
   //m_simpleMda
-  double minActivity = std::numeric_limits<double>::infinity(), maxActivity = 0.0;
+  double minSearchActivity = std::numeric_limits<double>::infinity(), maxSearchActivity = 0.0;
   
   int nused = 0;
   for( auto w : m_peaks->children() )
@@ -733,33 +795,178 @@ void DetectionConfidenceTool::doCalc()
     ++nused;
     if( (rw->m_simpleMda > 0.0) && !IsInf(rw->m_simpleMda) && !IsNan(rw->m_simpleMda)  )
     {
-      minActivity = std::min( minActivity, rw->m_simpleMda );
-      maxActivity = std::max( maxActivity, rw->m_simpleMda );
+      minSearchActivity = std::min( minSearchActivity, rw->m_simpleMda );
+      maxSearchActivity = std::max( maxSearchActivity, rw->m_simpleMda );
     }
   }//for( auto w : m_peaks->children() )
   
   if( !nused )
-    return;
-  
-  if( IsInf(minActivity) || maxActivity==0.0 )
   {
-    minActivity = 0.0;
-    maxActivity = 0.1*PhysicalUnits::curie;
+    m_results->hide();
+    if( m_errorMsg->isHidden() || m_errorMsg->text().empty() )
+    {
+      m_errorMsg->setText( "No peaks are selected" );
+      m_errorMsg->show();
+    }
+    
+    return;
+  }//if( !nused )
+  
+  if( IsInf(minSearchActivity) || maxSearchActivity==0.0 )
+  {
+    minSearchActivity = 0.0;
+    maxSearchActivity = PhysicalUnits::curie;
   }else
   {
-    minActivity *= 0.25;
-    maxActivity *= 4.0;
+    //minSearchActivity *= 0.25;
+    minSearchActivity = 0.0;
+    maxSearchActivity *= 10.0;
   }
   
-  size_t num_iterations = 0;
-  int numDOF = 0;
-  double overallBestChi2 = std::numeric_limits<double>::infinity(), overallBestActivity = 0.0;
+  m_errorMsg->hide();
+  
+  const double yrange = 15;
+  const double cl_chi2_delta = 4.0; //95.45% CL, or something
+  
+  const size_t nchi2 = 50;  //approx num chi2 to compute
   vector<pair<double,double>> chi2s;
+  double overallBestChi2 = 0.0, overallBestActivity = 0.0, upperLimit = 0.0, lowerLimit = 0.0, activityRangeMin = 0.0, activityRangeMax = 0.0;
+  
+  try
+  {
+    size_t num_iterations = 0;
+    
+    //The boost::math::tools::bisect(...) function will make calls using the same value of activity,
+    //  so we will cache those values to save some time.
+    map<double,double> chi2cache;
+    auto chi2ForAct = [this,&num_iterations,&chi2cache]( double const &activity ) -> double {
+      
+      const auto pos = chi2cache.find(activity);
+      if( pos != end(chi2cache) )
+        return pos->second;
+      
+      int numDOF = 0;
+      double chi2;
+      vector<shared_ptr<PeakDef>> peaks;
+      computeForAcivity( activity, peaks, chi2, numDOF );
+      
+      ++num_iterations;
+      
+      if( (numDOF == 0) && (chi2 == 0.0) )
+        throw runtime_error( "No DOF" );
+      
+      chi2cache.insert( std::pair<double,double>{activity,chi2} );
+      
+      return chi2;
+    };//chi2ForAct
+    
+    
+    //\TODO: if best activity is at minSearchActivity, it takes 50 iterations inside brent_find_minima
+    //      to confirm; we could save this time by using just a little bit of intelligence...
+    const int bits = 8; //Float has 24 bits of mantisa, so 12 would be its max precision; 8 should get us accurate to almost three significant figures
+    boost::uintmax_t max_iter = 100;
+    const pair<double, double> r = boost::math::tools::brent_find_minima( chi2ForAct, minSearchActivity, maxSearchActivity, bits, max_iter );
+  
+    overallBestChi2 = r.second;
+    overallBestActivity = r.first;
+    
+    cout << "Found min X2=" << overallBestChi2 << " with activity "
+         << PhysicalUnits::printToBestActivityUnits(overallBestActivity)
+         << " and it took " << std::dec << num_iterations << " iterations" << endl;
+    
+    //boost::math::tools::bracket_and_solve_root(...)
+    auto chi2ForRangeLimit = [&chi2ForAct, overallBestChi2, yrange]( double const &activity ) -> double {
+      return chi2ForAct(activity) - overallBestChi2 - yrange;
+    };
+    
+    auto chi2ForCL = [&chi2ForAct, overallBestChi2, cl_chi2_delta]( double const &activity ) -> double {
+      return chi2ForAct(activity) - overallBestChi2 - cl_chi2_delta;
+    };
+    
+    //Tolerance is called with two values of activity; one with the chi2 bellow root, and one above
+    auto tolerance = [chi2ForCL](double act1, double act2)->bool{
+      const double chi2_1 = chi2ForCL(act1);
+      const double chi2_2 = chi2ForCL(act2);
+      
+      //cout << "Tolerance called with act1=" << PhysicalUnits::printToBestActivityUnits(act1)
+      //     << ", act2=" << PhysicalUnits::printToBestActivityUnits(act2)
+      //     << " ---> chi2_1=" << chi2_1 << ", chi2_2=" << chi2_2 << endl;
+      
+      return fabs(chi2_1 - chi2_2) < 0.025;
+    };//tolerance(...)
+    
+    cout << "chi2ForCL(minSearchActivity)=" << chi2ForCL(minSearchActivity) << endl;
+    
+    //Before trying to find lower-bounding activity, make sure the best value isnt the lowest
+    //  possible value (i.e., zero in this case), and that if we go to the lowest possible value,
+    //  that the chi2 will increase at least by cl_chi2_delta
+    if( (fabs(minSearchActivity - overallBestActivity) > PhysicalUnits::nCi)
+       && (chi2ForCL(minSearchActivity) > 0.0) )
+    {
+      pair<double,double> lower_val;
+      lower_val = boost::math::tools::bisect( chi2ForCL, minSearchActivity, overallBestActivity, tolerance, max_iter );
+      lowerLimit = lower_val.first;
+      cout << "lower_val CL activity=" << PhysicalUnits::printToBestActivityUnits(lower_val.first)
+           << " wih chi2=" << chi2ForAct(lower_val.first) << ", num_iterations=" << std::dec << num_iterations << endl;
+      
+      lower_val = boost::math::tools::bisect( chi2ForRangeLimit, minSearchActivity, lowerLimit, tolerance, max_iter );
+      activityRangeMin = lower_val.first;
+      cout << "lower_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMin)
+           << " wih chi2=" << chi2ForAct(lower_val.first) << ", num_iterations=" << std::dec << num_iterations << endl;
+    }else
+    {
+      lowerLimit = 0.0;
+      activityRangeMin = overallBestActivity;
+      cout << "lower_val activity already at min" << endl;
+    }//if( fabs(minSearchActivity - overallBestActivity) > PhysicalUnits::nCi )
+    
+    if( fabs(maxSearchActivity - overallBestActivity) > PhysicalUnits::nCi )
+    {
+      pair<double,double> upper_val;
+      upper_val = boost::math::tools::bisect( chi2ForCL, overallBestActivity, maxSearchActivity, tolerance, max_iter );
+      upperLimit = upper_val.first;
+      cout << "upper_val CL activity=" << PhysicalUnits::printToBestActivityUnits(upperLimit)
+            << " wih chi2=" << chi2ForAct(upper_val.first) << ", num_iterations=" << std::dec << num_iterations << endl;
+      
+      upper_val = boost::math::tools::bisect( chi2ForRangeLimit, upperLimit, maxSearchActivity, tolerance, max_iter );
+      activityRangeMax = upper_val.first;
+      cout << "upper_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMax)
+           << " wih chi2=" << chi2ForAct(upper_val.first) << ", num_iterations=" << std::dec << num_iterations << endl;
+    }else
+    {
+      upperLimit = overallBestActivity;
+      activityRangeMax = overallBestActivity;
+      cout << "lower_val activity already at max" << endl;
+    }
+    
+    cout << "Found best chi2 and ranges with num_iterations=" << std::dec << num_iterations << endl;
+    
+    const double act_delta = fabs(activityRangeMax - activityRangeMin) / nchi2;
+    
+    for( double act = activityRangeMin; act <= activityRangeMax; act += act_delta )
+      chi2s.push_back( {act,chi2ForAct(act)} );
+  }catch( std::exception &e )
+  {
+    m_bestChi2Act->setText( "" );
+    m_upperLimit->setText( "" );
+    m_chi2Model->removeRows( 0, m_chi2Model->rowCount() );
+    m_results->hide();
+    m_errorMsg->setText( "Error calculating Chi2: " + string(e.what()) );
+    m_errorMsg->show();
+    return;
+  }//try / catch
+  
+  
+  /*
+  int numDOF = 0;
+  overallBestChi2 = std::numeric_limits<double>::infinity();
+  overallBestActivity = 0.0;
   const size_t maxNumActivities = 50;
+  
   while( chi2s.size() < (maxNumActivities/2) )
   {
-    cout << "Searching range " << PhysicalUnits::printToBestActivityUnits(minActivity) << " to "
-         << PhysicalUnits::printToBestActivityUnits(maxActivity) << endl;
+    cout << "Searching range " << PhysicalUnits::printToBestActivityUnits(minSearchActivity) << " to "
+         << PhysicalUnits::printToBestActivityUnits(maxSearchActivity) << endl;
     ++num_iterations;
     if( num_iterations > 100 )
     {
@@ -768,9 +975,9 @@ void DetectionConfidenceTool::doCalc()
     }
     size_t best_index = maxNumActivities + 1;
     vector<pair<double,double>> these_chi2s;
-    const double step = (maxActivity - minActivity) / maxNumActivities;
+    const double step = (maxSearchActivity - minSearchActivity) / maxNumActivities;
     double bestChi2 = std::numeric_limits<double>::infinity(), bestChi2Activity = 0.0;
-    for( double activity = minActivity; activity <= maxActivity; activity += step )
+    for( double activity = minSearchActivity; activity <= maxSearchActivity; activity += step )
     {
       double chi2;
       std::vector<shared_ptr<PeakDef>> peaks;
@@ -791,9 +998,9 @@ void DetectionConfidenceTool::doCalc()
       
       these_chi2s.push_back( {activity,chi2} );
     
-      if( chi2==0.0 && numDOF == 0 )
+      if( (chi2 == 0.0) && (numDOF == 0) )
         return;
-    }//for( double activity = minActivity; activity <= maxActivity; activity += step )
+    }//for( double activity = minSearchActivity; activity <= maxSearchActivity; activity += step )
     
     
     if( best_index > maxNumActivities )
@@ -813,11 +1020,10 @@ void DetectionConfidenceTool::doCalc()
     chi2s.insert( end(chi2s), begin(these_chi2s)+lower_index, begin(these_chi2s)+upper_index );
     if( chi2s.size() > 1 )
     {
-      minActivity = chi2s.front().first;
-      maxActivity = chi2s.back().first;
+      minSearchActivity = chi2s.front().first;
+      maxSearchActivity = chi2s.back().first;
     }
   }//while( chi2s.size() && chi2s.size() < (maxNumActivities/2) )
-  
   
   cout << "Fit Chi2s:" << endl;
   for( const auto &p : chi2s )
@@ -825,7 +1031,6 @@ void DetectionConfidenceTool::doCalc()
     cout << PhysicalUnits::printToBestActivityUnits(p.first) << " --> chi2=" << p.second << endl;
   }
   cout << "And there were " << std::dec << numDOF << " DOFs" << endl;
-  
   
   if( chi2s.empty() )
   {
@@ -840,15 +1045,23 @@ void DetectionConfidenceTool::doCalc()
       bestIndex = i;
   }
   
-  const double delta = 4.0; //95.45% CL, or something
+  
   double upperActivity = chi2s[bestIndex].first, upperActivtyChi2 = chi2s[bestIndex].second;
   for( size_t i = bestIndex + 1; i < chi2s.size(); ++i )
   {
     upperActivity = chi2s[i].first;
     upperActivtyChi2 = chi2s[i].second;
-    if( chi2s[i].second > (delta + chi2s[bestIndex].second) )
+    if( chi2s[i].second > (cl_chi2_delta + chi2s[bestIndex].second) )
       break;
   }
+  */
+  
+  
+  double upperActivity = upperLimit, upperActivtyChi2 = -999.9; //upperActivtyChi2=overallBestChi2 + cl_chi2_delta
+  
+  int numDOF = 0;
+  std::vector<shared_ptr<PeakDef>> peaks;
+  computeForAcivity( upperLimit, peaks, upperActivtyChi2, numDOF );
   
   
   char buffer[128];
@@ -864,32 +1077,63 @@ void DetectionConfidenceTool::doCalc()
   
   m_upperLimit->setText( buffer );
   
+  if( lowerLimit > 0.0 )
+  {
+    //display lower limit to user...
+  }
+  
   
   const bool useCurries = true;
-  const bool avrgAct = 0.5*(chi2s.front().first + chi2s.back().first);
-  const auto &units = PhysicalUnits::bestActivityUnitHtml( avrgAct, useCurries);
+  const double avrgAct = 0.5*(chi2s.front().first + chi2s.back().first);
+  const auto &units = PhysicalUnits::bestActivityUnitHtml( avrgAct, useCurries );
   
   m_chi2Model->insertColumn( 0 );
   m_chi2Model->insertColumn( 1 );
   m_chi2Model->insertRows(0, static_cast<int>(chi2s.size()) );
   
+  double minchi2 = std::numeric_limits<double>::infinity();
+  double maxchi2 = -std::numeric_limits<double>::infinity();
+  
   for( size_t i = 0; i < chi2s.size(); ++i )
   {
+    minchi2 = std::min( minchi2, chi2s[i].second );
+    maxchi2 = std::max( maxchi2, chi2s[i].second );
     m_chi2Model->setData( static_cast<int>(i), 0, (chi2s[i].first / units.second) );
     m_chi2Model->setData( static_cast<int>(i), 1, chi2s[i].second );
   }
   
-  m_chi2Chart->axis(Wt::Chart::XAxis).setTitle("Activity (" + units.first + ")");
+  
+  double chi2range = maxchi2 - minchi2;
+  if( IsInf(minchi2) || IsInf(maxchi2) ) //JIC
+  {
+    minchi2 = 0;
+    maxchi2 = 100;
+    chi2range = 0;
+  }
+  
+  if( units.first == "&mu;Ci" )  /// \TODO: fix PhysicalUnits::bestActivityUnitHtml(..) to just us u character
+    m_chi2Chart->axis(Wt::Chart::XAxis).setTitle("Activity (" MU_CHARACTER "Ci)");
+  else
+    m_chi2Chart->axis(Wt::Chart::XAxis).setTitle("Activity (" + units.first + ")");
+  
   m_chi2Model->setHeaderData(0, WString("Activity") );
   
   m_chi2Chart->setXSeriesColumn(0);
-  Wt::Chart::WDataSeries series(1, Wt::Chart::LineSeries,Wt::Chart::Y1Axis);
+  Wt::Chart::WDataSeries series(1, Wt::Chart::LineSeries,Wt::Chart::YAxis);
   //series.setPen( WPen(m_chartFwhmLineColor) );
   m_chi2Chart->addSeries(series);
   
-  //m_chi2Chart->axis(Wt::Chart::Y1Axis).setRoundLimits( Chart::AxisValue::MinimumValue | Chart::AxisValue::MaximumValue );
-  m_chi2Chart->axis(Wt::Chart::Y1Axis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
-  m_chi2Chart->axis(Wt::Chart::XAxis).setRange( (chi2s.front().first/units.second), (chi2s.back().first/units.second) );
+  //m_chi2Chart->axis(Wt::Chart::YAxis).setRoundLimits( Chart::AxisValue::MinimumValue | Chart::AxisValue::MaximumValue );
+  //m_chi2Chart->axis(Wt::Chart::YAxis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
+  m_chi2Chart->axis(Wt::Chart::YAxis).setRange( minchi2 - 0.1*chi2range, maxchi2 + 0.1*chi2range );
+  
+  double xstart = (chi2s.front().first/units.second);
+  double xend = (chi2s.front().first/units.second);
+  //Blah blah blah, coarse labels to be round numbers
+  //const double initialrange = xend - xstart;
+  //const double n = std::pow(10, std::floor(std::log10(initialrange/10)));
+  
+  m_chi2Chart->axis(Wt::Chart::XAxis).setRange( xstart, xend );
   //m_chi2Chart->axis(Wt::Chart::XAxis).setAutoLimits( Chart::MaximumValue );
   //m_chi2Chart->axis(Wt::Chart::XAxis).setRoundLimits( Chart::AxisValue::MinimumValue | Chart::AxisValue::MaximumValue );
 
@@ -1065,20 +1309,16 @@ void DetectionConfidenceTool::setRefLinesAndGetLineInfo()
 {
   // \TODO: this function is essentually the same as #ReferencePhotopeakDisplay::updateDisplayChange
   //        and given its un-cleaness, it may be worth refactoring.
+  
+  if( !m_currentNuclide )
+    return;
+  
   auto spec = m_chart->data();
   if( !m_our_meas || !spec )
     return;
     
   std::shared_ptr<DetectorPeakResponse> drf = m_our_meas->detector();
   if( !drf || !drf->hasResolutionInfo() || !drf->isValid() )
-    return;
-  
-  
-  const string isotxt = m_nuclideEdit->text().toUTF8();
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  const SandiaDecay::Nuclide *nuc = db->nuclide( isotxt );
-
-  if( !nuc )
     return;
     
   const string disttxt = m_distanceEdit->text().toUTF8();
@@ -1110,12 +1350,12 @@ void DetectionConfidenceTool::setRefLinesAndGetLineInfo()
   }//if( generic shielding ) / else
   
   string agestr;
-  double age = PeakDef::defaultDecayTime( nuc, &agestr );
+  double age = PeakDef::defaultDecayTime( m_currentNuclide, &agestr );
   
   auto theme = m_interspec->getColorTheme();
   
   ReferenceLineInfo reflines;
-  reflines.nuclide = nuc;
+  reflines.nuclide = m_currentNuclide;
   if( theme && theme->referenceLineColor.size() )
     reflines.lineColor = theme->referenceLineColor[0];
   
@@ -1131,7 +1371,7 @@ void DetectionConfidenceTool::setRefLinesAndGetLineInfo()
   reflines.age = age;
   reflines.lowerBrCuttoff = 0.0;
   
-  reflines.labelTxt = isotxt;
+  reflines.labelTxt = m_currentNuclide->symbol;
   
   if( generic_shielding )
   {
@@ -1148,10 +1388,10 @@ void DetectionConfidenceTool::setRefLinesAndGetLineInfo()
   
   
   SandiaDecay::NuclideMixture mixture;
-  mixture.addNuclideByActivity( nuc, 1.0E-3 * SandiaDecay::curie );
+  mixture.addNuclideByActivity( m_currentNuclide, 1.0E-3 * SandiaDecay::curie );
   
   const vector<SandiaDecay::NuclideActivityPair> activities = mixture.activity( age );
-  const double parent_activity = nuc ? mixture.activity( age, nuc ) : 0.0;
+  const double parent_activity = m_currentNuclide ? mixture.activity( age, m_currentNuclide ) : 0.0;
   
   vector<double> energies, branchratios;
   vector<SandiaDecay::ProductType> particle_type;
@@ -1364,7 +1604,7 @@ void DetectionConfidenceTool::setRefLinesAndGetLineInfo()
     //  element, than we will normalize them to go between zero and one.
     const bool is_gamma = (particle_type[i] == SandiaDecay::GammaParticle);
     const bool is_xray = (particle_type[i] == SandiaDecay::XrayParticle);
-    const bool is_decay_xray_gamma = (nuc && (is_gamma || is_xray));
+    const bool is_decay_xray_gamma = (m_currentNuclide && (is_gamma || is_xray));
     const double br = branchratios[i] / (is_decay_xray_gamma ? max_gamma_xray : maxbrs[particle_type[i]]);
     
     const SandiaDecay::Transition *transition = transistions[i];
@@ -1389,7 +1629,8 @@ void DetectionConfidenceTool::setRefLinesAndGetLineInfo()
       }//if( transition ) / else ...
     }else
     {
-      const SandiaDecay::Element *element = db->element( nuc->atomicNumber );
+      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+      const SandiaDecay::Element *element = db->element( m_currentNuclide->atomicNumber );
       
       particlestr = "xray";
       decaystr = "xray";
