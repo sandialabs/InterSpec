@@ -1779,7 +1779,7 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     if( detector && detector->hasResolutionInfo() )
       minsigma = 0.75*detector->peakResolutionSigma( origCont->lowerEnergy() );
     
-    int nFitWidth = 0;
+    int nFitWidth = 0, nFitEnergy = 0;
     
     ROOT::Minuit2::MnUserParameters params;
     for( size_t i = 0; i < inpeaks.size(); ++i )
@@ -1803,8 +1803,10 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
         params.Add( name, mean, 0.1*sigma, lx, ux );
       
       nFitWidth += inpeaks[i]->fitFor(PeakDef::Sigma);
+      nFitEnergy += inpeaks[i]->fitFor(PeakDef::Mean);
     }//for( const PeakDefShrdPtr &peak : inpeaks )
     
+      
     const double sigma0 = inpeaks[0]->sigma();
     if( nFitWidth == 0  )
       params.Add( "Sigma0", sigma0 );
@@ -1816,27 +1818,32 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     else if( inpeaks.size() > 1 )
       params.Add( "SigmaFcn", 0.0 );
     
-    ROOT::Minuit2::MnUserParameterState inputParamState( params );
-    ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+    if( (nFitWidth == 0) && (nFitEnergy == 0) )
+    {
+      // Nothing to do here; LinearProblemSubSolveChi2Fcn::parametersToPeaks(...) will do all work
+    }else
+    {
+      ROOT::Minuit2::MnUserParameterState inputParamState( params );
+      ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+      
+      ROOT::Minuit2::CombinedMinimizer fitter;
+      unsigned int maxFcnCall = 0;
+      const double tolerance = 0.01;
+      
+      auto minimum = fitter.Minimize( chi2Fcn, params, strategy, maxFcnCall, tolerance );
+      
+      params = minimum.UserState().Parameters();
+    }//if( no non-linear fit parameters ) / else
     
-    ROOT::Minuit2::CombinedMinimizer fitter;
-    unsigned int maxFcnCall = 0;
-    const double tolerance = 0.01;
-    
-    ROOT::Minuit2::FunctionMinimum minimum
-    = fitter.Minimize( chi2Fcn, params, strategy, maxFcnCall, tolerance );
-    
-    params = minimum.UserState().Parameters();
     const vector<double> pars = params.Params();
     const vector<double> errors = params.Errors();
-    
+      
     vector<PeakDef> fitpeaks;
     double chi2 = chi2Fcn.parametersToPeaks( fitpeaks, &pars[0], &errors[0] );
     double chi2Dof = chi2 / chi2Fcn.dof();
     
     if( fitpeaks.size() != inpeaks.size() )
-      throw std::logic_error( "refitPeaksThatShareROI:"
-                             " invalid number of result peaks" );
+      throw std::logic_error( "refitPeaksThatShareROI: invalid number of result peaks" );
     
     static int ntimesmessages = 0;
     if( ntimesmessages++ < 3 )
