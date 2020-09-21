@@ -177,6 +177,11 @@ public:
   void setShieldingMaterialAndThickness( const std::string &name,
                                          const std::string &thickness );
   
+  /** Returns the current ShieldingSelect.  This is intended as an accessor, not for setting the
+   shielding.
+   */
+  const ShieldingSelect *shieldingSelect();
+  
   //currentlyShowingNuclide(): as its name implies; returns NULL if not showing
   //  a nuclide.
   const ReferenceLineInfo &currentlyShowingNuclide() const;

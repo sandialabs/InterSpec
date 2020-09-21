@@ -278,6 +278,9 @@ public:
   Wt::WLineEdit *materialEdit();
   Wt::WLineEdit *thicknessEdit();
   
+  const Wt::WLineEdit *materialEdit() const;
+  const Wt::WLineEdit *thicknessEdit() const;
+  
   Wt::WLineEdit *arealDensityEdit();
   Wt::WLineEdit *atomicNumberEdit();
   

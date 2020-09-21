@@ -393,8 +393,8 @@ void ShieldingSelect::setMaterialNameAndThickness( const string &name,
   if( thickness.size() )
     PhysicalUnits::stringToDistance( thickness );
   
-  m_materialEdit->setText( name );
-  m_thicknessEdit->setText( thickness );
+  m_materialEdit->setText( WString::fromUTF8(name) );
+  m_thicknessEdit->setText( WString::fromUTF8(thickness) );
   
   handleMaterialChange();
 }//void setMaterialNameAndThickness(...)
@@ -427,6 +427,17 @@ WLineEdit *ShieldingSelect::materialEdit()
 
 
 Wt::WLineEdit *ShieldingSelect::thicknessEdit()
+{
+  return m_thicknessEdit;
+}
+
+
+const Wt::WLineEdit *ShieldingSelect::materialEdit() const
+{
+  return m_materialEdit;
+}
+
+const Wt::WLineEdit *ShieldingSelect::thicknessEdit() const
 {
   return m_thicknessEdit;
 }

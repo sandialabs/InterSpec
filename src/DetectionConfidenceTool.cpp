@@ -235,8 +235,8 @@ DetectionConfidenceWindow::DetectionConfidenceWindow( InterSpec *viewer,
   rejectWhenEscapePressed( true );
   
   m_tool = new DetectionConfidenceTool( viewer, materialDB, materialSuggest );
-  //stretcher()->addWidget( m_tool, 0, 0 );
-  contents()->addWidget( m_tool );
+  stretcher()->addWidget( m_tool, 0, 0 );
+  //contents()->addWidget( m_tool );
   
   AuxWindow::addHelpInFooter( footer(), "detection-confidence-tool" );
   
@@ -289,12 +289,13 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
    -[x] Put the Chi2 chart to the right of the spectrum, when it should exist
    -[ ] Give the user a choice about using continuum fixed at null hypothesis
    -[ ] Allow combining ROI with neghboring peaks
-   -[ ] Make it so when user change ROI on chart, it updates the text input
+   -[x] Make it so when user change ROI on chart, it updates the text input
+   -[ ] Allow minor gamma-lines overlapping with primary gamma lines to contribute to peak area
    -[ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like mayebe have each peak be a WPanel or something
    -[ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
    -[ ] Allow users to select CL, not just 95%
    -[ ] Add in allowing to age nuclide (didnt I generalize inputting a nuclide somewhere?  Hopefully just re-use that)
-   -[ ] Default fill in reference lines/shielding/age as user has in Reference Photopeak tool
+   -[x] Default fill in reference lines/shielding/age as user has in Reference Photopeak tool
    
    
    To calculate the Currie
@@ -411,19 +412,14 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
 
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
   
+  // \TODO: allow entering age, and see ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
+  
+  
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );
   m_nuclideSuggest->setModel( isoSuggestModel );
   m_nuclideSuggest->filterModel().connect( isoSuggestModel, &IsotopeNameFilterModel::filter );
   m_nuclideSuggest->forEdit( m_nuclideEdit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
-
-  ReferencePhotopeakDisplay *reflines = viewer->referenceLinesWidget();
-  if( reflines )
-  {
-    const ReferenceLineInfo &current = reflines->currentlyShowingNuclide();
-    if( current.nuclide )
-      m_nuclideEdit->setText( current.nuclide->symbol );
-  }
   
   SpectraFileModel *specFileModel = viewer->fileManager()->model();
   m_detectorDisplay = new DetectorDisplay( viewer, specFileModel );
@@ -475,7 +471,6 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
     m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()} );
     m_chart->setData( ourspec, false );
   }//if( spec )
-  
   
 
   
@@ -587,13 +582,47 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   m_peaks->addStyleClass( "MdaPeaks" );
   
   grid->setColumnStretch( 0, 1 );
-  //grid->setColumnStretch( 1, 1 );
+  grid->setRowStretch( grid->rowCount() - 1, 10 );
+  grid->setRowResizable( 0, true );
+  grid->setContentsMargins( 0, 0, 0, 0 );
   
-  //grid->setRowResizable( 0, screenH/3 );
   //grid->setColumnStretch( 1, 1 );
-  //grid->setRowStretch(grid->rowCount() -1, 1 );
+  //grid->setColumnStretch( 1, 1 );
   //grid->setRowStretch( 0, 1 );
   
+  
+  ReferencePhotopeakDisplay *reflines = viewer->referenceLinesWidget();
+  if( reflines )
+  {
+    const ReferenceLineInfo &current = reflines->currentlyShowingNuclide();
+    if( current.nuclide )
+      m_nuclideEdit->setText( current.nuclide->symbol );
+    
+    // \TODO: age
+    
+    const ShieldingSelect *shielding = reflines->shieldingSelect();
+    if( shielding )
+    {
+      const bool isGeneric = shielding->isGenericMaterial();
+      if( isGeneric && (shielding->arealDensity() > 0.0) )
+      {
+        const double an = shielding->atomicNumber();
+        const double ad = shielding->arealDensity();
+        m_shieldingSelect->setAtomicNumberAndArealDensity( an, ad );
+      }
+      
+      if( !isGeneric && shielding->materialEdit() && shielding->thicknessEdit() )
+      {
+        const string material = shielding->materialEdit()->text().toUTF8();
+        const string thick = shielding->thicknessEdit()->text().toUTF8();
+        
+        if( !material.empty() && !thick.empty() )
+          m_shieldingSelect->setMaterialNameAndThickness( material, thick );
+      }//if( generic ) / else
+    }//if( shielding )
+  }//if( reflines )
+  
+  handleNuclideChange();  //JIC we picked up the one from RefLines
   handleInputChange();
 }//DetectionConfidenceTool constructor
   
@@ -890,7 +919,7 @@ void DetectionConfidenceTool::doCalc()
   const double yrange = 15;
   const double cl_chi2_delta = 4.0; //95.45% CL, or something
   
-  const size_t nchi2 = 50;  //approx num chi2 to compute
+  const size_t nchi2 = 25;  //approx num chi2 to compute
   vector<pair<double,double>> chi2s;
   double overallBestChi2 = 0.0, overallBestActivity = 0.0, upperLimit = 0.0, lowerLimit = 0.0, activityRangeMin = 0.0, activityRangeMax = 0.0;
   
@@ -946,10 +975,11 @@ void DetectionConfidenceTool::doCalc()
     };
     
     //Tolerance is called with two values of activity; one with the chi2 bellow root, and one above
-    auto tolerance = [chi2ForCL](double act1, double act2)->bool{
+    auto tolerance = [chi2ForCL](double act1, double act2) -> bool{
       const double chi2_1 = chi2ForCL(act1);
       const double chi2_2 = chi2ForCL(act2);
       
+      // \TODO: make sure tolerance is being used correctly - when pringting info out for every call I'm not sure it is being used right... (but answers seem reasonable, so...)
       //cout << "Tolerance called with act1=" << PhysicalUnits::printToBestActivityUnits(act1)
       //     << ", act2=" << PhysicalUnits::printToBestActivityUnits(act2)
       //     << " ---> chi2_1=" << chi2_1 << ", chi2_2=" << chi2_2 << endl;
@@ -957,7 +987,7 @@ void DetectionConfidenceTool::doCalc()
       return fabs(chi2_1 - chi2_2) < 0.025;
     };//tolerance(...)
     
-    cout << "chi2ForCL(minSearchActivity)=" << chi2ForCL(minSearchActivity) << endl;
+    //cout << "chi2ForCL(minSearchActivity)=" << chi2ForCL(minSearchActivity) << endl;
     
     //Before trying to find lower-bounding activity, make sure the best value isnt the lowest
     //  possible value (i.e., zero in this case), and that if we go to the lowest possible value,
@@ -998,15 +1028,17 @@ void DetectionConfidenceTool::doCalc()
     {
       upperLimit = overallBestActivity;
       activityRangeMax = overallBestActivity;
-      cout << "lower_val activity already at max" << endl;
+      cout << "upper_val activity already at max" << endl;
     }
     
     cout << "Found best chi2 and ranges with num_iterations=" << std::dec << num_iterations << endl;
     
     const double act_delta = fabs(activityRangeMax - activityRangeMin) / nchi2;
-    
-    for( double act = activityRangeMin; act <= activityRangeMax; act += act_delta )
+    for( size_t i = 0; i < nchi2; ++i )
+    {
+      const double act = activityRangeMin + act_delta*i;
       chi2s.push_back( {act,chi2ForAct(act)} );
+    }
   }catch( std::exception &e )
   {
     m_bestChi2Act->setText( "" );
@@ -1018,107 +1050,7 @@ void DetectionConfidenceTool::doCalc()
     return;
   }//try / catch
   
-  
-  /*
-  int numDOF = 0;
-  overallBestChi2 = std::numeric_limits<double>::infinity();
-  overallBestActivity = 0.0;
-  const size_t maxNumActivities = 50;
-  
-  while( chi2s.size() < (maxNumActivities/2) )
-  {
-    cout << "Searching range " << PhysicalUnits::printToBestActivityUnits(minSearchActivity) << " to "
-         << PhysicalUnits::printToBestActivityUnits(maxSearchActivity) << endl;
-    ++num_iterations;
-    if( num_iterations > 100 )
-    {
-      cerr << "Too many iterations trying to find chart range" << endl;
-      break;
-    }
-    size_t best_index = maxNumActivities + 1;
-    vector<pair<double,double>> these_chi2s;
-    const double step = (maxSearchActivity - minSearchActivity) / maxNumActivities;
-    double bestChi2 = std::numeric_limits<double>::infinity(), bestChi2Activity = 0.0;
-    for( double activity = minSearchActivity; activity <= maxSearchActivity; activity += step )
-    {
-      double chi2;
-      std::vector<shared_ptr<PeakDef>> peaks;
-      computeForAcivity( activity, peaks, chi2, numDOF );
-      
-      if( chi2 < bestChi2 )
-      {
-        bestChi2 = chi2;
-        bestChi2Activity = activity;
-        best_index = these_chi2s.size();
-      }
-      
-      if( chi2 < overallBestChi2 )
-      {
-        overallBestChi2 = chi2;
-        overallBestActivity = activity;
-      }
-      
-      these_chi2s.push_back( {activity,chi2} );
-    
-      if( (chi2 == 0.0) && (numDOF == 0) )
-        return;
-    }//for( double activity = minSearchActivity; activity <= maxSearchActivity; activity += step )
-    
-    
-    if( best_index > maxNumActivities )
-    {
-      cerr << "Totally unexpected ( best_index < 0 )" << endl;
-      return;
-    }
-    
-    size_t lower_index = best_index, upper_index = best_index;
-    while( (lower_index > 0) && (these_chi2s[lower_index].second < (bestChi2 + 20)) )
-      --lower_index;
-    
-    while( (upper_index < these_chi2s.size()) && (these_chi2s[upper_index].second < (bestChi2 + 20)) )
-      ++upper_index;
-    
-    chi2s.clear();
-    chi2s.insert( end(chi2s), begin(these_chi2s)+lower_index, begin(these_chi2s)+upper_index );
-    if( chi2s.size() > 1 )
-    {
-      minSearchActivity = chi2s.front().first;
-      maxSearchActivity = chi2s.back().first;
-    }
-  }//while( chi2s.size() && chi2s.size() < (maxNumActivities/2) )
-  
-  cout << "Fit Chi2s:" << endl;
-  for( const auto &p : chi2s )
-  {
-    cout << PhysicalUnits::printToBestActivityUnits(p.first) << " --> chi2=" << p.second << endl;
-  }
-  cout << "And there were " << std::dec << numDOF << " DOFs" << endl;
-  
-  if( chi2s.empty() )
-  {
-    m_results->hide();
-    return;
-  }
-  
-  size_t bestIndex = 0;
-  for( size_t i = 1; i < chi2s.size(); ++i )
-  {
-    if( chi2s[i].second < chi2s[bestIndex].second )
-      bestIndex = i;
-  }
-  
-  
-  double upperActivity = chi2s[bestIndex].first, upperActivtyChi2 = chi2s[bestIndex].second;
-  for( size_t i = bestIndex + 1; i < chi2s.size(); ++i )
-  {
-    upperActivity = chi2s[i].first;
-    upperActivtyChi2 = chi2s[i].second;
-    if( chi2s[i].second > (cl_chi2_delta + chi2s[bestIndex].second) )
-      break;
-  }
-  */
-  
-  
+
   double upperActivity = upperLimit, upperActivtyChi2 = -999.9; //upperActivtyChi2=overallBestChi2 + cl_chi2_delta
   
   int numDOF = 0;
