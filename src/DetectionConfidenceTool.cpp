@@ -286,11 +286,21 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
     m_shieldingSelect( nullptr )
 {
   /** \TODO:
-   - Put the Chi2 chart to the right of the spectrum, when it should exist
-   - Give the user a choice about using continuum fixed at null hypothesis
-   - Allow combining ROI with neghboring peaks
-   - Have the energy rows fold down to show more information, similar to Steves tool, for each energy
-   - Allow users to select CL, not just 95%
+   -[x] Put the Chi2 chart to the right of the spectrum, when it should exist
+   -[ ] Give the user a choice about using continuum fixed at null hypothesis
+   -[ ] Allow combining ROI with neghboring peaks
+   -[ ] Make it so when user change ROI on chart, it updates the text input
+   -[ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like mayebe have each peak be a WPanel or something
+   -[ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
+   -[ ] Allow users to select CL, not just 95%
+   -[ ] Add in allowing to age nuclide (didnt I generalize inputting a nuclide somewhere?  Hopefully just re-use that)
+   -[ ] Default fill in reference lines/shielding/age as user has in Reference Photopeak tool
+   
+   
+   To calculate the Currie
+   For each Peak, fit the most likely area, and and its limits.
+   If lower confidence is above zero, assume there is a peak
+   
    */
   wApp->useStyleSheet( "InterSpec_resources/DetectionConfidenceTool.css" );
   
@@ -306,15 +316,22 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   
   m_chart = new D3SpectrumDisplayDiv();
   
-  const int screenW = viewer->renderedWidth();
+  //const int screenW = viewer->renderedWidth();
   const int screenH = viewer->renderedHeight();
-  const int width = ((screenW < 906) ? screenW : 0.75*screenW ); // maybe cap width off at 1800 px?
+  //const int width = ((screenW < 906) ? screenW : 0.75*screenW ); // maybe cap width off at 1800 px?
   const int height = ((screenH < 525) ? screenH : 0.8*screenH );
   //m_chart->resize( WLength(width-20,WLength::Unit::Pixel), WLength(std::min(0.3*height,300.0),WLength::Unit::Pixel) );
   //m_chart->resize( WLength::Auto, WLength(300,WLength::Unit::Pixel) );
   cout << "height-->" << 1.0*height << endl;
   m_chart->setMinimumSize( WLength::Auto, WLength( std::max(200.0,0.4*height),WLength::Unit::Pixel) );
   
+  /** \TODO: Right now the user can drag the ROI around, and if the peak amplitude becaomes
+             insignificant or under an area of 5, then the old peak is used, just with ROI range
+             altered.  So what we'll do is just catch when the peak ROI drag is final, and then
+             adjust the ROI, and re-due our fit - we should probably do something more intuitive
+             so the user knows whats going on.
+   */
+  m_chart->roiDragUpdate().connect( boost::bind( &DetectionConfidenceTool::roiDraggedCallback, this, _1, _2, _3, _4, _5, _6 ) );
   
   m_chart->setCompactAxis( true );
   m_chart->setXAxisTitle( "Energy (keV)" );
@@ -600,6 +617,51 @@ void DetectionConfidenceTool::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//render( flags )
 
 
+void DetectionConfidenceTool::roiDraggedCallback( double new_roi_lower_energy,
+                                                  double new_roi_upper_energy,
+                                                  double new_roi_lower_px,
+                                                  double new_roi_upper_px,
+                                                  double original_lower_energy,
+                                                  bool is_final_range )
+{
+  if( !is_final_range )
+    return;
+  
+  if( !m_peakModel )  //Shouldnt ever happen
+    return;
+  
+  shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks = m_peakModel->peaks();
+  if( !origpeaks || origpeaks->empty() )
+    return;  //shouldnt ever happen
+  
+  
+  for( auto w : m_peaks->children() )
+  {
+    auto rw = dynamic_cast<MdaPeakRow *>( w );
+    assert( rw );
+    
+    const float this_roi_start = rw->m_roi_start->value();
+    if( fabs(this_roi_start - original_lower_energy) < 0.1 )
+    {
+      rw->m_roi_start->setValue( new_roi_lower_energy );
+      rw->m_roi_end->setValue( new_roi_upper_energy );
+      rw->emitChanged();
+      
+      cout << "Updated ROI of peak at " << rw->m_energy << " keV to go from "
+           << new_roi_lower_energy << " to " << new_roi_upper_energy << " keV" << endl;
+      return;
+    }
+  }//for( auto w : m_peaks->children() )
+  
+  #if( PERFORM_DEVELOPER_CHECKS )
+    char msg[512];
+    snprintf( msg, sizeof(msg), "Failed to find a ROI that started at %f keV", new_roi_lower_energy );
+    log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+  #endif
+
+  cerr << "Failed to find a ROI that started at " << new_roi_lower_energy <<  " keV" << endl;
+}//void roiDraggedCallback(...)
+
 void DetectionConfidenceTool::handleNuclideChange()
 {
   const string isotxt = m_nuclideEdit->text().toUTF8();
@@ -751,16 +813,16 @@ void DetectionConfidenceTool::handleInputChange()
     float roi_end = energy + 1.5*fwhm;
     bool use = false;
     
-   for( const auto &oldval : oldvalues )
-   {
-     const float old_energy = get<0>(oldval);
-     if( old_energy != energy )
-       continue;
-     
-     use = get<1>(oldval);
-     roi_start = get<2>(oldval);
-     roi_end = get<3>(oldval);
-   }//for( const auto &oldval : oldvalues )
+    for( const auto &oldval : oldvalues )
+    {
+      const float old_energy = get<0>(oldval);
+      if( old_energy != energy )
+        continue;
+      
+      use = get<1>(oldval);
+      roi_start = get<2>(oldval);
+      roi_end = get<3>(oldval);
+    }//for( const auto &oldval : oldvalues )
     
     
     auto row = new MdaPeakRow( energy, countsPerBq , fwhm, roi_start, roi_end, spec, m_peaks );
@@ -847,7 +909,7 @@ void DetectionConfidenceTool::doCalc()
       
       int numDOF = 0;
       double chi2;
-      vector<shared_ptr<PeakDef>> peaks;
+      vector<PeakDef> peaks;
       computeForAcivity( activity, peaks, chi2, numDOF );
       
       ++num_iterations;
@@ -1060,7 +1122,7 @@ void DetectionConfidenceTool::doCalc()
   double upperActivity = upperLimit, upperActivtyChi2 = -999.9; //upperActivtyChi2=overallBestChi2 + cl_chi2_delta
   
   int numDOF = 0;
-  std::vector<shared_ptr<PeakDef>> peaks;
+  std::vector<PeakDef> peaks;
   computeForAcivity( upperLimit, peaks, upperActivtyChi2, numDOF );
   
   
@@ -1163,17 +1225,16 @@ void DetectionConfidenceTool::updateShownPeaks()
   
   int numDOF;
   double chi2;
-  std::vector<shared_ptr<PeakDef>> peaks;
+  std::vector<PeakDef> peaks;
   computeForAcivity( activity, peaks, chi2, numDOF );
-  for( auto &p : peaks )
-    m_peakModel->addNewPeak( *p );
-  
+  m_peakModel->setPeaks( peaks );
+    
   cout << "Done in updateShownPeaks()" << endl;
 }//void DetectionConfidenceTool::updateShownPeaks()
 
 
 void DetectionConfidenceTool::computeForAcivity( const double activity,
-                                                 std::vector<shared_ptr<PeakDef>> &peaks,
+                                                 std::vector<PeakDef> &peaks,
                                                  double &chi2, int &numDOF )
 {
   peaks.clear();
@@ -1298,11 +1359,15 @@ void DetectionConfidenceTool::computeForAcivity( const double activity,
   
   chi2 = initialChi2;
   numDOF = static_cast<int>( std::round(totalNDF) );
-  for( const auto &peak : fitPeaks )
-    peaks.push_back( make_shared<PeakDef>( peak ) );
+  
+  for( auto &peak : fitPeaks )
+  {
+    peak.setFitFor( PeakDef::CoefficientType::Mean, false );
+    peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
+  }
+  
+  peaks.swap( fitPeaks );
 }//void DetectionConfidenceTool::computeForAcivity(...)
-
-
 
 
 void DetectionConfidenceTool::setRefLinesAndGetLineInfo()

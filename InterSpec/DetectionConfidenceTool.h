@@ -90,11 +90,17 @@ public:
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
+  void roiDraggedCallback( double new_roi_lower_energy,
+                   double new_roi_upper_energy,
+                   double new_roi_lower_px,
+                   double new_roi_upper_px,
+                   double original_roi_lower_energy,
+                   bool is_final_range );
   
   void doCalc();
   void updateShownPeaks();
   void computeForAcivity( const double activity,
-                          std::vector<std::shared_ptr<PeakDef>> &peaks,
+                          std::vector<PeakDef> &peaks,
                           double &chi2, int &numDOF );
   void handleInputChange();
   void handleNuclideChange();
