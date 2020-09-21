@@ -922,6 +922,10 @@ void DetectionConfidenceTool::doCalc()
   const size_t nchi2 = 25;  //approx num chi2 to compute
   vector<pair<double,double>> chi2s;
   double overallBestChi2 = 0.0, overallBestActivity = 0.0, upperLimit = 0.0, lowerLimit = 0.0, activityRangeMin = 0.0, activityRangeMax = 0.0;
+  bool foundUpperCl = false, foundUpperDisplay = false, foundLowerCl = false, foundLowerDisplay = false;
+  
+  /// \TODO: currently all this stuff assumes a smooth continuosly increasing Chi2 with increasing
+  ///        activity, but this doesnt have to be the case, especially with quadratic continuums.
   
   try
   {
@@ -955,7 +959,7 @@ void DetectionConfidenceTool::doCalc()
     //\TODO: if best activity is at minSearchActivity, it takes 50 iterations inside brent_find_minima
     //      to confirm; we could save this time by using just a little bit of intelligence...
     const int bits = 8; //Float has 24 bits of mantisa, so 12 would be its max precision; 8 should get us accurate to almost three significant figures
-    boost::uintmax_t max_iter = 100;
+    boost::uintmax_t max_iter = 100;  //this variable gets changed each use, so you need to reset it afterwards
     const pair<double, double> r = boost::math::tools::brent_find_minima( chi2ForAct, minSearchActivity, maxSearchActivity, bits, max_iter );
   
     overallBestChi2 = r.second;
@@ -980,9 +984,9 @@ void DetectionConfidenceTool::doCalc()
       const double chi2_2 = chi2ForCL(act2);
       
       // \TODO: make sure tolerance is being used correctly - when pringting info out for every call I'm not sure it is being used right... (but answers seem reasonable, so...)
-      //cout << "Tolerance called with act1=" << PhysicalUnits::printToBestActivityUnits(act1)
-      //     << ", act2=" << PhysicalUnits::printToBestActivityUnits(act2)
-      //     << " ---> chi2_1=" << chi2_1 << ", chi2_2=" << chi2_2 << endl;
+      cout << "Tolerance called with act1=" << PhysicalUnits::printToBestActivityUnits(act1)
+           << ", act2=" << PhysicalUnits::printToBestActivityUnits(act2)
+           << " ---> chi2_1=" << chi2_1 << ", chi2_2=" << chi2_2 << endl;
       
       return fabs(chi2_1 - chi2_2) < 0.025;
     };//tolerance(...)
@@ -996,15 +1000,31 @@ void DetectionConfidenceTool::doCalc()
        && (chi2ForCL(minSearchActivity) > 0.0) )
     {
       pair<double,double> lower_val;
+
+      max_iter = 100;  //see note about needing to set before every use
       lower_val = boost::math::tools::bisect( chi2ForCL, minSearchActivity, overallBestActivity, tolerance, max_iter );
-      lowerLimit = lower_val.first;
+      lowerLimit = 0.5*(lower_val.first + lower_val.second);
+      foundLowerCl = true;
       cout << "lower_val CL activity=" << PhysicalUnits::printToBestActivityUnits(lower_val.first)
-           << " wih chi2=" << chi2ForAct(lower_val.first) << ", num_iterations=" << std::dec << num_iterations << endl;
+           << " wih chi2=" << chi2ForAct(lowerLimit) << ", num_iterations=" << std::dec << num_iterations
+           << " and search range from " << PhysicalUnits::printToBestActivityUnits(minSearchActivity) << " to "
+           << PhysicalUnits::printToBestActivityUnits(overallBestActivity)
+           << endl;
       
-      lower_val = boost::math::tools::bisect( chi2ForRangeLimit, minSearchActivity, lowerLimit, tolerance, max_iter );
-      activityRangeMin = lower_val.first;
-      cout << "lower_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMin)
-           << " wih chi2=" << chi2ForAct(lower_val.first) << ", num_iterations=" << std::dec << num_iterations << endl;
+      const double lowerLimitChi2 = chi2ForRangeLimit(lowerLimit);
+      if( lowerLimitChi2 < 0.0 )
+      {
+        activityRangeMin = minSearchActivity;
+        cout << "lower_val display activity being set to minSearchActivity (" << minSearchActivity << "): lowerLimitChi2=" << lowerLimitChi2 << endl;
+      }else
+      {
+        max_iter = 100;
+        lower_val = boost::math::tools::bisect( chi2ForRangeLimit, minSearchActivity, lowerLimit, tolerance, max_iter );
+        activityRangeMin = 0.5*(lower_val.first + lower_val.second);
+        foundLowerDisplay = true;
+        cout << "lower_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMin)
+             << " wih chi2=" << chi2ForAct(activityRangeMin) << ", num_iterations=" << std::dec << num_iterations << endl;
+      }
     }else
     {
       lowerLimit = 0.0;
@@ -1012,18 +1032,34 @@ void DetectionConfidenceTool::doCalc()
       cout << "lower_val activity already at min" << endl;
     }//if( fabs(minSearchActivity - overallBestActivity) > PhysicalUnits::nCi )
     
-    if( fabs(maxSearchActivity - overallBestActivity) > PhysicalUnits::nCi )
+    if( (fabs(maxSearchActivity - overallBestActivity) > PhysicalUnits::nCi)
+         && (chi2ForCL(maxSearchActivity) > 0.0)  )
     {
       pair<double,double> upper_val;
+      max_iter = 100;
       upper_val = boost::math::tools::bisect( chi2ForCL, overallBestActivity, maxSearchActivity, tolerance, max_iter );
-      upperLimit = upper_val.first;
+      upperLimit = 0.5*(upper_val.first + upper_val.second);
+      foundUpperCl = true;
       cout << "upper_val CL activity=" << PhysicalUnits::printToBestActivityUnits(upperLimit)
-            << " wih chi2=" << chi2ForAct(upper_val.first) << ", num_iterations=" << std::dec << num_iterations << endl;
+           << " wih chi2=" << chi2ForAct(upperLimit) << ", num_iterations=" << std::dec << num_iterations
+           << " and search range from " << PhysicalUnits::printToBestActivityUnits(overallBestActivity) << " to "
+           << PhysicalUnits::printToBestActivityUnits(maxSearchActivity)
+           << endl;
       
-      upper_val = boost::math::tools::bisect( chi2ForRangeLimit, upperLimit, maxSearchActivity, tolerance, max_iter );
-      activityRangeMax = upper_val.first;
-      cout << "upper_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMax)
-           << " wih chi2=" << chi2ForAct(upper_val.first) << ", num_iterations=" << std::dec << num_iterations << endl;
+      const double maxSearchChi2 = chi2ForRangeLimit(maxSearchActivity);
+      if( maxSearchChi2 < 0.0 )
+      {
+        activityRangeMax = maxSearchActivity;
+        cout << "upper_val display activity being set to maxSearchActivity (" << maxSearchActivity << "): maxSearchChi2=" << maxSearchChi2 << endl;
+      }else
+      {
+        max_iter = 100;
+        upper_val = boost::math::tools::bisect( chi2ForRangeLimit, upperLimit, maxSearchActivity, tolerance, max_iter );
+        activityRangeMax = 0.5*(upper_val.first + upper_val.second);
+        foundUpperDisplay = true;
+        cout << "upper_val display activity=" << PhysicalUnits::printToBestActivityUnits(activityRangeMax)
+             << " wih chi2=" << chi2ForAct(activityRangeMax) << ", num_iterations=" << std::dec << num_iterations << endl;
+      }
     }else
     {
       upperLimit = overallBestActivity;
@@ -1051,9 +1087,8 @@ void DetectionConfidenceTool::doCalc()
   }//try / catch
   
 
-  double upperActivity = upperLimit, upperActivtyChi2 = -999.9; //upperActivtyChi2=overallBestChi2 + cl_chi2_delta
-  
   int numDOF = 0;
+  double upperActivtyChi2 = -999.9; //upperActivtyChi2=overallBestChi2 + cl_chi2_delta
   std::vector<PeakDef> peaks;
   computeForAcivity( upperLimit, peaks, upperActivtyChi2, numDOF );
   
@@ -1065,13 +1100,16 @@ void DetectionConfidenceTool::doCalc()
             numDOF );
   m_bestChi2Act->setText( buffer );
   
-  string upperLimitActStr = PhysicalUnits::printToBestActivityUnits(upperActivity,3,true);
+  string upperLimitActStr = PhysicalUnits::printToBestActivityUnits(upperLimit,3,true);
   snprintf( buffer, sizeof(buffer), "95%% coverage at %s with &chi;<sup>2</sup> of %.1f",
             upperLimitActStr.c_str(), upperActivtyChi2 );
   
-  m_upperLimit->setText( buffer );
+  if( foundUpperCl )
+    m_upperLimit->setText( buffer );
+  else
+    m_upperLimit->setText( "Error: Didnt find upper 95%% limit" );
   
-  if( lowerLimit > 0.0 )
+  if( foundLowerCl && (lowerLimit > 0.0) )
   {
     //display lower limit to user...
   }
@@ -1132,7 +1170,7 @@ void DetectionConfidenceTool::doCalc()
   //m_chi2Chart->axis(Wt::Chart::XAxis).setRoundLimits( Chart::AxisValue::MinimumValue | Chart::AxisValue::MaximumValue );
 
   
-  // \TODO: draw line at upperActivity.
+  // \TODO: draw line at upperLimit.
   
   m_results->show();
   
@@ -1202,20 +1240,24 @@ void DetectionConfidenceTool::computeForAcivity( const double activity,
     peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
     shared_ptr<PeakContinuum> cont = peak.continuum();
     
-    switch( rw->m_continuum->currentIndex() )
+    cont->setRange( roi_start, roi_end );
+    cont->calc_linear_continuum_eqn( spec, roi_start, roi_end, 2 );  //sets to linear continuum type
+    
+    const int continuumSelected = rw->m_continuum->currentIndex();
+    switch( continuumSelected )
     {
       case 0:
         cont->setType( PeakContinuum::OffsetType::Linear );
+        for( size_t order = 0; order < 2; ++order )
+          cont->setPolynomialCoefFitFor( order, true );
         break;
+        
       case 1:
         cont->setType( PeakContinuum::OffsetType::Quadratic );
+        for( size_t order = 0; order < 3; ++order )
+          cont->setPolynomialCoefFitFor( order, true );
         break;
     }//switch( assign continuum )
-    
-    cont->setRange( roi_start, roi_end );
-    cont->calc_linear_continuum_eqn( spec, roi_start, roi_end, 2 );
-    cont->setPolynomialCoefFitFor( 0, true );
-    cont->setPolynomialCoefFitFor( 1, true );
     
     inputPeaks.push_back( std::move(peak) );
   }//for( size_t i = 0; i < energies.size(); ++i )
