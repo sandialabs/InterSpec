@@ -1353,6 +1353,10 @@ UserOption *InterSpecUser::getDefaultUserPreference( const std::string &name,
   if( defnode )
     return parseUserOption( defnode );
   
+  //Note: the string "couldn't find preference by name" is currently used in
+  //      restoreUserPrefsFromXml(...) to check if a preference with this name is no longer used.
+  //      So dont change next string without also changing there - or really, a more robust
+  //      indication should be used.
   throw runtime_error( "InterSpecUser::getDefaultUserPreference(...):"
                        " couldn't find preference by name " + name );
 }//UserOption *getDefaultUserPreference( const std::string &name )
@@ -1410,14 +1414,15 @@ void InterSpecUser::restoreUserPrefsFromXml(
       || !compare( prefs_node->name(), prefs_node->name_size(), "preferences", 11, true) )
     throw runtime_error( "restoreUserPrefsFromXml: invalid input" );
   
-  try
+ 
+  for( const xml_node<char> *pref = prefs_node->first_node( "pref", 4 ); pref;
+       pref = pref->next_sibling( "pref", 4 ) )
   {
-    for( const xml_node<char> *pref = prefs_node->first_node( "pref", 4 );
-         pref;
-         pref = pref->next_sibling( "pref", 4 ) )
+    std::unique_ptr<UserOption> option;
+    try
     {
-      std::unique_ptr<UserOption> option( parseUserOption(pref) );
-
+      option.reset( parseUserOption(pref) );
+      
       switch( option->m_type )
       {
         case UserOption::String:
@@ -1443,7 +1448,7 @@ void InterSpecUser::restoreUserPrefsFromXml(
           const int value = boost::any_cast<int>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
           InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                              boost::any(value), viewer, wApp );
+                                             boost::any(value), viewer, wApp );
           break;
         }//case Integer
           
@@ -1452,18 +1457,24 @@ void InterSpecUser::restoreUserPrefsFromXml(
           const bool value = boost::any_cast<bool>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
           InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                              boost::any(value), viewer, wApp );
+                                             boost::any(value), viewer, wApp );
           break;
         }//case Boolean
       }//switch( datatype )
-    }//for( loop over prefs )
-  }catch( std::exception &e )
-  {
-    stringstream msg;
-    msg << "Failed to deserialize user prefernces from XML: " << e.what();
-    throw runtime_error( msg.str() );
-  }//try / catch
-
+    }catch( std::exception &e )
+    {
+      const string errmsg = e.what();
+      if( SpecUtils::icontains( errmsg, "couldn't find preference by name" ) )
+      {
+        cerr << "Warning: couldnt find a preference named '"
+             << (option ? option->m_name : string("N/A")) << "' that is in the"
+             << " file being loaded, but apears to no longer be used." << endl;
+      }else
+      {
+        throw runtime_error( "Failed to deserialize user prefernces from XML: " + errmsg );
+      }
+    }//try / catch
+  }//for( loop over prefs )
 }//void restoreUserPrefsFromXml(...)
 
 
