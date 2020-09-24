@@ -1357,8 +1357,22 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
 
   peakModel->setPeaks( std::vector<PeakDef>() );
   
-  PeakSearchGuiUtils::automated_search_for_peaks( m_viewer, false );
-  
+  shared_ptr<const SpecUtils::Measurement> data = m_viewer->m_spectrum->data();
+  try
+  {
+    //This will take a minute, and app will look paused, but whatever.
+    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, false );
+    
+    for( const auto &p : resultpeaks )
+      testpeaks.push_back( *p );
+  }catch( std::exception &e )
+  {
+    string msg = "InterSpec::testAutomatedPeakSearch(): caught exception: '";
+    msg += e.what();
+    msg += "'";
+    cerr << msg << endl;
+  }//try / catch
+
   
   for( const PeakModel::PeakShrdPtr &peak : *peakModel->peaks() )
     testpeaks.push_back( *peak );

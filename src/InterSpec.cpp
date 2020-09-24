@@ -4427,12 +4427,10 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
 
 namespace
 {
-  void doTestStateLoad( WSelectionBox *filesbox,
-                        AuxWindow *window,
-                        InterSpec *viewer )
+  void doTestStateLoad( WSelectionBox *filesbox, AuxWindow *window, InterSpec *viewer )
   {
-    const string filename = string("analysis_tests/")
-                            + filesbox->currentText().toUTF8();
+    const string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
+    const string filename = SpecUtils::append_path( path_to_tests, filesbox->currentText().toUTF8() );
     viewer->loadN42TestState( filename );
     delete window;
   }
@@ -4440,10 +4438,8 @@ namespace
 
 void InterSpec::startN42TestStates()
 {
-  const std::string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
-  
-  const vector<string> files
-                  = SpecUtils::recursive_ls( path_to_tests, ".n42" );
+  const string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
+  const vector<string> files = SpecUtils::recursive_ls( path_to_tests, ".n42" );
   
   if( files.empty() )
   {
@@ -4461,30 +4457,22 @@ void InterSpec::startN42TestStates()
   
   for( const string &p : files )
   {
-    string name = p;
-    if( SpecUtils::starts_with(name, "analysis_tests/" ) )
-      name = name.substr(15);
+    const string name = SpecUtils::fs_relative( path_to_tests, p );
     filesbox->addItem( name );
   }
   
   WPushButton *button = new WPushButton( "Cancel" );
-  layout->addWidget( button, 1, 0 );
+  layout->addWidget( button, 1, 0, AlignCenter );
   button->clicked().connect( boost::bind(&AuxWindow::deleteAuxWindow, window) );
   
   button = new WPushButton( "Load" );
   button->disable();
-//  button->clicked().connect( boost::bind( [=](){
-//    loadN42TestState( filesbox->currentText().toUTF8() );
-//    delete window;
-//  }) );
   button->clicked().connect( boost::bind( &doTestStateLoad, filesbox, window, this ) );
   
-  layout->addWidget( button, 1, 1 );
+  layout->addWidget( button, 1, 1, AlignCenter );
   filesbox->activated().connect( button, &WPushButton::enable );
   
   layout->setRowStretch( 0, 1 );
-  layout->setColumnStretch( 0, 1 );
-  layout->setColumnStretch( 1, 1 );
   
   window->show();
   window->centerWindow();
