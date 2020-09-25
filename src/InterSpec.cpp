@@ -7295,95 +7295,10 @@ void InterSpec::showShieldingSourceFitWindow()
   if( !m_shieldingSourceFit )
   {
     assert( m_peakInfoDisplay );
-
-    m_shieldingSourceFitWindow = new AuxWindow( "Activity/Shielding Fit" );
-    m_shieldingSourceFit = new ShieldingSourceDisplay( m_peakModel, this,
-                                          m_shieldingSuggestion, m_materialDB.get() );
-
-    m_shieldingSourceFitWindow->setResizable( true );
-    m_shieldingSourceFitWindow->contents()->setOffsets(WLength(0,WLength::Pixel));
-    m_shieldingSourceFitWindow->stretcher()->addWidget( m_shieldingSourceFit, 0, 0 );
-    m_shieldingSourceFitWindow->stretcher()->setContentsMargins(0,0,0,0);
-   
-//    m_shieldingSourceFitWindow->footer()->resize(WLength::Auto, WLength(50.0));
+    auto widgets = ShieldingSourceDisplay::createWindow( this );
     
-    WPushButton *closeButton = m_shieldingSourceFitWindow->addCloseButtonToFooter();
-    closeButton->clicked().connect(m_shieldingSourceFitWindow, &AuxWindow::hide);
-    
-    AuxWindow::addHelpInFooter( m_shieldingSourceFitWindow->footer(), "activity-shielding-dialog" );
-  
-    m_shieldingSourceFitWindow->rejectWhenEscapePressed();
-    
-    //Should take lock on m_dataMeasurement->mutex_
-    
-    rapidxml::xml_document<char> *shield_source = nullptr;
-    if( m_dataMeasurement )
-      shield_source = m_dataMeasurement->shieldingSourceModel();
-    
-    if( shield_source && shield_source->first_node() )
-    {
-      //string msg = "Will try to deserailize: \n";
-      //rapidxml::print( std::back_inserter(msg), *shield_source->first_node(), 0 );
-      //cout << msg << endl << endl;
-      try
-      {
-        m_shieldingSourceFit->deSerialize( shield_source->first_node() );
-      }catch( std::exception &e )
-      {
-        string xmlstring;
-        rapidxml::print(std::back_inserter(xmlstring), *shield_source, 0);
-        stringstream debugmsg;
-        debugmsg << "Error loading Shielding/Source model: "
-                    "\n\tError Message: " << e.what()
-                 << "\n\tModel XML: " << xmlstring;
-#if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( __func__, debugmsg.str().c_str() );
-#else
-        cerr << debugmsg.str() << endl;
-#endif
-        passMessage( "There was an error loading the shielding/source model - model state is suspect!",
-                    "", WarningWidget::WarningMsgHigh );
-      }
-    }//if( shield_source )
-    
-    
-//    m_shieldingSourceFitWindow->resizeScaledWindow( 0.75, 0.75 );
-    
-    const double windowWidth = 0.95 * renderedWidth();
-    const double windowHeight = 0.95 * renderedHeight();
-    
-//    double footerheight = m_shieldingSourceFitWindow->footer()->height().value();
-//    m_shieldingSourceFitWindow->setMinimumSize( WLength(200), WLength(windowHeight) );
-    
-    
-    if( (windowHeight > 100) && (windowWidth > 100) )
-    {
-      if( !isPhone() )
-        m_shieldingSourceFitWindow->resizeWindow( windowWidth, windowHeight );
-
-      //Give the m_shieldingSourceFitWindow a hint about what size it will be
-      //  rendered at so it can decide what widgets should be rendered - acounting
-      //  for borders and stuff (roughly)
-      m_shieldingSourceFit->initialSizeHint( windowWidth - 12, windowHeight - 28 - 50 );
-    }else if( !isPhone() )
-    {
-      //When loading an application state that is showing this window, we may
-      //  not know the window size (e.g., windowWidth==windowHeight==0), so
-      //  instead skip giving the initial size hint, and instead size things
-      //  client side (maybe we should just do this always?)
-      m_shieldingSourceFitWindow->resizeScaledWindow( 0.95, 0.95 );
-    }
-      
-//    m_shieldingSourceFitWindow->contents()->  setHeight(WLength(windowHeight));
-
-    m_shieldingSourceFitWindow->centerWindow();
-
-    m_shieldingSourceFitWindow->finished().connect( this, &InterSpec::closeShieldingSourceFitWindow );
-    
-    m_shieldingSourceFitWindow->WDialog::setHidden(false);
-    
-    m_shieldingSourceFitWindow->show();
-    m_shieldingSourceFitWindow->centerWindow();
+    m_shieldingSourceFit = widgets.first;
+    m_shieldingSourceFitWindow  = widgets.second;
   }else
   {
     const double windowWidth = 0.95 * renderedWidth();
@@ -7592,7 +7507,19 @@ SpecMeasManager *InterSpec::fileManager()
 PeakModel *InterSpec::peakModel()
 {
   return m_peakModel;
-};
+}
+
+
+MaterialDB *InterSpec::materialDataBase()
+{
+  return m_materialDB.get();
+}
+
+
+Wt::WSuggestionPopup *InterSpec::shieldingSuggester()
+{
+  return m_shieldingSuggestion;
+}
 
 
 Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorChanged()

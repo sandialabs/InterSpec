@@ -600,6 +600,20 @@ public:
   
   PeakModel *peakModel();
 
+  /** The material database.
+   
+   Object will be alive as long as *this
+   */
+  MaterialDB *materialDataBase();
+  
+  /** The suggestion pop-up widget for shielding names; used globally for all shielding name inputs
+   so that there is not duplicate copies of the widget in the DOM.
+   
+   Object will be alive as long as *this.
+   */
+  Wt::WSuggestionPopup *shieldingSuggester();
+  
+  
   //detectorChanged(): signal emited when the detector is changed to a
   //  completely new detector.  Note that the object pointed to stays the same
   //  but it has been totally redifined.

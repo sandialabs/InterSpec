@@ -29,6 +29,10 @@
 #include <mutex>
 #include <utility>
 
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#include <boost/optional.hpp>
+#endif
+
 #include <Wt/WRectF>
 #include <Wt/WColor>
 #include <Wt/WPainter>
@@ -290,6 +294,17 @@ public:
   //  Throws exception on invalid XML or m_forFitting mismatch
   void deSerialize( const rapidxml::xml_node<char> *shielding_node );
   
+  
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  boost::optional<double> truthThickness;
+  boost::optional<double> truthThicknessTolerance;
+  boost::optional<double> truthAD;
+  boost::optional<double> truthADTolerance;
+  boost::optional<double> truthAN;
+  boost::optional<double> truthANTolerance;
+#endif
+
+  
 protected:
   void init();
 
@@ -422,6 +437,7 @@ protected:
 */
 
 
+
 class SourceFitModel: public Wt::WAbstractItemModel
 {
 protected:
@@ -436,6 +452,7 @@ protected:
     //age: in units of PhysicalUnits::second
     double age;
     bool fitAge;
+   
     
     //ageIsNotFittable: update this whenever you set the nuclide.  Intended to
     //  indicate nuclides where the spectrum doesnt change with time (ex Cs137,
@@ -450,11 +467,20 @@ protected:
     double activityUncertainty;
     double ageUncertainty;
 
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    boost::optional<double> truthActivity, truthActivityTolerance;
+    boost::optional<double> truthAge, truthAgeTolerance;
+#endif
+    
     IsoFitStruct()
       : nuclide(NULL), activity(0.0), fitActivity(false),
         age(0.0), fitAge(false), ageIsFittable(true), ageMasterNuc(NULL),
         shieldingIsSource(false),
         activityUncertainty(-1.0), ageUncertainty(-1.0)
+    #if( INCLUDE_ANALYSIS_TEST_SUITE )
+        , truthActivity(), truthActivityTolerance(),
+        truthAge(), truthAgeTolerance()
+    #endif
     {
     }
   };//struct IsoFitStruct
@@ -465,6 +491,9 @@ public:
   {
     kIsotope, kActivity, kFitActivity, kAge, kFitAge, kIsotopeMass,
     kActivityUncertainty, kAgeUncertainty,
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    kTruthActivity, kTruthActivityTolerance, kTruthAge, kTruthAgeTolerance,
+#endif
     kNumColumns
   };//enum Columns
 
@@ -497,6 +526,13 @@ public:
   double age( int nuc ) const;
   double ageUncert( int nuc ) const;
 
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  boost::optional<double> truthActivity( int nuc ) const;
+  boost::optional<double> truthActivityTolerance( int nuc ) const;
+  boost::optional<double> truthAge( int nuc ) const;
+  boost::optional<double> truthAgeTolerance( int nuc ) const;
+#endif
+  
   //fitAge(): returns IsoFitStruct::fitAge, which is if it is marked to fit age
   //  for this nuclide, not if you should fit for the age of this nuclide since
   //  it may have another master age nuclide that controlls the age, see
@@ -622,8 +658,21 @@ public:
                           Wt::WSuggestionPopup *materialSuggest,
                           MaterialDB *materialDB,
                           Wt::WContainerWidget *parent = 0 );
+  
+  /** Creates a AuxWindow with a ShieldingSourceDisplay in it.
+   
+   @returns the created ShieldingSourceDisplay and AuxWindow. If for some reason there was an issue
+   making the widgets, the returned pair will be nullptr's (and also an error message will be
+   displayed to the user).
+   */
+  static std::pair<ShieldingSourceDisplay *,AuxWindow *> createWindow( InterSpec *viewer  );
+  
   virtual ~ShieldingSourceDisplay();
 
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  void showInputTruthValuesWindow();
+#endif
+  
   //add generic shielding
   void addGenericShielding();
   
