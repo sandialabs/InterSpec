@@ -1635,6 +1635,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     {
       const double answer = activity * user_enetered_dose / dose_from_source;
       
+      
       const bool useCurries = (m_activityAnswerUnits->currentIndex() == 0);
       const string answerstr = PhysicalUnits::printToBestActivityUnits( answer, 2, useCurries );
       m_activityAnswer->setText( answerstr );
