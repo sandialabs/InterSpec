@@ -192,6 +192,9 @@ public:
   //Performs a case-insensitive comparison (eg string::operator<) comparison
   //  of names
   static bool less_than_by_name( const Material *lhs, const Material *rhs );
+  
+  //Similar to #less_than_by_name
+  static bool equal_by_name( const Material *lhs, const Material *rhs );
 
 protected:
   //refreshMaterialNames(): should be called whenever m_materials is modified.
