@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <tuple>
 #include <mutex>
 #include <utility>
 
@@ -81,6 +82,7 @@ namespace Wt
   class WText;
   class WLabel;
   class WAnchor;
+  class WSvgImage;
   class WCheckBox;
   class WLineEdit;
   class WTreeView;
@@ -637,8 +639,7 @@ protected:
 class ShieldingSourceDisplay : public Wt::WContainerWidget
 {
 public:
-  typedef std::shared_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn> \
-                Chi2FcnShrdPtr;
+  typedef std::shared_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn> Chi2FcnShrdPtr;
 
   /** The maximum time (in milliseconds) a model fit can take before the fit is
       aborted.  This generally will only ever be applicable to fits with
@@ -670,7 +671,27 @@ public:
   virtual ~ShieldingSourceDisplay();
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
+  /** Creates a window that lets you enter truth-values and tolerances for all the quantities
+   currently marked to be fit for.
+   */
   void showInputTruthValuesWindow();
+  
+  /** Sets activitities to like 1mCi, and thicknesses to 1 cm, so this was test fits wont be
+   starting at an already correct value.
+   */
+  void setFitQuantitiesToDefaultValues();
+  
+  /** Returns <num values specified, num fit values, is valid> */
+  std::tuple<int,int,bool> numTruthValuesForFitValues();
+  
+  /** Renders the Chi2Chart to a SVG image */
+  void renderChi2Chart( Wt::WSvgImage &image );
+
+  /** Tests the current values, for all quantities being fit for, against truth-level values.
+   
+   @returns <IfTestSuccesful,NumCorrect,NumTested,TextInfoLines>
+   */
+  std::tuple<bool,int,int,std::vector<std::string>> testCurrentFitAgainstTruth();
 #endif
   
   //add generic shielding
@@ -696,11 +717,6 @@ public:
                                            const SandiaDecay::Nuclide *nuc );
   void isotopeDeSelectedAsShieldingCallback( ShieldingSelect *select,
                                              const SandiaDecay::Nuclide *nuc );
-
-  //startModelFit(): Starts the actual fit of shielding, activities, and ages;
-  //  called when user clicks "Perform Model Fit" button.  The actual fitting
-  //  happens in a background thread.
-  void startModelFit();
   
   struct ModelFitProgress
   {
@@ -713,6 +729,8 @@ public:
   
   struct ModelFitResults
   {
+    std::mutex m_mutex;
+    
     enum class FitStatus{ Invalid, InterMediate, Final };
     FitStatus succesful;
     std::vector<ShieldingSelect *> shieldings;  //I dont think we strickly need, but more as a sanity check
@@ -724,6 +742,19 @@ public:
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;
   };//struct ModelFitResults
+  
+  /** Performs the actual fit of shielding, activities, and ages;
+   called when user clicks "Perform Model Fit" button.
+   
+   @param fitInBackground If true, the fit is performed in the background, and function will return
+          immediately (i.e., before fit is performed).  If false, function will not return until
+          fit is finished (i.e., blocking).
+   @returns A pointer to the fitting results; will be nullptr if fit was not started.  Note that
+            if fitting is being performed in the background, the returned object will be updated as
+            fitting is being performed (use m_mutex to ensure safe access).
+   */
+  std::shared_ptr<ModelFitResults> doModelFit( const bool fitInBackground );
+    
   
   /** Function that does the actual model fitting, not on the main GUI thread.
       \param wtsession The Wt session id of the current WApplication
