@@ -1954,14 +1954,13 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     return answer;
   }//if( !fitModel )
   
-  MaterialDB *matdb = m_viewer->materialDataBase();
-  PeakModel *peakModel = m_viewer->peakModel();
-  WSuggestionPopup *shieldSuggest = m_viewer->shieldingSuggester();
+  AuxWindow *window = nullptr;
   
   try
   {
-    unique_ptr<ShieldingSourceDisplay> disp;
-    disp.reset( new ShieldingSourceDisplay( peakModel, m_viewer, shieldSuggest, matdb ) );
+    pair<ShieldingSourceDisplay *,AuxWindow *> widgets = ShieldingSourceDisplay::createWindow( m_viewer );
+    window = get<1>(widgets);
+    ShieldingSourceDisplay *disp = get<0>(widgets);
     
     std::tuple<int,int,bool> nfitpars = disp->numTruthValuesForFitValues();
     
@@ -2047,9 +2046,9 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     note.m_title = "Failed test with exception";
     note.m_text = "Exception message: " + string( e.what() );
     answer.m_notes.push_back( note );
-    
-    return answer;
   }//try / catch
+  
+  AuxWindow::deleteAuxWindow( window );
   
   return answer;
 }//Score testShieldSourceFit()

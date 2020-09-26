@@ -3150,7 +3150,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivity )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, 2, useCurries );
+      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, 4, useCurries );
       return boost::any( WString(ans) );
     }
       
@@ -3158,7 +3158,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivityTolerance )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, 2, useCurries );
+      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, 4, useCurries );
       return boost::any( WString(ans) );
     }
       
@@ -3166,7 +3166,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthAge )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAge, 2 );
+      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAge, 4 );
       return boost::any( WString(ans) );
     }
       
@@ -3174,7 +3174,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthAgeTolerance )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAgeTolerance, 2 );
+      const string ans = PhysicalUnits::printToBestTimeUnits( *isof.truthAgeTolerance, 4 );
       return boost::any( WString(ans) );
     }
 #endif  //#if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -5059,6 +5059,14 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
       const boost::optional<double> tolerance = m_sourceModel->truthActivityTolerance(i);
       nFitQuantities += 1;
       nQuantitiesCan += (activity && tolerance);
+      if( !(activity && tolerance) )
+      {
+        auto actindex = m_sourceModel->index( i, SourceFitModel::kTruthActivity );
+        auto tolindex = m_sourceModel->index( i, SourceFitModel::kTruthActivityTolerance );
+        
+        cerr << "Dont have: (activity && tolerance): (" << !!activity << " && " << !!tolerance << ") -> via data -> ("
+        << asString(actindex.data()) << ", " << asString(tolindex.data()) << ")" << endl;
+      }
     }//if( fit activity )
     
     if( m_sourceModel->fitAge(i) )
@@ -5067,6 +5075,8 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
       const boost::optional<double> tolerance = m_sourceModel->truthAgeTolerance(i);
       nFitQuantities += 1;
       nQuantitiesCan += (age && tolerance);
+      if( !(age && tolerance) )
+        cerr << "Dont have: (age && tolerance)" << endl;
     }//if( fit age )
   }//for( int i = 0; i < nnuc; ++i )
   
@@ -5097,12 +5107,14 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
       shared_ptr<Material> mat = select->material();
       if( !mat )
       {
+        cerr << "Dont have: Coultn get material" << endl;
         isValid = false;
         continue;
       }
       
       if( select->fitForMassFractions() )
       {
+        cerr << "Dont have: Fitting for mass fraction" << endl;
         isValid = false;
         continue;
       }
@@ -5117,10 +5129,16 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
   }//for( WWidget *widget : m_shieldingSelects->children() )
   
   if( nQuantitiesCan != nFitQuantities )
+  {
+    cerr << "Dont have: nQuantitiesCan != nFitQuantities" << nQuantitiesCan << " != " << nFitQuantities << endl;
     isValid = false;
+  }
   
   if( !nQuantitiesCan )
+  {
+    cerr << "Dont have: !nQuantitiesCan: " << nQuantitiesCan << endl;
     isValid = false;
+  }
   
   return std::tuple<int,int,bool>( nQuantitiesCan, nFitQuantities, isValid );
 }//bool haveTruthValuesForAllFitValues()
@@ -6921,6 +6939,8 @@ void ShieldingSourceDisplay::deSerializeSourcesToFitFor(
           value = PhysicalUnits::stringToActivity( node->value() );
         else
           value = PhysicalUnits::stringToTimeDuration( node->value() );
+        
+        cout << "Set '" << truthName << "' to value " << *value << " from '" << node->value() <<  "' while deserializing" << endl;
       }catch(...)
       {
         cerr << "Failed to read back in " << truthName << " from " << node->value() << endl;
