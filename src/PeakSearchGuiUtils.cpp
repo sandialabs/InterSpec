@@ -1950,7 +1950,7 @@ namespace PeakSearchGuiUtils
 {
   
   std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils::Measurement> inmeas,
-                                              std::shared_ptr< std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                                              std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
                                               const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
                                               double lowx, double upperx,
                                               const int width, const int height,

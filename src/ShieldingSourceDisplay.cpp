@@ -46,6 +46,7 @@
 //#include "Minuit2/Minuit2Minimizer.h"
 #include "Minuit2/MnUserParameterState.h"
 
+
 #include <Wt/WText>
 #include <Wt/WTime>
 #include <Wt/WImage>
@@ -54,9 +55,11 @@
 #include <Wt/WAnchor>
 #include <Wt/WBorder>
 #include <Wt/WServer>
+#include <Wt/WPainter>
 #include <Wt/WTextArea>
 #include <Wt/WRectArea>
 #include <Wt/WResource>
+#include <Wt/WSvgImage>
 #include <Wt/WTableCell>
 #include <Wt/WTabWidget>
 #include <Wt/WIOService>
@@ -4190,7 +4193,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   
   m_fitModelButton = new WPushButton( "Perform Model Fit" );
-  m_fitModelButton->clicked().connect( this, &ShieldingSourceDisplay::startModelFit );
+  m_fitModelButton->clicked().connect( boost::bind(&ShieldingSourceDisplay::doModelFit, this, true) );
 
   m_fitProgressTxt = new WText();
   m_fitProgressTxt->hide();
@@ -4972,7 +4975,354 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
   window->resizeToFitOnScreen();
   window->show();
 }//showInputTruthValuesWindow()
-#endif
+
+
+void ShieldingSourceDisplay::setFitQuantitiesToDefaultValues()
+{
+  const int nnuc = m_sourceModel->numNuclides();
+  for( int i = 0; i < nnuc; ++i )
+  {
+    const SandiaDecay::Nuclide *nuc = m_sourceModel->nuclide( i );
+    assert( nuc );
+    
+    const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageMasterNuclide( nuc );
+    const bool selfAttNuc = m_sourceModel->shieldingDeterminedActivity( i );
+    
+    // For self-attenuating shieldings, we'll just test the shielding thickness
+    // For nuclides whose age is controlled by another nuclide, we dont need to test age.
+    if( selfAttNuc || (ageNuc && (ageNuc != nuc)) )
+      continue;
+    
+    if( m_sourceModel->fitActivity(i) )
+    {
+      WModelIndex index = m_sourceModel->index( i, SourceFitModel::kActivity );
+      m_sourceModel->setData( index, "1 mCi" );
+    }//if( fit activity )
+    
+    if( m_sourceModel->fitAge(i) )
+    {
+      string agestr;
+      PeakDef::defaultDecayTime( nuc, &agestr );
+      WModelIndex index = m_sourceModel->index( i, SourceFitModel::kAge );
+      m_sourceModel->setData( index, agestr );
+    }//if( fit age )
+  }//for( int i = 0; i < nnuc; ++i )
+  
+  
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+    if( !select )
+      continue;
+    
+    if( select->isGenericMaterial() )
+    {
+      if( select->fitArealDensity() )
+        select->arealDensityEdit()->setText( "0" );
+      if( select->fitAtomicNumber() )
+        select->atomicNumberEdit()->setText( "26" );
+    }else
+    {
+      shared_ptr<Material> mat = select->material();
+      if( !mat || select->fitForMassFractions() )
+        continue;
+      if( select->fitThickness() )
+        select->thicknessEdit()->setText( "1 cm" );
+    }//if( generic material ) / else
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+}//void setFitQuantitiesToDefaultValues()
+
+
+
+std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
+{
+  bool isValid = true;
+  int nFitQuantities = 0, nQuantitiesCan = 0;
+  
+  const int nnuc = m_sourceModel->numNuclides();
+  for( int i = 0; i < nnuc; ++i )
+  {
+    const SandiaDecay::Nuclide *nuc = m_sourceModel->nuclide( i );
+    assert( nuc );
+    
+    const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageMasterNuclide( nuc );
+    const bool selfAttNuc = m_sourceModel->shieldingDeterminedActivity( i );
+    
+    // For self-attenuating shieldings, we'll just test the shielding thickness
+    // For nuclides whose age is controlled by another nuclide, we dont need to test age.
+    if( selfAttNuc || (ageNuc && (ageNuc != nuc)) )
+      continue;
+    
+    if( m_sourceModel->fitActivity(i) )
+    {
+      const boost::optional<double> activity = m_sourceModel->truthActivity(i);
+      const boost::optional<double> tolerance = m_sourceModel->truthActivityTolerance(i);
+      nFitQuantities += 1;
+      nQuantitiesCan += (activity && tolerance);
+    }//if( fit activity )
+    
+    if( m_sourceModel->fitAge(i) )
+    {
+      const boost::optional<double> age = m_sourceModel->truthAge(i);
+      const boost::optional<double> tolerance = m_sourceModel->truthAgeTolerance(i);
+      nFitQuantities += 1;
+      nQuantitiesCan += (age && tolerance);
+    }//if( fit age )
+  }//for( int i = 0; i < nnuc; ++i )
+  
+  
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+    if( !select )
+      continue;
+    
+    if( select->isGenericMaterial() )
+    {
+      if( select->fitArealDensity() )
+      {
+        if( select->truthAD && select->truthADTolerance )
+          nQuantitiesCan += 1;
+        nFitQuantities += 1;
+      }//if( fit AD )
+      
+      if( select->fitAtomicNumber() )
+      {
+        if( select->truthAN && select->truthANTolerance )
+          nQuantitiesCan += 1;
+        nFitQuantities += 1;
+      }//if( fit AN )
+    }else
+    {
+      shared_ptr<Material> mat = select->material();
+      if( !mat )
+      {
+        isValid = false;
+        continue;
+      }
+      
+      if( select->fitForMassFractions() )
+      {
+        isValid = false;
+        continue;
+      }
+      
+      if( select->fitThickness() )
+      {
+        if( select->truthThickness && select->truthThicknessTolerance )
+          nQuantitiesCan += 1;
+        nFitQuantities += 1;
+      }//if( fit thickness )
+    }//if( generic material ) / else
+  }//for( WWidget *widget : m_shieldingSelects->children() )
+  
+  if( nQuantitiesCan != nFitQuantities )
+    isValid = false;
+  
+  if( !nQuantitiesCan )
+    isValid = false;
+  
+  return std::tuple<int,int,bool>( nQuantitiesCan, nFitQuantities, isValid );
+}//bool haveTruthValuesForAllFitValues()
+
+
+void ShieldingSourceDisplay::renderChi2Chart( Wt::WSvgImage &image )
+{
+  WPainter p( &image );
+  m_chi2Graphic->paint( p );
+  p.end();
+}//void renderChi2Chart( Wt::WSvgImage &image );
+
+
+tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainstTruth()
+{
+  bool successful = true;
+  int numCorrect = 0, numTested = 0;
+  vector<string> textInfoLines;
+
+  try
+  {
+    
+    const int nnuc = m_sourceModel->numNuclides();
+    for( int i = 0; i < nnuc; ++i )
+    {
+      const SandiaDecay::Nuclide *nuc = m_sourceModel->nuclide( i );
+      assert( nuc );
+      
+      const SandiaDecay::Nuclide *ageNuc = m_sourceModel->ageMasterNuclide( nuc );
+      const bool selfAttNuc = m_sourceModel->shieldingDeterminedActivity( i );
+      
+      // For self-attenuating shieldings, we'll just test the shielding thickness
+      // For nuclides whose age is controlled by another nuclide, we dont need to test age.
+      if( selfAttNuc || (ageNuc && (ageNuc != nuc)) )
+        continue;
+      
+      if( m_sourceModel->fitActivity(i) )
+      {
+        boost::optional<double> truthAct = m_sourceModel->truthActivity(i);
+        boost::optional<double> tolerance = m_sourceModel->truthActivityTolerance(i);
+        
+        if( !truthAct || !tolerance )
+        {
+          successful = false;
+          textInfoLines.push_back( "Did not have truth value for " + nuc->symbol + " activity." );
+          continue;
+        }
+        
+        const double fitAct = m_sourceModel->activity(i);
+        const bool closeEnough = (fabs(*truthAct - fitAct) < *tolerance);
+        
+        numTested += 1;
+        numCorrect += closeEnough;
+        
+        textInfoLines.push_back( "For " + nuc->symbol + " fit activity "
+                                + PhysicalUnits::printToBestActivityUnits(fitAct) + " with the"
+                                " truth value of "
+                                + PhysicalUnits::printToBestActivityUnits(*truthAct)
+                                + " and tolerance "
+                                + PhysicalUnits::printToBestActivityUnits(*tolerance)
+                                + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                );
+      }//if( fit activity )
+      
+      if( m_sourceModel->fitAge(i) )
+      {
+        const boost::optional<double> truthAge = m_sourceModel->truthAge(i);
+        const boost::optional<double> tolerance = m_sourceModel->truthAgeTolerance(i);
+        
+        if( !truthAge || !tolerance )
+        {
+          successful = false;
+          textInfoLines.push_back( "Did not have truth value for " + nuc->symbol + " age." );
+          continue;
+        }
+        
+        const double fitAge = m_sourceModel->age(i);
+        const bool closeEnough = (fabs(*truthAge - fitAge) < *tolerance);
+        
+        numTested += 1;
+        numCorrect += closeEnough;
+        
+        textInfoLines.push_back( "For " + nuc->symbol + " fit age "
+                                + PhysicalUnits::printToBestTimeUnits(fitAge) + " with the"
+                                " truth value of "
+                                + PhysicalUnits::printToBestTimeUnits(*truthAge)
+                                + " and tolerance "
+                                + PhysicalUnits::printToBestTimeUnits(*tolerance)
+                                + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                );
+      }//if( fit age )
+    }//for( int i = 0; i < nnuc; ++i )
+    
+    
+    for( WWidget *widget : m_shieldingSelects->children() )
+    {
+      ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
+      if( !select )
+        continue;
+      
+      if( select->isGenericMaterial() )
+      {
+        if( select->fitArealDensity() )
+        {
+          if( !select->truthAD || !select->truthADTolerance )
+          {
+            successful = false;
+            textInfoLines.push_back( "Did not have truth AD for generic shielding" );
+            continue;
+          }
+          
+          const double fitAD = select->arealDensity();
+          const bool closeEnough = (fabs(*select->truthAD - fitAD) < *select->truthADTolerance);
+          
+          numTested += 1;
+          numCorrect += closeEnough;
+          
+          textInfoLines.push_back( "For Generic Shielding fit AN " + std::to_string(fitAD)
+                                  + " with the truth value of " + std::to_string(*select->truthAD)
+                                  + " and tolerance " + std::to_string(*select->truthADTolerance)
+                                  + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                  );
+        }//if( fit AD )
+        
+        if( select->fitAtomicNumber() )
+        {
+          if( !select->truthAN || !select->truthANTolerance )
+          {
+            successful = false;
+            textInfoLines.push_back( "Did not have truth AN for generic shielding" );
+            continue;
+          }
+          
+          const double fitAN = select->atomicNumber();
+          const bool closeEnough = (fabs(*select->truthAN - fitAN) < *select->truthANTolerance);
+          
+          numTested += 1;
+          numCorrect += closeEnough;
+          
+          textInfoLines.push_back( "For Generic Shielding fit AN " + std::to_string(fitAN)
+                                  + " with the truth value of " + std::to_string(*select->truthAN)
+                                  + " and tolerance " + std::to_string(*select->truthANTolerance)
+                                  + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                  );
+        }//if( fit AN )
+      }else
+      {
+        shared_ptr<Material> mat = select->material();
+        if( !mat )
+        {
+          successful = false;
+          textInfoLines.push_back( "There was an invalid material." );
+          continue;
+        }
+        
+        if( select->fitForMassFractions() )
+        {
+          successful = false;
+          textInfoLines.push_back( "Mass fraction is being fit for, which isnt allowed." );
+          continue;
+        }
+        
+        if( select->fitThickness() )
+        {
+          if( !select->truthThickness || !select->truthThicknessTolerance )
+          {
+            successful = false;
+            textInfoLines.push_back( "Missing truth thickness for shielding '" + mat->name + "'" );
+            continue;
+          }
+          
+          const double fitThickness = select->thickness();
+          const bool closeEnough = (fabs(*select->truthThickness - fitThickness) < *select->truthThicknessTolerance);
+          
+          numTested += 1;
+          numCorrect += closeEnough;
+          
+          textInfoLines.push_back( "For shielding '" + mat->name + "' fit thickness "
+                                  + PhysicalUnits::printToBestLengthUnits(fitThickness,4)
+                                  + " with the truth value of "
+                                  + PhysicalUnits::printToBestLengthUnits(*select->truthThickness,4)
+                                  + " and tolerance "
+                                  + PhysicalUnits::printToBestLengthUnits(*select->truthThicknessTolerance)
+                                  + (closeEnough ? " - within tolerance." : " - out of tolerance." )
+                                  );
+        }//if( fit thickness )
+      }//if( generic material ) / else
+    }//for( WWidget *widget : m_shieldingSelects->children() )
+    
+    successful = (successful && numTested);
+  }catch( std::exception &e )
+  {
+    successful = false;
+    textInfoLines.push_back( "Caught exception during testing: " + string(e.what()) );
+  }//try / catch
+  
+  return tuple<bool,int,int,vector<string>>( successful, numCorrect, numTested, textInfoLines );
+}//std::tuple<bool,int,int,std::vector<std::string>> testCurrentFitAgainstTruth();
+
+
+
+#endif //INCLUDE_ANALYSIS_TEST_SUITE
 
 
 
@@ -7496,7 +7846,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
   {
     if( m_sourceModel->numNuclides() )
       passMessage( "There was no defined detector live time, so assuming"
-                   " 300 seconds", "ShieldingSourceDisplay::startModelFit",
+                   " 300 seconds", "ShieldingSourceDisplay::doModelFit",
                    WarningWidget::WarningMsgHigh );
     liveTime = 300.0 * PhysicalUnits::second;
   }//if( liveTime <= 0.0 )
@@ -7881,7 +8231,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     return;
   }
   
-  if( status == ModelFitResults::FitStatus::Invalid )
+  if( status == ModelFitResults::FitStatus::InterMediate )
   {
     passMessage( "Intermediate Fit status not handled yet.",
                 "", WarningWidget::WarningMsgHigh );
@@ -8042,7 +8392,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
         }//if( !origMaterial )
         
         if( !origMaterial )
-          throw runtime_error( "ShieldingSourceDisplay::startModelFit(): logic "
+          throw runtime_error( "ShieldingSourceDisplay::doModelFit(): logic "
                               "error completing mass fraction fit :(" );
         
         //        std::shared_ptr<Material> newmaterial
@@ -8161,8 +8511,12 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
         progress->numFcnCalls = infoFromChiFcn->m_num_fcn_calls;
       }
       
-      WServer::instance()->post( wtsession, progress_fcn );
-    };
+      WApplication *app = WApplication::instance();
+      if( app && (app->sessionId() == wtsession) )
+        progress_fcn();
+      else
+        WServer::instance()->post( wtsession, progress_fcn );
+    };//define progressUpdatInfo->m_guiUpdater
   
     chi2Fcn->setGuiProgressUpdater( sm_model_update_frequency_ms, progressUpdatInfo );
   }//if( progress_fcn && progress )
@@ -8282,6 +8636,8 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     
     const ROOT::Minuit2::MnUserParameters &fitParams = minimum.UserParameters();
     
+    std::lock_guard<std::mutex> lock( results->m_mutex );
+    
     if( !minimum.IsValid() )
     {
       stringstream msg;
@@ -8310,17 +8666,25 @@ void ShieldingSourceDisplay::doModelFittingWork( const std::string wtsession,
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
   }catch( exception &e )
   {
+    std::lock_guard<std::mutex> lock( results->m_mutex );
     results->succesful = ModelFitResults::FitStatus::Invalid;
     results->errormsgs.push_back( "Fit not performed: " + string(e.what()) );
   }// try / catch
   
   chi2Fcn->fittindIsFinished();
   
-  Wt::WServer::instance()->post( wtsession, update_fcn );
+  if( update_fcn )
+  {
+    WApplication *app = WApplication::instance();
+    if( app && (app->sessionId() == wtsession) )
+      update_fcn();
+    else
+      Wt::WServer::instance()->post( wtsession, update_fcn );
+  }//if( update_fcn )
 }//void doModelFittingWork( std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams )
 
 
-void ShieldingSourceDisplay::startModelFit()
+std::shared_ptr<ShieldingSourceDisplay::ModelFitResults> ShieldingSourceDisplay::doModelFit( const bool fitInBackground )
 {
   try
   {
@@ -8329,7 +8693,7 @@ void ShieldingSourceDisplay::startModelFit()
   {
     passMessage( e.what() + string("<br />Fit not performed."),
                 "", WarningWidget::WarningMsgHigh );
-    return;
+    return nullptr;
   }
   
   //Should make a progress dialog
@@ -8343,7 +8707,7 @@ void ShieldingSourceDisplay::startModelFit()
   {
     passMessage( e.what() + string("<br />Fit not performed."),
                  "", WarningWidget::WarningMsgHigh );
-    return;
+    return nullptr;
   }//try / catch
   
   Chi2FcnShrdPtr chi2Fcn;
@@ -8352,8 +8716,6 @@ void ShieldingSourceDisplay::startModelFit()
   
   //make sure fitting for at least one nuclide:
   
-  //For example ba133, gadras fits zero shielding, and 134.6 uCi of Ba133 (using
-  //  only first detector of the eight).
   auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
   
   try
@@ -8363,7 +8725,7 @@ void ShieldingSourceDisplay::startModelFit()
   {
     passMessage( e.what() + string("<br />Fit not performed (couldnt make Chi2Fcn)."),
                 "", WarningWidget::WarningMsgHigh );
-    return;
+    return nullptr;
   }//try / catch
   
   //To Do:
@@ -8410,13 +8772,19 @@ void ShieldingSourceDisplay::startModelFit()
   //  ShieldingSourceDisplay widget gets deleted before the computation is over
   boost::function<void()> gui_updater = wApp->bind( boost::bind( &ShieldingSourceDisplay::updateGuiWithModelFitResults, this, results ) );
   
-  
   const string sessionid = wApp->sessionId();
-  Wt::WServer *server = Wt::WServer::instance();
-  server->ioService().post( boost::bind( &ShieldingSourceDisplay::doModelFittingWork,
+  if( fitInBackground )
+  {
+    Wt::WServer *server = Wt::WServer::instance();
+    server->ioService().post( boost::bind( &ShieldingSourceDisplay::doModelFittingWork,
                             this, sessionid, inputPrams, progress, progress_updater, results, gui_updater ) );
-}//void startModelFit()
-
+  }else
+  {
+    doModelFittingWork( sessionid, inputPrams, progress, progress_updater, results, gui_updater );
+  }
+  
+  return results;
+}//void doModelFit()
 
 
 

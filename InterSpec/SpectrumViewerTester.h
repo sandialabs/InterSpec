@@ -67,11 +67,11 @@ public:
     AutomatedPeakSearch,
     ManualPeakClicking,
     MultiplePeakInRoiFit,
+    SourceShieldingFit,
     
     //PeakRefitTest
     
 //    NuclideIdGuessing,
-    //SourceShieldingFit
     //RecalibrationSpectrumTesting
     //RecalibrationPeakTesting
     NumTestType
@@ -143,6 +143,7 @@ public:
   Score testAutomatedPeakSearch();
   Score testManualPeakClicking();
   Score testMultiplePeakFit();
+  Score testShieldSourceFit();
   
   void setSizeHint( int width, int height );
   

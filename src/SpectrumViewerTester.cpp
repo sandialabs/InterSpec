@@ -98,6 +98,7 @@
 #include "InterSpec/GammaXsGui.h"
 
 #if( USE_SPECTRUM_CHART_D3 )
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #endif
 
@@ -625,15 +626,15 @@ const char *SpectrumViewerTester::tostr( TestType type )
   {
     case SpectrumViewerTester::AutomatedPeakSearch:
       return "Auto Peak Search";
-    break;
       
     case SpectrumViewerTester::ManualPeakClicking:
       return "Manual Peak Clicking";
-    break;
       
     case SpectrumViewerTester::MultiplePeakInRoiFit:
       return "Multiple Peak Fit";
-    break;
+      
+    case SpectrumViewerTester::SourceShieldingFit:
+      return "Shield/Source Fit";
       
     case SpectrumViewerTester::NumTestType:
       break;
@@ -887,13 +888,12 @@ double SpectrumViewerTester::scoreWeight( SpectrumViewerTester::TestType type )
   switch( type )
   {
     case SpectrumViewerTester::AutomatedPeakSearch:
-      return 1.0;
     case SpectrumViewerTester::ManualPeakClicking:
-      return 1.0;
     case SpectrumViewerTester::MultiplePeakInRoiFit:
+    case SpectrumViewerTester::SourceShieldingFit:
       return 1.0;
     case SpectrumViewerTester::NumTestType:
-      return 1.0;
+      break;
   }//switch( type )
   
   return 1.0;
@@ -909,8 +909,7 @@ void SpectrumViewerTester::scoreAllTests()
 }//void scoreAllTests()
 
 
-SpectrumViewerTester::Score SpectrumViewerTester::doTest(
-                                           SpectrumViewerTester::TestType type )
+SpectrumViewerTester::Score SpectrumViewerTester::doTest( SpectrumViewerTester::TestType type )
 {
   Score score;
   
@@ -926,6 +925,10 @@ SpectrumViewerTester::Score SpectrumViewerTester::doTest(
   
     case SpectrumViewerTester::MultiplePeakInRoiFit:
       score = testMultiplePeakFit();
+      break;
+      
+    case SpectrumViewerTester::SourceShieldingFit:
+      score = testShieldSourceFit();
       break;
       
     case SpectrumViewerTester::NumTestType:
@@ -1043,9 +1046,19 @@ std::shared_ptr<Wt::WSvgImage> SpectrumViewerTester::renderChartToSvg( double lo
                                                        double upperx,
                                                        int width, int height )
 {
-  std::shared_ptr<Wt::WSvgImage> img( new WSvgImage( width, height ) );
+#if( USE_SPECTRUM_CHART_D3 )
+  auto hist = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   
-#if ( !USE_SPECTRUM_CHART_D3 )
+  shared_ptr<const deque< PeakModel::PeakShrdPtr > > peaks = m_viewer->peakModel()->peaks();
+  std::vector<std::shared_ptr<const ReferenceLineInfo>> reflines;
+  auto theme = m_viewer->getColorTheme();
+  const bool compact = false;
+  
+  return PeakSearchGuiUtils::renderChartToSvg( hist, peaks, reflines, lowx, upperx, width,
+                                               height, theme, compact );
+#else
+  auto img = make_shared<Wt::WSvgImage>( width, height );
+  
   SpectrumChart *chart = m_viewer->m_spectrum->m_chart;
   SpectrumDataModel *model = m_viewer->m_spectrum->m_model;
   std::shared_ptr<Measurement> axisH = model->histUsedForXAxis();
@@ -1083,9 +1096,9 @@ std::shared_ptr<Wt::WSvgImage> SpectrumViewerTester::renderChartToSvg( double lo
 
   chart->setXAxisRange( oldlowx, oldhighx );
   model->setRebinFactor( oldrebin );
-#endif //#if ( !USE_SPECTRUM_CHART_D3 )
   
   return img;
+#endif //#if ( !USE_SPECTRUM_CHART_D3 )
 }//renderChartToSvg(...)
 
 
@@ -1912,6 +1925,135 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFit()
   
   return answer;
 }//Score testMultiplePeakFit()
+
+
+SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
+{
+  Score answer;
+  answer.m_test = TestType::SourceShieldingFit;
+  
+  shared_ptr<SpecMeas> spec = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !spec )
+  {
+    ScoreNote note;
+    note.m_title = "No foreground defined";
+    note.m_text = "Couldnt perform fit";
+    answer.m_notes.push_back( note );
+    
+    return answer;
+  }//if( !spec )
+  
+  auto fitModel = spec->shieldingSourceModel();
+  if( !fitModel )
+  {
+    ScoreNote note;
+    note.m_title = "No model is defined for fitting";
+    note.m_text = "Cant test";
+    answer.m_notes.push_back( note );
+    
+    return answer;
+  }//if( !fitModel )
+  
+  MaterialDB *matdb = m_viewer->materialDataBase();
+  PeakModel *peakModel = m_viewer->peakModel();
+  WSuggestionPopup *shieldSuggest = m_viewer->shieldingSuggester();
+  
+  try
+  {
+    unique_ptr<ShieldingSourceDisplay> disp;
+    disp.reset( new ShieldingSourceDisplay( peakModel, m_viewer, shieldSuggest, matdb ) );
+    
+    std::tuple<int,int,bool> nfitpars = disp->numTruthValuesForFitValues();
+    
+    if( !std::get<2>(nfitpars) )
+    {
+      ScoreNote note;
+      note.m_title = "Truth values not entered";
+      note.m_text = "Not all required truth values or tolerances were entered.";
+      answer.m_notes.push_back( note );
+      
+      return answer;
+    }//if( we can actually test things )
+    
+    ScoreNote note;
+    note.m_text = "";
+    note.m_title = "Fit Chi2 Graphic";
+    note.m_originalImage = make_shared<Wt::WSvgImage>(m_picWidth, m_picHeight);
+    disp->renderChi2Chart( *note.m_originalImage );
+    
+    // Set all the quantities being fit for to some default values, so we wont be starting off in
+    //  unfairly close to the real answer.
+    disp->setFitQuantitiesToDefaultValues();
+    
+    shared_ptr<ShieldingSourceDisplay::ModelFitResults> result = disp->doModelFit( false );
+    
+    // Uhg, sometimes users have to hit  a coupel times right now - this should be fixed
+    result = disp->doModelFit( false );
+    
+    note.m_testImage = make_shared<Wt::WSvgImage>(m_picWidth, m_picHeight);
+    disp->renderChi2Chart( *note.m_testImage );
+    answer.m_notes.push_back( note );
+    
+    switch( result->succesful )
+    {
+      case ShieldingSourceDisplay::ModelFitResults::FitStatus::Invalid:
+      {
+        answer.m_ntest += std::get<1>(nfitpars);
+        answer.m_nwrong += std::get<1>(nfitpars);
+        
+        ScoreNote note;
+        note.m_title = "Fit of model failed";
+        note.m_text = "Failed to fit model, so saying all " + std::to_string(std::get<1>(nfitpars))
+                      + " fit parameters were wrong.";
+        
+        if( !result->errormsgs.empty() )
+          note.m_text += "<br /><b>Error Messages:</b>";
+        
+        for( const auto &msg : result->errormsgs )
+          note.m_text += "<div>" + msg + "</div>";
+        answer.m_notes.push_back( note );
+        
+        return answer;
+        break;
+      }//invalid fit result
+        
+      case ShieldingSourceDisplay::ModelFitResults::FitStatus::InterMediate:
+        assert( 0 );
+        break;
+        
+      case ShieldingSourceDisplay::ModelFitResults::FitStatus::Final:
+        break;
+    }//switch( result->succesful )
+    
+    const tuple<bool,int,int,vector<string>> testres = disp->testCurrentFitAgainstTruth();
+    assert( get<0>(testres) );
+    const int numPass = get<1>(testres);
+    const int numTested = get<2>(testres);
+    const vector<string> &remarks = get<3>(testres);
+    
+    answer.m_ncorrect += numPass;
+    answer.m_ntest += numTested;
+    answer.m_nwrong += (numTested - numPass);
+    
+    ScoreNote valuesNote;
+    valuesNote.m_title = "Fit values";
+    for( const auto &msg : remarks )
+      valuesNote.m_text += "<div>" + msg + "</div>";
+    
+    answer.m_notes.push_back( valuesNote );
+  }catch( std::exception &e )
+  {
+    ScoreNote note;
+    note.m_title = "Failed test with exception";
+    note.m_text = "Exception message: " + string( e.what() );
+    answer.m_notes.push_back( note );
+    
+    return answer;
+  }//try / catch
+  
+  return answer;
+}//Score testShieldSourceFit()
+
 
 
 SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried(
