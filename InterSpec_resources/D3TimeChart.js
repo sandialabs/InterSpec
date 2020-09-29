@@ -199,7 +199,6 @@ D3TimeChart = function (elem, options) {
   this.selection = undefined;
   this.height = undefined;
   this.width = undefined;
-  this.leadTime = 2.5;
 
   this.margin = {
     top: 50,
@@ -358,7 +357,7 @@ D3TimeChart.prototype.render = function (options) {
         }
       }
     } // if (plotWidth < nPoints)
-    console.log(this.data);
+    // console.log(this.data);
     this.compressionIndex = compressionIndex;
 
     // set dimensions of svg element and plot
@@ -435,6 +434,9 @@ D3TimeChart.prototype.render = function (options) {
     var drag = d3.behavior
       .drag()
       .on("dragstart", () => {
+        if (d3.event.sourceEvent.ctrlKey) {
+          console.log("mouse + control key pressed");
+        }
         if (!this.escapeKeyPressed) {
           var coords = d3.mouse(this.rect.node());
           brush.setStart(coords[0]);
@@ -638,60 +640,83 @@ D3TimeChart.prototype.updateChart = function (
 
   var axisLabelX = this.svg.select("#th_label_x");
 
-  // var axisLabelXTranslation = this.options.compactXAxis
-  //   ? "translate(" +
-  //     this.width / 3 +
-  //     "," +
-  //     (this.height -
-  //       this.margin.bottom +
-  //       this.axisBottomG.node().getBBox().height +
-  //       15) +
-  //     ")"
-  //   : "translate(" +
-  //     this.width / 2 +
-  //     "," +
-  //     (this.height -
-  //       this.margin.bottom +
-  //       this.axisBottomG.node().getBBox().height +
-  //       15) +
-  //     ")";
-
-  // if already drawn, just update
-  if (!axisLabelX.empty()) {
-    // clear existing transforms
-    // axisLabelX.attr("transform", "none");
-
-    // reposition
-    axisLabelX.attr(
-      "transform",
-      "translate(" +
-        this.width / 2 +
-        "," +
-        (this.height -
-          this.margin.bottom +
-          this.axisBottomG.node().getBBox().height +
-          15) +
-        ")"
-    );
-  } else {
-    this.svg
+  if (axisLabelX.empty()) {
+    // create the element if not already created
+    axisLabelX = this.svg
       .append("text")
       .attr("class", "axis_label")
       .attr("id", "th_label_x")
-      .attr(
-        "transform",
-        "translate(" +
-          this.width / 2 +
-          "," +
-          (this.height -
-            this.margin.bottom +
-            this.axisBottomG.node().getBBox().height +
-            15) +
-          ")"
-      )
       .style("text-anchor", "middle")
       .text(this.options.xtitle);
   } // if (!axisLabelX.empty())
+
+  // compute axis label translation to use
+  var axisLabelXTranslation = this.options.compactXAxis
+    ? "translate(" +
+      (this.margin.left +
+        this.width -
+        axisLabelX.node().getBBox().width -
+        20) +
+      "," +
+      (this.height -
+        this.margin.bottom +
+        this.axisBottomG.node().getBBox().height -
+        3) +
+      ")"
+    : "translate(" +
+      this.width / 2 +
+      "," +
+      (this.height -
+        this.margin.bottom +
+        this.axisBottomG.node().getBBox().height +
+        15) +
+      ")";
+
+      axisLabelX.attr("transform", axisLabelXTranslation);
+
+  var xLabelBoundingRect = axisLabelX
+    .node()
+    .getBoundingClientRect();
+
+  var USE_COMPACT_X_AXIS = this.options.compactXAxis;
+  var axisBottomTicks = this.axisBottomG.selectAll("g.tick");
+  
+  // hide tick labels if they overlap with compact x-axis label
+  axisBottomTicks.each(function () {
+    var tickTransform = d3.transform(d3.select(this).attr("transform"));
+    var tickText = d3.select(this).select("text");
+    if (
+      USE_COMPACT_X_AXIS &&
+      tickTransform.translate[0] > xLabelBoundingRect.left &&
+      tickTransform.translate[0] < xLabelBoundingRect.right
+    ) {
+      tickText.attr("visibility", "hidden");
+    } else {
+      tickText.attr("visibility", "visible");
+    }
+  });
+
+  var dataBackgroundDuration = this.backgroundDuration;
+  var firstTickVal = this.axisBottomG.select("g.tick:first-child").node().textContent;
+
+  if (dataBackgroundDuration != null) {
+    // add background duration and remove negative axis labels
+    var leftMargin = this.margin.left;
+    var axisBottomTicks = this.axisBottomG.selectAll("g.tick");
+    axisBottomTicks.each(function () {
+      var text = d3.select(this).select("text");
+      var line = d3.select(this).select("line");
+      if (text.node().textContent < 0) {
+        if (text.node().textContent === firstTickVal) {
+          d3.select(this).attr("transform", "translate(" + leftMargin + ",0)");
+          text.node().textContent = -dataBackgroundDuration;
+        } else {
+          d3.select(line.node()).attr("visibility", "hidden");
+          d3.select(text.node()).attr("visibility", "hidden");
+        }
+      } // if (text.node().textContent < 0)
+    }); // axisBottomTicks.each()
+  } // if (dataBackgroundDuration != null)
 
   if (HAS_GAMMA) {
     var yAxisLeft = d3.svg
@@ -805,7 +830,7 @@ D3TimeChart.prototype.updateChart = function (
  *                    detName: String,
  *                    color: String
  *                    counts: Numbers[N]
- *                  }
+ *                  },
  *                  ...
  *                  ],
  *
@@ -908,34 +933,36 @@ D3TimeChart.prototype.isValidData = function (data) {
  * Formats data to several JSON objects for convenient plotting
  * returns object bundling sampleNumbers, realTimeIntervals, data domain, and detectors data.
  * e.g.
- * sampleNumbers: [1, 2, 3, ...],
- * realTimeIntervals: [[a,b], [c,d], ...],
- * meanIntervalTime: 0.500...
- * gpsCoordinates: [...], (optional)
- * occupied: [false, true, true, ...]
- * sourceTypes: [2, 3, 3, ..]
- * startTimeStamps: [...]
- * domains:
  * {
- *    x: [a, b],
- *    yGamma: [c, d]
- *    yNeutron: [e, f]
- * }
+ *   sampleNumbers: [1, 2, 3, ...],
+ *   realTimeIntervals: [[a,b], [c,d], ...],
+ *   meanIntervalTime: 0.500...
+ *   gpsCoordinates: [...], (optional)
+ *   occupied: [false, true, true, ...]
+ *   sourceTypes: [2, 3, 3, ..]
+ *   startTimeStamps: [...]
+ *   domains:
+ *   {
+ *      x: [a, b],
+ *      yGamma: [c, d]
+ *      yNeutron: [e, f]
+ *   }
  *
- * detectors:
- * {
- *    det1: {
- *              meta: {
- *                        "isGammaDetector": true,
- *                        "isNeutronDetector": true,
- *                        "gammaColor": rgb(0,0,0),
- *                        "neutronColor": rgb(0,128,0)
- *                    },
- *              counts: [{DataPoint}, {DataPoint}, {DataPoint}, ...]
- *          },
+ *   detectors:
+ *   {
+ *      det1: {
+ *                meta: {
+ *                          "isGammaDetector": true,
+ *                          "isNeutronDetector": true,
+ *                          "gammaColor": rgb(0,0,0),
+ *                          "neutronColor": rgb(0,128,0)
+ *                      },
+ *                counts: [{DataPoint}, {DataPoint}, {DataPoint}, ...]
+ *            },
  *
- *    det2: {...},
- *    ...
+ *      det2: {...},
+ *      ...
+ *   }
  * }
  *
  * @param {*} data
@@ -1207,7 +1234,8 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
     if (sourceTypes && i === 0 && sourceTypes[i] === 2) {
       // center so background is not started at 0
       // to handle long lead-in:
-      var leadTime = Math.max(-realTimes[i], -this.leadTime);
+      var leadTime = Math.max(-realTimes[i], -Math.floor(realTimes.length * 0.12));
+      this.backgroundDuration = realTimes[i];
       realTimeIntervals[i] = [leadTime, 0];
     } else if (i === 0) {
       // first point is not background, so don't need to center
@@ -1586,6 +1614,11 @@ D3TimeChart.prototype.findDataIndex = function (time, compressionIndex) {
   return -1;
 };
 
+/**
+ * Checks whether a given sample corresponds to a positive vehicle occupancy status.
+ * @param {*} sampleNumber : the integer sample number you are querying the occupancy status for
+ * @param {*} occupancies : raw occupancies data - an array of objects of form {color: [String], startSample: [Integer], endSample: [Integer]}
+ */
 D3TimeChart.prototype.isOccupiedSample = function (sampleNumber, occupancies) {
   // if occupancies.status is undefined, assume it is true...
   var status = occupancies.hasOwnProperty(status) ? occupancies.status : true;
@@ -1600,6 +1633,12 @@ D3TimeChart.prototype.isOccupiedSample = function (sampleNumber, occupancies) {
   return !(false ^ status);
 };
 
+/**
+ * Compresses data by iteratively aggregating contiguous sets of n data points if they share the same attributes.
+ * Returns the compressed data in the same JSON format as the raw (input) data passed by Wt.
+ * @param {*} data : raw time-history data passed by Wt
+ * @param {*} n : a non-negative integer that specifies the compression level.
+ */
 D3TimeChart.prototype.compress = function (data, n) {
   // Create output array template
   var out = {
@@ -1878,9 +1917,14 @@ D3TimeChart.prototype.setY2AxisTitle = function () {
   //redraw y2-title (e.g., neutron CPS axis title)
 };
 
+/**
+ * Function to handle setting compact x axis. Called whenever toggle compact x-axis on/off. Triggers a re-render. 
+ * @param {boolean} compact : boolean value defining whether or not to use compact x-axis
+ */
 D3TimeChart.prototype.setCompactXAxis = function (compact) {
-  this.options.compactXAxis = compact;
   //Make x-zis title comapact or not
+  this.options.compactXAxis = compact;
+  this.margin.bottom = compact ? 25 : 50;
 };
 
 D3TimeChart.prototype.setGridX = function (show) {
