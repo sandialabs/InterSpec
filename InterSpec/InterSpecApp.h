@@ -194,6 +194,10 @@ public:
   void getSafeAreaInsets( DeviceOrientation &orientation, float &top, float &right, float &bottom, float &left );
 #endif
   
+  //clearSession(): resets the session to a blank session (e.g. doesnt load
+  //  any saved state).
+  virtual void clearSession();
+  
 protected: 
 
   //notify(): over-riding WApplication::notify inorder to catch any exceptions
@@ -210,10 +214,6 @@ protected:
   //prepareForEndOfSession(): increments users total time in app and saves the
   //  state if their preferences ask for it
   virtual void prepareForEndOfSession();
-  
-  //clearSession(): resets the session to a blank session (e.g. doesnt load
-  //  any saved state).
-  virtual void clearSession();
   
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )

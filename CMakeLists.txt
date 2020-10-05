@@ -1314,15 +1314,18 @@ if(PERFORM_DEVELOPER_CHECKS)
     target_link_libraries(InterSpecLib PUBLIC ${Boost_DATE_TIME_LIBRARY})
 endif(PERFORM_DEVELOPER_CHECKS)
 
-set(CMAKE_REQUIRED_INCLUDES ${Wt_INCLUDE_DIR} ${Boost_INCLUDE_DIR})
-INCLUDE(CheckIncludeFileCXX)
+include(CheckIncludeFileCXX)
+set(CMAKE_REQUIRED_INCLUDES ${Wt_INCLUDE_DIR} ${Boost_INCLUDE_DIR} )
 
 if(Wt_DBOSQLITE3_LIBRARY)
-    check_include_file_cxx("Wt/Dbo/backend/Sqlite3" HAS_WTDBOSQLITE3)
+    # check_include_file_cxx(...) doesnt look to work w/ apple clang 12...
+    #check_include_file_cxx("Wt/Dbo/backend/Sqlite3" HAS_WT_DBO_SQLITE3)
+    find_file( HAS_WT_DBO_SQLITE3 "Sqlite3" PATHS "${Wt_INCLUDE_DIR}/Wt/Dbo/backend/" NO_DEFAULT_PATH )
 endif(Wt_DBOSQLITE3_LIBRARY)
 
 if(Wt_MYSQL_LIBRARY)
-    check_include_file_cxx("Wt/Dbo/backend/MySQL" HAS_WTDBOMYSQL)
+    #check_include_file_cxx("${Wt_INCLUDE_DIR}/Wt/Dbo/backend/MySQL" HAS_WT_DBO_MYSQL)
+    find_file( HAS_WT_DBO_MYSQL "MySQL" PATHS "${Wt_INCLUDE_DIR}/Wt/Dbo/backend/" NO_DEFAULT_PATH )
 endif(Wt_MYSQL_LIBRARY)
 
 INCLUDE( CheckIncludeFiles )
@@ -1359,13 +1362,13 @@ if(Wt_MYSQL_LIBRARY AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB)
     )
 endif(Wt_MYSQL_LIBRARY AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB)
 
-if(USE_MYSQL_DB AND NOT HAS_WTDBOMYSQL)
+if(USE_MYSQL_DB AND NOT HAS_WT_DBO_MYSQL)
     MESSAGE(FATAL_ERROR   "You do not have the MySQL Wt Dbo backend installed, but you have asked to use it")
-endif(USE_MYSQL_DB AND NOT HAS_WTDBOMYSQL)
+endif(USE_MYSQL_DB AND NOT HAS_WT_DBO_MYSQL)
 
-if(USE_SQLITE3_DB AND NOT HAS_WTDBOSQLITE3 AND NOT WIN32)
+if(USE_SQLITE3_DB AND NOT HAS_WT_DBO_SQLITE3 AND NOT WIN32)
     MESSAGE(FATAL_ERROR   "You do not have the SQLITE3 Wt Dbo backend installed, but you have asked to use it")
-endif(USE_SQLITE3_DB AND NOT HAS_WTDBOSQLITE3 AND NOT WIN32)
+endif(USE_SQLITE3_DB AND NOT HAS_WT_DBO_SQLITE3 AND NOT WIN32)
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec/InterSpec_config.h.in

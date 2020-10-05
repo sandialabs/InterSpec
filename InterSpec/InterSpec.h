@@ -657,6 +657,9 @@ public:
   void showLicenseAndDisclaimersWindow( const bool is_awk,
                                       std::function<void()> finished_callback );
   
+  /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
+  void startClearSession();
+    
   /** Deletes disclaimer, license, and statment window and sets m_licenseWindow
       to nullptr;
    */
