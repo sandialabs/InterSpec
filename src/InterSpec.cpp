@@ -3757,6 +3757,38 @@ void InterSpec::showLicenseAndDisclaimersWindow( const bool is_awk,
   }) );
 }//void showLicenseAndDisclaimersWindow()
 
+void InterSpec::startClearSession()
+{
+  AuxWindow *window = new AuxWindow( "Confirm Clear Session",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+                                     | AuxWindowProperties::DisableCollapse) );
+  WText *t = new WText( "Are you sure you would like to start a clean sesion?", window->contents() );
+  t->setInline( false );
+  window->setClosable( false );
+  
+  WPushButton *button = new WPushButton( "Yes", window->footer() );
+  button->clicked().connect( std::bind([=](){
+    AuxWindow::deleteAuxWindow( window );
+    
+    WServer::instance()->post( wApp->sessionId(), std::bind( [](){
+      auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+      if( app )
+      {
+        app->clearSession();
+        app->triggerUpdate();
+      }
+    } )
+    );
+  }) );
+
+  button = new WPushButton( "No", window->footer() );
+  button->clicked().connect( window, &AuxWindow::hide );
+  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  
+  window->centerWindow();
+  window->show();
+}//void startClearSession()
+
 
 void InterSpec::deleteLicenseAndDisclaimersWindow()
 { 
@@ -4502,17 +4534,19 @@ void InterSpec::startStoreTestStateInDb()
 {
   if( m_currentStateID >= 0 )
   {
-    AuxWindow *window = new AuxWindow( "Warning", AuxWindowProperties::PhoneModal );
+    AuxWindow *window = new AuxWindow( "Warning",
+                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+                                       | AuxWindowProperties::DisableCollapse) );
     WText *t = new WText( "Overwrite current test state?", window->contents() );
     t->setInline( false );
     
     window->setClosable( false );
 
-    WPushButton *button = new WPushButton( "Yes", window->footer() );
+    WPushButton *button = new WPushButton( "Overwrite", window->footer() );
     button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, false, true, false ) );
     
-    button = new WPushButton( "No", window->footer() );
+    button = new WPushButton( "Create New", window->footer() );
     button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, true, false, false ) );
     
@@ -4780,7 +4814,10 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
     return;
   }//if( state )
   
-  AuxWindow *window = new AuxWindow( "Create Snapshot", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+  AuxWindow *window = new AuxWindow( "Create Snapshot",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                                      | AuxWindowProperties::TabletModal
+                                      | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
@@ -6436,6 +6473,11 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   HelpSystem::attachToolTipOn( item, doloadtext, showToolTipInstantly );
   InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this, false );
 #endif
+  
+  m_helpMenuPopup->addSeparator();
+  item = m_helpMenuPopup->addMenuItem( "Clear Session..." );
+  item->triggered().connect( this, &InterSpec::startClearSession );
+    
 #if( !BUILD_AS_OSX_APP )
   m_helpMenuPopup->addSeparator();
   

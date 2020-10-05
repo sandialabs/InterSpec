@@ -6816,8 +6816,7 @@ void ShieldingSourceDisplay::deSerializePeaksToUse(
     PeakModel::PeakShrdPtr nearest_peak;
     for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
     {
-      WModelIndex index = m_peakModel->index( peakn,
-                                        PeakModel::kUseForShieldingSourceFit );
+      WModelIndex index = m_peakModel->index( peakn, PeakModel::kUseForShieldingSourceFit );
       PeakModel::PeakShrdPtr peak = m_peakModel->peak( index );
       const SandiaDecay::Nuclide *nuclide = peak->parentNuclide();
       
@@ -6843,47 +6842,40 @@ void ShieldingSourceDisplay::deSerializePeaksToUse(
 }//void deSerializePeaksToUse( rapidxml::xml_node<char> *peaks_node )
 
 
-void ShieldingSourceDisplay::deSerializeSourcesToFitFor(
-                                      const rapidxml::xml_node<char> *sources )
+void ShieldingSourceDisplay::deSerializeSourcesToFitFor( const rapidxml::xml_node<char> *sources )
 {
-  const rapidxml::xml_attribute<char> *fit_activity_attr, *fit_age_attr,
-                                      *age_master_attr;
-  const rapidxml::xml_node<> *activity_node, *age_node, *determined_note,
-                             *name_node, *src_node, *activity_value_node,
-                             *activity_uncert_node, *age_value_node,
-                             *age_uncert_node;
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
   vector<SourceFitModel::IsoFitStruct> &model_isos = m_sourceModel->m_nuclides;
   vector<bool> model_row_modded( model_isos.size(), false );
   
-  for( src_node = sources->first_node( "Nuclide", 7 );
+  for( const rapidxml::xml_node<> *src_node = sources->first_node( "Nuclide", 7 );
        src_node; src_node = src_node->next_sibling( "Nuclide", 7 ) )
   {
-    name_node = src_node->first_node( "Name", 4 );
-    activity_node = src_node->first_node( "Activity", 8 );
-    determined_note = src_node->first_node( "ShieldingDeterminedActivity", 27 );
+    const rapidxml::xml_node<> *name_node = src_node->first_node( "Name", 4 );
+    const rapidxml::xml_node<> *activity_node = src_node->first_node( "Activity", 8 );
+    const rapidxml::xml_node<> *determined_note = src_node->first_node( "ShieldingDeterminedActivity", 27 );
     
     if( !name_node || !name_node->value() || !activity_node
         || !determined_note || !determined_note->value() )
       throw runtime_error( "Missing necassasary element for sources XML" );
     
-    activity_value_node = activity_node->first_node( "Value", 5 );
-    activity_uncert_node = activity_node->first_node( "Uncertainty", 11 );
+    const rapidxml::xml_node<> *activity_value_node = activity_node->first_node( "Value", 5 );
+    const rapidxml::xml_node<> *activity_uncert_node = activity_node->first_node( "Uncertainty", 11 );
     
     if( !activity_value_node )
       throw runtime_error( "No activity value node" );
-    fit_activity_attr = activity_value_node->first_attribute( "Fit", 3 );
+    const rapidxml::xml_attribute<char> *fit_activity_attr = activity_value_node->first_attribute( "Fit", 3 );
     
-    age_node = src_node->first_node( "Age", 3 );
+    const rapidxml::xml_node<> *age_node = src_node->first_node( "Age", 3 );
     if( !age_node )
       throw runtime_error( "Missing necassasary age element for sources XML" );
     
-    age_value_node = age_node->first_node( "Value", 5 );
-    fit_age_attr = age_value_node->first_attribute( "Fit", 3 );
-    age_master_attr = age_value_node->first_attribute( "AgeMaster", 9 );
+    const rapidxml::xml_node<> *age_value_node = age_node->first_node( "Value", 5 );
+    const rapidxml::xml_attribute<char> *fit_age_attr = age_value_node->first_attribute( "Fit", 3 );
+    const rapidxml::xml_attribute<char> *age_master_attr = age_value_node->first_attribute( "AgeMaster", 9 );
     
-    age_uncert_node = age_node->first_node( "Uncertainty", 11 );
+    const rapidxml::xml_node<> *age_uncert_node = age_node->first_node( "Uncertainty", 11 );
     
     if( !activity_value_node || !activity_value_node->value()
         || !activity_uncert_node || !activity_uncert_node->value()
@@ -6963,15 +6955,20 @@ void ShieldingSourceDisplay::deSerializeSourcesToFitFor(
     }//for( size_t i = 0; i < m_sourceModel->m_nuclides.size(); ++i )
   }//for( loop over source isotopes )
   
+  
   //We should have modded all rows that are currently in m_sourceModel, but
-  //  we're not garunteed all rows that where in the XML are also in
-  //  m_sourceModel
-  for( const bool modded : model_row_modded )
-  {
-    if( !modded )
-      throw runtime_error( "Inconsistent state of source model and"
-                         " serialized from XML" );
-  }//for( const bool modded : model_row_modded )
+  //  we're not garunteed all rows that where in the XML are also in m_sourceModel
+  //Note 20200929: this check below is a little over-optimistic, so I commented it out; if you
+  //  stumble on this code in like a year, and its still commentd out, just delete it, because:
+  //  If m_sourceModel had "Tl201" because that is the peaks in our current spectrum (and that is
+  //  the peak that is marked to be used in a fit), but the XML model we're loading had "I131" in
+  //  it (because thats what we fit for in the previous record of the spectrum file), then
+  //  model_row_modded for this model will still be false.
+  //for( const bool modded : model_row_modded )
+  //{
+  //  if( !modded )
+  //    throw runtime_error( "Inconsistent state of source model and serialized from XML" );
+  //}//for( const bool modded : model_row_modded )
   
   if( m_sourceModel->rowCount() )
   {
@@ -7111,7 +7108,7 @@ void ShieldingSourceDisplay::deSerialize(
   m_prevDistStr = dist_node->value();
   
   deSerializePeaksToUse( peaks_node );
-  //  m_sourceModel->repopulateIsotopes();
+  m_sourceModel->repopulateIsotopes();
   deSerializeSourcesToFitFor( isotope_nodes );
   deSerializeShieldings( shieldings_node );
   
