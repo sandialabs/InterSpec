@@ -1433,6 +1433,7 @@ void InterSpec::initHotkeySignal()
         case 78: case 53: v=5; break; //n
         case 72:          v=6; break; //h
         case 73:          v=7; break; //i
+        case 76:          v=76; break; //l
         default:
           return;  //show
       }
@@ -1467,6 +1468,7 @@ void InterSpec::hotkeyPressed( const unsigned int value )
       case 5: expectedTxt = NuclideSearchTabTitle; break;
       case 6: HelpSystem::createHelpWindow( "getting-started" ); break;
       case 7: showWelcomeDialog( true ); break;
+      case 76: setLogY( !m_spectrum->yAxisIsLog() );  break;
     }//switch( value )
   
     if( expectedTxt.empty() )
@@ -1490,6 +1492,7 @@ void InterSpec::hotkeyPressed( const unsigned int value )
       case 3: showGammaLinesWindow();         break;
       case 4: showEnergyCalWindow();          break;
       case 5: showNuclideSearchWindow();      break;
+      case 76: setLogY( !m_spectrum->yAxisIsLog() );  break;
     }//switch( value )
   }//if( tool tabs visible ) / else
 }//void hotkeyPressed( const int value )
@@ -3783,6 +3786,8 @@ void InterSpec::startClearSession()
 
   button = new WPushButton( "No", window->footer() );
   button->clicked().connect( window, &AuxWindow::hide );
+  button->setFocus();
+  
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
   window->centerWindow();
@@ -4982,7 +4987,6 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
                                             SpecUtils::SpectrumType::Foreground ) );
     HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTipInstantly );
     
-    
     if( isMobile )
     {
       item = m_fileMenuPopup->addMenuItem( "Loaded Spectra..." );
@@ -4993,6 +4997,13 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   }//if( m_fileManager )
 #endif  //USE_DB_TO_STORE_SPECTRA
 
+
+  item = m_fileMenuPopup->addMenuItem( "Clear Session..." );
+  item->triggered().connect( this, &InterSpec::startClearSession );
+  HelpSystem::attachToolTipOn(item, "Starts a clean application state with no spectra loaded", showToolTipInstantly );
+  m_fileMenuPopup->addSeparator();
+  
+  
   PopupDivMenu *subPopup = 0;
 
   subPopup = m_fileMenuPopup->addPopupMenuItem( "Samples" );
@@ -6474,10 +6485,6 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this, false );
 #endif
   
-  m_helpMenuPopup->addSeparator();
-  item = m_helpMenuPopup->addMenuItem( "Clear Session..." );
-  item->triggered().connect( this, &InterSpec::startClearSession );
-    
 #if( !BUILD_AS_OSX_APP )
   m_helpMenuPopup->addSeparator();
   
