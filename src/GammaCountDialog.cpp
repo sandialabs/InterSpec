@@ -71,8 +71,10 @@ GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
     m_nsigmaHelp( NULL )
 {
   init();
+  
   handleEnergyRangeChange();
   
+  m_specViewer->displayedSpectrumChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   
   rejectWhenEscapePressed();
   
@@ -118,8 +120,7 @@ void GammaCountDialog::init()
   wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
   
   if( !m_specViewer )
-    throw runtime_error( "GammaCountDialog: you must pass in valid"
-                         " InterSpec pointer" );
+    throw runtime_error( "GammaCountDialog: you must pass in valid InterSpec pointer" );
  
   const bool showToolTipInstantly
          = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
@@ -175,20 +176,15 @@ void GammaCountDialog::init()
 
   WLabel *label = NULL;
   WText *text = NULL;
-  text = new WText( "Count the number of gammas in the"
-                    " specified energy range.",
-                    XHTMLUnsafeText );
-    text->setWordWrap(true);
+  text = new WText( "Count the number of gammas in the specified energy range." );
+  text->setWordWrap(true);
   text->setWidth( WLength(10.5, WLength::FontEm) );
-    int row=0;
-    text->setStyleClass("line-below");
-    layout->addWidget( text, row, 0, 1, 3/*, AlignCenter */);
-
-
-
+  int row=0;
+  text->setStyleClass("line-below");
+  layout->addWidget( text, row, 0, 1, 3/*, AlignCenter */);
 
   label = new WLabel( "Lower Energy" );
-       layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
+  layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
   layout->addWidget( m_lowerEnergy, row, 1, 1, 1, AlignLeft );
   label = new WLabel( "keV" );
   layout->addWidget( label, row, 2, 1, 1, AlignLeft );
@@ -201,10 +197,11 @@ void GammaCountDialog::init()
 
   if( m_specViewer && !m_specViewer->isMobile() )
   {
-      WLabel* temp = new WLabel("<center><i><small>You can also <b>Shift-Alt-Drag</b> on the chart to select the energy range</small></i></center>");
-      temp->setWordWrap(true);
-      layout->addWidget(temp,++row, 0 , 1 ,3,AlignCenter);
-      temp->setStyleClass("line-below");
+    WLabel* temp = new WLabel("<center><i><small>You can also <b>Shift-Alt-Drag</b> on the chart"
+                              " to select the energy range</small></i></center>");
+    temp->setWordWrap(true);
+    layout->addWidget(temp,++row, 0 , 1 ,3,AlignCenter);
+    temp->setStyleClass("line-below");
   }
     
   label = new WLabel( "Foreground Counts:" );
