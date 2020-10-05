@@ -486,6 +486,11 @@ public:
              std::vector<std::string>   //The detectors displayed
              >& displayedSpectrumChanged();
 
+  /** Signal emmitted when user changes a spectrums scale factor in the "Spectrum Files" tab, or using graphical y-axis scalers.
+   Is not emmitted when new spectra or sample numbers are loaded/changed.
+   */
+  Wt::Signal<SpecUtils::SpectrumType,double> &spectrumScaleFactorChanged();
+  
   //overlayCanvasJsExceptionCallback(...) is mostly for debugging and will
   //  probably be romived in the future
   void overlayCanvasJsExceptionCallback( const std::string &message );
@@ -1341,6 +1346,8 @@ protected:
              std::vector<std::string> /*detectors*/
              > m_displayedSpectrumChangedSignal;
 
+  Wt::Signal<SpecUtils::SpectrumType,double> m_spectrumScaleFactorChanged;
+  
 
   //Signals for when the current detector is changed or modified
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > m_detectorChanged;

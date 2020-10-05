@@ -75,6 +75,7 @@ GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
   handleEnergyRangeChange();
   
   m_specViewer->displayedSpectrumChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
+  m_specViewer->spectrumScaleFactorChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   
   rejectWhenEscapePressed();
   

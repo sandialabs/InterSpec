@@ -2552,6 +2552,11 @@ Wt::Signal<SpecUtils::SpectrumType,std::shared_ptr<SpecMeas>, std::set<int>, vec
 }
 
 
+Wt::Signal<SpecUtils::SpectrumType,double> &InterSpec::spectrumScaleFactorChanged()
+{
+  return m_spectrumScaleFactorChanged;
+}
+
 
 WModelIndex InterSpec::addPeak( PeakDef peak,
                                     const bool associateShowingNuclideXrayRctn )
@@ -6706,10 +6711,10 @@ double InterSpec::displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) co
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
 
 
-void InterSpec::setDisplayScaleFactor( const double sf,
-                                            const SpecUtils::SpectrumType spectrum_type )
+void InterSpec::setDisplayScaleFactor( const double sf, const SpecUtils::SpectrumType spec_type )
 {
-  m_spectrum->setDisplayScaleFactor( sf, spectrum_type );
+  m_spectrum->setDisplayScaleFactor( sf, spec_type );
+  m_spectrumScaleFactorChanged.emit( spec_type, sf );
 }//void setDisplayScaleFactor( const double sf, SpecUtils::SpectrumType spectrum_type );
 
 
