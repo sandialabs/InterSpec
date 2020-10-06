@@ -184,9 +184,41 @@ void getXAxisLabelTicks( const SpectrumChart *chart,
       
     WString t;
     
-    if( i>=0 && (i % subdashes == 0) ){
-      t = axis.label(v);
-    }
+    if( i>=0 && ((i % subdashes) == 0) )
+    {
+      if( renderInterval < 1.0 )
+      {
+        //If x-range is more than 10, but we have more than 10 labels, then labelFormat flag is
+        //  "%.0f", meaining no decimals, but we need decimals or else multiple ticks will have same
+        //  label - so here we will .
+        //  The intervals should almost always be something like 0.1, 0.2, etc, but because I didnt
+        //  go through the logic totally yet to make sure, I'll leave in a default catchall that
+        //  will print to four places, and then just remove trailing zeros.
+        const char *fmtflag = "%.4f";
+        bool removetrail = false;
+        if( renderInterval == 0.1 || renderInterval == 0.2 || renderInterval == 0.5 )
+          fmtflag = "%.1f";
+        else if( renderInterval == 0.25 )
+          fmtflag = "%.2f";
+        else
+          removetrail = true;
+        
+        char buffer[32] = { '\0' };
+        int nchar = snprintf( buffer, sizeof(buffer), fmtflag, v );
+        
+        //Remove trailing zeros
+        if( removetrail && (--nchar > 0) && (nchar < static_cast<int>(sizeof(buffer))) )
+        {
+          while( (nchar > 0) && ((buffer[nchar] == '0') || (buffer[nchar] == '.')) )
+            buffer[nchar--] = '\0';
+        }
+        
+        t = buffer;
+      }else
+      {
+        t = axis.label(v);
+      }
+    }//If( a major tick )
     
     ticks.push_back(MyTickLabel(v, i % subdashes == 0 ? MyTickLabel::Long : MyTickLabel::Short, t));
   }//for( intervals to draw ticks for )
