@@ -1012,9 +1012,9 @@ namespace
           if( m_betas )
           {
             for( auto &x : mixture->betas(time_now, order) )
-              response.out() <<  x.numPerSecond;
+              response.out() << "," << x.numPerSecond;
             for( auto &x : mixture->betaPlusses(time_now, order) )
-              response.out() << x.numPerSecond;
+              response.out() << "," << x.numPerSecond;
           }//if( m_betas )
         
           response.out() << eol_char;
