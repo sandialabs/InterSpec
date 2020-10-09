@@ -842,10 +842,10 @@ void D3TimeChart::setHighlightRegionsToClient()
   WStringStream js;
   js << m_jsgraph <<  ".setHighlightRegions( [";
   
-  int nadded = 0;
-  for( const auto &region : m_highlights )
+  for( size_t i = 0; i < m_highlights.size(); ++i )
   {
-    js << string(nadded ? "," : "")
+    const auto &region = m_highlights[i];
+    js << string(i ? "," : "")
        << "{startSample: " << region.start_sample_number
        << ", endSample: " << region.end_sample_number
        << ", fillColor: \"" << region.color.cssText() << "\""

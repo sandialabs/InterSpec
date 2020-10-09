@@ -1201,14 +1201,16 @@ D3TimeChart.prototype.getDomains = function (data) {
   }
 
   // Find max over neutron detectors
-  for (var i = 0; i < data.neutronCounts.length; i++) {
-    for (var j = 0; j < nSamples; j++) {
-      var cps = data.neutronCounts[i].liveTimes
-        ? data.neutronCounts[i].counts[j] / data.neutronCounts[i].liveTimes[j]
-        : data.neutronCounts[i].counts[j] / data.realTimes[j];
+  if (data.hasOwnProperty("neutronCounts")) {
+    for (var i = 0; i < data.neutronCounts.length; i++) {
+      for (var j = 0; j < nSamples; j++) {
+        var cps = data.neutronCounts[i].liveTimes
+          ? data.neutronCounts[i].counts[j] / data.neutronCounts[i].liveTimes[j]
+          : data.neutronCounts[i].counts[j] / data.realTimes[j];
 
-      if (cps > yMaxNeutron) {
-        yMaxNeutron = cps;
+        if (cps > yMaxNeutron) {
+          yMaxNeutron = cps;
+        }
       }
     }
   }
