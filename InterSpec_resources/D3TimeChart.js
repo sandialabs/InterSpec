@@ -207,6 +207,7 @@ D3TimeChart = function (elem, options) {
     left: 60,
   };
 
+  // map<integer, string> (i.e. array) of source integer code to string.
   this.sourceMap = [
     "IntrinsicActivity",
     "Calibration",
@@ -214,6 +215,21 @@ D3TimeChart = function (elem, options) {
     "Foreground",
     "Unknown",
   ];
+
+  this.highlightOptions = {
+    foreground: {
+      modifierKey: "none",
+      color: "rgb(255, 255, 0)",
+    },
+    background: {
+      modifierKey: "altKey",
+      color: "rgb(0, 255, 255)",
+    },
+    zoom: {
+      modifierKey: "ctrlKey",
+      color: "rgb(0, 0, 0)",
+    },
+  };
 
   this.svg = d3.select(this.chart).append("svg");
   this.linesG = this.svg.append("g").attr("class", "lines");
@@ -224,7 +240,7 @@ D3TimeChart = function (elem, options) {
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
   this.highlightText = this.rectG
     .append("text")
-    .text("Zoom In")
+    // .text("Zoom In")
     .attr("font-size", 11)
     .attr("font-weight", "bold");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
@@ -434,14 +450,19 @@ D3TimeChart.prototype.render = function (options) {
     var drag = d3.behavior
       .drag()
       .on("dragstart", () => {
-        if (d3.event.sourceEvent.ctrlKey) {
-          console.log("mouse + control key pressed");
-        }
-        if (!this.escapeKeyPressed) {
-          var coords = d3.mouse(this.rect.node());
-          brush.setStart(coords[0]);
-          this.mouseDownHighlight(coords[0]);
-          d3.select("body").style("cursor", "move");
+        var coords = d3.mouse(this.rect.node());
+        brush.setStart(coords[0]);
+        d3.select("body").style("cursor", "move");
+
+        if (d3.event.sourceEvent.altKey) {
+          this.highlightModifier = "altKey";
+          this.mouseDownHighlight(coords[0], "altKey");
+        } else if (d3.event.sourceEvent.ctrlKey) {
+          this.highlightModifier = "ctrlKey";
+          this.mouseDownHighlight(coords[0], "ctrlKey");
+        } else {
+          this.highlightModifier = "none";
+          this.mouseDownHighlight(coords[0], "none");
         }
       })
       .on("drag", () => {
@@ -453,11 +474,18 @@ D3TimeChart.prototype.render = function (options) {
         } else {
           brush.setEnd(d3.mouse(this.rect.node())[0]);
 
-          // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
-          if (brush.getEnd() < brush.getStart()) {
-            this.handleDragBack(brush);
+          if (this.highlightModifier === "ctrlKey") {
+            // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
+            if (brush.getEnd() < brush.getStart()) {
+              this.handleDragBackZoom(brush);
+            } else {
+              this.handleDragForwardZoom(brush);
+            }
           } else {
-            this.handleDragForward(brush);
+            var width =
+              brush.getScale()(brush.getEnd()) -
+              brush.getScale()(brush.getStart());
+            this.mouseMoveHighlight(width);
           }
         }
       })
@@ -470,9 +498,33 @@ D3TimeChart.prototype.render = function (options) {
           this.escapeKeyPressed = false;
         } else {
           d3.select("body").style("cursor", "auto");
-          this.handleBrush(brush);
-          brush.clear();
+          console.log(brush.extent());
+          var lIdx = this.findDataIndex(brush.extent()[0], 0);
+          var rIdx = this.findDataIndex(brush.extent()[1], 0);
+          console.log([
+            this.data[0].sampleNumbers[lIdx],
+            this.data[0].sampleNumbers[rIdx],
+          ]);
+          if (this.highlightModifier === "ctrlKey") {
+            this.handleBrushZoom(brush);
+          } else {
+            var keyModifierMap = {
+              "altKey": 0x4,
+              "none" : 0x0
+            }
+            this.WtEmit(
+              this.chart.id,
+              {name: 'timedragged'}, 
+              this.data[0].sampleNumbers[lIdx], 
+              this.data[0].sampleNumbers[rIdx],
+              keyModifierMap[this.highlightModifier]
+            );
+
+          }
           this.mouseUpHighlight();
+          brush.clear();
+                      this.highlightModifier = null;
+
         }
       });
 
@@ -653,10 +705,7 @@ D3TimeChart.prototype.updateChart = function (
   // compute axis label translation to use
   var axisLabelXTranslation = this.options.compactXAxis
     ? "translate(" +
-      (this.margin.left +
-        this.width -
-        axisLabelX.node().getBBox().width -
-        20) +
+      (this.margin.left + this.width - axisLabelX.node().getBBox().width - 20) +
       "," +
       (this.height -
         this.margin.bottom +
@@ -672,15 +721,13 @@ D3TimeChart.prototype.updateChart = function (
         15) +
       ")";
 
-      axisLabelX.attr("transform", axisLabelXTranslation);
+  axisLabelX.attr("transform", axisLabelXTranslation);
 
-  var xLabelBoundingRect = axisLabelX
-    .node()
-    .getBoundingClientRect();
+  var xLabelBoundingRect = axisLabelX.node().getBoundingClientRect();
 
   var USE_COMPACT_X_AXIS = this.options.compactXAxis;
   var axisBottomTicks = this.axisBottomG.selectAll("g.tick");
-  
+
   // hide tick labels if they overlap with compact x-axis label
   axisBottomTicks.each(function () {
     var tickTransform = d3.transform(d3.select(this).attr("transform"));
@@ -697,7 +744,8 @@ D3TimeChart.prototype.updateChart = function (
   });
 
   var dataBackgroundDuration = this.backgroundDuration;
-  var firstTickVal = this.axisBottomG.select("g.tick:first-child").node().textContent;
+  var firstTickVal = this.axisBottomG.select("g.tick:first-child").node()
+    .textContent;
 
   if (dataBackgroundDuration != null) {
     // add background duration and remove negative axis labels
@@ -1234,7 +1282,10 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
     if (sourceTypes && i === 0 && sourceTypes[i] === 2) {
       // center so background is not started at 0
       // to handle long lead-in:
-      var leadTime = Math.max(-realTimes[i], -Math.floor(realTimes.length * 0.12));
+      var leadTime = Math.max(
+        -realTimes[i],
+        -Math.floor(realTimes.length * 0.12)
+      );
       this.backgroundDuration = realTimes[i];
       realTimeIntervals[i] = [leadTime, 0];
     } else if (i === 0) {
@@ -1270,7 +1321,7 @@ D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
  * Brush handler to zoom into a selected domain or zoom out if brushed back
  * @param {} brush : BrushX object
  */
-D3TimeChart.prototype.handleBrush = function (brush) {
+D3TimeChart.prototype.handleBrushZoom = function (brush) {
   if (brush && !brush.empty()) {
     // handle dragback (zoom out). Must update selection and brush scale upon mouseup event.
     if (!this.draggedForward) {
@@ -1394,8 +1445,8 @@ D3TimeChart.prototype.handleBrush = function (brush) {
  * Handler for drawing rectangle on brush forward.
  * @param {*} brush : BrushX object
  */
-D3TimeChart.prototype.handleDragForward = function (brush) {
-  // if has been dragged backward
+D3TimeChart.prototype.handleDragForwardZoom = function (brush) {
+  // if has been dragged backward prior to dragging forward, should set the flag
   if (!this.draggedForward) {
     // Set draggedforward flag. Flag is used to find conditions for redrawing chart at default position (prior to any drag-back zoomout occurring)
     this.draggedForward = true;
@@ -1425,7 +1476,7 @@ D3TimeChart.prototype.handleDragForward = function (brush) {
  * Handler for updating chart to zoom out on brush backward.
  * @param {*} brush : BrushX object
  */
-D3TimeChart.prototype.handleDragBack = function (brush) {
+D3TimeChart.prototype.handleDragBackZoom = function (brush) {
   // clear rectangle if any drawn
   this.highlightRect.attr("width", 0);
   this.highlightText.attr("visibility", "hidden");
@@ -1489,7 +1540,21 @@ D3TimeChart.prototype.handleDoubleClick = function () {
  * Sets initial attributes of a highlight region
  * @param {Number} mouseX : x-coordinates of pointer in pixels relative to the containing element
  */
-D3TimeChart.prototype.mouseDownHighlight = function (mouseX) {
+D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
+  // TO DO: is object destructuring available in ES5?
+  var { foreground, background, zoom } = this.highlightOptions;
+
+  if (modifier === foreground.modifierKey) {
+    this.highlightRect.attr("fill", foreground.color);
+    this.highlightText.text("Select foreground");
+  } else if (modifier === background.modifierKey) {
+    this.highlightRect.attr("fill", background.color);
+    this.highlightText.text("Select background");
+  } else if (modifier === zoom.modifierKey) {
+    this.highlightRect.attr("fill", zoom.color);
+    this.highlightText.text("Zoom in");
+  }
+
   this.highlightRect
     .attr("height", this.height - this.margin.top - this.margin.bottom)
     .attr("x", mouseX)
@@ -1592,7 +1657,7 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
  * Performs search over data to find interval that the given time belongs to
  * Returns the index of the match in the data array
  * @param {} time : realTime of measurement (x-value)
- * @param {} compressionIndex : optional compression index to search over.
+ * @param {} compressionIndex : optional compression index to search over. Default (no argument) is the current compressionIndex based on zoom amount.
  */
 D3TimeChart.prototype.findDataIndex = function (time, compressionIndex) {
   var cIdx =
@@ -1899,6 +1964,7 @@ D3TimeChart.prototype.compress = function (data, n) {
 // UNIMPLEMENTED
 
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
+  console.log(regions);
   //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
 };
 
@@ -1918,7 +1984,7 @@ D3TimeChart.prototype.setY2AxisTitle = function () {
 };
 
 /**
- * Function to handle setting compact x axis. Called whenever toggle compact x-axis on/off. Triggers a re-render. 
+ * Function to handle setting compact x axis. Called whenever toggle compact x-axis on/off. Triggers a re-render.
  * @param {boolean} compact : boolean value defining whether or not to use compact x-axis
  */
 D3TimeChart.prototype.setCompactXAxis = function (compact) {
