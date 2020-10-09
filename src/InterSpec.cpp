@@ -7848,7 +7848,7 @@ void InterSpec::timeChartClicked( const int sample_number, Wt::WFlags<Wt::Keyboa
 }//void timeChartClicked(...)
 
 
-void InterSpec::timeChartDragged( const int sample_start, const int sample_end,
+void InterSpec::timeChartDragged( const int sample_start_in, const int sample_end_in,
                            Wt::WFlags<Wt::KeyboardModifier> modifiers )
 {
   if( !m_dataMeasurement )
@@ -7873,9 +7873,12 @@ void InterSpec::timeChartDragged( const int sample_start, const int sample_end,
                                  ? SpecUtils::SpectrumType::Background
                                  : SpecUtils::SpectrumType::Foreground;
   
+  const int sample_start = std::min( sample_start_in, sample_end_in );
+  const int sample_end = std::max( sample_start_in, sample_end_in );
+  
   const set<int> &all_samples = m_dataMeasurement->sample_numbers();
-  const auto start_iter = all_samples.find( sample_start );
-  auto end_iter = all_samples.find( sample_end );
+  const set<int>::const_iterator start_iter = all_samples.find( sample_start );
+  set<int>::const_iterator end_iter = all_samples.find( sample_end );
   
   if( start_iter == end(all_samples) || end_iter == end(all_samples) )
   {
@@ -7888,7 +7891,7 @@ void InterSpec::timeChartDragged( const int sample_start, const int sample_end,
   
   ++end_iter;
   set<int> interaction_samples;
-  for( auto iter = start_iter; iter != end_iter; ++iter )
+  for( set<int>::const_iterator iter = start_iter; iter != end_iter; ++iter )
     interaction_samples.insert( *iter );
   
   assert( interaction_samples.size() );
