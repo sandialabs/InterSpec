@@ -175,7 +175,7 @@ UnitsConverterTool::UnitsConverterTool()
   setWidth(400);
   const char *topMessage = "Convert between radiation related units.<br />"
                            "Ex: 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8feet, 9milli-sievert";
-  WText *message = new WText( topMessage, Wt::XHTMLUnsafeText);
+  WText *message = new WText( topMessage, Wt::XHTMLText );
 
   layout->addWidget(message,0,0,1,3);
 
@@ -223,7 +223,7 @@ UnitsConverterTool::UnitsConverterTool()
   
   m_message = new WText( "&nbsp", XHTMLUnsafeText );
   m_message->setHeight(WLength(50,WLength::Pixel));
-  m_message->setAttributeValue( "style", "color:blue;"  );
+  m_message->setAttributeValue( "style", "color: rgb(18,101,200);"  );
 //  m_message->setHiddenKeepsGeometry( true );
   m_message->hide();
   layout->addWidget(m_message,3,0,1,3);
