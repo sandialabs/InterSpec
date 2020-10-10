@@ -492,7 +492,7 @@ public:
     
     m_type = new WText( "&nbsp;", coefDiv );
     m_type->setInline( false );
-    m_type->addStyleClass( "CalType Wt-itemview Wt-header Wt-label" );
+    m_type->addStyleClass( "Wt-itemview Wt-header Wt-label CalType" );
     
     m_coefficients = new WContainerWidget( coefDiv );
     m_coefficients->addStyleClass( "CoefContent" );
@@ -2696,6 +2696,15 @@ string EnergyCalTool::applyToSummaryTxt() const
 
 void EnergyCalTool::doRefreshFromFiles()
 {
+  //Labels for horizantal labels when you have mutliple spectra shown, and at least one of them has
+  //  more than one detectors
+  const char * const spec_type_labels[3] = {"For.","Back","Sec."};
+  const char * const spec_type_labels_vert[3] = {"Foreground", "Background", "Secondary"};
+  
+  
+  
+  
+  
   string prevdet[3];
   int previousSpecInd = m_specTypeMenu ? m_specTypeMenu->currentIndex() : 0;
   
@@ -2735,16 +2744,159 @@ void EnergyCalTool::doRefreshFromFiles()
   
   const bool isWide = (m_tallLayoutContent ? false : true);
   
+  //If each spectrum file has only a single detector, then instead of having vertical menu display
+  //  detector name, we will have "For.", "Back", "Sec."
+  bool specTypeInForgrndMenu = true;
+  
   //If we try to re-use the menu and stacks, for some reason the calibration coefficents wont show
   //  up if we alter which background/secondary spectra are showing... not sure why, but for the
   //  moment we'll just re-create the menus and stacks... not great, but works, for the moment.
-  //
+  bool needStackRefresh = false;
+  
+  // Get the detector names, for the displayed sample numbers, for each spectrum type
+  set<string> disp_det_names[3];
+  
+  int nFilesWithCalInfo = 0;
+  
   // We want to preserve wich "Fit" check boxes are set.
   map< pair<SpecUtils::SpectrumType,string>, set<size_t> > set_fit_for_cbs;
   
-  bool specTypeInForgrndMenu = true;
   
-  {//begin codeblock to refresh the stacks
+  {//begin code-block to see if we need to refresh stack
+    
+    //TODO: need to check that isWide hasnt changed, and if it has set needStackRefresh=true
+    
+    //Check if we can put "For.", "Back", "Sec." on the vertical menu instead of detector names
+    for( int i = 0; i < 3; ++i )
+    {
+      disp_det_names[i] = gammaDetectorsForDisplayedSamples( spectypes[i] );
+      specTypeInForgrndMenu = (specTypeInForgrndMenu && (disp_det_names[i].size() <= 1));
+      
+      if( !disp_det_names[i].empty() )
+        nFilesWithCalInfo += 1;
+    }//for( int i = 0; i < 3; ++i )
+    
+    if( !m_specTypeMenu )
+    {
+      cout << "needStackRefresh: m_specTypeMenu == nullptr" << endl;
+      needStackRefresh = true;
+    }
+    
+    for( int i = 0; !needStackRefresh && (i < 3); ++i )
+    {
+      WMenuItem *typeItem = m_specTypeMenu->itemAt(i);
+      if( !typeItem )
+      {
+        needStackRefresh = true;
+        cout << "needStackRefresh: !typeItem" << endl;
+        continue;
+      }
+      
+      WMenu *detMenu = m_detectorMenu[(specTypeInForgrndMenu ? 0 : i)];
+      if( !specTypeInForgrndMenu && ((!detMenu) != (!specfiles[i])) )
+      {
+        needStackRefresh = true;
+        cout << "needStackRefresh: (!detMenu != !specfiles[i])" << endl;
+        continue;
+      }
+      
+    
+      if( specTypeInForgrndMenu )
+      {
+        if( specfiles[i] )
+        {
+          //Make sure one of the widgets have spec_type_labels_vert[i] in it
+          needStackRefresh = true;
+          for( int w = 0; needStackRefresh && (w < detMenu->count()); ++w )
+          {
+            auto item = detMenu->itemAt(w);
+            needStackRefresh = !(item && (item->text() == WString(spec_type_labels_vert[i])));
+          }
+          
+          if( needStackRefresh )
+            cout << "needStackRefresh: Did not have a menu entry for specfile[" << i << "]" << endl;
+        }else
+        {
+          //Make sure none of the widgets have spec_type_labels_vert[i] in them
+          for( int w = 0; !needStackRefresh && (w < detMenu->count()); ++w )
+          {
+            auto item = detMenu->itemAt(w);
+            needStackRefresh = (!item || (item->text() == WString(spec_type_labels_vert[i])));
+          }
+          
+          if( needStackRefresh )
+            cout << "needStackRefresh: For empty place " << i << " had a menu entry, but no spectrum file" << endl;
+        }//if( specfiles[i] ) / else
+      }else
+      {
+        assert( m_specTypeMenu );
+        WMenuItem *item = m_specTypeMenu->itemAt(i);
+        assert( item );
+     
+        if( !item )
+        {
+          //Shouldnt ever get here I think
+          needStackRefresh = true;
+          continue;
+        }//if( !item )
+        
+        if( !specfiles[i] )
+        {
+          //If there is no spectrum file for index i, item should be hidden, and if not need a refresh
+          needStackRefresh = !item->isHidden();
+          if( needStackRefresh )
+            cout << "needStackRefresh: item is not hidden for missing spectrum " << i << endl;
+          continue;
+        }//if( !specfiles[i] )
+        
+        if( item->isHidden() )
+        {
+          //If item is hidden, but here we do have a spectrum file, we need a refresh
+          needStackRefresh = true;
+          cout << "needStackRefresh: item is hidden for " << i << endl;
+          continue;
+        }//if( item->isHidden() )
+        
+        
+        //Need to check all the detectors are the same names
+        set<string> detsInMenu;
+        for( int j = 0; j < detMenu->count(); ++j )
+        {
+          auto detitem = detMenu->itemAt(j);
+          if( detitem )
+            detsInMenu.insert( detitem->text().toUTF8() );
+        }//for( int j = 0; j < detMenu->count(); ++j )
+        
+        needStackRefresh = (detsInMenu != disp_det_names[i]);
+        if( needStackRefresh )
+          cout << "needStackRefresh: New det names dont equal old for type=" << i << endl;
+      }//if( specTypeInForgrndMenu ) / else
+    }//for( int i = 0; i < 3; ++i )
+
+    
+  }//end code-block to see if we need to refresh stack
+  
+  //Dont show spectype menu (the vertical "For.", "Back", "Sec." menu), if we dont need to
+  const bool hideSpecType = ( specTypeInForgrndMenu
+                             || (nFilesWithCalInfo < 2)
+                             || ( (!specfiles[1] || (specfiles[0]==specfiles[1]))
+                                 && (!specfiles[2] || (specfiles[0]==specfiles[2]))) );
+  
+  if( !m_specTypeMenu || (m_specTypeMenu->isHidden() != hideSpecType) )
+  {
+    needStackRefresh = true;
+    cout << "needStackRefresh: m_specTypeMenu->isHidden() != hideSpecType" << endl;
+  }
+  
+  
+  cout << "needStackRefresh=" << needStackRefresh << endl;
+  
+  // TODO: instead of the above logic to catch when we need to refresh (e.g., create all new)
+  //       widgets, should combine it with the logic to create new widgets, but only delte or create
+  //       new widgets if a varaible passed in says to create.
+  
+  if( needStackRefresh )
+  {
     for( int i = 0; i < 3; ++i )
     {
       if( m_detectorMenu[i] )
@@ -2766,7 +2918,8 @@ void EnergyCalTool::doRefreshFromFiles()
         delete m_detectorMenu[i];
       }
       m_detectorMenu[i] = nullptr;
-    }
+    }//for( int i = 0; i < 3; ++i )
+    
     delete m_specTypeMenuStack;
     delete m_specTypeMenu;
     m_specTypeMenuStack = nullptr;
@@ -2794,8 +2947,6 @@ void EnergyCalTool::doRefreshFromFiles()
     m_calInfoDisplayStack->setTransitionAnimation( animation );
     callayout->addWidget( m_calInfoDisplayStack, 1, 1 );
     
-    const char * const labels[3] = {"For.","Back","Sec."};
-    
     /// \TODO: only create these menus when actually needed, so we wont need to
     for( int i = 0; i < 3; ++i )
     {
@@ -2809,15 +2960,10 @@ void EnergyCalTool::doRefreshFromFiles()
         continue;
       }
       
-      const SpecUtils::SpectrumType type = spectypes[i];
-      const set<string> detectors = gammaDetectorsForDisplayedSamples(type);
-      if( detectors.size() > 1 )
-        specTypeInForgrndMenu = false;
-      
       WContainerWidget *detMenuDiv = new WContainerWidget();  //this holds the WMenu for this SpecFile
       detMenuDiv->addStyleClass( "DetMenuDiv" );
       
-      WMenuItem *item = m_specTypeMenu->addItem( labels[i], detMenuDiv, WMenuItem::LoadPolicy::PreLoading );
+      WMenuItem *item = m_specTypeMenu->addItem( spec_type_labels[i], detMenuDiv, WMenuItem::LoadPolicy::PreLoading );
       //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
       item->clicked().connect( boost::bind(&WMenuItem::select, item) );
       
@@ -2826,7 +2972,9 @@ void EnergyCalTool::doRefreshFromFiles()
       
       m_detectorMenu[i]->itemSelected().connect( this, &EnergyCalTool::updateFitButtonStatus );
     }//for( int i = 0; i < 3; ++i )
-  }//end codeblock to refresh the stacks
+  }//if( needStackRefresh )
+  
+
   
   if( !specfiles[0] )
   {
@@ -2843,7 +2991,6 @@ void EnergyCalTool::doRefreshFromFiles()
   }
   
   
-  int nFilesWithCalInfo = 0;
   bool selectedDetToShowCalFor = false;
   bool hasFRFCal = false, hasPolyCal = false, hasLowerChanCal = false;
   
@@ -2865,7 +3012,7 @@ void EnergyCalTool::doRefreshFromFiles()
     assert( meas );
     
     const set<int> &samples = m_interspec->displayedSamples(type);
-    const set<string> detectors = gammaDetectorsForDisplayedSamples(type);
+    const set<string> &detectors = disp_det_names[i];
     
     specdetnames[i] = detectors;
     
@@ -2877,7 +3024,6 @@ void EnergyCalTool::doRefreshFromFiles()
       continue;
     }
     
-    nFilesWithCalInfo += 1;
 
     assert( specItem );
     specItem->setHidden( false );
@@ -2890,7 +3036,7 @@ void EnergyCalTool::doRefreshFromFiles()
         if( !m || (m->num_gamma_channels() <= 4) )
           continue;
         
-        auto calcontent = new EnergyCalImp::CalDisplay( this, type, detname, isWide );
+        shared_ptr<const SpecUtils::EnergyCalibration> energycal = m->energy_calibration();
         
         string displayname = detname;
         
@@ -2899,25 +3045,50 @@ void EnergyCalTool::doRefreshFromFiles()
           /// \TODO: when specTypeInForgrndMenu is true, we may not match detector name because
           ///        we are getting the menu item text above and assuming the detector name.
           ///        should fix this.
-          switch( type )
-          {
-            case SpecUtils::SpectrumType::Foreground:       displayname = "Foreground"; break;
-            case SpecUtils::SpectrumType::SecondForeground: displayname = "Secondary";  break;
-            case SpecUtils::SpectrumType::Background:       displayname = "Background"; break;
-          }//switch( type )
+          displayname = spec_type_labels_vert[i];
         }//if( specTypeInForgrndMenu )
         
-        WMenuItem *item = detMenu->addItem( WString::fromUTF8(displayname), calcontent, WMenuItem::LoadPolicy::PreLoading );
+        WMenuItem *item = nullptr;
+        if( !needStackRefresh )
+        {
+          for( int j = 0; !item && (j < detMenu->count()); ++j )
+          {
+            auto jitem = detMenu->itemAt(j);
+            if( jitem && (jitem->text() == WString(displayname)) )
+              item = jitem;
+          }
+        }//if( !needStackRefresh )
         
-        //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-        item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+        if( item )
+        {
+          WWidget *ww = item->contents();
+          EnergyCalImp::CalDisplay *calcontent = dynamic_cast<EnergyCalImp::CalDisplay *>(ww);
+          assert( calcontent );
+          if( calcontent )
+            calcontent->updateToGui( energycal );
+          else
+            item = nullptr;
+        }//if( item )
         
-        shared_ptr<const SpecUtils::EnergyCalibration> energycal = m->energy_calibration();
-        calcontent->updateToGui( energycal );
-        
-        const auto fitfor_iter = set_fit_for_cbs.find( {type,displayname} );
-        if( fitfor_iter != end(set_fit_for_cbs) )
-          calcontent->setFitFor( fitfor_iter->second );
+        if( !item )
+        {
+          auto calcontent = new EnergyCalImp::CalDisplay( this, type, detname, isWide );
+          item = detMenu->addItem( WString::fromUTF8(displayname), calcontent, WMenuItem::LoadPolicy::PreLoading );
+          //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
+          item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+          calcontent->updateToGui( energycal );
+          
+          const auto fitfor_iter = set_fit_for_cbs.find( {type,displayname} );
+          if( fitfor_iter != end(set_fit_for_cbs) )
+            calcontent->setFitFor( fitfor_iter->second );
+          
+          if( (displayname == prevdet[i]) && (i == previousSpecInd) )
+          {
+            m_specTypeMenu->select( previousSpecInd );
+            detMenu->select( item );
+            selectedDetToShowCalFor = true;
+          }
+        }//if( !item )
         
         if( energycal )
         {
@@ -2940,37 +3111,20 @@ void EnergyCalTool::doRefreshFromFiles()
               break;
           }//switch( energycal->type() )
         }//if( energycal )
-        
-        
-        if( (displayname == prevdet[i]) && (i == previousSpecInd) )
-        {
-          m_specTypeMenu->select( previousSpecInd );
-          detMenu->select( item );
-          selectedDetToShowCalFor = true;
-        }
-        
+      
         break;
       }
     }//for( const string &detname : detectors )
   }//for( int i = 0; i < 3; ++i )
   
-  if( !selectedDetToShowCalFor && m_detectorMenu[0] && m_detectorMenu[0]->count() )
+  if( needStackRefresh && !selectedDetToShowCalFor && m_detectorMenu[0] && m_detectorMenu[0]->count() )
   {
     m_specTypeMenu->select( 0 );
     m_detectorMenu[0]->select( 0 );
   }
   
   setShowNoCalInfo( !nFilesWithCalInfo );
-  
-  
-  
-  
-  //Dont show spectype menu if we dont need to
-  const bool showSpecType = ( specTypeInForgrndMenu
-                              || (nFilesWithCalInfo < 2)
-                              || ( (!specfiles[1] || (specfiles[0]==specfiles[1]))
-                                    && (!specfiles[2] || (specfiles[0]==specfiles[2]))) );
-  m_specTypeMenu->setHidden( showSpecType );
+  m_specTypeMenu->setHidden( hideSpecType );
   
   bool anyApplyToCbShown = false;
   for( ApplyToCbIndex index = static_cast<ApplyToCbIndex>(0);

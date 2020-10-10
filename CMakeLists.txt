@@ -1217,8 +1217,23 @@ if(NOT IOS)
 endif(NOT IOS)
 
 if(APPLE AND NOT IOS)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.10.0")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.12")
 endif()
+
+if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
+    # Setting Xcode working directory requrires pretty new version of cmake, so leaving out for the momemt
+    #set_target_properties(InterSpecExe PROPERTIES
+    #    XCODE_GENERATE_SCHEME TRUE
+    #    XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    #)
+endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
+
+if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR MATCHES "Visual Studio") )
+    #set_target_properties(InterSpecExe PROPERTIES
+    #    VS_DEBUGGER_COMMAND "debug_command"
+    #    VS_DEBUGGER_COMMAND_ARGUMENTS "debug_arguments")
+endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR MATCHES "Visual Studio") )
+
 
 #20180104: on my mac I tried compiling Wt with support for PDF (libharu), but only
 #  had the static libhpdfs, so I had to add bellow to link to this

@@ -26,7 +26,7 @@ button[disabled] {
   filter: grayscale(0%);
 }
 
-input[type="text"], textarea {
+input[type="text"], input[type="number"], numbertextarea {
   background-color: rgb(59,60,63) !important; 
   border-top: solid 1px rgb(61,62,64) !important; 
   border-left: none !important; 
@@ -145,7 +145,7 @@ ul.Wt-tv-root > li:nth-child(odd) {
   color: rgb(197,198,201);
 }
 
-.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th {
+.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th, .DevPairTitle, .CalDisplay .CalType, .DetHdr {
   background-color: rgb( 80, 81, 94 );
 }
 
@@ -179,9 +179,6 @@ ul.VerticalMenu > li.item:hover  {
 
 
 
-.DevPairTitle {
-  background-color: rgb( 80, 81, 94 );
-}
 
 .DetectorDisplay{
   background: rgb(70,70,77); 

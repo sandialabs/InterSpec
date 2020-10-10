@@ -7091,7 +7091,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, &InterSpec::createOneOverR2Calculator );
 
   item = popup->addMenuItem( "Units Converter" );
-  HelpSystem::attachToolTipOn( item,"Curie to Becquerel converter.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Convert radiation-related units.", showToolTipInstantly );
   item->triggered().connect( this, &InterSpec::createUnitsConverterTool );
   
   item = popup->addMenuItem( "Flux Tool" );
