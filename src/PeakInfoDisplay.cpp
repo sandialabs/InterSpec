@@ -1147,7 +1147,7 @@ void PeakInfoDisplay::init()
 #endif
   
   csvButton->setText( "CSV" );
-  csvButton->setStyleClass( "CsvLinkBtn" );
+  csvButton->setStyleClass( "LinkBtn" );
   csvButton->disable();
 
   auto enableDisableCsv = [this,csvButton](){

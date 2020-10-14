@@ -344,7 +344,17 @@ color: #E0F5FF;
 .CoefDisplay .CoefInput
 {
   width: 8em;
+  /* remove the up/down spinbox for Firefox*/
+  -moz-appearance: textfield;
 }
+
+input.CoefInput::-webkit-outer-spin-button, input.CoefInput::-webkit-inner-spin-button
+{
+  /* Remove the up/down arrow on spin box for Chrome, Safari, Edge, Opera */
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 
 .CoefFit
 {

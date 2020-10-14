@@ -1623,7 +1623,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
     csvButton->setIcon( "InterSpec_resources/images/download_small.png" );
     csvButton->setLinkTarget( Wt::TargetNewWindow );
     csvButton->setText( "CSV..." );
-    csvButton->setStyleClass( "CsvLinkBtn" );
+    csvButton->setStyleClass( "LinkBtn" );
     csvButton->clicked().connect( this, &DecayActivityDiv::createCsvDownloadGui );
   }
 

@@ -4431,6 +4431,10 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     
     std::shared_ptr<SpectraFileHeader> header;
     header = m_fileManager->addFile( filename, meas );
+    
+    const std::set<int> &dispsamples = meas->displayedSampleNumbers();
+    
+    
     setSpectrum( meas, meas->displayedSampleNumbers(), SpecUtils::SpectrumType::Foreground, false );
     
     if( backgroundsamplenums.size() )
@@ -4497,11 +4501,15 @@ void InterSpec::startN42TestStates()
   WSelectionBox *filesbox = new WSelectionBox();
   layout->addWidget( filesbox, 0, 0, 1, 2 );
   
+  //Lets display files by alphabetical name
+  vector<string> dispfiles;
   for( const string &p : files )
-  {
-    const string name = SpecUtils::fs_relative( path_to_tests, p );
+    dispfiles.push_back( SpecUtils::fs_relative( path_to_tests, p ) );
+    
+  std::sort( begin(dispfiles), end(dispfiles) );
+  
+  for( const string &name : dispfiles )
     filesbox->addItem( name );
-  }
   
   WPushButton *button = new WPushButton( "Cancel" );
   layout->addWidget( button, 1, 0, AlignCenter );

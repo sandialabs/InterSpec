@@ -199,7 +199,7 @@ ul.VerticalMenu > li.item:hover  {
   color: rgb(197,198,201);
 }
 
-.CsvLinkBtn {
+.LinkBtn {
   color: black;
   filter: invert(100%);
 }

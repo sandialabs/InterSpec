@@ -575,7 +575,8 @@ background: #9B9B9B;
 }
 
 
-.CsvLinkBtn, .CsvLinkBtn:hover {
+/* A button that shows up as a link. */
+.LinkBtn, .LinkBtn:hover {
   float: right;
   background: none !important;
   border: none !important;
