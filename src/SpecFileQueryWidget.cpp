@@ -1578,7 +1578,7 @@ string jsfct = "function(s,e){"
 #endif
   
   m_csv->setText( "CSV" );
-  m_csv->setStyleClass( "CsvLinkBtn" );
+  m_csv->setStyleClass( "LinkBtn" );
   m_csv->disable();
   
   m_loadSelectedFile = new WPushButton( "Load Selected" );

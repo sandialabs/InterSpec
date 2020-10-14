@@ -500,9 +500,12 @@ public:
     m_devPairs = new DeviationPairDisplay();
     
 #if( HIDE_EMPTY_DEV_PAIRS )
+    //For files with multiple detectors, the "Add dev. pairs" buttons doesnt show up right
+    // for the detectors not currently showing - I guess should toggle dev pairs for all detectors.
     m_devPairs->setHidden( true );
-    m_addPairs = new WPushButton( "Add Dev. Pairs" );
-    m_addPairs->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
+    m_addPairs = new WPushButton( "Add dev. pairs" );
+    m_addPairs->addStyleClass( "LinkBtn" );
+    //m_addPairs->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
     m_addPairs->setHidden( true );
     m_addPairs->clicked().connect( this, &CalDisplay::showDevPairs );
 #endif
@@ -688,8 +691,10 @@ public:
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::FullRangeFraction:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+#if( !HIDE_EMPTY_DEV_PAIRS )
         if( m_devPairs->isHidden() )
           m_devPairs->show();
+#endif
         if( m_convertMsg )
         {
           delete m_convertMsg;
@@ -754,6 +759,12 @@ public:
       disp->m_fit->checked().connect( m_tool, &EnergyCalTool::updateFitButtonStatus );
       disp->m_fit->unChecked().connect( m_tool, &EnergyCalTool::updateFitButtonStatus );
       
+      /* Note: if the user uses the up.down arrows in a NativeFloatSpinBox to change values, things
+               get all messed up (new values get set via c++ messing  up current values, or the
+               valueChanged() callback gets called like 10 times per second, causing changes faster
+               than everything can keep up, and just generally poor working), so in the CSS for
+               input.CoefInput I have disabled these arroes
+       */
       disp->m_value->valueChanged().connect( boost::bind(&EnergyCalTool::userChangedCoefficient, m_tool, coefnum, this) );
     }
     
@@ -1888,6 +1899,7 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
 
 void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display )
 {
+  cout << "EnergyCalTool::userChangedCoefficient" << endl;
   using namespace SpecUtils;
   assert( coefnum < 10 );  //If we ever allow lower channel energy adjustment this will need to be removed
   
@@ -2891,9 +2903,8 @@ void EnergyCalTool::doRefreshFromFiles()
   
   cout << "needStackRefresh=" << needStackRefresh << endl;
   
-  // TODO: instead of the above logic to catch when we need to refresh (e.g., create all new)
+  // TODO: instead of the above logic to catch when we need to refresh (\e.g., create all new)
   //       widgets, should combine it with the logic to create new widgets, but only delte or create
-  //       new widgets if a varaible passed in says to create.
   
   if( needStackRefresh )
   {

@@ -304,7 +304,7 @@ namespace HelpSystem
       {
         WPushButton *ancor = new WPushButton( bottom );
         ancor->setText( "Welcome..." );
-        ancor->setStyleClass( "CsvLinkBtn" );
+        ancor->setStyleClass( "LinkBtn" );
         ancor->setFloatSide( Wt::Right );
         ancor->clicked().connect( boost::bind( &InterSpec::showWelcomeDialog, app->viewer(), true ) );
       }
