@@ -47,6 +47,9 @@
 #include <Wt/WDoubleValidator>
 
 #include "SpecUtils/StringAlgo.h"
+
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayActivityDiv.h"
@@ -344,7 +347,10 @@ void DecaySelectNuclide::initActivityAgeSelects()
   actvalidator->setFlags(Wt::MatchCaseInsensitive);
   m_nuclideActivityEdit->setValidator( actvalidator );
   m_nuclideActivityEdit->setTextSize( 10 );
-  m_nuclideActivityEdit->setText( "1 uCi" );
+  if( InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() ) )
+    m_nuclideActivityEdit->setText( "1 uCi" );
+  else
+    m_nuclideActivityEdit->setText( "37 kBq" );
 
   m_nuclideAgeEdit->setText( "0.0 us" );
   m_nuclideAgeEdit->setTextSize( 10 );
@@ -456,7 +462,10 @@ void DecaySelectNuclide::emitAccepted()
 
     //units activity regex can accept: (bq|becquerel|ci|cu|curie|c)
     const string::size_type unitpos = activityTxt.find_first_of( "CcBb" );
-    if( unitpos == string::npos || activityTxt[unitpos]=='C' || activityTxt[unitpos]=='c' )
+    
+    if( unitpos == string::npos )
+      selected.useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    else if( activityTxt[unitpos]=='C' || activityTxt[unitpos]=='c' )
       selected.useCurrie = true;
     else
       selected.useCurrie = false;

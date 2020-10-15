@@ -319,9 +319,16 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
 {
   using namespace Wt;
   
+  if( !viewer )
+  {
+    UserOption *option = getDefaultUserPreference( name, DeviceType::Desktop );
+    boost::any value = option->value();
+    delete option;
+    return value;
+  }
+
   //This next line is the only reason InterSpec.h needs to be included
   //  above
-  
   Dbo::ptr<InterSpecUser> &user = userFromViewer(viewer);
   std::shared_ptr<DataBaseUtils::DbSession> sql = sqlFromViewer(viewer);
   
@@ -349,8 +356,9 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
   if( pos != prefs.end() )
     return pos->second;
   
-  UserOption *option = getDefaultUserPreference( name, user->m_deviceType );
-  option->m_user = user;
+  UserOption *option_raw = getDefaultUserPreference( name, user->m_deviceType );
+  Wt::Dbo::ptr<UserOption> option( option_raw );
+  option.modify()->m_user = user;
   
   DataBaseUtils::DbTransaction transaction( *sql );
   boost::any value;
@@ -361,6 +369,7 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
     user->m_preferences[name] = value;
   }catch( std::exception &e )
   {
+    //
     transaction.rollback();
     throw e;
   }//try / catch
@@ -472,6 +481,18 @@ void InterSpecUser::associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
   }
 }//associateFunction
 
+
+void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> user,
+                                   const std::string &name,
+                                   boost::function<void(void)> fcn,
+                                   InterSpec *viewer )
+{
+  if( !fcn )
+    return;
+  
+  boost::any value = preferenceValueAny( name, viewer ); //call to make sure a valid prefernce
+  user->m_onChangeCallbacks[name].push_back( fcn );
+}//addCallbackWhenChanged(...)
 
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                      const std::string &name,

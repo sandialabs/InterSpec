@@ -6458,6 +6458,15 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this, false );
   }//end add "AskPropagatePeaks" to menu
   
+  
+  {//begin add "DisplayBecquerel"
+    WCheckBox *checkbox = new WCheckBox( " Display in Becquerel" );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item, "Display activity in units of becquerel, rather than curie.",
+                                 true, HelpSystem::Right, HelpSystem::CanDelayShowing );
+    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this, false );
+  }//end add "DisplayBecquerel"
+  
     //High Bandwidth interactions
 #if( USE_HIGH_BANDWIDTH_INTERACTIONS && !USE_SPECTRUM_CHART_D3 )
     WCheckBox *highBWCb = new WCheckBox( "Smooth Zoom/Pan" );

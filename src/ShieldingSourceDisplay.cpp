@@ -2104,6 +2104,17 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
     m_peakModel( peakModel ),
     m_sameAgeForIsotopes( sameAgeIsotopes )
 {
+  auto interspec = InterSpec::instance();
+  if( !interspec )
+  {
+    m_displayCurries = true;
+  }else
+  {
+    m_displayCurries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    auto callback = wApp->bind( boost::bind( &SourceFitModel::displayUnitsChanged, this) );
+    InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", callback, interspec );
+  }//if( !interspec ) / else
+  
   peakModel->rowsAboutToBeRemoved().connect( this, &SourceFitModel::peakModelRowsRemovedCallback );
   peakModel->rowsInserted().connect( this, &SourceFitModel::peakModelRowsInsertedCallback );
   peakModel->dataChanged().connect( this, &SourceFitModel::peakModelDataChangedCallback );
@@ -2117,6 +2128,32 @@ SourceFitModel::~SourceFitModel()
   //nothing to do here
 }//~SourceFitModel()
 
+
+void SourceFitModel::displayUnitsChanged()
+{
+  cout << "in SourceFitModel::displayUnitsChanged" << endl;
+  try
+  {
+    auto interspec = InterSpec::instance();
+    if( !interspec )
+      return;
+    
+    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    if( useBq == m_displayCurries )
+    {
+      m_displayCurries = !useBq;
+      const int nrow = rowCount();
+      if( nrow > 0 )
+        dataChanged().emit( createIndex(0,0,nullptr), createIndex(nrow-1,kNumColumns-1,nullptr) );
+    }
+  }catch( std::exception &e )
+  {
+    //Shouldnt ever happen, but print a little something out JIC
+    cerr << "SourceFitModel::displayUnitsChanged: Failed to convert boost any: " << e.what() << endl;
+  }
+  
+  cout << "m_displayCurries is now: " << m_displayCurries << endl;
+}//void SourceFitModel::displayUnitsChanged( boost::any value )
 
 
 int SourceFitModel::numNuclides() const
@@ -3029,7 +3066,6 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
   const int row = index.row();
   const int column = index.column();
   const int nrows = static_cast<int>( m_nuclides.size() );
-  const bool useCurries = true;
   
   if( row<0 || column<0 || column>=kNumColumns || row>=nrows )
     return boost::any();
@@ -3059,9 +3095,8 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       return boost::any( WString(isof.nuclide->symbol) );
     case kActivity:
     {
-      const bool useCurries = true;
       double act = isof.activity * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
-      const string ans = PhysicalUnits::printToBestActivityUnits( act, 2, useCurries );
+      const string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
       return boost::any( WString(ans) );
     }//case kActivity:
 
@@ -3133,7 +3168,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
         return boost::any();
       
       double act = isof.activityUncertainty * GammaInteractionCalc::PointSourceShieldingChi2Fcn::sm_activityUnits;
-      const string ans = PhysicalUnits::printToBestActivityUnits( act, 2, useCurries );
+      const string ans = PhysicalUnits::printToBestActivityUnits( act, 2, m_displayCurries );
       return boost::any( WString(ans) );
     }//case kActivityUncertainty:
 
@@ -3150,7 +3185,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivity )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, 4, useCurries );
+      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivity, 4, m_displayCurries );
       return boost::any( WString(ans) );
     }
       
@@ -3158,7 +3193,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     {
       if( !isof.truthActivityTolerance )
         return boost::any();
-      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, 4, useCurries );
+      const string ans = PhysicalUnits::printToBestActivityUnits( *isof.truthActivityTolerance, 4, m_displayCurries );
       return boost::any( WString(ans) );
     }
       
@@ -8855,12 +8890,12 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
     if( nuc )
     {
-      const bool useCurries = true;
+      const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
       const double act = chi2Fcn->activity( nuc, params );
-      const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCurries );
+      const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCi );
       
       const double actUncert = chi2Fcn->activity( nuc, errors );
-      const string actUncertStr = PhysicalUnits::printToBestActivityUnits( actUncert, 2, useCurries );
+      const string actUncertStr = PhysicalUnits::printToBestActivityUnits( actUncert, 2, useCi );
       
       const double mass = act / nuc->activityPerGram();
       const std::string massStr = PhysicalUnits::printToBestMassUnits( mass, 2, 1.0 );

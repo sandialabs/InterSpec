@@ -2470,7 +2470,8 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
         if( std::find(begin(children),end(children),initial_nuc) != end(children) )
           return nuc.useCurrie;
       }
-      return false;
+      
+      return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     };
     
       infostrm << "<div>Starting from:</div><div style=\"margin-left: 20px; max-width: 60ex;\">";
