@@ -78,6 +78,9 @@
 using namespace Wt;
 using namespace std;
 
+
+
+
 namespace Wt
 {
   namespace Dbo
@@ -481,18 +484,24 @@ void InterSpecUser::associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
   }
 }//associateFunction
 
-
-void InterSpecUser::addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> user,
-                                   const std::string &name,
-                                   boost::function<void(void)> fcn,
-                                   InterSpec *viewer )
+ 
+void InterSpecUser::addCallbackWhenChanged( const std::string &name,
+                                            boost::function<void(boost::any)> fcn,
+                                            std::shared_ptr<Wt::Signals::connection> conn )
 {
-  if( !fcn )
-    return;
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
   
-  boost::any value = preferenceValueAny( name, viewer ); //call to make sure a valid prefernce
-  user->m_onChangeCallbacks[name].push_back( fcn );
+  Wt::Dbo::ptr<InterSpecUser> &user = viewer->m_user;
+  assert( user );
+  
+  boost::any value = preferenceValueAny( name, viewer ); //call to make sure a valid preference
+  if( value.empty() )  //just to make sure the call isnt optimized away
+    std::cout << "Unexpected failure of preference '" << name << "' to not have a value" << std::endl;
+  
+  user->m_onChangeCallbacks[name].emplace_back( std::move(fcn), std::move(conn) );
 }//addCallbackWhenChanged(...)
+
 
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                      const std::string &name,
@@ -1610,3 +1619,8 @@ void InterSpecUser::setPreviousAccessTime( const boost::posix_time::ptime &utcTi
   m_previousAccessUTC = utcTime;
 }//void setPreviousAccessTime( const boost::posix_time::ptime &utcTime );
 
+
+void InterSpecUser::EmitBindSignal( const std::shared_ptr< Wt::Signals::signal<void(boost::any)> > &s, boost::any value )
+{
+  (*s)(value); //equivalent to emit
+}
