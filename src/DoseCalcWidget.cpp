@@ -247,6 +247,7 @@ public:
     layout->addWidget( label, 0, 0, AlignMiddle );
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideEdit = new WLineEdit();
+    m_nuclideEdit->setAutoComplete( false );
     layout->addWidget( m_nuclideEdit, 0, 1 );
     m_nuclideEdit->addStyleClass( "DoseEnterTxt" );
     m_nuclideEdit->setAttributeValue( "spellcheck", "false" );
@@ -256,6 +257,7 @@ public:
     layout->addWidget( label, 1, 0, AlignMiddle );
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideAgeEdit = new WLineEdit();
+    m_nuclideAgeEdit->setAutoComplete( false );
     m_nuclideAgeEdit->setPlaceholderText( "NA" );
     layout->addWidget( m_nuclideAgeEdit, 1, 1 );
     label->setBuddy( m_nuclideAgeEdit );
@@ -790,12 +792,9 @@ void DoseCalcWidget::init()
     return;
   }//try / catch
   
-  
-  
-  
   const bool isPhone = m_viewer->isPhone();
   const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
-  
+  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
   WContainerWidget *enterDiv = new WContainerWidget();
   WContainerWidget *answerDiv = new WContainerWidget();
@@ -961,7 +960,7 @@ void DoseCalcWidget::init()
 
         
         m_doseEnter = new WLineEdit( m_enterWidgets[i] );
-        
+        m_doseEnter->setAutoComplete( false );
         m_doseEnter->addStyleClass( "DoseEnterTxt" );
         m_doseEnter->setText( "100" );
         if( isPhone )
@@ -1008,6 +1007,7 @@ void DoseCalcWidget::init()
         
         m_activityEnter = new WLineEdit( m_enterWidgets[i] );
         m_activityEnter->addStyleClass( "DoseEnterTxt" );
+        m_activityEnter->setAutoComplete( false );
         
         if( isPhone )
           m_activityEnter->setWidth( 50 );
@@ -1031,15 +1031,23 @@ void DoseCalcWidget::init()
           m_activityEnterUnits->addItem( WString::fromUTF8(val) );
         }
         
-        m_activityEnterUnits->setCurrentIndex( 6 ); //uci
+        if( useBq )
+          m_activityEnterUnits->setCurrentIndex( 2 ); //MBq
+        else
+          m_activityEnterUnits->setCurrentIndex( 6 ); //uci
         
         m_activityAnswerUnits->addItem( "curries" );
         m_activityAnswerUnits->addItem( "becquerels" );
 
+        if( useBq )
+          m_activityAnswerUnits->setCurrentIndex( 1 );
+        else
+          m_activityAnswerUnits->setCurrentIndex( 0 );
+        
         m_activityAnswer = new WText( m_answerWidgets[i] );
         m_activityAnswer->setInline( false );
 
-		    string actstr = "200 &mu;Ci";
+		    string actstr = useBq ? "1 MBq" : "200 &mu;Ci";
 		    const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
 		    SpecUtils::ireplace_all(actstr, "&mu;", (char *)utf8mu /*"\u03BC"*/);
 
@@ -1070,6 +1078,7 @@ void DoseCalcWidget::init()
     
         
         m_distanceEnter = new WLineEdit( "100 cm" );
+        m_distanceEnter->setAutoComplete( false );
         m_distanceEnter->addStyleClass( "DoseEnterTxt" );
         
         if( isPhone )

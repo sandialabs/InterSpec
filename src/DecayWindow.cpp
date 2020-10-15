@@ -63,7 +63,9 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   layout->setHorizontalSpacing( 0 );
   layout->setRowStretch( 0, 1 );
 
-  m_activityDiv->addNuclide( 53, 135, 0, 1.0*PhysicalUnits::MBq, false, 0.0 );
+  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const double actUnits = useBq ? PhysicalUnits::MBq : PhysicalUnits::microCi;
+  m_activityDiv->addNuclide( 53, 135, 0, 1.0*actUnits, !useBq, 0.0 );
 
   AuxWindow::addHelpInFooter( footer(), "decay-dialog" );
   Wt::WPushButton *closeButton = addCloseButtonToFooter();

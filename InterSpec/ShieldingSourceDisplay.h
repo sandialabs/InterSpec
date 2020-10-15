@@ -616,17 +616,20 @@ public:
 
 
   //compare(...): function to compare IsoFitStruct according to relevant Column;
-  //  functions similat to operator<
+  //  functions similar to operator<
   static bool compare( const IsoFitStruct &lhs, const IsoFitStruct &rhs,
                        Columns sortColumn, Wt::SortOrder order );
 
+  void displayUnitsChanged();
+  
 protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
+  bool m_displayCurries;
   PeakModel *m_peakModel;
   std::vector<IsoFitStruct> m_nuclides;
   bool m_sameAgeForIsotopes;
-
+  
   //m_previousResults: when a isotope gets removed from this model, we'll cache
   //  its current value, since it will often times get added again and be
   //  intended to be the same value

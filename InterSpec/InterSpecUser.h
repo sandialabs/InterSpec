@@ -34,6 +34,7 @@
 #include <stdexcept>
 
 #include <boost/any.hpp>
+#include <boost/function.hpp>
 #include <boost/date_time.hpp>
 
 #include <Wt/Dbo/Dbo>
@@ -274,10 +275,27 @@ public:
    that has gotten deleted.
    
    You may set multiple functions for each named preference.
+   
+   Note: the function passed in is only called, essentially when a new state is loaded - it is not called whenthe user changes a preference
+      value, for this see #addCallbackWhenChanged.
    */
   static void associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
                                 const std::string &name,
                                 std::function<void(boost::any)> fcn,
+                                InterSpec *viewer );
+  
+  /** Add a function to callback when the preference changes, either through loading  a new state, or toggling the preference checkbox
+   or whatever.
+   Make sure you protect the function from being called after its target widgets are deleted, by wrapping function calls by
+   wApp->bind(...), although you should be careful you dont add to many of things functions that will take up a lot of memory and
+   overhead.
+   
+     TODO: come up with mechanism to remove functions after their target widgets get deleted, maybe
+           using the WObject::destroyed() signal, or passing in a member function pointer and object and then tracking things.
+   */
+  static void addCallbackWhenChanged( Wt::Dbo::ptr<InterSpecUser> user,
+                                const std::string &name,
+                                boost::function<void(void)> fcn,
                                 InterSpec *viewer );
   
   /** Hooks up the necassary signals so that the database values will stay
@@ -403,6 +421,7 @@ protected:
  
   typedef std::map<std::string,boost::any> PreferenceMap;
   typedef std::map<std::string,std::vector<std::function<void(boost::any)> > > PreferenceFunctionMap;
+  typedef std::map<std::string,std::vector<boost::function<void(void)> > > CallbackFunctionMap;
   
   std::string m_userName;
   int m_deviceType;
@@ -413,9 +432,10 @@ protected:
   boost::posix_time::ptime m_currentAccessStartUTC;
   boost::posix_time::time_duration m_totalTimeInApp;
   
+  //These are mutable so Dbo::ptr<t>.modify() dont need to be called
   mutable PreferenceMap m_preferences;
   mutable PreferenceFunctionMap m_preferenceFunctions;
-  
+  mutable CallbackFunctionMap m_onChangeCallbacks;
   
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> >         m_userFiles;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> >           m_dbPreferences;
@@ -1011,6 +1031,8 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
                                        const std::string &name, const T &value,
                                        InterSpec *viewer )
 {
+  std::cout << "setPreferenceValue: " << name << std::endl;
+  
   if( name.size() > UserOption::sm_max_name_str_len )
     throw std::runtime_error( "Invalid name for preference: " + name );
   
@@ -1109,6 +1131,23 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
   }//end interacting with the database
   
   user->m_preferences[name] = option->value();
+  
+  
+  const auto callbackIter = user->m_onChangeCallbacks.find(name);
+  if( callbackIter != std::end(user->m_onChangeCallbacks) )
+  {
+    for( const auto &fcn : callbackIter->second )
+    {
+      try
+      {
+        fcn();
+      }catch(...)
+      {
+        std::cerr << "setPreferenceValue: caught exception calling m_onChangeCallbacks for '"
+                  << name << "' - you should check into this!" << std::endl;
+      }//try / catch
+    }//for( loop over callbacks
+  }//if( we have any callbacks for this preference )
 }//setPreferenceValue//(...)
 
 #endif //InterSpecUser_h

@@ -334,7 +334,10 @@ public:
       if( res.distance_ > 0.0 )
         result += "<tr><td>Distance</td><td>" + PhysicalUnits::printToBestLengthUnits(0.1*res.distance_) + "</td></tr>";
       if( res.activity_ > 0.0 )
-        result += "<tr><td>Activity</td><td>" + PhysicalUnits::printToBestActivityUnits( res.activity_, 2, true, 1.0 ) + "</td></tr>";
+      {
+        const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+        result += "<tr><td>Activity</td><td>" + PhysicalUnits::printToBestActivityUnits( res.activity_, 2, !useBq, 1.0 ) + "</td></tr>";
+      }
       if( res.remark_.size() > 0 )
         result += "<tr><td>Remark</td><td>" + res.remark_ + "</td></tr>";
       
