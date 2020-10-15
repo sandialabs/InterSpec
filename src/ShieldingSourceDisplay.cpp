@@ -2111,8 +2111,9 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
   }else
   {
     m_displayCurries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
-    auto callback = wApp->bind( boost::bind( &SourceFitModel::displayUnitsChanged, this) );
-    InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", callback, interspec );
+    //auto callback = wApp->bind( boost::bind( &SourceFitModel::displayUnitsChanged, this) );
+    //InterSpecUser::addCallbackWhenChanged( interspec->m_user, "DisplayBecquerel", callback, interspec );
+    InterSpecUser::addCallbackWhenChanged( "DisplayBecquerel", this, &SourceFitModel::displayUnitsChanged );
   }//if( !interspec ) / else
   
   peakModel->rowsAboutToBeRemoved().connect( this, &SourceFitModel::peakModelRowsRemovedCallback );
@@ -2129,16 +2130,14 @@ SourceFitModel::~SourceFitModel()
 }//~SourceFitModel()
 
 
-void SourceFitModel::displayUnitsChanged()
+void SourceFitModel::displayUnitsChanged( boost::any value )
 {
-  cout << "in SourceFitModel::displayUnitsChanged" << endl;
+  //cout << "in SourceFitModel::displayUnitsChanged" << endl;
   try
   {
-    auto interspec = InterSpec::instance();
-    if( !interspec )
-      return;
+    //const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useBq = boost::any_cast<bool>(value);
     
-    const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
     if( useBq == m_displayCurries )
     {
       m_displayCurries = !useBq;
@@ -2152,7 +2151,7 @@ void SourceFitModel::displayUnitsChanged()
     cerr << "SourceFitModel::displayUnitsChanged: Failed to convert boost any: " << e.what() << endl;
   }
   
-  cout << "m_displayCurries is now: " << m_displayCurries << endl;
+  //cout << "m_displayCurries is now: " << m_displayCurries << endl;
 }//void SourceFitModel::displayUnitsChanged( boost::any value )
 
 
