@@ -1524,7 +1524,8 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
 
   m_displayActivityUnitsCombo->addItem( "Arbitrary" );
 
-  m_displayActivityUnitsCombo->setCurrentIndex( 7 );
+  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  m_displayActivityUnitsCombo->setCurrentIndex( (useBq ? 2 : 7) ); //MBq : mCi
 
 #if( DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK )
   m_pdfAnchor->setResource( m_pdfResource );
@@ -1541,8 +1542,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   endLabel->setBuddy( m_displayTimeLength );
   displOptUpper->addWidget( endLabel );
   displOptUpper->addWidget( m_displayTimeLength );
-  m_displayTimeLength->changed().connect( this,
-                                        &DecayActivityDiv::refreshDecayDisplay );
+  m_displayTimeLength->changed().connect( this, &DecayActivityDiv::refreshDecayDisplay );
 #if( ADD_PHOTOPEAK_CHART )
   m_displayTimeLength->changed().connect( this,
                             &DecayActivityDiv::updatePhotopeakSliderEndDateText );
