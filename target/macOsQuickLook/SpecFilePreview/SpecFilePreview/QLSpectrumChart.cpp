@@ -1832,7 +1832,7 @@ void QLSpectrumChart::setAutoXAxisRange()
   QLSpectrumDataModel *theModel = dynamic_cast<QLSpectrumDataModel *>( model() );
   if( theModel )
   {
-    std::shared_ptr<Measurement> axisH = theModel->histUsedForXAxis();
+    std::shared_ptr<SpecUtils::Measurement> axisH = theModel->histUsedForXAxis();
     if( axisH )
     {
       float xmin = min( 0.0f, axisH->gamma_energy_min() );
@@ -2061,7 +2061,7 @@ void QLSpectrumChart::paintNonGausPeak( const QLPeakDef &peak, Wt::WPainter& pai
     throw runtime_error( "QLSpectrumChart::paintNonGausPeak(...): stupid programmer error"
                          ", QLSpectrumChart may only be powered by a QLSpectrumDataModel." );
 
-  const std::shared_ptr<const Measurement> data = th1Model->getData();
+  const std::shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
   if( !data )
   {
     cerr << "QLSpectrumChart::paint: No data histogram defined" << endl;
@@ -2300,22 +2300,21 @@ bool QLSpectrumChart::gausPeakDrawRange( int &minrow, int &maxrow,
     return false;
   
   const QLSpectrumDataModel *th1Model
-                           = dynamic_cast<const QLSpectrumDataModel *>( model() );
+  = dynamic_cast<const QLSpectrumDataModel *>( model() );
   assert( th1Model );
-
+  
   double minx = peak.lowerX();
   double maxx = peak.upperX();
   
-  std::shared_ptr<const Measurement> dataH = th1Model->getData();
+  std::shared_ptr<const SpecUtils::Measurement> dataH = th1Model->getData();
   if( dataH )
   {
-    int xlowbin = peak.lowerX(), xhighbin = peak.upperX();
-    //estimatePeakFitRange( peak, dataH, xlowbin, xhighbin );
-    minx = dataH->GetBinLowEdge( xlowbin ) + 0.001;
-    maxx = dataH->GetBinLowEdge( xhighbin )
-           + dataH->GetBinWidth( xhighbin ) - 0.0001;
+    size_t lower_channel, upper_channel;
+    //estimatePeakFitRange( peak, dataH, lower_channel, upper_channel );
+    minx = dataH->gamma_channel_lower(lower_channel) + 0.001;
+    maxx = dataH->gamma_channel_upper(upper_channel);
   }//if( dataH )
-
+  
   
   try
   {
@@ -2326,11 +2325,11 @@ bool QLSpectrumChart::gausPeakDrawRange( int &minrow, int &maxrow,
     
     if( minx>maxx )
       return false;
-
+    
     double bin_x_min = th1Model->rowLowEdge( minrow );
     double bin_width = th1Model->rowWidth( minrow );
     double bin_x_max = bin_x_min + bin_width;
-  
+    
     //Lets not draw the part of the peak than might less than the minimum X of
     //  the x-axis
     while( (bin_x_max < axisMinX) && (minrow < maxrow) )
@@ -2351,10 +2350,10 @@ bool QLSpectrumChart::gausPeakDrawRange( int &minrow, int &maxrow,
     return (minrow < maxrow);
   }catch(...)
   {
-    cerr << "Shouldnt have caught errror ar " << SRC_LOCATION << endl;
+    cerr << "Shouldnt have caught errror in SpectrumChart::gausPeakDrawRange(...)" << endl;
     return false;
   }
-    
+  
   return true;
 }//bool gausPeakDrawRange(...)
 
@@ -2447,7 +2446,7 @@ void QLSpectrumChart::drawIndependantGausPeak( const QLPeakDef &peak,
     start_point = mapToDevice( xstart, ystart );
   }catch( std::exception &e )
   {
-    cerr << "Caught exception: " << SRC_LOCATION << "\n\t" << e.what() << endl;
+    cerr << "Caught exception: SpectrumChart::drawIndependantGausPeak(...)" << "\n\t" << e.what() << endl;
   }
   
   
@@ -2713,7 +2712,7 @@ void QLSpectrumChart::paintGausPeak( const vector<std::shared_ptr<const QLPeakDe
         start_point = mapToDevice( xstart, ystart );
       }catch(...)
       {
-        cerr << "Caught exception: " << SRC_LOCATION << endl;
+        cerr << "Caught exception: in SpectrumChart::paintGausPeaks() from gausPeakBinValue" << endl;
       }
 
     
@@ -2875,7 +2874,7 @@ std::vector<std::shared_ptr<const QLPeakDef> >::const_iterator QLSpectrumChart::
     std::vector<std::shared_ptr<const QLPeakDef> >::const_iterator peak_start,
     std::vector<std::shared_ptr<const QLPeakDef> >::const_iterator peak_end,
     std::vector<std::shared_ptr<const QLPeakDef> > &peaks,
-    std::shared_ptr<const Measurement> data
+    std::shared_ptr<const SpecUtils::Measurement> data
   )
 {
   peaks.clear();
@@ -2936,7 +2935,7 @@ void QLSpectrumChart::paintPeaks( Wt::WPainter& painter ) const
   const double minx = axis(Chart::XAxis).minimum();
   const double maxx = axis(Chart::XAxis).maximum();
 
-  std::shared_ptr<const Measurement> dataH = th1Model->getData();
+  std::shared_ptr<const SpecUtils::Measurement> dataH = th1Model->getData();
   
   std::vector< std::shared_ptr<const QLPeakDef> > gauspeaks, nongauspeaks;
 
@@ -3026,7 +3025,7 @@ void QLSpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
     if( !mdl->columnHasData( index ) )
       continue;
     
-    std::shared_ptr<const Measurement> hist;
+    std::shared_ptr<const SpecUtils::Measurement> hist;
     const Chart::WDataSeries &serie = series(index);
     
     WString title = asString(model()->headerData(index));
