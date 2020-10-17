@@ -31,6 +31,9 @@ namespace Wt
 
 class AuxWindow;
 
+namespace SpecUtils{ class Measurement; }
+
+
 //See comments about QLSpectrumChart::setLeftYAxisPadding() for what
 //  DYNAMICALLY_ADJUST_LEFT_CHART_PADDING controls.  This feature has not
 //  been tested well enough to fully use yet, although it seems to work well.
@@ -193,7 +196,7 @@ public:
   static PeakDefPtrVecIter next_peaks( PeakDefPtrVecIter peak_start,
                                        PeakDefPtrVecIter peak_end,
                                        PeadDefPtrVec &peaks,
-                                       std::shared_ptr<const Measurement> data );
+                                       std::shared_ptr<const SpecUtils::Measurement> data );
 
   //paintGausPeak(): Paints peaks which are in a connected region.
   virtual void paintGausPeak( const std::vector<std::shared_ptr<const QLPeakDef> > &peaks,
