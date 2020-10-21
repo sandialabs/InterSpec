@@ -1,4 +1,4 @@
-.Wt-domRoot, .dialog-layout { 
+.Wt-domRoot, .dialog-layout, .Wt-panel .body {
   background: rgb(44,45,48); 
   color: white;
 }
@@ -26,7 +26,7 @@ button[disabled] {
   filter: grayscale(0%);
 }
 
-input[type="text"], input[type="number"], numbertextarea {
+input[type="text"], input[type="number"], numbertextarea, textarea {
   background-color: rgb(59,60,63) !important; 
   border-top: solid 1px rgb(61,62,64) !important; 
   border-left: none !important; 
@@ -177,9 +177,6 @@ ul.VerticalMenu > li.item:hover  {
 }
 
 
-
-
-
 .DetectorDisplay{
   background: rgb(70,70,77); 
   border-color: rgb(136, 136, 136);
@@ -204,8 +201,12 @@ ul.VerticalMenu > li.item:hover  {
   filter: invert(100%);
 }
 
-.DoseAnswerTxt {
+.DoseAnswerTxt, .DoseCalcRuntimeCheckFailMsg {
   color: black;
+}
+
+.MakeDrfEqnAnswer {
+  background: black !important;
 }
 
 .FooterHelpBtn {

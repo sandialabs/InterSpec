@@ -525,8 +525,8 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   else
     cb->setChecked( !value );
   
-  boost::function<void()> setchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb, true ) );
-  boost::function<void()> setunchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb, false ) );
+  boost::function<void()> setchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb ) );
+  boost::function<void()> setunchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setUnChecked, cb ) );
   
   std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
     const bool value = boost::any_cast<bool>(valueAny);

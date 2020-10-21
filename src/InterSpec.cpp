@@ -1426,13 +1426,14 @@ void InterSpec::initHotkeySignal()
         return;
       var v = 0;
       switch( e.keyCode ){
-        case 83: case 49: v=1; break; //s
-        case 80: case 50: v=2; break; //p
-        case 82: case 51: v=3; break; //r
-        case 69: case 52: v=4; break; //e
-        case 78: case 53: v=5; break; //n
-        case 72:          v=6; break; //h
-        case 73:          v=7; break; //i
+        case 83: case 49: v=1;  break; //s
+        case 80: case 50: v=2;  break; //p
+        case 82: case 51: v=3;  break; //r
+        case 69: case 52: v=4;  break; //e
+        case 78: case 53: v=5;  break; //n
+        case 72:          v=6;  break; //h
+        case 73:          v=7;  break; //i
+        case 67:          v=67; break; //c
         case 76:          v=76; break; //l
         default:
           return;  //show
@@ -1466,9 +1467,25 @@ void InterSpec::hotkeyPressed( const unsigned int value )
       case 3: expectedTxt = GammaLinesTabTitle;    break;
       case 4: expectedTxt = CalibrationTabTitle;   break;
       case 5: expectedTxt = NuclideSearchTabTitle; break;
-      case 6: HelpSystem::createHelpWindow( "getting-started" ); break;
-      case 7: showWelcomeDialog( true ); break;
-      case 76: setLogY( !m_spectrum->yAxisIsLog() );  break;
+      
+      case 6:
+        HelpSystem::createHelpWindow( "getting-started" );
+        break;
+      
+      case 7:
+        showWelcomeDialog( true );
+        break;
+      
+      case 67:
+        // TODO: decide how to handle this if the current reference lines are from the
+        //       "Nuclide Search" tool
+        if( m_referencePhotopeakLines )
+          m_referencePhotopeakLines->clearAllLines();
+        break;
+      
+      case 76:
+        setLogY( !m_spectrum->yAxisIsLog() );
+        break;
     }//switch( value )
   
     if( expectedTxt.empty() )
@@ -5902,8 +5919,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
                      " E-511 keV and E-1022 keV after a pair creation"
                      " event happened in the detector", showToolTipInstantly );
     
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, false ) );
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::EscapePeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::EscapePeakMarker, false ) );
 
 #if( !USE_SPECTRUM_CHART_D3 )
     const string can = "$('#c" + overlay->id() + "')";
@@ -5936,8 +5953,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     spin->setRange( 0, 180 );
     spin->setValue( 180 );
     
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonPeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonPeakMarker, false ) );
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonPeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonPeakMarker, false ) );
     
 #if( USE_SPECTRUM_CHART_D3 )
     //For some reason the signal through c++ always gives a value of 180 - so as
@@ -5974,8 +5991,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
                      " interacted once in the detector via a compton"
                      " interaction", showToolTipInstantly );
     
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, false ) );
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonEdgeMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonEdgeMarker, false ) );
     
 #if( !USE_SPECTRUM_CHART_D3 )
     js = "function(s,e){try{"+can+".data('compedge',s.checked);}catch(err){}}";
@@ -5992,8 +6009,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     HelpSystem::attachToolTipOn(item, "Energy of peak due to random summing of coincident"
                      " photopeak gammas.", showToolTipInstantly );
     
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, false ) );
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::SumPeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::SumPeakMarker, false ) );
 #if( !USE_SPECTRUM_CHART_D3 )
     js = "function(s,e){try{"+can+".data('sumpeak',s.checked);"
     +can+".data('sumpeakclick',null);}catch(err){}}";

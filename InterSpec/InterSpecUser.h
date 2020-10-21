@@ -470,8 +470,7 @@ protected:
    */
   static const std::string sm_defaultPreferenceFile;
   
-  static void EmitBindSignal( const std::shared_ptr< Wt::Signals::signal<void(boost::any)> > &s, boost::
-                              any value );
+  static void EmitBindSignal( const std::shared_ptr<Wt::Signals::signal<void(boost::any)>> &, boost::any );
   
   friend class InterSpec;
 };//struct UserOption

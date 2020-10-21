@@ -360,6 +360,9 @@ but menu items will be disabled if no background or secondary spectrum is loaded
     <li>
       <b><code>Ctrl-I</code></b>: Shows the <em>Welcome <u>I</u>nformation</em> screen.
     </li>
+    <li>
+      <b><code>Ctrl-C</code></b>: <u>C</u>lears all showing reference lines.
+    </li>
   </ul>
 </message>
 
