@@ -874,7 +874,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   //chi2fcn.set_reldiff_punish_start( 2.35482 );
   
   vector<PeakDef> inpeaks;
-  double conteqn[2] = { p0, p1 };
+  double conteqn[6] = { p0, p1, 0.0, 0.0, 0.0, 0.0 };
   double initial_cont_area = PeakContinuum::offset_eqn_integral( conteqn, offsetType, start_range, end_range, start_range );
   
   const double totalpeakarea = (areaarea > initial_cont_area)
@@ -2687,8 +2687,12 @@ void get_candidate_peak_estimates_for_user_click(
   const bool highres = (nchannels > 3000);
   
   const size_t midbin = dataH->find_gamma_channel( x );
-  const size_t lowchannel = midbin - lower_energy_mult*nchannels;
-  const size_t highchannel = midbin + upper_energy_mult*nchannels;
+  
+  const double lower_chan_sub = lower_energy_mult*nchannels;
+  const size_t lowchannel = static_cast<size_t>( (lower_chan_sub < midbin) ? (midbin - lower_chan_sub) : 0.0 );
+  
+  const double upper_chan_sub = upper_energy_mult*nchannels;
+  const size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
   
   const vector<PeakPtr> candidates
        = secondDerivativePeakCanidatesWithROI( dataH, lowchannel, highchannel );

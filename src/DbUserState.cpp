@@ -35,11 +35,11 @@
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
+#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/DbUserState.h"
 #include "InterSpec/InterSpecUser.h"
-#include "SpecUtils/UtilityFunctions.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 #include "external_libs/diff-match-patch-cpp-stl/diff_match_patch.h"
@@ -73,7 +73,7 @@ namespace Wt
       if( dynamic_cast<Wt::Dbo::backend::Firebird *>(conn) )
         return "blob";
 #endif
-      cerr << "\n\n\n" << SRC_LOCATION << "\n\tWarning, urogognized DB type\n";
+      cerr << "\n\n\nDbUserState:\n\tWarning, urogognized DB type\n";
       return conn->blobType();
     }
     
@@ -133,7 +133,7 @@ void Spectrum::update( const SpecMeas &spec )
   
   SpectrumFile specfile;
   UserSpectrumStuff specstuff;
-  specfile.setInformation( spec, SpectrumFile::k2011N42 );
+  specfile.setInformation( spec, DbUserState::SpectrumFile::SerializedFileFormat::k2011N42 );
   specstuff.setInformation( spec );
   
   Dbo::ptr<SpectrumFile> spectrumFile = m_spectrumFile.query();
@@ -186,7 +186,7 @@ std::shared_ptr<SpecMeas> Spectrum::assemble( Wt::Dbo::ptr<SpectrumFile> spectru
   if( specdata.empty() )
     throw runtime_error( "Spucetrum data from DB SpectrumFIle is empty" );
   
-  const bool loadedSpec = answer->MeasurementInfo::load_N42_from_data( (char *)&specdata[0] );
+  const bool loadedSpec = answer->SpecFile::load_N42_from_data( (char *)&specdata[0] );
   
   if( !loadedSpec )
     throw runtime_error( "Count load MeasurmentInformation from database data" );
@@ -231,16 +231,17 @@ std::shared_ptr<SpecMeas> Spectrum::assemble( Wt::Dbo::ptr<SpectrumFile> spectru
   {
     vector<int> samples;
     const char *horribleptr = (const char *)&sampleNumData[0];
-    const bool ok = UtilityFunctions::split_to_ints( horribleptr, sampleNumData.size(), samples );
+    const bool ok = SpecUtils::split_to_ints( horribleptr, sampleNumData.size(), samples );
     if( !ok )
       throw runtime_error( "invalid displayed sample numbers" );
     
     displayed_samples.insert( samples.begin(), samples.end() );
   }//if( sampleNumData.size() )
   
+  const vector<string> &detectors = answer->detector_names();
   
-  answer->displayedSpectrumChangedCallback( spectrumStuff->m_spectrumType, answer, displayed_samples );
-
+  answer->displayedSpectrumChangedCallback( spectrumStuff->m_spectrumType, answer,
+                                            displayed_samples, detectors );
   
   return answer;
 }//std::shared_ptr<SpecMeas> current()
@@ -272,13 +273,13 @@ SpectrumFile::SpectrumFile()
 }//SpectrumFile()
   
   
-void SpectrumFile::setInformation( const MeasurementInfo &spectrumFile,
+void SpectrumFile::setInformation( const SpecUtils::SpecFile &spectrumFile,
                                 const SerializedFileFormat format )
 {
   m_fileFormat = format;
   m_compression = NoCompression;
   
-  std::shared_ptr< ::rapidxml::xml_document<char> > xml = spectrumFile.MeasurementInfo::create_2012_N42_xml();
+  std::shared_ptr< ::rapidxml::xml_document<char> > xml = spectrumFile.SpecFile::create_2012_N42_xml();
   
   std::stringstream data;
   data << (*xml) << '\0';
@@ -334,7 +335,7 @@ void SpectrumFile::setFileData( const std::string &path,
 }//void setFileData(...)
   
 
-void SpectrumFile::decodeSpectrum( std::shared_ptr<MeasurementInfo> &meas ) const
+void SpectrumFile::decodeSpectrum( std::shared_ptr<SpecUtils::SpecFile> &meas ) const
 {
   if( !meas )
     throw runtime_error( "SpectrumFile::decodeSpectrum(): must have valid input pointer" );

@@ -1656,6 +1656,7 @@ void MakeDrf::startSaveAs()
   WPushButton *b = w->addCloseButtonToFooter( "Cancel" );
   b->clicked().connect( w, &AuxWindow::hide );
   
+  // TODO: Need to display messsage to user about how it is saved, how to access it again, and figure out why menus go away for people (maybe only on Windows?) - also should consider not closing AuxWindow - also fix assay date being invalid error (seems to cause uncaught exception).
   auto doSave = [this, w, validator, name, description,
                  def_for_serial_cb, def_for_model_cb,
                  representative_meas ](){
@@ -1755,7 +1756,7 @@ void MakeDrf::startSaveAs()
     
     if( def_for_model_cb && def_for_model_cb->isChecked() && representative_meas )
     {
-       UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
       WServer::instance()->ioService().post( std::bind( [=](){
         DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
       } ) );

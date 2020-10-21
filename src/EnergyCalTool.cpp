@@ -2805,6 +2805,14 @@ void EnergyCalTool::doRefreshFromFiles()
       }
       
       WMenu *detMenu = m_detectorMenu[(specTypeInForgrndMenu ? 0 : i)];
+      
+      if( !detMenu )
+      {
+        needStackRefresh = true;
+        cout << "needStackRefresh: !detMenu" << endl;
+        continue;
+      }
+      
       if( !specTypeInForgrndMenu && ((!detMenu) != (!specfiles[i])) )
       {
         needStackRefresh = true;
@@ -2812,7 +2820,6 @@ void EnergyCalTool::doRefreshFromFiles()
         continue;
       }
       
-    
       if( specTypeInForgrndMenu )
       {
         if( specfiles[i] )

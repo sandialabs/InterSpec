@@ -1129,7 +1129,7 @@ target_link_libraries(
     muparserx
 )
 
-if(USE_SPECRUM_FILE_QUERY_WIDGET)
+if(USE_SPECRUM_FILE_QUERY_WIDGET OR BUILD_AS_COMMAND_LINE_CODE_DEVELOPMENT)
     add_subdirectory(external_libs/pugixml-1.9)
     target_link_libraries(InterSpecLib PUBLIC pugixml)
 endif()
