@@ -1602,7 +1602,8 @@ void MakeDrf::startSaveAs()
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
-  new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
+  WAnchor n42anchor = new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
+  n42anchor->setTarget( AnchorTarget::TargetNewWindow );
   
   cell = table->elementAt(currentRow, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
@@ -1617,7 +1618,8 @@ void MakeDrf::startSaveAs()
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CsvDrfDownloadResource *csvResource = new CsvDrfDownloadResource( this );
-  new WAnchor( csvResource, "Export DRF as CSV.", cell );
+  WAnchor *csvanchor = new WAnchor( csvResource, "Export DRF as CSV.", cell );
+  csvanchor->setTarget( AnchorTarget::TargetNewWindow );
   
   auto updateName = [name,csvResource,n42Resource](){
     if( name->validate() == Wt::WValidator::Valid )
