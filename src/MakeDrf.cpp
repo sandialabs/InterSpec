@@ -1602,7 +1602,7 @@ void MakeDrf::startSaveAs()
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
-  WAnchor n42anchor = new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
+  WAnchor *n42anchor = new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
   n42anchor->setTarget( AnchorTarget::TargetNewWindow );
   
   cell = table->elementAt(currentRow, 2);
