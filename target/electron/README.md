@@ -7,7 +7,7 @@ In order to create the [Electron]([https://electronjs.org/](https://electronjs.o
 npm install -g cmake-js 
 
 # For macOS only, you may want to define a deployment target
-export MACOSX_DEPLOYMENT_TARGET=10.10
+export MACOSX_DEPLOYMENT_TARGET=10.12
 
 cd /path/to/InterSpec/target/electron
 
