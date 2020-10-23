@@ -215,6 +215,12 @@ std::string InterSpec::sm_writableDataDirectory = "";
 
 
 
+//#if( BUILD_AS_ELECTRON_APP && !USE_ELECTRON_NATIVE_MENU && !defined(__APPLE__) )
+  #define USE_ELECTRON_HTML_MENU 1
+//#else
+//  #define USE_ELECTRON_HTML_MENU 0
+//#endif
+
 void log_error_message( const std::string &message, const std::string &source, const int priority )
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp*>( Wt::WApplication::instance() );
@@ -656,9 +662,95 @@ InterSpec::InterSpec( WContainerWidget *parent )
   }else
   {
     m_menuDiv = new WContainerWidget();
+#if( USE_ELECTRON_HTML_MENU )
+    app->useStyleSheet( "InterSpec_resources/ElectronHtmlMenu.css" );
+    m_menuDiv->addStyleClass( "elec-titlebar cet-windows" );
+    m_menuDiv->setHeight( 30 ); //"background-color: rgb(68, 68, 68); color: rgb(255, 255, 255); height: 30px;"
+    
+    WContainerWidget *dragRegion = new WContainerWidget( m_menuDiv );
+    dragRegion->addStyleClass( "elec-titlebar-drag-region" );
+  
+    menuWidget = new WContainerWidget( m_menuDiv );
+    menuWidget->addStyleClass( "menubar" );
+    menuWidget->setAttributeValue( "role", "menubar" );
+    
+    WText *menuTitle = new WText( "InterSpec", m_menuDiv );
+    menuTitle->setInline( false );
+    menuTitle->addStyleClass( "window-title" ); //style="cursor: default; margin-right: auto; margin-left: auto;"
+    
+    
+#if( BUILD_AS_ELECTRON_APP )
+    //None of this JS is tested yet
+    WContainerWidget *windowControls = new WContainerWidget( m_menuDiv );
+    windowControls->addStyleClass( "window-controls-container" );
+    
+    WContainerWidget *iconDiv = new WContainerWidget( windowControls );
+    iconDiv->addStyleClass( "window-icon-bg" );
+    WContainerWidget *icon = new WContainerWidget( iconDiv );
+    icon->addStyleClass( "window-icon window-minimize" );
+    icon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
+    
+    
+    iconDiv = new WContainerWidget( windowControls );
+    iconDiv->addStyleClass( "window-icon-bg" );
+    icon = new WContainerWidget( iconDiv );
+    icon->addStyleClass( "window-icon window-max-restore window-maximize" );
+    
+    icon->clicked().connect( INLINE_JAVASCRIPT(
+      let win = $(window).data('ElectronWindow');
+      if( win.isMaximized() ) {
+        win.unmaximize();
+        $(window).onDidChangeMaximized(false);
+      } else {
+        win.maximize();
+        $(window).onDidChangeMaximized(true);
+      }
+    ) );
+    
+    iconDiv = new WContainerWidget( windowControls );
+    iconDiv->addStyleClass( "window-icon-bg" );
+    icon = new WContainerWidget( iconDiv );
+    icon->addStyleClass( "window-icon window-close" );
+    icon->clicked().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
+    
+    WContainerWidget *resizer = new WContainerWidget( m_menuDiv );
+    resizer->addStyleClass( "resizer top" );
+    
+    resizer = new WContainerWidget( m_menuDiv );
+    resizer->addStyleClass( "resizer left" );
+    
+    auto menujs = INLINE_JAVASCRIPT(
+      let currentWindow = remote.getCurrentWindow();
+      $(window).data('ElectronWindow',currentWindow);
+      
+      $(window).onDidChangeMaximized = function(maximized){
+        if( maximized ){
+          $('.resizer.top,.resizer.left').hide();
+          $('.window-max-restore').removeClass('window-maximize').addClass('window-unmaximize');
+        }else{
+          $('.resizer.top,.resizer.left').show();
+          $('.window-max-restore').removeClass('window-unmaximize').addClass('window-maximize');
+        }
+      };
+      
+      $(window).onDidChangeMaximized(currentWindow.isMaximized())
+
+      currentWindow.on( 'blur', function(){ } );
+      currentWindow.on( 'focus', function(){ } );
+      currentWindow.on( 'maximize', function(){$(window).onDidChangeMaximized(true); } );
+      currentWindow.on( 'unmaximize', function(){ $(window).onDidChangeMaximized(false); } );
+      currentWindow.on( 'enter-full-screen', function(){ } );
+      currentWindow.on( 'leave-full-screen', function(){ } );
+    );//menujs
+    
+    doJavaScript( menujs );
+#endif //BUILD_AS_ELECTRON_APP
+    
+#else
     m_menuDiv->addStyleClass( "TopMenuDiv" );
     menuWidget = m_menuDiv;
-  }
+#endif
+  }//if( isMobile() ) / else
   
   addFileMenu( menuWidget, isMobile()  );
   addDisplayMenu( menuWidget );
@@ -671,15 +763,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
   WDefaultLoadingIndicator *indicator = new Wt::WDefaultLoadingIndicator();
   indicator->addStyleClass( "LoadingIndicator" );
   app->setLoadingIndicator( indicator );
-    
+   
+#if( !USE_ELECTRON_HTML_MENU )
   if( m_menuDiv )
   {
-    WImage *snlLogo = new WImage( "InterSpec_resources/images/SNL_Stacked_Black_Blue_tiny.png", m_menuDiv );  //ToDo: maybe put a link to sandia.gov when/if this is clicked
+    WImage *snlLogo = new WImage( "InterSpec_resources/images/SNL_Stacked_Black_Blue_tiny.png", m_menuDiv );
     snlLogo->addStyleClass("URLogo");
     m_menuDiv->setStyleClass( "UpperMenuDivWithLogos" );
     snlLogo->setFloatSide( Right );
   }//if( m_menuDiv )
-
+#endif //!USE_ELECTRON_HTML_MENU
+  
   m_layout = new WGridLayout();
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setHorizontalSpacing( 0 );
