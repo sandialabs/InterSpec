@@ -398,6 +398,11 @@ function createWindow () {
       //We seem to only get here if the JS application dies and the message saying
       // "The application has stopped running, would you like to restart?" and
       // the user clicks okay.
+      // OR if we create a link in the app somewhere (like for a CSV file) and dont
+      //   call WAnchor::setTarget(AnchorTarget::TargetNewWindow) for the link (and in 
+      //   this case we can probably see if the URL looks somethign like:
+      //   http://127.0.0.1:57851/?wtd=oiaGAdsaiwqAs&request=resource&resource=asSaEwq&rand=65
+      //   but I didnt bother about this yet)
       //(as of 20191012 only tested by calling wApp->quit() from c++).
       doMenuStuff(mainWindow);
     }
