@@ -215,11 +215,16 @@ std::string InterSpec::sm_writableDataDirectory = "";
 
 
 
-//#if( BUILD_AS_ELECTRON_APP && !USE_ELECTRON_NATIVE_MENU && !defined(__APPLE__) )
+#if( BUILD_AS_ELECTRON_APP && !USE_ELECTRON_NATIVE_MENU )
   #define USE_ELECTRON_HTML_MENU 1
-//#else
-//  #define USE_ELECTRON_HTML_MENU 0
-//#endif
+#else
+  #define USE_ELECTRON_HTML_MENU 0
+#endif
+
+#if( USE_ELECTRON_HTML_MENU && BUILD_AS_ELECTRON_APP )
+#include "js/ElectronHtmlMenu.js"
+#endif
+
 
 void log_error_message( const std::string &message, const std::string &source, const int priority )
 {
@@ -680,7 +685,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     
 #if( BUILD_AS_ELECTRON_APP )
-    //None of this JS is tested yet
+    //None of this JS is really tested yet
+    LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsTitleBarChangeMaximized);
+    
     WContainerWidget *windowControls = new WContainerWidget( m_menuDiv );
     windowControls->addStyleClass( "window-controls-container" );
     
@@ -696,16 +703,16 @@ InterSpec::InterSpec( WContainerWidget *parent )
     icon = new WContainerWidget( iconDiv );
     icon->addStyleClass( "window-icon window-max-restore window-maximize" );
     
-    icon->clicked().connect( INLINE_JAVASCRIPT(
+    icon->clicked().connect( INLINE_JAVASCRIPT( function(){
       let win = $(window).data('ElectronWindow');
       if( win.isMaximized() ) {
         win.unmaximize();
-        $(window).onDidChangeMaximized(false);
+        Wt.WT.TitleBarChangeMaximized(false);
       } else {
         win.maximize();
-        $(window).onDidChangeMaximized(true);
+        Wt.WT.TitleBarChangeMaximized(true);
       }
-    ) );
+    }) );
     
     iconDiv = new WContainerWidget( windowControls );
     iconDiv->addStyleClass( "window-icon-bg" );
@@ -718,29 +725,20 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     resizer = new WContainerWidget( m_menuDiv );
     resizer->addStyleClass( "resizer left" );
+  
     
     auto menujs = INLINE_JAVASCRIPT(
       let currentWindow = remote.getCurrentWindow();
       $(window).data('ElectronWindow',currentWindow);
       
-      $(window).onDidChangeMaximized = function(maximized){
-        if( maximized ){
-          $('.resizer.top,.resizer.left').hide();
-          $('.window-max-restore').removeClass('window-maximize').addClass('window-unmaximize');
-        }else{
-          $('.resizer.top,.resizer.left').show();
-          $('.window-max-restore').removeClass('window-unmaximize').addClass('window-maximize');
-        }
-      };
-      
-      $(window).onDidChangeMaximized(currentWindow.isMaximized())
+      Wt.WT.TitleBarChangeMaximized( currentWindow.isMaximized() );
 
-      currentWindow.on( 'blur', function(){ } );
-      currentWindow.on( 'focus', function(){ } );
-      currentWindow.on( 'maximize', function(){$(window).onDidChangeMaximized(true); } );
-      currentWindow.on( 'unmaximize', function(){ $(window).onDidChangeMaximized(false); } );
-      currentWindow.on( 'enter-full-screen', function(){ } );
-      currentWindow.on( 'leave-full-screen', function(){ } );
+      currentWindow.on( 'blur', function(){ console.log('currentWindow.blur'); } );
+      currentWindow.on( 'focus', function(){ console.log('currentWindow.focus'); } );
+      currentWindow.on( 'maximize', function(){ Wt.WT.TitleBarChangeMaximized(true); } );
+      currentWindow.on( 'unmaximize', function(){ Wt.WT.TitleBarChangeMaximized(false); } );
+      currentWindow.on( 'enter-full-screen', function(){ console.log('currentWindow.enter-full-screen'); } );
+      currentWindow.on( 'leave-full-screen', function(){ console.log('currentWindow.leave-full-screen'); } );
     );//menujs
     
     doJavaScript( menujs );
