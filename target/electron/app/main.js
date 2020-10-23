@@ -226,6 +226,9 @@ function get_launch_options(){
 
 function doMenuStuff(currentwindow){
   console.log( 'Doing doMenuStuff' );
+  if( process.platform != 'darwin' )
+    return;
+
   currentwindow.setMenu(null);
   
   const template = [{label: 'Edit', submenu: [{role: 'cut'},{role: 'copy'},{role: 'paste'}]},
@@ -282,7 +285,7 @@ function createWindow () {
 
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
-  windowPrefs.frame = false;
+  windowPrefs.frame = (process.platform == 'darwin');
   windowPrefs.webPreferences = { nodeIntegration: true, nativeWindowOpen: true, enableRemoteModule: true, spellcheck: false };
 
   mainWindow = new BrowserWindow( windowPrefs );
