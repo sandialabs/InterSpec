@@ -3697,7 +3697,7 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
     theme = getColorTheme();
   m_colorTheme = theme;
 
-  this->m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
+  m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
   
   m_spectrum->setForegroundSpectrumColor( theme->foregroundLine );
   m_spectrum->setBackgroundSpectrumColor( theme->backgroundLine );
@@ -3752,7 +3752,15 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
                   "", WarningWidget::WarningMsgLow );
     }
   }//if( should load CSS file )
+  
+  m_colorThemeChanged.emit( theme );
 }//void InterSpec::applyColorTheme()
+
+
+Wt::Signal< std::shared_ptr<const ColorTheme> > &InterSpec::colorThemeChanged()
+{
+  return m_colorThemeChanged;
+}
 
 
 #if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP )

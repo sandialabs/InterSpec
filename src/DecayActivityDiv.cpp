@@ -340,7 +340,9 @@ public:
     }//if( m_phone )
     
     
-     //Color theme support code not complete or tested!
+    //Color theme support code not complete or tested!
+    //  Also the MakeDrfChart essentially copies this code, so if you improve here, update there too
+    //  (or refactor into common base class)
     auto plotArea = [&]() -> WRectF {
       int w, h;
       if( rectangle.isNull() || rectangle.isEmpty() )
