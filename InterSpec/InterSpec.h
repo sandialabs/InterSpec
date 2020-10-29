@@ -987,7 +987,13 @@ public:
   */
   void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
 
+  
+  /** Signal emitted when the color theme is changed.
+   Useful when sub-windows are created to keep them in-sync if the color theme changes
+   */
+  Wt::Signal< std::shared_ptr<const ColorTheme> > &colorThemeChanged();
 
+  
 //Applying the color theme from JS seems to work, but only tested on single
 //  browser and operating system, so leaving disabled for the moment, until I
 //  at least make sure it doesnt cause problems on older borwsers.
@@ -1391,6 +1397,8 @@ protected:
   std::string m_currentColorThemeCssFile;
   
   std::shared_ptr<const ColorTheme> m_colorTheme;
+  
+  Wt::Signal<std::shared_ptr<const ColorTheme>> m_colorThemeChanged;
   
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
