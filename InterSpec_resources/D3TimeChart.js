@@ -236,6 +236,7 @@ D3TimeChart = function (elem, options) {
   this.axisBottomG = this.svg.append("g").attr("class", "axis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis");
   this.axisRightG = this.svg.append("g").attr("class", "axis");
+  this.highlightRegionsG = this.svg.append("g").attr("class", "highlight_region")
 
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
   this.highlightText = this.rectG
@@ -313,6 +314,14 @@ D3TimeChart.prototype.setData = function (data) {
 
     this.data = [formattedData];
     console.log(this.data);
+
+    // create inverted index of sample numbers for fast lookup.
+    var sampleToIndex = {};
+    for (var i = 0; i < data.sampleNumbers.length; i++) {
+      sampleToIndex[data.sampleNumbers[i]] = i;
+    }
+    console.log(sampleToIndex);
+    this.sampleToIndex = sampleToIndex;
 
     // clear selection if there is any
     this.selection = null;
@@ -415,6 +424,7 @@ D3TimeChart.prototype.render = function (options) {
     }
 
     this.linesG.attr("clip-path", "url(#clip_th)");
+    this.highlightRegionsG.attr("clip-path", "url(#clip_th")
 
     // if have selection, recalculate compression index based on new plotWidth if needed.
     if (this.selection) {
@@ -453,6 +463,9 @@ D3TimeChart.prototype.render = function (options) {
         var coords = d3.mouse(this.rect.node());
         brush.setStart(coords[0]);
         d3.select("body").style("cursor", "move");
+        console.log(d3.event.sourceEvent);
+
+        this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
 
         if (d3.event.sourceEvent.altKey) {
           this.highlightModifier = "altKey";
@@ -509,22 +522,24 @@ D3TimeChart.prototype.render = function (options) {
             this.handleBrushZoom(brush);
           } else {
             var keyModifierMap = {
-              "altKey": 0x4,
-              "none" : 0x0
-            }
+              altKey: 0x4,
+              shiftKey: 0x1,
+              none: 0x0,
+            };
             this.WtEmit(
               this.chart.id,
-              {name: 'timedragged'}, 
-              this.data[0].sampleNumbers[lIdx], 
+              { name: "timedragged" },
+              this.data[0].sampleNumbers[lIdx],
               this.data[0].sampleNumbers[rIdx],
-              keyModifierMap[this.highlightModifier]
+              keyModifierMap[this.highlightModifier] |
+                (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
             );
-
           }
+          // clear
           this.mouseUpHighlight();
           brush.clear();
-                      this.highlightModifier = null;
-
+          this.highlightModifier = null;
+          this.shiftKeyHeld = false;
         }
       });
 
@@ -865,6 +880,9 @@ D3TimeChart.prototype.updateChart = function (
         .text(this.options.y2title);
     } // if (!axisLabelY2.empty())
   } // if (HAS_NEUTRON)
+
+  // if has highlight regions, redraw them:
+  this.setHighlightRegions(this.regions);
 };
 
 // HELPERS, CALLBACKS, AND EVENT HANDLERS //
@@ -1963,11 +1981,52 @@ D3TimeChart.prototype.compress = function (data, n) {
   return out;
 };
 
-// UNIMPLEMENTED
-
+/**
+ * Highlights selected time intervals. Called by D3TimeChart::setHighlightRegionsToClient()
+ * @param {*} regions : array of objects. Objects are of form:
+ * {
+ * startSample: int
+ * endSample: int
+ * fillColor: string
+ * type: string
+ * }
+ */
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
-  console.log(regions);
-  //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
+  console.log(regions)
+  this.regions = regions;
+
+  this.highlightRegionsG.selectAll('rect').remove();
+  if (this.sampleToIndex) {
+    //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
+    for (var i = 0; i < regions.length; i++) {
+      // get index from sample number
+      // TO DO: check if es5 has object destructuring
+      var { startSample, endSample, fillColor } = regions[i];
+      var lIdx = this.sampleToIndex[startSample];
+      var rIdx = this.sampleToIndex[endSample];
+      // look up the corresponding time of the sample number using the index
+      var startTime = this.data[0].realTimeIntervals[lIdx][0];
+      var endTime = this.data[0].realTimeIntervals[rIdx][1];
+      // draw a rectangle starting at the time and ending at the time with given height and fill color
+      console.log([startTime, endTime]);
+
+
+      var scales = this.selection ? this.getScales({x: this.selection.domain, yGamma: this.data[0].domains.yGamma, yNeutron: this.data[0].domains.yNeutron}) : this.getScales(this.data[0].domains)
+      var lPixel = scales.xScale(startTime);
+      var rPixel = scales.xScale(endTime);
+
+      this.highlightRegionsG
+      .append("rect")
+      .attr("height", this.height - this.margin.top - this.margin.bottom)
+      .attr("x", lPixel)
+      .attr("y", this.margin.top)
+      .attr("width", rPixel - lPixel)
+      .attr("fill", fillColor)
+      .attr("fill-opacity", 0.5)
+  
+      
+    }
+  }
 };
 
 D3TimeChart.prototype.setXAxisTitle = function (title) {
