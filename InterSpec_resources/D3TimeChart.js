@@ -236,7 +236,9 @@ D3TimeChart = function (elem, options) {
   this.axisBottomG = this.svg.append("g").attr("class", "axis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis");
   this.axisRightG = this.svg.append("g").attr("class", "axis");
-  this.highlightRegionsG = this.svg.append("g").attr("class", "highlight_region")
+  this.highlightRegionsG = this.svg
+    .append("g")
+    .attr("class", "highlight_region");
 
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
   this.highlightText = this.rectG
@@ -302,7 +304,7 @@ D3TimeChart.prototype.WtEmit = function (elem, event) {
  */
 D3TimeChart.prototype.setData = function (data) {
   //See the c++ function D3TimeChart::setData()
-  console.log(data);
+  // console.log(data);
   if (!this.isValidData(data)) {
     console.log(
       "Runtime error in D3TimeChart.setData: Structure of data is not valid.\nDoing nothing..."
@@ -313,14 +315,14 @@ D3TimeChart.prototype.setData = function (data) {
     var formattedData = this.formatData(data);
 
     this.data = [formattedData];
-    console.log(this.data);
+    // console.log(this.data);
 
     // create inverted index of sample numbers for fast lookup.
     var sampleToIndex = {};
     for (var i = 0; i < data.sampleNumbers.length; i++) {
       sampleToIndex[data.sampleNumbers[i]] = i;
     }
-    console.log(sampleToIndex);
+    // console.log(sampleToIndex);
     this.sampleToIndex = sampleToIndex;
 
     // clear selection if there is any
@@ -424,7 +426,7 @@ D3TimeChart.prototype.render = function (options) {
     }
 
     this.linesG.attr("clip-path", "url(#clip_th)");
-    this.highlightRegionsG.attr("clip-path", "url(#clip_th")
+    this.highlightRegionsG.attr("clip-path", "url(#clip_th");
 
     // if have selection, recalculate compression index based on new plotWidth if needed.
     if (this.selection) {
@@ -463,7 +465,7 @@ D3TimeChart.prototype.render = function (options) {
         var coords = d3.mouse(this.rect.node());
         brush.setStart(coords[0]);
         d3.select("body").style("cursor", "move");
-        console.log(d3.event.sourceEvent);
+        // console.log(d3.event.sourceEvent);
 
         this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
 
@@ -511,13 +513,13 @@ D3TimeChart.prototype.render = function (options) {
           this.escapeKeyPressed = false;
         } else {
           d3.select("body").style("cursor", "auto");
-          console.log(brush.extent());
+          // console.log(brush.extent());
           var lIdx = this.findDataIndex(brush.extent()[0], 0);
           var rIdx = this.findDataIndex(brush.extent()[1], 0);
-          console.log([
-            this.data[0].sampleNumbers[lIdx],
-            this.data[0].sampleNumbers[rIdx],
-          ]);
+          // console.log([
+          //   this.data[0].sampleNumbers[lIdx],
+          //   this.data[0].sampleNumbers[rIdx],
+          // ]);
           if (this.highlightModifier === "ctrlKey") {
             this.handleBrushZoom(brush);
           } else {
@@ -669,6 +671,35 @@ D3TimeChart.prototype.updateChart = function (
           .attr("d", lineNeutron);
       } // if (!pathNeutron.empty())
     }
+  }
+
+  // update highlight region rendering
+  if (this.regions) {
+    var chart = this;
+    this.highlightRegionsG.selectAll("rect").each(function (d, i) {
+      var { startSample, endSample } = chart.regions[i];
+      var lIdx = chart.sampleToIndex[startSample];
+      var rIdx = chart.sampleToIndex[endSample];
+      var startTime = chart.data[0].realTimeIntervals[lIdx][0];
+      var endTime = chart.data[0].realTimeIntervals[rIdx][1];
+
+      var lPixel = xScale(startTime);
+      var rPixel = xScale(endTime);
+
+      if (transitions) {
+
+        d3.select(this)
+        .transition()
+        .duration(500)
+        .attr("x", lPixel)
+        .attr("width", rPixel - lPixel);
+      } else {
+        d3.select(this)
+        .attr("x", lPixel)
+        .attr("width", rPixel - lPixel);
+
+      }
+    });
   }
 
   // set different tick counts for different viewport breakpoints
@@ -881,8 +912,6 @@ D3TimeChart.prototype.updateChart = function (
     } // if (!axisLabelY2.empty())
   } // if (HAS_NEUTRON)
 
-  // if has highlight regions, redraw them:
-  this.setHighlightRegions(this.regions);
 };
 
 // HELPERS, CALLBACKS, AND EVENT HANDLERS //
@@ -1992,10 +2021,10 @@ D3TimeChart.prototype.compress = function (data, n) {
  * }
  */
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
-  console.log(regions)
+  // console.log(regions);
   this.regions = regions;
 
-  this.highlightRegionsG.selectAll('rect').remove();
+  this.highlightRegionsG.selectAll("rect").remove();
   if (this.sampleToIndex) {
     //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
     for (var i = 0; i < regions.length; i++) {
@@ -2008,23 +2037,26 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
       var startTime = this.data[0].realTimeIntervals[lIdx][0];
       var endTime = this.data[0].realTimeIntervals[rIdx][1];
       // draw a rectangle starting at the time and ending at the time with given height and fill color
-      console.log([startTime, endTime]);
+      // console.log([startTime, endTime]);
 
-
-      var scales = this.selection ? this.getScales({x: this.selection.domain, yGamma: this.data[0].domains.yGamma, yNeutron: this.data[0].domains.yNeutron}) : this.getScales(this.data[0].domains)
+      var scales = this.selection
+        ? this.getScales({
+            x: this.selection.domain,
+            yGamma: this.data[0].domains.yGamma,
+            yNeutron: this.data[0].domains.yNeutron,
+          })
+        : this.getScales(this.data[0].domains);
       var lPixel = scales.xScale(startTime);
       var rPixel = scales.xScale(endTime);
 
       this.highlightRegionsG
-      .append("rect")
-      .attr("height", this.height - this.margin.top - this.margin.bottom)
-      .attr("x", lPixel)
-      .attr("y", this.margin.top)
-      .attr("width", rPixel - lPixel)
-      .attr("fill", fillColor)
-      .attr("fill-opacity", 0.5)
-  
-      
+        .append("rect")
+        .attr("height", this.height - this.margin.top - this.margin.bottom)
+        .attr("x", lPixel)
+        .attr("y", this.margin.top)
+        .attr("width", rPixel - lPixel)
+        .attr("fill", fillColor)
+        .attr("fill-opacity", 0.5);
     }
   }
 };
