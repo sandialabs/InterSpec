@@ -8,7 +8,8 @@ function()
   var urlIdFromName = function(name)
   {
     var str = name.toLowerCase();
-    if( str.indexOf('i-')===0 || str.indexOf('fore')>-1 || str.indexOf('item')>-1 || str.indexOf('ipc')>-1 || str.indexOf('unk')>-1 || str.indexOf('kwn')>-1 )
+    if( str.indexOf('i-')===0 || str.indexOf('fore')>-1 || str.indexOf('item')>-1
+        || str.indexOf('ipc')>-1 || str.indexOf('unk')>-1 || str.indexOf('inter')>-1  )
       return 'ForegroundUpUrl';
     if( str.indexOf('b-') === 0 || str.indexOf('back')>-1 || str.indexOf('bkg')>-1 || str.indexOf('bgd')>-1 || str.indexOf('bg')>-1 )
       return 'BackgroundUpUrl';
@@ -33,18 +34,18 @@ function()
       
       
       //Go through and make sure we have either one file total, or a max of one
-      //  for each foreground/background/second.  Also, make sure we upload
-      //  foreground first
+      //  for each foreground/background/second.
       var validin = true, uid, filelen = files.length, x, i;
-      var dict = {"ForegroundUpUrl":null, "BackgroundUpUrl":null, "SecondUpUrl":null};
+      var uploadOrder = ["ForegroundUpUrl", "BackgroundUpUrl", "SecondUpUrl"];
+      var toUpload = {"ForegroundUpUrl":null, "BackgroundUpUrl":null, "SecondUpUrl":null};
       
       for(i = 0; i < filelen; ++i)
       {
         uid = filelen>1 ? urlIdFromName(files[i].name) : urlid;
-        if( filelen>1 && (uid===null || (dict[uid]!==null)) )
+        if( filelen>1 && (uid===null || (toUpload[uid]!==null)) )
           validin = false;
         else
-          dict[uid] = i;
+          toUpload[uid] = files[i];
       }
       
       if( !validin )
@@ -54,15 +55,33 @@ function()
                + ' in the file name, and there is at most one of each spectrum type.' );
         return;
       }
-
-      for( uid in dict )
-      {
-        if( dict[uid]===null )
-          continue;
-        var xhr, uploadURL = $(target).data(uid), file = files[dict[uid]];
-        if( !uploadURL )
+      
+      // We want to upload the foreground, then background, then secondary, waiting for each upload
+      //  to finish before starting the next.
+      var uploadIndex = -1;
+      
+      function uploadNextFile(){
+        for( ++uploadIndex; (uploadIndex < uploadOrder.length) && (toUpload[uploadOrder[uploadIndex]] === null); ++uploadIndex )
+        {
+        }
+        
+        if( uploadIndex >= uploadOrder.length )
           return;
-  
+        
+        var thisUid = uploadOrder[uploadIndex];
+        uploadFileToUrl( $(target).data(thisUid), toUpload[thisUid] );
+      };
+      
+      function uploadFileToUrl( uploadURL, file ){
+        if( !uploadURL || !file )
+        {
+          console.log( 'uploadFileToUrl: - invalid url or file' );
+          return;
+        }
+          
+        console.log( 'uploadFileToUrl: will upload to ' + uploadURL );
+        
+        var xhr;
         if (window.XMLHttpRequest)
           xhr = new XMLHttpRequest();
         else if (window.ActiveXObject)
@@ -85,6 +104,9 @@ function()
           //console.log( 'xhr.readyState=' + xhr.readyState + ', xhr.status=' + xhr.status );
           if( (xhr.readyState === 4) && (xhr.status !== 200) )
             errfcn();
+            
+          if( xhr.readyState === 4 )
+            uploadNextFile();
         };//xhr.onload
         
         //xhr.timeout = 5000;
@@ -93,7 +115,9 @@ function()
         //};
           
         xhr.send(file);
-      }
+      };//uploadFileToUrl
+      
+      uploadNextFile();
     }catch(error)
     {
       console.log( "Error in HandleDrop: " + error );

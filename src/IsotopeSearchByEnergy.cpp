@@ -746,10 +746,22 @@ void IsotopeSearchByEnergy::minBrOrHlChanged()
 
 void IsotopeSearchByEnergy::resultSelectionChanged()
 {
-  if( !m_viewer || !m_viewer->referenceLinesWidget() )
+  if( !m_viewer )
     return;
- 
+  
+  // This is a bit of a hack, but if the tool tabs are not visible, then the
+  //  ReferencePhotopeakDisplay pointer will be nullptr, so we will create a reference gamma lines
+  //  window - havent tested this on phones, as of 20201030
   ReferencePhotopeakDisplay *display = m_viewer->referenceLinesWidget();
+  if( !display && !m_viewer->toolTabsVisible() )
+  {
+    m_viewer->showGammaLinesWindow();
+    display = m_viewer->referenceLinesWidget();
+  }
+  
+  if( !display )
+    return;
+  
   
   WModelIndexSet selected = m_results->selectedIndexes();
   if( selected.empty() )
