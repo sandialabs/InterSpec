@@ -1146,14 +1146,14 @@ protected:
   //  currently has the window nuclide search window open.
   AuxWindow              *m_nuclideSearchWindow;
   
-  //m_isotopeSearchContainer: holds the nuclide search content in tab when tool
+  //m_nuclideSearchContainer: holds the nuclide search content in tab when tool
   //  tabs are visible.  Will be valid when in tool tabs visible, and null when
   //  not.
-  WContainerWidget       *m_isotopeSearchContainer;
+  WContainerWidget       *m_nuclideSearchContainer;
   
-  //m_isotopeSearch: Nuclide Search widget.  Will always be a valid pointer,
+  //m_nuclideSearch: Nuclide Search widget.  Will always be a valid pointer,
   //  although not always in the DOM (specifically when tool tabs are hidden).
-  IsotopeSearchByEnergy  *m_isotopeSearch;
+  IsotopeSearchByEnergy  *m_nuclideSearch;
   
   //DataBaseUtils::DbSession is an indirect way to holds the Wt::Dbo::Session
   //  object associated with m_user.  This indirection forces you to use

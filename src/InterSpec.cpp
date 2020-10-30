@@ -379,8 +379,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_shieldingSourceFitWindow( 0 ),
     m_materialDB( nullptr ),
     m_nuclideSearchWindow( 0 ),
-    m_isotopeSearchContainer(0),
-    m_isotopeSearch( 0 ),
+    m_nuclideSearchContainer(0),
+    m_nuclideSearch( 0 ),
     m_fileMenuPopup( 0 ),
     m_toolsMenuPopup( 0 ),
     m_helpMenuPopup( 0 ),
@@ -569,8 +569,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   m_spectrum->setPeakModel( m_peakModel );
   
-  m_isotopeSearch = new IsotopeSearchByEnergy( this, m_spectrum );
-  m_isotopeSearch->setLoadLaterWhenInvisible(true);
+  m_nuclideSearch = new IsotopeSearchByEnergy( this, m_spectrum );
+  m_nuclideSearch->setLoadLaterWhenInvisible(true);
 
   m_warnings = new WarningWidget( this );
 
@@ -1013,7 +1013,7 @@ std::string InterSpec::writableDataDirectory()
 
 InterSpec::~InterSpec()
 {
-  //The deletion of the DOM root node will destrow all the AuxWindows we
+  //The deletion of the DOM root node will destroy all the AuxWindows we
   //  have open, but I am manually taking care of them below due to a crash
   //  I have been getting in the WApplication destructor for Wt 3.3.1-rc1
 
@@ -1064,6 +1064,12 @@ InterSpec::~InterSpec()
     m_shieldingSourceFitWindow = nullptr;
   }//if( m_shieldingSourceFitWindow )
   
+  if( m_nuclideSearch )
+  {
+    delete m_nuclideSearch;
+    m_nuclideSearch = nullptr;
+  }//if( m_nuclideSearch )
+
   if( m_nuclideSearchWindow )
   {
     delete m_nuclideSearchWindow;
@@ -1099,12 +1105,6 @@ InterSpec::~InterSpec()
     delete m_warningsWindow;
     m_warningsWindow = nullptr;
   }//if( m_warningsWindow )
-  
-  if( m_isotopeSearch )
-  {
-    delete m_isotopeSearch;
-    m_isotopeSearch = nullptr;
-  }//if( m_isotopeSearch )
   
   if( m_peakEditWindow )
   {
@@ -2262,7 +2262,7 @@ void InterSpec::updateRightClickNuclidesMenu(
 void InterSpec::handleLeftClick( double energy, double counts,
                                       int pageX, int pageY )
 {
-  if( (m_toolsTabs && m_currentToolsTab == m_toolsTabs->indexOf(m_isotopeSearchContainer))
+  if( (m_toolsTabs && m_currentToolsTab == m_toolsTabs->indexOf(m_nuclideSearchContainer))
       || m_nuclideSearchWindow )
   {
     setIsotopeSearchEnergy( energy );
@@ -2532,14 +2532,14 @@ void InterSpec::deletePeakEdit()
 
 void InterSpec::setIsotopeSearchEnergy( double energy )
 {
-  if( !m_isotopeSearch )
+  if( !m_nuclideSearch )
     return;
   
   double sigma = -1.0;
 
   if( m_toolsTabs )
   {
-    if( m_currentToolsTab != m_toolsTabs->indexOf(m_isotopeSearchContainer) )
+    if( m_currentToolsTab != m_toolsTabs->indexOf(m_nuclideSearchContainer) )
       return;
   }else if( !m_nuclideSearchWindow )
   {
@@ -2564,7 +2564,7 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
     }//if( within 3 sigma of peak )
   }//if( !!peak )
   
-  m_isotopeSearch->setNextSearchEnergy( energy, sigma );
+  m_nuclideSearch->setNextSearchEnergy( energy, sigma );
 }//void setIsotopeSearchEnergy( double energy );
 
 
@@ -2940,8 +2940,8 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 //    };
   
     entry.modify()->isotopeSearchEnergiesXml.clear();
-    if( m_isotopeSearch )
-      m_isotopeSearch->serialize( entry.modify()->isotopeSearchEnergiesXml );
+    if( m_nuclideSearch )
+      m_nuclideSearch->serialize( entry.modify()->isotopeSearchEnergiesXml );
    
     entry.modify()->gammaLinesXml.clear();
     if( m_referencePhotopeakLines )
@@ -3369,9 +3369,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     if( m_nuclideSearchWindow )
     {
-      m_isotopeSearchContainer->layout()->removeWidget( m_isotopeSearch );
-      delete m_isotopeSearchContainer;
-      m_isotopeSearchContainer = 0;
+      m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
+      delete m_nuclideSearchContainer;
+      m_nuclideSearchContainer = nullptr;
     }
     
 //  std::string showingDetectorNumbersCsv;
@@ -3473,12 +3473,16 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         closeGammaLinesWindow();
     }//if( entry->gammaLinesXml.size() )
     
-    if( m_isotopeSearch && entry->isotopeSearchEnergiesXml.size() )
+    if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
     {
       string data = entry->isotopeSearchEnergiesXml;
+      
+      if( !wasDocked )
+        showNuclideSearchWindow();
+      
       const bool display = !wasDocked || entry->currentTab == UserState::kIsotopeSearch;
-      m_isotopeSearch->deSerialize( data, display );
-    }//if( m_isotopeSearch && entry->isotopeSearchEnergiesXml.size() )
+      m_nuclideSearch->deSerialize( data, display );
+    }//if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
 
     for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
         label < SpectrumChart::kNumPeakLabels;
@@ -5664,33 +5668,33 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     if( m_nuclideSearchWindow )
     {
-      m_isotopeSearch->clearSearchEnergiesOnClient();
-      m_nuclideSearchWindow->stretcher()->removeWidget( m_isotopeSearch );
+      m_nuclideSearch->clearSearchEnergiesOnClient();
+      m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch );
       delete m_nuclideSearchWindow;
       m_nuclideSearchWindow = 0;
     }//if( m_nuclideSearchWindow )
     
-    assert( !m_isotopeSearchContainer );
+    assert( !m_nuclideSearchContainer );
     
-    m_isotopeSearchContainer = new WContainerWidget();
+    m_nuclideSearchContainer = new WContainerWidget();
     WGridLayout *isoSearchLayout = new WGridLayout();
-    m_isotopeSearchContainer->setLayout( isoSearchLayout );
+    m_nuclideSearchContainer->setLayout( isoSearchLayout );
     isoSearchLayout->setContentsMargins( 0, 0, 0, 0 );
-    isoSearchLayout->addWidget( m_isotopeSearch, 0, 0 );
-    m_isotopeSearchContainer->setMargin( 0 );
-    m_isotopeSearchContainer->setPadding( 0 );
+    isoSearchLayout->addWidget( m_nuclideSearch, 0, 0 );
+    m_nuclideSearchContainer->setMargin( 0 );
+    m_nuclideSearchContainer->setPadding( 0 );
     isoSearchLayout->setRowStretch( 0, 1 );
     isoSearchLayout->setColumnStretch( 0, 1 );
     
     //WMenuItem *nuclideTab =
-    m_toolsTabs->addTab( m_isotopeSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
+    m_toolsTabs->addTab( m_nuclideSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
 //    const char *tooltip = "Search for nuclides with constraints on energy, "
 //                          "branching ratio, and half life.";
 //    HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTipInstantly, HelpSystem::Top );
     
     //nuclideTab->setIcon("InterSpec_resources/images/magnifier.png");
-//    if( m_isotopeSearch )
-//      m_isotopeSearch->loadSearchEnergiesToClient();
+//    if( m_nuclideSearch )
+//      m_nuclideSearch->loadSearchEnergiesToClient();
     
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
@@ -5708,11 +5712,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->removeTab( m_peakInfoDisplay );
     m_toolsTabs->removeTab( m_energyCalTool );
     
-    m_isotopeSearch->clearSearchEnergiesOnClient();
-    m_isotopeSearchContainer->layout()->removeWidget( m_isotopeSearch );
-    m_toolsTabs->removeTab( m_isotopeSearchContainer );
-    delete m_isotopeSearchContainer;
-    m_isotopeSearchContainer = nullptr;
+    m_nuclideSearch->clearSearchEnergiesOnClient();
+    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
+    m_toolsTabs->removeTab( m_nuclideSearchContainer );
+    delete m_nuclideSearchContainer;
+    m_nuclideSearchContainer = nullptr;
     
     if( m_referencePhotopeakLines )
       m_referencePhotopeakLines->clearAllLines();
@@ -5782,6 +5786,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   //Not sure _why_ this next statement is needed, but it is, or else the
   //  spectrum chart shows up with no data
   m_spectrum->scheduleUpdateForeground();
+  m_spectrum->scheduleUpdateBackground();
+  m_spectrum->scheduleUpdateSecondData();
 #endif
 }//void setToolTabsVisible( bool showToolTabs )
 
@@ -7398,23 +7404,23 @@ void InterSpec::closeNuclideSearchWindow()
   if( !m_nuclideSearchWindow )
     return;
   
-  m_isotopeSearch->clearSearchEnergiesOnClient();
-  m_nuclideSearchWindow->stretcher()->removeWidget( m_isotopeSearch );
+  m_nuclideSearch->clearSearchEnergiesOnClient();
+  m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch );
   
   delete m_nuclideSearchWindow;
   m_nuclideSearchWindow = 0;
   
   if( m_toolsTabs )
   {
-    m_isotopeSearchContainer = new WContainerWidget();
+    m_nuclideSearchContainer = new WContainerWidget();
     WGridLayout *isotopeSearchGridLayout = new WGridLayout();
-    m_isotopeSearchContainer->setLayout( isotopeSearchGridLayout );
+    m_nuclideSearchContainer->setLayout( isotopeSearchGridLayout );
 
-    isotopeSearchGridLayout->addWidget( m_isotopeSearch, 0, 0 );
+    isotopeSearchGridLayout->addWidget( m_nuclideSearch, 0, 0 );
     isotopeSearchGridLayout->setRowStretch( 0, 1 );
     isotopeSearchGridLayout->setColumnStretch( 0, 1 );
 
-    m_toolsTabs->addTab( m_isotopeSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
+    m_toolsTabs->addTab( m_nuclideSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
     m_currentToolsTab = m_toolsTabs->currentIndex();
   }//if( m_toolsTabs )
 }//void closeNuclideSearchWindow()
@@ -7426,16 +7432,16 @@ void InterSpec::showNuclideSearchWindow()
     m_nuclideSearchWindow->show();
     m_nuclideSearchWindow->resizeToFitOnScreen();
     m_nuclideSearchWindow->centerWindow();
-    m_isotopeSearch->loadSearchEnergiesToClient();
+    m_nuclideSearch->loadSearchEnergiesToClient();
     return;
   }//if( m_nuclideSearchWindow )
   
-  if( m_toolsTabs && m_isotopeSearchContainer )
+  if( m_toolsTabs && m_nuclideSearchContainer )
   {
-    m_isotopeSearchContainer->layout()->removeWidget( m_isotopeSearch );
-    m_toolsTabs->removeTab( m_isotopeSearchContainer );
-    delete m_isotopeSearchContainer;
-    m_isotopeSearchContainer = 0;
+    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
+    m_toolsTabs->removeTab( m_nuclideSearchContainer );
+    delete m_nuclideSearchContainer;
+    m_nuclideSearchContainer = 0;
   }
   
   m_nuclideSearchWindow = new AuxWindow( NuclideSearchTabTitle, (AuxWindowProperties::TabletModal) );
@@ -7450,7 +7456,7 @@ void InterSpec::showNuclideSearchWindow()
   //}//if( isPhone() )
   
   m_nuclideSearchWindow->stretcher()->setContentsMargins( 0, 0, 0, 0 );
-  m_nuclideSearchWindow->stretcher()->addWidget( m_isotopeSearch, 0, 0 );
+  m_nuclideSearchWindow->stretcher()->addWidget( m_nuclideSearch, 0, 0 );
   
   //We need to set the footer height explicitly, or else the window->resize()
   //  messes up.
@@ -7469,7 +7475,7 @@ void InterSpec::showNuclideSearchWindow()
   m_nuclideSearchWindow->setResizable(true);
   m_nuclideSearchWindow->show();
   
-  m_isotopeSearch->loadSearchEnergiesToClient(); //clear the isotope search on the canvas
+  m_nuclideSearch->loadSearchEnergiesToClient(); //clear the isotope search on the canvas
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
@@ -7629,11 +7635,11 @@ void InterSpec::closeGammaLinesWindow()
     if( m_toolsTabs && m_toolsTabs->indexOf( m_referencePhotopeakLines ) >= 0 )
       m_toolsTabs->removeTab( m_referencePhotopeakLines );
     delete m_referencePhotopeakLines;
-    m_referencePhotopeakLines = 0;
+    m_referencePhotopeakLines = nullptr;
   }//if( m_referencePhotopeakLines )
 
   delete m_referencePhotopeakLinesWindow;
-  m_referencePhotopeakLinesWindow = 0;
+  m_referencePhotopeakLinesWindow = nullptr;
 
   if( m_toolsTabs )
   {
@@ -7661,16 +7667,16 @@ void InterSpec::handleToolTabChanged( int tab )
   
   const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
   const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
-  const int searchTab = m_toolsTabs->indexOf(m_isotopeSearchContainer);
+  const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
   
   if( m_referencePhotopeakLines && (tab == refTab) && !isMobile() )
     m_referencePhotopeakLines->setFocusToIsotopeEdit();
     
-  if( m_isotopeSearch && (m_currentToolsTab==searchTab) )
-    m_isotopeSearch->clearSearchEnergiesOnClient();
+  if( m_nuclideSearch && (m_currentToolsTab==searchTab) )
+    m_nuclideSearch->clearSearchEnergiesOnClient();
   
-  if( m_isotopeSearch && (tab==searchTab) )
-    m_isotopeSearch->loadSearchEnergiesToClient();
+  if( m_nuclideSearch && (tab==searchTab) )
+    m_nuclideSearch->loadSearchEnergiesToClient();
   
   if( tab == calibtab )
   {
