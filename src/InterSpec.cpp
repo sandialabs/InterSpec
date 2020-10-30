@@ -3161,7 +3161,6 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       setToolTabsVisible( wasDocked );
 
     //Now start reloading the state
-    set<int> foregroundNums, backgroundNums, secondNums, otherSamples;
     std::shared_ptr<SpecMeas> foreground, second, background;
     std::shared_ptr<SpecMeas> snapforeground, snapsecond, snapbackground;
     std::shared_ptr<SpectraFileHeader> foregroundheader, backgroundheader,
@@ -3311,20 +3310,19 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( parent )
     
+    auto csvToInts = []( const string &str ) -> set<int> {
+      set<int> samples;
+      stringstream strm( str );
+      std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
+                std::inserter( samples, end(samples) ) );
+      return samples;
+    }; //csvToInts lambda
     
+    const set<int> foregroundNums = csvToInts( entry->foregroundSampleNumsCsvIds );
+    const set<int> secondNums     = csvToInts( entry->secondForegroundSampleNumsCsvIds );
+    const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
+    const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
     
-    stringstream strm( entry->foregroundSampleNumsCsvIds );
-    std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-               std::inserter( foregroundNums, foregroundNums.end() ) );
-    strm.str( entry->secondForegroundSampleNumsCsvIds );
-    std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-              std::inserter( secondNums, secondNums.end() ) );
-    strm.str( entry->backgroundSampleNumsCsvIds );
-    std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-              std::inserter( backgroundNums, backgroundNums.end() ) );
-    strm.str( entry->otherSpectraCsvIds );
-    std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-              std::inserter( otherSamples, otherSamples.end() ) );
     
     setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, false );
     if( foreground )
