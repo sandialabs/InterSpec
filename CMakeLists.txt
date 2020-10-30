@@ -1225,11 +1225,23 @@ if(APPLE AND NOT IOS)
 endif()
 
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
-    # Setting Xcode working directory requrires pretty new version of cmake, so leaving out for the momemt
-    #set_target_properties(InterSpecExe PROPERTIES
-    #    XCODE_GENERATE_SCHEME TRUE
-    #    XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-    #)
+    
+    # Setting Xcode working directory requires cmake 3.17
+    if( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+        set_target_properties(InterSpecExe PROPERTIES
+            XCODE_GENERATE_SCHEME TRUE
+            XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        )
+    endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+    
+    # Xcode stopped generating debug sybols by default recently, so force enable,
+    if( CMAKE_BUILD_TYPE MATCHES Debug )
+      target_compile_options(SpecUtils PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
+      target_compile_options(SandiaDecay PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
+      target_compile_options(minuit2 PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
+      target_compile_options(InterSpecLib PUBLIC $<$<CXX_COMPILER_ID:Clang>:-g> )
+      #Cuba-3.0, muparserx
+    endif( CMAKE_BUILD_TYPE MATCHES Debug )
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR MATCHES "Visual Studio") )
