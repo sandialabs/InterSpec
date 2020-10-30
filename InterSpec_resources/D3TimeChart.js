@@ -257,18 +257,20 @@ D3TimeChart = function (elem, options) {
     .style("left", this.margin.left + 20 + "px")
     .style("top", this.margin.top + "px");
 
-  // // add esc canceling
-  // document.onkeydown = function(evt) {
-  //   evt = evt || window.event;
-  //   if (evt.keyCode == 27) {
-  //       console.log('Esc key pressed.');
-  //       this.escapeKeyPressed = true;
-  //       var event = document.createEvent('DragEvent');
-  //       event.initEvent('dragend', true, true);
-  //       // var evt = new DragEvent("dragend")
-  //       d3.select(".interaction_area").select("rect").node().dispatchEvent(event);
-  //   }
-  // };
+  // add esc canceling
+  document.onkeydown = function (evt) {
+    evt = evt || window.event;
+    if (evt.key === "Escape") {
+      self.escapeKeyPressed = true;
+
+      d3.select("body").style("cursor", "auto");
+      self.mouseUpHighlight();
+    } else if (evt.key === "ArrowLeft") {
+      self.shiftSelection(-1);
+    } else if (evt.key === "ArrowRight") {
+      self.shiftSelection(1);
+    }
+  };
 }; //
 
 /** Function to help emit callbacks back to C++
@@ -304,7 +306,7 @@ D3TimeChart.prototype.WtEmit = function (elem, event) {
  */
 D3TimeChart.prototype.setData = function (data) {
   //See the c++ function D3TimeChart::setData()
-  // console.log(data);
+  console.log(data);
   if (!this.isValidData(data)) {
     console.log(
       "Runtime error in D3TimeChart.setData: Structure of data is not valid.\nDoing nothing..."
@@ -315,7 +317,7 @@ D3TimeChart.prototype.setData = function (data) {
     var formattedData = this.formatData(data);
 
     this.data = [formattedData];
-    // console.log(this.data);
+    console.log(this.data);
 
     // create inverted index of sample numbers for fast lookup.
     var sampleToIndex = {};
@@ -346,6 +348,43 @@ D3TimeChart.prototype.handleResize = function () {
   this.width = this.chart.clientWidth;
 
   this.render();
+};
+
+D3TimeChart.prototype.shiftSelection = function (n) {
+  if (this.selection) {
+    var { domain, compressionIndex } = this.selection;
+    var stepSize =
+      this.data[compressionIndex].meanIntervalTime *
+      n *
+      Math.pow(2, compressionIndex);
+
+    // compute shifted bound
+    var rightBound = this.data[0].domains.x[1];
+    var leftBound = this.data[0].domains.x[0];
+
+    if (domain[1] + stepSize > rightBound) {
+      var shiftAmount = rightBound - domain[1];
+      domain[1] = rightBound;
+      domain[0] += shiftAmount;
+    } else if (domain[0] + stepSize < leftBound) {
+      var shiftAmount = leftBound - domain[0];
+      domain[0] = leftBound;
+      domain[1] += shiftAmount;
+    } else {
+      domain[0] += stepSize;
+      domain[1] += stepSize;
+    }
+
+    this.selection.domain = domain;
+
+    var fullDomain = {
+      x: domain,
+      yGamma: this.data[compressionIndex].domains.yGamma,
+      yNeutron: this.data[compressionIndex].domains.yNeutron,
+    };
+    var scale = this.getScales(fullDomain);
+    this.updateChart(scale, compressionIndex, { transitions: false });
+  }
 };
 
 /**
@@ -462,6 +501,10 @@ D3TimeChart.prototype.render = function (options) {
     var drag = d3.behavior
       .drag()
       .on("dragstart", () => {
+        if (this.escapeKeyPressed) {
+          this.escapeKeyPressed = false;
+        }
+
         var coords = d3.mouse(this.rect.node());
         brush.setStart(coords[0]);
         d3.select("body").style("cursor", "move");
@@ -481,14 +524,10 @@ D3TimeChart.prototype.render = function (options) {
         }
       })
       .on("drag", () => {
-        if (this.escapeKeyPressed) {
-          //clear stuff
-          d3.select("body").style("cursor", "auto");
-          brush.clear();
-          this.mouseUpHighlight();
-        } else {
-          brush.setEnd(d3.mouse(this.rect.node())[0]);
+        if (!this.escapeKeyPressed) {
 
+          brush.setEnd(d3.mouse(this.rect.node())[0]);
+          
           if (this.highlightModifier === "ctrlKey") {
             // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
             if (brush.getEnd() < brush.getStart()) {
@@ -498,51 +537,52 @@ D3TimeChart.prototype.render = function (options) {
             }
           } else {
             var width =
-              brush.getScale()(brush.getEnd()) -
-              brush.getScale()(brush.getStart());
+            brush.getScale()(brush.getEnd()) -
+            brush.getScale()(brush.getStart());
             this.mouseMoveHighlight(width);
           }
         }
       })
       .on("dragend", () => {
-        if (this.escapeKeyPressed) {
-          // reset escape key
-          d3.select("body").style("cursor", "auto");
-          brush.clear();
-          this.mouseUpHighlight();
-          this.escapeKeyPressed = false;
-        } else {
-          d3.select("body").style("cursor", "auto");
-          // console.log(brush.extent());
-          var lIdx = this.findDataIndex(brush.extent()[0], 0);
-          var rIdx = this.findDataIndex(brush.extent()[1], 0);
-          // console.log([
-          //   this.data[0].sampleNumbers[lIdx],
-          //   this.data[0].sampleNumbers[rIdx],
-          // ]);
-          if (this.highlightModifier === "ctrlKey") {
-            this.handleBrushZoom(brush);
+        if (brush.extent() != null) {
+          if (this.escapeKeyPressed) {
+            // clear selections and reset escape key
+            brush.clear();
+            // this.mouseUpHighlight();
+            this.escapeKeyPressed = false;
           } else {
-            var keyModifierMap = {
-              altKey: 0x4,
-              shiftKey: 0x1,
-              none: 0x0,
-            };
-            this.WtEmit(
-              this.chart.id,
-              { name: "timedragged" },
-              this.data[0].sampleNumbers[lIdx],
-              this.data[0].sampleNumbers[rIdx],
-              keyModifierMap[this.highlightModifier] |
-                (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
-            );
+            d3.select("body").style("cursor", "auto");
+            // console.log(brush.extent());
+            var lIdx = this.findDataIndex(brush.extent()[0], 0);
+            var rIdx = this.findDataIndex(brush.extent()[1], 0);
+            // console.log([
+            //   this.data[0].sampleNumbers[lIdx],
+            //   this.data[0].sampleNumbers[rIdx],
+            // ]);
+            if (this.highlightModifier === "ctrlKey") {
+              this.handleBrushZoom(brush);
+            } else {
+              var keyModifierMap = {
+                altKey: 0x4,
+                shiftKey: 0x1,
+                none: 0x0,
+              };
+              this.WtEmit(
+                this.chart.id,
+                { name: "timedragged" },
+                this.data[0].sampleNumbers[lIdx],
+                this.data[0].sampleNumbers[rIdx],
+                keyModifierMap[this.highlightModifier] |
+                  (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
+              );
+            }
           }
-          // clear
-          this.mouseUpHighlight();
-          brush.clear();
-          this.highlightModifier = null;
-          this.shiftKeyHeld = false;
         }
+        // clear
+        this.mouseUpHighlight();
+        brush.clear();
+        this.highlightModifier = null;
+        this.shiftKeyHeld = false;
       });
 
     this.rect.call(drag);
@@ -675,6 +715,7 @@ D3TimeChart.prototype.updateChart = function (
 
   // update highlight region rendering
   if (this.regions) {
+    console.log(this.regions)
     var chart = this;
     this.highlightRegionsG.selectAll("rect").each(function (d, i) {
       var { startSample, endSample } = chart.regions[i];
@@ -687,17 +728,15 @@ D3TimeChart.prototype.updateChart = function (
       var rPixel = xScale(endTime);
 
       if (transitions) {
-
         d3.select(this)
-        .transition()
-        .duration(500)
-        .attr("x", lPixel)
-        .attr("width", rPixel - lPixel);
+          .transition()
+          .duration(500)
+          .attr("x", lPixel)
+          .attr("width", rPixel - lPixel);
       } else {
         d3.select(this)
-        .attr("x", lPixel)
-        .attr("width", rPixel - lPixel);
-
+          .attr("x", lPixel)
+          .attr("width", rPixel - lPixel);
       }
     });
   }
@@ -911,7 +950,6 @@ D3TimeChart.prototype.updateChart = function (
         .text(this.options.y2title);
     } // if (!axisLabelY2.empty())
   } // if (HAS_NEUTRON)
-
 };
 
 // HELPERS, CALLBACKS, AND EVENT HANDLERS //
