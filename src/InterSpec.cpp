@@ -214,14 +214,7 @@ std::string InterSpec::sm_writableDataDirectory = "";
 #endif  //if( not a webapp )
 
 
-
-#if( BUILD_AS_ELECTRON_APP && !USE_ELECTRON_NATIVE_MENU )
-  #define USE_ELECTRON_HTML_MENU 1
-#else
-  #define USE_ELECTRON_HTML_MENU 0
-#endif
-
-#if( USE_ELECTRON_HTML_MENU && BUILD_AS_ELECTRON_APP )
+#if( USE_ELECTRON_HTML_MENU )
 #include "js/ElectronHtmlMenu.js"
 #endif
 
@@ -906,7 +899,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_menuDiv->hide();
 #endif
   
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
   m_menuDiv->hide();
 #endif
   
@@ -2575,7 +2568,7 @@ void InterSpec::setFeatureMarkerOption( const FeatureMarkerType option, const bo
   
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->setFeatureMarkerOption( option, show );
-#elif( USE_FEATURE_MARKER_WIDGET || USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#elif( USE_FEATURE_MARKER_WIDGET || USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
   CanvasForDragging *overlay = m_spectrum->overlayCanvas();
   if( !overlay )
     return;
@@ -5026,7 +5019,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
 
   
   string menuname = "InterSpec";
-#if( !defined(__APPLE__) && BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( !defined(__APPLE__) && USING_ELECTRON_NATIVE_MENU )
   menuname = "File";
 #else
   if( isMobile )
@@ -5050,7 +5043,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
 
   PopupDivMenuItem *item = (PopupDivMenuItem *)0;
   
-#if( defined(__APPLE__) && BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( defined(__APPLE__) && USING_ELECTRON_NATIVE_MENU )
   PopupDivMenuItem *aboutitem = m_fileMenuPopup->createAboutThisAppItem();
   
   aboutitem->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
@@ -5213,7 +5206,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
         DownloadCurrentSpectrumResource *resource
                      = new DownloadCurrentSpectrumResource( i, j, this, item );
         
-#if( USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
         //If were using OS X native menus, we obviously cant relly on the
         //  browser responding to a click on an anchor; we also cant click the
         //  link of the PopupDivMenuItem itself in javascript, or we get a
@@ -5390,7 +5383,7 @@ if (isSupportFile())
     m_fileMenuPopup->addSeparator();
 #endif
 
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
   m_fileMenuPopup->addSeparator();
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Quit );
 #endif
@@ -6034,7 +6027,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 #endif //if(USE_SPECTRUM_CHART_D3)/else
 
     
-#if( USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)  )
+#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU  )
     cerr << "\n\n\nCompton angle not yet implemented for macOS or Electron Native Menus\n\n" << endl;
 #else
     cb = new WCheckBox( "Comp. Peak" );
@@ -6140,7 +6133,17 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     chartmenu->addSeparator();
   }//if( overlay )
   
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( BUILD_AS_ELECTRON_APP )
+  const bool useNativeMenu = InterSpecApp::isPrimaryWindowInstance();
+  if( useNativeMenu )
+  {
+    m_displayOptionsPopupDiv->addSeparator();
+    auto browserItem = chartmenu->addMenuItem( "Use in external browser" );
+    browserItem->clicked().connect( "function(){ ipcRenderer.send('OpenInExternalBrowser'); }" );
+  }//if( useNativeMenu )
+#endif //BUILD_AS_ELECTRON_APP
+  
+#if( USING_ELECTRON_NATIVE_MENU )
   m_displayOptionsPopupDiv->addSeparator();
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleFullscreen );
   m_displayOptionsPopupDiv->addSeparator();
@@ -6152,7 +6155,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
 #endif
 #endif
-} // void addDisplayMenu( menuParentDiv )
+}//void addDisplayMenu( menuParentDiv )
 
 
 void InterSpec::addDetectorMenu( WWidget *menuWidget )
@@ -7212,7 +7215,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::showDoseTool, this ) );
   
 //  item = popup->addMenuItem( Wt::WString::fromUTF8("1/r² Calculator") );  // is superscript 2
-#if( USE_OSX_NATIVE_MENU  || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
   item = popup->addMenuItem( Wt::WString::fromUTF8("1/r\x0032 Calculator") );  //works on OS X at least.
 #else
   item = popup->addMenuItem( Wt::WString::fromUTF8("1/r<sup>2</sup> Calculator") );
@@ -9125,7 +9128,7 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
       }
     }
     
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
 #if( !defined(WIN32) )
     //20190125: hmm, looks like detectors menu is behaving okay - I guess I fixed it somewhere else?
     //#warning "Need to do something to get rid of previous detectors from Electrons menu"
@@ -9182,7 +9185,7 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
     if( m_detectorToShowMenu )
     {
 #if( WT_VERSION>=0x3030300 )
-#if( USE_OSX_NATIVE_MENU  || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
       WCheckBox *cb = new WCheckBox( title );
       cb->setChecked( true );
       PopupDivMenuItem *item = m_detectorToShowMenu->addWidget( cb, false );

@@ -88,6 +88,11 @@ option(
     OFF
 )
 option(
+    USE_ELECTRON_HTML_MENU
+    "Customizes WMenu to act closer to OS application menu, and reduces size of application titlebar (implementation in progress)"
+    OFF
+)
+option(
     USE_HIGH_BANDWIDTH_INTERACTIONS
     "Allow more interactiveness with the charts"
     ON
@@ -359,11 +364,15 @@ if(BUILD_AS_ELECTRON_APP)
     set(SpecUtils_ENABLE_D3_CHART ON)
     set(USE_SPECTRUM_CHART_D3 ON)
     set(USE_SEARCH_MODE_3D_CHART ON)
-    if(APPLE)
-        set(USE_ELECTRON_NATIVE_MENU ON)
-    else(APPLE)
-        set(USE_ELECTRON_NATIVE_MENU OFF)
-    endif(APPLE)
+    if( (NOT USE_ELECTRON_NATIVE_MENU AND NOT USE_ELECTRON_HTML_MENU) OR (USE_ELECTRON_NATIVE_MENU AND USE_ELECTRON_HTML_MENU) )
+        if(APPLE)
+            set(USE_ELECTRON_NATIVE_MENU ON)
+            set(USE_ELECTRON_HTML_MENU OFF)
+        else(APPLE)
+            set(USE_ELECTRON_NATIVE_MENU OFF)
+            set(USE_ELECTRON_HTML_MENU ON)
+        endif(APPLE)
+    endif( (NOT USE_ELECTRON_NATIVE_MENU AND NOT USE_ELECTRON_HTML_MENU) OR (USE_ELECTRON_NATIVE_MENU AND USE_ELECTRON_HTML_MENU) )
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
 endif(BUILD_AS_ELECTRON_APP)
 
@@ -1100,12 +1109,18 @@ elseif(BUILD_AS_ELECTRON_APP)
         src/InterSpecServer.cpp
         target/electron/ElectronUtils.cpp
     )
+    
     list(
         APPEND
         headers
         InterSpec/InterSpecServer.h
         target/electron/ElectronUtils.h
     )
+    
+    if( USE_ELECTRON_HTML_MENU )
+        list( APPEND sources js/ElectronHtmlMenu.js )
+    endif( USE_ELECTRON_HTML_MENU )
+    
     add_library(InterSpecLib STATIC ${sources} ${headers})
 
     #set_property( TARGET InterSpecLib PROPERTY POSITION_INDEPENDENT_CODE ON )

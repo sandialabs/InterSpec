@@ -84,6 +84,10 @@ extern "C"
    sessions to open the files... ToDo: decide on this behaviour).
    */
   LIB_INTERFACE(int) interspec_open_file( const char *session_token, const char *files_json );
+
+  /** Returns if using the Electron-native menus.  If you are using the HTML-electron menu, will return false.
+   */
+  LIB_INTERFACE(bool) interspec_using_electron_menus();
 }//extern "C"
 
 #endif //#if( BUILD_AS_ELECTRON_APP )
@@ -91,7 +95,7 @@ extern "C"
 
 namespace ElectronUtils
 {
-#if( USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
   /** Requests main.js to load a new clean session (i.e., don restore any state)
    This is a workaround to when the user requests a new session, the normal
    mechanism in c++ creates duplicate Electron menu items...

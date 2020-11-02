@@ -187,12 +187,7 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   WServer::instance()->ioService().post( &DecayDataBaseServer::initialize );
  
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-  if( !checkExternalTokenFromUrl() )
-  {
-    new WText( "Invalid external token.", root() );
-    quit();
-    return;
-  }
+  checkExternalTokenFromUrl();
 #endif
   
   setupDomEnvironment();
@@ -212,7 +207,7 @@ InterSpecApp::~InterSpecApp()
 
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-bool InterSpecApp::checkExternalTokenFromUrl()
+void InterSpecApp::checkExternalTokenFromUrl()
 {
   const Http::ParameterMap &parmap = environment().getParameterMap();
   for( const Http::ParameterMap::value_type &p : parmap )
@@ -220,9 +215,6 @@ bool InterSpecApp::checkExternalTokenFromUrl()
     if( SpecUtils::iequals_ascii(p.first, "externalid") && !p.second.empty() )
       m_externalToken = p.second.front();
   }//for( const Http::ParameterMap::value_type &p : parmap )
-  
-  //ToDo: actually enforce the token being one of the allowed ones.
-  return true;
 }//bool checkExternalTokenFromUrl()
 #endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
 
@@ -234,7 +226,7 @@ void InterSpecApp::setupDomEnvironment()
   //  https://stackoverflow.com/questions/32621988/electron-jquery-is-not-defined
   doJavaScript( "if (typeof module === 'object') {window.module = module; module = undefined;}", false );
 
-#if( USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
   //Some support to use native menu...
   doJavaScript( "const { remote, ipcRenderer } = require('electron');const {Menu, MenuItem} = remote;", false );
 #else
@@ -377,7 +369,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     delete m_viewer;
     m_viewer = nullptr;
     
-#if( (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#if( USING_ELECTRON_NATIVE_MENU )
     //ToDo: need to clear out all the native menus...
 #elif( USE_OSX_NATIVE_MENU )
 #endif
@@ -776,7 +768,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     cerr << "Have started session " << sessionId() << " for user "
     << m_viewer->m_user->userName() << endl;
   
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
   if( !m_externalToken.empty() )
   {
     //ToDo: time if WTimer::singleShot or post() is better
@@ -879,6 +871,24 @@ std::string InterSpecApp::externalToken()
 }//const std::string &externalToken() const
 
 
+bool InterSpecApp::isPrimaryWindowInstance()
+{
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( !app )
+    return false;
+  
+  WApplication::UpdateLock lock(app);
+  if( !lock )
+    return false;
+  
+  const string &externalid = app->m_externalToken;
+  
+  //XXX - should compare externalid to ElectronUtils::external_id()
+  
+  return !externalid.empty();
+}//bool isPrimaryWindowInstance()
+
+
 InterSpecApp *InterSpecApp::instanceFromExtenalToken( const std::string &idstr )
 {
   if( idstr.empty() )
@@ -938,23 +948,6 @@ void InterSpecApp::dragEventWithFileContentsFinished()
 }
 #endif
 
-#if( BUILD_AS_ELECTRON_APP )
-bool InterSpecApp::isElectronInstance()
-{
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
-  if( !app )
-	return false;
-  WApplication::UpdateLock lock(app);
-  if( !lock )
-    return false;
-
-  const string externalid = app->externalToken();
-  
-  //XXX - should compare externalid to ElectronUtils::external_id()
-
-  return !externalid.empty();
-}
-#endif
 
 
 #if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
@@ -1201,7 +1194,7 @@ void InterSpecApp::prepareForEndOfSession()
 
 void InterSpecApp::clearSession()
 {
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
   //  sends websocket message to node land to clear menus, and load a new session
   //  but with argument "restore=no"
