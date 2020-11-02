@@ -40,6 +40,10 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WCssDecorationStyle>
 
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#include <Wt/WServer>
+#endif
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "SpecUtils/Filesystem.h"
@@ -350,6 +354,9 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     SpecUtils::ireplace_all( staticdir, "/", "\\" );
 #endif
     
+    auto server = WServer::instance();
+    const int httpPort = server ? server->httpPort() : 0;
+    
     const string style = "font-family: monospace;"
                          " background: white;"
                          " color: black;"
@@ -366,7 +373,13 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     "<p>The data that comes with InterSpec, such as nuclear decay info,"
     " cross-section, and similar is stored in"
     "<div style=\"" + style + "\">" + staticdir + "</div>"
-    "</p>";
+    "</p>"
+    
+    "<p>You can also use InterSpec from your browser at"
+    " (port number will change when you restart InterSpec):"
+    "<div style=\"" + style + "\">http://127.0.0.1:" + std::to_string(httpPort) + "</div>"
+    "</p>"
+    ;
   }else
   {
     contents = "Error retrieving directory data";

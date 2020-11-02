@@ -130,8 +130,13 @@ public:
   static std::string tempDirectory();
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-  /** Returns the token passed as part of url "" */
+  /** Returns the token passed as part of url.
+   e.g., if url looked like "localhost:8080?externalid=blah", then this function would return "blah"
+  */
   std::string externalToken();
+  
+  /** Returns true if this app instance corresponds to the primary window instance. */
+  static bool isPrimaryWindowInstance();
   
   static InterSpecApp *instanceFromExtenalToken( const std::string &externalToken );
 #endif
@@ -158,9 +163,6 @@ public:
   void dragEventWithFileContentsFinished();
 #endif
   
-#if( BUILD_AS_ELECTRON_APP )
-  static bool isElectronInstance();
-#endif
 
 #if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
   static void osThemeChange( std::string name );
@@ -197,7 +199,7 @@ public:
   //clearSession(): resets the session to a blank session (e.g. doesnt load
   //  any saved state).
   virtual void clearSession();
-  
+    
 protected: 
 
   //notify(): over-riding WApplication::notify inorder to catch any exceptions
@@ -217,12 +219,8 @@ protected:
   
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-  /** Checks for URL argument "externalid", and if found sets m_externalToken
-   to it.
-   Returns true if should load session.  False if should redirect.
-   ToDo: Some day will validate against allowed tokens...
-   */
-  bool checkExternalTokenFromUrl();
+  /** Checks for URL argument "externalid", and if found sets m_externalToken to it. */
+  void checkExternalTokenFromUrl();
 #endif
   
   //setupDomEnvironment(): loads required JS and CSS resource, sets the

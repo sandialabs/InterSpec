@@ -97,7 +97,12 @@ cmake ..
 ```
 
 If you are on Windows, or prefer a GUI, running the CMake for building InterSpec should be like
-most other CMake project; you will probably have to fill in paths to boost and Wt manually.
+most other CMake project; you will probably have to fill in paths to boost and Wt manually.  Or if
+you have boost or Wt in a non-standard location, you can use a command like:
+
+```
+cmake -DBUILD_AS_ELECTRON_APP=/path/to/prefix ..
+```
 
 
 And then make:

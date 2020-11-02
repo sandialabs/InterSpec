@@ -50,7 +50,7 @@ namespace ElectronUtils
 {
 
   
-#if( USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
 bool requestNewCleanSession()
 {
   auto app = dynamic_cast<InterSpecApp *>(wApp);
@@ -80,7 +80,7 @@ bool requestNewCleanSession()
 
   return false;
 }//void requestNewCleanSession()
-#endif //USE_ELECTRON_NATIVE_MENU
+#endif //USING_ELECTRON_NATIVE_MENU
   
 bool notifyNodeJsOfNewSessionLoad()
 {
@@ -229,6 +229,7 @@ int interspec_start_server( const char *process_name, const char *userdatadir,
   return InterSpecServer::portBeingServedOn();
 }//int interspec_start_server( int argc, char *argv[] )
 
+
 void interspec_add_allowed_session_token( const char *session_id )
 {
   InterSpecServer::add_allowed_session_token( session_id );
@@ -244,6 +245,18 @@ int interspec_remove_allowed_session_token( const char *session_token )
 int interspec_open_file( const char *session_token, const char *files_json )
 {
   return InterSpecServer::open_file_in_session( session_token, files_json );
+}
+
+
+bool interspec_using_electron_menus()
+{
+#if( USING_ELECTRON_HTML_MENU )
+  return false;
+#elif( USING_ELECTRON_NATIVE_MENU )
+  return true;
+#else
+  return false;
+#endif
 }
 
 void interspec_kill_server()

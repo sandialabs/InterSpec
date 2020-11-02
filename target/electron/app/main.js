@@ -226,6 +226,12 @@ function get_launch_options(){
 
 function doMenuStuff(currentwindow){
   console.log( 'Doing doMenuStuff' );
+  
+  if( !interspec.usingElectronMenus() ){
+    console.log( 'Not using ElectronMenus - bailing' );
+    return;
+  }
+  
   if( process.platform != 'darwin' )
     return;
 
@@ -682,6 +688,50 @@ app.on('ready', function(){
     console.log( timestamp + msg );
   } );
   
+  ipcMain.on('OpenInExternalBrowser', function(evt, token ){
+    console.log( `Will try to open ${interspec_url} in external browser` );
+    
+    electron.shell.openExternal(interspec_url);
+    console.log( `Should have opened external URL...` );
+    
+    /*
+     //The pure node way to do this is below - I think it can be deleted once the above is tested.
+    const { exec } = require('child_process');
+    let command = '';
+    
+    switch( process.platform )
+    {
+      case 'android':
+      case 'linux':
+        command =  `xdg-open ${interspec_url}`;
+        break;
+        
+      case 'darwin':
+        command = `open ${interspec_url}`;
+        break;
+        
+      case 'win32':
+        command `cmd /c start ${interspec_url}`;
+        break;
+        
+      default:
+        console.log( "Unsupported platform for opening URL" );
+        return;
+    }//switch( process.platform )
+    
+    exec( command, (error, stdout, stderr) => {
+      if (error)
+      {
+        console.log( 'Couldnt open InterSpec URL in external browser: ' + error );
+        return;
+      }
+      
+      console.log( `stdout: ${stdout}` );
+      console.log( `stderr: ${stderr}` );
+      console.log( `Have opened ${interspec_url} in external browser (hopefully)` );
+    } );
+    */
+  } );
   //"ServerKilled"
 });
 
