@@ -457,7 +457,7 @@ public:
   
   virtual Wt::Signal< Wt::WString, Wt::WString, int > &messageLogged();
   
-  void toggleToolTip( const bool sticky );
+  void toggleToolTip( const bool showToolTips );
   
   int paintedWidth() const;  //Depreciated
   int paintedHeight() const; //Depreciated //XXX Not correct due to all padding and stuff, but close

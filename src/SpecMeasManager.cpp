@@ -802,7 +802,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
 void  SpecMeasManager::startSpectrumManager()
 {
-    const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
     m_spectrumManagerWindow = new AuxWindow( "Spectrum Manager",
                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
@@ -826,7 +826,7 @@ void  SpecMeasManager::startSpectrumManager()
     {
       Wt::WPushButton* uploadButton = new Wt::WPushButton("File...",uploadDiv);
       uploadButton->clicked().connect(  this, &SpecMeasManager::uploadSpectrum );
-      HelpSystem::attachToolTipOn(uploadButton, "Import spectrum from file", showToolTipInstantly, HelpSystem::Bottom );
+      HelpSystem::attachToolTipOn(uploadButton, "Import spectrum from file", showToolTips, HelpSystem::ToolTipPosition::Bottom );
       uploadButton->setIcon( "InterSpec_resources/images/file_search.png" );
       uploadButton->setMargin(10,Wt::Left);
     } //isSupportFile()
@@ -834,7 +834,7 @@ void  SpecMeasManager::startSpectrumManager()
 #if( USE_DB_TO_STORE_SPECTRA )
     Wt::WPushButton* importButton = new Wt::WPushButton( "Previous...", uploadDiv );
   importButton->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles, this, SpecUtils::SpectrumType::Foreground ) );
-    HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTipInstantly , HelpSystem::Bottom);
+    HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTips , HelpSystem::ToolTipPosition::Bottom);
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
     importButton->setMargin(2,Wt::Left);
     

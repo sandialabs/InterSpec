@@ -1527,10 +1527,10 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
     m_interspec( specViewer ),
     m_fileModel( fileModel )
 {
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   HelpSystem::attachToolTipOn( this, "The currently selected detector.  Click to select a"
-                              " different detector, or modify this one.", showToolTipInstantly );
+                              " different detector, or modify this one.", showToolTips );
   
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
@@ -1631,7 +1631,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
 {
   wApp->useStyleSheet( "InterSpec_resources/DetectorEdit.css" );
   
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   setOverflow(Wt::WContainerWidget::OverflowAuto);
   WGridLayout *mainLayout = new WGridLayout();
@@ -1898,7 +1898,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_eqnEnergyGroup->checkedChanged().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
   m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
     
-  HelpSystem::attachToolTipOn( energyContainer,"Energy unit for efficiency formula" , showToolTipInstantly, HelpSystem::Top );
+  HelpSystem::attachToolTipOn( energyContainer,"Energy unit for efficiency formula" ,
+                              showToolTips, HelpSystem::ToolTipPosition::Top );
 
   cell = formulaTable->elementAt( 3, 0 );
   new WLabel("Description", cell );
@@ -2154,10 +2155,11 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_acceptButton->setFloatSide(Wt::Right);
     
     m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
-    HelpSystem::attachToolTipOn( m_cancelButton,"Remove all changes or selections made by this dialog, and close the dialog" , showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_cancelButton, "Remove all changes or selections made by this"
+                                 " dialog, and close the dialog" , showToolTips );
     
     m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
-    HelpSystem::attachToolTipOn( m_acceptButton, "Accept all changes/selections made and close dialog" , showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_acceptButton, "Accept all changes/selections made and close dialog" , showToolTips );
   }else
   {
     m_acceptButton = new WPushButton( "Use Detector", m_footer );

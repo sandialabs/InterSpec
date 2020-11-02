@@ -458,7 +458,9 @@ void ShieldingSelect::init()
   //TODO/NOTE: had to hard code this as false because there is no way
   //to easily get the preference via InterSpec because
   //is still initializing when calling at this moment.
-  const bool showToolTipInstantly = false;
+  bool showToolTips = false;
+  if( auto interspec = InterSpec::instance() )
+    showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", interspec );
   
   addStyleClass( "ShieldingSelect" );
   
@@ -484,7 +486,7 @@ void ShieldingSelect::init()
  
   HelpSystem::attachToolTipOn( m_toggleImage,
     "Toggle between material and generic shielding",
-    showToolTipInstantly, HelpSystem::Top );
+                              showToolTips, HelpSystem::ToolTipPosition::Top );
   
   materialDivLayout->addWidget( m_toggleImage, 0, 0, AlignMiddle );
   
@@ -500,7 +502,7 @@ void ShieldingSelect::init()
     " density of 0.5+0.2+0.6=1.3 g/cm3."
     " To enter materials with isotopic components, you should single or double"
     " quote the nuclide, ex: 'U238'0.2'U235'0.8",
-    showToolTipInstantly, HelpSystem::Top );
+                              showToolTips, HelpSystem::ToolTipPosition::Top );
 
   //  m_materialEdit->setTextSize( 22 );
   m_materialEdit->setWidth( 155 );
@@ -656,7 +658,7 @@ void ShieldingSelect::init()
                           " (which is assumed spherical), so self attenuation"
                           " and other factors are accounted for.";
 
-    HelpSystem::attachToolTipOn( m_asSourceCBs,tooltip, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_asSourceCBs,tooltip, showToolTips );
     m_fitMassFrac = new WCheckBox( "Fit Mass Fractions", m_asSourceCBs );
     m_fitMassFrac->hide();
     m_fitMassFrac->setInline( false );
@@ -1990,8 +1992,8 @@ void ShieldingSelect::handleMaterialChange()
 
 //NOTE: can't add tooltip to this, causes WT error when toggling.  Can't fix.
 //    InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-//    const bool showToolTipInstantly = true;//InterSpecUser::preferenceValue<bool>( "ShowTooltips", app->viewer() );
-//    HelpSystem::attachToolTipOn( this,tooltip, showToolTipInstantly );
+//    const bool showToolTips = true;//InterSpecUser::preferenceValue<bool>( "ShowTooltips", app->viewer() );
+//    HelpSystem::attachToolTipOn( this,tooltip, showToolTips );
     
     m_materialSummarry->setText( summary );
   }//if( generic material ) / else
@@ -4037,7 +4039,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 {
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSourceDisplay.css" );
   
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   setLayoutSizeAware( true );
   const bool isotopesHaveSameAge = true;
@@ -4168,7 +4170,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
             " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
             " 40inches and 15.6cm respectively.";
 
-  HelpSystem::attachToolTipOn( m_distanceEdit,tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_distanceEdit,tooltip, showToolTips );
 
 
 //  WContainerWidget *shieldingDiv = new WContainerWidget();
@@ -4180,7 +4182,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
             " the subsequent shieldings layered around that one.  Any sources"
             " not attributed as components of shieldings are treated as point"
             " sources in the center.";
-  HelpSystem::attachToolTipOn( m_shieldingSelects,tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_shieldingSelects,tooltip, showToolTips );
 
 #define  SPLIT_BUTTON_SHIELDING_ADD 0
 
@@ -4189,7 +4191,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   tooltip = "Adds a shielding that allows you to select from a database, or"
             " enter a chemical formula.  See drop down menu to add a generic"
             " shielding defined by atomic number and areal density.";
-  HelpSystem::attachToolTipOn( addShielding->actionButton(), tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( addShielding->actionButton(), tooltip, showToolTips );
   addShielding->actionButton()->setText( "Add Shielding" );
   addShielding->actionButton()->clicked()
                 .connect( this, &ShieldingSourceDisplay::doAddShielding );
@@ -4209,7 +4211,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_addMaterialShielding = new WPushButton( "Material" );
   HelpSystem::attachToolTipOn( m_addMaterialShielding,
               "Choose from a library of predefined common shielding materials.",
-              showToolTipInstantly, HelpSystem::Top  );
+                              showToolTips, HelpSystem::ToolTipPosition::Top  );
   //m_addMaterialShielding->setStyleClass("ShieldAddIcon");
   m_addMaterialShielding->setIcon( "InterSpec_resources/images/shield_white.png" );
   m_addMaterialShielding->clicked().connect( this,
@@ -4218,7 +4220,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_addGenericShielding = new WPushButton( "Generic" );
   HelpSystem::attachToolTipOn( m_addGenericShielding,
               "Allows you to define and fit for atomic number and areal density.",
-             showToolTipInstantly , HelpSystem::Top );
+                              showToolTips , HelpSystem::ToolTipPosition::Top );
   //m_addGenericShielding->setStyleClass("ShapeSquareAddIcon");
   m_addGenericShielding->setIcon( "InterSpec_resources/images/atom_white.png" );
   m_addGenericShielding->clicked().connect( this,

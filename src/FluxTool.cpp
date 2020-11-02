@@ -701,7 +701,7 @@ void FluxToolWidget::init()
   
   wApp->useStyleSheet( "InterSpec_resources/FluxTool.css" );
   
-  const bool showToolTipInstantly = m_interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
+  const bool showToolTips = m_interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
   
   addStyleClass( "FluxToolWidget" );
   
@@ -740,7 +740,7 @@ void FluxToolWidget::init()
                               " followed by units; valid units are: meters, m, cm, mm, km, feet,"
                               " ft, ', in, inches, or \".  You may also add multiple distances,"
                               " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
-                              " 40inches and 15.6cm respectively.", showToolTipInstantly );
+                              " 40inches and 15.6cm respectively.", showToolTips );
   m_distance->changed().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   m_distance->enterPressed().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   

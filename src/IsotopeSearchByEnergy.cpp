@@ -360,17 +360,16 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "nuclide-search-dialog" ) );
   buttonDivLayout->addWidget(helpBtn,1,0, Wt::AlignLeft | Wt::AlignBottom );
   
-  const bool showToolTipInstantly
-  = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   WLabel *label = new WLabel( "Min. BR" );
-//  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTipInstantly , HelpSystem::Top);
+//  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips , HelpSystem::ToolTipPosition::Top);
    buttonDivLayout->addWidget(label,1,1, Wt::AlignMiddle | Wt::AlignRight );
 
   m_minBranchRatio = new NativeFloatSpinBox();
   //m_minBranchRatio->setNativeControl(true);
   string tip = "Minimum branching ratio.";
-  HelpSystem::attachToolTipOn( m_minBranchRatio, tip, showToolTipInstantly , HelpSystem::Top);
+  HelpSystem::attachToolTipOn( m_minBranchRatio, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
   buttonDivLayout->addWidget(m_minBranchRatio,1,2);
 
   m_minBranchRatio->setWidth( 35 );
@@ -394,11 +393,11 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
     "specified, they are summed, e.x. '1y6months 3m' is interpreted as "
     "18 months and 3 minutes"
     "</div>";
-//    HelpSystem::attachToolTipOn( label, tip, showToolTipInstantly , HelpSystem::Top);
+//    HelpSystem::attachToolTipOn( label, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
 
   buttonDivLayout->addWidget(label,1,3, Wt::AlignMiddle | Wt::AlignRight );
   m_minHalfLife = new WLineEdit( "6000 s" );
-  HelpSystem::attachToolTipOn( m_minHalfLife, tip, showToolTipInstantly , HelpSystem::Top );
+  HelpSystem::attachToolTipOn( m_minHalfLife, tip, showToolTips , HelpSystem::ToolTipPosition::Top );
 
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, this );
   validator->setFlags(Wt::MatchCaseInsensitive);

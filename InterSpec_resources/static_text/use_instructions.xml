@@ -333,35 +333,37 @@ but menu items will be disabled if no background or secondary spectrum is loaded
 <message id='10desktop-shortcuts-desc'>
 
   <ul>
-    <li><b><code>Ctrl-L</code></b>: Switches spectrum y-axis between log and linear.</li>
     <li>
-      <b><code>Ctrl-S</code></b>: Switches to the &quot;<em><u>S</u>pectrum Files</em>&quot; tab, or
+      <b><code>Ctrl-s</code></b>: Switches to the &quot;<em><u>S</u>pectrum Files</em>&quot; tab, or
       if <em>Tool Tabs</em> are hidden, shows the <em>Spectrum Files</em> tool.
     </li>
     <li>
-      <b><code>Ctrl-P</code></b>: Switches to the &quot;<em><u>P</u>eak Manager</em>&quot; tab, or
+      <b><code>Ctrl-p</code></b>: Switches to the &quot;<em><u>P</u>eak Manager</em>&quot; tab, or
       shows the tool.
     </li>
     <li>
-      <b><code>Ctrl-R</code></b>: Switches to the &quot;<em><u>R</u>eference Photopeaks</em>&quot;
+      <b><code>Ctrl-r</code></b>: Switches to the &quot;<em><u>R</u>eference Photopeaks</em>&quot;
       tab, or shows the tool.
     </li>
     <li>
-      <b><code>Ctrl-E</code></b>: Switches to the &quot;<em><u>E</u>nergy Calibration</em>&quot;
+      <b><code>Ctrl-e</code></b>: Switches to the &quot;<em><u>E</u>nergy Calibration</em>&quot;
       tab, or shows the tool.
     </li>
     <li>
-      <b><code>Ctrl-N</code></b>: Switches to the &quot;<em><u>N</u>uclide Search</em>&quot; tab,
+      <b><code>Ctrl-n</code></b>: Switches to the &quot;<em><u>N</u>uclide Search</em>&quot; tab,
       or shows the tool.
     </li>
     <li>
-      <b><code>Ctrl-H</code></b>: Shows the in-app <em><u>H</u>elp</em>.
+      <b><code>Ctrl-h</code></b>: Shows the in-app <em><u>H</u>elp</em>.
     </li>
     <li>
-      <b><code>Ctrl-I</code></b>: Shows the <em>Welcome <u>I</u>nformation</em> screen.
+      <b><code>Ctrl-i</code></b>: Shows the <em>Welcome <u>I</u>nformation</em> screen.
     </li>
     <li>
-      <b><code>Ctrl-C</code></b>: <u>C</u>lears all showing reference lines.
+      <b><code>Ctrl-l</code></b>: Switches spectrum y-axis between <u>l</u>og and <u>l</u>inear.
+    </li>
+    <li>
+      <b><code>Ctrl-c</code></b>: <u>C</u>lears all showing reference lines.
     </li>
   </ul>
 </message>

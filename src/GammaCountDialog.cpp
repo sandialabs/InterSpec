@@ -123,8 +123,7 @@ void GammaCountDialog::init()
   if( !m_specViewer )
     throw runtime_error( "GammaCountDialog: you must pass in valid InterSpec pointer" );
  
-  const bool showToolTipInstantly
-         = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   WGridLayout *layout = new WGridLayout();
   contents()->setLayout( layout );
@@ -172,8 +171,8 @@ void GammaCountDialog::init()
                         " difference between the foreground and the (scaled) background,"
                         " divided by the uncertainty. The uncertainty is calculated by"
                         " summing the statistical uncertainties of the foreground and background in"
-                        " quadrature, then taking the squareroot";
-  HelpSystem::attachToolTipOn( m_nsigmaHelp, tooltip, true, HelpSystem::Right );
+                        " quadrature, then taking the square root";
+  HelpSystem::attachToolTipOn( m_nsigmaHelp, tooltip, true, HelpSystem::ToolTipPosition::Right );
 
   WLabel *label = NULL;
   WText *text = NULL;
@@ -228,11 +227,11 @@ void GammaCountDialog::init()
     const char *txt = "Press <b>Enter</b> after typing in the energy";
 //    text = new WText( txt, XHTMLText );
 //    layout->addWidget( text, ++row, 0, 1, 3, AlignCenter );
-      HelpSystem::attachToolTipOn(m_lowerEnergy, txt, showToolTipInstantly);
-      HelpSystem::attachToolTipOn(m_upperEnergy, txt, showToolTipInstantly);
+      HelpSystem::attachToolTipOn(m_lowerEnergy, txt, showToolTips);
+      HelpSystem::attachToolTipOn(m_upperEnergy, txt, showToolTips);
 //    txt = "If you manually type an energy you will need to either press enter,"
 //          " or click another field before changes take effect.";
-//    HelpSystem::attachToolTipOn( contents(), txt, showToolTipInstantly );
+//    HelpSystem::attachToolTipOn( contents(), txt, showToolTips );
   }//if( !ismobile )
   
   layout->setColumnStretch( 1, 1 );

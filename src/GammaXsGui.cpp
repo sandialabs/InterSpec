@@ -84,7 +84,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout = new WGridLayout();
   setLayout( m_layout );
 
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
 
   m_energyEdit = new WLineEdit( "100" );
   m_energyValidator = new WDoubleValidator( 1.0, 10000.0, m_energyEdit );
@@ -112,7 +112,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   " preceding element.";
   
   label = new WLabel( "Material/mass-formula" );
-  HelpSystem::attachToolTipOn( label, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_materialEdit = new WLineEdit( "C0.5H0.2Ni0.3" );
   m_materialEdit->changed().connect( this, &GammaXsGui::handleMaterialChange );
@@ -120,7 +120,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 //  m_materialEdit->focussed().connect( this, &GammaXsGui::handleMaterialChange );
   m_materialEdit->blurred().connect( this, &GammaXsGui::handleMaterialChange );
 
-  HelpSystem::attachToolTipOn( m_materialEdit, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_materialEdit, tooltip, showToolTips );
   
   
   m_layout->addWidget( m_materialEdit, row, 1, 1, 2 );
@@ -240,8 +240,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_distance->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
   m_distance->focussed().connect( this, &GammaXsGui::calculateCrossSections );
   m_distance->blurred().connect( this, &GammaXsGui::calculateCrossSections );
-  HelpSystem::attachToolTipOn( m_distance, "Thickness of the attenuator.",
-                               showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_distance, "Thickness of the attenuator.", showToolTips );
   
   ++row;
   label = new WLabel( "Trans. Frac." );
@@ -250,11 +249,11 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( m_transmissionFraction, row, 1, 1, 2 );
   
 //  HelpSystem::attachToolTipOn( label,"This is the fraction of gammas that will make it through"
-//                                     " the specified shielding.", showToolTipInstantly );
+//                                     " the specified shielding.", showToolTips );
   
   HelpSystem::attachToolTipOn( m_transmissionFraction,
     "This is the fraction of gammas that will make it through the specified"
-    " shielding.", showToolTipInstantly );
+    " shielding.", showToolTips );
   m_layout->setColumnStretch( 1, row );
 
   ++row;
@@ -270,10 +269,10 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_detectorDistance = new WLineEdit("2 cm");
   m_detectorDistance->setValidator( distValidator );
   m_layout->addWidget( m_detectorDistance, row, 1, 1, 2 );
-//  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"This is the distance of the selected detector.", showToolTipInstantly );
+//  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"This is the distance of the selected detector.", showToolTips );
   HelpSystem::attachToolTipOn( m_detectorDistance,
     "This is the distance from the source center to the detector.",
-    showToolTipInstantly );
+                              showToolTips );
   
   m_detectorDistance->changed().connect( this, &GammaXsGui::updateDetectorCalc );
   m_detectorDistance->enterPressed().connect( this, &GammaXsGui::updateDetectorCalc );
@@ -287,10 +286,10 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_intrinsicEfficiency = new WText();
   m_layout->addWidget( m_intrinsicEfficiency, row, 1, 1, 2 );
   
-//  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Intrinsic efficiency (in-peak detection efficiency of gammas striking detector face).", showToolTipInstantly );
+//  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Intrinsic efficiency (in-peak detection efficiency of gammas striking detector face).", showToolTips );
   HelpSystem::attachToolTipOn( m_intrinsicEfficiency,
     "Intrinsic efficiency (in-peak detection efficiency of gammas striking"
-    " detector face).", showToolTipInstantly );
+    " detector face).", showToolTips );
   
   ++row;
   ++detectorCount;
@@ -299,10 +298,10 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_fractionalAngle = new WText();
   m_layout->addWidget( m_fractionalAngle, row, 1, 1, 2 );
   
-//  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Fractional solid angle of the selected detector at specified distance." , showToolTipInstantly );
+//  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Fractional solid angle of the selected detector at specified distance." , showToolTips );
   HelpSystem::attachToolTipOn( m_fractionalAngle,
     "Fractional solid angle of the selected detector at specified distance.",
-    showToolTipInstantly );
+                              showToolTips );
   
   
   ++row;
@@ -315,11 +314,11 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],
     "Intrinsic efficiency times solid angle fraction. E.g. the fraction of"
     " gammas making it out of the shielding that will be detected.",
-    showToolTipInstantly );
+                              showToolTips );
   HelpSystem::attachToolTipOn( m_efficiency,
     "Intrinsic efficiency times the solid angle fraction. E.g. the fraction of"
     " gammas making it out of the shielding that will be detected. Does not"
-    " include attenuation." , showToolTipInstantly );
+    " include attenuation." , showToolTips );
   
   
   ++row;
@@ -330,11 +329,11 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout->addWidget( m_totalEfficiency, row, 1, 1, 2 );
   
   HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],
-    "Transmition fraction times detection efficiency." , showToolTipInstantly );
+    "Transmition fraction times detection efficiency." , showToolTips );
   HelpSystem::attachToolTipOn( m_totalEfficiency,
     "Transmition fraction times detection efficiency. E.g. the fraction of"
     " gammas emmitted from the source that will be detected.",
-    showToolTipInstantly );
+                              showToolTips );
   
   m_specViewer->detectorChanged().connect( this, &GammaXsGui::handleDetectorChange );
   m_specViewer->detectorModified().connect( this, &GammaXsGui::handleDetectorChange );

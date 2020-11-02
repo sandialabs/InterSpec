@@ -78,7 +78,7 @@ OneOverR2Calc::OneOverR2Calc()
   WTableCell *cell = layoutTable->elementAt( 0, 0 );
   WText *label = new WText( "Near Measurement Intensity:", cell );
   
-  //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTipInstantly );
+  //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTips );
   
   cell = layoutTable->elementAt( 0, 1 );
   m_nearMeasurement = new WDoubleSpinBox( cell );

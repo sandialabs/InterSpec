@@ -228,7 +228,7 @@ DoseCalcWindow::~DoseCalcWindow()
 class GammaSourceEnter : public Wt::WContainerWidget
 {
 public:
-  GammaSourceEnter( const bool showToolTipInstantly, Wt::WContainerWidget *parent )
+  GammaSourceEnter( const bool showToolTips, Wt::WContainerWidget *parent )
    : WContainerWidget( parent ),
      m_nuclideEdit( 0 ),
      m_nuclideAgeEdit( 0 ),
@@ -300,7 +300,7 @@ public:
   
     string tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, "
                      "<b>U-235m</b> (meta stable state), <b>Cs137</b>, etc.";
-    HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTips );
     
     
     WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
@@ -328,7 +328,7 @@ public:
       "18 months and 3 minutes"
     "</div>";
     
-    HelpSystem::attachToolTipOn( m_nuclideAgeEdit, tooltip, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_nuclideAgeEdit, tooltip, showToolTips );
   }//GammaSourceEnter constructor
   
   
@@ -793,7 +793,7 @@ void DoseCalcWidget::init()
   }//try / catch
   
   const bool isPhone = m_viewer->isPhone();
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
   WContainerWidget *enterDiv = new WContainerWidget();
@@ -902,7 +902,7 @@ void DoseCalcWidget::init()
     m_neutronSourceCombo->addItem( "U238" );
     m_neutronSourceCombo->activated().connect( this, &DoseCalcWidget::updateResult );
     
-    m_gammaSource = new GammaSourceEnter( showToolTipInstantly, m_gammaSourceDiv );
+    m_gammaSource = new GammaSourceEnter( showToolTips, m_gammaSourceDiv );
     m_gammaSource->changed().connect( this, &DoseCalcWidget::updateResult );
   }
   
@@ -1093,7 +1093,7 @@ void DoseCalcWidget::init()
             " followed by units; valid units are: meters, m, cm, mm, km, feet,"
             " ft, ', in, inches, or \".  You may also add multiple distances,"
             " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
-            " 40inches and 15.6cm respectively.", showToolTipInstantly );
+            " 40inches and 15.6cm respectively.", showToolTips );
         
         m_distanceEnter->changed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
         m_distanceEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );

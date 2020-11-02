@@ -420,8 +420,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     throw runtime_error( "ReferencePhotopeakDisplay: a valid chart"
                          " must be passed in" );
 
-  const bool showToolTipInstantly
-      = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   //The inputDiv/Layout is the left side of the widget that holds all the
   //  nuclide input,age, color picker, DRF, etc
@@ -464,7 +463,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 //  m_nuclideEdit->selected().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
   m_persistLines = new WPushButton( "Add Another" );
   tooltip = "Keep the currently displayed lines and add a new nuclide/source to display.";
-  HelpSystem::attachToolTipOn( m_persistLines, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_persistLines, tooltip, showToolTips );
   m_persistLines->clicked().connect( this, &ReferencePhotopeakDisplay::persistCurentLines );
   m_persistLines->disable();
   
@@ -480,7 +479,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (x-rays only)"
             ", <b>Uranium</b> (x-rays), <b>U-235m</b> (meta stable state)"
             ", <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, etc.";
-  HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTips );
   
   string replacerJs, matcherJs;
   IsotopeNameFilterModel::replacerJs( replacerJs );
@@ -553,12 +552,12 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   "18 months and 3 minutes"
   "</div>";
   
-  HelpSystem::attachToolTipOn( m_ageEdit, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_ageEdit, tooltip, showToolTips );
   
   
   tooltip = "Clears all persisted lines, as well as the current non-persisted"
   " lines.";
-  HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTips );
   
   
   m_promptLinesOnly = new WCheckBox( "Prompt Only" );  //ɣ
@@ -567,7 +566,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   tooltip = "Gammas from only the original nuclide, and the daughters until one"
             " of them has a longer half-life than the original nuclide; the"
             " decay chain is in equilirium till that point.";
-  HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTips );
 //m_promptLinesOnly->setHiddenKeepsGeometry( true );  // causes display to function badly; why?
   m_promptLinesOnly->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_promptLinesOnly->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
@@ -603,9 +602,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   //tooltip = "The minimum relative gamma amplitude to display; the most intense"
   //          " gamma ray will have value 1.0.  Amplitude is calculated after"
   //          " the optional shielding and detector effects are applied.";
-  //HelpSystem::attachToolTipOn( minAmpLabel, tooltip, showToolTipInstantly );
+  //HelpSystem::attachToolTipOn( minAmpLabel, tooltip, showToolTips );
   //m_lowerBrCuttoff = new WDoubleSpinBox();
-  //HelpSystem::attachToolTipOn( m_lowerBrCuttoff, tooltip, showToolTipInstantly );
+  //HelpSystem::attachToolTipOn( m_lowerBrCuttoff, tooltip, showToolTips );
   //m_lowerBrCuttoff->setValue( 0.0 );
   //m_lowerBrCuttoff->setSingleStep( 0.01 );
   //m_lowerBrCuttoff->setRange( 0.0, 1.0 );
@@ -634,7 +633,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   //m_fitPeaks = new WPushButton( "Fit Peaks" );
   //tooltip = "Fits dominant peaks for primary nuclide";
-  //HelpSystem::attachToolTipOn( m_fitPeaks, tooltip, showToolTipInstantly );
+  //HelpSystem::attachToolTipOn( m_fitPeaks, tooltip, showToolTips );
   //m_fitPeaks->clicked().connect( this, &ReferencePhotopeakDisplay::fitPeaks );
   //inputLayout->addWidget( m_fitPeaks, 2, 2 );
   //m_fitPeaks->disable();
@@ -668,7 +667,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   HelpSystem::attachToolTipOn( whatToShow, "If checked, selection will be shown.  Gammas and "
                           "x-rays are shown in the table and on the chart, "
                           "alphas and betas only in the table.",
-                          showToolTipInstantly );
+                              showToolTips );
   whatToShow->hide(); //(20190408): Ehh, not sure these are actually useful, btu not sure, so keeping around, just hidden for a while, and then we can delete them
   
   m_showGammas->setChecked();
