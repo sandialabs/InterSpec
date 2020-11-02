@@ -1377,7 +1377,7 @@ string jsfct = "function(s,e){"
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
   const char *tooltip = "Recursively searches sub-directories or the selected directory.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   
   m_recursive = item->checkBox();
   if( !m_recursive ) //This shouldnt ever happen, but JIC
@@ -1427,12 +1427,12 @@ string jsfct = "function(s,e){"
 
   item = m_optionsMenu->addWidget( maxFileSizeDiv );
   tooltip = "Maximum size of file to attempt to parse as a spectrum file.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   
   item = m_optionsMenu->addMenuItem( "pre-filter by extension" );
   item->setCheckable( true );
   tooltip = "Eliminates common file types (ex. zip, doc, avi, etc) from search to speed results up.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   m_filterByExtension = item->checkBox();
   if( !m_filterByExtension ) //shouldnt ever happen
   {
@@ -1448,7 +1448,7 @@ string jsfct = "function(s,e){"
   item = m_optionsMenu->addMenuItem( "filter duplicate files" );
   item->setCheckable( true );
   tooltip = "Filters duplicate spectrum files through use of a hash of spectral and meta-information.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   m_filterUnique = item->checkBox();
   if( !m_filterUnique ) //shouldnt ever happen
   {
@@ -1468,7 +1468,7 @@ string jsfct = "function(s,e){"
   item = m_optionsMenu->addMenuItem( "cache parse result" );
   item->setCheckable( true );
   tooltip = "Allows caching spectrum file parsing results for much faster subsequent searches of the same directory if you change search criteria.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   m_cacheParseResults = item->checkBox();
   if( !m_cacheParseResults ) //shouldnt ever happen
   {
@@ -1486,7 +1486,7 @@ string jsfct = "function(s,e){"
   item->setCheckable( true );
   tooltip = "Saves the results of parse caching to a file in the directory selected to be searched."
             " This allows the caching to persist across usages of this tool and InterSpec.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   m_persistCacheResults = item->checkBox();
   if( !m_persistCacheResults ) //shouldnt ever happen
   {

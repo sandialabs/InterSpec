@@ -1515,7 +1515,7 @@ void MakeDrf::startSaveAs()
   const char *tooltip = "Name of the detector response function to save to <em>InterSpecs</em>"
                         " internal database so you can use the response function later."
                         "  Name must be a valid filename (e.g., no \\\\, /, :, etc. characters).";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   cell = table->elementAt(1, 0);
   label = new WLabel( "Description", cell );
@@ -1529,7 +1529,7 @@ void MakeDrf::startSaveAs()
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Optional description of the DRF to help remind yourself of details when you use the DRF in the future.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   std::shared_ptr<const SpecMeas> representative_meas;
   
@@ -1572,7 +1572,7 @@ void MakeDrf::startSaveAs()
       tooltip = "Make it so when spectra from a detector with a matching serial"
                 " number is loaded into InterSpec, this detector response function"
                 " will automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
     }//if( serial_number.size() )
     
     string model;
@@ -1593,7 +1593,7 @@ void MakeDrf::startSaveAs()
       tooltip = "Make it so when spectra from this model detector is loaded"
                 " into InterSpec, this detector response function will"
                 " automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
     }//if( !model.empty() )
   }//if( representative_meas )
   
@@ -1612,7 +1612,7 @@ void MakeDrf::startSaveAs()
             "  Source and shielding information is also usually stored into the file as well to,"
             " in principal, except for detector diameter and equation orders,"
             " provide all the input information used to create the DRF.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
@@ -1652,7 +1652,7 @@ void MakeDrf::startSaveAs()
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Exports the DRF into a CSV file that contains all of the information of the DRF."
             " Especially useful for using with other tools.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   
   WPushButton *b = w->addCloseButtonToFooter( "Cancel" );

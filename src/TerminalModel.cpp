@@ -274,7 +274,12 @@ namespace {
     class PeakFunction : public mup::ICallback
     {
     public:
-        PeakFunction(TerminalModel *model, const char* funName) :ICallback(mup::cmFUNC, funName, std::string(funName) == "peakGauss" ? 3 : 1), tm(model), functionName(funName) {};
+        PeakFunction(TerminalModel *model, const char* funName)
+          : ICallback(mup::cmFUNC, funName, std::string(funName) == "peakGauss" ? 3 : 1),
+            tm(model),
+            functionName(funName),
+            functionName_energy_arg( std::string(funName) + "( energy )")
+      {};
         
         virtual void Eval( mup::ptr_val_type& ret, const mup::ptr_val_type* argv, int a_iArgc ) {
             if ( functionName == "peakGauss" ) {
@@ -293,8 +298,10 @@ namespace {
             else if ( functionName == "peakChi2Dof" ) *ret = tm->peakChi2dof( arg );
         }
         const mup::char_type* GetDesc() const {
-            if ( functionName == "peakGauss" ) return std::string("peakGauss( energy, x0, x1 )").c_str();
-            else                                 return std::string(functionName + std::string("( energy )")).c_str();
+            if( functionName == "peakGauss" )
+              return "peakGauss( energy, x0, x1 )";
+            else
+              return functionName_energy_arg.c_str();
         }
         std::string tags() const {
             if      ( functionName == "peakArea" )    return "areas peaks peak area";
@@ -317,7 +324,11 @@ namespace {
             else                                      return "";
         }   
         mup::IToken* Clone() const { return new PeakFunction(*this); }
-    private: TerminalModel *tm; std::string functionName;
+    
+    private:
+      TerminalModel *tm;
+      std::string functionName;
+      std::string functionName_energy_arg;
     };
     
     
@@ -337,7 +348,11 @@ namespace {
         GammaAtFunction(TerminalModel *model, const char* funName)
         :ICallback(mup::cmFUNC, funName,
                    std::string(funName) == "gammaSum" || std::string(funName) == "gammaIntegral" ? 2 : std::string(funName) == "numGammas" || std::string(funName) == "gammaMin" || std::string(funName) == "gammaMax" ? 0 : 1),
-        tm(model), functionName(funName) {};
+        tm(model),
+        functionName(funName),
+        functionName_no_arg( std::string(funName) + "()" ),
+        functionName_energy_arg( std::string(funName) + "( energy )" )
+      {};
         
         virtual void Eval( mup::ptr_val_type& ret, const mup::ptr_val_type* argv, int a_iArgc ) {
             const bool functionHasTwoArgs = functionName == "gammaSum" || functionName == "gammaIntegral";
@@ -370,8 +385,8 @@ namespace {
             
             if ( functionName == "gammaSum" )              return "gammaSum( start_bin, end_bin )";
             else if ( functionName == "gammaIntegral" )    return "gammaIntegral( energy_low, energy_high )";
-            else if ( functionHasNoArgs )                   return std::string( functionName + "()" ).c_str();
-            else                                            return std::string( functionName + "( energy )" ).c_str();
+            else if ( functionHasNoArgs )                   return functionName_no_arg.c_str();
+            else                                            return functionName_energy_arg.c_str();
         }
         std::string tags() const {
             if      ( functionName == "gammaChannel" )   return "gammas channels gamma_channels";
@@ -402,7 +417,11 @@ namespace {
             else                                         return "";
         }
         mup::IToken* Clone() const { return new GammaAtFunction(*this); }
-    private: TerminalModel *tm; std::string functionName;
+    private:
+      TerminalModel *tm;
+      std::string functionName;
+      std::string functionName_no_arg;
+      std::string functionName_energy_arg;
     };
     
     class GammaForFunction : public mup::ICallback
@@ -411,7 +430,11 @@ namespace {
         GammaForFunction(TerminalModel *model, const char* funName)
         :ICallback(mup::cmFUNC, funName,
                    std::string(funName) == "gammaSumFor" || std::string(funName) == "gammaIntegralFor" ? 3 : std::string(funName) == "numGammasFor" || std::string(funName) == "gammaMinFor" || std::string(funName) == "gammaMaxFor" ? 1 : 2),
-        tm(model), functionName(funName) {};
+        tm(model),
+      functionName_spectrum_arg( std::string(funName) + "( spectrum )" ),
+      functionName_spec_energy_arg( std::string(funName) + "( spectrum, energy )" ),
+      functionName(funName)
+      {};
         
         virtual void Eval( mup::ptr_val_type& ret, const mup::ptr_val_type* argv, int a_iArgc ) {
             const bool functionHasThreeArgs = functionName == "gammaSumFor" || functionName == "gammaIntegralFor";
@@ -447,8 +470,8 @@ namespace {
             
             if ( functionName == "gammaSumFor" )              return "gammaSumFor( spectrum, start_bin, end_bin )";
             else if ( functionName == "gammaIntegralFor" )    return "gammaIntegralFor( spectrum, energy_low, energy_high )";
-            else if ( functionHasOneArg )                   return std::string( functionName + "( spectrum )" ).c_str();
-            else                                            return std::string( functionName + "( spectrum, energy )" ).c_str();
+            else if ( functionHasOneArg )                   return functionName_spectrum_arg.c_str();
+            else                                            return functionName_spec_energy_arg.c_str();
         }
         std::string tags() const {
             if      ( functionName == "gammaChannelFor" )   return "gammas channels gamma_channels for spectrum spectra";
@@ -479,7 +502,11 @@ namespace {
             else                                         return "";
         }
         mup::IToken* Clone() const { return new GammaForFunction(*this); }
-    private: TerminalModel *tm; std::string functionName;
+    private:
+      TerminalModel *tm;
+      std::string functionName;
+      std::string functionName_spectrum_arg;
+      std::string functionName_spec_energy_arg;
     };
     
     

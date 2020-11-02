@@ -903,7 +903,7 @@ void PeakInfoDisplay::init()
   assert( !m_infoView );
   assert( !m_infoLayout );
 
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   m_infoLayout = new WGridLayout();
   setLayout( m_infoLayout );
@@ -1017,12 +1017,13 @@ void PeakInfoDisplay::init()
   //m_searchForPeaks->setMargin(WLength(7),Wt::Left);
   //m_searchForPeaks->setMargin(WLength(3),Wt::Bottom);
   HelpSystem::attachToolTipOn( m_searchForPeaks, "Search for peaks using the automated peak finding "
-                              "algorithm.", showToolTipInstantly, HelpSystem::Top  );
+                              "algorithm.", showToolTips, HelpSystem::ToolTipPosition::Top  );
   m_searchForPeaks->clicked().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, m_viewer, true ) );
 
   
   WPushButton *clearPeaksButton = new WPushButton( "Clear all Peaks", buttonDiv );
-  HelpSystem::attachToolTipOn( clearPeaksButton, "Removes <b>all</b> existing peaks.", showToolTipInstantly, HelpSystem::Top  );
+  HelpSystem::attachToolTipOn( clearPeaksButton, "Removes <b>all</b> existing peaks.",
+                              showToolTips, HelpSystem::ToolTipPosition::Top  );
   
   //clearPeaksButton->setMargin(WLength(2),Wt::Left);
   clearPeaksButton->clicked().connect( this, &PeakInfoDisplay::confirmRemoveAllPeaks );
@@ -1037,7 +1038,7 @@ void PeakInfoDisplay::init()
                               "Assign peak nuclides from reference lines showing. Only applies to "
                               "peaks which do not already have a nuclide associated "
                               "with them." ,
-                              showToolTipInstantly , HelpSystem::Top );
+                              showToolTips , HelpSystem::ToolTipPosition::Top );
   nucFromRefButton->clicked().connect( boost::bind( &PeakInfoDisplay::assignNuclidesFromRefLines, this ) );
   nucFromRefButton->disable();
   
@@ -1061,7 +1062,7 @@ void PeakInfoDisplay::init()
                               "Guess nuclides responsible for peaks. Only applies to "
                               "peaks which do not already have a nuclide associated "
                               "with them.  Works best once all peaks have been fit for." ,
-                              showToolTipInstantly , HelpSystem::Top );
+ showToolTips , HelpSystem::ToolTipPosition::Top );
   button->clicked().connect( boost::bind( &InterSpec::guessIsotopesForPeaks, m_viewer, (WApplication *)0 ) );
 */
   
@@ -1097,12 +1098,12 @@ void PeakInfoDisplay::init()
   }else
   {
     WPushButton *addPeak = new WPushButton( "Add...", buttonDiv );
-    HelpSystem::attachToolTipOn( addPeak, "Manually add a new peak.", showToolTipInstantly, HelpSystem::Top );
+    HelpSystem::attachToolTipOn( addPeak, "Manually add a new peak.", showToolTips, HelpSystem::ToolTipPosition::Top );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
     addPeak->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
     
     WPushButton *delPeak = new WPushButton( "Delete", buttonDiv );
-    HelpSystem::attachToolTipOn( delPeak, "Deletes peak currently being edited.", showToolTipInstantly, HelpSystem::Top  );
+    HelpSystem::attachToolTipOn( delPeak, "Deletes peak currently being edited.", showToolTips, HelpSystem::ToolTipPosition::Top  );
     delPeak->setHiddenKeepsGeometry( true );
     delPeak->clicked().connect( this, &PeakInfoDisplay::deleteSelectedPeak );
     delPeak->setIcon( "InterSpec_resources/images/minus_min_white.png" );
@@ -1164,7 +1165,7 @@ void PeakInfoDisplay::init()
   m_model->layoutChanged().connect( std::bind(enableDisableCsv) );
   
   HelpSystem::attachToolTipOn( csvButton,"Export information about the identified peaks to a "
-                              "comma seperated format.", showToolTipInstantly );
+                              "comma seperated format.", showToolTips );
 #endif
   
 }//init()

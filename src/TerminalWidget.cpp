@@ -115,7 +115,7 @@ TerminalWidget::TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
   m_commandmenu->setHeight( 125 );
   m_commandmenu->addWidget( m_commandsearch );
     
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
     
   for ( const TerminalModel::CommandHelperTuple s : m_model->commandsFunctionsList() ) {            // initialize the command menu with commands
       const std::string& name = std::get<0>(s),
@@ -130,7 +130,7 @@ TerminalWidget::TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
       else {
         Wt::WMenuItem* item = m_commandmenu->addItem( name );
         if ( !toolTip.empty() )
-            HelpSystem::attachToolTipOn( item, toolTip, showToolTipInstantly );
+            HelpSystem::attachToolTipOn( item, toolTip, showToolTips );
         m_commandMenuItems.push_back( MenuItemTuple(item, tags, toolTip ) );
       }
   }
@@ -322,10 +322,10 @@ void TerminalWidget::commandMenuSearchInput()
                            toolTip = std::get<2>( m_commandMenuItems.at(index) ),
                            searchRegex = searchToRegexLiteral( search );
         
-        const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+        const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
         
         if ( !toolTip.empty() )
-            HelpSystem::attachToolTipOn( menuItem, toolTip, showToolTipInstantly );
+            HelpSystem::attachToolTipOn( menuItem, toolTip, showToolTips );
         
         const bool itemMatched = std::regex_search( menuItemText, std::regex( searchRegex, std::regex_constants::icase ) ) ||
                           std::regex_search( tags, std::regex( searchRegex, std::regex_constants::icase ) );

@@ -81,8 +81,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   std::shared_ptr<DataBaseUtils::DbSession> sql = hostViewer->sql();
 #endif
   
-  const bool showToolTipInstantly
-            = InterSpecUser::preferenceValue<bool>( "ShowTooltips", hostViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", hostViewer );
   
   WGridLayout *layout = 0;
   WTabWidget  *tabWidget = 0;
@@ -213,7 +212,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
                                   "Factor to scale the spectrum by. Entering an"
                                   " empty string will cause spectrum to be live"
                                   " time normalized to foreground spectrum.",
-                                  showToolTipInstantly );
+                                  showToolTips );
       
       WLabel *label = new WLabel( "Scale Factor:" );
       slidelayout->addWidget( label, 0, 0, AlignLeft | AlignMiddle );
@@ -244,8 +243,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
                            ". You may enter a range of sample numbers similar"
                            " to '33-39' or '33 to 39'; or CSV sample numbers"
                            " like '34,39,84'";
-    HelpSystem::attachToolTipOn( edit, tooltip, showToolTipInstantly,
-                                   HelpSystem::Bottom );
+    HelpSystem::attachToolTipOn( edit, tooltip, showToolTips, HelpSystem::ToolTipPosition::Bottom );
     
 
     m_displaySampleNumEdits[typeindex]->setTextSize( 6 );
@@ -349,7 +347,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       const char *tooltip = "";
       
       WText *note = new WText( msg );
-      HelpSystem::attachToolTipOn( this, tooltip, showToolTipInstantly );
+      HelpSystem::attachToolTipOn( this, tooltip, showToolTips );
       //setToolTip( tooltip );
 
       

@@ -1571,9 +1571,9 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   "</div>";
 //  m_displayTimeLength->setToolTip( tooltip );
   
-  const bool showToolTipInstantly = m_viewer ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
+  const bool showToolTips = m_viewer ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
   if( m_viewer )
-    HelpSystem::attachToolTipOn( m_displayTimeLength, tooltip, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_displayTimeLength, tooltip, showToolTips );
   
   WLabel *yaxisTypeLabel = new WLabel( isPhone ? "Y-Axis:" : "Y-Axis Type:", displOptUpper );
   yaxisTypeLabel->addStyleClass( "DecayChartYaxisTypeLabel" );

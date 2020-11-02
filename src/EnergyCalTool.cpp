@@ -901,7 +901,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   
   
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setVerticalSpacing( 0 );
@@ -995,7 +995,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     m_moreActions[static_cast<int>(index)]->clicked().connect( boost::bind(&EnergyCalTool::moreActionBtnClicked, this, index) );
     
     if( tooltip )
-      HelpSystem::attachToolTipOn( holder, tooltip, showToolTipInstantly );
+      HelpSystem::attachToolTipOn( holder, tooltip, showToolTips );
   }//for( loop over more actions )
   
   WContainerWidget *btndiv = new WContainerWidget();
@@ -1015,7 +1015,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   HelpSystem::attachToolTipOn( m_fitCalBtn, "Uses the expected energy of photopeaks "
   "associated with the fit peaks to fit for the energy coefficients.  This button is disabled if no"
   " coefficients are selected to fit for, or less peaks than coefficents are selected.",
-  showToolTipInstantly );
+                              showToolTips );
   
   
   
@@ -2647,9 +2647,8 @@ void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
     m_graphicalRecal = nullptr;
   }//if( m_graphicalRecal )
   
-  const bool showToolTipInstantly
-  = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
-  if( showToolTipInstantly )
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  if( showToolTips )
   {
 #if( USE_SPECTRUM_CHART_D3 )
     m_interspec->logMessage( "If you recalibrate again by ALT+CTRL+DRAG on"
@@ -2662,7 +2661,7 @@ void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
                             " option of preserving the effects of this calibration"
                             " as well.", "", 1 );
 #endif
-  }//if( showToolTipInstantly )
+  }//if( showToolTips )
 }//void deleteGraphicalRecalConfirmWindow()
 
 

@@ -5016,8 +5016,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   if( m_fileMenuPopup )
     return;
 
-  const bool showToolTipInstantly
-         = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
   WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
@@ -5081,7 +5080,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   if( m_fileManager )
   {
     item = m_fileMenuPopup->addMenuItem( "Manager...", "InterSpec_resources/images/file_manager_small.png" );
-    HelpSystem::attachToolTipOn(item, "Manage loaded spectra", showToolTipInstantly );
+    HelpSystem::attachToolTipOn(item, "Manage loaded spectra", showToolTips );
     
     item->triggered().connect( m_fileManager, &SpecMeasManager::startSpectrumManager );
     
@@ -5094,13 +5093,13 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     // --- new save menu ---
     m_saveState = m_fileMenuPopup->addMenuItem( save_txt );
     m_saveState->triggered().connect( boost::bind( &InterSpec::stateSave, this ) );
-    HelpSystem::attachToolTipOn(m_saveState, "Saves the current app state to InterSpecs database", showToolTipInstantly );
+    HelpSystem::attachToolTipOn(m_saveState, "Saves the current app state to InterSpecs database", showToolTips );
     
     
     // --- new save as menu ---
     m_saveStateAs = m_fileMenuPopup->addMenuItem( save_as_txt );
     m_saveStateAs->triggered().connect( boost::bind( &InterSpec::stateSaveAs, this ) );
-    HelpSystem::attachToolTipOn(m_saveStateAs, "Saves the current app state to a new listing in InterSpecs database", showToolTipInstantly );
+    HelpSystem::attachToolTipOn(m_saveStateAs, "Saves the current app state to a new listing in InterSpecs database", showToolTips );
     m_saveStateAs->setDisabled( true );
     
     // --- new save tag menu ---
@@ -5109,7 +5108,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     
     HelpSystem::attachToolTipOn(m_createTag, "Tags the current Interspec state so you "
                                 "can revert to at a later time.  When loading an app state, "
-                                "you can choose either the most recent save, or select past tagged versions.", showToolTipInstantly );
+                                "you can choose either the most recent save, or select past tagged versions.", showToolTips );
     
     m_fileMenuPopup->addSeparator();
     
@@ -5117,7 +5116,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     item->triggered().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
                                             m_fileManager,
                                             SpecUtils::SpectrumType::Foreground ) );
-    HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTipInstantly );
+    HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTips );
     
     if( isMobile )
     {
@@ -5132,7 +5131,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
 
   item = m_fileMenuPopup->addMenuItem( "Clear Session..." );
   item->triggered().connect( this, &InterSpec::startClearSession );
-  HelpSystem::attachToolTipOn(item, "Starts a clean application state with no spectra loaded", showToolTipInstantly );
+  HelpSystem::attachToolTipOn(item, "Starts a clean application state with no spectra loaded", showToolTips );
   m_fileMenuPopup->addSeparator();
   
   
@@ -5188,7 +5187,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
       tip += " Drag and drop the file directly into the app window as a quicker alternative.";
     
     item = m_fileMenuPopup->addMenuItem( "Open File..." );
-    HelpSystem::attachToolTipOn( item, tip, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( item, tip, showToolTips );
     item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
   } //!isSupportFile
   
@@ -5333,7 +5332,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
         const bool showInstantly = true;
         if( tooltip )
           HelpSystem::attachToolTipOn( item, tooltip, showInstantly,
-                              HelpSystem::Right, HelpSystem::CanDelayShowing );
+                                      HelpSystem::ToolTipPosition::Right );
       }//for( loop over file types )
       
       m_downloadMenus[static_cast<int>(i)]->disable();
@@ -5368,18 +5367,18 @@ if (isSupportFile())
   PopupDivMenu* testing = m_fileMenuPopup->addPopupMenuItem( "Testing" , "InterSpec_resources/images/testing.png");
   item = testing->addMenuItem( "Store App Test State..." );
   item->triggered().connect( boost::bind( &InterSpec::startStoreTestStateInDb, this ) );
-  HelpSystem::attachToolTipOn(item,"Stores app state as part of the automated test suite", showToolTipInstantly );
+  HelpSystem::attachToolTipOn(item,"Stores app state as part of the automated test suite", showToolTips );
   
   item = testing->addMenuItem( "Restore App Test State..." );
   item->triggered().connect( boost::bind(&InterSpec::browseDatabaseStates, this, true) );
-  HelpSystem::attachToolTipOn(item, "Restores InterSpec to a previously stored state.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn(item, "Restores InterSpec to a previously stored state.", showToolTips );
   
   item = testing->addMenuItem( "Load N42 Test State..." );
   item->triggered().connect( boost::bind(&InterSpec::startN42TestStates, this) );
   HelpSystem::attachToolTipOn(item, "Loads a InterSpec specific variant of a "
                                     "2012 N42 file that contains Foreground, "
                                     "Background, User Settings, and Shielding/"
-                                    "Source model.", showToolTipInstantly );
+                                    "Source model.", showToolTips );
   
   item = testing->addMenuItem( "Show Testing Widget..." );
   item->triggered().connect( boost::bind(&InterSpec::startStateTester, this ) );
@@ -5412,11 +5411,11 @@ void InterSpec::addToolsTabToMenuItems()
   if( m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::RefPhotopeaks)] )
     return;
   
-  bool showToolTipInstantly = false;
+  bool showToolTips = false;
   
   try
   {
-    showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+    showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   }catch(...)
   {
   }
@@ -5435,7 +5434,7 @@ void InterSpec::addToolsTabToMenuItems()
   item->triggered().connect( boost::bind( &InterSpec::showGammaLinesWindow, this ) );
   tooltip = "Allows user to display x-rays and/or gammas from elements, isotopes, or nuclear reactions."
             " Also provides user with a shortcut to change detector and account for shielding.";
-  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::RefPhotopeaks)] = item;
   
 #if( IOS || ANDROID )
@@ -5446,7 +5445,7 @@ void InterSpec::addToolsTabToMenuItems()
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 1, PeakInfoTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showPeakInfoWindow );
   tooltip = "Provides shortcuts to search for and identify peaks. Displays parameters of all fit peaks in a sortable table.";
-  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::PeakManager)] = item;
   
 #if( IOS || ANDROID )
@@ -5460,7 +5459,7 @@ void InterSpec::addToolsTabToMenuItems()
             " as well as edit non-linear deviation pairs.<br />"
             "Energy calibration can also be done graphically by right-click dragging the spectrum from original to modified energy"
             " (e.g., drag the data peak to the appropriate reference line).";
-  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::EnergyCal)] = item;
   
 #if( IOS || ANDROID )
@@ -5472,7 +5471,7 @@ void InterSpec::addToolsTabToMenuItems()
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 3, NuclideSearchTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showNuclideSearchWindow);
   tooltip = "Search for nuclides with constraints on energy, branching ratio, and half life.";
-  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NuclideSearch)] = item;
 
   
@@ -5581,7 +5580,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //WMenuItem * peakManTab =
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
 //    const char *tooltip = "Displays parameters of all identified peaks in a sortable table.";
-//    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTipInstantly, HelpSystem::Top );
+//    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
 //    peakManTab->setIcon("InterSpec_resources/images/peakmanager.png");
     
     if( m_referencePhotopeakLines )
@@ -5613,7 +5612,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 //                            "elements, isotopes, or nuclear reactions. Also "
 //                            "provides user with a shortcut to change detector "
 //                            "and account for shielding.";
-//      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTipInstantly, HelpSystem::Top );
+//      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
       //refPhotoTab->setIcon("InterSpec_resources/images/reflines.png");
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
@@ -5690,7 +5689,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->addTab( m_nuclideSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
 //    const char *tooltip = "Search for nuclides with constraints on energy, "
 //                          "branching ratio, and half life.";
-//    HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTipInstantly, HelpSystem::Top );
+//    HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
     //nuclideTab->setIcon("InterSpec_resources/images/magnifier.png");
 //    if( m_nuclideSearch )
@@ -5800,8 +5799,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     throw runtime_error( "InterSpec::addDisplayMenu(): parent passed in"
                         " must be a PopupDivMenu  or WContainerWidget" );
  
-  const bool showToolTipInstantly
-         = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   if( menuDiv )
   {
@@ -5982,7 +5980,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_mapMenuItem->disable();
   HelpSystem::attachToolTipOn( m_mapMenuItem,
                     "Show measurment(s) location on a Google Map. Only enabled"
-                    " when GPS coordinates are available.", showToolTipInstantly );
+                    " when GPS coordinates are available.", showToolTips );
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -5990,7 +5988,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_searchMode3DChart->triggered().connect( boost::bind( &InterSpec::create3DSearchModeChart, this ) );
   m_searchMode3DChart->disable();
   HelpSystem::attachToolTipOn( m_searchMode3DChart,
-                        "Shows Time vs. Energy vs. Counts view for search mode or RPM data.", showToolTipInstantly );
+                        "Shows Time vs. Energy vs. Counts view for search mode or RPM data.", showToolTips );
 #endif
   
   addDetectorMenu( m_displayOptionsPopupDiv );
@@ -6004,7 +6002,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     m_featureMarkerMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Feature Markers...", "", true );
     HelpSystem::attachToolTipOn( m_featureMarkerMenuItem,
                     "Tool to show single/double escape peaks, Compton peak, Compton Edge, and sum peaks",
-                     showToolTipInstantly );
+                                showToolTips );
     m_featureMarkerMenuItem->triggered().connect( this, &InterSpec::toggleFeatureMarkerWindow );
 #else
     string js;
@@ -6021,7 +6019,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 
     HelpSystem::attachToolTipOn(item, "Show energy of single and double escapes at"
                      " E-511 keV and E-1022 keV after a pair creation"
-                     " event happened in the detector", showToolTipInstantly );
+                     " event happened in the detector", showToolTips );
     
     cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::EscapePeakMarker, true ) );
     cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::EscapePeakMarker, false ) );
@@ -6045,7 +6043,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 
     HelpSystem::attachToolTipOn(item, "Show energy of photons which compton scattered"
                      " through the given angle before reaching the"
-                     " detector", showToolTipInstantly );
+                     " detector", showToolTips );
     WContainerWidget *angleDiv = new WContainerWidget( item );
     angleDiv->clicked().preventPropagation();
     angleDiv->clicked().preventDefaultAction();
@@ -6093,7 +6091,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 
     HelpSystem::attachToolTipOn(item, "Maximum energy detected (&#952; = 180 &#176;) for photon which"
                      " interacted once in the detector via a compton"
-                     " interaction", showToolTipInstantly );
+                     " interaction", showToolTips );
     
     cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonEdgeMarker, true ) );
     cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonEdgeMarker, false ) );
@@ -6111,7 +6109,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     item = submenu->addWidget( cb );
     
     HelpSystem::attachToolTipOn(item, "Energy of peak due to random summing of coincident"
-                     " photopeak gammas.", showToolTipInstantly );
+                     " photopeak gammas.", showToolTips );
     
     cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::SumPeakMarker, true ) );
     cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::SumPeakMarker, false ) );
@@ -6537,26 +6535,24 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   m_helpMenuPopup->addSeparator();
   PopupDivMenu *subPopup = m_helpMenuPopup->addPopupMenuItem( "Options", "InterSpec_resources/images/cog_small.png" );
     
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   const bool autoStore = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
   WCheckBox *cb = new WCheckBox( " Automatically store session" );
   cb->setChecked( autoStore );
   item = subPopup->addWidget( cb );
-  HelpSystem::attachToolTipOn( item, "Automatically stores app state", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Automatically stores app state", showToolTips );
   InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this, false );
   
 
   if( !isMobile() )
   {
-    WCheckBox *checkbox = new WCheckBox( " Instant tooltips" );
+    WCheckBox *checkbox = new WCheckBox( " Show tooltips" );
     item = subPopup->addWidget( checkbox );
-    checkbox->setChecked( showToolTipInstantly );
+    checkbox->setChecked( showToolTips );
     HelpSystem::attachToolTipOn( item,
-                                "Instant tooltips show up immediately and is helpful for beginners "
-                                "to understand how to use InterSpec.  Advanced users are recommended"
-                                " to turn this off, causing tooltips to show only after a 1 second"
-                                " delay." , true, HelpSystem::Right, HelpSystem::CanDelayShowing );
+                                "Show tooltips after hovering over an element for half a second."
+                                , true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
     InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this, false );
@@ -6573,7 +6569,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                  " new spectrum.  Only applies if new spectrum"
                                  " doesnt have any peaks, but previous"
                                  " foreground did.",
-                                 true, HelpSystem::Right, HelpSystem::CanDelayShowing );
+                                 true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
     InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this, false );
@@ -6584,7 +6580,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     WCheckBox *checkbox = new WCheckBox( " Display in Becquerel" );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, "Display activity in units of becquerel, rather than curie.",
-                                 true, HelpSystem::Right, HelpSystem::CanDelayShowing );
+                                 true, HelpSystem::ToolTipPosition::Right );
     InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this, false );
   }//end add "DisplayBecquerel"
   
@@ -6600,7 +6596,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     const char *smoothzoomtext = "Smooth zooming out and panning of spectrum.";
 #endif
     
-    HelpSystem::attachToolTipOn( item, smoothzoomtext, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( item, smoothzoomtext, showToolTips );
     InterSpecUser::associateWidget( m_user, "SmoothZoomPan", highBWCb, this, false );
     highBWCb->checked().connect( this, &InterSpec::enableSmoothChartOperations );
     highBWCb->unChecked().connect( this, &InterSpec::disableSmoothChartOperations );
@@ -6618,13 +6614,13 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   WCheckBox *promptOnLoad = new WCheckBox( "Prompt to load prev state" );
   item = subPopup->addWidget( promptOnLoad );
   const char *prompttext = "At application start, ask to load previous state.";
-  HelpSystem::attachToolTipOn( item, prompttext, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, prompttext, showToolTips );
   InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this, false );
   
   WCheckBox *doLoad = new WCheckBox( "Load prev state on start" );
   item = subPopup->addWidget( doLoad );
   const char *doloadtext = "At application start, automatically load previous state, if not set to be prompted";
-  HelpSystem::attachToolTipOn( item, doloadtext, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, doloadtext, showToolTips );
   InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this, false );
 #endif
   
@@ -6637,18 +6633,17 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 }//void addAboutMenu( Wt::WContainerWidget *menuDiv )
 
 
-void InterSpec::toggleToolTip( const bool sticky )
+void InterSpec::toggleToolTip( const bool showToolTips )
 {
   //update all existing qtips
-  const char *delay = sticky ? "0" : "1000";
-  const char *keyPressHide = sticky ? "" : " keypress";
-
-  char buffer[248];  //only need about 149 characters
-  snprintf( buffer, sizeof(buffer),
-           "$('.qtip-rounded.delayable').qtip('option', 'show.delay', %s);"
-           "$('.qtip-rounded.delayable').qtip('option', 'hide.event', 'mouseleave focusout%s' );",
-           delay, keyPressHide );
-  wApp->doJavaScript( buffer );
+  if( showToolTips )
+  {
+    wApp->doJavaScript( "$('.qtip-rounded.canDisableTt').qtip('option', 'show.event', 'mouseenter focus');" );
+  }else
+  {
+    wApp->doJavaScript( "$('.qtip-rounded.canDisableTt').qtip('option', 'show.event', '');" );
+  }
+  
 }//void toggleToolTip( const bool sticky )
 
 
@@ -7177,7 +7172,7 @@ void InterSpec::handleTerminalWindowClose()
 void InterSpec::addToolsMenu( Wt::WWidget *parent )
 {
   
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
   WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
@@ -7202,18 +7197,18 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   PopupDivMenuItem *item = NULL;
 
   item = popup->addMenuItem( "Activity/Shielding Fit" );
-  HelpSystem::attachToolTipOn( item,"Allows advanced input of shielding material and activity around source isotopes to improve the fit." , showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows advanced input of shielding material and activity around source isotopes to improve the fit." , showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
   
   item = popup->addMenuItem( "Gamma XS Calc", "" );
-  HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <code>InterSpec</code>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <code>InterSpec</code>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showGammaXsTool, this ) );
     
     
   item = popup->addMenuItem( "Dose Calc", "" );
   HelpSystem::attachToolTipOn( item,
       "Allows you to compute dose, activity, shielding, or distance, given the"
-      " other pieces of information.", showToolTipInstantly );
+      " other pieces of information.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showDoseTool, this ) );
   
 //  item = popup->addMenuItem( Wt::WString::fromUTF8("1/r² Calculator") );  // is superscript 2
@@ -7224,49 +7219,49 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->makeTextXHTML();
 #endif
   
-  HelpSystem::attachToolTipOn( item,"Allows user to use two dose measurements taken at different distances from a source to determine the absolute distance to the source from the nearer measurement.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to use two dose measurements taken at different distances from a source to determine the absolute distance to the source from the nearer measurement.", showToolTips );
   
   item->triggered().connect( this, &InterSpec::createOneOverR2Calculator );
 
   item = popup->addMenuItem( "Units Converter" );
-  HelpSystem::attachToolTipOn( item, "Convert radiation-related units.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Convert radiation-related units.", showToolTips );
   item->triggered().connect( this, &InterSpec::createUnitsConverterTool );
   
   item = popup->addMenuItem( "Flux Tool" );
-  HelpSystem::attachToolTipOn( item,"Converts detectred peak counts, to gammas emitted by the source.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Converts detectred peak counts, to gammas emitted by the source.", showToolTips );
   item->triggered().connect( this, &InterSpec::createFluxTool );
   
   item = popup->addMenuItem( "Nuclide Decay Info" );
-  HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTips );
   item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
 
   
   item = popup->addMenuItem( "Detector Response Select" );
-  HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showDetectorEditWindow, this ) );
   
   item = popup->addMenuItem( "Make Detector Response" );
-  HelpSystem::attachToolTipOn( item, "Create detector response function from characterization data.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Create detector response function from characterization data.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showMakeDrfWindow, this ) );
 
   
   item = popup->addMenuItem( "File Parameters" );
-  HelpSystem::attachToolTipOn( item,"Allows user to view/edit the file parameters. If ever the application is unable to render activity calculation, use this tool to provide parameters the original file did not provide; <code>InterSpec</code> needs all parameters for activity calculation.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to view/edit the file parameters. If ever the application is unable to render activity calculation, use this tool to provide parameters the original file did not provide; <code>InterSpec</code> needs all parameters for activity calculation.", showToolTips );
   item->triggered().connect( this, &InterSpec::createFileParameterWindow );
 
   item = popup->addMenuItem( "Energy Range Sum" );
-  HelpSystem::attachToolTipOn( item, "Sums the number of gammas in region of interest (ROI). Can also be accessed by left-click dragging over the ROI while holding both the <kbd><b>ALT</b></kbd> and <kbd><b>SHIFT</b></kbd> keys.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Sums the number of gammas in region of interest (ROI). Can also be accessed by left-click dragging over the ROI while holding both the <kbd><b>ALT</b></kbd> and <kbd><b>SHIFT</b></kbd> keys.", showToolTips );
   item->triggered().connect( this, &InterSpec::showGammaCountDialog );
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   item = popup->addMenuItem( "File Query Tool" );
-  HelpSystem::attachToolTipOn( item, "Searches through a directory (recursively) for spectrum files that match specafiable conditions.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Searches through a directory (recursively) for spectrum files that match specafiable conditions.", showToolTips );
   item->triggered().connect( this, &InterSpec::showFileQueryDialog );
 #endif
   
 #if( USE_TERMINAL_WIDGET )
   m_terminalMenuItem = popup->addMenuItem( "Math/Command Terminal" );
-  HelpSystem::attachToolTipOn( m_terminalMenuItem, "Creates a terminal that provides numeric and algebraic computations, as well as allowing text based interactions with the spectra.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_terminalMenuItem, "Creates a terminal that provides numeric and algebraic computations, as well as allowing text based interactions with the spectra.", showToolTips );
   m_terminalMenuItem->triggered().connect( this, &InterSpec::createTerminalWidget );
 #endif
 }//void InterSpec::addToolsMenu( Wt::WContainerWidget *menuDiv )
@@ -8780,10 +8775,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   if( spec_type==SpecUtils::SpectrumType::Foreground && !!m_dataMeasurement
       && m_dataMeasurement->passthrough() )
   {
-    const bool showToolTipInstantly
-                 = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
-    if( showToolTipInstantly )
+    if( showToolTips )
     {
       const char *tip = "Clicking and dragging on the time-series (bottom)"
       " chart, will change the time range the energy spectrum"
@@ -8796,7 +8790,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       " but for the background if it is the same spectrum"
       " file as the foreground.";
       passMessage( tip, "", WarningWidget::WarningMsgInfo );
-    }//if( showToolTipInstantly )
+    }//if( showToolTips )
   }//if( passthrough foreground )
 }//void setSpectrum(...)
 
