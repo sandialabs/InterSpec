@@ -22,8 +22,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 /**
- * Constructor for SampleData Objects
- * @param realTime: value of a time measurement "endpoint" (x)
+ * Constructor for DataPoint objects. Represents a single point in the time history chart.
+ * @param time: time of measurement (x)
  * @param gammaCPS: gamma counts per second (y)
  * @param neutronCPS: neutron counts per second (y)
  */
@@ -62,14 +62,32 @@ DetectorMetaData.prototype.setNeutronColor = function (neutronColor) {
   this.isNeutronDetector = true;
 };
 
+DataDomains = function (xDomain, yGammaDomain, yNeutronDomain) {
+  this.xDomain = xDomain;
+  this.yGammaDomain = yGammaDomain;
+  this.yNeutronDomain = yNeutronDomain;
+};
+
+DataDomains.prototype.setXDomain = function (xDomain) {
+  this.xDomain = xDomain;
+};
+
+DataDomains.prototype.setYGammaDomain = function (yGammaDomain) {
+  this.yGammaDomain = yGammaDomain;
+};
+
+DataDomains.prototype.setYNeutronDomain = function (yNeutronDomain) {
+  this.yNeutronDomain = yNeutronDomain;
+};
+
 /**
- * Constructor for rudimentary 1-dimensional brush along x direction
+ * Constructor for rudimentary 1-dimensional brush along x direction. Used to map mouse selection ranges to the data domain.
+ * @param scale: a D3 scale object that sets the x-scale associated with this brush
  */
-BrushX = function (scale, domain) {
+BrushX = function (scale) {
   this.start = undefined;
   this.end = undefined;
   this.scale = scale;
-  this.domain = domain;
 };
 
 /**
@@ -122,7 +140,6 @@ BrushX.prototype.setStart = function (startCoord) {
     scaledCoord = domain[1];
   }
   this.start = scaledCoord;
-  return this;
 };
 
 BrushX.prototype.getStart = function () {
@@ -148,7 +165,6 @@ BrushX.prototype.setEnd = function (endCoord) {
     scaledCoord = domain[1];
   }
   this.end = scaledCoord;
-  return this;
 };
 
 BrushX.prototype.getEnd = function () {
@@ -195,7 +211,7 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.minSelectionWidth !== "number")
     this.options.minSelectionWidth = 8;
 
-  this.data = undefined; // formatted data
+  this.data = undefined;
   this.selection = undefined;
   this.height = undefined;
   this.width = undefined;
@@ -207,7 +223,7 @@ D3TimeChart = function (elem, options) {
     left: 60,
   };
 
-  // map<integer, string> (i.e. array) of source integer code to string.
+  // map<integer, string> (i.e. array) of source integer code to string. 0 == IntrinsicActivity, 1== Calibration, 2 == Background, 3 == Foreground, 4 == Unknown
   this.sourceMap = [
     "IntrinsicActivity",
     "Calibration",
@@ -302,30 +318,34 @@ D3TimeChart.prototype.WtEmit = function (elem, event) {
 
 /**
  * Sets data members of the D3TimeChart object. Is called every time data is set in C++.
- * @param {Object} data
+ * Sets this.rawData, this.data, this.selection, and this.sampleToIndexMap
+ * @param {Object} rawData : raw data object sent from Wt
  */
-D3TimeChart.prototype.setData = function (data) {
+D3TimeChart.prototype.setData = function (rawData) {
   //See the c++ function D3TimeChart::setData()
-  console.log(data);
-  if (!this.isValidData(data)) {
+  console.log(rawData);
+  if (!this.isValidRawData(rawData)) {
     console.log(
       "Runtime error in D3TimeChart.setData: Structure of data is not valid.\nDoing nothing..."
     );
   } else {
-    this.rawData = data;
 
-    var formattedData = this.formatData(data);
+    var formattedData = this.formatDataFromRaw(rawData);
 
     this.data = [formattedData];
     console.log(this.data);
 
-    // create inverted index of sample numbers for fast lookup.
-    var sampleToIndex = {};
-    for (var i = 0; i < data.sampleNumbers.length; i++) {
-      sampleToIndex[data.sampleNumbers[i]] = i;
+    // create inverted index of sample numbers  for fast lookup of array-indices from sample number keys
+    var sampleToIndexMap = {};
+    for (var i = 0; i < rawData.sampleNumbers.length; i++) {
+      sampleToIndexMap[rawData.sampleNumbers[i]] = i;
     }
-    // console.log(sampleToIndex);
-    this.sampleToIndex = sampleToIndex;
+
+    // set other data members
+    
+    this.rawData = rawData;
+    // console.log(sampleToIndexMap);
+    this.sampleToIndexMap = sampleToIndexMap;
 
     // clear selection if there is any
     this.selection = null;
@@ -408,7 +428,7 @@ D3TimeChart.prototype.render = function (options) {
     var plotHeight = this.height - this.margin.top - this.margin.bottom;
 
     var nPoints = this.data[0].sampleNumbers.length;
-    // check chart pixels vs data points. Compress if needed, and add to the data array.
+    // check chart pixels vs data points. Compress data if needed, and add to the this.data array.
     // where each data[i] is data compressed at level 2^i.
     var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
     if (plotWidth < nPoints) {
@@ -417,7 +437,7 @@ D3TimeChart.prototype.render = function (options) {
         // only compress if data doesn't already exist before
         if (this.data[i] == null) {
           console.log("Compressing!");
-          this.data[i] = this.formatData(
+          this.data[i] = this.formatDataFromRaw(
             this.compress(this.rawData, Math.pow(2, i))
           );
         }
@@ -436,10 +456,6 @@ D3TimeChart.prototype.render = function (options) {
       .attr("x", this.margin.left)
       .attr("y", this.margin.top)
       .attr("fill-opacity", 0);
-
-    // this.rect.on("dblclick", () => {
-    //   this.handleDoubleClick();
-    // });
 
     // add a clipPath: everything outside of this area will not be drawn
     var clip = this.svg.select("#clip_th");
@@ -525,9 +541,8 @@ D3TimeChart.prototype.render = function (options) {
       })
       .on("drag", () => {
         if (!this.escapeKeyPressed) {
-
           brush.setEnd(d3.mouse(this.rect.node())[0]);
-          
+
           if (this.highlightModifier === "ctrlKey") {
             // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
             if (brush.getEnd() < brush.getStart()) {
@@ -537,8 +552,8 @@ D3TimeChart.prototype.render = function (options) {
             }
           } else {
             var width =
-            brush.getScale()(brush.getEnd()) -
-            brush.getScale()(brush.getStart());
+              brush.getScale()(brush.getEnd()) -
+              brush.getScale()(brush.getStart());
             this.mouseMoveHighlight(width);
           }
         }
@@ -715,12 +730,12 @@ D3TimeChart.prototype.updateChart = function (
 
   // update highlight region rendering
   if (this.regions) {
-    console.log(this.regions)
+    console.log(this.regions);
     var chart = this;
     this.highlightRegionsG.selectAll("rect").each(function (d, i) {
       var { startSample, endSample } = chart.regions[i];
-      var lIdx = chart.sampleToIndex[startSample];
-      var rIdx = chart.sampleToIndex[endSample];
+      var lIdx = chart.sampleToIndexMap[startSample];
+      var rIdx = chart.sampleToIndexMap[endSample];
       var startTime = chart.data[0].realTimeIntervals[lIdx][0];
       var endTime = chart.data[0].realTimeIntervals[rIdx][1];
 
@@ -979,41 +994,41 @@ D3TimeChart.prototype.updateChart = function (
  *    occupancies: [{...}, {...}]
  * }
  *
- * @param {Object} data: data Object passed from Wt
+ * @param {Object} rawData: data Object passed from Wt
  * @returns a boolean
  */
-D3TimeChart.prototype.isValidData = function (data) {
-  if (!data) {
+D3TimeChart.prototype.isValidRawData = function (rawData) {
+  if (!rawData) {
     return false;
   }
 
   // Check properties
   if (
-    !data.hasOwnProperty("sampleNumbers") ||
-    !data.hasOwnProperty("realTimes") ||
-    !data.hasOwnProperty("gammaCounts")
+    !rawData.hasOwnProperty("sampleNumbers") ||
+    !rawData.hasOwnProperty("realTimes") ||
+    !rawData.hasOwnProperty("gammaCounts")
   ) {
     return false;
   }
 
   // Check data types
   if (
-    !Array.isArray(data.sampleNumbers) ||
-    !Array.isArray(data.realTimes) ||
-    !Array.isArray(data.gammaCounts)
+    !Array.isArray(rawData.sampleNumbers) ||
+    !Array.isArray(rawData.realTimes) ||
+    !Array.isArray(rawData.gammaCounts)
   ) {
     return false;
   }
 
-  var nSamples = data.sampleNumbers.length;
+  var nSamples = rawData.sampleNumbers.length;
 
   // Check matching lengths
-  if (data.realTimes.length !== nSamples) {
+  if (rawData.realTimes.length !== nSamples) {
     return false;
   }
 
   // check data of each gamma detector
-  data.gammaCounts.forEach(function (detector) {
+  rawData.gammaCounts.forEach(function (detector) {
     // check  fields
     if (
       !detector.hasOwnProperty("color") ||
@@ -1034,12 +1049,12 @@ D3TimeChart.prototype.isValidData = function (data) {
   });
 
   //optional properties
-  if (data.hasOwnProperty("neutronCounts")) {
-    if (!Array.isArray(data.neutronCounts)) {
+  if (rawData.hasOwnProperty("neutronCounts")) {
+    if (!Array.isArray(rawData.neutronCounts)) {
       return false;
     }
 
-    data.neutronCounts.forEach(function (detector) {
+    rawData.neutronCounts.forEach(function (detector) {
       // check  fields
       if (
         !detector.hasOwnProperty("color") ||
@@ -1057,14 +1072,14 @@ D3TimeChart.prototype.isValidData = function (data) {
         return false;
       }
     });
-  } // if (data.hasOwnProperty("neutronCounts"))
+  } // if (rawData.hasOwnProperty("neutronCounts"))
 
   return true;
 };
 
 /**
- * Formats data to several JSON objects for convenient plotting
- * returns object bundling sampleNumbers, realTimeIntervals, data domain, and detectors data.
+ * Formats data to several JSON objects for convenient access and plotting. Data input assumed to be in same format as the raw data sent from Wt
+ * returns object bundling sampleNumbers, realTimeIntervals, mean time of an interval, gps coordinates, occupancy status of intervals, source types of intervals, the timestamps at the start of each interval, data domain, and detectors data.
  * e.g.
  * {
  *   sampleNumbers: [1, 2, 3, ...],
@@ -1076,9 +1091,9 @@ D3TimeChart.prototype.isValidData = function (data) {
  *   startTimeStamps: [...]
  *   domains:
  *   {
- *      x: [a, b],
- *      yGamma: [c, d]
- *      yNeutron: [e, f]
+ *      x: [minTime, maxTime],
+ *      yGamma: [minGamma, maxGamma]
+ *      yNeutron: [minNeutron, yNeutron]
  *   }
  *
  *   detectors:
@@ -1090,7 +1105,9 @@ D3TimeChart.prototype.isValidData = function (data) {
  *                          "gammaColor": rgb(0,0,0),
  *                          "neutronColor": rgb(0,128,0)
  *                      },
- *                counts: [{DataPoint}, {DataPoint}, {DataPoint}, ...]
+ *                counts: [{DataPoint}, {DataPoint}, {DataPoint}, ...],
+ *                gammaLiveTimes: [481.999, 2.00028, ...] // livetimes used for computing CPS if available
+ *                neutronLiveTimes: [481.671, 1.99889, ...]
  *            },
  *
  *      det2: {...},
@@ -1098,52 +1115,57 @@ D3TimeChart.prototype.isValidData = function (data) {
  *   }
  * }
  *
- * @param {*} data
+ * @param {*} rawData : data in same format as the raw data sent from Wt
  */
-D3TimeChart.prototype.formatData = function (data) {
-  var nSamples = data.sampleNumbers.length;
+D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
+  var nSamples = rawData.sampleNumbers.length;
   var detectors = {};
+
+  // get array of realTimes for intervals
   var realTimeIntervals = this.getRealTimeIntervals(
-    data.realTimes,
-    data.sourceTypes
-  );
-  var meanIntervalTime = this.getMeanIntervalTime(
-    data.realTimes,
-    data.sourceTypes
+    rawData.realTimes,
+    rawData.sourceTypes
   );
 
-  // create occupied array:
+  // get average interval time
+  var meanIntervalTime = this.getMeanIntervalTime(
+    rawData.realTimes,
+    rawData.sourceTypes
+  );
+
+  // format occupied array:
   var occupied;
-  if (data.hasOwnProperty("occupancies")) {
+  if (rawData.hasOwnProperty("occupancies")) {
     var occupied = [];
     for (var i = 0; i < nSamples; i++) {
       var sampleNumber =
-        typeof data.sampleNumbers[i] === "number" &&
-        isFinite(data.sampleNumbers[i])
-          ? data.sampleNumbers[i]
-          : parseInt(data.sampleNumbers[i].keys()[0]);
-      occupied[i] = this.isOccupiedSample(sampleNumber, data.occupancies);
+        typeof rawData.sampleNumbers[i] === "number" &&
+        isFinite(rawData.sampleNumbers[i])
+          ? rawData.sampleNumbers[i]
+          : parseInt(rawData.sampleNumbers[i].keys()[0]);
+      occupied[i] = this.isOccupiedSample(sampleNumber, rawData.occupancies);
     }
   }
 
-  // create startTimeStamps array:
+  // format startTimeStamps array:
   var startTimeStamps;
   if (
-    data.hasOwnProperty("startTimeOffset") &&
-    data.hasOwnProperty("startTimes")
+    rawData.hasOwnProperty("startTimeOffset") &&
+    rawData.hasOwnProperty("startTimes")
   ) {
-    startTimeStamps = data.startTimes.map(function (startTime) {
+    startTimeStamps = rawData.startTimes.map(function (startTime) {
       if (startTime == null) {
         return null;
       }
-      return data.startTimeOffset + startTime;
+      return rawData.startTimeOffset + startTime;
     });
   }
 
-  var domains = this.getDomains(data);
+  // get domains of the data (range of x values, range of yGamma values, range of yNeutron values)
+  var domains = this.getDomainsFromRaw(rawData);
 
-  // format counts data
-  data.gammaCounts.forEach(function (det) {
+  // format detectors data (detector metadata, livetimes, and counts)
+  rawData.gammaCounts.forEach(function (det) {
     // if new detector, initialize a new object and initialize metadata
     if (!detectors.hasOwnProperty(det.detName)) {
       detectors[det.detName] = {};
@@ -1156,7 +1178,7 @@ D3TimeChart.prototype.formatData = function (data) {
     detectors[det.detName].gammaLiveTimes = det.liveTimes;
 
     // if no data already present for this detector, create a new array to start holding data for that detector and fill in the data.
-    if (!detectors[det.detName].hasOwnProperty("data")) {
+    if (!detectors[det.detName].hasOwnProperty("counts")) {
       detectors[det.detName].counts = [];
 
       for (var i = 0; i < nSamples; i++) {
@@ -1185,10 +1207,10 @@ D3TimeChart.prototype.formatData = function (data) {
         detectors[det.detName].counts[2 * i + 1].setGammaCPS(cps);
       }
     }
-  }); // data.gammaCounts.forEach
+  }); // rawData.gammaCounts.forEach
 
-  if (data.hasOwnProperty("neutronCounts")) {
-    data.neutronCounts.forEach(function (det) {
+  if (rawData.hasOwnProperty("neutronCounts")) {
+    rawData.neutronCounts.forEach(function (det) {
       // if new detector, initialize a new object and initialize metadata
       var detName = det.detName;
       if (!detectors.hasOwnProperty(det.detName)) {
@@ -1232,18 +1254,18 @@ D3TimeChart.prototype.formatData = function (data) {
           detectors[det.detName].counts[2 * i].setNeutronCPS(cps);
           detectors[det.detName].counts[2 * i + 1].setNeutronCPS(cps);
         }
-      } // if (!detectors[det.detName].hasOwnProperty("data"))
-    }); // data.neutronCounts.forEach
-  } // if (data.hasOwnProperty("neutronCounts"))
+      } // if (!detectors[det.detName].hasOwnProperty("counts"))
+    }); // rawData.neutronCounts.forEach
+  } // if (rawData.hasOwnProperty("neutronCounts"))
 
   return {
-    sampleNumbers: data.sampleNumbers,
+    sampleNumbers: rawData.sampleNumbers,
     realTimeIntervals: realTimeIntervals,
     meanIntervalTime: meanIntervalTime,
     occupied: occupied,
-    sourceTypes: data.sourceTypes,
+    sourceTypes: rawData.sourceTypes,
     startTimeStamps: startTimeStamps,
-    gpsCoordinates: data.gpsCoordinates,
+    gpsCoordinates: rawData.gpsCoordinates,
 
     detectors: detectors,
     domains: domains,
@@ -1251,13 +1273,13 @@ D3TimeChart.prototype.formatData = function (data) {
 };
 
 /**
- * Gets data domains.
- * @param {Object} data: raw data from Wt
+ * Gets data domains. Data assumed to be in same format as the raw data sent from Wt
+ * @param {Object} rawData: data in same format as the raw data sent from Wt
  */
-D3TimeChart.prototype.getDomains = function (data) {
+D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
   var realTimeIntervals = this.getRealTimeIntervals(
-    data.realTimes,
-    data.sourceTypes
+    rawData.realTimes,
+    rawData.sourceTypes
   );
 
   var xMin = d3.min(realTimeIntervals, function (d) {
@@ -1271,13 +1293,13 @@ D3TimeChart.prototype.getDomains = function (data) {
   var yMaxNeutron = Number.MIN_SAFE_INTEGER;
 
   // Find max over gamma detectors
-  var nSamples = data.sampleNumbers.length;
+  var nSamples = rawData.sampleNumbers.length;
 
-  for (var i = 0; i < data.gammaCounts.length; i++) {
+  for (var i = 0; i < rawData.gammaCounts.length; i++) {
     for (var j = 0; j < nSamples; j++) {
-      var cps = data.gammaCounts[i].liveTimes
-        ? data.gammaCounts[i].counts[j] / data.gammaCounts[i].liveTimes[j]
-        : data.gammaCounts[i].counts[j] / data.realTimes[j];
+      var cps = rawData.gammaCounts[i].liveTimes
+        ? rawData.gammaCounts[i].counts[j] / rawData.gammaCounts[i].liveTimes[j]
+        : rawData.gammaCounts[i].counts[j] / rawData.realTimes[j];
 
       if (cps > yMaxGamma) {
         yMaxGamma = cps;
@@ -1286,12 +1308,13 @@ D3TimeChart.prototype.getDomains = function (data) {
   }
 
   // Find max over neutron detectors
-  if (data.hasOwnProperty("neutronCounts")) {
-    for (var i = 0; i < data.neutronCounts.length; i++) {
+  if (rawData.hasOwnProperty("neutronCounts")) {
+    for (var i = 0; i < rawData.neutronCounts.length; i++) {
       for (var j = 0; j < nSamples; j++) {
-        var cps = data.neutronCounts[i].liveTimes
-          ? data.neutronCounts[i].counts[j] / data.neutronCounts[i].liveTimes[j]
-          : data.neutronCounts[i].counts[j] / data.realTimes[j];
+        var cps = rawData.neutronCounts[i].liveTimes
+          ? rawData.neutronCounts[i].counts[j] /
+            rawData.neutronCounts[i].liveTimes[j]
+          : rawData.neutronCounts[i].counts[j] / rawData.realTimes[j];
 
         if (cps > yMaxNeutron) {
           yMaxNeutron = cps;
@@ -1311,9 +1334,10 @@ D3TimeChart.prototype.getDomains = function (data) {
 };
 
 /**
- * Get scaling functions based on the data domain and element dimensions.
- * this.data, this.height, and this.width must be defined
- * Argument domains must be of form:
+ * Get D3 linear scaling functions based on the data domain and chart element dimensions (height, width, margin).
+ * this.data, this.height, and this.width must be defined for D3TimeChart
+ *
+ * @param {*} domains: domains object, must be of form:
  * {
  *    x: [a, b],
  *    yGamma: [c, d],
@@ -1358,8 +1382,9 @@ D3TimeChart.prototype.getScales = function (domains) {
 };
 
 /**
- * Computes sequential real time intervals for each data point from raw time segments.
- * @param {number[]} realTimes: realTimes data passed from Wt
+ * Computes array of sequential real time intervals for each data point from raw time segments.
+ * @param {number[]} realTimes: realTimes array passed from Wt
+ * @param {number[]} sourceTypes: sourceTypes array passed from Wt
  * @returns an array of length-two arrays which represent time intervals for individual samples.
  */
 D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
@@ -1388,9 +1413,10 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
 };
 
 /**
- * Computes mean interval time over all foreground data
+ * Computes the mean interval time over all foreground sourcetype data
  * @param {*} realTimes : realTimes array of raw data
  * @param {*} sourceTypes : sourceTypes array of raw data
+ * @returns a number which is the average interval time length over all foreground sourcetype data
  */
 D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
   var n = 0;
@@ -1609,18 +1635,6 @@ D3TimeChart.prototype.handleDragBackZoom = function (brush) {
   });
 
   this.updateChart(scales, compressionIndex, { transitions: false });
-};
-
-/**
- * Double click handler to redraw chart with full (default) domain
- */
-D3TimeChart.prototype.handleDoubleClick = function () {
-  var transitions = this.selection.compressionIndex === this.compressionIndex;
-  // clear selection
-  this.selection = null;
-
-  // redraw with full domain
-  this.render({ transitions: transitions });
 };
 
 /**
@@ -2052,10 +2066,10 @@ D3TimeChart.prototype.compress = function (data, n) {
  * Highlights selected time intervals. Called by D3TimeChart::setHighlightRegionsToClient()
  * @param {*} regions : array of objects. Objects are of form:
  * {
- * startSample: int
- * endSample: int
- * fillColor: string
- * type: string
+ *   startSample: int
+ *   endSample: int
+ *   fillColor: string
+ *   type: string
  * }
  */
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
@@ -2063,14 +2077,14 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
   this.regions = regions;
 
   this.highlightRegionsG.selectAll("rect").remove();
-  if (this.sampleToIndex) {
+  if (this.sampleToIndexMap) {
     //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
     for (var i = 0; i < regions.length; i++) {
       // get index from sample number
       // TO DO: check if es5 has object destructuring
       var { startSample, endSample, fillColor } = regions[i];
-      var lIdx = this.sampleToIndex[startSample];
-      var rIdx = this.sampleToIndex[endSample];
+      var lIdx = this.sampleToIndexMap[startSample];
+      var rIdx = this.sampleToIndexMap[endSample];
       // look up the corresponding time of the sample number using the index
       var startTime = this.data[0].realTimeIntervals[lIdx][0];
       var endTime = this.data[0].realTimeIntervals[rIdx][1];
