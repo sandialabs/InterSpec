@@ -633,14 +633,7 @@ public:
   }
 
   
-#if __cplusplus < 201103L
-  //added this for pre-C++11 compile
-  virtual ~FileToLargeForDbException() throw() {};
-  
-  virtual const char *what() const throw()
-#else
   virtual const char* what() const noexcept
-#endif
   {
     return m_msg.c_str();
   }

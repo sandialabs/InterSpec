@@ -238,6 +238,26 @@ namespace
       //        delete m_dialog;
     }//void dorevert()
     
+    ~PreviousDbEntry() noexcept(true)
+    {
+      try
+      {
+        m_dbentry.reset();
+      }catch(...)
+      {
+        cerr << "PreviousDbEntry destructo caught exception doing m_dbentry.reset()" << endl;
+      }
+      
+      try
+      {
+        m_header.reset();
+      }catch(...)
+      {
+        cerr << "PreviousDbEntry destructo caught exception doing m_header.reset()" << endl;
+      }
+      
+    }//~PreviousDbEntry()
+    
     AuxWindow *m_dialog;
     SpecUtils::SpectrumType m_type;
     SpectraFileModel *m_model;

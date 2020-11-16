@@ -488,11 +488,19 @@ void ShieldingSelect::init()
     "Toggle between material and generic shielding",
                               showToolTips, HelpSystem::ToolTipPosition::Top );
   
-  materialDivLayout->addWidget( m_toggleImage, 0, 0, AlignMiddle );
+  materialDivLayout->addWidget( m_toggleImage, 0, 0, AlignLeft );
   
   m_materialEdit = new WLineEdit( "" );
   m_materialEdit->setAutoComplete( false );
-  materialDivLayout->addWidget( m_materialEdit, 0, 1, AlignMiddle );
+  
+  if( m_forFitting )
+  {
+    materialDivLayout->addWidget( m_materialEdit, 0, 1, AlignmentFlag::AlignMiddle );
+  }else
+  {
+    materialDivLayout->addWidget( m_materialEdit, 0, 1 );
+  }
+  
   HelpSystem::attachToolTipOn( m_materialEdit,
     "You can either enter the name of a pre-defined material or element here"
     " (clear form text and click arrow on right of form to see all predefined"
@@ -504,24 +512,31 @@ void ShieldingSelect::init()
     " quote the nuclide, ex: 'U238'0.2'U235'0.8",
                               showToolTips, HelpSystem::ToolTipPosition::Top );
 
-  //  m_materialEdit->setTextSize( 22 );
-  m_materialEdit->setWidth( 155 );
+  // m_materialEdit->setTextSize( 22 );
+  // m_materialEdit->setWidth( 155 );
   
   if( m_materialSuggest )
     m_materialSuggest->forEdit( m_materialEdit,
                    WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
 
+  
   m_materialSummarry = new WText( "", XHTMLText );
   if( m_forFitting )
-    materialDivLayout->addWidget(m_materialSummarry,1,1,AlignMiddle);
-  else
-    materialDivLayout->addWidget(m_materialSummarry,0,2,AlignMiddle);
+  {
+    materialDivLayout->addWidget( m_materialSummarry, 1, 1, AlignMiddle );
+  }else
+  {
+    //m_materialSummarry->setWidth( WLength(100,WLength::Unit::Pixel) );
+    m_materialSummarry->addStyleClass( "MaterialSummary" );
+    //materialDivLayout->addWidget( m_materialSummarry, 1, 2 );
+  }
   
   materialDivLayout->setColumnStretch(1,1);
   if( m_forFitting )
     setClosableAndAddable( true,  materialDivLayout );
 
   m_thicknessDiv = new WContainerWidget( this );
+  
   WGridLayout * thicknessDivLayout = new WGridLayout();
   m_thicknessDiv->setLayout(thicknessDivLayout);
   thicknessDivLayout->setContentsMargins(3,3,3,3);
@@ -536,20 +551,22 @@ void ShieldingSelect::init()
   validator->setFlags( Wt::MatchCaseInsensitive );
   m_thicknessEdit->setValidator( validator );
   
-  m_thicknessEdit->setWidth( 150 );
-  
-  thicknessDivLayout->addWidget(m_thicknessEdit,0,1,AlignMiddle);
-  
   if( m_forFitting )
   {
+    m_thicknessEdit->setWidth( 150 );
+    thicknessDivLayout->addWidget(m_thicknessEdit,0,1,AlignMiddle);
+    
     m_fitThicknessCB = new WCheckBox( "Fit" );
     m_fitThicknessCB->setChecked( true );
     thicknessDivLayout->addWidget(m_fitThicknessCB,0,2,AlignMiddle | AlignRight);
     thicknessDivLayout->setColumnStretch(3,1);
   }else
   {
-    thicknessDivLayout->setColumnStretch(1,1);
-  }
+    thicknessDivLayout->addWidget( m_thicknessEdit, 0, 1 );
+    thicknessDivLayout->addWidget( m_materialSummarry, 0, 2, AlignMiddle );
+    thicknessDivLayout->setColumnStretch( 1, 1 );
+  }//if( m_forFitting ) / else
+  
   
   const WBorder anAdBorder( WBorder::Solid, WBorder::None, black );
 
@@ -4653,12 +4670,20 @@ void ShieldingSourceDisplay::updateAllPeaksCheckBox( WCheckBox *but)
 } //updateAllPeaksCheckBox( WCheckBox *but)
 
 
-ShieldingSourceDisplay::~ShieldingSourceDisplay()
+ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
 {
   {//begin make sure calculation is cancelled
     std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
     if( m_currentFitFcn )
-      m_currentFitFcn->cancelFit();
+    {
+      try
+      {
+        m_currentFitFcn->cancelFit();
+      }catch( ... )
+      {
+        cerr << "Caught exception call m_currentFitFcn->cancelFit(), which probably shouldnt happen" << endl;
+      }
+    }
   }//end make sure calculation is cancelled
   
   if( m_addItemMenu )

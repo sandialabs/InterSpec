@@ -771,6 +771,10 @@ public:
     
     //Set the step size to move the upper range of energy by about 1 keV per step
     // Set up the little tick/spin/whatever boxes
+    /*
+     //The ".CoefInput" style class is currently removing the spin-box up/down arrow, so we wont set
+     //  the step-size, as on Firefox if we fit for a value, then it will turn red if the new value
+     //  doesnt hit on the step size
     for( size_t i = 0; i < coef_disps.size(); ++i )
     {
       CoefDisplay *disp = coef_disps[i];
@@ -800,6 +804,8 @@ public:
       
       disp->m_value->setSingleStep( stepsize );
     }//for( int i = 0; i < sm_numCoefs; ++i )
+     */
+    
   }//updateToGui(...)
   
   

@@ -671,7 +671,7 @@ public:
    */
   static std::pair<ShieldingSourceDisplay *,AuxWindow *> createWindow( InterSpec *viewer  );
   
-  virtual ~ShieldingSourceDisplay();
+  virtual ~ShieldingSourceDisplay() noexcept(true);
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   /** Creates a window that lets you enter truth-values and tolerances for all the quantities

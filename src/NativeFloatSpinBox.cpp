@@ -45,6 +45,7 @@ NativeFloatSpinBox::NativeFloatSpinBox( Wt::WContainerWidget *parent )
 {
   setAutoComplete( false );
   setAttributeValue( "type", "number" );
+  setAttributeValue( "step", "any" ); //For FF
   setValue( 0.0f );
           
   // @TODO: Since #handleChanged is connected first, it will be called last after the subsequent connections.

@@ -142,7 +142,7 @@ class InterSpec : public Wt::WContainerWidget
 public:
   InterSpec( Wt::WContainerWidget *parent = 0 );
 
-  virtual ~InterSpec();
+  ~InterSpec() noexcept(true);
   
   /** Returns the InterSpec instance cooresponding to the current WApplication instance.
    Will return nullptr if WApplication::instance() is null (e.g., current thread is not in a

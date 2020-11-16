@@ -1004,7 +1004,7 @@ std::string InterSpec::writableDataDirectory()
 
 
 
-InterSpec::~InterSpec()
+InterSpec::~InterSpec() noexcept(true)
 {
   //The deletion of the DOM root node will destroy all the AuxWindows we
   //  have open, but I am manually taking care of them below due to a crash
@@ -1018,7 +1018,13 @@ InterSpec::~InterSpec()
     m_licenseWindow = nullptr;
   }
   
-  closeShieldingSourceFitWindow();
+  try
+  {
+    closeShieldingSourceFitWindow();
+  }catch(...)
+  {
+    cerr << "Caught exception closing shielding source window - shouldnt have happened" << endl;
+  }
   
   if( m_peakInfoDisplay )
   {
@@ -1130,6 +1136,21 @@ InterSpec::~InterSpec()
     m_menuDiv = nullptr;
   }//if( m_menuDiv )
 
+  try
+  {
+    m_user.reset();
+  }catch( ... )
+  {
+    cerr << "Caught unexpected exception doing m_user.reset()" << endl;
+  }
+  
+  try
+  {
+    m_sql.reset();
+  }catch( ... )
+  {
+    cerr << "Caught unexpected exception doing m_sql.reset()" << endl;
+  }
 }//InterSpec destructor
 
 
