@@ -119,9 +119,10 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
     static const char *argv1 = ".";
     static const char *argv4 = "-c";
     static const char *argv5 = "./data/config/wt_config_ios.xml";
-    static const char *argv6 = "--tempdir";
-    static const char *argv7 = tmpdirstr.c_str();
-    static const char *argv[] = { argv0, argv1, argv4, argv5, argv6, argv7 };
+    static const char *argv6 = "--accesslog=-";
+    static const char *argv7 = "--tempdir";
+    static const char *argv8 = tmpdirstr.c_str();
+    static const char *argv[] = { argv0, argv1, argv4, argv5, argv6, argv7, argv8 };
     int argc = sizeof(argv) / sizeof(argv[0]);
     InterSpecServer::startServer( argc, (char **)argv, &createThisApplication );
   }
