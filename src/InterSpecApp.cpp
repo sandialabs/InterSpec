@@ -105,7 +105,7 @@ namespace
 #endif
 
   
-#if( ALLOW_URL_TO_FILESYSTEM_MAP && (BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS) )
+#if( ALLOW_URL_TO_FILESYSTEM_MAP && (BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_LOCAL_SERVER ) )
   std::string uri_decode( const std::string &sSrc )
   {
     //adapted from http://www.codeguru.com/cpp/cpp/algorithms/strings/article.php/c12759/URI-Encoding-and-Decoding.htm
@@ -433,14 +433,17 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   const Http::ParameterMap &parmap = environment().getParameterMap();
   
 #if( ALLOW_URL_TO_FILESYSTEM_MAP )
-#if( BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS )
+#if( BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_LOCAL_SERVER )
   //Allowing opening a file via the URL could potentially be a security issue
   //  if serving over the web, or the port being served on is available outside
   //  of the local computer (or user account).  Therefore we will only enable this
   //  feature for test setups, and to allow the Electron based app to more reliably
   //  open spectrum files when the user drags the spectrum to the app icon; the Electron
   //  app serves on 127.0.0.1, which is only available on the local computer, so this 
-  //  povides some protection.
+  //  provides some protection.
+  static_assert( !BUILD_FOR_WEB_DEPLOYMENT,
+                "Web deployment doesnt allow openeing spectrum files from URL" );
+  
   const Http::ParameterMap::const_iterator specfileiter
                                    = parmap.find( "specfilename" );
   if( (specfileiter != parmap.end()) && specfileiter->second.size() )
@@ -449,14 +452,33 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //  ToDo: after a little more testing enable always testing the request is
     //        from 127.0.0.1, AND for Electron version of app that that the 
     //        value of "externalid" in the URL matches InterSpecServer::external_id()
-    //SpecUtils::icontains( environment().clientAddress(), "127.0.0.1" )
+
+#if( BUILD_AS_LOCAL_SERVER )
+    const string &clientAddress = environment().clientAddress();
+    const string msg = "Will open file from URL.  ClientAddress='" + clientAddress + "',"
+                       " UriFileName='" + specfileiter->second[0].c_str() + "'";
+    wApp->log( "info" ) << msg;
+    cerr << msg << endl;
     
-    const string filename = uri_decode( specfileiter->second[0] );
-    loadedSpecFile = m_viewer->userOpenFileFromFilesystem( filename );
-    if( loadedSpecFile )
-      cout << "Openend file specified by URL '" << filename << "'" << endl;
-    else
-      cerr << "Invalid specfile specified in URL '" << filename << "'" << endl;
+    if( !SpecUtils::icontains( clientAddress, "127.0.0.1" ) )
+    {
+      string errormsg = "Security error: Request to open a file came from client-address '"
+                        + clientAddress + "' for file (uri encoded) '" + specfileiter->second[0]
+                        + "', will not do this, since not from 127.0.0.1.";
+      wApp->log( "error" ) << errormsg.c_str();
+      cerr << "From cerr: " << errormsg << endl;
+    }else
+    {
+#endif
+      const string filename = uri_decode( specfileiter->second[0] );
+      loadedSpecFile = m_viewer->userOpenFileFromFilesystem( filename );
+      if( loadedSpecFile )
+        cout << "Opened file specified by URL '" << filename << "'" << endl;
+      else
+        cerr << "Invalid specfile specified in URL '" << filename << "'" << endl;
+#if( BUILD_AS_LOCAL_SERVER )
+    }//
+#endif
   }//if( speciter != parmap.end() )
 #endif //#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS )
 
