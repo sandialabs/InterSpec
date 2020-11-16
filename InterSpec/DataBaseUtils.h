@@ -89,7 +89,7 @@ namespace DataBaseUtils
     //  time
   public:
     DbTransaction( DbSession &session );
-    ~DbTransaction();
+    ~DbTransaction() noexcept(false);
     
     bool commit();
     bool isActive() const;
