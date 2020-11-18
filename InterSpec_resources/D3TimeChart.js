@@ -211,10 +211,15 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.minSelectionWidth !== "number")
     this.options.minSelectionWidth = 8;
 
-  this.data = undefined;
-  this.selection = undefined;
-  this.height = undefined;
-  this.width = undefined;
+  this.data = null;
+  this.selection = null;
+  this.height = null;
+  this.width = null;
+
+  // other useful data members
+  this.rawData = null;
+  this.sampleToIndexMap = null;
+  this.backgroundDuration = null;
 
   this.margin = {
     top: 50,
@@ -259,7 +264,6 @@ D3TimeChart = function (elem, options) {
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
   this.highlightText = this.rectG
     .append("text")
-    // .text("Zoom In")
     .attr("font-size", 11)
     .attr("font-weight", "bold");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
@@ -329,7 +333,6 @@ D3TimeChart.prototype.setData = function (rawData) {
       "Runtime error in D3TimeChart.setData: Structure of data is not valid.\nDoing nothing..."
     );
   } else {
-
     var formattedData = this.formatDataFromRaw(rawData);
 
     this.data = [formattedData];
@@ -342,7 +345,7 @@ D3TimeChart.prototype.setData = function (rawData) {
     }
 
     // set other data members
-    
+
     this.rawData = rawData;
     // console.log(sampleToIndexMap);
     this.sampleToIndexMap = sampleToIndexMap;
@@ -359,7 +362,7 @@ D3TimeChart.prototype.setData = function (rawData) {
 
 D3TimeChart.prototype.handleResize = function () {
   // This function is called when the Wt layout manager resizes the parent <div> element
-  // Need to redraw everything
+  // Need to redraw everything (incl size of svg element, )
   // ...
   // Make sure to update the C++ code of the changed plotting size.
 
@@ -408,7 +411,7 @@ D3TimeChart.prototype.shiftSelection = function (n) {
 };
 
 /**
- * Renders the D3TimeChart.
+ * Renders/updates the D3TimeChart to be set up plotting data. compresses data for purposes of displaying, Updates dimensions of svg element, updates dimensions of clip-path, defines drag behavior over the figure
  * @param {*} options : Optional argument to specify render options
  */
 D3TimeChart.prototype.render = function (options) {
@@ -416,6 +419,7 @@ D3TimeChart.prototype.render = function (options) {
     console.log(
       "Runtime error in D3TimeChart.render: D3TimeChart data is not set.\nDoing nothing..."
     );
+    return;
   } else if (!this.height || !this.width) {
     console.log(
       "Runtime error in D3TimeChart.render: dimensions of D3TimeChart div element are not set.\nDoing nothing..."
@@ -428,8 +432,9 @@ D3TimeChart.prototype.render = function (options) {
     var plotHeight = this.height - this.margin.top - this.margin.bottom;
 
     var nPoints = this.data[0].sampleNumbers.length;
-    // check chart pixels vs data points. Compress data if needed, and add to the this.data array.
-    // where each data[i] is data compressed at level 2^i.
+
+    // check chart pixels vs full set of  data points. Compress data if needed for purposes of rendering, and cache the compressed data inside the this.data array.
+    // each data[i] is the data compressed at level 2^i.
     var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
     if (plotWidth < nPoints) {
       var i = 1;
@@ -450,6 +455,7 @@ D3TimeChart.prototype.render = function (options) {
     this.svg.attr("width", this.width);
     this.svg.attr("height", this.height);
 
+    // set dimensions of interactable area.
     this.rect
       .attr("width", plotWidth)
       .attr("height", plotHeight)
@@ -483,7 +489,7 @@ D3TimeChart.prototype.render = function (options) {
     this.linesG.attr("clip-path", "url(#clip_th)");
     this.highlightRegionsG.attr("clip-path", "url(#clip_th");
 
-    // if have selection, recalculate compression index based on new plotWidth if needed.
+    // if have selection, choose compression index to use based on number of points in the selection.
     if (this.selection) {
       var leftIndex = this.findDataIndex(this.selection.domain[0], 0);
       var rightIndex = this.findDataIndex(this.selection.domain[1], 0);
@@ -509,7 +515,7 @@ D3TimeChart.prototype.render = function (options) {
       ? this.selection.compressionIndex
       : this.compressionIndex;
 
-    // add brush-highlight zooming
+    // add brush-highlight selection
     var brush = new BrushX();
 
     brush.setScale(scales.xScale);
@@ -624,7 +630,7 @@ D3TimeChart.prototype.updateChart = function (
   var HAS_GAMMA = true;
   var HAS_NEUTRON = false;
 
-  // add/update hover interaction
+  // add/update hover interaction based on current scale (or zoom)
   this.rect
     .on("mouseover", () => {
       this.showToolTip();
@@ -633,17 +639,20 @@ D3TimeChart.prototype.updateChart = function (
       var x = xScale.invert(d3.mouse(this.rect.node())[0]);
 
       var idx = this.findDataIndex(x, compressionIndex);
+
       var startTimeStamp = this.data[compressionIndex].startTimeStamps
         ? this.data[compressionIndex].startTimeStamps[idx]
         : null;
+
       var sourceType = this.data[compressionIndex].sourceTypes
         ? this.data[compressionIndex].sourceTypes[idx]
         : null;
-      var data = [];
+
+      var tooltipData = [];
       for (var detName in this.data[compressionIndex].detectors) {
         var y = this.data[compressionIndex].detectors[detName].counts[idx * 2];
 
-        data.push({
+        tooltipData.push({
           detName: detName,
           gammaCPS: y.gammaCPS,
           neutronCPS: y.neutronCPS,
@@ -652,7 +661,7 @@ D3TimeChart.prototype.updateChart = function (
         });
       }
       var optargs = { sourceType: sourceType, startTimeStamp: startTimeStamp };
-      this.updateToolTip(x, data, optargs);
+      this.updateToolTip(x, tooltipData, optargs);
     })
     .on("mouseout", () => {
       this.hideToolTip();
@@ -730,7 +739,7 @@ D3TimeChart.prototype.updateChart = function (
 
   // update highlight region rendering
   if (this.regions) {
-    console.log(this.regions);
+    // console.log(this.regions);
     var chart = this;
     this.highlightRegionsG.selectAll("rect").each(function (d, i) {
       var { startSample, endSample } = chart.regions[i];
@@ -883,9 +892,6 @@ D3TimeChart.prototype.updateChart = function (
 
     // if already drawn, just update
     if (!axisLabelY1.empty()) {
-      // clear existing transforms
-      // axisLabelY1.attr("transform", "none");
-
       // reposition
       axisLabelY1.attr(
         "transform",
@@ -896,6 +902,7 @@ D3TimeChart.prototype.updateChart = function (
           ") rotate(-90)"
       );
     } else {
+      // create new
       this.svg
         .append("text")
         .attr("class", "axis_label")
@@ -930,9 +937,6 @@ D3TimeChart.prototype.updateChart = function (
 
     // if already drawn, just update
     if (!axisLabelY2.empty()) {
-      // clear existing transforms
-      // axisLabelY2.attr("transform", "none");
-
       // reposition
       axisLabelY2.attr(
         "transform",
@@ -946,6 +950,7 @@ D3TimeChart.prototype.updateChart = function (
           ") rotate(90)"
       );
     } else {
+      // create new
       this.svg
         .append("text")
         .attr("class", "axis_label")
