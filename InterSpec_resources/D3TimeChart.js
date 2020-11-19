@@ -268,6 +268,7 @@ D3TimeChart = function (elem, options) {
     .attr("font-weight", "bold");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
   this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area
+  this.bottomAxisRect = this.rectG.append("rect");
 
   this.hoverToolTip = d3
     .select(this.chart)
@@ -452,8 +453,14 @@ D3TimeChart.prototype.render = function (options) {
     this.compressionIndex = compressionIndex;
 
     // set dimensions of svg element and plot
-    this.svg.attr("width", this.width);
-    this.svg.attr("height", this.height);
+    this.svg.attr("width", this.width).attr("height", this.height);
+
+    this.bottomAxisRect
+      .attr("width", plotWidth)
+      .attr("height", this.axisBottomG.node().getBBox().height)
+      .attr("x", this.margin.left)
+      .attr("y", this.margin.top + plotHeight)
+      .attr("fill-opacity", 0);
 
     // set dimensions of interactable area.
     this.rect
@@ -520,7 +527,7 @@ D3TimeChart.prototype.render = function (options) {
 
     brush.setScale(scales.xScale);
 
-    var drag = d3.behavior
+    var selectionDrag = d3.behavior
       .drag()
       .on("dragstart", () => {
         if (this.escapeKeyPressed) {
@@ -606,7 +613,35 @@ D3TimeChart.prototype.render = function (options) {
         this.shiftKeyHeld = false;
       });
 
-    this.rect.call(drag);
+    this.rect.call(selectionDrag);
+
+    // pan drag behavior
+    // initialize new variables for holding new selection and scales from panning
+    var newSelection;
+    var newScale;
+    var panDrag = d3.behavior
+      .drag()
+      .on("dragstart", () => {
+        var coords = d3.mouse(this.rect.node());
+        brush.setStart(coords[0]);
+        d3.select("body").style("cursor", "ew-resize");
+      })
+      .on("drag", () => {
+        brush.setEnd(d3.mouse(this.rect.node())[0]);
+        var res = this.handleBrushPanSelection(brush);
+        if (res) {
+          newSelection = res.newSelection;
+          newScale = res.newScale;
+        }
+      })
+      .on("dragend", () => {
+        // update selection, update scale
+        this.selection = newSelection;
+        brush.setScale(newScale);
+        brush.clear();
+      });
+
+    this.bottomAxisRect.call(panDrag);
 
     this.updateChart(scales, compressionIndex, options);
   }
@@ -1436,12 +1471,13 @@ D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
 };
 
 /**
- * Brush handler to zoom into a selected domain or zoom out if brushed back
+ * Brush handler to zoom into a selected domain or zoom out if brushed back.
  * @param {} brush : BrushX object
  */
 D3TimeChart.prototype.handleBrushZoom = function (brush) {
   if (brush && !brush.empty()) {
     // handle dragback (zoom out). Must update selection and brush scale upon mouseup event.
+    // For dragback, handleDragBackZoom already handles chart updating--handleBrushZoom only updates selection and mouseup
     if (!this.draggedForward) {
       // if no selection (not already zoomed in), dragback does nothing.
       if (!this.selection) {
@@ -1449,6 +1485,7 @@ D3TimeChart.prototype.handleBrushZoom = function (brush) {
       }
 
       // calculate new extent if it is same as extent when all the way zoomed out, set selection to null.
+      // naturalXScale is the xScale used when all the way zoomed out (using all data points).
       var naturalXScale = this.getScales(
         this.data[this.compressionIndex].domains
       ).xScale;
@@ -1704,6 +1741,52 @@ D3TimeChart.prototype.mouseUpHighlight = function () {
 
 D3TimeChart.prototype.showToolTip = function () {
   this.hoverToolTip.style("visibility", "visible");
+};
+
+D3TimeChart.prototype.handleBrushPanSelection = function (brush) {
+  // if not zoomed in already (no selection), drag does nothing.
+  if (!this.selection) {
+    return;
+  }
+  // TO DO: Check if ES5 has object destructuring
+  var { domain, compressionIndex } = this.selection;
+
+  // compute new extent
+  var naturalXScale = this.getScales(this.data[this.compressionIndex].domains)
+    .xScale;
+  var panAmount =
+    naturalXScale.invert(brush.getScale()(brush.getEnd())) -
+    naturalXScale.invert(brush.getScale()(brush.getStart()));
+  var rightBound = this.data[this.compressionIndex].domains.x[1];
+  var leftBound = this.data[this.compressionIndex].domains.x[0];
+
+  // if will take you out of bound, do return and do nothing
+  if (domain[0] + panAmount < leftBound || domain[1] + panAmount > rightBound) {
+    return;
+  }
+
+  // compute new extent
+  var newLeftExtent = domain[0] + panAmount;
+  var newRightExtent = domain[1] + panAmount;
+  var newExtent = [newLeftExtent, newRightExtent];
+  // update chart
+  var scales = this.getScales({
+    x: newExtent,
+    yGamma: this.data[compressionIndex].domains.yGamma,
+    yNeutron: this.data[compressionIndex].domains.yNeutron,
+  });
+
+  // update chart
+  this.updateChart(scales, compressionIndex, { transitions: false });
+
+  // return new selection and new scale so can later update when drag ends
+  return {
+    newSelection: {
+      domain: newExtent,
+      compressionIndex: compressionIndex,
+    },
+    newScale: scales.xScale,
+  };
 };
 
 /**
