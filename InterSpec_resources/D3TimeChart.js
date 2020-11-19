@@ -617,8 +617,8 @@ D3TimeChart.prototype.render = function (options) {
 
     // pan drag behavior
     // initialize new variables for holding new selection and scales from panning
-    var newSelection;
-    var newScale;
+    var newSelection = this.selection;
+    var newScale = brush.getScale();
     var panDrag = d3.behavior
       .drag()
       .on("dragstart", () => {
@@ -642,6 +642,14 @@ D3TimeChart.prototype.render = function (options) {
       });
 
     this.bottomAxisRect.call(panDrag);
+
+    this.bottomAxisRect
+      .on("mouseover", () => {
+        d3.select("body").style("cursor", "ew-resize");
+      })
+      .on("mouseout", () => {
+        d3.select("body").style("cursor", "auto");
+      });
 
     this.updateChart(scales, compressionIndex, options);
   }
@@ -1752,11 +1760,9 @@ D3TimeChart.prototype.handleBrushPanSelection = function (brush) {
   var { domain, compressionIndex } = this.selection;
 
   // compute new extent
-  var naturalXScale = this.getScales(this.data[this.compressionIndex].domains)
-    .xScale;
   var panAmount =
-  naturalXScale.invert(brush.getScale()(brush.getStart())) -
-    naturalXScale.invert(brush.getScale()(brush.getEnd()));
+    brush.getScale().invert(brush.getScale()(brush.getStart())) -
+    brush.getScale().invert(brush.getScale()(brush.getEnd()));
   var rightBound = this.data[this.compressionIndex].domains.x[1];
   var leftBound = this.data[this.compressionIndex].domains.x[0];
 
