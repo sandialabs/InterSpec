@@ -1755,8 +1755,8 @@ D3TimeChart.prototype.handleBrushPanSelection = function (brush) {
   var naturalXScale = this.getScales(this.data[this.compressionIndex].domains)
     .xScale;
   var panAmount =
-    naturalXScale.invert(brush.getScale()(brush.getEnd())) -
-    naturalXScale.invert(brush.getScale()(brush.getStart()));
+  naturalXScale.invert(brush.getScale()(brush.getStart())) -
+    naturalXScale.invert(brush.getScale()(brush.getEnd()));
   var rightBound = this.data[this.compressionIndex].domains.x[1];
   var leftBound = this.data[this.compressionIndex].domains.x[0];
 
