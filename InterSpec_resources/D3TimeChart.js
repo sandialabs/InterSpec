@@ -222,7 +222,7 @@ D3TimeChart = function (elem, options) {
   this.backgroundDuration = null;
 
   this.margin = {
-    top: 50,
+    top: 20,
     right: 60,
     bottom: 50,
     left: 60,
@@ -933,17 +933,27 @@ D3TimeChart.prototype.updateChart = function (
 
     var axisLabelY1 = this.svg.select("#th_label_y1");
 
+    var axisLabelY1Text =
+      compressionIndex == 0
+        ? this.options.y1title
+        : this.options.y1title +
+          " per " +
+          Math.pow(2, compressionIndex) +
+          " Samples";
+
     // if already drawn, just update
     if (!axisLabelY1.empty()) {
       // reposition
-      axisLabelY1.attr(
-        "transform",
-        "translate(" +
-          (this.margin.left - this.axisLeftG.node().getBBox().width - 5) +
-          "," +
-          this.height / 2 +
-          ") rotate(-90)"
-      );
+      axisLabelY1
+        .attr(
+          "transform",
+          "translate(" +
+            (this.margin.left - this.axisLeftG.node().getBBox().width - 5) +
+            "," +
+            this.height / 2 +
+            ") rotate(-90)"
+        )
+        .text(axisLabelY1Text);
     } else {
       // create new
       this.svg
@@ -959,7 +969,7 @@ D3TimeChart.prototype.updateChart = function (
             ") rotate(-90)"
         )
         .style("text-anchor", "middle")
-        .text(this.options.y1title)
+        .text(axisLabelY1Text)
         .attr("font-size", "0.9em");
     } // if (!axisLabelY1.empty())
   } // if (HAS_GAMMA)
@@ -977,21 +987,30 @@ D3TimeChart.prototype.updateChart = function (
       .call(yAxisRight);
 
     var axisLabelY2 = this.svg.select("#th_label_y2");
+    var axisLabelY2Text =
+      compressionIndex == 0
+        ? this.options.y2title
+        : this.options.y2title +
+          " per " +
+          Math.pow(2, compressionIndex) +
+          " Samples";
 
     // if already drawn, just update
     if (!axisLabelY2.empty()) {
       // reposition
-      axisLabelY2.attr(
-        "transform",
-        "translate(" +
-          (this.width -
-            this.margin.left +
-            this.axisRightG.node().getBBox().width +
-            10) +
-          "," +
-          this.height / 2 +
-          ") rotate(90)"
-      );
+      axisLabelY2
+        .attr(
+          "transform",
+          "translate(" +
+            (this.width -
+              this.margin.left +
+              this.axisRightG.node().getBBox().width +
+              10) +
+            "," +
+            this.height / 2 +
+            ") rotate(90)"
+        )
+        .text(axisLabelY2Text);
     } else {
       // create new
       this.svg
@@ -1010,7 +1029,7 @@ D3TimeChart.prototype.updateChart = function (
             ") rotate(90)"
         )
         .style("text-anchor", "middle")
-        .text(this.options.y2title);
+        .text(axisLabelY2Text);
     } // if (!axisLabelY2.empty())
   } // if (HAS_NEUTRON)
 };
@@ -1810,38 +1829,41 @@ D3TimeChart.prototype.hideToolTip = function () {
 };
 
 D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
-  var compressionIndex = this.selection
-    ? this.selection.compressionIndex
-    : this.compressionIndex;
   var s =
     optargs.startTimeStamp != null
-      ? "<div>" + new Date(optargs.startTimeStamp).toUTCString() + "</div>"
+      ? "<div>" + new Date(optargs.startTimeStamp).toLocaleString() + "</div>"
       : "";
-  s += "<div>Data Compression Level: " + compressionIndex + "</div>";
 
-  s +=
-    optargs.sourceType != null
-      ? "<div>Source: " + this.sourceMap[optargs.sourceType] + "</div>"
-      : "";
+  // If want compression data in the tooltip, uncomment below
+  // var compressionIndex = this.selection
+  // ? this.selection.compressionIndex
+  // : this.compressionIndex;
+
+  // s += "<div>Data Compression Level: " + compressionIndex + "</div>";
+
+  // // If want sourcetype data in the tooltip, uncomment below
+  // s +=
+  //   optargs.sourceType != null
+  //     ? "<div>Source: " + this.sourceMap[optargs.sourceType] + "</div>"
+  //     : "";
+
   s += "<div>Time: " + time.toPrecision(4) + " s</div>";
 
   // for each detector, give counts
   for (var i = 0; i < data.length; i++) {
-    s +=
-      "<div>G CPS: " +
-      data[i].gammaCPS.toPrecision(6) +
-      " (" +
-      data[i].detName +
-      ")</div>";
+    s += "<div>G CPS: " + data[i].gammaCPS.toPrecision(6);
+
+    if (data[i].detName) {
+      s += " (" + data[i].detName + ")</div>";
+    }
 
     if (data[i].neutronCPS != null) {
       // cps of 0 is still valid to display
-      s +=
-        "<div>N CPS: " +
-        data[i].neutronCPS.toPrecision(3) +
-        " (" +
-        data[i].detName +
-        ")</div>";
+      s += "<div>N CPS: " + data[i].neutronCPS.toPrecision(3);
+
+      if (data[i].detName) {
+        s += " (" + data[i].detName + ")</div>";
+      }
     }
   }
 
