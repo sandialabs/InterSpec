@@ -1,11 +1,13 @@
 {
   "InterSpecResourceDir" : "",
   "InterSpecResourceDirDocumentation" : "The directory containing static resources needed by InterSpec, including the: css and js directories ('resources' and 'InterSpec_resources'), the nuclear and detector data directory ('data'), and 'example_spectra'.  Will be evaluated relative to the directory containing main.js, and then absolute.  Default is blank.",
-  
-  "ServerExe": "InterSpec.exe",
-  "ServerExeDocumentation": "The name of the InterSpec executable to run.  Evauluated relative to directory containing main.js being run, and then absolute if not found relative.  Default is 'InterSpec.exe'.",
-  
+    
   "UserDataDir" : "",
   "UserDataDirDocumentation": "The directory to store user data preferences and work.  If blank, uses directory returned by the operating system.  If a value of 'TEMP' is specified, uses system temp directory (try this is application not loading correctly). Otherwise should be an absolute path.",
   
+  "HttpPortToServeOn": 0,
+  "HttpPortToServeOnDocumentation": "The HTTP port to serve the application on; if zero (recomended!), will choose random port on startup.  Otherwise choose a port larger than 1024 (e.x., 8080) since pors below this maye require admin privledges",
+
+  "AllowExternalSessions": false,
+  "AllowExternalSessionsDocumentation": "Wehther to allow the user to load InterSpec sessions from the browser on the same machine."
 }

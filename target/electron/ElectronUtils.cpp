@@ -91,7 +91,9 @@ bool notifyNodeJsOfNewSessionLoad()
     return false;
   }
 
-  app->doJavaScript( "ipcRenderer.send('SessionFinishedLoading','" + app->externalToken() + "');" );
+  const string oldexternalid = app->externalToken();
+  if( !oldexternalid.empty() )
+    app->doJavaScript( "if( ipcRenderer ) ipcRenderer.send('SessionFinishedLoading','" + app->externalToken() + "');" );
   app->triggerUpdate();
   
   return true;
@@ -241,6 +243,13 @@ int interspec_remove_allowed_session_token( const char *session_token )
   return InterSpecServer::remove_allowed_session_token( session_token );
 }//int interspec_remove_allowed_session_token( const char *session_token )
 
+
+int interspec_session_is_alive( const char *session_token )
+{
+  const int status = InterSpecServer::session_status( session_token );
+  
+  return (status == 2);
+}
 
 int interspec_open_file( const char *session_token, const char *files_json )
 {

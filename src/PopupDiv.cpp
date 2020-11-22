@@ -757,7 +757,7 @@ PopupDivMenuItem *PopupDivMenu::createAboutThisAppItem()
   addItem( item );
   
   if( !m_hasElectronCounterpart )
-    return;
+    return nullptr;
   
   item->m_electron_clicked.connect( item, &PopupDivMenuItem::emitClickFromElectronMenu );
   

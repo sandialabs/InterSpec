@@ -88,6 +88,9 @@
 #endif
 
 
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#include "InterSpec/InterSpecServer.h"
+#endif
 
 
 using namespace std;
@@ -181,15 +184,21 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
     , m_safeAreas{ 0.0f }
 #endif
 {
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  if( !checkExternalTokenFromUrl() )
+  {
+    setTitle( "Error loading" );
+    new WText( "Invalid 'apptoken' specified, not loading", root() );
+    WApplication::quit( "InterSpec is configured to not allow arbitary sessions" );
+    return;
+  }//if( !checkExternalTokenFromUrl() )
+#endif
+ 
   enableUpdates( true );
-
+  
   //Might as well initialize the DecayDataBaseServer, but in the background
   WServer::instance()->ioService().post( &DecayDataBaseServer::initialize );
- 
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-  checkExternalTokenFromUrl();
-#endif
-  
+   
   setupDomEnvironment();
   setupWidgets( true );
 }//InterSpecApp constructor
@@ -197,6 +206,11 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
 
 InterSpecApp::~InterSpecApp()
 {
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  if( !m_externalToken.empty() )
+    InterSpecServer::set_session_destructing( m_externalToken.c_str() );
+#endif
+
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   {
     std::lock_guard<std::mutex> lock( AppInstancesMutex );
@@ -207,14 +221,39 @@ InterSpecApp::~InterSpecApp()
 
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-void InterSpecApp::checkExternalTokenFromUrl()
+bool InterSpecApp::checkExternalTokenFromUrl()
 {
+  m_primaryApp = false;
+  
+  const bool allow_untokened = InterSpecServer::allow_untokened_sessions();
   const Http::ParameterMap &parmap = environment().getParameterMap();
   for( const Http::ParameterMap::value_type &p : parmap )
   {
-    if( SpecUtils::iequals_ascii(p.first, "externalid") && !p.second.empty() )
+    if( (SpecUtils::iequals_ascii(p.first, "externalid")
+          || SpecUtils::iequals_ascii(p.first, "apptoken"))
+       && !p.second.empty() )
+    {
       m_externalToken = p.second.front();
+      
+      const int status = InterSpecServer::set_session_loaded( m_externalToken.c_str() );
+      m_primaryApp = true; //defaults to true if we have an app token
+      
+      for( const Http::ParameterMap::value_type &primary : parmap )
+      {
+        if( !primary.second.empty() && SpecUtils::iequals_ascii(primary.first, "primary") )
+        {
+          const string &val = primary.second.front();
+          m_primaryApp = !(SpecUtils::iequals_ascii(val,"no")
+                            || SpecUtils::iequals_ascii(val,"false")
+                            || SpecUtils::iequals_ascii(val,"0") );
+        }//if( there is a 'primary' argument in the URL
+      }//for( loop over parameters to see if this _shouldnt_ be a primary app )
+      
+      return (allow_untokened || (status==0));
+    }
   }//for( const Http::ParameterMap::value_type &p : parmap )
+  
+  return allow_untokened;
 }//bool checkExternalTokenFromUrl()
 #endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
 
@@ -224,16 +263,21 @@ void InterSpecApp::setupDomEnvironment()
 #if( BUILD_AS_ELECTRON_APP )
   //To make nodeIntegration=true work:
   //  https://stackoverflow.com/questions/32621988/electron-jquery-is-not-defined
-  doJavaScript( "if (typeof module === 'object') {window.module = module; module = undefined;}", false );
-
+  if( isPrimaryWindowInstance() )
+  {
+    // \TODO: when/if we allow multiple electron windows, need to upgrade from using
+    //        isPrimaryWindowInstance() to something that says if it is an electron window
+    doJavaScript( "if (typeof module === 'object') {window.module = module; module = undefined;}", false );
+    
 #if( USING_ELECTRON_NATIVE_MENU )
-  //Some support to use native menu...
-  doJavaScript( "const { remote, ipcRenderer } = require('electron');const {Menu, MenuItem} = remote;", false );
+    //Some support to use native menu...
+    doJavaScript( "const { remote, ipcRenderer } = require('electron');const {Menu, MenuItem} = remote;", false );
 #else
-  doJavaScript( "const {remote, ipcRenderer} = require('electron'); ", false );
+    doJavaScript( "const { remote, ipcRenderer} = require('electron'); ", false );
 #endif
+  }//if( isPrimaryWindowInstance() )
   
-#endif
+#endif //BUILD_AS_ELECTRON_APP
   
   setTitle( "InterSpec" );
   
@@ -791,7 +835,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     << m_viewer->m_user->userName() << endl;
   
 #if( USING_ELECTRON_NATIVE_MENU )
-  if( !m_externalToken.empty() )
+  if( isPrimaryWindowInstance() )
   {
     //ToDo: time if WTimer::singleShot or post() is better
     //WServer::instance()->post( sessionId(), [](){ PopupDivMenu::triggerElectronMenuUpdate(); } );
@@ -903,11 +947,13 @@ bool InterSpecApp::isPrimaryWindowInstance()
   if( !lock )
     return false;
   
+  if( !app->m_primaryApp )
+    return false;
+  
   const string &externalid = app->m_externalToken;
+  const int status = InterSpecServer::session_status( externalid.c_str() );
   
-  //XXX - should compare externalid to ElectronUtils::external_id()
-  
-  return !externalid.empty();
+  return ((status == 1) || (status == 2));
 }//bool isPrimaryWindowInstance()
 
 
@@ -1220,12 +1266,17 @@ void InterSpecApp::clearSession()
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
   //  sends websocket message to node land to clear menus, and load a new session
   //  but with argument "restore=no"
-  if( !ElectronUtils::requestNewCleanSession() )
+  if( InterSpecApp::isPrimaryWindowInstance() )
   {
-    passMessage( "There was an error requesting a new session - sorry.",
-                "", WarningWidget::WarningMsgHigh );
+    if( !ElectronUtils::requestNewCleanSession() )
+    {
+      passMessage( "There was an error requesting a new session - sorry.",
+                   "", WarningWidget::WarningMsgHigh );
+    }
+  }else
+  {
+    setupWidgets( false );
   }
-  
 #else
   setupWidgets( false );
 #endif
@@ -1322,14 +1373,17 @@ void InterSpecApp::loadSuccesfullCallback()
 {
   m_sucessfullyLoadedSignal.reset();
   
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
 #if( BUILD_AS_ELECTRON_APP )
-  ElectronUtils::notifyNodeJsOfNewSessionLoad();
+    ElectronUtils::notifyNodeJsOfNewSessionLoad();
 #elif( BUILD_AS_OSX_APP )
-  macOsUtils::sessionSuccessfullyLoaded();
+    macOsUtils::sessionSuccessfullyLoaded();
 #elif( ANDROID )
-  #warning "Need to implement notifying for parent process for Android"
+#warning "Need to implement notifying for parent process for Android"
 #else
-  static_assert( 0, "Something messed up with pre-processor setup" );
+    static_assert( 0, "Something messed up with pre-processor setup" );
 #endif
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
 }//void loadSuccesfullCallback()
 #endif
