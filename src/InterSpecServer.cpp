@@ -13,6 +13,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <chrono>
 #include <cstdlib>
 #include <stdlib.h>
 
@@ -53,12 +54,37 @@
 
 using namespace std;
 
+// Namespace to track allowed sessions and not
 namespace
 {
-  //The externalid of the primary session (the main electron window)
-  string ns_externalid;
-  std::mutex ns_externalid_mutex;
+struct SessionState
+{
+  enum class State
+  {
+    Invalid             = 0,
+    AuthorizedNotLoaded = 1,
+    AuthorizedLoaded    = 2,
+    NoLongerAuthorized  = 3,
+    Dead                = 4
+  };//enum class State
+  
+  State current_state;
+  
+  std::chrono::system_clock::time_point auth_time;
+  std::chrono::system_clock::time_point load_time;
+  std::chrono::system_clock::time_point deauth_time;
+  std::chrono::system_clock::time_point destruct_time;
+  
+  SessionState()
+  : current_state( State::Invalid ), auth_time(), load_time(), deauth_time(), destruct_time()
+  {
+  }
+};//struct SessionState
 
+
+std::mutex ns_sessions_mutex;
+std::map<string,SessionState> ns_sessions;
+bool ns_allow_untokened_sessions = true;
   
   Wt::WApplication *create_application( const Wt::WEnvironment &env )
   {
@@ -299,7 +325,7 @@ namespace InterSpecServer
     {
       throw std::runtime_error( "Failed to start Wt server" );
     }//if( server.start() )
-  }
+  }//startServerNodeAddon(...)
   
   
   void killServer()
@@ -317,43 +343,165 @@ namespace InterSpecServer
   }//void experimental_killServer()
   
   
-  void add_allowed_session_token( const char *session_id )
+  int add_allowed_session_token( const char *session_id )
   {
-#ifndef _WIN32
-  #warning "Need to make add_session_id() handle more than just single session ID"
-#endif
-    lock_guard<mutex> lock(ns_externalid_mutex);
-    ns_externalid = session_id;
-  }//void interspec_add_allowed_session_token( const char *session_id )
+    //Returns zero if hadnt been seen before, 1 if authorized but not seen yet, 2 if authorized and loaded, 3 if deauthorized session, 4 if dead session
+    SessionState newsession;
+    newsession.auth_time = std::chrono::system_clock::now();
+    newsession.current_state = SessionState::State::AuthorizedNotLoaded;
+    
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    
+    const auto pos = ns_sessions.find( session_id );
+    if( pos != end(ns_sessions) )
+    {
+      switch( pos->second.current_state )
+      {
+        case SessionState::State::Invalid:             return -1;  //shouldnt happen
+        case SessionState::State::AuthorizedNotLoaded: return 1;
+        case SessionState::State::AuthorizedLoaded:    return 2;
+        case SessionState::State::NoLongerAuthorized:  return 3;
+        case SessionState::State::Dead:                return 4;
+      }//
+      assert( 0 );
+    }//if( we already have this token )
+    
+    ns_sessions[session_id] = newsession;
+    
+    // Do some very niave cleanup for super long running sessions, will probably never actually hit
+    if( ns_sessions.size() > 500 )
+    {
+      vector<string> to_remove;
+      for( auto &keyval : ns_sessions )
+      {
+        if( keyval.second.current_state == SessionState::State::Dead )
+          to_remove.push_back( keyval.first );
+      }
+      
+      for( const auto &key : to_remove )
+        ns_sessions.erase( key );
+    }//if( ns_sessions.size() > 500 )
+    
+    return 0;
+  }//void add_allowed_session_token( const char *session_id )
   
   
   int remove_allowed_session_token( const char *session_token )
   {
-#ifndef _WIN32
-  #warning "Need to make interspec_remove_allowed_session_token() take into account if sesion with token had been seen"
-#endif
-    lock_guard<mutex> lock(ns_externalid_mutex);
-    if( session_token == ns_externalid )
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    auto pos = ns_sessions.find( session_token );
+    if( pos == end(ns_sessions) )
+      return -1;
+    
+    switch( pos->second.current_state )
     {
-      ns_externalid = "";
-      return 0;
-    }
+      case SessionState::State::Invalid:
+        return -2;
+        
+      case SessionState::State::AuthorizedNotLoaded:
+        pos->second.current_state = SessionState::State::NoLongerAuthorized;
+        pos->second.deauth_time = std::chrono::system_clock::now();
+        return 1;
+        
+      case SessionState::State::AuthorizedLoaded:
+      case SessionState::State::Dead:
+        pos->second.current_state = SessionState::State::NoLongerAuthorized;
+        pos->second.deauth_time = std::chrono::system_clock::now();
+        return 0;
+        
+      case SessionState::State::NoLongerAuthorized:
+        pos->second.current_state = SessionState::State::NoLongerAuthorized;
+        pos->second.deauth_time = std::chrono::system_clock::now();
+        return 2;
+    }//switch( pos->current_state )
+    
+    assert( 0 );
     
     return -1;
   }//int interspec_remove_allowed_session_token( const char *session_token )
   
-  std::string external_id()
+
+  bool allow_untokened_sessions()
   {
-    lock_guard<mutex> lock(ns_externalid_mutex);
-    return ns_externalid;
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    return ns_allow_untokened_sessions;
+  }//bool allow_untokened_sessions()
+
+
+  void set_require_tokened_sessions( const bool require )
+  {
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    ns_allow_untokened_sessions = !require;
   }
+
+
+  int set_session_loaded( const char *session_token )
+  {
+    //Returns 0 if had been authorized, 1 if had been seen, and 2 if not authorized, dead
+    
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    auto pos = ns_sessions.find( session_token );
+    if( pos == end(ns_sessions) )
+      return 2;
+    
+    switch( pos->second.current_state )
+    {
+      case SessionState::State::Invalid:
+        return 3;
+        
+      case SessionState::State::AuthorizedNotLoaded:
+        pos->second.current_state = SessionState::State::AuthorizedLoaded;
+        pos->second.load_time = std::chrono::system_clock::now();
+        return 0;
+        
+      case SessionState::State::AuthorizedLoaded:
+        return 1;
+        
+      case SessionState::State::Dead:
+      case SessionState::State::NoLongerAuthorized:
+        return 2;
+    }//switch( pos->current_state )
+    
+    assert( 0 );
+    
+    return -1;
+  }//int set_session_loaded( const char *session_token )
+
+  
+  void set_session_destructing( const char *session_token )
+  {
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    auto pos = ns_sessions.find( session_token );
+    if( pos != end(ns_sessions) )
+    {
+      pos->second.current_state = SessionState::State::Dead;
+      pos->second.destruct_time = std::chrono::system_clock::now();
+    }
+  }//void set_session_destructing( const char *session_token )
+
+
+  int session_status( const char *session_token )
+  {
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    auto pos = ns_sessions.find( session_token );
+    if( pos == end(ns_sessions) )
+      return 0;
+    
+    static_assert( static_cast<int>(SessionState::State::AuthorizedNotLoaded) == 1, "" );
+    static_assert( static_cast<int>(SessionState::State::AuthorizedLoaded) == 2, "" );
+    static_assert( static_cast<int>(SessionState::State::NoLongerAuthorized) == 3, "" );
+    static_assert( static_cast<int>(SessionState::State::Dead) == 4, "" );
+    
+    return static_cast<int>( pos->second.current_state );
+  }//int session_status( const char *session_token )
+
 
   int open_file_in_session( const char *sessionToken, const char *files_json )
   {
 #ifndef _WIN32
   #warning "Need to actually test interspec_open_file"
 #endif    
-    //Are we garunteed to recieve the entire message at once?
+    //Are we guaranteed to receeve the entire message at once?
     cerr << "Opening files not tested!" << endl;
     
     vector<string> files;

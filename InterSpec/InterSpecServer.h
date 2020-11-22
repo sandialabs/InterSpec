@@ -60,18 +60,62 @@ namespace InterSpecServer
   std::string getWtConfigXml( int argc, char *argv[] );
   
 
-  /** ToDo: allow adding of mutliple tokens; should also add a mechanism to
-   mark the token as having been loaded, so it cant be reused.
+  /** Add a session token to be tracked or allowed.
+   
+   Session tokens are given as part of the url using the key 'apptoken' or 'externalid', and are used to interact with a specific session
+   being displayed in a particular browser tab, or WebView, or whatever, programmatically through the c++.
+   An example of adding a token to a url would be: "http://localhost:8080?apptoken=23324assd1&restore=no&..."
+      
+   By default any token, or no token at all are required, but you can change this by calling #set_require_tokened_sessions, but if you do,
+   then you you also need to call #add_allowed_session_token with a particular token _before_ a session with that token in the URL
+   can be loaded.  If you dont restrict requiring tokens, then the status of sessions with tokens that you have not called
+   #add_allowed_session_token for will not be tracked, but the InterSpecApp class will still keep these tokens so that you can interact
+   with individual sessions.
+   
+   @Returns:
+   - 0 if hadnt been seen before
+   - 1 if authorized but not seen yet
+   - 2 if authorized and loaded
+   -3 if deauthorized session
+   - 4 if dead session
+   
+   if session had been seen before (e.g., non-zero return value), no changes will be made to that sessions allowed state.
    */
-  void add_allowed_session_token( const char *session_id );
+  int add_allowed_session_token( const char *session_id );
 
-  /** Returns -1 if invalid token.  Returns +1 if valid token that had never been loaded.  Returns zero if .  */
+  /** Returns -1 if invalid token.  Returns +1 if valid token that had never been loaded.  Returns zero if was loaded.  */
   int remove_allowed_session_token( const char *session_token );
+
+  /** Returns if we should allow sessions without, or without valid, tokens.
+   Defaults to true unless you call #set_require_tokened_sessions.
+   */
+  bool allow_untokened_sessions();
+
+  /** Set wether sessions without tokens, or without valid tokens are allowed.
+      Default is all sessions allowed.
+   */
+  void set_require_tokened_sessions( const bool require );
+
+  /** Returns the status for the specified session.
+    Returns:
+      - 0 if #add_allowed_session_token has not been called for the token
+      - 1 if #add_allowed_session_token has been called, but session not yet loaded
+      - 2 if session has been loaded
+      - 3 If session is no longer authorized (e.g., #remove_allowed_session_token called for it)
+      - 4 if session is dead
+   */
+  int session_status( const char *session_token );
   
-  /** The externalid passed into #run_app. */
-  std::string external_id();
+  /** Function that should be called when a session is initially loaded.
+   
+   Returns 0 if had been authorized, 1 if had been seen, and 2 if dead or no longer authorized
+   */
+  int set_session_loaded( const char *session_token );
+
+  /** Sets the session as dead. */
+  void set_session_destructing( const char *session_token );
   
-  
+
   /** Open one or more files from the filesystem.  For macOS this would be
    dropping a file to the app icon in the Finder.  Or on Windows it would be
    dropping multiple files onto app icon.

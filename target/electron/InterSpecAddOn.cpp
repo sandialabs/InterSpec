@@ -146,6 +146,16 @@ namespace functionexample
   }
 
 
+  Napi::Boolean usingElectronMenus(const Napi::CallbackInfo& info) 
+  {
+    Napi::Env env = info.Env();
+
+    const bool isUsing = interspec_using_electron_menus();
+
+    return Napi::Boolean::New( env, isUsing );
+  }
+
+
   Napi::Number AddWrapped(const Napi::CallbackInfo& info) 
   {
     Napi::Env env = info.Env();
@@ -171,6 +181,7 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   exports.Set( "addSessionToken", Napi::Function::New(env, functionexample::addSessionToken ));
   exports.Set( "removeSessionToken", Napi::Function::New(env, functionexample::removeSessionToken ));
 
+  exports.Set( "usingElectronMenus", Napi::Function::New(env, functionexample::usingElectronMenus ));
 
   exports.Set("add", Napi::Function::New(env, functionexample::AddWrapped));
   return exports;
