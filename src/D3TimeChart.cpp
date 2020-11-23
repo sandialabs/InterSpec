@@ -721,10 +721,10 @@ void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
       region.color = theme ? theme->timeHistoryForegroundHighlight : Wt::WColor(255,255,0,155);
       break;
     case SpecUtils::SpectrumType::SecondForeground:
-      region.color = theme ? theme->timeHistoryBackgroundHighlight : Wt::WColor(0,255,255,75);
+      region.color = theme ? theme->timeHistorySecondaryHighlight : Wt::WColor(0,255,255,75);
       break;
     case SpecUtils::SpectrumType::Background:
-      region.color = theme ? theme->timeHistorySecondaryHighlight : Wt::WColor(0,128,0,75);
+      region.color = theme ? theme->timeHistoryBackgroundHighlight : Wt::WColor(0,128,0,75);
       break;
   }//switch( type )
   
