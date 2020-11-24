@@ -87,6 +87,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
 
   m_energyEdit = new WLineEdit( "100" );
+  m_energyEdit->setAutoComplete( false );
   m_energyValidator = new WDoubleValidator( 1.0, 10000.0, m_energyEdit );
   m_energyEdit->setValidator( m_energyValidator );
   m_energyEdit->addStyleClass( "numberValidator"); //used to detect mobile keyboard
@@ -115,6 +116,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   HelpSystem::attachToolTipOn( label, tooltip, showToolTips );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_materialEdit = new WLineEdit( "C0.5H0.2Ni0.3" );
+  m_materialEdit->setAutoComplete( false );
   m_materialEdit->changed().connect( this, &GammaXsGui::handleMaterialChange );
   m_materialEdit->enterPressed().connect( this, &GammaXsGui::handleMaterialChange );
 //  m_materialEdit->focussed().connect( this, &GammaXsGui::handleMaterialChange );
@@ -205,6 +207,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   label = new WLabel( "Density:" );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_density = new WLineEdit();
+  m_density->setAutoComplete( false );
   WDoubleValidator *doubValidator = new WDoubleValidator( m_density );
   m_density->setValidator( doubValidator );
   m_density->addStyleClass( "numberValidator" ); //used to detect mobile keyboard
@@ -227,6 +230,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   label = new WLabel( "Thickness:" );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_distance = new WLineEdit( "1 cm" );
+  m_distance->setAutoComplete( false );
     
   WRegExpValidator *distValidator
                 = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
@@ -267,6 +271,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_detectorLabel[detectorCount] = new WLabel( "Distance" );
   m_layout->addWidget( m_detectorLabel[detectorCount] , row, 0, 1, 1, AlignLeft );
   m_detectorDistance = new WLineEdit("2 cm");
+  m_detectorDistance->setAutoComplete( false );
   m_detectorDistance->setValidator( distValidator );
   m_layout->addWidget( m_detectorDistance, row, 1, 1, 2 );
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"This is the distance of the selected detector.", showToolTips );

@@ -426,7 +426,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   //  nuclide input,age, color picker, DRF, etc
   WContainerWidget *inputDiv = new WContainerWidget();
   WGridLayout *inputLayout = new WGridLayout();
-  inputLayout->setContentsMargins( 0, 0, 0, 0 );
+  inputLayout->setContentsMargins( 0, 2, 0, 0 );
   inputDiv->setLayout( inputLayout );
     
     
@@ -449,6 +449,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
   m_nuclideEdit = new WLineEdit( "" );
   m_nuclideEdit->setMargin( 1 );
+  m_nuclideEdit->setMargin( 2, Wt::Side::Top );
 //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
   m_nuclideEdit->setAutoComplete( false );
@@ -947,6 +948,11 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
 
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
+  /** The gamma or xray energy below which we wont show lines for.
+   x-rays for nuclides were limited at above 10 keV, so we'll just impose this as a lower limit to show to be consistent.
+   */
+  const float lower_photon_energy = 10.0f;
+  
   bool show = true;
   show = (show && (!m_lowerBrCuttoff || m_lowerBrCuttoff->validate()==WValidator::Valid));
 
@@ -1339,6 +1345,23 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
         {
           const SandiaDecay::RadParticle &particle
                                             = transition->products[productNum];
+          
+          switch( particle.type )
+          {
+            case SandiaDecay::GammaParticle:
+            case SandiaDecay::XrayParticle:
+              if( particle.energy < lower_photon_energy )
+                continue;
+              break;
+            
+            case SandiaDecay::PositronParticle:
+            case SandiaDecay::BetaParticle:
+            case SandiaDecay::AlphaParticle:
+            case SandiaDecay::CaptureElectronParticle:
+              break;
+          }//switch( particle.type )
+          
+          
           if( type == SandiaDecay::PositronParticle && particle.type == SandiaDecay::PositronParticle )
           {
             const double br = activity * particle.intensity
@@ -1434,6 +1457,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
     for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
     {
+      if( eip.energy < lower_photon_energy )
+        continue;
+        
       transistions.push_back( NULL );
       energies.push_back( eip.energy );
       branchratios.push_back( eip.intensity );
@@ -1455,6 +1481,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   
   for( const ReactionGamma::ReactionPhotopeak &eip : rctnGammas )
   {
+    if( eip.energy < lower_photon_energy )
+      continue;
+    
     transistions.push_back( NULL );
     energies.push_back( eip.energy );
     branchratios.push_back( eip.abundance );
@@ -1475,6 +1504,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
   for( const BackgroundLine *bl : m_currentlyShowingNuclide.backgroundLines )
   {
+    if( std::get<0>(*bl) < lower_photon_energy )
+      continue;
+    
     transistions.push_back( NULL );
     energies.push_back( std::get<0>(*bl) );
     branchratios.push_back( std::get<1>(*bl) );
@@ -1512,8 +1544,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 //  for( size_t i = 0; i < inforows.size(); ++i )
 //    inforows[i].branchRatio /= maxOrigbr;
 
-  //Lets get rid of brannching ratios that are incredible close to zero
-  const float abs_min_br = FLT_MIN; //1.0E-15
+  //Lets get rid of branching ratios that are incredible close to zero
+  const float abs_min_br = FLT_MIN; //FLT_MIN is minimum, normalized, positive value of floats.
   vector<DecayParticleModel::RowData> inforowstouse;
   for( size_t i = 0; i < inforows.size(); ++i )
     if( inforows[i].branchRatio > abs_min_br && inforows[i].branchRatio >= brCutoff )

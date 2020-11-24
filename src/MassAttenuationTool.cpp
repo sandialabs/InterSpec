@@ -468,11 +468,15 @@ float MassAttenuationTool::logLogInterpolate( const float energy,
   //      to the highest energy value in the data file, but this is a detail
   if( iter == eend || (iter == (eend-1)) || iter == ebegin )
   {
-    //Note that choosing 5keV to 10 MeV is arbitrary, and I didnt actually check
-    //  the valid range of the cross-section files, but I think this should be
-    //  fine
-    if( energy > 5*PhysicalUnits::keV && energy < 10.0*PhysicalUnits::MeV )
-      return 0;
+    //Note, as of 20201124, the valid energy ranges of the various process, for each element is
+    //  at least the following:
+    //   - Compton has range 1 to 100000
+    //   - Rayleigh has range 1.00331 to 35436.5
+    //   - PhotoElectric has range 1 to 73282.4
+    //   - PairProd has range 1025.12 to 100000
+    if( energy > 1.01*PhysicalUnits::keV && energy < 100.0*PhysicalUnits::MeV )
+      return 0.0f;
+    
     throw runtime_error( "logLogInterpolatedValue(...): Out of range" );
   }//if( iter == eend || (iter == (eend-1)) || iter == ebegin )
 
@@ -764,6 +768,65 @@ float MassAttenuationTool::massAttenuationCoeficient( const int atomic_num,
   float s_mu, p_mu, pair_mu;
   return units * AttCoef( energy, atomic_num, s_mu, p_mu, pair_mu );
 #else
+  
+  /*
+   // Some code to quickly find the range valid energies for the cross-sections
+  auto to_str = []( MassAttenuation::GammaEmProcces ii ) -> string {
+    switch( ii )
+    {
+      case MassAttenuation::GammaEmProcces::ComptonScatter:    return "Compton";
+      case MassAttenuation::GammaEmProcces::RayleighScatter:   return "Rayleigh";
+      case MassAttenuation::GammaEmProcces::PhotoElectric:     return "PhotoElectric";
+      case MassAttenuation::GammaEmProcces::PairProduction:    return "PairProd";
+      case MassAttenuation::GammaEmProcces::NumGammaEmProcces: return "invalid";
+    }
+    return "invalid";
+  };//to_str
+  
+  vector<double> min_energies(static_cast<int>(MassAttenuation::GammaEmProcces::NumGammaEmProcces), -9999999.9 );
+  vector<double> max_energies(static_cast<int>(MassAttenuation::GammaEmProcces::NumGammaEmProcces), 99999999.9 );
+  
+  for( int i = 1; i < 98; ++i )
+  {
+    const ElementAttenuation * const data = attenuationData( atomic_num );
+    
+    string proccsstr;
+    
+    for( int i = 0; i < static_cast<int>(MassAttenuation::GammaEmProcces::NumGammaEmProcces); i += 1 )
+    {
+      const auto ii = MassAttenuation::GammaEmProcces(i);
+      const auto &energies = data->m_proccesses[i].m_logEnergies;
+      if( energies.empty() )
+        continue;
+      
+      const double minenergy = std::pow(10.0,energies.front());
+      const double maxenergy = std::pow(10.0,energies.back());
+      const double prevmin = min_energies[i];
+      const double prevmax = max_energies[i];
+      
+      if( minenergy > prevmin )
+      {
+        min_energies[i] = minenergy;
+        cerr << "XS: " << data->m_symbol << " process=" << to_str(ii) << " raises min energy to " << minenergy << endl;
+      }
+      
+      if( maxenergy < prevmax )
+      {
+        max_energies[i] = maxenergy;
+        cerr << "XS: " << data->m_symbol << " process=" << to_str(ii) << " lowers max energy to " << maxenergy << endl;
+      }
+      //cerr << "XS: " << data->m_symbol << " process=" << to_str(ii) << " has range " << minenergy << " to " << maxenergy << endl;
+    }//for( int i = 0; i < static_cast<int>(MassAttenuation::GammaEmProcces::NumGammaEmProcces); i += 1 )
+  }//for( int i = 1; i < 98; ++i )
+  
+  cerr << endl << endl;
+  for( int i = 0; i < static_cast<int>(MassAttenuation::GammaEmProcces::NumGammaEmProcces); i += 1 )
+  {
+    const auto ii = MassAttenuation::GammaEmProcces(i);
+    cerr << "Process " << to_str(ii) << " has range " << min_energies[i] << " to " << max_energies[i] << endl;
+  }
+   */
+  
   const ElementAttenuation * const data = attenuationData( atomic_num );
 
   float comptXs = 0.0, photoXs = 0.0, convXs = 0.0;
