@@ -164,11 +164,15 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   m_removeIcn = new WContainerWidget(); //needed or else button wont show up
   m_removeIcn->setStyleClass( "DeleteSearchEnergy Wt-icon" );
   m_removeIcn->clicked().connect( this, &SearchEnergy::emitRemove );
+  m_removeIcn->clicked().preventPropagation();  //make it so we wont emit gotFocus()
   layout->addWidget( m_removeIcn, 0, 5, Wt::AlignMiddle );
   
   m_addAnotherIcn = new WContainerWidget(); //needed or else button wont show up
   m_addAnotherIcn->setStyleClass( "AddSearchEnergy Wt-icon" );
   m_addAnotherIcn->clicked().connect( this, &SearchEnergy::emitAddAnother );
+  m_addAnotherIcn->clicked().preventPropagation(); //make it so we wont emit gotFocus(), which would
+                                                   // keep new search energy from getting focus due
+                                                   // order of handling signal callbacks
   layout->addWidget( m_addAnotherIcn, 0, 6, Wt::AlignMiddle );
   
   layout->setColumnStretch( 1, 1 );
@@ -344,6 +348,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 
   SearchEnergy *enrgy = new SearchEnergy( m_searchEnergies );
   enrgy->enter().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
+  enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
   enrgy->gotFocus().connect(
                 boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus,
                                         this, enrgy ) );
@@ -351,7 +356,6 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
                         boost::bind( &IsotopeSearchByEnergy::removeSearchEnergy,
                                       this, enrgy) );
   enrgy->addStyleClass( ActiveSearchEnergyClass );
-  enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
   enrgy->disableRemove();
   
   
@@ -553,6 +557,9 @@ IsotopeSearchByEnergy::SearchEnergy *IsotopeSearchByEnergy::addNewSearchEnergy()
     if( searchv[i]->energy() < 0.1 )
     {
       searchEnergyRecievedFocus( searchv[i] );
+      // Note: if there are more callbacks queued, like gotFocus(), then they may happen after here, so we
+      //    need to either be careful of the ordering of callbacks, or use something like a WTimer here.
+      //WTimer::singleShot( 1, boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus, this, searchv[i]) );
       break;
     }//if( searchv[i]->energy() < 0.01 )
   }//for( size_t i = 0; i < searchv.size(); ++i )
