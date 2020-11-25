@@ -222,7 +222,7 @@ D3TimeChart = function (elem, options) {
   this.backgroundDuration = null;
 
   this.margin = {
-    top: 20,
+    top: 5,
     right: 60,
     bottom: 50,
     left: 60,
@@ -541,6 +541,7 @@ D3TimeChart.prototype.render = function (options) {
 
         this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
 
+        console.log(d3.event.sourceEvent)
         if (d3.event.sourceEvent.altKey) {
           this.highlightModifier = "altKey";
           this.mouseDownHighlight(coords[0], "altKey");
