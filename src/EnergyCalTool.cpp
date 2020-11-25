@@ -1608,6 +1608,9 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
 #endif
     
     m_interspec->logMessage( msg, "", 3 );
+    
+    // We will get here if the user has Apply To "Foreground" checked, but not "Background", but
+    //  they change the background coefficient
     assert( 0 );
   }//if( updated_cals.find(disp_prev_cal) == end(updated_cals) )
   
@@ -1909,6 +1912,58 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   using namespace SpecUtils;
   assert( coefnum < 10 );  //If we ever allow lower channel energy adjustment this will need to be removed
   
+  shared_ptr<const EnergyCalibration> disp_prev_cal = display->lastSetCalibration();
+  if( !disp_prev_cal )
+  {
+    cerr << "unexpected error getting updaettd energy calibration coefficents" << endl;
+    m_interspec->logMessage( "Unexpected error retrieving previous calibration coefficients - not applying changes", "", 2 );
+    doRefreshFromFiles();
+    return;
+  }//if( !disp_prev_cal )
+  
+  
+  {// Begin check to make sure the changed energy cal is actually checked for it to be applied to...
+    bool willBeAppliedToDisplay = false;
+    const std::string &detname = display->detectorName();
+    const SpecUtils::SpectrumType type = display->spectrumType();
+    std::shared_ptr<SpecMeas> cal_disp_meas = m_interspec->measurment(type);
+    assert( cal_disp_meas );
+    
+    for( const MeasToApplyCoefChangeTo &delta : measurementsToApplyCoeffChangeTo() )
+    {
+      const shared_ptr<SpecMeas> &meas = delta.meas;
+      if( meas != cal_disp_meas )
+        continue;
+      
+      const set<string> &detectors = delta.detectors;
+      if( !detectors.count(detname) )
+        continue;
+      
+      // Actually, I think if we're here, we're probably good, but we'll check a little deeper to
+      //   make sure check in EnergyCalTool::applyCalChange will be satisfied
+      const set<int> &samples = delta.sample_numbers;
+      for( const int sample : samples )
+      {
+        auto m = meas->measurement( sample, detname);
+        willBeAppliedToDisplay = (m && (m->energy_calibration() == disp_prev_cal));
+        if( willBeAppliedToDisplay )
+          break;
+      }//for( const int sample : samples )
+    
+      if( willBeAppliedToDisplay )
+        break;
+    }//for( loop over changes )
+    
+    if( !willBeAppliedToDisplay )
+    {
+      m_interspec->logMessage( "It looks like the energy calibration you changed isn't marked"
+                               " for changes to be applied to; please correct that.", "", 2 );
+      doRefreshFromFiles();
+      return;
+    }
+  }// End check to make sure the changed energy cal is actually checked for it to be applied to...
+  
+  
   m_lastGraphicalRecal = 0;
   m_lastGraphicalRecalType = EnergyCalGraphicalConfirm::NumRecalTypes;
   m_lastGraphicalRecalEnergy = -999.0f;
@@ -1916,13 +1971,6 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   vector<float> dispcoefs = display->displayedCoefficents();
   if( dispcoefs.size() <= coefnum )
     dispcoefs.resize( coefnum+1, 0.0f );
-  
-  shared_ptr<const EnergyCalibration> disp_prev_cal = display->lastSetCalibration();
-  if( !disp_prev_cal )
-  {
-    cerr << "unexpected error getting updaettd energy calibration coefficents" << endl;
-    return;
-  }
   
   vector<float> prev_disp_coefs = disp_prev_cal->coefficients();
   if( prev_disp_coefs.size() <= coefnum )
@@ -2177,7 +2225,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   if( num_updated == 0 )
   {
     display->updateToGui( old_cal );
-    m_interspec->logMessage( "There was an eror setting deviation pairs for this detector.", "", 2 );
+    m_interspec->logMessage( "There was an error setting deviation pairs for this detector.", "", 2 );
     return;
   }
   
