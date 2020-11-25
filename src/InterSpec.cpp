@@ -897,7 +897,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_layout->setRowStretch( m_menuDiv ? 2 : 1, 3 );
   
 #if( USE_OSX_NATIVE_MENU )
-  m_menuDiv->hide();
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    m_menuDiv->hide();
 #endif
   
 #if( USING_ELECTRON_NATIVE_MENU )
@@ -5078,9 +5079,12 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Front );
   m_fileMenuPopup->addSeparator();
 #elif( BUILD_AS_OSX_APP )
-  item = m_fileMenuPopup->addMenuItem( "About InterSpec" );
-  item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
-  m_fileMenuPopup->addSeparator();  //doesnt seem to be showing up for some reason... owe well.
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    item = m_fileMenuPopup->addMenuItem( "About InterSpec" );
+    item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+    m_fileMenuPopup->addSeparator();  //doesnt seem to be showing up for some reason... owe well.
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif
   
   
@@ -6161,14 +6165,42 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     chartmenu->addSeparator();
   }//if( overlay )
   
-#if( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
     m_displayOptionsPopupDiv->addSeparator();
-    auto browserItem = chartmenu->addMenuItem( "Use in external browser" );
-    browserItem->clicked().connect( "function(){ if( ipcRenderer ) ipcRenderer.send('OpenInExternalBrowser'); }" );
+    auto browserItem = m_displayOptionsPopupDiv->addMenuItem( "Use in external browser" );
+#if( BUILD_AS_ELECTRON_APP )
+    browserItem->triggered().connect( std::bind( [](){
+      wApp->doJavaScript( "function(){ if(ipcRenderer) ipcRenderer.send('OpenInExternalBrowser'); }" );
+    } ) );
+#endif
+    
+#if( BUILD_AS_OSX_APP )
+    // A brief attempt at using javascript to open a browser window failed (probably because I wasnt
+    //  doing it right or something), so I just implemented calling back to obj-c; see the
+    //  didReceiveScriptMessage method in AppDelegate.mm.
+    //  Alternatively we could have added something into macOsUtils.h and then called into there
+    //  where we would have the obj-c open a browser window that way, but I wanted to try this
+    //  method of communicating between JS and native code (but I shuld check if it introduces any
+    //  notable overhead...).
+    // A note for the future: should probably have tried to init the javascript:
+    //    "try{document.getElementById('" + browserItem->anchor()->id() + "').click();}catch(e){}";
+    //    after calling the following c++
+    //      browserItem->setLink( WLink("http://localhost:port?restore=no&primary=no") );
+    //      browserItem->setLinkTarget( AnchorTarget::TargetNewWindow );
+    browserItem->triggered().connect( std::bind([=](){
+      doJavaScript( "console.log('Will try to call back to obj-c');"
+                    "try{"
+                      "window.webkit.messageHandlers.interOp.postMessage({\"action\": \"ExternalInstance\"});"
+                     "}catch(error){"
+                       "console.warn('Failed to callback to the obj-c: ' + error );"
+                     "}" );
+    }) );
+#endif //BUILD_AS_OSX_APP
   }//if( useNativeMenu )
-#endif //BUILD_AS_ELECTRON_APP
+#endif //BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP
+  
   
 #if( USING_ELECTRON_NATIVE_MENU )
   m_displayOptionsPopupDiv->addSeparator();
@@ -6654,12 +6686,21 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this, false );
 #endif
   
-#if( !BUILD_AS_OSX_APP )
-  m_helpMenuPopup->addSeparator();
   
-  item = m_helpMenuPopup->addMenuItem( "About InterSpec..." );
-  item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+#if( BUILD_AS_OSX_APP )
+  const bool addAboutInterSpec = !InterSpecApp::isPrimaryWindowInstance();
+#else
+    const bool addAboutInterSpec = true;
 #endif
+  
+  if( addAboutInterSpec )
+  {
+    m_helpMenuPopup->addSeparator();
+    
+    item = m_helpMenuPopup->addMenuItem( "About InterSpec..." );
+    item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+  }
+
 }//void addAboutMenu( Wt::WContainerWidget *menuDiv )
 
 
