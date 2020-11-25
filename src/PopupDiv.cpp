@@ -662,6 +662,8 @@ Wt::WMenuItem *PopupDivMenu::addSeparatorAt( int index )
 #elif( USE_OSX_NATIVE_MENU )
   if( m_nsmenu )
   {
+    if( index < 0 )
+      index = indexOf( item );  //For some reason the "InterSpec" menu needs this, the other ones dont...
     void *macItem = addOsxSeparatorAt( index, m_nsmenu );
     item->setData( macItem );
   }

@@ -129,16 +129,9 @@ void *addOsxMenu( PopupDivMenu *menu, const char *name  )
   //  initialization, which happens before the WApplication pointer is added
   //  to the running instances, so we require there to be no running instances
   //  in order to add the menus to the OSX menu bar.
-  const std::set<InterSpecApp *> apps = InterSpecApp::runningInstances();
-  if( apps.size() )
-  {
-    //Otherwise in case the user asked to reload to a blank session, we will
-    //  check the URL for a 'externalid=...' argument, wich the native gui app
-    //  should have, but others shouldnt
-    InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
-    if( !app || app->externalToken().empty() )
-      return 0;
-  }//if( apps.size() )
+  
+  if( !InterSpecApp::isPrimaryWindowInstance() )
+    return 0;
   
   NSMenu *newMenu = nil;
   
@@ -173,7 +166,8 @@ void *addOsxMenu( PopupDivMenu *menu, const char *name  )
         }
       }
       
-      return ret;
+      newMenu = ret;
+      return;
     }//InterSpec menu
     
     NSMenuItem *newItem = [[NSMenuItem alloc] initWithTitle:@"" action:NULL keyEquivalent:@""];

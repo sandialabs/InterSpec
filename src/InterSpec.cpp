@@ -7325,9 +7325,19 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, &InterSpec::showGammaCountDialog );
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
-  item = popup->addMenuItem( "File Query Tool" );
-  HelpSystem::attachToolTipOn( item, "Searches through a directory (recursively) for spectrum files that match specafiable conditions.", showToolTips );
-  item->triggered().connect( this, &InterSpec::showFileQueryDialog );
+  
+#if( BUILD_AS_OSX_APP )
+  const bool addQueryTool = InterSpecApp::isPrimaryWindowInstance();
+#else
+  const bool addQueryTool = true;
+#endif
+  
+  if( addQueryTool )
+  {
+    item = popup->addMenuItem( "File Query Tool" );
+    HelpSystem::attachToolTipOn( item, "Searches through a directory (recursively) for spectrum files that match specafiable conditions.", showToolTips );
+    item->triggered().connect( this, &InterSpec::showFileQueryDialog );
+  }//if( addQueryTool )
 #endif
   
 #if( USE_TERMINAL_WIDGET )
