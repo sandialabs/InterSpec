@@ -236,16 +236,31 @@ bool InterSpecApp::checkExternalTokenFromUrl()
       m_externalToken = p.second.front();
       
       const int status = InterSpecServer::set_session_loaded( m_externalToken.c_str() );
-      m_primaryApp = true; //defaults to true if we have an app token
       
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+      m_primaryApp = false;
+#else
+      // Default to true if we have an app token; this is temporary until I get around to changing
+      //  android/ios targets to always give "primary=yes" URL argument
+      m_primaryApp = true;
+#endif
+            
       for( const Http::ParameterMap::value_type &primary : parmap )
       {
         if( !primary.second.empty() && SpecUtils::iequals_ascii(primary.first, "primary") )
         {
           const string &val = primary.second.front();
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+          m_primaryApp = ((status == 0)
+                           && (SpecUtils::iequals_ascii(val,"yes")
+                               || SpecUtils::iequals_ascii(val,"true")
+                               || SpecUtils::iequals_ascii(val,"1") ));
+#else
           m_primaryApp = !(SpecUtils::iequals_ascii(val,"no")
                             || SpecUtils::iequals_ascii(val,"false")
                             || SpecUtils::iequals_ascii(val,"0") );
+#endif
+          break;
         }//if( there is a 'primary' argument in the URL
       }//for( loop over parameters to see if this _shouldnt_ be a primary app )
       

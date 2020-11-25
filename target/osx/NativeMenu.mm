@@ -140,46 +140,59 @@ void *addOsxMenu( PopupDivMenu *menu, const char *name  )
       return 0;
   }//if( apps.size() )
   
-  //Cleans out the old menu if it exists before replacing it
-  NSString *nsname = [NSString stringWithFormat:@"%s", name];
-  NSMenu* rootMenu = [NSApp mainMenu];
- 
-  //check if menu already exists, if so, remove
-  for( NSInteger i = 0; i < [[NSApp mainMenu] numberOfItems]; ++i )
-  {
-    NSMenu* menu = [[[NSApp mainMenu] itemAtIndex: i] submenu];
-    //Checks the name, but also make sure it's not the main "InterSpec" menu
-    if ([menu.title isEqualToString:nsname] && ![[menu title] isEqualToString:@"InterSpec"])
-    {
-      [rootMenu removeItemAtIndex:[rootMenu indexOfItemWithSubmenu:menu]];
-    }
-  }
-    
+  NSMenu *newMenu = nil;
   
-  if( std::strcmp(name,"InterSpec")==0 )
-  {
-    NSMenu* ret = [[[NSApp mainMenu] itemAtIndex: 0] submenu];
-    //Go through all the menuitems
-    for( NSMenuItem *item in [ret itemArray] )
+  //Cleans out the old menu if it exists before replacing it
+  auto doWork = [name,&newMenu](){
+    NSString *nsname = [NSString stringWithFormat:@"%s", name];
+    NSMenu* rootMenu = [NSApp mainMenu];
+    
+    //check if menu already exists, if so, remove
+    for( NSInteger i = 0; i < [[NSApp mainMenu] numberOfItems]; ++i )
     {
-      NSString *menuString = item.title;
-      if( ![menuString isEqualToString:@"Quit InterSpec"] )
+      NSMenu* menu = [[[NSApp mainMenu] itemAtIndex: i] submenu];
+      //Checks the name, but also make sure it's not the main "InterSpec" menu
+      if ([menu.title isEqualToString:nsname] && ![[menu title] isEqualToString:@"InterSpec"])
       {
-        //Remove everything if it is not Quit menuitem
-        [ret removeItem:item];
+        [rootMenu removeItemAtIndex:[rootMenu indexOfItemWithSubmenu:menu]];
       }
     }
     
-    return ret;
-  }//InterSpec menu
-  
-  NSMenuItem *newItem = [[NSMenuItem allocWithZone:[NSMenu menuZone]] initWithTitle:@"" action:NULL keyEquivalent:@""];
-  NSMenu *newMenu = [[NSMenu allocWithZone:[NSMenu menuZone]] initWithTitle:nsname];
-
-//  dispatch_async(dispatch_get_main_queue(), ^{
+    
+    if( std::strcmp(name,"InterSpec")==0 )
+    {
+      NSMenu* ret = [[[NSApp mainMenu] itemAtIndex: 0] submenu];
+      //Go through all the menuitems
+      for( NSMenuItem *item in [ret itemArray] )
+      {
+        NSString *menuString = item.title;
+        if( ![menuString isEqualToString:@"Quit InterSpec"] )
+        {
+          //Remove everything if it is not Quit menuitem
+          [ret removeItem:item];
+        }
+      }
+      
+      return ret;
+    }//InterSpec menu
+    
+    NSMenuItem *newItem = [[NSMenuItem alloc] initWithTitle:@"" action:NULL keyEquivalent:@""];
+    newMenu = [[NSMenu alloc] initWithTitle:nsname];
+    
     [newItem setSubmenu:newMenu];
     [[NSApp mainMenu] addItem:newItem];
-//  });
+  };//doWork
+  
+  if( [NSThread isMainThread] )
+  {
+    doWork();
+  }else
+  {
+    dispatch_sync(dispatch_get_main_queue(), ^{
+      doWork();
+    } );
+  }//if( in main thread ) / else
+  
   
   return newMenu;
 }//void *addOsxMenu( PopupDivMenu *menu, const char *name  )
@@ -190,8 +203,8 @@ void *addOsxSubMenu( void *parent, PopupDivMenu *item, const char *text )
   NSMenu *parentmenu = (NSMenu *)parent;
   NSString *nsname = [NSString stringWithFormat:@"%s", text];
   
-  NSMenuItem *newItem = [[NSMenuItem allocWithZone:[NSMenu menuZone]] initWithTitle:nsname action:NULL keyEquivalent:@""];
-  NSMenu *newMenu = [[NSMenu allocWithZone:[NSMenu menuZone]] initWithTitle:nsname];
+  NSMenuItem *newItem = [[NSMenuItem alloc] initWithTitle:nsname action:NULL keyEquivalent:@""];
+  NSMenu *newMenu = [[NSMenu alloc] initWithTitle:nsname];
 
 //  dispatch_async(dispatch_get_main_queue(), ^{
     NSInteger ind = [parentmenu indexOfItemWithTitle:@"Quit InterSpec"];
