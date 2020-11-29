@@ -3896,7 +3896,16 @@ void SpecMeasManager::browseDatabaseSpectrumFiles( SpecUtils::SpectrumType type 
 
 void SpecMeasManager::showPreviousDatabaseSpectrumFiles( SpecUtils::SpectrumType type, std::shared_ptr<SpectraFileHeader> header )
 {
-  new DbFileBrowser( this, m_viewer, type, header );
+  DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, type, header );
+  
+  // \TODO: come up with a way to check if there are any states before going through and creating
+  //        the widget and everything.
+  if( browser->numSnapshots() <= 0 )
+  {
+    delete browser;
+    browser = nullptr;
+  }
+  
   wApp->triggerUpdate();
 }
 

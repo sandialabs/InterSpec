@@ -2538,7 +2538,8 @@ void DownloadSpectrumResource::handle_resource_request(
           if( peaks )
           {
             vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-            options.peaks_json = PeakDef::peak_json( inpeaks );
+            std::shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+            options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
           }
           
           measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );

@@ -1212,7 +1212,7 @@ string InterSpec::print_d3_json() const
     if( peaks )
     {
       vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks );
+      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
     }
     
     D3SpectrumExport::write_spectrum_data_js( ostr, *data, options, 0, 1 );
@@ -1235,7 +1235,7 @@ string InterSpec::print_d3_json() const
     if( peaks )
     {
       vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks );
+      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
     }
     
     D3SpectrumExport::write_spectrum_data_js( ostr, *back, options, 1, -1 );
@@ -1259,7 +1259,7 @@ string InterSpec::print_d3_json() const
     if( peaks )
     {
       vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks );
+      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
     }
     
     D3SpectrumExport::write_spectrum_data_js( ostr, *second, options, 2, 1 );
@@ -8313,9 +8313,19 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( m_useInfoWindow )
     {
-      delete m_useInfoWindow;
-      m_useInfoWindow = nullptr;
-    }
+      // If we are loading a state from the "Welcome To InterSpec" screen, we dont want to delete
+      //  m_useInfoWindow because we will still use it, so instead we'll try deleting the window on
+      //  the next go around of the event loop.
+      auto doDelete = wApp->bind( std::bind([this](){
+        WApplication *app = wApp;
+        if( !app )
+          return;
+        deleteWelcomeCountDialog();
+        app->triggerUpdate();
+      }) );
+      
+      WServer::instance()->post( wApp->sessionId(), doDelete );
+    }//if( m_useInfoWindow )
     
 /*
     const std::vector<std::string> &names = meas->detector_names();
