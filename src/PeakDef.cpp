@@ -2263,7 +2263,8 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
 }//void fromXml(...)
 
 #if( SpecUtils_ENABLE_D3_CHART )
-std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const PeakDef> > &peaks)
+std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const PeakDef> > &peaks,
+                                  const std::shared_ptr<const SpecUtils::Measurement> &foreground )
 {
   //Need to check all numbers to make sure not inf or nan
   
@@ -2296,6 +2297,19 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 	}//switch( continuum->type() )
 	answer << q << "," << q << "lowerEnergy" << q << ":" << continuum->lowerEnergy()
 		<< "," << q << "upperEnergy" << q << ":" << continuum->upperEnergy();
+  
+  
+  if( foreground && foreground->channel_energies() && foreground->channel_energies()->size() > 2 )
+  {
+    // If we want integer counts (for simple spectra only), should use gamma_channels_sum, otherwise
+    //   gamma_integral(...) will almost always return fractional.
+    //const size_t lower_channel = foreground->find_gamma_channel( continuum->lowerEnergy() );
+    //const size_t upper_channel = foreground->find_gamma_channel( continuum->upperEnergy() );
+    //const double sum = foreground->gamma_channels_sum( lower_channel, upper_channel );
+    const double sum = foreground->gamma_integral( continuum->lowerEnergy(), continuum->upperEnergy() );
+    answer << "," << q << "roiCounts" << q << ":" << sum;
+  }//if( foreground )
+  
   
   switch( continuum->type() )
   {
@@ -2416,7 +2430,25 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 				<< "," << uncert << "," << (p.fitFor(t) ? "true" : "false")
 				<< "],";
 		}//for(...)
-
+    
+    // The peak amplitude CPS, is only used for the little info box when you hover-over/tap a peak,
+    //   so we'll just format the text here; may change in the future.
+    if( (p.type() == PeakDef::GaussianDefined) && (p.amplitudeUncert() > 0.0f)
+       && foreground && (foreground->live_time() > 0.0f) )
+    {
+      const float lt = foreground->live_time();
+      const float cps = p.amplitude() / lt;
+      const float cpsUncert = p.amplitudeUncert() / lt;
+      
+      // \TODO: Make it so uncertainty gives out to the same number of decimal places as cps, and
+      //        probably abstract this out into PhysicalUnits...
+      
+      char buffer[32] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "%.4g \xC2\xB1 %.3g", cps, cpsUncert );
+      
+      answer << q << "cpsTxt" << q << ":" << q << buffer << q << ",";
+    }//if( we can give peak CPS )
+    
 		answer << q << "forCalibration" << q << ":" << (p.useForCalibration() ? "true" : "false")
 			<< "," << q << "forSourceFit" << q << ":" << (p.useForShieldingSourceFit() ? "true" : "false");
 
@@ -2512,7 +2544,8 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 }//std::string PeakDef::gaus_peaks_to_json(...)
 
 
-string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks)
+string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks,
+                          const std::shared_ptr<const SpecUtils::Measurement> &foreground )
 {
 	if (inpeaks.empty())
 		return "[]";
@@ -2525,7 +2558,7 @@ string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks
 
 	string json = "[";
 	for (const ContinuumToPeakMap_t::value_type &vt : continuumToPeaks)
-		json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second);
+		json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second,foreground);
 
 	json += "]";
 	return json;

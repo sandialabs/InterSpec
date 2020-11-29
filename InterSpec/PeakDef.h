@@ -711,8 +711,10 @@ public:
   
 
 #if( SpecUtils_ENABLE_D3_CHART )
-  static std::string gaus_peaks_to_json(const std::vector<std::shared_ptr<const PeakDef> > &peaks);
-  static std::string peak_json(const std::vector<std::shared_ptr<const PeakDef> > &inpeaks);
+  static std::string gaus_peaks_to_json( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
+                                  const std::shared_ptr<const SpecUtils::Measurement> &foreground );
+  static std::string peak_json( const std::vector<std::shared_ptr<const PeakDef> > &inpeaks,
+                                const std::shared_ptr<const SpecUtils::Measurement> &foreground );
 #endif
   
 

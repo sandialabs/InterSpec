@@ -71,15 +71,16 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   {
     m_factory = new SnapshotBrowser( manager, viewer, type, header, footer(), nullptr );
     layout->addWidget( m_factory, 0, 0 );
-    
-    auto hider = wApp->bind( boost::bind( &AuxWindow::hide, this ) );
-    
-    m_factory->finished().connect( std::bind( [hider](){hider();} ) );
+  }catch( std::exception &e )
+  {
+    m_factory = nullptr;
+    WText *tt = new WText( "<b>Error creating SnapshotBrowser</b> - sorry :("
+                           "<br />Error: " + string(e.what()) );
+    layout->addWidget( tt, 0, 0 );
   }catch( ... )
   {
-    //In case something goes wrong inside SnapshotBrowser, we delete this window
-    AuxWindow::deleteAuxWindow(this);
-    return;
+    WText *tt = new WText( "<b>Unexpected issue creating SnapshotBrowser</b> - sorry :(" );
+    layout->addWidget( tt, 0, 0 );
   }
   
   WPushButton *cancel = addCloseButtonToFooter();
@@ -88,7 +89,7 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   rejectWhenEscapePressed();
   
   auto deleter = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  finished().connect( std::bind([deleter](){ deleter(); }) );
+  finished().connect( std::bind(deleter) );
 
   const int width = std::min( 500, static_cast<int>(0.95*viewer->renderedWidth()) );
   const int height = std::min( 475, static_cast<int>(0.95*viewer->renderedHeight()) );
@@ -97,6 +98,13 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   centerWindow();
   show();
 }//DbFileBrowser
+
+
+int DbFileBrowser::numSnapshots() const
+{
+  return m_factory ? m_factory->numSnaphots() : 0;
+}
+
 
 /*
 SnapshotBrowser is the refactored class to create the UI for loading snapshot/spectra

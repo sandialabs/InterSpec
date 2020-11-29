@@ -822,7 +822,8 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
     if( peaks )
     {
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      js = PeakDef::peak_json( inpeaks );
+      std::shared_ptr<Measurement> foreground = m_model->getData();
+      js = PeakDef::peak_json( inpeaks, foreground );
     }
   }
   
@@ -1219,7 +1220,7 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     if ( m_peakModel ) {
       std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks );
+      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks, data_hist );
     }
     
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(data_hist.get(),foregroundOptions) );
@@ -1677,7 +1678,8 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
         m_peakModel->addPeaks( peaks_to_add );
       }else
       {
-        string adjustRoiJson = PeakDef::gaus_peaks_to_json( new_roi_initial_peaks );
+        std::shared_ptr<Measurement> foreground = m_model->getData();
+        string adjustRoiJson = PeakDef::gaus_peaks_to_json( new_roi_initial_peaks, foreground );
         doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
       }
     }else if( new_upper_px >= (new_lower_px+10) )  //perhaps this should be by percentage of ROI?
@@ -1704,7 +1706,8 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
         m_peakModel->addPeaks( peaks_to_add );
       }else
       {
-        string adjustRoiJson = PeakDef::gaus_peaks_to_json( newpeaks );
+        std::shared_ptr<Measurement> foreground = m_model->getData();
+        string adjustRoiJson = PeakDef::gaus_peaks_to_json( newpeaks, foreground );
         doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
       }
       
@@ -2043,7 +2046,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       }else
       {
         std::vector<std::shared_ptr<const PeakDef> > peaks( begin(results[best_choice]), end(results[best_choice]) );
-        const string roiJson = PeakDef::gaus_peaks_to_json( peaks );
+        const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
         doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
       }
       
@@ -2066,7 +2069,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       cont->calc_linear_continuum_eqn( foreground, lower_energy, upper_energy, 0 );
       
       std::vector<std::shared_ptr<const PeakDef> > peaks{ make_shared<const PeakDef>(tmppeak) };
-      const string roiJson = PeakDef::gaus_peaks_to_json( peaks );
+      const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
       
       doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
       m_fitRoiDrag.emit( lower_energy, upper_energy, nForcedPeaks, isfinal );

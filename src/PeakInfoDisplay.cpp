@@ -941,14 +941,17 @@ void PeakInfoDisplay::init()
   dblDelagate = new WItemDelegate( m_infoView );
   dblDelagate->setTextFormat( "%.0f" );
   m_infoView->setItemDelegateForColumn( PeakModel::kAmplitude, dblDelagate );
-  m_infoView->setItemDelegateForColumn( PeakModel::kContinuumArea, dblDelagate );
+  m_infoView->setItemDelegateForColumn( PeakModel::kRoiCounts, dblDelagate );
 
   //tweak column widths
   m_infoView->setColumnWidth( PeakModel::kMean,       WLength(8, WLength::FontEx) );
   m_infoView->setColumnWidth( PeakModel::kFwhm,       WLength(9, WLength::FontEx) );
   m_infoView->setColumnWidth( PeakModel::kAmplitude,  WLength(12, WLength::FontEx) );
-
+  m_infoView->setColumnWidth( PeakModel::kCps,        WLength(13, WLength::FontEx) );
+  
+  
   m_infoView->setColumnWidth( PeakModel::kIsotope,    WLength(/*8*/9, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kDifference,    WLength(8, WLength::FontEx) );
   //Note 20131211, wcjohns: closeOnBlur was previoulsy set to false, however
   //  there was a rare crash that happened with the model row was deleted while
   //  the editor was still open.  Hopefully closeOnBlur==true will fix this
@@ -957,7 +960,7 @@ void PeakInfoDisplay::init()
   PhotopeakDelegate *nuclideDelegate = new PhotopeakDelegate( PhotopeakDelegate::NuclideDelegate, closeOnBlur, m_infoView );
   m_infoView->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
 
-  m_infoView->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(12 /*18*/, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(13 /*18*/, WLength::FontEx) );
   PhotopeakDelegate *photopeakDelegate = new PhotopeakDelegate( PhotopeakDelegate::GammaEnergyDelegate, closeOnBlur, m_infoView );
   m_infoView->setItemDelegateForColumn( PeakModel::kPhotoPeakEnergy, photopeakDelegate );
 
@@ -980,10 +983,10 @@ void PeakInfoDisplay::init()
   m_infoView->setColumnHidden( PeakModel::kType, true );
 //  m_infoView->setColumnWidth( PeakModel::kType,       WLength(12, WLength::FontEx) );
   
-  m_infoView->setColumnWidth( PeakModel::kLowerX,     WLength(/*11*/16, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kUpperX,     WLength(/*11*/16, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kContinuumArea, WLength(/*13*/16, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kContinuumType,  WLength(/*11*/16, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kLowerX,     WLength(/*11*/12, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kUpperX,     WLength(/*11*/12, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kRoiCounts,  WLength(8, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kContinuumType,  WLength(/*11*/12, WLength::FontEx) );
 //  m_infoView->setColumnWidth( PeakModel::kNumColumns, WLength(6, WLength::FontEx) );
 //  m_infoView->setColumnAlignment( PeakModel::kMean, AlignRight );
 

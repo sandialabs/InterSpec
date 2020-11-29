@@ -69,6 +69,7 @@ public:
     kIsotope,           //The isotope to display as the isotope responsible for this gamma line
     kUseForCalibration,
     kMean, kFwhm, kAmplitude,
+    kCps,
     kPhotoPeakEnergy,
     kDifference,  //calculate the difference
     kUseForShieldingSourceFit,
@@ -76,7 +77,7 @@ public:
     kPeakLineColor,
     kUserLabel,
     kHasSkew, kSkewAmount,
-    kType, kLowerX, kUpperX, kContinuumArea, kContinuumType,
+    kType, kLowerX, kUpperX, kRoiCounts, kContinuumType,
     kNumColumns
   };//enum Columns
   
@@ -232,7 +233,8 @@ public:
 
   virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
   static bool compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
-                       Columns column, Wt::SortOrder order );
+                       Columns column, Wt::SortOrder order,
+                       const std::shared_ptr<const SpecUtils::Measurement> &data );
 
   //isWithinRange(...) makes sure the peak mean is inside of the x-axis range
   bool isWithinRange( const PeakDef &peak ) const;
