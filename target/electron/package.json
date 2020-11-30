@@ -24,7 +24,7 @@
     "cmake-js": "^6.1.0"
   },
   "devDependencies": {
-    "electron": "^10.1.4",
+    "electron": "^10.1.5",
     "electron-packager": "^15.1.0",
     "node-addon-api": "^3.0.2"
   }
