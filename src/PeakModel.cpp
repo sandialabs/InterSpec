@@ -58,6 +58,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"  //Only for ALLOW_PEAK_COLOR_DELEGATE
@@ -1231,10 +1232,9 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         snprintf( text, sizeof(text), "%.4g", cps );
         return WString(text);
       }
-      
       const double cpsUncert = uncert / liveTime;
-      snprintf( text, sizeof(text), "%.4g \xC2\xB1 %.3g", cps, cpsUncert );
-      return WString(text);
+      const string txt = PhysicalUnits::printValueWithUncertainty( cps, cpsUncert, 4 );
+      return WString::fromUTF8(txt);
     }//case PeakModel::kCps:
       
     case kIsotope:
