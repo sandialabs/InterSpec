@@ -1602,16 +1602,16 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
   {
     //Shouldnt ever happen; check is for development
     string msg = "There was an internal error updating energy calibration - energy cal"
-    " associated with GUI wasnt updated - energy calibation state is suspect";
+    " associated with GUI wasn't updated - energy calibration state is suspect";
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, msg.c_str() );
 #endif
     
     m_interspec->logMessage( msg, "", 3 );
     
-    // We will get here if the user has Apply To "Foreground" checked, but not "Background", but
-    //  they change the background coefficient
+#if( PERFORM_DEVELOPER_CHECKS )
     assert( 0 );
+#endif
   }//if( updated_cals.find(disp_prev_cal) == end(updated_cals) )
   
   
@@ -2372,6 +2372,10 @@ void EnergyCalTool::specTypeToDisplayForChanged()
 
 bool EnergyCalTool::canDoEnergyFit()
 {
+  // Check that "Apply Changes To" for the "Foreground" is checked, otherwise fitting makes no sense
+  if( !m_applyToCbs[ApplyToCbIndex::ApplyToForeground]->isChecked() )
+    return false;
+  
   // Check if there are any peaks currently showing.
   shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks = m_peakModel->peaks();
   if( !peaks )
@@ -3441,6 +3445,9 @@ void EnergyCalTool::applyToCbChanged( const EnergyCalTool::ApplyToCbIndex index 
   switch( index )
   {
     case EnergyCalTool::ApplyToForeground:
+      updateFitButtonStatus();
+      break;
+      
     case EnergyCalTool::ApplyToBackground:
     case EnergyCalTool::ApplyToSecondary:
       break;
