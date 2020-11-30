@@ -34,7 +34,7 @@
    - Test the window positon stuff with multiple displays.
    - Setup to allow multiple windows (but dont actually allow yet)
      - Make so a request for a new session is sent to C++, which then sends back
-       a URL (which includes the externalid token) to connect to
+       a URL (which includes the apptoken token) to connect to
  */
 
 const electron = require('electron')
@@ -74,7 +74,7 @@ global.__basedir = __dirname;
 //   handled in most places)
 let mainWindow
 
-//Create the 'externalid' we will designate for the main window
+//Create the 'apptoken' we will designate for the main window
 const crypto = require('crypto');
 var session_token = null;
 
@@ -319,7 +319,7 @@ function createWindow () {
       session_token = session_token_buf.toString('hex');
       interspec.addSessionToken( session_token );
       
-      let msg = interspec_url  + "?externalid=" + session_token;
+      let msg = interspec_url  + "?apptoken=" + session_token + "&primary=yes";
       if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
         let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
         msg += "&specfilename=" + encodeURI(filepath);
@@ -503,9 +503,9 @@ function createWindow () {
     if( currentURL.includes("loading.html") )
       return;
   
-    if( currentURL.includes("externalid="+session_token) ){
+    if( currentURL.includes("apptoken="+session_token) ){
       //We have found main window.  Lets be conservative though and not require
-      //  the URL have this options.
+      //  the URL have this options.  We could also look to require "primary=yes"
     }
   
     page_loaded = true;
@@ -657,7 +657,7 @@ app.on('ready', function(){
     interspec.removeSessionToken( oldtoken );
     interspec.addSessionToken( session_token );
     doMenuStuff(mainWindow);
-    mainWindow.loadURL( interspec_url + "?externalid=" + session_token + "&restore=no");
+    mainWindow.loadURL( interspec_url + "?apptoken=" + session_token + "&restore=no&primary=yes");
   } );
 
   ipcMain.on('SessionFinishedLoading', function(evt, token ){
