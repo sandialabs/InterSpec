@@ -2439,14 +2439,8 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       const float lt = foreground->live_time();
       const float cps = p.amplitude() / lt;
       const float cpsUncert = p.amplitudeUncert() / lt;
-      
-      // \TODO: Make it so uncertainty gives out to the same number of decimal places as cps, and
-      //        probably abstract this out into PhysicalUnits...
-      
-      char buffer[32] = { '\0' };
-      snprintf( buffer, sizeof(buffer), "%.4g \xC2\xB1 %.3g", cps, cpsUncert );
-      
-      answer << q << "cpsTxt" << q << ":" << q << buffer << q << ",";
+      const string uncertstr = PhysicalUnits::printValueWithUncertainty( cps, cpsUncert, 4 );
+      answer << q << "cpsTxt" << q << ":" << q << uncertstr << q << ",";
     }//if( we can give peak CPS )
     
 		answer << q << "forCalibration" << q << ":" << (p.useForCalibration() ? "true" : "false")
