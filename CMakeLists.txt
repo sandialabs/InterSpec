@@ -353,6 +353,12 @@ if(BUILD_AS_OSX_APP)
 endif(BUILD_AS_OSX_APP)
 
 if(BUILD_AS_ELECTRON_APP)
+   option(
+    INTERSPEC_LIBRARY_STATIC
+    "Builds the InterSpec library as a static library that will be statically linked into the electron module; disable this if you want to use the shared library to run InterSpec server from C, or Python, or something - this is a little bit of a hack for the moment, and a seperate target should probably be defined for this use-case."
+    ON
+    )
+    
     set(CMAKE_POSITION_INDEPENDENT_CODE ON
         CACHE BOOL "Set PIC to make electron lib"
     )
@@ -1121,7 +1127,12 @@ elseif(BUILD_AS_ELECTRON_APP)
         list( APPEND sources js/ElectronHtmlMenu.js )
     endif( USE_ELECTRON_HTML_MENU )
     
-    add_library(InterSpecLib STATIC ${sources} ${headers})
+    
+    if( INTERSPEC_LIBRARY_STATIC )
+        add_library(InterSpecLib STATIC ${sources} ${headers})
+    else( INTERSPEC_LIBRARY_STATIC )
+        add_library(InterSpecLib SHARED ${sources} ${headers})
+    endif( INTERSPEC_LIBRARY_STATIC )
 
     #set_property( TARGET InterSpecLib PROPERTY POSITION_INDEPENDENT_CODE ON )
 else()
