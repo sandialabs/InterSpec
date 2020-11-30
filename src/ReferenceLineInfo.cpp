@@ -257,7 +257,7 @@ void ReferenceLineInfo::toJson( string &json ) const
   if( !detectorName.empty() )
     jsonstrm << "detector:" << jsQuote( detectorName ) << ",";
   
-  if( !shieldingName.empty() )
+  if( !shieldingName.empty() && (shieldingThickness > 0.1*PhysicalUnits::um ) )
   {
     const string name = jsQuote( shieldingName );
     string thickness = PhysicalUnits::printToBestLengthUnits( shieldingThickness );
