@@ -447,6 +447,10 @@ protected:
   {
     const SandiaDecay::Nuclide *nuclide;
     
+    //numProdigenyPeaksSelected: The number of different progeny selected to be included in the fit
+    //  through all the peaks with the parent nuclide as assigned.
+    size_t numProgenyPeaksSelected;
+    
     //activity: in units of PointSourceShieldingChi2Fcn::sm_activityUnits
     double activity;
     bool fitActivity;
@@ -462,9 +466,9 @@ protected:
     //  getting there.  See also PeakDef::ageFitNotAllowed(...).
     bool ageIsFittable;
     
-    //ageMasterNuc: specifies if the age of nuclide should be tied to the age
+    //ageDefiningNuc: specifies if the age of nuclide should be tied to the age
     //  a different nuclide instead.  Will be NULL if this is not the case.
-    const SandiaDecay::Nuclide *ageMasterNuc;
+    const SandiaDecay::Nuclide *ageDefiningNuc;
     bool shieldingIsSource;
     double activityUncertainty;
     double ageUncertainty;
@@ -475,8 +479,8 @@ protected:
 #endif
     
     IsoFitStruct()
-      : nuclide(NULL), activity(0.0), fitActivity(false),
-        age(0.0), fitAge(false), ageIsFittable(true), ageMasterNuc(NULL),
+      : nuclide(NULL), numProgenyPeaksSelected(0), activity(0.0), fitActivity(false),
+        age(0.0), fitAge(false), ageIsFittable(true), ageDefiningNuc(NULL),
         shieldingIsSource(false),
         activityUncertainty(-1.0), ageUncertainty(-1.0)
     #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -523,8 +527,8 @@ public:
   bool fitActivity( int nuc ) const;
   
   //age(): returns IsoFitStruct::age, which is marked age for this nuclide,
-  //  which if there is a master age nuclide set for this nuclide, you should
-  //  get the age for that nuclide. See ageMasterNuclide(...) for this case.
+  //  which if there is a defining age nuclide set for this nuclide, you should
+  //  get the age for that nuclide. See ageDefiningNuclide(...) for this case.
   double age( int nuc ) const;
   double ageUncert( int nuc ) const;
 
@@ -537,8 +541,8 @@ public:
   
   //fitAge(): returns IsoFitStruct::fitAge, which is if it is marked to fit age
   //  for this nuclide, not if you should fit for the age of this nuclide since
-  //  it may have another master age nuclide that controlls the age, see
-  //  ageMasterNuclide(...) for this case
+  //  it may have another defining age nuclide that controlls the age, see
+  //  ageDefiningNuclide(...) for this case
   bool fitAge( int nuc ) const;
   
   bool shieldingDeterminedActivity( int nuc ) const;
@@ -547,20 +551,19 @@ public:
  
   //setSharredAgeNuclide(): in order to make it so all isotopes of an element
   //  can be made to have the same age, we'll have it so one of the isotopes
-  //  controlls the age (and if it can be fit) for all of them in a nuclide.
-  //The slaveNucs' age will be controlled by masterNuc.  Setting the masterNuc
-  //  to NULL (or to same value as slaveNuc) will disable having another nuclide
+  //  controls the age (and if it can be fit) for all of them in a nuclide.
+  //The dependantNucs' age will be controlled by definingNuc.  Setting the definingNuc
+  //  to NULL (or to same value as dependantNuc) will disable having another nuclide
   //  control this age.
-  //If slaveNuc->atomicNumber != masterNuc->atomicNumber, an exception will
+  //If dependantNuc->atomicNumber != definingNuc->atomicNumber, an exception will
   //  be thrown
-  void setSharredAgeNuclide( const SandiaDecay::Nuclide *slaveNuc,
-                             const SandiaDecay::Nuclide *masterNuc );
+  void setSharredAgeNuclide( const SandiaDecay::Nuclide *dependantNuc,
+                             const SandiaDecay::Nuclide *definingNuc );
   
-  //ageMasterNuclide(...): returns the nuclide that controlls the age for the
+  //ageDefiningNuclide(...): returns the nuclide that controlls the age for the
   //  passed in nuclide.  If the passed in nuclide does not have another nuclide
-  //  that controlls its age, it returns the same nuclide that was passed in.
-  const SandiaDecay::Nuclide *ageMasterNuclide(
-                                  const SandiaDecay::Nuclide *slaveNuc ) const;
+  //  that controls its age, it returns the same nuclide that was passed in.
+  const SandiaDecay::Nuclide *ageDefiningNuclide( const SandiaDecay::Nuclide *dependantNuc ) const;
   
   
   void makeActivityEditable( const SandiaDecay::Nuclide *nuc );

@@ -499,7 +499,7 @@ SpecMeas::~SpecMeas()
 }//SpecMeas destructor
 
 
-void SpecMeas::save2012N42FileInSlaveThread( std::shared_ptr<SpecMeas> info,
+void SpecMeas::save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,
                                          const std::string filename,
                                          boost::function<void()> error_callback )
 {
@@ -518,10 +518,10 @@ void SpecMeas::save2012N42FileInSlaveThread( std::shared_ptr<SpecMeas> info,
   }else
   {
     //Probably wont ever get here - but just incase
-    cerr << "SpecMeas::save2012N42FileInSlaveThread(...)\n\tWarning: couldnt get WServer - not good" << endl << endl;
+    cerr << "SpecMeas::save2012N42FileInClientThread(...)\n\tWarning: couldnt get WServer - not good" << endl << endl;
     worker();
   }//if( server ) / else
-}//save2012N42FileInSlaveThread(...)
+}//save2012N42FileInClientThread(...)
 
 
 bool SpecMeas::save2012N42File( const std::string &filename )
