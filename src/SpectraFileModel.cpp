@@ -1180,7 +1180,7 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
     success = true;
 //    success = info->save_native_file( tempfile.generic_string() );
     boost::function<void()> error_callback = boost::bind( &SpectraFileHeader::errorSavingCallback, this, tempfile, info );
-    SpecMeas::save2012N42FileInSlaveThread( info, tempfile, error_callback );
+    SpecMeas::save2012N42FileInClientThread( info, tempfile, error_callback );
     
 //#if( USE_DB_TO_STORE_SPECTRA )
 //    if( m_app && shouldSaveToDb() )

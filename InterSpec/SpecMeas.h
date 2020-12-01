@@ -110,7 +110,7 @@ public:
   
   virtual bool save2012N42File( const std::string &filename );
   virtual void save2012N42File( const std::string &filename,
-                              boost::function<void()> error_callback ); //usefull when saving in a detached slave thread - be carful of race conditions (eg make error_callback will remain valid)
+                              boost::function<void()> error_callback ); //usefull when saving in a detached client thread - be carful of race conditions (eg make error_callback will remain valid)
 
   
   //write_2006_N42(...): writes a 2006 N42 simple spectrometer file (similar to
@@ -153,12 +153,12 @@ public:
   Wt::Signal<> &aboutToBeDeleted();
 
   
-  static void save2012N42FileInSlaveThread( std::shared_ptr<SpecMeas> info,
+  static void save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,
                                             const std::string filename,
                                             boost::function<void()> error_callback );
 
   //setDetector(): set not only the detector of *this, but also of all of its
-  //  observers, so they all point to the same object in memmory
+  //  observers, so they all point to the same object in memory
   void setDetector( std::shared_ptr<DetectorPeakResponse> det );
 
   //detectorChangedCallback(): right now just calls setDetector(), but may

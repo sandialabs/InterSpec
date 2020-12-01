@@ -1201,26 +1201,26 @@ double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
   if( params[2*ind+1] >= -0.00001 )
     return std::max( params[2*ind+1], 0.0 );
   
-  //Else the parameter value indicates the "master" nuclide whose age should be
-  // specified.  To get master index add one to value, and take negative
+  //Else the parameter value indicates the "defining" nuclide whose age should be
+  // specified.  To get defining index add one to value, and take negative
   const double findex = -1.0*params[2*ind+1];
   const int nearFIndex = static_cast<int>( std::round(findex) );
   
   if( fabs(findex - nearFIndex) > 0.01 || nearFIndex < 1 )
     throw runtime_error( "Got a negative age value that is not indicating a"
-                         " master nuclide age: " + std::to_string(params[2*ind+1]) );
+                         " defining nuclide age: " + std::to_string(params[2*ind+1]) );
   
-  const int master_nuclide_index = nearFIndex - 1;
+  const int defining_nuclide_index = nearFIndex - 1;
   
-  if( static_cast<size_t>(master_nuclide_index) >= params.size() )
+  if( static_cast<size_t>(defining_nuclide_index) >= params.size() )
     throw runtime_error( "Got a negative age value that is larger than could be"
-                         " for indicating a master nuclide age: " + std::to_string(params[2*ind+1]) );
+                         " for indicating a defining nuclide age: " + std::to_string(params[2*ind+1]) );
   
-  const double master_age = params[master_nuclide_index];
-  if( master_age < -0.00001 )
-    throw runtime_error( "Master age is also less than zero (shouldnt happen)" );
+  const double defining_age = params[defining_nuclide_index];
+  if( defining_age < -0.00001 )
+    throw runtime_error( "Defining age is also less than zero (shouldnt happen)" );
   
-  return std::max( master_age, 0.0 );
+  return std::max( defining_age, 0.0 );
 }//double age(...)
 
 
