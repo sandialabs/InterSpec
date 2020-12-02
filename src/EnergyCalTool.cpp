@@ -433,7 +433,7 @@ public:
     m_label->addStyleClass( "CoefLabel" );
     
     m_value = new NativeFloatSpinBox( this );
-    m_value->addStyleClass( "CoefInput" );
+    m_value->setSpinnerHidden( true );
     
     m_fit = new WCheckBox( "Fit", this );
     m_fit->addStyleClass( "CoefFit" );
@@ -762,8 +762,8 @@ public:
       /* Note: if the user uses the up.down arrows in a NativeFloatSpinBox to change values, things
                get all messed up (new values get set via c++ messing  up current values, or the
                valueChanged() callback gets called like 10 times per second, causing changes faster
-               than everything can keep up, and just generally poor working), so in the CSS for
-               input.CoefInput I have disabled these arroes
+               than everything can keep up, and just generally poor working), so for now I have
+               disabled these spinners via #NativeFloatSpinBox::setSpinnerHidden()
        */
       disp->m_value->valueChanged().connect( boost::bind(&EnergyCalTool::userChangedCoefficient, m_tool, coefnum, this) );
     }
@@ -772,9 +772,9 @@ public:
     //Set the step size to move the upper range of energy by about 1 keV per step
     // Set up the little tick/spin/whatever boxes
     /*
-     //The ".CoefInput" style class is currently removing the spin-box up/down arrow, so we wont set
-     //  the step-size, as on Firefox if we fit for a value, then it will turn red if the new value
-     //  doesnt hit on the step size
+     //The NativeFloatSpinBox::setSpinnerHidden() call is currently removing the spin-box up/down
+     //  arrow, so we wont set the step-size, as on Firefox if we fit for a value, then it will turn
+     //  red if the new value doesnt hit on the step size
     for( size_t i = 0; i < coef_disps.size(); ++i )
     {
       CoefDisplay *disp = coef_disps[i];

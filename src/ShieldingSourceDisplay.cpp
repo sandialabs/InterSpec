@@ -103,6 +103,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/RowStretchTreeView.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -189,11 +190,15 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
   labeltxt += " Mass Frac:";
 
   new WLabel( labeltxt, this );
-  m_massFraction = new WDoubleSpinBox( this );
-  m_massFraction->setDecimals( 3 );
-  m_massFraction->setSingleStep( 0.01 );
+  
+  m_massFraction = new NativeFloatSpinBox( this );
+  //m_massFraction->setDecimals( 3 );
+  //m_massFraction->setSingleStep( 0.01 );
   m_massFraction->setRange( 0.0, 1.0 );
-  m_massFraction->setTextSize( 5 );
+  //m_massFraction->setTextSize( 5 );
+  m_massFraction->setWidth( 80 );
+  m_massFraction->setMargin( 3, Wt::Left );
+  m_massFraction->setSpinnerHidden( true );
   m_massFraction->setValue( massFrac );
 
 //  m_massFraction->disable();
@@ -247,7 +252,7 @@ Wt::EventSignal<> &SourceCheckbox::unChecked()
   return m_useAsSourceCb->unChecked();
 }
 
-Wt::Signal<double> &SourceCheckbox::massFractionChanged()
+Wt::Signal<float> &SourceCheckbox::massFractionChanged()
 {
   return m_massFraction->valueChanged();
 }
@@ -1316,7 +1321,7 @@ void ShieldingSelect::addSourceIsotopeCheckBox( const SandiaDecay::Nuclide *iso 
   cb->unChecked().connect( boost::bind( &ShieldingSelect::isotopeUnCheckedCallback, this, iso ) );
   cb->massFractionChanged().connect( boost::bind( &ShieldingSelect::handleIsotopicChange, this, _1, iso ) );
 
-  handleIsotopicChange( massFrac, iso );
+  handleIsotopicChange( static_cast<float>(massFrac), iso );
   
 
 /*  //Commenting out since I'm guessing most elements have at least 2 isotopes
@@ -1344,8 +1349,7 @@ void ShieldingSelect::addSourceIsotopeCheckBox( const SandiaDecay::Nuclide *iso 
 }//void addSourceIsotopeCheckBox( const std::string &symol )
 
 
-void ShieldingSelect::handleIsotopicChange( double fraction,
-                                            const SandiaDecay::Nuclide *nuc )
+void ShieldingSelect::handleIsotopicChange( float fraction, const SandiaDecay::Nuclide *nuc )
 {
 /*
  *handleIsotopicChange(...): This functions is a bit long-winded, and should
@@ -1358,10 +1362,10 @@ void ShieldingSelect::handleIsotopicChange( double fraction,
 
   
   
-  if( fraction < 0.0 )
-    fraction = 0.0;
-  else if( fraction > 1.0 )
-    fraction = 1.0;
+  if( fraction < 0.0f )
+    fraction = 0.0f;
+  else if( fraction > 1.0f )
+    fraction = 1.0f;
 
   std::shared_ptr<Material> mat = material();
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -3619,6 +3623,47 @@ ShieldingSourceDisplay::Chi2Graphic::~Chi2Graphic()
 {
 }
 
+
+void ShieldingSourceDisplay::Chi2Graphic::setColorsFromTheme( std::shared_ptr<const ColorTheme> theme )
+{
+  if( !theme )
+    return;
+  
+  //if( !theme->foregroundLine.isDefault() )
+  //  m_chartEnergyLineColor = theme->foregroundLine;
+  
+  if( !theme->spectrumChartText.isDefault() )
+  {
+    WPen txtpen(theme->spectrumChartText);
+    this->setTextPen( txtpen );
+    this->axis(Chart::XAxis).setTextPen( txtpen );
+    this->axis(Chart::YAxis).setTextPen( txtpen );
+    this->setTextPenColor( theme->spectrumChartText );
+  }
+  
+  if( theme->spectrumChartBackground.isDefault() )
+    this->setBackground( Wt::NoBrush );
+  else
+    this->setBackground( WBrush(theme->spectrumChartBackground) );
+  
+  if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
+  {
+    //theme->spectrumChartBackground
+  }else if( !theme->spectrumChartMargins.isDefault() )
+  {
+    //theme->spectrumChartMargins
+  }
+  
+  if( !theme->spectrumAxisLines.isDefault() )
+  {
+    WPen defpen = this->axis(Chart::XAxis).pen();
+    defpen.setColor( theme->spectrumAxisLines );
+    this->axis(Chart::XAxis).setPen( defpen );
+    this->axis(Chart::YAxis).setPen( defpen );
+  }
+}//ShieldingSourceDisplay::Chi2Graphic::setColorsFromTheme( theme )
+
+
 void ShieldingSourceDisplay::Chi2Graphic::setNumFitForParams( unsigned int npar )
 {
   m_nFitForPar = static_cast<int>( npar );
@@ -4054,6 +4099,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
                                                 MaterialDB *materialDB,
                                                 WContainerWidget *parent )
   : WContainerWidget( parent ),
+    m_chi2ChartNeedsUpdating( true ),
     m_width( 0 ),
     m_height( 0 ),
     m_nResizeSinceHint( 0 ),
@@ -4365,45 +4411,11 @@ if (m_specViewer->isSupportFile())
   
   
   //We should check the color theme for colors
-  auto theme = m_specViewer->getColorTheme();
-  if( theme )
-  {
-    //if( !theme->foregroundLine.isDefault() )
-    //  m_chartEnergyLineColor = theme->foregroundLine;
-    
-    if( !theme->spectrumChartText.isDefault() )
-    {
-      WPen txtpen(theme->spectrumChartText);
-      m_chi2Graphic->setTextPen( txtpen );
-      m_chi2Graphic->axis(Chart::XAxis).setTextPen( txtpen );
-      m_chi2Graphic->axis(Chart::YAxis).setTextPen( txtpen );
-      m_chi2Graphic->setTextPenColor( theme->spectrumChartText );
-    }
-    
-    if( theme->spectrumChartBackground.isDefault() )
-      m_chi2Graphic->setBackground( Wt::NoBrush );
-    else
-      m_chi2Graphic->setBackground( WBrush(theme->spectrumChartBackground) );
-    
-    if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
-    {
-      //theme->spectrumChartBackground
-    }else if( !theme->spectrumChartMargins.isDefault() )
-    {
-      //theme->spectrumChartMargins
-    }
-    
-    if( !theme->spectrumAxisLines.isDefault() )
-    {
-      WPen defpen = m_chi2Graphic->axis(Chart::XAxis).pen();
-      defpen.setColor( theme->spectrumAxisLines );
-      m_chi2Graphic->axis(Chart::XAxis).setPen( defpen );
-      m_chi2Graphic->axis(Chart::YAxis).setPen( defpen );
-    }
-  }//if( theme )
+  m_specViewer->colorThemeChanged().connect( m_chi2Graphic, &Chi2Graphic::setColorsFromTheme );
+  m_chi2Graphic->setColorsFromTheme( m_specViewer->getColorTheme() );
   
   
-  //The next line is kinda ineffiecient because if all that changed was
+  //The next line is kinda inefficient because if all that changed was
   //  fit activity or fit age, then we dont really need to update the chi2 chart
   m_sourceModel->dataChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
 
@@ -4703,6 +4715,20 @@ void ShieldingSourceDisplay::updateAllPeaksCheckBox( WCheckBox *but)
     else
         but->setCheckState(Wt::PartiallyChecked);
 } //updateAllPeaksCheckBox( WCheckBox *but)
+
+
+void ShieldingSourceDisplay::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
+  
+  WContainerWidget::render( flags );
+  
+  if( m_chi2ChartNeedsUpdating )
+  {
+    updateChi2ChartActual();
+    m_chi2ChartNeedsUpdating = false;
+  }
+}//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
 
 ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
@@ -5573,6 +5599,13 @@ void ShieldingSourceDisplay::checkAndWarnZeroMassFraction()
 
 void ShieldingSourceDisplay::updateChi2Chart()
 {
+  m_chi2ChartNeedsUpdating = true;
+  scheduleRender(); //trigger re-render
+}//void updateChi2Chart()
+
+
+void ShieldingSourceDisplay::updateChi2ChartActual()
+{
   try
   {
     checkDistanceAndThicknessConsistent();
@@ -5950,8 +5983,7 @@ void ShieldingSourceDisplay::removeModelFromDb( WSelectionBox *selec1,
     querymodel->reload();
 }//void ShieldingSourceDisplay::removeModelFromDb( WSelectionBox *selec )
 
-bool ShieldingSourceDisplay::loadModelFromDb(
-                                    Dbo::ptr<ShieldingSourceModel> shieldmodel )
+bool ShieldingSourceDisplay::loadModelFromDb( Dbo::ptr<ShieldingSourceModel> shieldmodel )
 {
   if( !shieldmodel )
     return false;
@@ -6664,8 +6696,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
 }//void serialize( rapidxml::xml_document<> &doc ) const;
 
 
-void ShieldingSelect::deSerialize(
-                                const rapidxml::xml_node<char> *shield_node )
+void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node )
 {
   rapidxml::xml_attribute<char> *attr;
   rapidxml::xml_node<char> *node, *generic_node, *material_node;
@@ -6875,7 +6906,7 @@ void ShieldingSelect::deSerialize(
     //Calling handleIsotopicChange(...) will perform some normailizations
     //  and stuff (I think), that setMassFraction(...) doesnt do
     if( last_nuc )
-      handleIsotopicChange( last_frac, last_nuc );
+      handleIsotopicChange( static_cast<float>(last_frac), last_nuc );
   }//if( material_node )
 }//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 
@@ -7079,8 +7110,7 @@ void ShieldingSourceDisplay::deSerializeSourcesToFitFor( const rapidxml::xml_nod
 }//void deSerializeSourcesToFitFor( rapidxml::xml_node<char> *sources );
 
 
-void ShieldingSourceDisplay::deSerializeShieldings(
-                                    const rapidxml::xml_node<char> *shiledings )
+void ShieldingSourceDisplay::deSerializeShieldings( const rapidxml::xml_node<char> *shiledings )
 {
   const rapidxml::xml_node<> *shield_node;
   
@@ -7133,8 +7163,7 @@ bool ShieldingSourceDisplay::userChangedDuringCurrentForeground() const
 }//bool userChangedDuringCurrentForeground() const;
 
 
-void ShieldingSourceDisplay::deSerialize(
-                                      const rapidxml::xml_node<char> *base_node )
+void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
   const rapidxml::xml_node<char> *muti_iso_node, *back_sub_node,
                                  *peaks_node, *isotope_nodes, *shieldings_node,
@@ -7212,6 +7241,8 @@ void ShieldingSourceDisplay::deSerialize(
   deSerializeShieldings( shieldings_node );
   
   m_modifiedThisForeground = true;
+  
+  updateChi2Chart();
 }//void deSerialize( rapidxml::xml_document<char> &doc )
 
 
@@ -8087,6 +8118,12 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       //  until their ratios don't change within the available statistical precision.
       //  But for the moment, we'll do something much simpler and use the maximum of either the
       //  longest progenies half-life, or the sum half life of all progeny
+      //  \TODO: improve this max decay time estimate; some possibilities are:
+      //    - Could probably ignore the parents half-life, or only partially take into account
+      //    - For common nuclides could define reasonable fixed values
+      //    - Could look at gamma spectrum produced over time, and pick the time when the selected
+      //      photopeak ratios change little enough as to not be statistically significant to the
+      //      observed data (or even just hard-coded limits).
       auto maxNuclideDecayHL = []( const SandiaDecay::Nuclide * const nuc ) -> double {
         double maxhl = 0.0, sumhlfs = 0.0;
         

@@ -103,8 +103,9 @@ namespace GammaInteractionCalc
   class PointSourceShieldingChi2Fcn;
 }//namespace GammaInteractionCalc
 
-class SourceFitModel;
 class InterSpec;
+class SourceFitModel;
+class NativeFloatSpinBox;
 class ShieldingSourceDisplay;
 
 
@@ -124,11 +125,11 @@ public:
 
   Wt::EventSignal<> &checked();
   Wt::EventSignal<> &unChecked();
-  Wt::Signal<double> &massFractionChanged();
+  Wt::Signal<float> &massFractionChanged();
 
 protected:
   Wt::WCheckBox *m_useAsSourceCb;
-  Wt::WDoubleSpinBox *m_massFraction;
+  NativeFloatSpinBox *m_massFraction;
   const SandiaDecay::Nuclide *m_nuclide;
 };//class SourceCheckbox
 
@@ -342,7 +343,7 @@ protected:
   //  fractions in a way that is kinda intuitive to the user, while enforcing
   //  consitency.  The overal mass-fraction for the respective element stays
   //  the same.
-  void handleIsotopicChange( double fraction, const SandiaDecay::Nuclide *nuc );
+  void handleIsotopicChange( float fraction, const SandiaDecay::Nuclide *nuc );
 
   //addSourceIsotopeCheckBox(...): adds a checkbox for Nuclide and connects
   //  appropriate signals
@@ -945,13 +946,17 @@ public:
   void toggleUseAll(Wt::WCheckBox* button);
   void updateAllPeaksCheckBox(  Wt::WCheckBox *but);
     
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
 
 protected:
-  virtual void layoutSizeChanged( int width, int height );
-
+  void updateChi2ChartActual();
+  virtual void layoutSizeChanged( int width, int height ) override;
+  
 protected:
   class Chi2Graphic;  //forward declaration
 
+  bool m_chi2ChartNeedsUpdating;
+  
   int m_width, m_height, m_nResizeSinceHint;
 
   //m_modifiedThisForeground: tracks if the user has modified this
@@ -1035,7 +1040,7 @@ protected:
     
     void setShowChiOnChart( const bool show_chi );
     void setTextPenColor( const Wt::WColor &color );
-    
+    void setColorsFromTheme( std::shared_ptr<const ColorTheme> theme );
   protected:
     void calcAndSetAxisPadding( double yHeightPx );
     
