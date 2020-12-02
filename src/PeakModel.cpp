@@ -1304,7 +1304,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     case kUseForShieldingSourceFit:
       // Make so we only "use for shielding/source fit" show checkbox for decay gammas and x-rays,
       //  and not for peaks with no source associated, or with florescence x-rays, or for reactions
-      if( !peak->nuclearTransition() ) // && !peak->xrayElement() && !peak->reaction()
+      if( !peak->nuclearTransition() || !peak->parentNuclide() || (peak->decayParticleIndex() < 0) )
         return boost::any();
       
       switch( peak->sourceGammaType() )
@@ -1316,7 +1316,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         
         case PeakDef::SingleEscapeGamma:
         case PeakDef::DoubleEscapeGamma:
-          // Dont show "use for shielding/source fit" checkbox for single and double escape peaks
+          // Don't show "use for shielding/source fit" checkbox for single and double escape peaks
           return boost::any();
           break;
       }//switch( peak->sourceGammaType() )

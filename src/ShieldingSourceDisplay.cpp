@@ -189,9 +189,11 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
     labeltxt += db->element(nuclide->atomicNumber)->symbol;
   labeltxt += " Mass Frac:";
 
-  new WLabel( labeltxt, this );
+  WLabel *label = new WLabel( labeltxt, this );
   
   m_massFraction = new NativeFloatSpinBox( this );
+  label->setBuddy( m_massFraction );
+  m_massFraction->setAutoComplete( false );
   //m_massFraction->setDecimals( 3 );
   //m_massFraction->setSingleStep( 0.01 );
   m_massFraction->setRange( 0.0, 1.0 );
@@ -5627,6 +5629,8 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
     const vector<double> params = inputPrams.Params();
     const vector<double> errors = inputPrams.Errors();
     GammaInteractionCalc::PointSourceShieldingChi2Fcn::NucMixtureCache mixcache;
+    
+    
     m_calcLog.clear();
     if( m_logDiv )
     {
@@ -5638,6 +5642,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
                       = chi2Fcn->energy_chi_contributions( params, mixcache,
                                                 m_multiIsoPerPeak->isChecked(),
                                                 &m_calcLog );
+    
     m_showLog->setDisabled( m_calcLog.empty() );
 
     typedef tuple<double,double,double,Wt::WColor,double> DDPair;
@@ -5744,7 +5749,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
     //  event loop).
     if( m_chi2Model->rowCount() )
       m_chi2Model->removeRows( 0, m_chi2Model->rowCount() );
-    cerr << "ShieldingSourceDisplay::updateChi2Chart()\n\tCaught:" << e.what() << endl;
+    cerr << "ShieldingSourceDisplay::updateChi2ChartActual()\n\tCaught:" << e.what() << endl;
   }
   
   
@@ -5759,7 +5764,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual()
 //       << "m_chi2Model->columnCount()=" << m_chi2Model->columnCount() << endl;
 
   m_calcLog.push_back( ns_no_uncert_info_txt );
-}//void ShieldingSourceDisplay::updateChi2Chart()
+}//void ShieldingSourceDisplay::updateChi2ChartActual()
 
 
 void ShieldingSourceDisplay::showCalcLog()
@@ -8651,8 +8656,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Model
     }//for( int i = 0; i < nshieldings; ++i )
 #endif
     
-    updateChi2Chart();
-    
+    updateChi2ChartActual();
+    m_chi2ChartNeedsUpdating = false;
     updateCalcLogWithFitResults( m_currentFitFcn, results );
   }catch( std::exception &e )
   {
