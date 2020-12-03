@@ -409,7 +409,7 @@ class DateLengthCalculator : public WContainerWidget
   WDateEdit *m_begindate;
   WDateEdit *m_enddate;
   WLineEdit *m_duration;
-  WPushButton *m_updateParent;
+  //WPushButton *m_updateParent;
   WText *m_error;
   WContainerWidget *m_info;
   
@@ -422,7 +422,7 @@ class DateLengthCalculator : public WContainerWidget
      m_begindate( NULL ),
      m_enddate( NULL ),
      m_duration( NULL ),
-     m_updateParent( NULL ),
+     //m_updateParent( nullptr ),
      m_error( NULL ),
      m_info( NULL )
   {
@@ -440,16 +440,25 @@ class DateLengthCalculator : public WContainerWidget
     m_layout->addWidget( label, 0, 0, AlignMiddle );
     
     m_begindate = new WDateEdit();
+    label->setBuddy( m_begindate );
     m_begindate->setFormat( "MM/dd/yyyy" );
     m_begindate->setPlaceholderText( "mm/dd/yyy" );
-    m_begindate->setDate(Wt::WDate::currentServerDate().addDays(-ndaysBack) );
+    try
+    {
+      m_begindate->setDate(Wt::WDate::currentServerDate().addDays(-ndaysBack) );
+    }catch(...)
+    {
+    }
+    
     m_layout->addWidget( m_begindate, 0, 1, 1, 2, AlignLeft );
     
     label = new WLabel( "End Date" );
     m_layout->addWidget( label, 1, 0, AlignMiddle );
     m_enddate = new WDateEdit();
+    label->setBuddy( m_enddate );
     m_enddate->setFormat( "MM/dd/yyyy" );
     m_enddate->setPlaceholderText( "mm/dd/yyy" );
+    // \TODO: consider setting to current foreground spectrum date
     m_enddate->setDate( Wt::WDate::currentServerDate() );
     m_layout->addWidget( m_enddate, 1, 1, 1, 2, AlignLeft );
     
@@ -460,17 +469,18 @@ class DateLengthCalculator : public WContainerWidget
     m_layout->addWidget( label, 2, 0, AlignMiddle );
     
     m_duration = new WLineEdit();
+    label->setBuddy( m_duration );
     WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_duration );
     validator->setFlags(Wt::MatchCaseInsensitive);
     m_duration->setValidator(validator);
     m_duration->changed().connect( this, &DateLengthCalculator::durationChanged );
     m_duration->enterPressed().connect( this, &DateLengthCalculator::durationChanged );
-    m_layout->addWidget( m_duration, 2, 1 );
+    m_layout->addWidget( m_duration, 2, 1, AlignLeft );
     
-    m_updateParent = new WPushButton( "Update Chart");
-    m_updateParent->clicked().connect( this, &DateLengthCalculator::pushCurrentToParent );
-    
-    m_layout->addWidget( m_updateParent, 2, 2, AlignCenter );
+    //m_updateParent = new WPushButton( "Update Chart");
+    //m_updateParent->clicked().connect( this, &DateLengthCalculator::pushCurrentToParent );
+    //m_layout->addWidget( m_updateParent, 2, 2, AlignCenter );
+    m_layout->addWidget( new WContainerWidget(), 2, 2, AlignCenter );
     
     m_error = new WText( "" );
     m_error->setInline( false );
@@ -483,6 +493,7 @@ class DateLengthCalculator : public WContainerWidget
     
     m_layout->setRowStretch( 3, 1 );
     m_layout->setRowStretch( 4, 1 );
+    
     m_layout->setColumnStretch( 2, 1 );
   }//DateLengthCalculator
   
@@ -501,11 +512,12 @@ class DateLengthCalculator : public WContainerWidget
     //Let be optimistic things will be okay
     m_error->hide();
     m_error->setText("");
-    m_updateParent->enable();
+    //if( m_updateParent )
+    //  m_updateParent->enable();
     
     try
     {
-      const std::string durtxt = m_duration->text().narrow();
+      const std::string durtxt = m_duration->text().toUTF8();
       const bool validBeginDate = (m_begindate->validate() == Wt::WValidator::Valid);
       const bool validEndDate = (m_enddate->validate() == Wt::WValidator::Valid);
       bool duration_valid = false;
@@ -525,6 +537,7 @@ class DateLengthCalculator : public WContainerWidget
       
       if( duration_valid && validBeginDate && validEndDate )
       {
+        // Should make sure duration corresponds to date range...
         return duration;
       }else if( !duration_valid )
       {
@@ -560,7 +573,8 @@ class DateLengthCalculator : public WContainerWidget
       m_error->show();
       m_error->setText( e.what() );
       m_duration->setText( "" );
-      m_updateParent->disable();
+      //if( m_updateParent )
+      //  m_updateParent->disable();
       m_info->hide();
       
       return 0.0;
@@ -575,13 +589,13 @@ class DateLengthCalculator : public WContainerWidget
     if( getValidatedTimeSpan() == 0.0 )
       return;
     
-    const string txt = m_duration->text().narrow();
+    const string txt = m_duration->text().toUTF8();
     m_activityDiv->m_displayTimeLength->setText( txt );
     m_activityDiv->refreshDecayDisplay();
-#if( ADD_PHOTOPEAK_CHART )
-    m_activityDiv->updatePhotopeakSliderEndDateText();
-#endif
-    m_activityDiv->m_chartTabWidget->setCurrentIndex( 0 );
+//#if( ADD_PHOTOPEAK_CHART )
+//    m_activityDiv->updatePhotopeakSliderEndDateText();
+//#endif
+//    m_activityDiv->m_chartTabWidget->setCurrentIndex( 0 );
   }//void pushCurrentToParent()
   
   
@@ -597,21 +611,71 @@ class DateLengthCalculator : public WContainerWidget
     string datestr = PhysicalUnits::printToBestTimeUnits( 24.0*3600.0*days*PhysicalUnits::second, 2 );
     m_duration->setText( datestr );
     
+    pushCurrentToParent();
     updateInfo();
   }//void dateChanged()
   
   
   void durationChanged()
   {
+    // We get here when the user edits the duration text
+    const string durtxt = m_duration->text().toUTF8();
+    if( !durtxt.empty() && (m_duration->validate() == WValidator::State::Valid) )
+    {
+      try
+      {
+        const double duration = PhysicalUnits::stringToTimeDuration( durtxt );
+        
+        
+        double mintime = 1.0 * SandiaDecay::second;
+        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+        for( const auto &n : m_activityDiv->m_nuclides )
+        {
+          const auto nuc = db->nuclide( n.z, n.a, n.iso );
+          if( nuc )
+            mintime = std::min( mintime, nuc->halfLife );
+        }
+        
+        if( (duration < 0.01*mintime) && m_activityDiv && m_activityDiv->m_displayTimeLength )
+        {
+          m_duration->setText( m_activityDiv->m_displayTimeLength->text() );
+          updateInfo();
+          return;
+        }
+        
+        int64_t ndays = std::floor(duration / PhysicalUnits::day);
+        double remanderSeconds = duration - (ndays * PhysicalUnits::day);
+        if( fabs(PhysicalUnits::day - remanderSeconds) <= 1.0 )
+        {
+          remanderSeconds = PhysicalUnits::day - remanderSeconds;
+          ndays += 1.0;
+        }
+        
+        // \TODO: do the same thing as days, but for years to try and set an initial date
+        
+        if( (ndays < 1) || (remanderSeconds > 1.0)
+           || (m_enddate->validate() != WValidator::State::Valid)
+           || ndays >= std::numeric_limits<int>::max() )
+          m_begindate->setText( "" );
+        else
+          m_begindate->setDate( m_enddate->date().addDays( -static_cast<int>(ndays) ) );
+      }catch(...)
+      {
+        m_begindate->setText( "" );
+      }
+    }//if( we have valid duration string )
+    
     if( getValidatedTimeSpan() == 0.0 )
       return;
-  
+    
+    pushCurrentToParent();
     updateInfo();
   }//void durationChanged()
   
   void setTimeRangeTxt( std::string txt )
   {
-    if( txt != m_duration->text().narrow() )
+    const string oldtxt = m_duration->text().toUTF8();
+    if( txt != oldtxt )
     {
       m_duration->setText( txt );
       m_begindate->setText( "" );
@@ -641,30 +705,154 @@ class DateLengthCalculator : public WContainerWidget
     if( !mix )
       return;
     
-    const string txt = m_duration->text().narrow();
+    const string txt = m_duration->text().toUTF8();
     
     const std::vector<DecayActivityDiv::Nuclide> &nucs = m_activityDiv->m_nuclides;
     if( nucs.empty() )
       return;
-
+    
     for( size_t i = 0; i < nucs.size(); ++i )
     {
-      const SandiaDecay::Nuclide *nuc = db->nuclide( nucs[i].z, nucs[i].a, nucs[i].iso );
+      const DecayActivityDiv::Nuclide nucinfo = nucs[i];
+      const SandiaDecay::Nuclide *nuc = db->nuclide( nucinfo.z, nucinfo.a, nucinfo.iso );
       if( !nuc )
         continue;
       
-      string info = nuc->symbol + " had an initial activity of "
-                    + PhysicalUnits::printToBestActivityUnits( nucs[i].activity, 2, nucs[i].useCurrie );
+      const double activity = nucinfo.activity;
+      const bool useCurrie = nucinfo.useCurrie;
+      //const bool useCurrie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       
-      if( m_begindate->validate() == Wt::WValidator::Valid && !m_begindate->text().empty() )
-        info += " on " + m_begindate->text().narrow();
+      const string actTxt = PhysicalUnits::printToBestActivityUnits( activity, 3, useCurrie );
       
-      if( nucs[i].age > 0 )
-        info += " with an initial age of " + PhysicalUnits::printToBestTimeUnits(nucs[i].age);
+      WTable *nuctbl = new WTable( m_info );
+      nuctbl->setMargin( 10, Wt::Side::Top );
       
-      WText *txt = new WText( info, m_info );
-      txt->setInline( false );
-    }
+      WLabel *celltxt = nullptr;
+      WTableCell *cell = nullptr;
+      
+      const bool showNucHeader = (nucs.size() > 1);
+      const int rowOffset = showNucHeader ? 1 : 0;
+      
+      if( showNucHeader )
+      {
+        nuctbl->setHeaderCount( 1 );
+        cell = nuctbl->elementAt(0, 0);
+        celltxt = new WLabel( "For " + nuc->symbol + ":", cell );
+        cell->setColumnSpan( 2 );
+        cell->setAttributeValue( "style", "text-align: left;" + cell->attributeValue("style") );
+      }//if( showNucHeader )
+      
+      cell = nuctbl->elementAt(1 + rowOffset, 0);
+      cell->setVerticalAlignment( AlignmentFlag::AlignMiddle );
+      celltxt = new WLabel( "Initial Activity", cell );
+      
+      cell = nuctbl->elementAt(1 + rowOffset, 1);
+      WLineEdit *activityEdit = new WLineEdit(cell);
+      
+      WRegExpValidator *actvalidator = new WRegExpValidator( PhysicalUnits::sm_activityRegex, activityEdit );
+      actvalidator->setFlags(Wt::MatchCaseInsensitive);
+      activityEdit->setValidator( actvalidator );
+      activityEdit->setTextSize( 10 );
+      activityEdit->setText( actTxt );
+      
+      auto doActivityUpdate = [=](){
+        if( activityEdit->validate() != WValidator::State::Valid )
+        {
+          activityEdit->setText( actTxt );
+          return;
+        }
+        
+        try
+        {
+          double activity = PhysicalUnits::stringToActivity( activityEdit->text().toUTF8() );
+          if( activity <= 0.0 )
+            throw runtime_error( "Activity must be greater than zero" );
+          
+          bool updated = false;
+          for( DecayActivityDiv::Nuclide &n : m_activityDiv->m_nuclides )
+          {
+            if( (n.z == nucinfo.z) && (n.a == nucinfo.a) && (n.iso == nucinfo.iso)
+                && fabs(n.age - nucinfo.age) < 1.0 )
+            {
+              updated = true;
+              n.activity = activity;
+              n.updateTxt();
+              break;
+            }
+          }//for( loop over nuclides )
+          
+          if( !updated )
+            throw runtime_error( "Couldnt find source to update" );
+        }catch(...)
+        {
+          activityEdit->setText( actTxt );
+          return;
+        }// try / catch
+        
+        m_activityDiv->refreshDecayDisplay();
+        updateInfo();
+      };//doActivityUpdate lambda
+      
+      activityEdit->changed().connect( std::bind( doActivityUpdate ) );
+      activityEdit->enterPressed().connect( std::bind( doActivityUpdate ) );
+      
+      
+      const string ageTxt = PhysicalUnits::printToBestTimeUnits( nucinfo.age );
+      cell = nuctbl->elementAt(2 + rowOffset, 0);
+      cell->setVerticalAlignment( AlignmentFlag::AlignMiddle );
+      celltxt = new WLabel( "Initial Age", cell );
+      
+      cell = nuctbl->elementAt(2 + rowOffset, 1);
+      WLineEdit *ageEdit = new WLineEdit(cell);
+      
+      WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, ageEdit );
+      agevalidator->setFlags(Wt::MatchCaseInsensitive);
+      ageEdit->setValidator( agevalidator );
+      ageEdit->setTextSize( 10 );
+      ageEdit->setText( ageTxt );
+      
+      auto doAgeUpdate = [=](){
+        if( ageEdit->validate() != WValidator::State::Valid )
+        {
+          ageEdit->setText( ageTxt );
+          return;
+        }
+        
+        try
+        {
+          double age = PhysicalUnits::stringToTimeDuration( ageEdit->text().toUTF8() );
+          if( activity < 0.0 )
+            throw runtime_error( "Initial age must be zero or more" );
+          
+          bool updated = false;
+          for( DecayActivityDiv::Nuclide &n : m_activityDiv->m_nuclides )
+          {
+            if( (n.z == nucinfo.z) && (n.a == nucinfo.a) && (n.iso == nucinfo.iso)
+               && fabs(n.age - nucinfo.age) < 1.0 )
+            {
+              updated = true;
+              n.age = age;
+              n.updateTxt();
+              break;
+            }
+          }//for( loop over nuclides )
+          
+          if( !updated )
+            throw runtime_error( "Couldnt find source to update" );
+        }catch(...)
+        {
+          ageEdit->setText( ageTxt );
+          return;
+        }// try / catch
+        
+        m_activityDiv->refreshDecayDisplay();
+        updateInfo();
+      };//doActivityUpdate lambda
+      
+      ageEdit->changed().connect( std::bind( doAgeUpdate ) );
+      ageEdit->enterPressed().connect( std::bind( doAgeUpdate ) );
+    }//for( size_t i = 0; i < nucs.size(); ++i )
+    
     
     {
       WText *line = new WText( "&nbsp;", m_info );
@@ -1801,6 +1989,37 @@ void DecayActivityDiv::addTheNuclide( const NuclideSelectedInfo &n )
   addNuclide( n.z, n.a, n.metasable, n.activity, n.useCurrie, n.initialAge );
 }//void addTheNuclide( const NuclideSelectedInfo &nuc )
 
+
+void DecayActivityDiv::Nuclide::updateTxt()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Element *element = db->element( z );
+  const string elementName = (element ? element->symbol : string(""));
+  
+  stringstream label;
+  label << "<sup><font size=\"1.5\">" << a;
+  
+  if( iso )
+    label << "m";
+  
+  if( iso > 1 )
+    label << iso;
+  
+  label << "</font></sup>" << elementName;
+  label << " " << fixed << setprecision(2)
+        << PhysicalUnits::printToBestActivityUnits(activity, 2, useCurrie );
+  
+  if( age > 0.0 )
+  {
+    //const PhysicalUnits::UnitNameValuePair units = PhysicalUnits::bestTimeUnitShortHtml( age );
+    //label << " " << fixed << setprecision(2) <<  age/units.second << units.first;
+    label << " " << PhysicalUnits::printToBestTimeUnits(age);
+  }//if( age > 0.0 )
+  
+  txt->setText( label.str() );
+}//void DecayActivityDiv::Nuclide::updateTxt()
+
+
 void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
                                  const double activity, const bool useCurrie,
                                  const double age )
@@ -1830,6 +2049,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   nuclide.display   = new WContainerWidget();
   nuclide.display->setInline( true );
   nuclide.display->addStyleClass( "Nuclide" );
+  nuclide.txt = new WText( "", XHTMLText, nuclide.display );
 
   if( !editedNuclide )
   {
@@ -1839,10 +2059,6 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
     m_nuclidesAddedDiv->insertBefore( nuclide.display, editedNuclide );
     removeNuclide( editedNuclide );
   }
-  
-  const SandiaDecay::Element *element = db->element( z );
-
-  string name = (element ? element->symbol : string(""));
 
   const SandiaDecay::Nuclide *nuc = db->nuclide( z, a );
   if( nuc )
@@ -1859,22 +2075,8 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   nuclide.display->setToolTip( "Double click to edit this source nuclide. "
                                "Single click to make the decay chain to display"
                                " this nuclide" );
-
-  stringstream label;
-  label << "<sup><font size=\"1.5\">" << a;
-  if( nuclide.iso ) label << "m";
-  if( nuclide.iso > 1 ) label << nuclide.iso;
-  label << "</font></sup>" << name;
-  label << " " << fixed << setprecision(2) << PhysicalUnits::printToBestActivityUnits(activity, 2, useCurrie );
-
-  if( age > 0.0 )
-  {
-    //const PhysicalUnits::UnitNameValuePair units = PhysicalUnits::bestTimeUnitShortHtml( age );
-    //label << " " << fixed << setprecision(2) <<  age/units.second << units.first;
-    label << " " << PhysicalUnits::printToBestTimeUnits(age);
-  }//if( age > 0.0 )
-
-  new WText( label.str(), XHTMLUnsafeText, nuclide.display );
+  
+  nuclide.updateTxt();
 
 //  WText *closeIcon = new WText( "" );
 //  WText *closeIcon = new WText();
@@ -3053,7 +3255,7 @@ void DecayActivityDiv::refreshDecayDisplay()
   m_currentTimeRange  = maxDiplayTime;
   
   if( m_calc )
-    m_calc->setTimeRangeTxt( m_displayTimeLength->text().narrow() );
+    m_calc->setTimeRangeTxt( m_displayTimeLength->text().toUTF8() );
 }//void refreshDecayDisplay()
 
 
@@ -3122,9 +3324,6 @@ void DecayActivityDiv::addDecaySeries()
   
   m_decayLegend->clear();
   
-  
-  
-  cout << "nColumns=" << nColumns <<endl;
   
   for( int column = nColumns-1; column > 0; --column )
   {

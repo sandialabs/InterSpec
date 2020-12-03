@@ -358,6 +358,9 @@ void DecaySelectNuclide::initActivityAgeSelects()
   WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, m_nuclideAgeEdit );
   agevalidator->setFlags(Wt::MatchCaseInsensitive);
   m_nuclideAgeEdit->setValidator(agevalidator);
+  
+  m_nuclideActivityEdit->setAutoComplete( false );
+  m_nuclideAgeEdit->setAutoComplete( false );
 }//void initActivityAgeSelects()
 
 
