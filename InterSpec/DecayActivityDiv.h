@@ -100,6 +100,7 @@ public:
 
   InterSpec *m_viewer;
   
+  /** \TODO: make this an actual widget and instead of storing in m_nuclides, and just store only in m_nuclidesAddedDiv */
   struct Nuclide
   {
     int a;
@@ -109,6 +110,9 @@ public:
     double activity;
     bool useCurrie;
     Wt::WContainerWidget *display;
+    Wt::WText *txt;
+    
+    void updateTxt();
   };//struct Nuclide
 
   std::vector<Nuclide>         m_nuclides;
