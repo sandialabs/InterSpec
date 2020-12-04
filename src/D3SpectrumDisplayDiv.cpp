@@ -998,10 +998,7 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> backgroun
   m_model->setBackgroundHistogram( background, liveTime, realTime, neutronCounts );
   
   if( !background && m_model->backgroundSubtract() )
-  {
-    m_backgroundSubtract = false;
-    m_model->setBackgroundSubtract( false );
-  }
+    setBackgroundSubtract( false );
   
   scheduleUpdateBackground();
 }//void D3SpectrumDisplayDiv::setBackground(...);
