@@ -242,7 +242,7 @@ SpectraFileHeader::SpectraFileHeader( Wt::Dbo::ptr<InterSpecUser> user,
 }//SpectraFileHeader constructor
 
 
-SpectraFileHeader::~SpectraFileHeader()
+SpectraFileHeader::~SpectraFileHeader() noexcept(true)
 {
   try
   {
@@ -317,9 +317,9 @@ SpectraFileHeader::~SpectraFileHeader()
       if( !status )
         throw runtime_error( m_fileSystemLocation + " didn't exist to delete" );
     }// if we should delete the file
-  }catch( std::exception &e )
+  }catch( ... )
   {
-    cerr << "\n~SpectraFileHeader() caught: " << e.what() << endl;
+    //cerr << "\n~SpectraFileHeader() caught: " << e.what() << endl;
   }
 }//SpectraFileHeader destructor
 
