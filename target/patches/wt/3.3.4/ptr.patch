@@ -1,5 +1,5 @@
---- wt-3.3.4/src/Wt/Dbo/ptr.orig	2020-11-15 12:55:26.000000000 -0800
-+++ wt-3.3.4/src/Wt/Dbo/ptr	2020-11-15 14:39:58.000000000 -0800
+--- src/Wt/Dbo/ptr.orig	2020-12-03 12:46:51.000000000 -0800
++++ src/Wt/Dbo/ptr	2020-12-03 12:51:43.000000000 -0800
 @@ -33,7 +33,7 @@
  				     const std::string& needle);
  
@@ -18,6 +18,15 @@
  
    virtual void flush() = 0;
    virtual void bindId(SqlStatement *statement, int& column) = 0;
+@@ -343,7 +343,7 @@
+   typedef typename dbo_traits<C>::IdType IdType;
+ 
+   MetaDbo(C *obj);
+-  virtual ~MetaDbo();
++  virtual ~MetaDbo() noexcept(false);
+ 
+   virtual void flush();
+   virtual void bindId(SqlStatement *statement, int& column);
 @@ -481,7 +481,7 @@
  {
  public:
