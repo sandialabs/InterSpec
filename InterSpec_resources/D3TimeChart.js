@@ -376,7 +376,9 @@ D3TimeChart.prototype.handleResize = function () {
 
 D3TimeChart.prototype.shiftSelection = function (n) {
   if (this.selection) {
-    var { domain, compressionIndex } = this.selection;
+    var domain = this.selection.domain;
+    var compressionIndex = this.selection.compressionIndex;
+
     var stepSize =
       this.data[compressionIndex].meanIntervalTime *
       n *
@@ -669,7 +671,9 @@ D3TimeChart.prototype.updateChart = function (
 ) {
   var transitions = options && options.transitions ? true : false;
 
-  var { xScale, yScaleGamma, yScaleNeutron } = scales;
+  var xScale = scales.xScale;
+  var yScaleGamma = scales.yScaleGamma;
+  var yScaleNeutron = scales.yScaleNeutron;
 
   var HAS_GAMMA = true;
   var HAS_NEUTRON = false;
@@ -713,7 +717,8 @@ D3TimeChart.prototype.updateChart = function (
 
   // plot data
   for (var detName in this.data[compressionIndex].detectors) {
-    var { counts, meta } = this.data[compressionIndex].detectors[detName];
+    var counts = this.data[compressionIndex].detectors[detName].counts;
+    var meta = this.data[compressionIndex].detectors[detName].meta;
 
     var lineGamma = d3.svg
       .line()
@@ -786,7 +791,9 @@ D3TimeChart.prototype.updateChart = function (
     // console.log(this.regions);
     var chart = this;
     this.highlightRegionsG.selectAll("rect").each(function (d, i) {
-      var { startSample, endSample } = chart.regions[i];
+      var startSample = chart.regions[i].startSample;
+      var endSample = chart.regions[i].endSample;
+
       var lIdx = chart.sampleToIndexMap[startSample];
       var rIdx = chart.sampleToIndexMap[endSample];
       var startTime = chart.data[0].realTimeIntervals[lIdx][0];
@@ -1712,8 +1719,9 @@ D3TimeChart.prototype.handleDragBackZoom = function (brush) {
  * @param {Number} mouseX : x-coordinates of pointer in pixels relative to the containing element
  */
 D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
-  // TO DO: is object destructuring available in ES5?
-  var { foreground, background, zoom } = this.highlightOptions;
+  var foreground = this.highlightOptions.foreground;
+  var background = this.highlightOptions.background;
+  var zoom = this.highlightOptions.zoom;
 
   if (modifier === foreground.modifierKey) {
     this.highlightRect.attr("fill", foreground.color);
@@ -1776,8 +1784,8 @@ D3TimeChart.prototype.handleBrushPanSelection = function (brush) {
   if (!this.selection) {
     return;
   }
-  // TO DO: Check if ES5 has object destructuring
-  var { domain, compressionIndex } = this.selection;
+  var domain = this.selection.domain;
+  var compressionIndex = this.selection.compressionIndex;
 
   // compute new extent
   var panAmount =
@@ -2198,8 +2206,10 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
     //See the c++ function D3TimeChart::setHighlightRegionsToClient() for format of data
     for (var i = 0; i < regions.length; i++) {
       // get index from sample number
-      // TO DO: check if es5 has object destructuring
-      var { startSample, endSample, fillColor } = regions[i];
+      var startSample = regions[i].startSample;
+      var endSample = regions[i].endSample;
+      var fillColor = regions[i].fillColor;
+
       var lIdx = this.sampleToIndexMap[startSample];
       var rIdx = this.sampleToIndexMap[endSample];
       // look up the corresponding time of the sample number using the index
