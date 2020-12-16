@@ -1366,18 +1366,28 @@ double PointSourceShieldingChi2Fcn::DoEval( const std::vector<double> &x ) const
 
   try
   {
+    // Check we're not being passed total non-sense here
+    for( size_t i = 0; i < x.size(); ++i )
+    {
+      if( IsNan(x[i]) || IsInf(x[i]) )
+      {
+        throw runtime_error( "Invalid parameter (" + std::to_string(i) + ", "
+                            + std::to_string(x[i]) + ") passed to chi2 fit fcn" );
+      }
+    }//for( size_t i = 0; i < x.size(); ++i )
+    
     if( m_mixtureCache.size() > sm_maxMixtureCacheSize )
       m_mixtureCache.clear();
     
-  const vector< tuple<double,double,double,Wt::WColor,double> > chi2s
-                          = energy_chi_contributions( x, m_mixtureCache,
-                                            m_allowMultipleNucsContribToPeaks );
-  double chi2 = 0.0;
-
-  const size_t npoints = chi2s.size();
-  for( size_t i = 0; i < npoints; ++i )
+    const vector< tuple<double,double,double,Wt::WColor,double> > chi2s
+      = energy_chi_contributions( x, m_mixtureCache,
+                               m_allowMultipleNucsContribToPeaks );
+    double chi2 = 0.0;
+    
+    const size_t npoints = chi2s.size();
+    for( size_t i = 0; i < npoints; ++i )
     chi2 += pow( std::get<1>(chi2s[i]), 2.0 );
-
+    
     if( m_isFitting && m_guiUpdateFrequencyMs.load() && m_guiUpdateInfo )
     {
       //Need best chi2, and its cooresponding errors and

@@ -8081,7 +8081,6 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     
     const bool fitAct = m_sourceModel->fitActivity( ison )
                         && !m_sourceModel->shieldingDeterminedActivity( ison );
-    const double age = m_sourceModel->age( ison );
     const bool fitAge = m_sourceModel->fitAge( ison );
     
     const SandiaDecay::Nuclide *ageDefiningNuc = m_sourceModel->ageDefiningNuclide( nuclide );
@@ -8095,9 +8094,6 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
     
     num_fit_params += fitAct + (fitAge && hasOwnAge);
 
-    const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
-    const double ageStep = 0.25 * nuclide->halfLife;
-
     if( fitAct )
     {
       //We cant have both a specified lower and upper limit on activity, or
@@ -8107,6 +8103,7 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
 //      inputPrams.Add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
 //                     10000.0*PhysicalUnits::curie/PointSourceShieldingChi2Fcn::sm_activityUnits );
       const string name = nuclide->symbol + "Strength";
+      const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
       inputPrams.Add( name, activity, activityStep );
       inputPrams.SetLowerLimit( name, 0.0 );
     }else
@@ -8168,12 +8165,37 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       {
         maxAge = maxNuclideDecayHL( nuclide );
       }
-      
       assert( maxAge > 0.0 );
+      
+      double age = m_sourceModel->age( ison );
+      double ageStep = 0.25 * nuclide->halfLife;
+      
+      // Limit the maximum age to be the larger of ten times the current age, or 200 years.  This
+      //  is both to be reasonable in terms of answers we get, and because for really long-lived
+      //  isotopes, we could have a max age at this point so large it will cause Minuit to give
+      //  NaNs for age, even on first iteration.
+      maxAge = std::min( maxAge, std::max(10.0*age, 200.0*PhysicalUnits::year) );
+      
+      // If the age is currently over 10000 years, it is just really getting unreasonable, so
+      //  larger than Minuit can handle, so will impose a tougher 100k year limit, but let grow past
+      //  this, but require the user to hit "fit" over and over again.
+      if( maxAge > 10000.0*PhysicalUnits::year )
+        maxAge = std::max(2.0*age, 10000.0*PhysicalUnits::year);
+      
+      // But no matter what we'll limit to the age of earth, which at least for a few select
+      //  examples tried, Minuit was okay with (it wasnt okay with like 1.2E20 years that some of
+      //  the uraniums would give)
+      age = std::min( age, 4.543e+9 * PhysicalUnits::year );
+      maxAge = std::min( maxAge, 4.543e+9 * PhysicalUnits::year );
+      
+      ageStep = std::min( ageStep, 0.1*maxAge );
+      if( age > 0 )
+        ageStep = std::min( 0.1*age, ageStep );
       
       inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
     }else if( hasOwnAge )
     {
+      const double age = m_sourceModel->age( ison );
       inputPrams.Add( nuclide->symbol + "Age", age );
     }else  //see if defining nuclide age is fixed, if so use it, else put in negative integer of index of age...
     {
