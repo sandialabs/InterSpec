@@ -333,8 +333,11 @@ D3TimeChart.prototype.setData = function (rawData) {
     // console.log(sampleToIndexMap);
     this.sampleToIndexMap = sampleToIndexMap;
 
-    // clear selection if there is any
+    // clear existing selection if there is any
     this.selection = null;
+
+    // clear existing regions if there are any
+    this.regions = null;
 
     // if height and width are set, may render directly.
     if (this.height && this.width) {
@@ -884,9 +887,12 @@ D3TimeChart.prototype.updateChart = function (
     this.highlightRegionsG.selectAll("rect").each(function (d, i) {
       var startSample = chart.regions[i].startSample;
       var endSample = chart.regions[i].endSample;
+      // console.log(endSample);
 
       var lIdx = chart.sampleToIndexMap[startSample];
       var rIdx = chart.sampleToIndexMap[endSample];
+      // console.log(chart.sampleToIndexMap);
+      // console.log(rIdx);
       var startTime = chart.data[0].realTimeIntervals[lIdx][0];
       var endTime = chart.data[0].realTimeIntervals[rIdx][1];
 
