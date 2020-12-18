@@ -3314,15 +3314,25 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
     case DetectorType::Sam945:                     name = "SAM-945"; break;
     case DetectorType::Srpm210:                    name = "SRPM-210"; break;
       
+    case DetectorType::RIIDEyeNaI:                 name = "RIIDEyeX-GN1"; break;
+    case DetectorType::Interceptor:                name = "Interceptor"; break;
       
-    case DetectorType::MicroRaider:
+    case DetectorType::MicroRaider:                name = "Raider"; break;
+      
+    case DetectorType::RadSeekerNaI:               name = "RadSeeker-NaI"; break;
+    case DetectorType::RadSeekerLaBr:              name = "Radseeker-LaBr3"; break;
+      
     case DetectorType::OrtecRadEagleCeBr2Inch:
     case DetectorType::OrtecRadEagleCeBr3Inch:
     case DetectorType::OrtecRadEagleLaBr:
     case DetectorType::RadHunterLaBr3:
     case DetectorType::RadHunterNaI:
     case DetectorType::Sam940LaBr3:
-      //ToDo: fill in these names
+    case DetectorType::IdentiFinderTungsten:
+    case DetectorType::IdentiFinderUnknown:
+    case DetectorType::RIIDEyeLaBr:
+      
+      // \TODO: fill in these names
       break;
   }//switch( type )
   
