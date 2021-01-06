@@ -650,6 +650,13 @@ D3TimeChart.prototype.render = function (options) {
   }
 };
 
+/**
+ * Function to handle mouse wheel for zooming and panning.
+ * @param {*} brush : BrushX object of the 
+ * @param {*} deltaX : integer deltaX value of the mouse scroll event
+ * @param {*} deltaY : integer deltaY value of the mouse scroll event
+ * @param {*} mouseX : integer x position of the mouse
+ */
 D3TimeChart.prototype.handleMouseWheel = function (
   brush,
   deltaX,
@@ -668,7 +675,7 @@ D3TimeChart.prototype.handleMouseWheel = function (
 
   const minimumMeanIntervalTime = this.data[0].meanIntervalTime;
 
-  // don't allow zoom in more than 2 mean interval lengths or zoom out if current domain is 
+  // don't allow zoom in more than 2 mean interval lengths or zoom out if current domain is all the way zoomed out already.
   if (
     currentDomain[1] - currentDomain[0] <= minimumMeanIntervalTime * 2 &&
     deltaY < 0
@@ -686,6 +693,7 @@ D3TimeChart.prototype.handleMouseWheel = function (
 
   let newLeftExtent; 
   let newRightExtent; 
+
   if (Math.abs(deltaY) >= Math.abs(deltaX)) {
     // if scroll vertical, zoom
     newLeftExtent = Math.max(
@@ -712,10 +720,11 @@ D3TimeChart.prototype.handleMouseWheel = function (
     newRightExtent = currentDomain[1] + panStepSize;
   }
 
+  // if the window is smaller than 2x the mean interval time, then 
   if (newRightExtent - newLeftExtent < 2 * minimumMeanIntervalTime) {
     const extentCenter = (newRightExtent + newLeftExtent) / 2;
-    newLeftExtent = extentCenter - minimumMeanIntervalTime;
-    newRightExtent = extentCenter + minimumMeanIntervalTime;
+    newLeftExtent = Math.max(extentCenter - minimumMeanIntervalTime, leftLimit);
+    newRightExtent = Math.min(extentCenter + minimumMeanIntervalTime, rightLimit);
   }
 
   // compute new compression index to use
