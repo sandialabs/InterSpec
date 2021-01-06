@@ -89,7 +89,7 @@ BrushX.prototype.getScale = function () {
 };
 
 /**
- * Returns true if and only if the brush extent is empty. A brush extent is empty if it has no start point or end point. 
+ * Returns true if and only if the brush extent is empty. A brush extent is empty if it has no start point or end point.
  * When a brush is created, it is initially empty; the brush may also become empty with a single click on the background without moving, or if the extent is cleared.
  * A brush is considered empty if it has zero-width. When the brush is empty, its extent is not strictly defined.
  */
@@ -408,10 +408,11 @@ D3TimeChart.prototype.shiftSelection = function (n) {
     this.brush.setScale(scale.xScale);
     this.updateChart(scale, compressionIndex, { transitions: false });
   }
+  ``;
 };
 
 /**
- * Renders/updates the D3TimeChart to be set up plotting data. compresses data for purposes of displaying, Updates dimensions of svg element, updates dimensions of clip-path, defines drag behavior over the figure
+ * Renders/updates the D3TimeChart to be set up for plotting data. Compresses data for purposes of displaying, updates dimensions of svg element, updates dimensions of clip-path, and defines drag behavior over the figure
  * @param {*} options : Optional argument to specify render options
  */
 D3TimeChart.prototype.render = function (options) {
@@ -521,9 +522,9 @@ D3TimeChart.prototype.render = function (options) {
       ? this.selection.compressionIndex
       : this.compressionIndex;
 
-    // add brush-highlight selection
     var brush = this.brush;
 
+    // set scale of brush
     brush.setScale(scales.xScale);
 
     var selectionDrag = d3.behavior
@@ -534,14 +535,13 @@ D3TimeChart.prototype.render = function (options) {
         }
 
         var coords = d3.mouse(this.rect.node());
-        console.log(coords);
+        // console.log(coords);
         brush.setStart(coords[0]);
         d3.select("body").style("cursor", "move");
         // console.log(d3.event.sourceEvent);
 
         this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
 
-        console.log(d3.event.sourceEvent);
         if (d3.event.sourceEvent.altKey) {
           this.highlightModifier = "altKey";
           this.mouseDownHighlight(coords[0], "altKey");
@@ -560,9 +560,9 @@ D3TimeChart.prototype.render = function (options) {
           if (this.highlightModifier === "ctrlKey") {
             // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
             if (brush.getEnd() < brush.getStart()) {
-              this.handleDragBackZoom(brush);
+              this.handleDragBackZoom();
             } else {
-              this.handleDragForwardZoom(brush);
+              this.handleDragForwardZoom();
             }
           } else {
             var width =
@@ -577,7 +577,6 @@ D3TimeChart.prototype.render = function (options) {
           if (this.escapeKeyPressed) {
             // clear selections and reset escape key
             brush.clear();
-            // this.mouseUpHighlight();
             this.escapeKeyPressed = false;
           } else {
             d3.select("body").style("cursor", "auto");
@@ -589,7 +588,7 @@ D3TimeChart.prototype.render = function (options) {
             //   this.data[0].sampleNumbers[rIdx],
             // ]);
             if (this.highlightModifier === "ctrlKey") {
-              this.handleBrushZoom(brush);
+              this.handleBrushZoom();
             } else {
               var keyModifierMap = {
                 altKey: 0x4,
@@ -629,7 +628,7 @@ D3TimeChart.prototype.render = function (options) {
       })
       .on("drag", () => {
         brush.setEnd(d3.mouse(this.rect.node())[0]);
-        var res = this.handleBrushPanSelection(brush);
+        var res = this.handleBrushPanSelection();
         if (res) {
           newSelection = res.newSelection;
           newScale = res.newScale;
@@ -655,7 +654,7 @@ D3TimeChart.prototype.render = function (options) {
     // mouse wheel behavior
     this.rect.node().onwheel = (evt) => {
       evt.preventDefault();
-      this.handleMouseWheel(brush, evt.deltaX, evt.deltaY, evt.x);
+      this.handleMouseWheel(evt.deltaX, evt.deltaY, evt.x);
     };
 
     this.updateChart(scales, compressionIndex, options);
@@ -664,17 +663,12 @@ D3TimeChart.prototype.render = function (options) {
 
 /**
  * Function to handle mouse wheel for zooming and panning.
- * @param {*} brush : BrushX object of the 
  * @param {*} deltaX : integer deltaX value of the mouse scroll event
  * @param {*} deltaY : integer deltaY value of the mouse scroll event
  * @param {*} mouseX : integer x position of the mouse
  */
-D3TimeChart.prototype.handleMouseWheel = function (
-  brush,
-  deltaX,
-  deltaY,
-  mouseX
-) {
+D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
+  var brush = this.brush;
   const xScale = brush.getScale();
   const focalPoint = xScale.invert(mouseX);
 
@@ -703,8 +697,8 @@ D3TimeChart.prototype.handleMouseWheel = function (
 
   const zoomStepSize = 0.001 * Math.exp(2, this.compressionIndex);
 
-  let newLeftExtent; 
-  let newRightExtent; 
+  let newLeftExtent;
+  let newRightExtent;
 
   if (Math.abs(deltaY) >= Math.abs(deltaX)) {
     // if scroll vertical, zoom
@@ -720,7 +714,8 @@ D3TimeChart.prototype.handleMouseWheel = function (
     );
   } else {
     // if scroll horizontal, pan
-    let panStepSize = deltaX * 0.1 * this.data[this.compressionIndex].meanIntervalTime;
+    let panStepSize =
+      deltaX * 0.1 * this.data[this.compressionIndex].meanIntervalTime;
 
     if (currentDomain[0] + panStepSize < leftLimit) {
       panStepSize = leftLimit - currentDomain[0];
@@ -732,11 +727,14 @@ D3TimeChart.prototype.handleMouseWheel = function (
     newRightExtent = currentDomain[1] + panStepSize;
   }
 
-  // if the window is smaller than 2x the mean interval time, then 
+  // if the window is smaller than 2x the mean interval time, then
   if (newRightExtent - newLeftExtent < 2 * minimumMeanIntervalTime) {
     const extentCenter = (newRightExtent + newLeftExtent) / 2;
     newLeftExtent = Math.max(extentCenter - minimumMeanIntervalTime, leftLimit);
-    newRightExtent = Math.min(extentCenter + minimumMeanIntervalTime, rightLimit);
+    newRightExtent = Math.min(
+      extentCenter + minimumMeanIntervalTime,
+      rightLimit
+    );
   }
 
   // compute new compression index to use
@@ -1625,85 +1623,53 @@ D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
 
 /**
  * Brush handler to zoom into a selected domain or zoom out if brushed back.
- * @param {} brush : BrushX object
  */
-D3TimeChart.prototype.handleBrushZoom = function (brush) {
-  if (brush && !brush.empty()) {
-    // handle dragback (zoom out). Must update selection and brush scale upon mouseup event.
-    // For dragback, handleDragBackZoom already handles chart updating--handleBrushZoom only updates selection and mouseup
-    if (!this.draggedForward) {
-      // if no selection (not already zoomed in), dragback does nothing.
-      if (!this.selection) {
-        return;
-      }
+D3TimeChart.prototype.handleBrushZoom = function () {
+  var brush = this.brush;
+  if (!brush || !brush.getStart() || !brush.getEnd()) {
+    throw new Error("Brush start or end are undefined!")
+  }
+  // handle dragback (zoom out). Must update selection and brush scale upon mouseup event.
+  // For dragback, handleDragBackZoom already handles chart updating--handleBrushZoom only updates selection and mouseup
+  if (!this.draggedForward) {
+    // if no selection (not already zoomed in), dragback does nothing.
+    if (!this.selection) {
+      return;
+    }
 
-      // calculate new extent if it is same as extent when all the way zoomed out, set selection to null.
-      // naturalXScale is the xScale used when all the way zoomed out (using all data points).
-      var naturalXScale = this.getScales(
-        this.data[this.compressionIndex].domains
-      ).xScale;
+    // calculate new extent if it is same as extent when all the way zoomed out, set selection to null.
+    // naturalXScale is the xScale used when all the way zoomed out (using all data points).
+    var naturalXScale = this.getScales(this.data[this.compressionIndex].domains)
+      .xScale;
 
-      var zoomOutAmount = -(
-        naturalXScale.invert(brush.getScale()(brush.getEnd())) -
-        naturalXScale.invert(brush.getScale()(brush.getStart()))
-      );
+    var zoomOutAmount = -(
+      naturalXScale.invert(brush.getScale()(brush.getEnd())) -
+      naturalXScale.invert(brush.getScale()(brush.getStart()))
+    );
 
-      var newLeftExtent = Math.max(
-        this.selection.domain[0] - zoomOutAmount,
-        this.data[this.compressionIndex].domains.x[0]
-      );
-      var newRightExtent = Math.min(
-        this.selection.domain[1] + zoomOutAmount,
-        this.data[this.compressionIndex].domains.x[1]
-      );
-      var newExtent = [newLeftExtent, newRightExtent];
+    var newLeftExtent = Math.max(
+      this.selection.domain[0] - zoomOutAmount,
+      this.data[this.compressionIndex].domains.x[0]
+    );
+    var newRightExtent = Math.min(
+      this.selection.domain[1] + zoomOutAmount,
+      this.data[this.compressionIndex].domains.x[1]
+    );
+    var newExtent = [newLeftExtent, newRightExtent];
 
-      // if extent is identical to the natural x-domain (i.e. when all the way zoomed out), then set selection to null. And set brush scale to the natural x-scale.
-      if (
-        newLeftExtent === this.data[this.compressionIndex].domains.x[0] &&
-        newRightExtent === this.data[this.compressionIndex].domains.x[1]
-      ) {
-        this.selection = null;
-        // update brush scale
-        brush.setScale(naturalXScale);
-      } else {
-        // Otherwise, update the selection to reflect the new domain and compression level, and update the scale of the brush.
-        // compute new compression index to use
-        var leftIndex = this.findDataIndex(newExtent[0], 0);
-        var rightIndex = this.findDataIndex(newExtent[1], 0);
-        var nPoints = rightIndex - leftIndex + 1;
-        var plotWidth = this.width - this.margin.left - this.margin.right;
-
-        var compressionIndex = Math.ceil(
-          Math.log2(Math.ceil(nPoints / plotWidth))
-        );
-
-        // calculate new scale. Update brush
-        var scales = this.getScales({
-          x: newExtent,
-          yGamma: this.data[compressionIndex].domains.yGamma,
-          yNeutron: this.data[compressionIndex].domains.yNeutron,
-        });
-        this.selection = {
-          domain: newExtent,
-          compressionIndex: compressionIndex,
-        };
-
-        brush.setScale(scales.xScale);
-      } // if (newLeftExtent === this.data[this.compressionIndex].domains.x[0] && newRightExtent === this.data[this.compressionIndex].domains.x[1])
+    // if extent is identical to the natural x-domain (i.e. when all the way zoomed out), then set selection to null. And set brush scale to the natural x-scale.
+    if (
+      newLeftExtent === this.data[this.compressionIndex].domains.x[0] &&
+      newRightExtent === this.data[this.compressionIndex].domains.x[1]
+    ) {
+      this.selection = null;
+      // update brush scale
+      brush.setScale(naturalXScale);
     } else {
-      // handle drag forward (zoom-in)
-
-      // if drawn window is too small, do nothing
-      var width =
-        brush.getScale()(brush.getEnd()) - brush.getScale()(brush.getStart());
-      if (width < this.options.minSelectionWidth) {
-        return;
-      }
-
-      // find appropriate compression level for this range
-      var leftIndex = this.findDataIndex(brush.extent()[0], 0);
-      var rightIndex = this.findDataIndex(brush.extent()[1], 0);
+      // Otherwise, update the selection to reflect the new domain and compression level, and update the scale of the brush.
+      // compute new compression index to use
+      var leftIndex = this.findDataIndex(newExtent[0], 0);
+      var rightIndex = this.findDataIndex(newExtent[1], 0);
       var nPoints = rightIndex - leftIndex + 1;
       var plotWidth = this.width - this.margin.left - this.margin.right;
 
@@ -1711,52 +1677,86 @@ D3TimeChart.prototype.handleBrushZoom = function (brush) {
         Math.log2(Math.ceil(nPoints / plotWidth))
       );
 
-      // set lower limit on extent size to 2 interval lengths
-      var minExtentLeft = Math.max(
-        brush.getCenter() - this.data[compressionIndex].meanIntervalTime,
-        this.data[compressionIndex].domains.x[0]
-      );
-      var maxExtentRight = Math.min(
-        brush.getCenter() + this.data[compressionIndex].meanIntervalTime,
-        this.data[compressionIndex].domains.x[1]
-      );
-
-      var brushWidth = brush.extent()[1] - brush.extent()[0];
-
-      var extent =
-        brushWidth > 2 * this.data[compressionIndex].meanIntervalTime
-          ? brush.extent()
-          : [minExtentLeft, maxExtentRight];
-
-      // update x-domain to the new domain
-
-      // transition only if stays in same compression level
-      var transitions = this.selection
-        ? compressionIndex === this.selection.compressionIndex
-        : compressionIndex === this.compressionIndex;
-
-      // update selection
-      this.selection = { domain: extent, compressionIndex: compressionIndex };
-
+      // calculate new scale. Update brush
       var scales = this.getScales({
-        x: this.selection.domain,
+        x: newExtent,
         yGamma: this.data[compressionIndex].domains.yGamma,
         yNeutron: this.data[compressionIndex].domains.yNeutron,
       });
+      this.selection = {
+        domain: newExtent,
+        compressionIndex: compressionIndex,
+      };
 
-      // update brush scale
       brush.setScale(scales.xScale);
-      // var transitions = compressionIndex === this.compressionIndex;
-      this.updateChart(scales, compressionIndex, { transitions: transitions });
+    } // if (newLeftExtent === this.data[this.compressionIndex].domains.x[0] && newRightExtent === this.data[this.compressionIndex].domains.x[1])
+  } else {
+    // handle drag forward (zoom-in)
+
+    // if drawn window is too small, do nothing
+    var width =
+      brush.getScale()(brush.getEnd()) - brush.getScale()(brush.getStart());
+    if (width < this.options.minSelectionWidth) {
+      return;
     }
+
+    // find appropriate compression level for this range
+    var leftIndex = this.findDataIndex(brush.extent()[0], 0);
+    var rightIndex = this.findDataIndex(brush.extent()[1], 0);
+    var nPoints = rightIndex - leftIndex + 1;
+    var plotWidth = this.width - this.margin.left - this.margin.right;
+
+    var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+
+    // set lower limit on extent size to 2 interval lengths
+    var minExtentLeft = Math.max(
+      brush.getCenter() - this.data[compressionIndex].meanIntervalTime,
+      this.data[compressionIndex].domains.x[0]
+    );
+    var maxExtentRight = Math.min(
+      brush.getCenter() + this.data[compressionIndex].meanIntervalTime,
+      this.data[compressionIndex].domains.x[1]
+    );
+
+    var brushWidth = brush.extent()[1] - brush.extent()[0];
+
+    var extent =
+      brushWidth > 2 * this.data[compressionIndex].meanIntervalTime
+        ? brush.extent()
+        : [minExtentLeft, maxExtentRight];
+
+    // update x-domain to the new domain
+
+    // transition only if stays in same compression level
+    var transitions = this.selection
+      ? compressionIndex === this.selection.compressionIndex
+      : compressionIndex === this.compressionIndex;
+
+    // update selection
+    this.selection = { domain: extent, compressionIndex: compressionIndex };
+
+    var scales = this.getScales({
+      x: this.selection.domain,
+      yGamma: this.data[compressionIndex].domains.yGamma,
+      yNeutron: this.data[compressionIndex].domains.yNeutron,
+    });
+
+    // update brush scale
+    brush.setScale(scales.xScale);
+    // var transitions = compressionIndex === this.compressionIndex;
+    this.updateChart(scales, compressionIndex, { transitions: transitions });
   }
 };
 
 /**
  * Handler for drawing rectangle on brush forward.
- * @param {*} brush : BrushX object
  */
-D3TimeChart.prototype.handleDragForwardZoom = function (brush) {
+D3TimeChart.prototype.handleDragForwardZoom = function () {
+  var brush = this.brush;
+  if (!brush || !brush.getStart() || !brush.getEnd()) {
+    throw new Error("Brush start or end are undefined!")
+  }
+
   // if has been dragged backward prior to dragging forward, should set the flag
   if (!this.draggedForward) {
     // Set draggedforward flag. Flag is used to find conditions for redrawing chart at default position (prior to any drag-back zoomout occurring)
@@ -1785,9 +1785,13 @@ D3TimeChart.prototype.handleDragForwardZoom = function (brush) {
 
 /**
  * Handler for updating chart to zoom out on brush backward.
- * @param {*} brush : BrushX object
  */
-D3TimeChart.prototype.handleDragBackZoom = function (brush) {
+D3TimeChart.prototype.handleDragBackZoom = function () {
+  var brush = this.brush;
+  if (!brush || !brush.getStart() || !brush.getEnd()) {
+    throw new Error("Brush start or end are undefined!")
+  }
+
   // clear rectangle if any drawn
   this.highlightRect.attr("width", 0);
   this.highlightText.attr("visibility", "hidden");
@@ -1900,11 +1904,18 @@ D3TimeChart.prototype.showToolTip = function () {
   this.hoverToolTip.style("visibility", "visible");
 };
 
-D3TimeChart.prototype.handleBrushPanSelection = function (brush) {
+D3TimeChart.prototype.handleBrushPanSelection = function () {
   // if not zoomed in already (no selection), drag does nothing.
   if (!this.selection) {
     return;
   }
+
+  var brush = this.brush;
+
+  if (!brush || !brush.getStart() || !brush.getEnd()) {
+    throw new Error("Brush start or end are undefined!")
+  }
+
   var domain = this.selection.domain;
   var compressionIndex = this.selection.compressionIndex;
 
