@@ -23,9 +23,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 /**
  * Constructor for DataPoint objects. Represents a single point in the time history chart.
- * @param time: time of measurement (x)
- * @param gammaCPS: gamma counts per second (y)
- * @param neutronCPS: neutron counts per second (y)
+ * @param {Number} time: time of measurement (x)
+ * @param {Number} gammaCPS: gamma counts per second (y)
+ * @param {Number} neutronCPS: neutron counts per second (y)
  */
 DataPoint = function (time, gammaCPS, neutronCPS) {
   this.time = time; // realtime or livetime
@@ -63,18 +63,18 @@ DetectorMetaData.prototype.setNeutronColor = function (neutronColor) {
 };
 
 /**
- * Constructor for rudimentary 1-dimensional brush along x direction. Used to map mouse selection ranges to the data domain.
- * @param scale: a D3 scale object that sets the x-scale associated with this brush
+ * Constructor for rudimentary 1-dimensional brush along x direction. Used to map mouse (drag) selection ranges to the data domain.
+ * @param {Object} scale: a D3 scale object that sets the x-scale associated with this brush. The scale is used to map mouse positions into the data domain used to create the scale.
  */
 BrushX = function (scale) {
-  this.start = undefined;
-  this.end = undefined;
+  this.start = null;
+  this.end = null;
   this.scale = scale;
 };
 
 /**
- * Sets the x-scale associated with this brush
- * @param {*} scale: D3 scale object
+ * Sets or updates the x-scale associated with this brush. The scale is used to map mouse positions into data domain used to create the scale.
+ * @param {Object} scale: D3 scale object
  */
 BrushX.prototype.setScale = function (scale) {
   this.scale = scale;
@@ -82,16 +82,16 @@ BrushX.prototype.setScale = function (scale) {
 };
 
 /**
- * Returns the x-scale associated with this brush
+ * Returns the x-scale associated with this brush. The scale is used to map mouse positions into the data domain used to create the scale.
  */
 BrushX.prototype.getScale = function () {
   return this.scale;
 };
 
 /**
- * Returns true if and only if the brush extent is empty.
+ * Returns true if and only if the brush extent is empty. A brush extent is empty if it has no start point or end point. 
  * When a brush is created, it is initially empty; the brush may also become empty with a single click on the background without moving, or if the extent is cleared.
- * A brush is considered empty if it has zero-width or zero-height. When the brush is empty, its extent is not strictly defined.
+ * A brush is considered empty if it has zero-width. When the brush is empty, its extent is not strictly defined.
  */
 BrushX.prototype.empty = function () {
   return !this.start || !this.end || this.start === this.end;
@@ -101,27 +101,27 @@ BrushX.prototype.empty = function () {
  * Clears the extent, making the brush extent empty.
  */
 BrushX.prototype.clear = function () {
-  this.start = undefined;
-  this.end = undefined;
+  this.start = null;
+  this.end = null;
 };
 
 /**
- * Sets the start value of the brush scaled to the data domain.
+ * Sets the start value of the brush by mapping the mouse coordinate into into the data domain used to create the brush's scale.
  * @param {Number} startCoord : d3 mouse x coordinate.
  */
 BrushX.prototype.setStart = function (startCoord) {
   if (!this.scale) {
     console.log("Error: brush scale has not been set!");
   }
-  var scaledCoord = this.scale.invert(startCoord);
+  var scaledStart = this.scale.invert(startCoord);
   var domain = this.scale.domain();
-  if (scaledCoord < domain[0]) {
-    scaledCoord = domain[0];
+  if (scaledStart < domain[0]) {
+    scaledStart = domain[0];
   }
-  if (scaledCoord > domain[1]) {
-    scaledCoord = domain[1];
+  if (scaledStart > domain[1]) {
+    scaledStart = domain[1];
   }
-  this.start = scaledCoord;
+  this.start = scaledStart;
 };
 
 BrushX.prototype.getStart = function () {
@@ -129,7 +129,7 @@ BrushX.prototype.getStart = function () {
 };
 
 /**
- * Sets the end value of the brush scaled to the data domain.
+ * Sets the end value of the brush by mapping the mouse coordinate into into the data domain used to create the brush's scale.
  * @param {Number} endCoord : d3 mouse x coordinate.
  */
 BrushX.prototype.setEnd = function (endCoord) {
@@ -137,16 +137,16 @@ BrushX.prototype.setEnd = function (endCoord) {
     console.log("Error: brush scale has not been set!");
   }
 
-  var scaledCoord = this.scale.invert(endCoord);
+  var scaledEnd = this.scale.invert(endCoord);
   var domain = this.scale.domain();
 
-  if (scaledCoord < domain[0]) {
-    scaledCoord = domain[0];
+  if (scaledEnd < domain[0]) {
+    scaledEnd = domain[0];
   }
-  if (scaledCoord > domain[1]) {
-    scaledCoord = domain[1];
+  if (scaledEnd > domain[1]) {
+    scaledEnd = domain[1];
   }
-  this.end = scaledCoord;
+  this.end = scaledEnd;
 };
 
 BrushX.prototype.getEnd = function () {
@@ -319,7 +319,7 @@ D3TimeChart.prototype.setData = function (rawData) {
     var formattedData = this.formatDataFromRaw(rawData);
 
     this.data = [formattedData];
-    console.log(this.data);
+    // console.log(this.data);
 
     // create inverted index of sample numbers  for fast lookup of array-indices from sample number keys
     var sampleToIndexMap = {};
@@ -352,13 +352,17 @@ D3TimeChart.prototype.handleResize = function () {
   // ...
   // Make sure to update the C++ code of the changed plotting size.
 
-  console.log("Resized!");
+  // console.log("Resized!");
   this.height = this.chart.clientHeight;
   this.width = this.chart.clientWidth;
 
   this.render();
 };
 
+/**
+ * Function to handle shifting of the zoomed selection window.
+ * @param {Number} n : amount to shift by
+ */
 D3TimeChart.prototype.shiftSelection = function (n) {
   if (this.selection) {
     var domain = this.selection.domain;
