@@ -198,6 +198,9 @@ D3TimeChart = function (elem, options) {
   this.height = null;
   this.width = null;
 
+  // initialize brush-highlight selection
+  this.brush = new BrushX();
+
   // other useful data members
   this.rawData = null;
   this.sampleToIndexMap = null;
@@ -336,6 +339,9 @@ D3TimeChart.prototype.setData = function (rawData) {
     // clear existing selection if there is any
     this.selection = null;
 
+    // clear existing brush if there is any
+    this.brush = new BrushX();
+
     // clear existing regions if there are any
     this.regions = null;
 
@@ -390,6 +396,7 @@ D3TimeChart.prototype.shiftSelection = function (n) {
       domain[1] += stepSize;
     }
 
+    // update selection, update brush scale, update chart
     this.selection.domain = domain;
 
     var fullDomain = {
@@ -398,6 +405,7 @@ D3TimeChart.prototype.shiftSelection = function (n) {
       yNeutron: this.data[compressionIndex].domains.yNeutron,
     };
     var scale = this.getScales(fullDomain);
+    this.brush.setScale(scale.xScale);
     this.updateChart(scale, compressionIndex, { transitions: false });
   }
 };
@@ -514,7 +522,7 @@ D3TimeChart.prototype.render = function (options) {
       : this.compressionIndex;
 
     // add brush-highlight selection
-    var brush = new BrushX();
+    var brush = this.brush;
 
     brush.setScale(scales.xScale);
 
