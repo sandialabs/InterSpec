@@ -367,7 +367,7 @@ D3TimeChart.prototype.handleResize = function () {
 
 /**
  * Function to handle shifting of the zoomed selection window.
- * @param {Number} n : amount to shift by
+ * @param {Number} n : shift amount
  */
 D3TimeChart.prototype.shiftSelection = function (n) {
   if (this.selection) {
@@ -413,7 +413,7 @@ D3TimeChart.prototype.shiftSelection = function (n) {
 
 /**
  * Renders/updates the D3TimeChart to be set up for plotting data. Compresses data for purposes of displaying, updates dimensions of svg element, updates dimensions of clip-path, and defines drag behavior over the figure
- * @param {*} options : Optional argument to specify render options
+ * @param {Object} options : Optional argument to specify render options
  */
 D3TimeChart.prototype.render = function (options) {
   if (!this.data) {
@@ -442,7 +442,7 @@ D3TimeChart.prototype.render = function (options) {
       for (var i = 1; i <= compressionIndex; i++) {
         // only compress if data doesn't already exist before
         if (this.data[i] == null) {
-          console.log("Compressing!");
+          // console.log("Compressing!");
           this.data[i] = this.formatDataFromRaw(
             this.compress(this.rawData, Math.pow(2, i))
           );
@@ -665,7 +665,7 @@ D3TimeChart.prototype.render = function (options) {
  * Function to handle mouse wheel for zooming and panning.
  * @param {*} deltaX : integer deltaX value of the mouse scroll event
  * @param {*} deltaY : integer deltaY value of the mouse scroll event
- * @param {*} mouseX : integer x position of the mouse
+ * @param {*} mouseX : integer x-coordinates of pointer in pixels relative to the containing element
  */
 D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var brush = this.brush;
@@ -1306,7 +1306,7 @@ D3TimeChart.prototype.isValidRawData = function (rawData) {
  *   }
  * }
  *
- * @param {*} rawData : data in same format as the raw data sent from Wt
+ * @param {Object} rawData : data in same format as the raw data sent from Wt
  */
 D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
   var nSamples = rawData.sampleNumbers.length;
@@ -1528,7 +1528,7 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
  * Get D3 linear scaling functions based on the data domain and chart element dimensions (height, width, margin).
  * this.data, this.height, and this.width must be defined for D3TimeChart
  *
- * @param {*} domains: domains object, must be of form:
+ * @param {Object} domains: domains object, must be of form:
  * {
  *    x: [a, b],
  *    yGamma: [c, d],
@@ -1574,8 +1574,8 @@ D3TimeChart.prototype.getScales = function (domains) {
 
 /**
  * Computes array of sequential real time intervals for each data point from raw time segments.
- * @param {number[]} realTimes: realTimes array passed from Wt
- * @param {number[]} sourceTypes: sourceTypes array passed from Wt
+ * @param {Number[]} realTimes: realTimes array passed from Wt
+ * @param {Number[]} sourceTypes: sourceTypes array passed from Wt
  * @returns an array of length-two arrays which represent time intervals for individual samples.
  */
 D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
@@ -1605,8 +1605,8 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
 
 /**
  * Computes the mean interval time over all foreground sourcetype data
- * @param {*} realTimes : realTimes array of raw data
- * @param {*} sourceTypes : sourceTypes array of raw data
+ * @param {Number[]} realTimes : realTimes array of raw data
+ * @param {Number[]} sourceTypes : sourceTypes array of raw data
  * @returns a number which is the average interval time length over all foreground sourcetype data
  */
 D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
@@ -1623,6 +1623,7 @@ D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
 
 /**
  * Brush handler to zoom into a selected domain or zoom out if brushed back.
+ * this.brush must be not null, and start and end properties must be set.
  */
 D3TimeChart.prototype.handleBrushZoom = function () {
   var brush = this.brush;
@@ -1750,6 +1751,7 @@ D3TimeChart.prototype.handleBrushZoom = function () {
 
 /**
  * Handler for drawing rectangle on brush forward.
+ * this.brush must be not null, and start and end properties must be set.
  */
 D3TimeChart.prototype.handleDragForwardZoom = function () {
   var brush = this.brush;
@@ -1785,6 +1787,7 @@ D3TimeChart.prototype.handleDragForwardZoom = function () {
 
 /**
  * Handler for updating chart to zoom out on brush backward.
+ * this.brush must be not null, and start and end properties must be set.
  */
 D3TimeChart.prototype.handleDragBackZoom = function () {
   var brush = this.brush;
@@ -1893,17 +1896,18 @@ D3TimeChart.prototype.mouseMoveHighlight = function (width) {
 };
 
 /**
- * Clears rectangle dimensions
+ * Handles clearing of highlight rectangles on mouse-up.
  */
 D3TimeChart.prototype.mouseUpHighlight = function () {
   this.highlightRect.attr("height", 0).attr("width", 0);
   this.highlightText.style("visibility", "hidden");
 };
 
-D3TimeChart.prototype.showToolTip = function () {
-  this.hoverToolTip.style("visibility", "visible");
-};
-
+/**
+ * Handles panning selection window by dragging on bottom axis.
+ * this.brush must be not null, and start and end properties must be set.
+ * @returns an object containing the new selection and new scale of the panned selection. The caller of this function must set the selection and brush scale outside on mouse-up event.
+ */
 D3TimeChart.prototype.handleBrushPanSelection = function () {
   // if not zoomed in already (no selection), drag does nothing.
   if (!this.selection) {
@@ -1956,19 +1960,36 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
 };
 
 /**
+ * Handles showing tooltip.
+ */
+D3TimeChart.prototype.showToolTip = function () {
+  this.hoverToolTip.style("visibility", "visible");
+};
+
+/**
  * Handler to update tooltip display.
- * @param {*} time : real time of measurement (x-value)
- * @param {*} data : Array of data objects, where each object at minimum has fields: {detName, gammaCPS}. Optional fields: neutronCPS
- * @param {*} data : Object of optional keyword arguments. Accepted arguments include: startTimeStamp, sourceType
+ * @param {Number} time : real time of measurement (x-axis)
+ * @param {Object[]} data : Array of data objects, where each object at minimum has fields: {detName, gammaCPS}. Optional fields: neutronCPS
+ * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
  */
 D3TimeChart.prototype.updateToolTip = function (time, data, optargs) {
   this.hoverToolTip.html(this.createToolTipString(time, data, optargs));
 };
 
+/**
+ * Handler to hide tooltip.
+ */
 D3TimeChart.prototype.hideToolTip = function () {
   this.hoverToolTip.style("visibility", "hidden");
 };
 
+/**
+ * Handler to create tooltip string from data.
+ * @param {Number} time : real time of measurement (x-axis)
+ * @param {Object[]} data : Array of data objects, where each object at minimum has fields: {detName, gammaCPS}. Optional fields: neutronCPS
+ * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
+ * @returns the tooltip string
+ */
 D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
   var s =
     optargs.startTimeStamp != null
@@ -2012,10 +2033,10 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
 };
 
 /**
- * Performs search over data to find interval that the given time belongs to
+ * Performs binary search over data to find interval that the given time belongs to
  * Returns the index of the match in the data array
- * @param {} time : realTime of measurement (x-value)
- * @param {} compressionIndex : optional compression index to search over. Default (no argument) is the current compressionIndex based on zoom amount.
+ * @param {Number} time : realTime of measurement (x-value)
+ * @param {Number} compressionIndex : optional compression index to search over. Default (no argument) is the current compressionIndex based on zoom amount.
  */
 D3TimeChart.prototype.findDataIndex = function (time, compressionIndex) {
   var cIdx =
@@ -2039,8 +2060,8 @@ D3TimeChart.prototype.findDataIndex = function (time, compressionIndex) {
 
 /**
  * Checks whether a given sample corresponds to a positive vehicle occupancy status.
- * @param {*} sampleNumber : the integer sample number you are querying the occupancy status for
- * @param {*} occupancies : raw occupancies data - an array of objects of form {color: [String], startSample: [Integer], endSample: [Integer]}
+ * @param {Number} sampleNumber : the integer sample number you are querying the occupancy status for
+ * @param {Object[]} occupancies : raw occupancies data - an array of objects of form {color: [String], startSample: [Integer], endSample: [Integer]}
  */
 D3TimeChart.prototype.isOccupiedSample = function (sampleNumber, occupancies) {
   // if occupancies.status is undefined, assume it is true...
@@ -2058,9 +2079,9 @@ D3TimeChart.prototype.isOccupiedSample = function (sampleNumber, occupancies) {
 
 /**
  * Compresses data by iteratively aggregating contiguous sets of n data points if they share the same attributes.
- * Returns the compressed data in the same JSON format as the raw (input) data passed by Wt.
- * @param {*} data : raw time-history data passed by Wt
- * @param {*} n : a non-negative integer that specifies the compression level.
+ * @param {Object} data : raw time-history data passed by Wt
+ * @param {Number} n : a non-negative integer that specifies the compression level.
+ * @returns the compressed data in the same JSON format as the raw (input) data passed by Wt.
  */
 D3TimeChart.prototype.compress = function (data, n) {
   // Create output array template
@@ -2321,7 +2342,7 @@ D3TimeChart.prototype.compress = function (data, n) {
 
 /**
  * Highlights selected time intervals. Called by D3TimeChart::setHighlightRegionsToClient()
- * @param {*} regions : array of objects. Objects are of form:
+ * @param {Object[]} regions : array of objects. Objects are of form:
  * {
  *   startSample: int
  *   endSample: int
@@ -2372,16 +2393,19 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
   }
 };
 
+// Unimplemented
 D3TimeChart.prototype.setXAxisTitle = function (title) {
   this.options.xtitle = title;
   //redraw x-title
 };
 
+// Unimplemented
 D3TimeChart.prototype.setY1AxisTitle = function (title) {
   this.options.y1title = title;
   //redraw y1-title (e.g., gamma CPS axis title)
 };
 
+// Unimplemented
 D3TimeChart.prototype.setY2AxisTitle = function () {
   this.options.y2title = title;
   //redraw y2-title (e.g., neutron CPS axis title)
@@ -2389,7 +2413,7 @@ D3TimeChart.prototype.setY2AxisTitle = function () {
 
 /**
  * Function to handle setting compact x axis. Called whenever toggle compact x-axis on/off. Triggers a re-render.
- * @param {boolean} compact : boolean value defining whether or not to use compact x-axis
+ * @param {Boolean} compact : boolean value defining whether or not to use compact x-axis
  */
 D3TimeChart.prototype.setCompactXAxis = function (compact) {
   //Make x-zis title comapact or not
@@ -2397,16 +2421,19 @@ D3TimeChart.prototype.setCompactXAxis = function (compact) {
   this.margin.bottom = compact ? 25 : 50;
 };
 
+// Unimplemented
 D3TimeChart.prototype.setGridX = function (show) {
   this.options.gridx = show;
   //add/remove horizantal grid lines
 };
 
+// Unimplemented
 D3TimeChart.prototype.setGridY = function (show) {
   this.options.gridy = show;
   //add/remove vertical grid lines
 };
 
+// Unimplemented
 D3TimeChart.prototype.setXAxisZoomSamples = function (firstsample, lastsample) {
   //Set it so only firstsample through lastsample sampels are visible
   //...
