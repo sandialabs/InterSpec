@@ -787,6 +787,7 @@ D3TimeChart.prototype.updateChart = function (
   var xScale = scales.xScale;
   var yScaleGamma = scales.yScaleGamma;
   var yScaleNeutron = scales.yScaleNeutron;
+  console.log(scales)
 
   var HAS_GAMMA = true;
   var HAS_NEUTRON = false;
@@ -932,20 +933,30 @@ D3TimeChart.prototype.updateChart = function (
     });
   }
 
-  // set different tick counts for different viewport breakpoints
-  var nSamples = this.data[compressionIndex].sampleNumbers.length;
-  // if (this.width > 850) {
-  //   nTicksX = nSamples;
-  // } else if (this.width > 520) {
-  //   nTicksX = Math.floor(nSamples / 2);
-  // } else if (this.width > 280) {
-  //   nTicksX = Math.floor(nSamples / 4);
-  // } else {
-  //   nTicksX = Math.floor(nSamples / 8);
-  // }
-
   // plot axes and labels
-  var xAxis = d3.svg.axis().scale(xScale);
+  // console.log(xScale.ticks());
+  var xTickVals = xScale.ticks();
+  var xStart = xTickVals[0];
+  var xStep = xTickVals[1] - xTickVals[0];
+  var xTickCount = xTickVals.length;
+
+  var chartDomain = this.selection
+    ? this.selection.domain
+    : this.data[this.compressionIndex].domains.x;
+  var xTicksGenerated = this.generateTicks(
+    xStart,
+    xStep,
+    xTickCount,
+    10
+  ).filter(
+    (tick) => tick.value >= chartDomain[0] && tick.value <= chartDomain[1]
+  );
+
+  var xAxis = d3.svg
+    .axis()
+    .scale(xScale)
+    .tickValues(xTicksGenerated.map((tick) => tick.value))
+    .tickFormat(d3.format("~.6f"));
 
   // update or create axis
   if (transitions) {
@@ -1030,7 +1041,7 @@ D3TimeChart.prototype.updateChart = function (
     axisBottomTicks.each(function () {
       var text = d3.select(this).select("text");
       var line = d3.select(this).select("line");
-      if (text.node().textContent < 0) {
+      if (parseFloat(text.node().textContent) < 0) {
         if (text.node().textContent === firstTickVal) {
           d3.select(this).attr("transform", "translate(" + leftMargin + ",0)");
           text.node().textContent = -dataBackgroundDuration;
@@ -1041,6 +1052,17 @@ D3TimeChart.prototype.updateChart = function (
       } // if (text.node().textContent < 0)
     }); // axisBottomTicks.each()
   } // if (dataBackgroundDuration != null)
+
+  // format minor axis labels x-axis
+  axisBottomTicks.each(function (d, i) {
+    var tickText = d3.select(this).select("text");
+    var tickLine = d3.select(this).select("line");
+    if (!xTicksGenerated[i].isMajor) {
+      // if animations are on, THIS LEADS to array out of bound error when zooming in. Likely because the tick counts change while animating
+      tickText.attr("visibility", "hidden");
+      tickLine.attr("y2", 4);
+    }
+  });
 
   if (HAS_GAMMA) {
     var yAxisLeft = d3.svg
@@ -1096,6 +1118,8 @@ D3TimeChart.prototype.updateChart = function (
         .text(axisLabelY1Text)
         .attr("font-size", "0.9em");
     } // if (!axisLabelY1.empty())
+
+    // format minor axis labels:
   } // if (HAS_GAMMA)
 
   if (HAS_NEUTRON) {
@@ -1628,7 +1652,7 @@ D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
 D3TimeChart.prototype.handleBrushZoom = function () {
   var brush = this.brush;
   if (!brush || !brush.getStart() || !brush.getEnd()) {
-    throw new Error("Brush start or end are undefined!")
+    throw new Error("Brush start or end are undefined!");
   }
   // handle dragback (zoom out). Must update selection and brush scale upon mouseup event.
   // For dragback, handleDragBackZoom already handles chart updating--handleBrushZoom only updates selection and mouseup
@@ -1640,8 +1664,8 @@ D3TimeChart.prototype.handleBrushZoom = function () {
 
     // calculate new extent if it is same as extent when all the way zoomed out, set selection to null.
     // naturalXScale is the xScale used when all the way zoomed out (using all data points).
-    var naturalXScale = this.getScales(this.data[this.compressionIndex].domains)
-      .xScale;
+    var naturalScale = this.getScales(this.data[this.compressionIndex].domains);
+    var naturalXScale = naturalScale.xScale;
 
     var zoomOutAmount = -(
       naturalXScale.invert(brush.getScale()(brush.getEnd())) -
@@ -1666,6 +1690,9 @@ D3TimeChart.prototype.handleBrushZoom = function () {
       this.selection = null;
       // update brush scale
       brush.setScale(naturalXScale);
+      this.updateChart(naturalScale, this.compressionIndex, {
+        transitions: false,
+      });
     } else {
       // Otherwise, update the selection to reflect the new domain and compression level, and update the scale of the brush.
       // compute new compression index to use
@@ -1690,6 +1717,7 @@ D3TimeChart.prototype.handleBrushZoom = function () {
       };
 
       brush.setScale(scales.xScale);
+      this.updateChart(scales, compressionIndex, { transitions: false });
     } // if (newLeftExtent === this.data[this.compressionIndex].domains.x[0] && newRightExtent === this.data[this.compressionIndex].domains.x[1])
   } else {
     // handle drag forward (zoom-in)
@@ -1745,7 +1773,8 @@ D3TimeChart.prototype.handleBrushZoom = function () {
     // update brush scale
     brush.setScale(scales.xScale);
     // var transitions = compressionIndex === this.compressionIndex;
-    this.updateChart(scales, compressionIndex, { transitions: transitions });
+    // turn transition animations off for now
+    this.updateChart(scales, compressionIndex, { transitions: false });
   }
 };
 
@@ -1756,7 +1785,7 @@ D3TimeChart.prototype.handleBrushZoom = function () {
 D3TimeChart.prototype.handleDragForwardZoom = function () {
   var brush = this.brush;
   if (!brush || !brush.getStart() || !brush.getEnd()) {
-    throw new Error("Brush start or end are undefined!")
+    throw new Error("Brush start or end are undefined!");
   }
 
   // if has been dragged backward prior to dragging forward, should set the flag
@@ -1792,7 +1821,7 @@ D3TimeChart.prototype.handleDragForwardZoom = function () {
 D3TimeChart.prototype.handleDragBackZoom = function () {
   var brush = this.brush;
   if (!brush || !brush.getStart() || !brush.getEnd()) {
-    throw new Error("Brush start or end are undefined!")
+    throw new Error("Brush start or end are undefined!");
   }
 
   // clear rectangle if any drawn
@@ -1917,7 +1946,7 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
   var brush = this.brush;
 
   if (!brush || !brush.getStart() || !brush.getEnd()) {
-    throw new Error("Brush start or end are undefined!")
+    throw new Error("Brush start or end are undefined!");
   }
 
   var domain = this.selection.domain;
@@ -2391,6 +2420,39 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
         .attr("fill-opacity", 0.5);
     }
   }
+};
+
+/**
+ * Helper for generating major and minor chart tick values based on the initial values from the d3 automatic tick generator, which computes the tick values automatically from the scale used.
+ * The reason we rely on the d3 automatic tick generator is because otherwise, very challenging to dynamically generate good tick values. d3 does a better job.
+ * This function will divide the ticks generated from the d3 tick generator into minor divisions
+ * @param {*} start : starting tick value generated by d3 tick generator
+ * @param {*} step : step size between tick values generated by d3 tick generator
+ * @param {*} tickCount : number of ticks generated by d3 tick generator
+ * @param {*} minorDivisionsCount : number of times to divide original ticks by to form minor ticks. Must be even. 
+ */
+D3TimeChart.prototype.generateTicks = function (
+  start,
+  step,
+  tickCount,
+  minorDivisionsCount
+) {
+  // must adjust to account for the space before and after the start and end tick values given by d3
+  var tickArray = [];
+  var adjustedTickCount = (tickCount - 1 + 2) * minorDivisionsCount;
+  var adjustedStep = step / minorDivisionsCount;
+  var adjustedStart = start - step;
+
+  for (var i = 0; i < adjustedTickCount; i++) {
+    // a hack to handle imprecisions of floating point. Keeps up to 5 decimal points if needed.
+    var value = +(Math.round(adjustedStart + adjustedStep * i + "e+5") + "e-5");
+    tickArray.push({
+      value: value,
+      isMajor: i % (minorDivisionsCount / 2) === 0,
+    });
+  }
+
+  return tickArray;
 };
 
 // Unimplemented
