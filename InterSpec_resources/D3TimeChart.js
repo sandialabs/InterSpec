@@ -46,20 +46,16 @@ DataPoint.prototype.setNeutronCPS = function (neutronCPS) {
 };
 
 DetectorMetaData = function (gammaColor, neutronColor) {
-  this.isGammaDetector = gammaColor ? true : false;
-  this.isNeutronDetector = neutronColor ? true : false;
   this.gammaColor = gammaColor;
   this.neutronColor = neutronColor;
 };
 
 DetectorMetaData.prototype.setGammaColor = function (gammaColor) {
   this.gammaColor = gammaColor;
-  this.isGammaDetector = true;
 };
 
 DetectorMetaData.prototype.setNeutronColor = function (neutronColor) {
   this.neutronColor = neutronColor;
-  this.isNeutronDetector = true;
 };
 
 /**
@@ -344,6 +340,9 @@ D3TimeChart.prototype.setData = function (rawData) {
 
     // clear existing regions if there are any
     this.regions = null;
+    
+    // clear any existing lines drawn
+    this.linesG.selectAll('path').remove()
 
     // if height and width are set, may render directly.
     if (this.height && this.width) {
@@ -787,7 +786,6 @@ D3TimeChart.prototype.updateChart = function (
   var xScale = scales.xScale;
   var yScaleGamma = scales.yScaleGamma;
   var yScaleNeutron = scales.yScaleNeutron;
-  console.log(scales)
 
   var HAS_GAMMA = true;
   var HAS_NEUTRON = false;
@@ -897,7 +895,7 @@ D3TimeChart.prototype.updateChart = function (
           .style("fill", "none")
           .attr("d", lineNeutron);
       } // if (!pathNeutron.empty())
-    }
+    } 
   }
 
   // update highlight region rendering
@@ -1420,6 +1418,12 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
           : det.counts[i] / data.realTimes[i];
         detectors[det.detName].counts[2 * i].setGammaCPS(cps);
         detectors[det.detName].counts[2 * i + 1].setGammaCPS(cps);
+
+        // if cps > 0 ever, then is a gamma
+        if (!detectors[det.detName].meta.isGammaDetector && cps > 0) {
+          detectors[det.detName].meta.isGammaDetector = true;
+        }
+
       }
     }
   }); // rawData.gammaCounts.forEach
@@ -1468,6 +1472,11 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
             : det.counts[i] / data.realTimes[i];
           detectors[det.detName].counts[2 * i].setNeutronCPS(cps);
           detectors[det.detName].counts[2 * i + 1].setNeutronCPS(cps);
+
+          // if cps > 0 ever, then is a neutrondetector
+          if (!detectors[det.detName].meta.isNeutronDetector && cps > 0) {
+            detectors[det.detName].meta.isNeutronDetector = true;
+          }
         }
       } // if (!detectors[det.detName].hasOwnProperty("counts"))
     }); // rawData.neutronCounts.forEach
