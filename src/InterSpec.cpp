@@ -10864,13 +10864,19 @@ void InterSpec::displayBackgroundData()
   {
 #if( USE_SPECTRUM_CHART_D3 )
     const auto background = SpecUtils::SpectrumType::Background;
-    const set<int> allSamplesThisType = sampleNumbersForTypeFromForegroundFile(background);
-    if( m_backgroundSampleNumbers == allSamplesThisType )
+    if( m_backgroundMeasurement != m_dataMeasurement )
+    {
       m_timeSeries->setHighlightedIntervals( {}, background );
-    else
-      m_timeSeries->setHighlightedIntervals( m_backgroundSampleNumbers, background );
+    }else
+    {
+      const set<int> allSamplesThisType = sampleNumbersForTypeFromForegroundFile(background);
+      if( m_backgroundSampleNumbers == allSamplesThisType )
+        m_timeSeries->setHighlightedIntervals( {}, background );
+      else
+        m_timeSeries->setHighlightedIntervals( m_backgroundSampleNumbers, background );
+    }
 #else
-    vector< pair<double,double> > regions = timeRegionsToHighlight();
+    vector< pair<double,double> > regions = timeRegionsToHighlight(SpecUtils::SpectrumType::Background);
     m_timeSeries->setTimeHighLightRegions( regions, SpecUtils::SpectrumType::Background );
 #endif
   }
