@@ -227,8 +227,12 @@ D3TimeChart = function (elem, options) {
       modifierKey: "altKey",
       color: "rgb(0, 255, 255)",
     },
-    zoom: {
+    zoomCtrl: {
       modifierKey: "ctrlKey",
+      color: "rgb(0, 0, 0)",
+    },
+    zoomRightClick: {
+      modifierKey: "rightClick",
       color: "rgb(0, 0, 0)",
     },
   };
@@ -541,7 +545,10 @@ D3TimeChart.prototype.render = function (options) {
 
         this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
 
-        if (d3.event.sourceEvent.altKey) {
+        if (d3.event.sourceEvent.button == 2) {
+          this.highlightModifier = "rightClick";
+          this.mouseDownHighlight(coords[0], "rightClick");
+        } else if (d3.event.sourceEvent.altKey) {
           this.highlightModifier = "altKey";
           this.mouseDownHighlight(coords[0], "altKey");
         } else if (d3.event.sourceEvent.ctrlKey) {
@@ -556,7 +563,10 @@ D3TimeChart.prototype.render = function (options) {
         if (!this.escapeKeyPressed) {
           brush.setEnd(d3.mouse(this.rect.node())[0]);
 
-          if (this.highlightModifier === "ctrlKey") {
+          if (
+            this.highlightModifier === "ctrlKey" ||
+            this.highlightModifier === "rightClick"
+          ) {
             // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
             if (brush.getEnd() < brush.getStart()) {
               this.handleDragBackZoom();
@@ -586,7 +596,10 @@ D3TimeChart.prototype.render = function (options) {
             //   this.data[0].sampleNumbers[lIdx],
             //   this.data[0].sampleNumbers[rIdx],
             // ]);
-            if (this.highlightModifier === "ctrlKey") {
+            if (
+              this.highlightModifier === "ctrlKey" ||
+              this.highlightModifier === "rightClick"
+            ) {
               this.handleBrushZoom();
             } else {
               var keyModifierMap = {
@@ -899,35 +912,48 @@ D3TimeChart.prototype.updateChart = function (
   }
 
   // update highlight region rendering
-  if (this.regions) {
+  if (this.regions && this.sampleToIndexMap) {
     // console.log(this.regions);
     var chart = this;
     this.highlightRegionsG.selectAll("rect").each(function (d, i) {
       var startSample = chart.regions[i].startSample;
       var endSample = chart.regions[i].endSample;
       // console.log(endSample);
-
       var lIdx = chart.sampleToIndexMap[startSample];
       var rIdx = chart.sampleToIndexMap[endSample];
-      // console.log(chart.sampleToIndexMap);
-      // console.log(rIdx);
-      var startTime = chart.data[0].realTimeIntervals[lIdx][0];
-      var endTime = chart.data[0].realTimeIntervals[rIdx][1];
+      // if (
+      //   !(
+      //     lIdx == null ||
+      //     rIdx == null ||
+      //     lIdx < 0 ||
+      //     rIdx < 0 ||
+      //     !Array.isArray(chart.data[0].realTimeIntervals) ||
+      //     lIdx >= chart.data[0].realTimeIntervals.length ||
+      //     rIdx >= chart.data[0].realTimeIntervals.length ||
+      //     !Array.isArray(chart.data[0].realTimeIntervals[lIdx]) ||
+      //     !Array.isArray(chart.data[0].realTimeIntervals[rIdx]) ||
+      //     chart.data[0].realTimeIntervals[lIdx].length < 2 ||
+      //     chart.data[0].realTimeIntervals[rIdx].length < 2
+      //   )
+      // ) {
+        var startTime = chart.data[0].realTimeIntervals[lIdx][0];
+        var endTime = chart.data[0].realTimeIntervals[rIdx][1];
 
-      var lPixel = xScale(startTime);
-      var rPixel = xScale(endTime);
+        var lPixel = xScale(startTime);
+        var rPixel = xScale(endTime);
 
-      if (transitions) {
-        d3.select(this)
-          .transition()
-          .duration(500)
-          .attr("x", lPixel)
-          .attr("width", rPixel - lPixel);
-      } else {
-        d3.select(this)
-          .attr("x", lPixel)
-          .attr("width", rPixel - lPixel);
-      }
+        if (transitions) {
+          d3.select(this)
+            .transition()
+            .duration(500)
+            .attr("x", lPixel)
+            .attr("width", rPixel - lPixel);
+        } else {
+          d3.select(this)
+            .attr("x", lPixel)
+            .attr("width", rPixel - lPixel);
+        }
+      // }
     });
   }
 
@@ -1886,7 +1912,8 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
 D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
   var foreground = this.highlightOptions.foreground;
   var background = this.highlightOptions.background;
-  var zoom = this.highlightOptions.zoom;
+  var zoomCtrl = this.highlightOptions.zoomCtrl;
+  var zoomRightClick = this.highlightOptions.zoomRightClick;
 
   if (modifier === foreground.modifierKey) {
     this.highlightRect.attr("fill", foreground.color);
@@ -1894,8 +1921,13 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
   } else if (modifier === background.modifierKey) {
     this.highlightRect.attr("fill", background.color);
     this.highlightText.text("Select background");
-  } else if (modifier === zoom.modifierKey) {
-    this.highlightRect.attr("fill", zoom.color);
+  } else if (
+    modifier === zoomCtrl.modifierKey ||
+    modifier === zoomRightClick.modifierKey
+  ) {
+    var zoomColor =
+      modifier === zoomCtrl.modifierKey ? zoomCtrl.color : zoomRightClick.color;
+    this.highlightRect.attr("fill", zoomColor);
     this.highlightText.text("Zoom in");
   }
 
@@ -2388,7 +2420,6 @@ D3TimeChart.prototype.compress = function (data, n) {
  * }
  */
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
-
   if (!this.height || !this.width || this.height <= 0 || this.width <= 0) {
     return;
   }
