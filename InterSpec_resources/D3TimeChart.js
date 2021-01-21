@@ -2435,6 +2435,10 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
       var endSample = regions[i].endSample;
       var fillColor = regions[i].fillColor;
 
+      // Protect against invalid sample numbers specified in the regions
+      if( !(startSample in this.sampleToIndexMap) || !(endSample in this.sampleToIndexMap) )
+        continue;
+            
       var lIdx = this.sampleToIndexMap[startSample];
       var rIdx = this.sampleToIndexMap[endSample];
 

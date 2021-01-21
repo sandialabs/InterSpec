@@ -110,8 +110,6 @@ void D3TimeChart::defineJavaScript()
   setJavaScriptMember( "chart", "new D3TimeChart(" + jsRef() + "," + options + ");");
   setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
   
-  setHighlightRegionsToClient();
-  
   if( !m_chartClickedJS )
   {
     m_chartClickedJS.reset( new Wt::JSignal<int,int>(this, "timeclicked", false) );
@@ -143,21 +141,6 @@ void D3TimeChart::doJavaScript( const std::string& js )
 
 void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
 {
-  if( !data || data->sample_numbers().empty() )
-  {
-    if( m_highlights.size() )
-    {
-      m_highlights.clear();
-      scheduleHighlightRegionRender();
-    }
-    
-    if( m_spec )
-      doJavaScript( m_jsgraph + ".setData(null);" );
-    
-    m_spec = data;
-    return;
-  }//if( no data to load );
-  
   if( !m_highlights.empty() )
   {
     m_highlights.clear();
@@ -828,6 +811,13 @@ vector<pair<int,int>> D3TimeChart::sampleNumberRangesWithOccupancyStatus(
 
 void D3TimeChart::setHighlightRegionsToClient()
 {
+  if( !m_spec || m_highlights.empty() )
+  {
+    // Dont set the highlight regions if no data.  We probably shouldnt ever get here anyway.
+    doJavaScript( m_jsgraph + ".setHighlightRegions(null);" );
+    return;
+  }//if( !m_spec )
+  
   auto type_to_str = []( const SpecUtils::SpectrumType type ) -> std::string {
     switch (type )
     {
@@ -840,7 +830,7 @@ void D3TimeChart::setHighlightRegionsToClient()
   
   
   WStringStream js;
-  js << m_jsgraph <<  ".setHighlightRegions( [";
+  js << m_jsgraph << ".setHighlightRegions( [";
   
   for( size_t i = 0; i < m_highlights.size(); ++i )
   {
