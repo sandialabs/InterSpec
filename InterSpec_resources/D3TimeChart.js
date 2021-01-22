@@ -263,6 +263,15 @@ D3TimeChart = function (elem, options) {
     .style("left", this.margin.left + 20 + "px")
     .style("top", this.margin.top + "px");
 
+  this.occupancyStartText = this.svg
+    .append("text")
+    .text("occ. start")
+    .style("fill", "#dedede")
+    .style("visibility", "hidden");
+  this.occupancyStartLine = this.svg
+    .append("line")
+    .style("visibility", "hidden");
+
   // add esc canceling
   document.onkeydown = function (evt) {
     evt = evt || window.event;
@@ -1086,6 +1095,33 @@ D3TimeChart.prototype.updateChart = function (
     }); // axisBottomTicks.each()
   } // if (dataBackgroundDuration != null)
 
+  if (dataBackgroundDuration != null) {
+    // add occupancy start line
+    this.occupancyStartLine
+      .attr("x1", xScale(0))
+      .attr("y1", this.margin.top)
+      .attr("y2", this.height - this.margin.bottom)
+      .attr("x2", xScale(0))
+      .style("stroke-width", 1)
+      .style("stroke", "#dedede")
+      .style("visibility", "visible");
+
+    this.occupancyStartText
+      .attr(
+        "transform",
+        "translate(" +
+          (xScale(0) + 2) +
+          "," +
+          (this.margin.top + this.occupancyStartText.node().getBBox().height) +
+          ")"
+      )
+      .style("visibility", "visible");
+  } else {
+    console.log("here");
+    this.occupancyStartLine.style("visibility", "hidden");
+    this.occupancyStartText.style("visibility", "hidden");
+  }
+
   // format minor axis labels x-axis
   axisBottomTicks.each(function (d, i) {
     var tickText = d3.select(this).select("text");
@@ -1660,6 +1696,7 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
       realTimeIntervals[i] = [leadTime, 0];
     } else if (i === 0) {
       // first point is not background, so don't need to center
+      this.backgroundDuration = null;
       realTimeIntervals[i] = [0, realTimes[i]];
     } else {
       var prevEndpoint = realTimeIntervals[i - 1][1];
