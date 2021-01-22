@@ -968,7 +968,17 @@ D3TimeChart.prototype.updateChart = function (
 
   // plot axes and labels
   // console.log(xScale.ticks());
-  var xTickVals = xScale.ticks();
+
+  var plotWidth = this.width - this.margin.left - this.margin.right;
+
+  var tickCount = 10;
+  if (plotWidth < 220) {
+    tickCount = 2;
+  } else if (plotWidth < 520) {
+    tickCount = 5;
+  }
+
+  var xTickVals = xScale.ticks(tickCount);
   var xStart = xTickVals[0];
   var xStep = xTickVals[1] - xTickVals[0];
   var xTickCount = xTickVals.length;
@@ -1117,7 +1127,6 @@ D3TimeChart.prototype.updateChart = function (
       )
       .style("visibility", "visible");
   } else {
-    console.log("here");
     this.occupancyStartLine.style("visibility", "hidden");
     this.occupancyStartText.style("visibility", "hidden");
   }
@@ -1248,7 +1257,10 @@ D3TimeChart.prototype.updateChart = function (
         .style("text-anchor", "middle")
         .text(axisLabelY2Text);
     } // if (!axisLabelY2.empty())
-  } // if (HAS_NEUTRON)
+  } else {
+    this.axisRightG.selectAll("*").remove();
+    this.svg.select("#th_label_y2").remove();
+  }// if (HAS_NEUTRON)
 };
 
 // HELPERS, CALLBACKS, AND EVENT HANDLERS //
@@ -1417,16 +1429,18 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
     rawData.sourceTypes
   );
 
+  console.log(rawData);
   // format occupied array:
   var occupied;
   if (rawData.hasOwnProperty("occupancies")) {
     var occupied = [];
     for (var i = 0; i < nSamples; i++) {
+      console.log(i);
       var sampleNumber =
         typeof rawData.sampleNumbers[i] === "number" &&
         isFinite(rawData.sampleNumbers[i])
           ? rawData.sampleNumbers[i]
-          : parseInt(rawData.sampleNumbers[i].keys()[0]);
+          : parseInt(Object.keys(rawData.sampleNumbers[i])[0]);
       occupied[i] = this.isOccupiedSample(sampleNumber, rawData.occupancies);
     }
   }
@@ -1498,6 +1512,8 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
     }
   }); // rawData.gammaCounts.forEach
 
+  var HAS_NEUTRON = false;
+
   if (rawData.hasOwnProperty("neutronCounts")) {
     rawData.neutronCounts.forEach(function (det) {
       // if new detector, initialize a new object and initialize metadata
@@ -1532,6 +1548,12 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
           detectors[det.detName].counts.push(
             new DataPoint(realTimeIntervals[i][1], null, cps)
           );
+
+          if (!detectors[det.detName].meta.isNeutronDetector && cps > 0) {
+            detectors[det.detName].meta.isNeutronDetector = true;
+            HAS_NEUTRON = true;
+          }
+
         }
       } else {
         // data is already present for this detector, so only set neutron CPS for each data point.
@@ -1546,11 +1568,19 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
           // if cps > 0 ever, then is a neutrondetector
           if (!detectors[det.detName].meta.isNeutronDetector && cps > 0) {
             detectors[det.detName].meta.isNeutronDetector = true;
+            HAS_NEUTRON = true;
           }
         }
       } // if (!detectors[det.detName].hasOwnProperty("counts"))
     }); // rawData.neutronCounts.forEach
   } // if (rawData.hasOwnProperty("neutronCounts"))
+
+  if (!HAS_NEUTRON) {
+    // set margin
+    this.margin.right = 10
+  } else {
+    this.margin.right = 60
+  }
 
   return {
     sampleNumbers: rawData.sampleNumbers,
