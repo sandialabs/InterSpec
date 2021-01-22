@@ -936,23 +936,23 @@ D3TimeChart.prototype.updateChart = function (
       //     chart.data[0].realTimeIntervals[rIdx].length < 2
       //   )
       // ) {
-        var startTime = chart.data[0].realTimeIntervals[lIdx][0];
-        var endTime = chart.data[0].realTimeIntervals[rIdx][1];
+      var startTime = chart.data[0].realTimeIntervals[lIdx][0];
+      var endTime = chart.data[0].realTimeIntervals[rIdx][1];
 
-        var lPixel = xScale(startTime);
-        var rPixel = xScale(endTime);
+      var lPixel = xScale(startTime);
+      var rPixel = xScale(endTime);
 
-        if (transitions) {
-          d3.select(this)
-            .transition()
-            .duration(500)
-            .attr("x", lPixel)
-            .attr("width", rPixel - lPixel);
-        } else {
-          d3.select(this)
-            .attr("x", lPixel)
-            .attr("width", rPixel - lPixel);
-        }
+      if (transitions) {
+        d3.select(this)
+          .transition()
+          .duration(500)
+          .attr("x", lPixel)
+          .attr("width", rPixel - lPixel);
+      } else {
+        d3.select(this)
+          .attr("x", lPixel)
+          .attr("width", rPixel - lPixel);
+      }
       // }
     });
   }
@@ -999,6 +999,15 @@ D3TimeChart.prototype.updateChart = function (
         "translate(0," + (this.height - this.margin.bottom) + ")"
       )
       .call(xAxis);
+  }
+
+  // if zoomed in, display zoom in marker.
+  // Uses same zoom-in marker defined in SpectrumChartD3.js. Can define a different one in this file and use it if want to break the dependency.
+  var axisBottomPath = this.axisBottomG.select("path");
+  if (this.selection) {
+    axisBottomPath.attr("marker-end", "url(#arrowhead)");
+  } else {
+    axisBottomPath.attr("marker-end", null);
   }
 
   var axisLabelX = this.svg.select("#th_label_x");
@@ -2436,9 +2445,12 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
       var fillColor = regions[i].fillColor;
 
       // Protect against invalid sample numbers specified in the regions
-      if( !(startSample in this.sampleToIndexMap) || !(endSample in this.sampleToIndexMap) )
+      if (
+        !(startSample in this.sampleToIndexMap) ||
+        !(endSample in this.sampleToIndexMap)
+      )
         continue;
-            
+
       var lIdx = this.sampleToIndexMap[startSample];
       var rIdx = this.sampleToIndexMap[endSample];
 
