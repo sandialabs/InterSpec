@@ -3223,6 +3223,9 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const S
     case DetectorType::Falcon5000:        smname = "Falcon 5000";       break;
     case DetectorType::Unknown:           smname = "";                  break;
     case DetectorType::MicroDetective:    smname = "Micro Detective";   break;
+    
+    default:
+      break;
   }//switch( type )
   
   if( smname.empty() )
@@ -3321,6 +3324,13 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
       
     case DetectorType::RadSeekerNaI:               name = "RadSeeker-NaI"; break;
     case DetectorType::RadSeekerLaBr:              name = "Radseeker-LaBr3"; break;
+    
+    case DetectorType::VerifinderNaI:              name = "Verifinder-NaI"; break;
+    case DetectorType::VerifinderLaBr:             name = "Verifinder-LaBr3"; break;
+      
+    case DetectorType::IdentiFinderR500NaI:        name = "IdentiFINDER-R500-NaI";   break;
+    case DetectorType::IdentiFinderR500LaBr:       name = "IdentiFINDER-R500-LaBr3"; break;
+      
       
     case DetectorType::OrtecRadEagleCeBr2Inch:
     case DetectorType::OrtecRadEagleCeBr3Inch:

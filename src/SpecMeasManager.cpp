@@ -210,7 +210,7 @@ namespace
           if( entry && entry.id() == m_dbentry.id() )
           {
             measurement = header->parseFile();
-            m_manager->displayFile( row, measurement, m_type, false, false, false );
+            m_manager->displayFile( row, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
             m_dialog->hide();
             
             return;
@@ -221,7 +221,7 @@ namespace
         {
           const int modelRow = m_manager->setDbEntry( m_dbentry, header,
                                                      measurement, true );
-          m_manager->displayFile( modelRow, measurement, m_type, false, false, false );
+          m_manager->displayFile( modelRow, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
           m_dialog->hide();
         }catch( exception &e )
         {
@@ -700,7 +700,7 @@ public:
 //            if( meas )
 //            {
 //              thisheader->setMeasurmentInfo( meas );
-//              m_manager->displayFile( row, meas, type, false, true );
+//              m_manager->displayFile( row, meas, type, false, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
 //            }//if( meas )
 //          }//if( snapshot_id )
 //          
@@ -731,7 +731,7 @@ public:
 //    }//if( snapshot_id >= 0 && header )
 //#endif //#if( USE_DB_TO_STORE_SPECTRA )
 //    
-//    m_manager->displayFile( modelrow, measurement, type, false, true );
+//    m_manager->displayFile( modelrow, measurement, type, false, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
 //    
 //    delete this;
 //  }//void loadSelected()
@@ -1535,7 +1535,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   {
     const int modelRow = setFile( name, spoolName, header, measurement );
 
-    displayFile( modelRow, measurement, type, true, true, true );
+    displayFile( modelRow, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
     
     //It is the responsibility of the caller to clean up the file.
   }catch( exception &e )
@@ -1774,7 +1774,7 @@ void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
     return;
   } // if( row < 0 )
 
-  displayFile( row, measement_ptr, type, true, true, true );
+  displayFile( row, measement_ptr, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
 }//void finishQuickUpload(...)
 
 
@@ -1785,38 +1785,133 @@ void SpecMeasManager::selectEnergyBinning( const string binning,
                                   const bool checkIfPreviouslyOpened,
                                   const bool doPreviousEnergyRangeCheck )
 {
-  if( binning != "Keep All" )
-    meas->keep_energy_cal_variant( binning );
-  
   WModelIndex index = m_fileModel->index( header );
   
   if( !index.isValid() )
   {
     passMessage( "Aborting loading of file after selecting energy binning - "
-                 "the file is no longer available in memory. please report "
-                 "this bug to wcjohns@sandia.gov", "", WarningWidget::WarningMsgHigh );
+                "the file is no longer available in memory. please report "
+                "this bug to interspec@sandia.gov", "", WarningWidget::WarningMsgHigh );
     return;
-  }
+  }//if( !index.isValid() )
   
-  displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck, false );
+  
+  if( binning != "Keep All" )
+  {
+    try
+    {
+      meas->keep_energy_cal_variant( binning );
+    }catch( std::exception &e )
+    {
+      passMessage( "There was an error separating energy cal type; loading all (error: "
+                   + std::string(e.what()) + ")", "", WarningWidget::WarningMsgHigh )
+    }
+    
+    // Trigger a refresh of row info and selected rows in File Manager
+    m_fileModel->removeRows( index.row(), 1 );
+    header->setMeasurmentInfo( meas );
+    m_fileModel->addRow( header );
+    index = m_fileModel->index( header );
+  }//if( binning != "Keep All" ) / else
+  
+  displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
+              SpecMeasManager::VariantChecksToDo::None );
 }//
+
+
+void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDataToKeep tokeep,
+                             std::shared_ptr<SpectraFileHeader> header,
+                             std::shared_ptr<SpecMeas> meas,
+                             const SpecUtils::SpectrumType type,
+                             const bool checkIfPreviouslyOpened,
+                             const bool doPreviousEnergyRangeCheck )
+{
+  WModelIndex index = m_fileModel->index( header );
+  
+  if( !index.isValid() )
+  {
+    passMessage( "Aborting loading of file after selecting derived data type to keep - "
+                "the file is no longer available in memory. please report "
+                "this bug to interspec@sandia.gov", "", WarningWidget::WarningMsgHigh );
+    return;
+  }//if( !index.isValid() )
+  
+  VariantChecksToDo furtherChecks = VariantChecksToDo::None;
+  switch( tokeep )
+  {
+    case DerivedDataToKeep::All:
+      furtherChecks = VariantChecksToDo::MultipleEnergyCal;
+      break;
+      
+    case DerivedDataToKeep::RawOnly:
+      furtherChecks = VariantChecksToDo::MultipleEnergyCal;
+      break;
+      
+    case DerivedDataToKeep::DerivedOnly:
+      furtherChecks = VariantChecksToDo::None;
+      break;
+  }//switch( tokeep )
+  
+  
+  switch( tokeep )
+  {
+    case DerivedDataToKeep::All:
+      break;
+      
+    case DerivedDataToKeep::RawOnly:
+    case DerivedDataToKeep::DerivedOnly:
+    {
+      const auto keeptype = (tokeep==DerivedDataToKeep::DerivedOnly)
+                            ? SpecUtils::SpecFile::DerivedVariantToKeep::Derived
+                            : SpecUtils::SpecFile::DerivedVariantToKeep::NonDerived;
+      
+      meas->keep_derived_data_variant( keeptype );
+      
+      // Trigger a refresh of row info and selected rows in File Manager
+      m_fileModel->removeRows( index.row(), 1 );
+      header->setMeasurmentInfo( meas );
+      m_fileModel->addRow( header );
+      index = m_fileModel->index( header );
+      break;
+    }
+  }//switch( tokeep )
+  
+  
+  displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
+              furtherChecks );
+}//void selectDerivedDataChoice(...)
+
 
 
 bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<SpectraFileHeader> header,
                                             std::shared_ptr<SpecMeas> meas,
                                             const SpecUtils::SpectrumType type,
                                             const bool checkIfPreviouslyOpened,
-                                            const bool doPreviousEnergyRangeCheck )
+                                            const bool doPreviousEnergyRangeCheck,
+                                            const VariantChecksToDo viewingChecks )
 {
   if( !header || !meas )
     throw runtime_error( "SpecMeasManager::checkForAndPromptUserForDisplayOptions(): Invalid input" );
   
-  const set<string> cals = meas->energy_cal_variants();
-  
-  if( cals.size() < 2 )
+  if( viewingChecks == VariantChecksToDo::None )
     return false;
   
-  AuxWindow *dialog = new AuxWindow( "Select Binning",
+  bool derivedData = false, energyCal = false;
+  if( viewingChecks == VariantChecksToDo::DerivedDataAndEnergy )
+    derivedData = (meas->contains_derived_data() && meas->contains_non_derived_data());
+  
+  set<string> cals;
+  
+  if( !derivedData )
+  {
+    cals = meas->energy_cal_variants();
+    energyCal = (cals.size() > 1);
+  }
+  
+  if( !derivedData && !energyCal )
+    return false;
+
+  AuxWindow *dialog = new AuxWindow( (derivedData ? "Used Derived Data?" : "Select Binning"),
                       (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
                        | AuxWindowProperties::PhoneModal
                        | AuxWindowProperties::DisableCollapse) );
@@ -1833,8 +1928,9 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     dialog->Wt::WCompositeWidget::setMinimumSize( 420, 125 );
   }
    */
+
   
-  int ncolwide = static_cast<int>( cals.size() + 1 );
+  int ncolwide = (derivedData ? 3 : static_cast<int>(cals.size() + 1));
   if( ncolwide > 4 )
     ncolwide = 4;
   
@@ -1842,45 +1938,80 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   WTable *table = new WTable( dialog->contents() );
   dialog->contents()->setPadding( 10 );
   
-  WText *msg = new WText( "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
-                          "<div style=\"margin-bottom: 10px;\">Please select which one you would like</div>" , XHTMLText );
+  const char *msgtxt = "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
+                       "<div style=\"margin-top: 10px; margin-bottom: 10px;\">Please select which one you would like</div>";
+  if( derivedData )
+    msgtxt = "<div style=\"white-space: nowrap;\">This file contained &quot;Derived Data&quot; spectra, which are usually what is used by the detection system for analysis.</div>"
+    "<div style=\"margin-top: 10px; margin-bottom: 10px;\">What data would you like to load?</div>";
+  
+  WText *msg = new WText( msgtxt , XHTMLText );
   //layout->addWidget( msg, 0, 0, 1, ncolwide );
   WTableCell *cell = table->elementAt( 0, 0 );
   cell->addWidget( msg );
   cell->setColumnSpan( ncolwide );
   
   WPushButton *button = new WPushButton( "Keep All" );
-  //layout->addWidget( button, 1, 0 );
   cell = table->elementAt( 1, 0 );
   cell->addWidget( button );
   button->setWidth( WLength(95.0,WLength::Percentage) );
-  button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-  button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
-                                          string("Keep All"), header, meas, type,
-                                          checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
   
-  int calnum = 1;
-  for( set<string>::const_iterator iter = cals.begin(); iter != cals.end(); ++iter, ++calnum )
+  if( derivedData )
   {
-    const int row = 1 + (calnum / ncolwide);
-    const int col = (calnum % ncolwide);
+    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+    button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
+                                           DerivedDataToKeep::All, header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
     
-    //Make sure the calbration ID isnt too long
-    string label = *iter;
-    SpecUtils::utf8_limit_str_size( label, 15 );
-    
-    button = new WPushButton( label );
-    //layout->addWidget( button, row, col );
-    cell = table->elementAt( row, col );
+    button = new WPushButton( "Only Raw" );
+    cell = table->elementAt( 1, 1 );
     cell->addWidget( button );
     button->setWidth( WLength(95.0,WLength::Percentage) );
-
+    
     button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-    //Note, using *iter instead of label below.
+    button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
+                                           DerivedDataToKeep::RawOnly, header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    
+    button = new WPushButton( "Only Derived" );
+    cell = table->elementAt( 1, 2 );
+    cell->addWidget( button );
+    button->setWidth( WLength(95.0,WLength::Percentage) );
+    
+    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+    button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
+                                           DerivedDataToKeep::DerivedOnly, header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+  }else
+  {
+    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
     button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
-                                            *iter, header, meas, type,
-                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
-  }//for( loop over calibrations )
+                                           string("Keep All"), header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    
+    int calnum = 1;
+    for( set<string>::const_iterator iter = cals.begin(); iter != cals.end(); ++iter, ++calnum )
+    {
+      const int row = 1 + (calnum / ncolwide);
+      const int col = (calnum % ncolwide);
+      
+      //Make sure the calbration ID isnt too long
+      string label = *iter;
+      SpecUtils::utf8_limit_str_size( label, 15 );
+      
+      button = new WPushButton( label );
+      //layout->addWidget( button, row, col );
+      cell = table->elementAt( row, col );
+      cell->addWidget( button );
+      button->setWidth( WLength(95.0,WLength::Percentage) );
+      
+      button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+      //Note, using *iter instead of label below.
+      button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
+                                             *iter, header, meas, type,
+                                             checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    }//for( loop over calibrations )
+  }//if( derivedData ) / else
+  
   
   dialog->show();
   
@@ -1900,7 +2031,7 @@ void SpecMeasManager::displayFile( int row,
                                    const SpecUtils::SpectrumType type,
                                    bool checkIfPreviouslyOpened,
                                    const bool doPreviousEnergyRangeCheck,
-                                   const bool checkIfAppropriateForViewing )
+                                   const SpecMeasManager::VariantChecksToDo viewingChecks )
 {
   std::shared_ptr<SpecMeas> old_meas = m_viewer->measurment( type );
   std::shared_ptr<SpecMeas>  old_back;
@@ -1973,11 +2104,11 @@ void SpecMeasManager::displayFile( int row,
   }//if( header && checkIfPreviouslyOpened )
   
   
-  if( checkIfAppropriateForViewing && wApp )
+  if( viewingChecks != VariantChecksToDo::None )
   {
     if( checkForAndPromptUserForDisplayOptions( header, measement_ptr,
                                 type, checkIfPreviouslyOpened,
-                               doPreviousEnergyRangeCheck ) )
+                                doPreviousEnergyRangeCheck, viewingChecks ) )
       return;
   }//if( checkIfAppropriateForViewing )
   
@@ -2087,6 +2218,9 @@ void SpecMeasManager::displayFile( int row,
 
       if( passthrough )
       {
+        const bool hasDerived = measement_ptr ? measement_ptr->contains_derived_data() : false;
+        const bool hasNonDerived = measement_ptr ? measement_ptr->contains_non_derived_data() : true;
+        
         int nspectra_header = static_cast<int>( header->m_samples.size() );
 
         // A temporary check...
@@ -2104,13 +2238,14 @@ void SpecMeasManager::displayFile( int row,
           const SpectraHeader &spectra = header->m_samples[sample];
           const bool back = (spectra.spectra_type == SpecUtils::SourceType::Background);
           const bool calib = (spectra.spectra_type == SpecUtils::SourceType::Calibration);
+          const bool unWantedDerived = (hasDerived && hasNonDerived && spectra.is_derived_data);
 
           ncalibration += calib;
 
-          if( back && (type!=SpecUtils::SpectrumType::SecondForeground) )
+          if( back && (type != SpecUtils::SpectrumType::SecondForeground) && !unWantedDerived )
             background_sample_numbers.insert( spectra.sample_number );
 
-          if( back || calib )
+          if( back || calib || unWantedDerived )
             selected.erase( index.child(sample,0) );
         }//for( int sample = 0; sample < nsamples; ++sample )
 
@@ -2120,13 +2255,13 @@ void SpecMeasManager::displayFile( int row,
 
           warningmsgLevel = max( WarningWidget::WarningMsgInfo, warningmsgLevel );
           warningmsg << "The uploaded file contained " << ncalibration
-                       << " calibration samples<br />";
+                       << " calibration or derived-data samples<br />";
 
 
           if( ncalibration == 1 ) warningmsg << "It";
           else                    warningmsg << "They";
           warningmsg  << " will not be displayed.<br />"
-                      << "Use the <b>File Manager</b> to change this.";
+                      << "Use the <b>Spectrum Files</b> tab or <b>File Manager</b> to change this.";
         } // if( ncalibration > 0 )
       }// if( passthrough )
 
@@ -3548,8 +3683,9 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
                                  unModifiedFiles ) );
        */
     }
-  }catch( std::exception & )
+  }catch( std::exception &e )
   {
+    cerr << "Error checking if this file had been opened previously: " << e.what() << endl;
     WServer::instance()->post( sessionID,
                               boost::bind( &postErrorMessage,
               string("Error checking if this file had been opened previously"),
@@ -3610,7 +3746,7 @@ int SpecMeasManager::dataUploaded2( Wt::WFileUpload *upload , SpecUtils::Spectru
 {
   std::shared_ptr<SpecMeas> measurement;
   int row= dataUploaded( upload, measurement );
-  displayFile( row, measurement, type, true, true, true );
+  displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
   return row;
 } // int SpecMeasManager::dataUploaded( Wt::WFileUpload )
 
@@ -3641,7 +3777,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     m_treeView->setSelectedIndexes( WModelIndexSet() );    
 //    passMessage( "Successfully uploaded file.", "", 0 );
 
-    displayFile( row, measurement, type, true, true, true );
+    displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
   }catch( const std::exception &e )
   {
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )

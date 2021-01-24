@@ -146,6 +146,7 @@ SpectraHeader::SpectraHeader()
   sample_number = -1;
   gamma_counts_ = neutron_counts_ = 0.0;
   spectra_type = SpecUtils::SourceType::Unknown;
+  is_derived_data = false;
 }//SpectraHeader default constructor
 
 
@@ -162,7 +163,7 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Mea
   sample_number = -1;
   gamma_counts_ = neutron_counts_ = 0.0;
   spectra_type = SpecUtils::SourceType::Unknown;
-
+  is_derived_data = false;
 
   for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurements )
   {
@@ -173,8 +174,9 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Mea
     neutron_counts_ += m->neutron_counts_sum();
     detector_names.push_back( m->detector_name() );
     detector_numbers_.push_back( m->detector_number() );
-
     spectra_type = m->source_type();
+    if( m->derived_data_properties() )
+      is_derived_data = true;
 
     for( size_t i = 0; i < m->remarks().size(); ++i )
     {
@@ -1274,6 +1276,11 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
   
   m_modifiedSinceDecode = info->modified_since_decode();
   
+  // Incase we are updating an already filled out entity, clear out some variables we will fill in
+  m_samples.clear();
+  m_hasNeutronDetector = false;
+  m_spectrumTime = Wt::WDateTime();
+  
   for( const int sample : sample_numbers )
   {
     for( const int detector : detector_numbers )
@@ -1942,7 +1949,7 @@ bool SpectraFileModel::removeRows( int row, int count, const WModelIndex &parent
     return false;
   }//if( count <= 0 )
 
-  const int lastRow = row+count-1;
+  const int lastRow = row + count - 1;
 
   /*
   //I wouldn't have guessed we would have to do this, but if we don't also

@@ -226,36 +226,47 @@ namespace
           
             if( field == FileDataField::DetectionSystemType )
             {
-              //The below switch must match whats in JS - a little brittle, bu oh well for now
+              //The below switch must match whats in JS - a little brittle, but oh well for now
               switch( val )
               {
                 case 0: val = static_cast<int>(SpecUtils::DetectorType::Exploranium); break;
                 case 1: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinder); break;
                 case 2: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderNG); break;
                 case 3: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderLaBr3); break;
-                case 4: val = static_cast<int>(SpecUtils::DetectorType::DetectiveUnknown); break;
-                case 5: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx); break;
-                case 6: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx100); break;
-                case 7: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx200); break;
-                case 8: val = static_cast<int>(SpecUtils::DetectorType::SAIC8); break;
-                case 9: val = static_cast<int>(SpecUtils::DetectorType::Falcon5000); break;
-                case 10: val = static_cast<int>(SpecUtils::DetectorType::MicroDetective); break;
-                case 11: val = static_cast<int>(SpecUtils::DetectorType::MicroRaider); break;
-                case 12: val = static_cast<int>(SpecUtils::DetectorType::Sam940); break;
-                case 13: val = static_cast<int>(SpecUtils::DetectorType::Sam940LaBr3); break;
-                case 14: val = static_cast<int>(SpecUtils::DetectorType::Sam945); break;
-                case 15: val = static_cast<int>(SpecUtils::DetectorType::Rsi701); break;
-                case 16: val = static_cast<int>(SpecUtils::DetectorType::Rsi705); break;
-                case 17: val = static_cast<int>(SpecUtils::DetectorType::AvidRsi); break;
-                case 18: val = static_cast<int>(SpecUtils::DetectorType::RadHunterNaI); break;
-                case 19: val = static_cast<int>(SpecUtils::DetectorType::RadHunterLaBr3); break;
-                case 20: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleNai); break;
-                case 21: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleCeBr2Inch); break;
-                case 22: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleCeBr3Inch); break;
-                case 23: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleLaBr); break;
-                case 24: val = static_cast<int>(SpecUtils::DetectorType::Srpm210); break;
-                case 25: val = static_cast<int>(SpecUtils::DetectorType::DetectiveX); break;
-                case 26: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
+                case 4: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderTungsten); break;
+                case 5: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR500NaI); break;
+                case 6: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR500LaBr); break;
+                case 7: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderUnknown); break;
+                case 8: val = static_cast<int>(SpecUtils::DetectorType::DetectiveUnknown); break;
+                case 9: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx); break;
+                case 10: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx100); break;
+                case 11: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx200); break;
+                case 12: val = static_cast<int>(SpecUtils::DetectorType::DetectiveX); break;
+                case 13: val = static_cast<int>(SpecUtils::DetectorType::MicroDetective); break;
+                case 14: val = static_cast<int>(SpecUtils::DetectorType::SAIC8); break;
+                case 15: val = static_cast<int>(SpecUtils::DetectorType::Falcon5000); break;
+                case 16: val = static_cast<int>(SpecUtils::DetectorType::MicroRaider); break;
+                case 17: val = static_cast<int>(SpecUtils::DetectorType::Sam940); break;
+                case 18: val = static_cast<int>(SpecUtils::DetectorType::Sam940LaBr3); break;
+                case 19: val = static_cast<int>(SpecUtils::DetectorType::Sam945); break;
+                case 20: val = static_cast<int>(SpecUtils::DetectorType::Rsi701); break;
+                case 21: val = static_cast<int>(SpecUtils::DetectorType::Rsi705); break;
+                case 22: val = static_cast<int>(SpecUtils::DetectorType::AvidRsi); break;
+                case 23: val = static_cast<int>(SpecUtils::DetectorType::RadHunterNaI); break;
+                case 24: val = static_cast<int>(SpecUtils::DetectorType::RadHunterLaBr3); break;
+                case 25: val = static_cast<int>(SpecUtils::DetectorType::Interceptor); break;
+                case 26: val = static_cast<int>(SpecUtils::DetectorType::RIIDEyeNaI); break;
+                case 27: val = static_cast<int>(SpecUtils::DetectorType::RIIDEyeLaBr); break;
+                case 28: val = static_cast<int>(SpecUtils::DetectorType::RadSeekerNaI); break;
+                case 29: val = static_cast<int>(SpecUtils::DetectorType::RadSeekerLaBr); break;
+                case 30: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleNai); break;
+                case 31: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleCeBr2Inch); break;
+                case 32: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleCeBr3Inch); break;
+                case 33: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleLaBr); break;
+                case 34: val = static_cast<int>(SpecUtils::DetectorType::Srpm210); break;
+                case 35: val = static_cast<int>(SpecUtils::DetectorType::VerifinderNaI); break;
+                case 36: val = static_cast<int>(SpecUtils::DetectorType::VerifinderLaBr); break;
+                case 37: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
                   
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
