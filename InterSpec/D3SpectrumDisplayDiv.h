@@ -170,7 +170,7 @@ public:
   const std::string yAxisTitle() const;
 
   
-  void enableLegend( const bool forceMobileStyle );
+  void enableLegend();
   void disableLegend();
   bool legendIsEnabled() const;
   
@@ -324,7 +324,6 @@ protected:
   
   int m_layoutWidth;
   int m_layoutHeight;
-  bool m_autoAdjustDisplayBinnning;
   
   bool m_compactAxis;
   bool m_legendEnabled;

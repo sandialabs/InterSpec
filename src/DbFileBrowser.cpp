@@ -999,7 +999,7 @@ void SnapshotBrowser::loadSpectraSelected()
                         if( meas )
                         {
                             thisheader->setMeasurmentInfo( meas );
-                            m_manager->displayFile( row, meas, type, false, false, false );
+                            m_manager->displayFile( row, meas, type, false, false, SpecMeasManager::VariantChecksToDo::None );
                         }//if( meas )
                     }//if( snapshot_id )
                     
@@ -1014,7 +1014,7 @@ void SnapshotBrowser::loadSpectraSelected()
         if( modelrow < 0 )
             modelrow = m_manager->setDbEntry( dbfile, header, measurement, true );
         
-        m_manager->displayFile( modelrow, measurement, type, false, false, false );
+        m_manager->displayFile( modelrow, measurement, type, false, false, SpecMeasManager::VariantChecksToDo::None );
     }
     else
     {
@@ -1042,7 +1042,7 @@ void SnapshotBrowser::loadSpectraSelected()
                 if( entry && entry.id() == dbfile.id() )
                 {
                     measurement = header->parseFile();
-                    m_manager->displayFile( row, measurement, SpecUtils::SpectrumType::Foreground, false, false, false );
+                    m_manager->displayFile( row, measurement, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
                     m_finished.emit();
                     return;
                 }//if( entry.id() == dbfile.id() )
@@ -1052,7 +1052,7 @@ void SnapshotBrowser::loadSpectraSelected()
             {
                 const int modelRow = m_manager->setDbEntry( dbfile, header,
                                                            measurement, true );
-                m_manager->displayFile( modelRow, measurement, SpecUtils::SpectrumType::Foreground, false, false, false );
+                m_manager->displayFile( modelRow, measurement, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
                 
             }catch( exception &e )
             {

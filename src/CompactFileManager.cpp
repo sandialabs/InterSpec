@@ -411,7 +411,7 @@ void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumTy
     m_displayedPostTexts[typeindex]->setText( "" );
     m_displaySampleNumEdits[typeindex]->setText( "" );
     std::shared_ptr<SpecMeas> blankptr;
-    m_fullFileManager->displayFile( -1, blankptr, type, false, true, false );
+    m_fullFileManager->displayFile( -1, blankptr, type, false, true, SpecMeasManager::VariantChecksToDo::None );
     if( m_foregroundTitle && (type==SpecUtils::SpectrumType::Foreground) )
     {
       m_foregroundTitle->setText("");
@@ -423,7 +423,7 @@ void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumTy
   std::shared_ptr<const SpectraFileHeader> header = m_files->fileHeader(row);
   std::shared_ptr<SpecMeas> meas = header->parseFile();
 
-  m_fullFileManager->displayFile( row, meas, type, false, true, false );
+  m_fullFileManager->displayFile( row, meas, type, false, true, SpecMeasManager::VariantChecksToDo::None );
 }//void handleFileChangeRequest( SpecUtils::SpectrumType type );
 
 /**

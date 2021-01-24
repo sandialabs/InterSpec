@@ -4,7 +4,6 @@
 #include <vector>
 #include <utility>
 
-#include <Wt/WLabel>
 #include <Wt/WPoint>
 #include <Wt/WServer>
 #include <Wt/WLength>
@@ -389,7 +388,7 @@ bool D3SpectrumDisplayDiv::legendIsEnabled() const
 }
 
 
-void D3SpectrumDisplayDiv::enableLegend( const bool forceMobileStyle )
+void D3SpectrumDisplayDiv::enableLegend()
 {
   m_legendEnabled = true;
   m_legendEnabledSignal.emit();
@@ -787,7 +786,8 @@ void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double max
   m_xAxisMinimum = minimum;
   m_xAxisMaximum = maximum;
   
-  string js = m_jsgraph + ".setXAxisRange(" + minimumStr + "," + maximumStr + ",false);";
+  string js = m_jsgraph + ".setXAxisRange(" + minimumStr + "," + maximumStr + ",false);"
+              + m_jsgraph + ".redraw()();";
   if( isRendered() )
     doJavaScript( js );
   else

@@ -1038,6 +1038,17 @@ namespace SpecFileQuery
           case SpecUtils::DetectorType::Sam940:
           case SpecUtils::DetectorType::Sam945:
           case SpecUtils::DetectorType::Srpm210:
+          case SpecUtils::DetectorType::IdentiFinderTungsten:
+          case SpecUtils::DetectorType::IdentiFinderR500NaI:
+          case SpecUtils::DetectorType::IdentiFinderR500LaBr:
+          case SpecUtils::DetectorType::IdentiFinderUnknown:
+          case SpecUtils::DetectorType::Interceptor:
+          case SpecUtils::DetectorType::RIIDEyeNaI:
+          case SpecUtils::DetectorType::RIIDEyeLaBr:
+          case SpecUtils::DetectorType::RadSeekerNaI:
+          case SpecUtils::DetectorType::RadSeekerLaBr:
+          case SpecUtils::DetectorType::VerifinderNaI:
+          case SpecUtils::DetectorType::VerifinderLaBr:
             gotit = true;
             break;
         }

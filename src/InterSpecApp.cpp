@@ -64,6 +64,10 @@
 #include <Wt/Chart/WCartesianChart>
 #include <Wt/WMessageResourceBundle>
 
+#if( ALLOW_URL_TO_FILESYSTEM_MAP && (BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_LOCAL_SERVER ) )
+#include <Wt/Utils>
+#endif
+
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
@@ -106,70 +110,6 @@ namespace
   //note: could potentially use Wt::WServer::instance()->sessions() to retrieve
   //      sessionIds.
 #endif
-
-  
-#if( ALLOW_URL_TO_FILESYSTEM_MAP && (BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_LOCAL_SERVER ) )
-  std::string uri_decode( const std::string &sSrc )
-  {
-    //adapted from http://www.codeguru.com/cpp/cpp/algorithms/strings/article.php/c12759/URI-Encoding-and-Decoding.htm
-    
-    const char HEX2DEC[256] =
-    {
-      /*       0  1  2  3   4  5  6  7   8  9  A  B   C  D  E  F */
-      /* 0 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 1 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 2 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 3 */  0, 1, 2, 3,  4, 5, 6, 7,  8, 9,static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      
-      /* 4 */ static_cast<char>(-1),10,11,12, 13,14,15,static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 5 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 6 */ static_cast<char>(-1),10,11,12, 13,14,15,static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 7 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      
-      /* 8 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 9 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* A */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* B */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      
-      /* C */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* D */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* E */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* F */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1)
-    };
-    
-    const unsigned char *pSrc = (const unsigned char *)sSrc.c_str();
-    const int SRC_LEN = sSrc.length();
-    const unsigned char * const SRC_END = pSrc + SRC_LEN;
-    // last decodable '%'
-    const unsigned char * const SRC_LAST_DEC = SRC_END - 2;
-    
-    vector<char> newchars( SRC_LEN );
-    char *pEnd = &newchars[0];
-    
-    while (pSrc < SRC_LAST_DEC)
-    {
-      if (*pSrc == '%')
-      {
-        char dec1, dec2;
-        if (-1 != (dec1 = HEX2DEC[*(pSrc + 1)])
-            && -1 != (dec2 = HEX2DEC[*(pSrc + 2)]))
-        {
-          *pEnd++ = (dec1 << 4) + dec2;
-          pSrc += 3;
-          continue;
-        }
-      }
-      
-      *pEnd++ = *pSrc++;
-    }//while (pSrc < SRC_LAST_DEC)
-    
-    // the last 2- chars
-    while (pSrc < SRC_END)
-      *pEnd++ = *pSrc++;
-    
-    return std::string( &newchars[0], pEnd);
-  }
-#endif  //#if( ALLOW_URL_TO_FILESYSTEM_MAP )
 }//namespace
 
 
@@ -529,7 +469,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     }else
     {
 #endif
-      const string filename = uri_decode( specfileiter->second[0] );
+      
+      const string filename = Wt::Utils::urlDecode( specfileiter->second[0] );
+      
       loadedSpecFile = m_viewer->userOpenFileFromFilesystem( filename );
       if( loadedSpecFile )
         cout << "Opened file specified by URL '" << filename << "'" << endl;

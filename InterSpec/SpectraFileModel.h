@@ -107,6 +107,7 @@ public:
   std::vector<int> detector_numbers_;
   std::string  remarks;
   Wt::WDateTime start_time;
+  bool is_derived_data;
 };//struct SpectraHeader
 
 
