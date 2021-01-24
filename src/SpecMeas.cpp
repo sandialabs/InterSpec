@@ -111,7 +111,7 @@ namespace
 SpecMeas::SpecMeas()
   : SpecUtils::SpecFile()
 {
-  m_peaks.reset( new SampleNumsToPeakMap() );
+  m_peaks = std::make_shared<SampleNumsToPeakMap>();
   
 //  m_detector.reset( new DetectorPeakResponse() );
   m_displayType = make_shared<SpecUtils::SpectrumType>(SpecUtils::SpectrumType::Foreground);
@@ -417,7 +417,7 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
   SpecFile::operator=( rhs );
 
   if( !m_peaks )
-    m_peaks.reset( new SampleNumsToPeakMap );
+    m_peaks = std::make_shared<SampleNumsToPeakMap>();
   else
     m_peaks->clear();
   m_autoSearchPeaks.clear();
@@ -697,7 +697,7 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
   if( !m_peaks )
-    m_peaks.reset( new SampleNumsToPeakMap() );
+    m_peaks = std::make_shared<SampleNumsToPeakMap>();
   
   int version = 1;
   const xml_attribute<char> *version_att = peaksnode->first_attribute("version",7);
@@ -1068,7 +1068,10 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
     std::vector<int> contents;
     SpecUtils::split_to_ints( node->value(), node->value_size(), contents );
     for( const float t : contents )
-      m_displayedSampleNumbers->insert( t );
+    {
+      if( sample_numbers_.count(t) ) //make sure to not insert any invalid sample numbers
+        m_displayedSampleNumbers->insert( t );
+    }
   }//if( node )
   
   m_displayedDetectors = make_shared<vector<string>>();
@@ -1480,6 +1483,12 @@ const std::set<int> &SpecMeas::displayedSampleNumbers() const
   static const set<int> emptySet;
   if( !m_displayedSampleNumbers )
     return emptySet;
+  
+  // Protect against returning invalid sample numbers
+  for( const int sn : *m_displayedSampleNumbers )
+    if( !sample_numbers_.count(sn) )
+      return emptySet;
+  
   return *m_displayedSampleNumbers;
 }
 

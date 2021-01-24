@@ -296,7 +296,13 @@ public:
   Wt::WContainerWidget *menuDiv();
 
   const std::set<int> &displayedSamples( SpecUtils::SpectrumType spectrum_type ) const;
-  std::set<int> validForegroundSamples() const;//forground samples that could possibly be displayed
+  
+  /** Foreground samples that might be displayed.
+   
+   TODO: Eliminate calling this function, in coordination with upgrading
+         passthroughTimeToSampleNumber() (see TODOs for that function)
+   */
+  std::set<int> validForegroundSamples() const;
   
   std::vector<std::string> detectorsToDisplay( const SpecUtils::SpectrumType type ) const;
 
@@ -788,6 +794,22 @@ protected:
   
   std::set<int> timeRangeToSampleNumbers( double t0, double t1 );
   
+  /** Returns a vector of pairs that indicate the cumulative chart starting time of each interval, and
+    the sample number of that interval, for use in the time series chart.
+    The cumulative times are strictly increasing in value, and may not correspond to the integrated
+    real-times of all previous samples, because backgrounds are placed at negative times, and also
+    may be compressed if they are really long.
+    The last entry contains the upper edge of the last time segment, and a garbage sample number.
+    Background samples will always come first, followed by foreground, then "derived" data.  Derived
+    data are not sorted according to type (foreground/background/known/intrinsic)
+  
+   TODO: Make it so this function returns a tuple with:
+         {cumulative time, sample number, gamma counts, neutron counts, time, back/fore/second, occupancy}
+         and have the time history chart store this info, so this function only ever gets called
+         when file is loaded or number detectors changed.
+   TODO: Integrate the logic of validForegroundSamples() into this function, and maybe eliminate
+         other places
+   */
   std::vector<std::pair<float,int> > passthroughTimeToSampleNumber() const;
 
   //showNewWelcomeDialog(): see notes for showWelcomeDialog().  This function
@@ -953,6 +975,12 @@ public:
   void setBackgroundSub( bool sub );
   void setVerticalLines( bool show );
   void setHorizantalLines( bool show );
+  
+  /** A "hard" background subtraction alters the data, subtracting the background counts from foreground counts on a channel by
+   channel basis, with the resulting spectrum now having incorrect variances.
+   */
+  void startHardBackgroundSub();
+  void finishHardBackgroundSub();
   
 #if( USE_SPECTRUM_CHART_D3 )
   void setXAxisSlider( bool show );
@@ -1224,6 +1252,7 @@ protected:
   PopupDivMenuItem *m_logYItems[2];
   PopupDivMenuItem *m_toolTabsVisibleItems[2];
   PopupDivMenuItem *m_backgroundSubItems[2];
+  PopupDivMenuItem *m_hardBackgroundSub;
   PopupDivMenuItem *m_verticalLinesItems[2];
   PopupDivMenuItem *m_horizantalLinesItems[2];
 #if( USE_SPECTRUM_CHART_D3 )
