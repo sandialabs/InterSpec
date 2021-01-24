@@ -397,6 +397,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_logYItems{0},
   m_toolTabsVisibleItems{0},
   m_backgroundSubItems{0},
+  m_hardBackgroundSub( nullptr ),
   m_verticalLinesItems{0},
   m_horizantalLinesItems{0},
   m_tabToolsMenuItems{0},
@@ -808,7 +809,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->setXAxisTitle( "Energy (keV)" );
   m_spectrum->setYAxisTitle( "Counts/Channel" );
 
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->enableLegend();
+#else
   m_spectrum->enableLegend( false );
+#endif
+  
   m_spectrum->showHistogramIntegralsInLegend( true );
 #if( USE_SPECTRUM_CHART_D3 )
 #else
@@ -3429,9 +3435,16 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 //    m_spectrum->showGridLines( grid );
     
     if( (entry->shownDisplayFeatures & UserState::kSpectrumLegend) )
+    {
+#if( USE_SPECTRUM_CHART_D3 )
+      m_spectrum->enableLegend();
+#else
       m_spectrum->enableLegend( false );
-    else
+#endif
+    }else
+    {
       m_spectrum->disableLegend();
+    }
     
     if( (entry->shownDisplayFeatures & UserState::kTimeSeriesLegend) )
       m_timeSeries->enableLegend( false );
@@ -5938,14 +5951,13 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   PopupDivMenuItem *item = chartmenu->addMenuItem( "Show Spectrum Legend" );
   m_spectrum->legendDisabled().connect( item, &PopupDivMenuItem::show );
   m_spectrum->legendEnabled().connect( item,  &PopupDivMenuItem::hide );
-  item->triggered().connect( boost::bind(
-#if ( USE_SPECTRUM_CHART_D3 )
-                                         &D3SpectrumDisplayDiv::enableLegend,
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  item->triggered().connect( boost::bind( &D3SpectrumDisplayDiv::enableLegend, m_spectrum ) );
 #else
-                                         &SpectrumDisplayDiv::enableLegend,
+  item->triggered().connect( boost::bind( &SpectrumDisplayDiv::enableLegend, m_spectrum, false ) );
 #endif
-                                         m_spectrum,
-                                         false ) );
+  
   item->hide(); //we are already showing the legend
 
   item = chartmenu->addMenuItem( "Show Time Legend" );
@@ -5999,12 +6011,16 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_backgroundSubItems[1]->hide();
   
   
+  m_hardBackgroundSub = m_displayOptionsPopupDiv->addMenuItem( "Hard Background Sub..." );
+  m_hardBackgroundSub->triggered().connect( this, &InterSpec::startHardBackgroundSub );
+  m_hardBackgroundSub->disable();
+  
 #if( USE_GOOGLE_MAP )
   m_mapMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Map","InterSpec_resources/images/map_small.png" );
   m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, SpecUtils::SpectrumType::Foreground ) );
   m_mapMenuItem->disable();
   HelpSystem::attachToolTipOn( m_mapMenuItem,
-                    "Show measurment(s) location on a Google Map. Only enabled"
+                    "Show measurement(s) location on a Google Map. Only enabled"
                     " when GPS coordinates are available.", showToolTips );
 #endif
   
@@ -6352,6 +6368,204 @@ void InterSpec::setHorizantalLines( bool show )
   m_spectrum->showHorizontalLines( show );
   m_timeSeries->showHorizontalLines( show );
 }//void setHorizantalLines( bool show )
+
+
+void InterSpec::startHardBackgroundSub()
+{
+  AuxWindow *dialog = new AuxWindow( "Perform Hard Background Subtract?",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                                     | AuxWindowProperties::PhoneModal
+                                     | AuxWindowProperties::SetCloseable
+                                     | AuxWindowProperties::DisableCollapse ) );
+  dialog->rejectWhenEscapePressed();
+  
+  const char *msg =
+  "<p>The normal background subtraction option only affects display of the data, with operations"
+  " like peak-fitting or exporting data are done on the full-statistics original foreground"
+  " spectrum.</p>"
+  "<p>A &quot;hard background subtraction&quot; creates a modified foreground by doing a bin-by-bin"
+  " subtraction of the background from the foreground.</p>"
+  "<p>Side effects of doing a hard background subtraction include:"
+  "<ul style=\"list-style-type: square; margin-top: 4px;\">"  //list-style-type: none;
+    "<li>Variances, i.e. the statistical uncertainty of each channel, will no longer be correct.</li>"
+    "<li>Small energy calibration differences between spectra may create artificial features in the data.</li>"
+    "<li>If a peak in the foreground overlaps with a peak in the background, the statistical"
+         " uncertainty of fit foreground peaks will no longer be correct</li>"
+    "<li>Non-integer channel counts if energy calibrations are not identical, or background is scaled.</li>"
+  "</ul>"
+  "The primary reasons to choose a hard background subtraction over normal display background subtraction are:"
+  "<ul style=\"list-style-type: square; margin-top: 4px;\">"
+    "<li>You dont like the artifacts the display background subtraction makes on the fit peaks continuum.</li>"
+    "<li>It isnt worth fitting peaks in the background so the <b>Activity Shielding Fit</b> tool"
+         " can subtract off contributions from background peaks.</li>"
+    "<li>You are giving the resulting spectrum to someone who doesnt know or care about the"
+         " subtleties this causes.</li>"
+  "</ul>"
+  "</p>"
+  "<br />"
+  "<p style=\"text-align: center;\"><b><em>Would you like to proceed?</em></b></p>"
+  ;
+
+  WText *text = new WText( msg, dialog->contents() );
+  
+  
+  //WPushButton *button = dialog->addCloseButtonToFooter( "Yes", true );
+  WPushButton *button = new WPushButton( "Yes", dialog->footer() );
+  button->clicked().connect( dialog, &AuxWindow::hide );
+  button->clicked().connect( this, &InterSpec::finishHardBackgroundSub );
+  //buttonlayout->addWidget( button, 0, 0, AlignCenter );
+  button->setFocus( true );
+  
+  //button = dialog->addCloseButtonToFooter( "No", true );
+  button = new WPushButton( "No", dialog->footer() );
+  button->clicked().connect( dialog, &AuxWindow::hide );
+  //button->clicked().connect( ... );
+  //buttonlayout->addWidget( button, 0, 1, AlignCenter );
+  
+  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+  
+  const int ww = renderedWidth();
+  const int wh = renderedHeight();
+  const int w = std::min( std::max( static_cast<int>(0.66*ww), 300 ), 640 );
+  dialog->setWidth( w );
+  if( ww > 100 && wh > 100 )
+    dialog->setMaximumSize( ww, wh );
+  
+  dialog->show();
+  dialog->centerWindow();
+}//void startHardBackgroundSub()
+
+
+void InterSpec::finishHardBackgroundSub()
+{
+  const auto foreground = m_spectrum->data();
+  const auto background = m_spectrum->background();
+  const float sf = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
+  
+  if( !foreground
+     || !background
+     || !m_dataMeasurement
+     || (foreground->num_gamma_channels() < 7)
+     || (background->num_gamma_channels() < 7)
+     || IsInf(sf) || IsNan(sf) || (sf <= 0.0)
+     || !foreground->channel_energies()  //should be covered by num_gamma_channels(), but whatever
+     || !background->channel_energies()
+     || !background->energy_calibration() //should always be true, but whatever
+     || !foreground->energy_calibration()
+     || !background->energy_calibration()->valid()
+     || !foreground->energy_calibration()->valid()
+     )
+  {
+    passMessage( "Error doing hard background subtraction."
+                 " Foreground or background was not available, or background scale factor invalid.",
+                 "", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  try
+  {
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> orig_peaks = m_peakModel->peaks();
+    shared_ptr<const vector<float>> fore_counts = foreground->gamma_counts();
+    shared_ptr<const vector<float>> back_counts = background->gamma_counts();
+    
+    // Make sure back_counts has the same energy calibration and fore_counts, so we can subtract
+    //  on a bin-by-bin basis
+    if( background->energy_calibration() != foreground->energy_calibration()
+       && (*background->energy_calibration()) != (*foreground->energy_calibration()) )
+    {
+      auto new_backchan = make_shared<vector<float>>( fore_counts->size(), 0.0f );
+      SpecUtils::rebin_by_lower_edge( *background->channel_energies(), *back_counts,
+                                     *foreground->channel_energies(), *new_backchan );
+      back_counts = new_backchan;
+    }
+    
+    // Create what will be the background subtracted foreground
+    auto back_sub_counts = make_shared<vector<float>>( *fore_counts );
+    
+    //back_counts and fore_counts should always be the same size, but we'll be a bit verbose anyway
+    assert( back_counts->size() == fore_counts->size() );
+    const size_t nchann = std::min( back_counts->size(), fore_counts->size() );
+    
+    // Do the actual background subtraction
+    for( size_t i = 0; i < nchann; ++i )
+    (*back_sub_counts)[i] -= sf*(*back_counts)[i];
+    
+    // Create a new Measurement object, based on the old foreground
+    auto newspec = make_shared<SpecUtils::Measurement>( *foreground );
+    newspec->set_gamma_counts( back_sub_counts, foreground->live_time(), foreground->real_time() );
+    vector<string> remarks = foreground->remarks();
+    remarks.push_back( "This spectrum has been background subtracted in InterSpec" );
+    newspec->set_remarks( remarks );
+    newspec->set_sample_number( 1 );
+    
+    // Create a new spectrum file object, and set new background subtracted Measurement as its only
+    //  record
+    auto newmeas = make_shared<SpecMeas>();
+    
+    // Copy just the SpecUtils::SpecFile stuff over to 'newmeas' so we dont copy things like
+    //  displayed sample numbers, and uneeded peaks and stuff
+    static_cast<SpecUtils::SpecFile &>(*newmeas) = static_cast<SpecUtils::SpecFile &>(*m_dataMeasurement);
+    
+    newmeas->remove_measurements( newmeas->measurements() );
+    
+    // Need to make sure UUID will get updated.
+    newmeas->set_uuid( "" );
+    
+    // Update filename
+    newmeas->set_filename( "bkgsub_" + newmeas->filename() );
+    
+    // Actually add the measurement
+    newmeas->add_measurement( newspec, true );
+    
+    // Reset all displayed sample numbers and peaks and stuff
+    //newmeas->clearInterSpecDisplayStuff();
+    
+    // Re-fit peaks and set them
+    std::vector<PeakDef> refit_peaks;
+    if( orig_peaks && orig_peaks->size() )
+    {
+      try
+      {
+        vector<PeakDef> input_peaks;
+        for( const auto &i : *orig_peaks )
+          input_peaks.push_back( *i );
+        
+        const double lowE = newspec->gamma_energy_min();
+        const double upE = newspec->gamma_energy_max();
+      
+        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, {}, true );
+        
+        std::deque<std::shared_ptr<const PeakDef> > peakdeque;
+        for( const auto &p : refit_peaks )
+          peakdeque.push_back( std::make_shared<const PeakDef>(p) );
+        
+        newmeas->setPeaks( peakdeque, {newspec->sample_number()} );
+      }catch( std::exception &e )
+      {
+        cerr << "Unexpected exception re-fitting peaks doing hard background subtract: "
+             << e.what() << endl;
+      }//try / catch to fit peaks
+    }//if( we need to refit peaks )
+    
+    // Get rid of the previously displayed background if there was one
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, false );
+    
+    
+    auto header = m_fileManager->addFile( newmeas->filename(), newmeas );
+    SpectraFileModel *filemodel = m_fileManager->model();
+    auto index = filemodel->index( header );
+    m_fileManager->displayFile( index.row(), newmeas,
+                                SpecUtils::SpectrumType::Foreground,
+                                false, false,
+                                SpecMeasManager::VariantChecksToDo::None );
+  }catch( std::exception &e )
+  {
+    passMessage( "There was an error loading the newly created spectrum file, sorry:"
+                + string(e.what()),
+                "", WarningWidget::WarningMsgHigh );
+  }//try / catch
+  
+}//finishHardBackgroundSub();
 
 
 #if( USE_SPECTRUM_CHART_D3 )
@@ -7864,18 +8078,32 @@ std::set<int> InterSpec::timeRangeToSampleNumbers( double t0, double t1 )
   if( !m_dataMeasurement )
     return answer;
   
+  // The last entry in 'binning' will be a garbage sample number, and the time is the upper edge of
+  //  last time segment.
   const vector<pair<float,int> > binning = passthroughTimeToSampleNumber();
   
-  if( binning.empty() )
+  if( binning.size() <= 1 )
     return answer;
   
   size_t startind, endind;
-  for( startind = 0; startind < (binning.size()-1); ++startind )
+  for( startind = 0; (startind+1) < binning.size(); ++startind )
     if( binning[startind+1].first > t0 )
       break;
-  for( endind = startind; endind < (binning.size()-1); ++endind )
+  
+  // The very last entry in 'binning' is a garbage sample number, so if startind points to the last
+  //  element, we wont include any sample numbers, so return an empty answer.
+  if( (startind+1) >= binning.size() )
+    return answer;
+  
+  for( endind = startind; (endind+1) < binning.size(); ++endind )
     if( binning[endind+1].first > t1 )
       break;
+  
+  // 'endind' might point to the last garbage sample number, so lets protect against that
+  if( binning.size() == 1 )
+    endind = 0;
+  else
+    endind = std::min( endind, binning.size()-2 );
   
   for( size_t i = startind; i <= endind; ++i )
     answer.insert( binning[i].second );
@@ -7930,7 +8158,7 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
   
   std::shared_ptr<const SpecUtils::Measurement> prevhist = displayedHistogram(type);
   
-  std::set<int> *sampleset = 0;
+  std::set<int> *sampleset = nullptr;
   
   switch( type )
   {
@@ -8113,20 +8341,37 @@ std::set<int> InterSpec::validForegroundSamples() const
   for( const int s : m_excludedSamples )
     sample_nums.erase( s );
   
-  set<int> torm;
-  for( const int s : sample_nums )
+  // If we have "derived" and non-derived data, then don't let derived data be a valid foreground.
+  const bool hasDerivedData = m_dataMeasurement->contains_derived_data();
+  const bool hasNonDerivedData = m_dataMeasurement->contains_non_derived_data();
+  
+  set<int> to_rm;
+  for( const int samplenum : sample_nums )
   {
-    const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
-                               = m_dataMeasurement->sample_measurements(s);
-    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
+    const auto meass = m_dataMeasurement->sample_measurements(samplenum);
+    
+    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meass )
     {
-      if( m->source_type() == SpecUtils::SourceType::Background )
-        torm.insert( s );
-    }
+      if( hasDerivedData && hasNonDerivedData && m->derived_data_properties() )
+        to_rm.insert( samplenum );
+      
+      switch( m->source_type() )
+      {
+        case SpecUtils::SourceType::IntrinsicActivity:
+        case SpecUtils::SourceType::Calibration:
+        case SpecUtils::SourceType::Background:
+          to_rm.insert( samplenum );
+          break;
+          
+        case SpecUtils::SourceType::Foreground:
+        case SpecUtils::SourceType::Unknown:
+          break;
+      }//switch( m->source_type() )
+    }//for( loop over measurements of this sample number )
   }//for( const int s : sample_nums )
   
-  for( const int s : torm )
-    sample_nums.erase( s );
+  for( const int samplenum : to_rm )
+    sample_nums.erase( samplenum );
 
   return sample_nums;
 }//std::set<int> validForegroundSamples() const
@@ -8547,8 +8792,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       auto energy_cal = m_dataMeasurement->suggested_sum_energy_calibration( sample_numbers, detectors );
       if( energy_cal )
         binning = energy_cal->channel_energies();
-    }catch(...)
+    }catch( std::exception & )
     {
+      
     }
     
     shared_ptr<const vector<float>> prev_binning = prev_display ? prev_display->channel_energies() : nullptr;
@@ -8924,7 +9170,7 @@ void InterSpec::finishLoadUserFilesystemOpenedFile(
   try
   {
     const int row = fileModel->addRow( header );
-    m_fileManager->displayFile( row, meas, type, true, true, true );
+    m_fileManager->displayFile( row, meas, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
   }catch( std::exception & )
   {
     passMessage( "There was an error loading "
@@ -9027,7 +9273,7 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
       
       SpectraFileModel *fileModel = m_fileManager->model();
       const int row = fileModel->addRow( header );
-      m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, true );
+      m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
       return true;
     }
   }catch( std::exception &e )
@@ -10188,76 +10434,127 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
 
 vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
 {
-  std::vector<std::pair<float,int> > answer;
-  
   if( !m_dataMeasurement )
+    return {};
+  
+  const vector<string> disp_dets = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  
+  /* If we have both "derived" data and non-derived data, we dont want to count the derived data
+     spectra as background, because then weird things happen.
+   */
+  const bool hasDerivedData = m_dataMeasurement->contains_derived_data();
+  const bool hasNonDerivedData = m_dataMeasurement->contains_non_derived_data();
+  
+  // We'll first grab foreground, background, and derived samples separately, then combine them
+  //  So background samples will be first, and may be compressed, then foreground, then derived.
+  float foretime = 0.0f, backtime = 0.0f, derivedtime = 0.0f;
+  vector<pair<float,int> > foreground, background, derived_data;
+  
+  const set<int> all_sample_nums = m_dataMeasurement->sample_numbers();
+  for( const int sample_num : all_sample_nums )
+  {
+    if( m_excludedSamples.count(sample_num) )
+      continue;
+    
+    const float sampletime = sample_real_time_increment( m_dataMeasurement, sample_num, disp_dets );
+    if( sampletime <= 0.0f )
+      continue;
+    
+    bool isFore = false, isback = false, isDerived = false;
+    const auto meass = m_dataMeasurement->sample_measurements(sample_num);
+    
+    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meass )
+    {
+      if( hasDerivedData && hasNonDerivedData && m->derived_data_properties() )
+      {
+        isDerived = true;
+        continue;
+      }
+      
+      switch( m->source_type() )
+      {
+        case SpecUtils::SourceType::IntrinsicActivity:
+        case SpecUtils::SourceType::Calibration:
+          break;
+          
+        case SpecUtils::SourceType::Background:
+          isback = true;
+          break;
+          
+        case SpecUtils::SourceType::Foreground:
+        case SpecUtils::SourceType::Unknown:
+          isFore = true;
+          break;
+      }//switch( m->source_type() )
+    }//for( const std::shared_ptr<const SpecUtils::Measurement> &m : meass )
+    
+    if( isDerived )
+    {
+      derived_data.push_back( {sampletime, sample_num} );
+      derivedtime += sampletime;
+    }else if( isFore )
+    {
+      foreground.push_back( {sampletime, sample_num} );
+      foretime += sampletime;
+    }else if( isback )
+    {
+      background.push_back( {sampletime, sample_num} );
+      backtime += sampletime;
+    }
+  }//for( const int sample_num : sample_nums )
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  const auto prevfore = validForegroundSamples();
+  set<int> newfore;
+  for( auto s : foreground )
+    newfore.insert( s.second );
+  assert( newfore == prevfore );
+#endif
+  
+
+  float cumulative_time = 0.0f;
+  vector<pair<float,int> > answer;
+  if( background.empty() && foreground.empty() && derived_data.empty() )
     return answer;
   
-  const set<int> foregroundSamples = validForegroundSamples();
-  const vector<string> disp_det_names = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  answer.reserve( foreground.size() + background.size() + derived_data.size() + 1 );
   
-  float time = 0.0f;
-  vector<pair<float,int> > foreground;
-  for( const int sample : foregroundSamples )
+  if( !background.empty() )
   {
-    const float thistime = sample_real_time_increment( m_dataMeasurement, sample, disp_det_names );
-    if( thistime <= 0.0 )
-      continue;
-    foreground.push_back( make_pair(time,sample) );
-    time += thistime;
-  }//for( const int sample : sample_nums )
-  
-  if( foreground.size() )
-    foreground.push_back( make_pair(time,foreground.back().second + 1) );
-  
-  //
-  float backtime = 0.0f;
-  vector<pair<float,int> > background;
-  const set<int> all_sample_nums = m_dataMeasurement->sample_numbers();
-  for( const int s : all_sample_nums )
-  {
-    if( m_excludedSamples.count(s) )
-      continue;
+    // We want to limit the background samples to take up about 10% of the time chart because we
+    //  normally dont care much about the background variation, and a lot of times there can be like
+    //  a 5 minute, single spectrum, background, and like 10 seconds foreground, which would make
+    //  the foreground not even visible.
+    float backscale = 1.0f;
+    if( (foretime > 0.1f) && (backtime > 0.1f*foretime) )
+      backscale = ( std::ceil(0.1f*foretime) ) / backtime;
     
-    const float thistime = sample_real_time_increment( m_dataMeasurement, s, disp_det_names );
-    if( thistime <= 0.0 )
-      continue;
+    cumulative_time = -backscale * backtime;
     
-    bool isback = false;
-    const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
-                              = m_dataMeasurement->sample_measurements(s);
-    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
-      isback |= (m->source_type() == SpecUtils::SourceType::Background);
-    
-    if( isback )
+    for( const auto &time_sample : background )
     {
-      backtime += thistime;
-      background.push_back( make_pair(backtime,s) );
+      answer.push_back( {cumulative_time, time_sample.second} );
+      cumulative_time += (backscale * time_sample.first);
     }
-  }//for( const int s : sample_nums )
+  }//if( !background.empty() )
   
-  if( !background.empty() && foreground.empty() )
+  assert( fabs(cumulative_time) < 1.0E-6 );
+  
+  for( const auto &time_sample : foreground )
   {
-    background.push_back( make_pair(backtime,background.back().second + 1) );
-    return background;
-  }
-  if( background.empty() )
-    return foreground;
-  
-  float backscale = 1.0f;
-  if( backtime > 0.1f*time )
-    backscale = ( std::ceil(0.1f*time) ) / backtime;
-  
-  answer.reserve( foreground.size() + background.size() + 1 );
-  
-  float lastt = -backscale*background.back().first;
-  for( size_t i = 0; i < background.size(); ++i )
-  {
-    answer.push_back( make_pair(lastt, background[i].second));
-    lastt = -backscale*background.back().first + backscale*background[i].first;
+    answer.push_back( {cumulative_time, time_sample.second} );
+    cumulative_time += time_sample.first;
   }
   
-  answer.insert( answer.end(), foreground.begin(), foreground.end() );
+  for( const auto &time_sample : derived_data )
+  {
+    answer.push_back( {cumulative_time, time_sample.second} );
+    cumulative_time += time_sample.first;
+  }
+
+  // Add in upper edge of last time segment.
+  answer.push_back( {cumulative_time, answer.back().second + 1} );
   
   return answer;
 }//vector<std::pair<float,int> > passthroughTimeToSampleNumber() const
@@ -10688,6 +10985,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_backgroundSubItems[0]->disable();
     m_backgroundSubItems[0]->show();
     m_backgroundSubItems[1]->hide();
+    m_hardBackgroundSub->disable();
     
 #if( USE_SPECTRUM_CHART_D3 )
     m_showYAxisScalerItems[0]->setDisabled( m_showYAxisScalerItems[0]->isVisible() );
@@ -10708,11 +11006,56 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   const auto energy_cal = meas->suggested_sum_energy_calibration(sample_nums, detectors);
   if( !energy_cal )
   {
-    const size_t nspectra = detectors.size() * sample_nums.size();
-    string msg = "<p>I couldnt determine binning to display the spectrum.</p>";
-    if( nspectra > 1 )
-      msg += "<p>You might try selecting only a single spectra to display in "
-               "the <b>File manager</b>.</p>";
+    vector<shared_ptr<const SpecUtils::Measurement>> meass;
+    bool allNeutron = true, containSpectrum = false;
+    for( const auto sample_num : sample_nums )
+    {
+      for( const auto &m : meas->sample_measurements( sample_num ) )
+      {
+         if( std::find( begin(detectors), end(detectors), m->detector_name() ) != end(detectors) )
+         {
+           meass.push_back( m );
+           
+           const auto cal = m->energy_calibration();
+           const bool hasGamma = (m->num_gamma_channels() > 0);
+           const bool hasSpectrum = cal && cal->valid() && (cal->num_channels() > 7);
+           allNeutron = (allNeutron && !hasGamma);
+           containSpectrum = (containSpectrum || hasSpectrum);
+         }//if( this Measurement is from a detector we want )
+      }//for( loop over Measurements for this sample number )
+    }//for( const auto sample_num : sample_nums )
+    
+    string msg;
+    if( meass.empty() )
+    {
+      if( detectors.size() == meas->detector_names().size() )
+      {
+        msg = "<p>The spectrum file didn't contain any spectra with the current sample numbers.</p>"
+              "<p>Please select different/more sample numbers.</p>";
+      }else
+      {
+        msg = "<p>The spectrum file didn't contain any spectra with the current sample numbers and"
+              " detector names.</p>"
+              "<p>Please select more detectors or sample numbers.</p>";
+      }
+    }else if( allNeutron )
+    {
+      msg = "<p>The current sample numbers and detector names only contain neutron data.</p>"
+            "<p>Please select samples that include spectroscopic data.</p>";
+    }else if( !containSpectrum )
+    {
+      msg = "<p>The current sample numbers and detector names do not include any spectroscopic"
+            " measurements.</p>"
+            "<p>Please select samples that include spectroscopic data.</p>";
+    }else
+    {
+      msg = "<p>I couldn't determine binning to display the spectrum.</p>";
+      
+      if( meass.size() > 1 )
+        msg += "<p>You might try selecting only a single spectra to display in "
+        "the <b>File manager</b>, or a sample with gamma counts.</p>";
+    }//if(
+    
     passMessage( msg, "", WarningWidget::WarningMsgHigh );
   }//if( !binning )
 
@@ -10727,7 +11070,14 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_backgroundSubItems[1]->setHidden( !isSub );
   }//if( m_backgroundSubItems[0]->isHidden() != isSub )
 
-  auto dataH = m_dataMeasurement->sum_measurements( sample_nums, detectors, energy_cal );
+  if( m_hardBackgroundSub->isEnabled() != canSub )
+    m_hardBackgroundSub->setDisabled( !canSub );
+  
+  std::shared_ptr<SpecUtils::Measurement> dataH;
+  
+  if( energy_cal )
+    dataH = m_dataMeasurement->sum_measurements( sample_nums, detectors, energy_cal );
+  
   if( dataH )
     dataH->set_title( "Foreground" );
 
@@ -10796,6 +11146,7 @@ void InterSpec::displayBackgroundData()
     m_backgroundSubItems[0]->disable();
     m_backgroundSubItems[0]->show();
     m_backgroundSubItems[1]->hide();
+    m_hardBackgroundSub->disable();
     //disp_samples.clear();
     if( m_spectrum->background() )
       m_spectrum->setBackground( nullptr, -1.0f, -1.0f, -1.0f );
@@ -10826,5 +11177,8 @@ void InterSpec::displayBackgroundData()
     m_backgroundSubItems[0]->setHidden( isSub );
     m_backgroundSubItems[1]->setHidden( !isSub );
   }//if( m_backgroundSubItems[0]->isHidden() != isSub )
+  
+  if( m_hardBackgroundSub->isEnabled() != canSub )
+    m_hardBackgroundSub->setDisabled( !canSub );
 }//void displayBackgroundData()
 
