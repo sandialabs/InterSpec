@@ -1,9 +1,7 @@
 .simple-dialog
 {
-  color: #333;
+  font-size: 16px;
   background-color: #fff;
-  font-size: 14px;
-  
   border-radius: 10px;
   /* We have to set min and max width in the C++ */
   overflow: hidden;
@@ -13,7 +11,6 @@
 .simple-dialog .title
 {
   background: none;
-  font-size: 16px;
   line-height: 20px;
   padding: 20px 20px 6px;
   text-align: center;
@@ -29,15 +26,13 @@
 .simple-dialog .content
 {
   padding: 0 20px 20px;
-  font-size: 16px;
-  color: #333;
-  text-align:center
+  text-align: center
 }
 
 .simple-dialog .footer
 {
   display: flex;
-  background: #fff;
+  /* background: #fff; */
   padding: 0px 0px 0px 0px;
 }
 
@@ -68,8 +63,9 @@
   cursor: pointer;
   -webkit-appearance: none;
   border-radius: 0;
-  background: 0 0;
+  background: none;
   color: #157afb;
+  /* color: rgb(18,101,200); */
   border-top: 1px solid #ccc;
   margin: 0;
   padding: 12px;
@@ -77,4 +73,15 @@
   height: auto;
   
   border-right: 1px solid #ccc;
+}
+
+/* Get rid of border on the right of the very last button */
+.simple-dialog .footer button:last-child
+{
+  border-right: none;
+}
+
+.simple-dialog .footer button:hover
+{
+  color: rgb(99, 161, 236);  
 }
