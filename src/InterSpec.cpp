@@ -109,6 +109,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/EnergyCalTool.h"
@@ -6372,14 +6373,8 @@ void InterSpec::setHorizantalLines( bool show )
 
 void InterSpec::startHardBackgroundSub()
 {
-  AuxWindow *dialog = new AuxWindow( "Perform Hard Background Subtract?",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                     | AuxWindowProperties::PhoneModal
-                                     | AuxWindowProperties::SetCloseable
-                                     | AuxWindowProperties::DisableCollapse ) );
-  dialog->rejectWhenEscapePressed();
-  
   const char *msg =
+  "<div style=\"text-align: left;\">"
   "<p>The normal background subtraction option only affects display of the data, with operations"
   " like peak-fitting or exporting data are done on the full-statistics original foreground"
   " spectrum.</p>"
@@ -6402,37 +6397,15 @@ void InterSpec::startHardBackgroundSub()
          " subtleties this causes.</li>"
   "</ul>"
   "</p>"
+  "</div>"
   "<br />"
   "<p style=\"text-align: center;\"><b><em>Would you like to proceed?</em></b></p>"
   ;
 
-  WText *text = new WText( msg, dialog->contents() );
-  
-  
-  //WPushButton *button = dialog->addCloseButtonToFooter( "Yes", true );
-  WPushButton *button = new WPushButton( "Yes", dialog->footer() );
-  button->clicked().connect( dialog, &AuxWindow::hide );
+  SimpleDialog *dialog = new SimpleDialog( "Perform Hard Background Subtract?", msg );
+  WPushButton *button = dialog->addButton( "Yes" );
   button->clicked().connect( this, &InterSpec::finishHardBackgroundSub );
-  //buttonlayout->addWidget( button, 0, 0, AlignCenter );
-  button->setFocus( true );
-  
-  //button = dialog->addCloseButtonToFooter( "No", true );
-  button = new WPushButton( "No", dialog->footer() );
-  button->clicked().connect( dialog, &AuxWindow::hide );
-  //button->clicked().connect( ... );
-  //buttonlayout->addWidget( button, 0, 1, AlignCenter );
-  
-  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-  
-  const int ww = renderedWidth();
-  const int wh = renderedHeight();
-  const int w = std::min( std::max( static_cast<int>(0.66*ww), 300 ), 640 );
-  dialog->setWidth( w );
-  if( ww > 100 && wh > 100 )
-    dialog->setMaximumSize( ww, wh );
-  
-  dialog->show();
-  dialog->centerWindow();
+  dialog->addButton( "No" );  //dont need to hook this to anything
 }//void startHardBackgroundSub()
 
 

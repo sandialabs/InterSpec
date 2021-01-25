@@ -123,7 +123,7 @@ class AuxWindow : public Wt::WDialog
 public:
   //By default AuxWindow will be shown, centered in the window, at 50% of
   //  browser size.  Wt will assume that the window is visible as well, for
-  //  the puprposes of lazy loading of content.
+  //  the purposes of lazy loading of content.
   AuxWindow( const Wt::WString &windowTitle, Wt::WFlags<AuxWindowProperties> properties = Wt::WFlags<AuxWindowProperties>(0) );
   virtual ~AuxWindow();
 
