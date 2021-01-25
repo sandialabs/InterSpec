@@ -86,6 +86,9 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
     
     // We could update the max-width when window size changes, but we'll ignore this for now
     //doJavaScript( "$(window).bind('resize', function(){" + maxw + "} );" );
+    
+    // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
+    doJavaScript( "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 50 );" );
   }else
   {
     Wt::WDialog::render( flags );
@@ -121,7 +124,7 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   // We will set maximum size in a hacky way in SimpleDialog::render(...)
   
   show();
-  finished().connect( boost::bind( &SimpleDialog::deleteSimpleDialog, this ) );
+  finished().connect( this, &SimpleDialog::startDeleteSelf );
 }//init(...)
 
 
@@ -129,26 +132,6 @@ SimpleDialog::~SimpleDialog()
 {
   cerr << "Deleting simpledialog" << endl;
 }
-
-
-void SimpleDialog::deleteSimpleDialog( SimpleDialog *window )
-{
-  if( !window )
-    return;
-  
-  if( window->isModal() )
-    window->setModal(false);
-  
-  // We'll actually delete the windows later on in the event loop incase the order of connections
-  //  to its signals is out of intended order.
-  WServer::instance()->post( wApp->sessionId(), std::bind( [window](){
-    auto app = WApplication::instance();
-    if( app ){
-      delete window;
-      app->triggerUpdate();
-    }
-  } ) );
-}//deleteSimpleDialog
 
 
 Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt )
@@ -163,5 +146,28 @@ Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt )
   
   b->clicked().connect( boost::bind( &WDialog::done, this, Wt::WDialog::DialogCode::Accepted ) );
   return b;
+}
+
+
+void SimpleDialog::startDeleteSelf()
+{
+  if( isModal() )
+    setModal(false);
+  
+  // We'll actually delete the windows later on in the event loop incase the order of connections
+  //  to its signals is out of intended order, but also we will protect against being deleted in the
+  //  current event loop as well
+  boost::function<void(void)> updater = wApp->bind( boost::bind( &SimpleDialog::deleteSelf, this ) );
+  WServer::instance()->post( wApp->sessionId(), std::bind( [updater](){
+    updater();
+    wApp->triggerUpdate();
+  } ) );
+}//startDeleteSelf()
+
+
+void SimpleDialog::deleteSelf()
+{
+  // calling 'delete this' makes me feel uneasy
+  delete this;
 }
 

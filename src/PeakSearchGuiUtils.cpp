@@ -54,6 +54,7 @@
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/WarningWidget.h"
@@ -2096,24 +2097,19 @@ void automated_search_for_peaks( InterSpec *viewer,
   
   const bool setColor = viewer->colorPeaksBasedOnReferenceLines();
   
+  
   //We should indicate to the user that seraching for peaks will take a while,
   //  but also we want to give them the chance to go past this and keep using
   //  the app.
-  AuxWindow *msg = new AuxWindow( "Just a few moments",
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::PhoneModal) );
-  msg->setClosable( true );
-  msg->setModal( true );
-  msg->show();
+  const char *title = "Just a few moments";
+  const char *content = "<div style=\"text-align: left; white-space: nowrap;\">"
+                          "<div>Searching for peaks - this may take a bit.</div>"
+                          "<div>You can close this dialog and when the search is done,</div>"
+                        "you will be notified"
+                        "</div>";
+  SimpleDialog *msg = new SimpleDialog( title, content );
   msg->rejectWhenEscapePressed();
-  msg->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, msg ) );
-  new WText( "<div style=\"white-space: nowrap;\">Searching for peaks - this may take a bit.</div>"
-             "<div style=\"white-space: nowrap;\">You can close this dialog and when the search is done,</div>"
-             "you will be notified", Wt::XHTMLText, msg->contents() );
-  msg->centerWindow();
-  msg->disableCollapse();
-  
-  WPushButton *button = new WPushButton( "Close", msg->footer() );
-  button->clicked().connect( msg, &AuxWindow::hide );
+  msg->addButton( "Close" );
   
   //Make it so users cant keep clicking the search button
   viewer->automatedPeakSearchStarted();
@@ -2127,7 +2123,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   //using WApplication::bind to call msg->hide() will protect against the user
   //  closing the msg window (which will have deleted it)
   boost::function<void(void)> guiupdater
-                          = wApp->bind( boost::bind( &AuxWindow::hide, msg ) );
+                          = wApp->bind( boost::bind( &SimpleDialog::accept, msg ) );
   
   //The results of the peak search will be placed into the vector pointed to
   // by searchresults, which is why both 'callback' and below and

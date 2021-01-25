@@ -6399,7 +6399,8 @@ void InterSpec::startHardBackgroundSub()
   "</p>"
   "</div>"
   "<br />"
-  "<p style=\"text-align: center;\"><b><em>Would you like to proceed?</em></b></p>"
+  "<br />"
+  "<div style=\"text-align: center;\"><b><em>Would you like to proceed?</em></b></div>"
   ;
 
   SimpleDialog *dialog = new SimpleDialog( "Perform Hard Background Subtract?", msg );

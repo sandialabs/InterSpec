@@ -37,7 +37,12 @@ namespace Wt
 /** A simple minimal dialog meant to ask the user a question modal question where user should respond before continuing.
    Kinda similar to a iOS dialog asking a question.
  
- Defaults to centered in the middle of the screen.
+ Shown centered in the middle of the screen.
+ 
+ TODO:
+ - Maybe add a way of cancelling dialog if user clicks outside of the dialog
+ - Add option to not show grey cover over the rest of the window
+ - Test out more
  */
 class SimpleDialog : public Wt::WDialog
 {
@@ -68,7 +73,10 @@ protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   void init( const Wt::WString &title, const Wt::WString &content );
-  static void deleteSimpleDialog( SimpleDialog *d );
+  
+private:
+  void startDeleteSelf();
+  void deleteSelf();
 };//class SimpleDialog
 
 
