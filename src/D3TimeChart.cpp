@@ -694,6 +694,13 @@ void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
   }//for( loop over all incomming sample numbers )
 #endif
   
+  const set<int> allSamplesThisType = interspec->sampleNumbersForTypeFromForegroundFile(type);
+  if( sample_numbers == allSamplesThisType )
+  {
+    scheduleHighlightRegionRender();
+    return;
+  }//
+  
   shared_ptr<const ColorTheme> theme = (interspec ? interspec->getColorTheme() : nullptr);
   
   D3TimeChart::HighlightRegion region;
