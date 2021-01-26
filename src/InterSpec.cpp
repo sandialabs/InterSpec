@@ -10767,14 +10767,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   
 #if( USE_SPECTRUM_CHART_D3 )
   if( !m_timeSeries->isHidden() )
-  {
-    const auto foregrond = SpecUtils::SpectrumType::Foreground;
-    const set<int> allSamplesThisType = sampleNumbersForTypeFromForegroundFile(foregrond);
-    if( m_sectondForgroundSampleNumbers == allSamplesThisType )
-      m_timeSeries->setHighlightedIntervals( {}, foregrond );
-    else
-      m_timeSeries->setHighlightedIntervals( sample_nums, foregrond );
-  }//if( !m_timeSeries->isHidden() )
+    m_timeSeries->setHighlightedIntervals( sample_nums, SpecUtils::SpectrumType::Foreground );
 #endif
 }//void displayForegroundData()
 
@@ -10814,12 +10807,7 @@ void InterSpec::displaySecondForegroundData()
   if( !m_timeSeries->isHidden() )
   {
 #if( USE_SPECTRUM_CHART_D3 )
-    const auto secondary = SpecUtils::SpectrumType::SecondForeground;
-    const set<int> allSamplesThisType = sampleNumbersForTypeFromForegroundFile(secondary);
-    if( m_sectondForgroundSampleNumbers == allSamplesThisType )
-      m_timeSeries->setHighlightedIntervals( {}, secondary );
-    else
-      m_timeSeries->setHighlightedIntervals( m_sectondForgroundSampleNumbers, secondary );
+    m_timeSeries->setHighlightedIntervals( m_sectondForgroundSampleNumbers, SpecUtils::SpectrumType::SecondForeground );
 #else
     vector< pair<double,double> > regions = timeRegionsToHighlight(SpecUtils::SpectrumType::SecondForeground);
     m_timeSeries->setTimeHighLightRegions( regions, SpecUtils::SpectrumType::SecondForeground );
@@ -10869,11 +10857,7 @@ void InterSpec::displayBackgroundData()
       m_timeSeries->setHighlightedIntervals( {}, background );
     }else
     {
-      const set<int> allSamplesThisType = sampleNumbersForTypeFromForegroundFile(background);
-      if( m_backgroundSampleNumbers == allSamplesThisType )
-        m_timeSeries->setHighlightedIntervals( {}, background );
-      else
-        m_timeSeries->setHighlightedIntervals( m_backgroundSampleNumbers, background );
+      m_timeSeries->setHighlightedIntervals( m_backgroundSampleNumbers, background );
     }
 #else
     vector< pair<double,double> > regions = timeRegionsToHighlight(SpecUtils::SpectrumType::Background);

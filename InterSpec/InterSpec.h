@@ -305,6 +305,15 @@ public:
   */
   std::shared_ptr<const SpecUtils::Measurement> displayedHistogram( SpecUtils::SpectrumType spectrum_type ) const;
 
+#if( USE_SPECTRUM_CHART_D3 )
+  /** Returns the sample numbers marked as Foreground, Background, or Secondary (i.e., intrinsic or
+   known), in the foreground spectrum file.
+   This is used for displaying the highlighted regions on the time series chart.
+   */
+  std::set<int> sampleNumbersForTypeFromForegroundFile(
+                                                const SpecUtils::SpectrumType spec_type ) const;
+#endif
+  
 #if( IOS )
   void exportSpecFile();
 #endif
@@ -708,13 +717,6 @@ protected:
                                            const std::vector<std::string> &detector_names );
   
 #if( USE_SPECTRUM_CHART_D3 )
-  /** Returns the sample numbers marked as Foreground, Background, or Secondary (i.e., intrinsic or
-   known), in the foreground spectrum file.
-   This is used for displaying the highlighted regions on the time series chart.
-   */
-  std::set<int> sampleNumbersForTypeFromForegroundFile(
-                                                    const SpecUtils::SpectrumType spec_type ) const;
-  
   /** Function to call when the time chart is clicked or tapped on.
    @param sample_start The starting sample number (as defined by the SpecFile) that was drug.
    @param sample_end The ending sample number (as defined by the SpecFile) that was drug.

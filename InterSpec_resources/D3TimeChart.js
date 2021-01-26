@@ -2500,6 +2500,10 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
     return;
   }
 
+  if( !regions || !Array.isArray(regions) )
+   regions = [];
+  
+  
   if (this.data && this.data.length && this.sampleToIndexMap) {
     this.regions = regions;
     this.highlightRegionsG.selectAll("rect").remove();
