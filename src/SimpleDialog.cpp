@@ -130,7 +130,7 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 
 SimpleDialog::~SimpleDialog()
 {
-  cerr << "Deleting simpledialog" << endl;
+  //cerr << "Deleting simpledialog" << endl;
 }
 
 

@@ -69,11 +69,11 @@ namespace
   
 }//namespace
 
+
 WT_DECLARE_WT_MEMBER
 (SvgToPngDownload, Wt::JavaScriptFunction, "SvgToPngDownload",
  function(elid,filename)
 {
-  console.log( 'In SvgToPngDownload' );
   try{
     var svgchart = $('#' + elid).find('svg')[0];
     
@@ -94,35 +94,103 @@ WT_DECLARE_WT_MEMBER
     $('#' + elid)[0].appendChild(canvas);
     
     
-    //We will need to propogate all the styles we can dynamically set in the SVG
-    //  to the <defs> section of the new SVG.
-    //This is a real pain - and no wher close to being done.
-    //m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c );
-    //m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() );
-    var chartstyle = getComputedStyle($('#chartarea' + elid)[0]);
-    //This next select doesnt seem to work, so maybe assign an id to the <svg> elements and change how the CSS is set?
-    var svgbackstyle = getComputedStyle( $('#' + elid)[0], , ' > svg' );
+    //We will need to propagate all the styles we can dynamically set in the SVG
+    //  to the <defs> section of the new SVG.  We could define these in the C++ and pass them to the
+    //  JS, or we can dynamically grab them in JS, which is what we're doing here, but was maybe a
+    //  mistake; its a real pain and probably not complete.
     
+    // The c++ sets the following rules:
+    // ".xgrid > .tick, .ygrid > .tick", "stroke: #b3b3b3" );
+    // ".minorgrid", "stroke: #e6e6e6" );
+    // ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "stroke: " + c );
+    // ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick", "stroke: " + m_axisColor.cssText() );
+    // ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine", "stroke: " + m_axisColor.cssText() );
+    // "#" + id() + " > svg", "background: " + color.cssText() );
+    // "#chartarea" + id(), "fill: " + c );
     
-    var svgMarkup = '<svg xmlns="http://www.w3.org/2000/svg"' + ' width="'  + w + '"' + ' height="' + h + '"' + '>'
-    + '<defs><style type="text/css">'
-    + (chartstyle && chartstyle.fill ? '.chartarea{fill: ' + chartstyle.fill + ';}\n' : "")
-    + (svgbackstyle && svgbackstyle.background ? 'svg{ background:' + svgbackstyle.background + '}\n' : "")
-    //+ '.legend{ font-size: 1em; }\n'
-    + '.legendBack{ fill: rgba(245,245,245,0.5); stroke: rgba(185,185,185,0.80); }\n'
-    //+ '.xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis{ stroke: black; }\n'
-    //+ '.xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick { stroke: black; }\n'
+    let getStyle = function( sel ){
+      let els = $(sel);
+      if( els.length < 1 )
+        return null;
+      return window.getComputedStyle( els[0] );
+    };
+    
+    let getSvgFill = function( sel ){
+      let style = getStyle( sel );
+      let fill = style && style.fill ? style.fill : "";
+      let comps = fill.match(/\\d+/g);  //Note: the double backslash is for the C++ compiler, if move to JS file, make into a single backslash
+      if( (comps && (comps.reduce( function(a,b){ return parseFloat(a) + parseFloat(b); }) > 0.01))
+         || (fill.length > 2 && fill.substr(0,1)=='#') )
+        return fill;
+      return null;
+    };
+    
+
+    var domstyle = getStyle( '.Wt-domRoot' );
+    var dombackground = domstyle && domstyle.backgroundColor ? domstyle.backgroundColor : null; //ex "rgb(44, 45, 48)", or "rgba(0, 0, 0, 0)"
+    
+    // Check of dom background is something other than "rgba(0, 0, 0, 0)"; not perfect yet, but kinda works
+    if( dombackground )
+    {
+      let bgrndcomps = dombackground.match(/\\d+/g); //Note: the double backslash is for the C++ compiler, if move to JS file, make into a single backslash
+      if( !bgrndcomps
+         || ((bgrndcomps.reduce( function(a,b){ return parseFloat(a) + parseFloat(b); }) < 0.01)
+             && (dombackground.length < 2 || dombackground.substr(0,1)=='#')) )
+        dombackground = null;
+    }
+    
+    // If the SVG doesnt have a defined fill
+    let svgback = getSvgFill('#' + elid + ' > svg');
+    if( !svgback )
+      svgback = dombackground;
+    
+    let chartAreaFill = getSvgFill('#chartarea' + elid);
+    
+    let legStyle = getStyle( '.legend' );
+    let legFontSize = legStyle && legStyle.fontSize ? legStyle.fontSize : null;
+    let legColor = legStyle && legStyle.color ? legStyle.color : null;
+    
+    let legBackStyle = getStyle( '.legendBack' );
+    let legBackFill = legBackStyle && legBackStyle.fill ? legBackStyle.fill : null;
+    let legBackStroke = legBackStyle && legBackStyle.stroke ? legBackStyle.stroke : null;
+    
+    let axisStyle = getStyle( '.xaxis' );
+    let axisStroke = axisStyle && axisStyle.stroke ? axisStyle.stroke : null;
+    
+    let tickStyle = getStyle( '.xaxis > .tick > line' );
+    let tickStroke = tickStyle && tickStyle.stroke ? tickStyle.stroke : null;
+    
+    let gridTickStyle = getStyle( '.xgrid > .tick' );
+    let gridTickStroke = gridTickStyle && gridTickStyle.stroke ? gridTickStyle.stroke : null;
+    
+    let minorGridStyle = getStyle( '.minorgrid' );
+    let minorGridStroke = minorGridStyle && minorGridStyle.stroke ? minorGridStyle.stroke : null;
+
+    
+    let svgDefs = '<defs><style type="text/css">\n'
+    + 'svg{ background-color:' + (svgback ? svgback : 'rgb(255,255,255)') + ';}\n'
+    + '.chartarea{ fill: ' + (chartAreaFill ? chartAreaFill : 'rgba(0,0,0,0)') + ';}\n'
+    + '.legend{ ' + (legFontSize ? 'font-size: ' + legFontSize + ';' : "")
+                  + (legColor ? 'fill: ' + legColor + ';' : "")
+                  + ' }\n'
+    + '.legendBack{ ' + (legBackFill ? 'fill:' + legBackFill + ';' : "")
+                      + (legBackStroke ? 'stroke: ' + legBackStroke + ';' : "")
+                      + ' }\n'
+    + (axisStroke ? '.xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis{ fill: ' + axisStroke + '; }\n' : "")
+    + (tickStroke ? '.xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick { stroke: ' + tickStroke + '; }\n' : "")
+    + (gridTickStroke ? '.xgrid > .tick, .ygrid > .tick{ stroke: ' + gridTickStroke + ';}\n' : "" )
+    + (minorGridStroke ? '.minorgrid{ stroke: ' + minorGridStroke + ';}\n' : "" )
     //+ '.peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine { stroke: black; }\n'
-    //+ '.xgrid > .tick, .ygrid > .tick{ stroke: #b3b3b3;}\n'
-    //+ '.minorgrid{ stroke: #e6e6e6; }\n'
-    + '</style>'
-    + '</defs>'
+    + '</style></defs>';
+    
+    let svgMarkup = '<svg xmlns="http://www.w3.org/2000/svg"' + ' width="'  + w + '"' + ' height="' + h + '"' + '>'
+    + svgDefs
     + svgchart.innerHTML.toString()
     +'</svg>';
-
-    //var serializer = new XMLSerializer();
-    //var svgMarkup = serializer.serializeToString(svgchart);
      
+    //In FF at least, for debugging using console.log, need to return here or else all messages will be erased
+    //return;
+    
     var ctx = canvas.getContext("2d");
     var img = new Image();
     var svg = new Blob([svgMarkup], {type: "image/svg+xml;charset=utf-8"});
@@ -1450,6 +1518,13 @@ void D3SpectrumDisplayDiv::removeAllPeaks()
 
 void D3SpectrumDisplayDiv::saveChartToPng( const std::string &filename )
 {
+  // For now we grab CSS rules dynamically in the JS, which is tedious and error-prone, but we could
+  //  use the following to get (some of) the rules from C++ land.
+  //string cssrules;
+  //for( const auto &p : m_cssRules )
+  //  cssrules += p.second->selector() + "{ " + p.second->declarations() + " }  ";
+  //cout << "CSS rules: " << cssrules << endl;
+  
   LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsSvgToPngDownload);
   
   if( isRendered() )
