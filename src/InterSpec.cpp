@@ -6169,9 +6169,9 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     //    checkbox->checked().connect( boost::bind( &WApplication::doJavaScript, wApp, js, true ) );
     
 #if ( USE_SPECTRUM_CHART_D3 )
-    //m_displayOptionsPopupDiv->addSeparator();
-    //auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
-    //saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToPng, this, true) );
+    m_displayOptionsPopupDiv->addSeparator();
+    auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
+    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToPng, this, true) );
 #elif( !IOS )
     //Add a download link to convert the canvas into a PNG and download it.
     m_displayOptionsPopupDiv->addSeparator();
@@ -7089,7 +7089,10 @@ void InterSpec::saveChartToPng( const bool spectrum )
   if( ppos != string::npos )
     timestr = timestr.substr(0,ppos);
   filename += "_" + timestr + ".png";
-
+  
+  string illegal_chars = "\\/:?\"<>|";
+  SpecUtils::erase_any_character( filename, illegal_chars.c_str() );
+  
   if( spectrum )
     m_spectrum->saveChartToPng( filename );
   else
