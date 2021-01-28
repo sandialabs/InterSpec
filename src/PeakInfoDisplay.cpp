@@ -57,6 +57,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
@@ -316,49 +317,15 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   if( m_model->rowCount() <= 0 )
     return;
   
-  AuxWindow *window = new AuxWindow( "Confirmation",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::PhoneModal | AuxWindowProperties::DisableCollapse) );
-  window->rejectWhenEscapePressed();
-  WText * text = new WText("Erase All Peaks?");
-  window->stretcher()->addWidget(text,0,0);
+  SimpleDialog *window = new SimpleDialog( "Erase All Peaks?", "" );
+  WPushButton *yes_button = window->addButton( "Yes" );
+  WPushButton *no_button = window->addButton( "No" );
   
-  auto foot = window->footer();
-  
-  WPushButton *yes_button = nullptr, *no_button = nullptr;
-  
-  if( m_viewer->isMobile() )
-  {
-    window->titleBar()->hide();
-    yes_button = new WPushButton( "Yes" );
-    no_button = new WPushButton( "No" );
-    yes_button->setWidth( WLength(50,WLength::Percentage) );
-    no_button->setWidth( WLength(50,WLength::Percentage) );
-    yes_button->setStyleClass( "ModalConfirmBtn" );
-    no_button->setStyleClass( "ModalConfirmBtn" );
-    
-    foot->addWidget( yes_button );
-    foot->addWidget( no_button );
-    foot->addStyleClass( "MobileConfirmFooter" );
-  }else
-  {
-    yes_button = new WPushButton("Yes");
-    foot->addWidget( yes_button );
-    yes_button->setFloatSide(Wt::Right);
-    no_button = window->addCloseButtonToFooter("No");
-  }//if( m_viewer->isMobile() )
-  
-  no_button->clicked().connect( window, &AuxWindow::hide );
-  yes_button->clicked().connect( window, &AuxWindow::hide );
 #if ( USE_SPECTRUM_CHART_D3 )
   yes_button->clicked().connect( boost::bind( &D3SpectrumDisplayDiv::removeAllPeaks, m_spectrumDisplayDiv ) );
 #else
   yes_button->clicked().connect( boost::bind( &PeakModel::removeAllPeaks, m_model ) );
 #endif
-  
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  window->show();
-  window->setMinimumSize(200, WLength::Auto);
-  window->centerWindow();
 }//void confirmRemoveAllPeaks()
 
 

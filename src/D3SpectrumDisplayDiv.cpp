@@ -74,6 +74,8 @@ WT_DECLARE_WT_MEMBER
 (SvgToPngDownload, Wt::JavaScriptFunction, "SvgToPngDownload",
  function(elid,filename)
 {
+  // TODO: separate getting SVG and PNG components and offer seperate download links, and also to copy to the clipboard
+  // TODO: this method of downloading the image does NOT work on Safari or the native macOS build, but does on chrome and FF; not sure if its a source content origin permissions issue, or maybe Image needs to be loaded into the DOM, but setting img.src = url; doesnt cause the img.onload event to fire.
   try{
     var svgchart = $('#' + elid).find('svg')[0];
     
@@ -202,14 +204,18 @@ WT_DECLARE_WT_MEMBER
       var dt = canvas.toDataURL('image/png');
       dt = dt.replace(/^data:image\\/[^;]*/, 'data:application/octet-stream');
       dt = dt.replace(/^data:application\\/octet-stream/, 'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename='+filename);
+      canvas.remove();
       
       var link = document.createElement("a");
+      link.style.display = "none";
+      document.body.appendChild(link);
       link.download = filename;
       link.href = dt;
       link.target="_blank";
       link.click();
       
-      canvas.remove();
+      window.URL.revokeObjectURL(link.href);
+      document.body.removeChild(link);
     };
     img.src = url;
     

@@ -45,7 +45,6 @@
 #include <Wt/WText>
 #include <Wt/WTimer>
 #include <Wt/WLabel>
-#include <Wt/WBreak>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WIOService>
@@ -268,6 +267,7 @@ void InterSpecApp::setupDomEnvironment()
   
   //This is needed to fix keyboard hiding in iOS
 #if(IOS || ANDROID)
+  //TODO: this can be added to wt_config.xml instead
   const char *fix_ios_js = INLINE_JAVASCRIPT(
     var t=document.createElement('meta');
     t.name = "viewport";
@@ -284,7 +284,7 @@ void InterSpecApp::setupDomEnvironment()
 #if( BUILD_AS_OSX_APP && !PERFORM_DEVELOPER_CHECKS )
   root()->setAttributeValue( "oncontextmenu", "return false;" );
 #endif
-
+  
   if( isMobile() )
   {
     useStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
@@ -390,8 +390,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     throw e;
 #endif //#if( BUILD_AS_UNIT_TEST_SUITE )
     
-    string msg = "There was a problem initializing a necessary resource"
-    " for InterSpec";
+    string msg = "There was a problem initializing a necessary resource for InterSpec";
     WText *errorText = new WText( msg, root() );
     errorText->setInline( false );
     errorText->setAttributeValue( "style",
@@ -407,9 +406,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     errorText = new WText( e.what(), errorDiv );
     errorText->setAttributeValue( "style", "font-family:\"Times New Roman\", Times, serif;" );
     
-    new WBreak( root() );
-    
-    msg = "Please contact wcjohns@sandia.gov and/or interspec@sandia.gov to fix this error.";
+    msg = "<br />Please contact wcjohns@sandia.gov and/or interspec@sandia.gov to fix this error.";
     errorText = new WText( msg, root() );
     errorText->setAttributeValue( "style", "font-family:Courier New; color: blue;" );
     WApplication::quit();

@@ -264,6 +264,7 @@ function( selfid, txt, iconstr, itemid, roleType )
   
   m.submenu.append( newItem );
   
+  //console.log( "AddMenuItemToElectronMenu: adding itemid='" + itemid + "', txt='" + txt + "'" );
   $(window).data('electronItem'+itemid, newItem);
   
   if( $(window).data('HaveTriggeredMenuUpdate') ){
@@ -402,7 +403,7 @@ function( menuid, itemid, txt, isChecked )
   }
   
   var newItem = new MenuItem({label: txt, type: 'checkbox', checked: isChecked, click: function(item, BrowserWindow){
-    console.log( "Got click status: " + item.checked );
+    //console.log( "Got click status: " + item.checked );
     Wt.emit(itemid,'electron_checked',item.checked);
   }} );
   
@@ -419,7 +420,10 @@ WT_DECLARE_WT_MEMBER(AddElectronSubMenu, Wt::JavaScriptFunction, "AddElectronSub
 function( menuid, submenuid, txt, iconPath )
 {
   let appmenu = Menu.getApplicationMenu();
-  if(!appmenu) return;
+  if(!appmenu){
+    console.log( 'AddElectronSubMenu: no appmenu' );
+    return;
+  }
   
   //let m = $('#'+menuid).data('electronMenu');
   let m = $(window).data('electronMenu'+menuid);
@@ -434,7 +438,6 @@ function( menuid, submenuid, txt, iconPath )
   m.submenu.append( newItem );
   
   $(window).data('electronMenu'+submenuid, newItem );
-  //console.log( 'Added submenu for ' + submenuid + ', ' + newItem.label );
   
   if( $(window).data('HaveTriggeredMenuUpdate') )
     Menu.setApplicationMenu(appmenu);
@@ -479,6 +482,8 @@ function()
   let appmenu = Menu.getApplicationMenu();
   if( appmenu )
     Menu.setApplicationMenu(appmenu);
+  else
+    console.log( "Failed to get Application menu" );
 });
 
 
@@ -496,8 +501,7 @@ string resolve_icon_path( string inputIconPath )
   
   if( !SpecUtils::is_file( iconPath ) )
   {
-    cerr << "Couldnt find icon '" << inputIconPath
-         << "' in docRoot ('" << docroot << "') or CWD ('"
+    cerr << "Couldnt find icon '" << inputIconPath << "' in docRoot ('" << docroot << "') or CWD ('"
          << SpecUtils::get_working_path() << "')" << endl;
     iconPath = "";
   }
@@ -610,7 +614,7 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
   else
   {
 #if( USING_ELECTRON_NATIVE_MENU )
-    if( menutype==AppLevelMenu )
+    if( m_hasElectronCounterpart && (menutype == AppLevelMenu) )
       doJavaScript( "console.log('Not implemented: Adding PopupDivMenu (no parent) id=" + id() + (menutype==AppLevelMenu?" AppLevelMenu":" TransientMenu") + "');" );
 #endif
   }
@@ -682,7 +686,7 @@ bool PopupDivMenu::removeSeperator( Wt::WMenuItem *sepertor )
   int index = indexOf( sepertor );
   if( index < 0 )
   {
-    cout << "PopupDivMenu::removeSeperator: !Couldnt find sepertor" << endl;
+    cerr << "PopupDivMenu::removeSeperator: !Couldnt find sepertor" << endl;
     return false;
   }
   removeItem( sepertor );
@@ -978,6 +982,13 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
                                            + "'" + resolve_icon_path(iconPath) + "',"
                                            + "'" + item->id() + "', null);" );
     item->m_hasElectronItem = true;
+  }else
+  {
+    if( !text.empty() && (m_type == PopupDivMenu::AppLevelMenu) )
+      cout << "Not calling AddMenuItemToElectronMenu for id='" << id() << "' text='" << text.toUTF8() << "'"
+           << ", m_hasElectronCounterpart=" << m_hasElectronCounterpart
+           << ", (m_type == PopupDivMenu::AppLevelMenu)=" << (m_type == PopupDivMenu::AppLevelMenu)
+           << endl;
   }
 #endif
   
@@ -1061,10 +1072,7 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     menu->m_parentItem->mouseWentOver().connect( js );
 
 #if(USE_OSX_NATIVE_MENU)
-    PopupDivMenu *p = parentItem()
-                      ? dynamic_cast<PopupDivMenu *>(parentItem()->menu())
-                      : 0;
-    
+    PopupDivMenu *p = parentItem() ? dynamic_cast<PopupDivMenu *>(parentItem()->menu()) : nullptr;
     if( m_nsmenu && (!p || p->m_type==PopupDivMenu::AppLevelMenu) )
       menu->m_nsmenu = addOsxSubMenu( m_nsmenu, menu, text.toUTF8().c_str() );
 #endif
@@ -1072,9 +1080,10 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
 #if( USING_ELECTRON_NATIVE_MENU )
     if( m_hasElectronCounterpart )
     {
-      PopupDivMenu *p = parentItem() ? dynamic_cast<PopupDivMenu *>(parentItem()->menu()) : 0;
+      PopupDivMenu *p = parentItem() ? dynamic_cast<PopupDivMenu *>(parentItem()->menu()) : nullptr;
       if( !p || p->m_type==PopupDivMenu::AppLevelMenu )
       {
+        menu->m_hasElectronCounterpart = true;
         WApplication::instance()->doJavaScript( "Wt.WT.AddElectronSubMenu('" + id() + "',"
                                                 + "'" + menu->id() + "',"
                                                 + "'" + text.toUTF8() + "',"
@@ -1164,7 +1173,7 @@ void PopupDivMenuItem::setHidden( bool hidden, const Wt::WAnimation &animation )
 #if( USING_ELECTRON_NATIVE_MENU )
 void PopupDivMenuItem::emitClickFromElectronMenu()
 {
-  cout << "emitClickFromElectronMenu" << endl;
+  //cout << "emitClickFromElectronMenu" << endl;
   this->triggered().emit( (Wt::WMenuItem *)this );
   wApp->triggerUpdate();
 }//void emitClickFromElectronMenu( PopupDivMenuItem *item )
@@ -1175,7 +1184,7 @@ void PopupDivMenuItem::toggleFromElectronMenu(bool checked)
 {
   //Wt::WServer::instance()->post( WApplication::instance()->sessionId(), [this,checked](){
   
-  cout << "toggleFromElectronMenu: " << checked << endl;
+  //cout << "toggleFromElectronMenu: " << checked << endl;
   WCheckBox *cb = checkBox();
   if( !cb )
   {
@@ -1204,16 +1213,18 @@ void PopupDivMenuItem::setHidden( bool hidden, const Wt::WAnimation &animation )
 {
   //cout << "Hiding " << text().toUTF8() << endl;
   WMenuItem::setHidden( hidden, animation );
-  WApplication::instance()->doJavaScript( "Wt.WT.HideElectronMenuItem('" + id() + "',"
-                                         + string(hidden ? "true" : "false") + ");" );
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    WApplication::instance()->doJavaScript( "Wt.WT.HideElectronMenuItem('" + id() + "',"
+                                           + string(hidden ? "true" : "false") + ");" );
 }
 
 void PopupDivMenuItem::setDisabled(bool disabled)
 {
   //cout << "DIsabling " << text().toUTF8() << endl;
   WMenuItem::setDisabled(disabled);
-  WApplication::instance()->doJavaScript( "Wt.WT.DisableElectronMenuItem('" + id() + "',"
-                                         + string(disabled ? "true" : "false") + ");" );
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    WApplication::instance()->doJavaScript( "Wt.WT.DisableElectronMenuItem('" + id() + "',"
+                                           + string(disabled ? "true" : "false") + ");" );
 }
 
 #endif

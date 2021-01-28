@@ -88,7 +88,8 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
     //doJavaScript( "$(window).bind('resize', function(){" + maxw + "} );" );
     
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
-    doJavaScript( "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 50 );" );
+    doJavaScript( "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 0 );"
+                  "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 50 );" );
   }else
   {
     Wt::WDialog::render( flags );
