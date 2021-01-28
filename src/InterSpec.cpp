@@ -737,10 +737,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
                                       );//menujs
       
       doJavaScript( menujs );
+    }else //if( InterSpecApp::isPrimaryWindowInstance() )
+    {
+      m_menuDiv->addStyleClass( "TopMenuDiv" );
+      menuWidget = m_menuDiv;
     }//if( InterSpecApp::isPrimaryWindowInstance() )
+#else //BUILD_AS_ELECTRON_APP
+    m_menuDiv->addStyleClass( "TopMenuDiv" );
+    menuWidget = m_menuDiv;
 #endif //BUILD_AS_ELECTRON_APP
     
-#else
+#else  //USE_ELECTRON_HTML_MENU
     m_menuDiv->addStyleClass( "TopMenuDiv" );
     menuWidget = m_menuDiv;
 #endif
@@ -903,13 +910,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_layout->setRowStretch( m_menuDiv ? 1 : 0, 5 );
   m_layout->setRowStretch( m_menuDiv ? 2 : 1, 3 );
   
-#if( USE_OSX_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
   if( InterSpecApp::isPrimaryWindowInstance() )
     m_menuDiv->hide();
-#endif
-  
-#if( USING_ELECTRON_NATIVE_MENU )
-  m_menuDiv->hide();
 #endif
   
   if( !isPhone() )
@@ -3916,17 +3919,10 @@ void InterSpec::showLicenseAndDisclaimersWindow( const bool is_awk,
 
 void InterSpec::startClearSession()
 {
-  AuxWindow *window = new AuxWindow( "Confirm Clear Session",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
-                                     | AuxWindowProperties::DisableCollapse) );
-  WText *t = new WText( "Are you sure you would like to start a clean sesion?", window->contents() );
-  t->setInline( false );
-  window->setClosable( false );
-  
-  WPushButton *button = new WPushButton( "Yes", window->footer() );
+  SimpleDialog *window = new SimpleDialog( "Clear Session?",
+                                          "Are you sure you would like to start a clean session?" );
+  WPushButton *button = window->addButton( "Yes" );
   button->clicked().connect( std::bind([=](){
-    AuxWindow::deleteAuxWindow( window );
-    
     WServer::instance()->post( wApp->sessionId(), std::bind( [](){
       auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
       if( app )
@@ -3934,18 +3930,11 @@ void InterSpec::startClearSession()
         app->clearSession();
         app->triggerUpdate();
       }
-    } )
-    );
+    } ) );
   }) );
-
-  button = new WPushButton( "No", window->footer() );
-  button->clicked().connect( window, &AuxWindow::hide );
+  
+  button = window->addButton( "No" );
   button->setFocus();
-  
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  
-  window->centerWindow();
-  window->show();
 }//void startClearSession()
 
 
@@ -6189,7 +6178,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     auto browserItem = m_displayOptionsPopupDiv->addMenuItem( "Use in external browser" );
 #if( BUILD_AS_ELECTRON_APP )
     browserItem->triggered().connect( std::bind( [](){
-      wApp->doJavaScript( "function(){ if(ipcRenderer) ipcRenderer.send('OpenInExternalBrowser'); }" );
+      wApp->doJavaScript( "if(ipcRenderer) ipcRenderer.send('OpenInExternalBrowser');" );
     } ) );
 #endif
     

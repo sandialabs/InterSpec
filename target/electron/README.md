@@ -23,7 +23,8 @@ cmake-js --generator "Visual Studio 15 2017 Win64" \
          --CDWt_INCLUDE_DIR=/path/to/wt/include \
          --CDCMAKE_BUILD_TYPE="Release" \
          --CDGOOGLE_MAPS_KEY="..." \
-         --out="build_dir"
+         --out="build_dir" \
+         --target install
 
 # If you make changes and want to recompile
 cmake-js build --out="build_dir"
@@ -36,6 +37,15 @@ ninja -C build_dir
 # Make the "app" directory into the build directory
 ninja -C build_dir install
 
+# And also copy all the InterSpec resources to the 
+# 'app' sub-directory of your build dir
+cmake-js build --out=build_dir --target install
+# Or
+cmake --build build_dir --target install --config Release
+# Or
+ninja -C build_dir install
+
+
 # To run InterSpec without packaging everything, you
 # need to install the Electron package
 npm install electron
@@ -47,14 +57,6 @@ npm start
 # To create a packaged version of InterSpec, you
 # need to install electron-packager
 npm install electron-packager
-
-# And also copy all the InterSpec resources to the 
-# 'app' sub-directory of your build dir
-cmake-js build --out=build_dir --target install
-# Or
-cmake --build build_dir --target install --config Release
-# Or
-ninja -C build_dir install
 
 
 # Then to actually create the distributable package, run on of the following

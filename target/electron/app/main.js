@@ -231,9 +231,6 @@ function doMenuStuff(currentwindow){
     console.log( 'Not using ElectronMenus - bailing' );
     return;
   }
-  
-  if( process.platform != 'darwin' )
-    return;
 
   currentwindow.setMenu(null);
   
@@ -264,6 +261,7 @@ function doMenuStuff(currentwindow){
   //Menu.getApplicationMenu()
   const menubar = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menubar)
+  console.log( 'Have set ElectronMenus' );
 }
 
 
@@ -291,7 +289,7 @@ function createWindow () {
 
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
-  windowPrefs.frame = (process.platform == 'darwin');
+  windowPrefs.frame = ((process.platform == 'darwin') || interspec.usingElectronMenus());
   windowPrefs.webPreferences = { nodeIntegration: true, nativeWindowOpen: true, enableRemoteModule: true, spellcheck: false };
 
   mainWindow = new BrowserWindow( windowPrefs );
@@ -319,27 +317,27 @@ function createWindow () {
       session_token = session_token_buf.toString('hex');
       interspec.addSessionToken( session_token );
       
-      let msg = interspec_url  + "?apptoken=" + session_token + "&primary=yes";
+      let url_to_load = interspec_url  + "?apptoken=" + session_token + "&primary=yes";
       if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
         let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
-        msg += "&specfilename=" + encodeURI(filepath);
+        url_to_load += "&specfilename=" + encodeURI(filepath);
         initial_file_to_open = null;
       }
 
       //See https://github.com/electron/electron/blob/master/docs/tutorial/mojave-dark-mode-guide.md
       //  For implementing dark mode (leaving out for the moment since havent had time to test)
       //if( systemPreferences.isDarkMode() )
-      //  msg += "&colortheme=dark";
+      //  url_to_load += "&colortheme=dark";
       //Actually should use nativeTheme.shouldUseDarkColors
       //  see https://github.com/electron/electron/blob/master/docs/api/native-theme.md#nativethemeshouldusedarkcolors-readonly
       
       if( !allowRestore )
-        msg += "&restore=no";
+      url_to_load += "&restore=no";
       
-      console.log('Will Load ' + msg);
+      console.log('Will Load ' + url_to_load);
       
       doMenuStuff(mainWindow);
-      mainWindow.loadURL( msg );
+      mainWindow.loadURL( url_to_load );
     } else {
       let workingdir = path.dirname(require.main.filename);
       mainWindow.loadURL( "file://" + path.join(workingdir, "loading.html") );
@@ -374,7 +372,15 @@ function createWindow () {
   
   
   // Open the developer tools.
-  // mainWindow.webContents.openDevTools({mode: "bottom"})
+  // mainWindow.webContents.openDevTools({mode: "bottom"});
+
+  // A nice way to have the renderes console.log show up on the command line
+  //  when running for development.
+  //mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+  //  //https://www.electronjs.org/docs/api/web-contents#event-console-message  
+  //  //console.log( sourceId+ " ("+line+"): " + message );
+  //  console.log( "From renderer: " + message );
+  //});
 
   // Emitted when the window is closed.
   mainWindow.on('closed', function () {
