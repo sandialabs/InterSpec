@@ -418,10 +418,17 @@ public:
    
    Note: Currently not fully working for D3 based spectrum chart.
    
-   @param spectrum If true, make a PNG for the spcetrum chart.  If false make
-          PNG for the time-series chart
+   @param spectrum If true, make a PNG or SVG for the spcetrum chart.  If false make
+          PNG or SVG for the time-series chart
+   @param asPng if true, save as a PNG.  If false, save as a SVG
+   
+   Note: currently only PNG is supported for time chart
    */
-  void saveChartToPng( const bool spectrum );
+#if ( USE_SPECTRUM_CHART_D3 )
+  void saveChartToImg( const bool spectrum, const bool asPng );
+#else
+  void saveChartToImg( const bool spectrum );
+#endif
 
   
   //displayScaleFactor(...): the live time scale factor used by to display

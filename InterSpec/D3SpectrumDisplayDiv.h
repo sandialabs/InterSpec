@@ -268,10 +268,11 @@ public:
   void removeAllPeaks();
   
   
-  /** Executes appropriate javascript to generate and download a PNG based on
-   the currently showing spectrum.  PNG generation is done client side.
+  /** Executes appropriate javascript to generate and download a PNG or SVG based on
+   the currently showing spectrum.  PNG or SVG generation is done client side.
    */
-  void saveChartToPng( const std::string &name );
+  void saveChartToImg( const std::string &name, const bool asPng );
+  
   
 protected:
 
