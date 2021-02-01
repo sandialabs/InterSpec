@@ -80,6 +80,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/ShowRiidInstrumentsAna.h"
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
@@ -630,21 +631,22 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
         m_viewer->loadStateFromDb( state );
         
-        if( !m_clearSession )
+        if( !m_miscSignal )
         {
-          m_clearSession.reset( new JSignal<>(this, "clearSession", false) );
-          m_clearSession->connect( this, &InterSpecApp::clearSession );
+          m_miscSignal.reset( new JSignal<std::string>(this, "miscSignal", false) );
+          m_miscSignal->connect( this, &InterSpecApp::miscSignalHandler );
         }
           
         WStringStream js;
         js << "Resuming where you left off on " << state->name.toUTF8()
            << "<div onclick="
-        "\"Wt.emit('" << id() << "',{name:'clearSession'});"
-        "$('.qtip.jgrowl:visible:last').remove();"
+        "\"Wt.emit('" << id() << "',{name:'miscSignal'}, 'clearSession');"
+        //"$('.qtip.jgrowl:visible:last').remove();"
+        "try{$(this.parentElement.parentElement).remove();}catch(e){}"
         "return false;\" "
         "class=\"clearsession\"><span class=\"clearsessiontxt\">Start Fresh Session</span></div>";
         
-        WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo );
+        WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo, 5000 );
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
         }
 #endif
@@ -1236,6 +1238,33 @@ void InterSpecApp::clearSession()
 #endif
 }//void clearSession()
 
+
+void InterSpecApp::miscSignalHandler( const std::string &signal )
+{
+  if( signal == "clearSession" )
+  {
+    clearSession();
+    return;
+  }//if( signal == "clearSession" )
+  
+  if( SpecUtils::istarts_with( signal, "showRiidAna" ) )
+  {
+    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+    if( SpecUtils::icontains(signal, "background") )  //SpecUtils::descriptionText(SpecUtils::SpectrumType::Background)
+      type = SpecUtils::SpectrumType::Background;
+    else if( SpecUtils::icontains(signal, "secondary") )  //SpecUtils::descriptionText(SpecUtils::SpectrumType::SecondForeground)
+      type = SpecUtils::SpectrumType::SecondForeground;
+    
+    showRiidInstrumentsAna( m_viewer->measurment(type) );
+    return;
+  }
+  
+  // shouldnt ever make it here..
+  const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
+  passMessage( errmsg, "", WarningWidget::WarningMsgHigh );
+  log_developer_error( __func__, errmsg.c_str() );
+  cerr << errmsg << endl;
+}//void miscSignalHandler( const std::string &signal )
 
 
 void InterSpecApp::finalize()

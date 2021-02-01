@@ -313,8 +313,12 @@ void WarningWidget::clearMessages()
 
 
 void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
-                                              WarningWidget::WarningMsgLevel level )
+                                              WarningWidget::WarningMsgLevel level,
+                                              int num_millies )
 {
+  if( num_millies <= 0 )
+    num_millies = 5000;
+  
   //We need the properly escaped string (e.g., not single quotes or unintended backslases), so we
   //  will use WString::jsStringLiteral(). Note that this will also place a single quote around the
   //  string.
@@ -383,7 +387,7 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
         render: function(event, api) { \
             if(!api.options.show.persistent) { \
                 $(this).bind('mouseover mouseout', function(e) { \
-                    var lifespan = 5000; \
+                    var lifespan = " << num_millies << "; \
                     clearTimeout(api.timer); \
                     if (e.type !== 'mouseover') { \
                         api.timer = setTimeout(function() { api.hide(e) }, lifespan); \
@@ -433,7 +437,7 @@ void WarningWidget::addMessage( Wt::WString msg, Wt::WString src, int ilevel )
   } // if( m_active[ level ] )
     
   if( m_popupActive[level] )
-    displayPopupMessageUnsafe( msg, level );
+    displayPopupMessageUnsafe( msg, level, 5000 );
 } // void WarningWidget::addMessage(...)
 
 void WarningWidget::setActivity( WarningWidget::WarningMsgLevel priority, bool allowed )

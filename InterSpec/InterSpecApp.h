@@ -202,6 +202,8 @@ public:
   //  any saved state).
   virtual void clearSession();
     
+  void miscSignalHandler( const std::string &signal );
+  
 protected: 
 
   //notify(): over-riding WApplication::notify inorder to catch any exceptions
@@ -287,7 +289,12 @@ protected:
   std::unique_ptr<Wt::JSignal<> > m_sucessfullyLoadedSignal;
 #endif
   
-  std::unique_ptr<Wt::JSignal<> > m_clearSession;
+  /** A signal emitted from the JS with a string argument that specifies what caused the signal to be emitted.
+   So far this signal is only used to allow manually specifying a button to be clicked on the notification messages.
+   
+   \sa #miscSignalHandler
+   */
+  std::unique_ptr<Wt::JSignal<std::string> > m_miscSignal;
   
 #if( IOS )
   /* Note that we could setup a JS based 'orientationchange' JSignal to let us know

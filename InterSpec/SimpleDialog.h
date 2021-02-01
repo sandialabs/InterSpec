@@ -77,6 +77,23 @@ protected:
 private:
   void startDeleteSelf();
   void deleteSelf();
+  
+  // We dont need to keep a pointer around to the title or message contents right now, but as
+  //  the use of this class is still shaking out (as of 20210201), we will for the moment.
+  
+  /** Holds the title text.
+   Will have CSS style class "title".
+   
+   Will be null if no title text is passed in.
+   */
+  Wt::WText *m_title;
+  
+  /** Holds the message contents.
+   Will have CSS style class "content".
+   
+   Will be null if no contents text is passed in.
+   */
+  Wt::WText *m_msgContents;
 };//class SimpleDialog
 
 

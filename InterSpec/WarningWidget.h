@@ -71,8 +71,11 @@ public:
   /** Displays the message to the user in the q-tip popup style.
    Does not check the format or content of the msg, so you need to make sure any potentially bad
    script, or non-XHTML-ness is removed first.
+   
+   @param num_millies The number of milliseconds to have the popup stick around for.
    */
-  static void displayPopupMessageUnsafe( const Wt::WString &msg, const WarningMsgLevel level );
+  static void displayPopupMessageUnsafe( const Wt::WString &msg, const WarningMsgLevel level,
+                                         int num_millies );
   
   
   void setPopupActivity( WarningMsgLevel priority, bool allowed );
