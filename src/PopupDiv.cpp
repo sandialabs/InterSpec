@@ -982,13 +982,12 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
                                            + "'" + resolve_icon_path(iconPath) + "',"
                                            + "'" + item->id() + "', null);" );
     item->m_hasElectronItem = true;
-  }else
+  }else if( (m_type == PopupDivMenu::AppLevelMenu) && InterSpecApp::isPrimaryWindowInstance() )
   {
-    if( !text.empty() && (m_type == PopupDivMenu::AppLevelMenu) )
-      cout << "Not calling AddMenuItemToElectronMenu for id='" << id() << "' text='" << text.toUTF8() << "'"
-           << ", m_hasElectronCounterpart=" << m_hasElectronCounterpart
-           << ", (m_type == PopupDivMenu::AppLevelMenu)=" << (m_type == PopupDivMenu::AppLevelMenu)
-           << endl;
+    cout << "Not calling AddMenuItemToElectronMenu for id='" << id() << "' text='" << text.toUTF8() << "'"
+         << ", m_hasElectronCounterpart=" << m_hasElectronCounterpart
+         << ", (m_type == PopupDivMenu::AppLevelMenu)=" << (m_type == PopupDivMenu::AppLevelMenu)
+         << endl;
   }
 #endif
   
