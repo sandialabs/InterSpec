@@ -6160,12 +6160,14 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 #if ( USE_SPECTRUM_CHART_D3 )
     m_displayOptionsPopupDiv->addSeparator();
     auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
-    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToPng, this, true) );
+    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
+    saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as SVG" );
+    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
 #elif( !IOS )
     //Add a download link to convert the canvas into a PNG and download it.
     m_displayOptionsPopupDiv->addSeparator();
     auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
-    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToPng, this, true) );
+    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true ) );
 #endif  //USE_SPECTRUM_CHART_D3 / else
     
     chartmenu->addSeparator();
@@ -7062,7 +7064,11 @@ std::shared_ptr<const SpecUtils::Measurement> InterSpec::displayedHistogram( Spe
 }//displayedHistogram(...)
 
 
-void InterSpec::saveChartToPng( const bool spectrum )
+#if ( USE_SPECTRUM_CHART_D3 )
+void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
+#else
+void InterSpec::saveChartToImg( const bool spectrum )
+#endif
 {
   std::shared_ptr<const SpecMeas> spec = measurment(SpecUtils::SpectrumType::Foreground);
   string filename = (spec ? spec->filename() : string("spectrum"));
@@ -7077,15 +7083,29 @@ void InterSpec::saveChartToPng( const bool spectrum )
   auto ppos = timestr.find('.');
   if( ppos != string::npos )
     timestr = timestr.substr(0,ppos);
+#if ( USE_SPECTRUM_CHART_D3 )
+  filename += "_" + timestr + ((!spectrum || asPng) ? ".png" : ".svg");
+#else
   filename += "_" + timestr + ".png";
+#endif
   
   string illegal_chars = "\\/:?\"<>|";
   SpecUtils::erase_any_character( filename, illegal_chars.c_str() );
   
+#if ( USE_SPECTRUM_CHART_D3 )
   if( spectrum )
-    m_spectrum->saveChartToPng( filename );
+  {
+    m_spectrum->saveChartToImg( filename, asPng );
+  }else
+  {
+    m_timeSeries->saveChartToPng( filename );
+  }
+#else
+  if( spectrum )
+    m_spectrum->saveChartToImg( filename );
   else
     m_timeSeries->saveChartToPng( filename );
+#endif
 }//saveSpectrumToPng()
 
 

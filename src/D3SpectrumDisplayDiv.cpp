@@ -71,156 +71,92 @@ namespace
 
 
 WT_DECLARE_WT_MEMBER
-(SvgToPngDownload, Wt::JavaScriptFunction, "SvgToPngDownload",
- function(elid,filename)
+(SvgToImgDownload, Wt::JavaScriptFunction, "SvgToImgDownload",
+ function(chart,filename,asPng)
 {
-  // TODO: separate getting SVG and PNG components and offer seperate download links, and also to copy to the clipboard
-  // TODO: this method of downloading the image does NOT work on Safari or the native macOS build, but does on chrome and FF; not sure if its a source content origin permissions issue, or maybe Image needs to be loaded into the DOM, but setting img.src = url; doesnt cause the img.onload event to fire.
-  try{
-    var svgchart = $('#' + elid).find('svg')[0];
-    
-    if( svgchart.length === 0 )
-      throw 'Could not find svg';
-    
-    console.log( 'In SvgToPngDownload: svgchart' );
+  // TODO: look at being able to copy to the pasteboard; looks doable.
+  try
+  {
+    // 'chart' is the JS SpectrumChartD3 object
+    // 'chart.chart' is the <div> that holds the spectrum
+    //  and chart.svg is a D3 array with one entry to the actual <svg> element
+    //console.log( 'In SvgToImgDownload: svgchart' );
     if( filename.length === 0 )
-      filename = "spectrum.png"; //ToDo: add in date/time or something.
+      filename = "spectrum." + (asPng ? "png" : "svg"); //ToDo: add in date/time or something.
     
-    var w = parseFloat(svgchart.getAttribute("width"));
-    var h = parseFloat(svgchart.getAttribute("height"));
+    let svgMarkup = chart.getStaticSvg();
     
-    var canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    //document.body.appendChild(canvas);
-    $('#' + elid)[0].appendChild(canvas);
+    // A heavy-duty version of element.click()
+    function simulateClick( node ) {
+      try {
+        node.dispatchEvent(new MouseEvent('click'));
+      } catch (e) {
+        var evt = document.createEvent('MouseEvents');
+        evt.initMouseEvent('click', true, true, window,
+                            0, 0, 0, 100, 100,
+                            false, false, false, false, 0, null);
+        node.dispatchEvent(evt);
+      }
+    };// function simulateClick()
     
-    
-    //We will need to propagate all the styles we can dynamically set in the SVG
-    //  to the <defs> section of the new SVG.  We could define these in the C++ and pass them to the
-    //  JS, or we can dynamically grab them in JS, which is what we're doing here, but was maybe a
-    //  mistake; its a real pain and probably not complete.
-    
-    // The c++ sets the following rules:
-    // ".xgrid > .tick, .ygrid > .tick", "stroke: #b3b3b3" );
-    // ".minorgrid", "stroke: #e6e6e6" );
-    // ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "stroke: " + c );
-    // ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick", "stroke: " + m_axisColor.cssText() );
-    // ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine", "stroke: " + m_axisColor.cssText() );
-    // "#" + id() + " > svg", "background: " + color.cssText() );
-    // "#chartarea" + id(), "fill: " + c );
-    
-    let getStyle = function( sel ){
-      let els = $(sel);
-      if( els.length < 1 )
-        return null;
-      return window.getComputedStyle( els[0] );
-    };
-    
-    let getSvgFill = function( sel ){
-      let style = getStyle( sel );
-      let fill = style && style.fill ? style.fill : "";
-      let comps = fill.match(/\\d+/g);  //Note: the double backslash is for the C++ compiler, if move to JS file, make into a single backslash
-      if( (comps && (comps.reduce( function(a,b){ return parseFloat(a) + parseFloat(b); }) > 0.01))
-         || (fill.length > 2 && fill.substr(0,1)=='#') )
-        return fill;
-      return null;
-    };
-    
-
-    var domstyle = getStyle( '.Wt-domRoot' );
-    var dombackground = domstyle && domstyle.backgroundColor ? domstyle.backgroundColor : null; //ex "rgb(44, 45, 48)", or "rgba(0, 0, 0, 0)"
-    
-    // Check of dom background is something other than "rgba(0, 0, 0, 0)"; not perfect yet, but kinda works
-    if( dombackground )
+    if( !asPng )
     {
-      let bgrndcomps = dombackground.match(/\\d+/g); //Note: the double backslash is for the C++ compiler, if move to JS file, make into a single backslash
-      if( !bgrndcomps
-         || ((bgrndcomps.reduce( function(a,b){ return parseFloat(a) + parseFloat(b); }) < 0.01)
-             && (dombackground.length < 2 || dombackground.substr(0,1)=='#')) )
-        dombackground = null;
-    }
+      var dl = document.createElement("a");
+      document.body.appendChild(dl);
+      dl.target = "_blank";
+      dl.setAttribute("href", "data:image/svg+xml," + encodeURIComponent(svgMarkup) );
+      dl.setAttribute("download", filename);
+      simulateClick(dl);
+      document.body.removeChild(dl);
+    }else
+    {
+      //console.log( 'svgMarkup=' + svgMarkup );
+      var canvas = document.createElement("canvas");
+      canvas.width = chart.svg.attr("width");
+      canvas.height = chart.svg.attr("height");
+      chart.chart.appendChild(canvas);
     
-    // If the SVG doesnt have a defined fill
-    let svgback = getSvgFill('#' + elid + ' > svg');
-    if( !svgback )
-      svgback = dombackground;
-    
-    let chartAreaFill = getSvgFill('#chartarea' + elid);
-    
-    let legStyle = getStyle( '.legend' );
-    let legFontSize = legStyle && legStyle.fontSize ? legStyle.fontSize : null;
-    let legColor = legStyle && legStyle.color ? legStyle.color : null;
-    
-    let legBackStyle = getStyle( '.legendBack' );
-    let legBackFill = legBackStyle && legBackStyle.fill ? legBackStyle.fill : null;
-    let legBackStroke = legBackStyle && legBackStyle.stroke ? legBackStyle.stroke : null;
-    
-    let axisStyle = getStyle( '.xaxis' );
-    let axisStroke = axisStyle && axisStyle.stroke ? axisStyle.stroke : null;
-    
-    let tickStyle = getStyle( '.xaxis > .tick > line' );
-    let tickStroke = tickStyle && tickStyle.stroke ? tickStyle.stroke : null;
-    
-    let gridTickStyle = getStyle( '.xgrid > .tick' );
-    let gridTickStroke = gridTickStyle && gridTickStyle.stroke ? gridTickStyle.stroke : null;
-    
-    let minorGridStyle = getStyle( '.minorgrid' );
-    let minorGridStroke = minorGridStyle && minorGridStyle.stroke ? minorGridStyle.stroke : null;
-
-    
-    let svgDefs = '<defs><style type="text/css">\n'
-    + 'svg{ background-color:' + (svgback ? svgback : 'rgb(255,255,255)') + ';}\n'
-    + '.chartarea{ fill: ' + (chartAreaFill ? chartAreaFill : 'rgba(0,0,0,0)') + ';}\n'
-    + '.legend{ ' + (legFontSize ? 'font-size: ' + legFontSize + ';' : "")
-                  + (legColor ? 'fill: ' + legColor + ';' : "")
-                  + ' }\n'
-    + '.legendBack{ ' + (legBackFill ? 'fill:' + legBackFill + ';' : "")
-                      + (legBackStroke ? 'stroke: ' + legBackStroke + ';' : "")
-                      + ' }\n'
-    + (axisStroke ? '.xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis{ fill: ' + axisStroke + '; }\n' : "")
-    + (tickStroke ? '.xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick { stroke: ' + tickStroke + '; }\n' : "")
-    + (gridTickStroke ? '.xgrid > .tick, .ygrid > .tick{ stroke: ' + gridTickStroke + ';}\n' : "" )
-    + (minorGridStroke ? '.minorgrid{ stroke: ' + minorGridStroke + ';}\n' : "" )
-    //+ '.peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine { stroke: black; }\n'
-    + '</style></defs>';
-    
-    let svgMarkup = '<svg xmlns="http://www.w3.org/2000/svg"' + ' width="'  + w + '"' + ' height="' + h + '"' + '>'
-    + svgDefs
-    + svgchart.innerHTML.toString()
-    +'</svg>';
-     
-    //In FF at least, for debugging using console.log, need to return here or else all messages will be erased
-    //return;
-    
-    var ctx = canvas.getContext("2d");
-    var img = new Image();
-    var svg = new Blob([svgMarkup], {type: "image/svg+xml;charset=utf-8"});
-    var url = window.URL.createObjectURL(svg);
-    img.onload = function() {
-      ctx.drawImage(img, 0, 0);
-      window.URL.revokeObjectURL(url);
+      var ctx = canvas.getContext("2d");
       
-      var dt = canvas.toDataURL('image/png');
-      dt = dt.replace(/^data:image\\/[^;]*/, 'data:application/octet-stream');
-      dt = dt.replace(/^data:application\\/octet-stream/, 'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename='+filename);
-      canvas.remove();
+      // The default style in InterSpec doesnt have a background for the SVG (but the dark theme
+      //  does), so start with a solid white background instead of no fill (the default PNG viewer
+      //  in Windows fills in a solid black background in this case, making the PNG look incorrect)
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       
-      var link = document.createElement("a");
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.download = filename;
-      link.href = dt;
-      link.target="_blank";
-      link.click();
+      var img = new Image();
+      var svg = new Blob([svgMarkup], {type: "image/svg+xml"});
+      var url = window.URL.createObjectURL(svg);
       
-      window.URL.revokeObjectURL(link.href);
-      document.body.removeChild(link);
-    };
-    img.src = url;
+      // JIC something is messed up we can see it in debug console for development
+      img.onerror = function(e){ console.log( 'img.error: '); console.log(e); };
+      
+      img.onload = function() {
+        ctx.drawImage(img, 0, 0);
+        window.URL.revokeObjectURL(url);
+      
+        var dt = canvas.toDataURL('image/png');
+        dt = dt.replace(/^data:image\\/[^;]*/, 'data:application/octet-stream');
+        dt = dt.replace(/^data:application\\/octet-stream/, 'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename='+filename);
+        canvas.remove();
+      
+        var link = document.createElement("a");
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.download = filename;
+        link.href = dt;
+        link.target="_blank";
+        simulateClick(link);
+      
+        window.URL.revokeObjectURL(link.href);
+        document.body.removeChild(link);
+      };
+      img.src = url;
+    }//if( !asPng ) / else
     
   }catch(e){
-    console.log( 'Error saving PNG from SVG spectrum: ' + e );
+    console.log( 'Error saving PNG or SVG of spectrum: ' );
+    console.log( e );
   }
 }
 );
@@ -1522,7 +1458,7 @@ void D3SpectrumDisplayDiv::removeAllPeaks()
 }
 
 
-void D3SpectrumDisplayDiv::saveChartToPng( const std::string &filename )
+void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bool asPng )
 {
   // For now we grab CSS rules dynamically in the JS, which is tedious and error-prone, but we could
   //  use the following to get (some of) the rules from C++ land.
@@ -1531,10 +1467,11 @@ void D3SpectrumDisplayDiv::saveChartToPng( const std::string &filename )
   //  cssrules += p.second->selector() + "{ " + p.second->declarations() + " }  ";
   //cout << "CSS rules: " << cssrules << endl;
   
-  LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsSvgToPngDownload);
+  LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsSvgToImgDownload);
   
   if( isRendered() )
-    doJavaScript( "Wt.WT.SvgToPngDownload('" + id() + "','" + filename +"');" );
+    doJavaScript( "Wt.WT.SvgToImgDownload(" + m_jsgraph + ",'" + filename + "', "
+                  + string(asPng ? "true" : "false") + ");" );
 }//void saveChartToPng( const std::string &name )
 
 
