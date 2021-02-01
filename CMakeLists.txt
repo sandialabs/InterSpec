@@ -557,6 +557,7 @@ set(sources
     src/EnergyCalPreserveWindow.cpp
     src/EnergyCalMultiFile.cpp
     src/SimpleDialog.cpp
+    src/ShowRiidInstrumentsAna.cpp
     js/CanvasForDragging.js
     js/SpectrumChart.js
     js/InterSpec.js
@@ -639,6 +640,7 @@ set(headers
     InterSpec/EnergyCalPreserveWindow.h
     InterSpec/EnergyCalMultiFile.h
     InterSpec/SimpleDialog.h
+    InterSpec/ShowRiidInstrumentsAna.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)

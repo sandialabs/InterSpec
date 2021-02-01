@@ -143,6 +143,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/EnergyCalPreserveWindow.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
@@ -401,6 +402,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_hardBackgroundSub( nullptr ),
   m_verticalLinesItems{0},
   m_horizantalLinesItems{0},
+#if( USE_SPECTRUM_CHART_D3 )
+  m_showXAxisSliderItems{ nullptr },
+  m_showYAxisScalerItems{ nullptr },
+  m_compactXAxisItems{ nullptr },
+#endif
   m_tabToolsMenuItems{0},
   m_featureMarkersShown{false},
 #if( USE_FEATURE_MARKER_WIDGET )
@@ -413,6 +419,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #if( USE_SEARCH_MODE_3D_CHART )
     m_searchMode3DChart( 0 ),
 #endif
+    m_showRiidResults( nullptr ),
 #if( USE_TERMINAL_WIDGET )
     m_terminalMenuItem( 0 ),
     m_terminal( 0 ),
@@ -6022,6 +6029,12 @@ void InterSpec::addDisplayMenu( WWidget *parent )
                         "Shows Time vs. Energy vs. Counts view for search mode or RPM data.", showToolTips );
 #endif
   
+  m_showRiidResults = m_displayOptionsPopupDiv->addMenuItem( "Show RIID Results","" );
+  m_showRiidResults->triggered().connect( boost::bind( &InterSpec::showRiidResults, this, SpecUtils::SpectrumType::Foreground ) );
+  HelpSystem::attachToolTipOn( m_showRiidResults,
+                              "Shows the detectors RIID analysis results included in the spectrum file.", showToolTips );
+  m_showRiidResults->disable();
+  
   addDetectorMenu( m_displayOptionsPopupDiv );
   
 #if( !USE_SPECTRUM_CHART_D3 )
@@ -7377,6 +7390,12 @@ void InterSpec::create3DSearchModeChart()
 #endif
 
 
+void InterSpec::showRiidResults( const SpecUtils::SpectrumType type )
+{
+  showRiidInstrumentsAna( measurment(type) );
+}//void showRiidResults( const SpecUtils::SpectrumType type )
+
+
 #if( USE_TERMINAL_WIDGET )
 void InterSpec::createTerminalWidget()
 {
@@ -8480,7 +8499,8 @@ void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
        
        WStringStream js;
        js << "<div onclick=\"Wt.emit('" << id() << "',{name:'removeDrfAssociation'});"
-       "$('.qtip.jgrowl:visible:last').remove();return false;\" "
+       //"$('.qtip.jgrowl:visible:last').remove();return false;\" "
+       "try{$(this.parentElement.parentElement).remove();}catch(e){} return false;\"
        "class=\"clearsession\"><span class=\"clearsessiontxt\">Remove association of detector with DRF.</span></div>";
        
        passMessage( "Using the detector response function you specified to use as default for this detector."
@@ -8992,6 +9012,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     m_searchMode3DChart->setDisabled( !isSearchData );
 #endif
 
+  if( m_showRiidResults )
+    m_showRiidResults->setDisabled( !m_dataMeasurement->detectors_analysis() );
   
   //Right now, we will only search for hint peaks for foreground
 #if( !ANDROID && !IOS )
@@ -9050,6 +9072,31 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     furtherworkers.push_back( checkForWarnings );
   }//if( meas && !sameSpec )
   
+  // Check if there are RIID analysis results in the file, and if so let the user know.
+  if( meas && !sameSpec && meas->detectors_analysis() )
+  {
+    const int nusedfor = static_cast<int>( meas == m_dataMeasurement )
+                         + static_cast<int>( meas == m_backgroundMeasurement )
+                         + static_cast<int>( meas == m_secondDataMeasurement );
+    
+    // Only show notification when we arent already showing the file
+    if( nusedfor == 1 )
+    {
+      const std::string type = SpecUtils::descriptionText(spec_type);
+      WStringStream js;
+      js << "File contained RIID analysis results: "
+      << riidAnaSummary(meas)
+      << "<div onclick="
+           "\"Wt.emit('" << wApp->id() << "',{name:'miscSignal'}, 'showRiidAna-" << type << "');"
+           //"$('.qtip.jgrowl:visible:last').remove();"
+           "try{$(this.parentElement.parentElement).remove();}catch(e){}"
+           "return false;\" "
+           "class=\"clearsession\">"
+         "<span class=\"clearsessiontxt\">Show full RIID results</span></div>";
+      
+      WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo, 10000 );
+    }//if( nusedfor == 1 )
+  }//if( meas && !sameSpec )
   
   if( meas && furtherworkers.size() )
   {

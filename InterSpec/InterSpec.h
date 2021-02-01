@@ -661,6 +661,9 @@ public:
   void create3DSearchModeChart();
 #endif
 
+  /** Show the RIID results included in the spectrum file. */
+  void showRiidResults( const SpecUtils::SpectrumType type );
+  
 #if( USE_TERMINAL_WIDGET )
   void createTerminalWidget();
   void handleTerminalWindowClose();
@@ -1268,7 +1271,6 @@ protected:
   PopupDivMenuItem *m_compactXAxisItems[2];
 #endif
   
-  
   enum class ToolTabMenuItems
   {
     EnergyCal,
@@ -1311,6 +1313,8 @@ protected:
   PopupDivMenuItem *m_searchMode3DChart;
 #endif
 
+  PopupDivMenuItem *m_showRiidResults;
+  
 #if( USE_TERMINAL_WIDGET )
   PopupDivMenuItem *m_terminalMenuItem;
   TerminalWidget   *m_terminal;
