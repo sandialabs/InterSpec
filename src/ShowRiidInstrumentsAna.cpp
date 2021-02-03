@@ -279,7 +279,10 @@ public:
       
       if( !result.empty() )
         anastr += "<table class=\"RiidNuclideTable\">" + result + "</table>";
-    }
+    }//for( const SpecUtils::DetectorAnalysisResult &res : ana->results_ )
+    
+    if( ana->results_.empty() )
+      anastr = "<div class=\"RiidNoResultsTxt\">No nuclide identifications provided.</div>";
     
     if( anastr.size() > 2 )
     {
@@ -337,6 +340,9 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
   if( summary.length() > 64 )
     summary = summary.substr(0,61) + "...";
   
+  if( summary.empty() && ana->results_.empty() )
+    summary = "no nuclides identified.";
+  
   return Wt::Utils::htmlEncode( WString::fromUTF8(summary),0).toUTF8();
 }//riidAnaSummary(...)
 
@@ -344,11 +350,12 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
 void showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spec )
 {
   auto dialog = new SimpleDialog();
+  //dialog->setModal( false ); //doesnt seem to have any effect
   dialog->addButton( "Close" );
   
   WContainerWidget *contents = dialog->contents();
   WText *dialogTitle = new WText( "The Detectors RIID Results", contents );
-  dialogTitle->addStyleClass( "title" );
+  dialogTitle->addStyleClass( "title RiidDialogTitle" );
   dialogTitle->setInline( false );
   
   AnaResultDisplay *display = new AnaResultDisplay( contents );
