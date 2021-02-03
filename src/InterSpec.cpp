@@ -9013,7 +9013,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
 
   if( m_showRiidResults )
-    m_showRiidResults->setDisabled( !m_dataMeasurement->detectors_analysis() );
+  {
+    const bool showRiid = m_dataMeasurement && m_dataMeasurement->detectors_analysis();
+    m_showRiidResults->setDisabled( !showRiid );
+  }
   
   //Right now, we will only search for hint peaks for foreground
 #if( !ANDROID && !IOS )
@@ -9094,7 +9097,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
            "class=\"clearsession\">"
          "<span class=\"clearsessiontxt\">Show full RIID results</span></div>";
       
-      WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo, 10000 );
+      WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo, 30000 );
+      
+      
     }//if( nusedfor == 1 )
   }//if( meas && !sameSpec )
   
@@ -10538,11 +10543,14 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
   
   
 #if( PERFORM_DEVELOPER_CHECKS )
-  const auto prevfore = validForegroundSamples();
-  set<int> newfore;
-  for( auto s : foreground )
-    newfore.insert( s.second );
-  assert( newfore == prevfore );
+// Note: this check is not always valid.  The code above will put a sample as foreground if
+//       and of its measurements are foreground/unknown, but validForegroundSamples() will
+//       remove the sample from foreground if any of its measurements are background or cal.
+//  const auto prevfore = validForegroundSamples();
+//  set<int> newfore;
+//  for( auto s : foreground )
+//    newfore.insert( s.second );
+//  assert( newfore == prevfore );
 #endif
   
 

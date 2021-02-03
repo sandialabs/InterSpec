@@ -107,6 +107,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
@@ -1911,79 +1912,64 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   if( !derivedData && !energyCal )
     return false;
 
-  AuxWindow *dialog = new AuxWindow( (derivedData ? "Used Derived Data?" : "Select Binning"),
-                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                       | AuxWindowProperties::PhoneModal
-                       | AuxWindowProperties::DisableCollapse) );
-  dialog->rejectWhenEscapePressed( false );
-  dialog->setClosable( false );
-
-  /*
-  const int ww = m_viewer->renderedWidth();
-  const int wh = m_viewer->renderedHeight();
-  
-  if( !m_viewer->isPhone() && ww > 420 && wh > 125 )
-  {
-    dialog->setWidth( 420 );
-    dialog->Wt::WCompositeWidget::setMinimumSize( 420, 125 );
-  }
-   */
-
-  
-  int ncolwide = (derivedData ? 3 : static_cast<int>(cals.size() + 1));
-  if( ncolwide > 4 )
-    ncolwide = 4;
-  
-  //WGridLayout *layout = dialog->stretcher();
-  WTable *table = new WTable( dialog->contents() );
-  dialog->contents()->setPadding( 10 );
-  
-  const char *msgtxt = "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
-                       "<div style=\"margin-top: 10px; margin-bottom: 10px;\">Please select which one you would like</div>";
-  if( derivedData )
-    msgtxt = "<div style=\"white-space: nowrap;\">This file contained &quot;Derived Data&quot; spectra, which are usually what is used by the detection system for analysis.</div>"
-    "<div style=\"margin-top: 10px; margin-bottom: 10px;\">What data would you like to load?</div>";
-  
-  WText *msg = new WText( msgtxt , XHTMLText );
-  //layout->addWidget( msg, 0, 0, 1, ncolwide );
-  WTableCell *cell = table->elementAt( 0, 0 );
-  cell->addWidget( msg );
-  cell->setColumnSpan( ncolwide );
-  
-  WPushButton *button = new WPushButton( "Keep All" );
-  cell = table->elementAt( 1, 0 );
-  cell->addWidget( button );
-  button->setWidth( WLength(95.0,WLength::Percentage) );
   
   if( derivedData )
   {
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+    const char *title = "Use Derived Data?";
+    const char *msgtxt
+    = "<div>This file contained &quot;Derived Data&quot; spectra, which are</div>"
+      "<div>usually what is used by the detection system for analysis.</div>"
+      "<div style=\"margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;\">"
+        "What data would you like to load?"
+      "</div>";
+    
+    SimpleDialog *dialog = new SimpleDialog( title, msgtxt );
+    WPushButton *button = dialog->addButton( "All Data" );
+    
     button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
                                            DerivedDataToKeep::All, header, meas, type,
                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
     
-    button = new WPushButton( "Only Raw" );
-    cell = table->elementAt( 1, 1 );
-    cell->addWidget( button );
-    button->setWidth( WLength(95.0,WLength::Percentage) );
-    
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+    button = dialog->addButton( "Raw Data" );
     button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
                                            DerivedDataToKeep::RawOnly, header, meas, type,
                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
     
-    button = new WPushButton( "Only Derived" );
-    cell = table->elementAt( 1, 2 );
-    cell->addWidget( button );
-    button->setWidth( WLength(95.0,WLength::Percentage) );
-    
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+    button = dialog->addButton( "Derived Data" );
     button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
                                            DerivedDataToKeep::DerivedOnly, header, meas, type,
                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
-  }else
+    
+    return true;
+  }//if( derivedData )
+
+  const char *title = "Select Binning";
+  const char *msgtxt
+   = "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
+     "<div style=\"margin-top: 10px; margin-bottom: 10px;\">Please select which one you would like</div>";
+  
+  if( cals.size() > 3 )
   {
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+    SimpleDialog *dialog = new SimpleDialog( title );
+    
+    int ncolwide = (derivedData ? 3 : static_cast<int>(cals.size() + 1));
+    if( ncolwide > 4 )
+      ncolwide = 4;
+  
+    WTable *table = new WTable( dialog->contents() );
+  
+    WText *msg = new WText( msgtxt , XHTMLText );
+    //layout->addWidget( msg, 0, 0, 1, ncolwide );
+    WTableCell *cell = table->elementAt( 0, 0 );
+    cell->addWidget( msg );
+    cell->setColumnSpan( ncolwide );
+  
+    WPushButton *button = new WPushButton( "Keep All" );
+    cell = table->elementAt( 1, 0 );
+    cell->addWidget( button );
+    button->setWidth( WLength(95.0,WLength::Percentage) );
+  
+    button->clicked().connect( boost::bind( &SimpleDialog::reject, dialog ) );
     button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
                                            string("Keep All"), header, meas, type,
                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
@@ -2004,22 +1990,37 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
       cell->addWidget( button );
       button->setWidth( WLength(95.0,WLength::Percentage) );
       
-      button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
+      button->clicked().connect( boost::bind( &SimpleDialog::reject, dialog ) );
       //Note, using *iter instead of label below.
       button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
                                              *iter, header, meas, type,
                                              checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
     }//for( loop over calibrations )
-  }//if( derivedData ) / else
+  }else  //if( cals.size() > 3 )
+  {
+    SimpleDialog *dialog = new SimpleDialog( title );
+    
+    WText *msg = new WText( msgtxt , XHTMLText, dialog->contents() );
+    msg->addStyleClass( "content" );
+    
+    WPushButton *button = dialog->addButton( "Keep All" );
+    button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
+                                           string("Keep All"), header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    
+    for( set<string>::const_iterator iter = cals.begin(); iter != cals.end(); ++iter )
+    {
+      //Make sure the calbration ID isnt too long
+      string label = *iter;
+      SpecUtils::utf8_limit_str_size( label, 15 );
+      
+      button = dialog->addButton( label );
+      button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
+                                             *iter, header, meas, type,
+                                             checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    }//for( loop over calibrations )
+  }// if( cals.size() > 3 ) / else
   
-  
-  dialog->show();
-  
-  if( m_viewer->isMobile() )
-    dialog->titleBar()->hide();
-  
-  dialog->centerWindowHeavyHanded();
-  dialog->resizeToFitOnScreen();
   
   return true;
 }//checkForAndPromptUserForDisplayOptions(...)

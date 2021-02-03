@@ -35,6 +35,7 @@
 #include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WTable>
+#include <Wt/WServer>
 #include <Wt/WLineEdit>
 #include <Wt/WTextArea>
 #include <Wt/WComboBox>
@@ -338,7 +339,7 @@ void SpecFileSummary::init()
   fileInfoLayout->setColumnStretch( 7, 1 );
 
   
-  WGroupBox *measdiv = new WGroupBox( "Measurment Information" );
+  WGroupBox *measdiv = new WGroupBox( "Measurement Information" );
   measdiv->addStyleClass( "MeasInfo" );
   WGridLayout *measTable = new WGridLayout();
   measdiv->setLayout( measTable );
@@ -552,7 +553,16 @@ void SpecFileSummary::showRiidAnalysis()
   const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
   std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( type );
   
-  showRiidInstrumentsAna( meas );
+  // The SimpleDialog containing the RIID results will be behind this SpecFileSummary, if we create
+  //  it here (I assume do to the mouse click bringing *this to front), so we will create it in the
+  //  next event loop iteration, and this way it appears good.
+  WServer::instance()->post( wApp->sessionId(), std::bind([=](){
+    auto app = WApplication::instance();
+    if( app ){
+      showRiidInstrumentsAna( meas );
+      app->triggerUpdate();
+    }
+  }) );
 }//void showRiidAnalysis()
 
 

@@ -381,6 +381,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     root()->clear();
   }
   
+  if( !m_miscSignal )
+  {
+    m_miscSignal.reset( new JSignal<std::string>(this, "miscSignal", false) );
+    m_miscSignal->connect( this, &InterSpecApp::miscSignalHandler );
+  }
+  
   try
   {
     m_viewer = new InterSpec();
@@ -630,12 +636,6 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         {
 #endif
         m_viewer->loadStateFromDb( state );
-        
-        if( !m_miscSignal )
-        {
-          m_miscSignal.reset( new JSignal<std::string>(this, "miscSignal", false) );
-          m_miscSignal->connect( this, &InterSpecApp::miscSignalHandler );
-        }
           
         WStringStream js;
         js << "Resuming where you left off on " << state->name.toUTF8()
@@ -1262,7 +1262,9 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
   // shouldnt ever make it here..
   const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
   passMessage( errmsg, "", WarningWidget::WarningMsgHigh );
+#if( PERFORM_DEVELOPER_CHECKS )
   log_developer_error( __func__, errmsg.c_str() );
+#endif
   cerr << errmsg << endl;
 }//void miscSignalHandler( const std::string &signal )
 
