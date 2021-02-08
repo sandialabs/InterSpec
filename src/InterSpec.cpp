@@ -1545,10 +1545,9 @@ void InterSpec::initHotkeySignal()
   //sender.id was undefined in the following js, so had to work around this a bit
   const char *js = INLINE_JAVASCRIPT(
     function(id,e){
-      if(!e||(typeof e.keyCode === 'undefined'))
+      if( !e || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || (typeof e.keyCode === 'undefined')  )
         return;
-      if(e.metaKey||e.altKey||!e.ctrlKey||e.shiftKey)
-        return;
+     
       var v = 0;
       switch( e.keyCode ){
         case 83: case 49: v=1;  break; //s
@@ -2293,8 +2292,15 @@ void InterSpec::updateRightClickNuclidesMenu(
 
 
 void InterSpec::handleLeftClick( double energy, double counts,
-                                      int pageX, int pageY )
+                                      double pageX, double pageY )
 {
+  // For touch screen non-mobile devices, the right-click menu may be showing
+  //  since when it is touch activated (by holding down for >600ms), there is
+  //  no mouse-leave signal to cause it to leave.
+  //  Note: I dont think m_rightClickMenu is ever null, but we'll check JIC
+  if( m_rightClickMenu && !m_rightClickMenu->isHidden() )
+    m_rightClickMenu->hide();
+
   if( (m_toolsTabs && m_currentToolsTab == m_toolsTabs->indexOf(m_nuclideSearchContainer))
       || m_nuclideSearchWindow )
   {
@@ -2332,7 +2338,7 @@ void InterSpec::handleLeftClick( double energy, double counts,
 
 
 void InterSpec::handleRightClick( double energy, double counts,
-                                       int pageX, int pageY )
+                                  double pageX, double pageY )
 {
   if( !m_dataMeasurement )
     return;

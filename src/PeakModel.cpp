@@ -1190,6 +1190,8 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         return (dataArea - contArea);
       }//case PeakDef::DataDefined:
     }//switch( peak->type() )
+
+    return boost::any();
   };//auto getPeakArea lambda
   
   switch( column )
