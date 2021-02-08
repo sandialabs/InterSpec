@@ -353,8 +353,8 @@ protected:
   boost::scoped_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
   boost::scoped_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
   boost::scoped_ptr<Wt::JSignal<double, double> > m_doubleLeftClickJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_leftClickJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_rightClickJS;
+  boost::scoped_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_leftClickJS;
+  boost::scoped_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_rightClickJS;
   /** Currently including chart area in pixels in xRange changed from JS; this
       size in pixels is only approximate, since chart may not have been totally layed out
       and rendered when this signal was emmitted.
@@ -399,9 +399,10 @@ protected:
   void chartShiftKeyDragCallback( double x0, double x1 );
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
-  void chartLeftClickCallback( double x, double y, int pageX, int pageY );
+  void chartLeftClickCallback( double x, double y, double pageX, double pageY );
   void chartDoubleLeftClickCallback( double x, double y );
-  void chartRightClickCallback( double x, double y, int pageX, int pageY );
+  void chartRightClickCallback( double x, double y, double pageX,
+                                double pageY );
   void chartRoiDragedCallback( double new_lower_energy, double new_upper_energy,
                                double new_lower_px, double new_upper_px,
                                double original_lower_energy,

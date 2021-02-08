@@ -315,13 +315,13 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     m_rightMouseDraggJS.reset( new JSignal<double,double>( this, "rightmousedragged", true ) );
     m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback, this, _1, _2 ) );
     
-    m_leftClickJS.reset( new JSignal<double,double,int,int>( this, "leftclicked", true ) );
+    m_leftClickJS.reset( new JSignal<double,double,double,double>( this, "leftclicked", true ) );
     m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this, _1, _2, _3, _4 ) );
     
     m_doubleLeftClickJS.reset( new JSignal<double,double>( this, "doubleclicked", true ) );
     m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback, this, _1, _2 ) );
     
-    m_rightClickJS.reset( new JSignal<double,double,int,int>( this, "rightclicked", true ) );
+    m_rightClickJS.reset( new JSignal<double,double,double,double>( this, "rightclicked", true ) );
     m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this, _1, _2, _3, _4 ) );
     
     m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
@@ -1569,7 +1569,7 @@ void D3SpectrumDisplayDiv::chartRightMouseDragCallback( double x0, double x1 )
   m_rightMouseDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartRightMouseDragCallback(...)
 
-void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, int pageX, int pageY )
+void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY )
 {
   cout << "chartLeftClickCallback" << endl;
   m_leftClick.emit( x, y, pageX, pageY );
@@ -1581,7 +1581,7 @@ void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y )
   m_doubleLeftClick.emit( x, y );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
-void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, int pageX, int pageY )
+void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY )
 {
   cout << "chartRightClickCallback" << endl;
   m_rightClick.emit( x, y, pageX, pageY );

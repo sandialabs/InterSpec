@@ -857,10 +857,10 @@ protected:
   
   void deletePeakEdit();
   void createPeakEdit( double energy );
-  void handleRightClick( double energy, double counts,
-                         int pageX, int pageY );
-  void handleLeftClick( double energy, double counts,
-                        int pageX, int pageY );
+  void handleRightClick( const double energy, const double counts,
+                         const double pageX, const double pageY );
+  void handleLeftClick( const double energy, const double counts,
+                        const double pageX, const double pageY );
   void rightClickMenuClosed();
 #if( USE_SIMPLE_NUCLIDE_ASSIST )
   void leftClickMenuClosed();
