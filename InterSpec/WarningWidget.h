@@ -46,7 +46,14 @@ class WarningWidget : public Wt::WContainerWidget
 public:
   enum WarningMsgLevel
   {
-    WarningMsgInfo = 0, WarningMsgLow = 1, WarningMsgMedium = 2, WarningMsgHigh = 3 /*Not actually used anywhere*/, WarningMsgSave = 4
+    WarningMsgInfo = 0,
+    WarningMsgLow = 1,
+    WarningMsgMedium = 2,
+    WarningMsgHigh = 3 /*Not actually used anywhere*/,
+    WarningMsgSave = 4,
+    WarningMsgShowRiid = 5,
+    
+    NumWarningMsgType
   };//enum WarningMsgLevel
   
   static const char *tostr( const WarningMsgLevel level );
@@ -92,8 +99,8 @@ protected:
 
   int m_totalMessages;
 
-  bool m_popupActive[int(WarningMsgSave)+1];
-  bool m_active[int(WarningMsgSave)+1];
+  bool m_popupActive[int(WarningMsgLevel::NumWarningMsgType)];
+  bool m_active[int(WarningMsgLevel::NumWarningMsgType)];
 
   Wt::WGridLayout *m_layout;
   Wt::WStandardItemModel *m_messageModel;

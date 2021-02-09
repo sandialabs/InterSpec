@@ -193,9 +193,6 @@ namespace InterSpecServer
   void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication )
   {
-#ifndef _WIN32
-  #warning "Need to add a (optional) number that the requestor must provide in the URL in order to be served anything - this should probably be the externalid argument"
-#endif
     changeToBaseDir( argc, argv );
     const string xml_config_path = getWtConfigXml( argc, argv );
     

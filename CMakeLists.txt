@@ -132,7 +132,7 @@ option(
 option(
     USE_SEARCH_MODE_3D_CHART
     "Enable 3D chart or searchmode/passthrough data.  Requires Wt >=3.3.4 compiled with WebGL/OpenGL support"
-    OFF
+    ON
 )
 option(USE_TERMINAL_WIDGET "Enables use of terminal widget" OFF)
 set(SpecUtils_ENABLE_D3_CHART ON
@@ -235,7 +235,6 @@ if(ANDROID)
     set(USE_TERMINAL_WIDGET OFF)
     set(SpecUtils_ENABLE_D3_CHART OFF)
     set(USE_SPECTRUM_CHART_D3 OFF)
-    set(USE_SEARCH_MODE_3D_CHART ON)
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
     set(SHARED_LIBS OFF)
     add_definitions(-DANDROID -DWT_NO_STD_WSTRING=ON -DWT_NO_STD_LOCALE=ON)
@@ -349,7 +348,6 @@ if(BUILD_AS_OSX_APP)
     set(USE_TERMINAL_WIDGET OFF)
     set(SpecUtils_ENABLE_D3_CHART ON)
     set(USE_SPECTRUM_CHART_D3 ON)
-    set(USE_SEARCH_MODE_3D_CHART ON)
 endif(BUILD_AS_OSX_APP)
 
 if(BUILD_AS_ELECTRON_APP)
@@ -369,7 +367,6 @@ if(BUILD_AS_ELECTRON_APP)
     set(USE_TERMINAL_WIDGET OFF)
     set(SpecUtils_ENABLE_D3_CHART ON)
     set(USE_SPECTRUM_CHART_D3 ON)
-    set(USE_SEARCH_MODE_3D_CHART ON)
     if( (NOT USE_ELECTRON_NATIVE_MENU AND NOT USE_ELECTRON_HTML_MENU) OR (USE_ELECTRON_NATIVE_MENU AND USE_ELECTRON_HTML_MENU) )
         if(APPLE)
             set(USE_ELECTRON_NATIVE_MENU ON)
