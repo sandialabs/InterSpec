@@ -56,11 +56,13 @@ const char *iconUrl( const WarningWidget::WarningMsgLevel level )
 {
   switch( level )
   {
-    case WarningWidget::WarningMsgLevel::WarningMsgInfo:   return "InterSpec_resources/images/information.png";
-    case WarningWidget::WarningMsgLevel::WarningMsgLow:    return "InterSpec_resources/images/bullet_error.png";
-    case WarningWidget::WarningMsgLevel::WarningMsgMedium: return "InterSpec_resources/images/error.png";
-    case WarningWidget::WarningMsgLevel::WarningMsgHigh:   return "InterSpec_resources/images/exclamation.png";
-    case WarningWidget::WarningMsgLevel::WarningMsgSave:   return "InterSpec_resources/images/disk.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgInfo:     return "InterSpec_resources/images/information.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgLow:      return "InterSpec_resources/images/bullet_error.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgMedium:   return "InterSpec_resources/images/error.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgHigh:     return "InterSpec_resources/images/exclamation.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgSave:     return "InterSpec_resources/images/disk.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgShowRiid: return "InterSpec_resources/images/search_results.svg";
+    case WarningWidget::WarningMsgLevel::NumWarningMsgType:  return "";
   }//switch( WarningMsgLevel(level) )
   
   return "";
@@ -81,6 +83,10 @@ const char *WarningWidget::tostr( const WarningMsgLevel level )
       return "BlockNotificationHigh";
     case WarningWidget::WarningMsgSave:
       return "BlockNotificationSave";
+    case WarningMsgLevel::WarningMsgShowRiid:
+      return "BlockNotificationRiid";
+    case WarningMsgLevel::NumWarningMsgType:
+      return "";
   }//switch( i )
   
   throw runtime_error( "WarningWidget::tostr(...): invalid level" );
@@ -102,6 +108,10 @@ const char *WarningWidget::popupToStr( const WarningMsgLevel level )
       return "PopupBlockNotificationHigh";
     case WarningWidget::WarningMsgSave:
       return "PopupBlockNotificationSave";
+    case WarningWidget::WarningMsgShowRiid:
+      return "PopupBlockNotificationRiid";
+    case WarningWidget::NumWarningMsgType:
+      return "PopupBlockNotificationNumTypes";
   }//switch( i )
   
   throw runtime_error( "WarningWidget::tostr(...): invalid level" );
@@ -123,6 +133,10 @@ const char *WarningWidget::description( const WarningMsgLevel level )
       return "high";
     case WarningWidget::WarningMsgSave:
       return "save";
+    case WarningWidget::WarningMsgShowRiid:
+      return "RIID";
+    case WarningWidget::NumWarningMsgType:
+      return "";
   }//switch( i )
   
   throw runtime_error( "WarningWidget::description(...): invalid level" );
@@ -144,17 +158,19 @@ WarningWidget::WarningWidget( InterSpec *hostViewer,
   m_messageModel = new WStandardItemModel(1,4,this);
   
   // Find which messages should be active.
-  for( WarningMsgLevel i = WarningMsgLevel(0);
-      i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
+  for( WarningMsgLevel i = WarningMsgLevel(0); i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
     m_active[i] = !m_hostViewer->m_user->preferenceValue<bool>( tostr(i) );
   
-  for( WarningMsgLevel i = WarningMsgLevel(0);
-      i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
+  for( WarningMsgLevel i = WarningMsgLevel(0); i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
     m_popupActive[i] = !InterSpecUser::preferenceValue<bool>( WarningWidget::popupToStr(i), m_hostViewer );
   
   //Force WarningMsgSave to always be true
   m_active[WarningMsgSave] = true;
   m_popupActive[WarningMsgSave] = true;
+  
+  //Force ShowRiid to always be true
+  m_active[WarningMsgShowRiid] = true;
+  m_popupActive[WarningMsgShowRiid] = true;
   
   // Hook it up to the message handler in InterSpec
   hostViewer->messageLogged().connect( this, &WarningWidget::addMessage );
@@ -319,6 +335,8 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
   if( num_millies <= 0 )
     num_millies = 5000;
   
+  WStringStream strm;
+  
   //We need the properly escaped string (e.g., not single quotes or unintended backslases), so we
   //  will use WString::jsStringLiteral(). Note that this will also place a single quote around the
   //  string.
@@ -351,10 +369,19 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
       header = "Save";
       style = "qtip-green";
     break;
+      
+    case WarningMsgShowRiid:
+      header = "RIID Results";
+      style = "qtip-blue qtip-riid";
+      // remove all the other "show riid" results
+      strm << "$('.qtip.qtip-riid').remove();";
+      break;
+    
+    case NumWarningMsgType:
+      throw std::runtime_error( "Invalid warning message requested" );
   }//switch( level )
   
   //Create popup notifications
-  WStringStream strm;
   strm << "var target = $('.qtip.jgrowl:visible:last'); $(document.body).qtip({ \
       content: { \
         title:  '<img style=\"vertical-align: middle;\" src=\\'" << string(iconUrl(level)) << "\\'/>&nbsp;&nbsp;" << header << "', \

@@ -9103,7 +9103,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
            "class=\"clearsession\">"
          "<span class=\"clearsessiontxt\">Show full RIID results</span></div>";
       
-      WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo, 30000 );
+      WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgShowRiid, 20000 );
       
       
     }//if( nusedfor == 1 )
@@ -9153,6 +9153,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   //Display a notice to the user about how they can select different portions of
   //  passthrough/search-mode data
+  /*
   if( spec_type==SpecUtils::SpectrumType::Foreground && !!m_dataMeasurement
       && m_dataMeasurement->passthrough() )
   {
@@ -9173,6 +9174,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       passMessage( tip, "", WarningWidget::WarningMsgInfo );
     }//if( showToolTips )
   }//if( passthrough foreground )
+   */
 }//void setSpectrum(...)
 
 
@@ -9228,46 +9230,30 @@ void InterSpec::finishLoadUserFilesystemOpenedFile(
 void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
                                              std::shared_ptr<SpectraFileHeader> header )
 {
-  //Dialog layout only tested on phone.
-  AuxWindow *dialog = new AuxWindow( header->displayName().toUTF8(),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
-  dialog->disableCollapse();
-  
-  WGridLayout *layout = dialog->stretcher();
   const char *msg =
-  "This file looks like its from the same "
-  "detector as the current foreground."
-  "<br />How would you like to open this spectrum file?";
-  WText *text = new WText( msg );
-  text->setAttributeValue( "style", "text-align: center;" );
-  layout->addWidget( text, 0, 0, AlignMiddle );
+  "This file looks like it's from the same detector as the current foreground."
+  "<p>How would you like to open this spectrum file?</p>";
   
-  WContainerWidget *buttonDiv = new WContainerWidget();
-  layout->addWidget( buttonDiv, 1, 0, AlignMiddle );
+  string filename = header->displayName().toUTF8();
+  if( filename.size() > 48 )
+  {
+    SpecUtils::utf8_limit_str_size( filename, 48 );
+    filename += "...";
+  }
   
-  WGridLayout *buttonlayout = new WGridLayout();
-  buttonDiv->setLayout( buttonlayout );
-  
-  WPushButton *button = new WPushButton( "Foreground" );
-  button->clicked().connect( dialog, &AuxWindow::hide );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, SpecUtils::SpectrumType::Foreground ) );
-  buttonlayout->addWidget( button, 0, 0, AlignMiddle );
+  SimpleDialog *dialog = new SimpleDialog( WString::fromUTF8(filename), WString::fromUTF8(msg) );
+  WPushButton *button = dialog->addButton( WString::fromUTF8("Foreground") );
+  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this,
+                                          meas, header, SpecUtils::SpectrumType::Foreground ) );
   button->setFocus( true );
   
-  button = new WPushButton( "Background" );
-  button->clicked().connect( dialog, &AuxWindow::hide );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, SpecUtils::SpectrumType::Background ) );
-  buttonlayout->addWidget( button, 0, 1, AlignMiddle );
+  button = dialog->addButton( WString::fromUTF8("Background") );
+  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this,
+                                          meas, header, SpecUtils::SpectrumType::Background ) );
   
-  button = new WPushButton( "Secondary" );
-  button->clicked().connect( dialog, &AuxWindow::hide );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, SpecUtils::SpectrumType::SecondForeground ) );
-  buttonlayout->addWidget( button, 0, 2, AlignMiddle );
-  
-  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-  
-  dialog->show();
-  dialog->centerWindow();
+  button = dialog->addButton( WString::fromUTF8("Secondary") );
+  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this,
+                                         meas, header, SpecUtils::SpectrumType::SecondForeground ) );
 }//void promptUserHowToOpenFile(...)
 
 
@@ -10702,8 +10688,15 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
     }//if( m_timeSeries->isHidden() )
     
     const vector<string> &det_names = m_dataMeasurement->detector_names();
-    if( det_names.size() != det_to_use.size() )
-      throw runtime_error( "Inconsistent number of detectors." );
+    for( const string &name : det_to_use )
+    {
+      const auto iter = std::find( std::begin(det_names), std::end(det_names), name );
+      if( iter == std::end(det_names) )
+        throw runtime_error( "Detector '" + name + "' asked for by the GUI wasnt found in the"
+                             " foreground spectrum file - application state is suspect; if you can"
+                            " reproduce this error, please contact InterSpec@sandia.gov to fix.");
+    }//for( const string &name : det_to_use )
+    
 
     vector<float> channel_energies( binning.size() );
     
