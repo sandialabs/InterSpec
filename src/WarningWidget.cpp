@@ -155,7 +155,7 @@ WarningWidget::WarningWidget( InterSpec *hostViewer,
   m_description(NULL)
 {
   setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
-  m_messageModel = new WStandardItemModel(1,4,this);
+  m_messageModel = new WStandardItemModel( 1, 4, this );
   
   // Find which messages should be active.
   for( WarningMsgLevel i = WarningMsgLevel(0); i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
@@ -435,7 +435,7 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
 
 void WarningWidget::addMessage( Wt::WString msg, Wt::WString src, int ilevel )
 {
-  if( ilevel < 0 || ilevel > WarningMsgSave )
+  if( ilevel < 0 || ilevel >= WarningMsgLevel::NumWarningMsgType )
     ilevel = WarningMsgHigh;
 
   const WarningMsgLevel level = WarningMsgLevel(ilevel);
@@ -444,7 +444,7 @@ void WarningWidget::addMessage( Wt::WString msg, Wt::WString src, int ilevel )
   if( !Wt::Utils::removeScript(msg) )
     msg = Wt::Utils::htmlEncode( msg, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
   
-  if( m_active[ level ] )
+  if( m_active[level] )
   {
     m_totalMessages++; //only count if logging
     
