@@ -32,6 +32,19 @@
 
 #include "InterSpec/AuxWindow.h"
 
+/** TODO:
+ - Every update seems to trigger a layout resize that causes the chart to grow.
+ - Could allow entering a scale factor for spectrum; this is like you have a 5 minute background, but are interested in a 60s dwell
+ - The ikelihiood based estimate does not seem to be relieabel yet
+ - Add in checkbox to allow accounting for attenuation in the air (or just always do this)
+ - Add in allowing to calculate the maximum detection distance
+ - Add a drop-box to allow selecting confidence for limit (e.g., 80%, 90%, 95%, 99%, etc)
+ - Allow asserting you know there isnt a peak in the spectrum, and affix the peak continuums to the observed spectrum
+ - Allow adjusting the simple MDA side-widths
+ - Check numerical accuracies of calculations
+ */
+
+
 class PeakDef;
 class PeakModel;
 class InterSpec;
