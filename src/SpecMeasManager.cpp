@@ -1731,19 +1731,7 @@ void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
                                     const bool doPreviousEnergyRangeCheck )
 {
   std::shared_ptr<SpectraFileHeader> header = selectedFile();
-
-  if( !header )
-    return;
-
-  std::shared_ptr<SpecMeas> meas = header->parseFile();
-
-  if( !meas )
-  {
-    cerr << "SpecMeasManager::loadSelected(...)\n\tSerious error, couldnt parse file" << endl;
-    passMessage( "Couldn't parse file!", "", 3 );
-    return;
-  }//if( !meas )
-
+  std::shared_ptr<SpecMeas> meas = header ? header->parseFile() : nullptr;
   const set<int> displaySampleNums = selectedSampleNumbers();
 
   m_viewer->setSpectrum( meas, displaySampleNums, type, doPreviousEnergyRangeCheck );
@@ -2063,11 +2051,10 @@ void SpecMeasManager::displayFile( int row,
   std::shared_ptr<SpectraFileHeader> header;
   header = m_fileModel->fileHeader( row );
 
-  if( !header
-      || (header->measurementIfInMemory() != measement_ptr) )
+  if( !header || (header->measurementIfInMemory() != measement_ptr) )
   {
     const char *msg = "SpecMeasManager::displayFile(...): you must "
-                      "pass in the SpectraFileModel row cooresponding to the "
+                      "pass in the SpectraFileModel row corresponding to the "
                       "MeasurmentInfo object you pass in";
     cerr << msg << endl;
     throw std::runtime_error( msg );
@@ -2310,13 +2297,31 @@ void SpecMeasManager::displayFile( int row,
   if( ncandiadate_samples != selected.size() )
     selected.erase( index );
   
+  if( measement_ptr
+     && (type == SpecUtils::SpectrumType::Foreground
+         || type ==SpecUtils::SpectrumType::SecondForeground)
+     && selected.empty() )
+  {
+    // I think this can happen if its passthrough/search data that are all marked background
+    //  We'll just find the first spectrum.
+    const int nspectra_header = static_cast<int>( header->m_samples.size() );
+    for( int sample = 0; selected.empty() && (sample < nspectra_header); ++sample )
+    {
+      const SpectraHeader &spectra = header->m_samples[sample];
+      
+      //Note: we actually are just taking the first sample with non-zero gamma counts, which may
+      //      not be a spectrum.  WE could improve this...
+      if( spectra.gamma_counts_ > FLT_EPSILON )
+        selected.insert( index.child(sample,0) );
+    }//for( loop over to find a spectrum, any spectrum )
+    
+    background_sample_numbers.clear();
+  }//if( selected.empty() )
+  
   m_treeView->setSelectedIndexes( selected );
 
   if( warningmsg.str().size() )
-  {
     passMessage( warningmsg.str(), "SpecMeasManager", warningmsgLevel );
-  }
-  
   
   loadSelected( type, doPreviousEnergyRangeCheck );
 
