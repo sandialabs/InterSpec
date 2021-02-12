@@ -862,10 +862,10 @@ void FluxToolWidget::refreshPeakTable()
   
   m_msg->setText( "" );
   
-  float distance = static_cast<float>( 1.0*PhysicalUnits::meter );
+  double distance = 1.0*PhysicalUnits::meter;
   try
   {
-    distance = static_cast<float>( PhysicalUnits::stringToDistance( m_distance->text().toUTF8() ) );
+    distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
   }catch(...)
   {
     m_msg->setText( "Invalid Distance" );

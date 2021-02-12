@@ -245,7 +245,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
   if( expectedAbund == 0.0 )
     throw runtime_error( "fractionDetectedWeight(...): Peak with no candiates" );
   
-  const double det_sf = (!!response ? response->efficiency( mean, distance ) : 1.0f);
+  const double det_sf = (!!response ? response->efficiency( mean, distance ) : 1.0);
   const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, mean );
   const double shielding_sf = exp( -shielding_ad * xs );
   const double sf = test_peak->peakArea() / shielding_sf / det_sf /expectedAbund;
@@ -264,7 +264,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
     
     const double energy = source_gammas[i].energy;
     const double exp_resolution = (hasResolutionResponse ? response->peakResolutionSigma( energy ) : float((highE-lowE)/3.0) );
-    const double det_eff = (!!response ? response->efficiency( energy, distance ) : 1.0f);
+    const double det_eff = (!!response ? response->efficiency( energy, distance ) : 1.0);
     const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, energy );
     const double transmition = exp( -shielding_ad * xs );
     
