@@ -8561,63 +8561,23 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   vector< boost::function<void(void)> > furtherworkers;
   
-  bool wasModified = false, wasModifiedSinceDecode = false;
+  const bool wasModified = (meas ? meas->modified() : false);
+  const bool wasModifiedSinceDecode = (meas ? meas->modified_since_decode() : false);
   
-  if( !!meas )
+  if( m_useInfoWindow && meas )
   {
-    wasModified = meas->modified();
-    wasModifiedSinceDecode = meas->modified_since_decode();
-    
-    if( m_useInfoWindow )
-    {
-      // If we are loading a state from the "Welcome To InterSpec" screen, we dont want to delete
-      //  m_useInfoWindow because we will still use it, so instead we'll try deleting the window on
-      //  the next go around of the event loop.
-      auto doDelete = wApp->bind( std::bind([this](){
-        WApplication *app = wApp;
-        if( !app )
-          return;
-        deleteWelcomeCountDialog();
-        app->triggerUpdate();
-      }) );
+    // If we are loading a state from the "Welcome To InterSpec" screen, we dont want to delete
+    //  m_useInfoWindow because we will still use it, so instead we'll try deleting the window on
+    //  the next go around of the event loop.
+    auto doDelete = wApp->bind( std::bind([this](){
+      WApplication *app = wApp;
+      if( !app )
+        return;
+      deleteWelcomeCountDialog();
+      app->triggerUpdate();
+    }) );
       
-      WServer::instance()->post( wApp->sessionId(), doDelete );
-    }//if( m_useInfoWindow )
-    
-/*
-    const std::vector<std::string> &names = meas->detector_names();
-    std::vector< std::shared_ptr<const SpecUtils::Measurement> > meass = meas->measurements();
-    
-    vector<ofstream> outfiles( names.size() );
-    for( size_t i = 0; i < names.size(); ++i )
-      outfiles[i].open( ("/Users/wcjohns/Downloads/det_" + names[i] + ".txt").c_str() );
-    vector<float> max_energies( names.size(), 0.0f );
-    
-    for( size_t i = 0; i < meass.size(); ++i )
-    {
-      const size_t nchannel = meass[i]->num_gamma_channels();
-      if( !meass[i]->gamma_channel_contents() || nchannel < 10)
-        continue;
-      
-      const size_t index = std::find( names.begin(), names.end(), meass[i]->detector_name() ) - names.begin();
-      for( size_t j = 0; j < meass[i]->gamma_channel_contents()->size(); ++j )
-        outfiles[index] << meass[i]->gamma_channel_contents()->at(j) << " ";
-      outfiles[index] << endl;
-      max_energies[index] = max( max_energies[index], meass[i]->gamma_channel_upper(nchannel-1));
-    }
-*/
-    
-/*
-    std::shared_ptr<SpecUtils::Measurement> sumspec = meas->sum_measurements( meas->sample_numbers(), vector<bool>(meas->detector_numbers().size(),true) );
-    const std::shared_ptr< const std::vector<float> > &counts = sumspec->gamma_channel_contents();
-    
-    ofstream output( ("/Users/wcjohns/sum_" + meas->filename() + ".txt").c_str() );
-    output << "LiveTime: " << sumspec->live_time() << endl;
-    output << "RealTime: " << sumspec->real_time() << endl;
-    for( size_t i = 0; i < counts->size(); ++i )
-      output << (*counts)[i] << " ";
-    output << endl;
-*/
+    WServer::instance()->post( wApp->sessionId(), doDelete );
   }//if( meas )
   
   std::shared_ptr<SpecMeas> previous = measurment(spec_type);
