@@ -1519,22 +1519,22 @@ float DetectorPeakResponse::fractionalSolidAngle( const float detDiam,
     diameters are somewhat comparible to distance of source from detector
     An unverified implementation of that is:
   */
-  const float alpha = pow(source_rad/D,2.0f);
-  const float beta = pow(0.5f*detDiam/D,2.0f);
-  const float F1 = ((5.0f/16.0f)*beta/pow(1.0f+beta,3.5f)) - ((35.0f/64.0f)*beta*beta/pow(1.0f+beta,4.5f));
-  const float F2 = ((35.0f/128.0f)*beta/pow(1.0f+beta,4.5f)) - ((315.0/256.0)*beta*beta/pow(1.0f+beta,11.0f/12.0f)) + ((1155.0f/1024.0f)*beta*beta*beta/pow(1.0f+beta,6.5f));
+  const double alpha = pow(static_cast<double>(source_rad)/D,2.0);
+  const double beta = pow(0.5*detDiam/D,2.0);
+  const double F1 = ((5.0/16.0)*beta/pow(1.0+beta,3.5)) - ((35.0/64.0)*beta*beta/pow(1.0+beta,4.5));
+  const double F2 = ((35.0/128.0)*beta/pow(1.0+beta,4.5)) - ((315.0/256.0)*beta*beta/pow(1.0+beta,11.0/12.0)) + ((1155.0/1024.0)*beta*beta*beta/pow(1.0+beta,6.5));
 
-  const float omega = 0.5f * ( 1.0f - (1.0f/sqrt(1.0f+beta)) - ((3.0f/8.0f)*alpha*beta/pow(1.0f+beta,2.5f)) + alpha*alpha*F1 - alpha*alpha*alpha*F2 );
+  const double omega = 0.5 * ( 1.0 - (1.0/sqrt(1.0+beta)) - ((3.0/8.0)*alpha*beta/pow(1.0+beta,2.5)) + alpha*alpha*F1 - alpha*alpha*alpha*F2 );
 
-  return omega;
+  return static_cast<float>( omega );
 }//float DetectorPeakResponse::fractionalSolidAngle(...)
 
 
-float DetectorPeakResponse::fractionalSolidAngle( const float detDiam,
-                                                  const float D )
+float DetectorPeakResponse::fractionalSolidAngle( const float detDiam, const float D )
 {
-  const float r = 0.5f * detDiam;
-  return 0.5f*(1.0f - (D/sqrt(D*D+r*r)));
+  const double r = 0.5 * detDiam;
+  const double eff = 0.5*(1.0 - (D/sqrt(D*D+r*r)));
+  return static_cast<float>( eff );
 }//float fractionalSolidAngle(...)
 
 
