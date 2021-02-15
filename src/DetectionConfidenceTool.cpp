@@ -82,6 +82,7 @@
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -156,6 +157,21 @@ public:
     cout << "mda(" << m_energy << ") = " << mdastr << endl;
     
     m_poisonLimit->setText( "Simple MDA=" + mdastr );
+    
+    /*
+    boost::uintmax_t max_iter = 1000;
+    const double mda = m_simpleMda;
+    const double givenActivity_ci = 10; //10 Ci
+    const double origdist = 1.0;
+    auto distMinForActivity = [mda,givenActivity_ci,origdist]( double const &x ) -> double {
+      return fabs( ((1.0/(x*x)) * exp(-0.0094276*x)) - (mda/PhysicalUnits::curie)/givenActivity_ci/origdist );
+    };
+      
+    const pair<double, double> r = boost::math::tools::brent_find_minima( distMinForActivity, 1.0, 100000.0, 10, max_iter );
+    
+    cout << "For energy(" << m_energy << "), detection " << givenActivity_ci << " Ci, dist=" << r.first
+         << "m with error " << r.second << endl;
+     */
   }//void setSimplePoisonTxt()
   
   void emitChanged()
@@ -337,7 +353,7 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   m_chart->setCompactAxis( true );
   m_chart->setXAxisTitle( "Energy (keV)" );
   m_chart->setYAxisTitle( "Counts/Channel" );
-  m_chart->enableLegend( false );
+  m_chart->disableLegend();
   m_chart->showHistogramIntegralsInLegend( true );
   
   auto theme = m_interspec->getColorTheme();

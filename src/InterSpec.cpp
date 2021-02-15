@@ -7535,7 +7535,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
 
   item = popup->addMenuItem( "Detection Confidence Tool" );
-  HelpSystem::attachToolTipOn( item, "Provides an upper activity estimate for nuclides" , showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Provides an upper activity estimate for nuclides" , showToolTips );
   item->triggered().connect( this, &InterSpec::createDetectionConfidenceTool );
   
   item = popup->addMenuItem( "Detector Response Select" );
@@ -8812,7 +8812,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       m_backgroundMeasurement = nullptr;
-      m_spectrum->setBackground( nullptr, -1.0, -1.0, -1.0 );
+      m_spectrum->setBackground( nullptr );
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background, nullptr, {}, {} );
     }//if( nSecondBins )
   }//if( spec_type == SpecUtils::SpectrumType::Foreground )

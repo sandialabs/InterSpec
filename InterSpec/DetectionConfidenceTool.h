@@ -35,9 +35,10 @@
 /** TODO:
  - Every update seems to trigger a layout resize that causes the chart to grow.
  - Could allow entering a scale factor for spectrum; this is like you have a 5 minute background, but are interested in a 60s dwell
- - The ikelihiood based estimate does not seem to be relieabel yet
+ - The likelihood based estimate does not seem to be reliable yet
  - Add in checkbox to allow accounting for attenuation in the air (or just always do this)
- - Add in allowing to calculate the maximum detection distance
+ - Add in option to scale time period results are for.  Like if the spectrum is a five-minute spectrum, but you want a 1 second detection limit.
+ - Add in allowing to calculate the maximum detection distance; not sure if this should be individual peaks, or all peaks; maybe a toggle for the whole screen
  - Add a drop-box to allow selecting confidence for limit (e.g., 80%, 90%, 95%, 99%, etc)
  - Allow asserting you know there isnt a peak in the spectrum, and affix the peak continuums to the observed spectrum
  - Allow adjusting the simple MDA side-widths
