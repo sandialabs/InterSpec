@@ -1,0 +1,42 @@
+.SnapshotBrowser
+{
+  
+}
+
+
+.SnapshotTable
+{
+  padding: 2px;
+}
+
+.SnapshotTime
+{
+  border-top: solid 1px #e1e1e1; 
+}
+
+.SnapshotDesc
+{
+  
+}
+
+.DelSnapshotBtn
+{
+  float: right;
+  background: none;
+  display: none;
+  cursor: pointer;
+  opacity: 0.4;
+  margin-top: 1px;
+  margin-left: 1px;
+  margin-right: 2px
+}
+
+.DelSnapshotBtn:hover
+{
+  opacity: 1;
+}
+
+.Wt-selected .DelSnapshotBtn
+{
+  display: inline;
+}

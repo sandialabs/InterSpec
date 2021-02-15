@@ -35,6 +35,7 @@
 #include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WTable>
+#include <Wt/WServer>
 #include <Wt/WLineEdit>
 #include <Wt/WTextArea>
 #include <Wt/WComboBox>
@@ -58,9 +59,9 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecFileSummary.h"
+#include "InterSpec/ShowRiidInstrumentsAna.h"
 
 #if( USE_GOOGLE_MAP )
-#include <Wt/WGoogleMap>
 #include "InterSpec/GoogleMap.h"
 #endif
 
@@ -162,218 +163,6 @@ namespace
 }//namespace
 
 
-//Class to display a DetectorAnalysis; just a first go at it
-//  Some sort of model and table, or something might be a better implem
-class AnaResultDisplay : public WContainerWidget
-{
-  
-  
-  WText *m_summary;
-  std::shared_ptr<const SpecMeas> m_meas;
-  
-  WTable *m_table;
-  bool m_modifiable;
-  
-  enum AnaResultEditableFields
-  {
-    AlgorithmName,
-    AlgorithmVersion,
-    AlgorithmCreator,
-    AlgorithmDescription,
-    AlgorithmResultDescription,
-    AlgortihmRemarks
-  };//enum AnaResultEditableFields
-  
-  WLineEdit *m_algorithm_name;
-  WLineEdit *m_algorithm_version;
-  WLineEdit *m_algorithm_creator;
-  WLineEdit *m_algorithm_description;
-  WLineEdit *m_algorithm_result_description;
-  WTextArea *m_algorithm_remarks;
-  
-  void handleFieldUpdate( AnaResultEditableFields field )
-  {
-    switch( field )
-    {
-      case AlgorithmName:
-      case AlgorithmVersion:
-      case AlgorithmCreator:
-      case AlgorithmDescription:
-      case AlgorithmResultDescription:
-      case AlgortihmRemarks:
-        break;
-    }//switch( field )
-    
-    passMessage( "Editing Analysis Results Not implemented - sorry", "", WarningWidget::WarningMsgInfo );
-  }//void handleFieldUpdate( AnaResultEditableFields field )
-  
-  template <class T>
-  void addField( T *&edit, WTable *table, const WString &labelstr,
-                int row, int col, int rowspan = 1, int colspan = 1 )
-  {
-    WLabel *label = new WLabel(labelstr);
-    label->setStyleClass("SpectrumFileSummaryLabel");
-    WTableCell *cell = table->elementAt(row, col);
-    cell->setRowSpan( rowspan );
-    cell->addWidget( label );
-    edit = new T();
-    cell = table->elementAt(row, col+1);
-    cell->setRowSpan( rowspan );
-    cell->setColumnSpan( colspan );
-    cell->addWidget( edit );
-    label->setBuddy( edit );
-    edit->disable();
-  }//WLineEdit *addField(...)
-
-  void addField( WText *&edit, WTable *table, const WString &labelstr,
-                int row, int col, int rowspan = 1, int colspan = 1 )
-  {
-    WLabel *label = new WLabel(labelstr);
-    label->setStyleClass("SpectrumFileSummaryLabel");
-    WTableCell *cell = table->elementAt(row, col);
-    cell->setRowSpan( rowspan );
-    cell->addWidget( label );
-    
-    cell = table->elementAt(row, col+1);
-    cell->setRowSpan( rowspan );
-    cell->setColumnSpan( colspan );
-    edit = new WText();
-    cell->addWidget( edit );
-    edit->disable();
-  }
-  
-public:
-  AnaResultDisplay( WContainerWidget *parent = 0 )
-  : WContainerWidget( parent ), m_summary( NULL ), m_table( NULL ),
-    m_modifiable( false )
-  {
-    m_table = new WTable( this );
-    
-    addField( m_algorithm_name, m_table, "Algo Name", AlgorithmName, 0 );
-    addField( m_algorithm_version, m_table, "Algo Version", AlgorithmVersion, 0 );
-    addField( m_algorithm_creator, m_table, "Algo Creator", AlgorithmCreator, 0 );
-    addField( m_algorithm_description, m_table, "Algo Desc.", AlgorithmDescription, 0 );
-    addField( m_algorithm_result_description, m_table, "Result Desc", AlgorithmResultDescription, 0 );
-    addField( m_algorithm_remarks, m_table, "Remarks", AlgortihmRemarks, 0 );
-    
-    m_algorithm_name->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmName) );
-    m_algorithm_version->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this,AlgorithmVersion ) );
-    m_algorithm_creator->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmCreator ) );
-    m_algorithm_description->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmDescription ) );
-    m_algorithm_result_description->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmResultDescription ) );
-    m_algorithm_remarks->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgortihmRemarks ) );
-  }//constructor
-  
-  void updateDisplay( std::shared_ptr<const SpecMeas> meas )
-  {
-    m_meas = meas;
-    std::shared_ptr<const SpecUtils::DetectorAnalysis> ana;
-    if( meas )
-      ana = meas->detectors_analysis();
-    
-    if( m_summary )
-      delete m_summary;
-    m_summary = NULL;
-    
-    if( !ana )
-    {
-      m_algorithm_name->setText( "" );
-      m_algorithm_version->setText( "" );
-      m_algorithm_creator->setText( "" );
-      m_algorithm_description->setText( "" );
-      m_algorithm_result_description->setText( "" );
-      m_algorithm_remarks->setText( "" );
-      return;
-    }
-  
-    m_algorithm_name->setText( ana->algorithm_name_ );
-    m_table->rowAt(AlgorithmName)->setHidden( m_algorithm_name->text().empty() );
-    
-    string algovrsn;
-    for( const auto &nv : ana->algorithm_component_versions_ )
-      algovrsn += (algovrsn.empty() ? "" : ", ") + nv.first + ": " + nv.second;
-    
-    m_algorithm_version->setText( algovrsn );
-    m_table->rowAt(AlgorithmVersion)->setHidden( algovrsn.empty() );
-    
-    m_algorithm_creator->setText( ana->algorithm_creator_ );
-    m_table->rowAt(AlgorithmCreator)->setHidden( m_algorithm_creator->text().empty() );
-    
-    m_algorithm_description->setText( ana->algorithm_description_ );
-    m_table->rowAt(AlgorithmDescription)->setHidden( m_algorithm_description->text().empty() );
-    
-    m_algorithm_result_description->setText( ana->algorithm_result_description_ );
-    m_table->rowAt(AlgorithmResultDescription)->setHidden( m_algorithm_result_description->text().empty() );
-    
-    string remarktxt;
-    for( const string &r : ana->remarks_ )
-      remarktxt += (remarktxt.size() ? "\n" : "") + r;
-    
-    m_algorithm_remarks->setText( remarktxt );
-    m_table->rowAt(AlgortihmRemarks)->setHidden( m_algorithm_remarks->text().empty() );
-    
-    //Now Display the Nuclide results - hacking for now - should make dedicated
-    //  widget
-    string anastr;
-    
-    for( const SpecUtils::DetectorAnalysisResult &res : ana->results_ )
-    {
-      string result;
-      if( res.nuclide_.size() )
-        result = "<tr><td>Identified</td><td>" + res.nuclide_ + "</td></tr>";
-      if( res.nuclide_type_.size() )
-        result += "<tr><td>Category</td><td>" + res.nuclide_type_ + "</td></tr>";
-      if( res.id_confidence_.size() )
-        result += "<tr><td>Confidence</td><td>" + res.id_confidence_ + "</td></tr>";
-      if( res.detector_.size() )
-        result += "<tr><td>Detector</td><td>" + res.detector_ + "</td></tr>";
-      
-      if( res.dose_rate_ > 0.0 )
-        result += "<tr><td>Dose</td><td>"
-                  + PhysicalUnits::printToBestEquivalentDoseRateUnits( 1.0E-6 * res.dose_rate_*PhysicalUnits::sievert/PhysicalUnits::hour ) + "</td></tr>";
-      if( res.distance_ > 0.0 )
-        result += "<tr><td>Distance</td><td>" + PhysicalUnits::printToBestLengthUnits(0.1*res.distance_) + "</td></tr>";
-      if( res.activity_ > 0.0 )
-        result += "<tr><td>Activity</td><td>" + PhysicalUnits::printToBestActivityUnits( res.activity_, 2, true, 1.0 ) + "</td></tr>";
-      if( res.remark_.size() > 0 )
-        result += "<tr><td>Remark</td><td>" + res.remark_ + "</td></tr>";
-      
-      //  float real_time_;           //in units of seconds (eg: 1.0 = 1 s)
-      //  boost::posix_time::ptime start_time_;
-      
-      if( !result.empty() )
-        anastr += "<table>" + result + "</table>";
-    }
-    
-    if( anastr.size() > 2 )
-    {
-      m_summary = new WText( anastr );
-      m_summary->setInline( false );
-      this->addWidget( m_summary );
-    }
-  }//void updateDisplay( std::shared_ptr<const SpecMeas> meas )
-  
-  void allowModifiable( bool allow )
-  {
-    //unimplemented
-    m_modifiable = allow;
-    
-    m_algorithm_name->setEnabled( allow );
-    m_algorithm_version->setEnabled( allow );
-    m_algorithm_creator->setEnabled( allow );
-    m_algorithm_description->setEnabled( allow );
-    m_algorithm_result_description->setEnabled( allow );
-    m_algorithm_remarks->setEnabled( allow );
-    
-    m_table->rowAt(AlgorithmName)->setHidden( !allow && m_algorithm_name->text().empty() );
-    m_table->rowAt(AlgorithmVersion)->setHidden( !allow && m_algorithm_version->text().empty() );
-    m_table->rowAt(AlgorithmCreator)->setHidden( !allow && m_algorithm_creator->text().empty() );
-    m_table->rowAt(AlgorithmDescription)->setHidden( !allow && m_algorithm_description->text().empty() );
-    m_table->rowAt(AlgorithmResultDescription)->setHidden( !allow && m_algorithm_result_description->text().empty() );
-  }//void allowModifiable( bool allow )
-  
-};//class AnaResultDisplay
-
 SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
   : AuxWindow( "File Parameters" ),
     m_specViewer( specViewer ),
@@ -413,7 +202,6 @@ SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
     m_laneNumber( NULL ),
     m_measurement_location_name( NULL ),
     m_ana_button( NULL ),
-    m_ana_results( NULL ),
     m_inspection( NULL ),
     m_instrument_type( NULL ),
     m_manufacturer( NULL ),
@@ -516,13 +304,11 @@ void SpecFileSummary::init()
   addField( m_laneNumber, fileInfoLayout, "Lane:", 1, 2 );
   addField( m_measurement_location_name, fileInfoLayout, "Location:", 1, 4, 1, 1 );
   
-  m_ana_button = new WPushButton( "RIID Analysis" );
+  m_ana_button = new WPushButton( "No RIID Analysis" );
+  m_ana_button->disable();
+  m_ana_button->clicked().connect( this, &SpecFileSummary::showRiidAnalysis );
   fileInfoLayout->addWidget( m_ana_button, 1, 6, 1, 2, AlignLeft );
-  PopupDivMenu *popup = new PopupDivMenu( m_ana_button, PopupDivMenu::TransientMenu );
-  
-  m_ana_results = new AnaResultDisplay();
-  popup->addWidget( m_ana_results );
-  
+    
   addField( m_instrument_type, fileInfoLayout, "Instru. Type:", 2, 0 );
   addField( m_manufacturer, fileInfoLayout, "Manufacturer:", 2, 2 );
   addField( m_instrument_model, fileInfoLayout, "Model:", 2, 4, 1, 3 );
@@ -553,7 +339,7 @@ void SpecFileSummary::init()
   fileInfoLayout->setColumnStretch( 7, 1 );
 
   
-  WGroupBox *measdiv = new WGroupBox( "Measurment Information" );
+  WGroupBox *measdiv = new WGroupBox( "Measurement Information" );
   measdiv->addStyleClass( "MeasInfo" );
   WGridLayout *measTable = new WGridLayout();
   measdiv->setLayout( measTable );
@@ -653,7 +439,7 @@ void SpecFileSummary::init()
   overallLayout->setRowStretch( 1, 1 );
   overallLayout->setRowStretch( 2, 1 );
 
-  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &SpecFileSummary::handleSpectrumChange, this, _1, _2, _3 ) );
+  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &SpecFileSummary::handleSpectrumChange, this, _1, _2, _3, _4 ) );
 
 
   m_displayedLiveTime->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedLiveTime) );
@@ -760,6 +546,24 @@ SpecFileSummary::~SpecFileSummary()
 {
   //nothing to do here
 }
+
+
+void SpecFileSummary::showRiidAnalysis()
+{
+  const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
+  std::shared_ptr<const SpecMeas> meas = m_specViewer->measurment( type );
+  
+  // The SimpleDialog containing the RIID results will be behind this SpecFileSummary, if we create
+  //  it here (I assume do to the mouse click bringing *this to front), so we will create it in the
+  //  next event loop iteration, and this way it appears good.
+  WServer::instance()->post( wApp->sessionId(), std::bind([=](){
+    auto app = WApplication::instance();
+    if( app ){
+      showRiidInstrumentsAna( meas );
+      app->triggerUpdate();
+    }
+  }) );
+}//void showRiidAnalysis()
 
 
 #if( USE_GOOGLE_MAP )
@@ -1024,7 +828,15 @@ void SpecFileSummary::updateDisplayFromMemory()
 
     m_measurement_location_name->setText( meas->measurement_location_name() );
     
-    m_ana_results->updateDisplay( meas );
+    if( meas && meas->detectors_analysis() && !m_ana_button->isEnabled() )
+    {
+      m_ana_button->setText( "Show RIID Analysis" );
+      m_ana_button->enable();
+    }else if( m_ana_button->isEnabled() )
+    {
+      m_ana_button->setText( "No RIID Analysis" );
+      m_ana_button->disable();
+    }
     
     m_inspection->setText( meas->inspection() );
     m_instrument_type->setText( meas->instrument_type() );
@@ -1049,7 +861,8 @@ void SpecFileSummary::updateDisplayFromMemory()
     m_uuid->setText( "" );
     m_laneNumber->setText( "" );
     m_measurement_location_name->setText( "" );
-    m_ana_results->updateDisplay( std::shared_ptr<const SpecMeas>() );
+    m_ana_button->setText( "" );
+    m_ana_button->disable();
     m_inspection->setText( "" );
     m_instrument_type->setText( "" );
     m_manufacturer->setText( "" );
@@ -1342,9 +1155,10 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
 }//void handleFieldUpdate( EditableFields field )
 
 
-void SpecFileSummary::handleSpectrumChange( SpecUtils::SpectrumType type,
-                                            std::shared_ptr<SpecMeas> meas,
-                                            std::set<int> displaySample )
+void SpecFileSummary::handleSpectrumChange( const SpecUtils::SpectrumType type,
+                                            const std::shared_ptr<SpecMeas> &meas,
+                                            const std::set<int> &displaySample,
+                                            const std::vector<std::string> &detectors )
 {
   const SpecUtils::SpectrumType display_type = SpecUtils::SpectrumType(m_spectraGroup->checkedId());
   
@@ -1433,7 +1247,6 @@ void SpecFileSummary::handleAllowModifyStatusChange()
   m_uuid->setDisabled( disable );
   m_laneNumber->setDisabled( disable );
   m_measurement_location_name->setDisabled( disable );
-  m_ana_results->allowModifiable( !disable );
   m_inspection->setDisabled( disable );
   m_instrument_type->setDisabled( disable );
   m_manufacturer->setDisabled( disable );

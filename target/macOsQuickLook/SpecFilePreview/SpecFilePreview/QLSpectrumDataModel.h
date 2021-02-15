@@ -18,6 +18,8 @@
 #include <Wt/WAbstractItemModel>
 
 class QLSpectrumChart;
+namespace SpecUtils{ class Measurement; }
+
 
 class QLSpectrumDataModel: public Wt::WAbstractItemModel
 {
@@ -59,14 +61,14 @@ public:
   
   //setDataHistogram(): also sets m_secondSF and m_backgroundSF to
   //  m_dataLiveTime/m_{Second|Background}LiveTime
-  virtual void setDataHistogram( std::shared_ptr<Measurement> hist,
+  virtual void setDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
                                  float liveTime,
                                  float realTime,
                                  float neutronCounts );
   
   //setSecondDataHistogram(): also sets m_secondSF to
   //  m_dataLiveTime/m_secondDataLiveTime
-  virtual void setSecondDataHistogram( std::shared_ptr<Measurement> hist,
+  virtual void setSecondDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
                                        float liveTime,
                                        float realTime,
                                        float neutronCounts,
@@ -74,7 +76,7 @@ public:
   
   //setBackgroundHistogram(): also sets m_backgroundSF to
   //  m_dataLiveTime/m_backgroundLiveTime
-  virtual void setBackgroundHistogram( std::shared_ptr<Measurement> hist,
+  virtual void setBackgroundHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
                                        float liveTime,
                                        float realTime,
                                        float neutronCounts );
@@ -87,13 +89,13 @@ public:
 
   // The following functions will return an empty std::shared_ptr<Measurement> if the data histogram
   // was not previously set.
-  virtual std::shared_ptr<Measurement>      getData();
-  virtual std::shared_ptr<Measurement>      getSecondData();
-  virtual std::shared_ptr<Measurement>      getBackground();
+  virtual std::shared_ptr<SpecUtils::Measurement>      getData();
+  virtual std::shared_ptr<SpecUtils::Measurement>      getSecondData();
+  virtual std::shared_ptr<SpecUtils::Measurement>      getBackground();
 
-  virtual std::shared_ptr<const Measurement> getData()       const;
-  virtual std::shared_ptr<const Measurement> getSecondData() const;
-  virtual std::shared_ptr<const Measurement> getBackground() const;
+  virtual std::shared_ptr<const SpecUtils::Measurement> getData()       const;
+  virtual std::shared_ptr<const SpecUtils::Measurement> getSecondData() const;
+  virtual std::shared_ptr<const SpecUtils::Measurement> getBackground() const;
 
   virtual float dataRealTime() const;
   virtual float dataLiveTime() const;
@@ -136,8 +138,8 @@ public:
   virtual bool secondDataOwnAxis() const;
 
   // Find which histogram is defining the x-axis by moving through priorities.
-  std::shared_ptr<Measurement>      histUsedForXAxis();
-  std::shared_ptr<const Measurement> histUsedForXAxis() const;
+  std::shared_ptr<SpecUtils::Measurement>      histUsedForXAxis();
+  std::shared_ptr<const SpecUtils::Measurement> histUsedForXAxis() const;
 
   // The functions that follow are convenience functions that take m_rebinFactor into
   // account and return quantities about the x-axis. These are similar in nature to
@@ -183,9 +185,9 @@ public:
   
 protected:
   int        m_rebinFactor;
-  std::shared_ptr<Measurement> m_data;
-  std::shared_ptr<Measurement> m_secondData;
-  std::shared_ptr<Measurement> m_background;
+  std::shared_ptr<SpecUtils::Measurement> m_data;
+  std::shared_ptr<SpecUtils::Measurement> m_secondData;
+  std::shared_ptr<SpecUtils::Measurement> m_background;
   
   float m_dataLiveTime, m_dataRealTime, m_dataNeutronCounts;
   float m_backgroundLiveTime, m_backgroundRealTime, m_backgroundNeutronCounts;

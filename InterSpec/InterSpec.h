@@ -47,9 +47,8 @@ class MaterialDB;
 class DecayWindow;
 struct ColorTheme;
 class UserFileInDb;
-class Recalibrator;
-class SrbMySqlUtil;
 class PopupDivMenu;
+class EnergyCalTool;
 class SpectrumChart;
 class UseInfoWindow;
 class WarningWidget;
@@ -67,13 +66,13 @@ class SpectrumDisplayDiv;
 #if ( USE_SPECTRUM_CHART_D3 )
 class D3SpectrumDisplayDiv;
 #endif
-class PreserveCalibWindow;
 #if( USE_FEATURE_MARKER_WIDGET )
 class FeatureMarkerWindow;
 #endif
 class DetectorPeakResponse;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
+class EnergyCalPreserveWindow;
 class SimpleNuclideAssistPopup;
 class ReferencePhotopeakDisplay;
 class LicenseAndDisclaimersWindow;
@@ -106,13 +105,7 @@ namespace Wt
   class WGridLayout;
   class WPopupMenu;
   class WPushButton;
-  class WFileUpload;
-  class WSelectionBox;
   class WSuggestionPopup;
-  class WDoubleSpinBox;
-  class WTree;
-  class WTreeNode;
-  class WCheckBox;
     
   namespace Dbo
   {
@@ -120,8 +113,22 @@ namespace Wt
   }
 }//namespace Wt
 
-
+/** A convience function to call #InterSpec::logMessage
+ 
+ \deprecated Please directly call InterSpec::instance()->logMessage(message,source,priority).
+ */
 void log_error_message( const std::string &message, const std::string &source, const int priority );
+
+
+enum class FeatureMarkerType : int
+{
+  /// \TODO: move this to some other header
+  EscapePeakMarker,
+  ComptonPeakMarker,
+  ComptonEdgeMarker,
+  SumPeakMarker,
+  NumFeatureMarkers
+};//enum FeatureMarkerType
 
 
 class InterSpec : public Wt::WContainerWidget
@@ -135,7 +142,13 @@ class InterSpec : public Wt::WContainerWidget
 public:
   InterSpec( Wt::WContainerWidget *parent = 0 );
 
-  virtual ~InterSpec();
+  ~InterSpec() noexcept(true);
+  
+  /** Returns the InterSpec instance cooresponding to the current WApplication instance.
+   Will return nullptr if WApplication::instance() is null (e.g., current thread is not in a
+   WApplication event loop).
+   */
+  static InterSpec *instance();
   
   /** Sets the directory InterSpec "data" files are located, including cross
       sections, materials, detector response functions, nuclear decay info
@@ -283,7 +296,13 @@ public:
   Wt::WContainerWidget *menuDiv();
 
   const std::set<int> &displayedSamples( SpecUtils::SpectrumType spectrum_type ) const;
-  std::set<int> validForegroundSamples() const;//forground samples that could possibly be displayed
+  
+  /** Foreground samples that might be displayed.
+   
+   TODO: Eliminate calling this function, in coordination with upgrading
+         passthroughTimeToSampleNumber() (see TODOs for that function)
+   */
+  std::set<int> validForegroundSamples() const;
   
   std::vector<std::string> detectorsToDisplay( const SpecUtils::SpectrumType type ) const;
 
@@ -399,10 +418,17 @@ public:
    
    Note: Currently not fully working for D3 based spectrum chart.
    
-   @param spectrum If true, make a PNG for the spcetrum chart.  If false make
-          PNG for the time-series chart
+   @param spectrum If true, make a PNG or SVG for the spcetrum chart.  If false make
+          PNG or SVG for the time-series chart
+   @param asPng if true, save as a PNG.  If false, save as a SVG
+   
+   Note: currently only PNG is supported for time chart
    */
-  void saveChartToPng( const bool spectrum );
+#if ( USE_SPECTRUM_CHART_D3 )
+  void saveChartToImg( const bool spectrum, const bool asPng );
+#else
+  void saveChartToImg( const bool spectrum );
+#endif
 
   
   //displayScaleFactor(...): the live time scale factor used by to display
@@ -429,11 +455,22 @@ public:
   
   PopupDivMenu *displayOptionsPopupDiv();
 
-  
+  /** Emits a message to the user.
+   
+    The priority corresponds to the WarningWidget::WarningMsgLevel enum, namely:
+   - Info: 0
+   - Low: 1
+   - Medium: 2
+   - High: 3
+   - Save: 4
+   
+   \sa log_error_message
+   */
   void logMessage( const Wt::WString& message, const Wt::WString& source, int priority );
+  
   virtual Wt::Signal< Wt::WString, Wt::WString, int > &messageLogged();
   
-  void toggleToolTip( const bool sticky );
+  void toggleToolTip( const bool showToolTips );
   
   int paintedWidth() const;  //Depreciated
   int paintedHeight() const; //Depreciated //XXX Not correct due to all padding and stuff, but close
@@ -458,9 +495,15 @@ public:
   //  is changed.
   Wt::Signal<SpecUtils::SpectrumType,                //which spectrum changed
              std::shared_ptr<SpecMeas>, //A pointer to the new spectrum
-             std::set<int>               //The sample numbers displayed
+             std::set<int>,             //The sample numbers displayed
+             std::vector<std::string>   //The detectors displayed
              >& displayedSpectrumChanged();
 
+  /** Signal emmitted when user changes a spectrums scale factor in the "Spectrum Files" tab, or using graphical y-axis scalers.
+   Is not emmitted when new spectra or sample numbers are loaded/changed.
+   */
+  Wt::Signal<SpecUtils::SpectrumType,double> &spectrumScaleFactorChanged();
+  
   //overlayCanvasJsExceptionCallback(...) is mostly for debugging and will
   //  probably be romived in the future
   void overlayCanvasJsExceptionCallback( const std::string &message );
@@ -575,6 +618,20 @@ public:
   
   PeakModel *peakModel();
 
+  /** The material database.
+   
+   Object will be alive as long as *this
+   */
+  MaterialDB *materialDataBase();
+  
+  /** The suggestion pop-up widget for shielding names; used globally for all shielding name inputs
+   so that there is not duplicate copies of the widget in the DOM.
+   
+   Object will be alive as long as *this.
+   */
+  Wt::WSuggestionPopup *shieldingSuggester();
+  
+  
   //detectorChanged(): signal emited when the detector is changed to a
   //  completely new detector.  Note that the object pointed to stays the same
   //  but it has been totally redifined.
@@ -584,8 +641,8 @@ public:
   //  object is modified.
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &detectorModified();
 
-  void showRecalibratorWindow();
-  void handRecalibratorWindowClose();
+  void showEnergyCalWindow();
+  void handEnergyCalWindowClose();
 
   void showWarningsWindow();
   void handleWarningsWindowClose( bool closeWindowTo );
@@ -604,6 +661,9 @@ public:
   void create3DSearchModeChart();
 #endif
 
+  /** Show the RIID results included in the spectrum file. */
+  void showRiidResults( const SpecUtils::SpectrumType type );
+  
 #if( USE_TERMINAL_WIDGET )
   void createTerminalWidget();
   void handleTerminalWindowClose();
@@ -618,6 +678,9 @@ public:
   void showLicenseAndDisclaimersWindow( const bool is_awk,
                                       std::function<void()> finished_callback );
   
+  /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
+  void startClearSession();
+    
   /** Deletes disclaimer, license, and statment window and sets m_licenseWindow
       to nullptr;
    */
@@ -634,9 +697,9 @@ public:
   //  showing), and sets m_useInfoWindow to null
   void deleteWelcomeCountDialog();
   
-  //deletePreserveCalibWindow(): deletes the currently showing diaolg (if its
+  //deleteEnergyCalPreserveWindow(): deletes the currently showing diaolg (if its
   //  showing), and sets m_preserveCalibWindow to null
-  void deletePreserveCalibWindow();
+  void deleteEnergyCalPreserveWindow();
   
   //showIEWarningDialog(): returns NULL if user previously specified to not show
   //  again, otherwise it returns the AuxWIndow it is displaying.  The dialog
@@ -685,7 +748,7 @@ protected:
   void createFileParameterWindow();
   
   void updateGuiForPrimarySpecChange( std::set<int> display_sample_nums );
-  void displayForegroundData( const bool keep_current_energy_range );
+  
   static std::set<int> sampleRangeToSet( int start_sample,  int end_sample,
                                          std::shared_ptr<const SpecMeas> meas,
                                          const std::set<int> &excluded_samples );
@@ -713,9 +776,11 @@ protected:
   std::vector< std::pair<double,double> > timeRegionsFromFile(
                               const SpecUtils::OccupancyStatus occ_type ) const;
   
-  void displayForegroundData( int first_sample, int last_sample ); //sample numbers are inclusive
-  void displaySecondForegroundData();
+  
+  void displayForegroundData( const bool keep_current_energy_range );
   void displayBackgroundData();
+  void displaySecondForegroundData();
+  
   void displayTimeSeriesData( bool updateHighlightRegionsDisplay );
 
   // Inclusive for t0, exclusive for t1, e.g., if you have time slices of 0.1s,
@@ -740,6 +805,22 @@ protected:
   
   std::set<int> timeRangeToSampleNumbers( double t0, double t1 );
   
+  /** Returns a vector of pairs that indicate the cumulative chart starting time of each interval, and
+    the sample number of that interval, for use in the time series chart.
+    The cumulative times are strictly increasing in value, and may not correspond to the integrated
+    real-times of all previous samples, because backgrounds are placed at negative times, and also
+    may be compressed if they are really long.
+    The last entry contains the upper edge of the last time segment, and a garbage sample number.
+    Background samples will always come first, followed by foreground, then "derived" data.  Derived
+    data are not sorted according to type (foreground/background/known/intrinsic)
+  
+   TODO: Make it so this function returns a tuple with:
+         {cumulative time, sample number, gamma counts, neutron counts, time, back/fore/second, occupancy}
+         and have the time history chart store this info, so this function only ever gets called
+         when file is loaded or number detectors changed.
+   TODO: Integrate the logic of validForegroundSamples() into this function, and maybe eliminate
+         other places
+   */
   std::vector<std::pair<float,int> > passthroughTimeToSampleNumber() const;
 
   //showNewWelcomeDialog(): see notes for showWelcomeDialog().  This function
@@ -777,10 +858,10 @@ protected:
   
   void deletePeakEdit();
   void createPeakEdit( double energy );
-  void handleRightClick( double energy, double counts,
-                         int pageX, int pageY );
-  void handleLeftClick( double energy, double counts,
-                        int pageX, int pageY );
+  void handleRightClick( const double energy, const double counts,
+                         const double pageX, const double pageY );
+  void handleLeftClick( const double energy, const double counts,
+                        const double pageX, const double pageY );
   void rightClickMenuClosed();
 #if( USE_SIMPLE_NUCLIDE_ASSIST )
   void leftClickMenuClosed();
@@ -816,14 +897,6 @@ public:
 //#endif
   //Tracking of which feature markers are being shown on the c++ side of things
   //  is currently only used for export to the D3 chart...
-  enum FeatureMarkerType
-  {
-    EscapePeakMarker,
-    ComptonPeakMarker,
-    ComptonEdgeMarker,
-    SumPeakMarker,
-    NumFeatureMarkers
-  };//enum FeatureMarkerType
   
   void setFeatureMarkerOption( const FeatureMarkerType option, const bool show );
   bool showingFeatureMarker( const FeatureMarkerType option );
@@ -898,9 +971,6 @@ public:
   //  The InterSpec pointer is actually only necessary for the
   //  DetectorPeakResponse.
   void guessIsotopesForPeaks( Wt::WApplication *app );
-
-  //kevPerPixel(): Returns the approximated keV that 1 px covers.
-  float kevPerPixel() const;
   
   bool isSupportFile() const;
     
@@ -916,6 +986,12 @@ public:
   void setBackgroundSub( bool sub );
   void setVerticalLines( bool show );
   void setHorizantalLines( bool show );
+  
+  /** A "hard" background subtraction alters the data, subtracting the background counts from foreground counts on a channel by
+   channel basis, with the resulting spectrum now having incorrect variances.
+   */
+  void startHardBackgroundSub();
+  void finishHardBackgroundSub();
   
 #if( USE_SPECTRUM_CHART_D3 )
   void setXAxisSlider( bool show );
@@ -950,7 +1026,13 @@ public:
   */
   void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
 
+  
+  /** Signal emitted when the color theme is changed.
+   Useful when sub-windows are created to keep them in-sync if the color theme changes
+   */
+  Wt::Signal< std::shared_ptr<const ColorTheme> > &colorThemeChanged();
 
+  
 //Applying the color theme from JS seems to work, but only tested on single
 //  browser and operating system, so leaving disabled for the moment, until I
 //  at least make sure it doesnt cause problems on older borwsers.
@@ -1089,8 +1171,8 @@ protected:
   //  when they are visible
   Wt::WTabWidget *m_toolsTabs;
 
-  Recalibrator           *m_recalibrator; // The energy (re)calibrator
-  AuxWindow              *m_recalibratorWindow;
+  EnergyCalTool          *m_energyCalTool;
+  AuxWindow              *m_energyCalWindow;
   GammaCountDialog       *m_gammaCountDialog;
   AuxWindow              *m_specFileQueryDialog;
 
@@ -1103,14 +1185,14 @@ protected:
   //  currently has the window nuclide search window open.
   AuxWindow              *m_nuclideSearchWindow;
   
-  //m_isotopeSearchContainer: holds the nuclide search content in tab when tool
+  //m_nuclideSearchContainer: holds the nuclide search content in tab when tool
   //  tabs are visible.  Will be valid when in tool tabs visible, and null when
   //  not.
-  WContainerWidget       *m_isotopeSearchContainer;
+  WContainerWidget       *m_nuclideSearchContainer;
   
-  //m_isotopeSearch: Nuclide Search widget.  Will always be a valid pointer,
+  //m_nuclideSearch: Nuclide Search widget.  Will always be a valid pointer,
   //  although not always in the DOM (specifically when tool tabs are hidden).
-  IsotopeSearchByEnergy  *m_isotopeSearch;
+  IsotopeSearchByEnergy  *m_nuclideSearch;
   
   //DataBaseUtils::DbSession is an indirect way to holds the Wt::Dbo::Session
   //  object associated with m_user.  This indirection forces you to use
@@ -1181,6 +1263,7 @@ protected:
   PopupDivMenuItem *m_logYItems[2];
   PopupDivMenuItem *m_toolTabsVisibleItems[2];
   PopupDivMenuItem *m_backgroundSubItems[2];
+  PopupDivMenuItem *m_hardBackgroundSub;
   PopupDivMenuItem *m_verticalLinesItems[2];
   PopupDivMenuItem *m_horizantalLinesItems[2];
 #if( USE_SPECTRUM_CHART_D3 )
@@ -1188,7 +1271,6 @@ protected:
   PopupDivMenuItem *m_showYAxisScalerItems[2];
   PopupDivMenuItem *m_compactXAxisItems[2];
 #endif
-  
   
   enum class ToolTabMenuItems
   {
@@ -1211,7 +1293,8 @@ protected:
   Wt::WMenuItem *m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NumItems)];
   
   //Christian (20170425): Featuer marker option helpers for D3.js preferences
-  bool m_featureMarkersShown[NumFeatureMarkers];
+  //  When USE_FEATURE_MARKER_WIDGET is enabled full-time, remove this field
+  bool m_featureMarkersShown[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   
 #if( USE_FEATURE_MARKER_WIDGET )
   /** A window that controls if S.E., D.E., Compton Peak, Compton Edge, or Sum
@@ -1231,6 +1314,8 @@ protected:
   PopupDivMenuItem *m_searchMode3DChart;
 #endif
 
+  PopupDivMenuItem *m_showRiidResults;
+  
 #if( USE_TERMINAL_WIDGET )
   PopupDivMenuItem *m_terminalMenuItem;
   TerminalWidget   *m_terminal;
@@ -1284,7 +1369,7 @@ protected:
   //m_preserveCalibWindow: a pointer to the window that prompts the user if they
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
-  PreserveCalibWindow *m_preserveCalibWindow;
+  EnergyCalPreserveWindow *m_preserveCalibWindow;
   
   
   //Current width and height are set in layoutSizeChanged(...).
@@ -1304,8 +1389,12 @@ protected:
   //      measurments
   Wt::Signal<SpecUtils::SpectrumType,
              std::shared_ptr<SpecMeas>/*measurment*/,
-             std::set<int> /*sample_numbers*/ > m_displayedSpectrumChangedSignal;
+             std::set<int>, /*sample_numbers*/
+             std::vector<std::string> /*detectors*/
+             > m_displayedSpectrumChangedSignal;
 
+  Wt::Signal<SpecUtils::SpectrumType,double> m_spectrumScaleFactorChanged;
+  
 
   //Signals for when the current detector is changed or modified
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > m_detectorChanged;
@@ -1350,6 +1439,8 @@ protected:
   
   std::shared_ptr<const ColorTheme> m_colorTheme;
   
+  Wt::Signal<std::shared_ptr<const ColorTheme>> m_colorThemeChanged;
+  
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
   
@@ -1360,9 +1451,6 @@ protected:
   static std::mutex sm_writableDataDirectoryMutex;
   static std::string sm_writableDataDirectory;
 #endif  //if( not a webapp )
-
-  
-  friend class Recalibrator; // Recalibrator needs to be able access whatever
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

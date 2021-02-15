@@ -308,17 +308,35 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   WKWebViewConfiguration *webConfig = [[WKWebViewConfiguration alloc] init];
   //Setting the config like bellow seems to slow down the rendering.
-  webConfig.applicationNameForUserAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
+  
+  if ([webConfig respondsToSelector:@selector(applicationNameForUserAgent)]) {
+    webConfig.applicationNameForUserAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
+  }
+  
   //webConfig.ignoresViewportScaleLimits = ;  //Not sure what this is for.
-  webConfig.suppressesIncrementalRendering = YES;
+  if ([webConfig respondsToSelector:@selector(suppressesIncrementalRendering)]) {
+    webConfig.suppressesIncrementalRendering = YES;
+  }
   
   WKPreferences *prefs = [webConfig preferences];
-  prefs.javaEnabled = NO;
-  prefs.plugInsEnabled = NO;
-  prefs.javaScriptCanOpenWindowsAutomatically = YES;
-  prefs.javaScriptEnabled = YES;
+  //prefs.javaEnabled = NO;    //default is false anyway, and deprecated in 10.15
+  //prefs.plugInsEnabled = NO; //default is false anyway, and deprecated in 10.15
+  //prefs.javaScriptEnabled = YES; //default is true anyway, and deprecated in 10.15
+  
+  if ([webConfig respondsToSelector:@selector(javaScriptCanOpenWindowsAutomatically)]) {
+    //Does seem to get here for some reason
+    prefs.javaScriptCanOpenWindowsAutomatically = YES;  //default is true in macOS anyway
+  }
+  
   //prefs.minimumFontSize = 6.0;
-  prefs.tabFocusesLinks = NO;
+  if ([webConfig respondsToSelector:@selector(tabFocusesLinks)]) {
+    prefs.tabFocusesLinks = NO;
+  }
+  
+  // Make it so the obj-c didReceiveScriptMessage method will be called any time the javascript
+  //  does something like:
+  //      window.webkit.messageHandlers.interOp.postMessage({"action": "DoSomething"});
+  [webConfig.userContentController addScriptMessageHandler: self name:@"interOp"];
   
   //Some additional settings we may want to set:
   //  see more at http://jonathanblog2000.blogspot.com/2016/11/understanding-ios-wkwebview.html
@@ -339,14 +357,14 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //pageVisibilityBasedProcessSuppressionEnabled
   
   
-#if( PERFORM_DEVELOPER_CHECKS )
+//#if( PERFORM_DEVELOPER_CHECKS )
   [prefs setValue:@YES forKey:@"developerExtrasEnabled"];
   
   //Note: currently I disable right click in InterSpecApp using javascript if
   //      no PERFORM_DEVELOPER_CHECKS.  However, could also do:
   //https://stackoverflow.com/questions/28801032/how-can-the-context-menu-in-wkwebview-on-the-mac-be-modified-or-overridden#28981319
   //[_InterSpecWebView willOpenMenu:<#(nonnull NSMenu *)#> withEvent:<#(nonnull NSEvent *)#>];
-#endif
+//#endif
 
   //To allow deep integration, could
   //[_webConfig setURLSchemeHandler:<#(nullable id<WKURLSchemeHandler>)#> forURLScheme: @"helloworld://"];
@@ -361,9 +379,12 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   //Set the user agent string so
   NSString *userAgentStr = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
-  [_InterSpecWebView setCustomUserAgent: userAgentStr];
-  _InterSpecWebView.allowsLinkPreview = NO;
-  _InterSpecWebView.allowsBackForwardNavigationGestures = NO;
+  if ([_InterSpecWebView respondsToSelector:@selector(setCustomUserAgent)]) {
+    [_InterSpecWebView setCustomUserAgent: userAgentStr];
+    _InterSpecWebView.allowsLinkPreview = NO;
+  }
+  
+  _InterSpecWebView.allowsBackForwardNavigationGestures = NO;  //default is NO anyway
   
   
   [self setDbDirectory];
@@ -408,7 +429,10 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     
     const int randint = arc4random();
     _UrlUniqueId = [NSString stringWithFormat:@"%i", randint]; //@"123456789";
-    NSString *actualURL = [NSString stringWithFormat:@"%@?externalid=%@", _UrlServingOn, _UrlUniqueId];
+    
+    InterSpecServer::add_allowed_session_token( [_UrlUniqueId UTF8String] );
+    
+    NSString *actualURL = [NSString stringWithFormat:@"%@?apptoken=%@&primary=yes", _UrlServingOn, _UrlUniqueId];
     
     if( _fileNeedsOpening > -1 )
     {
@@ -485,6 +509,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     [_InterSpecWebView setNavigationDelegate: self];
     [_InterSpecWebView setUIDelegate: self];
     
+    
     if (@available(macOS 10.14, *)) {
       [NSDistributedNotificationCenter.defaultCenter addObserver:self selector:@selector(themeChanged:) name:@"AppleInterfaceThemeChangedNotification" object: nil];
     }
@@ -559,6 +584,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
                 decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
                 decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler
 {
+  NSLog(@"decidePolicyForNavigationAction" );
+  
   switch( [navigationAction navigationType] )
   {
     case WKNavigationTypeLinkActivated:  //external URL, or CSV, or spectrum file download.
@@ -573,9 +600,10 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
         NSString *host = [[request URL] host];
         NSString *absurl = [[request URL] absoluteString];
         
-        //NSLog(@"host=%@, absurl=%@", host, absurl );
+        NSLog(@"host=%@, absurl=%@", host, absurl );
         
-        if ([absurl rangeOfString:@"request=redirect&url=http"].location != NSNotFound || [[[request URL] scheme] isEqual:@"mailto"])
+        if ([absurl rangeOfString:@"request=redirect&url=http"].location != NSNotFound
+            || [[[request URL] scheme] isEqual:@"mailto"])
         {
           //external url or email
           [[NSWorkspace sharedWorkspace] openURL:[request URL]];
@@ -889,5 +917,51 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
   
   NSLog( @"applicationWillTerminate: setting to YES, DoResume=%i", [defaults boolForKey:@"DoResume"] );
 }
+
+
+// This method is for WKScriptMessageHandler, and is triggered each time 'interOp' is sent a
+//    message from the JavaScript code with something like:
+//      window.webkit.messageHandlers.interOp.postMessage({"val": 1});
+- (void)userContentController:(WKUserContentController *)userContentController
+      didReceiveScriptMessage:(WKScriptMessage *)message{
+  NSDictionary *sentData = (NSDictionary*)message.body;
+  
+  if( sentData == nil )
+  {
+    NSLog( @"didReceiveScriptMessage: got nil dictionary" );
+    return;
+  }
+  
+  id val = [sentData objectForKey: @"action"];
+  if( val != (id)[NSNull null] )
+  {
+    NSString *str = (NSString*)val;
+    if( !str )
+    {
+      NSLog( @"didReceiveScriptMessage: no value for action" );
+      return;
+    }
+    
+    if( [str isEqualToString:@"ExternalInstance"] )
+    {
+      NSLog( @"didReceiveScriptMessage: request for external instance" );
+      
+      //url = InterSpecServer::urlBeingServedOn(); //will be empty if not serving
+      const NSInteger port = InterSpecServer::portBeingServedOn();
+      NSString *url = [NSString stringWithFormat:@"http://localhost:%ld?primary=no&restore=no", port];
+      //NSString *url = [NSString stringWithFormat:@"%@?primary=no&restore=no", _UrlServingOn];
+      [[NSWorkspace sharedWorkspace] openURL: [NSURL URLWithString:url] ];
+    }else
+    {
+      NSLog( @"didReceiveScriptMessage: un-understood action: \"%@\"", str );
+    }
+  }else
+  {
+    NSLog( @"didReceiveScriptMessage: No \"action\" key" );
+  }
+  
+  // Could call back into the WebView using
+  //[_InterSpecWebView evaluateJavaScript: @"someJavascript" completionHandler:nil];
+}//didReceiveScriptMessage
 
 @end

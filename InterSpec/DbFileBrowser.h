@@ -112,6 +112,7 @@ public:
                  SpecUtils::SpectrumType type,
                  std::shared_ptr<SpectraFileHeader> header );
   
+  int numSnapshots() const;
 protected:
   SnapshotBrowser *m_factory;
 };

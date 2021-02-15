@@ -1,0 +1,74 @@
+.EnergyCalPreserve
+{
+}
+
+.EnergyCalPreserveCalContent
+{
+  overflow: auto;
+}
+
+.EnergyCalPreserve .VerticalMenu
+{
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-left: 7px;
+  padding-right: 7px;
+  font-size: 13px;
+  width: 7em;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
+.EnergyCalPreserve .VerticalMenu li
+{
+  height: 1.5em;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  -webkit-border-radius: 2px;
+  -moz-border-radius: 2px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+
+table.RecalibCoefTable
+{
+  margin-top: 10px;
+}
+
+table.RecalibCoefTable td, table.RecalibCoefTable th
+{
+  border: 1px solid black;
+  padding: 2px;
+  padding-left: 3px;
+  padding-right: 5px;
+}
+
+table.RecalibCoefTable th
+{
+  text-align: center;
+  vertical-align: middle;
+}
+
+
+.EnergyCalPreserveStack 
+{
+  overflow-y: auto;
+}
+
+.EnergyCalPreserve .VerticalMenu
+{
+
+}
+
+.EnergyCalPreserveIntroTxt
+{
+  margin-top: 5px;
+}
+
+.EnergyCalPreserveBottomTxt
+{
+  margin-top: 10px;
+}

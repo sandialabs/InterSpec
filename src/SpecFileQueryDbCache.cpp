@@ -229,7 +229,7 @@ namespace Wt {
       if( result && (((bindata.size() % sizeof(T))!=0)) )
       {
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, "Database re-read in of a set<POD> did not have proper size!  Programming logic error." );
+      log_developer_error( __func__, "Database re-read in of a set<POD> did not have proper size!  Programming logic error." );
 #endif
         result = false;
       }
@@ -398,7 +398,7 @@ namespace Wt {
       }catch(...)
       {
 #if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, "Boost tokenizer does throw exception!" );
+        log_developer_error( __func__, "Boost tokenizer does throw exception!" );
 #endif
       }
       return result;
@@ -420,7 +420,7 @@ namespace Wt {
         if( (position + sizeof(size_t)) > nbytes )
         {
 #if( PERFORM_DEVELOPER_CHECKS )
-          log_developer_error( BOOST_CURRENT_FUNCTION, "Database re-read in of a set<string> did not have proper size!  Programming logic error." );
+          log_developer_error( __func__, "Database re-read in of a set<string> did not have proper size!  Programming logic error." );
 #endif
           v.clear();
           return false;
@@ -433,7 +433,7 @@ namespace Wt {
         if( (position + nstrbytes) > nbytes )
         {
 #if( PERFORM_DEVELOPER_CHECKS )
-          log_developer_error( BOOST_CURRENT_FUNCTION, "Database re-read in of a set<string> did not have proper size to read a str!  Programming logic error." );
+          log_developer_error( __func__, "Database re-read in of a set<string> did not have proper size to read a str!  Programming logic error." );
 #endif
           v.clear();
           return false;
@@ -450,7 +450,7 @@ namespace Wt {
       if( position != nbytes )
       {
 #if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, "Database re-read in of a set<string> had left over bytes!  Programming logic error." );
+        log_developer_error( __func__, "Database re-read in of a set<string> had left over bytes!  Programming logic error." );
 #endif
       }
       
@@ -592,7 +592,7 @@ namespace Wt {
         "Error description: " << xml_result.description() << "\n"
         "Error offset: " << xml_result.offset << ", size(xml)=" << xmlstring.size();
 #if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
+        log_developer_error( __func__, msg.str().c_str() );
 #else
         cerr << msg.str().c_str() << endl;
 #endif
@@ -1042,7 +1042,7 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
       }
 #if( PERFORM_DEVELOPER_CHECKS )
       catch( std::exception &e ){
-        log_developer_error( BOOST_CURRENT_FUNCTION, ("Unexpected exception performing xpath query: " + string(e.what())).c_str() );
+        log_developer_error( __func__, ("Unexpected exception performing xpath query: " + string(e.what())).c_str() );
       }
 #else
       catch( std::exception & ){
@@ -1151,16 +1151,28 @@ bool SpecFileQueryDbCache::open_db( const std::string &path, const bool create_t
 bool SpecFileQueryDbCache::init_existing_persisted_db()
 {
   if( !SpecUtils::is_directory( m_fs_path ) )
+  {
+    std::cerr << "m_fs_path='" << m_fs_path << "', is not a path" << std::endl;
     return false;
-  
-  if( !SpecUtils::can_rw_in_directory( m_fs_path ) )
-    return false;
-  
+  }
+
+  // The read-only atribute of a Windows directory doesnt mean you cant read/write in that dir
+  //  so we'll just always skip checking if you can RW in a directory, even on POSIX, and 
+  //  instead wait for openeing of the database to fail.
+  //if( !SpecUtils::can_rw_in_directory( m_fs_path ) )
+  //{
+  //  std::cerr << "Can not RW in directory '" << m_fs_path << "'." << std::endl;
+  //  return false;
+  //}
+
   const string persisted_path = construct_persisted_db_filename(m_fs_path);
   
   if( !SpecUtils::is_file( persisted_path ) )
+  {
+    std::cerr << "Persisted db path '" << persisted_path << "' is not a file" << std::endl; 
     return false;
-  
+  }
+
   try
   {
     std::unique_ptr<Wt::Dbo::backend::Sqlite3> db( new Wt::Dbo::backend::Sqlite3(persisted_path) );
@@ -1234,6 +1246,7 @@ bool SpecFileQueryDbCache::init_existing_persisted_db()
     m_db_session.reset();
     m_db.reset();
     //passMessage( "Caught exception initind persisted DB; " + string(e.what()), "", 3 );
+    cerr << "\n\nIn persisting cache, caught: " << e.what() << endl << endl;
   }
   return false;
 }//bool init_existing_persisted_db()
@@ -1424,13 +1437,13 @@ void SpecFileQueryDbCache::cache_results( const std::vector<std::string> &&files
         auto results = m_db_session->find<SpecFileInfoToQuery>().where( "file_path_hash = ?" ).bind(dbinfo->file_path_hash).resultList();
         if( !results.size() )
         {
-          log_developer_error( BOOST_CURRENT_FUNCTION, "Failed to find SpecFileInfoToQuery I just saved!!  Programming logic error." );
+          log_developer_error( __func__, "Failed to find SpecFileInfoToQuery I just saved!!  Programming logic error." );
         }else
         {
           auto fromdb = results.front();
           if( !((*fromdb) == (*dbinfo)) )
           {
-            log_developer_error( BOOST_CURRENT_FUNCTION, "The SpecFileInfoToQuery from database is not equal to the one saved to database!  Programming logic error." );
+            log_developer_error( __func__, "The SpecFileInfoToQuery from database is not equal to the one saved to database!  Programming logic error." );
           }
         }
         trans.commit();
@@ -1527,7 +1540,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
       if( newfilename == m_db_location )
       {
 #if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, "Database new and old locations same - Programming logic error." );
+        log_developer_error( __func__, "Database new and old locations same - Programming logic error." );
 #endif
         return;
       }
@@ -1547,7 +1560,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
         }//
 
         const string oldloc = m_db_location;
-
+        m_db_location = newfilename;
        
         if( init_existing_persisted_db() )
             return;
@@ -1587,7 +1600,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
       char buffer[2048];
       snprintf( buffer, sizeof(buffer), "Failed to rename persisted file from '%s' to '%s'.",
                m_db_location.c_str(), newname.c_str() );
-      log_developer_error( BOOST_CURRENT_FUNCTION, "Failed to rename persisted file from." );
+      log_developer_error( __func__, "Failed to rename persisted file from." );
 #endif
       create_tables = true;
       newname = SpecUtils::temp_file_name( "interspec_file_query", SpecUtils::temp_dir() );

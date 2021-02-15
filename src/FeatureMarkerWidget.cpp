@@ -106,23 +106,27 @@ void FeatureMarkerWidget::init()
   m_escapePeaks = new WCheckBox( "Escape Peaks", this );
   m_escapePeaks->setInline( false );
   m_escapePeaks->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
-                                       InterSpec::FeatureMarkerType::EscapePeakMarker, true ) );
+                                       FeatureMarkerType::EscapePeakMarker, true ) );
   m_escapePeaks->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
-                                                InterSpec::FeatureMarkerType::EscapePeakMarker, false ) );
+                                                FeatureMarkerType::EscapePeakMarker, false ) );
   
   m_comptonPeak = new WCheckBox( "Compton Peak", this );
   m_comptonPeak->setInline( false );
   m_comptonPeak->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
-                                                InterSpec::FeatureMarkerType::ComptonPeakMarker, true ) );
+                                                FeatureMarkerType::ComptonPeakMarker, true ) );
   m_comptonPeak->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
-                                                  InterSpec::FeatureMarkerType::ComptonPeakMarker, false ) );
+                                                  FeatureMarkerType::ComptonPeakMarker, false ) );
   
   WContainerWidget *angleDiv = new WContainerWidget( this );
+  angleDiv->addStyleClass( "AngleRow" );
   WLabel *label = new WLabel( "Angle", angleDiv );
   label->setMargin( WLength(1.8,WLength::FontEm), Wt::Left );
   label->setMargin( WLength(0.2,WLength::FontEm), Wt::Right );
   m_comptonAngle = new WSpinBox( angleDiv );
-  m_comptonAngle->setTextSize( 3 );
+  m_comptonAngle->addStyleClass( "AngleInput" );
+
+  //m_comptonAngle->setTextSize( 3 );
+  //m_comptonAngle->setWidth( WLength( 4, WLength::FontEm ) );
   label->setBuddy( m_comptonAngle );
   m_comptonAngle->setRange( 0, 180 );
   m_comptonAngle->setValue( 180 );
@@ -132,17 +136,17 @@ void FeatureMarkerWidget::init()
   m_comptonEdge = new WCheckBox( "Compton Edge", this );
   m_comptonEdge->setInline( false );
   m_comptonEdge->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
-                                                InterSpec::FeatureMarkerType::ComptonEdgeMarker, true ) );
+                                                FeatureMarkerType::ComptonEdgeMarker, true ) );
   m_comptonEdge->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
-                                                  InterSpec::FeatureMarkerType::ComptonEdgeMarker, false ) );
+                                                  FeatureMarkerType::ComptonEdgeMarker, false ) );
   
   
   m_sumPeaks = new WCheckBox( "Sum Peak", this );
   m_sumPeaks->setInline( false );
   m_sumPeaks->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
-                                                InterSpec::FeatureMarkerType::SumPeakMarker, true ) );
+                                                FeatureMarkerType::SumPeakMarker, true ) );
   m_sumPeaks->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, m_viewer,
-                                                  InterSpec::FeatureMarkerType::SumPeakMarker, false ) );
+                                                  FeatureMarkerType::SumPeakMarker, false ) );
 }//init()
 
 

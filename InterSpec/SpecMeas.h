@@ -40,7 +40,6 @@
 
 class PeakDef;
 class PeakModel;
-class Recalibrator;
 struct PeakContinuum;
 class DetectorPeakResponse;
 
@@ -111,7 +110,7 @@ public:
   
   virtual bool save2012N42File( const std::string &filename );
   virtual void save2012N42File( const std::string &filename,
-                              boost::function<void()> error_callback ); //usefull when saving in a detached slave thread - be carful of race conditions (eg make error_callback will remain valid)
+                              boost::function<void()> error_callback ); //usefull when saving in a detached client thread - be carful of race conditions (eg make error_callback will remain valid)
 
   
   //write_2006_N42(...): writes a 2006 N42 simple spectrometer file (similar to
@@ -139,7 +138,14 @@ public:
   std::shared_ptr<DetectorPeakResponse> detector();
   std::shared_ptr<const DetectorPeakResponse> detector() const;
 
+  /**
+  \deprecated Not consistently used if SpecMeas is used for foreground and background or whatever.
+  */
   SpecUtils::SpectrumType displayType() const;
+  
+  /**
+   \deprecated Not consistently used if SpecMeas is used for foreground and background or whatever.
+   */
   const std::set<int> &displayedSampleNumbers() const;
 
   //aboutToBeDeleted(): signal emited right before object destructions - useful
@@ -147,12 +153,12 @@ public:
   Wt::Signal<> &aboutToBeDeleted();
 
   
-  static void save2012N42FileInSlaveThread( std::shared_ptr<SpecMeas> info,
+  static void save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,
                                             const std::string filename,
                                             boost::function<void()> error_callback );
 
   //setDetector(): set not only the detector of *this, but also of all of its
-  //  observers, so they all point to the same object in memmory
+  //  observers, so they all point to the same object in memory
   void setDetector( std::shared_ptr<DetectorPeakResponse> det );
 
   //detectorChangedCallback(): right now just calls setDetector(), but may
@@ -162,7 +168,8 @@ public:
 
   void displayedSpectrumChangedCallback( SpecUtils::SpectrumType type,
                                          std::shared_ptr<SpecMeas> measurment,
-                                         std::set<int> sample_numbers );
+                                         std::set<int> sample_numbers,
+                                         std::vector<std::string> detectors  );
   virtual void cleanup_after_load( const unsigned int flags
                                          = SpecFile::StandardCleanup );
   
@@ -206,17 +213,18 @@ public:
   //peaksHaveBeenAdded(): marks this SpecUtils::SpecFile object as
   void setModified();
 
+  
   //shiftPeaksForRecalibration: shift the peaks for when you apply a
   //  recalibration to the spectrum, for instance after calling
   //  SpecFile::recalibrate_by_eqn(...).  Note that the PeakModel is not
   //  notified of the changes, and the shift is applied to all peaks of the
   //  SpecMeas object.
-  void shiftPeaksForRecalibration( std::vector<float> old_pars,
-                    const std::vector< std::pair<float,float> > &old_devpairs,
-                    SpecUtils::EnergyCalType old_eqn_type,
-                    std::vector<float> new_pars,
-                    const std::vector< std::pair<float,float> > &new_devpairs,
-                    SpecUtils::EnergyCalType new_eqn_type );
+  //void shiftPeaksForRecalibration( std::vector<float> old_pars,
+  //                  const std::vector< std::pair<float,float> > &old_devpairs,
+  //                  SpecUtils::EnergyCalType old_eqn_type,
+  //                  std::vector<float> new_pars,
+  //                  const std::vector< std::pair<float,float> > &new_devpairs,
+  //                  SpecUtils::EnergyCalType new_eqn_type );
   
   //translatePeakForCalibrationChange(...): translates a peaks definition from
   //  one calibration to another.
@@ -225,15 +233,15 @@ public:
   //
   //ToDo: Only handles polynomial or full range fraction calibration type;
   //      should handle lower channel energy.
-  static void translatePeakForCalibrationChange( PeakDef &peak,
-                    std::vector<float> old_pars,
-                    const std::vector< std::pair<float,float> > &old_devpairs,
-                    SpecUtils::EnergyCalType old_eqn_type,
-                    std::vector<float> new_pars,
-                    const std::vector< std::pair<float,float> > &new_devpairs,
-                    SpecUtils::EnergyCalType new_eqn_type,
-                    const size_t nbins,
-                    const bool translate_continuum );
+  //static void translatePeakForCalibrationChange( PeakDef &peak,
+  //                  std::vector<float> old_pars,
+  //                  const std::vector< std::pair<float,float> > &old_devpairs,
+  //                  SpecUtils::EnergyCalType old_eqn_type,
+  //                  std::vector<float> new_pars,
+  //                  const std::vector< std::pair<float,float> > &new_devpairs,
+  //                  SpecUtils::EnergyCalType new_eqn_type,
+  //                  const size_t nbins,
+  //                  const bool translate_continuum );
   
   //appenSpecMeasStuffToXml(...): Adds the SpecMeas specific stuff (detector, 
   //  peaks, etc) to a node named <DHS:InterSpec> under 'parent'.
@@ -246,6 +254,12 @@ public:
   //  appended node (or null if !m_displayedSampleNumbers )
   ::rapidxml::xml_node<char> *appendSampleNumbersToXml(
                                     ::rapidxml::xml_node<char> *parent ) const;
+  
+  //appendDisplayedDetectorsToXml(...): appends displayed detector names XML to parent, returns
+  //  appended node (or null if !m_displayedSampleNumbers )
+  ::rapidxml::xml_node<char> *appendDisplayedDetectorsToXml(
+                                    ::rapidxml::xml_node<char> *parent ) const;
+  
   
   //decodeSpecMeasStuffFromXml(...): Parent node should be named "DHS:InterSpec"
   //Throws on error.
@@ -313,8 +327,14 @@ protected:
   std::shared_ptr< SampleNumsToPeakMap > m_peaks;
   std::shared_ptr<DetectorPeakResponse> m_detector;
 
+  /** \TODO: Currently m_displayType, m_displayedSampleNumbers, and m_displayedDetectors track
+   foreground, or background, or secondary, but this doesnt cover case where this SpecMeas is
+   being used for two of these catagories... Should upgrade this mechanism to track all of these
+   cases, or get rid of it totally.
+   */
   std::shared_ptr<SpecUtils::SpectrumType> m_displayType;
   std::shared_ptr<std::set<int> > m_displayedSampleNumbers;
+  std::shared_ptr<std::vector<std::string> > m_displayedDetectors;
 
   
   SampleNumsToPeakMap m_autoSearchPeaks;
@@ -332,6 +352,13 @@ protected:
    analysis results.
    */
   bool m_fileWasFromInterSpec;
+  
+  /** Version of XML serialization of the <DHS:InterSpec> node.
+   Changes:
+   - Added version field to xml 20200807, with initial value 1.  Added <DisplayedDetectors> field.
+   
+   */
+  static const int sm_specMeasSerializationVersion;
   
   static const int sm_peakXmlSerializationVersion;
 };//class SpecMeas

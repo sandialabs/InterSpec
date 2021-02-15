@@ -40,12 +40,20 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WCssDecorationStyle>
 
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || (BUILD_AS_LOCAL_SERVER && (defined(WIN32) || defined(__APPLE__))) )
+#include <Wt/WServer>
+#endif
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
+
+#ifdef _WIN32
+#include "SpecUtils/StringAlgo.h"
+#endif
 
 using namespace Wt;
 using namespace std;
@@ -116,7 +124,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   stack->setTransitionAnimation( animation, true );
   
   m_menu = new WMenu( stack, Wt::Vertical );
-  m_menu->addStyleClass( "SideMenu" );
+  m_menu->addStyleClass( "VerticalMenu SideMenu" );
   
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
   
@@ -325,7 +333,8 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
   string contents;
   if( viewer )
   {
-    string datadir = Wt::Utils::htmlEncode( viewer->writableDataDirectory() );
+    string datadir;
+    try{ datadir = Wt::Utils::htmlEncode( viewer->writableDataDirectory() ); }catch(...){}
     string staticdir = Wt::Utils::htmlEncode( viewer->staticDataDirectory() );
     
     //SpecUtils::is_absolute_path( staticdir )
@@ -345,6 +354,9 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     SpecUtils::ireplace_all( staticdir, "/", "\\" );
 #endif
     
+    auto server = WServer::instance();
+    const int httpPort = server ? server->httpPort() : 0;
+    
     const string style = "font-family: monospace;"
                          " background: white;"
                          " color: black;"
@@ -361,7 +373,13 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     "<p>The data that comes with InterSpec, such as nuclear decay info,"
     " cross-section, and similar is stored in"
     "<div style=\"" + style + "\">" + staticdir + "</div>"
-    "</p>";
+    "</p>"
+    
+    "<p>You can also use InterSpec from your browser at"
+    " (port number will change when you restart InterSpec):"
+    "<div style=\"" + style + "\">http://127.0.0.1:" + std::to_string(httpPort) + "</div>"
+    "</p>"
+    ;
   }else
   {
     contents = "Error retrieving directory data";

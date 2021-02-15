@@ -49,11 +49,14 @@ enum AuxWindowProperties
 {
   /** Window can be modal on phones and tablets. Without this all AuxWindows
       are full screen on phones.
+   \TODO: rename this to something like PhoneNotFullScreen
    */
   PhoneModal = 0x01,
   
   /** Window can be modal on tablets.  Without this all AuxWindows
-   are full screen on tablets (unless PhoneModal is set).*/
+   are full screen on tablets (unless PhoneModal is set).
+   \TODO: rename this to something like TabletNotFullScreen
+   */
   TabletModal = 0x02,
   
   /** When set, this window will be modal on PCs (e.g., no interaction with
@@ -120,7 +123,7 @@ class AuxWindow : public Wt::WDialog
 public:
   //By default AuxWindow will be shown, centered in the window, at 50% of
   //  browser size.  Wt will assume that the window is visible as well, for
-  //  the puprposes of lazy loading of content.
+  //  the purposes of lazy loading of content.
   AuxWindow( const Wt::WString &windowTitle, Wt::WFlags<AuxWindowProperties> properties = Wt::WFlags<AuxWindowProperties>(0) );
   virtual ~AuxWindow();
 

@@ -78,7 +78,7 @@ OneOverR2Calc::OneOverR2Calc()
   WTableCell *cell = layoutTable->elementAt( 0, 0 );
   WText *label = new WText( "Near Measurement Intensity:", cell );
   
-  //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTipInstantly );
+  //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTips );
   
   cell = layoutTable->elementAt( 0, 1 );
   m_nearMeasurement = new WDoubleSpinBox( cell );
@@ -143,7 +143,7 @@ OneOverR2Calc::OneOverR2Calc()
   label = new WText( "Power Law");
   powerLayout->addWidget( label, 0, 0 );
   powerLayout->addWidget( m_powerLawSelect, 0, 1 );
-  m_powerLawSelect->addItem( WString::fromUTF8("Low Scatter or using Peak Area, 1/r\u00B2") );
+  m_powerLawSelect->addItem( "Low Scatter or using Peak Area, 1/r^2" );
   m_powerLawSelect->addItem( "Mid Scatter Dose Rate, 1/r^1.85" );
   m_powerLawSelect->addItem( "High Scatter Dose Rate, 1/r^1.65" );
   m_powerLawSelect->setCurrentIndex( 0 );
@@ -204,7 +204,7 @@ OneOverR2Calc::OneOverR2Calc()
       setMaximumSize( WLength::Auto, viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f) );
       
       /* ToDo: get safe offsets in c++ land, and then also convert other AuxWindows that are modal on phone to resize correctly. */
-      /* Do same for Gamma XS Calc. And Energy Range Count*/
+      /* Do same for Gamma XS Calc. And Energy Range Sum*/
     }
   }else
   {

@@ -108,6 +108,22 @@ causilyDisconnectedPeaks(  const double ncausality,
 //setPeakXLimitsFromData(...): intended to set how far to the right and left of
 //  the mean a peaks continuum will be valid
 
+/** Function to make sure the continuum of the defined peaks are unique to the peaks passed in.
+ This function will
+ 
+ This function is necassary when fitting new peaks that even though the PeakDef objects themselves
+ get copied, so the original input peaks wont be modified, we need to make sure the continuum itself
+ wont get modified as well.  The PeakDef tracks its continuum as a shared pointer, that may be
+ shared by several PeakDefs, and if you copy a PeakDef, the pointer is just dumbly copied, meaning
+ if you modify the continuum of a copied PeakDef, the continuum of the original PeakDef is also
+ modified since they are the same object in memory.
+ This is a poor design.  The continuum should own the PeakDef, not the other way around, but this
+ function acts as a scab around this poor design, for the moment.
+
+ */
+void unique_copy_continuum( std::vector<PeakDef> &peaks );
+
+
 
 //Note: smoothSpectrum(...) does not divide by bin widths
 void smoothSpectrum( std::shared_ptr<const SpecUtils::Measurement> meas, const int side_bins,

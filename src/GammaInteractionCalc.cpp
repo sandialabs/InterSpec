@@ -1137,7 +1137,7 @@ double PointSourceShieldingChi2Fcn::activityDefinedFromShielding(
               << src->symbol << ", massFrac=" << massFrac;
           cerr << msg.str() << endl;
 #if( PERFORM_DEVELOPER_CHECKS )
-          log_developer_error( BOOST_CURRENT_FUNCTION, msg.str().c_str() );
+          log_developer_error( __func__, msg.str().c_str() );
 #endif
         }//if( massFrac <= 0.0 )
 */
@@ -1201,26 +1201,26 @@ double PointSourceShieldingChi2Fcn::age( const SandiaDecay::Nuclide *nuclide,
   if( params[2*ind+1] >= -0.00001 )
     return std::max( params[2*ind+1], 0.0 );
   
-  //Else the parameter value indicates the "master" nuclide whose age should be
-  // specified.  To get master index add one to value, and take negative
+  //Else the parameter value indicates the "defining" nuclide whose age should be
+  // specified.  To get defining index add one to value, and take negative
   const double findex = -1.0*params[2*ind+1];
   const int nearFIndex = static_cast<int>( std::round(findex) );
   
   if( fabs(findex - nearFIndex) > 0.01 || nearFIndex < 1 )
     throw runtime_error( "Got a negative age value that is not indicating a"
-                         " master nuclide age: " + std::to_string(params[2*ind+1]) );
+                         " defining nuclide age: " + std::to_string(params[2*ind+1]) );
   
-  const int master_nuclide_index = nearFIndex - 1;
+  const int defining_nuclide_index = nearFIndex - 1;
   
-  if( static_cast<size_t>(master_nuclide_index) >= params.size() )
+  if( static_cast<size_t>(defining_nuclide_index) >= params.size() )
     throw runtime_error( "Got a negative age value that is larger than could be"
-                         " for indicating a master nuclide age: " + std::to_string(params[2*ind+1]) );
+                         " for indicating a defining nuclide age: " + std::to_string(params[2*ind+1]) );
   
-  const double master_age = params[master_nuclide_index];
-  if( master_age < -0.00001 )
-    throw runtime_error( "Master age is also less than zero (shouldnt happen)" );
+  const double defining_age = params[defining_nuclide_index];
+  if( defining_age < -0.00001 )
+    throw runtime_error( "Defining age is also less than zero (shouldnt happen)" );
   
-  return std::max( master_age, 0.0 );
+  return std::max( defining_age, 0.0 );
 }//double age(...)
 
 
@@ -1366,18 +1366,28 @@ double PointSourceShieldingChi2Fcn::DoEval( const std::vector<double> &x ) const
 
   try
   {
+    // Check we're not being passed total non-sense here
+    for( size_t i = 0; i < x.size(); ++i )
+    {
+      if( IsNan(x[i]) || IsInf(x[i]) )
+      {
+        throw runtime_error( "Invalid parameter (" + std::to_string(i) + ", "
+                            + std::to_string(x[i]) + ") passed to chi2 fit fcn" );
+      }
+    }//for( size_t i = 0; i < x.size(); ++i )
+    
     if( m_mixtureCache.size() > sm_maxMixtureCacheSize )
       m_mixtureCache.clear();
     
-  const vector< tuple<double,double,double,Wt::WColor,double> > chi2s
-                          = energy_chi_contributions( x, m_mixtureCache,
-                                            m_allowMultipleNucsContribToPeaks );
-  double chi2 = 0.0;
-
-  const size_t npoints = chi2s.size();
-  for( size_t i = 0; i < npoints; ++i )
+    const vector< tuple<double,double,double,Wt::WColor,double> > chi2s
+      = energy_chi_contributions( x, m_mixtureCache,
+                               m_allowMultipleNucsContribToPeaks );
+    double chi2 = 0.0;
+    
+    const size_t npoints = chi2s.size();
+    for( size_t i = 0; i < npoints; ++i )
     chi2 += pow( std::get<1>(chi2s[i]), 2.0 );
-
+    
     if( m_isFitting && m_guiUpdateFrequencyMs.load() && m_guiUpdateInfo )
     {
       //Need best chi2, and its cooresponding errors and

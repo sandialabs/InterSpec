@@ -110,18 +110,18 @@ img.WhiteIcon[disabled]
   border: 1px solid rgb(0,122,255) !important;
 }
 
-ul.SideMenu > li.item, ul.SideMenuPhone > li.item
+ul.VerticalMenu > li.item, ul.VerticalMenuPhone > li.item
 {
   background: none;
   border: 1px solid rgb(0,122,255);
 }
 
-ul.SideMenu > li.item > a, ul.SideMenuPhone > li.item > a
+ul.VerticalMenu > li.item > a, ul.VerticalMenuPhone > li.item > a
 {
   color: rgb(0,122,255) !important;
 }
 
-ul.SideMenu > li.itemselected, ul.SideMenuPhone > li.itemselected
+ul.VerticalMenu > li.itemselected, ul.VerticalMenuPhone > li.itemselected
 {
   color: white !important;
   background: rgb(0,122,255);

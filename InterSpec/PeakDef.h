@@ -34,9 +34,6 @@
 #include <Wt/WColor>
 
 #include "InterSpec/ReactionGamma.h"
-#include "SandiaDecay/SandiaDecay.h"
-#include "InterSpec/DecayDataBaseServer.h"
-
 
 //Forward declaration
 class PeakDef;
@@ -47,6 +44,7 @@ namespace SandiaDecay
   struct Element;
   struct Transition;
   struct RadParticle;
+  struct EnergyIntensityPair;
 }//namespace SandiaDecay
 
 
@@ -57,7 +55,13 @@ namespace rapidxml
 }//namespace rapidxml
 
 
-
+/**
+ 
+ TODO: When PeakDefs are copied, their continuum still points to the same PeakContinuum object,
+       meaning if the copies modify their continuum, the originals continuum also gets modified.
+       This is currently necassary since multiple PeakDefs can share a PeakContinuum.  To fix this
+       a ROI (e.g., contimuum) should own the peaks, not the other way around
+ */
 struct PeakContinuum
 {
   enum OffsetType
@@ -287,6 +291,12 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Spec
 
 class PeakDef
 {
+  // If I was to re-write this class from scratch I would define peak mean by channel, and FWHM
+  //  by the fraction of the peak mean, and similarly for the other quantities so that it is
+  //  invariant to the energy calibration - although this isnt without issues.
+  // I would also make the PeakContinuum the primary ROI with a list of peaks beloinging to it,
+  //  instead of the other way around.
+  
 public:
   enum SkewType
   {
@@ -701,8 +711,10 @@ public:
   
 
 #if( SpecUtils_ENABLE_D3_CHART )
-  static std::string gaus_peaks_to_json(const std::vector<std::shared_ptr<const PeakDef> > &peaks);
-  static std::string peak_json(const std::vector<std::shared_ptr<const PeakDef> > &inpeaks);
+  static std::string gaus_peaks_to_json( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
+                                  const std::shared_ptr<const SpecUtils::Measurement> &foreground );
+  static std::string peak_json( const std::vector<std::shared_ptr<const PeakDef> > &inpeaks,
+                                const std::shared_ptr<const SpecUtils::Measurement> &foreground );
 #endif
   
 

@@ -400,32 +400,21 @@ padding-left:10px;
   border-top: none;
 }
 
-
-
+/* .SideMenu holds all the size information for the elements, while .VerticalMenu holds the styling
+ (color, hover, etc).
+*/
 .SideMenu
 {
-  margin: 0px;
   padding-left: 10px;
   padding-right:10px;
-  list-style-type: none;
-  overflow: auto;
   font-size: 13px;
   width: 12.5em;
 }
 
-
-
-.SideMenu > li 
-{
-}
-
 .SideMenu li
 {
-  vertical-align:middle;
-/*  font-size: small;*/
   font-weight: bold;
   height: 2.5em;
-  color: #ffffff;
   padding-top: 8px;
   padding-bottom: 8px;
   margin-top: 2px;
@@ -435,7 +424,31 @@ padding-left:10px;
   border-radius: 5px;
 }
 
-.SideMenu > .Wt-separator {
+.SideMenu a
+{
+  padding-left: 10px;
+  padding-right: 5px;
+}
+
+
+.VerticalMenu
+{
+  margin: 0px;
+  list-style-type: none;
+  overflow: auto;
+}
+
+.VerticalMenu > li
+{
+}
+
+.VerticalMenu li
+{
+  vertical-align:middle;
+  color: #ffffff;
+}
+
+.VerticalMenu > .Wt-separator {
     height: 0.25em;
     -webkit-border-radius: 0;
     -moz-border-radius: 0;
@@ -444,10 +457,8 @@ padding-left:10px;
     padding-bottom: 0px;
 }
 
-.SideMenu a
+.VerticalMenu a
 {
-  padding-left: 10px;
-  padding-right: 5px;
   cursor:pointer;
 }
 
@@ -470,36 +481,36 @@ ul.Wt-popupmenu > li > a > span > span:hover
 }
 
 
-.SideMenu li.item > a
+.VerticalMenu li.item > a
 {
 color: white;
 }
 
-.SideMenu li.itemselected > a
+.VerticalMenu li.itemselected > a
 {
 color: #E0F5FF;
 }
 
-.SideMenu li :hover
+.VerticalMenu li :hover
 {
   border-color: #eeeeee #eeeeee #dddddd;
 }
 
-.SideMenu li.itemselected
+.VerticalMenu li.itemselected
 {
 background: #C6C6C6;
 }
   
-.SideMenu li.itemselected:hover
+.VerticalMenu li.itemselected:hover
 {
 }
 
-.SideMenu li.item
+.VerticalMenu li.item
 {
 background: #888888;
 }
 
-.SideMenu li.item:hover
+.VerticalMenu li.item:hover
 {
 background: #9B9B9B;
 }
@@ -564,7 +575,8 @@ background: #9B9B9B;
 }
 
 
-.CsvLinkBtn, .CsvLinkBtn:hover {
+/* A button that shows up as a link. */
+.LinkBtn, .LinkBtn:hover {
   float: right;
   background: none !important;
   border: none !important;
@@ -586,255 +598,6 @@ background: #9B9B9B;
 }
 
 
-.RecalibratorWide
-{
-  margin-top: 2px;
-  padding-bottom: 3px;
-}
-
-.RecalibratorTall
-{
-}
-
-
-.DevPairDisplay
-{
-  border: 2px solid #e1e1e1;
-  
-  display: flex;
-  flex-direction: column;
-  flex-wrap: nowrap;
-}
-
-
-.DevPairDisplayWide
-{
-  margin-left: 5px;
-  width: 220px;
-}
-
-.DevPairDisplayTall
-{
-  height: 11.65em;
-}
-
-.DevPairsContainer
-{
-  padding: 3px;
-  
-  flex-grow: 1;
-  overflow: auto;
-  min-height: 2em;
-}
-
-.DevPairsFooter
-{
-  border-top: 1px solid #e1e1e1;
-  bottom: 0px;
-  width: 100%;
-  flex-shrink: 0;
-}
-
-
-.DevPairTitle
-{
-  font-weight:bold;
-  background:#EEEEEE;
-  white-space:nowrap;
-  text-align: center;
-  height: 20px;
-}
-
-
-.DevPairHeader
-{
-  border-bottom: 1px solid #e1e1e1;
-  flex-shrink: 0;
-}
-
-.DevPairEnergyHeader, .DevPairOffsetHeader
-{
-  /* font-weight:bold; */
-  font-size: smaller;
-  width: 45%;
-  display: inline-block;
-  padding-left: 5px;
-}
-
-
-.DevOffset, .DevEnergy
-{
-/*  width:60px;*/
-  margin-left:5px;
-  border-width: 0px;
-}
-
-.DevOffset
-{
-  margin-left:10px;
-  margin-right:4px;
-}
-
-/*
-.DevPairEnergyHeader
-{
-  border-right: 1px solid #e1e1e1;
-}
-*/
-
-
-
-.AddDevPair
-{
-  margin-left: 2px;
-  margin-top: 1px;
-  margin-bottom: 1px;
-  background-image: url('../InterSpec_resources/images/plus_min_black.svg');
-  background-repeat: no-repeat;
-  background-position: center;
-  height: 18px;
-  width: 19px;
-  opacity: 0.6;
-  cursor:pointer;
-  padding: 0;
-  display: block;
-}
-
-.AddDevPair:hover
-{
-  opacity: 1.0;
-}
-
-.InvalidDevPairs
-{
-  background: red;
-}
-
-.DevPair
-{
-  margin-top: 2px;
-  margin-bottom: 3px;
-  /* border: 1px solid #e1e1e1; */
-  padding-top: 5px;
-  padding-bottom: 5px;
-  padding-left: 5px;
-  background: rgba(245,245,245,0.5);
-  border-radius: 5px;
-}
-
-/* .DevPair > div > input
-{
-  border: red;
-}
-*/
-
-.PlusIconWhiteBtn, .PlusIconWhiteBtn:hover
-{
-  background-image: url('../InterSpec_resources/images/plus_min_white.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.MinusIconWhiteBtn, .MinusIconWhiteBtn:hover
-{
-  background-image: url('../InterSpec_resources/images/minus_min_white.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.DeleteDevPair
-{
-  background-image: url('../InterSpec_resources/images/minus_min_black.svg');
-  background-position: 0px center;
-  background-repeat: no-repeat;
-  float: right;
-  
-  opacity: 0.6;
-  cursor: pointer;
-}
-
-.DeleteDevPair:hover
-{
-  opacity: 1;
-}
-
-
-.RecalRow
-{
-  margin-left: 5px;
-  margin-right: 5px;
-  margin-bottom: 5px;
-}
-
-
-
-.RecalTermsDiv
-{
-  /*display: inline-block;*/
-  float: left;
-}
-
-
-
-.RecalLabel
-{
-  /*display:block;*/
-  display: inline-block;
-/*  width:5.75em;*/
-  white-space:nowrap;
-}
-
-.RecalFit
-{
-  display: inline-block;
-  margin-left: 0.85em;
-}
-
-.RecalInput
-{
-  display: inline-block;
-}
-
-.RecalExp
-{
-  display: inline-block;
-  white-space:nowrap;
-  margin-left: 0.25em;
-}
-
-.RecalIsotopeView
-{  
-  border: 2px solid #e1e1e1;
-}
-
-
-.RecalApplyToCbL
-{
-  display: inline-block;
-}
-
-.RecalApplyToCbR
-{
-  display: inline-block;
-}
-
-.RecalConvertToPolyTxt
-{
-  white-space: nowrap;
-  min-width: 275px;
-}
-
-.RecalCancelbtn, .RecalCancelbtn:hover
-{
-float:right;
-}
-
-.RecalPreviewbtn, .RecalPreviewbtn:hover
-{
-  float:right;
-}
 
 .FloatLeft, .FloatLeft:hover
 {
@@ -1032,6 +795,21 @@ h1
 /*{*/
 /*  border-spacing: 0;*/
 /*}*/
+
+.HideSpinners .HideSpinners
+{
+  width: 8em;
+  /* remove the up/down spinbox for Firefox - if you re-enable this, also re-enable the c++ code to set step size */
+  -moz-appearance: textfield;
+}
+
+input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner-spin-button
+{
+  /* Remove the up/down arrow on spin box for Chrome, Safari, Edge, Opera - if you re-enable this, also re-enable the c++ code to set step size */
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 
 .clearsession
 {
@@ -1331,6 +1109,7 @@ div.displaySampleDiv
 
 .CompactSpecTitle
 {
+  text-overflow: ellipsis;
 }
 
 

@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 #include <fstream>
+#include <algorithm>
 
 #include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
@@ -684,15 +685,23 @@ void RelEffDetSelect::saveFilePathToUserPreferences()
   
   auto children = m_files->children();
   
-  string concat_path;
+  vector<string> paths;
   for( auto w : children )
   {
     auto child = dynamic_cast<RelEffFile *>( w );
     const string filepath = child ? child->filepath() : string("");
     if( filepath.size() )
-      concat_path += (concat_path.size() ? ";" : "") + filepath;
+      paths.push_back( filepath );
+      //concat_path += (concat_path.size() ? ";" : "") + filepath;
   }//string concat_path;
   
+  //Make sure we only save unique paths
+  paths.erase( std::unique( begin(paths), end(paths) ), end(paths) );
+
+  string concat_path;
+  for( const auto &filepath : paths )
+    concat_path += (concat_path.size() ? ";" : "") + filepath;
+
   try
   {
     InterSpecUser::setPreferenceValue( m_interspec->m_user, "RelativeEffDRFPaths", concat_path, m_interspec );
@@ -797,6 +806,9 @@ void RelEffDetSelect::docreate()
   
   SpecUtils::split( paths, pathstr, "\r\n;" );
   
+  //Eliminate any duplicate entries in paths
+  paths.erase( std::unique( begin(paths), end(paths) ), end(paths) );
+
   if( paths.empty() )
     new RelEffFile( "", this, m_detectorEdit, m_files );
   
@@ -1515,10 +1527,10 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
     m_interspec( specViewer ),
     m_fileModel( fileModel )
 {
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   HelpSystem::attachToolTipOn( this, "The currently selected detector.  Click to select a"
-                              " different detector, or modify this one.", showToolTipInstantly );
+                              " different detector, or modify this one.", showToolTips );
   
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
@@ -1619,7 +1631,7 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
 {
   wApp->useStyleSheet( "InterSpec_resources/DetectorEdit.css" );
   
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   setOverflow(Wt::WContainerWidget::OverflowAuto);
   WGridLayout *mainLayout = new WGridLayout();
@@ -1749,10 +1761,10 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   lowerContent->resize( WLength::Auto, WLength(190,WLength::Pixel) );
   
   m_drfTypeStack = new Wt::WStackedWidget();
-  m_drfTypeStack->addStyleClass( "UseInfoStack" );
+  m_drfTypeStack->addStyleClass( "UseInfoStack DetEditContent" );
   
   m_drfTypeMenu = new WMenu( m_drfTypeStack, Wt::Vertical );
-  m_drfTypeMenu->addStyleClass( "SideMenu DetEditMenu" );
+  m_drfTypeMenu->addStyleClass( "VerticalMenu SideMenu DetEditMenu" );
   WContainerWidget *menuHolder = new WContainerWidget();
   menuHolder->addWidget( m_drfTypeMenu );
   lowerLayout->addWidget( menuHolder, 0, 0 );
@@ -1886,7 +1898,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_eqnEnergyGroup->checkedChanged().connect(boost::bind(&DetectorEdit::verifyManualDefinition, this));
   m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
     
-  HelpSystem::attachToolTipOn( energyContainer,"Energy unit for efficiency formula" , showToolTipInstantly, HelpSystem::Top );
+  HelpSystem::attachToolTipOn( energyContainer,"Energy unit for efficiency formula" ,
+                              showToolTips, HelpSystem::ToolTipPosition::Top );
 
   cell = formulaTable->elementAt( 3, 0 );
   new WLabel("Description", cell );
@@ -1939,9 +1952,8 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   //--- 5)  Recent
   //-------------------------------------
   WContainerWidget *recentDiv = new WContainerWidget( );
-  WGridLayout* recentDivLayout = new WGridLayout();
+  WGridLayout* recentDivLayout = new WGridLayout( recentDiv );
   recentDivLayout->setContentsMargins( 0, 0, 0, 0 );
-  recentDiv->setLayout(recentDivLayout);
 
   Dbo::ptr<InterSpecUser> user = m_interspec->m_user;
   
@@ -2059,9 +2071,9 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   recentDivLayout->addWidget( filter, 1, 2 );
   recentDivLayout->setRowStretch( 0, 1 );
-  recentDiv->setOverflow(Wt::WContainerWidget::OverflowHidden);
-  recentDiv->setMaximumSize( WLength::Auto, 180 );
-  
+  //recentDiv->setOverflow(Wt::WContainerWidget::OverflowHidden);
+  //recentDiv->setMaximumSize( WLength::Auto, 180 );
+  recentDiv->setHeight( WLength( 100, WLength::Unit::Percentage ) );
   m_DBtable->sortByColumn( 2, Wt::SortOrder::DescendingOrder );
   
   //--------------------------------------------------------------------------------
@@ -2143,10 +2155,11 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_acceptButton->setFloatSide(Wt::Right);
     
     m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
-    HelpSystem::attachToolTipOn( m_cancelButton,"Remove all changes or selections made by this dialog, and close the dialog" , showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_cancelButton, "Remove all changes or selections made by this"
+                                 " dialog, and close the dialog" , showToolTips );
     
     m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
-    HelpSystem::attachToolTipOn( m_acceptButton, "Accept all changes/selections made and close dialog" , showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_acceptButton, "Accept all changes/selections made and close dialog" , showToolTips );
   }else
   {
     m_acceptButton = new WPushButton( "Use Detector", m_footer );
@@ -3210,6 +3223,9 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initARelEffDetector( const S
     case DetectorType::Falcon5000:        smname = "Falcon 5000";       break;
     case DetectorType::Unknown:           smname = "";                  break;
     case DetectorType::MicroDetective:    smname = "Micro Detective";   break;
+    
+    default:
+      break;
   }//switch( type )
   
   if( smname.empty() )
@@ -3301,15 +3317,32 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::initAGadrasDetector(
     case DetectorType::Sam945:                     name = "SAM-945"; break;
     case DetectorType::Srpm210:                    name = "SRPM-210"; break;
       
+    case DetectorType::RIIDEyeNaI:                 name = "RIIDEyeX-GN1"; break;
+    case DetectorType::Interceptor:                name = "Interceptor"; break;
       
-    case DetectorType::MicroRaider:
+    case DetectorType::MicroRaider:                name = "Raider"; break;
+      
+    case DetectorType::RadSeekerNaI:               name = "RadSeeker-NaI"; break;
+    case DetectorType::RadSeekerLaBr:              name = "Radseeker-LaBr3"; break;
+    
+    case DetectorType::VerifinderNaI:              name = "Verifinder-NaI"; break;
+    case DetectorType::VerifinderLaBr:             name = "Verifinder-LaBr3"; break;
+      
+    case DetectorType::IdentiFinderR500NaI:        name = "IdentiFINDER-R500-NaI";   break;
+    case DetectorType::IdentiFinderR500LaBr:       name = "IdentiFINDER-R500-LaBr3"; break;
+      
+      
     case DetectorType::OrtecRadEagleCeBr2Inch:
     case DetectorType::OrtecRadEagleCeBr3Inch:
     case DetectorType::OrtecRadEagleLaBr:
     case DetectorType::RadHunterLaBr3:
     case DetectorType::RadHunterNaI:
     case DetectorType::Sam940LaBr3:
-      //ToDo: fill in these names
+    case DetectorType::IdentiFinderTungsten:
+    case DetectorType::IdentiFinderUnknown:
+    case DetectorType::RIIDEyeLaBr:
+      
+      // \TODO: fill in these names
       break;
   }//switch( type )
   

@@ -33,6 +33,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/DetectorEdit.h"
+#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -588,8 +589,8 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
 #endif
   
   csvButton->setText( "CSV" );
-  csvButton->setStyleClass( "CsvLinkBtn" );
-  csvButton->setAttributeValue( "style", "float: none;" );  //Keep the CSV download to the left side of the close button.  .CsvLinkBtn style class has the button float right..
+  csvButton->setStyleClass( "LinkBtn" );
+  csvButton->setAttributeValue( "style", "float: none;" );  //Keep the CSV download to the left side of the close button.  .LinkBtn style class has the button float right..
   
   auto enableDisableCsv = [csvButton,this](){
     csvButton->setDisabled( m_fluxTool->m_data.empty() );
@@ -700,7 +701,7 @@ void FluxToolWidget::init()
   
   wApp->useStyleSheet( "InterSpec_resources/FluxTool.css" );
   
-  const bool showToolTipInstantly = m_interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
+  const bool showToolTips = m_interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
   
   addStyleClass( "FluxToolWidget" );
   
@@ -739,7 +740,7 @@ void FluxToolWidget::init()
                               " followed by units; valid units are: meters, m, cm, mm, km, feet,"
                               " ft, ', in, inches, or \".  You may also add multiple distances,"
                               " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
-                              " 40inches and 15.6cm respectively.", showToolTipInstantly );
+                              " 40inches and 15.6cm respectively.", showToolTips );
   m_distance->changed().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   m_distance->enterPressed().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   
@@ -861,10 +862,10 @@ void FluxToolWidget::refreshPeakTable()
   
   m_msg->setText( "" );
   
-  float distance = static_cast<float>( 1.0*PhysicalUnits::meter );
+  double distance = 1.0*PhysicalUnits::meter;
   try
   {
-    distance = static_cast<float>( PhysicalUnits::stringToDistance( m_distance->text().toUTF8() ) );
+    distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
   }catch(...)
   {
     m_msg->setText( "Invalid Distance" );
@@ -951,8 +952,9 @@ void FluxToolWidget::refreshPeakTable()
       const double gammaInto4piUncert = cpsUncert / totaleff;
       
       //Flux in g/cm2/s
-      const double flux = gammaInto4pi / (4*M_PI*distance*distance);
-      const double fluxUncert = gammaInto4piUncert / (4*M_PI*distance*distance);
+      const double distance_cm = distance / PhysicalUnits::cm;
+      const double flux = gammaInto4pi / (4*M_PI*distance_cm*distance_cm);
+      const double fluxUncert = gammaInto4piUncert / (4*M_PI*distance_cm*distance_cm);
       
       
       m_data[i][FluxColumns::FluxFluxOnDetCol] = fluxOnDet;

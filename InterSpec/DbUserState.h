@@ -11,11 +11,7 @@
 
 #include "InterSpec/SpecMeas.h"
 
-namespace SpecUtils
-{
-  class SpecFile;
-  enum class SpectrumType : int;
-}//namespace SpecUtils
+namespace SpecUtils{ class SpecFile; }
 
 
 namespace DbUserState
@@ -250,7 +246,7 @@ private:
 };//class Spectrum
 
 
-//This class stores a MeasurementInfo object
+//This class stores a SpecUtils::SpecFile object
 class SpectrumFile
 {
 public:
@@ -280,7 +276,7 @@ public:
   //  binary format
   SerializedFileFormat m_fileFormat;
   
-  //fileData: the actual data of the serialized MeasurementInfo object, may be
+  //fileData: the actual data of the serialized SpecUtils::SpecFile object, may be
   //  compressed.
   SpectrumData_t m_spectrumData;
   
@@ -315,7 +311,7 @@ public:
   
   
 //UserSpectrumStuff nominally hold the stuff the SpecMeas class holds, minus
-//  the stuff the MeasurementInfo class holds
+//  the stuff the SpecUtils::SpecFile class holds
 class UserSpectrumStuff
 {
 public:
@@ -349,14 +345,14 @@ public:
       std::string type;
       Wt::Dbo::field( a, type, "SpectrumType" );
       
-      if( type == SpecUtils::descriptionText(SpecUtils::SpectrumType::Foreground) )
+      if( type == descriptionText(SpecUtils::SpectrumType::Foreground) )
         m_spectrumType = SpecUtils::SpectrumType::Foreground;
       else if( type == descriptionText(SpecUtils::SpectrumType::SecondForeground) )
         m_spectrumType = SpecUtils::SpectrumType::SecondForeground;
       else if( type == descriptionText(SpecUtils::SpectrumType::Background) )
         m_spectrumType = SpecUtils::SpectrumType::Background;
       else if( type == "" )
-        m_spectrumType = SpecUtils::SpectrumType::Foreground;
+        m_spectrumType = SpecUtils::SpectrumType::Background;
       else throw std::runtime_error( "Invalid spectrum type in DB: " + type );
     }//if( reading from DB )
     

@@ -799,7 +799,7 @@ namespace
                 try
                 {
                   age_at_meas = PhysicalUnits::stringToTimeDurationPossibleHalfLife( mtch[2].str(), (nuc ? nuc->halfLife : -1.0) );
-                }catch( std::exception &e )
+                }catch( std::exception & )
                 {
                   cerr << "Failed to convert '" << mtch[2].str() << "' to an age." << endl;
                 }
@@ -1515,7 +1515,7 @@ void MakeDrf::startSaveAs()
   const char *tooltip = "Name of the detector response function to save to <em>InterSpecs</em>"
                         " internal database so you can use the response function later."
                         "  Name must be a valid filename (e.g., no \\\\, /, :, etc. characters).";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   cell = table->elementAt(1, 0);
   label = new WLabel( "Description", cell );
@@ -1529,7 +1529,7 @@ void MakeDrf::startSaveAs()
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Optional description of the DRF to help remind yourself of details when you use the DRF in the future.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   std::shared_ptr<const SpecMeas> representative_meas;
   
@@ -1572,7 +1572,7 @@ void MakeDrf::startSaveAs()
       tooltip = "Make it so when spectra from a detector with a matching serial"
                 " number is loaded into InterSpec, this detector response function"
                 " will automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
     }//if( serial_number.size() )
     
     string model;
@@ -1593,7 +1593,7 @@ void MakeDrf::startSaveAs()
       tooltip = "Make it so when spectra from this model detector is loaded"
                 " into InterSpec, this detector response function will"
                 " automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
     }//if( !model.empty() )
   }//if( representative_meas )
   
@@ -1602,7 +1602,8 @@ void MakeDrf::startSaveAs()
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
-  new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
+  WAnchor *n42anchor = new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
+  n42anchor->setTarget( AnchorTarget::TargetNewWindow );
   
   cell = table->elementAt(currentRow, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
@@ -1611,13 +1612,14 @@ void MakeDrf::startSaveAs()
             "  Source and shielding information is also usually stored into the file as well to,"
             " in principal, except for detector diameter and equation orders,"
             " provide all the input information used to create the DRF.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CsvDrfDownloadResource *csvResource = new CsvDrfDownloadResource( this );
-  new WAnchor( csvResource, "Export DRF as CSV.", cell );
+  WAnchor *csvanchor = new WAnchor( csvResource, "Export DRF as CSV.", cell );
+  csvanchor->setTarget( AnchorTarget::TargetNewWindow );
   
   auto updateName = [name,csvResource,n42Resource](){
     if( name->validate() == Wt::WValidator::Valid )
@@ -1650,12 +1652,13 @@ void MakeDrf::startSaveAs()
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Exports the DRF into a CSV file that contains all of the information of the DRF."
             " Especially useful for using with other tools.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   
   WPushButton *b = w->addCloseButtonToFooter( "Cancel" );
   b->clicked().connect( w, &AuxWindow::hide );
   
+  // TODO: Need to display messsage to user about how it is saved, how to access it again, and figure out why menus go away for people (maybe only on Windows?) - also should consider not closing AuxWindow - also fix assay date being invalid error (seems to cause uncaught exception).
   auto doSave = [this, w, validator, name, description,
                  def_for_serial_cb, def_for_model_cb,
                  representative_meas ](){
@@ -1755,7 +1758,7 @@ void MakeDrf::startSaveAs()
     
     if( def_for_model_cb && def_for_model_cb->isChecked() && representative_meas )
     {
-       UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
       WServer::instance()->ioService().post( std::bind( [=](){
         DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
       } ) );

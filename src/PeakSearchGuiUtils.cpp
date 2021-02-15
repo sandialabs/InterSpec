@@ -39,6 +39,7 @@
 #include <Wt/WAnimation>
 #include <Wt/WIOService>
 #include <Wt/WTableCell>
+#include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/Chart/WDataSeries>
@@ -53,6 +54,7 @@
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/WarningWidget.h"
@@ -458,6 +460,7 @@ public:
     {
       cell = m_table->elementAt(0,keepPeakIndex);
       txt = new WText( "Keep Peak?", cell );
+      txt->setWordWrap( false );
     }
     
     if( peakEnergyIndex >= 0 )
@@ -515,6 +518,7 @@ public:
         }else
         {
           WCheckBox *cb = new WCheckBox( "Keep Peak", cbcell );
+          cb->setWordWrap(false);
           cb->setChecked(true);
           cb->changed().connect( this, &PeakSelectorWindow::keepPeakChanged );
           m_keep_peak_cbs[i] = cb;
@@ -1034,7 +1038,7 @@ public:
         {
           const string msg = "PeakSelectorWindow::nuclideDesc(): What - this shouldnt happen! - coudlnt find SF for '" + parttype + "'";
 #if( PERFORM_DEVELOPER_CHECKS )
-          log_developer_error( BOOST_CURRENT_FUNCTION, msg.c_str() );
+          log_developer_error( __func__, msg.c_str() );
 #else
           cerr << msg << endl;
 #endif
@@ -1332,7 +1336,7 @@ public:
           {
             const string msg = "PeakSelectorWindow::populateNuclideSelects(): What - this shouldnt happen! - coudlnt find SF for '" + parttype + "'";
 #if( PERFORM_DEVELOPER_CHECKS )
-            log_developer_error( BOOST_CURRENT_FUNCTION, msg.c_str() );
+            log_developer_error( __func__, msg.c_str() );
 #else
             cerr << msg << endl;
 #endif
@@ -1390,7 +1394,7 @@ public:
           {
 #if( PERFORM_DEVELOPER_CHECKS )
             if( currentstr.size() )  //shouldnt ever happen, right?
-              log_developer_error( BOOST_CURRENT_FUNCTION, ("PeakSelectorWindow::populateNuclideSelects(): Found mutliple matches of select strings for a nuclide: '" + string(buffer) + "'").c_str() );
+              log_developer_error( __func__, ("PeakSelectorWindow::populateNuclideSelects(): Found mutliple matches of select strings for a nuclide: '" + string(buffer) + "'").c_str() );
 #endif
             currentstr = buffer;
           }else if( backgroundLineMatchedRef && (diff_from_assigned < 0.1) )
@@ -1947,7 +1951,7 @@ namespace PeakSearchGuiUtils
 {
   
   std::shared_ptr<WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils::Measurement> inmeas,
-                                              std::shared_ptr< std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                                              std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
                                               const std::vector<std::shared_ptr<const ReferenceLineInfo>> &displayed,
                                               double lowx, double upperx,
                                               const int width, const int height,
@@ -2090,24 +2094,19 @@ void automated_search_for_peaks( InterSpec *viewer,
   
   const bool setColor = viewer->colorPeaksBasedOnReferenceLines();
   
+  
   //We should indicate to the user that seraching for peaks will take a while,
   //  but also we want to give them the chance to go past this and keep using
   //  the app.
-  AuxWindow *msg = new AuxWindow( "Just a few moments",
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::PhoneModal) );
-  msg->setClosable( true );
-  msg->setModal( true );
-  msg->show();
+  const char *title = "Just a few moments";
+  const char *content = "<div style=\"text-align: left; white-space: nowrap;\">"
+                          "<div>Searching for peaks - this may take a bit.</div>"
+                          "<div>You can close this dialog and when the search is done,</div>"
+                        "you will be notified"
+                        "</div>";
+  SimpleDialog *msg = new SimpleDialog( title, content );
   msg->rejectWhenEscapePressed();
-  msg->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, msg ) );
-  new WText( "<div style=\"white-space: nowrap;\">Searching for peaks - this may take a bit.</div>"
-             "<div style=\"white-space: nowrap;\">You can close this dialog and when the search is done,</div>"
-             "you will be notified", Wt::XHTMLText, msg->contents() );
-  msg->centerWindow();
-  msg->disableCollapse();
-  
-  WPushButton *button = new WPushButton( "Close", msg->footer() );
-  button->clicked().connect( msg, &AuxWindow::hide );
+  msg->addButton( "Close" );
   
   //Make it so users cant keep clicking the search button
   viewer->automatedPeakSearchStarted();
@@ -2121,7 +2120,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   //using WApplication::bind to call msg->hide() will protect against the user
   //  closing the msg window (which will have deleted it)
   boost::function<void(void)> guiupdater
-                          = wApp->bind( boost::bind( &AuxWindow::hide, msg ) );
+                          = wApp->bind( boost::bind( &SimpleDialog::accept, msg ) );
   
   //The results of the peak search will be placed into the vector pointed to
   // by searchresults, which is why both 'callback' and below and
@@ -2160,7 +2159,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer )
   //  then create the popup window widget to let the user change things - this
   //  function should also use that same popup window!
   
-  const bool showingEscapePeakFeature = viewer->showingFeatureMarker(InterSpec::FeatureMarkerType::EscapePeakMarker);
+  const bool showingEscapePeakFeature = viewer->showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
   auto peakModel = viewer->peakModel();
   auto foreground = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   const ReferencePhotopeakDisplay *refLineDisp = viewer->referenceLinesWidget();
@@ -2284,7 +2283,7 @@ void assign_nuclide_from_reference_lines( PeakDef &peak,
       const char *msg = "assign_nuclide_from_reference_lines(): bad logic getting"
                         " previous peak index";
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+      log_developer_error( __func__, msg );
 #else
       cerr << msg << endl;
 #endif
@@ -2328,7 +2327,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
     msg += "'";
     
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg.c_str() );
+    log_developer_error( __func__, msg.c_str() );
 #else
     cerr << msg << endl;
 #endif
@@ -2389,13 +2388,13 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
         if( res == PeakModel::NoSourceChange )
         {
 #if( PERFORM_DEVELOPER_CHECKS )
-          log_developer_error( BOOST_CURRENT_FUNCTION, "A suggested change to a peak did not result in a change - prob shouldnt have happened." );
+          log_developer_error( __func__, "A suggested change to a peak did not result in a change - prob shouldnt have happened." );
 #endif
         }
       }else
       {
 #if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, "A suggested peak to change was not in the input - logic error!" );
+        log_developer_error( __func__, "A suggested peak to change was not in the input - logic error!" );
 #endif
       }//if( pos != end(*answerpeaks) ) / else
     }//if( addswap )
@@ -2412,6 +2411,8 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
 }//void assign_srcs_from_ref_lines(...)
   
   
+
+
 void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::Measurement> data,
                          std::vector<PeakDef> input_peaks,
                          std::vector<PeakDef> orig_peaks,
@@ -2422,6 +2423,8 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
     cerr << "fit_template_peaks: data is invalid!" << endl; //prob shouldnt ever happen
     return;
   }
+  
+  unique_copy_continuum( input_peaks );
   
   vector<PeakDef> candidate_peaks, data_def_peaks;
   
@@ -2485,6 +2488,12 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
   
   //Make sure peaks are sorted, for good measure
   std::sort( begin(fitpeaks), end(fitpeaks), &PeakDef::lessThanByMean );
+  
+  
+  //Dont show user the dialog if no peaks were found, and we were looking for peaks from previous
+  //  spectrum
+  if( fitpeaks.empty() && (fitsrc == PeakTemplateFitSrc::PreviousSpectrum) )
+    return;
   
   WServer::instance()->post( sessionid, [=](){
     

@@ -45,7 +45,6 @@
 #include <Wt/WText>
 #include <Wt/WTimer>
 #include <Wt/WLabel>
-#include <Wt/WBreak>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WIOService>
@@ -64,6 +63,10 @@
 #include <Wt/Chart/WCartesianChart>
 #include <Wt/WMessageResourceBundle>
 
+#if( ALLOW_URL_TO_FILESYSTEM_MAP && (BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_LOCAL_SERVER ) )
+#include <Wt/Utils>
+#endif
+
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
@@ -76,6 +79,8 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
+#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/ShowRiidInstrumentsAna.h"
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
@@ -87,6 +92,9 @@
 #endif
 
 
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+#include "InterSpec/InterSpecServer.h"
+#endif
 
 
 using namespace std;
@@ -102,70 +110,6 @@ namespace
   //note: could potentially use Wt::WServer::instance()->sessions() to retrieve
   //      sessionIds.
 #endif
-
-  
-#if( ALLOW_URL_TO_FILESYSTEM_MAP && (BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS) )
-  std::string uri_decode( const std::string &sSrc )
-  {
-    //adapted from http://www.codeguru.com/cpp/cpp/algorithms/strings/article.php/c12759/URI-Encoding-and-Decoding.htm
-    
-    const char HEX2DEC[256] =
-    {
-      /*       0  1  2  3   4  5  6  7   8  9  A  B   C  D  E  F */
-      /* 0 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 1 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 2 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 3 */  0, 1, 2, 3,  4, 5, 6, 7,  8, 9,static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      
-      /* 4 */ static_cast<char>(-1),10,11,12, 13,14,15,static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 5 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 6 */ static_cast<char>(-1),10,11,12, 13,14,15,static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 7 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      
-      /* 8 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* 9 */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* A */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* B */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      
-      /* C */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* D */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* E */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),
-      /* F */ static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1), static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1),static_cast<char>(-1)
-    };
-    
-    const unsigned char *pSrc = (const unsigned char *)sSrc.c_str();
-    const int SRC_LEN = sSrc.length();
-    const unsigned char * const SRC_END = pSrc + SRC_LEN;
-    // last decodable '%'
-    const unsigned char * const SRC_LAST_DEC = SRC_END - 2;
-    
-    vector<char> newchars( SRC_LEN );
-    char *pEnd = &newchars[0];
-    
-    while (pSrc < SRC_LAST_DEC)
-    {
-      if (*pSrc == '%')
-      {
-        char dec1, dec2;
-        if (-1 != (dec1 = HEX2DEC[*(pSrc + 1)])
-            && -1 != (dec2 = HEX2DEC[*(pSrc + 2)]))
-        {
-          *pEnd++ = (dec1 << 4) + dec2;
-          pSrc += 3;
-          continue;
-        }
-      }
-      
-      *pEnd++ = *pSrc++;
-    }//while (pSrc < SRC_LAST_DEC)
-    
-    // the last 2- chars
-    while (pSrc < SRC_END)
-      *pEnd++ = *pSrc++;
-    
-    return std::string( &newchars[0], pEnd);
-  }
-#endif  //#if( ALLOW_URL_TO_FILESYSTEM_MAP )
 }//namespace
 
 
@@ -180,20 +124,21 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
     , m_safeAreas{ 0.0f }
 #endif
 {
-  enableUpdates( true );
-
-  //Might as well initialize the DecayDataBaseServer, but in the background
-  WServer::instance()->ioService().post( &DecayDataBaseServer::initialize );
- 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
   if( !checkExternalTokenFromUrl() )
   {
-    new WText( "Invalid external token.", root() );
-    quit();
+    setTitle( "Error loading" );
+    new WText( "Invalid 'apptoken' specified, not loading", root() );
+    WApplication::quit( "InterSpec is configured to not allow arbitary sessions" );
     return;
-  }
+  }//if( !checkExternalTokenFromUrl() )
 #endif
+ 
+  enableUpdates( true );
   
+  //Might as well initialize the DecayDataBaseServer, but in the background
+  WServer::instance()->ioService().post( &DecayDataBaseServer::initialize );
+   
   setupDomEnvironment();
   setupWidgets( true );
 }//InterSpecApp constructor
@@ -201,6 +146,11 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
 
 InterSpecApp::~InterSpecApp()
 {
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  if( !m_externalToken.empty() )
+    InterSpecServer::set_session_destructing( m_externalToken.c_str() );
+#endif
+
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   {
     std::lock_guard<std::mutex> lock( AppInstancesMutex );
@@ -213,15 +163,52 @@ InterSpecApp::~InterSpecApp()
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
 bool InterSpecApp::checkExternalTokenFromUrl()
 {
+  m_primaryApp = false;
+  
+  const bool allow_untokened = InterSpecServer::allow_untokened_sessions();
   const Http::ParameterMap &parmap = environment().getParameterMap();
   for( const Http::ParameterMap::value_type &p : parmap )
   {
-    if( SpecUtils::iequals_ascii(p.first, "externalid") && !p.second.empty() )
+    if( (SpecUtils::iequals_ascii(p.first, "externalid")
+          || SpecUtils::iequals_ascii(p.first, "apptoken"))
+       && !p.second.empty() )
+    {
       m_externalToken = p.second.front();
+      
+      const int status = InterSpecServer::set_session_loaded( m_externalToken.c_str() );
+      
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+      m_primaryApp = false;
+#else
+      // Default to true if we have an app token; this is temporary until I get around to changing
+      //  android/ios targets to always give "primary=yes" URL argument
+      m_primaryApp = true;
+#endif
+            
+      for( const Http::ParameterMap::value_type &primary : parmap )
+      {
+        if( !primary.second.empty() && SpecUtils::iequals_ascii(primary.first, "primary") )
+        {
+          const string &val = primary.second.front();
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+          m_primaryApp = ((status == 0)
+                           && (SpecUtils::iequals_ascii(val,"yes")
+                               || SpecUtils::iequals_ascii(val,"true")
+                               || SpecUtils::iequals_ascii(val,"1") ));
+#else
+          m_primaryApp = !(SpecUtils::iequals_ascii(val,"no")
+                            || SpecUtils::iequals_ascii(val,"false")
+                            || SpecUtils::iequals_ascii(val,"0") );
+#endif
+          break;
+        }//if( there is a 'primary' argument in the URL
+      }//for( loop over parameters to see if this _shouldnt_ be a primary app )
+      
+      return (allow_untokened || (status==0));
+    }
   }//for( const Http::ParameterMap::value_type &p : parmap )
   
-  //ToDo: actually enforce the token being one of the allowed ones.
-  return true;
+  return allow_untokened;
 }//bool checkExternalTokenFromUrl()
 #endif  //#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
 
@@ -231,16 +218,21 @@ void InterSpecApp::setupDomEnvironment()
 #if( BUILD_AS_ELECTRON_APP )
   //To make nodeIntegration=true work:
   //  https://stackoverflow.com/questions/32621988/electron-jquery-is-not-defined
-  doJavaScript( "if (typeof module === 'object') {window.module = module; module = undefined;}", false );
-
-#if( USE_ELECTRON_NATIVE_MENU )
-  //Some support to use native menu...
-  doJavaScript( "const { remote, ipcRenderer } = require('electron');const {Menu, MenuItem} = remote;", false );
+  if( isPrimaryWindowInstance() )
+  {
+    // \TODO: when/if we allow multiple electron windows, need to upgrade from using
+    //        isPrimaryWindowInstance() to something that says if it is an electron window
+    doJavaScript( "if (typeof module === 'object') {window.module = module; module = undefined;}", false );
+    
+#if( USING_ELECTRON_NATIVE_MENU )
+    //Some support to use native menu...
+    doJavaScript( "const { remote, ipcRenderer } = require('electron');const {Menu, MenuItem} = remote;", false );
 #else
-  doJavaScript( "const {remote, ipcRenderer} = require('electron'); ", false );
+    doJavaScript( "const { remote, ipcRenderer} = require('electron'); ", false );
 #endif
+  }//if( isPrimaryWindowInstance() )
   
-#endif
+#endif //BUILD_AS_ELECTRON_APP
   
   setTitle( "InterSpec" );
   
@@ -276,6 +268,7 @@ void InterSpecApp::setupDomEnvironment()
   
   //This is needed to fix keyboard hiding in iOS
 #if(IOS || ANDROID)
+  //TODO: this can be added to wt_config.xml instead
   const char *fix_ios_js = INLINE_JAVASCRIPT(
     var t=document.createElement('meta');
     t.name = "viewport";
@@ -292,7 +285,7 @@ void InterSpecApp::setupDomEnvironment()
 #if( BUILD_AS_OSX_APP && !PERFORM_DEVELOPER_CHECKS )
   root()->setAttributeValue( "oncontextmenu", "return false;" );
 #endif
-
+  
   if( isMobile() )
   {
     useStyleSheet( "InterSpec_resources/InterSpecMobileCommon.css" );
@@ -376,7 +369,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     delete m_viewer;
     m_viewer = nullptr;
     
-#if( (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#if( USING_ELECTRON_NATIVE_MENU )
     //ToDo: need to clear out all the native menus...
 #elif( USE_OSX_NATIVE_MENU )
 #endif
@@ -386,6 +379,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   {
     delete m_layout;
     root()->clear();
+  }
+  
+  if( !m_miscSignal )
+  {
+    m_miscSignal.reset( new JSignal<std::string>(this, "miscSignal", false) );
+    m_miscSignal->connect( this, &InterSpecApp::miscSignalHandler );
   }
   
   try
@@ -398,8 +397,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     throw e;
 #endif //#if( BUILD_AS_UNIT_TEST_SUITE )
     
-    string msg = "There was a problem initializing a necessary resource"
-    " for InterSpec";
+    string msg = "There was a problem initializing a necessary resource for InterSpec";
     WText *errorText = new WText( msg, root() );
     errorText->setInline( false );
     errorText->setAttributeValue( "style",
@@ -415,9 +413,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     errorText = new WText( e.what(), errorDiv );
     errorText->setAttributeValue( "style", "font-family:\"Times New Roman\", Times, serif;" );
     
-    new WBreak( root() );
-    
-    msg = "Please contact wcjohns@sandia.gov and/or interspec@sandia.gov to fix this error.";
+    msg = "<br />Please contact wcjohns@sandia.gov and/or interspec@sandia.gov to fix this error.";
     errorText = new WText( msg, root() );
     errorText->setAttributeValue( "style", "font-family:Courier New; color: blue;" );
     WApplication::quit();
@@ -440,14 +436,17 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   const Http::ParameterMap &parmap = environment().getParameterMap();
   
 #if( ALLOW_URL_TO_FILESYSTEM_MAP )
-#if( BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS )
+#if( BUILD_AS_ELECTRON_APP || INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_LOCAL_SERVER )
   //Allowing opening a file via the URL could potentially be a security issue
   //  if serving over the web, or the port being served on is available outside
   //  of the local computer (or user account).  Therefore we will only enable this
   //  feature for test setups, and to allow the Electron based app to more reliably
   //  open spectrum files when the user drags the spectrum to the app icon; the Electron
   //  app serves on 127.0.0.1, which is only available on the local computer, so this 
-  //  povides some protection.
+  //  provides some protection.
+  static_assert( !BUILD_FOR_WEB_DEPLOYMENT,
+                "Web deployment doesnt allow openeing spectrum files from URL" );
+  
   const Http::ParameterMap::const_iterator specfileiter
                                    = parmap.find( "specfilename" );
   if( (specfileiter != parmap.end()) && specfileiter->second.size() )
@@ -456,14 +455,35 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //  ToDo: after a little more testing enable always testing the request is
     //        from 127.0.0.1, AND for Electron version of app that that the 
     //        value of "externalid" in the URL matches InterSpecServer::external_id()
-    //SpecUtils::icontains( environment().clientAddress(), "127.0.0.1" )
+
+#if( BUILD_AS_LOCAL_SERVER )
+    const string &clientAddress = environment().clientAddress();
+    const string msg = "Will open file from URL.  ClientAddress='" + clientAddress + "',"
+                       " UriFileName='" + specfileiter->second[0].c_str() + "'";
+    wApp->log( "info" ) << msg;
+    cerr << msg << endl;
     
-    const string filename = uri_decode( specfileiter->second[0] );
-    loadedSpecFile = m_viewer->userOpenFileFromFilesystem( filename );
-    if( loadedSpecFile )
-      cout << "Openend file specified by URL '" << filename << "'" << endl;
-    else
-      cerr << "Invalid specfile specified in URL '" << filename << "'" << endl;
+    if( !SpecUtils::icontains( clientAddress, "127.0.0.1" ) )
+    {
+      string errormsg = "Security error: Request to open a file came from client-address '"
+                        + clientAddress + "' for file (uri encoded) '" + specfileiter->second[0]
+                        + "', will not do this, since not from 127.0.0.1.";
+      wApp->log( "error" ) << errormsg.c_str();
+      cerr << "From cerr: " << errormsg << endl;
+    }else
+    {
+#endif
+      
+      const string filename = Wt::Utils::urlDecode( specfileiter->second[0] );
+      
+      loadedSpecFile = m_viewer->userOpenFileFromFilesystem( filename );
+      if( loadedSpecFile )
+        cout << "Opened file specified by URL '" << filename << "'" << endl;
+      else
+        cerr << "Invalid specfile specified in URL '" << filename << "'" << endl;
+#if( BUILD_AS_LOCAL_SERVER )
+    }//
+#endif
   }//if( speciter != parmap.end() )
 #endif //#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS )
 
@@ -616,22 +636,17 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         {
 #endif
         m_viewer->loadStateFromDb( state );
-        
-        if( !m_clearSession )
-        {
-          m_clearSession.reset( new JSignal<>(this, "clearSession", false) );
-          m_clearSession->connect( this, &InterSpecApp::clearSession );
-        }
           
         WStringStream js;
-        js << "<div onclick="
-        "\"Wt.emit('" << id() << "',{name:'clearSession'});"
-        "$('.qtip.jgrowl:visible:last').remove();"
+        js << "Resuming where you left off on " << state->name.toUTF8()
+           << "<div onclick="
+        "\"Wt.emit('" << id() << "',{name:'miscSignal'}, 'clearSession');"
+        //"$('.qtip.jgrowl:visible:last').remove();"
+        "try{$(this.parentElement.parentElement).remove();}catch(e){}"
         "return false;\" "
         "class=\"clearsession\"><span class=\"clearsessiontxt\">Start Fresh Session</span></div>";
         
-        passMessage( "Resuming where you left off on " + state->name + js.str(),
-                    "", WarningWidget::WarningMsgInfo );
+        WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgInfo, 5000 );
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
         }
 #endif
@@ -775,8 +790,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     cerr << "Have started session " << sessionId() << " for user "
     << m_viewer->m_user->userName() << endl;
   
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
-  if( !m_externalToken.empty() )
+#if( USING_ELECTRON_NATIVE_MENU )
+  if( isPrimaryWindowInstance() )
   {
     //ToDo: time if WTimer::singleShot or post() is better
     //WServer::instance()->post( sessionId(), [](){ PopupDivMenu::triggerElectronMenuUpdate(); } );
@@ -878,6 +893,26 @@ std::string InterSpecApp::externalToken()
 }//const std::string &externalToken() const
 
 
+bool InterSpecApp::isPrimaryWindowInstance()
+{
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( !app )
+    return false;
+  
+  WApplication::UpdateLock lock(app);
+  if( !lock )
+    return false;
+  
+  if( !app->m_primaryApp )
+    return false;
+  
+  const string &externalid = app->m_externalToken;
+  const int status = InterSpecServer::session_status( externalid.c_str() );
+  
+  return ((status == 1) || (status == 2));
+}//bool isPrimaryWindowInstance()
+
+
 InterSpecApp *InterSpecApp::instanceFromExtenalToken( const std::string &idstr )
 {
   if( idstr.empty() )
@@ -937,23 +972,6 @@ void InterSpecApp::dragEventWithFileContentsFinished()
 }
 #endif
 
-#if( BUILD_AS_ELECTRON_APP )
-bool InterSpecApp::isElectronInstance()
-{
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
-  if( !app )
-	return false;
-  WApplication::UpdateLock lock(app);
-  if( !lock )
-    return false;
-
-  const string externalid = app->externalToken();
-  
-  //XXX - should compare externalid to ElectronUtils::external_id()
-
-  return !externalid.empty();
-}
-#endif
 
 
 #if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
@@ -1049,7 +1067,7 @@ void InterSpecApp::notify( const Wt::WEvent& event )
 #if( PERFORM_DEVELOPER_CHECKS )
     char message[1024];
     snprintf(message, sizeof(message), "Uncaught exception in event loop: %s", e.what() );
-    log_developer_error( BOOST_CURRENT_FUNCTION, message );
+    log_developer_error( __func__, message );
 #endif
     
   }//try/catch
@@ -1200,21 +1218,55 @@ void InterSpecApp::prepareForEndOfSession()
 
 void InterSpecApp::clearSession()
 {
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
   // As a workaround setup a function ElectronUtils::requestNewCleanSession() that
   //  sends websocket message to node land to clear menus, and load a new session
   //  but with argument "restore=no"
-  if( !ElectronUtils::requestNewCleanSession() )
+  if( InterSpecApp::isPrimaryWindowInstance() )
   {
-    passMessage( "There was an error requesting a new session - sorry.",
-                "", WarningWidget::WarningMsgHigh );
+    if( !ElectronUtils::requestNewCleanSession() )
+    {
+      passMessage( "There was an error requesting a new session - sorry.",
+                   "", WarningWidget::WarningMsgHigh );
+    }
+  }else
+  {
+    setupWidgets( false );
   }
-  
 #else
   setupWidgets( false );
 #endif
 }//void clearSession()
 
+
+void InterSpecApp::miscSignalHandler( const std::string &signal )
+{
+  if( signal == "clearSession" )
+  {
+    clearSession();
+    return;
+  }//if( signal == "clearSession" )
+  
+  if( SpecUtils::istarts_with( signal, "showRiidAna" ) )
+  {
+    SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+    if( SpecUtils::icontains(signal, "background") )  //SpecUtils::descriptionText(SpecUtils::SpectrumType::Background)
+      type = SpecUtils::SpectrumType::Background;
+    else if( SpecUtils::icontains(signal, "secondary") )  //SpecUtils::descriptionText(SpecUtils::SpectrumType::SecondForeground)
+      type = SpecUtils::SpectrumType::SecondForeground;
+    
+    showRiidInstrumentsAna( m_viewer->measurment(type) );
+    return;
+  }
+  
+  // shouldnt ever make it here..
+  const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
+  passMessage( errmsg, "", WarningWidget::WarningMsgHigh );
+#if( PERFORM_DEVELOPER_CHECKS )
+  log_developer_error( __func__, errmsg.c_str() );
+#endif
+  cerr << errmsg << endl;
+}//void miscSignalHandler( const std::string &signal )
 
 
 void InterSpecApp::finalize()
@@ -1306,14 +1358,17 @@ void InterSpecApp::loadSuccesfullCallback()
 {
   m_sucessfullyLoadedSignal.reset();
   
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
 #if( BUILD_AS_ELECTRON_APP )
-  ElectronUtils::notifyNodeJsOfNewSessionLoad();
+    ElectronUtils::notifyNodeJsOfNewSessionLoad();
 #elif( BUILD_AS_OSX_APP )
-  macOsUtils::sessionSuccessfullyLoaded();
+    macOsUtils::sessionSuccessfullyLoaded();
 #elif( ANDROID )
-  #warning "Need to implement notifying for parent process for Android"
+#warning "Need to implement notifying for parent process for Android"
 #else
-  static_assert( 0, "Something messed up with pre-processor setup" );
+    static_assert( 0, "Something messed up with pre-processor setup" );
 #endif
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
 }//void loadSuccesfullCallback()
 #endif

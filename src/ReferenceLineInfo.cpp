@@ -257,7 +257,7 @@ void ReferenceLineInfo::toJson( string &json ) const
   if( !detectorName.empty() )
     jsonstrm << "detector:" << jsQuote( detectorName ) << ",";
   
-  if( !shieldingName.empty() )
+  if( !shieldingName.empty() && (shieldingThickness > 0.1*PhysicalUnits::um ) )
   {
     const string name = jsQuote( shieldingName );
     string thickness = PhysicalUnits::printToBestLengthUnits( shieldingThickness );
@@ -344,7 +344,7 @@ void ReferenceLineInfo::sortByEnergy()
   {
     if( energies[i-1] > energies[i] )
     {
-      log_developer_error( BOOST_CURRENT_FUNCTION, "Error sorting reference photopeaks" );
+      log_developer_error( __func__, "Error sorting reference photopeaks" );
       break;
     }
   }//for( size_t i = 0; i < len; ++i )

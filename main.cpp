@@ -118,6 +118,8 @@ Wt::WApplication *createApplication( const Wt::WEnvironment &env )
 #include <stdio.h>
 #include <shellapi.h>
 
+#include "SpecUtils/StringAlgo.h"
+
 /** Get command line arguments encoded as UTF-8.
     This function just leaks the memory
  
@@ -169,7 +171,7 @@ void processCustomArgs( int argc, char **argv )
           SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
           set_serial_num_file = true;
         }
-      }catch( std::exception &e )
+      }catch( std::exception & )
       {
         std::cerr << "Invalid userdatadir ('" << argv[i+1] << "') specified"
                   << std::endl;

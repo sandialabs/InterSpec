@@ -49,48 +49,30 @@
 #include <boost/uuid/uuid_io.hpp>
 
 #include <Wt/WText>
-#include <Wt/WTree>
 #include <Wt/Utils>
-#include <Wt/WTable>
 #include <Wt/WLabel>
 #include <Wt/WImage>
 #include <Wt/WBreak>
 #include <Wt/WPoint>
 #include <Wt/WServer>
 #include <Wt/Dbo/Dbo>
-#include <Wt/WAnchor>
 #include <Wt/WSpinBox>
-#include <Wt/WIconPair>
-#include <Wt/WGroupBox>
 #include <Wt/WTextArea>
 #include <Wt/WCheckBox>
-#include <Wt/WTreeNode>
 #include <Wt/WTemplate>
 #include <Wt/WIOService>
 #include <Wt/WAnimation>
 #include <Wt/WTabWidget>
 #include <Wt/WPopupMenu>
-#include <Wt/WFileUpload>
 #include <Wt/WPushButton>
-#include <Wt/WWidgetItem>
-#include <Wt/WBorderLayout>
-
-#include <Wt/Json/Array>
-#include <Wt/Json/Parser>
-#include <Wt/Json/Object>
-#include <Wt/Json/Value>
-
 #include <Wt/WGridLayout>
-#include <Wt/WHBoxLayout>
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
-#include <Wt/WProgressBar>
 #include <Wt/WSplitButton>
+#include <Wt/WBorderLayout>
 #include <Wt/WSelectionBox>
 #include <Wt/WCssStyleSheet>
-#include <Wt/Dbo/QueryModel>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WContainerWidget>
 #include <Wt/WDefaultLoadingIndicator>
@@ -127,9 +109,10 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/Recalibrator.h"
 #include "InterSpec/DetectorEdit.h"
+#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/OneOverR2Calc.h"
@@ -152,6 +135,7 @@
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
 #include "InterSpec/UnitsConverterTool.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #if( USE_SIMPLE_NUCLIDE_ASSIST )
 #include "InterSpec/FeatureMarkerWidget.h"
 #endif
@@ -160,6 +144,8 @@
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/DetectionConfidenceTool.h"
+#include "InterSpec/ShowRiidInstrumentsAna.h"
+#include "InterSpec/EnergyCalPreserveWindow.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
@@ -230,6 +216,10 @@ std::mutex InterSpec::sm_writableDataDirectoryMutex;
 std::string InterSpec::sm_writableDataDirectory = "";
 #endif  //if( not a webapp )
 
+
+#if( USE_ELECTRON_HTML_MENU )
+#include "js/ElectronHtmlMenu.js"
+#endif
 
 
 void log_error_message( const std::string &message, const std::string &source, const int priority )
@@ -376,8 +366,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_peakEditWindow( 0 ),
     m_currentToolsTab( 0 ),
     m_toolsTabs( 0 ),
-    m_recalibrator( 0 ),
-    m_recalibratorWindow( 0 ),
+    m_energyCalTool( 0 ),
+    m_energyCalWindow( 0 ),
     m_gammaCountDialog( 0 ),
     m_specFileQueryDialog( 0 ),
     m_shieldingSuggestion( 0 ),
@@ -385,8 +375,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_shieldingSourceFitWindow( 0 ),
     m_materialDB( nullptr ),
     m_nuclideSearchWindow( 0 ),
-    m_isotopeSearchContainer(0),
-    m_isotopeSearch( 0 ),
+    m_nuclideSearchContainer(0),
+    m_nuclideSearch( 0 ),
     m_fileMenuPopup( 0 ),
     m_toolsMenuPopup( 0 ),
     m_helpMenuPopup( 0 ),
@@ -410,8 +400,14 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_logYItems{0},
   m_toolTabsVisibleItems{0},
   m_backgroundSubItems{0},
+  m_hardBackgroundSub( nullptr ),
   m_verticalLinesItems{0},
   m_horizantalLinesItems{0},
+#if( USE_SPECTRUM_CHART_D3 )
+  m_showXAxisSliderItems{ nullptr },
+  m_showYAxisScalerItems{ nullptr },
+  m_compactXAxisItems{ nullptr },
+#endif
   m_tabToolsMenuItems{0},
   m_featureMarkersShown{false},
 #if( USE_FEATURE_MARKER_WIDGET )
@@ -424,6 +420,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #if( USE_SEARCH_MODE_3D_CHART )
     m_searchMode3DChart( 0 ),
 #endif
+    m_showRiidResults( nullptr ),
 #if( USE_TERMINAL_WIDGET )
     m_terminalMenuItem( 0 ),
     m_terminal( 0 ),
@@ -451,6 +448,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   //  locally
   setLayoutSizeAware( true );
 
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  assert( app );
+  //make it so InterSpec::instance() wont return nullptr for calls from within this constructor
+  app->m_viewer = this;
   
   //for notification div
   m_notificationDiv = new WContainerWidget();
@@ -566,15 +567,15 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   m_spectrum->setPeakModel( m_peakModel );
   
-  m_isotopeSearch = new IsotopeSearchByEnergy( this, m_spectrum );
-  m_isotopeSearch->setLoadLaterWhenInvisible(true);
+  m_nuclideSearch = new IsotopeSearchByEnergy( this, m_spectrum );
+  m_nuclideSearch->setLoadLaterWhenInvisible(true);
 
-  m_warnings = new WarningWidget( m_spectrum, this );
+  m_warnings = new WarningWidget( this );
 
-  // Set up the floating energy recalibrator.
-  m_recalibrator = new Recalibrator( this, m_peakModel );
-  m_spectrum->rightMouseDragg().connect( m_recalibrator, &Recalibrator::handleGraphicalRecalRequest );
-  
+  // Set up the energy calibration tool
+  m_energyCalTool = new EnergyCalTool( this, m_peakModel );
+  m_spectrum->rightMouseDragg().connect( m_energyCalTool, &EnergyCalTool::handleGraphicalRecalRequest );
+  displayedSpectrumChanged().connect( m_energyCalTool, &EnergyCalTool::displayedSpecChangedCallback );
 
 #if( USE_SPECTRUM_CHART_D3 )
   const WEnvironment &env = wApp->environment();
@@ -664,9 +665,96 @@ InterSpec::InterSpec( WContainerWidget *parent )
   }else
   {
     m_menuDiv = new WContainerWidget();
+#if( USE_ELECTRON_HTML_MENU )
+    if( InterSpecApp::isPrimaryWindowInstance() )
+    {
+      app->useStyleSheet( "InterSpec_resources/ElectronHtmlMenu.css" );
+      m_menuDiv->addStyleClass( "elec-titlebar cet-windows" );
+      m_menuDiv->setHeight( 30 ); //"background-color: rgb(68, 68, 68); color: rgb(255, 255, 255); height: 30px;"
+      
+      WContainerWidget *dragRegion = new WContainerWidget( m_menuDiv );
+      dragRegion->addStyleClass( "elec-titlebar-drag-region" );
+      
+      menuWidget = new WContainerWidget( m_menuDiv );
+      menuWidget->addStyleClass( "menubar" );
+      menuWidget->setAttributeValue( "role", "menubar" );
+      
+      WText *menuTitle = new WText( "InterSpec", m_menuDiv );
+      menuTitle->setInline( false );
+      menuTitle->addStyleClass( "window-title" ); //style="cursor: default; margin-right: auto; margin-left: auto;"
+      
+#if( BUILD_AS_ELECTRON_APP )
+      //None of this JS is really tested yet
+      LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsTitleBarChangeMaximized);
+      
+      WContainerWidget *windowControls = new WContainerWidget( m_menuDiv );
+      windowControls->addStyleClass( "window-controls-container" );
+      
+      WContainerWidget *iconDiv = new WContainerWidget( windowControls );
+      iconDiv->addStyleClass( "window-icon-bg" );
+      WContainerWidget *icon = new WContainerWidget( iconDiv );
+      icon->addStyleClass( "window-icon window-minimize" );
+      icon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
+      
+      iconDiv = new WContainerWidget( windowControls );
+      iconDiv->addStyleClass( "window-icon-bg" );
+      icon = new WContainerWidget( iconDiv );
+      icon->addStyleClass( "window-icon window-max-restore window-maximize" );
+      
+      icon->clicked().connect( INLINE_JAVASCRIPT( function(){
+        let win = $(window).data('ElectronWindow');
+        if( win.isMaximized() ) {
+          win.unmaximize();
+          Wt.WT.TitleBarChangeMaximized(false);
+        } else {
+          win.maximize();
+          Wt.WT.TitleBarChangeMaximized(true);
+        }
+      }) );
+      
+      iconDiv = new WContainerWidget( windowControls );
+      iconDiv->addStyleClass( "window-icon-bg" );
+      icon = new WContainerWidget( iconDiv );
+      icon->addStyleClass( "window-icon window-close" );
+      icon->clicked().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
+      
+      WContainerWidget *resizer = new WContainerWidget( m_menuDiv );
+      resizer->addStyleClass( "resizer top" );
+      
+      resizer = new WContainerWidget( m_menuDiv );
+      resizer->addStyleClass( "resizer left" );
+      
+      
+      auto menujs = INLINE_JAVASCRIPT(
+                                      let currentWindow = remote.getCurrentWindow();
+                                      $(window).data('ElectronWindow',currentWindow);
+                                      
+                                      Wt.WT.TitleBarChangeMaximized( currentWindow.isMaximized() );
+                                      
+                                      currentWindow.on( 'blur', function(){ console.log('currentWindow.blur'); } );
+                                      currentWindow.on( 'focus', function(){ console.log('currentWindow.focus'); } );
+                                      currentWindow.on( 'maximize', function(){ Wt.WT.TitleBarChangeMaximized(true); } );
+                                      currentWindow.on( 'unmaximize', function(){ Wt.WT.TitleBarChangeMaximized(false); } );
+                                      currentWindow.on( 'enter-full-screen', function(){ console.log('currentWindow.enter-full-screen'); } );
+                                      currentWindow.on( 'leave-full-screen', function(){ console.log('currentWindow.leave-full-screen'); } );
+                                      );//menujs
+      
+      doJavaScript( menujs );
+    }else //if( InterSpecApp::isPrimaryWindowInstance() )
+    {
+      m_menuDiv->addStyleClass( "TopMenuDiv" );
+      menuWidget = m_menuDiv;
+    }//if( InterSpecApp::isPrimaryWindowInstance() )
+#else //BUILD_AS_ELECTRON_APP
     m_menuDiv->addStyleClass( "TopMenuDiv" );
     menuWidget = m_menuDiv;
-  }
+#endif //BUILD_AS_ELECTRON_APP
+    
+#else  //USE_ELECTRON_HTML_MENU
+    m_menuDiv->addStyleClass( "TopMenuDiv" );
+    menuWidget = m_menuDiv;
+#endif
+  }//if( isMobile() ) / else
   
   addFileMenu( menuWidget, isMobile()  );
   addDisplayMenu( menuWidget );
@@ -676,19 +764,20 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   
   /* Set the loading indicator so that it's the highest z-index, so always visible  */
-  Wt::WApplication *app = Wt::WApplication::instance();
   WDefaultLoadingIndicator *indicator = new Wt::WDefaultLoadingIndicator();
   indicator->addStyleClass( "LoadingIndicator" );
   app->setLoadingIndicator( indicator );
-    
+   
+#if( !USE_ELECTRON_HTML_MENU )
   if( m_menuDiv )
   {
-    WImage *snlLogo = new WImage( "InterSpec_resources/images/SNL_Stacked_Black_Blue_tiny.png", m_menuDiv );  //ToDo: maybe put a link to sandia.gov when/if this is clicked
+    WImage *snlLogo = new WImage( "InterSpec_resources/images/SNL_Stacked_Black_Blue_tiny.png", m_menuDiv );
     snlLogo->addStyleClass("URLogo");
     m_menuDiv->setStyleClass( "UpperMenuDivWithLogos" );
     snlLogo->setFloatSide( Right );
   }//if( m_menuDiv )
-
+#endif //!USE_ELECTRON_HTML_MENU
+  
   m_layout = new WGridLayout();
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setHorizontalSpacing( 0 );
@@ -729,7 +818,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_timeSeries->setY2AxisTitle( "Neutron CPS" );
   m_timeSeries->setAutoAdjustDisplayRebinFactor( true );
 
+#if( USE_SPECTRUM_CHART_D3 )
+  m_spectrum->enableLegend();
+#else
   m_spectrum->enableLegend( false );
+#endif
+  
   m_spectrum->showHistogramIntegralsInLegend( true );
 #if( USE_SPECTRUM_CHART_D3 )
 #else
@@ -817,12 +911,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_layout->setRowStretch( m_menuDiv ? 1 : 0, 5 );
   m_layout->setRowStretch( m_menuDiv ? 2 : 1, 3 );
   
-#if( USE_OSX_NATIVE_MENU )
-  m_menuDiv->hide();
-#endif
-  
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
-  m_menuDiv->hide();
+#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+    m_menuDiv->hide();
 #endif
   
   if( !isPhone() )
@@ -854,6 +945,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
   applyColorTheme( nullptr );
 }//InterSpec( constructor )
 
+InterSpec *InterSpec::instance()
+{
+  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( !app )
+    return nullptr;
+  return app->viewer();
+}//instance()
 
 void InterSpec::setStaticDataDirectory( const std::string &dir )
 {
@@ -919,9 +1017,9 @@ std::string InterSpec::writableDataDirectory()
 
 
 
-InterSpec::~InterSpec()
+InterSpec::~InterSpec() noexcept(true)
 {
-  //The deletion of the DOM root node will destrow all the AuxWindows we
+  //The deletion of the DOM root node will destroy all the AuxWindows we
   //  have open, but I am manually taking care of them below due to a crash
   //  I have been getting in the WApplication destructor for Wt 3.3.1-rc1
 
@@ -933,7 +1031,13 @@ InterSpec::~InterSpec()
     m_licenseWindow = nullptr;
   }
   
-  closeShieldingSourceFitWindow();
+  try
+  {
+    closeShieldingSourceFitWindow();
+  }catch(...)
+  {
+    cerr << "Caught exception closing shielding source window - shouldnt have happened" << endl;
+  }
   
   if( m_peakInfoDisplay )
   {
@@ -951,20 +1055,20 @@ InterSpec::~InterSpec()
     m_peakInfoWindow = nullptr;
   }//if( m_peakInfoWindow )
   
-  if( m_recalibrator )
+  if( m_energyCalTool )
   {
-    if( m_toolsTabs && m_toolsTabs->indexOf(m_recalibrator)>=0 )
-      m_toolsTabs->removeTab( m_recalibrator );
+    if( m_toolsTabs && m_toolsTabs->indexOf(m_energyCalTool)>=0 )
+      m_toolsTabs->removeTab( m_energyCalTool );
     
-    delete m_recalibrator;
-    m_recalibrator = nullptr;
-  }//if( m_recalibrator )
+    delete m_energyCalTool;
+    m_energyCalTool = nullptr;
+  }//if( m_energyCalTool )
   
-  if( m_recalibratorWindow )
+  if( m_energyCalWindow )
   {
-    delete m_recalibratorWindow;
-    m_recalibratorWindow = nullptr;
-  }//if( m_recalibratorWindow )
+    delete m_energyCalWindow;
+    m_energyCalWindow = nullptr;
+  }//if( m_energyCalWindow )
     
   if( m_shieldingSourceFitWindow )
   {
@@ -972,6 +1076,12 @@ InterSpec::~InterSpec()
     m_shieldingSourceFitWindow = nullptr;
   }//if( m_shieldingSourceFitWindow )
   
+  if( m_nuclideSearch )
+  {
+    delete m_nuclideSearch;
+    m_nuclideSearch = nullptr;
+  }//if( m_nuclideSearch )
+
   if( m_nuclideSearchWindow )
   {
     delete m_nuclideSearchWindow;
@@ -994,7 +1104,7 @@ InterSpec::~InterSpec()
     m_referencePhotopeakLinesWindow = nullptr;
   }//if( m_referencePhotopeakLinesWindow )
   
-  if( m_warnings )
+  if( m_warnings )  //WarningWidget isnt necassarily parented, so we do have to manually delete it
   {
     if( m_warningsWindow )
       m_warningsWindow->stretcher()->removeWidget( m_warnings );
@@ -1007,12 +1117,6 @@ InterSpec::~InterSpec()
     delete m_warningsWindow;
     m_warningsWindow = nullptr;
   }//if( m_warningsWindow )
-  
-  if( m_isotopeSearch )
-  {
-    delete m_isotopeSearch;
-    m_isotopeSearch = nullptr;
-  }//if( m_isotopeSearch )
   
   if( m_peakEditWindow )
   {
@@ -1045,6 +1149,21 @@ InterSpec::~InterSpec()
     m_menuDiv = nullptr;
   }//if( m_menuDiv )
 
+  try
+  {
+    m_user.reset();
+  }catch( ... )
+  {
+    cerr << "Caught unexpected exception doing m_user.reset()" << endl;
+  }
+  
+  try
+  {
+    m_sql.reset();
+  }catch( ... )
+  {
+    cerr << "Caught unexpected exception doing m_sql.reset()" << endl;
+  }
 }//InterSpec destructor
 
 
@@ -1105,7 +1224,7 @@ string InterSpec::print_d3_json() const
     if( peaks )
     {
       vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks );
+      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
     }
     
     D3SpectrumExport::write_spectrum_data_js( ostr, *data, options, 0, 1 );
@@ -1129,7 +1248,7 @@ string InterSpec::print_d3_json() const
     if( peaks )
     {
       vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks );
+      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
     }
     
     D3SpectrumExport::write_spectrum_data_js( ostr, *back, options, 1, -1 );
@@ -1154,7 +1273,7 @@ string InterSpec::print_d3_json() const
     if( peaks )
     {
       vector<PeakModel::PeakShrdPtr> inpeaks( peaks->begin(), peaks->end() );
-      options.peaks_json = PeakDef::peak_json( inpeaks );
+      options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
     }
     
     D3SpectrumExport::write_spectrum_data_js( ostr, *second, options, 2, 1 );
@@ -1194,10 +1313,10 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
                                  /* showPeakEnergyLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel ),
                                  /* showPeakNuclideLabels: */m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel ),
                                  /* showPeakNuclideEnergyLabels: */ m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies ),
-                                 /* showEscapePeakMarker: */m_featureMarkersShown[EscapePeakMarker],
-                                 /* showComptonPeakMarker: */m_featureMarkersShown[ComptonPeakMarker],
-                                 /* showComptonEdgeMarker: */m_featureMarkersShown[ComptonEdgeMarker],
-                                 /* showSumPeakMarker: */m_featureMarkersShown[SumPeakMarker],
+                                 /* showEscapePeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)],
+                                 /* showComptonPeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)],
+                                 /* showComptonEdgeMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)],
+                                 /* showSumPeakMarker: */m_featureMarkersShown[static_cast<int>(FeatureMarkerType::SumPeakMarker)],
                                  /* backgroundSubtract: */m_spectrum->backgroundSubtract(),
                                  /* xMin: */xMin, /* xMax: */xMax,
                                  referc_line_json
@@ -1267,11 +1386,6 @@ bool InterSpec::isSupportFile() const
 #else
     return true;
 #endif
-}
-
-float InterSpec::kevPerPixel() const
-{
-  return m_spectrum->xUnitsPerPixel();
 }
 
 
@@ -1428,19 +1542,20 @@ void InterSpec::initHotkeySignal()
   //sender.id was undefined in the following js, so had to work around this a bit
   const char *js = INLINE_JAVASCRIPT(
     function(id,e){
-      if(!e||(typeof e.keyCode === 'undefined'))
+      if( !e || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || (typeof e.keyCode === 'undefined')  )
         return;
-      if(e.metaKey||e.altKey||!e.ctrlKey||e.shiftKey)
-        return;
+     
       var v = 0;
       switch( e.keyCode ){
-        case 83: case 49: v=1; break; //s
-        case 80: case 50: v=2; break; //p
-        case 82: case 51: v=3; break; //r
-        case 69: case 52: v=4; break; //e
-        case 78: case 53: v=5; break; //n
-        case 72:          v=6; break; //h
-        case 73:          v=7; break; //i
+        case 83: case 49: v=1;  break; //s
+        case 80: case 50: v=2;  break; //p
+        case 82: case 51: v=3;  break; //r
+        case 69: case 52: v=4;  break; //e
+        case 78: case 53: v=5;  break; //n
+        case 72:          v=6;  break; //h
+        case 73:          v=7;  break; //i
+        case 67:          v=67; break; //c
+        case 76:          v=76; break; //l
         default:
           return;  //show
       }
@@ -1473,8 +1588,25 @@ void InterSpec::hotkeyPressed( const unsigned int value )
       case 3: expectedTxt = GammaLinesTabTitle;    break;
       case 4: expectedTxt = CalibrationTabTitle;   break;
       case 5: expectedTxt = NuclideSearchTabTitle; break;
-      case 6: HelpSystem::createHelpWindow( "getting-started" ); break;
-      case 7: showWelcomeDialog( true ); break;
+      
+      case 6:
+        HelpSystem::createHelpWindow( "getting-started" );
+        break;
+      
+      case 7:
+        showWelcomeDialog( true );
+        break;
+      
+      case 67:
+        // TODO: decide how to handle this if the current reference lines are from the
+        //       "Nuclide Search" tool
+        if( m_referencePhotopeakLines )
+          m_referencePhotopeakLines->clearAllLines();
+        break;
+      
+      case 76:
+        setLogY( !m_spectrum->yAxisIsLog() );
+        break;
     }//switch( value )
   
     if( expectedTxt.empty() )
@@ -1496,8 +1628,9 @@ void InterSpec::hotkeyPressed( const unsigned int value )
       case 1: showCompactFileManagerWindow(); break;
       case 2: showPeakInfoWindow();           break;
       case 3: showGammaLinesWindow();         break;
-      case 4: showRecalibratorWindow();       break;
+      case 4: showEnergyCalWindow();          break;
       case 5: showNuclideSearchWindow();      break;
+      case 76: setLogY( !m_spectrum->yAxisIsLog() );  break;
     }//switch( value )
   }//if( tool tabs visible ) / else
 }//void hotkeyPressed( const int value )
@@ -1903,12 +2036,9 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
 void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 {
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
-  if( !peak
-     || m_rightClickEnergy < peak->lowerX()
-     || m_rightClickEnergy > peak->upperX() )
+  if( !peak || m_rightClickEnergy < peak->lowerX() || m_rightClickEnergy > peak->upperX() )
   {
-    passMessage( "There was no ROI to add peak to",
-                "", WarningWidget::WarningMsgInfo );
+    passMessage( "There was no ROI to add peak to", "", WarningWidget::WarningMsgInfo );
     return;
   }//if( !peak )
   
@@ -1927,7 +2057,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   iter = std::find( peaks->begin(), peaks->end(), peak );
   
   if( iter==peaks->end() || (*iter)!=peak )
-    throw runtime_error( "InterSpec::shareContinuumWithNeighboringPeak: "
+    throw runtime_error( "shareContinuumWithNeighboringPeak: "
                          "error searching for peak I should have found" );
   
   if( shareWithLeft )
@@ -1952,8 +2082,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   vector<PeakModel::PeakShrdPtr> &pp = (shareWithLeft ? rightpeaks : leftpeaks);
   vector<PeakModel::PeakShrdPtr> &op = (shareWithLeft ? leftpeaks : rightpeaks);
   
-  for( deque< PeakModel::PeakShrdPtr >::const_iterator iter = peaks->begin();
-       iter != peaks->end(); ++iter )
+  for( auto iter = peaks->begin(); iter != peaks->end(); ++iter )
   {
     if( (*iter)->continuum() == peak->continuum() )
       pp.push_back( *iter );
@@ -1962,10 +2091,8 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   }//for( iterate over peaks )
   
   
-  std::shared_ptr<const PeakContinuum> oldcontinuum
-                           = peaktoshare->continuum();
-  std::shared_ptr<PeakContinuum> continuum
-                           = std::make_shared<PeakContinuum>( *oldcontinuum );
+  std::shared_ptr<const PeakContinuum> oldcontinuum = peaktoshare->continuum();
+  std::shared_ptr<PeakContinuum> continuum = std::make_shared<PeakContinuum>( *oldcontinuum );
   
   const double minx = min( leftpeaks[0]->lowerX(), rightpeaks[0]->lowerX() );
   const double maxx = max( leftpeaks[0]->upperX(), rightpeaks[0]->upperX() );
@@ -1997,6 +2124,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
     addPeak( newpeak, false );
   }//for( PeakModel::PeakShrdPtr &p : leftpeaks )
 
+  
 //Instead of the more computationally expensive stuff (lots of signals get
 //  emmitted, tables re-rendered, and charts re-drawn - although hopefully
 //  mostly lazili) above, you could do the following not very nice const casts
@@ -2161,9 +2289,16 @@ void InterSpec::updateRightClickNuclidesMenu(
 
 
 void InterSpec::handleLeftClick( double energy, double counts,
-                                      int pageX, int pageY )
+                                      double pageX, double pageY )
 {
-  if( (m_toolsTabs && m_currentToolsTab == m_toolsTabs->indexOf(m_isotopeSearchContainer))
+  // For touch screen non-mobile devices, the right-click menu may be showing
+  //  since when it is touch activated (by holding down for >600ms), there is
+  //  no mouse-leave signal to cause it to leave.
+  //  Note: I dont think m_rightClickMenu is ever null, but we'll check JIC
+  if( m_rightClickMenu && !m_rightClickMenu->isHidden() )
+    m_rightClickMenu->hide();
+
+  if( (m_toolsTabs && m_currentToolsTab == m_toolsTabs->indexOf(m_nuclideSearchContainer))
       || m_nuclideSearchWindow )
   {
     setIsotopeSearchEnergy( energy );
@@ -2200,7 +2335,7 @@ void InterSpec::handleLeftClick( double energy, double counts,
 
 
 void InterSpec::handleRightClick( double energy, double counts,
-                                       int pageX, int pageY )
+                                  double pageX, double pageY )
 {
   if( !m_dataMeasurement )
     return;
@@ -2433,14 +2568,14 @@ void InterSpec::deletePeakEdit()
 
 void InterSpec::setIsotopeSearchEnergy( double energy )
 {
-  if( !m_isotopeSearch )
+  if( !m_nuclideSearch )
     return;
   
   double sigma = -1.0;
 
   if( m_toolsTabs )
   {
-    if( m_currentToolsTab != m_toolsTabs->indexOf(m_isotopeSearchContainer) )
+    if( m_currentToolsTab != m_toolsTabs->indexOf(m_nuclideSearchContainer) )
       return;
   }else if( !m_nuclideSearchWindow )
   {
@@ -2465,18 +2600,18 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
     }//if( within 3 sigma of peak )
   }//if( !!peak )
   
-  m_isotopeSearch->setNextSearchEnergy( energy, sigma );
+  m_nuclideSearch->setNextSearchEnergy( energy, sigma );
 }//void setIsotopeSearchEnergy( double energy );
 
 
 
-void InterSpec::setFeatureMarkerOption( const InterSpec::FeatureMarkerType option, const bool show )
+void InterSpec::setFeatureMarkerOption( const FeatureMarkerType option, const bool show )
 {
-  m_featureMarkersShown[option] = show;
+  m_featureMarkersShown[static_cast<int>(option)] = show;
   
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->setFeatureMarkerOption( option, show );
-#elif( USE_FEATURE_MARKER_WIDGET || USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#elif( USE_FEATURE_MARKER_WIDGET || USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
   CanvasForDragging *overlay = m_spectrum->overlayCanvas();
   if( !overlay )
     return;
@@ -2504,7 +2639,7 @@ void InterSpec::setFeatureMarkerOption( const InterSpec::FeatureMarkerType optio
 
 bool InterSpec::showingFeatureMarker( const FeatureMarkerType option )
 {
-  return m_featureMarkersShown[option];
+  return m_featureMarkersShown[static_cast<int>(option)];
 }
 
 
@@ -2545,20 +2680,27 @@ void InterSpec::deleteFeatureMarkerWindow()
   m_featureMarkers = nullptr;
   m_featureMarkerMenuItem->setText( "Feature Markers..." );
   
-  for( FeatureMarkerType i = FeatureMarkerType(0); i < FeatureMarkerType::NumFeatureMarkers; i = FeatureMarkerType(i+1) )
+  for( FeatureMarkerType i = FeatureMarkerType(0);
+       i < FeatureMarkerType::NumFeatureMarkers;
+       i = FeatureMarkerType(static_cast<int>(i)+1) )
   {
-    if( m_featureMarkersShown[i] )
+    if( m_featureMarkersShown[static_cast<int>(i)] )
       setFeatureMarkerOption( i, false );
   }
 }//void deleteFeatureMarkerWindow()
 #endif //USE_FEATURE_MARKER_WIDGET
 
-Wt::Signal<SpecUtils::SpectrumType,std::shared_ptr<SpecMeas>, std::set<int> > &
+Wt::Signal<SpecUtils::SpectrumType,std::shared_ptr<SpecMeas>, std::set<int>, vector<string> > &
                                       InterSpec::displayedSpectrumChanged()
 {
   return m_displayedSpectrumChangedSignal;
 }
 
+
+Wt::Signal<SpecUtils::SpectrumType,double> &InterSpec::spectrumScaleFactorChanged()
+{
+  return m_spectrumScaleFactorChanged;
+}
 
 
 WModelIndex InterSpec::addPeak( PeakDef peak,
@@ -2742,7 +2884,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       {
         auto pos = std::find( begin(det_names), end(det_names), det );
         const auto index = pos - begin(det_names);
-        if( index < detNums.size() )
+        if( index < static_cast<int>(detNums.size()) )
           str += (str.empty() ? "" : ",") + to_string(detNums[index]);
       }
     }
@@ -2824,7 +2966,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     entry.modify()->showingWindows = 0x0;
     //m_warningsWindow
     //m_peakInfoWindow
-    //m_recalibratorWindow
+    //m_energyCalWindow
     //m_shieldingSourceFitWindow
     //m_referencePhotopeakLinesWindow
 //    m_nuclideSearchWindow
@@ -2834,8 +2976,8 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 //    };
   
     entry.modify()->isotopeSearchEnergiesXml.clear();
-    if( m_isotopeSearch )
-      m_isotopeSearch->serialize( entry.modify()->isotopeSearchEnergiesXml );
+    if( m_nuclideSearch )
+      m_nuclideSearch->serialize( entry.modify()->isotopeSearchEnergiesXml );
    
     entry.modify()->gammaLinesXml.clear();
     if( m_referencePhotopeakLines )
@@ -3055,7 +3197,6 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       setToolTabsVisible( wasDocked );
 
     //Now start reloading the state
-    set<int> foregroundNums, backgroundNums, secondNums, otherSamples;
     std::shared_ptr<SpecMeas> foreground, second, background;
     std::shared_ptr<SpecMeas> snapforeground, snapsecond, snapbackground;
     std::shared_ptr<SpectraFileHeader> foregroundheader, backgroundheader,
@@ -3205,20 +3346,19 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( parent )
     
+    auto csvToInts = []( const string &str ) -> set<int> {
+      set<int> samples;
+      stringstream strm( str );
+      std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
+                std::inserter( samples, end(samples) ) );
+      return samples;
+    }; //csvToInts lambda
     
+    const set<int> foregroundNums = csvToInts( entry->foregroundSampleNumsCsvIds );
+    const set<int> secondNums     = csvToInts( entry->secondForegroundSampleNumsCsvIds );
+    const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
+    const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
     
-    stringstream strm( entry->foregroundSampleNumsCsvIds );
-    std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-               std::inserter( foregroundNums, foregroundNums.end() ) );
-    strm.str( entry->secondForegroundSampleNumsCsvIds );
-    std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-              std::inserter( secondNums, secondNums.end() ) );
-    strm.str( entry->backgroundSampleNumsCsvIds );
-    std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-              std::inserter( backgroundNums, backgroundNums.end() ) );
-    strm.str( entry->otherSpectraCsvIds );
-    std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-              std::inserter( otherSamples, otherSamples.end() ) );
     
     setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, false );
     if( foreground )
@@ -3265,9 +3405,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     if( m_nuclideSearchWindow )
     {
-      m_isotopeSearchContainer->layout()->removeWidget( m_isotopeSearch );
-      delete m_isotopeSearchContainer;
-      m_isotopeSearchContainer = 0;
+      m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
+      delete m_nuclideSearchContainer;
+      m_nuclideSearchContainer = nullptr;
     }
     
 //  std::string showingDetectorNumbersCsv;
@@ -3309,9 +3449,16 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 //    m_spectrum->showGridLines( grid );
     
     if( (entry->shownDisplayFeatures & UserState::kSpectrumLegend) )
+    {
+#if( USE_SPECTRUM_CHART_D3 )
+      m_spectrum->enableLegend();
+#else
       m_spectrum->enableLegend( false );
-    else
+#endif
+    }else
+    {
       m_spectrum->disableLegend();
+    }
     
     if( (entry->shownDisplayFeatures & UserState::kTimeSeriesLegend) )
       m_timeSeries->enableLegend( false );
@@ -3369,12 +3516,16 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         closeGammaLinesWindow();
     }//if( entry->gammaLinesXml.size() )
     
-    if( m_isotopeSearch && entry->isotopeSearchEnergiesXml.size() )
+    if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
     {
       string data = entry->isotopeSearchEnergiesXml;
+      
+      if( !wasDocked )
+        showNuclideSearchWindow();
+      
       const bool display = !wasDocked || entry->currentTab == UserState::kIsotopeSearch;
-      m_isotopeSearch->deSerialize( data, display );
-    }//if( m_isotopeSearch && entry->isotopeSearchEnergiesXml.size() )
+      m_nuclideSearch->deSerialize( data, display );
+    }//if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
 
     for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
         label < SpectrumChart::kNumPeakLabels;
@@ -3591,7 +3742,7 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
     theme = getColorTheme();
   m_colorTheme = theme;
 
-  this->m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
+  m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
   
   m_spectrum->setForegroundSpectrumColor( theme->foregroundLine );
   m_spectrum->setBackgroundSpectrumColor( theme->backgroundLine );
@@ -3646,7 +3797,15 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
                   "", WarningWidget::WarningMsgLow );
     }
   }//if( should load CSS file )
+  
+  m_colorThemeChanged.emit( theme );
 }//void InterSpec::applyColorTheme()
+
+
+Wt::Signal< std::shared_ptr<const ColorTheme> > &InterSpec::colorThemeChanged()
+{
+  return m_colorThemeChanged;
+}
 
 
 #if( BUILD_AS_OSX_APP || APPLY_OS_COLOR_THEME_FROM_JS || IOS || BUILD_AS_ELECTRON_APP )
@@ -3726,8 +3885,8 @@ AuxWindow *InterSpec::showIEWarningDialog()
   contents->setContentAlignment( Wt::AlignCenter );
 
   WText *instructions = new WText(
-          "This webapp has not been tested with Microsoft Internet Explorer, and<br>"
-          " as a result some things will either fail to render or may not even work.<br>"
+          "This webapp has not been tested with Microsoft Internet Explorer, and<br />"
+          " as a result some things will either fail to render or may not even work.<br />"
           "<p>Please consider using a reasonably recent version of Firefox, Chrome, or Safari.</p>"
           , XHTMLUnsafeText, contents );
   instructions->setInline( false );
@@ -3767,6 +3926,26 @@ void InterSpec::showLicenseAndDisclaimersWindow( const bool is_awk,
       finished_callback();
   }) );
 }//void showLicenseAndDisclaimersWindow()
+
+void InterSpec::startClearSession()
+{
+  SimpleDialog *window = new SimpleDialog( "Clear Session?",
+                                          "Are you sure you would like to start a clean session?" );
+  WPushButton *button = window->addButton( "Yes" );
+  button->clicked().connect( std::bind([=](){
+    WServer::instance()->post( wApp->sessionId(), std::bind( [](){
+      auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+      if( app )
+      {
+        app->clearSession();
+        app->triggerUpdate();
+      }
+    } ) );
+  }) );
+  
+  button = window->addButton( "No" );
+  button->setFocus();
+}//void startClearSession()
 
 
 void InterSpec::deleteLicenseAndDisclaimersWindow()
@@ -3824,14 +4003,14 @@ void InterSpec::deleteWelcomeCountDialog()
 }//void deleteWelcomeCountDialog()
 
 
-void InterSpec::deletePreserveCalibWindow()
+void InterSpec::deleteEnergyCalPreserveWindow()
 {
   if( m_preserveCalibWindow )
   {
     delete m_preserveCalibWindow;
     m_preserveCalibWindow = nullptr;
   }
-}//void deletePreserveCalibWindow()
+}//void deleteEnergyCalPreserveWindow()
 
 
 void InterSpec::setShowIEWarningDialogCookie( bool show )
@@ -4053,7 +4232,7 @@ void InterSpec::showPeakInfoWindow()
     
     WPushButton *b = new WPushButton( CalibrationTabTitle, footer );
     // b->setIcon(WLink("InterSpec_resources/images/calibrate.png"));
-    b->clicked().connect( this, &InterSpec::showRecalibratorWindow );
+    b->clicked().connect( this, &InterSpec::showEnergyCalWindow );
     b->setFloatSide(Wt::Right);
       
     b = new WPushButton( GammaLinesTabTitle, footer );
@@ -4172,7 +4351,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
       SpecMeas::equalEnough( meas, *m_dataMeasurement );
     }catch( std::exception &e )
     {
-      log_developer_error( BOOST_CURRENT_FUNCTION, e.what() );
+      log_developer_error( __func__, e.what() );
     }
 #endif
     
@@ -4391,8 +4570,8 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     
     
     std::shared_ptr<SpecMeas> dummy;
-    setSpectrum( dummy, std::set<int>(), SpecUtils::SpectrumType::Background, false );
-    setSpectrum( dummy, std::set<int>(), SpecUtils::SpectrumType::SecondForeground, false );
+    setSpectrum( dummy, {}, SpecUtils::SpectrumType::Background, false );
+    setSpectrum( dummy, {}, SpecUtils::SpectrumType::SecondForeground, false );
     
     string filename = meas->filename();
     if( name && name->value_size() )
@@ -4400,6 +4579,10 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     
     std::shared_ptr<SpectraFileHeader> header;
     header = m_fileManager->addFile( filename, meas );
+    
+    const std::set<int> &dispsamples = meas->displayedSampleNumbers();
+    
+    
     setSpectrum( meas, meas->displayedSampleNumbers(), SpecUtils::SpectrumType::Foreground, false );
     
     if( backgroundsamplenums.size() )
@@ -4438,12 +4621,10 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
 
 namespace
 {
-  void doTestStateLoad( WSelectionBox *filesbox,
-                        AuxWindow *window,
-                        InterSpec *viewer )
+  void doTestStateLoad( WSelectionBox *filesbox, AuxWindow *window, InterSpec *viewer )
   {
-    const string filename = string("analysis_tests/")
-                            + filesbox->currentText().toUTF8();
+    const string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
+    const string filename = SpecUtils::append_path( path_to_tests, filesbox->currentText().toUTF8() );
     viewer->loadN42TestState( filename );
     delete window;
   }
@@ -4451,10 +4632,8 @@ namespace
 
 void InterSpec::startN42TestStates()
 {
-  const std::string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
-  
-  const vector<string> files
-                  = SpecUtils::recursive_ls( path_to_tests, ".n42" );
+  const string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
+  const vector<string> files = SpecUtils::recursive_ls( path_to_tests, ".n42" );
   
   if( files.empty() )
   {
@@ -4470,32 +4649,28 @@ void InterSpec::startN42TestStates()
   WSelectionBox *filesbox = new WSelectionBox();
   layout->addWidget( filesbox, 0, 0, 1, 2 );
   
+  //Lets display files by alphabetical name
+  vector<string> dispfiles;
   for( const string &p : files )
-  {
-    string name = p;
-    if( SpecUtils::starts_with(name, "analysis_tests/" ) )
-      name = name.substr(15);
+    dispfiles.push_back( SpecUtils::fs_relative( path_to_tests, p ) );
+    
+  std::sort( begin(dispfiles), end(dispfiles) );
+  
+  for( const string &name : dispfiles )
     filesbox->addItem( name );
-  }
   
   WPushButton *button = new WPushButton( "Cancel" );
-  layout->addWidget( button, 1, 0 );
+  layout->addWidget( button, 1, 0, AlignCenter );
   button->clicked().connect( boost::bind(&AuxWindow::deleteAuxWindow, window) );
   
   button = new WPushButton( "Load" );
   button->disable();
-//  button->clicked().connect( boost::bind( [=](){
-//    loadN42TestState( filesbox->currentText().toUTF8() );
-//    delete window;
-//  }) );
   button->clicked().connect( boost::bind( &doTestStateLoad, filesbox, window, this ) );
   
-  layout->addWidget( button, 1, 1 );
+  layout->addWidget( button, 1, 1, AlignCenter );
   filesbox->activated().connect( button, &WPushButton::enable );
   
   layout->setRowStretch( 0, 1 );
-  layout->setColumnStretch( 0, 1 );
-  layout->setColumnStretch( 1, 1 );
   
   window->show();
   window->centerWindow();
@@ -4525,17 +4700,19 @@ void InterSpec::startStoreTestStateInDb()
 {
   if( m_currentStateID >= 0 )
   {
-    AuxWindow *window = new AuxWindow( "Warning", AuxWindowProperties::PhoneModal );
+    AuxWindow *window = new AuxWindow( "Warning",
+                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+                                       | AuxWindowProperties::DisableCollapse) );
     WText *t = new WText( "Overwrite current test state?", window->contents() );
     t->setInline( false );
     
     window->setClosable( false );
 
-    WPushButton *button = new WPushButton( "Yes", window->footer() );
+    WPushButton *button = new WPushButton( "Overwrite", window->footer() );
     button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, false, true, false ) );
     
-    button = new WPushButton( "No", window->footer() );
+    button = new WPushButton( "Create New", window->footer() );
     button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, true, false, false ) );
     
@@ -4803,7 +4980,10 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
     return;
   }//if( state )
   
-  AuxWindow *window = new AuxWindow( "Create Snapshot", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+  AuxWindow *window = new AuxWindow( "Create Snapshot",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                                      | AuxWindowProperties::TabletModal
+                                      | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
@@ -4865,8 +5045,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   if( m_fileMenuPopup )
     return;
 
-  const bool showToolTipInstantly
-         = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
   WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
@@ -4876,7 +5055,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
 
   
   string menuname = "InterSpec";
-#if( !defined(__APPLE__) && BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( !defined(__APPLE__) && USING_ELECTRON_NATIVE_MENU )
   menuname = "File";
 #else
   if( isMobile )
@@ -4900,10 +5079,11 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
 
   PopupDivMenuItem *item = (PopupDivMenuItem *)0;
   
-#if( defined(__APPLE__) && BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( defined(__APPLE__) && USING_ELECTRON_NATIVE_MENU )
   PopupDivMenuItem *aboutitem = m_fileMenuPopup->createAboutThisAppItem();
   
-  aboutitem->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+  if( aboutitem )
+    aboutitem->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
   
   m_fileMenuPopup->addSeparator();
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Hide );
@@ -4912,9 +5092,12 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Front );
   m_fileMenuPopup->addSeparator();
 #elif( BUILD_AS_OSX_APP )
-  item = m_fileMenuPopup->addMenuItem( "About InterSpec" );
-  item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
-  m_fileMenuPopup->addSeparator();  //doesnt seem to be showing up for some reason... owe well.
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    item = m_fileMenuPopup->addMenuItem( "About InterSpec" );
+    item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+    m_fileMenuPopup->addSeparator();  //doesnt seem to be showing up for some reason... owe well.
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif
   
   
@@ -4930,7 +5113,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   if( m_fileManager )
   {
     item = m_fileMenuPopup->addMenuItem( "Manager...", "InterSpec_resources/images/file_manager_small.png" );
-    HelpSystem::attachToolTipOn(item, "Manage loaded spectra", showToolTipInstantly );
+    HelpSystem::attachToolTipOn(item, "Manage loaded spectra", showToolTips );
     
     item->triggered().connect( m_fileManager, &SpecMeasManager::startSpectrumManager );
     
@@ -4943,13 +5126,13 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     // --- new save menu ---
     m_saveState = m_fileMenuPopup->addMenuItem( save_txt );
     m_saveState->triggered().connect( boost::bind( &InterSpec::stateSave, this ) );
-    HelpSystem::attachToolTipOn(m_saveState, "Saves the current app state to InterSpecs database", showToolTipInstantly );
+    HelpSystem::attachToolTipOn(m_saveState, "Saves the current app state to InterSpecs database", showToolTips );
     
     
     // --- new save as menu ---
     m_saveStateAs = m_fileMenuPopup->addMenuItem( save_as_txt );
     m_saveStateAs->triggered().connect( boost::bind( &InterSpec::stateSaveAs, this ) );
-    HelpSystem::attachToolTipOn(m_saveStateAs, "Saves the current app state to a new listing in InterSpecs database", showToolTipInstantly );
+    HelpSystem::attachToolTipOn(m_saveStateAs, "Saves the current app state to a new listing in InterSpecs database", showToolTips );
     m_saveStateAs->setDisabled( true );
     
     // --- new save tag menu ---
@@ -4958,17 +5141,15 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     
     HelpSystem::attachToolTipOn(m_createTag, "Tags the current Interspec state so you "
                                 "can revert to at a later time.  When loading an app state, "
-                                "you can choose either the most recent save, or select past tagged versions.", showToolTipInstantly );
+                                "you can choose either the most recent save, or select past tagged versions.", showToolTips );
     
     m_fileMenuPopup->addSeparator();
     
     item = m_fileMenuPopup->addMenuItem( "Previous..." , "InterSpec_resources/images/db_small.png");
     item->triggered().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
                                             m_fileManager,
-                                            SpecUtils::SpectrumType::Foreground,
-                                            std::shared_ptr<SpectraFileHeader>()) );
-    HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTipInstantly );
-    
+                                            SpecUtils::SpectrumType::Foreground ) );
+    HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTips );
     
     if( isMobile )
     {
@@ -4980,6 +5161,13 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   }//if( m_fileManager )
 #endif  //USE_DB_TO_STORE_SPECTRA
 
+
+  item = m_fileMenuPopup->addMenuItem( "Clear Session..." );
+  item->triggered().connect( this, &InterSpec::startClearSession );
+  HelpSystem::attachToolTipOn(item, "Starts a clean application state with no spectra loaded", showToolTips );
+  m_fileMenuPopup->addSeparator();
+  
+  
   PopupDivMenu *subPopup = 0;
 
   subPopup = m_fileMenuPopup->addPopupMenuItem( "Samples" );
@@ -5032,7 +5220,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
       tip += " Drag and drop the file directly into the app window as a quicker alternative.";
     
     item = m_fileMenuPopup->addMenuItem( "Open File..." );
-    HelpSystem::attachToolTipOn( item, tip, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( item, tip, showToolTips );
     item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
   } //!isSupportFile
   
@@ -5058,7 +5246,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
         DownloadCurrentSpectrumResource *resource
                      = new DownloadCurrentSpectrumResource( i, j, this, item );
         
-#if( USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
         //If were using OS X native menus, we obviously cant relly on the
         //  browser responding to a click on an anchor; we also cant click the
         //  link of the PopupDivMenuItem itself in javascript, or we get a
@@ -5087,7 +5275,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
         item->setLinkTarget( TargetNewWindow );
 #endif
         
-        const char *tooltip = 0;
+        const char *tooltip = nullptr;
         switch( j )
         {
           case SpecUtils::SaveSpectrumAsType::Txt:
@@ -5163,6 +5351,10 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
             tooltip = "A binary Canberra file format that contains only a single spectrum.";
             break;
             
+          case SpecUtils::SaveSpectrumAsType::Tka:
+            tooltip = "A text based format that provides real time and channel counts only.";
+            break;
+            
 #if( SpecUtils_ENABLE_D3_CHART )
           case SpecUtils::SaveSpectrumAsType::HtmlD3:
             tooltip = "An HTML file using D3.js to generate a spectrum chart"
@@ -5173,11 +5365,12 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
             break;
         }//switch( j )
         
+        assert( tooltip );
         
         const bool showInstantly = true;
         if( tooltip )
           HelpSystem::attachToolTipOn( item, tooltip, showInstantly,
-                              HelpSystem::Right, HelpSystem::CanDelayShowing );
+                                      HelpSystem::ToolTipPosition::Right );
       }//for( loop over file types )
       
       m_downloadMenus[static_cast<int>(i)]->disable();
@@ -5212,18 +5405,18 @@ if (isSupportFile())
   PopupDivMenu* testing = m_fileMenuPopup->addPopupMenuItem( "Testing" , "InterSpec_resources/images/testing.png");
   item = testing->addMenuItem( "Store App Test State..." );
   item->triggered().connect( boost::bind( &InterSpec::startStoreTestStateInDb, this ) );
-  HelpSystem::attachToolTipOn(item,"Stores app state as part of the automated test suite", showToolTipInstantly );
+  HelpSystem::attachToolTipOn(item,"Stores app state as part of the automated test suite", showToolTips );
   
   item = testing->addMenuItem( "Restore App Test State..." );
   item->triggered().connect( boost::bind(&InterSpec::browseDatabaseStates, this, true) );
-  HelpSystem::attachToolTipOn(item, "Restores InterSpec to a previously stored state.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn(item, "Restores InterSpec to a previously stored state.", showToolTips );
   
   item = testing->addMenuItem( "Load N42 Test State..." );
   item->triggered().connect( boost::bind(&InterSpec::startN42TestStates, this) );
   HelpSystem::attachToolTipOn(item, "Loads a InterSpec specific variant of a "
                                     "2012 N42 file that contains Foreground, "
                                     "Background, User Settings, and Shielding/"
-                                    "Source model.", showToolTipInstantly );
+                                    "Source model.", showToolTips );
   
   item = testing->addMenuItem( "Show Testing Widget..." );
   item->triggered().connect( boost::bind(&InterSpec::startStateTester, this ) );
@@ -5235,7 +5428,7 @@ if (isSupportFile())
     m_fileMenuPopup->addSeparator();
 #endif
 
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
   m_fileMenuPopup->addSeparator();
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Quit );
 #endif
@@ -5256,11 +5449,11 @@ void InterSpec::addToolsTabToMenuItems()
   if( m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::RefPhotopeaks)] )
     return;
   
-  bool showToolTipInstantly = false;
+  bool showToolTips = false;
   
   try
   {
-    showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+    showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   }catch(...)
   {
   }
@@ -5279,7 +5472,7 @@ void InterSpec::addToolsTabToMenuItems()
   item->triggered().connect( boost::bind( &InterSpec::showGammaLinesWindow, this ) );
   tooltip = "Allows user to display x-rays and/or gammas from elements, isotopes, or nuclear reactions."
             " Also provides user with a shortcut to change detector and account for shielding.";
-  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::RefPhotopeaks)] = item;
   
 #if( IOS || ANDROID )
@@ -5290,7 +5483,7 @@ void InterSpec::addToolsTabToMenuItems()
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 1, PeakInfoTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showPeakInfoWindow );
   tooltip = "Provides shortcuts to search for and identify peaks. Displays parameters of all fit peaks in a sortable table.";
-  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::PeakManager)] = item;
   
 #if( IOS || ANDROID )
@@ -5299,12 +5492,12 @@ void InterSpec::addToolsTabToMenuItems()
   icon = "InterSpec_resources/images/calibrate.png";
 #endif
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 2, CalibrationTabTitle, icon, true );
-  item->triggered().connect( this, &InterSpec::showRecalibratorWindow );
+  item->triggered().connect( this, &InterSpec::showEnergyCalWindow );
   tooltip = "Allows user to modify or fit for offset, linear, or quadratic energy calibration terms,"
             " as well as edit non-linear deviation pairs.<br />"
             "Energy calibration can also be done graphically by right-click dragging the spectrum from original to modified energy"
             " (e.g., drag the data peak to the appropriate reference line).";
-  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::EnergyCal)] = item;
   
 #if( IOS || ANDROID )
@@ -5316,7 +5509,7 @@ void InterSpec::addToolsTabToMenuItems()
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 3, NuclideSearchTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showNuclideSearchWindow);
   tooltip = "Search for nuclides with constraints on energy, branching ratio, and half life.";
-  HelpSystem::attachToolTipOn( item, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NuclideSearch)] = item;
 
   
@@ -5405,12 +5598,12 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     closeGammaLinesWindow();
     
-    if( m_recalibratorWindow )
+    if( m_energyCalWindow )
     {
-      m_recalibratorWindow->stretcher()->removeWidget( m_recalibrator );
-      delete m_recalibratorWindow;
-      m_recalibratorWindow = nullptr;
-    }//if( m_recalibratorWindow )
+      m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool );
+      delete m_energyCalWindow;
+      m_energyCalWindow = nullptr;
+    }//if( m_energyCalWindow )
     
     m_toolsTabs = new WTabWidget();
     //m_toolsTabs->addStyleClass( "ToolsTabs" );
@@ -5425,7 +5618,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //WMenuItem * peakManTab =
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
 //    const char *tooltip = "Displays parameters of all identified peaks in a sortable table.";
-//    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTipInstantly, HelpSystem::Top );
+//    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
 //    peakManTab->setIcon("InterSpec_resources/images/peakmanager.png");
     
     if( m_referencePhotopeakLines )
@@ -5457,27 +5650,14 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 //                            "elements, isotopes, or nuclear reactions. Also "
 //                            "provides user with a shortcut to change detector "
 //                            "and account for shielding.";
-//      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTipInstantly, HelpSystem::Top );
+//      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
       //refPhotoTab->setIcon("InterSpec_resources/images/reflines.png");
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
     
-    //WGridLayout *gridLayout = new WGridLayout();
-    //m_recalibrator->setRecalibratorLayout(gridLayout);
-    if( m_recalibrator->Recalibrator::currentLayoutStyle() != Recalibrator::LayoutStyle::kWide )
-      m_recalibrator->setWideLayout(); //do this after unhiding to trigger Recalibrator::refreshRecalibrator();
-    else
-      m_recalibrator->refreshRecalibrator();
-
-    /*WMenuItem * calibTab = */ //m_toolsTabs->addTab( m_calibrateContainer, CalibrationTabTitle, TabLoadPolicy );
-    m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
-    
-    //calibTab->setIcon("InterSpec_resources/images/calibrate.png");
-//    const char *tooltip = "Allows user to fit for offset, linear, and/or "
-//                          "quadratic terms. Can also be accessed graphically by "
-//                          "right-click dragging from original to modified energy.";
-//    HelpSystem::attachToolTipOn( calibTab, tooltip, showToolTipInstantly , HelpSystem::Top);
-    
+    m_energyCalTool->setWideLayout();
+    m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
+        
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
     if( m_timeSeries->isHidden() )
@@ -5525,33 +5705,33 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     if( m_nuclideSearchWindow )
     {
-      m_isotopeSearch->clearSearchEnergiesOnClient();
-      m_nuclideSearchWindow->stretcher()->removeWidget( m_isotopeSearch );
+      m_nuclideSearch->clearSearchEnergiesOnClient();
+      m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch );
       delete m_nuclideSearchWindow;
       m_nuclideSearchWindow = 0;
-    }//if( m_recalibratorWindow )
+    }//if( m_nuclideSearchWindow )
     
-    assert( !m_isotopeSearchContainer );
+    assert( !m_nuclideSearchContainer );
     
-    m_isotopeSearchContainer = new WContainerWidget();
+    m_nuclideSearchContainer = new WContainerWidget();
     WGridLayout *isoSearchLayout = new WGridLayout();
-    m_isotopeSearchContainer->setLayout( isoSearchLayout );
+    m_nuclideSearchContainer->setLayout( isoSearchLayout );
     isoSearchLayout->setContentsMargins( 0, 0, 0, 0 );
-    isoSearchLayout->addWidget( m_isotopeSearch, 0, 0 );
-    m_isotopeSearchContainer->setMargin( 0 );
-    m_isotopeSearchContainer->setPadding( 0 );
+    isoSearchLayout->addWidget( m_nuclideSearch, 0, 0 );
+    m_nuclideSearchContainer->setMargin( 0 );
+    m_nuclideSearchContainer->setPadding( 0 );
     isoSearchLayout->setRowStretch( 0, 1 );
     isoSearchLayout->setColumnStretch( 0, 1 );
     
     //WMenuItem *nuclideTab =
-    m_toolsTabs->addTab( m_isotopeSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
+    m_toolsTabs->addTab( m_nuclideSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
 //    const char *tooltip = "Search for nuclides with constraints on energy, "
 //                          "branching ratio, and half life.";
-//    HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTipInstantly, HelpSystem::Top );
+//    HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
     //nuclideTab->setIcon("InterSpec_resources/images/magnifier.png");
-//    if( m_isotopeSearch )
-//      m_isotopeSearch->loadSearchEnergiesToClient();
+//    if( m_nuclideSearch )
+//      m_nuclideSearch->loadSearchEnergiesToClient();
     
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
@@ -5567,13 +5747,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
     m_toolsTabs->removeTab( m_peakInfoDisplay );
-    m_toolsTabs->removeTab( m_recalibrator );
+    m_toolsTabs->removeTab( m_energyCalTool );
     
-    m_isotopeSearch->clearSearchEnergiesOnClient();
-    m_isotopeSearchContainer->layout()->removeWidget( m_isotopeSearch );
-    m_toolsTabs->removeTab( m_isotopeSearchContainer );
-    delete m_isotopeSearchContainer;
-    m_isotopeSearchContainer = nullptr;
+    m_nuclideSearch->clearSearchEnergiesOnClient();
+    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
+    m_toolsTabs->removeTab( m_nuclideSearchContainer );
+    delete m_nuclideSearchContainer;
+    m_nuclideSearchContainer = nullptr;
     
     if( m_referencePhotopeakLines )
       m_referencePhotopeakLines->clearAllLines();
@@ -5643,6 +5823,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   //Not sure _why_ this next statement is needed, but it is, or else the
   //  spectrum chart shows up with no data
   m_spectrum->scheduleUpdateForeground();
+  m_spectrum->scheduleUpdateBackground();
+  m_spectrum->scheduleUpdateSecondData();
 #endif
 }//void setToolTabsVisible( bool showToolTabs )
 
@@ -5655,8 +5837,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     throw runtime_error( "InterSpec::addDisplayMenu(): parent passed in"
                         " must be a PopupDivMenu  or WContainerWidget" );
  
-  const bool showToolTipInstantly
-         = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   if( menuDiv )
   {
@@ -5770,14 +5951,13 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   PopupDivMenuItem *item = chartmenu->addMenuItem( "Show Spectrum Legend" );
   m_spectrum->legendDisabled().connect( item, &PopupDivMenuItem::show );
   m_spectrum->legendEnabled().connect( item,  &PopupDivMenuItem::hide );
-  item->triggered().connect( boost::bind(
-#if ( USE_SPECTRUM_CHART_D3 )
-                                         &D3SpectrumDisplayDiv::enableLegend,
+  
+#if( USE_SPECTRUM_CHART_D3 )
+  item->triggered().connect( boost::bind( &D3SpectrumDisplayDiv::enableLegend, m_spectrum ) );
 #else
-                                         &SpectrumDisplayDiv::enableLegend,
+  item->triggered().connect( boost::bind( &SpectrumDisplayDiv::enableLegend, m_spectrum, false ) );
 #endif
-                                         m_spectrum,
-                                         false ) );
+  
   item->hide(); //we are already showing the legend
 
   item = chartmenu->addMenuItem( "Show Time Legend" );
@@ -5831,13 +6011,17 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_backgroundSubItems[1]->hide();
   
   
+  m_hardBackgroundSub = m_displayOptionsPopupDiv->addMenuItem( "Hard Background Sub..." );
+  m_hardBackgroundSub->triggered().connect( this, &InterSpec::startHardBackgroundSub );
+  m_hardBackgroundSub->disable();
+  
 #if( USE_GOOGLE_MAP )
   m_mapMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Map","InterSpec_resources/images/map_small.png" );
   m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, SpecUtils::SpectrumType::Foreground ) );
   m_mapMenuItem->disable();
   HelpSystem::attachToolTipOn( m_mapMenuItem,
-                    "Show measurment(s) location on a Google Map. Only enabled"
-                    " when GPS coordinates are available.", showToolTipInstantly );
+                    "Show measurement(s) location on a Google Map. Only enabled"
+                    " when GPS coordinates are available.", showToolTips );
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -5845,8 +6029,14 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_searchMode3DChart->triggered().connect( boost::bind( &InterSpec::create3DSearchModeChart, this ) );
   m_searchMode3DChart->disable();
   HelpSystem::attachToolTipOn( m_searchMode3DChart,
-                        "Shows Time vs. Energy vs. Counts view for search mode or RPM data.", showToolTipInstantly );
+                        "Shows Time vs. Energy vs. Counts view for search mode or RPM data.", showToolTips );
 #endif
+  
+  m_showRiidResults = m_displayOptionsPopupDiv->addMenuItem( "Show RIID Results","" );
+  m_showRiidResults->triggered().connect( boost::bind( &InterSpec::showRiidResults, this, SpecUtils::SpectrumType::Foreground ) );
+  HelpSystem::attachToolTipOn( m_showRiidResults,
+                              "Shows the detectors RIID analysis results included in the spectrum file.", showToolTips );
+  m_showRiidResults->disable();
   
   addDetectorMenu( m_displayOptionsPopupDiv );
   
@@ -5859,7 +6049,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     m_featureMarkerMenuItem = m_displayOptionsPopupDiv->addMenuItem( "Feature Markers...", "", true );
     HelpSystem::attachToolTipOn( m_featureMarkerMenuItem,
                     "Tool to show single/double escape peaks, Compton peak, Compton Edge, and sum peaks",
-                     showToolTipInstantly );
+                                showToolTips );
     m_featureMarkerMenuItem->triggered().connect( this, &InterSpec::toggleFeatureMarkerWindow );
 #else
     string js;
@@ -5876,10 +6066,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 
     HelpSystem::attachToolTipOn(item, "Show energy of single and double escapes at"
                      " E-511 keV and E-1022 keV after a pair creation"
-                     " event happened in the detector", showToolTipInstantly );
+                     " event happened in the detector", showToolTips );
     
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, EscapePeakMarker, false ) );
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::EscapePeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::EscapePeakMarker, false ) );
 
 #if( !USE_SPECTRUM_CHART_D3 )
     const string can = "$('#c" + overlay->id() + "')";
@@ -5891,7 +6081,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 #endif //if(USE_SPECTRUM_CHART_D3)/else
 
     
-#if( USE_OSX_NATIVE_MENU || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)  )
+#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU  )
     cerr << "\n\n\nCompton angle not yet implemented for macOS or Electron Native Menus\n\n" << endl;
 #else
     cb = new WCheckBox( "Comp. Peak" );
@@ -5900,7 +6090,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 
     HelpSystem::attachToolTipOn(item, "Show energy of photons which compton scattered"
                      " through the given angle before reaching the"
-                     " detector", showToolTipInstantly );
+                     " detector", showToolTips );
     WContainerWidget *angleDiv = new WContainerWidget( item );
     angleDiv->clicked().preventPropagation();
     angleDiv->clicked().preventDefaultAction();
@@ -5912,8 +6102,8 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     spin->setRange( 0, 180 );
     spin->setValue( 180 );
     
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonPeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonPeakMarker, false ) );
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonPeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonPeakMarker, false ) );
     
 #if( USE_SPECTRUM_CHART_D3 )
     //For some reason the signal through c++ always gives a value of 180 - so as
@@ -5948,10 +6138,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 
     HelpSystem::attachToolTipOn(item, "Maximum energy detected (&#952; = 180 &#176;) for photon which"
                      " interacted once in the detector via a compton"
-                     " interaction", showToolTipInstantly );
+                     " interaction", showToolTips );
     
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, ComptonEdgeMarker, false ) );
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonEdgeMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::ComptonEdgeMarker, false ) );
     
 #if( !USE_SPECTRUM_CHART_D3 )
     js = "function(s,e){try{"+can+".data('compedge',s.checked);}catch(err){}}";
@@ -5966,10 +6156,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     item = submenu->addWidget( cb );
     
     HelpSystem::attachToolTipOn(item, "Energy of peak due to random summing of coincident"
-                     " photopeak gammas.", showToolTipInstantly );
+                     " photopeak gammas.", showToolTips );
     
-    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, true ) );
-    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, SumPeakMarker, false ) );
+    cb->checked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::SumPeakMarker, true ) );
+    cb->unChecked().connect( boost::bind( &InterSpec::setFeatureMarkerOption, this, FeatureMarkerType::SumPeakMarker, false ) );
 #if( !USE_SPECTRUM_CHART_D3 )
     js = "function(s,e){try{"+can+".data('sumpeak',s.checked);"
     +can+".data('sumpeakclick',null);}catch(err){}}";
@@ -5984,20 +6174,59 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     //    checkbox->checked().connect( boost::bind( &WApplication::doJavaScript, wApp, js, true ) );
     
 #if ( USE_SPECTRUM_CHART_D3 )
-    //m_displayOptionsPopupDiv->addSeparator();
-    //auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
-    //saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToPng, this, true) );
+    m_displayOptionsPopupDiv->addSeparator();
+    auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
+    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
+    saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as SVG" );
+    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
 #elif( !IOS )
     //Add a download link to convert the canvas into a PNG and download it.
     m_displayOptionsPopupDiv->addSeparator();
     auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
-    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToPng, this, true) );
+    saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true ) );
 #endif  //USE_SPECTRUM_CHART_D3 / else
     
     chartmenu->addSeparator();
   }//if( overlay )
   
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    m_displayOptionsPopupDiv->addSeparator();
+    auto browserItem = m_displayOptionsPopupDiv->addMenuItem( "Use in external browser" );
+#if( BUILD_AS_ELECTRON_APP )
+    browserItem->triggered().connect( std::bind( [](){
+      wApp->doJavaScript( "if(ipcRenderer) ipcRenderer.send('OpenInExternalBrowser');" );
+    } ) );
+#endif
+    
+#if( BUILD_AS_OSX_APP )
+    // A brief attempt at using javascript to open a browser window failed (probably because I wasnt
+    //  doing it right or something), so I just implemented calling back to obj-c; see the
+    //  didReceiveScriptMessage method in AppDelegate.mm.
+    //  Alternatively we could have added something into macOsUtils.h and then called into there
+    //  where we would have the obj-c open a browser window that way, but I wanted to try this
+    //  method of communicating between JS and native code (but I shuld check if it introduces any
+    //  notable overhead...).
+    // A note for the future: should probably have tried to init the javascript:
+    //    "try{document.getElementById('" + browserItem->anchor()->id() + "').click();}catch(e){}";
+    //    after calling the following c++
+    //      browserItem->setLink( WLink("http://localhost:port?restore=no&primary=no") );
+    //      browserItem->setLinkTarget( AnchorTarget::TargetNewWindow );
+    browserItem->triggered().connect( std::bind([=](){
+      doJavaScript( "console.log('Will try to call back to obj-c');"
+                    "try{"
+                      "window.webkit.messageHandlers.interOp.postMessage({\"action\": \"ExternalInstance\"});"
+                     "}catch(error){"
+                       "console.warn('Failed to callback to the obj-c: ' + error );"
+                     "}" );
+    }) );
+#endif //BUILD_AS_OSX_APP
+  }//if( useNativeMenu )
+#endif //BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP
+  
+  
+#if( USING_ELECTRON_NATIVE_MENU )
   m_displayOptionsPopupDiv->addSeparator();
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleFullscreen );
   m_displayOptionsPopupDiv->addSeparator();
@@ -6009,7 +6238,7 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
 #endif
 #endif
-} // void addDisplayMenu( menuParentDiv )
+}//void addDisplayMenu( menuParentDiv )
 
 
 void InterSpec::addDetectorMenu( WWidget *menuWidget )
@@ -6036,76 +6265,79 @@ void InterSpec::addDetectorMenu( WWidget *menuWidget )
   if( m_detectorToShowMenu->parentItem() )
     m_detectorToShowMenu->parentItem()->disable();
 //  PopupDivMenuItem *item = m_detectorToShowMenu->addMenuItem( "Energy Calibration" );
-//  item->triggered().connect( boost::bind( &WDialog::setHidden, m_recalibratorWindow, false, WAnimation() ) );
-//  item->triggered().connect( boost::bind( &InterSpec::showRecalibratorWindow, this ) );
+//  item->triggered().connect( boost::bind( &WDialog::setHidden, m_energyCalWindow, false, WAnimation() ) );
+//  item->triggered().connect( boost::bind( &InterSpec::showEnergyCalWindow, this ) );
 }//void addDetectorMenu( WContainerWidget *menuDiv )
 
 
-void InterSpec::handRecalibratorWindowClose()
+void InterSpec::handEnergyCalWindowClose()
 {
-  if( !m_recalibratorWindow || !m_recalibrator )
+  if( !m_energyCalWindow || !m_energyCalTool )
     return;
   
-  WGridLayout *layout = m_recalibratorWindow->stretcher();
-  layout->removeWidget( m_recalibrator );
+  WGridLayout *layout = m_energyCalWindow->stretcher();
+  layout->removeWidget( m_energyCalTool );
   
-  AuxWindow::deleteAuxWindow( m_recalibratorWindow );
-  m_recalibratorWindow = nullptr;
+  AuxWindow::deleteAuxWindow( m_energyCalWindow );
+  m_energyCalWindow = nullptr;
   
   if( m_toolsTabs )
   {
-    if( m_toolsTabs->indexOf(m_recalibrator) < 0 )
-      m_toolsTabs->addTab( m_recalibrator, CalibrationTabTitle, TabLoadPolicy );
+    m_energyCalTool->setWideLayout();
+    if( m_toolsTabs->indexOf(m_energyCalTool) < 0 )
+      m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
     
     m_currentToolsTab = m_toolsTabs->currentIndex();
-    
-    if( m_recalibrator->currentLayoutStyle() != Recalibrator::LayoutStyle::kWide )
-      m_recalibrator->setWideLayout();
-    else
-      m_recalibrator->refreshRecalibrator();
   }//if( m_toolsTabs )
-}//void handRecalibratorWindowClose()
+}//void handEnergyCalWindowClose()
 
 
-void InterSpec::showRecalibratorWindow()
+void InterSpec::showEnergyCalWindow()
 {
-  if( m_recalibratorWindow && !m_toolsTabs )
+  if( m_energyCalWindow && !m_toolsTabs )
   {
-    m_recalibratorWindow->show();
-    m_recalibrator->refreshRecalibrator();
+    m_energyCalWindow->show();
     return;
   }
 
-  const int index = (m_toolsTabs ? m_toolsTabs->indexOf(m_recalibrator) : -1);
+  const int index = (m_toolsTabs ? m_toolsTabs->indexOf(m_energyCalTool) : -1);
   
   if( index >= 0 )
-    m_toolsTabs->removeTab( m_recalibrator );
+    m_toolsTabs->removeTab( m_energyCalTool );
   
-  if( m_recalibratorWindow )
+  if( m_energyCalWindow )
   {
-    m_recalibratorWindow->stretcher()->removeWidget(m_recalibrator);
-    delete m_recalibratorWindow;
+    m_energyCalWindow->stretcher()->removeWidget(m_energyCalTool);
+    delete m_energyCalWindow;
   }
     
-  m_recalibratorWindow = new AuxWindow( "Energy Calibration" );
-  m_recalibratorWindow->rejectWhenEscapePressed();
-  m_recalibratorWindow->stretcher()->addWidget( m_recalibrator, 0, 0 );
-  m_recalibrator->setTallLayout( m_recalibratorWindow );
+  m_energyCalWindow = new AuxWindow( "Energy Calibration",
+                                WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                    | AuxWindowProperties::TabletModal );
+  m_energyCalWindow->rejectWhenEscapePressed();
+  m_energyCalWindow->stretcher()->addWidget( m_energyCalTool, 0, 0 );
+  m_energyCalTool->setTallLayout();
+  m_energyCalTool->show();
    
-  m_recalibratorWindow->setClosable(false);
-  //m_recalibratorWindow->finished().connect(boost::bind( &AuxWindow::deleteAuxWindow, m_recalibratorWindow ) );
-  m_recalibratorWindow->finished().connect( boost::bind( &InterSpec::handRecalibratorWindowClose, this ) );
+  //m_energyCalWindow->finished().connect(boost::bind( &AuxWindow::deleteAuxWindow, m_energyCalWindow ) );
+  m_energyCalWindow->finished().connect( boost::bind( &InterSpec::handEnergyCalWindowClose, this ) );
 
-  m_recalibratorWindow->setHeight( 700 );
+  if( (m_renderedWidth > 100) && (m_renderedHeight > 100) )
+    m_energyCalWindow->setMaximumSize( 0.8*m_renderedWidth, 0.8*m_renderedHeight );
+  m_energyCalWindow->setWidth( 380 );
   
-  m_recalibratorWindow->show();
-  m_recalibratorWindow->resizeToFitOnScreen();
-  m_recalibratorWindow->centerWindow();
+  m_energyCalWindow->show();
+  m_energyCalWindow->resizeToFitOnScreen();
+  m_energyCalWindow->centerWindow();
+  
+  AuxWindow::addHelpInFooter( m_energyCalWindow->footer(), "energy-calibration" );
+  Wt::WPushButton *closeButton = m_energyCalWindow->addCloseButtonToFooter("Close",true);
+  closeButton->clicked().connect( boost::bind( &InterSpec::handEnergyCalWindowClose, this ) );
+  
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
-  m_recalibrator->refreshRecalibrator();
-}//void showRecalibratorWindow()
+}//void showEnergyCalWindow()
 
 
 
@@ -6144,6 +6376,177 @@ void InterSpec::setHorizantalLines( bool show )
   m_spectrum->showHorizontalLines( show );
   m_timeSeries->showHorizontalLines( show );
 }//void setHorizantalLines( bool show )
+
+
+void InterSpec::startHardBackgroundSub()
+{
+  const char *msg =
+  "<div style=\"text-align: left;\">"
+  "<p>The normal background subtraction option only affects display of the data, with operations"
+  " like peak-fitting or exporting data are done on the full-statistics original foreground"
+  " spectrum.</p>"
+  "<p>A &quot;hard background subtraction&quot; creates a modified foreground by doing a bin-by-bin"
+  " subtraction of the background from the foreground.</p>"
+  "<p>Side effects of doing a hard background subtraction include:"
+  "<ul style=\"list-style-type: square; margin-top: 4px;\">"  //list-style-type: none;
+    "<li>Variances, i.e. the statistical uncertainty of each channel, will no longer be correct.</li>"
+    "<li>Small energy calibration differences between spectra may create artificial features in the data.</li>"
+    "<li>If a peak in the foreground overlaps with a peak in the background, the statistical"
+         " uncertainty of fit foreground peaks will no longer be correct</li>"
+    "<li>Non-integer channel counts if energy calibrations are not identical, or background is scaled.</li>"
+  "</ul>"
+  "The primary reasons to choose a hard background subtraction over normal display background subtraction are:"
+  "<ul style=\"list-style-type: square; margin-top: 4px;\">"
+    "<li>You dont like the artifacts the display background subtraction makes on the fit peaks continuum.</li>"
+    "<li>It isnt worth fitting peaks in the background so the <b>Activity Shielding Fit</b> tool"
+         " can subtract off contributions from background peaks.</li>"
+    "<li>You are giving the resulting spectrum to someone who doesnt know or care about the"
+         " subtleties this causes.</li>"
+  "</ul>"
+  "</p>"
+  "</div>"
+  "<br />"
+  "<br />"
+  "<div style=\"text-align: center;\"><b><em>Would you like to proceed?</em></b></div>"
+  ;
+
+  SimpleDialog *dialog = new SimpleDialog( "Perform Hard Background Subtract?", msg );
+  WPushButton *button = dialog->addButton( "Yes" );
+  button->clicked().connect( this, &InterSpec::finishHardBackgroundSub );
+  dialog->addButton( "No" );  //dont need to hook this to anything
+}//void startHardBackgroundSub()
+
+
+void InterSpec::finishHardBackgroundSub()
+{
+  const auto foreground = m_spectrum->data();
+  const auto background = m_spectrum->background();
+  const float sf = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
+  
+  if( !foreground
+     || !background
+     || !m_dataMeasurement
+     || (foreground->num_gamma_channels() < 7)
+     || (background->num_gamma_channels() < 7)
+     || IsInf(sf) || IsNan(sf) || (sf <= 0.0)
+     || !foreground->channel_energies()  //should be covered by num_gamma_channels(), but whatever
+     || !background->channel_energies()
+     || !background->energy_calibration() //should always be true, but whatever
+     || !foreground->energy_calibration()
+     || !background->energy_calibration()->valid()
+     || !foreground->energy_calibration()->valid()
+     )
+  {
+    passMessage( "Error doing hard background subtraction."
+                 " Foreground or background was not available, or background scale factor invalid.",
+                 "", WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  try
+  {
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> orig_peaks = m_peakModel->peaks();
+    shared_ptr<const vector<float>> fore_counts = foreground->gamma_counts();
+    shared_ptr<const vector<float>> back_counts = background->gamma_counts();
+    
+    // Make sure back_counts has the same energy calibration and fore_counts, so we can subtract
+    //  on a bin-by-bin basis
+    if( background->energy_calibration() != foreground->energy_calibration()
+       && (*background->energy_calibration()) != (*foreground->energy_calibration()) )
+    {
+      auto new_backchan = make_shared<vector<float>>( fore_counts->size(), 0.0f );
+      SpecUtils::rebin_by_lower_edge( *background->channel_energies(), *back_counts,
+                                     *foreground->channel_energies(), *new_backchan );
+      back_counts = new_backchan;
+    }
+    
+    // Create what will be the background subtracted foreground
+    auto back_sub_counts = make_shared<vector<float>>( *fore_counts );
+    
+    //back_counts and fore_counts should always be the same size, but we'll be a bit verbose anyway
+    assert( back_counts->size() == fore_counts->size() );
+    const size_t nchann = std::min( back_counts->size(), fore_counts->size() );
+    
+    // Do the actual background subtraction
+    for( size_t i = 0; i < nchann; ++i )
+    (*back_sub_counts)[i] -= sf*(*back_counts)[i];
+    
+    // Create a new Measurement object, based on the old foreground
+    auto newspec = make_shared<SpecUtils::Measurement>( *foreground );
+    newspec->set_gamma_counts( back_sub_counts, foreground->live_time(), foreground->real_time() );
+    vector<string> remarks = foreground->remarks();
+    remarks.push_back( "This spectrum has been background subtracted in InterSpec" );
+    newspec->set_remarks( remarks );
+    newspec->set_sample_number( 1 );
+    
+    // Create a new spectrum file object, and set new background subtracted Measurement as its only
+    //  record
+    auto newmeas = make_shared<SpecMeas>();
+    
+    // Copy just the SpecUtils::SpecFile stuff over to 'newmeas' so we dont copy things like
+    //  displayed sample numbers, and uneeded peaks and stuff
+    static_cast<SpecUtils::SpecFile &>(*newmeas) = static_cast<SpecUtils::SpecFile &>(*m_dataMeasurement);
+    
+    newmeas->remove_measurements( newmeas->measurements() );
+    
+    // Need to make sure UUID will get updated.
+    newmeas->set_uuid( "" );
+    
+    // Update filename
+    newmeas->set_filename( "bkgsub_" + newmeas->filename() );
+    
+    // Actually add the measurement
+    newmeas->add_measurement( newspec, true );
+    
+    // Reset all displayed sample numbers and peaks and stuff
+    //newmeas->clearInterSpecDisplayStuff();
+    
+    // Re-fit peaks and set them
+    std::vector<PeakDef> refit_peaks;
+    if( orig_peaks && orig_peaks->size() )
+    {
+      try
+      {
+        vector<PeakDef> input_peaks;
+        for( const auto &i : *orig_peaks )
+          input_peaks.push_back( *i );
+        
+        const double lowE = newspec->gamma_energy_min();
+        const double upE = newspec->gamma_energy_max();
+      
+        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, {}, true );
+        
+        std::deque<std::shared_ptr<const PeakDef> > peakdeque;
+        for( const auto &p : refit_peaks )
+          peakdeque.push_back( std::make_shared<const PeakDef>(p) );
+        
+        newmeas->setPeaks( peakdeque, {newspec->sample_number()} );
+      }catch( std::exception &e )
+      {
+        cerr << "Unexpected exception re-fitting peaks doing hard background subtract: "
+             << e.what() << endl;
+      }//try / catch to fit peaks
+    }//if( we need to refit peaks )
+    
+    // Get rid of the previously displayed background if there was one
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, false );
+    
+    
+    auto header = m_fileManager->addFile( newmeas->filename(), newmeas );
+    SpectraFileModel *filemodel = m_fileManager->model();
+    auto index = filemodel->index( header );
+    m_fileManager->displayFile( index.row(), newmeas,
+                                SpecUtils::SpectrumType::Foreground,
+                                false, false,
+                                SpecMeasManager::VariantChecksToDo::None );
+  }catch( std::exception &e )
+  {
+    passMessage( "There was an error loading the newly created spectrum file, sorry:"
+                + string(e.what()),
+                "", WarningWidget::WarningMsgHigh );
+  }//try / catch
+  
+}//finishHardBackgroundSub();
 
 
 #if( USE_SPECTRUM_CHART_D3 )
@@ -6389,33 +6792,31 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   m_helpMenuPopup->addSeparator();
   PopupDivMenu *subPopup = m_helpMenuPopup->addPopupMenuItem( "Options", "InterSpec_resources/images/cog_small.png" );
     
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   const bool autoStore = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
   WCheckBox *cb = new WCheckBox( " Automatically store session" );
   cb->setChecked( autoStore );
   item = subPopup->addWidget( cb );
-  HelpSystem::attachToolTipOn( item, "Automatically stores app state", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Automatically stores app state", showToolTips );
   InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this, false );
   
 
   if( !isMobile() )
   {
-    WCheckBox *checkbox = new WCheckBox( " Instant tooltips" );
+    WCheckBox *checkbox = new WCheckBox( " Show tooltips" );
     item = subPopup->addWidget( checkbox );
-    checkbox->setChecked( showToolTipInstantly );
+    checkbox->setChecked( showToolTips );
     HelpSystem::attachToolTipOn( item,
-                                "Instant tooltips show up immediately and is helpful for beginners "
-                                "to understand how to use InterSpec.  Advanced users are recommended"
-                                " to turn this off, causing tooltips to show only after a 1 second"
-                                " delay." , true, HelpSystem::Right, HelpSystem::CanDelayShowing );
+                                "Show tooltips after hovering over an element for half a second."
+                                , true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
     InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this, false );
   }//if( !isMobile() )
   
   {//begin add "AskPropagatePeaks" to menu
-    const bool doPropogate = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+    const bool doPropogate = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
     WCheckBox *checkbox = new WCheckBox( " Ask to Propagate Peaks" );
     checkbox->setChecked( doPropogate );
     item = subPopup->addWidget( checkbox );
@@ -6425,11 +6826,20 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                  " new spectrum.  Only applies if new spectrum"
                                  " doesnt have any peaks, but previous"
                                  " foreground did.",
-                                 true, HelpSystem::Right, HelpSystem::CanDelayShowing );
+                                 true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
     InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this, false );
   }//end add "AskPropagatePeaks" to menu
+  
+  
+  {//begin add "DisplayBecquerel"
+    WCheckBox *checkbox = new WCheckBox( " Display in Becquerel" );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item, "Display activity in units of becquerel, rather than curie.",
+                                 true, HelpSystem::ToolTipPosition::Right );
+    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this, false );
+  }//end add "DisplayBecquerel"
   
     //High Bandwidth interactions
 #if( USE_HIGH_BANDWIDTH_INTERACTIONS && !USE_SPECTRUM_CHART_D3 )
@@ -6443,7 +6853,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     const char *smoothzoomtext = "Smooth zooming out and panning of spectrum.";
 #endif
     
-    HelpSystem::attachToolTipOn( item, smoothzoomtext, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( item, smoothzoomtext, showToolTips );
     InterSpecUser::associateWidget( m_user, "SmoothZoomPan", highBWCb, this, false );
     highBWCb->checked().connect( this, &InterSpec::enableSmoothChartOperations );
     highBWCb->unChecked().connect( this, &InterSpec::disableSmoothChartOperations );
@@ -6461,36 +6871,45 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   WCheckBox *promptOnLoad = new WCheckBox( "Prompt to load prev state" );
   item = subPopup->addWidget( promptOnLoad );
   const char *prompttext = "At application start, ask to load previous state.";
-  HelpSystem::attachToolTipOn( item, prompttext, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, prompttext, showToolTips );
   InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this, false );
   
   WCheckBox *doLoad = new WCheckBox( "Load prev state on start" );
   item = subPopup->addWidget( doLoad );
   const char *doloadtext = "At application start, automatically load previous state, if not set to be prompted";
-  HelpSystem::attachToolTipOn( item, doloadtext, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, doloadtext, showToolTips );
   InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this, false );
 #endif
-#if( !BUILD_AS_OSX_APP )
-  m_helpMenuPopup->addSeparator();
   
-  item = m_helpMenuPopup->addMenuItem( "About InterSpec..." );
-  item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+  
+#if( BUILD_AS_OSX_APP )
+  const bool addAboutInterSpec = !InterSpecApp::isPrimaryWindowInstance();
+#else
+    const bool addAboutInterSpec = true;
 #endif
+  
+  if( addAboutInterSpec )
+  {
+    m_helpMenuPopup->addSeparator();
+    
+    item = m_helpMenuPopup->addMenuItem( "About InterSpec..." );
+    item->triggered().connect( boost::bind( &InterSpec::showLicenseAndDisclaimersWindow, this, false, std::function<void()>{} ) );
+  }
+
 }//void addAboutMenu( Wt::WContainerWidget *menuDiv )
 
 
-void InterSpec::toggleToolTip( const bool sticky )
+void InterSpec::toggleToolTip( const bool showToolTips )
 {
   //update all existing qtips
-  const char *delay = sticky ? "0" : "1000";
-  const char *keyPressHide = sticky ? "" : " keypress";
-
-  char buffer[248];  //only need about 149 characters
-  snprintf( buffer, sizeof(buffer),
-           "$('.qtip-rounded.delayable').qtip('option', 'show.delay', %s);"
-           "$('.qtip-rounded.delayable').qtip('option', 'hide.event', 'mouseleave focusout%s' );",
-           delay, keyPressHide );
-  wApp->doJavaScript( buffer );
+  if( showToolTips )
+  {
+    wApp->doJavaScript( "$('.qtip-rounded.canDisableTt').qtip('option', 'show.event', 'mouseenter focus');" );
+  }else
+  {
+    wApp->doJavaScript( "$('.qtip-rounded.canDisableTt').qtip('option', 'show.event', '');" );
+  }
+  
 }//void toggleToolTip( const bool sticky )
 
 
@@ -6661,7 +7080,11 @@ std::shared_ptr<const SpecUtils::Measurement> InterSpec::displayedHistogram( Spe
 }//displayedHistogram(...)
 
 
-void InterSpec::saveChartToPng( const bool spectrum )
+#if ( USE_SPECTRUM_CHART_D3 )
+void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
+#else
+void InterSpec::saveChartToImg( const bool spectrum )
+#endif
 {
   std::shared_ptr<const SpecMeas> spec = measurment(SpecUtils::SpectrumType::Foreground);
   string filename = (spec ? spec->filename() : string("spectrum"));
@@ -6676,12 +7099,29 @@ void InterSpec::saveChartToPng( const bool spectrum )
   auto ppos = timestr.find('.');
   if( ppos != string::npos )
     timestr = timestr.substr(0,ppos);
+#if ( USE_SPECTRUM_CHART_D3 )
+  filename += "_" + timestr + ((!spectrum || asPng) ? ".png" : ".svg");
+#else
   filename += "_" + timestr + ".png";
-
+#endif
+  
+  string illegal_chars = "\\/:?\"<>|";
+  SpecUtils::erase_any_character( filename, illegal_chars.c_str() );
+  
+#if ( USE_SPECTRUM_CHART_D3 )
   if( spectrum )
-    m_spectrum->saveChartToPng( filename );
+  {
+    m_spectrum->saveChartToImg( filename, asPng );
+  }else
+  {
+    m_timeSeries->saveChartToPng( filename );
+  }
+#else
+  if( spectrum )
+    m_spectrum->saveChartToImg( filename );
   else
     m_timeSeries->saveChartToPng( filename );
+#endif
 }//saveSpectrumToPng()
 
 
@@ -6691,10 +7131,10 @@ double InterSpec::displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) co
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
 
 
-void InterSpec::setDisplayScaleFactor( const double sf,
-                                            const SpecUtils::SpectrumType spectrum_type )
+void InterSpec::setDisplayScaleFactor( const double sf, const SpecUtils::SpectrumType spec_type )
 {
-  m_spectrum->setDisplayScaleFactor( sf, spectrum_type );
+  m_spectrum->setDisplayScaleFactor( sf, spec_type );
+  m_spectrumScaleFactorChanged.emit( spec_type, sf );
 }//void setDisplayScaleFactor( const double sf, SpecUtils::SpectrumType spectrum_type );
 
 
@@ -6959,6 +7399,12 @@ void InterSpec::create3DSearchModeChart()
 #endif
 
 
+void InterSpec::showRiidResults( const SpecUtils::SpectrumType type )
+{
+  showRiidInstrumentsAna( measurment(type) );
+}//void showRiidResults( const SpecUtils::SpectrumType type )
+
+
 #if( USE_TERMINAL_WIDGET )
 void InterSpec::createTerminalWidget()
 {
@@ -7025,7 +7471,7 @@ void InterSpec::handleTerminalWindowClose()
 void InterSpec::addToolsMenu( Wt::WWidget *parent )
 {
   
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
   WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
@@ -7050,42 +7496,42 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   PopupDivMenuItem *item = NULL;
 
   item = popup->addMenuItem( "Activity/Shielding Fit" );
-  HelpSystem::attachToolTipOn( item,"Allows advanced input of shielding material and activity around source isotopes to improve the fit." , showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows advanced input of shielding material and activity around source isotopes to improve the fit." , showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showShieldingSourceFitWindow, this ) );
   
   item = popup->addMenuItem( "Gamma XS Calc", "" );
-  HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <code>InterSpec</code>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to determine the cross section for gammas of arbitrary energy though any material in <code>InterSpec</code>'s library. Efficiency estimates for detection of the gamma rays inside the full energy peak and the fraction of gamma rays that will make it through the material without interacting with it can be provided with the input of additional information.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showGammaXsTool, this ) );
     
     
   item = popup->addMenuItem( "Dose Calc", "" );
   HelpSystem::attachToolTipOn( item,
       "Allows you to compute dose, activity, shielding, or distance, given the"
-      " other pieces of information.", showToolTipInstantly );
+      " other pieces of information.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showDoseTool, this ) );
   
 //  item = popup->addMenuItem( Wt::WString::fromUTF8("1/r² Calculator") );  // is superscript 2
-#if( USE_OSX_NATIVE_MENU  || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
   item = popup->addMenuItem( Wt::WString::fromUTF8("1/r\x0032 Calculator") );  //works on OS X at least.
 #else
   item = popup->addMenuItem( Wt::WString::fromUTF8("1/r<sup>2</sup> Calculator") );
   item->makeTextXHTML();
 #endif
   
-  HelpSystem::attachToolTipOn( item,"Allows user to use two dose measurements taken at different distances from a source to determine the absolute distance to the source from the nearer measurement.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to use two dose measurements taken at different distances from a source to determine the absolute distance to the source from the nearer measurement.", showToolTips );
   
   item->triggered().connect( this, &InterSpec::createOneOverR2Calculator );
 
   item = popup->addMenuItem( "Units Converter" );
-  HelpSystem::attachToolTipOn( item,"Curie to Becquerel converter.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Convert radiation-related units.", showToolTips );
   item->triggered().connect( this, &InterSpec::createUnitsConverterTool );
   
   item = popup->addMenuItem( "Flux Tool" );
-  HelpSystem::attachToolTipOn( item,"Converts detectred peak counts, to gammas emitted by the source.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Converts detectred peak counts, to gammas emitted by the source.", showToolTips );
   item->triggered().connect( this, &InterSpec::createFluxTool );
   
   item = popup->addMenuItem( "Nuclide Decay Info" );
-  HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and daughter nuclides." , showToolTips );
   item->triggered().connect( this, &InterSpec::createDecayInfoWindow );
 
   item = popup->addMenuItem( "Detection Confidence Tool" );
@@ -7093,31 +7539,41 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, &InterSpec::createDetectionConfidenceTool );
   
   item = popup->addMenuItem( "Detector Response Select" );
-  HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showDetectorEditWindow, this ) );
   
   item = popup->addMenuItem( "Make Detector Response" );
-  HelpSystem::attachToolTipOn( item, "Create detector response function from characterization data.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item, "Create detector response function from characterization data.", showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showMakeDrfWindow, this ) );
 
   
   item = popup->addMenuItem( "File Parameters" );
-  HelpSystem::attachToolTipOn( item,"Allows user to view/edit the file parameters. If ever the application is unable to render activity calculation, use this tool to provide parameters the original file did not provide; <code>InterSpec</code> needs all parameters for activity calculation.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( item,"Allows user to view/edit the file parameters. If ever the application is unable to render activity calculation, use this tool to provide parameters the original file did not provide; <code>InterSpec</code> needs all parameters for activity calculation.", showToolTips );
   item->triggered().connect( this, &InterSpec::createFileParameterWindow );
 
-  item = popup->addMenuItem( "Energy Range Count" );
-  HelpSystem::attachToolTipOn( item, "Sums the number of gammas in region of interest (ROI). Can also be accessed by left-click dragging over the ROI while holding both the <kbd><b>ALT</b></kbd> and <kbd><b>SHIFT</b></kbd> keys.", showToolTipInstantly );
+  item = popup->addMenuItem( "Energy Range Sum" );
+  HelpSystem::attachToolTipOn( item, "Sums the number of gammas in region of interest (ROI). Can also be accessed by left-click dragging over the ROI while holding both the <kbd><b>ALT</b></kbd> and <kbd><b>SHIFT</b></kbd> keys.", showToolTips );
   item->triggered().connect( this, &InterSpec::showGammaCountDialog );
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
-  item = popup->addMenuItem( "File Query Tool" );
-  HelpSystem::attachToolTipOn( item, "Searches through a directory (recursively) for spectrum files that match specafiable conditions.", showToolTipInstantly );
-  item->triggered().connect( this, &InterSpec::showFileQueryDialog );
+  
+#if( BUILD_AS_OSX_APP )
+  const bool addQueryTool = InterSpecApp::isPrimaryWindowInstance();
+#else
+  const bool addQueryTool = true;
+#endif
+  
+  if( addQueryTool )
+  {
+    item = popup->addMenuItem( "File Query Tool" );
+    HelpSystem::attachToolTipOn( item, "Searches through a directory (recursively) for spectrum files that match specafiable conditions.", showToolTips );
+    item->triggered().connect( this, &InterSpec::showFileQueryDialog );
+  }//if( addQueryTool )
 #endif
   
 #if( USE_TERMINAL_WIDGET )
   m_terminalMenuItem = popup->addMenuItem( "Math/Command Terminal" );
-  HelpSystem::attachToolTipOn( m_terminalMenuItem, "Creates a terminal that provides numeric and algebraic computations, as well as allowing text based interactions with the spectra.", showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_terminalMenuItem, "Creates a terminal that provides numeric and algebraic computations, as well as allowing text based interactions with the spectra.", showToolTips );
   m_terminalMenuItem->triggered().connect( this, &InterSpec::createTerminalWidget );
 #endif
 }//void InterSpec::addToolsMenu( Wt::WContainerWidget *menuDiv )
@@ -7255,23 +7711,23 @@ void InterSpec::closeNuclideSearchWindow()
   if( !m_nuclideSearchWindow )
     return;
   
-  m_isotopeSearch->clearSearchEnergiesOnClient();
-  m_nuclideSearchWindow->stretcher()->removeWidget( m_isotopeSearch );
+  m_nuclideSearch->clearSearchEnergiesOnClient();
+  m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch );
   
   delete m_nuclideSearchWindow;
   m_nuclideSearchWindow = 0;
   
   if( m_toolsTabs )
   {
-    m_isotopeSearchContainer = new WContainerWidget();
+    m_nuclideSearchContainer = new WContainerWidget();
     WGridLayout *isotopeSearchGridLayout = new WGridLayout();
-    m_isotopeSearchContainer->setLayout( isotopeSearchGridLayout );
+    m_nuclideSearchContainer->setLayout( isotopeSearchGridLayout );
 
-    isotopeSearchGridLayout->addWidget( m_isotopeSearch, 0, 0 );
+    isotopeSearchGridLayout->addWidget( m_nuclideSearch, 0, 0 );
     isotopeSearchGridLayout->setRowStretch( 0, 1 );
     isotopeSearchGridLayout->setColumnStretch( 0, 1 );
 
-    m_toolsTabs->addTab( m_isotopeSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
+    m_toolsTabs->addTab( m_nuclideSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
     m_currentToolsTab = m_toolsTabs->currentIndex();
   }//if( m_toolsTabs )
 }//void closeNuclideSearchWindow()
@@ -7283,16 +7739,16 @@ void InterSpec::showNuclideSearchWindow()
     m_nuclideSearchWindow->show();
     m_nuclideSearchWindow->resizeToFitOnScreen();
     m_nuclideSearchWindow->centerWindow();
-    m_isotopeSearch->loadSearchEnergiesToClient();
+    m_nuclideSearch->loadSearchEnergiesToClient();
     return;
   }//if( m_nuclideSearchWindow )
   
-  if( m_toolsTabs && m_isotopeSearchContainer )
+  if( m_toolsTabs && m_nuclideSearchContainer )
   {
-    m_isotopeSearchContainer->layout()->removeWidget( m_isotopeSearch );
-    m_toolsTabs->removeTab( m_isotopeSearchContainer );
-    delete m_isotopeSearchContainer;
-    m_isotopeSearchContainer = 0;
+    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
+    m_toolsTabs->removeTab( m_nuclideSearchContainer );
+    delete m_nuclideSearchContainer;
+    m_nuclideSearchContainer = 0;
   }
   
   m_nuclideSearchWindow = new AuxWindow( NuclideSearchTabTitle, (AuxWindowProperties::TabletModal) );
@@ -7307,7 +7763,7 @@ void InterSpec::showNuclideSearchWindow()
   //}//if( isPhone() )
   
   m_nuclideSearchWindow->stretcher()->setContentsMargins( 0, 0, 0, 0 );
-  m_nuclideSearchWindow->stretcher()->addWidget( m_isotopeSearch, 0, 0 );
+  m_nuclideSearchWindow->stretcher()->addWidget( m_nuclideSearch, 0, 0 );
   
   //We need to set the footer height explicitly, or else the window->resize()
   //  messes up.
@@ -7326,7 +7782,7 @@ void InterSpec::showNuclideSearchWindow()
   m_nuclideSearchWindow->setResizable(true);
   m_nuclideSearchWindow->show();
   
-  m_isotopeSearch->loadSearchEnergiesToClient(); //clear the isotope search on the canvas
+  m_nuclideSearch->loadSearchEnergiesToClient(); //clear the isotope search on the canvas
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
@@ -7338,95 +7794,10 @@ void InterSpec::showShieldingSourceFitWindow()
   if( !m_shieldingSourceFit )
   {
     assert( m_peakInfoDisplay );
-
-    m_shieldingSourceFitWindow = new AuxWindow( "Activity/Shielding Fit" );
-    m_shieldingSourceFit = new ShieldingSourceDisplay( m_peakModel, this,
-                                          m_shieldingSuggestion, m_materialDB.get() );
-
-    m_shieldingSourceFitWindow->setResizable( true );
-    m_shieldingSourceFitWindow->contents()->setOffsets(WLength(0,WLength::Pixel));
-    m_shieldingSourceFitWindow->stretcher()->addWidget( m_shieldingSourceFit, 0, 0 );
-    m_shieldingSourceFitWindow->stretcher()->setContentsMargins(0,0,0,0);
-   
-//    m_shieldingSourceFitWindow->footer()->resize(WLength::Auto, WLength(50.0));
+    auto widgets = ShieldingSourceDisplay::createWindow( this );
     
-    WPushButton *closeButton = m_shieldingSourceFitWindow->addCloseButtonToFooter();
-    closeButton->clicked().connect(m_shieldingSourceFitWindow, &AuxWindow::hide);
-    
-    AuxWindow::addHelpInFooter( m_shieldingSourceFitWindow->footer(), "activity-shielding-dialog" );
-  
-    m_shieldingSourceFitWindow->rejectWhenEscapePressed();
-    
-    //Should take lock on m_dataMeasurement->mutex_
-    
-    rapidxml::xml_document<char> *shield_source = nullptr;
-    if( m_dataMeasurement )
-      shield_source = m_dataMeasurement->shieldingSourceModel();
-    
-    if( shield_source && shield_source->first_node() )
-    {
-      //string msg = "Will try to deserailize: \n";
-      //rapidxml::print( std::back_inserter(msg), *shield_source->first_node(), 0 );
-      //cout << msg << endl << endl;
-      try
-      {
-        m_shieldingSourceFit->deSerialize( shield_source->first_node() );
-      }catch( std::exception &e )
-      {
-        string xmlstring;
-        rapidxml::print(std::back_inserter(xmlstring), *shield_source, 0);
-        stringstream debugmsg;
-        debugmsg << "Error loading Shielding/Source model: "
-                    "\n\tError Message: " << e.what()
-                 << "\n\tModel XML: " << xmlstring;
-#if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, debugmsg.str().c_str() );
-#else
-        cerr << debugmsg.str() << endl;
-#endif
-        passMessage( "There was an error loading the shielding/source model - model state is suspect!",
-                    "", WarningWidget::WarningMsgHigh );
-      }
-    }//if( shield_source )
-    
-    
-//    m_shieldingSourceFitWindow->resizeScaledWindow( 0.75, 0.75 );
-    
-    const double windowWidth = 0.95 * renderedWidth();
-    const double windowHeight = 0.95 * renderedHeight();
-    
-//    double footerheight = m_shieldingSourceFitWindow->footer()->height().value();
-//    m_shieldingSourceFitWindow->setMinimumSize( WLength(200), WLength(windowHeight) );
-    
-    
-    if( (windowHeight > 100) && (windowWidth > 100) )
-    {
-      if( !isPhone() )
-        m_shieldingSourceFitWindow->resizeWindow( windowWidth, windowHeight );
-
-      //Give the m_shieldingSourceFitWindow a hint about what size it will be
-      //  rendered at so it can decide what widgets should be rendered - acounting
-      //  for borders and stuff (roughly)
-      m_shieldingSourceFit->initialSizeHint( windowWidth - 12, windowHeight - 28 - 50 );
-    }else if( !isPhone() )
-    {
-      //When loading an application state that is showing this window, we may
-      //  not know the window size (e.g., windowWidth==windowHeight==0), so
-      //  instead skip giving the initial size hint, and instead size things
-      //  client side (maybe we should just do this always?)
-      m_shieldingSourceFitWindow->resizeScaledWindow( 0.95, 0.95 );
-    }
-      
-//    m_shieldingSourceFitWindow->contents()->  setHeight(WLength(windowHeight));
-
-    m_shieldingSourceFitWindow->centerWindow();
-
-    m_shieldingSourceFitWindow->finished().connect( this, &InterSpec::closeShieldingSourceFitWindow );
-    
-    m_shieldingSourceFitWindow->WDialog::setHidden(false);
-    
-    m_shieldingSourceFitWindow->show();
-    m_shieldingSourceFitWindow->centerWindow();
+    m_shieldingSourceFit = widgets.first;
+    m_shieldingSourceFitWindow  = widgets.second;
   }else
   {
     const double windowWidth = 0.95 * renderedWidth();
@@ -7571,11 +7942,11 @@ void InterSpec::closeGammaLinesWindow()
     if( m_toolsTabs && m_toolsTabs->indexOf( m_referencePhotopeakLines ) >= 0 )
       m_toolsTabs->removeTab( m_referencePhotopeakLines );
     delete m_referencePhotopeakLines;
-    m_referencePhotopeakLines = 0;
+    m_referencePhotopeakLines = nullptr;
   }//if( m_referencePhotopeakLines )
 
   delete m_referencePhotopeakLinesWindow;
-  m_referencePhotopeakLinesWindow = 0;
+  m_referencePhotopeakLinesWindow = nullptr;
 
   if( m_toolsTabs )
   {
@@ -7602,21 +7973,20 @@ void InterSpec::handleToolTabChanged( int tab )
     return;
   
   const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
-  const int calibtab = m_toolsTabs->indexOf(m_recalibrator);
-  const int searchTab = m_toolsTabs->indexOf(m_isotopeSearchContainer);
+  const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
+  const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
   
   if( m_referencePhotopeakLines && (tab == refTab) && !isMobile() )
     m_referencePhotopeakLines->setFocusToIsotopeEdit();
     
-  if( m_isotopeSearch && (m_currentToolsTab==searchTab) )
-    m_isotopeSearch->clearSearchEnergiesOnClient();
+  if( m_nuclideSearch && (m_currentToolsTab==searchTab) )
+    m_nuclideSearch->clearSearchEnergiesOnClient();
   
-  if( m_isotopeSearch && (tab==searchTab) )
-    m_isotopeSearch->loadSearchEnergiesToClient();
+  if( m_nuclideSearch && (tab==searchTab) )
+    m_nuclideSearch->loadSearchEnergiesToClient();
   
   if( tab == calibtab )
   {
-    m_recalibrator->refreshRecalibrator();
     if( InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
       passMessage( "You can also recalibrate graphically by right-clicking and "
                    "dragging the spectrum to where you want",
@@ -7636,7 +8006,19 @@ SpecMeasManager *InterSpec::fileManager()
 PeakModel *InterSpec::peakModel()
 {
   return m_peakModel;
-};
+}
+
+
+MaterialDB *InterSpec::materialDataBase()
+{
+  return m_materialDB.get();
+}
+
+
+Wt::WSuggestionPopup *InterSpec::shieldingSuggester()
+{
+  return m_shieldingSuggestion;
+}
 
 
 Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorChanged()
@@ -7713,18 +8095,32 @@ std::set<int> InterSpec::timeRangeToSampleNumbers( double t0, double t1 )
   if( !m_dataMeasurement )
     return answer;
   
+  // The last entry in 'binning' will be a garbage sample number, and the time is the upper edge of
+  //  last time segment.
   const vector<pair<float,int> > binning = passthroughTimeToSampleNumber();
   
-  if( binning.empty() )
+  if( binning.size() <= 1 )
     return answer;
   
   size_t startind, endind;
-  for( startind = 0; startind < (binning.size()-1); ++startind )
+  for( startind = 0; (startind+1) < binning.size(); ++startind )
     if( binning[startind+1].first > t0 )
       break;
-  for( endind = startind; endind < (binning.size()-1); ++endind )
+  
+  // The very last entry in 'binning' is a garbage sample number, so if startind points to the last
+  //  element, we wont include any sample numbers, so return an empty answer.
+  if( (startind+1) >= binning.size() )
+    return answer;
+  
+  for( endind = startind; (endind+1) < binning.size(); ++endind )
     if( binning[endind+1].first > t1 )
       break;
+  
+  // 'endind' might point to the last garbage sample number, so lets protect against that
+  if( binning.size() == 1 )
+    endind = 0;
+  else
+    endind = std::min( endind, binning.size()-2 );
   
   for( size_t i = startind; i <= endind; ++i )
     answer.insert( binning[i].second );
@@ -7779,7 +8175,7 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
   
   std::shared_ptr<const SpecUtils::Measurement> prevhist = displayedHistogram(type);
   
-  std::set<int> *sampleset = 0;
+  std::set<int> *sampleset = nullptr;
   
   switch( type )
   {
@@ -7840,7 +8236,8 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
   }//switch( spec_type )
 #endif
   
-  m_displayedSpectrumChangedSignal.emit( type, meas, (*sampleset) );
+  const auto dets = detectorsToDisplay(type);
+  m_displayedSpectrumChangedSignal.emit( type, meas, (*sampleset), dets );
 }//void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples )
 
 
@@ -7961,20 +8358,37 @@ std::set<int> InterSpec::validForegroundSamples() const
   for( const int s : m_excludedSamples )
     sample_nums.erase( s );
   
-  set<int> torm;
-  for( const int s : sample_nums )
+  // If we have "derived" and non-derived data, then don't let derived data be a valid foreground.
+  const bool hasDerivedData = m_dataMeasurement->contains_derived_data();
+  const bool hasNonDerivedData = m_dataMeasurement->contains_non_derived_data();
+  
+  set<int> to_rm;
+  for( const int samplenum : sample_nums )
   {
-    const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
-                               = m_dataMeasurement->sample_measurements(s);
-    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
+    const auto meass = m_dataMeasurement->sample_measurements(samplenum);
+    
+    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meass )
     {
-      if( m->source_type() == SpecUtils::SourceType::Background )
-        torm.insert( s );
-    }
+      if( hasDerivedData && hasNonDerivedData && m->derived_data_properties() )
+        to_rm.insert( samplenum );
+      
+      switch( m->source_type() )
+      {
+        case SpecUtils::SourceType::IntrinsicActivity:
+        case SpecUtils::SourceType::Calibration:
+        case SpecUtils::SourceType::Background:
+          to_rm.insert( samplenum );
+          break;
+          
+        case SpecUtils::SourceType::Foreground:
+        case SpecUtils::SourceType::Unknown:
+          break;
+      }//switch( m->source_type() )
+    }//for( loop over measurements of this sample number )
   }//for( const int s : sample_nums )
   
-  for( const int s : torm )
-    sample_nums.erase( s );
+  for( const int samplenum : to_rm )
+    sample_nums.erase( samplenum );
 
   return sample_nums;
 }//std::set<int> validForegroundSamples() const
@@ -8097,7 +8511,8 @@ void InterSpec::loadDetectorToPrimarySpectrum( SpecUtils::DetectorType type,
        
        WStringStream js;
        js << "<div onclick=\"Wt.emit('" << id() << "',{name:'removeDrfAssociation'});"
-       "$('.qtip.jgrowl:visible:last').remove();return false;\" "
+       //"$('.qtip.jgrowl:visible:last').remove();return false;\" "
+       "try{$(this.parentElement.parentElement).remove();}catch(e){} return false;\"
        "class=\"clearsession\"><span class=\"clearsessiontxt\">Remove association of detector with DRF.</span></div>";
        
        passMessage( "Using the detector response function you specified to use as default for this detector."
@@ -8152,53 +8567,23 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   vector< boost::function<void(void)> > furtherworkers;
   
-  bool wasModified = false, wasModifiedSinceDecode = false;
+  const bool wasModified = (meas ? meas->modified() : false);
+  const bool wasModifiedSinceDecode = (meas ? meas->modified_since_decode() : false);
   
-  if( !!meas )
+  if( m_useInfoWindow && meas )
   {
-    wasModified = meas->modified();
-    wasModifiedSinceDecode = meas->modified_since_decode();
-    
-    if( m_useInfoWindow )
-    {
-      delete m_useInfoWindow;
-      m_useInfoWindow = nullptr;
-    }
-    
-/*
-    const std::vector<std::string> &names = meas->detector_names();
-    std::vector< std::shared_ptr<const SpecUtils::Measurement> > meass = meas->measurements();
-    
-    vector<ofstream> outfiles( names.size() );
-    for( size_t i = 0; i < names.size(); ++i )
-      outfiles[i].open( ("/Users/wcjohns/Downloads/det_" + names[i] + ".txt").c_str() );
-    vector<float> max_energies( names.size(), 0.0f );
-    
-    for( size_t i = 0; i < meass.size(); ++i )
-    {
-      const size_t nchannel = meass[i]->num_gamma_channels();
-      if( !meass[i]->gamma_channel_contents() || nchannel < 10)
-        continue;
+    // If we are loading a state from the "Welcome To InterSpec" screen, we dont want to delete
+    //  m_useInfoWindow because we will still use it, so instead we'll try deleting the window on
+    //  the next go around of the event loop.
+    auto doDelete = wApp->bind( std::bind([this](){
+      WApplication *app = wApp;
+      if( !app )
+        return;
+      deleteWelcomeCountDialog();
+      app->triggerUpdate();
+    }) );
       
-      const size_t index = std::find( names.begin(), names.end(), meass[i]->detector_name() ) - names.begin();
-      for( size_t j = 0; j < meass[i]->gamma_channel_contents()->size(); ++j )
-        outfiles[index] << meass[i]->gamma_channel_contents()->at(j) << " ";
-      outfiles[index] << endl;
-      max_energies[index] = max( max_energies[index], meass[i]->gamma_channel_upper(nchannel-1));
-    }
-*/
-    
-/*
-    std::shared_ptr<SpecUtils::Measurement> sumspec = meas->sum_measurements( meas->sample_numbers(), vector<bool>(meas->detector_numbers().size(),true) );
-    const std::shared_ptr< const std::vector<float> > &counts = sumspec->gamma_channel_contents();
-    
-    ofstream output( ("/Users/wcjohns/sum_" + meas->filename() + ".txt").c_str() );
-    output << "LiveTime: " << sumspec->live_time() << endl;
-    output << "RealTime: " << sumspec->real_time() << endl;
-    for( size_t i = 0; i < counts->size(); ++i )
-      output << (*counts)[i] << " ";
-    output << endl;
-*/
+    WServer::instance()->post( wApp->sessionId(), doDelete );
   }//if( meas )
   
   std::shared_ptr<SpecMeas> previous = measurment(spec_type);
@@ -8245,7 +8630,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         deletePeakEdit();
     break;
     
-    case SpecUtils::SpectrumType::SecondForeground: case SpecUtils::SpectrumType::Background:
+    case SpecUtils::SpectrumType::SecondForeground:
+    case SpecUtils::SpectrumType::Background:
     break;
   }//switch( spec_type )
 
@@ -8339,7 +8725,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         
         m_detectorChangedConnection = m_detectorChanged.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), _1 ) );
         m_detectorModifiedConnection = m_detectorModified.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), _1 ) );
-        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( boost::bind( &SpecMeas::displayedSpectrumChangedCallback, meas.get(), _1, _2, _3 ) );
+        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( boost::bind( &SpecMeas::displayedSpectrumChangedCallback, meas.get(), _1, _2, _3, _4 ) );
       }//if( meas )
 
       m_dataMeasurement = meas;
@@ -8384,8 +8770,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       auto energy_cal = m_dataMeasurement->suggested_sum_energy_calibration( sample_numbers, detectors );
       if( energy_cal )
         binning = energy_cal->channel_energies();
-    }catch(...)
+    }catch( std::exception & )
     {
+      
     }
     
     shared_ptr<const vector<float>> prev_binning = prev_display ? prev_display->channel_energies() : nullptr;
@@ -8412,8 +8799,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       m_spectrum->setSecondData( nullptr, false );
       
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::SecondForeground,
-                                            m_secondDataMeasurement,
-                                            std::set<int>() );
+                                             nullptr, {}, {} );
     }//if( num_sec_channel )
     
     if( diff_fore_nchan && num_back_channel && num_foreground_channels && (num_back_channel != num_foreground_channels) )
@@ -8425,11 +8811,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         m_downloadMenu->setItemHidden( item, true );
 #endif
       
-      m_backgroundMeasurement = std::shared_ptr<SpecMeas>();
-      m_spectrum->setBackground( nullptr );
-      m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background,
-                                            m_backgroundMeasurement,
-                                            std::set<int>() );
+      m_backgroundMeasurement = nullptr;
+      m_spectrum->setBackground( nullptr, -1.0, -1.0, -1.0 );
+      m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background, nullptr, {}, {} );
     }//if( nSecondBins )
   }//if( spec_type == SpecUtils::SpectrumType::Foreground )
   
@@ -8508,24 +8892,24 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   
   
-  deletePreserveCalibWindow();
+  deleteEnergyCalPreserveWindow();
   
-  if( checkForPrevioudEnergyCalib && !sameSpec && m_recalibrator && !!meas && !!m_dataMeasurement )
+  if( checkForPrevioudEnergyCalib && !sameSpec && m_energyCalTool && !!meas && !!m_dataMeasurement )
   {
     switch( spec_type )
     {
       case SpecUtils::SpectrumType::Foreground:
-        if( PreserveCalibWindow::candidate(meas,previous) )
-          m_preserveCalibWindow = new PreserveCalibWindow( meas, spec_type,
-                                         previous, spec_type, m_recalibrator );
+        if( EnergyCalPreserveWindow::candidate(meas,previous) )
+          m_preserveCalibWindow = new EnergyCalPreserveWindow( meas, spec_type,
+                                         previous, spec_type, m_energyCalTool );
       break;
     
       case SpecUtils::SpectrumType::SecondForeground:
       case SpecUtils::SpectrumType::Background:
-        if( PreserveCalibWindow::candidate(meas,m_dataMeasurement) )
-          m_preserveCalibWindow = new PreserveCalibWindow( meas, spec_type,
+        if( EnergyCalPreserveWindow::candidate(meas,m_dataMeasurement) )
+          m_preserveCalibWindow = new EnergyCalPreserveWindow( meas, spec_type,
                                                 m_dataMeasurement, SpecUtils::SpectrumType::Foreground,
-                                                m_recalibrator );
+                                                m_energyCalTool );
       break;
     };//switch( spec_type )
   
@@ -8534,7 +8918,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       if( propigate_peaks_fcns )
       {
         m_preserveCalibWindow->finished().connect( std::bind( [=](){
-          deletePreserveCalibWindow();
+          deleteEnergyCalPreserveWindow();
           std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
           WServer::instance()->ioService().post( std::bind([=](){ propigate_peaks_fcns(data); }) );
         } ) );
@@ -8542,11 +8926,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         propigate_peaks_fcns = nullptr;
       }else
       {
-        m_preserveCalibWindow->finished().connect( this, &InterSpec::deletePreserveCalibWindow );
+        m_preserveCalibWindow->finished().connect( this, &InterSpec::deleteEnergyCalPreserveWindow );
       }//if( propigate_peaks_fcns ) / else
       
     }
-  }//if( !sameSpec && m_recalibrator && !!meas )
+  }//if( !sameSpec && m_energyCalTool && !!meas )
   
   if( propigate_peaks_fcns )
   {
@@ -8575,10 +8959,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//switch( spec_type )
   
   
-  // Update the recalibrator, as there is new data.
-  if( m_recalibrator )
-    m_recalibrator->refreshRecalibrator();
-  m_displayedSpectrumChangedSignal.emit( spec_type, meas, sample_numbers );
+  // Update the energy calibration tool, as there is new data.
+  const auto shownDets = detectorsToDisplay(spec_type);
+  m_displayedSpectrumChangedSignal.emit( spec_type, meas, sample_numbers, shownDets );
   
   if( meas )
   {
@@ -8601,6 +8984,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     m_searchMode3DChart->setDisabled( !isSearchData );
 #endif
 
+  if( m_showRiidResults )
+  {
+    const bool showRiid = m_dataMeasurement && m_dataMeasurement->detectors_analysis();
+    m_showRiidResults->setDisabled( !showRiid );
+  }
   
   //Right now, we will only search for hint peaks for foreground
 #if( !ANDROID && !IOS )
@@ -8659,6 +9047,33 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     furtherworkers.push_back( checkForWarnings );
   }//if( meas && !sameSpec )
   
+  // Check if there are RIID analysis results in the file, and if so let the user know.
+  if( meas && !sameSpec && meas->detectors_analysis() )
+  {
+    const int nusedfor = static_cast<int>( meas == m_dataMeasurement )
+                         + static_cast<int>( meas == m_backgroundMeasurement )
+                         + static_cast<int>( meas == m_secondDataMeasurement );
+    
+    // Only show notification when we arent already showing the file
+    if( nusedfor == 1 )
+    {
+      const std::string type = SpecUtils::descriptionText(spec_type);
+      WStringStream js;
+      js << "File contained RIID analysis results: "
+      << riidAnaSummary(meas)
+      << "<div onclick="
+           "\"Wt.emit('" << wApp->id() << "',{name:'miscSignal'}, 'showRiidAna-" << type << "');"
+           //"$('.qtip.jgrowl:visible:last').remove();"
+           "try{$(this.parentElement.parentElement).remove();}catch(e){}"
+           "return false;\" "
+           "class=\"clearsession\">"
+         "<span class=\"clearsessiontxt\">Show full RIID results</span></div>";
+      
+      WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgShowRiid, 20000 );
+      
+      
+    }//if( nusedfor == 1 )
+  }//if( meas && !sameSpec )
   
   if( meas && furtherworkers.size() )
   {
@@ -8704,13 +9119,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   //Display a notice to the user about how they can select different portions of
   //  passthrough/search-mode data
+  /*
   if( spec_type==SpecUtils::SpectrumType::Foreground && !!m_dataMeasurement
       && m_dataMeasurement->passthrough() )
   {
-    const bool showToolTipInstantly
-                 = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
-    if( showToolTipInstantly )
+    if( showToolTips )
     {
       const char *tip = "Clicking and dragging on the time-series (bottom)"
       " chart, will change the time range the energy spectrum"
@@ -8723,8 +9138,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       " but for the background if it is the same spectrum"
       " file as the foreground.";
       passMessage( tip, "", WarningWidget::WarningMsgInfo );
-    }//if( showToolTipInstantly )
+    }//if( showToolTips )
   }//if( passthrough foreground )
+   */
 }//void setSpectrum(...)
 
 
@@ -8766,7 +9182,7 @@ void InterSpec::finishLoadUserFilesystemOpenedFile(
   try
   {
     const int row = fileModel->addRow( header );
-    m_fileManager->displayFile( row, meas, type, true, true, true );
+    m_fileManager->displayFile( row, meas, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
   }catch( std::exception & )
   {
     passMessage( "There was an error loading "
@@ -8780,46 +9196,30 @@ void InterSpec::finishLoadUserFilesystemOpenedFile(
 void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
                                              std::shared_ptr<SpectraFileHeader> header )
 {
-  //Dialog layout only tested on phone.
-  AuxWindow *dialog = new AuxWindow( header->displayName().toUTF8(),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
-  dialog->disableCollapse();
-  
-  WGridLayout *layout = dialog->stretcher();
   const char *msg =
-  "This file looks like its from the same "
-  "detector as the current foreground."
-  "<br />How would you like to open this spectrum file?";
-  WText *text = new WText( msg );
-  text->setAttributeValue( "style", "text-align: center;" );
-  layout->addWidget( text, 0, 0, AlignMiddle );
+  "This file looks like it's from the same detector as the current foreground."
+  "<p>How would you like to open this spectrum file?</p>";
   
-  WContainerWidget *buttonDiv = new WContainerWidget();
-  layout->addWidget( buttonDiv, 1, 0, AlignMiddle );
+  string filename = header->displayName().toUTF8();
+  if( filename.size() > 48 )
+  {
+    SpecUtils::utf8_limit_str_size( filename, 48 );
+    filename += "...";
+  }
   
-  WGridLayout *buttonlayout = new WGridLayout();
-  buttonDiv->setLayout( buttonlayout );
-  
-  WPushButton *button = new WPushButton( "Foreground" );
-  button->clicked().connect( dialog, &AuxWindow::hide );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, SpecUtils::SpectrumType::Foreground ) );
-  buttonlayout->addWidget( button, 0, 0, AlignMiddle );
+  SimpleDialog *dialog = new SimpleDialog( WString::fromUTF8(filename), WString::fromUTF8(msg) );
+  WPushButton *button = dialog->addButton( WString::fromUTF8("Foreground") );
+  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this,
+                                          meas, header, SpecUtils::SpectrumType::Foreground ) );
   button->setFocus( true );
   
-  button = new WPushButton( "Background" );
-  button->clicked().connect( dialog, &AuxWindow::hide );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, SpecUtils::SpectrumType::Background ) );
-  buttonlayout->addWidget( button, 0, 1, AlignMiddle );
+  button = dialog->addButton( WString::fromUTF8("Background") );
+  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this,
+                                          meas, header, SpecUtils::SpectrumType::Background ) );
   
-  button = new WPushButton( "Secondary" );
-  button->clicked().connect( dialog, &AuxWindow::hide );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this, meas, header, SpecUtils::SpectrumType::SecondForeground ) );
-  buttonlayout->addWidget( button, 0, 2, AlignMiddle );
-  
-  dialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-  
-  dialog->show();
-  dialog->centerWindow();
+  button = dialog->addButton( WString::fromUTF8("Secondary") );
+  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this,
+                                         meas, header, SpecUtils::SpectrumType::SecondForeground ) );
 }//void promptUserHowToOpenFile(...)
 
 
@@ -8869,7 +9269,7 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
       
       SpectraFileModel *fileModel = m_fileManager->model();
       const int row = fileModel->addRow( header );
-      m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, true );
+      m_fileManager->displayFile( row, meas, SpecUtils::SpectrumType::Foreground, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
       return true;
     }
   }catch( std::exception &e )
@@ -9030,6 +9430,15 @@ void InterSpec::detectorsToDisplayChanged()
   displaySecondForegroundData();
   displayForegroundData( true );
   displayTimeSeriesData( true ); //wcjohns change 20160602 to true, to force an update of highlighted regions, should consider removing the highlight option
+  
+  // This function is only called when a checkbox in the "Detectors" sub-menu is changed, so for the
+  //  moment, we will only emit that things changed for the foreground.  In the future we should get
+  //  rid of this sub-menu and handle things correctly.
+  const auto type = SpecUtils::SpectrumType::Foreground;
+  const auto meas = measurment(type);
+  const auto &samples = displayedSamples(type);
+  const auto detectors = detectorsToDisplay(type);
+  m_displayedSpectrumChangedSignal.emit(type,meas,samples,detectors);
 }//void detectorsToDisplayChanged()
 
 
@@ -9049,7 +9458,7 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
       }
     }
     
-#if( BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
 #if( !defined(WIN32) )
     //20190125: hmm, looks like detectors menu is behaving okay - I guess I fixed it somewhere else?
     //#warning "Need to do something to get rid of previous detectors from Electrons menu"
@@ -9106,7 +9515,7 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
     if( m_detectorToShowMenu )
     {
 #if( WT_VERSION>=0x3030300 )
-#if( USE_OSX_NATIVE_MENU  || (BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU) )
+#if( USE_OSX_NATIVE_MENU  || USING_ELECTRON_NATIVE_MENU )
       WCheckBox *cb = new WCheckBox( title );
       cb->setChecked( true );
       PopupDivMenuItem *item = m_detectorToShowMenu->addWidget( cb, false );
@@ -9251,8 +9660,8 @@ void InterSpec::overlayCanvasJsExceptionCallback( const std::string &message )
     m_timeSeries->disableOverlayCanvas();
   }//if( starts_with( message, "[initCanvasForDragging exception]" ) )
 
-  const string msg = "There was a problem with the clientside javascript.<br>"
-                     "Some or all features may not function corectly.<br>"
+  const string msg = "There was a problem with the clientside javascript.<br />"
+                     "Some or all features may not function corectly.<br />"
                      "&nbsp;&nbsp;&nbsp;&nbsp;Message: '" + message + "'";
   passMessage( msg, "", WarningWidget::WarningMsgHigh );  
 }//void overlayCanvasJsExceptionCallback( const std::string &message )
@@ -9475,7 +9884,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
   
 #if( PERFORM_DEVELOPER_CHECKS )
   if( !wApp )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "setHintPeaks() being called from not within the event loop!" );
+    log_developer_error( __func__, "setHintPeaks() being called from not within the event loop!" );
 #endif
 
   m_findingHintPeaks = false;
@@ -10021,76 +10430,130 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
 
 vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
 {
-  std::vector<std::pair<float,int> > answer;
-  
   if( !m_dataMeasurement )
+    return {};
+  
+  const vector<string> disp_dets = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  
+  /* If we have both "derived" data and non-derived data, we dont want to count the derived data
+     spectra as background, because then weird things happen.
+   */
+  const bool hasDerivedData = m_dataMeasurement->contains_derived_data();
+  const bool hasNonDerivedData = m_dataMeasurement->contains_non_derived_data();
+  
+  // We'll first grab foreground, background, and derived samples separately, then combine them
+  //  So background samples will be first, and may be compressed, then foreground, then derived.
+  double foretime = 0.0, backtime = 0.0, derivedtime = 0.0;
+  vector<pair<float,int> > foreground, background, derived_data;
+  
+  const set<int> all_sample_nums = m_dataMeasurement->sample_numbers();
+  for( const int sample_num : all_sample_nums )
+  {
+    if( m_excludedSamples.count(sample_num) )
+      continue;
+    
+    const float sampletime = sample_real_time_increment( m_dataMeasurement, sample_num, disp_dets );
+    if( sampletime <= 0.0f )
+      continue;
+    
+    bool isFore = false, isback = false, isDerived = false;
+    const auto meass = m_dataMeasurement->sample_measurements(sample_num);
+    
+    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meass )
+    {
+      if( hasDerivedData && hasNonDerivedData && m->derived_data_properties() )
+      {
+        isDerived = true;
+        continue;
+      }
+      
+      switch( m->source_type() )
+      {
+        case SpecUtils::SourceType::IntrinsicActivity:
+        case SpecUtils::SourceType::Calibration:
+          break;
+          
+        case SpecUtils::SourceType::Background:
+          isback = true;
+          break;
+          
+        case SpecUtils::SourceType::Foreground:
+        case SpecUtils::SourceType::Unknown:
+          isFore = true;
+          break;
+      }//switch( m->source_type() )
+    }//for( const std::shared_ptr<const SpecUtils::Measurement> &m : meass )
+    
+    if( isDerived )
+    {
+      derived_data.push_back( {sampletime, sample_num} );
+      derivedtime += sampletime;
+    }else if( isFore )
+    {
+      foreground.push_back( {sampletime, sample_num} );
+      foretime += sampletime;
+    }else if( isback )
+    {
+      background.push_back( {sampletime, sample_num} );
+      backtime += sampletime;
+    }
+  }//for( const int sample_num : sample_nums )
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+// Note: this check is not always valid.  The code above will put a sample as foreground if
+//       and of its measurements are foreground/unknown, but validForegroundSamples() will
+//       remove the sample from foreground if any of its measurements are background or cal.
+//  const auto prevfore = validForegroundSamples();
+//  set<int> newfore;
+//  for( auto s : foreground )
+//    newfore.insert( s.second );
+//  assert( newfore == prevfore );
+#endif
+  
+
+  double cumulative_time = 0.0;
+  vector<pair<float,int> > answer;
+  if( background.empty() && foreground.empty() && derived_data.empty() )
     return answer;
   
-  const set<int> foregroundSamples = validForegroundSamples();
-  const vector<string> disp_det_names = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  answer.reserve( foreground.size() + background.size() + derived_data.size() + 1 );
   
-  float time = 0.0f;
-  vector<pair<float,int> > foreground;
-  for( const int sample : foregroundSamples )
+  if( !background.empty() )
   {
-    const float thistime = sample_real_time_increment( m_dataMeasurement, sample, disp_det_names );
-    if( thistime <= 0.0 )
-      continue;
-    foreground.push_back( make_pair(time,sample) );
-    time += thistime;
-  }//for( const int sample : sample_nums )
-  
-  if( foreground.size() )
-    foreground.push_back( make_pair(time,foreground.back().second + 1) );
-  
-  //
-  float backtime = 0.0f;
-  vector<pair<float,int> > background;
-  const set<int> all_sample_nums = m_dataMeasurement->sample_numbers();
-  for( const int s : all_sample_nums )
-  {
-    if( m_excludedSamples.count(s) )
-      continue;
+    // We want to limit the background samples to take up about 10% of the time chart because we
+    //  normally dont care much about the background variation, and a lot of times there can be like
+    //  a 5 minute, single spectrum, background, and like 10 seconds foreground, which would make
+    //  the foreground not even visible.
+    double backscale = 1.0;
+    if( !foreground.empty() && (foretime > 0.1) && (backtime > 0.1*foretime) )
+      backscale = ( std::ceil(0.1*foretime) ) / backtime;
     
-    const float thistime = sample_real_time_increment( m_dataMeasurement, s, disp_det_names );
-    if( thistime <= 0.0 )
-      continue;
+    cumulative_time = -backscale * backtime;
     
-    bool isback = false;
-    const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
-                              = m_dataMeasurement->sample_measurements(s);
-    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
-      isback |= (m->source_type() == SpecUtils::SourceType::Background);
-    
-    if( isback )
+    for( const auto &time_sample : background )
     {
-      backtime += thistime;
-      background.push_back( make_pair(backtime,s) );
+      answer.push_back( {static_cast<float>(cumulative_time), time_sample.second} );
+      cumulative_time += (backscale * time_sample.first);
     }
-  }//for( const int s : sample_nums )
+  }//if( !background.empty() )
   
-  if( !background.empty() && foreground.empty() )
+  assert( fabs(cumulative_time) < 1.0E-4 );
+  
+  for( const auto &time_sample : foreground )
   {
-    background.push_back( make_pair(backtime,background.back().second + 1) );
-    return background;
-  }
-  if( background.empty() )
-    return foreground;
-  
-  float backscale = 1.0f;
-  if( backtime > 0.1f*time )
-    backscale = ( std::ceil(0.1f*time) ) / backtime;
-  
-  answer.reserve( foreground.size() + background.size() + 1 );
-  
-  float lastt = -backscale*background.back().first;
-  for( size_t i = 0; i < background.size(); ++i )
-  {
-    answer.push_back( make_pair(lastt, background[i].second));
-    lastt = -backscale*background.back().first + backscale*background[i].first;
+    answer.push_back( {static_cast<float>(cumulative_time), time_sample.second} );
+    cumulative_time += time_sample.first;
   }
   
-  answer.insert( answer.end(), foreground.begin(), foreground.end() );
+  for( const auto &time_sample : derived_data )
+  {
+    answer.push_back( {cumulative_time, time_sample.second} );
+    cumulative_time += time_sample.first;
+  }
+
+  // Add in upper edge of last time segment.
+  answer.push_back( {cumulative_time, answer.back().second + 1} );
   
   return answer;
 }//vector<std::pair<float,int> > passthroughTimeToSampleNumber() const
@@ -10191,8 +10654,15 @@ void InterSpec::displayTimeSeriesData( bool updateHighlightRegionsDisplay )
     }//if( m_timeSeries->isHidden() )
     
     const vector<string> &det_names = m_dataMeasurement->detector_names();
-    if( det_names.size() != det_to_use.size() )
-      throw runtime_error( "Inconsistent number of detectors." );
+    for( const string &name : det_to_use )
+    {
+      const auto iter = std::find( std::begin(det_names), std::end(det_names), name );
+      if( iter == std::end(det_names) )
+        throw runtime_error( "Detector '" + name + "' asked for by the GUI wasnt found in the"
+                             " foreground spectrum file - application state is suspect; if you can"
+                            " reproduce this error, please contact InterSpec@sandia.gov to fix.");
+    }//for( const string &name : det_to_use )
+    
 
     vector<float> channel_energies( binning.size() );
     
@@ -10354,13 +10824,6 @@ std::set<int> InterSpec::sampleRangeToSet( int start_sample,  int end_sample,
   return display_samples;
 }//sampleRangeToSet
 
-
-void InterSpec::displayForegroundData( int start_sample,  int end_sample )
-{
-  m_displayedSamples = sampleRangeToSet( start_sample, end_sample, m_dataMeasurement, m_excludedSamples );
-  const bool keep_current_energy_range = true;
-  displayForegroundData( keep_current_energy_range );
-}//void InterSpec::displayForegroundData( int start_sample,  int end_sample )
 
 
 vector<string> InterSpec::detectorsToDisplay( const SpecUtils::SpectrumType type ) const
@@ -10528,6 +10991,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_backgroundSubItems[0]->disable();
     m_backgroundSubItems[0]->show();
     m_backgroundSubItems[1]->hide();
+    m_hardBackgroundSub->disable();
     
 #if( USE_SPECTRUM_CHART_D3 )
     m_showYAxisScalerItems[0]->setDisabled( m_showYAxisScalerItems[0]->isVisible() );
@@ -10548,11 +11012,56 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   const auto energy_cal = meas->suggested_sum_energy_calibration(sample_nums, detectors);
   if( !energy_cal )
   {
-    const size_t nspectra = detectors.size() * sample_nums.size();
-    string msg = "<p>I couldnt determine binning to display the spectrum.</p>";
-    if( nspectra > 1 )
-      msg += "<p>You might try selecting only a single spectra to display in "
-               "the <b>File manager</b>.</p>";
+    vector<shared_ptr<const SpecUtils::Measurement>> meass;
+    bool allNeutron = true, containSpectrum = false;
+    for( const auto sample_num : sample_nums )
+    {
+      for( const auto &m : meas->sample_measurements( sample_num ) )
+      {
+         if( std::find( begin(detectors), end(detectors), m->detector_name() ) != end(detectors) )
+         {
+           meass.push_back( m );
+           
+           const auto cal = m->energy_calibration();
+           const bool hasGamma = (m->num_gamma_channels() > 0);
+           const bool hasSpectrum = cal && cal->valid() && (cal->num_channels() > 7);
+           allNeutron = (allNeutron && !hasGamma);
+           containSpectrum = (containSpectrum || hasSpectrum);
+         }//if( this Measurement is from a detector we want )
+      }//for( loop over Measurements for this sample number )
+    }//for( const auto sample_num : sample_nums )
+    
+    string msg;
+    if( meass.empty() )
+    {
+      if( detectors.size() == meas->detector_names().size() )
+      {
+        msg = "<p>The spectrum file didn't contain any spectra with the current sample numbers.</p>"
+              "<p>Please select different/more sample numbers.</p>";
+      }else
+      {
+        msg = "<p>The spectrum file didn't contain any spectra with the current sample numbers and"
+              " detector names.</p>"
+              "<p>Please select more detectors or sample numbers.</p>";
+      }
+    }else if( allNeutron )
+    {
+      msg = "<p>The current sample numbers and detector names only contain neutron data.</p>"
+            "<p>Please select samples that include spectroscopic data.</p>";
+    }else if( !containSpectrum )
+    {
+      msg = "<p>The current sample numbers and detector names do not include any spectroscopic"
+            " measurements.</p>"
+            "<p>Please select samples that include spectroscopic data.</p>";
+    }else
+    {
+      msg = "<p>I couldn't determine binning to display the spectrum.</p>";
+      
+      if( meass.size() > 1 )
+        msg += "<p>You might try selecting only a single spectra to display in "
+        "the <b>File manager</b>, or a sample with gamma counts.</p>";
+    }//if(
+    
     passMessage( msg, "", WarningWidget::WarningMsgHigh );
   }//if( !binning )
 
@@ -10567,7 +11076,14 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_backgroundSubItems[1]->setHidden( !isSub );
   }//if( m_backgroundSubItems[0]->isHidden() != isSub )
 
-  auto dataH = m_dataMeasurement->sum_measurements( sample_nums, detectors, energy_cal );
+  if( m_hardBackgroundSub->isEnabled() != canSub )
+    m_hardBackgroundSub->setDisabled( !canSub );
+  
+  std::shared_ptr<SpecUtils::Measurement> dataH;
+  
+  if( energy_cal )
+    dataH = m_dataMeasurement->sum_measurements( sample_nums, detectors, energy_cal );
+  
   if( dataH )
     dataH->set_title( "Foreground" );
 
@@ -10628,6 +11144,7 @@ void InterSpec::displayBackgroundData()
     m_backgroundSubItems[0]->disable();
     m_backgroundSubItems[0]->show();
     m_backgroundSubItems[1]->hide();
+    m_hardBackgroundSub->disable();
     //disp_samples.clear();
     if( m_spectrum->background() )
       m_spectrum->setBackground( nullptr );
@@ -10655,5 +11172,8 @@ void InterSpec::displayBackgroundData()
     m_backgroundSubItems[0]->setHidden( isSub );
     m_backgroundSubItems[1]->setHidden( !isSub );
   }//if( m_backgroundSubItems[0]->isHidden() != isSub )
+  
+  if( m_hardBackgroundSub->isEnabled() != canSub )
+    m_hardBackgroundSub->setDisabled( !canSub );
 }//void displayBackgroundData()
 

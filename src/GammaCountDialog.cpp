@@ -54,7 +54,7 @@ using namespace Wt;
 
 
 GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
-: AuxWindow( "Energy Range Count",
+: AuxWindow( "Energy Range Sum",
              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
               | AuxWindowProperties::SetCloseable
               | AuxWindowProperties::DisableCollapse) ),
@@ -71,8 +71,11 @@ GammaCountDialog::GammaCountDialog( InterSpec *specViewer )
     m_nsigmaHelp( NULL )
 {
   init();
+  
   handleEnergyRangeChange();
   
+  m_specViewer->displayedSpectrumChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
+  m_specViewer->spectrumScaleFactorChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   
   rejectWhenEscapePressed();
   
@@ -118,11 +121,9 @@ void GammaCountDialog::init()
   wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
   
   if( !m_specViewer )
-    throw runtime_error( "GammaCountDialog: you must pass in valid"
-                         " InterSpec pointer" );
+    throw runtime_error( "GammaCountDialog: you must pass in valid InterSpec pointer" );
  
-  const bool showToolTipInstantly
-         = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
   
   WGridLayout *layout = new WGridLayout();
   contents()->setLayout( layout );
@@ -170,25 +171,20 @@ void GammaCountDialog::init()
                         " difference between the foreground and the (scaled) background,"
                         " divided by the uncertainty. The uncertainty is calculated by"
                         " summing the statistical uncertainties of the foreground and background in"
-                        " quadrature, then taking the squareroot";
-  HelpSystem::attachToolTipOn( m_nsigmaHelp, tooltip, true, HelpSystem::Right );
+                        " quadrature, then taking the square root";
+  HelpSystem::attachToolTipOn( m_nsigmaHelp, tooltip, true, HelpSystem::ToolTipPosition::Right );
 
   WLabel *label = NULL;
   WText *text = NULL;
-  text = new WText( "Count the number of gammas in the"
-                    " specified energy range.",
-                    XHTMLUnsafeText );
-    text->setWordWrap(true);
+  text = new WText( "Count the number of gammas in the specified energy range." );
+  text->setWordWrap(true);
   text->setWidth( WLength(10.5, WLength::FontEm) );
-    int row=0;
-    text->setStyleClass("line-below");
-    layout->addWidget( text, row, 0, 1, 3/*, AlignCenter */);
-
-
-
+  int row=0;
+  text->setStyleClass("line-below");
+  layout->addWidget( text, row, 0, 1, 3/*, AlignCenter */);
 
   label = new WLabel( "Lower Energy" );
-       layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
+  layout->addWidget( label, ++row, 0, 1, 1, AlignLeft );
   layout->addWidget( m_lowerEnergy, row, 1, 1, 1, AlignLeft );
   label = new WLabel( "keV" );
   layout->addWidget( label, row, 2, 1, 1, AlignLeft );
@@ -201,10 +197,11 @@ void GammaCountDialog::init()
 
   if( m_specViewer && !m_specViewer->isMobile() )
   {
-      WLabel* temp = new WLabel("<center><i><small>You can also <b>Shift-Alt-Drag</b> on the chart to select the energy range</small></i></center>");
-      temp->setWordWrap(true);
-      layout->addWidget(temp,++row, 0 , 1 ,3,AlignCenter);
-      temp->setStyleClass("line-below");
+    WLabel* temp = new WLabel("<center><i><small>You can also <b>Shift-Alt-Drag</b> on the chart"
+                              " to select the energy range</small></i></center>");
+    temp->setWordWrap(true);
+    layout->addWidget(temp,++row, 0 , 1 ,3,AlignCenter);
+    temp->setStyleClass("line-below");
   }
     
   label = new WLabel( "Foreground Counts:" );
@@ -230,18 +227,18 @@ void GammaCountDialog::init()
     const char *txt = "Press <b>Enter</b> after typing in the energy";
 //    text = new WText( txt, XHTMLText );
 //    layout->addWidget( text, ++row, 0, 1, 3, AlignCenter );
-      HelpSystem::attachToolTipOn(m_lowerEnergy, txt, showToolTipInstantly);
-      HelpSystem::attachToolTipOn(m_upperEnergy, txt, showToolTipInstantly);
+      HelpSystem::attachToolTipOn(m_lowerEnergy, txt, showToolTips);
+      HelpSystem::attachToolTipOn(m_upperEnergy, txt, showToolTips);
 //    txt = "If you manually type an energy you will need to either press enter,"
 //          " or click another field before changes take effect.";
-//    HelpSystem::attachToolTipOn( contents(), txt, showToolTipInstantly );
+//    HelpSystem::attachToolTipOn( contents(), txt, showToolTips );
   }//if( !ismobile )
   
   layout->setColumnStretch( 1, 1 );
 
   m_lowerEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   m_upperEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
-  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &GammaCountDialog::handleSpectrumChange, this, _1, _2, _3) );
+  m_specViewer->displayedSpectrumChanged().connect( boost::bind( &GammaCountDialog::handleSpectrumChange, this, _1, _2, _3, _4) );
   
  
   WPushButton *closeButton = addCloseButtonToFooter();
@@ -492,9 +489,10 @@ void GammaCountDialog::setGammaCountText( Wt::WText *text, std::shared_ptr<const
 
 
 
-void GammaCountDialog::handleSpectrumChange( SpecUtils::SpectrumType /*type*/,
-                                             std::shared_ptr<SpecMeas> /*meas*/,
-                                             std::set<int> /*displaySample*/ )
+void GammaCountDialog::handleSpectrumChange( const SpecUtils::SpectrumType /*type*/,
+                                             const std::shared_ptr<SpecMeas> &/*meas*/,
+                                             const std::set<int> &/*displaySample*/,
+                                             const std::vector<std::string> & /*detectors*/)
 {
   handleEnergyRangeChange();
 }//void handleSpectrumChange(...)

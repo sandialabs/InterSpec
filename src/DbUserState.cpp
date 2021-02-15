@@ -36,8 +36,6 @@
 #include "rapidxml/rapidxml_print.hpp"
 
 #include "SpecUtils/SpecFile.h"
-#include "SpecUtils/StringAlgo.h"
-#include "SpecUtils/ParseUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/DbUserState.h"
@@ -76,7 +74,7 @@ namespace Wt
       if( dynamic_cast<Wt::Dbo::backend::Firebird *>(conn) )
         return "blob";
 #endif
-      cerr << "\n\n\nDbUserState\n\tWarning, urogognized DB type\n";
+      cerr << "\n\n\nDbUserState:\n\tWarning, urogognized DB type\n";
       return conn->blobType();
     }
     
@@ -136,7 +134,7 @@ void Spectrum::update( const SpecMeas &spec )
   
   SpectrumFile specfile;
   UserSpectrumStuff specstuff;
-  specfile.setInformation( spec, SpectrumFile::k2011N42 );
+  specfile.setInformation( spec, DbUserState::SpectrumFile::SerializedFileFormat::k2011N42 );
   specstuff.setInformation( spec );
   
   Dbo::ptr<SpectrumFile> spectrumFile = m_spectrumFile.query();
@@ -189,7 +187,7 @@ std::shared_ptr<SpecMeas> Spectrum::assemble( Wt::Dbo::ptr<SpectrumFile> spectru
   if( specdata.empty() )
     throw runtime_error( "Spucetrum data from DB SpectrumFIle is empty" );
   
-  const bool loadedSpec = answer->SpecUtils::SpecFile::load_N42_from_data( (char *)&specdata[0] );
+  const bool loadedSpec = answer->SpecFile::load_N42_from_data( (char *)&specdata[0] );
   
   if( !loadedSpec )
     throw runtime_error( "Count load MeasurmentInformation from database data" );
@@ -241,9 +239,10 @@ std::shared_ptr<SpecMeas> Spectrum::assemble( Wt::Dbo::ptr<SpectrumFile> spectru
     displayed_samples.insert( samples.begin(), samples.end() );
   }//if( sampleNumData.size() )
   
+  const vector<string> &detectors = answer->detector_names();
   
-  answer->displayedSpectrumChangedCallback( spectrumStuff->m_spectrumType, answer, displayed_samples );
-
+  answer->displayedSpectrumChangedCallback( spectrumStuff->m_spectrumType, answer,
+                                            displayed_samples, detectors );
   
   return answer;
 }//std::shared_ptr<SpecMeas> current()

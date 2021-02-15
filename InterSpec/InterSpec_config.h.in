@@ -31,6 +31,32 @@
 #cmakedefine01 PERFORM_DEVELOPER_CHECKS
 #cmakedefine01 USE_OSX_NATIVE_MENU
 #cmakedefine01 USE_ELECTRON_NATIVE_MENU
+#cmakedefine01 USE_ELECTRON_HTML_MENU
+
+// Since USE_ELECTRON_NATIVE_MENU or USE_ELECTRON_HTML_MENU can be set to true without
+//  BUILD_AS_ELECTRON_APP being true, you have to test both its an electron app, and the menu type,
+//  so we'll create a little bit of a shortcut
+//  \TODO: There is probably a cleaner way to define things...
+#if( BUILD_AS_ELECTRON_APP )
+  static_assert( !(USE_ELECTRON_NATIVE_MENU && USE_ELECTRON_HTML_MENU),
+                 "You can only enable either native or HTML electron menu" );
+  #if( USE_ELECTRON_NATIVE_MENU )
+    #define USING_ELECTRON_NATIVE_MENU 1
+  #else
+    #define USING_ELECTRON_NATIVE_MENU 0
+  #endif
+
+  #if( USE_ELECTRON_HTML_MENU )
+    #define USING_ELECTRON_HTML_MENU 1
+  #else
+    #define USING_ELECTRON_HTML_MENU 0
+  #endif
+#else
+  #define USING_ELECTRON_NATIVE_MENU 0
+  #define USING_ELECTRON_HTML_MENU 0
+#endif
+
+
 #cmakedefine01 BUILD_AS_UNIT_TEST_SUITE
 #cmakedefine01 BUILD_AS_OFFLINE_ANALYSIS_TEST_SUITE
 #cmakedefine01 INCLUDE_ANALYSIS_TEST_SUITE
@@ -55,7 +81,6 @@
 #cmakedefine01 USE_SPECTRUM_CHART_D3
 #cmakedefine01 DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK
 #cmakedefine01 SpecUtils_NO_BOOST_LIB
-#cmakedefine01 SpecUtils_REBIN_FILES_TO_SINGLE_BINNING
 #cmakedefine01 RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE
 
 #cmakedefine DATABASE_PASSWORD_FILE "@DATABASE_PASSWORD_FILE@"
