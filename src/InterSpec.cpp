@@ -10437,7 +10437,7 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
   
   // We'll first grab foreground, background, and derived samples separately, then combine them
   //  So background samples will be first, and may be compressed, then foreground, then derived.
-  float foretime = 0.0f, backtime = 0.0f, derivedtime = 0.0f;
+  double foretime = 0.0, backtime = 0.0, derivedtime = 0.0;
   vector<pair<float,int> > foreground, background, derived_data;
   
   const set<int> all_sample_nums = m_dataMeasurement->sample_numbers();
@@ -10506,7 +10506,7 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
 #endif
   
 
-  float cumulative_time = 0.0f;
+  double cumulative_time = 0.0;
   vector<pair<float,int> > answer;
   if( background.empty() && foreground.empty() && derived_data.empty() )
     return answer;
@@ -10519,24 +10519,24 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
     //  normally dont care much about the background variation, and a lot of times there can be like
     //  a 5 minute, single spectrum, background, and like 10 seconds foreground, which would make
     //  the foreground not even visible.
-    float backscale = 1.0f;
-    if( (foretime > 0.1f) && (backtime > 0.1f*foretime) )
-      backscale = ( std::ceil(0.1f*foretime) ) / backtime;
+    double backscale = 1.0;
+    if( !foreground.empty() && (foretime > 0.1) && (backtime > 0.1*foretime) )
+      backscale = ( std::ceil(0.1*foretime) ) / backtime;
     
     cumulative_time = -backscale * backtime;
     
     for( const auto &time_sample : background )
     {
-      answer.push_back( {cumulative_time, time_sample.second} );
+      answer.push_back( {static_cast<float>(cumulative_time), time_sample.second} );
       cumulative_time += (backscale * time_sample.first);
     }
   }//if( !background.empty() )
   
-  assert( fabs(cumulative_time) < 1.0E-6 );
+  assert( fabs(cumulative_time) < 1.0E-4 );
   
   for( const auto &time_sample : foreground )
   {
-    answer.push_back( {cumulative_time, time_sample.second} );
+    answer.push_back( {static_cast<float>(cumulative_time), time_sample.second} );
     cumulative_time += time_sample.first;
   }
   

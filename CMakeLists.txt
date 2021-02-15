@@ -161,11 +161,6 @@ option(
 )
 option(USE_GOOGLE_MAP "Use google maps widget" ON)
 option(
-    SpecUtils_REBIN_FILES_TO_SINGLE_BINNING
-    "Rebins all spectra in spectrum file to the same energy calibration"
-    OFF
-)
-option(
     DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK
     "Include support for downloading images of the displayed page"
     OFF
@@ -410,6 +405,10 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     set(SpecUtils_ENABLE_D3_CHART ON)
     set(USE_SPECTRUM_CHART_D3 ON)
 endif(BUILD_FOR_WEB_DEPLOYMENT)
+
+if(BUILD_AS_LOCAL_SERVER)
+    set(PERFORM_DEVELOPER_CHECKS ON)
+endif(BUILD_AS_LOCAL_SERVER)
 
 #check to make sure exactly one target is specified
 set(NUM_TARGETS_SPECIFIED 0)
