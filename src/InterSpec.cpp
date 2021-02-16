@@ -5868,6 +5868,10 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   
   m_displayOptionsPopupDiv->addSeparator();
 
+  addDetectorMenu( m_displayOptionsPopupDiv );
+  
+  m_displayOptionsPopupDiv->addSeparator();
+  
   PopupDivMenu *chartmenu = m_displayOptionsPopupDiv->addPopupMenuItem( "Chart Options" , "InterSpec_resources/images/spec_settings_small.png");
   
   const bool logypref = m_user->preferenceValue<bool>( "LogY" );
@@ -6041,7 +6045,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
                               "Shows the detectors RIID analysis results included in the spectrum file.", showToolTips );
   m_showRiidResults->disable();
   
-  addDetectorMenu( m_displayOptionsPopupDiv );
   
 #if( !USE_SPECTRUM_CHART_D3 )
   CanvasForDragging *overlay = m_spectrum->overlayCanvas();
@@ -6251,6 +6254,7 @@ void InterSpec::addDetectorMenu( WWidget *menuWidget )
   
   PopupDivMenu *parentPopup = dynamic_cast<PopupDivMenu *>( menuWidget );
 
+  //TODO: Change "Detectors" to "Detectors Displayed"
   if( parentPopup )
   {
     m_detectorToShowMenu = parentPopup->addPopupMenuItem( "Detectors" /*, "InterSpec_resources/images/detector_small_white.png"*/ );
@@ -7524,7 +7528,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, &InterSpec::createUnitsConverterTool );
   
   item = popup->addMenuItem( "Flux Tool" );
-  HelpSystem::attachToolTipOn( item,"Converts detectred peak counts, to gammas emitted by the source.", showToolTips );
+  HelpSystem::attachToolTipOn( item,"Converts detected peak counts to gammas emitted by the source.", showToolTips );
   item->triggered().connect( this, &InterSpec::createFluxTool );
   
   item = popup->addMenuItem( "Nuclide Decay Info" );
