@@ -755,7 +755,7 @@ include(cmake/DeployJsAndCss.cmake)
 
 list(APPEND sources external_libs/SpecUtils/d3_resources/d3.v3.min.js)
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/d3.v3.min.js"
-                    "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/d3.v3.min.js"
 )
 
 if(USE_SPECTRUM_CHART_D3)
