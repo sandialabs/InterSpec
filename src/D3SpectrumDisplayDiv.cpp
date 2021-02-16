@@ -110,10 +110,15 @@ WT_DECLARE_WT_MEMBER
       document.body.removeChild(dl);
     }else
     {
-      //console.log( 'svgMarkup=' + svgMarkup );
+      // The getStaticSvg() function does not include the energy slider chart, so we should
+      //  compensate for that height if its showing
+      let height = chart.svg.attr("height");
+      if( chart.sliderChart && chart.size && chart.size.sliderChartHeight )
+        height -= chart.size.sliderChartHeight;
+      
       var canvas = document.createElement("canvas");
       canvas.width = chart.svg.attr("width");
-      canvas.height = chart.svg.attr("height");
+      canvas.height = height;
       chart.chart.appendChild(canvas);
     
       var ctx = canvas.getContext("2d");
