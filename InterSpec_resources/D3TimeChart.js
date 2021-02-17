@@ -967,58 +967,82 @@ D3TimeChart.prototype.updateChart = function (
   }
 
   // plot axes and labels
-  // console.log(xScale.ticks());
 
   var plotWidth = this.width - this.margin.left - this.margin.right;
 
-  var tickCount = 10;
-  if (plotWidth < 220) {
-    tickCount = 2;
-  } else if (plotWidth < 520) {
-    tickCount = 5;
-  }
+  var tickCount = 20;
+  
+  do {
+    tickCount = Math.floor(tickCount / 2)
 
-  var xTickVals = xScale.ticks(tickCount);
-  var xStart = xTickVals[0];
-  var xStep = xTickVals[1] - xTickVals[0];
-  var xTickCount = xTickVals.length;
+    // implement lower limit on tick count
+    if (tickCount < 2) {
+      break;
+    }
+    var xTickVals = xScale.ticks(tickCount);
+    var xStart = xTickVals[0];
+    var xStep = xTickVals[1] - xTickVals[0];
+    var xTickCount = xTickVals.length;
 
-  var chartDomain = this.selection
-    ? this.selection.domain
-    : this.data[this.compressionIndex].domains.x;
-  var xTicksGenerated = this.generateTicks(
-    xStart,
-    xStep,
-    xTickCount,
-    10
-  ).filter(
-    (tick) => tick.value >= chartDomain[0] && tick.value <= chartDomain[1]
-  );
+    var chartDomain = this.selection
+      ? this.selection.domain
+      : this.data[this.compressionIndex].domains.x;
+    var xTicksGenerated = this.generateTicks(
+      xStart,
+      xStep,
+      xTickCount,
+      10
+    ).filter(
+      (tick) => tick.value >= chartDomain[0] && tick.value <= chartDomain[1]
+    );
 
-  var xAxis = d3.svg
-    .axis()
-    .scale(xScale)
-    .tickValues(xTicksGenerated.map((tick) => tick.value))
-    .tickFormat(d3.format("~.6f"));
+    var xAxis = d3.svg
+      .axis()
+      .scale(xScale)
+      .tickValues(xTicksGenerated.map((tick) => tick.value))
+      .tickFormat(d3.format("~.6f"));
 
-  // update or create axis
-  if (transitions) {
-    this.axisBottomG
-      .transition()
-      .duration(500)
-      .attr(
-        "transform",
-        "translate(0," + (this.height - this.margin.bottom) + ")"
-      )
-      .call(xAxis);
-  } else {
-    this.axisBottomG
-      .attr(
-        "transform",
-        "translate(0," + (this.height - this.margin.bottom) + ")"
-      )
-      .call(xAxis);
-  }
+    // update or create axis
+    if (transitions) {
+      this.axisBottomG
+        .transition()
+        .duration(500)
+        .attr(
+          "transform",
+          "translate(0," + (this.height - this.margin.bottom) + ")"
+        )
+        .attr("id", "th_x-axis")
+        .call(xAxis);
+    } else {
+      this.axisBottomG
+        .attr(
+          "transform",
+          "translate(0," + (this.height - this.margin.bottom) + ")"
+        )
+        .attr("id", "th_x-axis")
+        .call(xAxis);
+    }
+
+    // check whether there is any possibility for axis text overlap
+    // if yes, then re-define axes with reduced (half) the current tick count
+    var NUMBER_OF_TICKS_BETWEEN_MAJOR_TICKS = 5 // set this to the number of ticks between major ticks. Helps you get the next visible tick.
+
+    var renderedTickCount = this.axisBottomG.selectAll("g.tick").size();
+    var lastVisibleTick = this.axisBottomG
+      .select(`g.tick:nth-child(${renderedTickCount})`)
+
+    var secondToLastVisibleTick = this.axisBottomG
+        .select(`g.tick:nth-child(${renderedTickCount - NUMBER_OF_TICKS_BETWEEN_MAJOR_TICKS})`)
+
+    var lastVisibleTickBound = lastVisibleTick
+      .node()
+      .getBoundingClientRect();
+    
+    var secondToLastVisibleTickBound = secondToLastVisibleTick
+      .node()
+      .getBoundingClientRect();
+
+  } while (secondToLastVisibleTickBound.right > lastVisibleTickBound.left)
 
   var xAxisArrowDefs = this.axisBottomG.select("#arrow_defs");
 
@@ -1038,7 +1062,7 @@ D3TimeChart.prototype.updateChart = function (
       .attr("orient", 0)
       .append("path")
       .attr("d", "M0,0 L0,10 L5,5 L0,0")
-      .attr("transform", 'translate(2, 0)')
+      .attr("transform", "translate(2, 0)")
       .style("stroke", "black")
       .style("fill", "black");
 
@@ -1053,7 +1077,7 @@ D3TimeChart.prototype.updateChart = function (
       .attr("orient", 180)
       .append("path")
       .attr("d", "M0,0 L0,10 L5,5 L0,0")
-      .attr("transform", 'translate(2, 0)')
+      .attr("transform", "translate(2, 0)")
       .style("stroke", "black")
       .style("fill", "black");
   }
@@ -1111,7 +1135,7 @@ D3TimeChart.prototype.updateChart = function (
   axisBottomTicks.each(function () {
     var tickTransform = d3.transform(d3.select(this).attr("transform"));
     var tickText = d3.select(this).select("text");
-    var tickBoundingRect = tickText.node().getBoundingClientRect()
+    var tickBoundingRect = tickText.node().getBoundingClientRect();
     if (
       USE_COMPACT_X_AXIS &&
       tickBoundingRect.right > xLabelBoundingRect.left &&
