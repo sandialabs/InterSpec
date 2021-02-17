@@ -1111,10 +1111,11 @@ D3TimeChart.prototype.updateChart = function (
   axisBottomTicks.each(function () {
     var tickTransform = d3.transform(d3.select(this).attr("transform"));
     var tickText = d3.select(this).select("text");
+    var tickBoundingRect = tickText.node().getBoundingClientRect()
     if (
       USE_COMPACT_X_AXIS &&
-      tickTransform.translate[0] > xLabelBoundingRect.left &&
-      tickTransform.translate[0] < xLabelBoundingRect.right
+      tickBoundingRect.right > xLabelBoundingRect.left &&
+      tickBoundingRect.left < xLabelBoundingRect.right
     ) {
       tickText.attr("visibility", "hidden");
     } else {
