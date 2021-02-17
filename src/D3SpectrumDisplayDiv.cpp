@@ -1369,7 +1369,7 @@ void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "stroke: " + c );
+  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "fill: " + c );
 }
 
 
