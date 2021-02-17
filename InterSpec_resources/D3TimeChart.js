@@ -1020,13 +1020,53 @@ D3TimeChart.prototype.updateChart = function (
       .call(xAxis);
   }
 
+  var xAxisArrowDefs = this.axisBottomG.select("#arrow_defs");
+
+  if (xAxisArrowDefs.empty()) {
+    xAxisArrowDefs = this.axisBottomG
+      .append("svg:defs")
+      .attr("id", "arrow_defs");
+
+    xAxisArrowDefs
+      .append("svg:marker")
+      .attr("id", "right_arrow")
+      .attr("class", "xaxisarrow")
+      .attr("refX", 0)
+      .attr("refY", 5)
+      .attr("markerWidth", 9)
+      .attr("markerHeight", 14)
+      .attr("orient", 0)
+      .append("path")
+      .attr("d", "M0,0 L0,10 L5,5 L0,0")
+      .attr("transform", 'translate(2, 0)')
+      .style("stroke", "black")
+      .style("fill", "black");
+
+    xAxisArrowDefs
+      .append("svg:marker")
+      .attr("id", "left_arrow")
+      .attr("class", "xaxisarrow")
+      .attr("refX", 0)
+      .attr("refY", 5)
+      .attr("markerWidth", 9)
+      .attr("markerHeight", 14)
+      .attr("orient", 180)
+      .append("path")
+      .attr("d", "M0,0 L0,10 L5,5 L0,0")
+      .attr("transform", 'translate(2, 0)')
+      .style("stroke", "black")
+      .style("fill", "black");
+  }
+
   // if zoomed in, display zoom in marker.
   // Uses same zoom-in marker defined in SpectrumChartD3.js. Can define a different one in this file and use it if want to break the dependency.
   var axisBottomPath = this.axisBottomG.select("path");
   if (this.selection) {
-    axisBottomPath.attr("marker-end", "url(#arrowhead)");
+    axisBottomPath.attr("marker-end", "url(#right_arrow)");
+    axisBottomPath.attr("marker-start", "url(#left_arrow)");
   } else {
     axisBottomPath.attr("marker-end", null);
+    axisBottomPath.attr("marker-start", null);
   }
 
   var axisLabelX = this.svg.select("#th_label_x");
@@ -1260,7 +1300,7 @@ D3TimeChart.prototype.updateChart = function (
   } else {
     this.axisRightG.selectAll("*").remove();
     this.svg.select("#th_label_y2").remove();
-  }// if (HAS_NEUTRON)
+  } // if (HAS_NEUTRON)
 };
 
 // HELPERS, CALLBACKS, AND EVENT HANDLERS //
@@ -1553,7 +1593,6 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
             detectors[det.detName].meta.isNeutronDetector = true;
             HAS_NEUTRON = true;
           }
-
         }
       } else {
         // data is already present for this detector, so only set neutron CPS for each data point.
@@ -1577,9 +1616,9 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
 
   if (!HAS_NEUTRON) {
     // set margin
-    this.margin.right = 10
+    this.margin.right = 10;
   } else {
-    this.margin.right = 60
+    this.margin.right = 60;
   }
 
   return {
@@ -2500,10 +2539,8 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
     return;
   }
 
-  if( !regions || !Array.isArray(regions) )
-   regions = [];
-  
-  
+  if (!regions || !Array.isArray(regions)) regions = [];
+
   if (this.data && this.data.length && this.sampleToIndexMap) {
     this.regions = regions;
     this.highlightRegionsG.selectAll("rect").remove();
