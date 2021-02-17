@@ -448,6 +448,9 @@ D3TimeChart.prototype.render = function (options) {
 
     // check chart pixels vs full set of  data points. Compress data if needed for purposes of rendering, and cache the compressed data inside the this.data array.
     // each data[i] is the data compressed at level 2^i.
+
+    // impose lower plotWidth limit on compression calculations
+    if (plotWidth > 10) {
     var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
     if (plotWidth < nPoints) {
       var i = 1;
@@ -463,6 +466,7 @@ D3TimeChart.prototype.render = function (options) {
     } // if (plotWidth < nPoints)
     // console.log(this.data);
     this.compressionIndex = compressionIndex;
+  }
 
     // set dimensions of svg element and plot
     this.svg.attr("width", this.width).attr("height", this.height);
@@ -971,9 +975,9 @@ D3TimeChart.prototype.updateChart = function (
   var plotWidth = this.width - this.margin.left - this.margin.right;
 
   var tickCount = 20;
-  
+
   do {
-    tickCount = Math.floor(tickCount / 2)
+    tickCount = Math.floor(tickCount / 2);
 
     // implement lower limit on tick count
     if (tickCount < 2) {
@@ -1025,24 +1029,29 @@ D3TimeChart.prototype.updateChart = function (
 
     // check whether there is any possibility for axis text overlap
     // if yes, then re-define axes with reduced (half) the current tick count
-    var NUMBER_OF_TICKS_BETWEEN_MAJOR_TICKS = 5 // set this to the number of ticks between major ticks. Helps you get the next visible tick.
+    var NUMBER_OF_TICKS_BETWEEN_MAJOR_TICKS = 5; // set this to the number of ticks between major ticks. Helps you get the next visible tick.
 
     var renderedTickCount = this.axisBottomG.selectAll("g.tick").size();
-    var lastVisibleTick = this.axisBottomG
-      .select(`g.tick:nth-child(${renderedTickCount})`)
+    var lastVisibleTick = this.axisBottomG.select(
+      `g.tick:nth-child(${renderedTickCount})`
+    );
 
-    var secondToLastVisibleTick = this.axisBottomG
-        .select(`g.tick:nth-child(${renderedTickCount - NUMBER_OF_TICKS_BETWEEN_MAJOR_TICKS})`)
+    var secondToLastVisibleTick = this.axisBottomG.select(
+      `g.tick:nth-child(${
+        renderedTickCount - NUMBER_OF_TICKS_BETWEEN_MAJOR_TICKS
+      })`
+    );
 
-    var lastVisibleTickBound = lastVisibleTick
-      .node()
-      .getBoundingClientRect();
-    
+    if (lastVisibleTick.empty() || secondToLastVisibleTick.empty()) {
+      break;
+    }
+
+    var lastVisibleTickBound = lastVisibleTick.node().getBoundingClientRect();
+
     var secondToLastVisibleTickBound = secondToLastVisibleTick
       .node()
       .getBoundingClientRect();
-
-  } while (secondToLastVisibleTickBound.right > lastVisibleTickBound.left)
+  } while (secondToLastVisibleTickBound.right > lastVisibleTickBound.left);
 
   var xAxisArrowDefs = this.axisBottomG.select("#arrow_defs");
 
