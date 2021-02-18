@@ -331,7 +331,7 @@ D3TimeChart.prototype.setData = function (rawData) {
     var formattedData = this.formatDataFromRaw(rawData);
 
     this.data = [formattedData];
-    // console.log(this.data);
+    console.log(this.data);
 
     // create inverted index of sample numbers  for fast lookup of array-indices from sample number keys
     var sampleToIndexMap = {};
@@ -451,22 +451,24 @@ D3TimeChart.prototype.render = function (options) {
 
     // impose lower plotWidth limit on compression calculations
     if (plotWidth > 10) {
-    var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
-    if (plotWidth < nPoints) {
-      var i = 1;
-      for (var i = 1; i <= compressionIndex; i++) {
-        // only compress if data doesn't already exist before
-        if (this.data[i] == null) {
-          // console.log("Compressing!");
-          this.data[i] = this.formatDataFromRaw(
-            this.compress(this.rawData, Math.pow(2, i))
-          );
+      var compressionIndex = Math.ceil(
+        Math.log2(Math.ceil(nPoints / plotWidth))
+      );
+      if (plotWidth < nPoints) {
+        var i = 1;
+        for (var i = 1; i <= compressionIndex; i++) {
+          // only compress if data doesn't already exist before
+          if (this.data[i] == null) {
+            // console.log("Compressing!");
+            this.data[i] = this.formatDataFromRaw(
+              this.compress(this.rawData, Math.pow(2, i))
+            );
+          }
         }
-      }
-    } // if (plotWidth < nPoints)
-    // console.log(this.data);
-    this.compressionIndex = compressionIndex;
-  }
+      } // if (plotWidth < nPoints)
+      // console.log(this.data);
+      this.compressionIndex = compressionIndex;
+    }
 
     // set dimensions of svg element and plot
     this.svg.attr("width", this.width).attr("height", this.height);
@@ -1157,10 +1159,9 @@ D3TimeChart.prototype.updateChart = function (
   });
 
   var dataBackgroundDuration = this.backgroundDuration;
-  var firstTickVal = this.axisBottomG.select("g.tick:first-child").node()
-    .textContent;
+  var firstTick = this.axisBottomG.select("g.tick:first-child");
 
-  if (dataBackgroundDuration != null) {
+  if (!firstTick.empty() && dataBackgroundDuration != null) {
     // add background duration and remove negative axis labels
     var leftMargin = this.margin.left;
     var axisBottomTicks = this.axisBottomG.selectAll("g.tick");
@@ -1168,7 +1169,7 @@ D3TimeChart.prototype.updateChart = function (
       var text = d3.select(this).select("text");
       var line = d3.select(this).select("line");
       if (parseFloat(text.node().textContent) < 0) {
-        if (text.node().textContent === firstTickVal) {
+        if (text.node().textContent === firstTick.node().textContent) {
           d3.select(this).attr("transform", "translate(" + leftMargin + ",0)");
           text.node().textContent = -dataBackgroundDuration;
         } else {
@@ -1181,6 +1182,7 @@ D3TimeChart.prototype.updateChart = function (
 
   if (dataBackgroundDuration != null) {
     // add occupancy start line
+    console.log(xScale(0));
     this.occupancyStartLine
       .attr("x1", xScale(0))
       .attr("y1", this.margin.top)
@@ -1503,13 +1505,11 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
     rawData.sourceTypes
   );
 
-  console.log(rawData);
   // format occupied array:
   var occupied;
   if (rawData.hasOwnProperty("occupancies")) {
     var occupied = [];
     for (var i = 0; i < nSamples; i++) {
-      console.log(i);
       var sampleNumber =
         typeof rawData.sampleNumbers[i] === "number" &&
         isFinite(rawData.sampleNumbers[i])
