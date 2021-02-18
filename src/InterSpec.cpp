@@ -7592,7 +7592,7 @@ void InterSpec::fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
     WServer::instance()->post( sessionid, update );
   }catch( std::exception &e )
   {
-    WString msg = "Error initilizing the material database: " + string(e.what());
+    WString msg = "Error initializing the material database: " + string(e.what());
     
     WServer::instance()->post( sessionid, boost::bind( &postSvlogHelper, msg, int(WarningWidget::WarningMsgHigh) ) );
     

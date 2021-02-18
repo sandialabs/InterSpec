@@ -62,7 +62,12 @@ FeatureMarkerWindow::FeatureMarkerWindow( InterSpec *viewer )
   rejectWhenEscapePressed( false );
   
   m_feature = new FeatureMarkerWidget( viewer, contents() );
-  m_feature->setHeight( WLength(100,WLength::Percentage) );
+  //m_feature->setHeight( WLength(100,WLength::Percentage) );
+  
+  // This next call seems to help resize the window to show all the contents, otherwise "Sum Peak"
+  //  will hang-off the bottom of the window.
+  //  Although definitely not 100% effective...
+  centerWindow();
   
   show();
   

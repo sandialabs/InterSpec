@@ -28,6 +28,9 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+// Need to make sure we have M_PI, etc
+#define _USE_MATH_DEFINES
+
 #include "InterSpec_config.h"
 
 #include <vector>
@@ -87,8 +90,7 @@ namespace {
         try {
             boost::math::chi_squared distribution( df );
             return 1 - boost::math::cdf( distribution, chiSquareScore );
-            
-        } catch ( const std::exception& e ) {
+        } catch ( const std::exception & ) {
             throw mup::ParserError( "Domain error calculating the p-value." );
         }
     }
@@ -379,11 +381,12 @@ namespace {
             else if ( functionName == "gammaCenter" )    *ret = tm->gammaChannelCentralEnergyAt( arg );
             else if ( functionName == "gammaUpper" )     *ret = tm->gammaChannelHigherEnergyAt( arg );
             else if ( functionName == "gammaWidth" )     *ret = tm->gammaChannelWidthAt( arg );
+            else if ( functionName == "gammaEnergyForChannel" )     *ret = tm->gammaEnergyForChannelAt( arg );
         }
         const mup::char_type* GetDesc() const {
             const bool functionHasNoArgs = functionName == "numGammas" || functionName == "gammaMin" || functionName == "gammaMax";
             
-            if ( functionName == "gammaSum" )              return "gammaSum( start_bin, end_bin )";
+            if ( functionName == "gammaSum" )              return "gammaSum( start_bin(int), end_bin(int) )";
             else if ( functionName == "gammaIntegral" )    return "gammaIntegral( energy_low, energy_high )";
             else if ( functionHasNoArgs )                   return functionName_no_arg.c_str();
             else                                            return functionName_energy_arg.c_str();
@@ -395,6 +398,7 @@ namespace {
             else if ( functionName == "gammaCenter" )    return "gammas center_energy gamma channels central energy energies";
             else if ( functionName == "gammaUpper" )     return "gammas upper_energy gamma_channels channels upper higher bound energy energies";
             else if ( functionName == "gammaWidth" )     return "gammas widths gamma_channels channels width";
+            else if ( functionName == "gammaEnergyForChannel" ) return "gammas gamma energy channels";
             else if ( functionName == "numGammas" )      return "number of gammas num_gammas gamma channels numbers";
             else if ( functionName == "gammaMin" )       return "gammas gamma channels minimum min energy energies";
             else if ( functionName == "gammaMax" )       return "gammas gamma channels maximum max energy energies";
@@ -409,6 +413,8 @@ namespace {
             else if ( functionName == "gammaCenter" )    return "Returns <b>central energy</b> of specified <i>gamma channel</i> for a specified spectrum. For last channel, returns width of second-to-last channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
             else if ( functionName == "gammaUpper" )     return "Returns <b>energy</b> for a spectra just past energy range the specified <i>channel</i> contains. Returns error if channel is invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
             else if ( functionName == "gammaWidth" )     return "Returns <b>energy width</b> of a channel. If at last channel, then <b>width of second-to-last channel</b> is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+            else if( functionName == "gammaEnergyForChannel" )
+              return "Returns the energy corresponding to the provided fractional channel; e.x., if you pass in integer, will return lower energy of the channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
             else if ( functionName == "numGammas" )      return "Returns <b>minimum number of channels</b> of channel energies or gamma counts for spectrum. Returns 0 if neither is defined. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
             else if ( functionName == "gammaMin" )       return "Returns <b>minimum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
             else if ( functionName == "gammaMax" )       return "Returns <b>maximum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
@@ -613,7 +619,14 @@ TerminalModel::TerminalModel( InterSpec* viewer )
     GammaAtFunction* gammaLowerFunc = new GammaAtFunction(this, "gammaLower");            addFunction( gammaLowerFunc, gammaLowerFunc->tags(), gammaLowerFunc->toolTip() );
     GammaAtFunction* gammaCenterFunc = new GammaAtFunction(this, "gammaCenter");          addFunction( gammaCenterFunc, gammaCenterFunc->tags(), gammaCenterFunc->toolTip() );
     GammaAtFunction* gammaUpperFunc = new GammaAtFunction(this, "gammaUpper");            addFunction( gammaUpperFunc, gammaUpperFunc->tags(), gammaUpperFunc->toolTip() );
-    GammaAtFunction* gammaWidthFunc = new GammaAtFunction(this, "gammaWidth");            addFunction( gammaWidthFunc, gammaWidthFunc->tags(), gammaWidthFunc->toolTip() );
+  
+  GammaAtFunction* gammaWidthFunc = new GammaAtFunction(this, "gammaWidth");
+  addFunction( gammaWidthFunc, gammaWidthFunc->tags(), gammaWidthFunc->toolTip() );
+  
+  GammaAtFunction* gammaEnergyForChannelFunc = new GammaAtFunction(this, "gammaEnergyForChannel");
+  addFunction( gammaEnergyForChannelFunc, gammaEnergyForChannelFunc->tags(), gammaEnergyForChannelFunc->toolTip() );
+  
+  
     GammaAtFunction* gammaIntegralFunc = new GammaAtFunction(this, "gammaIntegral");      addFunction( gammaIntegralFunc, gammaIntegralFunc->tags(), gammaIntegralFunc->toolTip() );
     GammaAtFunction* gammaSumFunc = new GammaAtFunction(this, "gammaSum");                addFunction( gammaSumFunc, gammaSumFunc->tags(), gammaSumFunc->toolTip() );
     GammaAtFunction* gammaMinFunc = new GammaAtFunction(this, "gammaMin");                addFunction( gammaMinFunc, gammaMinFunc->tags(), gammaMinFunc->toolTip() );
@@ -701,22 +714,14 @@ std::string TerminalModel::evaluate(std::string input)
             
             try {
                 const double result = m_parser->Eval().GetFloat();              // Get the value of the evaluated input
-                return convertDoubleTypeToString(result);                       // Convert result into string format
-                
+                return convertDoubleTypeToString(result);                       // Convert result into string format  
             } catch ( const mup::ParserError& e ) {
-                std::ostringstream os;                                          // These are errors specific to the parser
-                os << "Error code " << e.GetCode() << ": " << e.GetMsg();
-                return os.str();
-                
-            } catch (std::exception e) {                                        // catch any other possible exceptions (non-parser specific)
-                std::ostringstream os;
-                os << "Error: " << e.what();
-                return os.str();
-                
+                // These are errors specific to the parser
+              return "Error code " + std::to_string(e.GetCode()) + ": " + e.GetMsg();
             } catch (std::runtime_error re) {
-                std::ostringstream os;
-                os << "Runtime error: " << re.what();
-                return os.str();
+              return "Runtime error: " + std::string(re.what());
+            } catch (std::exception e) {                                        // catch any other possible exceptions (non-parser specific)
+              return "Error: " + std::string(e.what());
             }
         }
     }
@@ -941,9 +946,13 @@ double TerminalModel::realTimeWithoutArgument()
 
 float TerminalModel::gammaChannel( std::shared_ptr<const SpecUtils::Measurement> histogram, const double energy )
 {
-    if ( !histogram )
-        throw mup::ParserError( "No spectrum detected to gather corresponding gamma channel with energy." );
-    return histogram->find_gamma_channel( energy );
+  auto cal = histogram ? histogram->energy_calibration() : nullptr;
+  
+  if( !cal || !cal->valid() )
+    throw mup::ParserError( "No spectrum detected to gather corresponding gamma channel with energy." );
+  
+  return cal->channel_for_energy(energy);  //returns double
+  //return histogram->find_gamma_channel( energy ); //returns int
 }
 
 // Gets the gamma channel count of a specific spectrum
@@ -981,9 +990,20 @@ float TerminalModel::gammaChannelHigherEnergy( std::shared_ptr<const SpecUtils::
 float TerminalModel::gammaChannelWidth( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel )
 {
     if ( !histogram )
-        throw mup::ParserError( "No spectrum detected to gather gamma channel lower energy." );
+        throw mup::ParserError( "No spectrum detected to gather gamma channel width." );
     return histogram->gamma_channel_width( channel );
 }
+
+
+float TerminalModel::gammaEnergyForChannel( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel )
+{
+  auto cal = histogram ? histogram->energy_calibration() : nullptr;
+  if ( !cal || !cal->valid() )
+    throw mup::ParserError( "No spectrum or invalid energy calibration to convert channel to energy." );
+  
+  return cal->energy_for_channel( channel );
+}
+
 
 // Gets the gamma integral of a specific spectrum
 float TerminalModel::gammaIntegral( std::shared_ptr<const SpecUtils::Measurement> histogram, double energyLow, double energyHigh )
@@ -1001,6 +1021,9 @@ float TerminalModel::gammaSum( std::shared_ptr<const SpecUtils::Measurement> his
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to get gamma channel sum." );
+  
+  //TODO: gamma_channels_sum(...) take integer startBin and endBin - need to rectify and such
+  
     return histogram->gamma_channels_sum( startBin, endBin );
 }
 
@@ -1089,6 +1112,9 @@ double TerminalModel::gammaChannelHigherEnergyFor( const std::string& histogram,
 { return gammaFunctionOneArgFor(histogram, energy, &TerminalModel::gammaChannelHigherEnergy ); }
 
 double TerminalModel::gammaChannelWidthAt( const double energy ) { return gammaFunctionOneArg( energy, &TerminalModel::gammaChannelWidth ); }
+
+double TerminalModel::gammaEnergyForChannelAt( const double energy ) { return gammaFunctionOneArg( energy, &TerminalModel::gammaEnergyForChannel ); }
+
 
 // Automatically gets the higher energy for a gamma channel for a specific spectrum, throws error if spectrum undetected
 double TerminalModel::gammaChannelWidthFor( const std::string& histogram, const double energy )
