@@ -120,6 +120,7 @@ public:  // Function methods (for parser, can combine with expressions)
     double gammaChannelHigherEnergyAt( const double channel );
     double gammaChannelWidthFor( const std::string& histogram, const double channel );
     double gammaChannelWidthAt( const double channel );
+    double gammaEnergyForChannelAt( const double channel );
     double gammaIntegralAt( const double energyLow, const double energyHigh );
     double gammaIntegralFor( const std::string& histogram, const double energyLow, const double energyHigh );
     double gammaSumAt( const double startBin, const double endBin );
@@ -206,6 +207,7 @@ protected:  // Internal helper methods
     float gammaChannelCentralEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
     float gammaChannelHigherEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
     float gammaChannelWidth( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
+    float gammaEnergyForChannel( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
     float gammaIntegral( std::shared_ptr<const SpecUtils::Measurement> histogram, const double energyLow, const double energyHigh );  // continous sum (energy)
     float gammaSum( std::shared_ptr<const SpecUtils::Measurement> histogram, const double startBin, const double endBin );            // discrete sum (bins)
     
