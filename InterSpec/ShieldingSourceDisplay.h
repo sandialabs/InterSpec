@@ -55,6 +55,9 @@ class DetectorDisplay;
 class PopupDivMenuItem;
 class DetectorPeakResponse;
 struct ShieldingSourceModel;
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+class SpectrumViewerTester;
+#endif
 
 namespace SandiaDecay
 {
@@ -1050,6 +1053,11 @@ protected:
   };//class WCartesianChart
 
   static const int sm_xmlSerializationVersion;
+  
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  // So the tester can call updateChi2ChartActual
+  friend class SpectrumViewerTester;
+#endif
 };//class ShieldingSourceDisplay
 
 

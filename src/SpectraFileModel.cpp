@@ -287,9 +287,9 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
         {
           saveToDatabaseFromTempFile();
           //passMessage ("memObj saveToDatabaseFromTempFile", "", WarningWidget::WarningMsgMedium);
-            WString msg = "Autosaved previously opened spectra '";
-            msg += (!!memObj ? memObj->filename() : fileSystemLocation);
-            msg += "'";
+            //WString msg = "Autosaved previously opened spectra '";
+            //msg += (!!memObj ? memObj->filename() : fileSystemLocation);
+            //msg += "'";
             //passMessage( msg, "", WarningWidget::WarningMsgInfo );
         }
         else //probably shouldnt happen

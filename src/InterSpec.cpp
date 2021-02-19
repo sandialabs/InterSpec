@@ -4594,14 +4594,9 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     const xml_node<char> *sourcefit = InterSpecNode->first_node( "ShieldingSourceFit" );
     if( sourcefit )
     {
-      if( !m_shieldingSourceFit )
-      {
-        showShieldingSourceFitWindow();
-        if( m_shieldingSourceFitWindow )
-          m_shieldingSourceFitWindow->hide();
-      }//if( !m_shieldingSourceFit )
-      
+      showShieldingSourceFitWindow();
       m_shieldingSourceFit->deSerialize( sourcefit );
+      closeShieldingSourceFitWindow();
     }//if( sourcefit )
     
     stringstream msg;

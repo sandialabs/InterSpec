@@ -51,6 +51,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/TerminalModel.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 /*
@@ -347,20 +348,32 @@ namespace {
     class GammaAtFunction : public mup::ICallback
     {
     public:
-        GammaAtFunction(TerminalModel *model, const char* funName)
-        :ICallback(mup::cmFUNC, funName,
-                   std::string(funName) == "gammaSum" || std::string(funName) == "gammaIntegral" ? 2 : std::string(funName) == "numGammas" || std::string(funName) == "gammaMin" || std::string(funName) == "gammaMax" ? 0 : 1),
+        GammaAtFunction(TerminalModel *model, const std::string &funName)
+        :ICallback( mup::cmFUNC, funName.c_str(),
+                    (funName == "gammaSum" || funName == "gammaIntegral" || funName == "drfEfficiency") ? 2
+                      : (funName == "numGammas" || funName == "gammaMin" || funName == "gammaMax") ? 0 : 1),
         tm(model),
         functionName(funName),
         functionName_no_arg( std::string(funName) + "()" ),
         functionName_energy_arg( std::string(funName) + "( energy )" )
       {};
-        
+      
         virtual void Eval( mup::ptr_val_type& ret, const mup::ptr_val_type* argv, int a_iArgc ) {
-            const bool functionHasTwoArgs = functionName == "gammaSum" || functionName == "gammaIntegral";
+            const bool functionHasTwoArgs = functionName == "gammaSum" || functionName == "gammaIntegral" || functionName == "drfEfficiency";
             const bool functionHasNoArgs = functionName == "numGammas" || functionName == "gammaMin" || functionName == "gammaMax";
             
-            if ( functionHasTwoArgs ) {
+          if( functionName == "drfEfficiency" )
+          {
+            if ( !argv[0]->IsNonComplexScalar() )
+              throw mup::ParserError( "First argument for function '" + functionName + "' must be of type 'scalar value'." );
+            
+            if ( !argv[1]->IsString() )
+              throw mup::ParserError( "Second argument for function '" + functionName + "' must be a string giving distance (ex \"1m\")." );
+            
+            *ret = tm->drfEfficiency( argv[0]->GetFloat(), argv[1]->GetString() );
+            return;
+          } else if( functionHasTwoArgs )
+          {
                 if ( !argv[0]->IsNonComplexScalar() || !argv[1]->IsNonComplexScalar() )
                     throw mup::ParserError( "Arguments for function '" + functionName + "' must be all of type 'scalar value'." );
                 *ret = (functionName == "gammaSum") ?  tm->gammaSumAt( argv[0]->GetFloat(), argv[1]->GetFloat() ) : tm->gammaIntegralAt( argv[0]->GetFloat(), argv[1]->GetFloat() );
@@ -372,56 +385,100 @@ namespace {
                 else if ( functionName == "gammaMax" )   *ret = tm->gammaMax( );
                 return;
             }
-            if ( !argv[0]->IsNonComplexScalar() )
-                throw mup::ParserError( "Argument for function '" + functionName + "' must be of type 'scalar value'." );
-            const double arg = argv[0]->GetFloat();
-            if      ( functionName == "gammaChannel" )   *ret = tm->gammaChannelAt( arg );
+          
+          if ( functionName == "drfGeometricEff" )
+          {
+            if ( !argv[0]->IsString() )
+              throw mup::ParserError( "Argument for function '" + functionName + "' must be of a string giving distance (ex \"1.2m\")." );
+            *ret = tm->drfGeometricEff( argv[0]->GetString() );
+          }
+          
+          if( !argv[0]->IsNonComplexScalar() )
+            throw mup::ParserError( "Argument for function '" + functionName + "' must be of type 'scalar value'." );
+          
+          const double arg = argv[0]->GetFloat();
+          if      ( functionName == "gammaChannel" )   *ret = tm->gammaChannelAt( arg );
             else if ( functionName == "gammaContent" )   *ret = tm->gammaChannelCountAt( arg );
             else if ( functionName == "gammaLower" )     *ret = tm->gammaChannelLowerEnergyAt( arg );
             else if ( functionName == "gammaCenter" )    *ret = tm->gammaChannelCentralEnergyAt( arg );
             else if ( functionName == "gammaUpper" )     *ret = tm->gammaChannelHigherEnergyAt( arg );
             else if ( functionName == "gammaWidth" )     *ret = tm->gammaChannelWidthAt( arg );
             else if ( functionName == "gammaEnergyForChannel" )     *ret = tm->gammaEnergyForChannelAt( arg );
+            else if ( functionName == "drfFWHM" )     *ret = tm->drfFWHM( arg );
+            else if ( functionName == "drfIntrinsicEff" )     *ret = tm->drfIntrinsicEff( arg );
+          
+          
+          
+          
         }
         const mup::char_type* GetDesc() const {
             const bool functionHasNoArgs = functionName == "numGammas" || functionName == "gammaMin" || functionName == "gammaMax";
             
             if ( functionName == "gammaSum" )              return "gammaSum( start_bin(int), end_bin(int) )";
             else if ( functionName == "gammaIntegral" )    return "gammaIntegral( energy_low, energy_high )";
+            else if ( functionName == "drfGeometricEff" )  return "drfGeometricEff( distance )";
+            else if ( functionName == "drfEfficiency" )    return "drfEfficiency( energy, distance )";
             else if ( functionHasNoArgs )                   return functionName_no_arg.c_str();
             else                                            return functionName_energy_arg.c_str();
         }
         std::string tags() const {
-            if      ( functionName == "gammaChannel" )   return "gammas channels gamma_channels";
-            else if ( functionName == "gammaContent" )   return "gammas contents gamma_contents channel channels";
-            else if ( functionName == "gammaLower" )     return "gammas lower_energy gamma_energy energies energy lower";
-            else if ( functionName == "gammaCenter" )    return "gammas center_energy gamma channels central energy energies";
-            else if ( functionName == "gammaUpper" )     return "gammas upper_energy gamma_channels channels upper higher bound energy energies";
-            else if ( functionName == "gammaWidth" )     return "gammas widths gamma_channels channels width";
+            if      ( functionName == "gammaChannel" )    return "gammas channels gamma_channels";
+            else if ( functionName == "gammaContent" )    return "gammas contents gamma_contents channel channels";
+            else if ( functionName == "gammaLower" )      return "gammas lower_energy gamma_energy energies energy lower";
+            else if ( functionName == "gammaCenter" )     return "gammas center_energy gamma channels central energy energies";
+            else if ( functionName == "gammaUpper" )      return "gammas upper_energy gamma_channels channels upper higher bound energy energies";
+            else if ( functionName == "gammaWidth" )      return "gammas widths gamma_channels channels width";
             else if ( functionName == "gammaEnergyForChannel" ) return "gammas gamma energy channels";
-            else if ( functionName == "numGammas" )      return "number of gammas num_gammas gamma channels numbers";
-            else if ( functionName == "gammaMin" )       return "gammas gamma channels minimum min energy energies";
-            else if ( functionName == "gammaMax" )       return "gammas gamma channels maximum max energy energies";
-            else if ( functionName == "gammaSum" )       return "gammas gamma channels sum add added total two arguments";
-            else if ( functionName == "gammaIntegral" )  return "gammas gamma channels integral integrate total lower bound upper higher x sum";
-            else                                          return "";
+            else if ( functionName == "numGammas" )       return "number of gammas num_gammas gamma channels numbers";
+            else if ( functionName == "gammaMin" )        return "gammas gamma channels minimum min energy energies";
+            else if ( functionName == "gammaMax" )        return "gammas gamma channels maximum max energy energies";
+            else if ( functionName == "gammaSum" )        return "gammas gamma channels sum add added total two arguments";
+            else if ( functionName == "gammaIntegral" )   return "gammas gamma channels integral integrate total lower bound upper higher x sum";
+            else if ( functionName == "drfFWHM" )         return "drf detector response FWHM";
+            else if ( functionName == "drfIntrinsicEff" ) return "drf detector response intrinsic efficiency";
+            else if ( functionName == "drfGeometricEff" ) return "drf detector response geometric efficiency";
+            else if ( functionName == "drfEfficiency" )   return "drf detector response efficiency";
+            else                                          return "drf detector ";
         }
-        std::string toolTip() const {
-            if      ( functionName == "gammaChannel" )   return "Returns <b>gamma channel</b> containing energy. If <i>energy</i> is below zero, then 0 is returned. If the <i>energy</i> is above the last channel, the last channel is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaContent" )   return "Returns <b>gamma channel contents</b> for a specified spectrum in a specified channel. Returns 0 if channel <i>energies</i> is not defined or <i>channel</i> is invalid (too large). Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaLower" )     return "Returns <b>lower energy</b> of specified <i>gamma channel</i> for a specified spectrum. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaCenter" )    return "Returns <b>central energy</b> of specified <i>gamma channel</i> for a specified spectrum. For last channel, returns width of second-to-last channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaUpper" )     return "Returns <b>energy</b> for a spectra just past energy range the specified <i>channel</i> contains. Returns error if channel is invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaWidth" )     return "Returns <b>energy width</b> of a channel. If at last channel, then <b>width of second-to-last channel</b> is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if( functionName == "gammaEnergyForChannel" )
-              return "Returns the energy corresponding to the provided fractional channel; e.x., if you pass in integer, will return lower energy of the channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "numGammas" )      return "Returns <b>minimum number of channels</b> of channel energies or gamma counts for spectrum. Returns 0 if neither is defined. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaMin" )       return "Returns <b>minimum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaMax" )       return "Returns <b>maximum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaSum" )       return "Get the <b>sum of gamma channel contents</b> for all channels in between (inclusive) <i>start_bin</i> and <i>end_bin</i> for a spectrum. Returns 0 if start_bin too large or gamma counts invalid. If end_bin too large, then it will be clamped to number of channels. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaIntegral" )  return "Get <b>integral of gamma counts</b> between <i>energy_low</i> and <i>energy_high</i> for a spectrum. Returns <b>0</b> if channel energies or gamma counts invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else                                         return "";
-        }
+      
+      std::string toolTip() const
+      {
+        if( functionName == "gammaChannel" )
+          return "Returns <b>gamma channel</b> containing energy. If <i>energy</i> is below zero, then 0 is returned. If the <i>energy</i> is above the last channel, the last channel is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaContent" )
+          return "Returns <b>gamma channel contents</b> for a specified spectrum in a specified channel. Returns 0 if channel <i>energies</i> is not defined or <i>channel</i> is invalid (too large). Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaLower" )
+          return "Returns <b>lower energy</b> of specified <i>gamma channel</i> for a specified spectrum. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaCenter" )
+          return "Returns <b>central energy</b> of specified <i>gamma channel</i> for a specified spectrum. For last channel, returns width of second-to-last channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaUpper" )
+          return "Returns <b>energy</b> for a spectra just past energy range the specified <i>channel</i> contains. Returns error if channel is invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaWidth" )
+          return "Returns <b>energy width</b> of a channel. If at last channel, then <b>width of second-to-last channel</b> is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if( functionName == "gammaEnergyForChannel" )
+          return "Returns the energy corresponding to the provided fractional channel; e.x., if you pass in integer, will return lower energy of the channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "numGammas" )
+          return "Returns <b>minimum number of channels</b> of channel energies or gamma counts for spectrum. Returns 0 if neither is defined. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaMin" )
+          return "Returns <b>minimum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaMax" )
+          return "Returns <b>maximum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaSum" )
+          return "Get the <b>sum of gamma channel contents</b> for all channels in between (inclusive) <i>start_bin</i> and <i>end_bin</i> for a spectrum. Returns 0 if start_bin too large or gamma counts invalid. If end_bin too large, then it will be clamped to number of channels. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaIntegral" )
+          return "Get <b>integral of gamma counts</b> between <i>energy_low</i> and <i>energy_high</i> for a spectrum. Returns <b>0</b> if channel energies or gamma counts invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if( functionName == "drfFWHM" )
+          return "Returns the full-width-at-half-maximum according to the current detector response function, for the specified energy.";
+        else if( functionName == "drfIntrinsicEff" )
+          return "Returns the intrinsic efficiency (i.e., probability of gamma striking face of detector contributing towards a peak) for the specified energy.";
+        else if( functionName == "drfGeometricEff" )
+          return "Returns the fraction of gammas emitted from a point source at the specified distance, that will impinge upon the detector face.";
+        else if( functionName == "drfEfficiency" )
+          return "Returns the fraction of gammas, at the specified energy and distance, that will contribute to a photo-peak.";
+        
+        return "";
+      }
+      
         mup::IToken* Clone() const { return new GammaAtFunction(*this); }
     private:
       TerminalModel *tm;
@@ -642,6 +699,22 @@ TerminalModel::TerminalModel( InterSpec* viewer )
     PeakFunction* peakChi2DofFun = new PeakFunction(this, "peakChi2Dof");   addFunction( peakChi2DofFun, peakChi2DofFun->tags(), peakChi2DofFun->toolTip() );
     PeakFunction* peakGaussFun = new PeakFunction(this, "peakGauss");       addFunction( peakGaussFun, peakGaussFun->tags(), peakGaussFun->toolTip() );
     
+  
+  //Define FWHM functions
+  addDropDownListHeader( "Detector Response Functions" );
+  GammaAtFunction *drfFWHMFunc = new GammaAtFunction(this, "drfFWHM");
+  addFunction( drfFWHMFunc, drfFWHMFunc->tags(), drfFWHMFunc->toolTip() );
+  
+  GammaAtFunction *drfIntrinsicEffFunc = new GammaAtFunction(this, "drfIntrinsicEff");
+  addFunction( drfIntrinsicEffFunc, drfIntrinsicEffFunc->tags(), drfIntrinsicEffFunc->toolTip() );
+  
+  GammaAtFunction *drfGeometricEffFunc = new GammaAtFunction(this, "drfGeometricEff");
+  addFunction( drfGeometricEffFunc, drfGeometricEffFunc->tags(), drfGeometricEffFunc->toolTip() );
+  
+  GammaAtFunction *drfEfficiencyFunc = new GammaAtFunction(this, "drfEfficiency");
+  addFunction( drfEfficiencyFunc, drfEfficiencyFunc->tags(), drfEfficiencyFunc->toolTip() );
+  
+  
     // Define non-built-in statistical functions
     addDropDownListHeader( "Statistical Functions" );
     PValueFromChiSquare* pValFun = new PValueFromChiSquare;      addFunction( pValFun, pValFun->tags(), pValFun->toolTip() );
@@ -1243,6 +1316,130 @@ double TerminalModel::gammaMaxFor( const std::string& histogram )
     
     throw mup::ParserError ( "Invalid argument for function 'gammaMaxFor( spectrum )'" );
 }
+
+
+
+double TerminalModel::drfFWHM( const double energy )
+{
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !foreground )
+    throw mup::ParserError( "Foreground not foreground loaded." );
+  
+  std::shared_ptr<const DetectorPeakResponse> det = foreground->detector();
+  if( !det )
+    throw mup::ParserError( "No detector response loaded." );
+  
+  if( !det->isValid() )
+    throw mup::ParserError( "Detector response loaded is not valid." );
+  
+  if( !det->hasResolutionInfo() )
+    throw mup::ParserError( "Detector response does not contain peak-resolution information." );
+  
+  try
+  {
+    return det->peakResolutionFWHM( static_cast<float>(energy) );
+  }catch( std::exception &e )
+  {
+    throw mup::ParserError( "Error getting peak FWHM: " + std::string(e.what()) );
+  }
+  
+  return 0.0;
+}//drfFWHM(energy)
+
+
+double TerminalModel::drfIntrinsicEff( const double energy )
+{
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !foreground )
+    throw mup::ParserError( "Foreground not foreground loaded." );
+  
+  std::shared_ptr<const DetectorPeakResponse> det = foreground->detector();
+  if( !det )
+    throw mup::ParserError( "No detector response loaded." );
+  
+  if( !det->isValid() )
+    throw mup::ParserError( "Detector response loaded is not valid." );
+  
+  try
+  {
+    return det->intrinsicEfficiency( static_cast<float>(energy) );
+  }catch( std::exception &e )
+  {
+    throw mup::ParserError( "Error getting intrinsic efficiency: " + std::string(e.what()) );
+  }
+  
+  return 0.0;
+}//drfIntrinsicEff(energy)
+
+
+double TerminalModel::drfGeometricEff( const std::string &distance_str )
+{
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !foreground )
+    throw mup::ParserError( "Foreground not foreground loaded." );
+  
+  std::shared_ptr<const DetectorPeakResponse> det = foreground->detector();
+  if( !det || !det->isValid() )
+    throw mup::ParserError( "No valid detector response loaded." );
+  
+  double distance = 0;
+  try
+  {
+    distance = PhysicalUnits::stringToDistance(distance_str);
+  }catch(...)
+  {
+    throw mup::ParserError( "Could not convert '" + distance_str + "' to a distance" );
+  }
+  
+  if( distance < 0.0 )
+    throw mup::ParserError( "Distance must not be negative." );
+  
+  try
+  {
+    return DetectorPeakResponse::fractionalSolidAngle( det->detectorDiameter(), distance );
+  }catch( std::exception &e )
+  {
+    throw mup::ParserError( "Error getting geometric efficiency: " + std::string(e.what()) );
+  }
+  
+  return 0.0;
+}//drfGeometricEff(energy)
+
+
+double TerminalModel::drfEfficiency( const double energy, const std::string &distance_str )
+{
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !foreground )
+    throw mup::ParserError( "Foreground not foreground loaded." );
+  
+  std::shared_ptr<const DetectorPeakResponse> det = foreground->detector();
+  if( !det || !det->isValid() )
+    throw mup::ParserError( "No valid detector response loaded." );
+  
+  double distance = 0;
+  try
+  {
+    distance = PhysicalUnits::stringToDistance(distance_str);
+  }catch(...)
+  {
+    throw mup::ParserError( "Could not convert '" + distance_str + "' to a distance" );
+  }
+  
+  if( distance < 0.0 )
+    throw mup::ParserError( "Distance must not be negative." );
+  
+  try
+  {
+    return det->efficiency( energy, distance );
+  }catch( std::exception &e )
+  {
+    throw mup::ParserError( "Error getting geometric efficiency: " + std::string(e.what()) );
+  }
+  
+  return 0.0;
+}//double drfEfficiency( const double energy, const std::string &distance )
+
+
 
 float TerminalModel::gammaFunctionOneArg( const double energy, float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram, const double arg) )
 {
