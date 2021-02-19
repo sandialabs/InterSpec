@@ -1816,8 +1816,7 @@ vector< tuple<double,double,double,Wt::WColor,double> >
   
   
   EnergyCountMap energy_count_map;
-  const vector<pair<double,double> > energie_widths
-                                          = observedPeakEnergyWidths( m_peaks );
+  const vector<pair<double,double> > energie_widths = observedPeakEnergyWidths( m_peaks );
   
   if( allow_multiple_iso_contri )
   {

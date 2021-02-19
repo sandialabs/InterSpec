@@ -129,7 +129,12 @@ public:  // Function methods (for parser, can combine with expressions)
     double gammaMinFor( const std::string& histogram );
     double gammaMax();
     double gammaMaxFor( const std::string& histogram );
-    
+  
+  double drfFWHM( const double energy );
+  double drfIntrinsicEff( const double energy );
+  double drfGeometricEff( const std::string &distance );
+  double drfEfficiency( const double energy, const std::string &distance );
+  
 protected:  /* Command methods (complete actions on Spectrum, cannot be used with parser)
              To add a new command in the Terminal tool:
                  1. Add the corresponding CommandType enum inside the TerminalModel Header file.

@@ -65,9 +65,9 @@ FeatureMarkerWindow::FeatureMarkerWindow( InterSpec *viewer )
   //m_feature->setHeight( WLength(100,WLength::Percentage) );
   
   // This next call seems to help resize the window to show all the contents, otherwise "Sum Peak"
-  //  will hang-off the bottom of the window.
-  //  Although definitely not 100% effective...
-  centerWindow();
+  //  will hang-off the bottom of the window.  Definitely a hack.
+  doJavaScript( "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 0 );"
+                "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 50 );" );
   
   show();
   
