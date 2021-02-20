@@ -54,6 +54,32 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
+
+
+// The regex in GCC 4.8.x does not have working regex...., so we will detect this via
+//    https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions#answer-41186162
+#if defined(_MSC_VER) \
+  || (__cplusplus >= 201103L &&                             \
+        (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
+          (defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) || \
+          defined(_GLIBCXX_REGEX_STATE_LIMIT)           || \
+            (defined(_GLIBCXX_RELEASE)                && \
+            _GLIBCXX_RELEASE > 4))))
+#define HAVE_WORKING_REGEX 1
+#else
+#define HAVE_WORKING_REGEX 0
+#endif
+
+#if( HAVE_WORKING_REGEX )
+#include <regex>
+namespace RegexNs = std;
+#else
+#include <boost/regex.hpp>
+#warning "TerminalModel using boost regex - support for this compiler will be dropped soon"
+namespace RegexNs = boost;
+#endif
+
+
 /*
  Helper Namespace:
  Define any useful functions here for helping in creating general functions for your parser. For example, I used this namespace to create the math functions
@@ -62,10 +88,11 @@
  */
 namespace {
     /* Regex Expressions */
-    const std::regex variableAssignmentRegex ("^(?:\\s)*([A-Za-z]\\w*)(?:\\s)*?=(?:\\s)*([^=]+)$"),
-    validVariableRegex      ("^([a-zA-Z]\\w*|_[a-zA-Z]\\w*)+$"),
-    keywordRegex            ("^(cos|sin|tan|acos|asin|atan|sinh|cosh|tanh|asinh|acosh|atanh|log2|log10|log|ln|exp|sqrt|sign|rint|abs|min|max|sum|avg|default|empty)$");
-    
+    //The variableAssignmentRegex and validVariableRegex are invalid for gcc 4.8.4
+    const char * const ns_variableAssignmentRegexArg = "^(?:\\s)*([A-Za-z]\\w*)(?:\\s)*?=(?:\\s)*([^=]+)$";
+    const char * const ns_validVariableRegexArg = "^([a-zA-Z]\\w*|_[a-zA-Z]\\w*)+$";
+    const char * const ns_keywordRegexArg = "^(cos|sin|tan|acos|asin|atan|sinh|cosh|tanh|asinh|acosh|atanh|log2|log10|log|ln|exp|sqrt|sign|rint|abs|min|max|sum|avg|default|empty)$";
+
     /* Internal Parser helper methods */
     std::string convertDoubleTypeToString(const double value)
     {
@@ -754,14 +781,17 @@ void TerminalModel::setViewer( InterSpec* spectViewer )
 // Determines input type of a user-inputted string
 TerminalModel::InputType TerminalModel::inputType(const std::string& input)
 {
-    if (std::regex_match(input, variableAssignmentRegex))
+  RegexNs::regex variableAssignmentRegex( ns_variableAssignmentRegexArg );
+  
+    if (RegexNs::regex_match(input, variableAssignmentRegex))
         return VariableAssignment;
     
-    else if (std::regex_match(input, commandRegex())) {
+    else if (RegexNs::regex_match(input, RegexNs::regex(commandRegex()) )) {
         std::string command = input.substr(0, input.find("("));
         
         // If the command being called is a keyword for an operation, then it is an OPERATION
-        if (std::regex_match(command, keywordRegex)) return Operation;
+      RegexNs::regex keywordRegex( ns_keywordRegexArg );
+        if (RegexNs::regex_match(command, keywordRegex)) return Operation;
         else return Command;
     }
     // Default input
@@ -929,11 +959,11 @@ double TerminalModel::liveTime( const std::string& argument )
     m_backgroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
     m_secondaryHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
     
-    if ( std::regex_match( arg, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) )    // foreground
+    if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) )    // foreground
         return foregroundLiveTime();
-    else if ( std::regex_match( arg, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) )  // second foreground
+    else if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) )  // second foreground
         return secondaryForegroundLiveTime();
-    else if ( std::regex_match( arg, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) )  // background
+    else if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) )  // background
         return backgroundLiveTime();
     
     // Throw an ecINVALID_NAME error if argument user provided is not valid
@@ -976,11 +1006,11 @@ double TerminalModel::realTime( const std::string& argument )
 {
     const std::string& arg (argument);
     
-    if ( std::regex_match( arg, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) )    // foreground
+    if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) )    // foreground
         return foregroundRealTime();
-    else if ( std::regex_match( arg, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) )  // second foreground
+    else if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) )  // second foreground
         return secondaryForegroundRealTime();
-    else if ( std::regex_match( arg, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) )  // background
+    else if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) )  // background
         return backgroundRealTime();
     
     // Throw an ecINVALID_NAME error if argument user provided is not valid
@@ -1138,15 +1168,15 @@ double TerminalModel::numGammaChannelsFor( const std::string& histogram )
     const std::string& hist (histogram);
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return m_foregroundHistogram->num_gamma_channels();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return m_secondaryHistogram->num_gamma_channels();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return m_backgroundHistogram->num_gamma_channels();
     }
@@ -1247,15 +1277,15 @@ double TerminalModel::gammaMinFor( const std::string& histogram )
     const std::string& hist (histogram);
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return m_foregroundHistogram->gamma_energy_min();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return m_secondaryHistogram->gamma_energy_min();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return m_backgroundHistogram->gamma_energy_min();
     }
@@ -1301,15 +1331,15 @@ double TerminalModel::gammaMaxFor( const std::string& histogram )
     const std::string& hist (histogram);
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return m_foregroundHistogram->gamma_energy_max();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return m_secondaryHistogram->gamma_energy_max();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return m_backgroundHistogram->gamma_energy_max();
     }
@@ -1519,15 +1549,15 @@ float TerminalModel::gammaFunctionOneArgFor( const std::string& histogram, const
     
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return (this->*func)( m_foregroundHistogram, energy_value );
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return (this->*func)( m_secondaryHistogram, energy_value );
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return (this->*func)( m_backgroundHistogram, energy_value );
         
@@ -1544,15 +1574,15 @@ float TerminalModel::gammaFunctionTwoArgFor( const std::string& histogram, const
     
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return (this->*func)( m_foregroundHistogram, arg_1, arg_2 );
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return (this->*func)( m_secondaryHistogram, arg_1, arg_2 );
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return (this->*func)( m_backgroundHistogram, arg_1, arg_2 );
         
@@ -1563,7 +1593,7 @@ float TerminalModel::gammaFunctionTwoArgFor( const std::string& histogram, const
 
 // Command Methods
 // Return a regex object of the current regex-string for checking commands
-const std::regex TerminalModel::commandRegex() { return std::regex(commandRegexStr);  }
+std::string TerminalModel::commandRegex() { return commandRegexStr;  }
 
 void TerminalModel::addCommand(const std::string& command, CommandType type)
 {
@@ -1605,8 +1635,8 @@ void TerminalModel::addCommand(const std::string& command, CommandType type)
 // Executes inputted command from user
 std::string TerminalModel::doCommand(const std::string& input)
 {
-    std::smatch match;
-    std::regex_match(input, match, commandRegex());
+  RegexNs::smatch match;
+  RegexNs::regex_match(input, match, RegexNs::regex(commandRegex()) );
     
     const std::string& command = match[1];
     const std::string& arguments = match[2];
@@ -1630,15 +1660,15 @@ std::string TerminalModel::doCommand(const std::string& input)
 std::string TerminalModel::saveFile( const std::string& arguments )
 {
     // Takes in destination path and output type of file
-    const std::regex argumentRegex = std::regex ( "^\\s*([\\s*\\S+\\s*]*)\\s*\\,\\s*([\\s*\\S+\\s*]*)\\s*$" );
+    const RegexNs::regex argumentRegex = RegexNs::regex ( "^\\s*([\\s*\\S+\\s*]*)\\s*\\,\\s*([\\s*\\S+\\s*]*)\\s*$" );
     std::ostringstream os;
     
-    if (!std::regex_match(arguments, argumentRegex)) {      // User provided invalid arguments, display proper error message
+    if (!RegexNs::regex_match(arguments, argumentRegex)) {      // User provided invalid arguments, display proper error message
         os << "The arguments (" << arguments << ") are not valid arguments for the function saveFile( path, output_type )";
         return os.str();
     }
-    std::smatch match;
-    std::regex_match(arguments, match, argumentRegex);
+  RegexNs::smatch match;
+  RegexNs::regex_match(arguments, match, argumentRegex);
     
     const std::string& path = match[1], outputType = match[2];
     
@@ -1677,8 +1707,11 @@ std::string TerminalModel::variableMapStr( const std::string& args )
         os << "}";
         
     } else {                                                          // Provide value for a specified variable
+      
+      RegexNs::regex validVariableRegex( ns_validVariableRegexArg );
+      
         if ( isVariable(arguments) )                                  os << "Current value for variable (" << arguments << ") = " << m_variables.at(arguments);
-        else if ( std::regex_match(arguments, validVariableRegex) )   os << "\"" << arguments << "\" is not a declared variable in the map";    // User specified undeclared variable
+        else if ( RegexNs::regex_match(arguments, validVariableRegex) )   os << "\"" << arguments << "\" is not a declared variable in the map";    // User specified undeclared variable
         else                                                          os << "\"" << arguments << "\" is not a valid variable";   // User specified an invalid variable
     }
 
@@ -1693,15 +1726,17 @@ std::string TerminalModel::clearVar( const std::string& args )
     
     if ( arguments.empty() )
         return "Error: Please enter a variable to be removed.";
-        
+      
     if ( isVariable(arguments) ) {
         os << "Removing variable (" << arguments << ") that had value (" << m_variables.at(arguments)->GetFloat() << ")";
         m_parser->RemoveVar( arguments );
         delete m_variables[ arguments ];
         m_variables.erase( arguments );
+    }else if ( RegexNs::regex_match(arguments, RegexNs::regex(ns_validVariableRegexArg)) ) {
+      os << "\"" << arguments << "\" is not a declared variable in the map";    // User specified undeclared variable
+    } else {
+      os << "\"" << arguments << "\" is not a valid variable";   // User specified an invalid variable
     }
-    else if ( std::regex_match(arguments, validVariableRegex) )   os << "\"" << arguments << "\" is not a declared variable in the map";    // User specified undeclared variable
-    else                                                          os << "\"" << arguments << "\" is not a valid variable";   // User specified an invalid variable
     
     return os.str();
 }
@@ -1712,16 +1747,16 @@ std::string TerminalModel::clearVar( const std::string& args )
 std::string TerminalModel::setEnergyRange( const std::string& arguments )
 {
     std::ostringstream os;                      // Regex matching arguments: must be two valid expressions separated by commas inside parentheses
-    const std::regex argumentRegex = std::regex ( "^\\s*([\\s*\\S*\\s*]*)\\s*\\,\\s*([\\s*\\S*\\s*]*)\\s*$" );
+    const RegexNs::regex argumentRegex = RegexNs::regex ( "^\\s*([\\s*\\S*\\s*]*)\\s*\\,\\s*([\\s*\\S*\\s*]*)\\s*$" );
     
     
-    if (!std::regex_match(arguments, argumentRegex)) {      // User provided invalid arguments, display proper error message
+    if (!RegexNs::regex_match(arguments, argumentRegex)) {      // User provided invalid arguments, display proper error message
         os << "The arguments (" << arguments << ") are not valid arguments for the function setRange( lowerBound, upperBound )";
         return os.str();
     }
     try {
-        std::smatch match;
-        std::regex_match(arguments, match, argumentRegex);
+      RegexNs::smatch match;
+      RegexNs::regex_match(arguments, match, argumentRegex);
         
         float lower, upper;
         m_parser->SetExpr(match[1]);  lower = m_parser->Eval().GetFloat();
@@ -1859,16 +1894,16 @@ std::string TerminalModel::refitPeak ( const std::string& argument )
 std::string TerminalModel::setNuclide( const std::string& arguments )
 {
     ReferencePhotopeakDisplay *nuclideReference = m_viewer->referenceLinesWidget();
-    const std::regex argumentRegex = std::regex ( "^(.+)\\,(.+)$" );
-    const std::regex argumentRegexWithoutAge = std::regex ( "^([^,]+)$" );
+    const RegexNs::regex argumentRegex = RegexNs::regex ( "^(.+)\\,(.+)$" );
+    const RegexNs::regex argumentRegexWithoutAge = RegexNs::regex ( "^([^,]+)$" );
     
-    if ( !std::regex_match(arguments, argumentRegex) && !std::regex_match(arguments, argumentRegexWithoutAge) )
+    if ( !RegexNs::regex_match(arguments, argumentRegex) && !RegexNs::regex_match(arguments, argumentRegexWithoutAge) )
         return "Error: failed to set nuclude and age because of invalid arguments.";
     
-    std::smatch match;
-    std::regex_match(arguments, match, argumentRegex);
+  RegexNs::smatch match;
+  RegexNs::regex_match(arguments, match, argumentRegex);
     
-    const bool argumentContainsAge = std::regex_match(arguments, argumentRegex);
+    const bool argumentContainsAge = RegexNs::regex_match(arguments, argumentRegex);
     
     const std::string& nuclide = argumentContainsAge ? match[1] : arguments,
                         age = argumentContainsAge ? match[2] : std::string();
@@ -1988,13 +2023,15 @@ double TerminalModel::peakGaussianIntegral ( const double argument, const double
 //      Set the variable value to that evaluated expression
 std::string TerminalModel::assignVariable(const std::string& input)
 {
-    std::smatch match;
-    std::regex_match(input, match, variableAssignmentRegex);                         // match input with regex for variable assignment
+  RegexNs::smatch match;
+    if( !RegexNs::regex_match(input, match, RegexNs::regex(ns_variableAssignmentRegexArg)) ){
+      return "No variable to assign";
+    }
     
     std::ostringstream os;
     
     const std::string& variable = match[1];
-    if ( std::regex_match(variable, keywordRegex) ) {                                              // invalid variable error (built-in error)
+    if ( RegexNs::regex_match(variable, RegexNs::regex(ns_keywordRegexArg) ) ) {                                              // invalid variable error (built-in error)
         const mup::ParserError e = mup::ParserError( "Invalid name. Variable must not be a keyword.");
         return errorMessage(e);
     }
