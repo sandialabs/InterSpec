@@ -34,7 +34,6 @@
 #include "InterSpec_config.h"
 
 #include <map>
-#include <regex>
 #include <array>
 #include <tuple>
 #include <string>
@@ -50,6 +49,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
+
 
 //Forward declarations
 class InterSpec;
@@ -174,7 +174,7 @@ protected:  /* Command methods (complete actions on Spectrum, cannot be used wit
     std::string clearVar      ( const std::string& arguments );
     
     void addCommand(const std::string& command, CommandType type);
-    const std::regex commandRegex();
+    std::string commandRegex();
     std::string doCommand(const std::string& input);
     
     

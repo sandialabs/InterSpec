@@ -31,7 +31,6 @@
 
 #include <string>
 #include <iostream>
-#include <regex>
 
 #include <Wt/WText>
 #include <Wt/WAnchor>
@@ -56,6 +55,31 @@
 #include "InterSpec/HelpSystem.h"
 
 #include "js/TerminalWidget.js"
+
+
+// The regex in GCC 4.8.x does not have working regex...., so we will detect this via
+//    https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions#answer-41186162
+#if defined(_MSC_VER) \
+    || (__cplusplus >= 201103L &&                             \
+        (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
+            (defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) || \
+             defined(_GLIBCXX_REGEX_STATE_LIMIT)           || \
+              (defined(_GLIBCXX_RELEASE)                && \
+               _GLIBCXX_RELEASE > 4))))
+#define HAVE_WORKING_REGEX 1
+#else
+#define HAVE_WORKING_REGEX 0
+#endif
+
+#if( HAVE_WORKING_REGEX )
+#include <regex>
+namespace RegexNs = std;
+#else
+#include <boost/regex.hpp>
+#warning "TerminalWidget using boost regex - support for this compiler will be dropped soon"
+namespace RegexNs = boost;
+#endif
+
 
 using namespace std;
 using namespace Wt;
@@ -327,8 +351,8 @@ void TerminalWidget::commandMenuSearchInput()
         if ( !toolTip.empty() )
             HelpSystem::attachToolTipOn( menuItem, toolTip, showToolTips );
         
-        const bool itemMatched = std::regex_search( menuItemText, std::regex( searchRegex, std::regex_constants::icase ) ) ||
-                          std::regex_search( tags, std::regex( searchRegex, std::regex_constants::icase ) );
+        const bool itemMatched = RegexNs::regex_search( menuItemText, RegexNs::regex( searchRegex, RegexNs::regex_constants::icase ) )
+                                 || RegexNs::regex_search( tags, RegexNs::regex( searchRegex, RegexNs::regex_constants::icase ) );
         
         if ( headerMatched ) {                                                      // if header matched, add all items from
             if ( menuItem->isSectionHeader() ) {                                    // that header to the list of items
