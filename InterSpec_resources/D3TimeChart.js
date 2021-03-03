@@ -852,6 +852,8 @@ D3TimeChart.prototype.updateChart = function (
         ? this.data[compressionIndex].sourceTypes[idx]
         : null;
 
+      var sampleNumber = this.data[compressionIndex].sampleNumbers[idx];
+
       var tooltipData = [];
       for (var detName in this.data[compressionIndex].detectors) {
         var y = this.data[compressionIndex].detectors[detName].counts[idx * 2];
@@ -862,6 +864,7 @@ D3TimeChart.prototype.updateChart = function (
           neutronCPS: y.neutronCPS,
           startTimeStamp: startTimeStamp,
           sourceType: sourceType,
+          sampleNumber: sampleNumber,
         });
       }
       var optargs = { sourceType: sourceType, startTimeStamp: startTimeStamp };
@@ -2246,9 +2249,27 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
 
   // for each detector, give counts
   for (var i = 0; i < data.length; i++) {
+    if (typeof data[i].sampleNumber === "number") {
+      s += "<div>Sample Number: " + data[i].sampleNumber.toString();
+    } else {
+      const sampleNumbers = Object.keys(data[i].sampleNumber)
+      if (sampleNumbers.length > 4) {
+        s+= 
+        "<div>Sample Number: " + sampleNumbers[0].toString() + "..." + sampleNumbers[sampleNumbers.length - 1].toString();
+
+      } else {
+
+        s +=
+        "<div>Sample Number: " + sampleNumbers.toString();
+      }
+    }
+    if (data[i].detName.length > 0) {
+      s += " (" + data[i].detName + ")</div>";
+    }
+
     s += "<div>G CPS: " + data[i].gammaCPS.toPrecision(6);
 
-    if (data[i].detName) {
+    if (data[i].detName.length > 0) {
       s += " (" + data[i].detName + ")</div>";
     }
 
@@ -2256,7 +2277,7 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
       // cps of 0 is still valid to display
       s += "<div>N CPS: " + data[i].neutronCPS.toPrecision(3);
 
-      if (data[i].detName) {
+      if (data[i].detName.length > 0) {
         s += " (" + data[i].detName + ")</div>";
       }
     }
