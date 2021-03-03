@@ -185,6 +185,11 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
 
+  // option to use simplified gesture mode, which we define as mapping all drag gestures to zoom functionality.
+  // To add extra functionality to other keys in this mode, would need to make conditional changes to this.highlightOptions to add new key mappings.
+  if (typeof this.options.useSimplifiedGestures !== "boolean")
+    this.options.useSimplifiedGestures = false;
+
   // minimum selection width option. Default used from Spectrum Chart
   if (typeof this.options.minSelectionWidth !== "number")
     this.options.minSelectionWidth = 8;
@@ -218,22 +223,21 @@ D3TimeChart = function (elem, options) {
     "Unknown",
   ];
 
+  this.highlightColors = {
+    foreground: "rgb(255, 255, 0)",
+    background: "rgb(0, 255, 255)",
+    zoom: "rgb(0, 0, 0)",
+  };
+
   this.highlightOptions = {
     foreground: {
-      modifierKey: "none",
-      color: "rgb(255, 255, 0)",
+      modifierKey: new Set(["none"]),
     },
     background: {
-      modifierKey: "altKey",
-      color: "rgb(0, 255, 255)",
+      modifierKey: new Set(["altKey"]),
     },
-    zoomCtrl: {
-      modifierKey: "ctrlKey",
-      color: "rgb(0, 0, 0)",
-    },
-    zoomRightClick: {
-      modifierKey: "rightClick",
-      color: "rgb(0, 0, 0)",
+    zoom: {
+      modifierKey: new Set(["ctrlKey", "rightClick"]),
     },
   };
 
@@ -579,8 +583,8 @@ D3TimeChart.prototype.render = function (options) {
           brush.setEnd(d3.mouse(this.rect.node())[0]);
 
           if (
-            this.highlightModifier === "ctrlKey" ||
-            this.highlightModifier === "rightClick"
+            this.options.useSimplifiedGestures ||
+            this.highlightOptions.zoom.modifierKey.has(this.highlightModifier)
           ) {
             // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
             if (brush.getEnd() < brush.getStart()) {
@@ -589,10 +593,16 @@ D3TimeChart.prototype.render = function (options) {
               this.handleDragForwardZoom();
             }
           } else {
-            var width =
-              brush.getScale()(brush.getEnd()) -
-              brush.getScale()(brush.getStart());
-            this.mouseMoveHighlight(width);
+            // handle interactions other than zoom
+            if (!this.options.useSimplifiedGestures) {
+              // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
+              // handle foreground or background selection
+
+              var width =
+                brush.getScale()(brush.getEnd()) -
+                brush.getScale()(brush.getStart());
+              this.mouseMoveHighlight(width);
+            }
           }
         }
       })
@@ -612,24 +622,30 @@ D3TimeChart.prototype.render = function (options) {
             //   this.data[0].sampleNumbers[rIdx],
             // ]);
             if (
-              this.highlightModifier === "ctrlKey" ||
-              this.highlightModifier === "rightClick"
+              this.options.useSimplifiedGestures ||
+              this.highlightOptions.zoom.modifierKey.has(this.highlightModifier)
             ) {
               this.handleBrushZoom();
             } else {
-              var keyModifierMap = {
-                altKey: 0x4,
-                shiftKey: 0x1,
-                none: 0x0,
-              };
-              this.WtEmit(
-                this.chart.id,
-                { name: "timedragged" },
-                this.data[0].sampleNumbers[lIdx],
-                this.data[0].sampleNumbers[rIdx],
-                keyModifierMap[this.highlightModifier] |
-                  (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
-              );
+              // handle interactions other than zoom
+              if (!this.options.useSimplifiedGestures) {
+                // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
+                // handle foreground or background selection
+
+                var keyModifierMap = {
+                  altKey: 0x4,
+                  shiftKey: 0x1,
+                  none: 0x0,
+                };
+                this.WtEmit(
+                  this.chart.id,
+                  { name: "timedragged" },
+                  this.data[0].sampleNumbers[lIdx],
+                  this.data[0].sampleNumbers[rIdx],
+                  keyModifierMap[this.highlightModifier] |
+                    (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
+                );
+              }
             }
           }
         }
@@ -1182,7 +1198,7 @@ D3TimeChart.prototype.updateChart = function (
 
   if (dataBackgroundDuration != null) {
     // add occupancy start line
-    console.log(xScale(0));
+    // console.log(xScale(0));
     this.occupancyStartLine
       .attr("x1", xScale(0))
       .attr("y1", this.margin.top)
@@ -2059,25 +2075,24 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
  * @param {Number} mouseX : x-coordinates of pointer in pixels relative to the containing element
  */
 D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
-  var foreground = this.highlightOptions.foreground;
-  var background = this.highlightOptions.background;
-  var zoomCtrl = this.highlightOptions.zoomCtrl;
-  var zoomRightClick = this.highlightOptions.zoomRightClick;
-
-  if (modifier === foreground.modifierKey) {
-    this.highlightRect.attr("fill", foreground.color);
-    this.highlightText.text("Select foreground");
-  } else if (modifier === background.modifierKey) {
-    this.highlightRect.attr("fill", background.color);
-    this.highlightText.text("Select background");
-  } else if (
-    modifier === zoomCtrl.modifierKey ||
-    modifier === zoomRightClick.modifierKey
-  ) {
-    var zoomColor =
-      modifier === zoomCtrl.modifierKey ? zoomCtrl.color : zoomRightClick.color;
-    this.highlightRect.attr("fill", zoomColor);
+  if (this.options.useSimplifiedGestures) {
+    this.highlightRect.attr("fill", this.highlightColors.zoom);
     this.highlightText.text("Zoom in");
+  } else {
+    var foreground = this.highlightOptions.foreground;
+    var background = this.highlightOptions.background;
+    var zoom = this.highlightOptions.zoom;
+
+    if (foreground && foreground.modifierKey.has(modifier)) {
+      this.highlightRect.attr("fill", this.highlightColors.foreground);
+      this.highlightText.text("Select foreground");
+    } else if (background && background.modifierKey.has(modifier)) {
+      this.highlightRect.attr("fill", this.highlightColors.background);
+      this.highlightText.text("Select background");
+    } else if (zoom && zoom.modifierKey.has(modifier)) {
+      this.highlightRect.attr("fill", this.highlightColors.zoom);
+      this.highlightText.text("Zoom in");
+    }
   }
 
   this.highlightRect
