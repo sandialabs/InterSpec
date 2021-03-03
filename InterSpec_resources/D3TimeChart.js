@@ -712,17 +712,17 @@ D3TimeChart.prototype.render = function (options) {
  */
 D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var brush = this.brush;
-  const xScale = brush.getScale();
-  const focalPoint = xScale.invert(mouseX);
+  var xScale = brush.getScale();
+  var focalPoint = xScale.invert(mouseX);
 
-  const leftLimit = this.data[this.compressionIndex].domains.x[0];
-  const rightLimit = this.data[this.compressionIndex].domains.x[1];
+  var leftLimit = this.data[this.compressionIndex].domains.x[0];
+  var rightLimit = this.data[this.compressionIndex].domains.x[1];
 
-  const currentDomain = this.selection
+  var currentDomain = this.selection
     ? this.selection.domain
     : this.data[this.compressionIndex].domains.x;
 
-  const minimumMeanIntervalTime = this.data[0].meanIntervalTime;
+  var minimumMeanIntervalTime = this.data[0].meanIntervalTime;
 
   // don't allow zoom in more than 2 mean interval lengths or zoom out if current domain is all the way zoomed out already.
   if (
@@ -738,7 +738,7 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
     return;
   }
 
-  const zoomStepSize = 0.001 * Math.exp(2, this.compressionIndex);
+  var zoomStepSize = 0.001 * Math.exp(2, this.compressionIndex);
 
   let newLeftExtent;
   let newRightExtent;
@@ -772,7 +772,7 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
 
   // if the window is smaller than 2x the mean interval time, then
   if (newRightExtent - newLeftExtent < 2 * minimumMeanIntervalTime) {
-    const extentCenter = (newRightExtent + newLeftExtent) / 2;
+    var extentCenter = (newRightExtent + newLeftExtent) / 2;
     newLeftExtent = Math.max(extentCenter - minimumMeanIntervalTime, leftLimit);
     newRightExtent = Math.min(
       extentCenter + minimumMeanIntervalTime,
@@ -976,16 +976,17 @@ D3TimeChart.prototype.updateChart = function (
       var lPixel = xScale(startTime);
       var rPixel = xScale(endTime);
 
+      var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2
       if (transitions) {
         d3.select(this)
           .transition()
           .duration(500)
           .attr("x", lPixel)
-          .attr("width", rPixel - lPixel);
+          .attr("width", highlightWidth);
       } else {
         d3.select(this)
           .attr("x", lPixel)
-          .attr("width", rPixel - lPixel);
+          .attr("width", highlightWidth);
       }
       // }
     });
@@ -2252,7 +2253,7 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
     if (typeof data[i].sampleNumber === "number") {
       s += "<div>Sample Number: " + data[i].sampleNumber.toString();
     } else {
-      const sampleNumbers = Object.keys(data[i].sampleNumber)
+      var sampleNumbers = Object.keys(data[i].sampleNumber)
       if (sampleNumbers.length > 4) {
         s+= 
         "<div>Sample Number: " + sampleNumbers[0].toString() + "..." + sampleNumbers[sampleNumbers.length - 1].toString();
@@ -2661,12 +2662,13 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
       var lPixel = scales.xScale(startTime);
       var rPixel = scales.xScale(endTime);
 
+      var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2
       this.highlightRegionsG
         .append("rect")
         .attr("height", this.height - this.margin.top - this.margin.bottom)
         .attr("x", lPixel)
         .attr("y", this.margin.top)
-        .attr("width", rPixel - lPixel)
+        .attr("width", highlightWidth)
         .attr("fill", fillColor)
         .attr("fill-opacity", 0.5);
     }
