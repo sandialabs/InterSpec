@@ -269,16 +269,6 @@ D3TimeChart = function (elem, options) {
 
   this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
 
-  // // TODO: remove this after checking
-  // this.occupancyStartText = this.occupancyLinesG
-  //   .append("text")
-  //   .text("occ. start")
-  //   .style("fill", "#dedede")
-  //   .style("visibility", "hidden");
-  // this.occupancyStartLine = this.occupancyLinesG
-  //   .append("line")
-  //   .style("visibility", "hidden");
-
   // add esc canceling
   document.onkeydown = function (evt) {
     evt = evt || window.event;
@@ -348,7 +338,7 @@ D3TimeChart.prototype.setData = function (rawData) {
 
     // set other data members
 
-    // // TODO: remove after checking
+    // // TODO: this is a way to check behavior with multiple occupancies
     // rawData.occupancies = [
     //   {
     //     color: "rgb(128,128,128)",
@@ -1312,37 +1302,13 @@ D3TimeChart.prototype.updateChart = function (
               ")"
           );
         endLine.attr("transform", "translate(" + xScale(endTime) + ",0)");
+
+        // if end is the final data point, then hide the line to avoid overlap with axis line
+        if (rIdx === chart.data[0].realTimeIntervals.length - 1) {
+          endLine.attr("visibility", "hidden");
+        }
       });
   }
-
-  // // TODO: remove after checking
-
-  // if (dataBackgroundDuration != null) {
-  //   // add occupancy start line
-  //   // console.log(xScale(0));
-  //   this.occupancyStartLine
-  //     .attr("x1", xScale(0))
-  //     .attr("y1", this.margin.top)
-  //     .attr("y2", this.height - this.margin.bottom)
-  //     .attr("x2", xScale(0))
-  //     .style("stroke-width", 1)
-  //     .style("stroke", "#dedede")
-  //     .style("visibility", "visible");
-
-  //   this.occupancyStartText
-  //     .attr(
-  //       "transform",
-  //       "translate(" +
-  //         (xScale(0) + 2) +
-  //         "," +
-  //         (this.margin.top + this.occupancyStartText.node().getBBox().height) +
-  //         ")"
-  //     )
-  //     .style("visibility", "visible");
-  // } else {
-  //   this.occupancyStartLine.style("visibility", "hidden");
-  //   this.occupancyStartText.style("visibility", "hidden");
-  // }
 
   // format minor axis labels x-axis
   axisBottomTicks.each(function (d, i) {
