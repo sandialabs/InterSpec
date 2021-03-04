@@ -267,14 +267,17 @@ D3TimeChart = function (elem, options) {
     .style("left", this.margin.left + 20 + "px")
     .style("top", this.margin.top + "px");
 
-  this.occupancyStartText = this.svg
-    .append("text")
-    .text("occ. start")
-    .style("fill", "#dedede")
-    .style("visibility", "hidden");
-  this.occupancyStartLine = this.svg
-    .append("line")
-    .style("visibility", "hidden");
+  this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
+
+  // // TODO: remove this after checking
+  // this.occupancyStartText = this.occupancyLinesG
+  //   .append("text")
+  //   .text("occ. start")
+  //   .style("fill", "#dedede")
+  //   .style("visibility", "hidden");
+  // this.occupancyStartLine = this.occupancyLinesG
+  //   .append("line")
+  //   .style("visibility", "hidden");
 
   // add esc canceling
   document.onkeydown = function (evt) {
@@ -344,6 +347,20 @@ D3TimeChart.prototype.setData = function (rawData) {
     }
 
     // set other data members
+
+    // // TODO: remove after checking
+    // rawData.occupancies = [
+    //   {
+    //     color: "rgb(128,128,128)",
+    //     endSample: 10,
+    //     startSample: 2,
+    //   },
+    //   {
+    //     color: "rgb(128,128,128)",
+    //     endSample: 24,
+    //     startSample: 12,
+    //   }
+    // ];
 
     this.rawData = rawData;
     // console.log(sampleToIndexMap);
@@ -517,6 +534,7 @@ D3TimeChart.prototype.render = function (options) {
 
     this.linesG.attr("clip-path", "url(#clip_th)");
     this.highlightRegionsG.attr("clip-path", "url(#clip_th");
+    this.occupancyLinesG.attr("clip-path", "url(#clip_th");
 
     // if have selection, choose compression index to use based on number of points in the selection.
     if (this.selection) {
@@ -976,7 +994,7 @@ D3TimeChart.prototype.updateChart = function (
       var lPixel = xScale(startTime);
       var rPixel = xScale(endTime);
 
-      var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2
+      var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2;
       if (transitions) {
         d3.select(this)
           .transition()
@@ -984,9 +1002,7 @@ D3TimeChart.prototype.updateChart = function (
           .attr("x", lPixel)
           .attr("width", highlightWidth);
       } else {
-        d3.select(this)
-          .attr("x", lPixel)
-          .attr("width", highlightWidth);
+        d3.select(this).attr("x", lPixel).attr("width", highlightWidth);
       }
       // }
     });
@@ -1200,32 +1216,133 @@ D3TimeChart.prototype.updateChart = function (
     }); // axisBottomTicks.each()
   } // if (dataBackgroundDuration != null)
 
-  if (dataBackgroundDuration != null) {
-    // add occupancy start line
-    // console.log(xScale(0));
-    this.occupancyStartLine
-      .attr("x1", xScale(0))
-      .attr("y1", this.margin.top)
-      .attr("y2", this.height - this.margin.bottom)
-      .attr("x2", xScale(0))
-      .style("stroke-width", 1)
-      .style("stroke", "#dedede")
-      .style("visibility", "visible");
+  if (this.rawData.occupancies) {
+    var occupancies = this.rawData.occupancies;
+    // create if necessary
+    if (
+      this.occupancyLinesG.selectAll(".occupancy_line_group").size() <
+      occupancies.length
+    ) {
+      // if for any reason don't have all lines drawn, clear all existing lines and redraw
+      this.occupancyLinesG.selectAll(".occupancy_line_group").remove();
 
-    this.occupancyStartText
-      .attr(
-        "transform",
-        "translate(" +
-          (xScale(0) + 2) +
-          "," +
-          (this.margin.top + this.occupancyStartText.node().getBBox().height) +
-          ")"
-      )
-      .style("visibility", "visible");
-  } else {
-    this.occupancyStartLine.style("visibility", "hidden");
-    this.occupancyStartText.style("visibility", "hidden");
+      for (var i = 0; i < occupancies.length; i++) {
+        var occupancyG = this.occupancyLinesG
+          .append("g")
+          .attr("class", "occupancy_line_group");
+        var occupancyStartG = occupancyG
+          .append("g")
+          .attr("class", "occupancy_start_line_group");
+
+        occupancyStartG
+          .append("text")
+          .text("occ. start")
+          .style("fill", "#dedede");
+
+        occupancyStartG
+          .append("line")
+          .attr("x1", 0)
+          .attr("y1", this.margin.top)
+          .attr("y2", this.height - this.margin.bottom)
+          .attr("x2", 0)
+          .style("stroke-width", 1)
+          .style("stroke", "#dedede");
+
+        var occupancyEndG = occupancyG
+          .append("g")
+          .attr("class", "occupancy_end_line_group");
+
+        occupancyEndG.append("text").text("occ. end").style("fill", "#dedede");
+
+        occupancyEndG
+          .append("line")
+          .attr("x1", 0)
+          .attr("y1", this.margin.top)
+          .attr("y2", this.height - this.margin.bottom)
+          .attr("x2", 0)
+          .style("stroke-width", 1)
+          .style("stroke", "#dedede");
+      }
+    }
+
+    // update positions
+    var chart = this;
+    this.occupancyLinesG
+      .selectAll(".occupancy_line_group")
+      .each(function (d, i) {
+        var startSample = occupancies[i].startSample;
+        var endSample = occupancies[i].endSample;
+        var lIdx = chart.sampleToIndexMap[startSample];
+        var rIdx = chart.sampleToIndexMap[endSample];
+
+        var startTime = chart.data[0].realTimeIntervals[lIdx][0];
+        var endTime = chart.data[0].realTimeIntervals[rIdx][1];
+
+        var startLine = d3.select(this).select(".occupancy_start_line_group");
+        var endLine = d3.select(this).select(".occupancy_end_line_group");
+
+        startLine
+          .attr("y1", chart.margin.top)
+          .attr("y2", chart.height - chart.margin.bottom);
+
+        startLine
+          .select("text")
+          .attr(
+            "transform",
+            "translate(2," +
+              (chart.margin.top +
+                startLine.select("text").node().getBBox().height) +
+              ")"
+          );
+        startLine.attr("transform", "translate(" + xScale(startTime) + ",0)");
+
+        endLine
+          .select("line")
+          .attr("y1", chart.margin.top)
+          .attr("y2", chart.height - chart.margin.bottom);
+
+        endLine
+          .select("text")
+          .attr(
+            "transform",
+            "translate(2," +
+              (chart.margin.top +
+                20 +
+                endLine.select("text").node().getBBox().height) +
+              ")"
+          );
+        endLine.attr("transform", "translate(" + xScale(endTime) + ",0)");
+      });
   }
+
+  // // TODO: remove after checking
+
+  // if (dataBackgroundDuration != null) {
+  //   // add occupancy start line
+  //   // console.log(xScale(0));
+  //   this.occupancyStartLine
+  //     .attr("x1", xScale(0))
+  //     .attr("y1", this.margin.top)
+  //     .attr("y2", this.height - this.margin.bottom)
+  //     .attr("x2", xScale(0))
+  //     .style("stroke-width", 1)
+  //     .style("stroke", "#dedede")
+  //     .style("visibility", "visible");
+
+  //   this.occupancyStartText
+  //     .attr(
+  //       "transform",
+  //       "translate(" +
+  //         (xScale(0) + 2) +
+  //         "," +
+  //         (this.margin.top + this.occupancyStartText.node().getBBox().height) +
+  //         ")"
+  //     )
+  //     .style("visibility", "visible");
+  // } else {
+  //   this.occupancyStartLine.style("visibility", "hidden");
+  //   this.occupancyStartText.style("visibility", "hidden");
+  // }
 
   // format minor axis labels x-axis
   axisBottomTicks.each(function (d, i) {
@@ -2253,15 +2370,15 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
     if (typeof data[i].sampleNumber === "number") {
       s += "<div>Sample Number: " + data[i].sampleNumber.toString();
     } else {
-      var sampleNumbers = Object.keys(data[i].sampleNumber)
+      var sampleNumbers = Object.keys(data[i].sampleNumber);
       if (sampleNumbers.length > 4) {
-        s+= 
-        "<div>Sample Number: " + sampleNumbers[0].toString() + "..." + sampleNumbers[sampleNumbers.length - 1].toString();
-
-      } else {
-
         s +=
-        "<div>Sample Number: " + sampleNumbers.toString();
+          "<div>Sample Number: " +
+          sampleNumbers[0].toString() +
+          "..." +
+          sampleNumbers[sampleNumbers.length - 1].toString();
+      } else {
+        s += "<div>Sample Number: " + sampleNumbers.toString();
       }
     }
     if (data[i].detName.length > 0) {
@@ -2662,7 +2779,7 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
       var lPixel = scales.xScale(startTime);
       var rPixel = scales.xScale(endTime);
 
-      var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2
+      var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2;
       this.highlightRegionsG
         .append("rect")
         .attr("height", this.height - this.margin.top - this.margin.bottom)
