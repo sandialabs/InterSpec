@@ -424,6 +424,9 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   {
     _isServing = YES;
     _UrlServingOn = [NSString stringWithUTF8String:url.c_str()];
+    
+    //NSLog( @"Serving at URL=%@", _UrlServingOn );
+    
     //[_window setTitle: [NSString stringWithFormat:@"TRB InterSpec - %@", _UrlServingOn]];
     [_window setTitle: @"InterSpec"];
     
@@ -608,7 +611,8 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
           //external url or email
           [[NSWorkspace sharedWorkspace] openURL:[request URL]];
         }else if( (host && [host isEqualToString:@"127.0.0.1"])
-                 || (!host && absurl && [absurl hasPrefix: @"data:application/octet-stream"]) )
+                 || (!host && absurl && [absurl hasPrefix: @"data:application/octet-stream"])
+                 || (!host && absurl && [absurl hasPrefix: @"data:image/svg+xml"]) )
         {
           //CSV, spectrum file, JSON file, etc
           NSLog(@"Will attempt to download spectrum, CSV, JSON, PNG, etc. file");
