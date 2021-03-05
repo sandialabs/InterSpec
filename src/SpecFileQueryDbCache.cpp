@@ -1024,7 +1024,7 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
       continue;
 #else
     if( !doc.load_file( xmlfilename.c_str() ) )
-      
+      continue;
 #endif
     
     for( const EventXmlFilterInfo &test : xmlfilters )
