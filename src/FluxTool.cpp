@@ -478,7 +478,10 @@ namespace FluxToolImp
           const double data = tool->m_data[row][col];
           const double uncert = tool->m_uncertainties[row][col];
           
-          const std::string datastr = (col==FluxToolWidget::FluxColumns::FluxNuclideCol ? tool->m_nucNames[row] : std::to_string(data));
+          std::string datastr = (col==FluxToolWidget::FluxColumns::FluxNuclideCol ? tool->m_nucNames[row] : std::to_string(data));
+          
+          if( !html && (col == FluxToolWidget::FluxColumns::FluxNuclideCol) )
+            SpecUtils::ireplace_all( datastr, ",", " " );
           
           if( html )
             strm << (col==0 ? "<td>" : "</td><td>") << datastr;
