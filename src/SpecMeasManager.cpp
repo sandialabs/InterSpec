@@ -1257,6 +1257,30 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }
   infile.seekg(0);
   
+  //Case insensitive search of 'term' in the header 'data'
+  auto header_contains = [&data]( const std::string &term ) -> bool {
+    const char * const char_start = (const char *)data;
+    const char * const char_end = (const char *)(data + boost::size(data));
+    const auto pos = std::search( char_start, char_end, begin(term), end(term),
+                                 [](unsigned char a, unsigned char b) -> bool {
+      return (std::tolower(a) == std::tolower(b));
+    } );
+    return (pos != char_end);
+  };//header_contains lambda
+  
+#define USE_SIMPLE_DIALOG_FOR_NOT_SPEC 1
+  
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+  SimpleDialog *dialog = new SimpleDialog();
+  dialog->addButton( "Close" );
+  WGridLayout *stretcher = new WGridLayout();
+  stretcher->setContentsMargins( 0, 0, 0, 0 );
+  dialog->contents()->setLayout( stretcher );
+  WText *title = new WText( "Not a spectrum file" );
+  title->addStyleClass( "title" );
+  stretcher->addWidget( title, 0, 0 );
+  
+#else
   
   AuxWindow *w = new AuxWindow( "Not a spectrum file",
                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
@@ -1268,8 +1292,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   WPushButton *b = w->addCloseButtonToFooter();
   b->clicked().connect( w, &AuxWindow::hide );
   w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w ) );
+  WGridLayout *stretcher = w->stretcher();
   if( !m_viewer->isMobile() && m_viewer->renderedWidth() > 400 && m_viewer->renderedHeight() > 250 )
     w->resize( 400, 250 );
+#endif
   
   // const string filename = SpecUtils::filename(displayName);
   
@@ -1289,10 +1315,11 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     {
       WText *t = new WText( "This looks to be an N42 ICD2 file that contains analysis results rather than raw spectra.<br />"
                             "If you believe this to be a legitimate spectrum file, please email it to <a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a> to support this file type." );
-      w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+      stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       t->setTextAlignment( Wt::AlignCenter );
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
       w->show();
-      
+#endif
       return true;
     }
   }//if( might be ICD2 )
@@ -1342,7 +1369,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                       || check_magic_number( data, jpeg5_mn ));
   const bool ispng = check_magic_number( data, png_mn );
   const bool isbmp = check_magic_number( data, bmp_mn );
-  
+  const bool issvg = header_contains( "<svg" );
   
   if( iszip )
   {
@@ -1358,9 +1385,11 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
           "for a version that supports ZIP files.";
 #endif
     WText *t = new WText( msg );
-    w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
     w->show();
+#endif
     
     return true;
   }//if( iszip )
@@ -1373,9 +1402,11 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                       "if you would like support for this archive type added.";
     
     WText *t = new WText( msg );
-    w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
     w->show();
+#endif
     
     return true;
   }//if( israr || istar || iszip7 || isgz )
@@ -1383,22 +1414,24 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( ispdf | isps | istif )
   {
-    const char *msg = "This file looks to be an document file, and not supported by InterSpec.";
+    const char *msg = "This file looks to be a document file, and not supported by InterSpec.";
     WText *t = new WText( msg );
-    w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
     w->show();
+#endif
     
     return true;
   }//if( ispdf | isps | istif )
   
   
-  if( isgif || isjpg || ispng || isbmp )
+  if( isgif || isjpg || ispng || isbmp || issvg )
   {
     const char *msg = "This file looks to be an image, and not a spectrum file.";
     WText *t = new WText( msg );
     t->setTextAlignment( Wt::AlignCenter );
-    w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
    
     const size_t max_disp_size = 16*1024*1024;
     
@@ -1409,6 +1442,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       else if( isjpg ) mimetype = "image/jpeg";
       else if( ispng ) mimetype = "image/png";
       else if( isbmp ) mimetype = "image/bmp";
+      else if( issvg ) mimetype = "image/svg+xml";
+      
     
       std::unique_ptr<WImage> image( new WImage() );
       WMemoryResource *resource = new WMemoryResource( mimetype, image.get() );
@@ -1417,49 +1452,47 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       
       if( !m_viewer->isMobile() )
       {
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
         w->resize( WLength::Auto, WLength::Auto );
         w->setMaximumSize( 0.6*m_viewer->renderedWidth(), 0.8*m_viewer->renderedHeight() );
+#endif
       }
       
       if( success )
       {
         resource->setData( totaldata );
         image->setImageLink( WLink(resource) );
-        w->stretcher()->addWidget( image.release(), 1, 0, AlignCenter | AlignMiddle );
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+        const int ww = m_viewer->renderedWidth();
+        const int wh = m_viewer->renderedHeight();
+        if( (ww > 120) && (wh > 120) )
+          image->setMaximumSize( WLength(0.45*ww,WLength::Unit::Pixel), WLength(wh - 120, WLength::Unit::Pixel) );
+#endif
+        stretcher->addWidget( image.release(), stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       }else
       {
-        WText *errort = new WText( "Couldnt read uplaoded file." );
+        WText *errort = new WText( "Couldn't read uploaded file." );
         errort->setTextAlignment( Wt::AlignCenter );
-        w->stretcher()->addWidget( errort, 1, 0 );
+        stretcher->addWidget( errort, stretcher->rowCount(), 0 );
       }
     }else
     {
-      WText *errort = new WText( "Uploaded file was to large to try and display." );
+      WText *errort = new WText( "Uploaded file was too large to try and display." );
       errort->setTextAlignment( Wt::AlignCenter );
-      w->stretcher()->addWidget( errort, 1, 0, AlignCenter | AlignMiddle );
+      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     }//if( filesize < max_disp_size ) / else
     
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
     w->show();
     w->resizeToFitOnScreen();
     w->centerWindowHeavyHanded();
+#endif
     
     return true;
   }//if( isgif || isjpg || ispng || isbmp )
 
   //Check if CSV giving peak ROIs.
   auto currdata = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  
-  //Case insensitive search of 'term' in the header 'data'
-  auto header_contains = [&data]( const std::string &term ) -> bool {
-    const char * const char_start = (const char *)data;
-    const char * const char_end = (const char *)(data + boost::size(data));
-    const auto pos = std::search( char_start, char_end, begin(term), end(term),
-                                  [](unsigned char a, unsigned char b) -> bool {
-                                    return std::tolower(a)==std::tolower(b);
-                                 } );
-    return (pos != char_end);
-  };//header_contains lambda
-  
   
   if( currdata
       //&& SpecUtils::icontains( SpecUtils::file_extension(displayName), "csv" )
@@ -1479,29 +1512,41 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                   orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
       } ) );
       
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+      delete dialog;
+#else
       delete w;
+#endif
       return true;
     }catch( exception &e )
     {
       WText *errort = new WText( "Uploaded file looked like a Peak CSV file, but was invalid." );
       errort->setTextAlignment( Wt::AlignCenter );
-      w->stretcher()->addWidget( errort, 1, 0, AlignCenter | AlignMiddle );
+      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       
       errort = new WText( string(e.what()) );
       errort->setAttributeValue( "style", "color: red; font-weight: bold; font-family: monospace; " );
       errort->setTextAlignment( Wt::AlignCenter );
-      w->stretcher()->addWidget( errort, 2, 0, AlignCenter | AlignMiddle );
+      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
       w->show();
       w->resizeToFitOnScreen();
       w->centerWindowHeavyHanded();
+#endif
+      
+      return true;
     }//try / catch get candidate peaks )
-  }//if( we could possible care about propogating peaks from a CSV file )
+  }//if( we could possible care about propagating peaks from a CSV file )
   
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+  delete dialog;
+#else
   delete w;
+#endif
   
   return false;
-}//void handleNonParsableFile(...)
+}//void handleNonSpectrumFile(...)
 
 
 void SpecMeasManager::handleFileDrop( const std::string &name,
