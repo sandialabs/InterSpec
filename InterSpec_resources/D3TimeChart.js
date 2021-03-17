@@ -368,6 +368,9 @@ D3TimeChart.prototype.setData = function (rawData) {
     // clear any existing lines drawn
     this.linesG.selectAll("path").remove();
 
+    // clear any occupancy lines drawn
+    this.occupancyLinesG.selectAll(".occupancy_line_group").remove();
+
     // if height and width are set, may render directly.
     if (this.height && this.width) {
       this.render();
@@ -1092,14 +1095,14 @@ D3TimeChart.prototype.updateChart = function (
       .append("svg:marker")
       .attr("id", "right_arrow")
       .attr("class", "xaxisarrow")
-      .attr("refX", 0)
-      .attr("refY", 5)
+      .attr("refX", -2)
+      .attr("refY", 11)
       .attr("markerWidth", 9)
       .attr("markerHeight", 14)
       .attr("orient", 0)
       .append("path")
       .attr("d", "M0,0 L0,10 L5,5 L0,0")
-      .attr("transform", "translate(2, 0)")
+      .attr("transform", "translate(0, 0)")
       .style("stroke", "black")
       .style("fill", "black");
 
@@ -1107,14 +1110,14 @@ D3TimeChart.prototype.updateChart = function (
       .append("svg:marker")
       .attr("id", "left_arrow")
       .attr("class", "xaxisarrow")
-      .attr("refX", 0)
-      .attr("refY", 5)
+      .attr("refX", -2)
+      .attr("refY", -1)
       .attr("markerWidth", 9)
       .attr("markerHeight", 14)
       .attr("orient", 180)
       .append("path")
       .attr("d", "M0,0 L0,10 L5,5 L0,0")
-      .attr("transform", "translate(2, 0)")
+      .attr("transform", "translate(0, 0)")
       .style("stroke", "black")
       .style("fill", "black");
   }
@@ -2334,17 +2337,17 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
   // for each detector, give counts
   for (var i = 0; i < data.length; i++) {
     if (typeof data[i].sampleNumber === "number") {
-      s += "<div>Sample Number: " + data[i].sampleNumber.toString();
+      s += "<div>Sample Num: " + data[i].sampleNumber.toString();
     } else {
       var sampleNumbers = Object.keys(data[i].sampleNumber);
       if (sampleNumbers.length > 4) {
         s +=
-          "<div>Sample Number: " +
+          "<div>Sample Nums: " +
           sampleNumbers[0].toString() +
           "..." +
           sampleNumbers[sampleNumbers.length - 1].toString();
       } else {
-        s += "<div>Sample Number: " + sampleNumbers.toString();
+        s += "<div>Sample Nums: " + sampleNumbers.toString();
       }
     }
     if (data[i].detName.length > 0) {
