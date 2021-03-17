@@ -888,6 +888,14 @@ D3TimeChart.prototype.updateChart = function (
   // plot data
   for (var detName in this.data[compressionIndex].detectors) {
     var counts = this.data[compressionIndex].detectors[detName].counts;
+
+    // only use visible range if zoomed in, otherwise use full range.
+    if (this.selection) {
+      var lIdx = this.findDataIndex(this.selection.domain[0], compressionIndex)
+      var rIdx = this.findDataIndex(this.selection.domain[1], compressionIndex)
+      counts = counts.slice(lIdx*2, (rIdx + 1)*2)
+    }
+
     var meta = this.data[compressionIndex].detectors[detName].meta;
 
     var lineGamma = d3.svg
