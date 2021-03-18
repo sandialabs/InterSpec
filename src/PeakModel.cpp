@@ -1304,16 +1304,22 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     }//case kPhotoPeakEnergy:
 
     case kUseForShieldingSourceFit:
+    {
       // Make so we only "use for shielding/source fit" show checkbox for decay gammas and x-rays,
       //  and not for peaks with no source associated, or with florescence x-rays, or for reactions
-      if( !peak->nuclearTransition() || !peak->parentNuclide() || (peak->decayParticleIndex() < 0) )
-        return boost::any();
       
       switch( peak->sourceGammaType() )
       {
         case PeakDef::NormalGamma:
         case PeakDef::XrayGamma:
+          if( !peak->nuclearTransition() || !peak->parentNuclide() || (peak->decayParticleIndex() < 0) )
+            return boost::any();
+          break;
+          
         case PeakDef::AnnihilationGamma:
+          // Annihilation gammas wont have a nuclearTransition or decay particle index associated with them
+          if( !peak->parentNuclide() )
+            return boost::any();
           break;
         
         case PeakDef::SingleEscapeGamma:
@@ -1324,6 +1330,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       }//switch( peak->sourceGammaType() )
       
       return peak->useForShieldingSourceFit();
+    }//case kUseForShieldingSourceFit:
 
     case kUseForCalibration:
       return peak->useForCalibration();
