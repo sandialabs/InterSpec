@@ -113,11 +113,16 @@ WT_DECLARE_WT_MEMBER
       // The getStaticSvg() function does not include the energy slider chart, so we should
       //  compensate for that height if its showing
       let height = chart.svg.attr("height");
+      let width = chart.svg.attr("width");
+      
       if( chart.sliderChart && chart.size && chart.size.sliderChartHeight )
         height -= chart.size.sliderChartHeight;
       
+      if( chart.scalerWidget )
+        width -= chart.scalerWidget.node().getBBox().width;
+      
       var canvas = document.createElement("canvas");
-      canvas.width = chart.svg.attr("width");
+      canvas.width = width;
       canvas.height = height;
       chart.chart.appendChild(canvas);
     
@@ -1782,7 +1787,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   std::shared_ptr<Measurement> foreground = m_model->getData();
   
   const size_t nchan = foreground->num_gamma_channels();
-  const bool isHpge = (nchan > 4094);
+  const bool isHpge = (nchan > HIGH_RES_NUM_CHANNELS);
   const float erange = upper_energy - lower_energy;
   const float midenergy = 0.5f*(lower_energy + upper_energy);
   
