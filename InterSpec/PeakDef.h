@@ -249,13 +249,6 @@ double skewedGaussianIntegral( double x0,  //x-value to start integrating at
                               );
 
 
-/** Define a number of channels where if the spectrum has more than this, we'll assume this is high-resolution.
- 
- TODO: should instead define an average keV per channel for this purpose.  Some limited energy
-       range HPGe detectors may only have 4096 channels.
- */
-const size_t HIGH_RES_NUM_CHANNELS = 5000;
-
 /** TODO: Define and implement this function
  
  @param fwhm The real or estimated FWHM of the peak
