@@ -249,6 +249,29 @@ double skewedGaussianIntegral( double x0,  //x-value to start integrating at
                               );
 
 
+/** Define a number of channels where if the spectrum has more than this, we'll assume this is high-resolution.
+ 
+ TODO: should instead define an average keV per channel for this purpose.  Some limited energy
+       range HPGe detectors may only have 4096 channels.
+ */
+const size_t HIGH_RES_NUM_CHANNELS = 5000;
+
+/** TODO: Define and implement this function
+ 
+ @param fwhm The real or estimated FWHM of the peak
+ @param energy The mean of the peak
+ @param nchannel The number of channels in the spectrum.  If specified as zero, will not be used.
+ @returns Whether this peak is likely to be from a HPGe detector or not.
+ */
+//bool is_high_resolution_peak( const float fwhm, const float energy, const size_t nchannel );
+//
+// OR
+/** Returns true if the energy per channel is more inline with a high resolution system.
+ */
+//bool is_high_resolution( const std::shared_ptr<const SpecUtils::Measurement> &data );
+//
+
+
 //findROILimit(...): returns the channel number that should be the extent of the
 //  region of interest, for the peak with the given mean and sigma.  If
 //  high==true, then the bin higher in energy than the mean will be returned,

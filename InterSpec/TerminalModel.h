@@ -41,7 +41,6 @@
 #include <memory>
 #include <algorithm>
 
-#include <boost/math/distributions/chi_squared.hpp>
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"

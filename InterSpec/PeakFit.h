@@ -52,6 +52,7 @@ typedef std::vector< std::shared_ptr<const PeakDef> > PeakShrdVec;
 
 //XXX - should put everything in this file into a namespace
 
+
 struct SavitzyGolayCoeffs
 {
   const int num_left;          //number of coef. to left of current point

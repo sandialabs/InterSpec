@@ -526,7 +526,7 @@ void findCandidates( vector<string> &suggestednucs,
       string csvfilename = SpecUtils::append_path( basename, "HPGe 40%/Efficiency.csv" );
       string datFilename = SpecUtils::append_path( basename, "HPGe 40%/Detector.dat" );
       
-      if( data->num_gamma_channels() <= 2050 )
+      if( data->num_gamma_channels() < HIGH_RES_NUM_CHANNELS )
       {
         csvfilename = SpecUtils::append_path( basename, "NaI 3x3/Efficiency.csv" );
         datFilename = SpecUtils::append_path( basename, "NaI 3x3/Detector.dat" );
