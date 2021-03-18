@@ -2598,7 +2598,7 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
       sigma = width;
       
       //For low res spectra make relatively less wide
-      if( !!m_dataMeasurement && m_dataMeasurement->num_gamma_channels()<4100 )
+      if( !!m_dataMeasurement && (m_dataMeasurement->num_gamma_channels()< HIGH_RES_NUM_CHANNELS) )
         sigma *= 0.35;
     }//if( within 3 sigma of peak )
   }//if( !!peak )
@@ -10320,7 +10320,7 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
       detector.reset( detPtr );
     
       string drf_dir = SpecUtils::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
-      if( data && (data->num_gamma_channels() <= 2049) )
+      if( data && (data->num_gamma_channels() < HIGH_RES_NUM_CHANNELS) )
         drf_dir = SpecUtils::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/NaI 1x1" );
       
       detPtr->fromGadrasDirectory( drf_dir );

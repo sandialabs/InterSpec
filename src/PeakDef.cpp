@@ -462,7 +462,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( nchannel<128 )
     throw runtime_error( "findROILimit(...): Invalid input" );
   
-  const bool highres = (nchannel > 3000);
+  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
   
   const vector<float> &contents = *dataH->gamma_channel_contents();
   
