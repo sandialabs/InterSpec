@@ -720,9 +720,11 @@ public:
   std::shared_ptr<DataBaseUtils::DbSession> sql();
   
 
-  //refreshDisplayedCharts(): re-displays the data (foreground, background, 2nd)
-  //  keeping the currently displayed energy range.
-  //Useful after calibrations.
+  /** Hard re-displays the foreground, background, and 2nd datas.
+   Displayed energy range will only be changed if the currently displayed range goes past what the data now displays.
+   
+   Useful after calibrations.
+   */
   void refreshDisplayedCharts();
   
 protected:
