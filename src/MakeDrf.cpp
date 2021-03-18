@@ -1788,8 +1788,9 @@ void MakeDrf::startSaveAs()
     
     w->hide();
     
-    m_finished.emit();
-  };
+    //m_finished.emit();
+    passMessage( "Saved '" + drfname + "' to the internal database.", "", 0 );
+  };//auto doSave
   
   WPushButton *save = w->addCloseButtonToFooter( "Save" );
   save->clicked().connect( std::bind(doSave) );
