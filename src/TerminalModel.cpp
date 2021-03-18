@@ -41,6 +41,8 @@
 #include <iostream>
 #include <functional>
 
+#include <boost/math/distributions/chi_squared.hpp>
+
 #include "Wt/WModelIndex"
 
 #include "mpParser.h"
