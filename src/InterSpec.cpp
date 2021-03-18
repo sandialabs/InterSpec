@@ -10882,6 +10882,38 @@ void InterSpec::refreshDisplayedCharts()
     displaySecondForegroundData();
   if( !!m_backgroundMeasurement )
     displayBackgroundData();
+  
+  // Now check if the currently displayed energy range extend past all the ranges of the data.
+  //  If so, dont display past where the data is.
+  double min_energy = 99999.9, max_energy = -99999.9;
+
+  auto checkEnergyRange = [&min_energy, &max_energy]( std::shared_ptr<const SpecUtils::Measurement> m ){
+    auto cal = m ? m->energy_calibration() : nullptr;
+    if( !cal || !cal->valid() )
+      return;
+    min_energy = std::min( static_cast<double>( cal->lower_energy() ), min_energy );
+    max_energy = std::max( static_cast<double>( cal->upper_energy() ), max_energy );
+  };
+  
+  checkEnergyRange( m_spectrum->data() );
+  checkEnergyRange( m_spectrum->background() );
+  checkEnergyRange( m_spectrum->secondData() );
+  
+  if( (max_energy > min_energy)
+     && !IsInf(min_energy) && !IsInf(max_energy)
+     && !IsNan(min_energy) && !IsNan(max_energy) )
+  {
+    const double curr_min = m_spectrum->xAxisMinimum();
+    const double curr_max = m_spectrum->xAxisMaximum();
+    
+    if( (max_energy < curr_max) || (curr_min < min_energy) )
+    {
+      min_energy = ((curr_min < min_energy) || (curr_min >= max_energy)) ? min_energy : curr_min;
+      max_energy = ((max_energy < curr_max) || (curr_max <= min_energy)) ? max_energy : curr_max;
+      
+      m_spectrum->setXAxisRange( min_energy, max_energy );
+    }//if( either min or max range is outside of the data )
+  }//if( possible energy range is valid )
 }//void refreshDisplayedCharts()
 
 
