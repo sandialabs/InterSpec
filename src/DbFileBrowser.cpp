@@ -631,8 +631,8 @@ void SnapshotBrowser::startDeleteSelected()
     AuxWindow::deleteAuxWindow( m_editWindow );
   
   m_editWindow = new AuxWindow( title,
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
   WTreeNode *node = *begin(selection);
   WText *label = node->label();
@@ -704,8 +704,8 @@ void SnapshotBrowser::startEditSelected()
     AuxWindow::deleteAuxWindow( m_editWindow );
   
   m_editWindow = new AuxWindow( title,
-                               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+                               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
   m_editWindow->setWidth( std::min(425, std::max(m_viewer->renderedWidth(), 250)) );
   m_editWindow->setHeight( std::min(250, std::max(m_viewer->renderedHeight(), 150)) );

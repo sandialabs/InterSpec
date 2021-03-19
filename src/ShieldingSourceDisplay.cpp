@@ -4794,8 +4794,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
   //Also, if you change the model any while this window is open - bad things will happen.
   
   AuxWindow *window = new AuxWindow( "Input Truth Values",
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                     | AuxWindowProperties::TabletModal) );
+                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                     | AuxWindowProperties::TabletNotFullScreen) );
   
   WContainerWidget *contents = window->contents();
   
@@ -5878,8 +5878,8 @@ void ShieldingSourceDisplay::modelUploadError( const ::int64_t size_tried,
 void ShieldingSourceDisplay::startModelUpload()
 {
   AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model",
-                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                        | AuxWindowProperties::TabletModal) );
+                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                        | AuxWindowProperties::TabletNotFullScreen) );
   
   WContainerWidget *contents = window->contents();
   WFileUpload *upload = new WFileUpload( contents );
@@ -6098,7 +6098,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
   WTextArea *summary = NULL;
   WPushButton *accept = NULL, *cancel = NULL, *del = NULL;
   AuxWindow *window = new AuxWindow( "Previously Saved Models",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
   
   try
   {
@@ -6340,8 +6340,8 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   }//if( m_modelInDb && !prompt )
   
   AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model",
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                   | AuxWindowProperties::TabletModal
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                   | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse) );
   WContainerWidget *contents = window->contents();
   window->centerWindow();

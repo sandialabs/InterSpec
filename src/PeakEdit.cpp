@@ -83,7 +83,7 @@ static_assert( int(PeakEdit::Chi2DOF)         == int(PeakDef::Chi2DOF),
 PeakEditWindow::PeakEditWindow( const double energy,
                                 PeakModel *peakmodel,
                                 InterSpec *viewer )
-  : AuxWindow( "Peak Editor", WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal) | AuxWindowProperties::DisableCollapse  )
+  : AuxWindow( "Peak Editor", WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen) | AuxWindowProperties::DisableCollapse  )
 {
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   

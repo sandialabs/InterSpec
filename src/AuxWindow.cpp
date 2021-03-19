@@ -594,15 +594,13 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   const bool isPhone = app ? app->isPhone() : false;
   const bool isTablet = app ? app->isTablet() : false;
   
-  const bool isPhoneModal = properties.testFlag(AuxWindowProperties::PhoneModal);
-  const bool isTabletModal = properties.testFlag(AuxWindowProperties::TabletModal);
+  const bool isPhoneNotFullScreen = properties.testFlag(AuxWindowProperties::PhoneNotFullScreen);
+  const bool isTabletNotFullScreen = properties.testFlag(AuxWindowProperties::TabletNotFullScreen);
   
-  const bool phoneFullScreen = (isPhone && !isPhoneModal)
-                               || (isTablet && !isTabletModal && !isPhoneModal);
+  const bool phoneFullScreen = (isPhone && !isPhoneNotFullScreen)
+                               || (isTablet && !isTabletNotFullScreen && !isPhoneNotFullScreen);
   
-  m_modalOrig = (properties.testFlag(AuxWindowProperties::IsAlwaysModal)
-                 || (isPhone && isPhoneModal)
-                 || (isTablet && (isTabletModal || isPhoneModal)) );
+  m_modalOrig = properties.testFlag(AuxWindowProperties::IsModal);
   if( phoneFullScreen )
   {
     m_modalOrig = false;  //Sometimes the Welcome screen modal underlay seems a bit sticky.
@@ -613,7 +611,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   
   setModal( m_modalOrig );
   
-  if( isTablet && !isTabletModal && !isPhoneModal )
+  if( isTablet && !isTabletNotFullScreen && !isPhoneNotFullScreen )
     m_isTablet = true;
   
   m_isAndroid = app && app->isAndroid();
@@ -645,7 +643,7 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
 
   if( m_isPhone
       || properties.testFlag(AuxWindowProperties::DisableCollapse)
-      || ((isPhone || isTablet) && (isTabletModal || isPhoneModal) ) )
+      || ((isPhone || isTablet) && (isTabletNotFullScreen || isPhoneNotFullScreen) ) )
   {
     m_collapseSlot.reset( new JSlot("function(){}",this) );
     m_expandSlot.reset( new JSlot("function(){}",this) );
@@ -794,8 +792,8 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   if( properties.testFlag(AuxWindowProperties::EnableResize) )
     setResizable( true );
 
-  if( (isPhone && isPhoneModal)
-      || (isTablet && isTabletModal) )
+  if( (isPhone && isPhoneNotFullScreen)
+      || (isTablet && isTabletNotFullScreen) )
   {
     resizeToFitOnScreen();
     centerWindowHeavyHanded();

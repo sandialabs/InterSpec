@@ -48,7 +48,7 @@ using namespace std;
 
 OneOverR2Calc::OneOverR2Calc()
   : AuxWindow( "1/r<sup>2</sup> Calculator",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) ),
     m_nearMeasurement( NULL ),

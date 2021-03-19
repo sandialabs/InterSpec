@@ -54,6 +54,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
@@ -438,7 +439,7 @@ void PeakInfoDisplay::createNewPeak()
   const float maxEnergy = meas->gamma_channel_upper(nbin-1);
   
   AuxWindow *window = new AuxWindow( "Add Peak",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse) );
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   
   WTable *table = new WTable( window->contents() );

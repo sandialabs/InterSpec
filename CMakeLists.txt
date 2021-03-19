@@ -283,7 +283,7 @@ if(ANDROID)
 endif(ANDROID)
 
 if(IOS)
-    set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "7.0"
+    set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "10.2"
         CACHE STRING "Set the minimum deployment target value."
         FORCE
     )
@@ -319,7 +319,8 @@ if(IOS)
     set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
     set(SUPPORT_ZIPPED_SPECTRUM_FILES ON)
     set(SpecUtils_ENABLE_D3_CHART ON)
-    set(USE_SPECTRUM_CHART_D3 ON)
+    set(USE_SPECTRUM_CHART_D3 OFF)
+    set(USE_GOOGLE_MAP OFF)
 
     #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
     # iosbuild.rb everywhere, and in the Xcode project.

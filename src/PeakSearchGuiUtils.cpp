@@ -160,7 +160,7 @@ public:
                       const vector<PeakDef> &final_peaks,
                       const vector<ReferenceLineInfo> &displayed )
   : AuxWindow( "Dummy",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse) ),
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) ),
     m_viewer( viewer ),
     m_table( nullptr ),
     m_previewChartColumn( -1 ),

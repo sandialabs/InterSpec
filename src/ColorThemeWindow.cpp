@@ -125,7 +125,7 @@ namespace
 
 
 ColorThemeWindow::ColorThemeWindow( InterSpec *interspec )
-: AuxWindow( "Color Themes", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal) | AuxWindowProperties::SetCloseable ),
+: AuxWindow( "Color Themes", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::SetCloseable ),
 m_interspec(interspec),
 m_menu( nullptr ),
 m_edit( nullptr ),
@@ -330,7 +330,7 @@ void ColorThemeWindow::removeThemeCallback()
   
   AuxWindow *conf = new AuxWindow( "Delete " + name + "?",
                                   WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
-                                  | AuxWindowProperties::IsAlwaysModal | AuxWindowProperties::TabletModal );
+                                  | AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen );
   
   auto doDelete = [this,dbIndex,item,conf](){
     if( dbIndex >= 0 )
@@ -393,8 +393,8 @@ void ColorThemeWindow::uploadThemeCallback()
 
   //1) Make a dialog to allow user to select a file.
   AuxWindow *window = new AuxWindow( "Upload Color Theme JSON",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                     | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                     | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::SetCloseable) );
   
   WContainerWidget *contents = window->contents();
@@ -514,7 +514,7 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
   }
   
   AuxWindow *dialog = new AuxWindow( "Save Changes?",
-                                    WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse );
+                                    WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::DisableCollapse );
 
   auto content = dialog->contents();
   WText *txt = new WText( content );
