@@ -2981,6 +2981,13 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     entry.modify()->isotopeSearchEnergiesXml.clear();
     if( m_nuclideSearch )
       m_nuclideSearch->serialize( entry.modify()->isotopeSearchEnergiesXml );
+    
+    if( !toolTabsVisible() && m_nuclideSearchWindow )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingEnergySearch;
+      entry.modify()->currentTab = UserState::kIsotopeSearch;
+    }
+  
    
     entry.modify()->gammaLinesXml.clear();
     if( m_referencePhotopeakLines )
@@ -3523,10 +3530,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     {
       string data = entry->isotopeSearchEnergiesXml;
       
-      if( !wasDocked )
-        showNuclideSearchWindow();
+      bool display = (entry->currentTab == UserState::kIsotopeSearch);
       
-      const bool display = !wasDocked || entry->currentTab == UserState::kIsotopeSearch;
+      if( !wasDocked )
+      {
+        display = (entry->shownDisplayFeatures & UserState::kShowingEnergySearch);
+        if( display )
+          showNuclideSearchWindow();
+      }//if( !wasDocked )
+      
       m_nuclideSearch->deSerialize( data, display );
     }//if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
 

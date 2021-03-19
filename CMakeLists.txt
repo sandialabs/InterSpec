@@ -274,9 +274,6 @@ if(ANDROID)
         ${BOOST_LIB_START}unit_test_framework${BOOST_LIB_END}
     )
     set(Boost_SIGNALS_LIBRARY_RELEASE ${BOOST_LIB_START}signals${BOOST_LIB_END})
-    set(Boost_SERIALIZATION_LIBRARY_RELEASE
-        ${BOOST_LIB_START}serialization${BOOST_LIB_END}
-    )
     set(Wt_INCLUDE_DIR=${USRPREFIX}/include)
     set(Wt_LIBRARY=${USRPREFIX}/lib/libwt.a)
     set(Wt_TEST_LIBRARY=${USRPREFIX}/lib/libwttest.a)
