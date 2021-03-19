@@ -1440,7 +1440,7 @@ MakeDrf::~MakeDrf()
 AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSuggestionPopup *materialSuggest )
 {
   AuxWindow *window = new AuxWindow( "Create Detector Response Function",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::EnableResize) );
@@ -1486,8 +1486,8 @@ AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt
 
 void MakeDrf::startSaveAs()
 {
-  Wt::WFlags<AuxWindowProperties> windowprop = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                               | AuxWindowProperties::PhoneModal
+  Wt::WFlags<AuxWindowProperties> windowprop = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                               | AuxWindowProperties::PhoneNotFullScreen
                                                | AuxWindowProperties::SetCloseable
                                                | AuxWindowProperties::DisableCollapse;
   if( m_effEqnCoefs.empty() )

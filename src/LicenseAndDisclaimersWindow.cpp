@@ -90,7 +90,7 @@ using namespace std;
 
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int screen_width, int screen_height )
 : AuxWindow("Disclaimers, Licenses, Credit, and Contact",
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
   m_menu( nullptr )
 {

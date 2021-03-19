@@ -162,7 +162,7 @@ string convertDistance( string val )
 
 UnitsConverterTool::UnitsConverterTool()
   : AuxWindow( "Units Converter",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
                | AuxWindowProperties::DisableCollapse
                | AuxWindowProperties::SetCloseable) ),
     m_input( NULL ),

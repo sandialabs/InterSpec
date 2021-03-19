@@ -291,8 +291,8 @@ namespace
   public:
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
-    : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                       | AuxWindowProperties::PhoneModal | AuxWindowProperties::DisableCollapse) ),
+    : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                       | AuxWindowProperties::PhoneNotFullScreen | AuxWindowProperties::DisableCollapse) ),
       m_fileUpload( 0 ),
       m_manager( manager ),
       m_type( SpectrumType::Foreground )
@@ -448,7 +448,7 @@ class UploadBrowser : public AuxWindow
 public:
   UploadBrowser( SpecMeasManager *manager )
   : AuxWindow( "Import Spectrum Files",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                 | AuxWindowProperties::DisableCollapse
                 | AuxWindowProperties::EnableResize) ),
   m_manager( manager )
@@ -826,8 +826,8 @@ void  SpecMeasManager::startSpectrumManager()
     const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
     m_spectrumManagerWindow = new AuxWindow( "Spectrum Manager",
-                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                     | AuxWindowProperties::TabletModal) );
+                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                     | AuxWindowProperties::TabletNotFullScreen) );
     m_spectrumManagerWindow->addStyleClass( "SpecMeasManager" );
     
     WContainerWidget *title = m_spectrumManagerWindow->titleBar();
@@ -1091,7 +1091,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }
     
     AuxWindow *window = new AuxWindow( "Uploaded ZIP File Contents",
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
     window->stretcher()->addWidget( t, 0, 0 );
     //window->stretcher()->addWidget( selection, 1, 0 );
     window->stretcher()->addWidget( table, 1, 0 );
@@ -1283,8 +1283,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
 #else
   
   AuxWindow *w = new AuxWindow( "Not a spectrum file",
-                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                 | AuxWindowProperties::TabletModal
+                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                 | AuxWindowProperties::TabletNotFullScreen
                  | AuxWindowProperties::SetCloseable
                  | AuxWindowProperties::DisableCollapse) );
   w->centerWindow();
@@ -2417,8 +2417,8 @@ void SpecMeasManager::setDisplayedToSelected()
 void SpecMeasManager::displayQuickSaveAsDialog()
 {
   AuxWindow *dialog = new AuxWindow( "Save As...",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-               | AuxWindowProperties::TabletModal
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+               | AuxWindowProperties::TabletNotFullScreen
                | AuxWindowProperties::DisableCollapse) );
   
   dialog->centerWindow();
@@ -3534,8 +3534,8 @@ void SpecMeasManager::createPreviousSpectraDialog( const std::string sessionID,
                                                   const std::vector< Wt::Dbo::ptr<UserFileInDb> > unModifiedFiles )
 {
   AuxWindow *message = new AuxWindow( "File Viewed Before",
-                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                           | AuxWindowProperties::TabletModal
+                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                           | AuxWindowProperties::TabletNotFullScreen
                            | AuxWindowProperties::DisableCollapse) );
   message->setResizable( false );
   message->rejectWhenEscapePressed();
@@ -4184,8 +4184,8 @@ void SpecMeasManager::startStoreSpectraAsInDb()
     
     const string typestr = descriptionText(type);
     AuxWindow *window = new AuxWindow( "Save " + typestr + " Spectrum As" ,
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                      | AuxWindowProperties::TabletModal
+                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                      | AuxWindowProperties::TabletNotFullScreen
                                       | AuxWindowProperties::SetCloseable) );
     window->rejectWhenEscapePressed();
     window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
@@ -4367,8 +4367,8 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
   {
       
       AuxWindow *window = new AuxWindow( "Save Spectrum Version",
-                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
-                           | AuxWindowProperties::IsAlwaysModal) );
+                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                           | AuxWindowProperties::IsModal) );
       window->setWidth( 250 );
       
       WGridLayout *layout = window->stretcher();

@@ -567,7 +567,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         if( promptLoad )
         {
           //Create a dialog asking if the user wants to pick up
-          AuxWindow *loadStateDialog = new AuxWindow( "Load previous state?", (AuxWindowProperties::IsAlwaysModal | AuxWindowProperties::TabletModal) );
+          AuxWindow *loadStateDialog = new AuxWindow( "Load previous state?", (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
         
           WContainerWidget *dialogDiv = loadStateDialog->contents();
           

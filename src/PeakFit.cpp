@@ -5950,11 +5950,18 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     
     //const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
     double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
-    
+  
+/*
     // If data is zero, or negative, lets look for the nearest non-zero bin, within 5 bins of here
+    //  This situation might happen more often after a hard background subtraction.
+    //
+    //  TODO: this doesnt fix the one-example I was looking at - perhaps need to try ignoring a
+    //        region. Maybe try looking for regions that are anomalously low (e.g., essentially
+    //        zero), and just ignore them if they are extremely below surrounding region.
+    //
     const double non_poisson_threshold = 0.5; //FLT_EPSILON
     const double significant_stats_threshold = 5.0;
-    
+  
     if( dataval < non_poisson_threshold )
     {
       double nearest_data = dataval;
@@ -5971,11 +5978,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       if( nearest_data > non_poisson_threshold )
         uncert = sqrt(nearest_data);
     }//if( dataval < FLT_EPSILON )
-    
-    
-    
-    
-    
+*/
     
     
 #if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)

@@ -3588,7 +3588,7 @@ DetectorEditWindow::DetectorEditWindow(
                                   InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
   : AuxWindow("Detector Response Function Select",
-              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal),
+              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen),
     m_edit( NULL )
 {
   disableCollapse();

@@ -2624,11 +2624,11 @@ void InterSpec::setFeatureMarkerOption( const FeatureMarkerType option, const bo
   string jsoption;
   switch( option )
   {
-    case EscapePeakMarker:  jsoption = "escpeaks";  break;
-    case ComptonEdgeMarker: jsoption = "compedge";  break;
-    case ComptonPeakMarker: jsoption = "comppeak";  break;
-    case SumPeakMarker:     jsoption = "sumpeak";   break;
-    case NumFeatureMarkers:                       break;
+    case FeatureMarkerType::EscapePeakMarker:  jsoption = "escpeaks";  break;
+    case FeatureMarkerType::ComptonEdgeMarker: jsoption = "compedge";  break;
+    case FeatureMarkerType::ComptonPeakMarker: jsoption = "comppeak";  break;
+    case FeatureMarkerType::SumPeakMarker:     jsoption = "sumpeak";   break;
+    case FeatureMarkerType::NumFeatureMarkers:                       break;
   };//switch( option )
   
   if( !jsoption.empty() )
@@ -3893,7 +3893,7 @@ AuxWindow *InterSpec::showIEWarningDialog()
   }catch(...){}
 
 
-  AuxWindow *dialog = new AuxWindow( "Not Compatible with Internet Explorer", AuxWindowProperties::IsAlwaysModal );
+  AuxWindow *dialog = new AuxWindow( "Not Compatible with Internet Explorer", AuxWindowProperties::IsModal );
   dialog->setAttributeValue( "style", "max-width: 80%;" );
 
   WContainerWidget *contents = dialog->contents();
@@ -4071,7 +4071,7 @@ void InterSpec::showFileQueryDialog()
   if( m_specFileQueryDialog )
     return;
   
-  m_specFileQueryDialog = new AuxWindow( "Spectrum File Query Tool", AuxWindowProperties::TabletModal );
+  m_specFileQueryDialog = new AuxWindow( "Spectrum File Query Tool", AuxWindowProperties::TabletNotFullScreen );
   m_specFileQueryDialog->setResizable( true );
   //m_specFileQueryDialog->disableCollapse();
   
@@ -4170,7 +4170,7 @@ void InterSpec::showWarningsWindow()
   if( !m_warningsWindow )
   {
     m_warningsWindow = new AuxWindow( "Notification/Logs",
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal) | AuxWindowProperties::IsAlwaysModal) );
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::IsModal) );
     m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
     m_warningsWindow->rejectWhenEscapePressed();
     m_warningsWindow->stretcher()->addWidget( m_warnings, 0, 0, 1, 1 );
@@ -4711,7 +4711,7 @@ void InterSpec::startStoreTestStateInDb()
   if( m_currentStateID >= 0 )
   {
     AuxWindow *window = new AuxWindow( "Warning",
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
                                        | AuxWindowProperties::DisableCollapse) );
     WText *t = new WText( "Overwrite current test state?", window->contents() );
     t->setInline( false );
@@ -4763,7 +4763,7 @@ void InterSpec::stateSaveAs()
 {
   const bool forTesting = false;
     
-  AuxWindow *window = new AuxWindow( "Store State As", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+  AuxWindow *window = new AuxWindow( "Store State As", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
@@ -4812,7 +4812,7 @@ void InterSpec::stateSaveAs()
 void InterSpec::stateSaveTag()
 {
   AuxWindow *window = new AuxWindow( "Tag current state",
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
@@ -4991,8 +4991,8 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
   }//if( state )
   
   AuxWindow *window = new AuxWindow( "Create Snapshot",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                      | AuxWindowProperties::TabletModal
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                      | AuxWindowProperties::TabletNotFullScreen
                                       | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
@@ -5122,6 +5122,16 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   
   if( m_fileManager )
   {
+    if( isMobile )
+    {
+      item = m_fileMenuPopup->addMenuItem( "Open File..." );
+      item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
+      
+      item = m_fileMenuPopup->addMenuItem( "Loaded Spectra..." );
+      item->triggered().connect( this, &InterSpec::showCompactFileManagerWindow );
+    }//if( isMobile )
+    
+    
     item = m_fileMenuPopup->addMenuItem( "Manager...", "InterSpec_resources/images/file_manager_small.png" );
     HelpSystem::attachToolTipOn(item, "Manage loaded spectra", showToolTips );
     
@@ -5160,12 +5170,6 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
                                             m_fileManager,
                                             SpecUtils::SpectrumType::Foreground ) );
     HelpSystem::attachToolTipOn(item, "Opens previously saved states", showToolTips );
-    
-    if( isMobile )
-    {
-      item = m_fileMenuPopup->addMenuItem( "Loaded Spectra..." );
-      item->triggered().connect( this, &InterSpec::showCompactFileManagerWindow );
-    }//if( isMobile )
     
     m_fileMenuPopup->addSeparator();
   }//if( m_fileManager )
@@ -5223,7 +5227,8 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
                                            SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
   }//if( isMobile )
   
-  if( isSupportFile() )
+  
+  if( isSupportFile() && !isMobile )
   {
     string tip = "Creates a dialog to browse for a spectrum file on your file system.";
     if( !isMobile )
@@ -6327,7 +6332,7 @@ void InterSpec::showEnergyCalWindow()
     
   m_energyCalWindow = new AuxWindow( "Energy Calibration",
                                 WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                    | AuxWindowProperties::TabletModal );
+                                    | AuxWindowProperties::TabletNotFullScreen );
   m_energyCalWindow->rejectWhenEscapePressed();
   m_energyCalWindow->stretcher()->addWidget( m_energyCalTool, 0, 0 );
   m_energyCalTool->setTallLayout();
@@ -7132,7 +7137,7 @@ void InterSpec::saveChartToImg( const bool spectrum )
   }
 #else
   if( spectrum )
-    m_spectrum->saveChartToImg( filename );
+    m_spectrum->saveChartToPng( filename );
   else
     m_timeSeries->saveChartToPng( filename );
 #endif
@@ -7695,7 +7700,7 @@ void InterSpec::showCompactFileManagerWindow()
   m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
 #endif
   
-  AuxWindow *window = new AuxWindow( "Select Opened Spectra to Display", (AuxWindowProperties::TabletModal) );
+  AuxWindow *window = new AuxWindow( "Select Opened Spectra to Display", (AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
@@ -7756,7 +7761,7 @@ void InterSpec::showNuclideSearchWindow()
     m_nuclideSearchContainer = 0;
   }
   
-  m_nuclideSearchWindow = new AuxWindow( NuclideSearchTabTitle, (AuxWindowProperties::TabletModal) );
+  m_nuclideSearchWindow = new AuxWindow( NuclideSearchTabTitle, (AuxWindowProperties::TabletNotFullScreen) );
   m_nuclideSearchWindow->contents()->setOverflow(Wt::WContainerWidget::OverflowHidden);
   m_nuclideSearchWindow->finished().connect( boost::bind( &InterSpec::closeNuclideSearchWindow, this ) );
   m_nuclideSearchWindow->rejectWhenEscapePressed();
@@ -7874,7 +7879,7 @@ void InterSpec::showGammaLinesWindow()
     m_referencePhotopeakLines = NULL;
   }//if( m_referencePhotopeakLines )
 
-  m_referencePhotopeakLinesWindow = new AuxWindow( GammaLinesTabTitle, (AuxWindowProperties::TabletModal) );
+  m_referencePhotopeakLinesWindow = new AuxWindow( GammaLinesTabTitle, (AuxWindowProperties::TabletNotFullScreen) );
   m_referencePhotopeakLinesWindow->contents()->setOverflow(WContainerWidget::OverflowHidden);
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();
 
@@ -9992,7 +9997,7 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
   
   const size_t lower_channel = dataH->find_gamma_channel(x0);
   const size_t upper_channel = dataH->find_gamma_channel(x1);
-  const size nchannel = 1 + ((upper_channel > lower_channel)
+  const size_t nchannel = 1 + ((upper_channel > lower_channel)
                              ? (upper_channel - lower_channel) : size_t(0));
   
   for( auto &thread : thread_grp )
@@ -10022,7 +10027,7 @@ void InterSpec::findPeakFromControlDrag( double x0, double x1, int nPeaks )
     }//if( mean >= x0 && mean <= x1 )
   }//for( loop over peaks )
   
-  const double dof = (nbin + 3*nPeaks + answer[bestchi2][0]->type());
+  const double dof = (nchannel + 3*nPeaks + answer[bestchi2][0]->type());
   const double chi2Dof = chi2[bestchi2] / dof;
   
   for( size_t i = 0; i < answer[bestchi2].size(); ++i )
