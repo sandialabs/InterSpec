@@ -1250,7 +1250,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   uint8_t data[1024] = { 0x0 };
   
-  if( !infile.read( (char *)data, std::min(boost::size(data),filesize) ) )
+  if( !infile.read( (char *)data, std::min(sizeof(data), filesize) ) )
   {
     passMessage( "Failed to read non-spectrum file.", "", 2 );
     return true;
