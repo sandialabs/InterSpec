@@ -104,8 +104,11 @@
 .CenterBtnInMblAuxWindowHeader
 {
   /* Center button in footer/header */
-  display: block !important;
-  margin: 0 auto !important;
+  /* display: block !important; */
+  /* margin: 0 auto !important; */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .CenterBtnInMblAuxWindowHeader[disabled]
