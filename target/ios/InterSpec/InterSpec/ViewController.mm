@@ -434,7 +434,21 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   [_webView setAllowsLinkPreview: NO];
   //[_webView setAllowsMagnification: NO]; //default is not
   [_webView setAllowsBackForwardNavigationGestures: NO];
-  //[_webView setCustomUserAgent: @""];
+  
+  if( UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad )
+  {
+    //[_webView evaluateJavaScript:@"navigator.userAgent" completionHandler:^(id __nullable userAgent, NSError * __nullable error) {
+    //  NSLog(@"The actual user agent: %@", userAgent);
+    //  On my iPad prints "Mozilla/5.0 (iPad; CPU OS 14_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+    //}];
+    
+    // For some reason I get 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko)' in the C++ on my iPad,
+    //  which means the c++ of InterSpec doesnt detect it as an iPad - so we'll set a custom user agent that includes "iPad"
+    [_webView setCustomUserAgent: @"Mozilla/5.0 (iPad; CPU OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"];
+  }else if( UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone )
+  {
+    // This looks to always be fine, so we wont set a custom user agent
+  }
   
   [_webView setNavigationDelegate: self];
   
