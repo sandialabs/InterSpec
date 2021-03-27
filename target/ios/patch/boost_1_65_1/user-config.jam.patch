@@ -1,0 +1,19 @@
+--- user-config.jam.orig	2021-03-27 10:28:23.000000000 -0700
++++ user-config.jam	2021-03-27 10:28:40.000000000 -0700
+@@ -90,3 +90,15 @@
+ 
+ # Configure specific Python version.
+ # using python : 3.1 : /usr/bin/python3 : /usr/include/python3.1 : /usr/lib ;
++
++
++using darwin : 14.4~iphone
++: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -arch arm64 -fvisibility=hidden -fvisibility-inlines-hidden -std=c++11 -stdlib=libc++
++: <striper> <root>/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer
++: <architecture>arm <target-os>iphone <address-model>64
++;
++using darwin : 14.4~iphonesim
++: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -arch x86_64 -fvisibility=hidden -fvisibility-inlines-hidden -std=c++11 -stdlib=libc++
++: <striper> <root>/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer
++: <architecture>x86 <target-os>iphone <address-model>64
++;
+\ No newline at end of file
