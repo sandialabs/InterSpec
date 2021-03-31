@@ -82,7 +82,7 @@ int main( int argc, char **argv )
 #endif //#if( ANDROID )
   
   std::cout << std::showbase << std::hex << "Running with Wt version "
-            << WT_VERSION << ", from executable compiled on "
+            << WT_VERSION << std::dec << ", from executable compiled on "
             << __DATE__ << std::endl;
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -117,6 +117,8 @@ Wt::WApplication *createApplication( const Wt::WEnvironment &env )
 #include <windows.h>
 #include <stdio.h>
 #include <shellapi.h>
+
+#include "SpecUtils/StringAlgo.h"
 
 /** Get command line arguments encoded as UTF-8.
     This function just leaks the memory
@@ -169,7 +171,7 @@ void processCustomArgs( int argc, char **argv )
           SerialToDetectorModel::set_detector_model_input_csv( serial_db[0] );
           set_serial_num_file = true;
         }
-      }catch( std::exception &e )
+      }catch( std::exception & )
       {
         std::cerr << "Invalid userdatadir ('" << argv[i+1] << "') specified"
                   << std::endl;

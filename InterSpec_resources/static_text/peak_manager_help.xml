@@ -1,3 +1,4 @@
+<!-- SAND2021-1543 O -->
 <div align="center">
   <h1 id="peak-manager">
     <b>Peak Manager</b>
@@ -5,6 +6,124 @@
   <hr />
 </div>
 
-<div>
-Content about the peak manager to be placed here
+
+<div style="display:table-row">
+<h4>Overview</h4>
+The <em>Peak Manager</em> allows quickly viewing or editing properties of the peaks fit in the spectrum.
+As can be seen below, you can use this tool to change the nuclide associated with the peak, or the
+specific gamma or x-ray assigned to the peak.  You can also change the other properties like mean, FWHM,
+or add a custom label for the peak that will be displayed on the spectrum.
+<br />
+Most of these actions, and more, can also be performed using the &quot;Peak Editor&quot; that can
+be accessed by right-clicking on a peak.
+<br />
+The <span style="color: blue"><b>CSV</b></span> export capability in the lower right hand corner is also useful
+to export the fit peak information for use within other applications.
+<br />
+Editing the information is straight-forward for most of the columns, however, it is worth noting
+that if editing the &quot;Photopeak&quot; column, you must first have assigned a nuclide, element,
+or nuclear reaction, and then as you type in an energy, a suggestion popup will appear giving you
+the gammas and x-rays of the relevant nuclide/element/reaction.  If you precede the energy with either
+&quot;S.E.&quot; or &quot;D.E.&quot; you can choose to associate the peak with a gamma where
+either one or two 511 keV peaks, resulting from pair-production inside the detector, escaped the
+detection element.  A common use for this is to assign the source to the 2103 and 1592 keV in HPGe
+detector, which would be assigned as &quot;S.E. 2614&quot; and &quot;D.E. 2614&quot; respectively.
 </div>
+
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/peak_manager.jpg"  class="imageBorder" style="width: 85%" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+An example screenshot of the <em>Peak Manager</em> tool illustrating editing the nuclide assigned to a given peak.
+</div>
+</div>
+
+<p> As can be seen from the above screen-shot, there are also a number of other peak-related functions
+that can be performed from this tool:
+</p>
+<table style="text-align: left; margin-left: 10px;">
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top; white-space: nowrap;">
+      Search for Peaks...
+    </th>
+    <td style="padding-bottom: 20px;">
+      This performs an automated search for peaks in the spectrum.  If you have reference photo-peak
+      lines showing before clicking this button, you will then be able to select having only peaks
+      from that nuclide fit, as well as having the peaks auto-associated with that nuclide.  The
+      feature is most useful for HPGe spectra with lots of peaks; it doesn't do a perfect job, but
+      often times can get you 90% there.
+      For lower-resolution (e.x., NaI or CsI), manually fitting peaks will usually do a better job
+      then using this feature, so it is recommended to not use it for these detectors.
+
+      <div style="padding-top: 10px; text-align: center;">
+        <img src="InterSpec_resources/static_text/images/auto_peak_search_result.jpg"  class="imageBorder" style="width: 30%" align="middle" />
+        <div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+          An example result of the auto-peak search. From this dialog you can select which peaks you want to keep, or adjust nuclide assignments.
+        </div>
+      </div>
+    </td>
+  </tr>
+
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      Clear all Peaks
+    </th>
+    <td style="padding-bottom: 20px;">
+      Removes all peaks from the current spectrum.
+    </td>
+  </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      Nuc. from Ref.
+    </th>
+    <td style="padding-bottom: 20px;">
+      Clicking this button will allow associating already-fit peaks with the currently showing photo-peak reference lines.
+      This is useful if you have fit peaks, but weren't showing reference lines, or otherwise haven't associated nuclides
+      with the peaks.  It does a pretty good job of selecting the correct gammas or x-rays for peaks
+      when the reference lines for a single nuclide are showing, but results can be sub-par when showing reference lines for
+      multiple nuclides, each with lots of gammas.
+    </td>
+  </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      Add...
+    </th>
+    <td style="padding-bottom: 20px;">
+      This will create a dialog that will allow you to add a peak to the spectrum.  This is useful
+      for really low statistics peaks that <b>InterSpec</b> wont otherwise fit, or to force small
+      peaks overlapping much larger peaks.
+    </td>
+  </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      Delete
+    </th>
+    <td style="padding-bottom: 20px;">
+      Deletes the peak of the currently selected row.  In the above screenshot of the <em>Peak Manager</em>,
+      the row being edited is highlighted yellow, and so its the peak that would be deleted if this
+      button is clicked.
+    </td>
+  </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      CSV
+    </th>
+    <td style="padding-bottom: 20px;">
+      Clicking this element allows exporting peak information in a convenient CSV format, useful for
+      analysis in other programs or spreadsheet applications.  Another use for this CSV is that if you
+      later load another spectrum that has similar peaks, you can drag-and-drop the previous spectrums CSV
+      onto <b>InterSpec</b>, and those same peaks will be fit for in the new spectrum.  This is useful
+      if you often process spectra of similar sources.
+      <br />
+      There is also a &quot;Ask to Propagate Peaks&quot; option in the &quot;Help&quot; &rarr; &quot;Options&quot;
+      menu, that when selected, and you open a new spectrum file from the same detector as your current
+      foreground spectrum, <b>InterSpec</b> will ask if you would like to fit the peaks fit in the
+      previous spectrum in the newly opened spectrum.
+    </td>
+  </tr>
+</table>
+

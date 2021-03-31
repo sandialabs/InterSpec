@@ -116,7 +116,7 @@ class MaterialDB
    Text based files in either GEANT4 or GADRAS style formating may be used to
    populate database.  
    This class is thread safe, and may be populated by calling 
-   parseGadrasMaterialFile() or parseG4MaterialFile() from a secondary slave 
+   parseGadrasMaterialFile() or parseG4MaterialFile() from a secondary client
    thread *assuming* only a single input file will be used to populate the 
    database.  If you are going to populate a second source file, then do not
    call any other member in parrelel during parsing.
@@ -192,6 +192,9 @@ public:
   //Performs a case-insensitive comparison (eg string::operator<) comparison
   //  of names
   static bool less_than_by_name( const Material *lhs, const Material *rhs );
+  
+  //Similar to #less_than_by_name
+  static bool equal_by_name( const Material *lhs, const Material *rhs );
 
 protected:
   //refreshMaterialNames(): should be called whenever m_materials is modified.

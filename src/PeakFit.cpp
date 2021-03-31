@@ -307,9 +307,9 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
       }//try / catch
     }else
     {
-      cerr << "\tPeak at " << mean << " has fractional error " << fracerror
-      << ", FWHM=" << input[i]->fwhm() << " fit peak width fwhm=" << width
-      << endl;
+      // cerr << "\tPeak at " << mean << " has fractional error " << fracerror
+      // << ", FWHM=" << input[i]->fwhm() << " fit peak width fwhm=" << width
+      // << endl;
       answer.push_back( input[i] );
     }
   }//for( size_t i = 0; i < npeaks; ++i )
@@ -407,7 +407,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       inpeaks.insert( inpeaks.end(), candidates.begin()+i+1, candidates.end() );
       inpeaks.push_back( peak );
       
-      const double nsigma = (meas->num_gamma_channels()<3000) ? 5.0 : 10.0;
+      const double nsigma = (meas->num_gamma_channels() < HIGH_RES_NUM_CHANNELS) ? 5.0 : 10.0;
       const vector< vector<std::shared_ptr<const PeakDef> > > disconnectedpeaks
                               = causilyDisconnectedPeaks(  nsigma, true, inpeaks );
       
@@ -489,7 +489,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     candidates.swap( nextcandidates );
   }//while( !candidates.empty() )
   
-  if( meas->num_gamma_channels() > 3000 )
+  if( meas->num_gamma_channels() > HIGH_RES_NUM_CHANNELS )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
   
   
@@ -581,7 +581,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
               &PeakDef::lessThanByMeanShrdPtr );
   }//while( !candidates.empty() )
   
-  if( meas->num_gamma_channels() > 3000 )
+  if( meas->num_gamma_channels() > HIGH_RES_NUM_CHANNELS )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
   
   return fitpeakvec;
@@ -774,6 +774,30 @@ causilyDisconnectedPeaks(  const double ncausality,
   return answer;
 }//causilyDisconnectedPeaks(...)
 
+      
+void unique_copy_continuum( std::vector<PeakDef> &input_peaks )
+{
+  map<std::shared_ptr<PeakContinuum>,vector<PeakDef>> contToPeaks;
+  for( auto &p : input_peaks )
+    contToPeaks[p.continuum()].push_back( p );
+        
+  for( auto &pp : contToPeaks )
+  {
+    pp.second[0].makeUniqueNewContinuum();
+    auto newcont = pp.second[0].continuum();
+    for( size_t i = 1; i < pp.second.size(); ++i )
+      pp.second[i].setContinuum( newcont );
+  }
+        
+  input_peaks.clear();
+  for( auto &pp : contToPeaks )
+  {
+    for( auto p : pp.second )
+      input_peaks.push_back( p );
+  }
+  std::sort( begin(input_peaks), end(input_peaks), &PeakDef::lessThanByMean );
+}//unique_copy_continuum(...)
+
 
 std::vector< std::vector<PeakDef> > causilyDisconnectedPeaks( const double x0,
                                                              const double x1,
@@ -850,7 +874,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   //chi2fcn.set_reldiff_punish_start( 2.35482 );
   
   vector<PeakDef> inpeaks;
-  double conteqn[2] = { p0, p1 };
+  double conteqn[6] = { p0, p1, 0.0, 0.0, 0.0, 0.0 };
   double initial_cont_area = PeakContinuum::offset_eqn_integral( conteqn, offsetType, start_range, end_range, start_range );
   
   const double totalpeakarea = (areaarea > initial_cont_area)
@@ -1086,7 +1110,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
       inputPrams.Add( "P3",  0.0, 0.25 );
   }//if( intputSharesContinuum ) / else
   
-  const bool isHpge = (dataH->num_gamma_channels() > 4094);
+  const bool isHpge = (dataH->num_gamma_channels() > HIGH_RES_NUM_CHANNELS);
   
   for( size_t i = 0; i < inpeaks.size(); ++i )
   {
@@ -1228,7 +1252,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, x0, x1 );
   
   
-  const bool isHpge = (dataH->num_gamma_channels() > 4094);
+  const bool isHpge = (dataH->num_gamma_channels() > HIGH_RES_NUM_CHANNELS);
   
   float minw_lower, maxw_lower, minw_upper, maxw_upper;
   expected_peak_width_limits( x0, isHpge, minw_lower, maxw_lower );
@@ -1779,7 +1803,7 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     if( detector && detector->hasResolutionInfo() )
       minsigma = 0.75*detector->peakResolutionSigma( origCont->lowerEnergy() );
     
-    int nFitWidth = 0;
+    int nFitWidth = 0, nFitEnergy = 0;
     
     ROOT::Minuit2::MnUserParameters params;
     for( size_t i = 0; i < inpeaks.size(); ++i )
@@ -1803,8 +1827,10 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
         params.Add( name, mean, 0.1*sigma, lx, ux );
       
       nFitWidth += inpeaks[i]->fitFor(PeakDef::Sigma);
+      nFitEnergy += inpeaks[i]->fitFor(PeakDef::Mean);
     }//for( const PeakDefShrdPtr &peak : inpeaks )
     
+      
     const double sigma0 = inpeaks[0]->sigma();
     if( nFitWidth == 0  )
       params.Add( "Sigma0", sigma0 );
@@ -1816,27 +1842,32 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
     else if( inpeaks.size() > 1 )
       params.Add( "SigmaFcn", 0.0 );
     
-    ROOT::Minuit2::MnUserParameterState inputParamState( params );
-    ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+    if( (nFitWidth == 0) && (nFitEnergy == 0) )
+    {
+      // Nothing to do here; LinearProblemSubSolveChi2Fcn::parametersToPeaks(...) will do all work
+    }else
+    {
+      ROOT::Minuit2::MnUserParameterState inputParamState( params );
+      ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+      
+      ROOT::Minuit2::CombinedMinimizer fitter;
+      unsigned int maxFcnCall = 0;
+      const double tolerance = 0.01;
+      
+      auto minimum = fitter.Minimize( chi2Fcn, params, strategy, maxFcnCall, tolerance );
+      
+      params = minimum.UserState().Parameters();
+    }//if( no non-linear fit parameters ) / else
     
-    ROOT::Minuit2::CombinedMinimizer fitter;
-    unsigned int maxFcnCall = 0;
-    const double tolerance = 0.01;
-    
-    ROOT::Minuit2::FunctionMinimum minimum
-    = fitter.Minimize( chi2Fcn, params, strategy, maxFcnCall, tolerance );
-    
-    params = minimum.UserState().Parameters();
     const vector<double> pars = params.Params();
     const vector<double> errors = params.Errors();
-    
+      
     vector<PeakDef> fitpeaks;
     double chi2 = chi2Fcn.parametersToPeaks( fitpeaks, &pars[0], &errors[0] );
     double chi2Dof = chi2 / chi2Fcn.dof();
     
     if( fitpeaks.size() != inpeaks.size() )
-      throw std::logic_error( "refitPeaksThatShareROI:"
-                             " invalid number of result peaks" );
+      throw std::logic_error( "refitPeaksThatShareROI: invalid number of result peaks" );
     
     static int ntimesmessages = 0;
     if( ntimesmessages++ < 3 )
@@ -2031,7 +2062,7 @@ void find_roi_for_2nd_deriv_candidate(
     throw runtime_error( "find_roi_for_2nd_deriv_candidate: invalid input" );
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = (nchannel > 3000);
+  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
   
   const size_t meanchannel = data->find_gamma_channel( peakmean );
   
@@ -2406,7 +2437,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
   roiLower = roiUpper = -1.0;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > 3000);
+  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);
   
   double minEnergy = mean0 - 2.0*sigma0 - 20.0/pixelPerKev;
   double maxEnergy = mean0 + 2.0*sigma0 + 20.0/pixelPerKev;
@@ -2653,11 +2684,15 @@ void get_candidate_peak_estimates_for_user_click(
   const double upper_energy_mult = 0.2;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > 3000);
+  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);
   
   const size_t midbin = dataH->find_gamma_channel( x );
-  const size_t lowchannel = midbin - lower_energy_mult*nchannels;
-  const size_t highchannel = midbin + upper_energy_mult*nchannels;
+  
+  const double lower_chan_sub = lower_energy_mult*nchannels;
+  const size_t lowchannel = static_cast<size_t>( (lower_chan_sub < midbin) ? (midbin - lower_chan_sub) : 0.0 );
+  
+  const double upper_chan_sub = upper_energy_mult*nchannels;
+  const size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
   
   const vector<PeakPtr> candidates
        = secondDerivativePeakCanidatesWithROI( dataH, lowchannel, highchannel );
@@ -2769,7 +2804,7 @@ void fit_peak_for_user_click( PeakShrdVec &results,
   const size_t nchannels = dataH->num_gamma_channels();
   const size_t midbin = dataH->find_gamma_channel( mean0 );
   const float binwidth = dataH->gamma_channel_width( midbin );
-  const bool highres = (nchannels > 3000);
+  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);
   const size_t nFitPeaks = coFitPeaks.size() + 1;
   
   //The below should probably go off the number of bins in the ROI
@@ -4154,7 +4189,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   const double core_end = std::min( mean + fwhm, peak->upperX() );
   
 
-  const bool debug_this_peak = fabs(mean - 32.9752) < 2.5;
+  const bool debug_this_peak = false; //fabs(mean - 32.9752) < 2.5;
   
   if( debug_this_peak )
     cout << "debug_this_peak" << endl;
@@ -4522,7 +4557,6 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   bool lowstatregion = false;
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > 3000);
   
   double sigma0, mean0, area0;
   get_candidate_peak_estimates_for_user_click( sigma0, mean0, area0, x,
@@ -4572,6 +4606,13 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   if( initialfitpeaks.empty() )
     return pair<PeakShrdVec,PeakShrdVec>();
+  
+  // Using the number of channels to determine if high-resolution isnt a great method, as its not
+  //  uncommon for LaBr systems to have 4096 channels.  We should probably define some resolution
+  //  function that is the worst possible possible for high-resolution detectors, and threshold off
+  //  of this
+  const bool highres = (nchannels > 5000);  //any system above 4096 channels has to be HPGe, right?
+  
   
   if( initialfitpeaks.size() > 1 )
   {
@@ -4683,7 +4724,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
     return;
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = (nchannel > 3000);
+  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -5019,7 +5060,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
     return candidates;
   
   const size_t nchannel = dataH->num_gamma_channels();
-  const bool highres = (nchannel > 3000);
+  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -5435,7 +5476,7 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
   try
   {
     fitpeaks.clear();
-    
+      
     //We have to seperate out non-fgaussian peaks since they cant enter the
     //  fitting methods
     vector<PeakDef> fixedpeaks, near_peaks, datadefined_peaks;
@@ -5470,6 +5511,9 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     if( near_peaks.empty() )
       return;
     
+    unique_copy_continuum( near_peaks );
+    unique_copy_continuum( fixedpeaks );  //prob not necassary, but JIC
+      
     //Need to make sure near_peaks and fixedpeaks are all gaussian (if not
     //  seperate them out, and add them in later).  If fitpeaks is non-gaussian
     //  ignore it or throw an exception.
@@ -5903,7 +5947,39 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     double dataval = data[row];
     const double x0 = x[row];
     const double x1 = x[row+1];
-    const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+    
+    //const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+    double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+  
+/*
+    // If data is zero, or negative, lets look for the nearest non-zero bin, within 5 bins of here
+    //  This situation might happen more often after a hard background subtraction.
+    //
+    //  TODO: this doesnt fix the one-example I was looking at - perhaps need to try ignoring a
+    //        region. Maybe try looking for regions that are anomalously low (e.g., essentially
+    //        zero), and just ignore them if they are extremely below surrounding region.
+    //
+    const double non_poisson_threshold = 0.5; //FLT_EPSILON
+    const double significant_stats_threshold = 5.0;
+  
+    if( dataval < non_poisson_threshold )
+    {
+      double nearest_data = dataval;
+      
+      for( size_t i = 1; (i <= 5) && (nearest_data < significant_stats_threshold); ++i )
+      {
+        if( ((row + i) < nbin) && (data[row+i] > significant_stats_threshold) )
+          nearest_data = data[row+i];
+        
+        if( i <= row && (data[row-i] > significant_stats_threshold) )
+          nearest_data = data[row-i];
+      }//for( size_t i = 1; (i <= 5) && (nearest_data < non_poisson_threshold); ++i )
+      
+      if( nearest_data > non_poisson_threshold )
+        uncert = sqrt(nearest_data);
+    }//if( dataval < FLT_EPSILON )
+*/
+    
     
 #if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
     //I havent actually reasoned through the algorithm to see if this is the
@@ -6270,7 +6346,7 @@ bool chi2_significance_test( PeakDef peak,
             
             m_fixed_peaks = fixed_peaks;
             
-            const bool highres = (m_x->size() > 3000);
+            const bool highres = (m_x->size() > HIGH_RES_NUM_CHANNELS);
             
             m_side_bins           = highres ? 7    : 10;
             m_smooth_order        = highres ? 3    : 2;
@@ -6309,7 +6385,7 @@ bool chi2_significance_test( PeakDef peak,
             vector<PeakDef> candidates;
             
             const int nchannel = static_cast<int>( channel_counts.size() );
-            const bool highres = (nchannel > 3000);
+            const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
             
             vector<float> second_deriv;
             second_derivative( channel_counts, second_deriv );
@@ -6555,7 +6631,7 @@ bool chi2_significance_test( PeakDef peak,
 #endif
             
             
-            const bool highres = (m_x->size() > 3000);
+            const bool highres = (m_x->size() > HIGH_RES_NUM_CHANNELS);
             
             const size_t npeaks = m_fixed_peaks.size() + m_candidates.size();
             
@@ -6822,7 +6898,7 @@ bool chi2_significance_test( PeakDef peak,
             meanwidth /= npeaks;
             const double span = m_x->back() - m_x->front();
             const double meanbinwidth = span / m_x->size();
-            const bool highres = (m_x->size() > 3000);
+            const bool highres = (m_x->size() > HIGH_RES_NUM_CHANNELS);
             
             switch( m_resolution_type )
             {
@@ -7369,7 +7445,7 @@ bool chi2_significance_test( PeakDef peak,
             if( !meas || !meas->gamma_counts() )
               return origpeaks;
             
-            const bool highres = (meas->gamma_counts()->size() > 2050);
+            const bool highres = (meas->gamma_counts()->size() > HIGH_RES_NUM_CHANNELS);
             
             
             const double min_chi2_dof_thresh         = highres ? 0.2   : 3.5;

@@ -78,6 +78,9 @@
 using namespace Wt;
 using namespace std;
 
+
+
+
 namespace Wt
 {
   namespace Dbo
@@ -319,9 +322,16 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
 {
   using namespace Wt;
   
+  if( !viewer )
+  {
+    UserOption *option = getDefaultUserPreference( name, DeviceType::Desktop );
+    boost::any value = option->value();
+    delete option;
+    return value;
+  }
+
   //This next line is the only reason InterSpec.h needs to be included
   //  above
-  
   Dbo::ptr<InterSpecUser> &user = userFromViewer(viewer);
   std::shared_ptr<DataBaseUtils::DbSession> sql = sqlFromViewer(viewer);
   
@@ -349,8 +359,9 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
   if( pos != prefs.end() )
     return pos->second;
   
-  UserOption *option = getDefaultUserPreference( name, user->m_deviceType );
-  option->m_user = user;
+  UserOption *option_raw = getDefaultUserPreference( name, user->m_deviceType );
+  Wt::Dbo::ptr<UserOption> option( option_raw );
+  option.modify()->m_user = user;
   
   DataBaseUtils::DbTransaction transaction( *sql );
   boost::any value;
@@ -361,6 +372,7 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
     user->m_preferences[name] = value;
   }catch( std::exception &e )
   {
+    //
     transaction.rollback();
     throw e;
   }//try / catch
@@ -472,6 +484,24 @@ void InterSpecUser::associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
   }
 }//associateFunction
 
+ 
+void InterSpecUser::addCallbackWhenChanged( const std::string &name,
+                                            boost::function<void(boost::any)> fcn,
+                                            std::shared_ptr<Wt::Signals::connection> conn )
+{
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  
+  Wt::Dbo::ptr<InterSpecUser> &user = viewer->m_user;
+  assert( user );
+  
+  boost::any value = preferenceValueAny( name, viewer ); //call to make sure a valid preference
+  if( value.empty() )  //just to make sure the call isnt optimized away
+    std::cout << "Unexpected failure of preference '" << name << "' to not have a value" << std::endl;
+  
+  user->m_onChangeCallbacks[name].emplace_back( std::move(fcn), std::move(conn) );
+}//addCallbackWhenChanged(...)
+
 
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                      const std::string &name,
@@ -495,8 +525,8 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   else
     cb->setChecked( !value );
   
-  boost::function<void()> setchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb, true ) );
-  boost::function<void()> setunchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb, false ) );
+  boost::function<void()> setchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb ) );
+  boost::function<void()> setunchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setUnChecked, cb ) );
   
   std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
     const bool value = boost::any_cast<bool>(valueAny);
@@ -1057,7 +1087,7 @@ std::shared_ptr<SpecMeas> UserFileInDbData::decodeSpectrum() const
           
 #if( PERFORM_DEVELOPER_CHECKS )
           if( end == start )
-            log_developer_error( BOOST_CURRENT_FUNCTION, "data from database wasnt null terminated" );
+            log_developer_error( __func__, "data from database wasnt null terminated" );
 #endif
           
           if( end == start )
@@ -1353,6 +1383,10 @@ UserOption *InterSpecUser::getDefaultUserPreference( const std::string &name,
   if( defnode )
     return parseUserOption( defnode );
   
+  //Note: the string "couldn't find preference by name" is currently used in
+  //      restoreUserPrefsFromXml(...) to check if a preference with this name is no longer used.
+  //      So dont change next string without also changing there - or really, a more robust
+  //      indication should be used.
   throw runtime_error( "InterSpecUser::getDefaultUserPreference(...):"
                        " couldn't find preference by name " + name );
 }//UserOption *getDefaultUserPreference( const std::string &name )
@@ -1410,14 +1444,15 @@ void InterSpecUser::restoreUserPrefsFromXml(
       || !compare( prefs_node->name(), prefs_node->name_size(), "preferences", 11, true) )
     throw runtime_error( "restoreUserPrefsFromXml: invalid input" );
   
-  try
+ 
+  for( const xml_node<char> *pref = prefs_node->first_node( "pref", 4 ); pref;
+       pref = pref->next_sibling( "pref", 4 ) )
   {
-    for( const xml_node<char> *pref = prefs_node->first_node( "pref", 4 );
-         pref;
-         pref = pref->next_sibling( "pref", 4 ) )
+    std::unique_ptr<UserOption> option;
+    try
     {
-      std::unique_ptr<UserOption> option( parseUserOption(pref) );
-
+      option.reset( parseUserOption(pref) );
+      
       switch( option->m_type )
       {
         case UserOption::String:
@@ -1443,7 +1478,7 @@ void InterSpecUser::restoreUserPrefsFromXml(
           const int value = boost::any_cast<int>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
           InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                              boost::any(value), viewer, wApp );
+                                             boost::any(value), viewer, wApp );
           break;
         }//case Integer
           
@@ -1452,18 +1487,24 @@ void InterSpecUser::restoreUserPrefsFromXml(
           const bool value = boost::any_cast<bool>( option->value() );
           setPreferenceValue( user, option->m_name, value, viewer );
           InterSpecUser::pushPreferenceValue( user, option->m_name,
-                                              boost::any(value), viewer, wApp );
+                                             boost::any(value), viewer, wApp );
           break;
         }//case Boolean
       }//switch( datatype )
-    }//for( loop over prefs )
-  }catch( std::exception &e )
-  {
-    stringstream msg;
-    msg << "Failed to deserialize user prefernces from XML: " << e.what();
-    throw runtime_error( msg.str() );
-  }//try / catch
-
+    }catch( std::exception &e )
+    {
+      const string errmsg = e.what();
+      if( SpecUtils::icontains( errmsg, "couldn't find preference by name" ) )
+      {
+        cerr << "Warning: couldnt find a preference named '"
+             << (option ? option->m_name : string("N/A")) << "' that is in the"
+             << " file being loaded, but apears to no longer be used." << endl;
+      }else
+      {
+        throw runtime_error( "Failed to deserialize user prefernces from XML: " + errmsg );
+      }
+    }//try / catch
+  }//for( loop over prefs )
 }//void restoreUserPrefsFromXml(...)
 
 
@@ -1578,3 +1619,8 @@ void InterSpecUser::setPreviousAccessTime( const boost::posix_time::ptime &utcTi
   m_previousAccessUTC = utcTime;
 }//void setPreviousAccessTime( const boost::posix_time::ptime &utcTime );
 
+
+void InterSpecUser::EmitBindSignal( const std::shared_ptr< Wt::Signals::signal<void(boost::any)> > &s, boost::any value )
+{
+  (*s)(value); //equivalent to emit
+}

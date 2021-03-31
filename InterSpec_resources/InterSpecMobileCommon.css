@@ -104,8 +104,11 @@
 .CenterBtnInMblAuxWindowHeader
 {
   /* Center button in footer/header */
-  display: block !important;
-  margin: 0 auto !important;
+  /* display: block !important; */
+  /* margin: 0 auto !important; */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .CenterBtnInMblAuxWindowHeader[disabled]
@@ -130,16 +133,12 @@
   height: 100%
 }
 
+
 .SideMenuPhone > li
 {
-  vertical-align:middle;
-  /*  font-size: small;*/
   font-weight: bold;
-  
-  color: #ffffff;
   padding-top: 10px;
   padding-left: 14px;
-  
   padding-bottom: 8px;
   margin-top: 2px;
   margin-bottom: 2px;
@@ -148,13 +147,22 @@
   border-radius: 5px;
 }
 
+.VerticalMenuPhone > li
+{
+  vertical-align:middle;
+  color: #ffffff;
+}
+
+
+
+
 
 .IsotopePeaksMobileWindowContents
 {
 }
 
 
-.SideMenuPhone > .itemselected
+.VerticalMenuPhone > .itemselected
 {
   background: #C6C6C6;
 }
@@ -164,6 +172,11 @@
 {
 }
 
+.VerticalMenuPhone
+{
+  list-style-type: none;
+  overflow: auto;
+}
 
 
 .SideMenuPhone
@@ -172,8 +185,6 @@
   padding-top:30px;
   padding-left: 1px;
   padding-right:1px;
-  list-style-type: none;
-  overflow: auto;
   font-size: 13px;
   width: 45px;
 }
@@ -212,14 +223,6 @@ table.RecalibCoefTable
   margin-right:auto;
   margin-top: 10px;
 }
-
-table.RecalibCoefTable td, table.RecalibCoefTable th
-{
-  border:1px solid black;
-  padding: 2px;
-}
-
-
 
 
 .PopupDivMenuPhone

@@ -1,6 +1,21 @@
 # Tutorials
 
-## An overview of using InterSpec for Analysis
+## Introduction To Spectroscopy with InterSpec
+See:
+* [20210315_spectroscopy_intro_InterSpec.pptx](spec_intro_March2021/20210315_spectroscopy_intro_InterSpec.pptx).
+* [spectrum_files.zip](spec_intro_March2021/spectrum_files.zip).
+
+
+## Overview Course Sep 2020
+See:
+* [20200915_InterSpec_intro_part1.pdf](intro_course_Sep2020/20200915_InterSpec_intro_part1.pdf).
+* [20200915_InterSpec_intro_part2.pdf](intro_course_Sep2020/20200915_InterSpec_intro_part2.pdf).
+
+Data files:
+* All files [spectrum_files.zip](intro_course_Sep2020/spectrum_files.zip)
+
+
+## An overview of using InterSpec for Analysis (Oct 2018)
 See [brief_ana_overview_InterSpec_Oct2018.pdf](brief_analysis_intro/brief_ana_overview_InterSpec_Oct2018.pdf).
 
 Data files:

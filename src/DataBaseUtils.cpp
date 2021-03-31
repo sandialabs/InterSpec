@@ -174,10 +174,16 @@ DbTransaction::DbTransaction( DbSession &session )
   m_transaction = new Dbo::Transaction( *(session.m_session) );
 }
   
-DbTransaction::~DbTransaction()
+DbTransaction::~DbTransaction() noexcept(false)
 {
-  delete m_transaction;
-  m_transaction = 0;
+  try
+  {
+    delete m_transaction;
+    m_transaction = 0;
+  }catch(...)
+  {
+    cerr << "Exception deleting Wt::Dbo::Transaction" << endl;
+  }
 }
 
 bool DbTransaction::commit()

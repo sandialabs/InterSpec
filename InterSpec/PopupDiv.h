@@ -37,7 +37,7 @@ namespace Wt
 }
 
 
-//Limitations of enabling USE_OSX_NATIVE_MENU or USE_ELECTRON_NATIVE_MENU:
+//Limitations of enabling USE_OSX_NATIVE_MENU or USING_ELECTRON_NATIVE_MENU:
 //  -disabling the closing of the menu when an item is selected isn't supported.
 //  -CheckBox items must be created through passing a WCheckBox to
 //   PopupDivMenu::addWidget(...).
@@ -46,7 +46,7 @@ namespace Wt
 //  -USE_OSX_NATIVE_MENU implementation casts the objective-c pointers to void*
 //   pointers, I tried doing some forward declartions using things similar to
 //   'typedef struct objc_object NSMenu', but then ran into linking errors.
-//  -USE_ELECTRON_NATIVE_MENU implementation currently expects top level menus
+//  -USING_ELECTRON_NATIVE_MENU implementation currently expects top level menus
 //   to already exist (probably easy to fix).
 
 class PopupDivMenu : public Wt::WPopupMenu
@@ -95,7 +95,7 @@ public:
    */
   bool removeSeperator( Wt::WMenuItem *sepertor );
   
-#if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
+#if( USING_ELECTRON_NATIVE_MENU )
   enum class MenuRole{
     Quit, ResetZoom, ZoomIn, ZoomOut, ToggleFullscreen,
     Cut, Copy, Past, ToggleDevTools,
@@ -218,7 +218,7 @@ protected:
   friend class PopupDivMenuItem;
 #endif
   
-#if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
+#if( USING_ELECTRON_NATIVE_MENU )
   bool m_hasElectronCounterpart;
 #endif
 
@@ -277,7 +277,7 @@ protected:
   friend class PopupDivMenu;
 #endif
   
-#if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
+#if( USING_ELECTRON_NATIVE_MENU )
   friend class PopupDivMenu;
   bool m_hasElectronItem;
 

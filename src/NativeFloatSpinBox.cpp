@@ -45,6 +45,7 @@ NativeFloatSpinBox::NativeFloatSpinBox( Wt::WContainerWidget *parent )
 {
   setAutoComplete( false );
   setAttributeValue( "type", "number" );
+  setAttributeValue( "step", "any" ); //For FF
   setValue( 0.0f );
           
   // @TODO: Since #handleChanged is connected first, it will be called last after the subsequent connections.
@@ -123,6 +124,20 @@ void NativeFloatSpinBox::setPlaceholderText(const WString& placeholder)
   Wt::WLineEdit::setPlaceholderText( placeholder );
 }
           
+
+void NativeFloatSpinBox::setSpinnerHidden( const bool hidden )
+{
+  const char * const styleClass = "HideSpinners";
+  const bool hasClass = hasStyleClass( styleClass );
+  
+  if( hidden && !hasClass )
+    addStyleClass( styleClass );
+  
+  if( !hidden && hasClass )
+    removeStyleClass( styleClass );
+}
+
+
 Signal<float> &NativeFloatSpinBox::valueChanged()
 {
   return m_valueChanged;

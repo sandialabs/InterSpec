@@ -28,6 +28,9 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+// Need to make sure we have M_PI, etc
+#define _USE_MATH_DEFINES
+
 #include "InterSpec_config.h"
 
 #include <vector>
@@ -37,6 +40,8 @@
 #include <fstream>
 #include <iostream>
 #include <functional>
+
+#include <boost/math/distributions/chi_squared.hpp>
 
 #include "Wt/WModelIndex"
 
@@ -48,7 +53,34 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/TerminalModel.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
+
+
+
+// The regex in GCC 4.8.x does not have working regex...., so we will detect this via
+//    https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions#answer-41186162
+#if defined(_MSC_VER) \
+  || (__cplusplus >= 201103L &&                             \
+        (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
+          (defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) || \
+          defined(_GLIBCXX_REGEX_STATE_LIMIT)           || \
+            (defined(_GLIBCXX_RELEASE)                && \
+            _GLIBCXX_RELEASE > 4))))
+#define HAVE_WORKING_REGEX 1
+#else
+#define HAVE_WORKING_REGEX 0
+#endif
+
+#if( HAVE_WORKING_REGEX )
+#include <regex>
+namespace RegexNs = std;
+#else
+#include <boost/regex.hpp>
+#warning "TerminalModel using boost regex - support for this compiler will be dropped soon"
+namespace RegexNs = boost;
+#endif
+
 
 /*
  Helper Namespace:
@@ -58,10 +90,11 @@
  */
 namespace {
     /* Regex Expressions */
-    const std::regex variableAssignmentRegex ("^(?:\\s)*([A-Za-z]\\w*)(?:\\s)*?=(?:\\s)*([^=]+)$"),
-    validVariableRegex      ("^([a-zA-Z]\\w*|_[a-zA-Z]\\w*)+$"),
-    keywordRegex            ("^(cos|sin|tan|acos|asin|atan|sinh|cosh|tanh|asinh|acosh|atanh|log2|log10|log|ln|exp|sqrt|sign|rint|abs|min|max|sum|avg|default|empty)$");
-    
+    //The variableAssignmentRegex and validVariableRegex are invalid for gcc 4.8.4
+    const char * const ns_variableAssignmentRegexArg = "^(?:\\s)*([A-Za-z]\\w*)(?:\\s)*?=(?:\\s)*([^=]+)$";
+    const char * const ns_validVariableRegexArg = "^([a-zA-Z]\\w*|_[a-zA-Z]\\w*)+$";
+    const char * const ns_keywordRegexArg = "^(cos|sin|tan|acos|asin|atan|sinh|cosh|tanh|asinh|acosh|atanh|log2|log10|log|ln|exp|sqrt|sign|rint|abs|min|max|sum|avg|default|empty)$";
+
     /* Internal Parser helper methods */
     std::string convertDoubleTypeToString(const double value)
     {
@@ -87,8 +120,7 @@ namespace {
         try {
             boost::math::chi_squared distribution( df );
             return 1 - boost::math::cdf( distribution, chiSquareScore );
-            
-        } catch ( const std::exception& e ) {
+        } catch ( const std::exception & ) {
             throw mup::ParserError( "Domain error calculating the p-value." );
         }
     }
@@ -274,7 +306,12 @@ namespace {
     class PeakFunction : public mup::ICallback
     {
     public:
-        PeakFunction(TerminalModel *model, const char* funName) :ICallback(mup::cmFUNC, funName, std::string(funName) == "peakGauss" ? 3 : 1), tm(model), functionName(funName) {};
+        PeakFunction(TerminalModel *model, const char* funName)
+          : ICallback(mup::cmFUNC, funName, std::string(funName) == "peakGauss" ? 3 : 1),
+            tm(model),
+            functionName(funName),
+            functionName_energy_arg( std::string(funName) + "( energy )")
+      {};
         
         virtual void Eval( mup::ptr_val_type& ret, const mup::ptr_val_type* argv, int a_iArgc ) {
             if ( functionName == "peakGauss" ) {
@@ -293,8 +330,10 @@ namespace {
             else if ( functionName == "peakChi2Dof" ) *ret = tm->peakChi2dof( arg );
         }
         const mup::char_type* GetDesc() const {
-            if ( functionName == "peakGauss" ) return std::string("peakGauss( energy, x0, x1 )").c_str();
-            else                                 return std::string(functionName + std::string("( energy )")).c_str();
+            if( functionName == "peakGauss" )
+              return "peakGauss( energy, x0, x1 )";
+            else
+              return functionName_energy_arg.c_str();
         }
         std::string tags() const {
             if      ( functionName == "peakArea" )    return "areas peaks peak area";
@@ -317,7 +356,11 @@ namespace {
             else                                      return "";
         }   
         mup::IToken* Clone() const { return new PeakFunction(*this); }
-    private: TerminalModel *tm; std::string functionName;
+    
+    private:
+      TerminalModel *tm;
+      std::string functionName;
+      std::string functionName_energy_arg;
     };
     
     
@@ -334,16 +377,32 @@ namespace {
     class GammaAtFunction : public mup::ICallback
     {
     public:
-        GammaAtFunction(TerminalModel *model, const char* funName)
-        :ICallback(mup::cmFUNC, funName,
-                   std::string(funName) == "gammaSum" || std::string(funName) == "gammaIntegral" ? 2 : std::string(funName) == "numGammas" || std::string(funName) == "gammaMin" || std::string(funName) == "gammaMax" ? 0 : 1),
-        tm(model), functionName(funName) {};
-        
+        GammaAtFunction(TerminalModel *model, const std::string &funName)
+        :ICallback( mup::cmFUNC, funName.c_str(),
+                    (funName == "gammaSum" || funName == "gammaIntegral" || funName == "drfEfficiency") ? 2
+                      : (funName == "numGammas" || funName == "gammaMin" || funName == "gammaMax") ? 0 : 1),
+        tm(model),
+        functionName(funName),
+        functionName_no_arg( std::string(funName) + "()" ),
+        functionName_energy_arg( std::string(funName) + "( energy )" )
+      {};
+      
         virtual void Eval( mup::ptr_val_type& ret, const mup::ptr_val_type* argv, int a_iArgc ) {
-            const bool functionHasTwoArgs = functionName == "gammaSum" || functionName == "gammaIntegral";
+            const bool functionHasTwoArgs = functionName == "gammaSum" || functionName == "gammaIntegral" || functionName == "drfEfficiency";
             const bool functionHasNoArgs = functionName == "numGammas" || functionName == "gammaMin" || functionName == "gammaMax";
             
-            if ( functionHasTwoArgs ) {
+          if( functionName == "drfEfficiency" )
+          {
+            if ( !argv[0]->IsNonComplexScalar() )
+              throw mup::ParserError( "First argument for function '" + functionName + "' must be of type 'scalar value'." );
+            
+            if ( !argv[1]->IsString() )
+              throw mup::ParserError( "Second argument for function '" + functionName + "' must be a string giving distance (ex \"1m\")." );
+            
+            *ret = tm->drfEfficiency( argv[0]->GetFloat(), argv[1]->GetString() );
+            return;
+          } else if( functionHasTwoArgs )
+          {
                 if ( !argv[0]->IsNonComplexScalar() || !argv[1]->IsNonComplexScalar() )
                     throw mup::ParserError( "Arguments for function '" + functionName + "' must be all of type 'scalar value'." );
                 *ret = (functionName == "gammaSum") ?  tm->gammaSumAt( argv[0]->GetFloat(), argv[1]->GetFloat() ) : tm->gammaIntegralAt( argv[0]->GetFloat(), argv[1]->GetFloat() );
@@ -355,54 +414,106 @@ namespace {
                 else if ( functionName == "gammaMax" )   *ret = tm->gammaMax( );
                 return;
             }
-            if ( !argv[0]->IsNonComplexScalar() )
-                throw mup::ParserError( "Argument for function '" + functionName + "' must be of type 'scalar value'." );
-            const double arg = argv[0]->GetFloat();
-            if      ( functionName == "gammaChannel" )   *ret = tm->gammaChannelAt( arg );
+          
+          if ( functionName == "drfGeometricEff" )
+          {
+            if ( !argv[0]->IsString() )
+              throw mup::ParserError( "Argument for function '" + functionName + "' must be of a string giving distance (ex \"1.2m\")." );
+            *ret = tm->drfGeometricEff( argv[0]->GetString() );
+          }
+          
+          if( !argv[0]->IsNonComplexScalar() )
+            throw mup::ParserError( "Argument for function '" + functionName + "' must be of type 'scalar value'." );
+          
+          const double arg = argv[0]->GetFloat();
+          if      ( functionName == "gammaChannel" )   *ret = tm->gammaChannelAt( arg );
             else if ( functionName == "gammaContent" )   *ret = tm->gammaChannelCountAt( arg );
             else if ( functionName == "gammaLower" )     *ret = tm->gammaChannelLowerEnergyAt( arg );
             else if ( functionName == "gammaCenter" )    *ret = tm->gammaChannelCentralEnergyAt( arg );
             else if ( functionName == "gammaUpper" )     *ret = tm->gammaChannelHigherEnergyAt( arg );
             else if ( functionName == "gammaWidth" )     *ret = tm->gammaChannelWidthAt( arg );
+            else if ( functionName == "gammaEnergyForChannel" )     *ret = tm->gammaEnergyForChannelAt( arg );
+            else if ( functionName == "drfFWHM" )     *ret = tm->drfFWHM( arg );
+            else if ( functionName == "drfIntrinsicEff" )     *ret = tm->drfIntrinsicEff( arg );
+          
+          
+          
+          
         }
         const mup::char_type* GetDesc() const {
             const bool functionHasNoArgs = functionName == "numGammas" || functionName == "gammaMin" || functionName == "gammaMax";
             
-            if ( functionName == "gammaSum" )              return "gammaSum( start_bin, end_bin )";
+            if ( functionName == "gammaSum" )              return "gammaSum( start_bin(int), end_bin(int) )";
             else if ( functionName == "gammaIntegral" )    return "gammaIntegral( energy_low, energy_high )";
-            else if ( functionHasNoArgs )                   return std::string( functionName + "()" ).c_str();
-            else                                            return std::string( functionName + "( energy )" ).c_str();
+            else if ( functionName == "drfGeometricEff" )  return "drfGeometricEff( distance )";
+            else if ( functionName == "drfEfficiency" )    return "drfEfficiency( energy, distance )";
+            else if ( functionHasNoArgs )                   return functionName_no_arg.c_str();
+            else                                            return functionName_energy_arg.c_str();
         }
         std::string tags() const {
-            if      ( functionName == "gammaChannel" )   return "gammas channels gamma_channels";
-            else if ( functionName == "gammaContent" )   return "gammas contents gamma_contents channel channels";
-            else if ( functionName == "gammaLower" )     return "gammas lower_energy gamma_energy energies energy lower";
-            else if ( functionName == "gammaCenter" )    return "gammas center_energy gamma channels central energy energies";
-            else if ( functionName == "gammaUpper" )     return "gammas upper_energy gamma_channels channels upper higher bound energy energies";
-            else if ( functionName == "gammaWidth" )     return "gammas widths gamma_channels channels width";
-            else if ( functionName == "numGammas" )      return "number of gammas num_gammas gamma channels numbers";
-            else if ( functionName == "gammaMin" )       return "gammas gamma channels minimum min energy energies";
-            else if ( functionName == "gammaMax" )       return "gammas gamma channels maximum max energy energies";
-            else if ( functionName == "gammaSum" )       return "gammas gamma channels sum add added total two arguments";
-            else if ( functionName == "gammaIntegral" )  return "gammas gamma channels integral integrate total lower bound upper higher x sum";
-            else                                          return "";
+            if      ( functionName == "gammaChannel" )    return "gammas channels gamma_channels";
+            else if ( functionName == "gammaContent" )    return "gammas contents gamma_contents channel channels";
+            else if ( functionName == "gammaLower" )      return "gammas lower_energy gamma_energy energies energy lower";
+            else if ( functionName == "gammaCenter" )     return "gammas center_energy gamma channels central energy energies";
+            else if ( functionName == "gammaUpper" )      return "gammas upper_energy gamma_channels channels upper higher bound energy energies";
+            else if ( functionName == "gammaWidth" )      return "gammas widths gamma_channels channels width";
+            else if ( functionName == "gammaEnergyForChannel" ) return "gammas gamma energy channels";
+            else if ( functionName == "numGammas" )       return "number of gammas num_gammas gamma channels numbers";
+            else if ( functionName == "gammaMin" )        return "gammas gamma channels minimum min energy energies";
+            else if ( functionName == "gammaMax" )        return "gammas gamma channels maximum max energy energies";
+            else if ( functionName == "gammaSum" )        return "gammas gamma channels sum add added total two arguments";
+            else if ( functionName == "gammaIntegral" )   return "gammas gamma channels integral integrate total lower bound upper higher x sum";
+            else if ( functionName == "drfFWHM" )         return "drf detector response FWHM";
+            else if ( functionName == "drfIntrinsicEff" ) return "drf detector response intrinsic efficiency";
+            else if ( functionName == "drfGeometricEff" ) return "drf detector response geometric efficiency";
+            else if ( functionName == "drfEfficiency" )   return "drf detector response efficiency";
+            else                                          return "drf detector ";
         }
-        std::string toolTip() const {
-            if      ( functionName == "gammaChannel" )   return "Returns <b>gamma channel</b> containing energy. If <i>energy</i> is below zero, then 0 is returned. If the <i>energy</i> is above the last channel, the last channel is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaContent" )   return "Returns <b>gamma channel contents</b> for a specified spectrum in a specified channel. Returns 0 if channel <i>energies</i> is not defined or <i>channel</i> is invalid (too large). Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaLower" )     return "Returns <b>lower energy</b> of specified <i>gamma channel</i> for a specified spectrum. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaCenter" )    return "Returns <b>central energy</b> of specified <i>gamma channel</i> for a specified spectrum. For last channel, returns width of second-to-last channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaUpper" )     return "Returns <b>energy</b> for a spectra just past energy range the specified <i>channel</i> contains. Returns error if channel is invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaWidth" )     return "Returns <b>energy width</b> of a channel. If at last channel, then <b>width of second-to-last channel</b> is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "numGammas" )      return "Returns <b>minimum number of channels</b> of channel energies or gamma counts for spectrum. Returns 0 if neither is defined. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaMin" )       return "Returns <b>minimum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaMax" )       return "Returns <b>maximum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaSum" )       return "Get the <b>sum of gamma channel contents</b> for all channels in between (inclusive) <i>start_bin</i> and <i>end_bin</i> for a spectrum. Returns 0 if start_bin too large or gamma counts invalid. If end_bin too large, then it will be clamped to number of channels. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else if ( functionName == "gammaIntegral" )  return "Get <b>integral of gamma counts</b> between <i>energy_low</i> and <i>energy_high</i> for a spectrum. Returns <b>0</b> if channel energies or gamma counts invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
-            else                                         return "";
-        }
+      
+      std::string toolTip() const
+      {
+        if( functionName == "gammaChannel" )
+          return "Returns <b>gamma channel</b> containing energy. If <i>energy</i> is below zero, then 0 is returned. If the <i>energy</i> is above the last channel, the last channel is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaContent" )
+          return "Returns <b>gamma channel contents</b> for a specified spectrum in a specified channel. Returns 0 if channel <i>energies</i> is not defined or <i>channel</i> is invalid (too large). Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaLower" )
+          return "Returns <b>lower energy</b> of specified <i>gamma channel</i> for a specified spectrum. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaCenter" )
+          return "Returns <b>central energy</b> of specified <i>gamma channel</i> for a specified spectrum. For last channel, returns width of second-to-last channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaUpper" )
+          return "Returns <b>energy</b> for a spectra just past energy range the specified <i>channel</i> contains. Returns error if channel is invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaWidth" )
+          return "Returns <b>energy width</b> of a channel. If at last channel, then <b>width of second-to-last channel</b> is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if( functionName == "gammaEnergyForChannel" )
+          return "Returns the energy corresponding to the provided fractional channel; e.x., if you pass in integer, will return lower energy of the channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "numGammas" )
+          return "Returns <b>minimum number of channels</b> of channel energies or gamma counts for spectrum. Returns 0 if neither is defined. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaMin" )
+          return "Returns <b>minimum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaMax" )
+          return "Returns <b>maximum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaSum" )
+          return "Get the <b>sum of gamma channel contents</b> for all channels in between (inclusive) <i>start_bin</i> and <i>end_bin</i> for a spectrum. Returns 0 if start_bin too large or gamma counts invalid. If end_bin too large, then it will be clamped to number of channels. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if ( functionName == "gammaIntegral" )
+          return "Get <b>integral of gamma counts</b> between <i>energy_low</i> and <i>energy_high</i> for a spectrum. Returns <b>0</b> if channel energies or gamma counts invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+        else if( functionName == "drfFWHM" )
+          return "Returns the full-width-at-half-maximum according to the current detector response function, for the specified energy.";
+        else if( functionName == "drfIntrinsicEff" )
+          return "Returns the intrinsic efficiency (i.e., probability of gamma striking face of detector contributing towards a peak) for the specified energy.";
+        else if( functionName == "drfGeometricEff" )
+          return "Returns the fraction of gammas emitted from a point source at the specified distance, that will impinge upon the detector face.";
+        else if( functionName == "drfEfficiency" )
+          return "Returns the fraction of gammas, at the specified energy and distance, that will contribute to a photo-peak.";
+        
+        return "";
+      }
+      
         mup::IToken* Clone() const { return new GammaAtFunction(*this); }
-    private: TerminalModel *tm; std::string functionName;
+    private:
+      TerminalModel *tm;
+      std::string functionName;
+      std::string functionName_no_arg;
+      std::string functionName_energy_arg;
     };
     
     class GammaForFunction : public mup::ICallback
@@ -411,7 +522,11 @@ namespace {
         GammaForFunction(TerminalModel *model, const char* funName)
         :ICallback(mup::cmFUNC, funName,
                    std::string(funName) == "gammaSumFor" || std::string(funName) == "gammaIntegralFor" ? 3 : std::string(funName) == "numGammasFor" || std::string(funName) == "gammaMinFor" || std::string(funName) == "gammaMaxFor" ? 1 : 2),
-        tm(model), functionName(funName) {};
+        tm(model),
+      functionName_spectrum_arg( std::string(funName) + "( spectrum )" ),
+      functionName_spec_energy_arg( std::string(funName) + "( spectrum, energy )" ),
+      functionName(funName)
+      {};
         
         virtual void Eval( mup::ptr_val_type& ret, const mup::ptr_val_type* argv, int a_iArgc ) {
             const bool functionHasThreeArgs = functionName == "gammaSumFor" || functionName == "gammaIntegralFor";
@@ -447,8 +562,8 @@ namespace {
             
             if ( functionName == "gammaSumFor" )              return "gammaSumFor( spectrum, start_bin, end_bin )";
             else if ( functionName == "gammaIntegralFor" )    return "gammaIntegralFor( spectrum, energy_low, energy_high )";
-            else if ( functionHasOneArg )                   return std::string( functionName + "( spectrum )" ).c_str();
-            else                                            return std::string( functionName + "( spectrum, energy )" ).c_str();
+            else if ( functionHasOneArg )                   return functionName_spectrum_arg.c_str();
+            else                                            return functionName_spec_energy_arg.c_str();
         }
         std::string tags() const {
             if      ( functionName == "gammaChannelFor" )   return "gammas channels gamma_channels for spectrum spectra";
@@ -479,7 +594,11 @@ namespace {
             else                                         return "";
         }
         mup::IToken* Clone() const { return new GammaForFunction(*this); }
-    private: TerminalModel *tm; std::string functionName;
+    private:
+      TerminalModel *tm;
+      std::string functionName;
+      std::string functionName_spectrum_arg;
+      std::string functionName_spec_energy_arg;
     };
     
     
@@ -586,7 +705,14 @@ TerminalModel::TerminalModel( InterSpec* viewer )
     GammaAtFunction* gammaLowerFunc = new GammaAtFunction(this, "gammaLower");            addFunction( gammaLowerFunc, gammaLowerFunc->tags(), gammaLowerFunc->toolTip() );
     GammaAtFunction* gammaCenterFunc = new GammaAtFunction(this, "gammaCenter");          addFunction( gammaCenterFunc, gammaCenterFunc->tags(), gammaCenterFunc->toolTip() );
     GammaAtFunction* gammaUpperFunc = new GammaAtFunction(this, "gammaUpper");            addFunction( gammaUpperFunc, gammaUpperFunc->tags(), gammaUpperFunc->toolTip() );
-    GammaAtFunction* gammaWidthFunc = new GammaAtFunction(this, "gammaWidth");            addFunction( gammaWidthFunc, gammaWidthFunc->tags(), gammaWidthFunc->toolTip() );
+  
+  GammaAtFunction* gammaWidthFunc = new GammaAtFunction(this, "gammaWidth");
+  addFunction( gammaWidthFunc, gammaWidthFunc->tags(), gammaWidthFunc->toolTip() );
+  
+  GammaAtFunction* gammaEnergyForChannelFunc = new GammaAtFunction(this, "gammaEnergyForChannel");
+  addFunction( gammaEnergyForChannelFunc, gammaEnergyForChannelFunc->tags(), gammaEnergyForChannelFunc->toolTip() );
+  
+  
     GammaAtFunction* gammaIntegralFunc = new GammaAtFunction(this, "gammaIntegral");      addFunction( gammaIntegralFunc, gammaIntegralFunc->tags(), gammaIntegralFunc->toolTip() );
     GammaAtFunction* gammaSumFunc = new GammaAtFunction(this, "gammaSum");                addFunction( gammaSumFunc, gammaSumFunc->tags(), gammaSumFunc->toolTip() );
     GammaAtFunction* gammaMinFunc = new GammaAtFunction(this, "gammaMin");                addFunction( gammaMinFunc, gammaMinFunc->tags(), gammaMinFunc->toolTip() );
@@ -602,6 +728,22 @@ TerminalModel::TerminalModel( InterSpec* viewer )
     PeakFunction* peakChi2DofFun = new PeakFunction(this, "peakChi2Dof");   addFunction( peakChi2DofFun, peakChi2DofFun->tags(), peakChi2DofFun->toolTip() );
     PeakFunction* peakGaussFun = new PeakFunction(this, "peakGauss");       addFunction( peakGaussFun, peakGaussFun->tags(), peakGaussFun->toolTip() );
     
+  
+  //Define FWHM functions
+  addDropDownListHeader( "Detector Response Functions" );
+  GammaAtFunction *drfFWHMFunc = new GammaAtFunction(this, "drfFWHM");
+  addFunction( drfFWHMFunc, drfFWHMFunc->tags(), drfFWHMFunc->toolTip() );
+  
+  GammaAtFunction *drfIntrinsicEffFunc = new GammaAtFunction(this, "drfIntrinsicEff");
+  addFunction( drfIntrinsicEffFunc, drfIntrinsicEffFunc->tags(), drfIntrinsicEffFunc->toolTip() );
+  
+  GammaAtFunction *drfGeometricEffFunc = new GammaAtFunction(this, "drfGeometricEff");
+  addFunction( drfGeometricEffFunc, drfGeometricEffFunc->tags(), drfGeometricEffFunc->toolTip() );
+  
+  GammaAtFunction *drfEfficiencyFunc = new GammaAtFunction(this, "drfEfficiency");
+  addFunction( drfEfficiencyFunc, drfEfficiencyFunc->tags(), drfEfficiencyFunc->toolTip() );
+  
+  
     // Define non-built-in statistical functions
     addDropDownListHeader( "Statistical Functions" );
     PValueFromChiSquare* pValFun = new PValueFromChiSquare;      addFunction( pValFun, pValFun->tags(), pValFun->toolTip() );
@@ -641,14 +783,17 @@ void TerminalModel::setViewer( InterSpec* spectViewer )
 // Determines input type of a user-inputted string
 TerminalModel::InputType TerminalModel::inputType(const std::string& input)
 {
-    if (std::regex_match(input, variableAssignmentRegex))
+  RegexNs::regex variableAssignmentRegex( ns_variableAssignmentRegexArg );
+  
+    if (RegexNs::regex_match(input, variableAssignmentRegex))
         return VariableAssignment;
     
-    else if (std::regex_match(input, commandRegex())) {
+    else if (RegexNs::regex_match(input, RegexNs::regex(commandRegex()) )) {
         std::string command = input.substr(0, input.find("("));
         
         // If the command being called is a keyword for an operation, then it is an OPERATION
-        if (std::regex_match(command, keywordRegex)) return Operation;
+      RegexNs::regex keywordRegex( ns_keywordRegexArg );
+        if (RegexNs::regex_match(command, keywordRegex)) return Operation;
         else return Command;
     }
     // Default input
@@ -674,22 +819,14 @@ std::string TerminalModel::evaluate(std::string input)
             
             try {
                 const double result = m_parser->Eval().GetFloat();              // Get the value of the evaluated input
-                return convertDoubleTypeToString(result);                       // Convert result into string format
-                
+                return convertDoubleTypeToString(result);                       // Convert result into string format  
             } catch ( const mup::ParserError& e ) {
-                std::ostringstream os;                                          // These are errors specific to the parser
-                os << "Error code " << e.GetCode() << ": " << e.GetMsg();
-                return os.str();
-                
-            } catch (std::exception e) {                                        // catch any other possible exceptions (non-parser specific)
-                std::ostringstream os;
-                os << "Error: " << e.what();
-                return os.str();
-                
+                // These are errors specific to the parser
+              return "Error code " + std::to_string(e.GetCode()) + ": " + e.GetMsg();
             } catch (std::runtime_error re) {
-                std::ostringstream os;
-                os << "Runtime error: " << re.what();
-                return os.str();
+              return "Runtime error: " + std::string(re.what());
+            } catch (std::exception e) {                                        // catch any other possible exceptions (non-parser specific)
+              return "Error: " + std::string(e.what());
             }
         }
     }
@@ -824,11 +961,11 @@ double TerminalModel::liveTime( const std::string& argument )
     m_backgroundHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
     m_secondaryHistogram = m_viewer->displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
     
-    if ( std::regex_match( arg, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) )    // foreground
+    if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) )    // foreground
         return foregroundLiveTime();
-    else if ( std::regex_match( arg, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) )  // second foreground
+    else if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) )  // second foreground
         return secondaryForegroundLiveTime();
-    else if ( std::regex_match( arg, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) )  // background
+    else if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) )  // background
         return backgroundLiveTime();
     
     // Throw an ecINVALID_NAME error if argument user provided is not valid
@@ -871,11 +1008,11 @@ double TerminalModel::realTime( const std::string& argument )
 {
     const std::string& arg (argument);
     
-    if ( std::regex_match( arg, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) )    // foreground
+    if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) )    // foreground
         return foregroundRealTime();
-    else if ( std::regex_match( arg, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) )  // second foreground
+    else if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) )  // second foreground
         return secondaryForegroundRealTime();
-    else if ( std::regex_match( arg, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) )  // background
+    else if ( RegexNs::regex_match( arg, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) )  // background
         return backgroundRealTime();
     
     // Throw an ecINVALID_NAME error if argument user provided is not valid
@@ -914,9 +1051,13 @@ double TerminalModel::realTimeWithoutArgument()
 
 float TerminalModel::gammaChannel( std::shared_ptr<const SpecUtils::Measurement> histogram, const double energy )
 {
-    if ( !histogram )
-        throw mup::ParserError( "No spectrum detected to gather corresponding gamma channel with energy." );
-    return histogram->find_gamma_channel( energy );
+  auto cal = histogram ? histogram->energy_calibration() : nullptr;
+  
+  if( !cal || !cal->valid() )
+    throw mup::ParserError( "No spectrum detected to gather corresponding gamma channel with energy." );
+  
+  return cal->channel_for_energy(energy);  //returns double
+  //return histogram->find_gamma_channel( energy ); //returns int
 }
 
 // Gets the gamma channel count of a specific spectrum
@@ -954,9 +1095,20 @@ float TerminalModel::gammaChannelHigherEnergy( std::shared_ptr<const SpecUtils::
 float TerminalModel::gammaChannelWidth( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel )
 {
     if ( !histogram )
-        throw mup::ParserError( "No spectrum detected to gather gamma channel lower energy." );
+        throw mup::ParserError( "No spectrum detected to gather gamma channel width." );
     return histogram->gamma_channel_width( channel );
 }
+
+
+float TerminalModel::gammaEnergyForChannel( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel )
+{
+  auto cal = histogram ? histogram->energy_calibration() : nullptr;
+  if ( !cal || !cal->valid() )
+    throw mup::ParserError( "No spectrum or invalid energy calibration to convert channel to energy." );
+  
+  return cal->energy_for_channel( channel );
+}
+
 
 // Gets the gamma integral of a specific spectrum
 float TerminalModel::gammaIntegral( std::shared_ptr<const SpecUtils::Measurement> histogram, double energyLow, double energyHigh )
@@ -974,6 +1126,9 @@ float TerminalModel::gammaSum( std::shared_ptr<const SpecUtils::Measurement> his
 {
     if ( !histogram )
         throw mup::ParserError( "No spectrum detected to get gamma channel sum." );
+  
+  //TODO: gamma_channels_sum(...) take integer startBin and endBin - need to rectify and such
+  
     return histogram->gamma_channels_sum( startBin, endBin );
 }
 
@@ -1015,15 +1170,15 @@ double TerminalModel::numGammaChannelsFor( const std::string& histogram )
     const std::string& hist (histogram);
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return m_foregroundHistogram->num_gamma_channels();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return m_secondaryHistogram->num_gamma_channels();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return m_backgroundHistogram->num_gamma_channels();
     }
@@ -1062,6 +1217,9 @@ double TerminalModel::gammaChannelHigherEnergyFor( const std::string& histogram,
 { return gammaFunctionOneArgFor(histogram, energy, &TerminalModel::gammaChannelHigherEnergy ); }
 
 double TerminalModel::gammaChannelWidthAt( const double energy ) { return gammaFunctionOneArg( energy, &TerminalModel::gammaChannelWidth ); }
+
+double TerminalModel::gammaEnergyForChannelAt( const double energy ) { return gammaFunctionOneArg( energy, &TerminalModel::gammaEnergyForChannel ); }
+
 
 // Automatically gets the higher energy for a gamma channel for a specific spectrum, throws error if spectrum undetected
 double TerminalModel::gammaChannelWidthFor( const std::string& histogram, const double energy )
@@ -1121,15 +1279,15 @@ double TerminalModel::gammaMinFor( const std::string& histogram )
     const std::string& hist (histogram);
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return m_foregroundHistogram->gamma_energy_min();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return m_secondaryHistogram->gamma_energy_min();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return m_backgroundHistogram->gamma_energy_min();
     }
@@ -1175,21 +1333,145 @@ double TerminalModel::gammaMaxFor( const std::string& histogram )
     const std::string& hist (histogram);
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return m_foregroundHistogram->gamma_energy_max();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return m_secondaryHistogram->gamma_energy_max();
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return m_backgroundHistogram->gamma_energy_max();
     }
     
     throw mup::ParserError ( "Invalid argument for function 'gammaMaxFor( spectrum )'" );
 }
+
+
+
+double TerminalModel::drfFWHM( const double energy )
+{
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !foreground )
+    throw mup::ParserError( "Foreground not foreground loaded." );
+  
+  std::shared_ptr<const DetectorPeakResponse> det = foreground->detector();
+  if( !det )
+    throw mup::ParserError( "No detector response loaded." );
+  
+  if( !det->isValid() )
+    throw mup::ParserError( "Detector response loaded is not valid." );
+  
+  if( !det->hasResolutionInfo() )
+    throw mup::ParserError( "Detector response does not contain peak-resolution information." );
+  
+  try
+  {
+    return det->peakResolutionFWHM( static_cast<float>(energy) );
+  }catch( std::exception &e )
+  {
+    throw mup::ParserError( "Error getting peak FWHM: " + std::string(e.what()) );
+  }
+  
+  return 0.0;
+}//drfFWHM(energy)
+
+
+double TerminalModel::drfIntrinsicEff( const double energy )
+{
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !foreground )
+    throw mup::ParserError( "Foreground not foreground loaded." );
+  
+  std::shared_ptr<const DetectorPeakResponse> det = foreground->detector();
+  if( !det )
+    throw mup::ParserError( "No detector response loaded." );
+  
+  if( !det->isValid() )
+    throw mup::ParserError( "Detector response loaded is not valid." );
+  
+  try
+  {
+    return det->intrinsicEfficiency( static_cast<float>(energy) );
+  }catch( std::exception &e )
+  {
+    throw mup::ParserError( "Error getting intrinsic efficiency: " + std::string(e.what()) );
+  }
+  
+  return 0.0;
+}//drfIntrinsicEff(energy)
+
+
+double TerminalModel::drfGeometricEff( const std::string &distance_str )
+{
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !foreground )
+    throw mup::ParserError( "Foreground not foreground loaded." );
+  
+  std::shared_ptr<const DetectorPeakResponse> det = foreground->detector();
+  if( !det || !det->isValid() )
+    throw mup::ParserError( "No valid detector response loaded." );
+  
+  double distance = 0;
+  try
+  {
+    distance = PhysicalUnits::stringToDistance(distance_str);
+  }catch(...)
+  {
+    throw mup::ParserError( "Could not convert '" + distance_str + "' to a distance" );
+  }
+  
+  if( distance < 0.0 )
+    throw mup::ParserError( "Distance must not be negative." );
+  
+  try
+  {
+    return DetectorPeakResponse::fractionalSolidAngle( det->detectorDiameter(), distance );
+  }catch( std::exception &e )
+  {
+    throw mup::ParserError( "Error getting geometric efficiency: " + std::string(e.what()) );
+  }
+  
+  return 0.0;
+}//drfGeometricEff(energy)
+
+
+double TerminalModel::drfEfficiency( const double energy, const std::string &distance_str )
+{
+  std::shared_ptr<SpecMeas> foreground = m_viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  if( !foreground )
+    throw mup::ParserError( "Foreground not foreground loaded." );
+  
+  std::shared_ptr<const DetectorPeakResponse> det = foreground->detector();
+  if( !det || !det->isValid() )
+    throw mup::ParserError( "No valid detector response loaded." );
+  
+  double distance = 0;
+  try
+  {
+    distance = PhysicalUnits::stringToDistance(distance_str);
+  }catch(...)
+  {
+    throw mup::ParserError( "Could not convert '" + distance_str + "' to a distance" );
+  }
+  
+  if( distance < 0.0 )
+    throw mup::ParserError( "Distance must not be negative." );
+  
+  try
+  {
+    return det->efficiency( energy, distance );
+  }catch( std::exception &e )
+  {
+    throw mup::ParserError( "Error getting geometric efficiency: " + std::string(e.what()) );
+  }
+  
+  return 0.0;
+}//double drfEfficiency( const double energy, const std::string &distance )
+
+
 
 float TerminalModel::gammaFunctionOneArg( const double energy, float (TerminalModel::*func)(std::shared_ptr<const SpecUtils::Measurement> histogram, const double arg) )
 {
@@ -1269,15 +1551,15 @@ float TerminalModel::gammaFunctionOneArgFor( const std::string& histogram, const
     
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return (this->*func)( m_foregroundHistogram, energy_value );
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return (this->*func)( m_secondaryHistogram, energy_value );
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return (this->*func)( m_backgroundHistogram, energy_value );
         
@@ -1294,15 +1576,15 @@ float TerminalModel::gammaFunctionTwoArgFor( const std::string& histogram, const
     
     updateHistograms();
     
-    if ( std::regex_match( hist, std::regex( "^(\\s*(foreground|fg)\\s*)$", std::regex::icase ) ) ) { // foreground
+    if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(foreground|fg)\\s*)$", RegexNs::regex::icase ) ) ) { // foreground
         if ( !m_foregroundHistogram ) throw mup::ParserError( "Foreground not detected." );
         else return (this->*func)( m_foregroundHistogram, arg_1, arg_2 );
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", std::regex::icase ) ) ) { // second foreground
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(secondary|sfg|secondaryforeground|secondforeground)\\s*)$", RegexNs::regex::icase ) ) ) { // second foreground
         if ( !m_secondaryHistogram ) throw mup::ParserError( "Secondary foreground not detected." );
         else return (this->*func)( m_secondaryHistogram, arg_1, arg_2 );
         
-    } else if ( std::regex_match( hist, std::regex( "^(\\s*(background|bg|background|back)\\s*)$", std::regex::icase ) ) ) { // background
+    } else if ( RegexNs::regex_match( hist, RegexNs::regex( "^(\\s*(background|bg|background|back)\\s*)$", RegexNs::regex::icase ) ) ) { // background
         if ( !m_backgroundHistogram ) throw mup::ParserError( "Background not detected." );
         else return (this->*func)( m_backgroundHistogram, arg_1, arg_2 );
         
@@ -1313,7 +1595,7 @@ float TerminalModel::gammaFunctionTwoArgFor( const std::string& histogram, const
 
 // Command Methods
 // Return a regex object of the current regex-string for checking commands
-const std::regex TerminalModel::commandRegex() { return std::regex(commandRegexStr);  }
+std::string TerminalModel::commandRegex() { return commandRegexStr;  }
 
 void TerminalModel::addCommand(const std::string& command, CommandType type)
 {
@@ -1355,8 +1637,8 @@ void TerminalModel::addCommand(const std::string& command, CommandType type)
 // Executes inputted command from user
 std::string TerminalModel::doCommand(const std::string& input)
 {
-    std::smatch match;
-    std::regex_match(input, match, commandRegex());
+  RegexNs::smatch match;
+  RegexNs::regex_match(input, match, RegexNs::regex(commandRegex()) );
     
     const std::string& command = match[1];
     const std::string& arguments = match[2];
@@ -1380,15 +1662,15 @@ std::string TerminalModel::doCommand(const std::string& input)
 std::string TerminalModel::saveFile( const std::string& arguments )
 {
     // Takes in destination path and output type of file
-    const std::regex argumentRegex = std::regex ( "^\\s*([\\s*\\S+\\s*]*)\\s*\\,\\s*([\\s*\\S+\\s*]*)\\s*$" );
+    const RegexNs::regex argumentRegex = RegexNs::regex ( "^\\s*([\\s*\\S+\\s*]*)\\s*\\,\\s*([\\s*\\S+\\s*]*)\\s*$" );
     std::ostringstream os;
     
-    if (!std::regex_match(arguments, argumentRegex)) {      // User provided invalid arguments, display proper error message
+    if (!RegexNs::regex_match(arguments, argumentRegex)) {      // User provided invalid arguments, display proper error message
         os << "The arguments (" << arguments << ") are not valid arguments for the function saveFile( path, output_type )";
         return os.str();
     }
-    std::smatch match;
-    std::regex_match(arguments, match, argumentRegex);
+  RegexNs::smatch match;
+  RegexNs::regex_match(arguments, match, argumentRegex);
     
     const std::string& path = match[1], outputType = match[2];
     
@@ -1427,8 +1709,11 @@ std::string TerminalModel::variableMapStr( const std::string& args )
         os << "}";
         
     } else {                                                          // Provide value for a specified variable
+      
+      RegexNs::regex validVariableRegex( ns_validVariableRegexArg );
+      
         if ( isVariable(arguments) )                                  os << "Current value for variable (" << arguments << ") = " << m_variables.at(arguments);
-        else if ( std::regex_match(arguments, validVariableRegex) )   os << "\"" << arguments << "\" is not a declared variable in the map";    // User specified undeclared variable
+        else if ( RegexNs::regex_match(arguments, validVariableRegex) )   os << "\"" << arguments << "\" is not a declared variable in the map";    // User specified undeclared variable
         else                                                          os << "\"" << arguments << "\" is not a valid variable";   // User specified an invalid variable
     }
 
@@ -1443,15 +1728,17 @@ std::string TerminalModel::clearVar( const std::string& args )
     
     if ( arguments.empty() )
         return "Error: Please enter a variable to be removed.";
-        
+      
     if ( isVariable(arguments) ) {
         os << "Removing variable (" << arguments << ") that had value (" << m_variables.at(arguments)->GetFloat() << ")";
         m_parser->RemoveVar( arguments );
         delete m_variables[ arguments ];
         m_variables.erase( arguments );
+    }else if ( RegexNs::regex_match(arguments, RegexNs::regex(ns_validVariableRegexArg)) ) {
+      os << "\"" << arguments << "\" is not a declared variable in the map";    // User specified undeclared variable
+    } else {
+      os << "\"" << arguments << "\" is not a valid variable";   // User specified an invalid variable
     }
-    else if ( std::regex_match(arguments, validVariableRegex) )   os << "\"" << arguments << "\" is not a declared variable in the map";    // User specified undeclared variable
-    else                                                          os << "\"" << arguments << "\" is not a valid variable";   // User specified an invalid variable
     
     return os.str();
 }
@@ -1462,16 +1749,16 @@ std::string TerminalModel::clearVar( const std::string& args )
 std::string TerminalModel::setEnergyRange( const std::string& arguments )
 {
     std::ostringstream os;                      // Regex matching arguments: must be two valid expressions separated by commas inside parentheses
-    const std::regex argumentRegex = std::regex ( "^\\s*([\\s*\\S*\\s*]*)\\s*\\,\\s*([\\s*\\S*\\s*]*)\\s*$" );
+    const RegexNs::regex argumentRegex = RegexNs::regex ( "^\\s*([\\s*\\S*\\s*]*)\\s*\\,\\s*([\\s*\\S*\\s*]*)\\s*$" );
     
     
-    if (!std::regex_match(arguments, argumentRegex)) {      // User provided invalid arguments, display proper error message
+    if (!RegexNs::regex_match(arguments, argumentRegex)) {      // User provided invalid arguments, display proper error message
         os << "The arguments (" << arguments << ") are not valid arguments for the function setRange( lowerBound, upperBound )";
         return os.str();
     }
     try {
-        std::smatch match;
-        std::regex_match(arguments, match, argumentRegex);
+      RegexNs::smatch match;
+      RegexNs::regex_match(arguments, match, argumentRegex);
         
         float lower, upper;
         m_parser->SetExpr(match[1]);  lower = m_parser->Eval().GetFloat();
@@ -1609,16 +1896,16 @@ std::string TerminalModel::refitPeak ( const std::string& argument )
 std::string TerminalModel::setNuclide( const std::string& arguments )
 {
     ReferencePhotopeakDisplay *nuclideReference = m_viewer->referenceLinesWidget();
-    const std::regex argumentRegex = std::regex ( "^(.+)\\,(.+)$" );
-    const std::regex argumentRegexWithoutAge = std::regex ( "^([^,]+)$" );
+    const RegexNs::regex argumentRegex = RegexNs::regex ( "^(.+)\\,(.+)$" );
+    const RegexNs::regex argumentRegexWithoutAge = RegexNs::regex ( "^([^,]+)$" );
     
-    if ( !std::regex_match(arguments, argumentRegex) && !std::regex_match(arguments, argumentRegexWithoutAge) )
+    if ( !RegexNs::regex_match(arguments, argumentRegex) && !RegexNs::regex_match(arguments, argumentRegexWithoutAge) )
         return "Error: failed to set nuclude and age because of invalid arguments.";
     
-    std::smatch match;
-    std::regex_match(arguments, match, argumentRegex);
+  RegexNs::smatch match;
+  RegexNs::regex_match(arguments, match, argumentRegex);
     
-    const bool argumentContainsAge = std::regex_match(arguments, argumentRegex);
+    const bool argumentContainsAge = RegexNs::regex_match(arguments, argumentRegex);
     
     const std::string& nuclide = argumentContainsAge ? match[1] : arguments,
                         age = argumentContainsAge ? match[2] : std::string();
@@ -1738,13 +2025,15 @@ double TerminalModel::peakGaussianIntegral ( const double argument, const double
 //      Set the variable value to that evaluated expression
 std::string TerminalModel::assignVariable(const std::string& input)
 {
-    std::smatch match;
-    std::regex_match(input, match, variableAssignmentRegex);                         // match input with regex for variable assignment
+  RegexNs::smatch match;
+    if( !RegexNs::regex_match(input, match, RegexNs::regex(ns_variableAssignmentRegexArg)) ){
+      return "No variable to assign";
+    }
     
     std::ostringstream os;
     
     const std::string& variable = match[1];
-    if ( std::regex_match(variable, keywordRegex) ) {                                              // invalid variable error (built-in error)
+    if ( RegexNs::regex_match(variable, RegexNs::regex(ns_keywordRegexArg) ) ) {                                              // invalid variable error (built-in error)
         const mup::ParserError e = mup::ParserError( "Invalid name. Variable must not be a keyword.");
         return errorMessage(e);
     }

@@ -553,7 +553,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   const double wh = 0.65*interspec->renderedHeight();
   
   Wt::WFlags<AuxWindowProperties> windowProp
-  = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+  = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
   | AuxWindowProperties::DisableCollapse
   | AuxWindowProperties::SetCloseable
   | AuxWindowProperties::EnableResize;

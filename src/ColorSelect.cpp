@@ -20,7 +20,7 @@
  License along with this library; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
+ 
 #include "InterSpec_config.h"
 
 #include <string>
@@ -293,7 +293,7 @@ void ColorSelect::colorSetCallback( const std::string &val )
   }catch( std::exception & )
   {
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "Invalid CSS color called back " );
+    log_developer_error( __func__, "Invalid CSS color called back " );
 #endif
     setAttributeValue( "value", "#000000" );  //to force a repaint ...
     setAttributeValue( "value", old );

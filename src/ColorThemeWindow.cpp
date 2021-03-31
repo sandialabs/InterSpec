@@ -125,7 +125,7 @@ namespace
 
 
 ColorThemeWindow::ColorThemeWindow( InterSpec *interspec )
-: AuxWindow( "Color Themes", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal) | AuxWindowProperties::SetCloseable ),
+: AuxWindow( "Color Themes", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::SetCloseable ),
 m_interspec(interspec),
 m_menu( nullptr ),
 m_edit( nullptr ),
@@ -174,7 +174,7 @@ m_apply( nullptr )
   m_menu = new WMenu(Wt::Vertical,menuDiv);
   leftMenuDivLayout->addWidget( menuDiv, 0, 0 );
   //m_menu->addStyleClass((m_interspec->isMobile() ? "SideMenuPhone" : "SideMenu")); //defined in InterSpec.css
-  m_menu->addStyleClass( "SideMenu" );
+  m_menu->addStyleClass( "SideMenu VerticalMenu" );
   
   WContainerWidget *adSubDiv = new WContainerWidget();
   leftMenuDivLayout->addWidget( adSubDiv, 1, 0 );
@@ -330,7 +330,7 @@ void ColorThemeWindow::removeThemeCallback()
   
   AuxWindow *conf = new AuxWindow( "Delete " + name + "?",
                                   WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
-                                  | AuxWindowProperties::IsAlwaysModal | AuxWindowProperties::TabletModal );
+                                  | AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen );
   
   auto doDelete = [this,dbIndex,item,conf](){
     if( dbIndex >= 0 )
@@ -393,8 +393,8 @@ void ColorThemeWindow::uploadThemeCallback()
 
   //1) Make a dialog to allow user to select a file.
   AuxWindow *window = new AuxWindow( "Upload Color Theme JSON",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                     | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                     | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::SetCloseable) );
   
   WContainerWidget *contents = window->contents();
@@ -514,7 +514,7 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
   }
   
   AuxWindow *dialog = new AuxWindow( "Save Changes?",
-                                    WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse );
+                                    WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::DisableCollapse );
 
   auto content = dialog->contents();
   WText *txt = new WText( content );
@@ -752,6 +752,7 @@ std::vector<std::unique_ptr<ColorTheme>>  ColorThemeWindow::userDbThemes()
       throw runtime_error("Invalid database ish");
     
     DataBaseUtils::DbTransaction transaction(*sql);
+    user.reread();
     
     const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> > &userthemes = user->colorThemes();
     
@@ -772,9 +773,12 @@ std::vector<std::unique_ptr<ColorTheme>>  ColorThemeWindow::userDbThemes()
     //ToDo: check for duplicate names, and if so, maybe add the date or something
     
     transaction.commit();
-  }catch (...)
+  }catch( Wt::Dbo::Exception &e )
   {
-    cerr << "ColorThemeWindow::userDbThemes(): Caught error searching database for users themes." << endl;
+    cerr << "ColorThemeWindow::userDbThemes(): Caught exception searching database for users themes: " << e.what() << " code=" << e.code() << endl;
+  }catch( std::exception &e )
+  {
+    cerr << "ColorThemeWindow::userDbThemes(): Caught error searching database for users themes: " << e.what() << endl;
   }
   
   return dbthemes;

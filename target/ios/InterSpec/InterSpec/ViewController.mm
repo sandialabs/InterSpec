@@ -238,7 +238,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     if( _dbIndexOfFileToOpen >= 0 )
     {
       NSLog( @"We should open up a file though" );
-      InterSpecApp *app = InterSpecApp::instanceFromExtenalIdString( [_UrlUniqueId UTF8String] );
+      InterSpecApp *app = InterSpecApp::instanceFromExtenalToken( [_UrlUniqueId UTF8String] );
 
       if( app )
       {
@@ -267,7 +267,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   //
   _UrlUniqueId = [NSString stringWithFormat:@"%i", arc4random_uniform(10000000)];
-  NSString *actualURL = [NSString stringWithFormat:@"%@?externalid=%@", _UrlServingOn, _UrlUniqueId];
+  NSString *actualURL = [NSString stringWithFormat:@"%@?apptoken=%@", _UrlServingOn, _UrlUniqueId];
   
   //Check to see if we should open a spectrum file; if so append which on to URL
   if( _dbIndexOfFileToOpen >= 0 )
@@ -325,48 +325,70 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
 -(BOOL)openSpectrumFile:(NSURL *)url
 {
-  const std::string urlstr = [[url path] UTF8String];
+  std::string urlstr = [[url path] UTF8String];
+  //std::string urlstr = [url fileSystemRepresentation];
   
-  if( boost::filesystem::exists( urlstr ) )
+  // I dont think we need this try /catch any more, but leaving in, because well, why not
+  try
   {
-    NSLog( @"Will try to open %s", urlstr.c_str() );
+    NSLog( @"Will check to try and open %s", urlstr.c_str() );
+    
+    NSFileManager *filemgr = [NSFileManager defaultManager];
+    if( ![filemgr isReadableFileAtPath: [url path]] ){
+      NSLog(@"Can NOT access file at path '%@'.", [url path]);
+      return NO;
+    }
+    
+    NSLog( @"Can access, and will try to open '%s'", urlstr.c_str() );
+    
+    std::string path_json = "[\"" + urlstr + "\"]";
+    int status = InterSpecServer::open_file_in_session( [_UrlUniqueId UTF8String], path_json.c_str() );
+    if( status > 0 ){
+      NSLog( @"Opened file at '%@' directly via InterSpecServer.", [url path] );
+      return YES;
+    }
+    
+    NSLog( @"Will try to open file via DbToFilesystemLink from '%@'.", [url path] );
+  
+    // We will copy the file to a temporary location, since by the time we try to read it into
+    //  InterSpec, we may not have permissions to access the file an further.
+    
+    NSString *tempDir = NSTemporaryDirectory();
+    NSString *fname = [url lastPathComponent];
+    // TODO: should create unique directory so there wont be a filename clash
+    NSString *tmpfile = [tempDir stringByAppendingPathComponent:fname];
+    
+    NSError *error;
+    BOOL copied = [filemgr copyItemAtPath: [url path] toPath: tmpfile error:&error];
+    if( copied ){
+      NSLog( @"Copied file from '%@' t0 '%@'.", [url path], tmpfile );
+      urlstr = [tmpfile UTF8String];
+    }else{
+      NSLog( @"Failed to copy file from '%@' t0 '%@', with error %@.", [url path], tmpfile, error );
+    }
+    
+    // TODO: Try parsing the file here, and see if it is a valid spectrum file, so this way we can return a proper YES/NO.  Also, we could just hold it in memorry and pass it off to the InterSpec session once it starts (but would need to implement this in InterSpec class)
+    // TODO: cleanup temporary file if we copied it over
+    // TODO: skip this whole database thing, and just have a member variable to hold the URL, and open it once the app loads
     
     //TODO - could try to see if file is a background file to the current
     //       spectrum, and if so load it as the background spectrum `
     DbToFilesystemLink::FileIdToLocation requestinfo;
     requestinfo.m_foregroundFilePath = urlstr;
-//    requestinfo.m_backgroundFilePath = "/path/to/background";
+    //    requestinfo.m_backgroundFilePath = "/path/to/background";
     const int dbid = DbToFilesystemLink::addFileToOpenToDatabase( requestinfo );
     if( dbid < 0 )
     {
       NSLog( @"openSpectrumFile: Error saving file path to database" );
       return NO;
     }
-    
+      
     _dbIndexOfFileToOpen = dbid;
-    
-//We cant use this next block of code because wakeupFromBackground: hasnt been
-//  called yet, so a valid InterSpecApp wont exist, since we dont instruct
-//  the webview to load the URL until wakeupFromBackground:
-//  if( _UrlUniqueId.length > 0 && _dbIndexOfFileToOpen >= 0 )
-//  {
-//    InterSpecApp *app = InterSpecApp::instanceFromExtenalIdString( [_UrlUniqueId UTF8String] );
-//    if( app )
-//    {
-//      Wt::WApplication::UpdateLock applock( app );
-//      Wt::WApplication *wtapp = Wt::WApplication::instance();
-//      if( wtapp && applock )
-//      {
-//        app->openFileFromDbFileSystemLink( _dbIndexOfFileToOpen ) )
-//        app->triggerUpdate();
-//      }
-//    }
-//  }//if( _dbIndexOfFileToOpen >= 0 )
-  }else
+  }catch( std::exception &e )
   {
-    NSLog( @"The file %@ could not be accessed", [url path] );
+    NSLog( @"Caught exception trying to access file: %s", e.what() );
     return NO;
-  } 
+  }
 
   return YES;
 }//openSpectrumFile
@@ -412,7 +434,21 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   [_webView setAllowsLinkPreview: NO];
   //[_webView setAllowsMagnification: NO]; //default is not
   [_webView setAllowsBackForwardNavigationGestures: NO];
-  //[_webView setCustomUserAgent: @""];
+  
+  if( UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad )
+  {
+    //[_webView evaluateJavaScript:@"navigator.userAgent" completionHandler:^(id __nullable userAgent, NSError * __nullable error) {
+    //  NSLog(@"The actual user agent: %@", userAgent);
+    //  On my iPad prints "Mozilla/5.0 (iPad; CPU OS 14_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+    //}];
+    
+    // For some reason I get 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko)' in the C++ on my iPad,
+    //  which means the c++ of InterSpec doesnt detect it as an iPad - so we'll set a custom user agent that includes "iPad"
+    [_webView setCustomUserAgent: @"Mozilla/5.0 (iPad; CPU OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"];
+  }else if( UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone )
+  {
+    // This looks to always be fine, so we wont set a custom user agent
+  }
   
   [_webView setNavigationDelegate: self];
   

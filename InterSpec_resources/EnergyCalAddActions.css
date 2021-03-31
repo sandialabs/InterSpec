@@ -1,0 +1,78 @@
+.ConvertCalTypeTool
+{
+  
+}
+
+
+.ConvertToNA
+{
+  
+}
+
+.ConvertToApplieTo
+{
+  margin-top: 5px;
+}
+
+.ConvertToMsg
+{
+  
+}
+
+.ConvertFromLCERes
+{
+  
+}
+
+
+.LinearizeCalTool
+{
+  
+}
+
+.LinearizeInputTbl
+{
+  
+}
+
+.LinearizeInputTbl > tbody > tr
+{
+}
+
+.LinearizeInputTbl > tbody > tr > td
+{
+  padding-right: 8px;
+  padding-bottom: 8px;
+}
+
+.NChannelSpecTxt
+{
+  
+}
+
+.CombineChannelsTool
+{
+  
+}
+
+.TruncateChannelsTool
+{
+  
+}
+
+.TruncateKeepOverflow
+{
+  float: right;
+  margin-right: 25px;
+}
+
+.TruncateApplyTo
+{
+  margin-top: 25px;
+  margin-bottom: 5px;
+}
+
+.TruncateNote
+{
+  font-style: italic;
+}

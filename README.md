@@ -66,11 +66,11 @@ may be useful for you:
 ### Prerequisites
 
 To compile, you need a C++11 compiler, and:
-* [Wt](https://www.webtoolkit.eu/wt) versions 3.3.1 through 3.3.4 should work, but 3.3.4 is recommended.
+* [Wt](https://www.webtoolkit.eu/wt) version 3.3.4.  Some patches are included in the [patches](https://github.com/sandialabs/InterSpec/tree/master/target/patches/wt/3.3.4) directory.
 * [boost](https://www.boost.org/) versions 1.48 through 1.65.1 will probably work, but development is done using 1.65.1.
 * [cmake](https://cmake.org/) 
 
-To make building a little easier, other required libraries, including 
+To make building a little easier, other required libraries, including
 [Cuba](http://www.feynarts.de/cuba), 
 [Minuit2](https://github.com/root-project/root/tree/master/math/minuit2), 
 [muparserx](https://github.com/beltoforion/muparserx), 
@@ -97,7 +97,19 @@ cmake ..
 ```
 
 If you are on Windows, or prefer a GUI, running the CMake for building InterSpec should be like
-most other CMake project; you will probably have to fill in paths to boost and Wt manually.
+most other CMake project; you will probably have to fill in paths to boost and Wt manually.  Or if
+you have boost or Wt in a non-standard location, you can use a command like:
+
+```
+cmake -DCMAKE_PREFIX_PATH=/path/to/prefix ..
+```
+or if boost and Wt are in different directories:
+```
+cmake --generator "Visual Studio 15 2017 Win64" \
+      --DBOOST_ROOT=/path/to/boost \
+      --DWt_INCLUDE_DIR=/path/to/wt/include \
+      ..
+```
 
 
 And then make:

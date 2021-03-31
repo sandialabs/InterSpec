@@ -119,12 +119,52 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
     static const char *argv1 = ".";
     static const char *argv4 = "-c";
     static const char *argv5 = "./data/config/wt_config_ios.xml";
-    static const char *argv6 = "--tempdir";
-    static const char *argv7 = tmpdirstr.c_str();
-    static const char *argv[] = { argv0, argv1, argv4, argv5, argv6, argv7 };
+    static const char *argv6 = "--accesslog=-";
+    static const char *argv7 = "--tempdir";
+    static const char *argv8 = tmpdirstr.c_str();
+    static const char *argv[] = { argv0, argv1, argv4, argv5, argv6, argv7, argv8 };
     int argc = sizeof(argv) / sizeof(argv[0]);
     InterSpecServer::startServer( argc, (char **)argv, &createThisApplication );
   }
+}
+
+-(BOOL)application:(UIApplication *)application
+           openURL:(NSURL *)url
+           options:(NSDictionary<UIApplicationOpenURLOptionsKey, id> *)options
+{
+  NSLog(@"Will see if we should open file in place for URL %@", url );
+  
+  BOOL openInPlace = false;
+  
+  if( options && ([options objectForKey: UIApplicationOpenURLOptionsOpenInPlaceKey] != nil) )
+    openInPlace = [options[UIApplicationOpenURLOptionsOpenInPlaceKey] boolValue];
+  
+  if( ![url isFileURL] ){
+    NSLog(@"URL passed in is not a file" );
+    return NO;
+  }
+  
+  BOOL didStartAccessing = [url startAccessingSecurityScopedResource];
+  if( !didStartAccessing ) {
+    NSLog(@"Error getting access to %@", url );
+  }
+  
+  BOOL success = NO;
+  if( !openInPlace )
+  {
+    NSLog(@"openInPlace=False" );
+    // TODO: we should copy the file over...
+    success = [_viewController openSpectrumFile: url];
+  }else
+  {
+    NSLog(@"openInPlace=True" );
+    success = [_viewController openSpectrumFile: url];
+  }
+  
+  if( didStartAccessing )
+    [url stopAccessingSecurityScopedResource];
+  
+  return success;
 }
 
 
@@ -133,17 +173,28 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
  sourceApplication:(NSString *)sourceApplication
         annotation:(id)annotation
 {
+  BOOL success = NO;
+  
   // Make sure url indicates a file (as opposed to, e.g., http://)
   if (url != nil && [url isFileURL])
   {
+    BOOL didStartAccessing = [url startAccessingSecurityScopedResource];
+    if( !didStartAccessing ) {
+      NSLog(@"Error getting access to %@", url );
+    }
+    
     NSLog(@"File to open %@ from %@", url, sourceApplication );
     
-    [_viewController openSpectrumFile: url];
+    success = [_viewController openSpectrumFile: url];
+    
+    if( didStartAccessing )
+      [url stopAccessingSecurityScopedResource];
   }
   
-  // Indicate that we have successfully opened the URL
-  return YES;
+  // Indicate if we have successfully opened the URL
+  return success;
 }
+
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {

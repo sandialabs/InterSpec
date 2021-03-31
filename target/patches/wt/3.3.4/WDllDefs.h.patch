@@ -1,0 +1,11 @@
+--- wt-3.3.4/src/Wt/WDllDefs.h.orig	2020-11-15 13:23:34.000000000 -0800
++++ wt-3.3.4/src/Wt/WDllDefs.h	2020-11-15 13:23:44.000000000 -0800
+@@ -86,7 +86,7 @@
+ 
+ #ifndef WT_CXX11
+ 
+-#if defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L
++#if defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L || defined(_MSC_VER)
+ #define WT_CXX11
+ #endif
+ 

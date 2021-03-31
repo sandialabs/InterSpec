@@ -226,36 +226,47 @@ namespace
           
             if( field == FileDataField::DetectionSystemType )
             {
-              //The below switch must match whats in JS - a little brittle, bu oh well for now
+              //The below switch must match whats in JS - a little brittle, but oh well for now
               switch( val )
               {
                 case 0: val = static_cast<int>(SpecUtils::DetectorType::Exploranium); break;
                 case 1: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinder); break;
                 case 2: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderNG); break;
                 case 3: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderLaBr3); break;
-                case 4: val = static_cast<int>(SpecUtils::DetectorType::DetectiveUnknown); break;
-                case 5: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx); break;
-                case 6: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx100); break;
-                case 7: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx200); break;
-                case 8: val = static_cast<int>(SpecUtils::DetectorType::SAIC8); break;
-                case 9: val = static_cast<int>(SpecUtils::DetectorType::Falcon5000); break;
-                case 10: val = static_cast<int>(SpecUtils::DetectorType::MicroDetective); break;
-                case 11: val = static_cast<int>(SpecUtils::DetectorType::MicroRaider); break;
-                case 12: val = static_cast<int>(SpecUtils::DetectorType::Sam940); break;
-                case 13: val = static_cast<int>(SpecUtils::DetectorType::Sam940LaBr3); break;
-                case 14: val = static_cast<int>(SpecUtils::DetectorType::Sam945); break;
-                case 15: val = static_cast<int>(SpecUtils::DetectorType::Rsi701); break;
-                case 16: val = static_cast<int>(SpecUtils::DetectorType::Rsi705); break;
-                case 17: val = static_cast<int>(SpecUtils::DetectorType::AvidRsi); break;
-                case 18: val = static_cast<int>(SpecUtils::DetectorType::RadHunterNaI); break;
-                case 19: val = static_cast<int>(SpecUtils::DetectorType::RadHunterLaBr3); break;
-                case 20: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleNai); break;
-                case 21: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleCeBr2Inch); break;
-                case 22: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleCeBr3Inch); break;
-                case 23: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleLaBr); break;
-                case 24: val = static_cast<int>(SpecUtils::DetectorType::Srpm210); break;
-                case 25: val = static_cast<int>(SpecUtils::DetectorType::DetectiveX); break;
-                case 26: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
+                case 4: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderTungsten); break;
+                case 5: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR500NaI); break;
+                case 6: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR500LaBr); break;
+                case 7: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderUnknown); break;
+                case 8: val = static_cast<int>(SpecUtils::DetectorType::DetectiveUnknown); break;
+                case 9: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx); break;
+                case 10: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx100); break;
+                case 11: val = static_cast<int>(SpecUtils::DetectorType::DetectiveEx200); break;
+                case 12: val = static_cast<int>(SpecUtils::DetectorType::DetectiveX); break;
+                case 13: val = static_cast<int>(SpecUtils::DetectorType::MicroDetective); break;
+                case 14: val = static_cast<int>(SpecUtils::DetectorType::SAIC8); break;
+                case 15: val = static_cast<int>(SpecUtils::DetectorType::Falcon5000); break;
+                case 16: val = static_cast<int>(SpecUtils::DetectorType::MicroRaider); break;
+                case 17: val = static_cast<int>(SpecUtils::DetectorType::Sam940); break;
+                case 18: val = static_cast<int>(SpecUtils::DetectorType::Sam940LaBr3); break;
+                case 19: val = static_cast<int>(SpecUtils::DetectorType::Sam945); break;
+                case 20: val = static_cast<int>(SpecUtils::DetectorType::Rsi701); break;
+                case 21: val = static_cast<int>(SpecUtils::DetectorType::Rsi705); break;
+                case 22: val = static_cast<int>(SpecUtils::DetectorType::AvidRsi); break;
+                case 23: val = static_cast<int>(SpecUtils::DetectorType::RadHunterNaI); break;
+                case 24: val = static_cast<int>(SpecUtils::DetectorType::RadHunterLaBr3); break;
+                case 25: val = static_cast<int>(SpecUtils::DetectorType::Interceptor); break;
+                case 26: val = static_cast<int>(SpecUtils::DetectorType::RIIDEyeNaI); break;
+                case 27: val = static_cast<int>(SpecUtils::DetectorType::RIIDEyeLaBr); break;
+                case 28: val = static_cast<int>(SpecUtils::DetectorType::RadSeekerNaI); break;
+                case 29: val = static_cast<int>(SpecUtils::DetectorType::RadSeekerLaBr); break;
+                case 30: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleNai); break;
+                case 31: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleCeBr2Inch); break;
+                case 32: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleCeBr3Inch); break;
+                case 33: val = static_cast<int>(SpecUtils::DetectorType::OrtecRadEagleLaBr); break;
+                case 34: val = static_cast<int>(SpecUtils::DetectorType::Srpm210); break;
+                case 35: val = static_cast<int>(SpecUtils::DetectorType::VerifinderNaI); break;
+                case 36: val = static_cast<int>(SpecUtils::DetectorType::VerifinderLaBr); break;
+                case 37: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
                   
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
@@ -484,7 +495,7 @@ namespace
           }catch(...)
           {
 #if( PERFORM_DEVELOPER_CHECKS )
-            log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected exception getting relative path between fi" );
+            log_developer_error( __func__, "Unexpected exception getting relative path between fi" );
 #endif
             row[f] = SpecUtils::parent_path(meas.filename);
             if( SpecUtils::starts_with(row[f], base_search_dir.c_str()) )
@@ -1069,7 +1080,7 @@ public:
        && ((col - NumFileDataFields) >= static_cast<int>(m_eventXmlColNames.size())) )
     {
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected (to large of) column requested (larger than ever expected)" );
+      log_developer_error( __func__, "Unexpected (to large of) column requested (larger than ever expected)" );
 #endif
       return boost::any();
     }
@@ -1091,7 +1102,7 @@ public:
     if( col >= static_cast<int>(fields.size()) )
     {
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected (to large of) column requested we dont have data for" );
+      log_developer_error( __func__, "Unexpected (to large of) column requested we dont have data for" );
 #endif
       return boost::any();
     }
@@ -1125,7 +1136,7 @@ public:
       if( index >= static_cast<int>(m_eventXmlColNames.size()) )
       {
 #if( PERFORM_DEVELOPER_CHECKS )
-        log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected (to large of) column requested for header data" );
+        log_developer_error( __func__, "Unexpected (to large of) column requested for header data" );
 #endif
         return boost::any();
       }
@@ -1377,7 +1388,7 @@ string jsfct = "function(s,e){"
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
   const char *tooltip = "Recursively searches sub-directories or the selected directory.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   
   m_recursive = item->checkBox();
   if( !m_recursive ) //This shouldnt ever happen, but JIC
@@ -1427,12 +1438,12 @@ string jsfct = "function(s,e){"
 
   item = m_optionsMenu->addWidget( maxFileSizeDiv );
   tooltip = "Maximum size of file to attempt to parse as a spectrum file.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   
   item = m_optionsMenu->addMenuItem( "pre-filter by extension" );
   item->setCheckable( true );
   tooltip = "Eliminates common file types (ex. zip, doc, avi, etc) from search to speed results up.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   m_filterByExtension = item->checkBox();
   if( !m_filterByExtension ) //shouldnt ever happen
   {
@@ -1448,7 +1459,7 @@ string jsfct = "function(s,e){"
   item = m_optionsMenu->addMenuItem( "filter duplicate files" );
   item->setCheckable( true );
   tooltip = "Filters duplicate spectrum files through use of a hash of spectral and meta-information.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   m_filterUnique = item->checkBox();
   if( !m_filterUnique ) //shouldnt ever happen
   {
@@ -1468,7 +1479,7 @@ string jsfct = "function(s,e){"
   item = m_optionsMenu->addMenuItem( "cache parse result" );
   item->setCheckable( true );
   tooltip = "Allows caching spectrum file parsing results for much faster subsequent searches of the same directory if you change search criteria.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   m_cacheParseResults = item->checkBox();
   if( !m_cacheParseResults ) //shouldnt ever happen
   {
@@ -1486,7 +1497,7 @@ string jsfct = "function(s,e){"
   item->setCheckable( true );
   tooltip = "Saves the results of parse caching to a file in the directory selected to be searched."
             " This allows the caching to persist across usages of this tool and InterSpec.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   m_persistCacheResults = item->checkBox();
   if( !m_persistCacheResults ) //shouldnt ever happen
   {
@@ -1578,7 +1589,7 @@ string jsfct = "function(s,e){"
 #endif
   
   m_csv->setText( "CSV" );
-  m_csv->setStyleClass( "CsvLinkBtn" );
+  m_csv->setStyleClass( "LinkBtn" );
   m_csv->disable();
   
   m_loadSelectedFile = new WPushButton( "Load Selected" );
@@ -1951,7 +1962,7 @@ void SpecFileQueryWidget::basePathChanged()
   }catch(...)
   {
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected error grabbing prefefence value" );
+    log_developer_error( __func__, "Unexpected error grabbing prefefence value" );
 #endif
   }
   
@@ -1974,7 +1985,7 @@ void SpecFileQueryWidget::basePathChanged()
   }catch( ... )
   {
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "Unexpected error setting prefefence value" );
+    log_developer_error( __func__, "Unexpected error setting prefefence value" );
 #endif
   }
   
@@ -2142,9 +2153,9 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
         nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
 
 #endif
-  } catch( ... )
+  } catch( std::exception &e )
   {
-    std::cerr << "Error in updateNumberFiles; unexpected exception" << std::endl;
+    std::cerr << "Error in updateNumberFiles; unexpected exception: " << e.what() << std::endl;
 
     if( !(*widgetdeleted) )
       WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,

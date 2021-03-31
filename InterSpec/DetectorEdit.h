@@ -36,6 +36,7 @@
 #include <Wt/Chart/WCartesianChart>
 
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpecUser.h"  //for UseDrfPref::UseDrfType enum only
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -61,8 +62,15 @@ class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
 class DetectorPeakResponse;
-namespace DataBaseUtils{ class DbSession; }
-namespace SpecUtils{ enum class DetectorType : int; }
+namespace DataBaseUtils
+{
+  class DbSession;
+}
+namespace SpecUtils
+{
+  class SpecFile;
+  enum class DetectorType : int;
+}
 
 
 class DetectorDisplay : public Wt::WContainerWidget

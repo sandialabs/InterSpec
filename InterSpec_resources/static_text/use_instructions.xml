@@ -174,81 +174,85 @@ the XHTML message for that entry.
 -->
 <message id='desktop-mouse-interactions-info'>
 {
-  "1desktop-mouse-interactions-zoominout": {
+  "01desktop-mouse-interactions-zoominout": {
     "title": "Zoom-In/Out",
     "img": "InterSpec_resources/images/ZoomInOut.gif",
-    "desc_message_id": "1desktop-mouse-interactions-zoominout-desc"
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
   },
-  "2desktop-mouse-interactions-shiftenergyrange": {
+  "02desktop-mouse-interactions-shiftenergyrange": {
     "title": "Pan Energy",
     "img": "InterSpec_resources/images/ERShift.gif",
-    "desc_message_id": "2desktop-mouse-interactions-shiftenergyrange-desc"
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
   },
-  "3desktop-mouse-interactions-energyslider": {
+  "03desktop-mouse-interactions-energyslider": {
     "title": "Energy Slider",
     "img": "InterSpec_resources/images/energy_slider.gif",
-    "desc_message_id": "3desktop-mouse-interactions-energyslider-desc"
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
   },
-  "4desktop-mouse-interactions-identifypeaks": {
+  "04desktop-mouse-interactions-identifypeaks": {
     "title": "Peak Fit",
     "img": "InterSpec_resources/images/PeakFit.gif",
-    "desc_message_id": "4desktop-mouse-interactions-identifypeaks-desc"
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
   },
-  "4desktop-mouse-interactions-multipeaks": {
+  "04desktop-mouse-interactions-multipeaks": {
     "title": "ROI Fit",
     "img": "InterSpec_resources/images/multi_peak_fit.gif",
-    "desc_message_id": "4desktop-mouse-interactions-multipeaks-desc"
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
   },
-  "7desktop-mouse-interactions-deletepeaks": {
+  "07desktop-mouse-interactions-deletepeaks": {
     "title": "Delete Peak",
     "img": "InterSpec_resources/images/DeletePeaks.gif",
-    "desc_message_id": "7desktop-mouse-interactions-deletepeaks-desc"
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
   },
-  "6desktop-mouse-interactions-visualcalibration": {
+  "06desktop-mouse-interactions-visualcalibration": {
     "title": "Energy Calibration",
     "img": "InterSpec_resources/images/VisRecalib.gif",
-    "desc_message_id": "6desktop-mouse-interactions-visualcalibration-desc"
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
   },
-  "5desktop-mouse-interactions-peakeditor": {
+  "05desktop-mouse-interactions-peakeditor": {
     "title": "Peak Editor",
     "img": "InterSpec_resources/images/PeakEdit.gif",
-    "message-id": "5desktop-mouse-interactions-peakeditor-desc"
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
   },
-  "8desktop-mouse-interactions-adjustROI": {
+  "08desktop-mouse-interactions-adjustROI": {
     "title": "Adjust ROI",
     "img": "InterSpec_resources/images/roi_range_adjust.gif",
-    "desc_message_id": "8desktop-mouse-interactions-adjustROI-desc"
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
   },
-  "8desktop-mouse-interactions-scale-y": {
+  "08desktop-mouse-interactions-scale-y": {
     "title": "Scale Y",
     "img": "InterSpec_resources/images/yscale.gif",
-    "desc_message_id": "8desktop-mouse-interactions-scale-y-desc"
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
   },
-  "9desktop-mouse-interactions-countgamma": {
+  "09desktop-mouse-interactions-countgamma": {
     "title": "Count Gammas",
     "img": "InterSpec_resources/images/ERCount.gif",
-    "desc_message_id": "9desktop-mouse-interactions-countgamma-desc"
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "Keyboard Shortcuts",
+    "desc_message_id": "10desktop-shortcuts-desc"
   }
 }
 </message>
 
-<message id='1desktop-mouse-interactions-zoominout-desc'>
+<message id='01desktop-mouse-interactions-zoominout-desc'>
 <div><center>Left-Click Drag <b>right</b> to zoom-in.</center></div>
 <div><center>Left-Click Drag <b>left</b> to zoom-out.</center></div>
 </message>
 
-<message id='2desktop-mouse-interactions-shiftenergyrange-desc'>
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
 <center>Right-Click Drag</center>
 </message>
 
 
-<message id='3desktop-mouse-interactions-energyslider-desc'>
+<message id='03desktop-mouse-interactions-energyslider-desc'>
 <center> From <b>View</b> menu select &quot;<b>Show Energy Slider</b>&quot;.</center>
 <div>This is an easy to use way to adjust spectrum energy range.</div>
 <div><b>InterSpec</b> will remember if you want the energy slider chart showing.</div>
 </message>
 
-<message id='4desktop-mouse-interactions-identifypeaks-desc'>
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
 <center>
 <p style="font-size: 14px">There are a number of ways to fit peaks, including: </p>
 </center>
@@ -267,14 +271,14 @@ with that nuclide.  This infomation is used to fit for energy calibration, detec
 </message>
 
 
-<message id='4desktop-mouse-interactions-multipeaks-desc'>
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
 <div>To fit a definite number of peaks in a Region of Interest (ROI):</div>
 <center>
 <b><kbd>CTRL</kbd></b> + Left-Click Drag &rarr; and then select how many peaks.
 </center>
 </message>
 
-<message id='7desktop-mouse-interactions-deletepeaks-desc'>
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
 <ol>
 <li>Right-Click &rarr; &quot;<b>Delete Peak</b>&quot;</li>
 <li>Right-Click &rarr; &quot;<b>Peak Editor</b>&quot; &rarr; &quot;<b>Delete</b>&quot;</li>
@@ -284,7 +288,7 @@ with that nuclide.  This infomation is used to fit for energy calibration, detec
 </ol>
 </message>
 
-<message id='6desktop-mouse-interactions-visualcalibration-desc'>
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
 <div>To graphically adjust energy calibration:</div>
 <center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Left-Click Drag &rarr; <u>Optional</u>: Adjust Quantities &rarr; &quot;<b>Accept</b>&quot;</center>
 <div>Note: if do this action again, like first on a high energy peak, then on a low energy peak (or vice versa), the dialog that pops up will
@@ -295,19 +299,19 @@ energy calibration coefficients, or fit for them using the nuclides associated w
 </p>
 </message>
 
-<message id='5desktop-mouse-interactions-peakeditor-desc'>
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
 <div><center>Right-Click &rarr; &quot;Peak Editor&quot;</center></div>
 </message>
 
 
 
-<message id='8desktop-mouse-interactions-adjustROI-desc'>
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
 <center><div>Place mouse near the edge of Region of Interest (ROI) and drag.</div></center>
 <div>Mouse must be within the y-range of the peak, and within 10 pixels of the edge of the ROI.</div>
 </message>
 
 
-<message id='8desktop-mouse-interactions-scale-y-desc'>
+<message id='08desktop-mouse-interactions-scale-y-desc'>
 <center>Scale the amplitude of background and/or secondary spectra relative to the foreground
 by selecting <b>View</b> &rarr; &quot;<b>Show Y-Axis Scalers</b>&quot;.
 </center>
@@ -317,14 +321,53 @@ but menu items will be disabled if no background or secondary spectrum is loaded
 </message>
 
 
-<message id='9desktop-mouse-interactions-countgamma-desc'>
-<center>
-<ol>
-<li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Left-Click Drag &rarr; <u>Optional</u>: Adjust Quantities</li>
-<li><b>Tools</b> &rarr; <b>Energy Range Count</b></li>
-</ol>
-</center>
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Left-Click Drag &rarr; <u>Optional</u>: Adjust Quantities</li>
+      <li><b>Tools</b> &rarr; <b>Energy Range Sum</b></li>
+    </ol>
+  </center>
 </message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <ul>
+    <li>
+      <b><code>Ctrl-s</code></b>: Switches to the &quot;<em><u>S</u>pectrum Files</em>&quot; tab, or
+      if <em>Tool Tabs</em> are hidden, shows the <em>Spectrum Files</em> tool.
+    </li>
+    <li>
+      <b><code>Ctrl-p</code></b>: Switches to the &quot;<em><u>P</u>eak Manager</em>&quot; tab, or
+      shows the tool.
+    </li>
+    <li>
+      <b><code>Ctrl-r</code></b>: Switches to the &quot;<em><u>R</u>eference Photopeaks</em>&quot;
+      tab, or shows the tool.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: Switches to the &quot;<em><u>E</u>nergy Calibration</em>&quot;
+      tab, or shows the tool.
+    </li>
+    <li>
+      <b><code>Ctrl-n</code></b>: Switches to the &quot;<em><u>N</u>uclide Search</em>&quot; tab,
+      or shows the tool.
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b>: Shows the in-app <em><u>H</u>elp</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b>: Shows the <em>Welcome <u>I</u>nformation</em> screen.
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b>: Switches spectrum y-axis between <u>l</u>og and <u>l</u>inear.
+    </li>
+    <li>
+      <b><code>Ctrl-c</code></b>: <u>C</u>lears all showing reference lines.
+    </li>
+  </ul>
+</message>
+
 
   <message id='1intro-video'>
      <center>${video1}</center>

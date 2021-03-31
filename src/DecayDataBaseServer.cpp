@@ -123,8 +123,8 @@ void DecayDataBaseServer::setXmlFileDirectory( const std::string &dir )  //assum
 
 
 
-double EnergyToNuclideServer::sm_halfLife = 4.0*SandiaDecay::hour;
-double EnergyToNuclideServer::sm_branchRatio = 0.001;
+double EnergyToNuclideServer::sm_halfLife = 6000.0*SandiaDecay::second;
+double EnergyToNuclideServer::sm_branchRatio = 0.0;
 
 const std::shared_ptr< const EnergyToNuclideServer::EnergyNuclidePairVec > &
                                         EnergyToNuclideServer::energyToNuclide()

@@ -192,7 +192,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
                                 Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
 : AuxWindow( "Dose Calc",
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) )
 {
@@ -228,7 +228,7 @@ DoseCalcWindow::~DoseCalcWindow()
 class GammaSourceEnter : public Wt::WContainerWidget
 {
 public:
-  GammaSourceEnter( const bool showToolTipInstantly, Wt::WContainerWidget *parent )
+  GammaSourceEnter( const bool showToolTips, Wt::WContainerWidget *parent )
    : WContainerWidget( parent ),
      m_nuclideEdit( 0 ),
      m_nuclideAgeEdit( 0 ),
@@ -247,14 +247,17 @@ public:
     layout->addWidget( label, 0, 0, AlignMiddle );
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideEdit = new WLineEdit();
+    m_nuclideEdit->setAutoComplete( false );
     layout->addWidget( m_nuclideEdit, 0, 1 );
     m_nuclideEdit->addStyleClass( "DoseEnterTxt" );
+    m_nuclideEdit->setAttributeValue( "spellcheck", "false" );
     label->setBuddy( m_nuclideEdit );
     
     label = new WLabel( "Age:" );
     layout->addWidget( label, 1, 0, AlignMiddle );
     label->addStyleClass( "DoseFieldLabel" );
     m_nuclideAgeEdit = new WLineEdit();
+    m_nuclideAgeEdit->setAutoComplete( false );
     m_nuclideAgeEdit->setPlaceholderText( "NA" );
     layout->addWidget( m_nuclideAgeEdit, 1, 1 );
     label->setBuddy( m_nuclideAgeEdit );
@@ -297,7 +300,7 @@ public:
   
     string tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, "
                      "<b>U-235m</b> (meta stable state), <b>Cs137</b>, etc.";
-    HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTips );
     
     
     WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationHalfLiveOptionalRegex, this );
@@ -325,7 +328,7 @@ public:
       "18 months and 3 minutes"
     "</div>";
     
-    HelpSystem::attachToolTipOn( m_nuclideAgeEdit, tooltip, showToolTipInstantly );
+    HelpSystem::attachToolTipOn( m_nuclideAgeEdit, tooltip, showToolTips );
   }//GammaSourceEnter constructor
   
   
@@ -789,12 +792,9 @@ void DoseCalcWidget::init()
     return;
   }//try / catch
   
-  
-  
-  
   const bool isPhone = m_viewer->isPhone();
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
-  
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
   WContainerWidget *enterDiv = new WContainerWidget();
   WContainerWidget *answerDiv = new WContainerWidget();
@@ -851,7 +851,7 @@ void DoseCalcWidget::init()
   intoTxtLayout->setRowStretch( 0, 10 );
   
   m_menu = new WMenu();
-  m_menu->addStyleClass( (isPhone ? "SideMenuPhone" : "SideMenu") );
+  m_menu->addStyleClass( (isPhone ? "VerticalMenuPhone SideMenuPhone" : "VerticalMenu SideMenu") );
   m_menu->addStyleClass( "DoseCalcSideMenu" );
   
   m_stack = new WStackedWidget();
@@ -902,7 +902,7 @@ void DoseCalcWidget::init()
     m_neutronSourceCombo->addItem( "U238" );
     m_neutronSourceCombo->activated().connect( this, &DoseCalcWidget::updateResult );
     
-    m_gammaSource = new GammaSourceEnter( showToolTipInstantly, m_gammaSourceDiv );
+    m_gammaSource = new GammaSourceEnter( showToolTips, m_gammaSourceDiv );
     m_gammaSource->changed().connect( this, &DoseCalcWidget::updateResult );
   }
   
@@ -960,7 +960,7 @@ void DoseCalcWidget::init()
 
         
         m_doseEnter = new WLineEdit( m_enterWidgets[i] );
-        
+        m_doseEnter->setAutoComplete( false );
         m_doseEnter->addStyleClass( "DoseEnterTxt" );
         m_doseEnter->setText( "100" );
         if( isPhone )
@@ -1007,6 +1007,7 @@ void DoseCalcWidget::init()
         
         m_activityEnter = new WLineEdit( m_enterWidgets[i] );
         m_activityEnter->addStyleClass( "DoseEnterTxt" );
+        m_activityEnter->setAutoComplete( false );
         
         if( isPhone )
           m_activityEnter->setWidth( 50 );
@@ -1030,15 +1031,23 @@ void DoseCalcWidget::init()
           m_activityEnterUnits->addItem( WString::fromUTF8(val) );
         }
         
-        m_activityEnterUnits->setCurrentIndex( 6 ); //uci
+        if( useBq )
+          m_activityEnterUnits->setCurrentIndex( 2 ); //MBq
+        else
+          m_activityEnterUnits->setCurrentIndex( 6 ); //uci
         
         m_activityAnswerUnits->addItem( "curries" );
         m_activityAnswerUnits->addItem( "becquerels" );
 
+        if( useBq )
+          m_activityAnswerUnits->setCurrentIndex( 1 );
+        else
+          m_activityAnswerUnits->setCurrentIndex( 0 );
+        
         m_activityAnswer = new WText( m_answerWidgets[i] );
         m_activityAnswer->setInline( false );
 
-		    string actstr = "200 &mu;Ci";
+		    string actstr = useBq ? "1 MBq" : "200 &mu;Ci";
 		    const unsigned char utf8mu[] = { 0xCE, 0xBC, 0 };
 		    SpecUtils::ireplace_all(actstr, "&mu;", (char *)utf8mu /*"\u03BC"*/);
 
@@ -1069,6 +1078,7 @@ void DoseCalcWidget::init()
     
         
         m_distanceEnter = new WLineEdit( "100 cm" );
+        m_distanceEnter->setAutoComplete( false );
         m_distanceEnter->addStyleClass( "DoseEnterTxt" );
         
         if( isPhone )
@@ -1083,7 +1093,7 @@ void DoseCalcWidget::init()
             " followed by units; valid units are: meters, m, cm, mm, km, feet,"
             " ft, ', in, inches, or \".  You may also add multiple distances,"
             " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
-            " 40inches and 15.6cm respectively.", showToolTipInstantly );
+            " 40inches and 15.6cm respectively.", showToolTips );
         
         m_distanceEnter->changed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
         m_distanceEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
@@ -1254,7 +1264,7 @@ void DoseCalcWidget::runtime_sanity_checks()
   expected = 25.19E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 23.9 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
-  areal_density = 50.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  areal_density = 50.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
   expected = 2.59E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 0.842 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
@@ -1267,7 +1277,7 @@ void DoseCalcWidget::runtime_sanity_checks()
   expected = 1.86E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 1.8 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
-  areal_density = 2.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
+  areal_density = 2.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
   expected = 2.34E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 0.78 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
@@ -1302,6 +1312,32 @@ void DoseCalcWidget::runtime_sanity_checks()
   areal_density = 10.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
   expected = 134.09E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 111 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+  
+  
+  auto checkPrintDose = [=]( double dose, const string answer, const bool useSv ){
+    dose *= useSv ? PhysicalUnits::sievert : PhysicalUnits::rem;
+    dose /= PhysicalUnits::hour;
+    
+    const string value = PhysicalUnits::printToBestEquivalentDoseRateUnits( dose, 2, useSv );
+  
+    if( value != answer )
+      throw runtime_error( "Error printing to dose string; expected '"
+                           + answer + "', but got '" + value + "'" );
+  };//checkPrintDose(...)
+  
+  // The printToBest*(...) functions currently internally use snprintf, with a format flag like
+  //  '%.2f', which behaves a bit different on the different platforms for trailing zeros, so will
+  //  avoid that case for this test - I'm also not sure if rounding is handled different on Windows
+  //  e.g., if “round to nearest and ties to even” or "nearest-even"
+  checkPrintDose( 1.234, "1.23 sv/hr", true );
+  checkPrintDose( 1.234, "1.23 rem/hr", false );
+  checkPrintDose( 8.236, "8.24 sv/hr", true );
+  checkPrintDose( 8.23688E-7, "823.69 nsv/hr", true );
+  checkPrintDose( 8.23688E-5, "82.37 usv/hr", true );
+  checkPrintDose( 8.23688E-2, "82.37 msv/hr", true );
+  checkPrintDose( 8.23688E2, "823.69 sv/hr", true );
+  checkPrintDose( 8.23688E5, "823.69 ksv/hr", true );
+  checkPrintDose( 8.23688E6, "8.24 Msv/hr", true );
 }//void runtime_sanity_checks()
 
 
@@ -1607,6 +1643,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     case Activity:
     {
       const double answer = activity * user_enetered_dose / dose_from_source;
+      
       
       const bool useCurries = (m_activityAnswerUnits->currentIndex() == 0);
       const string answerstr = PhysicalUnits::printToBestActivityUnits( answer, 2, useCurries );
