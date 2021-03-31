@@ -1,12 +1,12 @@
    <div align="center">
       <h1 id="energy-range-count">
-            <b>Energy Range Count</b>
+            <b>Energy Range Sum</b>
       </h1>
       <hr />
 	  </div>
       <div>
          The
-         <b>Energy Range Count</b> tool
+         <b>Energy Range Sum</b> tool
          will sum the number of gammas in a selected energy range. To
          <u>select</u>
          an energy range, manually

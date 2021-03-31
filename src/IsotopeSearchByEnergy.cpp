@@ -66,6 +66,8 @@
 
 #if ( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
+#else
+#include "InterSpec/SpectrumDisplayDiv.h"
 #endif
 
 using namespace Wt;
@@ -164,11 +166,15 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   m_removeIcn = new WContainerWidget(); //needed or else button wont show up
   m_removeIcn->setStyleClass( "DeleteSearchEnergy Wt-icon" );
   m_removeIcn->clicked().connect( this, &SearchEnergy::emitRemove );
+  m_removeIcn->clicked().preventPropagation();  //make it so we wont emit gotFocus()
   layout->addWidget( m_removeIcn, 0, 5, Wt::AlignMiddle );
   
   m_addAnotherIcn = new WContainerWidget(); //needed or else button wont show up
   m_addAnotherIcn->setStyleClass( "AddSearchEnergy Wt-icon" );
   m_addAnotherIcn->clicked().connect( this, &SearchEnergy::emitAddAnother );
+  m_addAnotherIcn->clicked().preventPropagation(); //make it so we wont emit gotFocus(), which would
+                                                   // keep new search energy from getting focus due
+                                                   // order of handling signal callbacks
   layout->addWidget( m_addAnotherIcn, 0, 6, Wt::AlignMiddle );
   
   layout->setColumnStretch( 1, 1 );
@@ -344,6 +350,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 
   SearchEnergy *enrgy = new SearchEnergy( m_searchEnergies );
   enrgy->enter().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
+  enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
   enrgy->gotFocus().connect(
                 boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus,
                                         this, enrgy ) );
@@ -351,7 +358,6 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
                         boost::bind( &IsotopeSearchByEnergy::removeSearchEnergy,
                                       this, enrgy) );
   enrgy->addStyleClass( ActiveSearchEnergyClass );
-  enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
   enrgy->disableRemove();
   
   
@@ -360,26 +366,27 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "nuclide-search-dialog" ) );
   buttonDivLayout->addWidget(helpBtn,1,0, Wt::AlignLeft | Wt::AlignBottom );
   
-  const bool showToolTipInstantly
-  = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   WLabel *label = new WLabel( "Min. BR" );
-//  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTipInstantly , HelpSystem::Top);
+//  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips , HelpSystem::ToolTipPosition::Top);
    buttonDivLayout->addWidget(label,1,1, Wt::AlignMiddle | Wt::AlignRight );
 
   m_minBranchRatio = new NativeFloatSpinBox();
   //m_minBranchRatio->setNativeControl(true);
   string tip = "Minimum branching ratio.";
-  HelpSystem::attachToolTipOn( m_minBranchRatio, tip, showToolTipInstantly , HelpSystem::Top);
+  HelpSystem::attachToolTipOn( m_minBranchRatio, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
   buttonDivLayout->addWidget(m_minBranchRatio,1,2);
 
   m_minBranchRatio->setWidth( 35 );
   m_minBranchRatio->setValue( m_minBr );
-  m_minBranchRatio->setRange( 0.0, 1.0 );
-  m_minBranchRatio->setSingleStep( 0.1 );
+  m_minBranchRatio->setRange( 0.0f, 1.0f );
+  m_minBranchRatio->setSingleStep( 0.1f );
+  label->setBuddy( m_minBranchRatio );
+  
   label = new WLabel( "Min. HL" );
  
-  tip = "Minimum half life of nuclides to be searched.<br>"
+  tip = "Minimum half life of nuclides to be searched.<br />"
     "<div>Age can be specified using a combination of time units, "
     "similar to '<b>5.3y 8d 22m</b>'.</div>"
     "<div>"
@@ -392,11 +399,11 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
     "specified, they are summed, e.x. '1y6months 3m' is interpreted as "
     "18 months and 3 minutes"
     "</div>";
-//    HelpSystem::attachToolTipOn( label, tip, showToolTipInstantly , HelpSystem::Top);
+//    HelpSystem::attachToolTipOn( label, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
 
   buttonDivLayout->addWidget(label,1,3, Wt::AlignMiddle | Wt::AlignRight );
   m_minHalfLife = new WLineEdit( "6000 s" );
-  HelpSystem::attachToolTipOn( m_minHalfLife, tip, showToolTipInstantly , HelpSystem::Top );
+  HelpSystem::attachToolTipOn( m_minHalfLife, tip, showToolTips , HelpSystem::ToolTipPosition::Top );
 
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, this );
   validator->setFlags(Wt::MatchCaseInsensitive);
@@ -405,6 +412,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
     
   buttonDivLayout->addWidget(m_minHalfLife,1,4);
   m_minHalfLife->setWidth( 55 );
+  label->setBuddy( m_minHalfLife );
   //XXX should set WRegExpValidator for m_minHalfLife here.
 
   m_minBranchRatio->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
@@ -551,6 +559,9 @@ IsotopeSearchByEnergy::SearchEnergy *IsotopeSearchByEnergy::addNewSearchEnergy()
     if( searchv[i]->energy() < 0.1 )
     {
       searchEnergyRecievedFocus( searchv[i] );
+      // Note: if there are more callbacks queued, like gotFocus(), then they may happen after here, so we
+      //    need to either be careful of the ordering of callbacks, or use something like a WTimer here.
+      //WTimer::singleShot( 1, boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus, this, searchv[i]) );
       break;
     }//if( searchv[i]->energy() < 0.01 )
   }//for( size_t i = 0; i < searchv.size(); ++i )
@@ -743,10 +754,22 @@ void IsotopeSearchByEnergy::minBrOrHlChanged()
 
 void IsotopeSearchByEnergy::resultSelectionChanged()
 {
-  if( !m_viewer || !m_viewer->referenceLinesWidget() )
+  if( !m_viewer )
     return;
- 
+  
+  // This is a bit of a hack, but if the tool tabs are not visible, then the
+  //  ReferencePhotopeakDisplay pointer will be nullptr, so we will create a reference gamma lines
+  //  window - havent tested this on phones, as of 20201030
   ReferencePhotopeakDisplay *display = m_viewer->referenceLinesWidget();
+  if( !display && !m_viewer->toolTabsVisible() )
+  {
+    m_viewer->showGammaLinesWindow();
+    display = m_viewer->referenceLinesWidget();
+  }
+  
+  if( !display )
+    return;
+  
   
   WModelIndexSet selected = m_results->selectedIndexes();
   if( selected.empty() )
@@ -1026,7 +1049,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   std::shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
   if( foreground )
   {
-    const std::set<int> &samplenums = foreground->displayedSampleNumbers();
+    const set<int> &samplenums = m_viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
     auto userpeaks = foreground->peaks( samplenums );
     auto autopeaks = foreground->automatedSearchPeaks( samplenums );
     

@@ -130,8 +130,15 @@ public:
   static std::string tempDirectory();
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-  /** Returns the token passed as part of url "" */
+  /** Returns the token passed as part of url using parameter 'externalid' or 'apptoken'.
+   e.g., if url looked like "localhost:8080?externalid=blah", then this function would return "blah"
+   
+   Note that if you want to assign a session token but not have this be the primary window, add a URL argument of 'primary=no'.
+  */
   std::string externalToken();
+  
+  /** Returns true if this app instance corresponds to the primary window instance. */
+  static bool isPrimaryWindowInstance();
   
   static InterSpecApp *instanceFromExtenalToken( const std::string &externalToken );
 #endif
@@ -158,9 +165,6 @@ public:
   void dragEventWithFileContentsFinished();
 #endif
   
-#if( BUILD_AS_ELECTRON_APP )
-  static bool isElectronInstance();
-#endif
 
 #if( BUILD_AS_OSX_APP || IOS || BUILD_AS_ELECTRON_APP )
   static void osThemeChange( std::string name );
@@ -194,6 +198,12 @@ public:
   void getSafeAreaInsets( DeviceOrientation &orientation, float &top, float &right, float &bottom, float &left );
 #endif
   
+  //clearSession(): resets the session to a blank session (e.g. doesnt load
+  //  any saved state).
+  virtual void clearSession();
+    
+  void miscSignalHandler( const std::string &signal );
+  
 protected: 
 
   //notify(): over-riding WApplication::notify inorder to catch any exceptions
@@ -211,16 +221,11 @@ protected:
   //  state if their preferences ask for it
   virtual void prepareForEndOfSession();
   
-  //clearSession(): resets the session to a blank session (e.g. doesnt load
-  //  any saved state).
-  virtual void clearSession();
-  
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-  /** Checks for URL argument "externalid", and if found sets m_externalToken
-   to it.
-   Returns true if should load session.  False if should redirect.
-   ToDo: Some day will validate against allowed tokens...
+  /** Checks for URL argument "externalid", or equivalently "apptoken", and if found sets m_externalToken to it.
+   
+   Returns true if session should continue to be loaded; also notifies InterSpecServer we have loaded this token.
    */
   bool checkExternalTokenFromUrl();
 #endif
@@ -263,7 +268,18 @@ protected:
 #endif
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  /** App token specified using the URL "externalid" or "apptoken" arguments. */
   std::string m_externalToken;
+  
+  /** Specifies wether this instance corresponds to the primary application window (e.g., uses the native menus, receives request to
+   open files, etc).
+   Defaults too true, if a 'apptoken'/'externalid' is specified in the url, but can be set to false by including a url argument of 'primary=no'.
+   
+   \TODO: should default this to false, even if there is an external session, and instead have the
+   primary application (electron, obj-c, java, etc) instead add a 'primary=true' argument to the URL, and require the URL to have been
+   allowed through #InterSpecServer::add_allowed_session_token before this can be set to true.
+   */
+  bool m_primaryApp;
 #endif
   
   //iOS version of app handles not reloading app state through the iOS restore
@@ -273,7 +289,12 @@ protected:
   std::unique_ptr<Wt::JSignal<> > m_sucessfullyLoadedSignal;
 #endif
   
-  std::unique_ptr<Wt::JSignal<> > m_clearSession;
+  /** A signal emitted from the JS with a string argument that specifies what caused the signal to be emitted.
+   So far this signal is only used to allow manually specifying a button to be clicked on the notification messages.
+   
+   \sa #miscSignalHandler
+   */
+  std::unique_ptr<Wt::JSignal<std::string> > m_miscSignal;
   
 #if( IOS )
   /* Note that we could setup a JS based 'orientationchange' JSignal to let us know

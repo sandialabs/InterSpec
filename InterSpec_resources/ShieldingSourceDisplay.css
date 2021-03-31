@@ -18,7 +18,7 @@
   margin: 0;
   margin-right: 4px;
   width: 16px;
-  height: 16px;
+  height: 17px;
 }
 
 .ShieldingDelete:hover, .ShieldingAdd:hover
@@ -50,6 +50,15 @@
   
   margin-top:    3px;
   margin-bottom: 3px;
+}
+
+.ShieldingSelect .MaterialSummary
+{
+  overflow-x: hidden;
+  white-space: nowrap;
+  width: 95px;
+  text-align: right;
+  margin-right: 3px;
 }
 
 .MassFracNoFit

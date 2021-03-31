@@ -60,8 +60,7 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
                               SpecUtils::SpectrumType type,
                               std::shared_ptr<SpectraFileHeader> header)
 : AuxWindow( "Previously Stored States",
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                             | AuxWindowProperties::DisableCollapse
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
                                              | AuxWindowProperties::EnableResize) ),
   m_factory( nullptr )
 {
@@ -72,19 +71,25 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   {
     m_factory = new SnapshotBrowser( manager, viewer, type, header, footer(), nullptr );
     layout->addWidget( m_factory, 0, 0 );
-    m_factory->finished().connect( this, &AuxWindow::hide );
+  }catch( std::exception &e )
+  {
+    m_factory = nullptr;
+    WText *tt = new WText( "<b>Error creating SnapshotBrowser</b> - sorry :("
+                           "<br />Error: " + string(e.what()) );
+    layout->addWidget( tt, 0, 0 );
   }catch( ... )
   {
-    //In case something goes wrong inside SnapshotBrowser, we delete this window
-    AuxWindow::deleteAuxWindow(this);
-    return;
+    WText *tt = new WText( "<b>Unexpected issue creating SnapshotBrowser</b> - sorry :(" );
+    layout->addWidget( tt, 0, 0 );
   }
   
   WPushButton *cancel = addCloseButtonToFooter();
   cancel->clicked().connect( this, &AuxWindow::hide );
   
   rejectWhenEscapePressed();
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+  
+  auto deleter = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+  finished().connect( std::bind(deleter) );
 
   const int width = std::min( 500, static_cast<int>(0.95*viewer->renderedWidth()) );
   const int height = std::min( 475, static_cast<int>(0.95*viewer->renderedHeight()) );
@@ -93,6 +98,13 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   centerWindow();
   show();
 }//DbFileBrowser
+
+
+int DbFileBrowser::numSnapshots() const
+{
+  return m_factory ? m_factory->numSnaphots() : 0;
+}
+
 
 /*
 SnapshotBrowser is the refactored class to create the UI for loading snapshot/spectra
@@ -122,11 +134,16 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_editWindow( nullptr ),
     m_nrows( 0 )
 {
+  wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+  
+  addStyleClass( "SnapshotBrowser" );
+  
   WContainerWidget *footer = buttonBar;
   if( !footer )
     footer = new WContainerWidget();
   
   WGridLayout *layout = new WGridLayout();
+  layout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( layout );
   
   //We have to create a independant Dbo::Session for this class since the
@@ -146,12 +163,13 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
     WContainerWidget* tablecontainer = new WContainerWidget();
     
-    //With m_snapshotTable being a WTree, we cant implement double clicking on
-    //  an item to open it right away.  If we use a WTreeView, then we should
-    //  be able to do that...
     m_snapshotTable = new WTree();
+    m_snapshotTable->addStyleClass( "SnapshotTable" );
+
+    
     WGridLayout *tablelayout = new WGridLayout();
-    tablelayout->setContentsMargins(2, 2, 2, 2);
+    //tablelayout->setContentsMargins(2, 2, 2, 2);
+    tablelayout->setContentsMargins(0,0,0,0);
     tablelayout->setRowStretch(0, 1);
     tablelayout->setColumnStretch(0, 1);
     tablelayout->addWidget(m_snapshotTable, 0, 0);
@@ -169,8 +187,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_snapshotTable->setTreeRoot(root);
     m_snapshotTable->setSelectionMode(Wt::SingleSelection);
     m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
-    
-    
+      
     Dbo::Transaction transaction( *m_session->session() );
     Dbo::collection< Dbo::ptr<UserState> > query;
     
@@ -222,42 +239,84 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       }//m_uuid.empty()
     }//if( m_nrows == 0 )
     
+    
+    //Some sudo-styling for if we want to style this - or if we implement this as a WTreeView
+    //  most of this styling comes along much easier (so I think this should be what is done
+    //  sometime in the future).
+    //if( !wApp->styleSheet().isDefined("snapshotrow") )
+    //{
+    //  // We would add these rules to InterSpec.css
+    //  wApp->styleSheet().addRule( "li.SnapshotRow > .Wt-item", "height: 30px; line-height: 30px;", "snapshotrow" );
+    //  wApp->styleSheet().addRule( ".SnapshotRow", "text-overflow: ellipsis; white-space: nowrap; overflow: hidden;" );
+    //  wApp->styleSheet().addRule( ".SnapshotRow .Wt-expand", "height: 30px; padding-top: 5px" );
+    //  wApp->styleSheet().addRule( ".SnapshotRow div.Wt-item.Wt-trunk,"
+    //                              ".Wt-tree.Wt-trunk,"
+    //                              ".Wt-tree .Wt-item.Wt-trunk",
+    //                              "background-image: none !important;" );
+    //  //Make table alternate row colors using:
+    //  wApp->styleSheet().addRule( "ul.Wt-root > li.SnapshotRow", "color: white; background: rgb(41,42,44) !important;" );
+    //  wApp->styleSheet().addRule( "ul.Wt-root > li.SnapshotRow:nth-child(odd)", "background: rgb(30,32,34) !important;" );
+    //}
+    
     for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshotIterator = query.begin();
         snapshotIterator != query.end(); ++snapshotIterator )
     {
       Wt::WTreeNode *snapshotNode = new Wt::WTreeNode((*snapshotIterator)->name, 0, root);
+    
+      //snapshotNode->addStyleClass( "SnapshotRow" );
       
-      //m_snapshotTable->doubleClicked
-      
+      // We will go-around Wt::WTreeNode API to hack in a way to customize display and options
+      //  each row in the table can have by assuming the row is implemented as a WContainerWidget,
+      //  which seems to always be true, at least for Wt 3.3.4.
+      // \TODO: sub-class WTreeNode in order to allow customization, which is probably a cleaner
+      //       solution, or we could use a WTreeView instead of WTree, which is probably best
+      //       solution.
       WContainerWidget *rowDiv = nullptr;
-      if( buttonBar && snapshotNode->label() && snapshotNode->label()->parent() )
+      if( snapshotNode->label() )
         rowDiv = dynamic_cast<WContainerWidget *>( snapshotNode->label()->parent() );
       
-      if( rowDiv )  //Always seems to be true for Wt 3.1.4
+      if( !rowDiv && snapshotNode->label() )
+      {
+        //In case Wt changes in new versions
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, "nsnapshotNode->label()->parent() Is Not a WContainerWidget" );
+#endif
+        cerr << "\n\nsnapshotNode->label()->parent() Is Not a WContainerWidget\n\n" << endl;
+      }//if( Wt has changed with new version )
+      
+      // Add ability to double click on a row to load this state
+      if( rowDiv )
+      {
+        auto loader = wApp->bind( boost::bind( &SnapshotBrowser::loadSnapshotSelected, this ) );
+        rowDiv->doubleClicked().connect( std::bind([this,loader,snapshotNode](){
+          const set<WTreeNode *> sets = m_snapshotTable->selectedNodes();
+          if( !sets.empty() && ((*begin(sets)) == snapshotNode) )
+            loader();
+#if( PERFORM_DEVELOPER_CHECKS )
+          else
+            log_developer_error( __func__, "Got double click on SnapshotBrowser state but that wasnt what was selected." );
+#endif
+        }) );
+      }//if( rowDiv )
+      
+      
+      // If a 'buttonBar' was specified to this contructor, then this browser is NOT on the
+      //  InterSpec introductory screen, but instantiated by the "InterSpec" --> "Previous..." menu.
+      if( buttonBar && rowDiv )
       {
         WImage *delBtn = new WImage( "InterSpec_resources/images/minus_min_black.svg", rowDiv );
         delBtn->resize( WLength(16), WLength(16) );
         delBtn->addStyleClass( "DelSnapshotBtn" );
         delBtn->clicked().connect( this, &SnapshotBrowser::startDeleteSelected );
+        delBtn->doubleClicked().preventPropagation();
         
         
         WImage *editBtn = new WImage( "InterSpec_resources/images/edit_black.svg", rowDiv );
         editBtn->resize( WLength(16), WLength(16) );
         editBtn->addStyleClass( "DelSnapshotBtn" );
         editBtn->clicked().connect( this, &SnapshotBrowser::startEditSelected );
-        
-        if( !wApp->styleSheet().isDefined("snapshotbtn") )
-        {
-          wApp->styleSheet().addRule( ".DelSnapshotBtn", "float: right; background: none; display: none; cursor: pointer; opacity: 0.4; margin-top: 1px; margin-left: 1px; margin-right: 2px", "snapshotbtn" );
-          wApp->styleSheet().addRule( ".DelSnapshotBtn:hover", "opacity: 1;" );
-          wApp->styleSheet().addRule( ".Wt-selected .DelSnapshotBtn", "display: inline;" );
-        }
-      }else
-      {
-        //In case Wt changes in new versions
-        if( buttonBar && snapshotNode->label() )
-          cerr << "\n\nsnapshotNode->label()->parent() Is Not a WContainerWidget\n\n" << endl;
-      }//if( rowDiv )
+        editBtn->doubleClicked().preventPropagation();
+      }//if( buttonBar && rowDiv )
       
       //snapshotNode->setChildCountPolicy(Wt::WTreeNode::Enabled);
       snapshotNode->setChildCountPolicy(Wt::WTreeNode::Disabled);
@@ -269,7 +328,6 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       
       //If not root, then return how many versions
       typedef Dbo::collection< Dbo::ptr<UserState> > Snapshots;
-      typedef Snapshots::iterator SnapshotIter;
       Snapshots snapshots;
       
       if( *snapshotIterator )
@@ -322,9 +380,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     layout->setRowStretch( row, 1 );
     
     m_timeLabel = new WText();
+    m_timeLabel->addStyleClass( "SnapshotTime" );
     layout->addWidget(m_timeLabel, ++row,0);
     
     m_descriptionLabel = new WText();
+    m_descriptionLabel->addStyleClass( "SnapshotDesc" );
     layout->addWidget(m_descriptionLabel, ++row,0);
     layout->columnStretch(1);
     
@@ -373,7 +433,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_loadSnapshotButton->disable();
     
     if( !buttonBar )
-      layout->addWidget( footer, layout->rowCount()+1 , 0, AlignRight );
+    {
+      layout->addWidget( footer, layout->rowCount()+1 , 0 );
+      m_loadSpectraButton->setFloatSide( Wt::Side::Right );
+      m_loadSnapshotButton->setFloatSide( Wt::Side::Right );
+    }
   }catch( std::exception &e )
   {
     if( !buttonBar )
@@ -396,7 +460,6 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
 {
   //add in foreground/background/2ndfore
   typedef Dbo::collection< Dbo::ptr<UserFileInDb> > Spectras;
-  typedef Spectras::iterator SpectraIter;
   
   for( int i = 0; i < 3; i++ )
   {
@@ -442,7 +505,27 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
         post = "";
       } //default look is not bolded
       
-      Wt::WTreeNode *spectraNode = new Wt::WTreeNode(pre + " " + (*spectraIterator)->filename + " <i>(" + descriptionText(spectratype)+")</i>" + post, icon, versionNode);
+      const auto nodeTxt = pre + " " + (*spectraIterator)->filename
+                           + " <i>(" + descriptionText(spectratype)+")</i>" + post;
+      Wt::WTreeNode *spectraNode = new Wt::WTreeNode( nodeTxt, icon, versionNode );
+      
+      // Hack in letting user double click on row to load just the spectrum
+      auto label = spectraNode->label();
+      WContainerWidget *rowDiv = label ? dynamic_cast<WContainerWidget *>( label->parent() ) : nullptr;
+      if( rowDiv )
+      {
+        rowDiv->doubleClicked().connect( std::bind([this,spectraNode](){
+          const set<WTreeNode *> sets = m_snapshotTable->selectedNodes();
+          if( !sets.empty() && ((*begin(sets)) == spectraNode) )
+            loadSpectraSelected();
+#if( PERFORM_DEVELOPER_CHECKS )
+          else
+            log_developer_error( __func__, "Got double click on SnapshotBrowser spectrum but that wasnt what was selected." );
+#endif
+        }) );
+      }//if( rowDive )
+      
+      
       
       if( m_header && !m_header->m_uuid.empty() )
       {
@@ -464,8 +547,9 @@ void SnapshotBrowser::selectionChanged()
 {
   std::set<Wt::WTreeNode *> sets = m_snapshotTable->selectedNodes();
   
-  //Only one row selected
-  Wt::WTreeNode * selectedTreeNode = *sets.begin();
+  Wt::WTreeNode *selectedTreeNode = nullptr;
+  if( !sets.empty() ) //Should only select one row at a time
+    selectedTreeNode = *sets.begin();
   
   Wt::Dbo::ptr<UserState> userstate;
   Wt::Dbo::ptr<UserFileInDb> dbfile;
@@ -547,8 +631,8 @@ void SnapshotBrowser::startDeleteSelected()
     AuxWindow::deleteAuxWindow( m_editWindow );
   
   m_editWindow = new AuxWindow( title,
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
   WTreeNode *node = *begin(selection);
   WText *label = node->label();
@@ -620,8 +704,8 @@ void SnapshotBrowser::startEditSelected()
     AuxWindow::deleteAuxWindow( m_editWindow );
   
   m_editWindow = new AuxWindow( title,
-                               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+                               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
   m_editWindow->setWidth( std::min(425, std::max(m_viewer->renderedWidth(), 250)) );
   m_editWindow->setHeight( std::min(250, std::max(m_viewer->renderedHeight(), 150)) );
@@ -915,7 +999,7 @@ void SnapshotBrowser::loadSpectraSelected()
                         if( meas )
                         {
                             thisheader->setMeasurmentInfo( meas );
-                            m_manager->displayFile( row, meas, type, false, false, false );
+                            m_manager->displayFile( row, meas, type, false, false, SpecMeasManager::VariantChecksToDo::None );
                         }//if( meas )
                     }//if( snapshot_id )
                     
@@ -930,7 +1014,7 @@ void SnapshotBrowser::loadSpectraSelected()
         if( modelrow < 0 )
             modelrow = m_manager->setDbEntry( dbfile, header, measurement, true );
         
-        m_manager->displayFile( modelrow, measurement, type, false, false, false );
+        m_manager->displayFile( modelrow, measurement, type, false, false, SpecMeasManager::VariantChecksToDo::None );
     }
     else
     {
@@ -958,7 +1042,7 @@ void SnapshotBrowser::loadSpectraSelected()
                 if( entry && entry.id() == dbfile.id() )
                 {
                     measurement = header->parseFile();
-                    m_manager->displayFile( row, measurement, SpecUtils::SpectrumType::Foreground, false, false, false );
+                    m_manager->displayFile( row, measurement, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
                     m_finished.emit();
                     return;
                 }//if( entry.id() == dbfile.id() )
@@ -968,7 +1052,7 @@ void SnapshotBrowser::loadSpectraSelected()
             {
                 const int modelRow = m_manager->setDbEntry( dbfile, header,
                                                            measurement, true );
-                m_manager->displayFile( modelRow, measurement, SpecUtils::SpectrumType::Foreground, false, false, false );
+                m_manager->displayFile( modelRow, measurement, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
                 
             }catch( exception &e )
             {

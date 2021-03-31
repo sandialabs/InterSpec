@@ -1,4 +1,4 @@
-.Wt-domRoot, .dialog-layout { 
+.Wt-domRoot, .dialog-layout, .Wt-panel .body {
   background: rgb(44,45,48); 
   color: white;
 }
@@ -26,7 +26,7 @@ button[disabled] {
   filter: grayscale(0%);
 }
 
-input[type="text"], textarea {
+input[type="text"], input[type="number"], numbertextarea, textarea {
   background-color: rgb(59,60,63) !important; 
   border-top: solid 1px rgb(61,62,64) !important; 
   border-left: none !important; 
@@ -145,7 +145,7 @@ ul.Wt-tv-root > li:nth-child(odd) {
   color: rgb(197,198,201);
 }
 
-.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th {
+.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th, .DevPairTitle, .CalDisplay .CalType, .DetHdr {
   background-color: rgb( 80, 81, 94 );
 }
 
@@ -159,29 +159,23 @@ ul.Wt-tv-root > li:nth-child(odd) {
   background: rgba(110, 110, 110, 0.5) !important;
 }
 
-ul.SideMenu > li.itemselected  {
+ul.VerticalMenu > li.itemselected  {
   background: rgb(175,175,175) !important;
 }
 
-ul.SideMenu > li.itemselected > a {
+ul.VerticalMenu > li.itemselected > a {
   color: rgb(115, 115, 255) !important;
 }
 
 
-ul.SideMenu > li.item {
+ul.VerticalMenu > li.item {
   background: rgb(124,124,124) !important;
 }
 
-ul.SideMenu > li.item:hover  {
+ul.VerticalMenu > li.item:hover  {
   background: rgb(135,135,135) !important;
 }
 
-
-
-
-.DevPairTitle {
-  background-color: rgb( 80, 81, 94 );
-}
 
 .DetectorDisplay{
   background: rgb(70,70,77); 
@@ -194,7 +188,7 @@ ul.SideMenu > li.item:hover  {
   border-color: rgb(136, 136, 136);
 }
 
-.ParticleViewTable, .RecalIsotopeView, .IsotopeSearchResultTable, .DevPairDisplayWide {
+.ParticleViewTable, .IsotopeSearchResultTable {
   border-color: rgb(136, 136, 136);
 }
 
@@ -202,13 +196,17 @@ ul.SideMenu > li.item:hover  {
   color: rgb(197,198,201);
 }
 
-.CsvLinkBtn {
+.LinkBtn {
   color: black;
   filter: invert(100%);
 }
 
-.DoseAnswerTxt {
+.DoseAnswerTxt, .DoseCalcRuntimeCheckFailMsg {
   color: black;
+}
+
+.MakeDrfEqnAnswer {
+  background: black !important;
 }
 
 .FooterHelpBtn {

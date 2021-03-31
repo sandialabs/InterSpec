@@ -496,7 +496,7 @@ namespace
 //        char buffer[256];
 //        snprintf( buffer, sizeof(buffer), "Found a search_range_rate=%f for nuclide=%s - should not happen.",
 //                  search_range_rate, source_name.c_str() );
-//        log_developer_error( BOOST_CURRENT_FUNCTION, buffer );
+//        log_developer_error( __func__, buffer );
 //#endif
 //        continue;
         return -1.0;
@@ -1439,10 +1439,10 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
                                                   Wt::Orientation orientation,
                                                   int role ) const
 {
-  if( orientation==Wt::Horizontal && role==Wt::LevelRole )
+  if( (orientation == Wt::Orientation::Horizontal) && (role == Wt::ItemDataRole::LevelRole) )
     return 0;
   
-  if (role==Wt::DisplayRole)
+  if( role == Wt::ItemDataRole::DisplayRole )
   {
     switch( section )
     {
@@ -1453,7 +1453,7 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
       case IsotopeSearchByEnergyModel::Column::Energy:
         return WString("Energy (keV)");
       case IsotopeSearchByEnergyModel::Column::BranchRatio:
-        return WString("B.R.");
+        return WString("Rel. B.R.");
       case IsotopeSearchByEnergyModel::Column::ProfileDistance:
         return WString("Profile");
       case IsotopeSearchByEnergyModel::Column::SpecificIsotope:
@@ -1465,8 +1465,7 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
       case IsotopeSearchByEnergyModel::Column::NumColumns:
         break;
     }//switch( col )
-  }//DisplayRole
-  else if (role==Wt::ToolTipRole)
+  }else if( role == Wt::ItemDataRole::ToolTipRole )
   {
     switch( section )
     {
@@ -1477,9 +1476,11 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
       case IsotopeSearchByEnergyModel::Column::Energy:
         return WString("Nuclide energy");
       case IsotopeSearchByEnergyModel::Column::BranchRatio:
-        return WString("Branching ratio of selected nuclide");
+        return WString("Branching ratio, relative to the nuclides largest yield gamma"
+                        " (i.e., 1.0 indicates the most abundant gamma, not one gamma per decay)");
       case IsotopeSearchByEnergyModel::Column::ProfileDistance:
-        return WString("A rough metric for how close the observed spectrum comes to having the expected peaks for the selected source");
+        return WString("A rough metric for how close the observed spectrum comes to having the"
+                       " expected peaks for the selected source");
       case IsotopeSearchByEnergyModel::Column::SpecificIsotope:
         return boost::any();
       case IsotopeSearchByEnergyModel::Column::ParentHalfLife:

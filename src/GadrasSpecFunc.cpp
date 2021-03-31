@@ -39,6 +39,7 @@
 
 #ifdef _WIN32
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #endif
 
 using namespace std;

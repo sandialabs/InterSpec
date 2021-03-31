@@ -24,7 +24,7 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
-@interface AppDelegate : NSObject <NSApplicationDelegate,WKNavigationDelegate,WKUIDelegate,NSURLDownloadDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate,WKNavigationDelegate,WKUIDelegate,NSURLDownloadDelegate,WKScriptMessageHandler>
 @property (nonatomic,strong) WKWebView *InterSpecWebView;
 //@property (nonatomic, strong) WKWebViewConfiguration *webConfig;
 

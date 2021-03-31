@@ -69,7 +69,7 @@ namespace PeakSearchGuiUtils
  @param compact Whether to plot the chart to maximize plot area.
  */
 std::shared_ptr<Wt::WSvgImage> renderChartToSvg( std::shared_ptr<const SpecUtils::Measurement> measurement,
-                                                std::shared_ptr< std::deque<std::shared_ptr<const PeakDef> > > peaks,
+                                                std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > peaks,
                                                 const std::vector<std::shared_ptr<const ReferenceLineInfo>> &reflines,
                                               double lower_energy, double upper_energy,
                                               const int width_px, const int height_px,
@@ -128,7 +128,6 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
                                 const std::vector<ReferenceLineInfo> &displayed,
                                  const bool setColor,
                                 const bool showingEscapePeakFeature );
-  
   
 /** Enum to tell #fit_template_peaks where the candidate peaks to fit are
    comming from.  This info will be propagated through to the GUI and influence

@@ -71,6 +71,12 @@
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
+#if ( USE_SPECTRUM_CHART_D3 )
+#include "InterSpec/D3SpectrumDisplayDiv.h"
+#else
+#include "InterSpec/SpectrumDisplayDiv.h"
+#endif
+
 using namespace std;
 using namespace Wt;
 
@@ -416,14 +422,13 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     throw runtime_error( "ReferencePhotopeakDisplay: a valid chart"
                          " must be passed in" );
 
-  const bool showToolTipInstantly
-      = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   //The inputDiv/Layout is the left side of the widget that holds all the
   //  nuclide input,age, color picker, DRF, etc
   WContainerWidget *inputDiv = new WContainerWidget();
   WGridLayout *inputLayout = new WGridLayout();
-  inputLayout->setContentsMargins( 0, 0, 0, 0 );
+  inputLayout->setContentsMargins( 0, 2, 0, 0 );
   inputDiv->setLayout( inputLayout );
     
     
@@ -446,9 +451,12 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
   m_nuclideEdit = new WLineEdit( "" );
   m_nuclideEdit->setMargin( 1 );
+  m_nuclideEdit->setMargin( 2, Wt::Side::Top );
 //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
   m_nuclideEdit->setAutoComplete( false );
+  nucInputLabel->setBuddy( m_nuclideEdit );
+  
   
 //  m_nuclideEdit->changed().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
 //  m_nuclideEdit->blurred().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
@@ -458,7 +466,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 //  m_nuclideEdit->selected().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
   m_persistLines = new WPushButton( "Add Another" );
   tooltip = "Keep the currently displayed lines and add a new nuclide/source to display.";
-  HelpSystem::attachToolTipOn( m_persistLines, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_persistLines, tooltip, showToolTips );
   m_persistLines->clicked().connect( this, &ReferencePhotopeakDisplay::persistCurentLines );
   m_persistLines->disable();
   
@@ -474,7 +482,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (x-rays only)"
             ", <b>Uranium</b> (x-rays), <b>U-235m</b> (meta stable state)"
             ", <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, etc.";
-  HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_nuclideEdit, tooltip, showToolTips );
   
   string replacerJs, matcherJs;
   IsotopeNameFilterModel::replacerJs( replacerJs );
@@ -500,7 +508,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_ageEdit->setValidator(validator);
   m_ageEdit->setAutoComplete( false );
-
+  ageInputLabel->setBuddy( m_ageEdit );
 
   m_ageEdit->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_ageEdit->blurred().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
@@ -547,12 +555,12 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   "18 months and 3 minutes"
   "</div>";
   
-  HelpSystem::attachToolTipOn( m_ageEdit, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_ageEdit, tooltip, showToolTips );
   
   
   tooltip = "Clears all persisted lines, as well as the current non-persisted"
   " lines.";
-  HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_clearLines, tooltip, showToolTips );
   
   
   m_promptLinesOnly = new WCheckBox( "Prompt Only" );  //ɣ
@@ -561,7 +569,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   tooltip = "Gammas from only the original nuclide, and the daughters until one"
             " of them has a longer half-life than the original nuclide; the"
             " decay chain is in equilirium till that point.";
-  HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTipInstantly );
+  HelpSystem::attachToolTipOn( m_promptLinesOnly, tooltip, showToolTips );
 //m_promptLinesOnly->setHiddenKeepsGeometry( true );  // causes display to function badly; why?
   m_promptLinesOnly->checked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_promptLinesOnly->unChecked().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
@@ -597,9 +605,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   //tooltip = "The minimum relative gamma amplitude to display; the most intense"
   //          " gamma ray will have value 1.0.  Amplitude is calculated after"
   //          " the optional shielding and detector effects are applied.";
-  //HelpSystem::attachToolTipOn( minAmpLabel, tooltip, showToolTipInstantly );
+  //HelpSystem::attachToolTipOn( minAmpLabel, tooltip, showToolTips );
   //m_lowerBrCuttoff = new WDoubleSpinBox();
-  //HelpSystem::attachToolTipOn( m_lowerBrCuttoff, tooltip, showToolTipInstantly );
+  //HelpSystem::attachToolTipOn( m_lowerBrCuttoff, tooltip, showToolTips );
   //m_lowerBrCuttoff->setValue( 0.0 );
   //m_lowerBrCuttoff->setSingleStep( 0.01 );
   //m_lowerBrCuttoff->setRange( 0.0, 1.0 );
@@ -628,7 +636,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   //m_fitPeaks = new WPushButton( "Fit Peaks" );
   //tooltip = "Fits dominant peaks for primary nuclide";
-  //HelpSystem::attachToolTipOn( m_fitPeaks, tooltip, showToolTipInstantly );
+  //HelpSystem::attachToolTipOn( m_fitPeaks, tooltip, showToolTips );
   //m_fitPeaks->clicked().connect( this, &ReferencePhotopeakDisplay::fitPeaks );
   //inputLayout->addWidget( m_fitPeaks, 2, 2 );
   //m_fitPeaks->disable();
@@ -662,7 +670,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   HelpSystem::attachToolTipOn( whatToShow, "If checked, selection will be shown.  Gammas and "
                           "x-rays are shown in the table and on the chart, "
                           "alphas and betas only in the table.",
-                          showToolTipInstantly );
+                              showToolTips );
   whatToShow->hide(); //(20190408): Ehh, not sure these are actually useful, btu not sure, so keeping around, just hidden for a while, and then we can delete them
   
   m_showGammas->setChecked();
@@ -942,6 +950,11 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
 
 void ReferencePhotopeakDisplay::updateDisplayChange()
 {
+  /** The gamma or xray energy below which we wont show lines for.
+   x-rays for nuclides were limited at above 10 keV, so we'll just impose this as a lower limit to show to be consistent.
+   */
+  const float lower_photon_energy = 10.0f;
+  
   bool show = true;
   show = (show && (!m_lowerBrCuttoff || m_lowerBrCuttoff->validate()==WValidator::Valid));
 
@@ -1334,6 +1347,23 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
         {
           const SandiaDecay::RadParticle &particle
                                             = transition->products[productNum];
+          
+          switch( particle.type )
+          {
+            case SandiaDecay::GammaParticle:
+            case SandiaDecay::XrayParticle:
+              if( particle.energy < lower_photon_energy )
+                continue;
+              break;
+            
+            case SandiaDecay::PositronParticle:
+            case SandiaDecay::BetaParticle:
+            case SandiaDecay::AlphaParticle:
+            case SandiaDecay::CaptureElectronParticle:
+              break;
+          }//switch( particle.type )
+          
+          
           if( type == SandiaDecay::PositronParticle && particle.type == SandiaDecay::PositronParticle )
           {
             const double br = activity * particle.intensity
@@ -1429,6 +1459,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
     for( const SandiaDecay::EnergyIntensityPair &eip : element->xrays )
     {
+      if( eip.energy < lower_photon_energy )
+        continue;
+        
       transistions.push_back( NULL );
       energies.push_back( eip.energy );
       branchratios.push_back( eip.intensity );
@@ -1450,6 +1483,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
   
   for( const ReactionGamma::ReactionPhotopeak &eip : rctnGammas )
   {
+    if( eip.energy < lower_photon_energy )
+      continue;
+    
     transistions.push_back( NULL );
     energies.push_back( eip.energy );
     branchratios.push_back( eip.abundance );
@@ -1470,6 +1506,9 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 
   for( const BackgroundLine *bl : m_currentlyShowingNuclide.backgroundLines )
   {
+    if( std::get<0>(*bl) < lower_photon_energy )
+      continue;
+    
     transistions.push_back( NULL );
     energies.push_back( std::get<0>(*bl) );
     branchratios.push_back( std::get<1>(*bl) );
@@ -1507,8 +1546,8 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 //  for( size_t i = 0; i < inforows.size(); ++i )
 //    inforows[i].branchRatio /= maxOrigbr;
 
-  //Lets get rid of brannching ratios that are incredible close to zero
-  const float abs_min_br = FLT_MIN; //1.0E-15
+  //Lets get rid of branching ratios that are incredible close to zero
+  const float abs_min_br = FLT_MIN; //FLT_MIN is minimum, normalized, positive value of floats.
   vector<DecayParticleModel::RowData> inforowstouse;
   for( size_t i = 0; i < inforows.size(); ++i )
     if( inforows[i].branchRatio > abs_min_br && inforows[i].branchRatio >= brCutoff )
@@ -1568,7 +1607,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
 #if( PERFORM_DEVELOPER_CHECKS )
     char msg[512];
     snprintf( msg, sizeof(msg), "Error caclulating attenuation: %s", e.what() );
-    log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+    log_developer_error( __func__, msg );
 #endif
   }
 
@@ -1711,7 +1750,7 @@ void ReferencePhotopeakDisplay::updateDisplayChange()
       char msg[512];
       snprintf( msg, sizeof(msg), "Missing particlestrs (%s) in particle_sf.", s.c_str() );
 //      throw runtime_error(msg);
-      log_developer_error( BOOST_CURRENT_FUNCTION, msg );
+      log_developer_error( __func__, msg );
     }
   }
 #endif
@@ -2439,7 +2478,7 @@ void ReferencePhotopeakDisplay::userColorSelectCallback( const WColor &color )
   if( color.isDefault() )
   {
 #if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( BOOST_CURRENT_FUNCTION, "Was passed an invalid color." );
+    log_developer_error( __func__, "Was passed an invalid color." );
 #endif
     m_userHasPickedColor = false;
     m_colorSelect->setColor( m_currentlyShowingNuclide.lineColor );

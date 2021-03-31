@@ -25,59 +25,65 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WText>
 #include <Wt/WContainerWidget>
-#include <Wt/WGridLayout>
 
-#include "InterSpec/AuxWindow.h"
-#include "InterSpec/InterSpec.h"
-#if ( USE_SPECTRUM_CHART_D3 )
-#include "InterSpec/D3SpectrumDisplayDiv.h"
-#else
-#include "InterSpec/SpectrumDisplayDiv.h"
-#endif
-#include "InterSpec/RowStretchTreeView.h"
-
+// Some forward declarations
 class InterSpec;
-#if ( USE_SPECTRUM_CHART_D3 )
-class D3SpectrumDisplayDiv;
-#else
-class SpectrumDisplayDiv;
-#endif
-
+class RowStretchTreeView;
 namespace Wt
 {
-  class WApplication;
+  class WText;
+  class WGridLayout;
   class WStandardItemModel;
 }//namespace Wt
 
+
+/// \TODO: seperate this class into kinda the model that acepts error messages, flashes them to the
+///        user, and keeps track of them, and the display (e.g., have #createContent() create a
+///        view for this class), and then improve the memory management
 class WarningWidget : public Wt::WContainerWidget
 {
 public:
   enum WarningMsgLevel
   {
-    WarningMsgInfo = 0, WarningMsgLow = 1, WarningMsgMedium = 2, WarningMsgHigh = 3 /*Not actually used anywhere*/, WarningMsgSave = 4
+    WarningMsgInfo = 0,
+    WarningMsgLow = 1,
+    WarningMsgMedium = 2,
+    WarningMsgHigh = 3 /*Not actually used anywhere*/,
+    WarningMsgSave = 4,
+    WarningMsgShowRiid = 5,
+    
+    NumWarningMsgType
   };//enum WarningMsgLevel
   
   static const char *tostr( const WarningMsgLevel level );
   static const char *popupToStr( const WarningMsgLevel level );
-  
   static const char *description( const WarningMsgLevel level );
   
 public:
-  WarningWidget(
-#if ( USE_SPECTRUM_CHART_D3 )
-                 D3SpectrumDisplayDiv *spectrumDisplayDiv,
-#else
-                 SpectrumDisplayDiv *spectrumDisplayDiv,
-#endif
-                 InterSpec *hostViewer,
+  WarningWidget( InterSpec *hostViewer,
                  Wt::WContainerWidget *parent = 0 );
   virtual ~WarningWidget();
 
   void createContent();
-  void addMessage( const Wt::WString &msg, const Wt::WString &src, int level );
+  
+  /** Displays message to the user in a q-tip popup if the user option is to display messages at
+   that level.  Also stores the message in the model for later vieweing.
+   
+   Input 'msg' will be sanitized before displaying (e.g., must be valid XHTML and not have any JS
+   scripting) and storage.
+   */
+  void addMessage( Wt::WString msg, Wt::WString src, int level );
 
+  /** Displays the message to the user in the q-tip popup style.
+   Does not check the format or content of the msg, so you need to make sure any potentially bad
+   script, or non-XHTML-ness is removed first.
+   
+   @param num_millies The number of milliseconds to have the popup stick around for.
+   */
+  static void displayPopupMessageUnsafe( const Wt::WString &msg, const WarningMsgLevel level,
+                                         int num_millies );
+  
   
   void setPopupActivity( WarningMsgLevel priority, bool allowed );
   void setActivity( WarningMsgLevel priority, bool allowed );
@@ -88,27 +94,19 @@ public:
     
   void clearMessages();
   
-protected:
-#if ( USE_SPECTRUM_CHART_D3 )
-  D3SpectrumDisplayDiv *m_spectrumDisplayDiv;
-#else
-  SpectrumDisplayDiv *m_spectrumDisplayDiv;
-#endif
-  
+protected:  
   InterSpec *m_hostViewer;
 
   int m_totalMessages;
 
-  bool m_popupActive[int(WarningMsgSave)+1];
-  bool m_active[int(WarningMsgSave)+1];
+  bool m_popupActive[int(WarningMsgLevel::NumWarningMsgType)];
+  bool m_active[int(WarningMsgLevel::NumWarningMsgType)];
 
-  Wt::WApplication *m_app;
-  Wt::WGridLayout* m_layout;
-  Wt::WStandardItemModel* m_messageModel;
+  Wt::WGridLayout *m_layout;
+  Wt::WStandardItemModel *m_messageModel;
     
   RowStretchTreeView *m_tableView;
-  Wt::WText * m_description;
-    
-}; // class WarningWidget
+  Wt::WText *m_description;
+}; //class WarningWidget
 
 #endif

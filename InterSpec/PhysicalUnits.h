@@ -162,8 +162,8 @@ namespace PhysicalUnits
   
   std::string printToBestEquivalentDoseRateUnits( double dosePerTime,
                                    const int maxNpostDecimal = 2,
-                                   const bool useRemPerHr = true,
-                                   const double remPerHrDefinition = rem/hour );
+                                   const bool useSievertPerHr = true,
+                                   const double svPerHrDefinition = sievert/hour );
 
   std::string printToBestEquivalentDoseUnits( double dose,
                                             const int maxNpostDecimal = 2,
@@ -235,6 +235,34 @@ namespace PhysicalUnits
    Throws std::runtime_exception on failure.
    */
   double stringToEquivalentDose( const std::string &str, const double sievert_def = sievert );
+
+  /** Prints the passed in value and uncertainty in a form like "1.23 \xC2\xB1 0.123", where \xC2\xB1 is the plus-or-minus character.
+   Output will use scientific notation decimals, depending on fewest number of characters (i.e., the '%g' printf flag).
+     
+   Currently, If value uncertainty and uncertainty "overlap" with more than one digit, then we will only print uncertainty out to the same
+   decimal order as the value; if they only overlap by one digit, or not at all, then we will print out one more decimal point than value will
+   be printed to.
+   
+   \TODO: Decide if above policy is a good way to print things out, and if so, finalize
+   \TODO: trailing zeros may-or-may-not be appended after decimal point, this should be decided on
+          and fixed
+   
+   Some example values (value,uncert,nsigfig) -> answer;
+   - (4.66712, 0.0457612, 4) -> '4.667 ± 0.046'
+   - (4.66712e-16, 4.57612e-18, 4) -> '4.667e-16 ± 4.6e-18'
+   - (4.66712, 0.0457612, 3) -> '4.67 ± 0.046'
+   - (4.66712, 0.0457612, 2) -> '4.7 ± 0.05'
+   - (4.66712, 0.0457612, 1) -> '5 ± 0'
+   - (0.1, 0.001, 2) -> '0.1 ± 0.001'
+   - (0.1, 1.001, 3) -> '0.1 ± 1'
+   - (0.1, 1.001, 4) -> '0.1 ± 1.001'
+   - (1.23457, 0.897654, 1) -> '1 ± 0.9'
+   - (1.23457, 0.897654, 2) -> '1.2 ± 0.9'
+   - (1.23457, 0.897654, 3) -> '1.23 ± 0.9'
+   - (1.23457, 0.897654, 4) -> '1.235 ± 0.898'
+   - (1.23457, 8.97654e-06, 1) -> '1 ± 0'
+   */
+  std::string printValueWithUncertainty( double value, double uncert, int nsigfig );
 
 
   //Functions below here were imported 20121014 from some other code I have

@@ -208,7 +208,7 @@ namespace HelpSystem
   
   HelpWindow::HelpWindow(std::string preselect)
    : AuxWindow( "InterSpec Help",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::IsHelpWIndow) ),
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::IsHelpWIndow) ),
      m_tree ( new Wt::WTree() ),
      m_searchText( new Wt::WLineEdit() )
   {
@@ -304,7 +304,7 @@ namespace HelpSystem
       {
         WPushButton *ancor = new WPushButton( bottom );
         ancor->setText( "Welcome..." );
-        ancor->setStyleClass( "CsvLinkBtn" );
+        ancor->setStyleClass( "LinkBtn" );
         ancor->setFloatSide( Wt::Right );
         ancor->clicked().connect( boost::bind( &InterSpec::showWelcomeDialog, app->viewer(), true ) );
       }
@@ -807,9 +807,10 @@ namespace HelpSystem
    Attach a tooltip onto a widget.  Depending on preference, it might show immediately.
    
    */
-  void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text, const bool showInstantly,
-                        const PopupPosition position,
-                        const PopupToolBehavior override )
+  void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text,
+                        const bool enableShowing,
+                        const ToolTipPosition position,
+                        const ToolTipPrefOverride forceShowing )
   {
       
     //if is gesture controlled, we do not want to add tooltips to objects
@@ -830,15 +831,7 @@ namespace HelpSystem
     //we want to display the tooltips immediately for beginners.  Pro users also hide
     //the tooltip when they start typing.
     
-    string delay ="1000";
-    string keyPressHide="";
-
-    const bool overrideShow = (override==AlwaysShow);
-    
-    if( overrideShow || showInstantly )
-      delay = "0";  //for beginners, so the tooltip shows immediately, instead of default 1 second
-    else
-      keyPressHide= "keypress"; //for pro users so the tooltip hides
+    const bool overrideShow = (forceShowing == ToolTipPrefOverride::AlwaysShow);
     
     //Create popup notifications
     Wt::WStringStream strm;
@@ -849,41 +842,39 @@ namespace HelpSystem
     
     string pos = "";
     
-    switch(position) {
-      case Top: pos = "my: 'bottom center', at: 'top center', "; break;
-      case Bottom: pos = "my: 'top center', at: 'bottom center', ";break;
-      case Right: pos = "my: 'left center', at: 'right center', ";break;
-      case Left: pos = "my: 'right center', at: 'left center', ";break;
-    }
+    switch( position )
+    {
+      case ToolTipPosition::Top:    pos = "my: 'bottom center', at: 'top center', "; break;
+      case ToolTipPosition::Bottom: pos = "my: 'top center', at: 'bottom center', "; break;
+      case ToolTipPosition::Right:  pos = "my: 'left center', at: 'right center', "; break;
+      case ToolTipPosition::Left:   pos = "my: 'right center', at: 'left center', "; break;
+    }//switch( position )
     
 
     RmHelpFromDom *remover = new RmHelpFromDom( widget );
     
-    //Note: need to prerender, as toggling requires tooltip already rendered.
+    //Note: need to pre-render, as toggling requires tooltip already rendered.
     strm << "$('#"<< widget->id() <<"').qtip({ "
         "id: '" << remover->id() << "',"
         "prerender: true, "
-        "content:  { text: '"<< val <<"'}, "
+        "content:  { text: '" << val << "'}, "
         "position: { " << pos <<
                     "viewport: $(window), "
                     "adjust: { "
                         "method: 'flipinvert flipinvert', "
                         "x:5} "
                     "},"
-        "show:  {  event: 'mouseenter focus', "
-                  "delay: "<< delay << ""
-              "},"
-        "hide:  {  fixed: true, event: 'mouseleave focusout "<< keyPressHide <<"'  },"
-        "style: { classes: 'qtip-rounded qtip-shadow" << string(overrideShow ? "" : " delayable") << "',"
+        "show:  {  event: '" << string(enableShowing ? "mouseenter focus" : "") << "', delay: 500 },"
+        "hide:  {  fixed: true, event: 'mouseleave focusout keypress'  },"
+        "style: { classes: 'qtip-rounded qtip-shadow" << string(overrideShow ? "" : " canDisableTt") << "',"
                   "tip: {"
                         "corner: true, "
                         "width: 18, "
                         "height: 12}"
                 "}"
         "});";
-    widget->doJavaScript(strm.str());
     
-    
+    widget->doJavaScript( strm.str() );
   }//void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text, bool force)
 
 } //namespace HelpSystem

@@ -698,6 +698,9 @@ public class InterSpec extends Activity
     //ToDo: delete tmpDir contents if it exists
     args.add("-DWT_TMP_DIR=" + tmpDir.getAbsolutePath());
 
+    //Quite down all the log outputs of ever GET or REQUEST
+    args.add("--accesslog=-");
+
     //Electron version of app also specifies "--userdatadir", "--basedir", and "--externalid"
 
     Log.d("WtAndroid::onCreate", "Starting wt application ...");

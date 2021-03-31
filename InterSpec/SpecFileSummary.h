@@ -92,6 +92,8 @@ public:
 protected:
   void init();
 
+  void showRiidAnalysis();
+  
   void handleUserChangeSampleNum();
   void handleUserIncrementSampleNum( bool increment );
 
@@ -103,9 +105,10 @@ protected:
 
   void handleFieldUpdate( EditableFields field );
 
-  void handleSpectrumChange( SpecUtils::SpectrumType type,
-                            std::shared_ptr<SpecMeas> meas,
-                            std::set<int> displaySample );
+  void handleSpectrumChange( const SpecUtils::SpectrumType type,
+                            const std::shared_ptr<SpecMeas> &meas,
+                            const std::set<int> &displaySample,
+                            const std::vector<std::string> &detectors );
 
   void reloadCurrentSpectrum();
 
@@ -160,17 +163,16 @@ protected:
   Wt::WTextArea *m_fileRemarks;
   Wt::WText     *m_sizeInMemmory;
 
-  Wt::WLineEdit *m_filename;
-  Wt::WLineEdit *m_uuid;
-  Wt::WLineEdit *m_laneNumber;
-  Wt::WLineEdit *m_measurement_location_name;
-  Wt::WPushButton   *m_ana_button;
-  AnaResultDisplay  *m_ana_results;
-  Wt::WLineEdit *m_inspection;
-  Wt::WLineEdit *m_instrument_type;
-  Wt::WLineEdit *m_manufacturer;
-  Wt::WLineEdit *m_instrument_model;
-  Wt::WLineEdit *m_instrument_id;
+  Wt::WLineEdit   *m_filename;
+  Wt::WLineEdit   *m_uuid;
+  Wt::WLineEdit   *m_laneNumber;
+  Wt::WLineEdit   *m_measurement_location_name;
+  Wt::WPushButton *m_ana_button;
+  Wt::WLineEdit   *m_inspection;
+  Wt::WLineEdit   *m_instrument_type;
+  Wt::WLineEdit   *m_manufacturer;
+  Wt::WLineEdit   *m_instrument_model;
+  Wt::WLineEdit   *m_instrument_id;
 
   Wt::WPushButton *m_reloadSpectrum;
 };//class SpecFileSummary

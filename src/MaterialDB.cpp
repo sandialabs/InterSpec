@@ -317,6 +317,7 @@ MaterialDB::MaterialDB()
 
 MaterialDB::~MaterialDB()
 {
+  std::unique_lock<std::mutex> lock( m_mutex );
   for( const Material *m : m_materials )
     if( m != &sm_voidMaterial )
       delete m;
@@ -360,6 +361,7 @@ const Material *MaterialDB::material( const std::string &name ) const
   if( !wait_material_ready() )
     throw std::runtime_error( "Material database is not initialized" );
   
+  std::unique_lock<std::mutex> lock( m_mutex );
   for( const Material *m : m_materials )
   {
     //we had added some comments in (...), so lets gets allow the user
@@ -391,6 +393,7 @@ const Material *MaterialDB::material( const size_t index ) const
   if( !wait_material_ready() )
     throw std::runtime_error( "Material database is not initialized" );
   
+  std::unique_lock<std::mutex> lock( m_mutex );
   if( index >= m_materials.size() )
     throw std::runtime_error( "MaterialDB::material( size_t index ): index out of bounds" );
   return m_materials[index];
@@ -456,7 +459,6 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
   */
   
   int lineNumber = 0;
-  Material *material = NULL;
   std::vector<const Material *> materials;
 
   try
@@ -501,7 +503,7 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
         continue;
 
       //presumably, if we are here, we are at the _start_ of a new material
-      material = new Material();
+      std::unique_ptr<Material> material( new Material() );
       material->source = Material::kGadras;
       material->name = line;
       bool gotit = !!SpecUtils::safe_get_line( is, line );  //should really test this
@@ -628,38 +630,24 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
       }//if( material->elements.size() == 1 && material->nuclides.empty() )
 
       //lets make sure we dont already have this material actually
-      std::vector<const Material *>::iterator pos;
-      pos = lower_bound( m_materials.begin(), m_materials.end(),
-                         material, &MaterialDB::less_than_by_name );
+      bool alreadyHave = false;
+      {//begin lock on m_mutex
+        std::unique_lock<std::mutex> lock( m_mutex );
+        
+        auto pos = lower_bound( begin(m_materials), end(m_materials),
+                                material.get(), &MaterialDB::less_than_by_name );
 
-      if( (pos != m_materials.end() &&
-          (MaterialDB::less_than_by_name(material,*pos)
-             == MaterialDB::less_than_by_name(*pos,material)))
-          || SpecUtils::iequals_ascii(material->name,"void") )
-      {
-/*
-        cerr << "Found duplicate material: " << material->name
-             << " with density " << material->density << " (" << (*pos)->density
-             << ") and " << material->elements.size() << " (" << (*pos)->elements.size()
-             << ") elements and " << material->nuclides.size() << " (" << (*pos)->nuclides.size()
-             << ")" << endl;
-*/
-        delete material;
-        material = NULL;
-      }//if( we already have this material )
-
-      if( material )
-        materials.push_back( material );
-      material = NULL;
+        alreadyHave = ( SpecUtils::iequals_ascii(material->name,"void")
+                        || ((pos != end(m_materials)) && MaterialDB::equal_by_name(material.get(),*pos)) );
+      }//end lock on m_mutex
+      
+      if( !alreadyHave )
+        materials.push_back( material.release() );
     }//while( safe_get_line( is, line ) )
   }catch( const std::exception &e )
   {
-    if( material )
-      delete material;
-
     for( const Material *m : materials )
-      if( m )
-        delete m;
+      delete m;
 
     stringstream msg;
     msg << "MaterialDB::parseG4MaterialFile(...): Error parsing file  at or "
@@ -689,7 +677,6 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
                             const SandiaDecay::SandiaDecayDataBase *db )
 {
   int lineNumber = 0;
-  Material *material = NULL;
   std::vector<const Material *> materials;
 
   try
@@ -762,7 +749,7 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
         continue;
       }//if( !is_material && !is_component )
 
-      material = new Material();
+      std::unique_ptr<Material> material( new Material() );
       material->source = Material::kNist;
 
       if( is_compound )
@@ -831,30 +818,21 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
       }//if( material->elements.size() == 1 && material->nuclides.empty() )
 
       //lets make sure we dont already have this material actually
-      std::vector<const Material *>::iterator pos;
-      pos = lower_bound( m_materials.begin(), m_materials.end(),
-                         material, &MaterialDB::less_than_by_name );
-
-      if( pos != m_materials.end() &&
-          (MaterialDB::less_than_by_name(material,*pos)
-             == MaterialDB::less_than_by_name(*pos,material)) )
-      {
-        delete material;
-        material = NULL;
-      }//if( we already have this material )
-
-      if( material )
-        materials.push_back( material );
-      material = NULL;
+      bool alreadyHave = false;
+      {//begin lock on m_mutex
+        std::unique_lock<std::mutex> lock( m_mutex );
+        auto pos = lower_bound( m_materials.begin(), m_materials.end(),
+                               material.get(), &MaterialDB::less_than_by_name );
+      
+        alreadyHave = ((pos != m_materials.end()) && MaterialDB::equal_by_name(material.get(),*pos) );
+      }//end lock on m_mutex
+      if( !alreadyHave )
+        materials.push_back( material.release() );
     }//while( safe_get_line( is, line ) )
   }catch( const std::exception &e )
   {
-    if( material )
-      delete material;
-
     for( const Material *m : materials )
-      if( m )
-        delete m;
+      delete m;
 
     stringstream msg;
     msg << "MaterialDB::parseG4MaterialFile(...): Error parsing file  at or "
@@ -902,10 +880,10 @@ const Material *MaterialDB::parseChemicalFormula( string text,
   try
   {
     material->parseChemicalFormula( text, db );
-    vector<const Material *>::iterator iter = lower_bound( m_materials.begin(), m_materials.end(), material, &MaterialDB::less_than_by_name );
     
     {
       std::unique_lock<std::mutex> lock( m_mutex );
+      auto iter = lower_bound( m_materials.begin(), m_materials.end(), material, &MaterialDB::less_than_by_name );
       m_materials.insert( iter, material );
     }
     
@@ -933,3 +911,13 @@ bool MaterialDB::less_than_by_name( const Material *lhs, const Material *rhs )
   return (lhsname < rhsname);
 }
 
+
+
+bool MaterialDB::equal_by_name( const Material *lhs, const Material *rhs )
+{
+  string lhsname = SpecUtils::to_lower_ascii_copy(lhs->name);
+  string rhsname = SpecUtils::to_lower_ascii_copy(rhs->name);
+  SpecUtils::erase_any_character( lhsname, "_- \t " );
+  SpecUtils::erase_any_character( rhsname, "_- \t " );
+  return (lhsname == rhsname);
+}

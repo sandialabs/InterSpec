@@ -34,9 +34,6 @@
 #include <Wt/WColor>
 
 #include "InterSpec/ReactionGamma.h"
-#include "SandiaDecay/SandiaDecay.h"
-#include "InterSpec/DecayDataBaseServer.h"
-
 
 //Forward declaration
 class PeakDef;
@@ -47,6 +44,7 @@ namespace SandiaDecay
   struct Element;
   struct Transition;
   struct RadParticle;
+  struct EnergyIntensityPair;
 }//namespace SandiaDecay
 
 
@@ -57,7 +55,13 @@ namespace rapidxml
 }//namespace rapidxml
 
 
-
+/**
+ 
+ TODO: When PeakDefs are copied, their continuum still points to the same PeakContinuum object,
+       meaning if the copies modify their continuum, the originals continuum also gets modified.
+       This is currently necassary since multiple PeakDefs can share a PeakContinuum.  To fix this
+       a ROI (e.g., contimuum) should own the peaks, not the other way around
+ */
 struct PeakContinuum
 {
   enum OffsetType
@@ -245,6 +249,22 @@ double skewedGaussianIntegral( double x0,  //x-value to start integrating at
                               );
 
 
+/** TODO: Define and implement this function
+ 
+ @param fwhm The real or estimated FWHM of the peak
+ @param energy The mean of the peak
+ @param nchannel The number of channels in the spectrum.  If specified as zero, will not be used.
+ @returns Whether this peak is likely to be from a HPGe detector or not.
+ */
+//bool is_high_resolution_peak( const float fwhm, const float energy, const size_t nchannel );
+//
+// OR
+/** Returns true if the energy per channel is more inline with a high resolution system.
+ */
+//bool is_high_resolution( const std::shared_ptr<const SpecUtils::Measurement> &data );
+//
+
+
 //findROILimit(...): returns the channel number that should be the extent of the
 //  region of interest, for the peak with the given mean and sigma.  If
 //  high==true, then the bin higher in energy than the mean will be returned,
@@ -287,6 +307,12 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Spec
 
 class PeakDef
 {
+  // If I was to re-write this class from scratch I would define peak mean by channel, and FWHM
+  //  by the fraction of the peak mean, and similarly for the other quantities so that it is
+  //  invariant to the energy calibration - although this isnt without issues.
+  // I would also make the PeakContinuum the primary ROI with a list of peaks beloinging to it,
+  //  instead of the other way around.
+  
 public:
   enum SkewType
   {
@@ -701,8 +727,10 @@ public:
   
 
 #if( SpecUtils_ENABLE_D3_CHART )
-  static std::string gaus_peaks_to_json(const std::vector<std::shared_ptr<const PeakDef> > &peaks);
-  static std::string peak_json(const std::vector<std::shared_ptr<const PeakDef> > &inpeaks);
+  static std::string gaus_peaks_to_json( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
+                                  const std::shared_ptr<const SpecUtils::Measurement> &foreground );
+  static std::string peak_json( const std::vector<std::shared_ptr<const PeakDef> > &inpeaks,
+                                const std::shared_ptr<const SpecUtils::Measurement> &foreground );
 #endif
   
 

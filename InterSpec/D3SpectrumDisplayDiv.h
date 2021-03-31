@@ -15,6 +15,7 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
+#include "InterSpec/InterSpec.h"  //Only for FeatureMarkerType::NumFeatureMarkers
 
 static_assert( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE, "RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE must be enabled when USE_SPECTRUM_CHART_D3 is enabled" );
 
@@ -31,7 +32,7 @@ namespace Wt
 {
   class WCssTextRule;
 }//namespace Wt
-
+enum class FeatureMarkerType : int;
 namespace SpecUtils{ class Measurement; }
 namespace SpecUtils{ enum class SpectrumType : int; }
 
@@ -169,9 +170,7 @@ public:
   const std::string yAxisTitle() const;
 
   
-  float xUnitsPerPixel() const;
-  
-  void enableLegend( const bool forceMobileStyle );
+  void enableLegend();
   void disableLegend();
   bool legendIsEnabled() const;
   
@@ -227,7 +226,7 @@ public:
   bool backgroundSubtract() const;
   void setBackgroundSubtract( bool subtract );
   
-  void setFeatureMarkerOption( InterSpec::FeatureMarkerType option, bool show );
+  void setFeatureMarkerOption( FeatureMarkerType option, bool show );
   void setComptonPeakAngle( int angle );
   
   void showXAxisSliderChart( const bool show );
@@ -269,10 +268,11 @@ public:
   void removeAllPeaks();
   
   
-  /** Executes appropriate javascript to generate and download a PNG based on
-   the currently showing spectrum.  PNG generation is done client side.
+  /** Executes appropriate javascript to generate and download a PNG or SVG based on
+   the currently showing spectrum.  PNG or SVG generation is done client side.
    */
-  void saveChartToPng( const std::string &name );
+  void saveChartToImg( const std::string &name, const bool asPng );
+  
   
 protected:
 
@@ -325,7 +325,6 @@ protected:
   
   int m_layoutWidth;
   int m_layoutHeight;
-  bool m_autoAdjustDisplayBinnning;
   
   bool m_compactAxis;
   bool m_legendEnabled;
@@ -354,8 +353,8 @@ protected:
   boost::scoped_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
   boost::scoped_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
   boost::scoped_ptr<Wt::JSignal<double, double> > m_doubleLeftClickJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_leftClickJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_rightClickJS;
+  boost::scoped_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_leftClickJS;
+  boost::scoped_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_rightClickJS;
   /** Currently including chart area in pixels in xRange changed from JS; this
       size in pixels is only approximate, since chart may not have been totally layed out
       and rendered when this signal was emmitted.
@@ -400,9 +399,10 @@ protected:
   void chartShiftKeyDragCallback( double x0, double x1 );
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
-  void chartLeftClickCallback( double x, double y, int pageX, int pageY );
+  void chartLeftClickCallback( double x, double y, double pageX, double pageY );
   void chartDoubleLeftClickCallback( double x, double y );
-  void chartRightClickCallback( double x, double y, int pageX, int pageY );
+  void chartRightClickCallback( double x, double y, double pageX,
+                                double pageY );
   void chartRoiDragedCallback( double new_lower_energy, double new_upper_energy,
                                double new_lower_px, double new_upper_px,
                                double original_lower_energy,
@@ -440,7 +440,7 @@ protected:
 #endif
   bool m_showRefLineInfoForMouseOver;
   
-  bool m_showFeatureMarker[InterSpec::NumFeatureMarkers];
+  bool m_showFeatureMarker[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   
   /** Current compton angle used - note there is a bug in the WSpinBox inside
      WMenu (at least in Wt 3.3.4) so this value is likely not valid, and instead

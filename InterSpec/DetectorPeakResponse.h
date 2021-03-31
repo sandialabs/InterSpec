@@ -369,7 +369,7 @@ public:
   //  efficiencies, respectively.
   //Returns efficiency per decay measured at `distance`
   //Energy should be in units of SandiaDecay (e.g. keV=1.0).
-  float efficiency( const float energy, const float distance ) const;
+  double efficiency( const float energy, const double distance ) const;
 
 
   //intrinsicEfficiency(...): Currently just linearly interpolates between
@@ -382,16 +382,18 @@ public:
   //fractionalSolidAngle(...) returns the fraction of gamma rays from a point
   //  source that would strike the detector face of a detector with diameter
   //  'detectorDiameter' at a distance from source of distance.
-  static float fractionalSolidAngle( const float detector_diameter,
-                                     const float observation_distance );
+  //  Note: For a detector diameter of 5cm, you might start running into numerical accuracy
+  //        issues for distances around 100 km.
+  static double fractionalSolidAngle( const double detector_diameter,
+                                     const double observation_distance );
 
 
   //fractionalSolidAngle(...): similar to the above, but takes into account
   //  the source radius (assumed to be flat round plane); see pg 119 in Knoll
   //  for details on approxiation used.
-  static float fractionalSolidAngle( const float detector_diameter,
-                                     const float observation_distance,
-                                     const float source_radius );
+  static double fractionalSolidAngle( const double detector_diameter,
+                                     const double observation_distance,
+                                     const double source_radius );
 
 
   //peakResolutionFWHM(...): returns the full width at half max of the detector.

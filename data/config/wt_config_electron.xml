@@ -518,10 +518,17 @@
          user-agent, using a regular expression. You can have multiple
          set-meta-headers definitions.
 
-	 -->
+	 --> 
+	 <!-- I havent yet found the magical set of CSP that will quite Electron warnings down when node integration is enabled; the solution is to go through and disable the node-integration probably
+	 <meta-headers user-agent=".*">
+	  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost http://127.0.0.1" />
+	 </meta-headers>
+	-->
+
 	<meta-headers user-agent=".*MSIE.*">
 	  <meta name="robots" content="noindex" />
 	</meta-headers>
+	
 
 	<!-- Runtime Properties
      

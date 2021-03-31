@@ -26,8 +26,13 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <tuple>
 #include <mutex>
 #include <utility>
+
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#include <boost/optional.hpp>
+#endif
 
 #include <Wt/WRectF>
 #include <Wt/WColor>
@@ -50,6 +55,9 @@ class DetectorDisplay;
 class PopupDivMenuItem;
 class DetectorPeakResponse;
 struct ShieldingSourceModel;
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+class SpectrumViewerTester;
+#endif
 
 namespace SandiaDecay
 {
@@ -77,6 +85,7 @@ namespace Wt
   class WText;
   class WLabel;
   class WAnchor;
+  class WSvgImage;
   class WCheckBox;
   class WLineEdit;
   class WTreeView;
@@ -97,8 +106,9 @@ namespace GammaInteractionCalc
   class PointSourceShieldingChi2Fcn;
 }//namespace GammaInteractionCalc
 
-class SourceFitModel;
 class InterSpec;
+class SourceFitModel;
+class NativeFloatSpinBox;
 class ShieldingSourceDisplay;
 
 
@@ -118,11 +128,11 @@ public:
 
   Wt::EventSignal<> &checked();
   Wt::EventSignal<> &unChecked();
-  Wt::Signal<double> &massFractionChanged();
+  Wt::Signal<float> &massFractionChanged();
 
 protected:
   Wt::WCheckBox *m_useAsSourceCb;
-  Wt::WDoubleSpinBox *m_massFraction;
+  NativeFloatSpinBox *m_massFraction;
   const SandiaDecay::Nuclide *m_nuclide;
 };//class SourceCheckbox
 
@@ -290,6 +300,17 @@ public:
   //  Throws exception on invalid XML or m_forFitting mismatch
   void deSerialize( const rapidxml::xml_node<char> *shielding_node );
   
+  
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  boost::optional<double> truthThickness;
+  boost::optional<double> truthThicknessTolerance;
+  boost::optional<double> truthAD;
+  boost::optional<double> truthADTolerance;
+  boost::optional<double> truthAN;
+  boost::optional<double> truthANTolerance;
+#endif
+
+  
 protected:
   void init();
 
@@ -325,7 +346,7 @@ protected:
   //  fractions in a way that is kinda intuitive to the user, while enforcing
   //  consitency.  The overal mass-fraction for the respective element stays
   //  the same.
-  void handleIsotopicChange( double fraction, const SandiaDecay::Nuclide *nuc );
+  void handleIsotopicChange( float fraction, const SandiaDecay::Nuclide *nuc );
 
   //addSourceIsotopeCheckBox(...): adds a checkbox for Nuclide and connects
   //  appropriate signals
@@ -422,12 +443,17 @@ protected:
 */
 
 
+
 class SourceFitModel: public Wt::WAbstractItemModel
 {
 protected:
   struct IsoFitStruct
   {
     const SandiaDecay::Nuclide *nuclide;
+    
+    //numProdigenyPeaksSelected: The number of different progeny selected to be included in the fit
+    //  through all the peaks with the parent nuclide as assigned.
+    size_t numProgenyPeaksSelected;
     
     //activity: in units of PointSourceShieldingChi2Fcn::sm_activityUnits
     double activity;
@@ -436,6 +462,7 @@ protected:
     //age: in units of PhysicalUnits::second
     double age;
     bool fitAge;
+   
     
     //ageIsNotFittable: update this whenever you set the nuclide.  Intended to
     //  indicate nuclides where the spectrum doesnt change with time (ex Cs137,
@@ -443,18 +470,27 @@ protected:
     //  getting there.  See also PeakDef::ageFitNotAllowed(...).
     bool ageIsFittable;
     
-    //ageMasterNuc: specifies if the age of nuclide should be tied to the age
+    //ageDefiningNuc: specifies if the age of nuclide should be tied to the age
     //  a different nuclide instead.  Will be NULL if this is not the case.
-    const SandiaDecay::Nuclide *ageMasterNuc;
+    const SandiaDecay::Nuclide *ageDefiningNuc;
     bool shieldingIsSource;
     double activityUncertainty;
     double ageUncertainty;
 
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    boost::optional<double> truthActivity, truthActivityTolerance;
+    boost::optional<double> truthAge, truthAgeTolerance;
+#endif
+    
     IsoFitStruct()
-      : nuclide(NULL), activity(0.0), fitActivity(false),
-        age(0.0), fitAge(false), ageIsFittable(true), ageMasterNuc(NULL),
+      : nuclide(NULL), numProgenyPeaksSelected(0), activity(0.0), fitActivity(false),
+        age(0.0), fitAge(false), ageIsFittable(true), ageDefiningNuc(NULL),
         shieldingIsSource(false),
         activityUncertainty(-1.0), ageUncertainty(-1.0)
+    #if( INCLUDE_ANALYSIS_TEST_SUITE )
+        , truthActivity(), truthActivityTolerance(),
+        truthAge(), truthAgeTolerance()
+    #endif
     {
     }
   };//struct IsoFitStruct
@@ -465,6 +501,9 @@ public:
   {
     kIsotope, kActivity, kFitActivity, kAge, kFitAge, kIsotopeMass,
     kActivityUncertainty, kAgeUncertainty,
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+    kTruthActivity, kTruthActivityTolerance, kTruthAge, kTruthAgeTolerance,
+#endif
     kNumColumns
   };//enum Columns
 
@@ -492,15 +531,22 @@ public:
   bool fitActivity( int nuc ) const;
   
   //age(): returns IsoFitStruct::age, which is marked age for this nuclide,
-  //  which if there is a master age nuclide set for this nuclide, you should
-  //  get the age for that nuclide. See ageMasterNuclide(...) for this case.
+  //  which if there is a defining age nuclide set for this nuclide, you should
+  //  get the age for that nuclide. See ageDefiningNuclide(...) for this case.
   double age( int nuc ) const;
   double ageUncert( int nuc ) const;
 
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  boost::optional<double> truthActivity( int nuc ) const;
+  boost::optional<double> truthActivityTolerance( int nuc ) const;
+  boost::optional<double> truthAge( int nuc ) const;
+  boost::optional<double> truthAgeTolerance( int nuc ) const;
+#endif
+  
   //fitAge(): returns IsoFitStruct::fitAge, which is if it is marked to fit age
   //  for this nuclide, not if you should fit for the age of this nuclide since
-  //  it may have another master age nuclide that controlls the age, see
-  //  ageMasterNuclide(...) for this case
+  //  it may have another defining age nuclide that controlls the age, see
+  //  ageDefiningNuclide(...) for this case
   bool fitAge( int nuc ) const;
   
   bool shieldingDeterminedActivity( int nuc ) const;
@@ -509,20 +555,19 @@ public:
  
   //setSharredAgeNuclide(): in order to make it so all isotopes of an element
   //  can be made to have the same age, we'll have it so one of the isotopes
-  //  controlls the age (and if it can be fit) for all of them in a nuclide.
-  //The slaveNucs' age will be controlled by masterNuc.  Setting the masterNuc
-  //  to NULL (or to same value as slaveNuc) will disable having another nuclide
+  //  controls the age (and if it can be fit) for all of them in a nuclide.
+  //The dependantNucs' age will be controlled by definingNuc.  Setting the definingNuc
+  //  to NULL (or to same value as dependantNuc) will disable having another nuclide
   //  control this age.
-  //If slaveNuc->atomicNumber != masterNuc->atomicNumber, an exception will
+  //If dependantNuc->atomicNumber != definingNuc->atomicNumber, an exception will
   //  be thrown
-  void setSharredAgeNuclide( const SandiaDecay::Nuclide *slaveNuc,
-                             const SandiaDecay::Nuclide *masterNuc );
+  void setSharredAgeNuclide( const SandiaDecay::Nuclide *dependantNuc,
+                             const SandiaDecay::Nuclide *definingNuc );
   
-  //ageMasterNuclide(...): returns the nuclide that controlls the age for the
+  //ageDefiningNuclide(...): returns the nuclide that controlls the age for the
   //  passed in nuclide.  If the passed in nuclide does not have another nuclide
-  //  that controlls its age, it returns the same nuclide that was passed in.
-  const SandiaDecay::Nuclide *ageMasterNuclide(
-                                  const SandiaDecay::Nuclide *slaveNuc ) const;
+  //  that controls its age, it returns the same nuclide that was passed in.
+  const SandiaDecay::Nuclide *ageDefiningNuclide( const SandiaDecay::Nuclide *dependantNuc ) const;
   
   
   void makeActivityEditable( const SandiaDecay::Nuclide *nuc );
@@ -578,17 +623,20 @@ public:
 
 
   //compare(...): function to compare IsoFitStruct according to relevant Column;
-  //  functions similat to operator<
+  //  functions similar to operator<
   static bool compare( const IsoFitStruct &lhs, const IsoFitStruct &rhs,
                        Columns sortColumn, Wt::SortOrder order );
 
+  void displayUnitsChanged( boost::any value );
+  
 protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
+  bool m_displayCurries;
   PeakModel *m_peakModel;
   std::vector<IsoFitStruct> m_nuclides;
   bool m_sameAgeForIsotopes;
-
+  
   //m_previousResults: when a isotope gets removed from this model, we'll cache
   //  its current value, since it will often times get added again and be
   //  intended to be the same value
@@ -601,8 +649,7 @@ protected:
 class ShieldingSourceDisplay : public Wt::WContainerWidget
 {
 public:
-  typedef std::shared_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn> \
-                Chi2FcnShrdPtr;
+  typedef std::shared_ptr<GammaInteractionCalc::PointSourceShieldingChi2Fcn> Chi2FcnShrdPtr;
 
   /** The maximum time (in milliseconds) a model fit can take before the fit is
       aborted.  This generally will only ever be applicable to fits with
@@ -622,8 +669,41 @@ public:
                           Wt::WSuggestionPopup *materialSuggest,
                           MaterialDB *materialDB,
                           Wt::WContainerWidget *parent = 0 );
-  virtual ~ShieldingSourceDisplay();
+  
+  /** Creates a AuxWindow with a ShieldingSourceDisplay in it.
+   
+   @returns the created ShieldingSourceDisplay and AuxWindow. If for some reason there was an issue
+   making the widgets, the returned pair will be nullptr's (and also an error message will be
+   displayed to the user).
+   */
+  static std::pair<ShieldingSourceDisplay *,AuxWindow *> createWindow( InterSpec *viewer  );
+  
+  virtual ~ShieldingSourceDisplay() noexcept(true);
 
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  /** Creates a window that lets you enter truth-values and tolerances for all the quantities
+   currently marked to be fit for.
+   */
+  void showInputTruthValuesWindow();
+  
+  /** Sets activitities to like 1mCi, and thicknesses to 1 cm, so this was test fits wont be
+   starting at an already correct value.
+   */
+  void setFitQuantitiesToDefaultValues();
+  
+  /** Returns <num values specified, num fit values, is valid> */
+  std::tuple<int,int,bool> numTruthValuesForFitValues();
+  
+  /** Renders the Chi2Chart to a SVG image */
+  void renderChi2Chart( Wt::WSvgImage &image );
+
+  /** Tests the current values, for all quantities being fit for, against truth-level values.
+   
+   @returns <IfTestSuccesful,NumCorrect,NumTested,TextInfoLines>
+   */
+  std::tuple<bool,int,int,std::vector<std::string>> testCurrentFitAgainstTruth();
+#endif
+  
   //add generic shielding
   void addGenericShielding();
   
@@ -647,11 +727,6 @@ public:
                                            const SandiaDecay::Nuclide *nuc );
   void isotopeDeSelectedAsShieldingCallback( ShieldingSelect *select,
                                              const SandiaDecay::Nuclide *nuc );
-
-  //startModelFit(): Starts the actual fit of shielding, activities, and ages;
-  //  called when user clicks "Perform Model Fit" button.  The actual fitting
-  //  happens in a background thread.
-  void startModelFit();
   
   struct ModelFitProgress
   {
@@ -664,6 +739,8 @@ public:
   
   struct ModelFitResults
   {
+    std::mutex m_mutex;
+    
     enum class FitStatus{ Invalid, InterMediate, Final };
     FitStatus succesful;
     std::vector<ShieldingSelect *> shieldings;  //I dont think we strickly need, but more as a sanity check
@@ -675,6 +752,19 @@ public:
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;
   };//struct ModelFitResults
+  
+  /** Performs the actual fit of shielding, activities, and ages;
+   called when user clicks "Perform Model Fit" button.
+   
+   @param fitInBackground If true, the fit is performed in the background, and function will return
+          immediately (i.e., before fit is performed).  If false, function will not return until
+          fit is finished (i.e., blocking).
+   @returns A pointer to the fitting results; will be nullptr if fit was not started.  Note that
+            if fitting is being performed in the background, the returned object will be updated as
+            fitting is being performed (use m_mutex to ensure safe access).
+   */
+  std::shared_ptr<ModelFitResults> doModelFit( const bool fitInBackground );
+    
   
   /** Function that does the actual model fitting, not on the main GUI thread.
       \param wtsession The Wt session id of the current WApplication
@@ -859,13 +949,17 @@ public:
   void toggleUseAll(Wt::WCheckBox* button);
   void updateAllPeaksCheckBox(  Wt::WCheckBox *but);
     
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
 
 protected:
-  virtual void layoutSizeChanged( int width, int height );
-
+  void updateChi2ChartActual();
+  virtual void layoutSizeChanged( int width, int height ) override;
+  
 protected:
   class Chi2Graphic;  //forward declaration
 
+  bool m_chi2ChartNeedsUpdating;
+  
   int m_width, m_height, m_nResizeSinceHint;
 
   //m_modifiedThisForeground: tracks if the user has modified this
@@ -949,7 +1043,7 @@ protected:
     
     void setShowChiOnChart( const bool show_chi );
     void setTextPenColor( const Wt::WColor &color );
-    
+    void setColorsFromTheme( std::shared_ptr<const ColorTheme> theme );
   protected:
     void calcAndSetAxisPadding( double yHeightPx );
     
@@ -959,6 +1053,11 @@ protected:
   };//class WCartesianChart
 
   static const int sm_xmlSerializationVersion;
+  
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+  // So the tester can call updateChi2ChartActual
+  friend class SpectrumViewerTester;
+#endif
 };//class ShieldingSourceDisplay
 
 

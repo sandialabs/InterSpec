@@ -34,8 +34,10 @@
 #include <stdexcept>
 
 #include <boost/any.hpp>
+#include <boost/function.hpp>
 #include <boost/date_time.hpp>
 
+#include <Wt/WSignal>
 #include <Wt/Dbo/Dbo>
 //#include <Wt/Dbo/weak_ptr>  //usable with Wt 3.3.1, but not currently using
 #include <Wt/Dbo/SqlTraits>
@@ -274,13 +276,45 @@ public:
    that has gotten deleted.
    
    You may set multiple functions for each named preference.
+   
+   Note: the function passed in is only called, essentially when a new state is loaded - it is not called whenthe user changes a preference
+      value, for this see #addCallbackWhenChanged.
    */
   static void associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
                                 const std::string &name,
                                 std::function<void(boost::any)> fcn,
                                 InterSpec *viewer );
   
-  /** Hooks up the necassary signals so that the database values will stay
+  /** Add a function to callback when the preference changes, either through loading  a new state, or toggling the preference checkbox
+   or whatever.
+   
+   This function must be called from the application thread such that InterSpec::instance() will be non-void
+   
+   The target object must derive from WObject, and the member function passed in must take a boost::any as a parameter; this
+   boost::any will be the new preference value that things are changed too.  If the target object is deleted, then the callback will also be
+   removed from the list of callbacks next time the preference is changed.
+      
+   TODO: Should override things so that the target member function can take a bool, etc to make to
+         avoid the boost::any_cast that could (but shouldnt!) potentially throw.
+   */
+  template<class T, class V>
+  static void addCallbackWhenChanged( const std::string &name,
+                                      T *target, void (V::*method)(boost::any) );
+  
+  /** Adds a function to callback when the preference changes, either through loading  a new state, or toggling the preference checkbox
+   or whatever.
+   
+   This function must be called from the application thread such that InterSpec::instance() will be non-void
+   
+   If the Wt::Signals::connection pointer is null, then callback will never be removed from the list of callbacks when the value changes.
+   If the Wt::Signals::connection pointer is non-null, then the callback will be  removed from the list of callbacks when the connection is
+   disconnected.
+   */
+  static void addCallbackWhenChanged( const std::string &name,
+                                      boost::function<void(boost::any)> fcn,
+                                      std::shared_ptr<Wt::Signals::connection> conn );
+  
+  /** Hooks up the necessary signals so that the database values will stay
    inline with what the user enters via the GUI.  Also, when
    #pushPreferenceValue function is called, the widget state will be set
    appropriately, and signal emitted as-if the user had changed things via the
@@ -403,6 +437,7 @@ protected:
  
   typedef std::map<std::string,boost::any> PreferenceMap;
   typedef std::map<std::string,std::vector<std::function<void(boost::any)> > > PreferenceFunctionMap;
+  typedef std::map<std::string,std::vector<std::pair<boost::function<void(boost::any)>,std::shared_ptr<Wt::Signals::connection>>> > CallbackFunctionMap;
   
   std::string m_userName;
   int m_deviceType;
@@ -413,9 +448,10 @@ protected:
   boost::posix_time::ptime m_currentAccessStartUTC;
   boost::posix_time::time_duration m_totalTimeInApp;
   
+  //These are mutable so Dbo::ptr<t>.modify() dont need to be called
   mutable PreferenceMap m_preferences;
   mutable PreferenceFunctionMap m_preferenceFunctions;
-  
+  mutable CallbackFunctionMap m_onChangeCallbacks;
   
   Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> >         m_userFiles;
   Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> >           m_dbPreferences;
@@ -433,6 +469,8 @@ protected:
       "default_preferences.xml".
    */
   static const std::string sm_defaultPreferenceFile;
+  
+  static void EmitBindSignal( const std::shared_ptr<Wt::Signals::signal<void(boost::any)>> &, boost::any );
   
   friend class InterSpec;
 };//struct UserOption
@@ -595,14 +633,7 @@ public:
   }
 
   
-#if __cplusplus < 201103L
-  //added this for pre-C++11 compile
-  virtual ~FileToLargeForDbException() throw() {};
-  
-  virtual const char *what() const throw()
-#else
   virtual const char* what() const noexcept
-#endif
   {
     return m_msg.c_str();
   }
@@ -815,13 +846,14 @@ struct UserState
   
   enum ShownDisplayFeatures
   {
-    kDockedWindows       = 0x1,
-    kLogSpectrumCounts   = 0x2,
-    kVerticalGridLines   = 0x4,
-    kHorizontalGridLines = 0x8,
-    kSpectrumLegend      = 0x10,
-    kTimeSeriesLegend    = 0x20,
-    kShowingShieldSourceFit    = 0x40,
+    kDockedWindows          = 0x1,
+    kLogSpectrumCounts      = 0x2,
+    kVerticalGridLines      = 0x4,
+    kHorizontalGridLines    = 0x8,
+    kSpectrumLegend         = 0x10,
+    kTimeSeriesLegend       = 0x20,
+    kShowingShieldSourceFit = 0x40,
+    kShowingEnergySearch    = 0x80
   };//enum ShownDisplayFeatures
   
   //UserState(): default constructor, initializes values to reasonable defaults
@@ -1011,6 +1043,8 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
                                        const std::string &name, const T &value,
                                        InterSpec *viewer )
 {
+  //std::cout << "setPreferenceValue: " << name << std::endl;
+  
   if( name.size() > UserOption::sm_max_name_str_len )
     throw std::runtime_error( "Invalid name for preference: " + name );
   
@@ -1063,10 +1097,35 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
     option = sql->session()->add( newoption );
     transaction.commit();
   }else if( noptions == 1 )
+  {
     option = options.front();
-  else
-    throw std::runtime_error( "Invlaid number of preferences for " + name
-                             + " for user " + user->userName() );
+  }else
+  {
+    //Hmmm, not sure how this happened, but I have made it here for "ColorThemeIndex".
+    //  We will take the first option and
+#if( PERFORM_DEVELOPER_CHECKS )
+    char buffer[1024];
+    snprintf( buffer, sizeof(buffer), "Invalid number of preferences (%i) for %s for user %s; will"
+                                      " remove all of them after the first from the database.",
+              static_cast<int>(noptions), name.c_str(), user->userName().c_str() );
+    log_developer_error( __func__, buffer );
+#endif
+    
+    option = options.front();
+    for( size_t i = 1; i < noptions; ++i )
+    {
+      try
+      {
+        DataBaseUtils::DbTransaction transaction( *sql );
+        options[i].remove();
+      }catch(...)
+      {
+        std::cerr << "Caught excettion removing duplicate preference from database" << std::endl;
+      }
+    }//for( size_t i = 1; i < noptions; ++i )
+    
+    //throw runtime_error( "Invalid number of preferences for " + name + " for user " + user->userName() );
+  }//if( noptions == 0 ) / else / else
   
   std::stringstream valuestrm;
   valuestrm << value;
@@ -1084,7 +1143,63 @@ void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
   }//end interacting with the database
   
   user->m_preferences[name] = option->value();
+  
+  
+  const auto callbackIter = user->m_onChangeCallbacks.find(name);
+  if( callbackIter != std::end(user->m_onChangeCallbacks) )
+  {
+    bool any_disconnected = false;
+    auto &callbacks = callbackIter->second;
+    for( const auto &fcn_conn : callbacks )
+    {
+      try
+      {
+        if( fcn_conn.second && !fcn_conn.second->connected() )
+        {
+          any_disconnected = true;
+        }else
+        {
+          //std::cout << "Calling callback for pref '" << name << "'" << std::endl;
+          fcn_conn.first( boost::any(value) );
+        }
+      }catch(...)
+      {
+        std::cerr << "setPreferenceValue: caught exception calling m_onChangeCallbacks for '"
+                  << name << "' - you should check into this!" << std::endl;
+      }//try / catch
+    }//for( loop over callbacks
+    
+    //Cleanup any connections no longer needed
+    if( any_disconnected )
+    {
+      //std::cerr << "Will remove dead connections: pre_size=" << callbacks.size() << std::endl;
+      callbacks.erase( std::remove_if( std::begin(callbacks), std::end(callbacks),
+                         []( std::pair<boost::function<void(boost::any)>,
+                             std::shared_ptr<Wt::Signals::connection>> &a ){
+                           return a.second && !a.second->connected();
+                         }),
+                       std::end(callbacks) );
+      
+      //std::cerr << "post_size=" << callbacks.size() << std::endl;
+    }//if( any_disconnected )
+  }//if( we have any callbacks for this preference )
 }//setPreferenceValue//(...)
+
+
+
+template<class T, class V>
+void InterSpecUser::addCallbackWhenChanged( const std::string &name,
+                                            T *target, void (V::*method)(boost::any) )
+{
+  
+  auto s = std::make_shared<Wt::Signals::signal<void(boost::any)>>();
+  Wt::Signals::connection conn = s->connect( boost::bind(method, target, _1) );
+  auto conn_ptr = std::make_shared<Wt::Signals::connection>( std::move(conn) );
+  boost::function<void(boost::any)> fcn = boost::bind( &InterSpecUser::EmitBindSignal, s, _1 );
+  
+  addCallbackWhenChanged( name, fcn, conn_ptr );
+}//InterSpecUser::addCallbackWhenChanged(...)
+
 
 #endif //InterSpecUser_h
 
