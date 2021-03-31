@@ -146,13 +146,7 @@ public:
   InterSpec( Wt::WContainerWidget *parent = 0 );
 
   ~InterSpec() noexcept(true);
-  
-  /** Returns the InterSpec instance cooresponding to the current WApplication instance.
-   Will return nullptr if WApplication::instance() is null (e.g., current thread is not in a
-   WApplication event loop).
-   */
-  static InterSpec *instance();
-  
+    
   /** Returns the InterSpec instance cooresponding to the current WApplication instance.
    Will return nullptr if WApplication::instance() is null (e.g., current thread is not in a
    WApplication event loop).
@@ -817,13 +811,6 @@ protected:
   
   std::vector<std::pair<float,int> > passthroughTimeToSampleNumber() const;
   
-  
-  void displayForegroundData( const bool keep_current_energy_range );
-  void displayBackgroundData();
-  void displaySecondForegroundData();
-  
-  void displayTimeSeriesData( bool updateHighlightRegionsDisplay );
-
   // Inclusive for t0, exclusive for t1, e.g., if you have time slices of 0.1s,
   // and you pass in t0 = 0.1, t1 = 0.2; then only the second time slice will be
   // displayed.
@@ -837,6 +824,7 @@ protected:
                                       const SpecUtils::SpectrumType type );
 #endif //if( USE_SPECTRUM_CHART_D3 ) / else
   
+  void displayForegroundData( const bool keep_current_energy_range );
   void displaySecondForegroundData();
   void displayBackgroundData();
   void displayTimeSeriesData();
