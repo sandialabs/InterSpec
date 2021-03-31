@@ -8109,57 +8109,6 @@ float InterSpec::sample_real_time_increment( const std::shared_ptr<const SpecMea
 }//double sample_real_time_increment()
 
 
-std::set<int> InterSpec::timeRangeToSampleNumbers( double t0, double t1 )
-{
-  //t0 may be the exact lower edge, and t1 may be the exact upper edge, so we
-  //  need to add/subtract a small epsilon so we dont extend into the
-  //  neighboring bins
-  
-  if( t0 > t1 )
-    std::swap( t0, t1 );
-  
-  t0 += 1.0E-6;
-  t1 -= 1.0E-6;
-
-  set<int> answer;
-  
-  if( !m_dataMeasurement )
-    return answer;
-  
-  // The last entry in 'binning' will be a garbage sample number, and the time is the upper edge of
-  //  last time segment.
-  const vector<pair<float,int> > binning = passthroughTimeToSampleNumber();
-  
-  if( binning.size() <= 1 )
-    return answer;
-  
-  size_t startind, endind;
-  for( startind = 0; (startind+1) < binning.size(); ++startind )
-    if( binning[startind+1].first > t0 )
-      break;
-  
-  // The very last entry in 'binning' is a garbage sample number, so if startind points to the last
-  //  element, we wont include any sample numbers, so return an empty answer.
-  if( (startind+1) >= binning.size() )
-    return answer;
-  
-  for( endind = startind; (endind+1) < binning.size(); ++endind )
-    if( binning[endind+1].first > t1 )
-      break;
-  
-  // 'endind' might point to the last garbage sample number, so lets protect against that
-  if( binning.size() == 1 )
-    endind = 0;
-  else
-    endind = std::min( endind, binning.size()-2 );
-  
-  for( size_t i = startind; i <= endind; ++i )
-    answer.insert( binning[i].second );
-  
-  return answer;
-}//timeRangeToSampleNumbers(...)
-
-
 /*
 double InterSpec::liveTime( const std::set<int> &samplenums ) const
 {
@@ -9555,7 +9504,7 @@ void InterSpec::detectorsToDisplayChanged()
   displayBackgroundData();
   displaySecondForegroundData();
   displayForegroundData( true );
-  displayTimeSeriesData( true ); //wcjohns change 20160602 to true, to force an update of highlighted regions, should consider removing the highlight option
+  displayTimeSeriesData(); //wcjohns change 20160602 to true, to force an update of highlighted regions, should consider removing the highlight option
   
   // This function is only called when a checkbox in the "Detectors" sub-menu is changed, so for the
   //  moment, we will only emit that things changed for the foreground.  In the future we should get
@@ -11157,82 +11106,82 @@ std::set<int> InterSpec::timeRangeToSampleNumbers( double t0, double t1 )
   return answer;
 }//timeRangeToSampleNumbers(...)
 
-
-vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
-{
-  std::vector<std::pair<float,int> > answer;
+// // Old InterSpec::passthroughTimeToSampleNumber() definition
+// vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
+// {
+//   std::vector<std::pair<float,int> > answer;
   
-  if( !m_dataMeasurement )
-    return answer;
+//   if( !m_dataMeasurement )
+//     return answer;
   
-  const set<int> foregroundSamples = validForegroundSamples();
-  const vector<string> disp_det_names = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+//   const set<int> foregroundSamples = validForegroundSamples();
+//   const vector<string> disp_det_names = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   
-  float time = 0.0f;
-  vector<pair<float,int> > foreground;
-  for( const int sample : foregroundSamples )
-  {
-    const float thistime = sample_real_time_increment( m_dataMeasurement, sample, disp_det_names );
-    if( thistime <= 0.0 )
-      continue;
-    foreground.push_back( make_pair(time,sample) );
-    time += thistime;
-  }//for( const int sample : sample_nums )
+//   float time = 0.0f;
+//   vector<pair<float,int> > foreground;
+//   for( const int sample : foregroundSamples )
+//   {
+//     const float thistime = sample_real_time_increment( m_dataMeasurement, sample, disp_det_names );
+//     if( thistime <= 0.0 )
+//       continue;
+//     foreground.push_back( make_pair(time,sample) );
+//     time += thistime;
+//   }//for( const int sample : sample_nums )
   
-  if( foreground.size() )
-    foreground.push_back( make_pair(time,foreground.back().second + 1) );
+//   if( foreground.size() )
+//     foreground.push_back( make_pair(time,foreground.back().second + 1) );
   
-  //
-  float backtime = 0.0f;
-  vector<pair<float,int> > background;
-  const set<int> all_sample_nums = m_dataMeasurement->sample_numbers();
-  for( const int s : all_sample_nums )
-  {
-    if( m_excludedSamples.count(s) )
-      continue;
+//   //
+//   float backtime = 0.0f;
+//   vector<pair<float,int> > background;
+//   const set<int> all_sample_nums = m_dataMeasurement->sample_numbers();
+//   for( const int s : all_sample_nums )
+//   {
+//     if( m_excludedSamples.count(s) )
+//       continue;
     
-    const float thistime = sample_real_time_increment( m_dataMeasurement, s, disp_det_names );
-    if( thistime <= 0.0 )
-      continue;
+//     const float thistime = sample_real_time_increment( m_dataMeasurement, s, disp_det_names );
+//     if( thistime <= 0.0 )
+//       continue;
     
-    bool isback = false;
-    const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
-                              = m_dataMeasurement->sample_measurements(s);
-    for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
-      isback |= (m->source_type() == SpecUtils::SourceType::Background);
+//     bool isback = false;
+//     const vector< std::shared_ptr<const SpecUtils::Measurement> > meas
+//                               = m_dataMeasurement->sample_measurements(s);
+//     for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas )
+//       isback |= (m->source_type() == SpecUtils::SourceType::Background);
     
-    if( isback )
-    {
-      backtime += thistime;
-      background.push_back( make_pair(backtime,s) );
-    }
-  }//for( const int s : sample_nums )
+//     if( isback )
+//     {
+//       backtime += thistime;
+//       background.push_back( make_pair(backtime,s) );
+//     }
+//   }//for( const int s : sample_nums )
   
-  if( !background.empty() && foreground.empty() )
-  {
-    background.push_back( make_pair(backtime,background.back().second + 1) );
-    return background;
-  }
-  if( background.empty() )
-    return foreground;
+//   if( !background.empty() && foreground.empty() )
+//   {
+//     background.push_back( make_pair(backtime,background.back().second + 1) );
+//     return background;
+//   }
+//   if( background.empty() )
+//     return foreground;
   
-  float backscale = 1.0f;
-  if( backtime > 0.1f*time )
-    backscale = ( std::ceil(0.1f*time) ) / backtime;
+//   float backscale = 1.0f;
+//   if( backtime > 0.1f*time )
+//     backscale = ( std::ceil(0.1f*time) ) / backtime;
   
-  answer.reserve( foreground.size() + background.size() + 1 );
+//   answer.reserve( foreground.size() + background.size() + 1 );
   
-  float lastt = -backscale*background.back().first;
-  for( size_t i = 0; i < background.size(); ++i )
-  {
-    answer.push_back( make_pair(lastt, background[i].second));
-    lastt = -backscale*background.back().first + backscale*background[i].first;
-  }
+//   float lastt = -backscale*background.back().first;
+//   for( size_t i = 0; i < background.size(); ++i )
+//   {
+//     answer.push_back( make_pair(lastt, background[i].second));
+//     lastt = -backscale*background.back().first + backscale*background[i].first;
+//   }
   
-  answer.insert( answer.end(), foreground.begin(), foreground.end() );
+//   answer.insert( answer.end(), foreground.begin(), foreground.end() );
   
-  return answer;
-}//vector<std::pair<float,int> > passthroughTimeToSampleNumber() const
+//   return answer;
+// }//vector<std::pair<float,int> > passthroughTimeToSampleNumber() const
 
 
 vector< pair<double,double> > InterSpec::timeRegionsToHighlight(

@@ -764,8 +764,11 @@ if(USE_SPECTRUM_CHART_D3)
         external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
         external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
         external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
+        src/D3TimeChart.cpp
     )
-    list(APPEND headers InterSpec/D3SpectrumDisplayDiv.h)
+    list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h InterSpec/D3TimeChart.h )
+
+    list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
 
     deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"
@@ -1435,13 +1438,13 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     add_subdirectory(testing)
 endif(BUILD_AS_UNIT_TEST_SUITE)
 
-set(OTHER_SUPPORT_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/README.md
-    ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
-)
+list( APPEND OTHER_SUPPORT_FILES
+     ${CMAKE_CURRENT_SOURCE_DIR}/README.md
+     ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
+  )
 
 FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
 list(FILTER CSS_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")
