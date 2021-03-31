@@ -319,7 +319,7 @@ D3TimeChart.prototype.WtEmit = function (elem, event) {
  */
 D3TimeChart.prototype.setData = function (rawData) {
   //See the c++ function D3TimeChart::setData()
-  console.log(rawData);
+  // console.log(rawData);
   if (!this.isValidRawData(rawData)) {
     console.log(
       "Runtime error in D3TimeChart.setData: Structure of data is not valid.\nDoing nothing..."
@@ -328,7 +328,7 @@ D3TimeChart.prototype.setData = function (rawData) {
     var formattedData = this.formatDataFromRaw(rawData);
 
     this.data = [formattedData];
-    console.log(this.data);
+    // console.log(this.data);
 
     // create inverted index of sample numbers  for fast lookup of array-indices from sample number keys
     var sampleToIndexMap = {};
@@ -453,7 +453,7 @@ D3TimeChart.prototype.render = function (options) {
     );
     return;
   } else {
-    console.log("Rendering...");
+    // console.log("Rendering...");
 
     var plotWidth = this.width - this.margin.left - this.margin.right;
     var plotHeight = this.height - this.margin.top - this.margin.bottom;
