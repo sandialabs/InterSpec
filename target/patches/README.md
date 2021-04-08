@@ -74,7 +74,7 @@ make -j12 install
 
 ## Build Wt 3.3.4
 ```bash
-curl https://github.com/emweb/wt/archive/3.3.4.tar.gz --output wt-3.3.4.tar.gz
+curl -L https://github.com/emweb/wt/archive/3.3.4.tar.gz --output wt-3.3.4.tar.gz
 tar -xzvf wt-3.3.4.tar.gz
 
 cd wt-3.3.4
