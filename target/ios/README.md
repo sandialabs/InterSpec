@@ -121,4 +121,10 @@ mkdir build-iphonesimulator; cd build-iphonesimulator
 IPHONEOS_DEPLOYMENT_TARGET=10.2 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../cmake/iOSToolchain.cmake -DIOS=ON -DCMAKE_PREFIX_PATH=../target/ios/prefix -DIOS_PLATFORM=SIMULATOR ..
 ```
 
+iOS projects dont seem to like including the Wt web-resources forlder as 'resources', so we need a different name, so do:
+```bash
+cd InterSpec/target/ios/InterSpec
+cp -r ./target/ios/prefix/share/Wt/resources ./XcodeFiles/WtsRsrcs
+```
+
 Now you can open the `InterSpec/target/ios/InterSpec/InterSpec.xcodeproj` and when you compile, it will run the `make` command for either the `build-iphoneos` or `build-iphonesimulator` target, depending on your build target.
