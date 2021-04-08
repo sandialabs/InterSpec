@@ -31,7 +31,6 @@
 #include <Wt/WLabel>
 #include <Wt/WSlider>
 #include <Wt/WLineEdit>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/WComboBox>
 #include <Wt/WTabWidget>
 #include <Wt/WGridLayout>
@@ -55,6 +54,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/CanvasForDragging.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/CompactFileManager.h"
 #if( !ANDROID && !IOS )
 #include "InterSpec/FileDragUploadResource.h"
@@ -108,10 +108,6 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   const char *val_regex = "(\\-?\\d+\\s*((\\-|to|through)\\s*\\d+)?,*\\s*)+";
   
 //  WPopupWidget *sampleToolTip = 0, *scaleToolTip = 0;
-  
-  WDoubleValidator *dblval = new WDoubleValidator( this );
-  dblval->setRange( 0.0, 10000.0 );
-//  dblval->setInvalidBlankText( "1.0" );
   
   WRegExpValidator *validator = new WRegExpValidator( val_regex, this );
   validator->setFlags( Wt::MatchCaseInsensitive );
@@ -179,32 +175,24 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       wrapperLayout->addWidget( m_foregroundTitle,3,0 );
     }//( type==SpecUtils::SpectrumType::Foreground && mode==LeftToRight )
     
-    if( mode==TopToBottom || type == SpecUtils::SpectrumType::Foreground )
+    if( (mode == TopToBottom) || (type == SpecUtils::SpectrumType::Foreground) )
     {
       m_scaleValueTxt[typeindex] = nullptr;
       m_rescaleByLiveTime[typeindex] = nullptr;
     }else
     {
       WContainerWidget *rowdiv = new WContainerWidget( );
-      wrapperLayout->addWidget( rowdiv,3,0, AlignBottom);
+      wrapperLayout->addWidget( rowdiv, 3, 0, AlignBottom);
       WGridLayout *slidelayout = new WGridLayout( rowdiv );
 
       slidelayout->setHorizontalSpacing(10);
       slidelayout->setVerticalSpacing(10);
-      m_scaleValueTxt[typeindex] = new WDoubleSpinBox();
-#if (IOS || ANDROID)
-      //can't use m_interspec->isMobile() here, so use #IOS
-      //20150123: on android at least, calling setNativeControl() causes
-      //  a javascript exception (having to do with the validate) when first
-      //  loading the app.
-//      m_scaleValueTxt[type]->setNativeControl(true); //mobile should not show spinner
-#endif
-      m_scaleValueTxt[typeindex]->setSingleStep(0.1);
+      m_scaleValueTxt[typeindex] = new NativeFloatSpinBox();
+      //m_scaleValueTxt[typeindex]->setSingleStep(0.1);
+      m_scaleValueTxt[typeindex]->setSpinnerHidden( true );
       m_scaleValueTxt[typeindex]->setRange( 0.0, 1000000.0 );
-      m_scaleValueTxt[typeindex]->setValidator( dblval );
-      m_scaleValueTxt[typeindex]->addStyleClass( "numberValidator"); //used to detect mobile keyboard
       m_scaleValueTxt[typeindex]->addStyleClass( "SpecNormTxt" );
-      m_scaleValueTxt[typeindex]->changed().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactor, this, type) );
+      m_scaleValueTxt[typeindex]->valueChanged().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactor, this, type) );
       m_scaleValueTxt[typeindex]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type, _1) );
         
     
@@ -951,7 +939,7 @@ void CompactFileManager::updateDisplayedScaleFactorNumbers( const double sf,
     return;
   
   char buffer[32];
-  snprintf( buffer, sizeof(buffer), "%.2f", sf );
+  snprintf( buffer, sizeof(buffer), "%.4f", sf );
   m_scaleValueTxt[typeindex]->setText( buffer );
 }//void updateDisplayedScaleFactorNumbers(...)
 
@@ -1021,7 +1009,9 @@ void CompactFileManager::handleUserEnterdScaleFactorWheel( const SpecUtils::Spec
 {
   int i = e.wheelDelta();
   const int typeindex = static_cast<int>(type);
-  m_scaleValueTxt[typeindex]->setValue(m_scaleValueTxt[typeindex]->value() + m_scaleValueTxt[typeindex]->singleStep()*i);
+  
+  const float oldValue = m_scaleValueTxt[typeindex]->value();
+  m_scaleValueTxt[typeindex]->setValue( oldValue + 0.05*oldValue*i);
   handleUserEnterdScaleFactor(type);
 }//void handleUserEnterdScaleFactor( const SpecUtils::SpectrumType type )
 

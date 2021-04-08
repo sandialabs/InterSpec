@@ -45,8 +45,9 @@ namespace SpecUtils{ enum class SpectrumType : int; }
 
 class SpecMeas;
 class InterSpec;
-class SpectraFileModel;
 class SpecMeasManager;
+class SpectraFileModel;
+class NativeFloatSpinBox;
 
 
 class CompactFileManager : public Wt::WContainerWidget
@@ -114,7 +115,7 @@ private:
   Wt::WLineEdit *m_displaySampleNumEdits[3];
   Wt::WInteractWidget *m_nextSampleNumButtons[3];
   Wt::WInteractWidget *m_prevSampleNumButtons[3];
-  Wt::WDoubleSpinBox *m_scaleValueTxt[3];  //could use a WInPlaceEdit
+  NativeFloatSpinBox *m_scaleValueTxt[3];  //could use a WInPlaceEdit
   Wt::WPushButton *m_rescaleByLiveTime[3];
   
   //We want to avoid un-necassarily re-loading the data on blur of the sample
