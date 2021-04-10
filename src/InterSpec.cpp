@@ -7693,11 +7693,7 @@ void InterSpec::showDetectorEditWindow()
 
 void InterSpec::showCompactFileManagerWindow()
 {
-  const CompactFileManager::DisplayMode cfmMode
-                                 = isMobile() ? CompactFileManager::Tabbed
-                                              : CompactFileManager::TopToBottom;
-  CompactFileManager *compact
-                       = new CompactFileManager( m_fileManager, this, cfmMode );
+ auto *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::Tabbed );
 
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );

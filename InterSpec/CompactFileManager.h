@@ -60,7 +60,7 @@ class CompactFileManager : public Wt::WContainerWidget
   \****************************************************************************/
 
 public:
-  enum DisplayMode{ TopToBottom, LeftToRight, Tabbed };
+  enum DisplayMode{ LeftToRight, Tabbed };
   
   CompactFileManager( SpecMeasManager *fullFileManager,
                       InterSpec *hostViewer,
@@ -130,7 +130,7 @@ private:
   //  detector, if the measurment has a title, it will be displayed using
   //  m_foregroundTitle.  In the future it may be worth while to make this a
   //  WInPlaceEdit to allow the user an easy way to change it.
-  Wt::WText *m_foregroundTitle;
+  Wt::WText *m_titles[3];
   
   // A link to the file manager, as that's where everything's stored
   SpectraFileModel *m_files;
