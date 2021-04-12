@@ -1299,7 +1299,7 @@ if(TRY_TO_STATIC_LINK)
             ${Boost_RANDOM_LIBRARY}
             ${Boost_PROGRAM_OPTIONS_LIBRARY}
             ${LIBZ_LIBRARY}
-            /usr/lib/libSystem.B.dylib
+            libSystem.B.dylib
             /System/Library/Frameworks/Carbon.framework/Versions/A/Carbon
             /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation
         )
