@@ -169,6 +169,8 @@ BrushX.prototype.getCenter = function () {
  */
 D3TimeChart = function (elem, options) {
   // this is called when the widget is loaded.
+
+  /** OPTIONS */
   var self = this;
   this.chart = typeof elem === "string" ? document.getElementById(elem) : elem;
 
@@ -185,27 +187,29 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
 
-  // option to use simplified gesture mode, which we define as mapping all drag gestures to zoom functionality.
-  // To add extra functionality to other keys in this mode, would need to make conditional changes to this.highlightOptions to add new key mappings.
-  if (typeof this.options.useSimplifiedGestures !== "boolean")
-    this.options.useSimplifiedGestures = false;
-
-  // minimum selection width option. Default used from Spectrum Chart
+  // minimum selection width option. Default value taken from D3SpectrumChart
   if (typeof this.options.minSelectionWidth !== "number")
     this.options.minSelectionWidth = 8;
 
-  this.data = null;
-  this.selection = null;
-  this.height = null;
-  this.width = null;
+  // option to use simplified gesture mode, which we define as mapping all drag gestures to zoom functionality.
+  // current implementation of simplified gesture mode simply disables use of this.highlightOptions and treats any drag gesture as zoom, regardless of keyboard modifier.
+  // To add extra functionality to other keys in simplified gesture mode, would need to use and make conditional changes to this.highlightOptions to add new key mappings
+  if (typeof this.options.useSimplifiedGestures !== "boolean")
+    this.options.useSimplifiedGestures = false;
 
-  // initialize brush-highlight selection
-  this.brush = new BrushX();
-
-  // other useful data members
-  this.rawData = null;
-  this.sampleToIndexMap = null;
-  this.backgroundDuration = null;
+  // defines keyboard modifiers and/or other metadata to use with drag gestures to achieve various highlight selection functionality.
+  // uses object to emulate behavior of Set object (e.g. {"none": true} instead of new Set(["none"])) to accommodate ES5
+  this.highlightOptions = {
+    foreground: {
+      modifierKey: { none: true },
+    },
+    background: {
+      modifierKey: { altKey: true },
+    },
+    zoom: {
+      modifierKey: { ctrlKey: true, rightClick: true },
+    },
+  };
 
   this.margin = {
     top: 5,
@@ -214,33 +218,39 @@ D3TimeChart = function (elem, options) {
     left: 60,
   };
 
+  /** CONSTANTS */
   // map<integer, string> (i.e. array) of source integer code to string. 0 == IntrinsicActivity, 1== Calibration, 2 == Background, 3 == Foreground, 4 == Unknown
-  this.sourceMap = [
+  this.SOURCE_MAP = Object.freeze([
     "IntrinsicActivity",
     "Calibration",
     "Background",
     "Foreground",
     "Unknown",
-  ];
+  ]);
 
-  this.highlightColors = {
+  // colors used for highlight rectangles for various selection types.
+  this.HIGHLIGHT_COLORS = Object.freeze({
     foreground: "rgb(255, 255, 0)",
     background: "rgb(0, 255, 255)",
     zoom: "rgb(0, 0, 0)",
-  };
+  });
 
-  this.highlightOptions = {
-    foreground: {
-      modifierKey: new Set(["none"]),
-    },
-    background: {
-      modifierKey: new Set(["altKey"]),
-    },
-    zoom: {
-      modifierKey: new Set(["ctrlKey", "rightClick"]),
-    },
-  };
+  /** COMPONENT STATE */
+  // component state. When state changes, the component sould respond by re-rendering/updating to reflect changes.
+  this.data = null; //
+  this.selection = null; //
+  this.height = null; //
+  this.width = null; //
 
+  // initialize brush-highlight selection
+  this.brush = new BrushX();
+
+  // other useful data members
+  this.rawData = null; //
+  this.sampleToIndexMap = null; //
+  this.backgroundDuration = null; // 
+
+  /** SVG COMPONENT REFERENCES */
   this.svg = d3.select(this.chart).append("svg");
   this.linesG = this.svg.append("g").attr("class", "lines");
   this.axisBottomG = this.svg.append("g").attr("class", "axis");
@@ -269,6 +279,7 @@ D3TimeChart = function (elem, options) {
 
   this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
 
+  /** GLOBAL LISTENERS */
   // add esc canceling
   document.onkeydown = function (evt) {
     evt = evt || window.event;
@@ -328,15 +339,14 @@ D3TimeChart.prototype.setData = function (rawData) {
     var formattedData = this.formatDataFromRaw(rawData);
 
     this.data = [formattedData];
-    // console.log(this.data);
+    console.log(this.data);
+    console.log(rawData);
 
     // create inverted index of sample numbers  for fast lookup of array-indices from sample number keys
     var sampleToIndexMap = {};
     for (var i = 0; i < rawData.sampleNumbers.length; i++) {
       sampleToIndexMap[rawData.sampleNumbers[i]] = i;
     }
-
-    // set other data members
 
     // // TODO: this is a way to check behavior with multiple occupancies
     // rawData.occupancies = [
@@ -351,6 +361,8 @@ D3TimeChart.prototype.setData = function (rawData) {
     //     startSample: 12,
     //   }
     // ];
+
+    // set other data members
 
     this.rawData = rawData;
     // console.log(sampleToIndexMap);
@@ -595,7 +607,7 @@ D3TimeChart.prototype.render = function (options) {
 
           if (
             this.options.useSimplifiedGestures ||
-            this.highlightOptions.zoom.modifierKey.has(this.highlightModifier)
+            this.highlightModifier in this.highlightOptions.zoom.modifierKey
           ) {
             // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
             if (brush.getEnd() < brush.getStart()) {
@@ -634,7 +646,7 @@ D3TimeChart.prototype.render = function (options) {
             // ]);
             if (
               this.options.useSimplifiedGestures ||
-              this.highlightOptions.zoom.modifierKey.has(this.highlightModifier)
+              this.highlightModifier in this.highlightOptions.zoom.modifierKey
             ) {
               this.handleBrushZoom();
             } else {
@@ -891,9 +903,9 @@ D3TimeChart.prototype.updateChart = function (
 
     // only use visible range if zoomed in, otherwise use full range.
     if (this.selection) {
-      var lIdx = this.findDataIndex(this.selection.domain[0], compressionIndex)
-      var rIdx = this.findDataIndex(this.selection.domain[1], compressionIndex)
-      counts = counts.slice(lIdx*2, (rIdx + 1)*2)
+      var lIdx = this.findDataIndex(this.selection.domain[0], compressionIndex);
+      var rIdx = this.findDataIndex(this.selection.domain[1], compressionIndex);
+      counts = counts.slice(lIdx * 2, (rIdx + 1) * 2);
     }
 
     var meta = this.data[compressionIndex].detectors[detName].meta;
@@ -2174,21 +2186,21 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
  */
 D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
   if (this.options.useSimplifiedGestures) {
-    this.highlightRect.attr("fill", this.highlightColors.zoom);
+    this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
     this.highlightText.text("Zoom in");
   } else {
     var foreground = this.highlightOptions.foreground;
     var background = this.highlightOptions.background;
     var zoom = this.highlightOptions.zoom;
 
-    if (foreground && foreground.modifierKey.has(modifier)) {
-      this.highlightRect.attr("fill", this.highlightColors.foreground);
+    if (foreground && modifier in foreground.modifierKey) {
+      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.foreground);
       this.highlightText.text("Select foreground");
-    } else if (background && background.modifierKey.has(modifier)) {
-      this.highlightRect.attr("fill", this.highlightColors.background);
+    } else if (background && modifier in background.modifierKey) {
+      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.background);
       this.highlightText.text("Select background");
-    } else if (zoom && zoom.modifierKey.has(modifier)) {
-      this.highlightRect.attr("fill", this.highlightColors.zoom);
+    } else if (zoom && modifier in zoom.modifierKey) {
+      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
       this.highlightText.text("Zoom in");
     }
   }
@@ -2337,7 +2349,7 @@ D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
   // // If want sourcetype data in the tooltip, uncomment below
   // s +=
   //   optargs.sourceType != null
-  //     ? "<div>Source: " + this.sourceMap[optargs.sourceType] + "</div>"
+  //     ? "<div>Source: " + this.SOURCE_MAP[optargs.sourceType] + "</div>"
   //     : "";
 
   s += "<div>Time: " + time.toPrecision(4) + " s</div>";
@@ -2821,7 +2833,7 @@ D3TimeChart.prototype.setY2AxisTitle = function () {
 };
 
 /**
- * Function to handle setting compact x axis. Called whenever toggle compact x-axis on/off. Triggers a re-render.
+ * Function to handle setting compact x axis. Called whenever toggle compact x-axis on/off. Triggers a resize.
  * @param {Boolean} compact : boolean value defining whether or not to use compact x-axis
  */
 D3TimeChart.prototype.setCompactXAxis = function (compact) {
