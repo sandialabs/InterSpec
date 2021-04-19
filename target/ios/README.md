@@ -3,7 +3,7 @@
 ## Building Boost for iOS
 ```bash
 cd InterSpec/target/ios
-curl https://dl.bintray.com/boostorg/release/1.65.1/source/boost_1_65_1.tar.gz --output boost_1_65_1.tar.gz
+curl -L https://dl.bintray.com/boostorg/release/1.65.1/source/boost_1_65_1.tar.gz --output boost_1_65_1.tar.gz
 tar -xzvf boost_1_65_1.tar.bz2
 cd boost_1_65_1
 ```
