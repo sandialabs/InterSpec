@@ -49,16 +49,13 @@ class SpecMeasManager;
 class SpectraFileModel;
 class NativeFloatSpinBox;
 
-
+/** This is the "Spectrum Files" tab implementation.
+ 
+ TODO:
+   - allow selecting which detectors to display, for each of the display types
+ */
 class CompactFileManager : public Wt::WContainerWidget
 {
-  /****************************************************************************\
-  | CompactFileManager is a highly stripped down file manager for use in the
-  | tool tab.
-  | The main file manager is to big for tool tab space. It is intended to do only
-  | simple functions: set fore/back ground and secondary spectrums, do uploads
-  \****************************************************************************/
-
 public:
   enum DisplayMode{ LeftToRight, Tabbed };
   
