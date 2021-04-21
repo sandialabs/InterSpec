@@ -205,10 +205,21 @@ public:
   
   //
   void doShow( bool clicked );
+  
+  
+  void setupDesktopMenuStuff();
+  
+  void parentClicked();
+  void undoParentClicked();
+  
+  void parentMouseWentOver();
+  void undoParentHoveredOver();
+  
 protected:
   //Some functions primarily intended ot allow implementing stateless slots
 
   void doHide();
+  
   
   Wt::WMenuItem *m_parentItem;
   Wt::WPushButton *m_menuParent;
