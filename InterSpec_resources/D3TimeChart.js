@@ -382,13 +382,9 @@ D3TimeChart.prototype.setData = function (rawData) {
     // clear any existing lines drawn
     this.linesG.selectAll("path").remove();
 
-    // clear any occupancy lines drawn
-    this.occupancyLinesG.selectAll(".occupancy_line_group").remove();
-    console.log(this.state.data)
-
     // if height and width are set, may render directly.
     if (this.state.height && this.state.width) {
-      this.render();
+      this.reinitializeChart();
     }
   }
 };
@@ -403,7 +399,7 @@ D3TimeChart.prototype.handleResize = function () {
   this.state.height = this.chart.clientHeight;
   this.state.width = this.chart.clientWidth;
 
-  this.render();
+  this.reinitializeChart();
 };
 
 /**
@@ -453,10 +449,10 @@ D3TimeChart.prototype.shiftSelection = function (n) {
 };
 
 /**
- * Renders/updates the D3TimeChart to be set up for plotting data. Compresses data for purposes of displaying, updates dimensions of svg element, updates dimensions of clip-path, and defines drag behavior over the figure
+ * Renders/re-initializes the D3TimeChart to be set up for plotting data and interaction. Compresses data for purposes of displaying, updates dimensions of svg element, updates dimensions of clip-path, and defines drag behavior over the figure
  * @param {Object} options : Optional argument to specify render options
  */
-D3TimeChart.prototype.render = function (options) {
+D3TimeChart.prototype.reinitializeChart = function (options) {
   if (!this.state.data.formatted) {
     console.log(
       "Runtime error in D3TimeChart.render: D3TimeChart data is not set.\nDoing nothing..."
@@ -468,7 +464,7 @@ D3TimeChart.prototype.render = function (options) {
     );
     return;
   } else {
-    // console.log("Rendering...");
+    // console.log("Re-initializing...");
 
     var plotWidth = this.state.width - this.margin.left - this.margin.right;
     var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
@@ -580,114 +576,149 @@ D3TimeChart.prototype.render = function (options) {
     // set scale of brush
     brush.setScale(scales.xScale);
 
-    var selectionDrag = d3.behavior
-      .drag()
-      .on("dragstart", () => {
-        if (this.escapeKeyPressed) {
-          this.escapeKeyPressed = false;
-        }
+    // define handlers for selection gestures
+    // TODO: To add additional touch functionality, add analogous touch gestures (to right click, alt key, ctrl key-- to perform zoom and background selection)
+    var startSelection = (option) => {
+      if (option && option.touch) {
+        d3.event.preventDefault();
+        d3.event.stopPropagation();
+      }
 
-        var coords = d3.mouse(this.rect.node());
-        // console.log(coords);
-        brush.setStart(coords[0]);
-        d3.select("body").style("cursor", "move");
-        // console.log(d3.event.sourceEvent);
+      if (this.escapeKeyPressed) this.escapeKeyPressed = false;
 
-        this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
+      var coords =
+        option && option.touch
+          ? d3.touches(this.rect.node())[0]
+          : d3.mouse(this.rect.node());
+      // console.log(coords);
+      brush.setStart(coords[0]);
+      d3.select("body").style("cursor", "move");
+      // console.log(d3.event.sourceEvent);
 
-        if (d3.event.sourceEvent.button == 2) {
-          this.highlightModifier = "rightClick";
-          this.mouseDownHighlight(coords[0], "rightClick");
-        } else if (d3.event.sourceEvent.altKey) {
-          this.highlightModifier = "altKey";
-          this.mouseDownHighlight(coords[0], "altKey");
-        } else if (d3.event.sourceEvent.ctrlKey) {
-          this.highlightModifier = "ctrlKey";
-          this.mouseDownHighlight(coords[0], "ctrlKey");
+      // TODO: add analogous touch gestures to add additional touch functionality
+      this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
+
+      if (d3.event.sourceEvent.button == 2) {
+        this.highlightModifier = "rightClick";
+        this.mouseDownHighlight(coords[0], "rightClick");
+      } else if (d3.event.sourceEvent.altKey) {
+        this.highlightModifier = "altKey";
+        this.mouseDownHighlight(coords[0], "altKey");
+      } else if (d3.event.sourceEvent.ctrlKey) {
+        this.highlightModifier = "ctrlKey";
+        this.mouseDownHighlight(coords[0], "ctrlKey");
+      } else {
+        this.highlightModifier = "none";
+        this.mouseDownHighlight(coords[0], "none");
+      }
+    };
+
+    var moveSelection = (option) => {
+      if (option && option.touch) {
+        d3.event.preventDefault();
+        d3.event.stopPropagation();
+      }
+
+      if (!this.escapeKeyPressed) {
+        var coords =
+          option && option.touch
+            ? d3.touches(this.rect.node())[0]
+            : d3.mouse(this.rect.node());
+        brush.setEnd(coords[0]);
+
+        if (
+          this.options.useSimplifiedGestures ||
+          this.highlightModifier in this.highlightOptions.zoom.modifierKey
+        ) {
+          // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
+          if (brush.getEnd() < brush.getStart()) {
+            this.handleDragBackZoom();
+          } else {
+            this.handleDragForwardZoom();
+          }
         } else {
-          this.highlightModifier = "none";
-          this.mouseDownHighlight(coords[0], "none");
-        }
-      })
-      .on("drag", () => {
-        if (!this.escapeKeyPressed) {
-          brush.setEnd(d3.mouse(this.rect.node())[0]);
+          // handle interactions other than zoom
+          if (!this.options.useSimplifiedGestures) {
+            // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
+            // handle foreground or background selection
 
+            var width =
+              brush.getScale()(brush.getEnd()) -
+              brush.getScale()(brush.getStart());
+            this.mouseMoveHighlight(width);
+          }
+        }
+      }
+    };
+
+    var endSelection = (option) => {
+      if (brush.extent() != null) {
+        if (option && option.touch) {
+          d3.event.preventDefault();
+          d3.event.stopPropagation();
+        }
+
+        if (this.escapeKeyPressed) {
+          // clear selections and reset escape key
+          brush.clear();
+          this.escapeKeyPressed = false;
+        } else {
+          d3.select("body").style("cursor", "auto");
+          // console.log(brush.extent());
+          var lIdx = this.findDataIndex(brush.extent()[0], 0);
+          var rIdx = this.findDataIndex(brush.extent()[1], 0);
+          // console.log([
+          //   this.state.data.formatted[0].sampleNumbers[lIdx],
+          //   this.state.data.formatted[0].sampleNumbers[rIdx],
+          // ]);
           if (
             this.options.useSimplifiedGestures ||
             this.highlightModifier in this.highlightOptions.zoom.modifierKey
           ) {
-            // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
-            if (brush.getEnd() < brush.getStart()) {
-              this.handleDragBackZoom();
-            } else {
-              this.handleDragForwardZoom();
-            }
+            this.handleBrushZoom();
           } else {
             // handle interactions other than zoom
             if (!this.options.useSimplifiedGestures) {
               // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
               // handle foreground or background selection
 
-              var width =
-                brush.getScale()(brush.getEnd()) -
-                brush.getScale()(brush.getStart());
-              this.mouseMoveHighlight(width);
+              var keyModifierMap = {
+                altKey: 0x4,
+                shiftKey: 0x1,
+                none: 0x0,
+              };
+              this.WtEmit(
+                this.chart.id,
+                { name: "timedragged" },
+                this.state.data.formatted[0].sampleNumbers[lIdx],
+                this.state.data.formatted[0].sampleNumbers[rIdx],
+                keyModifierMap[this.highlightModifier] |
+                  (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
+              );
             }
           }
         }
-      })
-      .on("dragend", () => {
-        if (brush.extent() != null) {
-          if (this.escapeKeyPressed) {
-            // clear selections and reset escape key
-            brush.clear();
-            this.escapeKeyPressed = false;
-          } else {
-            d3.select("body").style("cursor", "auto");
-            // console.log(brush.extent());
-            var lIdx = this.findDataIndex(brush.extent()[0], 0);
-            var rIdx = this.findDataIndex(brush.extent()[1], 0);
-            // console.log([
-            //   this.state.data.formatted[0].sampleNumbers[lIdx],
-            //   this.state.data.formatted[0].sampleNumbers[rIdx],
-            // ]);
-            if (
-              this.options.useSimplifiedGestures ||
-              this.highlightModifier in this.highlightOptions.zoom.modifierKey
-            ) {
-              this.handleBrushZoom();
-            } else {
-              // handle interactions other than zoom
-              if (!this.options.useSimplifiedGestures) {
-                // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
-                // handle foreground or background selection
+      }
+      // clear
+      this.mouseUpHighlight();
+      brush.clear();
+      this.highlightModifier = null;
+      this.shiftKeyHeld = false;
+    };
 
-                var keyModifierMap = {
-                  altKey: 0x4,
-                  shiftKey: 0x1,
-                  none: 0x0,
-                };
-                this.WtEmit(
-                  this.chart.id,
-                  { name: "timedragged" },
-                  this.state.data.formatted[0].sampleNumbers[lIdx],
-                  this.state.data.formatted[0].sampleNumbers[rIdx],
-                  keyModifierMap[this.highlightModifier] |
-                    (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
-                );
-              }
-            }
-          }
-        }
-        // clear
-        this.mouseUpHighlight();
-        brush.clear();
-        this.highlightModifier = null;
-        this.shiftKeyHeld = false;
-      });
-
+    // mouse drag behavior
+    var selectionDrag = d3.behavior
+      .drag()
+      .on("dragstart", startSelection)
+      .on("drag", moveSelection)
+      .on("dragend", endSelection);
     this.rect.call(selectionDrag);
+
+    // touch drag behavior
+    this.rect
+      .on("touchstart", () => startSelection({ touch: true }))
+      .on("touchmove", () => moveSelection({ touch: true }))
+      .on("touchend", () => endSelection({ touch: true }));
 
     // pan drag behavior
     // initialize new variables for holding new selection and scales from panning
@@ -711,8 +742,11 @@ D3TimeChart.prototype.render = function (options) {
       .on("dragend", () => {
         // update selection, update scale
         this.state.selection = newSelection;
-        brush.setScale(newScale);
+        brush.setScale(newScale.xScale);
         brush.clear();
+        this.updateChart(newScale, newSelection.compressionIndex, {
+          transitions: false,
+        });
       });
 
     this.bottomAxisRect.call(panDrag);
@@ -845,7 +879,7 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
     this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
       .x[1] === newRightExtent
   ) {
-    // if completely zoomed out, set selection to null
+    // completely zoomed out, so set selection to null
     this.state.selection = null;
   } else {
     this.state.selection = {
@@ -1268,9 +1302,8 @@ D3TimeChart.prototype.updateChart = function (
 
   if (this.state.data.raw.occupancies) {
     var occupancies = this.state.data.raw.occupancies;
-    // create if necessary
     if (
-      this.occupancyLinesG.selectAll(".occupancy_line_group").size() <
+      this.occupancyLinesG.selectAll(".occupancy_line_group").size() !=
       occupancies.length
     ) {
       // if for any reason don't have all lines drawn, clear all existing lines and redraw
@@ -1372,7 +1405,10 @@ D3TimeChart.prototype.updateChart = function (
           endLine.attr("visibility", "hidden");
         }
       });
-  }
+  } else {
+    // if (this.state.data.raw.occupancies)
+    this.occupancyLinesG.selectAll(".occupancy_line_group").remove();
+  } // if (this.state.data.raw.occupancies)
 
   // format minor axis labels x-axis
   axisBottomTicks.each(function (d, i) {
@@ -2368,7 +2404,7 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
       domain: newExtent,
       compressionIndex: compressionIndex,
     },
-    newScale: scales.xScale,
+    newScale: scales,
   };
 };
 
