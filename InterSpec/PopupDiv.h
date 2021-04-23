@@ -187,7 +187,6 @@ public:
   //  on item activation though.
   virtual bool isHidden() const;
   
-  void hideMenuAndParents();
   
   //parentItem(): if this PopupDivMenu is a sub menu of another PopupDivMenu,
   //  and was created by calling addPopupMenuItem(...) on the parent, then
@@ -216,10 +215,10 @@ public:
   void undoParentHoveredOver();
   
 protected:
-  //Some functions primarily intended ot allow implementing stateless slots
+  void desktopDoHide();
 
-  void doHide();
-  
+  void mobileDoHide();
+  void mobileHideMenuAndParents();
   
   Wt::WMenuItem *m_parentItem;
   Wt::WPushButton *m_menuParent;

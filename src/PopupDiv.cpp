@@ -544,17 +544,16 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
     addStyleClass( "PopupDivMenuPhone" );
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "ShowPhone", wtjsShowPhone);
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "HideOverlay", wtjsHideOverlay);
+    
+    // Note: need to call this to reset the menus when a submenu is
+    //  selected/hidden.  No need to call triggered(), as it will be hidden too.
+    aboutToHide().connect( this, &PopupDivMenu::mobileDoHide );
   }else
   {
     addStyleClass( "PopupDivMenu" );
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsBringAboveDialogs);
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsOnPopupDivShow);
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAdjustTopPos);
-    
-    //setAutoHide( true, 500 );
-    //implementStateless( &PopupDivMenu::showFromClick, &PopupDivMenu::doHide );
-    //implementStateless( &PopupDivMenu::showFromMouseOver, &PopupDivMenu::doHide );
-    //implementStateless( &PopupDivMenu::doHide, &PopupDivMenu::showFromClick );
   }//if( mobile ) / else
 
 #if( USING_ELECTRON_NATIVE_MENU || USE_OSX_NATIVE_MENU )
@@ -606,19 +605,17 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
 #endif
       
       setupDesktopMenuStuff();
-    } //else !m_mobile
-  }//if( menuParent )
-  else
+    } //if( m_mobile) / else
+  }else //if( menuParent )
   {
 #if( USING_ELECTRON_NATIVE_MENU )
     if( m_hasElectronCounterpart && (menutype == AppLevelMenu) )
-      doJavaScript( "console.log('Not implemented: Adding PopupDivMenu (no parent) id=" + id() + (menutype==AppLevelMenu?" AppLevelMenu":" TransientMenu") + "');" );
+      doJavaScript( "console.log('Not implemented: Adding PopupDivMenu (no parent) id="
+                   + id() + (menutype==AppLevelMenu?" AppLevelMenu":" TransientMenu") + "');" );
 #endif
-  }
-  
-  // Note: need to call this to reset the menus when a submenu is
-  //  selected/hidden.  No need to call triggered(), as it will be hidden too.
-  aboutToHide().connect( this, &PopupDivMenu::doHide );
+    
+    setAutoHide( true, 500 );
+  }//if( menuParent ) / else
 }//PopupDivMenu( constructor )
 
 
@@ -988,48 +985,37 @@ void PopupDivMenu::undoParentHoveredOver()
 
 void PopupDivMenu::setupDesktopMenuStuff()
 {
-  /* I want to be able to open the menu in JS by mousing over the parent button, but only if another
-   menu is already open.  To do this, we either need to know when a menu is closing in JS, so we
-   can remove its parent buttons "active" class, or we need to tell C++ that we are opening a menu
+  /* Goals:
+   - When menu parent button is clicked, open menu immediately from JS without delay of going to
+     server
+   - When a menu is already opened, and another parent button is moused over, close original menu,
+     and open new one, again without delay of going to server
+   - When menu parent button of an already opened menu is clicked, close that menu
+   - When application is clicked anywhere else, or escape hit, close all app menus
    
-   Could use a MutationObserver to check when menu becomes visible or hidden
-   - when menu gets shown, add style class to parent button, and look for any other open app
-   menus, and if so, close them calling WPopupMenu::setHidden in JS.
-   - Add a callback to let the C++ know its open, if it wasnt done by the C++ (e.g., from mouse-over parent button)
-   - When a menu closes, remove parent button style class and call WPopupMenu::setHidden in JS
-   
-   
-   Another potential hack is to make virtual PopupDivMenu::setHidden(...) so it never calls
-   WPopupMenu::setHidden(...), and the C++ always thinks the menu is open, but really we close it in
-   JS, and control it there.  This should allow the aboutToHide() C++ signal to always be emitted
-   when ever the JS emits the 'cancel' signal to the server.
-   Or really, if we do this, we can control everything in C++, using the MutationObserver to handle
-   adding or removing the "active" class to the parent button
-   
-   
-   Maybe the easiest thing to do is just define a callback so when opened from JS (either from click
-   or mouse over when another menu is already open), then this callback calls "show()" in c++.
-   Then to set "active" class just do it in both C++ and JS, and all should be okay (or just use
-   MutationObserver).  The open JS should look for other open app menus, and close them, so maybe
-   add a special style class to these menus, so they can be easily found and calls the JS
-   setHidden(...), and also "APP.emit(el.id, 'cancel');"
-   - need to check this doesnt cause any jitter or anything though...
-   
-   This all should be setup in a dedicated C++ function (after getting it to work, copy that
-   function and revert back to all the old code, so can make as minimal changes as possible).
-  
-   New plan: use implementStateless(...) to achieve no-latency opening/closing... not sure this can
-   work, but worth a try at this point 
-  
    TODO:
-     - [ ] Implement mouse-over parent buttons opening up other menus
+     - [x] Implement mouse-over parent buttons opening up other menus
      - [ ] Make so bulk of work is in static JS function to minimize how much JS there is
+           e.g., use LOAD_JAVASCRIPT(...)
      - [ ] Have a fade out when disappearing because you clicked the parent button
      - [ ] add in drop shadow, more space between items, and styling to make look native
      - [ ] Make menu-bar taller, and match electron
      - [ ] add timeout so that if mouse leaves parent button, but without going to menu, then menu will
        be closed - or really, check if Windows Electron version closes menu if mouse goes out, and
        make it function like that (e.g., maybe no timeout at all)
+     - [ ] See https://css-tricks.com/in-praise-of-the-unambiguous-click-menu/#building-click-menus
+     - [ ] Check behaviour of mousing over parent button when no menus are open, for Electron build, and mirror that
+     
+     
+   Electron titlebar notes:
+     - macOS height 22px, Windows height 30px
+     - Drop shadow styling `0 2px 1px -1px rgba(0, 0, 0, .2), 0 1px 1px 0 rgba(0, 0, 0, .14), 0 1px 3px 0 rgba(0, 0, 0, .12)`;
+     - To make fullscreen: https://www.w3schools.com/howto/howto_js_fullscreen.asp, and https://developer.mozilla.org/en-US/docs/Web/API/Fullscreen_API
+     - Watch for window 'blur' and 'focus' events and update titlebar color based on that; see https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API
+       (see using onblur and onfocus events to detect when the window goes into the background)
+     - Styling from
+   https://github.com/Treverix/custom-electron-titlebar/blob/master/static/theme/common.css
+   https://github.com/Treverix/custom-electron-titlebar/blob/master/static/theme/win.css
    */
   
   assert( m_menuParent );
@@ -1048,105 +1034,23 @@ void PopupDivMenu::setupDesktopMenuStuff()
   m_menuParent->clicked().connect( this, &PopupDivMenu::parentClicked );
   m_menuParent->mouseWentOver().connect( this, &PopupDivMenu::parentMouseWentOver );
   
-  
-  //popup( WPoint(-10000,-10000) );  //trigger all the JS to be loaded and stuff
-  //doJavaScript( "(function(){"
-  //    "const el = document.getElementById('" + id() + "');"
-  //    "if(!el) return;"  //shouldnt ever happen
-  //    "const obj = jQuery.data(el, 'obj');"
-  //    "if(obj) obj.setHidden(1);" //should always happen
-  //  "})();"
-  //);
-  
   // TODO: see if we can connect to the 'cancel' signal in JS, so we can just do this there
-  aboutToHide().connect( std::bind( [this](){
-    cout << "aboutToHide(): '" << this->id() << "'" << endl;
-    this->doJavaScript(
-      "$('#" + id() + "').removeClass('current');"
-      "$('#" + m_menuParent->id() + "').removeClass('active');" );
-    })
-  );
-  
-  /*
-  string parent_clicked_js = "function(){"
-    "const el = document.getElementById('" + id() + "');"
-    "const btn = document.getElementById('" + m_menuParent->id() + "');"
-    "if( !el || !btn ){"
-      "return;" //shouldnt ever happen
-    "}"
-  
-    "const showing = $(btn).hasClass('active');"  //el.style.display !== 'block'
-    "if( !showing ){"
-      "console.log( 'not showing ', el.id, el );"
-      //remove "active" class from all other buttons with style class "PopupMenuParentButton"
-      "$('.PopupMenuParentButton.active').each(function(){"
-        "$(this).removeClass('active');"
-      "});"
-  
-      "$('.PopupDivMenu.AppMenu.current').each(function(){"
-        "$(this).removeClass('current');"
-      "});"
-  
-      "$(el).addClass('current');"
-      "$(btn).addClass('active');"
-  
-      // This next call (defined in WPopupMenu.js) binds signals to hide the menu on document mouse
-      //  click or escape presses, as well as sets the menus display to 'block'
-      "jQuery.data(el, 'obj').setHidden(0);"
-      
-      WT_CLASS ".positionAtWidget('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS + ".Vertical);"
-      
-  "setTimeout(function(){"
-    "jQuery.data(el, 'obj').setHidden(0);"
-    WT_CLASS ".positionAtWidget('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS + ".Vertical);"
-   "},0);"
-  
-      "console.log( 'should now be showing ', el.id, el.style.display, el.style );"
-    "}else{"
-      "console.log( 'showing ', el.id, el );"
-      "$(el).removeClass('current');"
-      "$(btn).removeClass('active');"
-  
-      // This next call unbinds the document mouse click and escape press, and sets menu display to ''
-      // (not sure why this is needed
-      "jQuery.data(el, 'obj').setHidden(1);"
-    "}"
-  "}";
-  
-  
-  m_menuParent->clicked().connect( parent_clicked_js );
-  
-  aboutToHide().connect( std::bind( [this](){ this->doJavaScript(
-    "$('#" + id() + "').removeClass('current');"
-    "$('#" + m_menuParent->id() + "').removeClass('active');" ); } )
-  );
-  */
-  
-  
-  // We need the C++ to know when the menu is and is not hidden so the cancel signal function will
-  //  actually cause the aboutToHide() signal to emit.
-//  if( isHidden() )
-//    show();
-  //else
-    //hide();
-
-}
+  //       (but for the moment I dont see how to do this since WPopupMenu::cancel_ is private and
+  //        JSlot and friends is a bit to deep for me to comprehend or figure out how to fake
+  //        hooking the JS in 'desktopDoHide' without going through Wt)
+  aboutToHide().connect( this, &PopupDivMenu::desktopDoHide );
+}//setupDesktopMenuStuff()
 
 
 
 
 
-void PopupDivMenu::doHide()
+void PopupDivMenu::mobileDoHide()
 {
-  cout << "Do Hide" << endl;
-  //if( m_menuParent )
-  //  m_menuParent->removeStyleClass("active", true);
-  
+  assert( m_mobile );
   if( m_mobile )
     setHidden(true, WAnimation(WAnimation::SlideInFromLeft,WAnimation::Linear,200));
-  //else
-  //  hide();
-}//void doHide()
+}//void mobileDoHide()
 
 
 PopupDivMenuItem *PopupDivMenu::addWidget( Wt::WWidget *widget,
@@ -1256,7 +1160,7 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
   //addItem( item );
   
   if( m_mobile && closeMenuOnActivation )
-    item->triggered().connect( this, &PopupDivMenu::hideMenuAndParents );
+    item->triggered().connect( this, &PopupDivMenu::mobileHideMenuAndParents );
   
 #if(USE_OSX_NATIVE_MENU)
   if( m_nsmenu )
@@ -1296,16 +1200,31 @@ Wt::WMenuItem *PopupDivMenu::parentItem()
 }//Wt::WMenuItem *PopupDivMenu::parentItem()
 
 
-void PopupDivMenu::hideMenuAndParents()
+void PopupDivMenu::desktopDoHide()
 {
-  doHide();
+  cout << "aboutToHide(): '" << this->id() << "'" << endl;
+  
+  assert( m_menuParent );
+  
+  string js = "$('#" + id() + "').removeClass('current');";
+  if( m_menuParent )
+    js += "$('#" + m_menuParent->id() + "').removeClass('active');";
+  
+  doJavaScript( js );
+}//void PopupDivMenu::desktopDoHide()
+
+
+void PopupDivMenu::mobileHideMenuAndParents()
+{
+  mobileDoHide();
+  
   if( m_parentItem )
   {
     PopupDivMenu *p = dynamic_cast<PopupDivMenu *>( m_parentItem->parentMenu() );
     if( p )
-      p->hideMenuAndParents();
+      p->mobileHideMenuAndParents();
   }
-}//void hideMenuAndParents()
+}//void mobileHideMenuAndParents()
 
 
 bool PopupDivMenu::isHidden() const
@@ -1325,12 +1244,12 @@ PopupDivMenuItem *PopupDivMenu::addPhoneBackItem( PopupDivMenu *parent )
   
   if( parent )
   {
-    backitem->triggered().connect( this, &PopupDivMenu::doHide );
+    backitem->triggered().connect( this, &PopupDivMenu::mobileDoHide );
     backitem->addStyleClass( "PhoneMenuBack" );
   }else
   {
-    backitem->triggered().connect( this, &PopupDivMenu::doHide );
-    backitem->clicked().connect( this, &PopupDivMenu::doHide );
+    backitem->triggered().connect( this, &PopupDivMenu::mobileDoHide );
+    backitem->clicked().connect( this, &PopupDivMenu::mobileDoHide );
     
     backitem->addStyleClass( "PhoneMenuClose" );
     addStyleClass("Root");
