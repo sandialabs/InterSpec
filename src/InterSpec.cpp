@@ -6406,41 +6406,60 @@ void InterSpec::startHardBackgroundSub()
   " spectrum.</p>"
   "<p>A &quot;hard background subtraction&quot; creates a modified foreground by doing a bin-by-bin"
   " subtraction of the background from the foreground.</p>"
-  "<p>Side effects of doing a hard background subtraction include:"
+  "Side effects of doing a hard background subtraction include:"
   "<ul style=\"list-style-type: square; margin-top: 4px;\">"  //list-style-type: none;
     "<li>Variances, i.e. the statistical uncertainty of each channel, will no longer be correct.</li>"
     "<li>Small energy calibration differences between spectra may create artificial features in the data.</li>"
     "<li>If a peak in the foreground overlaps with a peak in the background, the statistical"
          " uncertainty of fit foreground peaks will no longer be correct</li>"
-    "<li>Non-integer channel counts if energy calibrations are not identical, or background is scaled.</li>"
   "</ul>"
   "The primary reasons to choose a hard background subtraction over normal display background subtraction are:"
   "<ul style=\"list-style-type: square; margin-top: 4px;\">"
-    "<li>You dont like the artifacts the display background subtraction makes on the fit peaks continuum.</li>"
-    "<li>It isnt worth fitting peaks in the background so the <b>Activity Shielding Fit</b> tool"
-         " can subtract off contributions from background peaks.</li>"
-    "<li>You are giving the resulting spectrum to someone who doesnt know or care about the"
-         " subtleties this causes.</li>"
+    "<li>Avoiding artifacts on fit peak continuums.</li>"
+    "<li>To simplify background peak subtraction in the <b>Activity/Shielding Fit</b> tool.</li>"
+    "<li>You dont care about subtleties this causes (which in practice are minimal).</li>"
   "</ul>"
-  "</p>"
   "</div>"
-  "<br />"
   "<br />"
   "<div style=\"text-align: center;\"><b><em>Would you like to proceed?</em></b></div>"
   ;
 
+  
   SimpleDialog *dialog = new SimpleDialog( "Perform Hard Background Subtract?", msg );
+  
+  auto truncate_neg = make_shared<bool>(false);
+  auto round_counts = make_shared<bool>(false);
+  
+  WContainerWidget *optionsDiv = new WContainerWidget( dialog->contents() );
+  optionsDiv->setPadding( 40, Wt::Side::Left );
+  optionsDiv->setPadding( 20, Wt::Side::Bottom );
+  
+  WCheckBox *cb = new WCheckBox( "Truncate negative bins at zero", optionsDiv );
+  cb->setInline( false );
+  cb->checked().connect( std::bind([=](){ *truncate_neg = true; } ) );
+  cb->unChecked().connect( std::bind([=](){ *truncate_neg = false; } ) );
+  
+  cb = new WCheckBox( "Round channel counts to nearest integer", optionsDiv );
+  cb->setInline( false );
+  cb->checked().connect( std::bind([=](){ *round_counts = true; } ) );
+  cb->unChecked().connect( std::bind([=](){ *round_counts = false; } ) );
+  
+  
   WPushButton *button = dialog->addButton( "Yes" );
-  button->clicked().connect( this, &InterSpec::finishHardBackgroundSub );
+  button->setFocus();
+  button->clicked().connect( boost::bind( &InterSpec::finishHardBackgroundSub, this, truncate_neg, round_counts ) );
   dialog->addButton( "No" );  //dont need to hook this to anything
 }//void startHardBackgroundSub()
 
 
-void InterSpec::finishHardBackgroundSub()
+void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std::shared_ptr<bool> round_counts )
 {
   const auto foreground = m_spectrum->data();
   const auto background = m_spectrum->background();
   const float sf = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
+  
+  const bool no_neg = truncate_neg ? *truncate_neg : false;
+  const bool do_round = round_counts ? *round_counts : false;
   
   if( !foreground
      || !background
@@ -6488,7 +6507,16 @@ void InterSpec::finishHardBackgroundSub()
     
     // Do the actual background subtraction
     for( size_t i = 0; i < nchann; ++i )
-    (*back_sub_counts)[i] -= sf*(*back_counts)[i];
+    {
+      float &val = (*back_sub_counts)[i];
+      val -= sf*(*back_counts)[i];
+      
+      if( no_neg )
+        val = std::max( 0.0f, val );
+      
+      if( do_round )
+        val = std::round( val );
+    }//for( size_t i = 0; i < nchann; ++i )
     
     // Create a new Measurement object, based on the old foreground
     auto newspec = make_shared<SpecUtils::Measurement>( *foreground );

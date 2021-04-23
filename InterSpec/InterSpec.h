@@ -1005,7 +1005,7 @@ public:
    channel basis, with the resulting spectrum now having incorrect variances.
    */
   void startHardBackgroundSub();
-  void finishHardBackgroundSub();
+  void finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std::shared_ptr<bool> round_counts );
   
 #if( USE_SPECTRUM_CHART_D3 )
   void setXAxisSlider( bool show );
