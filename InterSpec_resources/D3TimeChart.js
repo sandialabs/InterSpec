@@ -350,20 +350,6 @@ D3TimeChart.prototype.setData = function (rawData) {
       sampleToIndexMap[rawData.sampleNumbers[i]] = i;
     }
 
-    // // TODO: this is a way to check behavior with multiple occupancies
-    // rawData.occupancies = [
-    //   {
-    //     color: "rgb(128,128,128)",
-    //     endSample: 10,
-    //     startSample: 2,
-    //   },
-    //   {
-    //     color: "rgb(128,128,128)",
-    //     endSample: 24,
-    //     startSample: 12,
-    //   }
-    // ];
-
     // set other data members
 
     this.state.data.raw = rawData;
@@ -400,52 +386,6 @@ D3TimeChart.prototype.handleResize = function () {
   this.state.width = this.chart.clientWidth;
 
   this.reinitializeChart();
-};
-
-/**
- * Function to handle shifting of the zoomed selection window.
- * @param {Number} n : shift amount
- */
-D3TimeChart.prototype.shiftSelection = function (n) {
-  if (this.state.selection) {
-    var domain = this.state.selection.domain;
-    var compressionIndex = this.state.selection.compressionIndex;
-
-    var stepSize =
-      this.state.data.formatted[compressionIndex].meanIntervalTime *
-      n *
-      Math.pow(2, compressionIndex);
-
-    // compute shifted bound
-    var rightBound = this.state.data.formatted[0].domains.x[1];
-    var leftBound = this.state.data.formatted[0].domains.x[0];
-
-    if (domain[1] + stepSize > rightBound) {
-      var shiftAmount = rightBound - domain[1];
-      domain[1] = rightBound;
-      domain[0] += shiftAmount;
-    } else if (domain[0] + stepSize < leftBound) {
-      var shiftAmount = leftBound - domain[0];
-      domain[0] = leftBound;
-      domain[1] += shiftAmount;
-    } else {
-      domain[0] += stepSize;
-      domain[1] += stepSize;
-    }
-
-    // update selection, update brush scale, update chart
-    this.state.selection.domain = domain;
-
-    var fullDomain = {
-      x: domain,
-      yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-      yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-    };
-    var scale = this.getScales(fullDomain);
-    this.state.brush.setScale(scale.xScale);
-    this.updateChart(scale, compressionIndex, { transitions: false });
-  }
-  ``;
 };
 
 /**
@@ -770,129 +710,6 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 };
 
 /**
- * Function to handle mouse wheel for zooming and panning.
- * @param {*} deltaX : integer deltaX value of the mouse scroll event
- * @param {*} deltaY : integer deltaY value of the mouse scroll event
- * @param {*} mouseX : integer x-coordinates of pointer in pixels relative to the containing element
- */
-D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
-  var brush = this.state.brush;
-  var xScale = brush.getScale();
-  var focalPoint = xScale.invert(mouseX);
-
-  var leftLimit = this.state.data.formatted[
-    this.state.data.unzoomedCompressionIndex
-  ].domains.x[0];
-  var rightLimit = this.state.data.formatted[
-    this.state.data.unzoomedCompressionIndex
-  ].domains.x[1];
-
-  var currentDomain = this.state.selection
-    ? this.state.selection.domain
-    : this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
-        .domains.x;
-
-  var minimumMeanIntervalTime = this.state.data.formatted[0].meanIntervalTime;
-
-  // don't allow zoom in more than 2 mean interval lengths or zoom out if current domain is all the way zoomed out already.
-  if (
-    currentDomain[1] - currentDomain[0] <= minimumMeanIntervalTime * 2 &&
-    deltaY < 0
-  ) {
-    return;
-  } else if (
-    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
-      .x[0] === currentDomain[0] &&
-    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
-      .x[1] === currentDomain[1] &&
-    deltaY > 0
-  ) {
-    return;
-  }
-
-  var zoomStepSize =
-    0.001 * Math.exp(2, this.state.data.unzoomedCompressionIndex);
-
-  let newLeftExtent;
-  let newRightExtent;
-
-  if (Math.abs(deltaY) >= Math.abs(deltaX)) {
-    // if scroll vertical, zoom
-    newLeftExtent = Math.max(
-      currentDomain[0] -
-        deltaY * Math.abs(currentDomain[0] - focalPoint) * zoomStepSize,
-      leftLimit
-    );
-    newRightExtent = Math.min(
-      currentDomain[1] +
-        deltaY * Math.abs(currentDomain[1] - focalPoint) * zoomStepSize,
-      rightLimit
-    );
-  } else {
-    // if scroll horizontal, pan
-    let panStepSize =
-      deltaX *
-      0.1 *
-      this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
-        .meanIntervalTime;
-
-    if (currentDomain[0] + panStepSize < leftLimit) {
-      panStepSize = leftLimit - currentDomain[0];
-    } else if (currentDomain[1] + panStepSize > rightLimit) {
-      panStepSize = rightLimit - currentDomain[1];
-    }
-
-    newLeftExtent = currentDomain[0] + panStepSize;
-    newRightExtent = currentDomain[1] + panStepSize;
-  }
-
-  // if the window is smaller than 2x the mean interval time, then
-  if (newRightExtent - newLeftExtent < 2 * minimumMeanIntervalTime) {
-    var extentCenter = (newRightExtent + newLeftExtent) / 2;
-    newLeftExtent = Math.max(extentCenter - minimumMeanIntervalTime, leftLimit);
-    newRightExtent = Math.min(
-      extentCenter + minimumMeanIntervalTime,
-      rightLimit
-    );
-  }
-
-  // compute new compression index to use
-  var leftIndex = this.findDataIndex(newLeftExtent, 0);
-  var rightIndex = this.findDataIndex(newRightExtent, 0);
-  var nPoints = rightIndex - leftIndex + 1;
-  var plotWidth = this.state.width - this.margin.left - this.margin.right;
-
-  var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
-
-  // obtain new scales, update brush, update selection
-  var scales = this.getScales({
-    x: [newLeftExtent, newRightExtent],
-    yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-    yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-  });
-
-  brush.setScale(scales.xScale);
-
-  if (
-    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
-      .x[0] === newLeftExtent &&
-    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
-      .x[1] === newRightExtent
-  ) {
-    // completely zoomed out, so set selection to null
-    this.state.selection = null;
-  } else {
-    this.state.selection = {
-      domain: [newLeftExtent, newRightExtent],
-      compressionIndex: compressionIndex,
-    };
-  }
-
-  // update chart
-  this.updateChart(scales, compressionIndex, { transitions: false });
-};
-
-/**
  * Draws or updates plots and axes
  * @param {*} scales : Object of scales with properties xScale, yScaleGamma, yScaleNeutron
  * @param {*} compressionIndex : Positive integer specifying data compression level to use for redrawing the chart. Compressed data are calculated during render() and cached inside this.state.data.formatted
@@ -1089,8 +906,6 @@ D3TimeChart.prototype.updateChart = function (
   }
 
   // plot axes and labels
-
-  var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
   var tickCount = 20;
 
@@ -1985,7 +1800,7 @@ D3TimeChart.prototype.getScales = function (domains) {
 };
 
 /**
- * Computes array of sequential real time intervals for each data point from raw time segments.
+ * Computes array of sequential real time intervals for each data point from raw time segments, AND record background duration if there is a background
  * @param {Number[]} realTimes: realTimes array passed from Wt
  * @param {Number[]} sourceTypes: sourceTypes array passed from Wt
  * @returns an array of length-two arrays which represent time intervals for individual samples.
@@ -2032,6 +1847,175 @@ D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
     }
   }
   return acc / n;
+};
+
+/**
+ * Function to handle shifting of the zoomed selection window.
+ * @param {Number} n : shift amount
+ */
+D3TimeChart.prototype.shiftSelection = function (n) {
+  if (this.state.selection) {
+    var domain = this.state.selection.domain;
+    var compressionIndex = this.state.selection.compressionIndex;
+
+    var stepSize =
+      this.state.data.formatted[compressionIndex].meanIntervalTime *
+      n *
+      Math.pow(2, compressionIndex);
+
+    // compute shifted bound
+    var rightBound = this.state.data.formatted[0].domains.x[1];
+    var leftBound = this.state.data.formatted[0].domains.x[0];
+
+    if (domain[1] + stepSize > rightBound) {
+      var shiftAmount = rightBound - domain[1];
+      domain[1] = rightBound;
+      domain[0] += shiftAmount;
+    } else if (domain[0] + stepSize < leftBound) {
+      var shiftAmount = leftBound - domain[0];
+      domain[0] = leftBound;
+      domain[1] += shiftAmount;
+    } else {
+      domain[0] += stepSize;
+      domain[1] += stepSize;
+    }
+
+    // update selection, update brush scale, update chart
+    this.state.selection.domain = domain;
+
+    var fullDomain = {
+      x: domain,
+      yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
+      yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
+    };
+    var scale = this.getScales(fullDomain);
+    this.state.brush.setScale(scale.xScale);
+    this.updateChart(scale, compressionIndex, { transitions: false });
+  }
+  ``;
+};
+
+/**
+ * Function to handle mouse wheel for zooming and panning.
+ * @param {*} deltaX : integer deltaX value of the mouse scroll event
+ * @param {*} deltaY : integer deltaY value of the mouse scroll event
+ * @param {*} mouseX : integer x-coordinates of pointer in pixels relative to the containing element
+ */
+D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
+  var brush = this.state.brush;
+  var xScale = brush.getScale();
+  var focalPoint = xScale.invert(mouseX);
+
+  var leftLimit = this.state.data.formatted[
+    this.state.data.unzoomedCompressionIndex
+  ].domains.x[0];
+  var rightLimit = this.state.data.formatted[
+    this.state.data.unzoomedCompressionIndex
+  ].domains.x[1];
+
+  var currentDomain = this.state.selection
+    ? this.state.selection.domain
+    : this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
+        .domains.x;
+
+  var minimumMeanIntervalTime = this.state.data.formatted[0].meanIntervalTime;
+
+  // don't allow zoom in more than 2 mean interval lengths or zoom out if current domain is all the way zoomed out already.
+  if (
+    currentDomain[1] - currentDomain[0] <= minimumMeanIntervalTime * 2 &&
+    deltaY < 0
+  ) {
+    return;
+  } else if (
+    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
+      .x[0] === currentDomain[0] &&
+    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
+      .x[1] === currentDomain[1] &&
+    deltaY > 0
+  ) {
+    return;
+  }
+
+  var zoomStepSize =
+    0.001 * Math.exp(2, this.state.data.unzoomedCompressionIndex);
+
+  let newLeftExtent;
+  let newRightExtent;
+
+  if (Math.abs(deltaY) >= Math.abs(deltaX)) {
+    // if scroll vertical, zoom
+    newLeftExtent = Math.max(
+      currentDomain[0] -
+        deltaY * Math.abs(currentDomain[0] - focalPoint) * zoomStepSize,
+      leftLimit
+    );
+    newRightExtent = Math.min(
+      currentDomain[1] +
+        deltaY * Math.abs(currentDomain[1] - focalPoint) * zoomStepSize,
+      rightLimit
+    );
+  } else {
+    // if scroll horizontal, pan
+    let panStepSize =
+      deltaX *
+      0.1 *
+      this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
+        .meanIntervalTime;
+
+    if (currentDomain[0] + panStepSize < leftLimit) {
+      panStepSize = leftLimit - currentDomain[0];
+    } else if (currentDomain[1] + panStepSize > rightLimit) {
+      panStepSize = rightLimit - currentDomain[1];
+    }
+
+    newLeftExtent = currentDomain[0] + panStepSize;
+    newRightExtent = currentDomain[1] + panStepSize;
+  }
+
+  // if the window is smaller than 2x the mean interval time, then
+  if (newRightExtent - newLeftExtent < 2 * minimumMeanIntervalTime) {
+    var extentCenter = (newRightExtent + newLeftExtent) / 2;
+    newLeftExtent = Math.max(extentCenter - minimumMeanIntervalTime, leftLimit);
+    newRightExtent = Math.min(
+      extentCenter + minimumMeanIntervalTime,
+      rightLimit
+    );
+  }
+
+  // compute new compression index to use
+  var leftIndex = this.findDataIndex(newLeftExtent, 0);
+  var rightIndex = this.findDataIndex(newRightExtent, 0);
+  var nPoints = rightIndex - leftIndex + 1;
+  var plotWidth = this.state.width - this.margin.left - this.margin.right;
+
+  var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+
+  // obtain new scales, update brush, update selection
+  var scales = this.getScales({
+    x: [newLeftExtent, newRightExtent],
+    yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
+    yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
+  });
+
+  brush.setScale(scales.xScale);
+
+  if (
+    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
+      .x[0] === newLeftExtent &&
+    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
+      .x[1] === newRightExtent
+  ) {
+    // completely zoomed out, so set selection to null
+    this.state.selection = null;
+  } else {
+    this.state.selection = {
+      domain: [newLeftExtent, newRightExtent],
+      compressionIndex: compressionIndex,
+    };
+  }
+
+  // update chart
+  this.updateChart(scales, compressionIndex, { transitions: false });
 };
 
 /**
@@ -2177,7 +2161,7 @@ D3TimeChart.prototype.handleBrushZoom = function () {
     // update brush scale
     brush.setScale(scales.xScale);
     // var transitions = compressionIndex === this.state.data.unzoomedCompressionIndex;
-    // turn transition animations off for now
+    // turn transition animations off for now; otherwise some weird things happen
     this.updateChart(scales, compressionIndex, { transitions: false });
   }
 };
@@ -2388,6 +2372,7 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
   var newLeftExtent = domain[0] + panAmount;
   var newRightExtent = domain[1] + panAmount;
   var newExtent = [newLeftExtent, newRightExtent];
+
   // update chart
   var scales = this.getScales({
     x: newExtent,
@@ -2395,7 +2380,6 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
     yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
   });
 
-  // update chart
   this.updateChart(scales, compressionIndex, { transitions: false });
 
   // return new selection and new scale so can later update when drag ends
