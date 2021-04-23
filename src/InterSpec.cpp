@@ -6427,6 +6427,12 @@ void InterSpec::startHardBackgroundSub()
   
   SimpleDialog *dialog = new SimpleDialog( "Perform Hard Background Subtract?", msg );
   
+  // For some reason on Windows Electron version, the dialog does not expand out very wide - so lets
+  //  force it
+  const int ww = renderedWidth();
+  if( ww > 500 )
+    dialog->setWidth( std::min(ww/2, 800) );
+  
   auto truncate_neg = make_shared<bool>(false);
   auto round_counts = make_shared<bool>(false);
   
