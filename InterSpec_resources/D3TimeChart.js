@@ -282,11 +282,15 @@ D3TimeChart = function (elem, options) {
 
   this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
 
-  this.add;
+  /** MISC MEMBERS */
+  this.escapeKeyPressed = false;
+  this.shiftKeyHeld = false;
+  this.highlightModifier = null;
+  this.draggedForward = false;
+
   /** GLOBAL LISTENERS */
   // add esc canceling
   document.addEventListener("keydown", function (evt) {
-    this.addedListener = true;
     evt = evt || window.event;
     if (evt.key === "Escape") {
       self.escapeKeyPressed = true;
@@ -298,7 +302,7 @@ D3TimeChart = function (elem, options) {
       self.shiftSelection(1);
     }
   });
-}; //
+};
 
 /** Function to help emit callbacks back to C++
  
