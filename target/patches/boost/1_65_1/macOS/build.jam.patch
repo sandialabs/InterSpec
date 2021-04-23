@@ -1,0 +1,15 @@
+--- build.jam.orig	2021-04-11 22:24:51.000000000 -0700
++++ build.jam	2021-04-11 22:25:21.000000000 -0700
+@@ -208,9 +208,9 @@
+ ## MacOSX Darwin, using GCC 2.9.x, 3.x
+ toolset darwin cc :  "-o " : -D
+     :
+-    [ opt --release : -Wl,-x -O3 -finline-functions ]
+-    [ opt --debug : -g -O0 -fno-inline -pg ]
+-    [ opt --profile : -Wl,-x -O3 -finline-functions -g -pg ]
++    [ opt --release : -Wl,-x -O3 -finline-functions -Wno-error-implicit-function-declaration ]
++    [ opt --debug : -g -O0 -fno-inline -pg -Wno-error-implicit-function-declaration ]
++    [ opt --profile : -Wl,-x -O3 -finline-functions -g -pg -Wno-error-implicit-function-declaration ]
+     -I$(--python-include) -I$(--extra-include)
+     : -L$(--python-lib[1]) -l$(--python-lib[2]) ;
+ ## GCC 2.x, 3.x, 4.x
