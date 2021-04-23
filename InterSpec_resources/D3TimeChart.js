@@ -282,13 +282,14 @@ D3TimeChart = function (elem, options) {
 
   this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
 
+  this.add;
   /** GLOBAL LISTENERS */
   // add esc canceling
-  document.onkeydown = function (evt) {
+  document.addEventListener("keydown", function (evt) {
+    this.addedListener = true;
     evt = evt || window.event;
     if (evt.key === "Escape") {
       self.escapeKeyPressed = true;
-
       d3.select("body").style("cursor", "auto");
       self.mouseUpHighlight();
     } else if (evt.key === "ArrowLeft") {
@@ -296,7 +297,7 @@ D3TimeChart = function (elem, options) {
     } else if (evt.key === "ArrowRight") {
       self.shiftSelection(1);
     }
-  };
+  });
 }; //
 
 /** Function to help emit callbacks back to C++
