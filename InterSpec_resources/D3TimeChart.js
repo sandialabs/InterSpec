@@ -576,15 +576,31 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     // console.log(d3.event.sourceEvent);
 
     // TODO: add analogous touch gestures to add additional touch functionality
-    this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
+    var TOUCH_ANALOGOUS_SHIFT = false;
+    var TOUCH_ANALOGOUS_RIGHTCLICK = false;
+    var TOUCH_ANALOGOUS_ALTKEY = false;
+    var TOUCH_ANALOGOUS_CTRLCLICK = false;
 
-    if (d3.event.sourceEvent.button == 2) {
+    this.shiftKeyHeld =
+      TOUCH_ANALOGOUS_SHIFT ||
+      (d3.event.sourceEvent && d3.event.sourceEvent.shiftKey);
+
+    if (
+      TOUCH_ANALOGOUS_RIGHTCLICK ||
+      (d3.event.sourceEvent && d3.event.sourceEvent.button == 2)
+    ) {
       this.highlightModifier = "rightClick";
       this.mouseDownHighlight(coords[0], "rightClick");
-    } else if (d3.event.sourceEvent.altKey) {
+    } else if (
+      TOUCH_ANALOGOUS_ALTKEY ||
+      (d3.event.sourceEvent && d3.event.sourceEvent.altKey)
+    ) {
       this.highlightModifier = "altKey";
       this.mouseDownHighlight(coords[0], "altKey");
-    } else if (d3.event.sourceEvent.ctrlKey) {
+    } else if (
+      TOUCH_ANALOGOUS_CTRLCLICK ||
+      (d3.event.sourceEvent && d3.event.sourceEvent.ctrlKey)
+    ) {
       this.highlightModifier = "ctrlKey";
       this.mouseDownHighlight(coords[0], "ctrlKey");
     } else {
