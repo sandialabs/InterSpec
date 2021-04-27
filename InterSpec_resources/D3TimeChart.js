@@ -22,6 +22,29 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 /**
+ * Constructor for custom error type, inherited from generic JS Error
+ *
+ */
+ValidationError = function (message, fileName, lineNumber) {
+  var instance = new Error(message, fileName, lineNumber);
+  Object.setPrototypeOf(instance, Object.getPrototypeOf(this));
+  return instance;
+};
+ValidationError.prototype = Object.create(Error.prototype, {
+  constructor: {
+    value: Error,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  },
+});
+if (Object.setPrototypeOf) {
+  Object.setPrototypeOf(ValidationError, Error);
+} else {
+  ValidationError.__proto__ = Error;
+}
+
+/**
  * Constructor for DataPoint objects. Represents a single point in the time history chart.
  * @param {Number} time: time of measurement (x)
  * @param {Number} gammaCPS: gamma counts per second (y)
@@ -107,7 +130,7 @@ BrushX.prototype.clear = function () {
  */
 BrushX.prototype.setStart = function (startCoord) {
   if (!this.scale) {
-    console.log("Error: brush scale has not been set!");
+    throw new Error("Brush scale has not been set!");
   }
   var scaledStart = this.scale.invert(startCoord);
   var domain = this.scale.domain();
@@ -130,7 +153,7 @@ BrushX.prototype.getStart = function () {
  */
 BrushX.prototype.setEnd = function (endCoord) {
   if (!this.scale) {
-    console.log("Error: brush scale has not been set!");
+    throw new Error("Brush scale has not been set!");
   }
 
   var scaledEnd = this.scale.invert(endCoord);
@@ -237,7 +260,7 @@ D3TimeChart = function (elem, options) {
   });
 
   /** COMPONENT STATE */
-  // component state. When state changes, the component should respond by re-rendering/updating to reflect changes.
+  // component state. When state changes, the component should usually respond by re-rendering/updating to reflect changes.
   this.state = {
     data: {
       formatted: null,
@@ -337,13 +360,11 @@ D3TimeChart.prototype.WtEmit = function (elem, event) {
  * @param {Object} rawData : raw data object sent from Wt
  */
 D3TimeChart.prototype.setData = function (rawData) {
-  //See the c++ function D3TimeChart::setData()
-  // console.log(rawData);
-  if (!this.isValidRawData(rawData)) {
-    console.log(
-      "Runtime error in D3TimeChart.setData: Structure of data is not valid.\nDoing nothing..."
-    );
-  } else {
+  try {
+    //See the c++ function D3TimeChart::setData()
+    if (!this.isValidRawData(rawData)) {
+      throw new ValidationError("Structure of raw data is not valid.");
+    }
     var formattedData = this.formatDataFromRaw(rawData);
 
     this.state.data.formatted = [formattedData];
@@ -377,6 +398,13 @@ D3TimeChart.prototype.setData = function (rawData) {
     if (this.state.height && this.state.width) {
       this.reinitializeChart();
     }
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      console.log(err.message + "\nDoing nothing...");
+      // console.log(err); // log call stack to console
+    } else {
+      throw err;
+    }
   }
 };
 
@@ -385,12 +413,20 @@ D3TimeChart.prototype.handleResize = function () {
   // Need to redraw everything (incl size of svg element, )
   // ...
   // Make sure to update the C++ code of the changed plotting size.
+  try {
+    // console.log("Resized!");
+    this.state.height = this.chart.clientHeight;
+    this.state.width = this.chart.clientWidth;
 
-  // console.log("Resized!");
-  this.state.height = this.chart.clientHeight;
-  this.state.width = this.chart.clientWidth;
-
-  this.reinitializeChart();
+    this.reinitializeChart();
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      console.log(err.message + "\nDoing nothing...");
+      // console.log(err); // log call stack to console
+    } else {
+      throw err;
+    }
+  }
 };
 
 /**
@@ -399,319 +435,326 @@ D3TimeChart.prototype.handleResize = function () {
  */
 D3TimeChart.prototype.reinitializeChart = function (options) {
   if (!this.state.data.formatted) {
-    console.log(
-      "Runtime error in D3TimeChart.render: D3TimeChart data is not set.\nDoing nothing..."
+    throw new ValidationError("D3TimeChart data is not set.");
+  }
+  if (!this.state.height || !this.state.width) {
+    throw new ValidationError(
+      "dimensions of D3TimeChart div element are not set."
     );
-    return;
-  } else if (!this.state.height || !this.state.width) {
-    console.log(
-      "Runtime error in D3TimeChart.render: dimensions of D3TimeChart div element are not set.\nDoing nothing..."
-    );
-    return;
-  } else {
-    // console.log("Re-initializing...");
+  }
+  // console.log("Re-initializing...");
 
-    var plotWidth = this.state.width - this.margin.left - this.margin.right;
-    var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
+  var plotWidth = this.state.width - this.margin.left - this.margin.right;
+  var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
 
-    var nPoints = this.state.data.formatted[0].sampleNumbers.length;
+  var nPoints = this.state.data.formatted[0].sampleNumbers.length;
 
-    // check chart pixels vs full set of  data points. Compress data if needed for purposes of rendering, and cache the compressed data inside the this.state.data.formatted array.
-    // each data[i] is the data compressed at level 2^i.
+  // check chart pixels vs full set of  data points. Compress data if needed for purposes of rendering, and cache the compressed data inside the this.state.data.formatted array.
+  // each data[i] is the data compressed at level 2^i.
 
-    // impose lower plotWidth limit on compression calculations
-    if (plotWidth > 10) {
-      var compressionIndex = Math.ceil(
-        Math.log2(Math.ceil(nPoints / plotWidth))
-      );
-      if (plotWidth < nPoints) {
-        var i = 1;
-        for (var i = 1; i <= compressionIndex; i++) {
-          // only compress if data doesn't already exist before
-          if (this.state.data.formatted[i] == null) {
-            // console.log("Compressing!");
-            this.state.data.formatted[i] = this.formatDataFromRaw(
-              this.compress(this.state.data.raw, Math.pow(2, i))
-            );
-          }
+  // impose lower plotWidth limit on compression calculations
+  if (plotWidth > 10) {
+    var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+    if (plotWidth < nPoints) {
+      var i = 1;
+      for (var i = 1; i <= compressionIndex; i++) {
+        // only compress if data doesn't already exist before
+        if (this.state.data.formatted[i] == null) {
+          // console.log("Compressing!");
+          this.state.data.formatted[i] = this.formatDataFromRaw(
+            this.compress(this.state.data.raw, Math.pow(2, i))
+          );
         }
-      } // if (plotWidth < nPoints)
-      // console.log(this.state.data.formatted);
-      this.state.data.unzoomedCompressionIndex = compressionIndex;
-    }
+      }
+    } // if (plotWidth < nPoints)
+    // console.log(this.state.data.formatted);
+    this.state.data.unzoomedCompressionIndex = compressionIndex;
+  }
 
-    // set dimensions of svg element and plot
-    this.svg.attr("width", this.state.width).attr("height", this.state.height);
+  // set dimensions of svg element and plot
+  this.svg.attr("width", this.state.width).attr("height", this.state.height);
 
-    this.bottomAxisRect
-      .attr("width", plotWidth)
-      .attr("height", this.axisBottomG.node().getBBox().height)
-      .attr("x", this.margin.left)
-      .attr("y", this.margin.top + plotHeight)
-      .attr("fill-opacity", 0);
+  this.bottomAxisRect
+    .attr("width", plotWidth)
+    .attr("height", this.axisBottomG.node().getBBox().height)
+    .attr("x", this.margin.left)
+    .attr("y", this.margin.top + plotHeight)
+    .attr("fill-opacity", 0);
 
-    // set dimensions of interactable area.
-    this.rect
+  // set dimensions of interactable area.
+  this.rect
+    .attr("width", plotWidth)
+    .attr("height", plotHeight)
+    .attr("x", this.margin.left)
+    .attr("y", this.margin.top)
+    .attr("fill-opacity", 0);
+
+  // add a clipPath: everything outside of this area will not be drawn
+  var clip = this.svg.select("#clip_th");
+
+  if (!clip.empty()) {
+    // update if already exists
+    clip
+      .select("rect")
       .attr("width", plotWidth)
       .attr("height", plotHeight)
       .attr("x", this.margin.left)
-      .attr("y", this.margin.top)
-      .attr("fill-opacity", 0);
+      .attr("y", this.margin.top - 2); // to account for stroke-width of path
+  } else {
+    this.svg
+      .append("defs")
+      .append("svg:clipPath")
+      .attr("id", "clip_th")
+      .append("svg:rect")
+      .attr("width", plotWidth)
+      .attr("height", plotHeight)
+      .attr("x", this.margin.left)
+      .attr("y", this.margin.top - 2);
+  }
 
-    // add a clipPath: everything outside of this area will not be drawn
-    var clip = this.svg.select("#clip_th");
+  this.linesG.attr("clip-path", "url(#clip_th)");
+  this.highlightRegionsG.attr("clip-path", "url(#clip_th");
+  this.occupancyLinesG.attr("clip-path", "url(#clip_th");
 
-    if (!clip.empty()) {
-      // update if already exists
-      clip
-        .select("rect")
-        .attr("width", plotWidth)
-        .attr("height", plotHeight)
-        .attr("x", this.margin.left)
-        .attr("y", this.margin.top - 2); // to account for stroke-width of path
-    } else {
-      this.svg
-        .append("defs")
-        .append("svg:clipPath")
-        .attr("id", "clip_th")
-        .append("svg:rect")
-        .attr("width", plotWidth)
-        .attr("height", plotHeight)
-        .attr("x", this.margin.left)
-        .attr("y", this.margin.top - 2);
-    }
+  // if have selection, choose compression index to use based on number of points in the selection.
+  if (this.state.selection) {
+    var leftIndex = this.findDataIndex(this.state.selection.domain[0], 0);
+    var rightIndex = this.findDataIndex(this.state.selection.domain[1], 0);
+    var nPointsSelection = rightIndex - leftIndex + 1;
 
-    this.linesG.attr("clip-path", "url(#clip_th)");
-    this.highlightRegionsG.attr("clip-path", "url(#clip_th");
-    this.occupancyLinesG.attr("clip-path", "url(#clip_th");
+    this.state.selection.compressionIndex = Math.ceil(
+      Math.log2(Math.ceil(nPointsSelection / plotWidth))
+    );
+  }
 
-    // if have selection, choose compression index to use based on number of points in the selection.
-    if (this.state.selection) {
-      var leftIndex = this.findDataIndex(this.state.selection.domain[0], 0);
-      var rightIndex = this.findDataIndex(this.state.selection.domain[1], 0);
-      var nPointsSelection = rightIndex - leftIndex + 1;
-
-      this.state.selection.compressionIndex = Math.ceil(
-        Math.log2(Math.ceil(nPointsSelection / plotWidth))
-      );
-    }
-
-    // get scales
-    var domains = this.state.selection
-      ? {
-          x: this.state.selection.domain,
-          yGamma: this.state.data.formatted[
-            this.state.selection.compressionIndex
-          ].domains.yGamma,
-          yNeutron: this.state.data.formatted[
-            this.state.selection.compressionIndex
-          ].domains.yNeutron,
-        }
-      : this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
-          .domains;
-
-    var scales = this.getScales(domains);
-
-    var compressionIndex = this.state.selection
-      ? this.state.selection.compressionIndex
-      : this.state.data.unzoomedCompressionIndex;
-
-    var brush = this.state.brush;
-
-    // set scale of brush
-    brush.setScale(scales.xScale);
-
-    // define handlers for selection gestures
-    // TODO: To add additional touch functionality, add analogous touch gestures (to right click, alt key, ctrl key-- to perform zoom and background selection)
-    var startSelection = (option) => {
-      if (option && option.touch) {
-        d3.event.preventDefault();
-        d3.event.stopPropagation();
+  // get scales
+  var domains = this.state.selection
+    ? {
+        x: this.state.selection.domain,
+        yGamma: this.state.data.formatted[this.state.selection.compressionIndex]
+          .domains.yGamma,
+        yNeutron: this.state.data.formatted[
+          this.state.selection.compressionIndex
+        ].domains.yNeutron,
       }
+    : this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
+        .domains;
 
-      if (this.escapeKeyPressed) this.escapeKeyPressed = false;
+  var scales = this.getScales(domains);
 
+  var compressionIndex = this.state.selection
+    ? this.state.selection.compressionIndex
+    : this.state.data.unzoomedCompressionIndex;
+
+  var brush = this.state.brush;
+
+  // set scale of brush
+  brush.setScale(scales.xScale);
+
+  // define handlers for selection gestures
+  // TODO: To add additional touch functionality, add analogous touch gestures (to right click, alt key, ctrl key-- to perform zoom and background selection)
+
+  /**
+   * Handler for the initation of a selection gesture.
+   * @param {*} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
+   */
+  var startSelection = (option) => {
+    if (option && option.touch) {
+      d3.event.preventDefault();
+      d3.event.stopPropagation();
+    }
+
+    if (this.escapeKeyPressed) this.escapeKeyPressed = false;
+
+    var coords =
+      option && option.touch
+        ? d3.touches(this.rect.node())[0]
+        : d3.mouse(this.rect.node());
+    // console.log(coords);
+    brush.setStart(coords[0]);
+    d3.select("body").style("cursor", "move");
+    // console.log(d3.event.sourceEvent);
+
+    // TODO: add analogous touch gestures to add additional touch functionality
+    this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
+
+    if (d3.event.sourceEvent.button == 2) {
+      this.highlightModifier = "rightClick";
+      this.mouseDownHighlight(coords[0], "rightClick");
+    } else if (d3.event.sourceEvent.altKey) {
+      this.highlightModifier = "altKey";
+      this.mouseDownHighlight(coords[0], "altKey");
+    } else if (d3.event.sourceEvent.ctrlKey) {
+      this.highlightModifier = "ctrlKey";
+      this.mouseDownHighlight(coords[0], "ctrlKey");
+    } else {
+      this.highlightModifier = "none";
+      this.mouseDownHighlight(coords[0], "none");
+    }
+  };
+
+  /**
+   * Handler for the progression of a selection gesture.
+   * @param {*} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
+   */
+  var moveSelection = (option) => {
+    if (option && option.touch) {
+      d3.event.preventDefault();
+      d3.event.stopPropagation();
+    }
+
+    if (!this.escapeKeyPressed) {
       var coords =
         option && option.touch
           ? d3.touches(this.rect.node())[0]
           : d3.mouse(this.rect.node());
-      // console.log(coords);
-      brush.setStart(coords[0]);
-      d3.select("body").style("cursor", "move");
-      // console.log(d3.event.sourceEvent);
+      brush.setEnd(coords[0]);
 
-      // TODO: add analogous touch gestures to add additional touch functionality
-      this.shiftKeyHeld = d3.event.sourceEvent.shiftKey;
-
-      if (d3.event.sourceEvent.button == 2) {
-        this.highlightModifier = "rightClick";
-        this.mouseDownHighlight(coords[0], "rightClick");
-      } else if (d3.event.sourceEvent.altKey) {
-        this.highlightModifier = "altKey";
-        this.mouseDownHighlight(coords[0], "altKey");
-      } else if (d3.event.sourceEvent.ctrlKey) {
-        this.highlightModifier = "ctrlKey";
-        this.mouseDownHighlight(coords[0], "ctrlKey");
+      if (
+        this.options.useSimplifiedGestures ||
+        this.highlightModifier in this.highlightOptions.zoom.modifierKey
+      ) {
+        // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
+        if (brush.getEnd() < brush.getStart()) {
+          this.handleDragBackZoom();
+        } else {
+          this.handleDragForwardZoom();
+        }
       } else {
-        this.highlightModifier = "none";
-        this.mouseDownHighlight(coords[0], "none");
-      }
-    };
+        // handle interactions other than zoom
+        if (!this.options.useSimplifiedGestures) {
+          // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
+          // handle foreground or background selection
 
-    var moveSelection = (option) => {
+          var width =
+            brush.getScale()(brush.getEnd()) -
+            brush.getScale()(brush.getStart());
+          this.mouseMoveHighlight(width);
+        }
+      }
+    }
+  };
+
+  /**
+   * Handler for the termination of a selection gesture.
+   * @param {*} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
+   */
+
+  var endSelection = (option) => {
+    if (brush.extent() != null) {
       if (option && option.touch) {
         d3.event.preventDefault();
         d3.event.stopPropagation();
       }
 
-      if (!this.escapeKeyPressed) {
-        var coords =
-          option && option.touch
-            ? d3.touches(this.rect.node())[0]
-            : d3.mouse(this.rect.node());
-        brush.setEnd(coords[0]);
-
+      if (this.escapeKeyPressed) {
+        // clear selections and reset escape key
+        brush.clear();
+        this.escapeKeyPressed = false;
+      } else {
+        d3.select("body").style("cursor", "auto");
+        // console.log(brush.extent());
+        var lIdx = this.findDataIndex(brush.extent()[0], 0);
+        var rIdx = this.findDataIndex(brush.extent()[1], 0);
+        // console.log([
+        //   this.state.data.formatted[0].sampleNumbers[lIdx],
+        //   this.state.data.formatted[0].sampleNumbers[rIdx],
+        // ]);
         if (
           this.options.useSimplifiedGestures ||
           this.highlightModifier in this.highlightOptions.zoom.modifierKey
         ) {
-          // if brush backward, call handler to handle zoom-out. Else, handle drawing the selection rectangle for zoom-in.
-          if (brush.getEnd() < brush.getStart()) {
-            this.handleDragBackZoom();
-          } else {
-            this.handleDragForwardZoom();
-          }
+          this.handleBrushZoom();
         } else {
           // handle interactions other than zoom
           if (!this.options.useSimplifiedGestures) {
             // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
             // handle foreground or background selection
 
-            var width =
-              brush.getScale()(brush.getEnd()) -
-              brush.getScale()(brush.getStart());
-            this.mouseMoveHighlight(width);
+            var keyModifierMap = {
+              altKey: 0x4,
+              shiftKey: 0x1,
+              none: 0x0,
+            };
+            this.WtEmit(
+              this.chart.id,
+              { name: "timedragged" },
+              this.state.data.formatted[0].sampleNumbers[lIdx],
+              this.state.data.formatted[0].sampleNumbers[rIdx],
+              keyModifierMap[this.highlightModifier] |
+                (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
+            );
           }
         }
       }
-    };
+    }
+    // clear
+    this.mouseUpHighlight();
+    brush.clear();
+    this.highlightModifier = null;
+    this.shiftKeyHeld = false;
+  };
 
-    var endSelection = (option) => {
-      if (brush.extent() != null) {
-        if (option && option.touch) {
-          d3.event.preventDefault();
-          d3.event.stopPropagation();
-        }
+  // mouse drag behavior
+  var selectionDrag = d3.behavior
+    .drag()
+    .on("dragstart", startSelection)
+    .on("drag", moveSelection)
+    .on("dragend", endSelection);
+  this.rect.call(selectionDrag);
 
-        if (this.escapeKeyPressed) {
-          // clear selections and reset escape key
-          brush.clear();
-          this.escapeKeyPressed = false;
-        } else {
-          d3.select("body").style("cursor", "auto");
-          // console.log(brush.extent());
-          var lIdx = this.findDataIndex(brush.extent()[0], 0);
-          var rIdx = this.findDataIndex(brush.extent()[1], 0);
-          // console.log([
-          //   this.state.data.formatted[0].sampleNumbers[lIdx],
-          //   this.state.data.formatted[0].sampleNumbers[rIdx],
-          // ]);
-          if (
-            this.options.useSimplifiedGestures ||
-            this.highlightModifier in this.highlightOptions.zoom.modifierKey
-          ) {
-            this.handleBrushZoom();
-          } else {
-            // handle interactions other than zoom
-            if (!this.options.useSimplifiedGestures) {
-              // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
-              // handle foreground or background selection
+  // touch drag behavior
+  this.rect
+    .on("touchstart", () => startSelection({ touch: true }))
+    .on("touchmove", () => moveSelection({ touch: true }))
+    .on("touchend", () => endSelection({ touch: true }));
 
-              var keyModifierMap = {
-                altKey: 0x4,
-                shiftKey: 0x1,
-                none: 0x0,
-              };
-              this.WtEmit(
-                this.chart.id,
-                { name: "timedragged" },
-                this.state.data.formatted[0].sampleNumbers[lIdx],
-                this.state.data.formatted[0].sampleNumbers[rIdx],
-                keyModifierMap[this.highlightModifier] |
-                  (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
-              );
-            }
-          }
-        }
+  // pan drag behavior
+  // initialize new variables for holding new selection and scales from panning
+  var newSelection = this.state.selection;
+  var newScale = brush.getScale();
+  var panDrag = d3.behavior
+    .drag()
+    .on("dragstart", () => {
+      var coords = d3.mouse(this.rect.node());
+      brush.setStart(coords[0]);
+      d3.select("body").style("cursor", "ew-resize");
+    })
+    .on("drag", () => {
+      brush.setEnd(d3.mouse(this.rect.node())[0]);
+      var res = this.handleBrushPanSelection();
+      if (res) {
+        newSelection = res.newSelection;
+        newScale = res.newScale;
       }
-      // clear
-      this.mouseUpHighlight();
+    })
+    .on("dragend", () => {
+      // update selection, update scale
+      this.state.selection = newSelection;
+      brush.setScale(newScale.xScale);
       brush.clear();
-      this.highlightModifier = null;
-      this.shiftKeyHeld = false;
-    };
-
-    // mouse drag behavior
-    var selectionDrag = d3.behavior
-      .drag()
-      .on("dragstart", startSelection)
-      .on("drag", moveSelection)
-      .on("dragend", endSelection);
-    this.rect.call(selectionDrag);
-
-    // touch drag behavior
-    this.rect
-      .on("touchstart", () => startSelection({ touch: true }))
-      .on("touchmove", () => moveSelection({ touch: true }))
-      .on("touchend", () => endSelection({ touch: true }));
-
-    // pan drag behavior
-    // initialize new variables for holding new selection and scales from panning
-    var newSelection = this.state.selection;
-    var newScale = brush.getScale();
-    var panDrag = d3.behavior
-      .drag()
-      .on("dragstart", () => {
-        var coords = d3.mouse(this.rect.node());
-        brush.setStart(coords[0]);
-        d3.select("body").style("cursor", "ew-resize");
-      })
-      .on("drag", () => {
-        brush.setEnd(d3.mouse(this.rect.node())[0]);
-        var res = this.handleBrushPanSelection();
-        if (res) {
-          newSelection = res.newSelection;
-          newScale = res.newScale;
-        }
-      })
-      .on("dragend", () => {
-        // update selection, update scale
-        this.state.selection = newSelection;
-        brush.setScale(newScale.xScale);
-        brush.clear();
-        this.updateChart(newScale, newSelection.compressionIndex, {
-          transitions: false,
-        });
+      this.updateChart(newScale, newSelection.compressionIndex, {
+        transitions: false,
       });
+    });
 
-    this.bottomAxisRect.call(panDrag);
+  this.bottomAxisRect.call(panDrag);
 
-    this.bottomAxisRect
-      .on("mouseover", () => {
-        d3.select("body").style("cursor", "ew-resize");
-      })
-      .on("mouseout", () => {
-        d3.select("body").style("cursor", "auto");
-      });
+  this.bottomAxisRect
+    .on("mouseover", () => {
+      d3.select("body").style("cursor", "ew-resize");
+    })
+    .on("mouseout", () => {
+      d3.select("body").style("cursor", "auto");
+    });
 
-    // mouse wheel behavior
-    this.rect.node().onwheel = (evt) => {
-      evt.preventDefault();
-      this.handleMouseWheel(evt.deltaX, evt.deltaY, evt.x);
-    };
+  // mouse wheel behavior
+  this.rect.node().onwheel = (evt) => {
+    evt.preventDefault();
+    this.handleMouseWheel(evt.deltaX, evt.deltaY, evt.x);
+  };
 
-    this.updateChart(scales, compressionIndex, options);
-  }
+  this.updateChart(scales, compressionIndex, options);
 };
 
 /**
@@ -1768,16 +1811,6 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
  * }
  */
 D3TimeChart.prototype.getScales = function (domains) {
-  if (!this.state.data.formatted) {
-    console.log(
-      "In D3TimeChart.getScales: domain not set.\nScales undefined..."
-    );
-    return {
-      xScale: undefined,
-      yScaleGamma: undefined,
-      yScaleNeutron: undefined,
-    };
-  }
   var xScale = domains.x
     ? d3.scale
         .linear()
