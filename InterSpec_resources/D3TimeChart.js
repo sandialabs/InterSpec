@@ -22,8 +22,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 /**
- * Constructor for custom error type, inherited from generic JS Error
- *
+ * Constructor for custom error type, inherited from generic JS Error. Arguments are the same as for the generic JS Error objects.
  */
 ValidationError = function (message, fileName, lineNumber) {
   var instance = new Error(message, fileName, lineNumber);
@@ -68,6 +67,11 @@ DataPoint.prototype.setNeutronCPS = function (neutronCPS) {
   this.neutronCPS = neutronCPS;
 };
 
+/**
+ * Constructor for DetectorMetaData objects.
+ * @param {String} gammaColor: string representation of a color to use for the plotted gamma line
+ * @param {String} neutronColor: string representation of a color to use for the plotted neutron line
+ */
 DetectorMetaData = function (gammaColor, neutronColor) {
   this.gammaColor = gammaColor;
   this.neutronColor = neutronColor;
@@ -214,14 +218,14 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.minSelectionWidth !== "number")
     this.options.minSelectionWidth = 8;
 
-  // option to use simplified gesture mode, which we define as mapping all drag gestures to zoom functionality.
+  // option to use simplified gesture mode, which we currently define as mapping all drag gestures to zoom functionality.
   // current implementation of simplified gesture mode simply disables use of this.highlightOptions and treats any drag gesture as zoom, regardless of keyboard modifier.
-  // To add extra functionality to other keys in simplified gesture mode, would need to use and make conditional changes to this.highlightOptions to add new key mappings
+  // To add extra functionality to other keys in simplified gesture mode, would need to use and make conditional changes to this.highlightOptions to add new key mappings under simplifiedGestureMode
   if (typeof this.options.useSimplifiedGestures !== "boolean")
     this.options.useSimplifiedGestures = false;
 
-  // defines keyboard modifiers and/or other metadata to use with drag gestures to achieve various highlight selection functionality.
-  // uses object to emulate behavior of Set object (e.g. {"none": true} instead of new Set(["none"])) to accommodate ES5
+  // defines keyboard modifier keys and/or other metadata to use with drag gestures to achieve various highlight selection functionalities.
+  // uses JS object to emulate behavior of Set object (e.g. {"none": true} instead of new Set(["none"])) to accommodate ES5
   this.highlightOptions = {
     foreground: {
       modifierKey: { none: true },
@@ -269,7 +273,7 @@ D3TimeChart = function (elem, options) {
       sampleNumberToIndexMap: null,
       unzoomedCompressionIndex: 0,
     },
-    selection: null,
+    selection: null, // maybe would have been better to have named this "zoom": stores data related to zoom selection (e.g. data domain of magnified area, corresponding compression index to use for plotting this magnified data)
     regions: null,
     brush: new BrushX(),
     height: null,
@@ -278,10 +282,14 @@ D3TimeChart = function (elem, options) {
 
   /** SVG COMPONENT REFERENCES */
   this.svg = d3.select(this.chart).append("svg");
+  this.verticalGridG = this.svg.append("g").attr("class", "grid");
+  this.horizontalLeftGridG = this.svg.append("g").attr("class", "grid");
+  this.horizontalRightGridG = this.svg.append("g").attr("class", "grid");
   this.linesG = this.svg.append("g").attr("class", "lines");
   this.axisBottomG = this.svg.append("g").attr("class", "axis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis");
   this.axisRightG = this.svg.append("g").attr("class", "axis");
+
   this.highlightRegionsG = this.svg
     .append("g")
     .attr("class", "highlight_region");
@@ -292,8 +300,8 @@ D3TimeChart = function (elem, options) {
     .attr("font-size", 11)
     .attr("font-weight", "bold");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
-  this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area
-  this.bottomAxisRect = this.rectG.append("rect");
+  this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area on plot area
+  this.bottomAxisRect = this.rectG.append("rect"); // rectangle spanning additional interactable area on bottom axis area
 
   this.hoverToolTip = d3
     .select(this.chart)
@@ -308,11 +316,11 @@ D3TimeChart = function (elem, options) {
   /** MISC MEMBERS */
   this.escapeKeyPressed = false;
   this.shiftKeyHeld = false;
-  this.highlightModifier = null;
+  this.highlightModifier = null; // holds the key pressed in conjunction with a highlight gesture to modify the action
   this.draggedForward = false;
 
   /** GLOBAL LISTENERS */
-  // add esc canceling
+  // listeners to support esc canceling of highlighting and arrow-key panning
   document.addEventListener("keydown", function (evt) {
     evt = evt || window.event;
     if (evt.key === "Escape") {
@@ -391,10 +399,10 @@ D3TimeChart.prototype.setData = function (rawData) {
     // clear existing regions if there are any
     this.state.regions = null;
 
-    // clear any existing lines drawn
+    // clear any existing plot lines drawn
     this.linesG.selectAll("path").remove();
 
-    // if height and width are set, may render directly.
+    // if height and width are set, may initialize chart directly.
     if (this.state.height && this.state.width) {
       this.reinitializeChart();
     }
@@ -431,6 +439,7 @@ D3TimeChart.prototype.handleResize = function () {
 
 /**
  * Renders/re-initializes the D3TimeChart to be set up for plotting data and interaction. Compresses data for purposes of displaying, updates dimensions of svg element, updates dimensions of clip-path, and defines drag behavior over the figure
+ * depends on data and chart size being already defined
  * @param {Object} options : Optional argument to specify render options
  */
 D3TimeChart.prototype.reinitializeChart = function (options) {
@@ -474,19 +483,19 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   // set dimensions of svg element and plot
   this.svg.attr("width", this.state.width).attr("height", this.state.height);
 
-  this.bottomAxisRect
-    .attr("width", plotWidth)
-    .attr("height", this.axisBottomG.node().getBBox().height)
-    .attr("x", this.margin.left)
-    .attr("y", this.margin.top + plotHeight)
-    .attr("fill-opacity", 0);
-
   // set dimensions of interactable area.
   this.rect
     .attr("width", plotWidth)
     .attr("height", plotHeight)
     .attr("x", this.margin.left)
     .attr("y", this.margin.top)
+    .attr("fill-opacity", 0);
+
+  this.bottomAxisRect
+    .attr("width", plotWidth)
+    .attr("height", this.axisBottomG.node().getBBox().height)
+    .attr("x", this.margin.left)
+    .attr("y", this.margin.top + plotHeight)
     .attr("fill-opacity", 0);
 
   // add a clipPath: everything outside of this area will not be drawn
@@ -499,8 +508,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       .attr("width", plotWidth)
       .attr("height", plotHeight)
       .attr("x", this.margin.left)
-      .attr("y", this.margin.top - 2); // to account for stroke-width of path
+      .attr("y", this.margin.top);
   } else {
+    // else create new
     this.svg
       .append("defs")
       .append("svg:clipPath")
@@ -509,14 +519,14 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       .attr("width", plotWidth)
       .attr("height", plotHeight)
       .attr("x", this.margin.left)
-      .attr("y", this.margin.top - 2);
+      .attr("y", this.margin.top);
   }
 
   this.linesG.attr("clip-path", "url(#clip_th)");
   this.highlightRegionsG.attr("clip-path", "url(#clip_th");
   this.occupancyLinesG.attr("clip-path", "url(#clip_th");
 
-  // if have selection, choose compression index to use based on number of points in the selection.
+  // if have a selection, choose compression index to use for plotting based on number of points in the selection.
   if (this.state.selection) {
     var leftIndex = this.findDataIndex(this.state.selection.domain[0], 0);
     var rightIndex = this.findDataIndex(this.state.selection.domain[1], 0);
@@ -551,12 +561,12 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   // set scale of brush
   brush.setScale(scales.xScale);
 
-  // define handlers for selection gestures
+  // DEFINE HANDLERS AND LISTENERS
   // TODO: To add additional touch functionality, add analogous touch gestures (to right click, alt key, ctrl key-- to perform zoom and background selection)
 
   /**
-   * Handler for the initation of a selection gesture.
-   * @param {*} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
+   * Handler for the initiation of a selection gesture.
+   * @param {Object} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
    */
   var startSelection = (option) => {
     if (option && option.touch) {
@@ -611,7 +621,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   /**
    * Handler for the progression of a selection gesture.
-   * @param {*} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
+   * @param {Object} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
    */
   var moveSelection = (option) => {
     if (option && option.touch) {
@@ -653,7 +663,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   /**
    * Handler for the termination of a selection gesture.
-   * @param {*} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
+   * @param {Object} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
    */
 
   var endSelection = (option) => {
@@ -749,9 +759,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       this.state.selection = newSelection;
       brush.setScale(newScale.xScale);
       brush.clear();
-      this.updateChart(newScale, newSelection.compressionIndex, {
-        transitions: false,
-      });
+      this.updateChart(newScale, newSelection.compressionIndex);
     });
 
   this.bottomAxisRect.call(panDrag);
@@ -770,28 +778,30 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     this.handleMouseWheel(evt.deltaX, evt.deltaY, evt.x);
   };
 
+  // Finally, initialization finished-- update chart
   this.updateChart(scales, compressionIndex, options);
 };
 
 /**
  * Draws or updates plots and axes
- * @param {*} scales : Object of scales with properties xScale, yScaleGamma, yScaleNeutron
- * @param {*} compressionIndex : Positive integer specifying data compression level to use for redrawing the chart. Compressed data are calculated during render() and cached inside this.state.data.formatted
- * @param {*} options : Optional argument to specify render options
+ * @param {Object} scales : Object of scales with properties xScale, yScaleGamma, yScaleNeutron
+ * @param {Number} compressionIndex : Positive integer specifying data compression level to use for redrawing the chart. Compressed data are calculated during render() and cached inside this.state.data.formatted
+ * @param {Object} options : Optional argument to specify additional render options if any
  */
 D3TimeChart.prototype.updateChart = function (
   scales,
   compressionIndex,
   options
 ) {
-  var transitions = options && options.transitions ? true : false;
-
   var xScale = scales.xScale;
   var yScaleGamma = scales.yScaleGamma;
   var yScaleNeutron = scales.yScaleNeutron;
 
   var HAS_GAMMA = true;
   var HAS_NEUTRON = false;
+
+  var plotWidth = this.state.width - this.margin.left - this.margin.right;
+  var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
 
   // add/update hover interaction based on current scale (or zoom)
   this.rect
@@ -871,11 +881,7 @@ D3TimeChart.prototype.updateChart = function (
 
     // if already drawn, just update
     if (!pathGamma.empty()) {
-      if (transitions) {
-        pathGamma.datum(counts).transition().duration(500).attr("d", lineGamma);
-      } else {
-        pathGamma.datum(counts).attr("d", lineGamma);
-      }
+      pathGamma.datum(counts).attr("d", lineGamma);
     } else {
       this.linesG
         .append("path")
@@ -902,15 +908,7 @@ D3TimeChart.prototype.updateChart = function (
 
       // if already drawn, just update
       if (!pathNeutron.empty()) {
-        if (transitions) {
-          pathNeutron
-            .datum(counts)
-            .transition()
-            .duration(500)
-            .attr("d", lineNeutron);
-        } else {
-          pathNeutron.datum(counts).attr("d", lineNeutron);
-        }
+        pathNeutron.datum(counts).attr("d", lineNeutron);
       } else {
         this.linesG
           .append("path")
@@ -956,15 +954,7 @@ D3TimeChart.prototype.updateChart = function (
       var rPixel = xScale(endTime);
 
       var highlightWidth = rPixel - lPixel > 2 ? rPixel - lPixel : 2;
-      if (transitions) {
-        d3.select(this)
-          .transition()
-          .duration(500)
-          .attr("x", lPixel)
-          .attr("width", highlightWidth);
-      } else {
-        d3.select(this).attr("x", lPixel).attr("width", highlightWidth);
-      }
+      d3.select(this).attr("x", lPixel).attr("width", highlightWidth);
       // }
     });
   }
@@ -1005,25 +995,13 @@ D3TimeChart.prototype.updateChart = function (
       .tickFormat(d3.format("~.6f"));
 
     // update or create axis
-    if (transitions) {
-      this.axisBottomG
-        .transition()
-        .duration(500)
-        .attr(
-          "transform",
-          "translate(0," + (this.state.height - this.margin.bottom) + ")"
-        )
-        .attr("id", "th_x-axis")
-        .call(xAxis);
-    } else {
-      this.axisBottomG
-        .attr(
-          "transform",
-          "translate(0," + (this.state.height - this.margin.bottom) + ")"
-        )
-        .attr("id", "th_x-axis")
-        .call(xAxis);
-    }
+    this.axisBottomG
+      .attr(
+        "transform",
+        "translate(0," + (this.state.height - this.margin.bottom) + ")"
+      )
+      .attr("id", "th_x-axis")
+      .call(xAxis);
 
     // check whether there is any possibility for axis text overlap
     // if yes, then re-define axes with reduced (half) the current tick count
@@ -1294,11 +1272,33 @@ D3TimeChart.prototype.updateChart = function (
     var tickText = d3.select(this).select("text");
     var tickLine = d3.select(this).select("line");
     if (!xTicksGenerated[i].isMajor) {
-      // if animations are on, THIS LEADS to array out of bound error when zooming in. Likely because the tick counts change while animating
       tickText.attr("visibility", "hidden");
       tickLine.attr("y2", 4);
     }
   });
+
+  // add grid lines
+  if (this.options.gridx) {
+    this.verticalGridG
+      .attr(
+        "transform",
+        "translate(0," + (this.state.height - this.margin.bottom) + ")"
+      )
+      .attr("id", "th_x-grid")
+      .call(xAxis.tickFormat("").tickSize(-plotHeight));
+
+    var verticalGridLines = this.verticalGridG.selectAll("g.tick");
+    verticalGridLines.each(function (d, i) {
+      var tickLine = d3.select(this).select("line");
+      if (!xTicksGenerated[i].isMajor) {
+        tickLine.attr("stroke", "#f6f6f6");
+      } else {
+        tickLine.attr("stroke", "#d3d3d3");
+      }
+    });
+  } else {
+    this.verticalGridG.selectAll("*").remove();
+  }
 
   if (HAS_GAMMA) {
     var yAxisLeft = d3.svg
@@ -1312,6 +1312,24 @@ D3TimeChart.prototype.updateChart = function (
     this.axisLeftG
       .attr("transform", "translate(" + this.margin.left + ",0)")
       .call(yAxisLeft);
+
+    // add grid lines
+    if (this.options.gridy) {
+      this.horizontalLeftGridG
+        .attr("transform", "translate(" + this.margin.left + ",0)")
+        .attr("id", "th_y1-grid")
+        .call(yAxisLeft.tickFormat("").tickSize(-plotWidth));
+
+      var horizontalLeftGridLines = this.horizontalLeftGridG.selectAll(
+        "g.tick"
+      );
+      horizontalLeftGridLines.each(function (d, i) {
+        var tickLine = d3.select(this).select("line");
+        tickLine.attr("stroke", "#d3d3d3");
+      });
+    } else {
+      this.horizontalLeftGridG.selectAll("*").remove();
+    }
 
     var axisLabelY1 = this.svg.select("#th_label_y1");
 
@@ -1372,6 +1390,27 @@ D3TimeChart.prototype.updateChart = function (
         "translate(" + (this.state.width - this.margin.left) + ",0)"
       )
       .call(yAxisRight);
+
+    // add grid lines
+    if (this.options.gridy) {
+      this.horizontalRightGridG
+        .attr(
+          "transform",
+          "translate(" + (this.state.width - this.margin.left) + ",0)"
+        )
+        .attr("id", "th_y1-grid")
+        .call(yAxisRight.tickFormat("").tickSize(-plotWidth));
+
+      var horizontalRightGridLines = this.horizontalRightGridG.selectAll(
+        "g.tick"
+      );
+      horizontalRightGridLines.each(function (d, i) {
+        var tickLine = d3.select(this).select("line");
+        tickLine.attr("stroke", "#f6f6f6");
+      });
+    } else {
+      this.horizontalRightGridG.selectAll("*").remove();
+    }
 
     var axisLabelY2 = this.svg.select("#th_label_y2");
     var axisLabelY2Text =
@@ -1865,7 +1904,7 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
   for (var i = 0; i < realTimes.length; i++) {
     if (sourceTypes && i === 0 && sourceTypes[i] === 2) {
       // center so background is not started at 0
-      // to handle long lead-in:
+      // to reduce long lead-in for plotting, replace with a smaller value inside realTimeIntervals and then record the true backgroundDuration in this.state for future reference:
       var leadTime = Math.max(
         -realTimes[i],
         -Math.floor(realTimes.length * 0.12)
@@ -1944,16 +1983,16 @@ D3TimeChart.prototype.shiftSelection = function (n) {
     };
     var scale = this.getScales(fullDomain);
     this.state.brush.setScale(scale.xScale);
-    this.updateChart(scale, compressionIndex, { transitions: false });
+    this.updateChart(scale, compressionIndex);
   }
   ``;
 };
 
 /**
  * Function to handle mouse wheel for zooming and panning.
- * @param {*} deltaX : integer deltaX value of the mouse scroll event
- * @param {*} deltaY : integer deltaY value of the mouse scroll event
- * @param {*} mouseX : integer x-coordinates of pointer in pixels relative to the containing element
+ * @param {Number} deltaX : integer deltaX value of the mouse scroll event
+ * @param {Number} deltaY : integer deltaY value of the mouse scroll event
+ * @param {Number} mouseX : integer x-coordinates of pointer in pixels relative to the containing element
  */
 D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var brush = this.state.brush;
@@ -2069,7 +2108,7 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   }
 
   // update chart
-  this.updateChart(scales, compressionIndex, { transitions: false });
+  this.updateChart(scales, compressionIndex);
 };
 
 /**
@@ -2126,9 +2165,7 @@ D3TimeChart.prototype.handleBrushZoom = function () {
       this.state.selection = null;
       // update brush scale
       brush.setScale(naturalXScale);
-      this.updateChart(naturalScale, this.state.data.unzoomedCompressionIndex, {
-        transitions: false,
-      });
+      this.updateChart(naturalScale, this.state.data.unzoomedCompressionIndex);
     } else {
       // Otherwise, update the selection to reflect the new domain and compression level, and update the scale of the brush.
       // compute new compression index to use
@@ -2153,7 +2190,7 @@ D3TimeChart.prototype.handleBrushZoom = function () {
       };
 
       brush.setScale(scales.xScale);
-      this.updateChart(scales, compressionIndex, { transitions: false });
+      this.updateChart(scales, compressionIndex);
     } // if (newLeftExtent === this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains.x[0] && newRightExtent === this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains.x[1])
   } else {
     // handle drag forward (zoom-in)
@@ -2195,11 +2232,6 @@ D3TimeChart.prototype.handleBrushZoom = function () {
 
     // update x-domain to the new domain
 
-    // transition only if stays in same compression level
-    var transitions = this.state.selection
-      ? compressionIndex === this.state.selection.compressionIndex
-      : compressionIndex === this.state.data.unzoomedCompressionIndex;
-
     // update selection
     this.state.selection = {
       domain: extent,
@@ -2214,9 +2246,7 @@ D3TimeChart.prototype.handleBrushZoom = function () {
 
     // update brush scale
     brush.setScale(scales.xScale);
-    // var transitions = compressionIndex === this.state.data.unzoomedCompressionIndex;
-    // turn transition animations off for now; otherwise some weird things happen
-    this.updateChart(scales, compressionIndex, { transitions: false });
+    this.updateChart(scales, compressionIndex);
   }
 };
 
@@ -2246,9 +2276,7 @@ D3TimeChart.prototype.handleDragForwardZoom = function () {
         ].domains.yNeutron,
       });
 
-      this.updateChart(scales, this.state.selection.compressionIndex, {
-        transitions: false,
-      });
+      this.updateChart(scales, this.state.selection.compressionIndex);
     }
   }
 
@@ -2316,7 +2344,7 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
     yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
   });
 
-  this.updateChart(scales, compressionIndex, { transitions: false });
+  this.updateChart(scales, compressionIndex);
 };
 
 /**
@@ -2434,7 +2462,7 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
     yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
   });
 
-  this.updateChart(scales, compressionIndex, { transitions: false });
+  this.updateChart(scales, compressionIndex);
 
   // return new selection and new scale so can later update when drag ends
   return {
@@ -2943,10 +2971,11 @@ D3TimeChart.prototype.setHighlightRegions = function (regions) {
  * Helper for generating major and minor chart tick values based on the initial values from the d3 automatic tick generator, which computes the tick values automatically from the scale used.
  * The reason we rely on the d3 automatic tick generator is because otherwise, very challenging to dynamically generate good tick values. d3 does a better job.
  * This function will divide the ticks generated from the d3 tick generator into minor divisions
- * @param {*} start : starting tick value generated by d3 tick generator
- * @param {*} step : step size between tick values generated by d3 tick generator
- * @param {*} tickCount : number of ticks generated by d3 tick generator
- * @param {*} minorDivisionsCount : number of times to divide original ticks by to form minor ticks. Must be even.
+ * @param {Number} start : starting tick value generated by d3 tick generator
+ * @param {Number} step : step size between tick values generated by d3 tick generator
+ * @param {Number} tickCount : number of ticks generated by d3 tick generator
+ * @param {Number} minorDivisionsCount : number of times to divide original ticks by to form minor ticks. Must be even.
+ * @returns an array of objects containing tick values and flag of whether the tick is major or minor
  */
 D3TimeChart.prototype.generateTicks = function (
   start,
@@ -3000,13 +3029,11 @@ D3TimeChart.prototype.setCompactXAxis = function (compact) {
   this.margin.bottom = compact ? 25 : 50;
 };
 
-// Unimplemented
 D3TimeChart.prototype.setGridX = function (show) {
   this.options.gridx = show;
   //add/remove horizantal grid lines
 };
 
-// Unimplemented
 D3TimeChart.prototype.setGridY = function (show) {
   this.options.gridy = show;
   //add/remove vertical grid lines
