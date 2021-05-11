@@ -189,6 +189,28 @@ width:100%;
 {
 }
 
+.Wt-btn .with-label {
+  font-size: 0.9em;
+  font-weight: bold;
+  vertical-align: middle;
+  border: 1px solid #e1e1e1;
+  color: #FFFFFF;
+  background-color: #888888;
+  border-radius: 5px;
+  height: 23px;
+  white-space: nowrap;
+}
+
+
+.Wt-icon {
+  display: inline-block;
+  padding: 0px 8px;
+  margin-right: 8px;
+  background-repeat: no-repeat;
+  background-position: center left;
+  height: 16px;
+}
+
 /* ------------------------- */
 /* ----    ICON CLASS   ---- */
 /* ------------------------- */
@@ -248,7 +270,7 @@ width:100%;
  */
 .ContentHelpBtn
 {
-  background-image: url('../InterSpec_resources/images/help_minimal.svg');
+  background-image: url('images/help_minimal.svg');
   background-repeat: no-repeat;
   background-position: center;
   height: 16px;
@@ -1025,34 +1047,6 @@ cursor: default;
 }
 
 
-
-
-.CompactFileManager
-{
-  padding-top: 5px;
-  padding-left: 5px;
-  margin-right: -1px;
-  padding-bottom: 3px;
-  overflow-y: hidden;
-}
-
-
-div.CompactSampleWrapper
-{
-  border-color: grey;
-  border-style: ridge;
-  border-width: 1px;
-  padding: 5px;
-  margin-right: 5px;
-}
-
-
-.CompactManagerButtons
-{
-  margin-right: 5px;
-  margin-top: 3px;
-}
-
 .img-centered
 {
   display: block;
@@ -1060,64 +1054,6 @@ div.CompactSampleWrapper
   margin-right: auto;
   text-align: centered;
 }
-
-div.displaySampleDiv  
-{
-  /*Used in the CompactFileManager class*/
-  text-align: center;
-  padding-top: 5px;
-  /*display: block;*/
-  /*margin-left: auto;*/
-  /*margin-right: auto;*/
-}
-
-.displaySampleSelect
-{
-  width: 95%;
-}
-
-.displayPrevSample
-{
-  position: relative;
-  top: 6px;
-  width: 22px;
-  height: 22px;
-  margin-right: 10px;
-}
-
-.displayNextSample
-{
-  position: relative;
-  top: 6px;
-  width: 22px;
-  height: 22px;
-  margin-left: 10px;
-}
-
-.displaySampleInput
-{
-}
-
-
-.CompactInfoTxt
-{
-  color: gray;
-  /*vertical-align: text-bottom;*/
-  /*position: absolute;*/
-  /*bottom: 5px;*/
-}
-
-.CompactSpecTitle
-{
-  text-overflow: ellipsis;
-}
-
-
-.SpecNormTxt
-{
-  width: 5em;
-}
-
 
 
 /*
