@@ -566,10 +566,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   /**
    * Handler for the initiation of a selection gesture.
-   * @param {Object} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
    */
-  var startSelection = (option) => {
-    if (option && option.touch) {
+  var startSelection = () => {
+    if (d3.event instanceof TouchEvent) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
@@ -577,7 +576,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     if (this.escapeKeyPressed) this.escapeKeyPressed = false;
 
     var coords =
-      option && option.touch
+      d3.event instanceof TouchEvent ||
+      d3.event.sourceEvent instanceof TouchEvent
         ? d3.touches(this.rect.node())[0]
         : d3.mouse(this.rect.node());
     // console.log(coords);
@@ -597,19 +597,25 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
     if (
       TOUCH_ANALOGOUS_RIGHTCLICK ||
-      (d3.event.sourceEvent && d3.event.sourceEvent.button == 2)
+      (d3.event.type == "dragstart" &&
+        d3.event.sourceEvent instanceof MouseEvent &&
+        d3.event.sourceEvent.button == 2)
     ) {
       this.highlightModifier = "rightClick";
       this.mouseDownHighlight(coords[0], "rightClick");
     } else if (
       TOUCH_ANALOGOUS_ALTKEY ||
-      (d3.event.sourceEvent && d3.event.sourceEvent.altKey)
+      (d3.event.type == "dragstart" &&
+        d3.event.sourceEvent instanceof MouseEvent &&
+        d3.event.sourceEvent.altKey)
     ) {
       this.highlightModifier = "altKey";
       this.mouseDownHighlight(coords[0], "altKey");
     } else if (
       TOUCH_ANALOGOUS_CTRLCLICK ||
-      (d3.event.sourceEvent && d3.event.sourceEvent.ctrlKey)
+      (d3.event.type == "dragstart" &&
+        d3.event.sourceEvent instanceof MouseEvent &&
+        d3.event.sourceEvent.ctrlKey)
     ) {
       this.highlightModifier = "ctrlKey";
       this.mouseDownHighlight(coords[0], "ctrlKey");
@@ -621,17 +627,17 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   /**
    * Handler for the progression of a selection gesture.
-   * @param {Object} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
    */
-  var moveSelection = (option) => {
-    if (option && option.touch) {
+  var moveSelection = () => {
+    if (d3.event instanceof TouchEvent) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
 
     if (!this.escapeKeyPressed) {
       var coords =
-        option && option.touch
+        d3.event instanceof TouchEvent ||
+        d3.event.sourceEvent instanceof TouchEvent
           ? d3.touches(this.rect.node())[0]
           : d3.mouse(this.rect.node());
       brush.setEnd(coords[0]);
@@ -663,16 +669,14 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   /**
    * Handler for the termination of a selection gesture.
-   * @param {Object} option: optional argument to specify handling of exceptional behavior (e.g. touch handling)
    */
 
-  var endSelection = (option) => {
+  var endSelection = () => {
+    if (d3.event instanceof TouchEvent) {
+      d3.event.preventDefault();
+      d3.event.stopPropagation();
+    }
     if (brush.extent() != null) {
-      if (option && option.touch) {
-        d3.event.preventDefault();
-        d3.event.stopPropagation();
-      }
-
       if (this.escapeKeyPressed) {
         // clear selections and reset escape key
         brush.clear();
@@ -721,6 +725,12 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     this.shiftKeyHeld = false;
   };
 
+  // touch drag behavior
+  this.rect
+    .on("touchstart", startSelection)
+    .on("touchmove", moveSelection)
+    .on("touchend", endSelection);
+
   // mouse drag behavior
   var selectionDrag = d3.behavior
     .drag()
@@ -728,12 +738,6 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     .on("drag", moveSelection)
     .on("dragend", endSelection);
   this.rect.call(selectionDrag);
-
-  // touch drag behavior
-  this.rect
-    .on("touchstart", () => startSelection({ touch: true }))
-    .on("touchmove", () => moveSelection({ touch: true }))
-    .on("touchend", () => endSelection({ touch: true }));
 
   // pan drag behavior
   // initialize new variables for holding new selection and scales from panning
@@ -3031,11 +3035,13 @@ D3TimeChart.prototype.setCompactXAxis = function (compact) {
 
 D3TimeChart.prototype.setGridX = function (show) {
   this.options.gridx = show;
+  this.reinitializeChart();
   //add/remove horizantal grid lines
 };
 
 D3TimeChart.prototype.setGridY = function (show) {
   this.options.gridy = show;
+  this.reinitializeChart();
   //add/remove vertical grid lines
 };
 
