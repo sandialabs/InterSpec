@@ -8299,7 +8299,7 @@ void InterSpec::timeChartDragged( const int sample_start_in, const int sample_en
   if( measurment(type) != m_dataMeasurement )
   {
     if( action != ActionType::RemoveSamples )
-      setSpectrum( m_dataMeasurement, interaction_samples, type, false );
+      setSpectrum( m_dataMeasurement, interaction_samples, type, 0 );
     return;
   }//if( the action isnt for the foreground )
   
