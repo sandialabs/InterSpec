@@ -1233,7 +1233,13 @@ bool check_magic_number( const uint8_t (&magic_num)[N], const uint8_t (&data)[M]
 bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                                              const std::string &fileLocation )
 {
-  ifstream infile( fileLocation.c_str(), ios_base::binary|ios_base::in );
+#ifdef _WIN32
+  const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(fileLocation);
+  std::ifstream infile( wpathstr.c_str(), ios::in | ios::binary );
+#else
+  std::ifstream infile( fileLocation.c_str(), ios::in | ios::binary );
+#endif
+  
   if( !infile )
     return false;
  
@@ -1317,7 +1323,9 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                             "If you believe this to be a legitimate spectrum file, please email it to <a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a> to support this file type." );
       stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       t->setTextAlignment( Wt::AlignCenter );
-#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+      dialog->show();
+#else
       w->show();
 #endif
       return true;
@@ -1370,6 +1378,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const bool ispng = check_magic_number( data, png_mn );
   const bool isbmp = check_magic_number( data, bmp_mn );
   const bool issvg = header_contains( "<svg" );
+  
+  // Wt::Utils::guessImageMimeTypeData(<#const std::vector<unsigned char> &header#>)
   
   if( iszip )
   {
@@ -1443,7 +1453,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       else if( ispng ) mimetype = "image/png";
       else if( isbmp ) mimetype = "image/bmp";
       else if( issvg ) mimetype = "image/svg+xml";
-      
     
       std::unique_ptr<WImage> image( new WImage() );
       WMemoryResource *resource = new WMemoryResource( mimetype, image.get() );
@@ -1560,25 +1569,13 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
     return;
 #endif
   
-  std::shared_ptr< SpectraFileHeader > header;
-  std::shared_ptr< SpecMeas >   measurement;
-
-  WApplication *app = WApplication::instance();
-  std::unique_ptr< WApplication::UpdateLock > lock;
-  
-  //Should maybe consider posting to the WServer if we arent in the event loop.
-  //WServer::instance()->post( appid, boost::bind( &SpecMeasManager::handleFileDrop, this, name, spoolName, type ) );
-  
-  if( !app )
-    app = dynamic_cast<WApplication *>( m_viewer->parent() );
-  
-  // If the file was uploaded using a POST request to a WResource, then we have to notify
-  // WApplication that we have changed things.
-  if( app )
-    lock.reset( new WApplication::UpdateLock( app ) );
+  assert( WApplication::instance() );
   
   try
   {
+    std::shared_ptr<SpecMeas> measurement;
+    std::shared_ptr<SpectraFileHeader> header;
+    
     const int modelRow = setFile( name, spoolName, header, measurement );
 
     displayFile( modelRow, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
@@ -1591,9 +1588,6 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
       displayInvalidFileMsg(name,e.what());
     }
   }
-  
-  if( app )
-    app->triggerUpdate();
 }//handleFileDrop(...)
 
 void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string errormsg )
@@ -1753,9 +1747,7 @@ std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
 
 void SpecMeasManager::unDisplay( SpecUtils::SpectrumType type )
 {
-  std::set<int> displaySampleNums;
-  std::shared_ptr<SpecMeas> meas;
-  m_viewer->setSpectrum( meas, displaySampleNums, type, false );
+  m_viewer->setSpectrum( nullptr, {}, type, 0 );
   selectionChanged(); // update buttons
 } // void SpecMeasManager::unDisplay( SpecUtils::SpectrumType type );
 
@@ -1779,7 +1771,14 @@ void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
   std::shared_ptr<SpecMeas> meas = header ? header->parseFile() : nullptr;
   const set<int> displaySampleNums = selectedSampleNumbers();
 
-  m_viewer->setSpectrum( meas, displaySampleNums, type, doPreviousEnergyRangeCheck );
+  WFlags<InterSpec::SetSpectrumOptions> options;
+  if( doPreviousEnergyRangeCheck )
+  {
+    options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
+    options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+  }
+  
+  m_viewer->setSpectrum( meas, displaySampleNums, type, options );
 
   addToTempSpectrumInfoCache( meas );
 
@@ -2080,7 +2079,11 @@ void SpecMeasManager::displayFile( int row,
   
   if( row < 0 && !measement_ptr )
   {
-    m_viewer->setSpectrum( measement_ptr, std::set<int>(), type, true );
+    WFlags<InterSpec::SetSpectrumOptions> options;
+    options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
+    options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+    
+    m_viewer->setSpectrum( measement_ptr, std::set<int>(), type, options );
 
     if( old_meas.use_count() == 1 )
       serializeToTempFile( old_meas );
@@ -2389,9 +2392,15 @@ void SpecMeasManager::displayFile( int row,
 
   if( background_sample_numbers.size() )
   {
-    m_viewer->setSpectrum( measement_ptr,
-                                   background_sample_numbers,
-                                   SpecUtils::SpectrumType::Background, doPreviousEnergyRangeCheck );
+    WFlags<InterSpec::SetSpectrumOptions> options;
+    if( doPreviousEnergyRangeCheck )
+    {
+      options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
+      options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+    }
+    
+    m_viewer->setSpectrum( measement_ptr, background_sample_numbers,
+                           SpecUtils::SpectrumType::Background, options );
   }//if( backgroundIndexs.size() )
   
 #if( USE_DB_TO_STORE_SPECTRA )

@@ -57,6 +57,7 @@ namespace
 // Returns map from detector name, to first energy calibration found for it.
 //  Note that this doesnt account for energy calibration possibly being different for a detector for
 //  different sample numbers
+// TODO: should say currently displayed sample number, wo we can get energy calibration of current sample number
 map<string,shared_ptr<const EnergyCalibration>> gamma_names_to_cals( shared_ptr<const SpecMeas> meas )
 {
   map<string,shared_ptr<const EnergyCalibration>> gamma_cals;
@@ -320,10 +321,10 @@ bool EnergyCalPreserveWindow::candidate( std::shared_ptr<SpecMeas> newmeas,
   
   // Check if every detector in 'newmeas' with a calibration, also has a calibration in 'oldmeas'
   //  and the number of channels match
-  const auto new_cals = gamma_names_to_cals( newmeas );
+  const auto new_cals = gamma_names_to_cals( newmeas ); // TODO: should say currently displayed sample number, wo we can get energy calibration of current sample number
   const auto old_cals = gamma_names_to_cals( oldmeas );
   
-  if( new_cals.empty() || old_cals.empty() )
+  if( new_cals.empty() || old_cals.empty() || (new_cals.size() != old_cals.size()) )
     return false;
   
   bool allCalsMatch = true;

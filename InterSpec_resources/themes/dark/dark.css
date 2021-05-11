@@ -7,7 +7,7 @@ h1 {
   color: white;
 }
 
-select, .displaySampleSelect {
+select {
   color: white !important;
   background: rgb(86,88,90) !important;
 }

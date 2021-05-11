@@ -19,25 +19,24 @@ table.PeakSelectorTable th
   margin-right: 3px;
 }
 
-.KeepPeakCell{
-  width: 9.5em;
+table.PeakSelectorTable td.KeepPeakCell{
   vertical-align: middle;
   padding-left: 5px;
 }
 
-.PeakEnergyCell{
+table.PeakSelectorTable td.PeakEnergyCell{
   vertical-align: middle;
   padding-left: 10px;
   padding-right: 10px;
 }
 
-.OrigNucCell{
+table.PeakSelectorTable td.OrigNucCell{
   vertical-align: middle;
   padding-left: 5px;
   padding-right: 5px;
 }
 
-.NewNucCell{
+table.PeakSelectorTable td.NewNucCell{
   vertical-align: middle;
   padding-left: 3px;
   padding-right: 3px;

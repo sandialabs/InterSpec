@@ -3369,26 +3369,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
     
     
-#if( PERFORM_DEVELOPER_CHECKS )
-    if( foreground )
-    {
-      for( const int sample : foregroundNums )
-      {
-        if( !foreground->sample_numbers().count(sample) )
-        {
-          log_developer_error( __func__, ("While loading state found foreground sample not in SpecFile: " + std::to_string(sample)).c_str() );
-        }
-      }
-    }//if( foreground )
-#endif
-    
-    
-    setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, false );
+    setSpectrum( foreground, foregroundNums, SpecUtils::SpectrumType::Foreground, 0 );
     if( foreground )
     {
       //If we dont have a foreground, we probably shouldnt be loading the state, but...
-      setSpectrum( background, backgroundNums, SpecUtils::SpectrumType::Background, false );
-      setSpectrum( second, secondNums, SpecUtils::SpectrumType::SecondForeground, false );
+      setSpectrum( background, backgroundNums, SpecUtils::SpectrumType::Background, 0 );
+      setSpectrum( second, secondNums, SpecUtils::SpectrumType::SecondForeground, 0 );
     }
     
     //Load the other spectra the user had opened.  Note that they were not
@@ -4604,8 +4590,8 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     
     
     std::shared_ptr<SpecMeas> dummy;
-    setSpectrum( dummy, {}, SpecUtils::SpectrumType::Background, false );
-    setSpectrum( dummy, {}, SpecUtils::SpectrumType::SecondForeground, false );
+    setSpectrum( dummy, {}, SpecUtils::SpectrumType::Background, 0 );
+    setSpectrum( dummy, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
     
     string filename = meas->filename();
     if( name && name->value_size() )
@@ -4617,10 +4603,10 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     const std::set<int> &dispsamples = meas->displayedSampleNumbers();
     
     
-    setSpectrum( meas, meas->displayedSampleNumbers(), SpecUtils::SpectrumType::Foreground, false );
+    setSpectrum( meas, meas->displayedSampleNumbers(), SpecUtils::SpectrumType::Foreground, 0 );
     
     if( backgroundsamplenums.size() )
-      setSpectrum( meas, backgroundsamplenums, SpecUtils::SpectrumType::Background, false );
+      setSpectrum( meas, backgroundsamplenums, SpecUtils::SpectrumType::Background, 0 );
     
     const xml_node<char> *sourcefit = InterSpecNode->first_node( "ShieldingSourceFit" );
     if( sourcefit )
@@ -6427,41 +6413,60 @@ void InterSpec::startHardBackgroundSub()
   " spectrum.</p>"
   "<p>A &quot;hard background subtraction&quot; creates a modified foreground by doing a bin-by-bin"
   " subtraction of the background from the foreground.</p>"
-  "<p>Side effects of doing a hard background subtraction include:"
+  "Side effects of doing a hard background subtraction include:"
   "<ul style=\"list-style-type: square; margin-top: 4px;\">"  //list-style-type: none;
     "<li>Variances, i.e. the statistical uncertainty of each channel, will no longer be correct.</li>"
     "<li>Small energy calibration differences between spectra may create artificial features in the data.</li>"
     "<li>If a peak in the foreground overlaps with a peak in the background, the statistical"
          " uncertainty of fit foreground peaks will no longer be correct</li>"
-    "<li>Non-integer channel counts if energy calibrations are not identical, or background is scaled.</li>"
   "</ul>"
   "The primary reasons to choose a hard background subtraction over normal display background subtraction are:"
   "<ul style=\"list-style-type: square; margin-top: 4px;\">"
-    "<li>You dont like the artifacts the display background subtraction makes on the fit peaks continuum.</li>"
-    "<li>It isnt worth fitting peaks in the background so the <b>Activity Shielding Fit</b> tool"
-         " can subtract off contributions from background peaks.</li>"
-    "<li>You are giving the resulting spectrum to someone who doesnt know or care about the"
-         " subtleties this causes.</li>"
+    "<li>Avoiding artifacts on fit peak continuums.</li>"
+    "<li>To simplify background peak subtraction in the <b>Activity/Shielding Fit</b> tool.</li>"
+    "<li>You dont care about subtleties this causes (which in practice are minimal).</li>"
   "</ul>"
-  "</p>"
   "</div>"
-  "<br />"
   "<br />"
   "<div style=\"text-align: center;\"><b><em>Would you like to proceed?</em></b></div>"
   ;
 
+  
   SimpleDialog *dialog = new SimpleDialog( "Perform Hard Background Subtract?", msg );
+  
+  auto truncate_neg = make_shared<bool>(false);
+  auto round_counts = make_shared<bool>(false);
+  
+  WContainerWidget *optionsDiv = new WContainerWidget( dialog->contents() );
+  optionsDiv->setPadding( 40, Wt::Side::Left );
+  optionsDiv->setPadding( 20, Wt::Side::Bottom );
+  
+  WCheckBox *cb = new WCheckBox( "Truncate negative bins at zero", optionsDiv );
+  cb->setInline( false );
+  cb->checked().connect( std::bind([=](){ *truncate_neg = true; } ) );
+  cb->unChecked().connect( std::bind([=](){ *truncate_neg = false; } ) );
+  
+  cb = new WCheckBox( "Round channel counts to nearest integer", optionsDiv );
+  cb->setInline( false );
+  cb->checked().connect( std::bind([=](){ *round_counts = true; } ) );
+  cb->unChecked().connect( std::bind([=](){ *round_counts = false; } ) );
+  
+  
   WPushButton *button = dialog->addButton( "Yes" );
-  button->clicked().connect( this, &InterSpec::finishHardBackgroundSub );
+  button->setFocus();
+  button->clicked().connect( boost::bind( &InterSpec::finishHardBackgroundSub, this, truncate_neg, round_counts ) );
   dialog->addButton( "No" );  //dont need to hook this to anything
 }//void startHardBackgroundSub()
 
 
-void InterSpec::finishHardBackgroundSub()
+void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std::shared_ptr<bool> round_counts )
 {
   const auto foreground = m_spectrum->data();
   const auto background = m_spectrum->background();
   const float sf = m_spectrum->displayScaleFactor(SpecUtils::SpectrumType::Background);
+  
+  const bool no_neg = truncate_neg ? *truncate_neg : false;
+  const bool do_round = round_counts ? *round_counts : false;
   
   if( !foreground
      || !background
@@ -6509,7 +6514,16 @@ void InterSpec::finishHardBackgroundSub()
     
     // Do the actual background subtraction
     for( size_t i = 0; i < nchann; ++i )
-    (*back_sub_counts)[i] -= sf*(*back_counts)[i];
+    {
+      float &val = (*back_sub_counts)[i];
+      val -= sf*(*back_counts)[i];
+      
+      if( no_neg )
+        val = std::max( 0.0f, val );
+      
+      if( do_round )
+        val = std::round( val );
+    }//for( size_t i = 0; i < nchann; ++i )
     
     // Create a new Measurement object, based on the old foreground
     auto newspec = make_shared<SpecUtils::Measurement>( *foreground );
@@ -6569,7 +6583,7 @@ void InterSpec::finishHardBackgroundSub()
     }//if( we need to refit peaks )
     
     // Get rid of the previously displayed background if there was one
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, false );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
     
     
     auto header = m_fileManager->addFile( newmeas->filename(), newmeas );
@@ -7328,9 +7342,12 @@ void InterSpec::displayOnlySamplesWithinView( GoogleMap *map,
   
   
   if( (fromSamples!=targetSamples) || targetSamples!=SpecUtils::SpectrumType::Foreground )
-    setSpectrum( meass, sample_numbers, targetSamples, true );
-  else
+  {
+    setSpectrum( meass, sample_numbers, targetSamples, SetSpectrumOptions::CheckToPreservePreviousEnergyCal );
+  }else
+  {
     changeDisplayedSampleNums( sample_numbers, targetSamples );
+  }
 }//displayOnlySamplesWithinView(...)
 
 
@@ -7711,11 +7728,7 @@ void InterSpec::showDetectorEditWindow()
 
 void InterSpec::showCompactFileManagerWindow()
 {
-  const CompactFileManager::DisplayMode cfmMode
-                                 = isMobile() ? CompactFileManager::Tabbed
-                                              : CompactFileManager::TopToBottom;
-  CompactFileManager *compact
-                       = new CompactFileManager( m_fileManager, this, cfmMode );
+ auto *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::Tabbed );
 
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
@@ -8328,7 +8341,7 @@ void InterSpec::sampleNumbersToDisplayAddded( const double t0,
   
   if( meas != m_dataMeasurement )
   {
-    setSpectrum( m_dataMeasurement, newSampleNums, type, false );
+    setSpectrum( m_dataMeasurement, newSampleNums, type, 0 );
   }else
   {
     //if newSampleNums is entirely in sampleNums, then we will remove them
@@ -8370,7 +8383,7 @@ void InterSpec::changeTimeRange( const double t0, const double t1,
   const set<int> sampleNums = timeRangeToSampleNumbers( t0, t1 );
   
   if( meas != m_dataMeasurement )
-    setSpectrum( m_dataMeasurement, sampleNums, type, false );
+    setSpectrum( m_dataMeasurement, sampleNums, type, 0 );
   else
     changeDisplayedSampleNums( sampleNums, type );
   
@@ -8634,9 +8647,9 @@ void InterSpec::doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
 
 
 void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
-                                    std::set<int> sample_numbers,
-                                  const SpecUtils::SpectrumType spec_type,
-                                  const bool checkForPrevioudEnergyCalib )
+                             std::set<int> sample_numbers,
+                             const SpecUtils::SpectrumType spec_type,
+                             const Wt::WFlags<SetSpectrumOptions> options )
 {
   const int spectypeindex = static_cast<int>( spec_type );
   
@@ -8689,9 +8702,12 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
-  if( !!meas && isMobile() && !toolTabsVisible() /* && checkForPrevioudEnergyCalib */
+  if( !!meas && isMobile() && !toolTabsVisible()
+      /* && options.testFlag(SetSpectrumOptions::CheckToPreservePreviousEnergyCal) */
       && m_referencePhotopeakLines  && (spec_type == SpecUtils::SpectrumType::Foreground) )
+  {
     m_referencePhotopeakLines->clearAllLines();
+  }
   
   string msg;
   switch( spec_type )
@@ -8933,7 +8949,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   const bool askToPropigatePeaks
           = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
-  if( askToPropigatePeaks && checkForPrevioudEnergyCalib
+  if( askToPropigatePeaks
+     && options.testFlag(InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
      && !sameSpec && meas && m_dataMeasurement && previous && m_spectrum->data()
      && spec_type==SpecUtils::SpectrumType::Foreground
      && previous->instrument_id()==meas->instrument_id()
@@ -8969,7 +8986,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   deleteEnergyCalPreserveWindow();
   
-  if( checkForPrevioudEnergyCalib && !sameSpec && m_energyCalTool && !!meas && !!m_dataMeasurement )
+  if( options.testFlag(SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
+      && !sameSpec && m_energyCalTool && !!meas && !!m_dataMeasurement )
   {
     switch( spec_type )
     {
@@ -9123,14 +9141,39 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//if( meas && !sameSpec )
   
   // Check if there are RIID analysis results in the file, and if so let the user know.
-  if( meas && !sameSpec && meas->detectors_analysis() )
+  if( !sameSpec && meas && meas->detectors_analysis()
+     && options.testFlag(SetSpectrumOptions::CheckForRiidResults) )
   {
+    auto ana = meas->detectors_analysis();
+    
+    // We'll show the analysis results for the foreground, no matter what if its not-empty (e.g., it
+    //  might only have algorithm version information).  But for background and second foreground,
+    //  we'll only show if there is an identified nuclide - perhaps we shouldnt ever show for the
+    //  background/secondary.
+    bool worthShowing = true;
+    switch( spec_type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        worthShowing = ana->is_empty();
+        break;
+        
+      case SpecUtils::SpectrumType::SecondForeground:
+      case SpecUtils::SpectrumType::Background:
+        worthShowing = false;
+        for( const auto &r : ana->results_ )
+          worthShowing = (worthShowing || !r.nuclide_.empty());
+        break;
+    }//switch( spec_type )
+    
+    // Also, only show popup if we are only using this file for this display type.
+    //  Note though that if someone loads a file as a background, then changes it to a foreground,
+    //  they wont get the RIID notification popup
     const int nusedfor = static_cast<int>( meas == m_dataMeasurement )
                          + static_cast<int>( meas == m_backgroundMeasurement )
                          + static_cast<int>( meas == m_secondDataMeasurement );
     
     // Only show notification when we arent already showing the file
-    if( nusedfor == 1 )
+    if( worthShowing && (nusedfor == 1) )
     {
       const std::string type = SpecUtils::descriptionText(spec_type);
       WStringStream js;
@@ -9145,8 +9188,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
          "<span class=\"clearsessiontxt\">Show full RIID results</span></div>";
       
       WarningWidget::displayPopupMessageUnsafe( js.str(), WarningWidget::WarningMsgShowRiid, 20000 );
-      
-      
     }//if( nusedfor == 1 )
   }//if( meas && !sameSpec )
   
@@ -9242,7 +9283,7 @@ void InterSpec::reloadCurrentSpectrum( SpecUtils::SpectrumType spec_type )
     break;
   }//switch( spec_type )
 
-  setSpectrum( meas, sample_numbers, spec_type, false );
+  setSpectrum( meas, sample_numbers, spec_type, 0 );
 }//void reloadCurrentSpectrum( SpecUtils::SpectrumType spec_type )
 
 

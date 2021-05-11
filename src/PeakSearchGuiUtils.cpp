@@ -459,14 +459,16 @@ public:
     if( keepPeakIndex >= 0 )
     {
       cell = m_table->elementAt(0,keepPeakIndex);
-      txt = new WText( "Keep Peak?", cell );
+      // We will add in some space so the "Keep Peak" text will have enough room to be next to the
+      //  actual check box, and they wont be on separate lines.
+      txt = new WText( "Keep Peak?&nbsp;&nbsp;&nbsp;&nbsp;", cell );
       txt->setWordWrap( false );
     }
     
     if( peakEnergyIndex >= 0 )
     {
       cell = m_table->elementAt(0,peakEnergyIndex);
-      txt = new WText( "Peak Energy, FWHM", cell );
+      txt = new WText( "Energy, FWHM", cell );
     }
     
     if( origColumnIndex >= 0 )

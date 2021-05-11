@@ -243,6 +243,19 @@ public:
                                            std::shared_ptr<SpectraFileHeader> header,
                                            const SpecUtils::SpectrumType type );
 
+  // Options for setting the spectrum.
+  //  E.g., what we should potentially prompt the user for.  Like if were opening up a spectrum file
+  //    that belongs to the same detector as previous, then should we ask if the old energy
+  //    calibration should be preserved.  However a lot of the times we're calling #setSpectrum, we
+  //    know we shouldnt bug the user, so we dont want these things checked.
+  enum SetSpectrumOptions
+  {
+    CheckToPreservePreviousEnergyCal = 0x01,
+    CheckForRiidResults = 0x02
+    
+    // TODO: it seems both these options are the same everywhere - maybe go back and just use a bool
+  };//SetSpectrumOptions
+  
   
   //setSpectrum(...) is intended to be the only place m_dataMeasurement,
   //  m_secondDataMeasurement, or m_backgroundMeasurement are set.
@@ -262,7 +275,7 @@ public:
   void setSpectrum( std::shared_ptr<SpecMeas> meas,
                     std::set<int> sample_numbers,
                     const SpecUtils::SpectrumType spec_type,
-                    const bool checkForPrevioudEnergyCalib );
+                    const Wt::WFlags<SetSpectrumOptions> options = 0 );
 
   //reloadCurrentSpectrum(...): reloads the specified spectrum.  This function
   //  is useful when you change teh SpecMeas object (e.x. live or real time),
@@ -1021,7 +1034,7 @@ public:
    channel basis, with the resulting spectrum now having incorrect variances.
    */
   void startHardBackgroundSub();
-  void finishHardBackgroundSub();
+  void finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std::shared_ptr<bool> round_counts );
   
 #if( USE_SPECTRUM_CHART_D3 )
   void setXAxisSlider( bool show );

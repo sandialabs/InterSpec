@@ -1,0 +1,11 @@
+--- build.sh.orig	2021-04-11 22:49:17.000000000 -0700
++++ build.sh	2021-04-11 22:49:39.000000000 -0700
+@@ -154,7 +154,7 @@
+     ;;
+ 
+     darwin)
+-    BOOST_JAM_CC=cc
++    BOOST_JAM_CC="cc -Wno-error-implicit-function-declaration"
+     ;;
+ 
+     intel-darwin)
