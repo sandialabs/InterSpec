@@ -1,0 +1,36 @@
+.axis path,
+.axis line {
+    fill: none;
+    stroke: rgb(0,0,0);
+}
+
+.axis text {
+    font-family: sans-serif;
+    font-size: 0.9em;
+    font-weight: lighter;
+    stroke: rgb(0,0,0)
+}
+
+.axis_label {
+    stroke: rgb(0,0,0)
+
+}
+
+.grid path {
+    fill: none;
+}
+
+.interaction_area .selection {
+    fill-opacity: .125;
+    shape-rendering: crispEdges;
+}
+
+#hover_info {
+    padding: 10px;
+    border-radius: 5px;
+    background-color: rgba(245, 245, 245, 0.5);
+    pointer-events: none;
+    position: absolute;
+    font-size: 11px;
+
+}
