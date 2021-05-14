@@ -666,11 +666,28 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_mobileForwardButton->setZIndex( 8388635 );
     m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, SpecUtils::SpectrumType::Foreground, true) );
     m_mobileForwardButton->setHidden(true);
-  }else
+  }else  //if( isMobile() )
   {
     m_menuDiv = new WContainerWidget();
-#if( USE_ELECTRON_HTML_MENU )
-    if( InterSpecApp::isPrimaryWindowInstance() )
+
+#if( BUILD_AS_ELECTRON_APP )
+  #if( USE_ELECTRON_NATIVE_MENU )
+      const bool isAppTitlebar = false;
+  #else
+      const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
+  #endif
+#else
+    const bool isAppTitlebar = false;
+#endif
+    
+    if( !isAppTitlebar )
+    {
+      menuWidget = m_menuDiv;
+      m_menuDiv->addStyleClass( "WebMenuBar" );
+      
+      WImage *snlLogo = new WImage( "InterSpec_resources/images/SNL_Stacked_Black_Blue_tiny.png", m_menuDiv );
+      snlLogo->addStyleClass("SnlWebMenuBarLogo");
+    }else
     {
       app->useStyleSheet( "InterSpec_resources/ElectronHtmlMenu.css" );
       m_menuDiv->addStyleClass( "elec-titlebar cet-windows" );
@@ -744,22 +761,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
                                       );//menujs
       
       doJavaScript( menujs );
-    }else //if( InterSpecApp::isPrimaryWindowInstance() )
-    {
-      m_menuDiv->addStyleClass( "TopMenuDiv" );
-      menuWidget = m_menuDiv;
-    }//if( InterSpecApp::isPrimaryWindowInstance() )
-#else //BUILD_AS_ELECTRON_APP
-    m_menuDiv->addStyleClass( "TopMenuDiv" );
-    menuWidget = m_menuDiv;
 #endif //BUILD_AS_ELECTRON_APP
-    
-#else  //USE_ELECTRON_HTML_MENU
-    m_menuDiv->addStyleClass( "TopMenuDiv" );
-    menuWidget = m_menuDiv;
-#endif
+    }//if( !isAppTitlebar ) / else
   }//if( isMobile() ) / else
-  
+
   addFileMenu( menuWidget, isMobile()  );
   addDisplayMenu( menuWidget );
   
@@ -772,16 +777,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   indicator->addStyleClass( "LoadingIndicator" );
   app->setLoadingIndicator( indicator );
    
-#if( !USE_ELECTRON_HTML_MENU )
-  if( m_menuDiv )
-  {
-    WImage *snlLogo = new WImage( "InterSpec_resources/images/SNL_Stacked_Black_Blue_tiny.png", m_menuDiv );
-    snlLogo->addStyleClass("URLogo");
-    m_menuDiv->setStyleClass( "UpperMenuDivWithLogos" );
-    snlLogo->setFloatSide( Right );
-  }//if( m_menuDiv )
-#endif //!USE_ELECTRON_HTML_MENU
-  
+
   m_layout = new WGridLayout();
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setHorizontalSpacing( 0 );
@@ -2792,7 +2788,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->snapshotTagParent || forTesting)
         || (dbforeground && dbforeground->isWriteProtected()) )
     {
-      dbforeground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbforeground, true );
+      dbforeground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbforeground, *m_sql, true );
       if( dbforeground && !(entry->snapshotTagParent || forTesting) )
         UserFileInDb::removeWriteProtection( dbforeground );
     }
@@ -2802,7 +2798,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
          && !dbsecond->isWriteProtected()
          && (foreground != second) )
     {
-      dbsecond = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbsecond, true );
+      dbsecond = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbsecond, *m_sql, true );
       if( dbsecond && !(entry->snapshotTagParent || forTesting) )
         UserFileInDb::removeWriteProtection( dbsecond );
     }else if( foreground == second )
@@ -2814,7 +2810,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         && (background != foreground)
         && (background != second))
     {
-      dbbackground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbbackground, true );
+      dbbackground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbbackground, *m_sql, true );
       if( dbbackground && !(entry->snapshotTagParent || forTesting) )
         UserFileInDb::removeWriteProtection( dbbackground );
     }else if( background == foreground )
@@ -3332,7 +3328,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           background = snapbackground;
         }else if( snapbackground && dbbackground )
         {
-          dbbackground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbbackground, true );
+          dbbackground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbbackground, *m_sql, true );
           if( dbbackground )
             UserFileInDb::removeWriteProtection( dbbackground );
           m_fileManager->setDbEntry( dbbackground, backgroundheader, background, 0);
@@ -3348,7 +3344,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           second = snapsecond;
         }else if( snapsecond && dbsecond )
         {
-          dbsecond = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbsecond, true );
+          dbsecond = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbsecond, *m_sql, true );
           if( dbsecond )
             UserFileInDb::removeWriteProtection( dbsecond );
           m_fileManager->setDbEntry( dbsecond, secondheader, second, 0);
@@ -6203,8 +6199,6 @@ void InterSpec::addDisplayMenu( WWidget *parent )
     auto saveitem = m_displayOptionsPopupDiv->addMenuItem( "Save Spectrum as PNG" );
     saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true ) );
 #endif  //USE_SPECTRUM_CHART_D3 / else
-    
-    chartmenu->addSeparator();
   }//if( overlay )
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
@@ -6884,9 +6878,9 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   
 	item = subPopup->addMenuItem("Color Themes...");
 	item->triggered().connect(boost::bind(&InterSpec::showColorThemeWindow, this));
-	subPopup->addSeparator();
 
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
+  subPopup->addSeparator();
   WCheckBox *promptOnLoad = new WCheckBox( "Prompt to load prev state" );
   item = subPopup->addWidget( promptOnLoad );
   const char *prompttext = "At application start, ask to load previous state.";

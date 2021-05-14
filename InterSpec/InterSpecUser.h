@@ -540,6 +540,7 @@ public:
   //  ShieldingSourceModels which arent write proteced.
   static Wt::Dbo::ptr<UserFileInDb> makeDeepWriteProtectedCopyInDatabase(
                                             Wt::Dbo::ptr<UserFileInDb> orig,
+                                            DataBaseUtils::DbSession &session,
                                             bool isSaveState );
   
   

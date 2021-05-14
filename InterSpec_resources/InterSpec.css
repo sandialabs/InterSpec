@@ -330,22 +330,6 @@ width:100%;
 }
 
 
-
-.PopupDivMenu
-{
-  background-color: #FAFAFA;
-  border: solid 1px #e1e1e1;
-  max-height: 90%;
-  overflow-y: auto;
-}
-
-
-.PopupDivMenuItem-disabled
-{
-background: none;
-color: #D2D2D2;
-}
-
 .NeutDetCbItem
 {
   color: blue;
@@ -813,10 +797,11 @@ h1
 -webkit-margin-end: 0px;
 }
 
-/*table*/
-/*{*/
-/*  border-spacing: 0;*/
-/*}*/
+.Wt-tableview .Wt-spacer
+{
+  /* background: white;*/
+}
+
 
 .HideSpinners .HideSpinners
 {
@@ -854,61 +839,12 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
 }
 
 
-div.TopMenuDiv
+/* The WebMenuBar CSS class is added to the title bar, for browser-based desktop app sessions (e.g.,
+ not added for electron builds that use HTML menus)
+ */
+.WebMenuBar
 {
-/*  padding-bottom: 0.2em;*/
-  border-bottom: 1px solid grey;
-  padding-top: 0px;
-}
-
-
-span.MenuLabel
-{
-/*  border: 1px solid blue; */
-padding-left: 1.0ex;
-padding-right: 1.0ex;
-}
-
-span.MenuLabelSelected
-{
-  color: white;
-  background: grey;
-}
-
-.Wt-tableview .Wt-spacer 
-{
-/* background: white;*/
-}
-
-
-.URLogo
-{
-    padding-top: 3px;
-    padding-right: 8px;
-}
-
-
-.PopupMenuParentButton, .PopupMenuParentButton:hover
-{
-  height: 23px; /*leave 1 px for UpperMenuDivWithLogos lower border */
-  padding: 4px 8px 3px 8px;
-  margin:0px 0px;
-  font-weight:normal;
-  background: #FFFFFF; color: black;
-  border: none;
-  -moz-border-radius: 0px;
-  -webkit-border-radius: 0px;
-  border-radius: 0px;
-  
-  -moz-box-shadow: none !important;
-  -webkit-box-shadow: none !important;
-  box-shadow: none !important;
-  outline: none;
-
-}
-
-.UpperMenuDivWithLogos
-{
+  padding-left: 8px;
   height: 24px;  /*pics are 18px with 3px top padding*/
   font-size: 15px;
   padding-top: 0px;
@@ -916,12 +852,101 @@ span.MenuLabelSelected
   background: #FFF;
 }
 
+/* This is the SNL logo that is placed on the right-hand side of the title bar on desktop browser-based sessions. */
+.SnlWebMenuBarLogo
+{
+  padding-top: 3px;
+  padding-right: 8px;
+  float: right;
+}
 
-/*.PopupMenuParentButton:hover{background: #E6E6E6;}*/
+
+
+/* The PopupDivMenu or PopupDivMenuPhone CSS class is added to the actual popup div that holds the
+   menu items for all instances of the C++ PopupDivMenu class.  
+ 
+ AppMenu CSS class is added to the same popup divs, but only for the app-level menus (i.e. "InterSpec",
+ "View", "Tools", and "Help") on non-mobile.
+ */
+.PopupDivMenu
+{
+  background-color: #FAFAFA;
+  border: solid 1px #e1e1e1;
+  max-height: 90%;
+  overflow-y: auto;
+}
+
+/* Add a drop-shadow for the app-level menus. */
+.PopupDivMenu.AppMenu
+{
+  box-shadow: 0 5px 5px -3px rgba(0,0,0,.2), 0 8px 10px 1px rgba(0,0,0,.14), 0 3px 14px 2px rgba(0,0,0,.12);
+}
+
+/* Add a slightly more petite drop shadow for sub-menus.
+ TODO: it would be nice to move the sub-menu to the right by a couple pixels, but I dont see how to hack the CSS so the Wt.fitToWindow JS function wont clober the efforts
+ */
+.PopupDivMenu.AppSubMenu
+{
+  box-shadow: 0 5px 3px -3px rgba(0,0,0,.12), 4px 8px 6px 1px rgba(0,0,0,.08), 5px 3px 6px 1px rgba(0,0,0,.06);
+}
+
+/*
+ TODO: it would be nice to hide separators that are at the bottom and top of menus; this happens when all the menu items above or below the separator is hidden.  For some reason selectors like the next dont actually function (but they will aw part of a jQuery selector).
+.PopupDivMenu > li.Wt-separator:visible:last
+{
+  border-top: 0px;
+  border-bottom: 0px;
+  margin: 0px 0px;
+}
+ */
+
+.PopupDivMenuItem-disabled
+{
+  background: none;
+  color: #D2D2D2;
+}
+
+.PopupDivMenu li
+{
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.PopupDivMenu li.Wt-separator
+{
+  padding-top: 0px;
+  padding-bottom: 0px;
+}
+
+
+.PopupMenuParentButton, .PopupMenuParentButton:hover
+{
+  height: 23px; /*leave 1 px for WebMenuBar lower border */
+  padding: 4px 8px 3px 8px;
+  margin:0px 0px;
+  font-weight:normal;
+  background: #FFFFFF;
+  color: black;
+  border: none;
+  -moz-border-radius: 2px;
+  -webkit-border-radius: 2px;
+  border-radius: 2px;
+  
+  -moz-box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  box-shadow: none !important;
+  outline: none;
+}
+
+
+.PopupMenuParentButton:hover:not(.active)
+{
+  background: rgba(128, 128, 128, 0.25);
+}
 
 .PopupMenuParentButton.active
 {
-  background: grey;
+  background: rgba(128, 128, 128, 1.0);
   
   -moz-box-shadow: none !important;
   -webkit-box-shadow: none !important;

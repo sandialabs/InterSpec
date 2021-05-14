@@ -187,8 +187,8 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_snapshotTable->setTreeRoot(root);
     m_snapshotTable->setSelectionMode(Wt::SingleSelection);
     m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
-      
-    Dbo::Transaction transaction( *m_session->session() );
+    
+    DataBaseUtils::DbTransaction transaction( *m_session );
     Dbo::collection< Dbo::ptr<UserState> > query;
     
     if( m_header && !m_header->m_uuid.empty())
@@ -792,7 +792,8 @@ std::shared_ptr<SpecMeas> SnapshotBrowser::retrieveMeas( const int dbid )
     
     try
     {
-      Dbo::Transaction transaction( *m_session->session() );
+      DataBaseUtils::DbTransaction transaction( *m_session );
+      
       Dbo::ptr<UserFileInDb> dbsnapshot = m_session->session()->find<UserFileInDb>()
       .where( "id = ?" )
       .bind( dbid );

@@ -31,29 +31,19 @@
 #cmakedefine01 PERFORM_DEVELOPER_CHECKS
 #cmakedefine01 USE_OSX_NATIVE_MENU
 #cmakedefine01 USE_ELECTRON_NATIVE_MENU
-#cmakedefine01 USE_ELECTRON_HTML_MENU
 
-// Since USE_ELECTRON_NATIVE_MENU or USE_ELECTRON_HTML_MENU can be set to true without
-//  BUILD_AS_ELECTRON_APP being true, you have to test both its an electron app, and the menu type,
-//  so we'll create a little bit of a shortcut
+// Since USE_ELECTRON_NATIVE_MENU can be set to true without BUILD_AS_ELECTRON_APP being true, you
+//  have to test both its an electron app, and the menu type, so we'll create a little bit of a
+//  shortcut
 //  \TODO: There is probably a cleaner way to define things...
 #if( BUILD_AS_ELECTRON_APP )
-  static_assert( !(USE_ELECTRON_NATIVE_MENU && USE_ELECTRON_HTML_MENU),
-                 "You can only enable either native or HTML electron menu" );
   #if( USE_ELECTRON_NATIVE_MENU )
     #define USING_ELECTRON_NATIVE_MENU 1
   #else
     #define USING_ELECTRON_NATIVE_MENU 0
   #endif
-
-  #if( USE_ELECTRON_HTML_MENU )
-    #define USING_ELECTRON_HTML_MENU 1
-  #else
-    #define USING_ELECTRON_HTML_MENU 0
-  #endif
 #else
   #define USING_ELECTRON_NATIVE_MENU 0
-  #define USING_ELECTRON_HTML_MENU 0
 #endif
 
 
