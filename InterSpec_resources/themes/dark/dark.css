@@ -61,13 +61,18 @@ a:hover, .InfoLink:hover {
 /* button > img { filter: invert(100%); }  */
 
 
-.UpperMenuDivWithLogos, .PopupMenuParentButton {
+.WebMenuBar, .PopupMenuParentButton {
   background-color: rgb(65,65,65) !important; 
   color: rgb(230,230,230) !important;
 }
 
-.PopupMenuParentButton:hover, .PopupMenuParentButton.active {
+.PopupMenuParentButton.active {
   background-color: rgb(18,101,200) !important;
+}
+
+.PopupMenuParentButton:hover:not(.active)
+{
+  background-color: rgba(18,101,200,0.25) !important;
 }
 
 .Wt-popup.Wt-outset {

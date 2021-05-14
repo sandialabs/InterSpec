@@ -69,9 +69,17 @@ WT_DECLARE_WT_MEMBER
 (BringAboveDialogs, Wt::JavaScriptFunction, "BringAboveDialogs",
  function( id )
  {
+   /* bring above all dialogs and popup menus */
+  
    var z = 0;
-   $('.Wt-dialog').each(function(i,v){z=Math.max(z,$(v).css('z-index'));});
-   if(z>$('#'+id).css('z-index'))$('#'+id).css('z-index',z+1);
+   $('.Wt-dialog, .Wt-popup').each( function(i,v){
+     if( $(v).is(":visible") )
+       z = Math.max( z, $(v).css('z-index') );
+   });
+  
+   if( z > $('#'+id).css('z-index') ){
+     $('#'+id).css('z-index',z+1);
+   }
 });
 
 
@@ -180,7 +188,7 @@ WT_DECLARE_WT_MEMBER(HideOverlay, Wt::JavaScriptFunction, "HideOverlay", functio
 //  repositioning in a timeout since fitToWindow(...) et al will do their
 //  work after the mouseWentOver() signal is emitted.  Note I tried
 //  placing this javascript into the overiden PopupDivMenu::setHidden(...)
-//  function, but it didnt work (presumably for same reason we nee a timeout
+//  function, but it didnt work (presumably for same reason we need a timeout
 //  function here).
 WT_DECLARE_WT_MEMBER
 (AdjustTopPos, Wt::JavaScriptFunction, "AdjustTopPos",
@@ -189,7 +197,7 @@ WT_DECLARE_WT_MEMBER
    var w = Wt.WT.getElement(id);
    if(!w)
      return;
-   
+  
    var fcn = function()
    {
      if( Wt.WT.widgetPageCoordinates(w).y < 0 )
@@ -206,6 +214,123 @@ WT_DECLARE_WT_MEMBER
    };
    setTimeout( fcn, 50 );
  });
+
+WT_DECLARE_WT_MEMBER
+ (ParentMouseWentOver, Wt::JavaScriptFunction, "ParentMouseWentOver",
+  function( elId, btnId, wtapp )
+{
+  const el = document.getElementById(elId);
+  const btn = document.getElementById(btnId);
+  
+  if( !el || !btn || !wtapp )
+    return; //shouldnt ever happen
+  
+  const obj = jQuery.data(el, 'obj');
+  if(!obj) console.log('parentMouseWentOver: !obj');
+  
+  if( $('.PopupMenuParentButton.active').length === 0 ){
+    if(obj) obj.setHidden(1); //do cleanup from the c++ popup( WPoint(....) ); call
+    return; // No menus are showing, so dont do anything
+  }
+  
+  // Check if we are going from the menu, back to parent button (I think this is the only case
+  // where the button has active class, and yet mouse is entering the parent button
+  const showing = $(btn).hasClass('active');
+  
+  if( showing ){
+    // Fixup 'popup( WPoint(-10000,-10000) );' call from C++  ...
+    //  TODO: users may see small glitch... should fix eventually
+    wtapp.positionAtWidget(el.id,btn.id,wtapp.Vertical);
+    return; //Nothing more to do
+  }
+  
+  // Lets try to trigger the 'cancel' signal so C++ will know about things
+  //  - this doesnt work because the keydown event happens even if we put the below stuff in a
+  //    setTimeout(...) call
+  //"jQuery.event.trigger({ type : 'keydown', keyCode: 27 });"
+  
+  //remove "active" class from all other buttons with style class "PopupMenuParentButton"
+  //  The C++ aboutToHide() callback would do this anyway, but lets be a little more snappy
+  $('.PopupMenuParentButton.active').each(function(){
+    $(this).removeClass('active');
+  });
+  
+  $('.PopupDivMenu.AppMenu.current').each(function(){
+    $(this).removeClass('current');
+    const thisobj = jQuery.data(this, 'obj');
+    if(thisobj)
+      thisobj.setHidden(1);
+    
+    // Hide the menu, and emit the 'cancel' signal so the C++ will
+    this.style.display = 'none';
+    Wt.emit(this.id, 'cancel');
+  });
+  
+  $(el).addClass('current');
+  $(btn).addClass('active');
+  if(obj) obj.setHidden(0);
+  wtapp.positionAtWidget(el.id,btn.id,wtapp.Vertical);
+});
+
+
+WT_DECLARE_WT_MEMBER
+ (ParentClicked, Wt::JavaScriptFunction, "ParentClicked",
+  function( elId, btnId, wtapp )
+{
+  const el = document.getElementById(elId);
+  const btn = document.getElementById(btnId);
+  
+  if( !el || !btn || !wtapp )
+    return; //shouldnt ever happen
+  
+  const obj = jQuery.data(el, 'obj');
+  if(!obj) console.log('!obj');
+  
+  const showing = $(btn).hasClass('active');  //el.style.display !== 'block'
+  if( !showing ){
+    //remove "active" class from all other buttons with style class "PopupMenuParentButton"
+    $('.PopupMenuParentButton.active').each(function(){
+      $(this).removeClass('active');
+    });
+    
+    $('.PopupDivMenu.AppMenu.current').each(function(){
+      $(this).removeClass('current');
+    });
+    
+    $(el).addClass('current');
+    $(btn).addClass('active');
+    
+    // This next call (defined in WPopupMenu.js) binds signals to hide the menu on document mouse
+    //  click or escape presses, as well as sets the menus display to 'block'
+    if(obj) obj.setHidden(0);
+    
+    wtapp.positionAtWidget(el.id,btn.id,wtapp.Vertical);
+  }else{
+    $(el).removeClass('current');
+    $(btn).removeClass('active');
+    
+    // This next call unbinds the document mouse click and escape press, and sets menu display to ''
+    // (not sure why this is needed
+    if(obj) obj.setHidden(1);
+  }
+});
+
+WT_DECLARE_WT_MEMBER
+ (UndoParentClicked, Wt::JavaScriptFunction, "UndoParentClicked",
+  function( elId, btnId, wtapp )
+{
+  const el = document.getElementById(elId);
+  const btn = document.getElementById(btnId);
+  
+  if( !el || !btn || !wtapp )
+    return; //shouldnt ever happen
+  
+  const obj = jQuery.data(el, 'obj');
+  if(obj) obj.setHidden(1);
+  $(el).removeClass('current');
+  $(btn).removeClass('active');
+});
+
 
 #if( USING_ELECTRON_NATIVE_MENU )
 WT_DECLARE_WT_MEMBER(FindElectronMenu, Wt::JavaScriptFunction, "FindElectronMenu",
@@ -836,141 +961,44 @@ void PopupDivMenu::doShow( bool clicked )
 }//void doShow()
 
 
+
+
 void PopupDivMenu::parentClicked()
 {
-  //cout << "parentClicked() for id '" << id() << "'" << endl;
-  
   // We need this function to be stateless, so we'll always popup the menu, even if we actually
   //  want to close it, and then we'll use the JS to close the menu if we dont actually want it open
   popup( WPoint(-10000,-10000) );
   
-  
-  string parent_clicked_js =
   // We need this setTimeout(...) or else sometimes when we open it, it will immediately close
+  const string parent_clicked_js =
   "setTimeout( function(){"
-    "const el = document.getElementById('" + id() + "');"
-    "const btn = document.getElementById('" + m_menuParent->id() + "');"
-    "const obj = jQuery.data(el, 'obj');"
-    "if( !el || !btn )"
-      "return;" //shouldnt ever happen
-  
-    "if(!obj) console.log('!obj');"
-  
-    "const showing = $(btn).hasClass('active');"  //el.style.display !== 'block'
-    "if( !showing ){"
-      //remove "active" class from all other buttons with style class "PopupMenuParentButton"
-      "$('.PopupMenuParentButton.active').each(function(){"
-        "$(this).removeClass('active');"
-      "});"
-  
-      "$('.PopupDivMenu.AppMenu.current').each(function(){"
-        "$(this).removeClass('current');"
-      "});"
-  
-      "$(el).addClass('current');"
-      "$(btn).addClass('active');"
-  
-      // This next call (defined in WPopupMenu.js) binds signals to hide the menu on document mouse
-      //  click or escape presses, as well as sets the menus display to 'block'
-      "if(obj) obj.setHidden(0);"
-  
-      WT_CLASS ".positionAtWidget(el.id,btn.id," WT_CLASS + ".Vertical);"
-    "}else{"
-      "$(el).removeClass('current');"
-      "$(btn).removeClass('active');"
-  
-      // This next call unbinds the document mouse click and escape press, and sets menu display to ''
-      // (not sure why this is needed
-      "if(obj) obj.setHidden(1);"
-    "}"
+    "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
   "}, 0 );";
-  
-  
+
   doJavaScript( parent_clicked_js );
 }//void parentClicked()
 
 
+
 void PopupDivMenu::undoParentClicked()
 {
-  string undo_js = "(function(){"
-  "const el = document.getElementById('" + id() + "');"
-  "const btn = document.getElementById('" + m_menuParent->id() + "');"
-  "if( !el || !btn ) return;" //shouldnt ever happen
-  
-  "const obj = jQuery.data(el, 'obj');"
-  "if(obj) obj.setHidden(1);"
-  "$(el).removeClass('current');"
-  "$(btn).removeClass('active');"
-  "})();";
-  
+  const string undo_js = "Wt.WT.UndoParentClicked('" + id() + "','" + m_menuParent->id() + "');";
   doJavaScript( undo_js );
   hide();
 }
 
 
+
+
 void PopupDivMenu::parentMouseWentOver()
 {
-  //cout << "parentMouseWentOver() for id '" << id() << "'" << endl;
-  
   popup( WPoint(-10000,-10000) );
   
-  string parent_hovered_over_js =
+  const string parent_hovered_over_js =
   // We need this setTimeout(...) or else sometimes when we open it, it will immediately close
-  "setTimeout( function(){"
-    "const el = document.getElementById('" + id() + "');"
-    "const btn = document.getElementById('" + m_menuParent->id() + "');"
-    "const obj = jQuery.data(el, 'obj');"
-    "if(!obj) console.log('parentMouseWentOver: !obj');"
-    
-    "if( !el || !btn )"
-      "return;" //shouldnt ever happen
-  
-    "if( $('.PopupMenuParentButton.active').length === 0 ){"
-      "if(obj) obj.setHidden(1);" //do cleanup from the c++ popup( WPoint(....) ); call
-      "return;" // No menus are showing, so dont do anything
-    "}"
-  
-    // Check if we are going from the menu, back to parent button (I think this is the only case
-    // where the button has active class, and yet mouse is entering the parent button
-    "const showing = $(btn).hasClass('active');"
-    "console.log('showing:', showing);"
-    "if( showing ){"
-      // Fixup 'popup( WPoint(-10000,-10000) );' call from C++  ...
-      //  TODO: users may see small glitch... should fix eventually
-      WT_CLASS ".positionAtWidget(el.id,btn.id," WT_CLASS + ".Vertical);"
-      "return;" //Nothing more to do
-    "}"
-  
-    //"console.log( 'Will show from mouseover parent' );"
-  
-    // Lets try to trigger the 'cancel' signal so C++ will know about things
-    //  - this doesnt work because the keydown event happens even if we put the below stuff in a
-    //    setTimeout(...) call
-    //"jQuery.event.trigger({ type : 'keydown', keyCode: 27 });"
-  
-    //remove "active" class from all other buttons with style class "PopupMenuParentButton"
-    //  The C++ aboutToHide() callback would do this anyway, but lets be a little more snappy
-    "$('.PopupMenuParentButton.active').each(function(){"
-      "$(this).removeClass('active');"
-    "});"
-  
-    "$('.PopupDivMenu.AppMenu.current').each(function(){"
-      "$(this).removeClass('current');"
-      "const thisobj = jQuery.data(this, 'obj');"
-      "if(thisobj)"
-        "thisobj.setHidden(1);"
-      
-      // Hide the menu, and emit the 'cancel' signal so the C++ will
-      "this.style.display = 'none';"
-      "Wt.emit(this.id, 'cancel');"
-    "});"
-  
-    "$(el).addClass('current');"
-    "$(btn).addClass('active');"
-    "if(obj) obj.setHidden(0);"
-    WT_CLASS ".positionAtWidget(el.id,btn.id," WT_CLASS + ".Vertical);"
+  "setTimeout(function(){"
+    "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
   "}, 0 );";
-  
   
   doJavaScript( parent_hovered_over_js );
 }//void parentHoveredOver()
@@ -1019,6 +1047,10 @@ void PopupDivMenu::setupDesktopMenuStuff()
    */
   
   assert( m_menuParent );
+  
+  LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsParentMouseWentOver);
+  LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsParentClicked);
+  LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsUndoParentClicked);
   
   //menuParent->setMenu( this );  //adds/removes active class to menuParent, etc
   
@@ -1202,8 +1234,6 @@ Wt::WMenuItem *PopupDivMenu::parentItem()
 
 void PopupDivMenu::desktopDoHide()
 {
-  cout << "aboutToHide(): '" << this->id() << "'" << endl;
-  
   assert( m_menuParent );
   
   string js = "$('#" + id() + "').removeClass('current');";
@@ -1276,6 +1306,12 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     menu->addPhoneBackItem( this );
   }else
   {
+    if( hasStyleClass( "AppMenu" ) || hasStyleClass( "AppSubMenu" ) )
+    {
+      // TODO: it would be nice to move the sub-menu to the right by a couple pixels, but the Wt.fitToWindow JS function clobers any CSS rule, so maybe try adding a few pixels to the right position in AdjustTopPos(...)
+      menu->addStyleClass( "AppSubMenu" );
+    }
+    
     menu->m_parentItem = addMenu( iconPath, text, menu );
     menu->m_parentItem->clicked().preventPropagation();
     menu->m_parentItem->clicked().preventDefaultAction();
