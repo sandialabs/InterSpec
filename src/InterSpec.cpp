@@ -201,6 +201,7 @@
 #endif
 
 #include "js/InterSpec.js"
+#include "js/ElectronHtmlMenu.js"
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
@@ -215,10 +216,6 @@ std::mutex InterSpec::sm_writableDataDirectoryMutex;
 std::string InterSpec::sm_writableDataDirectory = "";
 #endif  //if( not a webapp )
 
-
-#if( USE_ELECTRON_HTML_MENU )
-#include "js/ElectronHtmlMenu.js"
-#endif
 
 
 void log_error_message( const std::string &message, const std::string &source, const int priority )
@@ -629,6 +626,18 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   initMaterialDbAndSuggestions();
   
+#if( BUILD_AS_ELECTRON_APP )
+#if( USE_ELECTRON_NATIVE_MENU )
+  const bool isAppTitlebar = false;
+#else
+  const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
+#endif
+#else
+  const bool isAppTitlebar = true; // !isMobile()
+  cout << "\n\n\n\nMaking app title bar for dev only - should revert back.\n\n\n\n";
+#endif
+  
+  
   WWidget *menuWidget = NULL;
   if( isMobile() )
   {
@@ -669,16 +678,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   }else  //if( isMobile() )
   {
     m_menuDiv = new WContainerWidget();
-
-#if( BUILD_AS_ELECTRON_APP )
-  #if( USE_ELECTRON_NATIVE_MENU )
-      const bool isAppTitlebar = false;
-  #else
-      const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
-  #endif
-#else
-    const bool isAppTitlebar = false;
-#endif
+    m_menuDiv->addStyleClass( "MenuBar" );
     
     if( !isAppTitlebar )
     {
@@ -690,39 +690,60 @@ InterSpec::InterSpec( WContainerWidget *parent )
     }else
     {
       app->useStyleSheet( "InterSpec_resources/ElectronHtmlMenu.css" );
-      m_menuDiv->addStyleClass( "elec-titlebar cet-windows" );
-      m_menuDiv->setHeight( 30 ); //"background-color: rgb(68, 68, 68); color: rgb(255, 255, 255); height: 30px;"
+      m_menuDiv->addStyleClass( "app-titlebar" );
+      m_menuDiv->setHeight( 30 );
       
       WContainerWidget *dragRegion = new WContainerWidget( m_menuDiv );
-      dragRegion->addStyleClass( "elec-titlebar-drag-region" );
+      dragRegion->addStyleClass( "app-titlebar-drag-region" );
+      
+      //Add InterSpec icon to left side of menubar
+      WContainerWidget *appIcon = new WContainerWidget( m_menuDiv );
+      appIcon->addStyleClass( "window-appicon" );
       
       menuWidget = new WContainerWidget( m_menuDiv );
-      menuWidget->addStyleClass( "menubar" );
+      menuWidget->addStyleClass( "AppMenuBtns" );
       menuWidget->setAttributeValue( "role", "menubar" );
       
       WText *menuTitle = new WText( "InterSpec", m_menuDiv );
       menuTitle->setInline( false );
-      menuTitle->addStyleClass( "window-title" ); //style="cursor: default; margin-right: auto; margin-left: auto;"
+      menuTitle->addStyleClass( "window-title" );
       
-#if( BUILD_AS_ELECTRON_APP )
-      //None of this JS is really tested yet
-      LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsTitleBarChangeMaximized);
+      WContainerWidget *titleStretcher = new WContainerWidget( m_menuDiv );
+      titleStretcher->addStyleClass( "titlebar-stretcher" );
       
       WContainerWidget *windowControls = new WContainerWidget( m_menuDiv );
       windowControls->addStyleClass( "window-controls-container" );
       
       WContainerWidget *iconDiv = new WContainerWidget( windowControls );
       iconDiv->addStyleClass( "window-icon-bg" );
-      WContainerWidget *icon = new WContainerWidget( iconDiv );
-      icon->addStyleClass( "window-icon window-minimize" );
-      icon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
+      WContainerWidget *minimizeIcon = new WContainerWidget( iconDiv );
+      minimizeIcon->addStyleClass( "window-icon window-minimize InvertInDark" );
       
       iconDiv = new WContainerWidget( windowControls );
       iconDiv->addStyleClass( "window-icon-bg" );
-      icon = new WContainerWidget( iconDiv );
-      icon->addStyleClass( "window-icon window-max-restore window-maximize" );
+      WContainerWidget *maximizeIcon = new WContainerWidget( iconDiv );
+      maximizeIcon->addStyleClass( "window-icon window-max-restore window-maximize InvertInDark" );
       
-      icon->clicked().connect( INLINE_JAVASCRIPT( function(){
+      iconDiv = new WContainerWidget( windowControls );
+      iconDiv->addStyleClass( "window-icon-bg" );
+      WContainerWidget *closeIcon = new WContainerWidget( iconDiv );
+      closeIcon->addStyleClass( "window-icon window-close InvertInDark" );
+  
+      WContainerWidget *resizer = new WContainerWidget( m_menuDiv );
+      resizer->addStyleClass( "resizer top" );
+      
+      resizer = new WContainerWidget( m_menuDiv );
+      resizer->addStyleClass( "resizer left" );
+      
+      LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsTitleBarChangeMaximized);
+      
+#if( BUILD_AS_ELECTRON_APP )
+      //None of this JS is really tested yet
+      //  Also need to add double clicking on menu-bar to make full-screen, or bring back to window
+      
+      minimizeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
+      
+      maximizeIcon->clicked().connect( INLINE_JAVASCRIPT( function(){
         let win = $(window).data('ElectronWindow');
         if( win.isMaximized() ) {
           win.unmaximize();
@@ -733,39 +754,65 @@ InterSpec::InterSpec( WContainerWidget *parent )
         }
       }) );
       
-      iconDiv = new WContainerWidget( windowControls );
-      iconDiv->addStyleClass( "window-icon-bg" );
-      icon = new WContainerWidget( iconDiv );
-      icon->addStyleClass( "window-icon window-close" );
-      icon->clicked().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
-      
-      WContainerWidget *resizer = new WContainerWidget( m_menuDiv );
-      resizer->addStyleClass( "resizer top" );
-      
-      resizer = new WContainerWidget( m_menuDiv );
-      resizer->addStyleClass( "resizer left" );
-      
-      
+      closeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
       auto menujs = INLINE_JAVASCRIPT(
-                                      let currentWindow = remote.getCurrentWindow();
-                                      $(window).data('ElectronWindow',currentWindow);
+        let currentWindow = remote.getCurrentWindow();
+        $(window).data('ElectronWindow',currentWindow);
                                       
-                                      Wt.WT.TitleBarChangeMaximized( currentWindow.isMaximized() );
+        Wt.WT.TitleBarChangeMaximized( currentWindow.isMaximized() );
                                       
-                                      currentWindow.on( 'blur', function(){ console.log('currentWindow.blur'); } );
-                                      currentWindow.on( 'focus', function(){ console.log('currentWindow.focus'); } );
-                                      currentWindow.on( 'maximize', function(){ Wt.WT.TitleBarChangeMaximized(true); } );
-                                      currentWindow.on( 'unmaximize', function(){ Wt.WT.TitleBarChangeMaximized(false); } );
-                                      currentWindow.on( 'enter-full-screen', function(){ console.log('currentWindow.enter-full-screen'); } );
-                                      currentWindow.on( 'leave-full-screen', function(){ console.log('currentWindow.leave-full-screen'); } );
-                                      );//menujs
+        currentWindow.on( 'blur', function(){ console.log('currentWindow.blur'); } );
+        currentWindow.on( 'focus', function(){ console.log('currentWindow.focus'); } );
+        currentWindow.on( 'maximize', function(){ Wt.WT.TitleBarChangeMaximized(true); } );
+        currentWindow.on( 'unmaximize', function(){ Wt.WT.TitleBarChangeMaximized(false); } );
+        currentWindow.on( 'enter-full-screen', function(){ console.log('currentWindow.enter-full-screen'); } );
+        currentWindow.on( 'leave-full-screen', function(){ console.log('currentWindow.leave-full-screen'); } );
+      );//menujs
       
       doJavaScript( menujs );
+#else
+      // All of this is mostly for development
+      auto menujs = INLINE_JAVASCRIPT(
+        $(window).blur(function(){
+          $('.app-titlebar').addClass('inactive');
+        });
+      
+        $(window).focus(function(){
+          $('.app-titlebar').removeClass('inactive');
+        });
+                                      
+        document.addEventListener('fullscreenchange', (event) => {
+          if (document.fullscreenElement) {
+            console.log(`Element: ${document.fullscreenElement.id} entered full-screen mode.`);
+          } else {
+            console.log('Leaving full-screen mode.');
+          }
+          Wt.WT.TitleBarChangeMaximized(document.fullscreenElement);
+        });
+      );
+      
+      doJavaScript( menujs );
+      
+      const string maximizeJS = INLINE_JAVASCRIPT( function(){
+        let elem = document.querySelector(".Wt-domRoot");
+        if (!document.fullscreenElement) {
+          elem.requestFullscreen().catch(err => {
+            console.log( 'Error attempting to enable full-screen mode' );
+          });
+        } else {
+          document.exitFullscreen();
+        }
+      } );
+      
+      maximizeIcon->clicked().connect( maximizeJS );
+      appIcon->doubleClicked().connect( maximizeJS );
+      dragRegion->doubleClicked().connect( maximizeJS );
+      menuTitle->doubleClicked().connect( maximizeJS );
 #endif //BUILD_AS_ELECTRON_APP
     }//if( !isAppTitlebar ) / else
   }//if( isMobile() ) / else
 
-  addFileMenu( menuWidget, isMobile()  );
+  addFileMenu( menuWidget, isAppTitlebar );
   addDisplayMenu( menuWidget );
   
   addToolsMenu( menuWidget );
@@ -5046,11 +5093,12 @@ void InterSpec::startStateTester()
 
 
 
-void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
+void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 {
   if( m_fileMenuPopup )
     return;
 
+  const bool mobile = isMobile();
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
   
   PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
@@ -5059,12 +5107,11 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     throw runtime_error( "InterSpec::addFileMenu(): parent passed in must"
                          " be a PopupDivMenu  or WContainerWidget" );
 
-  
-  string menuname = "InterSpec";
+  string menuname = isAppTitlebar ? "File" : "InterSpec";
 #if( !defined(__APPLE__) && USING_ELECTRON_NATIVE_MENU )
   menuname = "File";
 #else
-  if( isMobile )
+  if( mobile )
     menuname = "Spectra";
 #endif
   
@@ -5118,14 +5165,14 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   
   if( m_fileManager )
   {
-    if( isMobile )
+    if( mobile )
     {
       item = m_fileMenuPopup->addMenuItem( "Open File..." );
       item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
       
       item = m_fileMenuPopup->addMenuItem( "Loaded Spectra..." );
       item->triggered().connect( this, &InterSpec::showCompactFileManagerWindow );
-    }//if( isMobile )
+    }//if( mobile )
     
     
     item = m_fileMenuPopup->addMenuItem( "Manager...", "InterSpec_resources/images/file_manager_small.png" );
@@ -5188,7 +5235,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                          SpecUtils::append_path(docroot, "example_spectra/ba133_source_640s_20100317.n42"),
                                          SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::N42_2006 ) );
-  if( isMobile )
+  if( mobile )
     item = subPopup->addMenuItem( "Passthrough (16k channel)" );
   else
     item = subPopup->addMenuItem( "Passthrough (16k bin ICD1, 8 det., 133 samples)" );
@@ -5201,7 +5248,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
                                          SpecUtils::append_path(docroot, "example_spectra/background_20100317.n42"),
                                          SpecUtils::SpectrumType::Background, SpecUtils::ParserType::N42_2006 ) );
   //If its a mobile device, we'll give a few more spectra to play with
-  if( isMobile )
+  if( mobile )
   {
     item = subPopup->addMenuItem( "Ba-133 (Low Res, No Calib)" );
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
@@ -5221,13 +5268,13 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                            SpecUtils::append_path(docroot, "example_spectra/Th232LowResNoCalib.spe"),
                                            SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
-  }//if( isMobile )
+  }//if( mobile )
   
   
-  if( isSupportFile() && !isMobile )
+  if( isSupportFile() && !mobile )
   {
     string tip = "Creates a dialog to browse for a spectrum file on your file system.";
-    if( !isMobile )
+    if( !mobile )
       tip += " Drag and drop the file directly into the app window as a quicker alternative.";
     
     item = m_fileMenuPopup->addMenuItem( "Open File..." );
@@ -5390,7 +5437,7 @@ void InterSpec::addFileMenu( WWidget *parent, bool isMobile )
     }//for( loop over spectrums )
     
     m_fileMenuPopup->setItemHidden(m_downloadMenu->parentItem(),true); //set as hidden first, will be visible when spectrum is added
-  } //!isMobile
+  } //!mobile
 #elif( IOS )
   PopupDivMenuItem *exportFile = m_fileMenuPopup->addMenuItem( "Export Spectrum..." );
   exportFile->triggered().connect( this, &InterSpec::exportSpecFile );

@@ -7,6 +7,11 @@ body
   -webkit-touch-callout: none !important;
 }
 
+/* For when the app requests to go fullscreen in our JS. */
+.Wt-domRoot:fullscreen {
+  background-color: white;
+}
+
 input
 {
   /* border-width: 1px; */
@@ -838,6 +843,14 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
   background-color: #EEEEEE;
 }
 
+/* The MenuBar CSS class is added to the title bar both for browser-based, and Electron based (that
+ use HTML menu) app sessions
+ */
+.MenuBar
+{
+  border-bottom: 1px solid grey;
+  background: #FFF;
+}
 
 /* The WebMenuBar CSS class is added to the title bar, for browser-based desktop app sessions (e.g.,
  not added for electron builds that use HTML menus)
@@ -848,9 +861,8 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
   height: 24px;  /*pics are 18px with 3px top padding*/
   font-size: 15px;
   padding-top: 0px;
-  border-bottom: 1px solid grey;
-  background: #FFF;
 }
+
 
 /* This is the SNL logo that is placed on the right-hand side of the title bar on desktop browser-based sessions. */
 .SnlWebMenuBarLogo

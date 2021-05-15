@@ -1023,16 +1023,17 @@ void PopupDivMenu::setupDesktopMenuStuff()
    
    TODO:
      - [x] Implement mouse-over parent buttons opening up other menus
-     - [ ] Make so bulk of work is in static JS function to minimize how much JS there is
+     - [x] Make so bulk of work is in static JS function to minimize how much JS there is
            e.g., use LOAD_JAVASCRIPT(...)
      - [ ] Have a fade out when disappearing because you clicked the parent button
-     - [ ] add in drop shadow, more space between items, and styling to make look native
+     - [x] add in drop shadow, more space between items, and styling to make look native
+     - [ ] Position sub -menu a few more pixels to the right, probably by abusing the AdjustTopPos JS function
      - [ ] Make menu-bar taller, and match electron
      - [ ] add timeout so that if mouse leaves parent button, but without going to menu, then menu will
        be closed - or really, check if Windows Electron version closes menu if mouse goes out, and
        make it function like that (e.g., maybe no timeout at all)
      - [ ] See https://css-tricks.com/in-praise-of-the-unambiguous-click-menu/#building-click-menus
-     - [ ] Check behaviour of mousing over parent button when no menus are open, for Electron build, and mirror that
+     - [x] Check behaviour of mousing over parent button when no menus are open, for Electron build, and mirror that
      
      
    Electron titlebar notes:
