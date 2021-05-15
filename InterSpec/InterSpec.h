@@ -291,7 +291,7 @@ public:
 
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
-  void addFileMenu( Wt::WWidget *menuDiv, bool isMobile );
+  void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );
   void addDisplayMenu( Wt::WWidget *menuDiv );
   void addDetectorMenu( Wt::WWidget *menuDiv );
   void addToolsMenu( Wt::WWidget *menuDiv );

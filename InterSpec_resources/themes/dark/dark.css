@@ -1,5 +1,5 @@
-.Wt-domRoot, .dialog-layout, .Wt-panel .body {
-  background: rgb(44,45,48); 
+.Wt-domRoot, .Wt-domRoot:fullscreen, .dialog-layout, .Wt-panel .body {
+  background: rgb(44,45,48) !important; 
   color: white;
 }
 
@@ -61,7 +61,7 @@ a:hover, .InfoLink:hover {
 /* button > img { filter: invert(100%); }  */
 
 
-.WebMenuBar, .PopupMenuParentButton {
+.MenuBar, .PopupMenuParentButton {
   background-color: rgb(65,65,65) !important; 
   color: rgb(230,230,230) !important;
 }
@@ -243,3 +243,14 @@ ul.VerticalMenu > li.item:hover  {
 
 
 /* .AuxWindow-content.Decay { background: rgb(230,230,230) !important; } */
+
+
+/* When using a HTML app menu-bar, fix up close button background color on hover */
+.app-titlebar .window-controls-container .window-icon-bg .window-icon.window-close:hover {
+  background-color: rgb(57,207,207) !important;
+}
+
+/* When using a HTML app menu-bar, fix up minimize and maximize buttons on hover */
+.app-titlebar .window-controls-container .window-icon-bg .window-icon:hover {
+  background-color: rgb(175,175,175) !important;
+}
