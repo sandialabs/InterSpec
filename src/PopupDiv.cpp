@@ -1061,6 +1061,12 @@ void PopupDivMenu::setupDesktopMenuStuff()
   
   //setAutoHide( true, 500 );
   
+  // Note: when WebSocket are used instead of Ajax and long-polling, implementing the below will
+  //       cause the JS to be emitted twice (once when event originates in JS, and I think second
+  //       time after going back to c++ then it issuing the JS).  We are currently relying on the JS
+  //       only being emitted once - so make sure you arent using WebSockets.
+  //       This seems fragile, and relying on a bug either way - should eventually improve all this
+  //       to be more sane.
   implementStateless( &PopupDivMenu::parentClicked, &PopupDivMenu::undoParentClicked );
   implementStateless( &PopupDivMenu::parentMouseWentOver, &PopupDivMenu::undoParentHoveredOver );
   

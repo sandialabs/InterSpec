@@ -21,7 +21,7 @@
   user-select: none;
   zoom: 1;
   display: flex;
-  z-index: 99999;
+  /* z-index: 999; */
 }
 
 

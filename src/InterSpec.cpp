@@ -633,8 +633,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
 #endif
 #else
-  const bool isAppTitlebar = true; // !isMobile()
-  cout << "\n\n\n\nMaking app title bar for dev only - should revert back.\n\n\n\n";
+  const bool isAppTitlebar = false; // !isMobile()
 #endif
   
   
@@ -735,75 +734,22 @@ InterSpec::InterSpec( WContainerWidget *parent )
       resizer = new WContainerWidget( m_menuDiv );
       resizer->addStyleClass( "resizer left" );
       
+      LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsSetupAppTitleBar);
       LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsTitleBarChangeMaximized);
+      LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsTitleBarHandleMaximizeClick);
       
 #if( BUILD_AS_ELECTRON_APP )
       //None of this JS is really tested yet
       //  Also need to add double clicking on menu-bar to make full-screen, or bring back to window
-      
       minimizeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
-      
-      maximizeIcon->clicked().connect( INLINE_JAVASCRIPT( function(){
-        let win = $(window).data('ElectronWindow');
-        if( win.isMaximized() ) {
-          win.unmaximize();
-          Wt.WT.TitleBarChangeMaximized(false);
-        } else {
-          win.maximize();
-          Wt.WT.TitleBarChangeMaximized(true);
-        }
-      }) );
-      
+      maximizeIcon->clicked().connect( "function(){ Wt.WT.TitleBarHandleMaximizeClick(); }" );
       closeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
-      auto menujs = INLINE_JAVASCRIPT(
-        let currentWindow = remote.getCurrentWindow();
-        $(window).data('ElectronWindow',currentWindow);
-                                      
-        Wt.WT.TitleBarChangeMaximized( currentWindow.isMaximized() );
-                                      
-        currentWindow.on( 'blur', function(){ console.log('currentWindow.blur'); } );
-        currentWindow.on( 'focus', function(){ console.log('currentWindow.focus'); } );
-        currentWindow.on( 'maximize', function(){ Wt.WT.TitleBarChangeMaximized(true); } );
-        currentWindow.on( 'unmaximize', function(){ Wt.WT.TitleBarChangeMaximized(false); } );
-        currentWindow.on( 'enter-full-screen', function(){ console.log('currentWindow.enter-full-screen'); } );
-        currentWindow.on( 'leave-full-screen', function(){ console.log('currentWindow.leave-full-screen'); } );
-      );//menujs
       
-      doJavaScript( menujs );
+      doJavaScript( "Wt.WT.SetupAppTitleBar();" );
 #else
       // All of this is mostly for development
-      auto menujs = INLINE_JAVASCRIPT(
-        $(window).blur(function(){
-          $('.app-titlebar').addClass('inactive');
-        });
-      
-        $(window).focus(function(){
-          $('.app-titlebar').removeClass('inactive');
-        });
-                                      
-        document.addEventListener('fullscreenchange', (event) => {
-          if (document.fullscreenElement) {
-            console.log(`Element: ${document.fullscreenElement.id} entered full-screen mode.`);
-          } else {
-            console.log('Leaving full-screen mode.');
-          }
-          Wt.WT.TitleBarChangeMaximized(document.fullscreenElement);
-        });
-      );
-      
-      doJavaScript( menujs );
-      
-      const string maximizeJS = INLINE_JAVASCRIPT( function(){
-        let elem = document.querySelector(".Wt-domRoot");
-        if (!document.fullscreenElement) {
-          elem.requestFullscreen().catch(err => {
-            console.log( 'Error attempting to enable full-screen mode' );
-          });
-        } else {
-          document.exitFullscreen();
-        }
-      } );
-      
+      doJavaScript( "Wt.WT.SetupAppTitleBar();" );
+      const string maximizeJS = "function(){ Wt.WT.TitleBarHandleMaximizeClick(); }";
       maximizeIcon->clicked().connect( maximizeJS );
       appIcon->doubleClicked().connect( maximizeJS );
       dragRegion->doubleClicked().connect( maximizeJS );
@@ -5486,11 +5432,22 @@ if (isSupportFile())
     m_fileMenuPopup->addSeparator();
 #endif
 
+#if( BUILD_AS_ELECTRON_APP )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
 #if( USING_ELECTRON_NATIVE_MENU )
   m_fileMenuPopup->addSeparator();
   m_fileMenuPopup->addRoleMenuItem( PopupDivMenu::MenuRole::Quit );
+#elif( BUILD_AS_ELECTRON_APP )
+  m_fileMenuPopup->addSeparator();
+  PopupDivMenuItem *exitItem = m_fileMenuPopup->addMenuItem( "Exit" );
+  //exitItem->triggered().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
+  exitItem->triggered().connect( std::bind( []{
+    wApp->doJavaScript( "$(window).data('ElectronWindow').close();" );
+  }) );
 #endif
-  
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
+#endif // BUILD_AS_ELECTRON_APP
 } // void InterSpec::addFileMenu( WContainerWidget *menuDiv, bool show_examples )
 
 
@@ -6296,6 +6253,55 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   m_displayOptionsPopupDiv->addSeparator();
   m_displayOptionsPopupDiv->addRoleMenuItem( PopupDivMenu::MenuRole::ToggleDevTools );
 #endif
+#elif( BUILD_AS_ELECTRON_APP )
+  
+  // TODO: need to make all these JS functions detect if Electron, and if so, do different JS
+  // TODO: need to make sure menu bar is below full-screen overlays
+  
+  LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsResetPageZoom);
+  LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsIncreasePageZoom);
+  LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsDecreasePageZoom);
+  
+  
+  m_displayOptionsPopupDiv->addSeparator();
+  PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Full Screen" );  //F11
+  m_displayOptionsPopupDiv->addSeparator();
+  PopupDivMenuItem *resetZoomItem = m_displayOptionsPopupDiv->addMenuItem( "Actual Size" ); //Ctrl+0
+  PopupDivMenuItem *zoomInItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom In" ); //Ctrl+Shift+=
+  PopupDivMenuItem *zoomOutItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom Out" ); //Ctrl+-
+
+  //fullScreenItem->triggered().connect( "function(){ Wt.WT.TitleBarHandleMaximizeClick(); }" );
+  fullScreenItem->triggered().connect( std::bind( []{
+    wApp->doJavaScript( "Wt.WT.TitleBarHandleMaximizeClick();" );
+  }) );
+  
+  //resetZoomItem->triggered().connect( "function(){ Wt.WT.ResetPageZoom(); }" );
+  resetZoomItem->triggered().connect( std::bind( []{
+    wApp->doJavaScript( "Wt.WT.ResetPageZoom();" );
+  }) );
+  
+  //zoomInItem->triggered().connect( "function(){ Wt.WT.IncreasePageZoom(); }" );
+  zoomInItem->triggered().connect( std::bind( []{
+    wApp->doJavaScript( "Wt.WT.IncreasePageZoom();" );
+  }) );
+  
+  //zoomOutItem->triggered().connect( "function(){ Wt.WT.DecreasePageZoom(); }" );
+  zoomOutItem->triggered().connect( std::bind( []{
+    wApp->doJavaScript( "Wt.WT.DecreasePageZoom();" );
+  }) );
+
+#if( BUILD_AS_ELECTRON_APP )
+  //#if( PERFORM_DEVELOPER_CHECKS )
+  LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsToggleDevTools);
+  m_displayOptionsPopupDiv->addSeparator();
+  PopupDivMenuItem *devToolItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Dev Tools" );
+  //devToolItem->triggered().connect( "function(){ Wt.WT.ToggleDevTools(); }" );
+  devToolItem->triggered().connect( std::bind( []{
+    wApp->doJavaScript( "Wt.WT.ToggleDevTools();" );
+  }) );
+  //#endif
+#endif
+  
 #endif
 }//void addDisplayMenu( menuParentDiv )
 

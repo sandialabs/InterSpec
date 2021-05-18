@@ -1,5 +1,13 @@
-.Wt-domRoot, .Wt-domRoot:fullscreen, .dialog-layout, .Wt-panel .body {
+.Wt-domRoot, .dialog-layout, .Wt-panel .body {
   background: rgb(44,45,48) !important; 
+  color: white;
+}
+
+/* On Safari if we out .Wt-domRoot:fullscreen in with the list of the above, it makes the statement
+ fail for some reason, so we'll keep it separate, even though the contents are identical to above.
+ */
+.Wt-domRoot:fullscreen {
+  background: rgb(44,45,48) !important;
   color: white;
 }
 
