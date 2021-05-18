@@ -102,10 +102,28 @@ open InterSpec.xcodeproj
 
 # Building dependencies on Windows 10 
 
+From the Visual Studio 2017 "x64 Native Tools Command Prompt":
 ```bash
-curl https://dl.bintray.com/boostorg/release/1.65.1/source/boost_1_65_1.zip --output boost_1_65_1.tar.gz
+cd C:\temp
+mkdir build
+cd build
+curl https://boostorg.jfrog.io/artifactory/main/release/1.65.1/source/boost_1_65_1.tar.gz --output boost_1_65_1.tar.gz
 tar -xzvf boost_1_65_1.tar.gz
-cd Path\To\boost_1_65_1
+cd boost_1_65_1
 boostrap.bat
-b2.exe -j4 runtime-link=static link=static threading=multi address-model=64 --prefix=C:\install\msvc2017\x64\boost_1_65_1 install
+```
+
+Edit project-config.jam to change
+```bash
+using msvc ;
+```
+To something like
+```bash
+using msvc : 14.1 : "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Tools\MSVC\14.16.27023\bin\Hostx86\x86\cl.exe";
+```
+
+Then compile and install:
+
+```bash
+.\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 msvcver=msvc-14.1 --prefix=C:\install\msvc2017\x64\boost_1_65_1 --build-dir=win_build -j8 install
 ```
