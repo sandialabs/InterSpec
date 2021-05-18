@@ -28,7 +28,7 @@ patch -u wt-3.3.4/src/Wt/WDllDefs.h -i /path/to/InterSpec/target/patches/wt/3.3.
 ```
 
 
-# Building dependancies on macOS Catalina
+# Building dependencies on macOS Catalina
 First, lets set the directory we will install all the pre-requesits to:
 ```bash
 export MACOSX_DEPLOYMENT_TARGET=10.12
@@ -108,4 +108,33 @@ make -j16 install
 cd ${PATCH_DIR}/../..
 cmake -DCMAKE_PREFIX_PATH=${MY_WT_PREFIX} -DBUILD_AS_OSX_APP=ON -DTRY_TO_STATIC_LINK=ON -DUSE_SPECRUM_FILE_QUERY_WIDGET=ON -DUSE_TERMINAL_WIDGET=ON -G Xcode ..
 open InterSpec.xcodeproj
+```
+
+
+# Building dependencies on Windows 10 
+
+From the Visual Studio 2017 "x64 Native Tools Command Prompt":
+```bash
+cd C:\temp
+mkdir build
+cd build
+curl https://boostorg.jfrog.io/artifactory/main/release/1.65.1/source/boost_1_65_1.tar.gz --output boost_1_65_1.tar.gz
+tar -xzvf boost_1_65_1.tar.gz
+cd boost_1_65_1
+boostrap.bat
+```
+
+Edit project-config.jam to change
+```bash
+using msvc ;
+```
+To something like
+```bash
+using msvc : 14.1 : "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Tools\MSVC\14.16.27023\bin\Hostx86\x86\cl.exe";
+```
+
+Then compile and install:
+
+```bash
+.\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 msvcver=msvc-14.1 --prefix=C:\install\msvc2017\x64\boost_1_65_1 --build-dir=win_build -j8 install
 ```

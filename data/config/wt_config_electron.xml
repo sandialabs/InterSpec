@@ -344,8 +344,13 @@
            This feature is still experimental: the Web Sockets RFC is
            still a draft. Wt implements up to version 17 of the draft
 	   (latest as of November 2011).
+
+	   wcjohns note: enabling WebSockets causes 'implementStateless' calls to
+	                 emit the JS twice (I think once in the JS when the call
+					 originates, and once after going back to C++) - but when
+					 WebSockets is false, the JS will only be emitted once.
 	  -->
-	<web-sockets>true</web-sockets>
+	<web-sockets>false</web-sockets>
 
 	<!-- Enables the detection of webgl-capabilites.
 
