@@ -201,7 +201,7 @@
 #endif
 
 #include "js/InterSpec.js"
-#include "js/ElectronHtmlMenu.js"
+#include "js/AppHtmlMenu.js"
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
@@ -688,7 +688,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
       snlLogo->addStyleClass("SnlWebMenuBarLogo");
     }else
     {
-      app->useStyleSheet( "InterSpec_resources/ElectronHtmlMenu.css" );
+      // TODO: If we're here, BUILD_AS_ELECTRON_APP is true, but not putting all this stuff behind compile switch for development purposes - should do this and the including of AppHtmlMenu.js to be behind compile switch.
+      app->useStyleSheet( "InterSpec_resources/AppHtmlMenu.css" );
       m_menuDiv->addStyleClass( "app-titlebar" );
       m_menuDiv->setHeight( 30 );
       
@@ -734,26 +735,21 @@ InterSpec::InterSpec( WContainerWidget *parent )
       resizer = new WContainerWidget( m_menuDiv );
       resizer->addStyleClass( "resizer left" );
       
-      LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsSetupAppTitleBar);
-      LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsTitleBarChangeMaximized);
-      LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsTitleBarHandleMaximizeClick);
-      
-#if( BUILD_AS_ELECTRON_APP )
-      //None of this JS is really tested yet
-      //  Also need to add double clicking on menu-bar to make full-screen, or bring back to window
-      minimizeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
-      maximizeIcon->clicked().connect( "function(){ Wt.WT.TitleBarHandleMaximizeClick(); }" );
-      closeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
+      LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsSetupAppTitleBar);
+      LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsTitleBarChangeMaximized);
+      LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsTitleBarHandleMaximizeClick);
       
       doJavaScript( "Wt.WT.SetupAppTitleBar();" );
-#else
-      // All of this is mostly for development
-      doJavaScript( "Wt.WT.SetupAppTitleBar();" );
+      
       const string maximizeJS = "function(){ Wt.WT.TitleBarHandleMaximizeClick(); }";
       maximizeIcon->clicked().connect( maximizeJS );
       appIcon->doubleClicked().connect( maximizeJS );
       dragRegion->doubleClicked().connect( maximizeJS );
       menuTitle->doubleClicked().connect( maximizeJS );
+      
+#if( BUILD_AS_ELECTRON_APP )
+      minimizeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
+      closeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
 #endif //BUILD_AS_ELECTRON_APP
     }//if( !isAppTitlebar ) / else
   }//if( isMobile() ) / else
@@ -1521,9 +1517,8 @@ void InterSpec::initWindowZoomWatcher()
 
 void InterSpec::initHotkeySignal()
 {
-  //TODO: currenlty integers are used to represent the shortcuts; this should
-  //      be changed to an enum.  The reason integers are used rather than just
-  //      the key code 
+  //TODO: currently integers are used to represent the shortcuts; this should
+  //      be changed to an enum.
   if( !!m_hotkeySignal )
     return;
   
@@ -6255,12 +6250,9 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 #endif
 #elif( BUILD_AS_ELECTRON_APP )
   
-  // TODO: need to make all these JS functions detect if Electron, and if so, do different JS
-  // TODO: need to make sure menu bar is below full-screen overlays
-  
-  LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsResetPageZoom);
-  LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsIncreasePageZoom);
-  LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsDecreasePageZoom);
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
   
   
   m_displayOptionsPopupDiv->addSeparator();
@@ -6270,36 +6262,33 @@ void InterSpec::addDisplayMenu( WWidget *parent )
   PopupDivMenuItem *zoomInItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom In" ); //Ctrl+Shift+=
   PopupDivMenuItem *zoomOutItem = m_displayOptionsPopupDiv->addMenuItem( "Zoom Out" ); //Ctrl+-
 
-  //fullScreenItem->triggered().connect( "function(){ Wt.WT.TitleBarHandleMaximizeClick(); }" );
+  // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
+  //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
   fullScreenItem->triggered().connect( std::bind( []{
     wApp->doJavaScript( "Wt.WT.TitleBarHandleMaximizeClick();" );
   }) );
   
-  //resetZoomItem->triggered().connect( "function(){ Wt.WT.ResetPageZoom(); }" );
   resetZoomItem->triggered().connect( std::bind( []{
     wApp->doJavaScript( "Wt.WT.ResetPageZoom();" );
   }) );
   
-  //zoomInItem->triggered().connect( "function(){ Wt.WT.IncreasePageZoom(); }" );
   zoomInItem->triggered().connect( std::bind( []{
     wApp->doJavaScript( "Wt.WT.IncreasePageZoom();" );
   }) );
   
-  //zoomOutItem->triggered().connect( "function(){ Wt.WT.DecreasePageZoom(); }" );
   zoomOutItem->triggered().connect( std::bind( []{
     wApp->doJavaScript( "Wt.WT.DecreasePageZoom();" );
   }) );
 
 #if( BUILD_AS_ELECTRON_APP )
-  //#if( PERFORM_DEVELOPER_CHECKS )
-  LOAD_JAVASCRIPT(wApp, "js/ElectronHtmlMenu.js", "ElectronHtmlMenu", wtjsToggleDevTools);
+#if( PERFORM_DEVELOPER_CHECKS )
+  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsToggleDevTools);
   m_displayOptionsPopupDiv->addSeparator();
   PopupDivMenuItem *devToolItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Dev Tools" );
-  //devToolItem->triggered().connect( "function(){ Wt.WT.ToggleDevTools(); }" );
   devToolItem->triggered().connect( std::bind( []{
     wApp->doJavaScript( "Wt.WT.ToggleDevTools();" );
   }) );
-  //#endif
+#endif
 #endif
   
 #endif
