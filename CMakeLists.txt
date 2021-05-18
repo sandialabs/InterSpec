@@ -1104,7 +1104,7 @@ elseif(BUILD_AS_ELECTRON_APP)
     )
     
     if( NOT USE_ELECTRON_NATIVE_MENU )
-      list( APPEND sources js/ElectronHtmlMenu.js )
+      list( APPEND sources js/AppHtmlMenu.js )
     endif( NOT USE_ELECTRON_NATIVE_MENU )
     
     if( INTERSPEC_LIBRARY_STATIC )
