@@ -84,12 +84,7 @@ option(
 )
 option(
     USE_ELECTRON_NATIVE_MENU
-    "Mirrors WMenus with Electrons native Menu (not fully implemented)"
-    OFF
-)
-option(
-    USE_ELECTRON_HTML_MENU
-    "Customizes WMenu to act closer to OS application menu, and reduces size of application titlebar (implementation in progress)"
+    "Mirrors WMenus with Electrons native Menu (not fully implemented); if off will use HTML based menus"
     OFF
 )
 option(
@@ -357,15 +352,6 @@ if(BUILD_AS_ELECTRON_APP)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
     set(SpecUtils_ENABLE_D3_CHART ON)
     set(USE_SPECTRUM_CHART_D3 ON)
-    if( (NOT USE_ELECTRON_NATIVE_MENU AND NOT USE_ELECTRON_HTML_MENU) OR (USE_ELECTRON_NATIVE_MENU AND USE_ELECTRON_HTML_MENU) )
-        if(APPLE)
-            set(USE_ELECTRON_NATIVE_MENU ON)
-            set(USE_ELECTRON_HTML_MENU OFF)
-        else(APPLE)
-            set(USE_ELECTRON_NATIVE_MENU ON)
-            set(USE_ELECTRON_HTML_MENU OFF)
-        endif(APPLE)
-    endif( (NOT USE_ELECTRON_NATIVE_MENU AND NOT USE_ELECTRON_HTML_MENU) OR (USE_ELECTRON_NATIVE_MENU AND USE_ELECTRON_HTML_MENU) )
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
 endif(BUILD_AS_ELECTRON_APP)
 
@@ -1117,10 +1103,9 @@ elseif(BUILD_AS_ELECTRON_APP)
         target/electron/ElectronUtils.h
     )
     
-    if( USE_ELECTRON_HTML_MENU )
-        list( APPEND sources js/ElectronHtmlMenu.js )
-    endif( USE_ELECTRON_HTML_MENU )
-    
+    if( NOT USE_ELECTRON_NATIVE_MENU )
+      list( APPEND sources js/AppHtmlMenu.js )
+    endif( NOT USE_ELECTRON_NATIVE_MENU )
     
     if( INTERSPEC_LIBRARY_STATIC )
         add_library(InterSpecLib STATIC ${sources} ${headers})

@@ -1,0 +1,228 @@
+/** wcjohns 20201023: adapted from https://github.com/Treverix/custom-electron-titlebar which is
+ in turn adapted from https://github.com/Microsoft/vscode/ (MIT License)
+ 
+ */
+
+
+/* The div with class .app-titlebar, holds the div with class .AppMenuBtns */
+
+.app-titlebar
+{
+  padding: 0;
+  height: 30px;
+  line-height: 30px;
+  justify-content: left;
+  overflow: visible;
+  
+  box-sizing: border-box;
+  width: 100%;
+  font-size: 13px;
+  flex-shrink: 0;
+  user-select: none;
+  zoom: 1;
+  display: flex;
+  /* z-index: 999; */
+}
+
+
+.AppMenuBtns button, .AppMenuBtns button:hover {
+  font-size: 13px;
+  
+  align-items: center;
+  box-sizing: border-box;
+  padding: 1px 8px 0px 8px;
+  height: 29px;
+  cursor: default;
+  -webkit-app-region: no-drag;
+  zoom: 1;
+  white-space: nowrap;
+  outline: 0;
+  transition: background 0.25s;
+}
+
+
+.app-titlebar .titlebar-stretcher {
+  cursor: default;
+  flex: 0 1 auto;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+
+.app-titlebar .window-title {
+  cursor: default;
+  display: inline-block;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  margin: 0 auto;
+  zoom: 1;
+}
+
+
+/* Drag region */
+
+.app-titlebar .app-titlebar-drag-region {
+  top: 0;
+  left: 0;
+  display: block;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  -webkit-app-region: drag;
+}
+
+/* icon app */
+
+.app-titlebar > .window-appicon {
+  width: 35px;
+  height: 30px;
+  
+  background-image: url(images/AppTitleBarIcon.png);
+  
+  position: relative;
+  z-index: 99;
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 18px;
+  flex-shrink: 0;
+}
+
+/* The div that holds the buttons */
+
+.AppMenuBtns {
+  display: flex;
+  flex-shrink: 1;
+  box-sizing: border-box;
+  height: 30px;
+  overflow: hidden;
+  flex-wrap: wrap;
+}
+
+
+
+/*
+ Could modify/improve sub-menu indication by using something like:
+.Wt-popupmenu .submenu {
+  -webkit-mask: url("data:image/svg+xml;charset=utf-8,%3Csvg width='14' height='14' viewBox='0 0 14 14' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.52 12.364L9.879 7 4.52 1.636l.615-.615L11.122 7l-5.986 5.98-.615-.616z' fill='%23000'/%3E%3C/svg%3E") no-repeat right center/13px 13px;
+  mask: url("data:image/svg+xml;charset=utf-8,%3Csvg width='14' height='14' viewBox='0 0 14 14' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.52 12.364L9.879 7 4.52 1.636l.615-.615L11.122 7l-5.986 5.98-.615-.616z' fill='%23000'/%3E%3C/svg%3E") no-repeat right center/13px 13px;
+}
+ */
+
+
+/* Window controls */
+.app-titlebar .window-controls-container {
+  display: flex;
+  flex-grow: 0;
+  flex-shrink: 0;
+  text-align: center;
+  position: relative;
+  z-index: 99;
+  -webkit-app-region: no-drag;
+  height: 30px;
+  margin-left: 5px;
+}
+
+/* Resizer */
+.app-titlebar .resizer {
+  -webkit-app-region: no-drag;
+  position: absolute;
+}
+
+.app-titlebar .resizer.top {
+  top: 0;
+  width: 100%;
+  height: 6px;
+}
+
+.app-titlebar .resizer.left {
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+}
+
+.app-titlebar .window-controls-container .window-icon-bg {
+  display: inline-block;
+  -webkit-app-region: no-drag;
+  /* height: 100%; */
+  height: 29px;
+  width: 46px;
+}
+
+.app-titlebar .window-controls-container .window-icon-bg .window-icon {
+  height: 100%;
+  width: 100%;
+  -webkit-mask-size: 23.1%;
+  mask-size: 23.1%;
+  transition: background 0.25s;
+}
+
+.app-titlebar .window-controls-container .window-icon-bg .window-icon:hover {
+  background-color: rgb(229,229,229) !important;
+}
+
+
+
+
+.app-titlebar .window-controls-container .window-icon-bg .window-icon.window-close {
+  background-image: url("data:image/svg+xml,%3Csvg width='11' height='11' viewBox='0 0 11 11' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6.279 5.5L11 10.221l-.779.779L5.5 6.279.779 11 0 10.221 4.721 5.5 0 .779.779 0 5.5 4.721 10.221 0 11 .779 6.279 5.5z' fill='%23000'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 11px;
+  transition: background 0.25s;
+}
+
+.app-titlebar .window-controls-container .window-icon-bg .window-icon.window-close:hover {
+  background-image: url("data:image/svg+xml,%3Csvg width='11' height='11' viewBox='0 0 11 11' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6.279 5.5L11 10.221l-.779.779L5.5 6.279.779 11 0 10.221 4.721 5.5 0 .779.779 0 5.5 4.721 10.221 0 11 .779 6.279 5.5z' fill='%23ffffff'/%3E%3C/svg%3E");
+  
+  /* For non-dark-mode. */
+  background-color: rgb(214, 50, 48) !important;
+  
+  /* For dark-mode. */
+  /* background-color: rgb(198,48,48) !important; */
+}
+
+
+.app-titlebar .window-controls-container .window-icon-bg .window-icon.window-unmaximize {
+  background-image: url("data:image/svg+xml,%3Csvg width='11' height='11' viewBox='0 0 11 11' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 8.798H8.798V11H0V2.202h2.202V0H11v8.798zm-3.298-5.5h-6.6v6.6h6.6v-6.6zM9.9 1.1H3.298v1.101h5.5v5.5h1.1v-6.6z' fill='%23000'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 11px;
+}
+
+.app-titlebar .window-controls-container .window-icon-bg .window-icon.window-maximize {
+  background-image: url("data:image/svg+xml,%3Csvg width='11' height='11' viewBox='0 0 11 11' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 0v11H0V0h11zM9.899 1.101H1.1V9.9h8.8V1.1z' fill='%23000'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 11px;
+}
+
+.app-titlebar .window-controls-container .window-icon-bg .window-icon.window-minimize {
+  background-image: url("data:image/svg+xml,%3Csvg width='11' height='11' viewBox='0 0 11 11' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 4.399V5.5H0V4.399h11z' fill='%23000'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 11px;
+}
+
+
+.app-titlebar.inactive .window-controls-container .window-icon,
+.app-titlebar.inactive button,
+.app-titlebar.inactive .window-title {
+  opacity: .4;
+}
+
+.app-titlebar.inactive, .app-titlebar.inactive button {
+  /* For non-dark-mode. */
+  background-color: rgb(250, 250, 250) !important;
+  
+  /* For dark-mode. */
+  /* background-color: rgb(50,50,51) !important; */
+}
+

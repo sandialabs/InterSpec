@@ -1,5 +1,13 @@
 .Wt-domRoot, .dialog-layout, .Wt-panel .body {
-  background: rgb(44,45,48); 
+  background: rgb(44,45,48) !important; 
+  color: white;
+}
+
+/* On Safari if we out .Wt-domRoot:fullscreen in with the list of the above, it makes the statement
+ fail for some reason, so we'll keep it separate, even though the contents are identical to above.
+ */
+.Wt-domRoot:fullscreen {
+  background: rgb(44,45,48) !important;
   color: white;
 }
 
@@ -61,13 +69,18 @@ a:hover, .InfoLink:hover {
 /* button > img { filter: invert(100%); }  */
 
 
-.UpperMenuDivWithLogos, .PopupMenuParentButton {
+.MenuBar, .PopupMenuParentButton {
   background-color: rgb(65,65,65) !important; 
   color: rgb(230,230,230) !important;
 }
 
-.PopupMenuParentButton:hover, .PopupMenuParentButton.active {
+.PopupMenuParentButton.active {
   background-color: rgb(18,101,200) !important;
+}
+
+.PopupMenuParentButton:hover:not(.active)
+{
+  background-color: rgba(18,101,200,0.25) !important;
 }
 
 .Wt-popup.Wt-outset {
@@ -238,3 +251,14 @@ ul.VerticalMenu > li.item:hover  {
 
 
 /* .AuxWindow-content.Decay { background: rgb(230,230,230) !important; } */
+
+
+/* When using a HTML app menu-bar, fix up close button background color on hover */
+.app-titlebar .window-controls-container .window-icon-bg .window-icon.window-close:hover {
+  background-color: rgb(57,207,207) !important;
+}
+
+/* When using a HTML app menu-bar, fix up minimize and maximize buttons on hover */
+.app-titlebar .window-controls-container .window-icon-bg .window-icon:hover {
+  background-color: rgb(175,175,175) !important;
+}
