@@ -27,6 +27,8 @@
 #include <vector>
 #include <sstream>
 
+#include <boost/math/tools/roots.hpp>
+
 #include <Wt/WMenu>
 #include <Wt/WText>
 #include <Wt/WLabel>
@@ -99,7 +101,7 @@ namespace
     const vector<float> &m_energies;
     const vector<float> &m_intensities;
     const float m_atomic_number;
-    const double m_user_enetered_dose;
+    const double m_user_entered_dose;
     const double m_distance;
     const GadrasScatterTable &m_scatter;
 
@@ -109,13 +111,13 @@ namespace
     FitShieldingAdChi2( const vector<float> &energies,
                         const vector<float> &intensities,
                         const float atomic_number,
-                        const double user_enetered_dose,
+                        const double user_entered_dose,
                         const double distance,
                         const GadrasScatterTable &scatter )
       : m_energies( energies ),
         m_intensities( intensities ),
         m_atomic_number( atomic_number ),
-        m_user_enetered_dose( user_enetered_dose ),
+        m_user_entered_dose( user_entered_dose ),
         m_distance( distance ),
         m_scatter( scatter )
     {
@@ -131,25 +133,25 @@ namespace
       const double dose = DoseCalc::gamma_dose_with_shielding( m_energies, m_intensities, ad, m_atomic_number, m_distance, m_scatter );
       
       //return differnce in microrem per hour from the target
-      return fabs(dose - m_user_enetered_dose) * 1000000.0 * PhysicalUnits::hour / PhysicalUnits::rem;
+      return fabs(dose - m_user_entered_dose) * 1000000.0 * PhysicalUnits::hour / PhysicalUnits::rem;
     }
   };//class FitShieldingAdChi2
 
   
   
   double fit_ad( const vector<float> &energies, const vector<float> &intensities,
-                const float atomic_number, const double user_enetered_dose,
+                const float atomic_number, const double user_entered_dose,
                 const double distance,
                 const GadrasScatterTable &scatter )
   {
     const double dose_no_shielding = DoseCalc::gamma_dose_with_shielding( energies, intensities, 0.0, atomic_number, distance, scatter );
     
-    if( dose_no_shielding < user_enetered_dose )
+    if( dose_no_shielding < user_entered_dose )
       throw runtime_error( "Dose from source specified is less than"
                           " entered dose, even with out shielding." );
     
     FitShieldingAdChi2 chi2Fcn( energies, intensities,
-                                atomic_number, user_enetered_dose, distance,
+                                atomic_number, user_entered_dose, distance,
                                 scatter );
     
     ROOT::Minuit2::MnUserParameters inputPrams;
@@ -1587,7 +1589,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     return;
   }
   
-  double dose_from_source = 0.0, user_enetered_dose = 0.0, distance = 10.0*PhysicalUnits::cm;
+  double dose_from_source = 0.0, user_entered_dose = 0.0, distance = 10.0*PhysicalUnits::cm;
   
   if( quantity != Distance )
   {
@@ -1624,7 +1626,7 @@ void DoseCalcWidget::updateResultForGammaSource()
   
   if( quantity != Dose )
   {
-    if( !(stringstream(m_doseEnter->text().toUTF8()) >> user_enetered_dose) )
+    if( !(stringstream(m_doseEnter->text().toUTF8()) >> user_entered_dose) )
     {
       m_issueTxt->setText( "Invalid source dose." );
       return;
@@ -1634,7 +1636,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     if( doseIndex >= static_cast<int>(PhysicalUnits::sm_doseRateUnitHtmlNameValues.size()) || doseIndex < 0 )
       throw runtime_error( "doseIndex >= PhysicalUnits::sm_doseRateUnitHtmlNameValues.size() || doseIndex < 0" );
     
-    user_enetered_dose *= PhysicalUnits::sm_doseRateUnitHtmlNameValues[doseIndex].second;
+    user_entered_dose *= PhysicalUnits::sm_doseRateUnitHtmlNameValues[doseIndex].second;
   }//if( quantity != Dose )
   
   
@@ -1642,7 +1644,7 @@ void DoseCalcWidget::updateResultForGammaSource()
   {
     case Activity:
     {
-      const double answer = activity * user_enetered_dose / dose_from_source;
+      const double answer = activity * user_entered_dose / dose_from_source;
       
       
       const bool useCurries = (m_activityAnswerUnits->currentIndex() == 0);
@@ -1675,15 +1677,95 @@ void DoseCalcWidget::updateResultForGammaSource()
       
     case Distance:
     {
-      if( user_enetered_dose <= 0.0 || IsInf(user_enetered_dose) || IsNan(user_enetered_dose) )
+      if( user_entered_dose <= 0.0 || IsInf(user_entered_dose) || IsNan(user_entered_dose) )
       {
         m_issueTxt->setText( "Invalid source dose." );
         return;
       }
       
-      const double ratio = dose_from_source / user_enetered_dose;
-      const double dist = distance * sqrt(ratio);
-      m_distanceAnswer->setText( PhysicalUnits::printToBestLengthUnits(dist) );
+      // Note: we cant actually use 'dist_guess' as is; it doesnt take into account attenuation in
+      //       the air, so we'll first take a guess (based on the default distance of 10 cm) that
+      //       doesnt account for air attenuation then use this to find a set of distances that
+      //       bracket the actual distance that yields the desired dose.
+      const double ratio = dose_from_source / user_entered_dose;
+      const double dist_guess = distance * sqrt(ratio);
+      
+      distance = -1.0;
+      try
+      {
+        // Choose the accuracy we want to find the answer to; we could probably loosen this up a bit
+        const double dist_delta = ((dist_guess < PhysicalUnits::meter) ? 0.1 : 1.0) * PhysicalUnits::mm;
+        
+        // Make a lambda to easily compute dose for a trial distance
+        auto dose_root_calc = [=]( const double radius ) -> double {
+          const double dose = DoseCalc::gamma_dose_with_shielding( energies, intensities,
+                                                  shielding_ad, shielding_an, radius, *m_scatter );
+          return user_entered_dose - dose;
+        };//dose_root_calc lamda
+        
+        auto term_cond = [=]( double x0, double x1 ) -> bool { return fabs(x0 - x1) < dist_delta; };
+        
+        // Makeup some termination conditions so we dont get stuck in infinite loops
+        boost::uintmax_t num_iters;
+        const boost::uintmax_t max_bounds_iters = 25;  //seems to take 2 iterations or fewer
+        const boost::uintmax_t max_bisect_iters = 250; //seems to take around 20 iterations
+        
+        // Find lower bounding distance
+        double lower_dist = dist_guess, upper_dist = dist_guess;
+        for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
+        {
+          if( dose_root_calc(lower_dist) < 0.0 )
+            break;
+          lower_dist *= 0.5;
+        }//for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
+        
+        if( num_iters >= max_bounds_iters )
+          throw runtime_error( "Failed to find lower bounding distance, at "
+                              + std::to_string(lower_dist/PhysicalUnits::cm) + "cm.");
+        
+        // Find upper bounding distance
+        for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
+        {
+          if( dose_root_calc(upper_dist) > 0.0 )
+            break;
+          upper_dist *= 2.0;
+        }//for( num_iters = 0; num_iters < max_bounds_iters; ++num_iters )
+        
+        if( num_iters >= max_bounds_iters )
+          throw runtime_error( "Failed to find upper bounding distance, at "
+                              + std::to_string(upper_dist/PhysicalUnits::cm) + "cm.");
+        
+        // Now find the actual distance to within 'dist_delta'
+        num_iters = max_bisect_iters;
+        const pair<double, double> bracketing_dists
+           = boost::math::tools::bisect( dose_root_calc, lower_dist, upper_dist, term_cond, num_iters );
+        
+        if( num_iters >= max_bisect_iters )
+          throw runtime_error( "Couldnt find distance; exceeded max iterations." );
+        
+        assert( term_cond(bracketing_dists.first,bracketing_dists.second) );
+        
+        distance = 0.5*(bracketing_dists.first + bracketing_dists.second);
+        
+        if( distance <= 0.0 )
+          throw runtime_error( "Got negative distance: " + std::to_string(distance) );
+        
+        //const double final_dose = DoseCalc::gamma_dose_with_shielding( energies, intensities,
+        //                                        shielding_ad, shielding_an, distance, *m_scatter );
+        //cout << "Took " << num_iters << " to get distance in range ["
+        //     << PhysicalUnits::printToBestLengthUnits(bracketing_dists.first)
+        //     << "," << PhysicalUnits::printToBestLengthUnits(bracketing_dists.second) << "]"
+        //     << " for a dose of " << PhysicalUnits::printToBestEquivalentDoseRateUnits(final_dose)
+        //     << endl;
+      }catch( std::exception &e )
+      {
+        m_issueTxt->setText( "Error calculating dose while searching for distance, sorry :{" );
+        cerr << "Error calculating dose while searching for distance: " << e.what() << endl;
+        return;
+      }//try / catch
+      
+      assert( distance > 0.0 );
+      m_distanceAnswer->setText( PhysicalUnits::printToBestLengthUnits(distance) );
       break;
     }//case Distance:
       
@@ -1720,7 +1802,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         }//if( shielding_an < 1.0 )
       
       
-        const double adfit = fit_ad( energies, intensities, shielding_an, user_enetered_dose, distance, *m_scatter );
+        const double adfit = fit_ad( energies, intensities, shielding_an, user_entered_dose, distance, *m_scatter );
         
         if( isGeneric )
         {
