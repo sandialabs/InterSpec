@@ -29,8 +29,10 @@ is used to account for down-scatter.
        to the wrong dose values.
     </p>
     <p>Under the &quot;Answer&quot; column, the <em>Stay Time</em> table provides approximate equivalencies of dose to give a rough 
-    idea of equivilant dose from commonly encountered or quoted sources.  The comparisons are only approximate, and should not be 
+    idea of equivalent dose from commonly encountered or quoted sources.  The comparisons are only approximate, and should not be
     relied on to make health or safety decisions on.
+    </p>
+    <p> Note that for distances greater than 3 meters, attenuation in the air (density 1.29 mg/cm<sup>3</sup>, effective atomic number 7.37) is also accounted for.
     </p>
   </span>
 </div>
