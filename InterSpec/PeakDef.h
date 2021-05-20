@@ -71,6 +71,7 @@ struct PeakContinuum
     Linear,
     Quadratic,
     Cubic,
+    LinearStep,
     External
   };//enum OffsetType
   
@@ -135,7 +136,9 @@ struct PeakContinuum
   //  the contonuum density will be returned.  If globally defined continuum,
   //  then the integral will be returned, using linear interpolation for
   //  ranges not exactly on the bin edges.
-  double offset_integral( const double x0, const double x1 ) const;
+  //  If LinearStep, then data histogram is necassary
+  double offset_integral( const double x0, const double x1,
+                          const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
   
   //defined: returns true if a _valid_ polynomial or external continuum type
   bool defined() const;
@@ -143,7 +146,7 @@ struct PeakContinuum
   //energyRangeDefined: returns if an energy range has explicitely been set
   bool energyRangeDefined() const;
   
-  //isPolynomial:
+  /** Returns true if Constant, Linear, Quadratic, Cubic, or LinearStep: */
   bool isPolynomial() const;
   
   double lowerEnergy() const { return m_lowerEnergy; }

@@ -971,9 +971,14 @@ MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<cons
     case PeakContinuum::External:
       throw runtime_error( "MultiPeakFitChi2Fcn: invalid offset type" );
     break;
+    
     case PeakContinuum::Constant:   case PeakContinuum::Linear:
     case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
       m_numOffset = static_cast<int>(m_offsetType);
+    break;
+    
+    case PeakContinuum::LinearStep:
+      m_numOffset = 2;
     break;
   }//switch( m_offsetType )
 }//MultiPeakFitChi2Fcn constructpor
@@ -1395,7 +1400,9 @@ void LinearProblemSubSolveChi2Fcn::init( std::shared_ptr<const SpecUtils::Measur
   {
     case PeakContinuum::Constant: case PeakContinuum::Linear:
     case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+    case PeakContinuum::LinearStep:
     break;
+      
     case PeakContinuum::NoOffset: case PeakContinuum::External:
       throw runtime_error( "LinearProblemSubSolveChi2Fcn: invalid offset" );
     break;
@@ -1579,6 +1586,7 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
   }//if( one peak ) / else
   
   vector<double> amps, offsets, amps_uncerts, offsets_uncerts;
+  //blah blah blah, need to account for LinearStep ...
   const double chi2 = fit_amp_and_offset( &m_x[0], &m_y[0], m_nbin,
                                           m_offsetType-1, m_lowerROI,
                                           means, sigmas,

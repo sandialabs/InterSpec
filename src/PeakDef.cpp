@@ -971,9 +971,18 @@ ostream &operator<<( std::ostream &stream, const PeakContinuum &cont )
     case PeakContinuum::NoOffset:
       stream << "Underfined continuum";
     break;
+      
     case PeakContinuum::External:
       stream << "Globally defined continuum";
     break;
+      
+    case PeakContinuum::LinearStep:
+      stream << "Linear step with coefficients {";
+      for( size_t i = 0; i < cont.m_values.size(); ++i )
+        stream << (i?", ":"") << cont.m_values[i];
+      stream << "} relative to " << cont.m_refernceEnergy << " keV";
+      break;
+      
     case PeakContinuum::Constant:   case PeakContinuum::Linear:
     case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
       stream << "Polynomial continuum with values {";
@@ -1532,6 +1541,7 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
     case Linear:     type = "Linear";     break;
     case Quadratic:  type = "Quardratic"; break;  //Note mispelling of "Quardratic" is left for backwards compatibility (InterSpec v1.0.6 and before), but should eventually be fixed...
     case Cubic:      type = "Cubic";      break;
+    case LinearStep: type = "LinearStep"; break;
     case External:   type = "External";   break;
   }//switch( m_type )
   
@@ -1660,6 +1670,8 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     m_type = Quadratic;
   else if( compare(node->value(),node->value_size(),"Cubic",5,false) )
     m_type = Cubic;
+  else if( compare(node->value(),node->value_size(),"LinearStep",10,false) )
+    m_type = LinearStep;
   else if( compare(node->value(),node->value_size(),"External",8,false) )
     m_type = External;
   else
@@ -1685,7 +1697,7 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
   {
     xml_node<char> *coeffs_node = cont_node->first_node("Coefficients",12);
     if( !coeffs_node )
-      throw runtime_error( "Contoinuum didt have Coefficients node" );
+      throw runtime_error( "Continuum didnt have Coefficients node" );
     
     std::vector<float> contents;
     node = coeffs_node->first_node( "Values", 6 );
@@ -2293,6 +2305,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 	  case PeakContinuum::Linear:     answer << "Linear";     break;
 	  case PeakContinuum::Quadratic:  answer << "Quadratic";  break;
 	  case PeakContinuum::Cubic:      answer << "Cubic";      break;
+    case PeakContinuum::LinearStep: answer << "LinearStep"; break;
 	  case PeakContinuum::External:   answer << "External";   break;
 	}//switch( continuum->type() )
 	answer << q << "," << q << "lowerEnergy" << q << ":" << continuum->lowerEnergy()
@@ -2320,6 +2333,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     case PeakContinuum::Linear:
     case PeakContinuum::Quadratic:
     case PeakContinuum::Cubic:
+    case PeakContinuum::LinearStep:
     {
       if( IsInf(continuum->referenceEnergy()) || IsNan(continuum->referenceEnergy()) )
         throw runtime_error( "Continuum reference energy is invalid" );
@@ -2345,9 +2359,39 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         answer << (i ? "," : "") << (continuum->fitForParameter()[i] ? "true" : "false");
       answer << "]";
       
+      if( (continuum->type() == PeakContinuum::LinearStep)
+         && foreground && foreground->num_gamma_channels() )
+      {
+        const size_t nchannel = foreground->num_gamma_channels();
+        
+        //We'll put in the coefficients, but also the values to make things easy in JS
+        size_t firstbin = foreground->find_gamma_channel( continuum->lowerEnergy() );
+        size_t lastbin = foreground->find_gamma_channel( continuum->upperEnergy() );
+        
+        firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
+        firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
+        lastbin = (lastbin < (nchannel - 1)) ? (nchannel + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (nchannel + 1) : nchannel;
+        
+        
+        answer << "," << q << "continuumEnergies" << q << ":[";
+        for (size_t i = firstbin; i <= lastbin; ++i)
+          answer << (i ? "," : "") << foreground->gamma_channel_lower(i);
+        
+        answer << "]," << q << "continuumCounts" << q << ":[";
+        for (size_t i = firstbin; i <= lastbin; ++i)
+        {
+          const float lower_x = foreground->gamma_channel_lower( i );
+          const float upper_x = foreground->gamma_channel_upper( i );
+          const float cont_counts = continuum->offset_integral( lower_x, upper_x, foreground );
+          
+          answer << (i ? "," : "") << cont_counts;
+        }
+        answer << "]";
+      }//if( continuum->type() == PeakContinuum::LinearStep )
+      
       break;
     }//polynomial continuum
-      
       
     case PeakContinuum::External:
     {
@@ -2358,20 +2402,17 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         size_t firstbin = hist->find_gamma_channel(continuum->lowerEnergy());
         size_t lastbin = hist->find_gamma_channel(continuum->upperEnergy());
         
-        if (firstbin > 0)
-          --firstbin;
-        if (firstbin > 0)
-          --firstbin;
-        if (lastbin < (hist->num_gamma_channels() - 1))
-          ++lastbin;
-        if (lastbin < (hist->num_gamma_channels() - 1))
-          ++lastbin;
+        const size_t nchannel = hist->num_gamma_channels();
+        firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
+        firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
+        lastbin = (lastbin < (nchannel - 1)) ? (nchannel + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (nchannel + 1) : nchannel;
         
         answer << "," << q << "continuumEnergies" << q << ":[";
-        for (size_t i = 0; i <= lastbin; ++i)
+        for (size_t i = firstbin; i <= lastbin; ++i)
           answer << (i ? "," : "") << hist->gamma_channel_lower(i);
         answer << "]," << q << "continuumCounts" << q << ":[";
-        for (size_t i = 0; i <= lastbin; ++i)
+        for (size_t i = firstbin; i <= lastbin; ++i)
           answer << (i ? "," : "") << hist->gamma_channel_content(i);
         answer << "]";
       }
@@ -3438,6 +3479,7 @@ bool PeakContinuum::defined() const
       if( m_values[2] != 0.0)
         return true;
     case Linear:
+    case LinearStep:
       if( m_values[1] != 0.0)
         return true;
     case Constant:
@@ -3637,11 +3679,15 @@ void PeakContinuum::setParameters( double referenceEnergy,
       
     case Constant:   case Linear:
     case Quadratic: case Cubic:
+      if( x.size() != static_cast<size_t>(m_type) )
+        throw runtime_error( "PeakContinuum::setParameters invalid parameter size" );
+    break;
+      
+    case LinearStep:
+      if( x.size() != 2 )
+        throw runtime_error( "PeakContinuum::setParameters invalid parameter size for LinearStep" );
     break;
   };//switch( m_type )
-  
-  if( x.size() != static_cast<size_t>(m_type) )
-    throw runtime_error( "PeakContinuum::setParameters invalid parameter size" );
   
   m_values = x;
   m_refernceEnergy = referenceEnergy;
@@ -3653,6 +3699,9 @@ void PeakContinuum::setParameters( double referenceEnergy,
     m_uncertainties.resize( x.size(), 0.0 );
   }else
   {
+    if( (m_type == LinearStep) && (uncertainties.size() != static_cast<size_t>(m_type)) )
+      throw runtime_error( "PeakContinuum::setParameters invalid uncert size for LinearStep" );
+    
     if( uncertainties.size() != static_cast<size_t>(m_type) )
       throw runtime_error( "PeakContinuum::setParameters invalid uncert size" );
     m_uncertainties = uncertainties;
@@ -3694,6 +3743,10 @@ void PeakContinuum::setParameters( double referenceEnergy,
                                    const double *parameters,
                                    const double *uncertainties )
 {
+  if( !parameters )
+    throw runtime_error( "PeakContinuum::setParameters invalid parameters" );
+  
+  vector<double> uncerts, values;
   switch( m_type )
   {
     case NoOffset: case External:
@@ -3701,15 +3754,17 @@ void PeakContinuum::setParameters( double referenceEnergy,
       
     case Constant:   case Linear:
     case Quadratic: case Cubic:
+      values.insert( end(values), parameters, parameters + m_type );
+      if( uncertainties )
+        uncerts.insert( end(uncerts), uncertainties, uncertainties+m_type );
+      break;
+      
+    case LinearStep:
+      values.insert( end(values), parameters, parameters + 2 );
+      if( uncertainties )
+        uncerts.insert( end(uncerts), uncertainties, uncertainties + 2 );
       break;
   };//switch( m_type )
-  
-  if( !parameters )
-    throw runtime_error( "PeakContinuum::setParameters invalid paramters" );
-  
-  vector<double> uncerts, values( parameters, parameters+m_type );
-  if( uncertainties )
-    uncerts.insert( uncerts.end(), uncertainties, uncertainties+m_type );
   
   setParameters( referenceEnergy, values, uncerts );
 }//setParameters
@@ -3745,9 +3800,12 @@ bool PeakContinuum::isPolynomial() const
   {
     case NoOffset:   case External:
       return false;
+      
     case Constant:   case Linear:
     case Quadratic: case Cubic:
+    case LinearStep:
       return true;
+      
     break;
   }//switch( m_type )
   
@@ -3777,6 +3835,7 @@ void PeakContinuum::setType( PeakContinuum::OffsetType type )
     break;
     
     case Linear:
+    case LinearStep:
       m_values.resize( 2, 0.0 );
       m_uncertainties.resize( 2, 0.0 );
       m_fitForValue.resize( 2, true );
@@ -3825,16 +3884,45 @@ void PeakContinuum::calc_linear_continuum_eqn( const std::shared_ptr<const Measu
 }//void calc_continuum_eqn(...)
 
 
-double PeakContinuum::offset_integral( const double x0, const double x1 ) const
+double PeakContinuum::offset_integral( const double x0, const double x1,
+                                       const std::shared_ptr<const SpecUtils::Measurement> &data  ) const
 {
   switch( m_type )
   {
     case NoOffset:
       return 0.0;
-    case Constant:   case Linear:
-    case Quadratic: case Cubic:
-      return offset_eqn_integral( &(m_values[0]),
-                                 m_type, x0, x1, m_refernceEnergy );
+    
+    case Constant: case Linear: case Quadratic: case Cubic:
+      return offset_eqn_integral( &(m_values[0]), m_type, x0, x1, m_refernceEnergy );
+      
+    case LinearStep:
+    {
+      assert( m_values.size() == 2 );
+      
+      if( !data || !data->num_gamma_channels() )
+        throw runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
+      
+      // TODO: this is not efficient, tested, or correct if integration limits do not correspond to channel limits
+#warning "TODO: LinearStep offset_integral is not efficient, tested, or correct"
+      
+      const double roi_lower = lowerEnergy();
+      const double roi_upper = upperEnergy();
+      
+      const double cumulative_data = data->gamma_integral(roi_lower, 0.5*(x0 + x1) );
+      const double roi_data_sum = data->gamma_integral(roi_lower, roi_upper );
+      
+      const double frac_data = cumulative_data / roi_data_sum;
+      
+      const double roi_0 = roi_lower - m_refernceEnergy;
+      const double roi_1 = roi_upper - m_refernceEnergy;
+      const double frac_roi = (x1 - x0) / (roi_upper - roi_lower);
+      
+      const double offset = m_values[0]*(x1 - x0);
+      const double linear_total_area = 0.5*m_values[1]*(roi_1*roi_1 - roi_0*roi_0);
+      
+      return offset + frac_roi*linear_total_area*frac_data;
+    }//case LinearStep:
+      
     case External:
       if( !m_externalContinuum )
         return 0.0;
@@ -3910,7 +3998,7 @@ double PeakContinuum::offset_eqn_integral( const double *coefs,
   
   switch( type )
   {
-    case NoOffset: case External:
+    case NoOffset: case External: case LinearStep:
       throw runtime_error( "PeakContinuum::offset_eqn_integral(...) may only be"
                           " called for polynomial backgrounds" );
       
@@ -3955,6 +4043,7 @@ void PeakContinuum::translate_offset_polynomial( double *new_coefs,
                            "quadratic or cubic polynomials" );
       
     case Linear:
+    case LinearStep:
     {
       new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
       new_coefs[1] = old_coefs[1];
