@@ -110,7 +110,7 @@ double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr
   {
     double lowx(0.0), upperx(0.0);
     findROIEnergyLimits( lowx, upperx, *peak, data );
-    contArea = peak->offset_integral( lowx, upperx );
+    contArea = peak->offset_integral( lowx, upperx, data );
   }else
   {
     const double lowerx = (peak->gausPeak() ? (peak->mean()-3.0*peak->sigma()) : peak->lowerX());

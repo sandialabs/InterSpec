@@ -2370,8 +2370,8 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (nchannel + 1) : nchannel;
-        lastbin = (lastbin < (nchannel - 1)) ? (nchannel + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
         
         
         answer << "," << q << "continuumEnergies" << q << ":[";
@@ -2379,6 +2379,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           answer << (i ? "," : "") << foreground->gamma_channel_lower(i);
         
         answer << "]," << q << "continuumCounts" << q << ":[";
+#warning "Can make computing continuumCounts for LinearStep so much more efficient"
         for (size_t i = firstbin; i <= lastbin; ++i)
         {
           const float lower_x = foreground->gamma_channel_lower( i );
@@ -2405,8 +2406,8 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         const size_t nchannel = hist->num_gamma_channels();
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (nchannel + 1) : nchannel;
-        lastbin = (lastbin < (nchannel - 1)) ? (nchannel + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
         
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
@@ -2763,7 +2764,7 @@ double PeakDef::areaFromData( std::shared_ptr<const Measurement> data ) const
       const float e0 = std::max( energyStart, data->gamma_channel_lower(i) );
       const float e1 = std::min( energyEnd, data->gamma_channel_upper(i) );
       const double data_area_i = data->gamma_integral(e0, e1);
-      const double cont_area_1 = m_continuum->offset_integral(e0, e1);
+      const double cont_area_1 = m_continuum->offset_integral(e0, e1, data);
       if( data_area_i > cont_area_1 )
         sumval += (data_area_i - cont_area_1);
     }
@@ -3541,9 +3542,10 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
 
 
 
-double PeakDef::offset_integral( const double x0, const double x1 ) const
+double PeakDef::offset_integral( const double x0, const double x1,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &data ) const
 {
-  return m_continuum->offset_integral( x0, x1 );
+  return m_continuum->offset_integral( x0, x1, data );
 }//double offset_integral( const double x0, const double x1 ) const
 
 
@@ -3672,6 +3674,7 @@ void PeakContinuum::setParameters( double referenceEnergy,
                                    const std::vector<double> &x,
                                    const std::vector<double> &uncertainties )
 {
+  // First check size of inputs are valid
   switch( m_type )
   {
     case NoOffset: case External:
@@ -3681,31 +3684,25 @@ void PeakContinuum::setParameters( double referenceEnergy,
     case Quadratic: case Cubic:
       if( x.size() != static_cast<size_t>(m_type) )
         throw runtime_error( "PeakContinuum::setParameters invalid parameter size" );
+      
+      if( !uncertainties.empty() && (uncertainties.size() != static_cast<size_t>(m_type)) )
+        throw runtime_error( "PeakContinuum::setParameters invalid uncert size" );
     break;
       
     case LinearStep:
       if( x.size() != 2 )
         throw runtime_error( "PeakContinuum::setParameters invalid parameter size for LinearStep" );
+      
+      if( !uncertainties.empty() && (uncertainties.size() != 2) )
+        throw runtime_error( "PeakContinuum::setParameters invalid uncert size for LinearStep" );
     break;
   };//switch( m_type )
   
   m_values = x;
   m_refernceEnergy = referenceEnergy;
   m_fitForValue.resize( m_values.size(), true );
-  
-  if( uncertainties.empty() )
-  {
-    m_uncertainties.clear();
-    m_uncertainties.resize( x.size(), 0.0 );
-  }else
-  {
-    if( (m_type == LinearStep) && (uncertainties.size() != static_cast<size_t>(m_type)) )
-      throw runtime_error( "PeakContinuum::setParameters invalid uncert size for LinearStep" );
-    
-    if( uncertainties.size() != static_cast<size_t>(m_type) )
-      throw runtime_error( "PeakContinuum::setParameters invalid uncert size" );
-    m_uncertainties = uncertainties;
-  }//if( uncertainties.empty() ) / else
+  m_uncertainties = uncertainties;
+  m_uncertainties.resize( m_values.size(), 0.0 );
 }//void setParameters(...)
 
 
@@ -3835,6 +3832,12 @@ void PeakContinuum::setType( PeakContinuum::OffsetType type )
     break;
     
     case Linear:
+      m_values.resize( 2, 0.0 );
+      m_uncertainties.resize( 2, 0.0 );
+      m_fitForValue.resize( 2, true );
+      m_externalContinuum.reset();
+      break;
+      
     case LinearStep:
       m_values.resize( 2, 0.0 );
       m_uncertainties.resize( 2, 0.0 );

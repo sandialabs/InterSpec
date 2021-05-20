@@ -803,9 +803,12 @@ void PeakEdit::refreshPeakInfo()
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
       {
         const PeakContinuum::OffsetType type = continuum->type();
+        
         const int coefnum = t - PeakEdit::OffsetPolynomial0;
-        const bool hide = (type==PeakContinuum::External)
-                          || (coefnum>=type);
+        const bool hide = ( (type==PeakContinuum::External)
+                            || (coefnum>=type)
+                            || ((type == PeakContinuum::LinearStep) && (coefnum > 1)) );
+        
         row->setHidden( hide );
         
         if( hide )
@@ -1825,7 +1828,7 @@ void PeakEdit::setAmplitudeForDataDefinedPeak()
     const float lowere = max( data->gamma_channel_lower(channel), roilower );
     const float uppere = min( data->gamma_channel_upper(channel), roiupper );
     const double dataarea = gamma_integral( data, lowere, uppere );
-    const double contarea = continuum->offset_integral( lowere, uppere );
+    const double contarea = continuum->offset_integral( lowere, uppere, data );
     datasum += max( 0.0, dataarea);
     peaksum += max( 0.0, (dataarea-contarea));
   }//for( int bin = lowerbin; bin <= upperbin; ++bin )
@@ -1846,8 +1849,7 @@ void PeakEdit::apply()
     {
   std::shared_ptr<PeakContinuum> continuum = m_currentPeak.continuum();
   
-  const PeakContinuum::OffsetType offset
-                  = PeakContinuum::OffsetType(m_continuumType->currentIndex());
+  const PeakContinuum::OffsetType offset = PeakContinuum::OffsetType(m_continuumType->currentIndex());
   if( offset != continuum->type() )
   {
     continuum->setType( offset );

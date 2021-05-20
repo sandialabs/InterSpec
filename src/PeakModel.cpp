@@ -1171,7 +1171,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         {
           double lowx(0.0), upperx(0.0);
           findROIEnergyLimits( lowx, upperx, *peak, dataH );
-          contArea = peak->offset_integral( lowx, upperx );
+          contArea = peak->offset_integral( lowx, upperx, dataH );
         }else
         {
           std::shared_ptr<const SpecUtils::Measurement> continuum = m_dataModel->getBackground();
@@ -1418,6 +1418,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         case PeakContinuum::Linear:     return WString( "Linear" );
         case PeakContinuum::Quadratic:  return WString( "Quadratic" );
         case PeakContinuum::Cubic:      return WString( "Cubic" );
+        case PeakContinuum::LinearStep: return WString( "Linear Step" );
         case PeakContinuum::External:   return WString( "Global Cont." );
       }//switch( peak->offsetType() )
       
@@ -2343,8 +2344,14 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
         lhs_area = data->gamma_integral( lhs->lowerX(), lhs->upperX() );
       }else
       {
-        rhs_area = rhs->offset_integral( rhs->lowerX(), rhs->upperX() );
-        lhs_area = lhs->offset_integral( lhs->lowerX(), lhs->upperX() );
+        try
+        {
+          rhs_area = rhs->offset_integral( rhs->lowerX(), rhs->upperX(), data );
+          lhs_area = lhs->offset_integral( lhs->lowerX(), lhs->upperX(), data );
+        }catch(...)
+        {
+          //Will only fail for LinearStep continuum - which I doubt we will ever get here anyway.
+        }
       }
       
       return (asscend ? (lhs_area<rhs_area) : (lhs_area>rhs_area));
