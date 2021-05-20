@@ -396,12 +396,13 @@ void PeakEdit::init()
   {
     switch ( t )
     {
-      case PeakContinuum::NoOffset:  m_continuumType->addItem( "None" );         break;
-      case PeakContinuum::External:  m_continuumType->addItem( "Global Cont." ); break;
-      case PeakContinuum::Constant:  m_continuumType->addItem( "Constant" );     break;
-      case PeakContinuum::Linear:    m_continuumType->addItem( "Linear" );       break;
-      case PeakContinuum::Quadratic: m_continuumType->addItem( "Quadratic" );  break;
-      case PeakContinuum::Cubic:     m_continuumType->addItem( "Cubic" );        break;
+      case PeakContinuum::NoOffset:   m_continuumType->addItem( "None" );         break;
+      case PeakContinuum::LinearStep: m_continuumType->addItem( "Linear Step" );  break;
+      case PeakContinuum::External:   m_continuumType->addItem( "Global Cont." ); break;
+      case PeakContinuum::Constant:   m_continuumType->addItem( "Constant" );     break;
+      case PeakContinuum::Linear:     m_continuumType->addItem( "Linear" );       break;
+      case PeakContinuum::Quadratic:  m_continuumType->addItem( "Quadratic" );    break;
+      case PeakContinuum::Cubic:      m_continuumType->addItem( "Cubic" );        break;
     }//switch ( t )
   }//for( loop over PeakContinuum::OffsetType )
 
@@ -1421,6 +1422,7 @@ void PeakEdit::contnuumTypeChanged()
     break;
     
     case PeakContinuum::Linear:
+    case PeakContinuum::LinearStep:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial1)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial2)->setHidden( true );
@@ -1530,14 +1532,20 @@ void PeakEdit::skewTypeChanged()
               case PeakContinuum::External:
 //                if( continuum )
 //                  contArea = integral( continuum, lowe, upe );
-                contArea = continuum->offset_integral( lowe, upe );
+                contArea = continuum->offset_integral( lowe, upe, nullptr );
                 break;
                 
               case PeakContinuum::Constant: case PeakContinuum::Linear:
               case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
 //                contArea = m_currentPeak.offset_integral( lowe, upe );
-                contArea = continuum->offset_integral( lowe, upe );
+                contArea = continuum->offset_integral( lowe, upe, nullptr );
                 break;
+                
+              case PeakContinuum::LinearStep:
+              {
+                std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+                contArea = continuum->offset_integral( lowe, upe, data );
+              }
             }//switch( m_currentPeak.offsetType() )
             
             if( dataArea > contArea )
@@ -1879,27 +1887,16 @@ void PeakEdit::apply()
         
       case PeakContinuum::Constant:
       case PeakContinuum::Linear:
-      {
-//        double refEnrgy = continuum->referenceEnergy();
-//        vector<double> pars = continuum->parameters();
-//        vector<double> errors = continuum->unertainties();
-//        for( size_t i = 0; i < pars.size(); ++i )
-//          if( pars[i] == 0 )
-//            pars[i] = 0.1;
-//        continuum->setParameters( refEnrgy, pars, errors );
-        break;
-      }//
-      
       case PeakContinuum::Quadratic:
       case PeakContinuum::Cubic:
+      case PeakContinuum::LinearStep:
         break;
     }//switch( offset )
   }//if( offset != m_currentPeak.offsetType() )
   
   
   
-  const PeakDef::SkewType skewType
-                             = PeakDef::SkewType( m_skewType->currentIndex() );
+  const PeakDef::SkewType skewType = PeakDef::SkewType( m_skewType->currentIndex() );
   if( skewType != m_currentPeak.skewType() )
   {
     cerr << "PeakEdit::apply(): handle skew type change better" << endl;
