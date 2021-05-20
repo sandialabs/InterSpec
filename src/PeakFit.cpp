@@ -1721,7 +1721,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
         const double xbinlow = data->gamma_channel_lower(channel);
         const double xbinup = data->gamma_channel_upper(channel);
         const double ndata = data->gamma_channel_content(channel);
-        const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
+        const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
         
         double npeak = 0.0;
         for( const PeakShrdPtr &peak : peaks )
@@ -1750,7 +1750,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
             predicted[channel] = 0.0;
           const double xbinlow = data->gamma_channel_lower(channel);
           const double xbinup = data->gamma_channel_upper(channel);
-          const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
+          const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
           predicted[channel] += ncontinuum + peak->gauss_integral( xbinlow, xbinup );
           if( peak->skewType() == PeakDef::LandauSkew )
             predicted[channel] += peak->skew_integral( xbinlow, xbinup );
@@ -1965,7 +1965,7 @@ double evaluate_chi2dof_for_range( const std::vector<PeakDef> &peaks,
       if( !continuums.count( contptr ) )
       {
         continuums.insert( contptr );
-        y_pred += contptr->offset_integral(x0, x1);
+        y_pred += contptr->offset_integral(x0, x1, dataH);
       }
     }//for( size_t j = 0; j < peaks.size(); ++j )
     
@@ -3636,8 +3636,8 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     // (being lazy and just integrating, rather than evaluating)
     const double ptipval = peak->gauss_integral( mean-0.1*sigma, mean+0.1*sigma );
     const double p2val = peak->gauss_integral( mean+1.9*sigma, mean+2.1*sigma );
-    const double conttipval = peak->offset_integral( mean-0.1*sigma, mean+0.1*sigma );
-    const double cont2val = peak->offset_integral( mean+1.9*sigma, mean+2.1*sigma );
+    const double conttipval = peak->offset_integral( mean-0.1*sigma, mean+0.1*sigma, dataH );
+    const double cont2val = peak->offset_integral( mean+1.9*sigma, mean+2.1*sigma, dataH );
     const double contdiff = conttipval - cont2val;
     const double peakdiff = ptipval - p2val;
     
@@ -3647,8 +3647,8 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     const double roi_lower = peak->lowerX();
     const double roi_upper = peak->upperX();
     
-    const double below_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower );
-    const double above_roi_cont_area = peak->continuum()->offset_integral( roi_upper, roi_upper + sigma );
+    const double below_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower, dataH );
+    const double above_roi_cont_area = peak->continuum()->offset_integral( roi_upper, roi_upper + sigma, dataH );
     const double below_roi_data_area = dataH->gamma_integral( roi_lower - sigma, roi_lower );
     const double above_roi_data_area = dataH->gamma_integral( roi_upper, roi_upper + sigma );
     
@@ -3836,7 +3836,7 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
   
     for( size_t i = startchannel; i <= endchannel; ++i )
     {
-      const double val = continuum->offset_integral( energies[i], energies[i+1] );
+      const double val = continuum->offset_integral( energies[i], energies[i+1], dataH );
       if( val < minval )
       {
         minval = val;
@@ -3845,9 +3845,9 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
     }//for( size_t i = startchannel; i <= endchannel; ++i )
   
     const double lowedgeval = continuum->offset_integral( energies[startchannel],
-                                                    energies[startchannel+1] );
+                                                    energies[startchannel+1], dataH );
     const double highedgeval = continuum->offset_integral( energies[endchannel],
-                                                    energies[endchannel+1] );
+                                                    energies[endchannel+1], dataH );
   
     //THe below 0.5 and 10.0 are based off nearly nothing
     if( minval < 0.5*lowedgeval && minval < 0.5*highedgeval
@@ -5441,7 +5441,7 @@ void set_chi2_dof( std::shared_ptr<const Measurement> data,
         nfitpeak += fitpeaks[peakinds[i]].gauss_integral( xbinlow, xbinup );
       
       const double ndata = data->gamma_channel_content( channel );
-      const double ncontinuim = continuum->offset_integral( xbinlow, xbinup );
+      const double ncontinuim = continuum->offset_integral( xbinlow, xbinup, data );
       
       const double datauncert = std::max( ndata, 1.0 );
       const double nabove = (ndata - ncontinuim - nfitpeak);
@@ -5883,6 +5883,7 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
         
 double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
                                   const int polynomial_order,
+                                  const bool step_continuum,
                                   const double ref_energy,
                                   const vector<double> &means,
                                   const vector<double> &sigmas,
@@ -6981,7 +6982,21 @@ bool chi2_significance_test( PeakDef peak,
             assert( peaks.size() );
             
             std::shared_ptr<const PeakContinuum> cont = peaks[0].continuum();
-            const int polynomial_order = cont->type() - PeakContinuum::Constant;
+            
+            const int polynomial_order = ([&cont]() -> int {
+              switch( cont->type() )
+              {
+                case PeakContinuum::NoOffset: case PeakContinuum::External:
+                  return 0;
+                  
+                case PeakContinuum::Constant: case PeakContinuum::Linear:
+                case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+                  return cont->type() - PeakContinuum::Constant;
+                  
+                case PeakContinuum::LinearStep:
+                  return 1;
+              }//switch( cont->type() )
+            })();
             
             std::vector<double> means, sigmas;
             
@@ -7062,6 +7077,7 @@ bool chi2_significance_test( PeakDef peak,
               {
                 chi2 = fit_amp_and_offset( x_start, y_start, nregionbin,
                                           polynomial_order,
+                                          (cont->type() == PeakContinuum::LinearStep),
                                           cont->lowerEnergy(),
                                           means, sigmas,
 #if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
@@ -7297,7 +7313,7 @@ bool chi2_significance_test( PeakDef peak,
             {
               const float loweredge = (*m_x)[bin];
               const float upperedge = (*m_x)[bin+1];
-              const double continuumarea = continuum->offset_integral( loweredge, upperedge );
+              const double continuumarea = continuum->offset_integral( loweredge, upperedge, m_meas );
               const double peakarea = peak.gauss_integral( loweredge, upperedge );
               double otherPeakArea = 0.0;
               for( size_t i = 0; i < other_peaks.size(); ++i )
@@ -7683,7 +7699,7 @@ bool chi2_significance_test( PeakDef peak,
                   sigmas.push_back( sigma );
                   
                   int polynomial_order = 1;  //linear
-                  
+                  const bool step_continuum = false;
                   /*
                    if( means.size() > 2 )
                    polynomial_order = 2;
@@ -7692,7 +7708,9 @@ bool chi2_significance_test( PeakDef peak,
                    */
                   
                   const double chi2 =  fit_amp_and_offset( x_start, data, nbin,
-                                                          polynomial_order, energy, means, sigmas,
+                                                          polynomial_order,
+                                                          step_continuum,
+                                                          energy, means, sigmas,
 #if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
                                                           fixedAmpPeaks,
 #endif

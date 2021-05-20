@@ -575,7 +575,8 @@ public:
   
   
   //offset_integral(): gives area of the continuum component between x0 and x1.
-  double offset_integral( const double x0, const double x1 ) const;
+  double offset_integral( const double x0, const double x1,
+                          const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
 
   inline bool fitFor( CoefficientType type ) const;
   inline void setFitFor( CoefficientType type, bool fit );

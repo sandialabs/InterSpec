@@ -320,6 +320,7 @@ double evaluate_polynomial( const double x,
 //  to remind myself to check it out some more.
 double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
                            const int polynomial_order,
+                           const bool step_continuum,
                            const double ref_energy,
                            const std::vector<double> &means,
                            const std::vector<double> &sigmas,

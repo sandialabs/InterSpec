@@ -1102,7 +1102,8 @@ std::shared_ptr<Wt::WSvgImage> SpectrumViewerTester::renderChartToSvg( double lo
 }//renderChartToSvg(...)
 
 
-string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak )
+string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak,
+                                        const std::shared_ptr<const SpecUtils::Measurement> &data )
 {
   stringstream strm;
   
@@ -1134,18 +1135,26 @@ string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak )
 
   switch( peak.continuum()->type() )
   {
-    case PeakContinuum::NoOffset:   strm << "None</td></tr>\n";      break;
-    case PeakContinuum::Constant:   strm << "Constant</td></tr>\n";  break;
-    case PeakContinuum::Linear:     strm << "Linear</td></tr>\n";    break;
-    case PeakContinuum::Quadratic:  strm << "Quadratic</td></tr>\n"; break;
-    case PeakContinuum::Cubic:      strm << "Cubic</td></tr>\n";     break;
-    case PeakContinuum::External:   strm << "Global</td></tr>\n";    break;
+    case PeakContinuum::NoOffset:   strm << "None</td></tr>\n";       break;
+    case PeakContinuum::Constant:   strm << "Constant</td></tr>\n";   break;
+    case PeakContinuum::Linear:     strm << "Linear</td></tr>\n";     break;
+    case PeakContinuum::Quadratic:  strm << "Quadratic</td></tr>\n";  break;
+    case PeakContinuum::Cubic:      strm << "Cubic</td></tr>\n";      break;
+    case PeakContinuum::LinearStep: strm << "Linear Step</td></tr>\n"; break;
+    case PeakContinuum::External:   strm << "Global</td></tr>\n";     break;
   }//switch( peak.continuum()->type() )
   
-  strm
-    << startrow << "Cont. Area" << starttd
-       << peak.continuum()->offset_integral(peak.lowerX(), peak.upperX())
-       << " keV</td></tr>\n";
+  double offset_area = 0.0;
+  
+  try
+  {
+    peak.continuum()->offset_integral(peak.lowerX(), peak.upperX(), data);
+  }catch(...)
+  {
+    //can only get here for PeakContinuum::LinearStep with invalid data
+  }
+  
+  strm << startrow << "Cont. Area" << starttd << offset_area << "</td></tr>\n";
   if( peak.chi2Defined() )
     strm << startrow << "Chi2/DOF" << starttd << peak.chi2dof() << "</td></tr>\n";
   strm << "</table>";
@@ -1168,6 +1177,8 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
   Score score;
   score.m_test = ManualPeakClicking;
   PeakModel *peakModel = m_viewer->m_peakModel;
+  
+  const auto data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   
   if( !peakModel->peaks() || peakModel->peaks()->empty() )
     return score;
@@ -1293,7 +1304,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
       }//if( neffectOtherPeaks ) / else
       
       note.m_title = onstack;
-      note.m_text = makePeakSummarryTable( *peak );
+      note.m_text = makePeakSummarryTable( *peak, data );
       
       double lowx = peak->mean() - sm_nfwhm_manually_click*peak->fwhm();
       double highx = peak->mean() + sm_nfwhm_manually_click*peak->fwhm();
@@ -1589,7 +1600,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
     
     WStringStream peakTableStrm;
     
-    note.m_text = makePeakSummarryTable( peak );
+    note.m_text = makePeakSummarryTable( peak, data );
     
     const double lowx = 2.0*peak.lowerX() - peak.upperX();
     const double upperx = 2.0*peak.upperX() - peak.lowerX();
@@ -1612,7 +1623,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
     snprintf( onstack, sizeof(onstack),
              "Found unexpected peak at %.1f keV", test.mean() );
     note.m_title = onstack;
-    note.m_text = makePeakSummarryTable( test );
+    note.m_text = makePeakSummarryTable( test, data );
     
     const double lowx = 2.0*test.lowerX() - test.upperX();
     const double upperx = 2.0*test.upperX() - test.lowerX();
@@ -1642,7 +1653,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
              "Found %i peaks where one was expected at %.1f keV",
              int(tests.size()), truth.mean() );
     note.m_title = onstack;
-//    note.m_text = makePeakSummarryTable( truth );
+//    note.m_text = makePeakSummarryTable( truth, data );
     
     double lowxer = 99999.9, upperx = -999999.9;
     for( const PeakDef &p : tests )
@@ -1771,7 +1782,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
                "Found %i peaks in ROI where %i is expected",
                int(tests.size()), int(truths.size()) );
       note.m_title = onstack;
-      //    note.m_text = makePeakSummarryTable( truth );
+      //    note.m_text = makePeakSummarryTable( truth, data );
     
       double lowxer = 99999.9, upperx = -999999.9;
       for( const PeakDef &p : tests )
@@ -2064,6 +2075,8 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
   
   PeakModel *peakModel = m_viewer->m_peakModel;
   
+  const auto data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
   if( !peakModel->peaks() || peakModel->peaks()->empty() )
     return score;
   
@@ -2209,10 +2222,10 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
             << issue << "</div>"
             << "\t\t<div style=\"display: inline-block; padding-top:10px;\">"
                "<div style=\"color:green;\"><b>Expected</b></div>\n\t\t"
-            << makePeakSummarryTable(*orig) << "</div>"
+            << makePeakSummarryTable(*orig, data) << "</div>"
             << "\t\t<div style=\"display: inline-block; padding-top:10px;\">"
                "<div style=\"color:red;\"><b>Found</b></div>\n\t\t"
-            << makePeakSummarryTable(*found) << "</div>\n";
+            << makePeakSummarryTable(*found, data) << "</div>\n";
         msg << "\t</div>\n";
         
         note.m_text += msg.str();
@@ -2353,10 +2366,10 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
         msg << "\t<div>\n"
             << "\t\t<div style=\"display: inline-block;\">\n"
                "\t\t\t<div style=\"color:green;\"><b>Expected</b></div>\n\t\t\t"
-            << makePeakSummarryTable(*pre) << "\n\t\t</div>"
+            << makePeakSummarryTable(*pre, data) << "\n\t\t</div>"
             << "\t\t<div style=\"display: inline-block;\">\n"
                "\t\t\t<div style=\"color:red;\"><b>Found</b></div>\n\t\t\t"
-            << makePeakSummarryTable(post) << "\n\t\t</div>\n"
+            << makePeakSummarryTable(post, data) << "\n\t\t</div>\n"
             << "\t</div>\n";
         thisnote.m_text += msg.str();
         

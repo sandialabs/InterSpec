@@ -2468,7 +2468,7 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
     const double lowerx = std::max( peak.lowerX(), peak.mean() - 3*peak.sigma() );
     const double upperx = std::min( peak.upperX(), peak.mean() + 3*peak.sigma() );
     const double dataarea = data->gamma_integral( lowerx, upperx );
-    const double contarea = peak.continuum()->offset_integral( lowerx, upperx );
+    const double contarea = peak.continuum()->offset_integral( lowerx, upperx, data );
     const double peakarea = (dataarea > contarea) ? (dataarea - contarea) : 10.0;
     peak.setPeakArea( peakarea );
     

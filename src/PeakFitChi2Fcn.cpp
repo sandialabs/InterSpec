@@ -468,7 +468,7 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
       const double xbinlow = m_data->gamma_channel_lower(channel);
       const double xbinup = m_data->gamma_channel_upper(channel);
       const double ndata = m_data->gamma_channel_content(channel);
-      const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
+      const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, m_data);
       
       double nfitpeak = 0.0;
       for( const PeakDef *peak : peaks )
@@ -1122,7 +1122,7 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       centroidbins[i] = bin;
       const double lowx = m_binLowerEdge[bin];
       const double highx = m_binUpperEdge[bin];
-      const double contarea = peaks[i].offset_integral( lowx, highx );
+      const double contarea = peaks[i].offset_integral( lowx, highx, m_data );
       
       b(i) = std::max( 0.0, m_dataCounts[bin] - contarea );
     }//for( int i = 0; i < m_npeak; ++i )
@@ -1207,7 +1207,7 @@ double MultiPeakFitChi2Fcn::evalRelBinRange( const size_t beginRelChannel,
       nfitpeak += peaks[i].gauss_integral( xbinlow, xbinup );
     
     const double ndata = m_dataCounts[relchannel];
-    const double ncontinuim = peaks[0].offset_integral( xbinlow, xbinup );
+    const double ncontinuim = peaks[0].offset_integral( xbinlow, xbinup, m_data );
     
     const double datauncert = std::max( ndata, 1.0 );
     const double nabove = (ndata - ncontinuim - nfitpeak);
@@ -1585,10 +1585,28 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     }//for( size_t i = 0; i < m_npeak; ++i )
   }//if( one peak ) / else
   
+  const int polynomial_order = ([this]() -> int {
+    switch( m_offsetType )
+    {
+      case PeakContinuum::NoOffset: case PeakContinuum::External:
+        return 0;
+        
+      case PeakContinuum::Constant: case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+        return m_offsetType - PeakContinuum::Constant;
+        
+      case PeakContinuum::LinearStep:
+        return 1;
+    }//switch( cont->type() )
+  })();
+  const bool step_continuum = (m_offsetType == PeakContinuum::LinearStep);
+  
   vector<double> amps, offsets, amps_uncerts, offsets_uncerts;
-  //blah blah blah, need to account for LinearStep ...
+  
   const double chi2 = fit_amp_and_offset( &m_x[0], &m_y[0], m_nbin,
-                                          m_offsetType-1, m_lowerROI,
+                                         polynomial_order,
+                                         step_continuum,
+                                          m_lowerROI,
                                           means, sigmas,
 #if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
                                          fixedamppeaks,
