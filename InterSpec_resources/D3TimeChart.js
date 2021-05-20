@@ -286,9 +286,9 @@ D3TimeChart = function (elem, options) {
   this.horizontalLeftGridG = this.svg.append("g").attr("class", "grid");
   this.horizontalRightGridG = this.svg.append("g").attr("class", "grid");
   this.linesG = this.svg.append("g").attr("class", "lines");
-  this.axisBottomG = this.svg.append("g").attr("class", "axis");
-  this.axisLeftG = this.svg.append("g").attr("class", "axis");
-  this.axisRightG = this.svg.append("g").attr("class", "axis");
+  this.axisBottomG = this.svg.append("g").attr("class", "axis xaxis");
+  this.axisLeftG = this.svg.append("g").attr("class", "axis yaxis");
+  this.axisRightG = this.svg.append("g").attr("class", "axis yaxis");
 
   this.highlightRegionsG = this.svg
     .append("g")
@@ -453,6 +453,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   }
   // console.log("Re-initializing...");
 
+  this.margin.bottom = this.options.compactXAxis ? 25 : 50;
+
   var plotWidth = this.state.width - this.margin.left - this.margin.right;
   var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
 
@@ -541,11 +543,12 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   var domains = this.state.selection
     ? {
         x: this.state.selection.domain,
-        yGamma: this.state.data.formatted[this.state.selection.compressionIndex]
-          .domains.yGamma,
-        yNeutron: this.state.data.formatted[
-          this.state.selection.compressionIndex
-        ].domains.yNeutron,
+        yGamma:
+          this.state.data.formatted[this.state.selection.compressionIndex]
+            .domains.yGamma,
+        yNeutron:
+          this.state.data.formatted[this.state.selection.compressionIndex]
+            .domains.yNeutron,
       }
     : this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
         .domains;
@@ -568,7 +571,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
    * Handler for the initiation of a selection gesture.
    */
   var startSelection = () => {
-    if (d3.event instanceof TouchEvent) {
+    if (window.TouchEvent && d3.event instanceof TouchEvent) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
@@ -576,8 +579,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     if (this.escapeKeyPressed) this.escapeKeyPressed = false;
 
     var coords =
-      d3.event instanceof TouchEvent ||
-      d3.event.sourceEvent instanceof TouchEvent
+      window.TouchEvent &&
+      (d3.event instanceof TouchEvent ||
+        d3.event.sourceEvent instanceof TouchEvent)
         ? d3.touches(this.rect.node())[0]
         : d3.mouse(this.rect.node());
     // console.log(coords);
@@ -629,15 +633,16 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
    * Handler for the progression of a selection gesture.
    */
   var moveSelection = () => {
-    if (d3.event instanceof TouchEvent) {
+    if (window.TouchEvent && d3.event instanceof TouchEvent) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
 
     if (!this.escapeKeyPressed) {
       var coords =
-        d3.event instanceof TouchEvent ||
-        d3.event.sourceEvent instanceof TouchEvent
+        window.TouchEvent &&
+        (d3.event instanceof TouchEvent ||
+          d3.event.sourceEvent instanceof TouchEvent)
           ? d3.touches(this.rect.node())[0]
           : d3.mouse(this.rect.node());
       brush.setEnd(coords[0]);
@@ -672,7 +677,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
    */
 
   var endSelection = () => {
-    if (d3.event instanceof TouchEvent) {
+    if (window.TouchEvent && d3.event instanceof TouchEvent) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
@@ -741,29 +746,34 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   // pan drag behavior
   // initialize new variables for holding new selection and scales from panning
-  var newSelection = this.state.selection;
+  var newSelection = null;
   var newScale = brush.getScale();
   var panDrag = d3.behavior
     .drag()
     .on("dragstart", () => {
+      newSelection = this.state.selection;
       var coords = d3.mouse(this.rect.node());
       brush.setStart(coords[0]);
       d3.select("body").style("cursor", "ew-resize");
     })
     .on("drag", () => {
-      brush.setEnd(d3.mouse(this.rect.node())[0]);
-      var res = this.handleBrushPanSelection();
-      if (res) {
-        newSelection = res.newSelection;
-        newScale = res.newScale;
+      if (newSelection) {
+        brush.setEnd(d3.mouse(this.rect.node())[0]);
+        var res = this.handleBrushPanSelection();
+        if (res) {
+          newSelection = res.newSelection;
+          newScale = res.newScale;
+        }
       }
     })
     .on("dragend", () => {
       // update selection, update scale
-      this.state.selection = newSelection;
-      brush.setScale(newScale.xScale);
+      if (newSelection) {
+        this.state.selection = newSelection;
+        brush.setScale(newScale.xScale);
+        this.updateChart(newScale, newSelection.compressionIndex);
+      }
       brush.clear();
-      this.updateChart(newScale, newSelection.compressionIndex);
     });
 
   this.bottomAxisRect.call(panDrag);
@@ -826,14 +836,16 @@ D3TimeChart.prototype.updateChart = function (
         ? this.state.data.formatted[compressionIndex].sourceTypes[idx]
         : null;
 
-      var sampleNumber = this.state.data.formatted[compressionIndex]
-        .sampleNumbers[idx];
+      var sampleNumber =
+        this.state.data.formatted[compressionIndex].sampleNumbers[idx];
 
       var tooltipData = [];
       for (var detName in this.state.data.formatted[compressionIndex]
         .detectors) {
-        var y = this.state.data.formatted[compressionIndex].detectors[detName]
-          .counts[idx * 2];
+        var y =
+          this.state.data.formatted[compressionIndex].detectors[detName].counts[
+            idx * 2
+          ];
 
         tooltipData.push({
           detName: detName,
@@ -853,8 +865,8 @@ D3TimeChart.prototype.updateChart = function (
 
   // plot data
   for (var detName in this.state.data.formatted[compressionIndex].detectors) {
-    var counts = this.state.data.formatted[compressionIndex].detectors[detName]
-      .counts;
+    var counts =
+      this.state.data.formatted[compressionIndex].detectors[detName].counts;
 
     // only use visible range if zoomed in, otherwise use full range.
     if (this.state.selection) {
@@ -869,8 +881,8 @@ D3TimeChart.prototype.updateChart = function (
       counts = counts.slice(lIdx * 2, (rIdx + 1) * 2);
     }
 
-    var meta = this.state.data.formatted[compressionIndex].detectors[detName]
-      .meta;
+    var meta =
+      this.state.data.formatted[compressionIndex].detectors[detName].meta;
 
     var lineGamma = d3.svg
       .line()
@@ -1088,7 +1100,7 @@ D3TimeChart.prototype.updateChart = function (
     // create the element if not already created
     axisLabelX = this.svg
       .append("text")
-      .attr("class", "axis_label")
+      .attr("class", "xaxistitle")
       .attr("id", "th_label_x")
       .style("text-anchor", "middle")
       .text(this.options.xtitle);
@@ -1324,9 +1336,8 @@ D3TimeChart.prototype.updateChart = function (
         .attr("id", "th_y1-grid")
         .call(yAxisLeft.tickFormat("").tickSize(-plotWidth));
 
-      var horizontalLeftGridLines = this.horizontalLeftGridG.selectAll(
-        "g.tick"
-      );
+      var horizontalLeftGridLines =
+        this.horizontalLeftGridG.selectAll("g.tick");
       horizontalLeftGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
         tickLine.attr("stroke", "#d3d3d3");
@@ -1362,7 +1373,7 @@ D3TimeChart.prototype.updateChart = function (
       // create new
       this.svg
         .append("text")
-        .attr("class", "axis_label")
+        .attr("class", "yaxistitle")
         .attr("id", "th_label_y1")
         .attr(
           "transform",
@@ -1405,9 +1416,8 @@ D3TimeChart.prototype.updateChart = function (
         .attr("id", "th_y1-grid")
         .call(yAxisRight.tickFormat("").tickSize(-plotWidth));
 
-      var horizontalRightGridLines = this.horizontalRightGridG.selectAll(
-        "g.tick"
-      );
+      var horizontalRightGridLines =
+        this.horizontalRightGridG.selectAll("g.tick");
       horizontalRightGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
         tickLine.attr("stroke", "#f6f6f6");
@@ -1445,7 +1455,7 @@ D3TimeChart.prototype.updateChart = function (
       // create new
       this.svg
         .append("text")
-        .attr("class", "axis_label")
+        .attr("class", "yaxistitle")
         .attr("id", "th_label_y2")
         .attr(
           "transform",
@@ -2003,12 +2013,12 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var xScale = brush.getScale();
   var focalPoint = xScale.invert(mouseX);
 
-  var leftLimit = this.state.data.formatted[
-    this.state.data.unzoomedCompressionIndex
-  ].domains.x[0];
-  var rightLimit = this.state.data.formatted[
-    this.state.data.unzoomedCompressionIndex
-  ].domains.x[1];
+  var leftLimit =
+    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
+      .x[0];
+  var rightLimit =
+    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
+      .x[1];
 
   var currentDomain = this.state.selection
     ? this.state.selection.domain
@@ -2273,11 +2283,12 @@ D3TimeChart.prototype.handleDragForwardZoom = function () {
     if (this.state.selection) {
       var scales = this.getScales({
         x: this.state.selection.domain,
-        yGamma: this.state.data.formatted[this.state.selection.compressionIndex]
-          .domains.yGamma,
-        yNeutron: this.state.data.formatted[
-          this.state.selection.compressionIndex
-        ].domains.yNeutron,
+        yGamma:
+          this.state.data.formatted[this.state.selection.compressionIndex]
+            .domains.yGamma,
+        yNeutron:
+          this.state.data.formatted[this.state.selection.compressionIndex]
+            .domains.yNeutron,
       });
 
       this.updateChart(scales, this.state.selection.compressionIndex);
@@ -2442,12 +2453,12 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
   var panAmount =
     brush.getScale().invert(brush.getScale()(brush.getStart())) -
     brush.getScale().invert(brush.getScale()(brush.getEnd()));
-  var rightBound = this.state.data.formatted[
-    this.state.data.unzoomedCompressionIndex
-  ].domains.x[1];
-  var leftBound = this.state.data.formatted[
-    this.state.data.unzoomedCompressionIndex
-  ].domains.x[0];
+  var rightBound =
+    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
+      .x[1];
+  var leftBound =
+    this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
+      .x[0];
 
   // if will take you out of bound, do return and do nothing
   if (domain[0] + panAmount < leftBound || domain[1] + panAmount > rightBound) {
@@ -3008,18 +3019,21 @@ D3TimeChart.prototype.generateTicks = function (
 // Unimplemented
 D3TimeChart.prototype.setXAxisTitle = function (title) {
   this.options.xtitle = title;
+  this.reinitializeChart();
   //redraw x-title
 };
 
 // Unimplemented
 D3TimeChart.prototype.setY1AxisTitle = function (title) {
   this.options.y1title = title;
+  this.reinitializeChart();
   //redraw y1-title (e.g., gamma CPS axis title)
 };
 
 // Unimplemented
 D3TimeChart.prototype.setY2AxisTitle = function () {
   this.options.y2title = title;
+  this.reinitializeChart();
   //redraw y2-title (e.g., neutron CPS axis title)
 };
 
@@ -3030,7 +3044,7 @@ D3TimeChart.prototype.setY2AxisTitle = function () {
 D3TimeChart.prototype.setCompactXAxis = function (compact) {
   //Make x-zis title comapact or not
   this.options.compactXAxis = compact;
-  this.margin.bottom = compact ? 25 : 50;
+  this.reinitializeChart();
 };
 
 D3TimeChart.prototype.setGridX = function (show) {
