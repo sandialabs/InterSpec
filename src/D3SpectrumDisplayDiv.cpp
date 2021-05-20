@@ -1387,7 +1387,7 @@ void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick", "stroke: " + m_axisColor.cssText() );
+  m_cssRules[rulename] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick > line, .yaxistick", "stroke: " + m_axisColor.cssText() );
   
   //ToDo: is setting feature line colors okay like this
   rulename = "FeatureLinesColor";

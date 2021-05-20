@@ -925,7 +925,7 @@ void D3TimeChart::setTextColor( const Wt::WColor &color )
                                        " .D3TimeChart .yaxis,"
                                        " .D3TimeChart .yaxislabel,"
                                        " .D3TimeChart .xaxis",
-                                       "stroke: " + c );
+                                       "fill: " + c );
 }//setTextColor(...)
 
 
@@ -941,7 +941,7 @@ void D3TimeChart::setAxisLineColor( const Wt::WColor &color )
   m_cssRules[rulename] = style.addRule( ".D3TimeChart .xaxis > .domain,"
                                         " .D3TimeChart .yaxis > .domain,"
                                         " .D3TimeChart .xaxis > .tick > line,"
-                                        " .D3TimeChart .yaxis > .tick,"
+                                        " .D3TimeChart .yaxis > .tick > line,"
                                         " .D3TimeChart .yaxistick",
                                        "stroke: " + m_axisColor.cssText() );
 }//setAxisLineColor(...)
