@@ -44,6 +44,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
+#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 using namespace std;
@@ -2281,6 +2282,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
   //Need to check all numbers to make sure not inf or nan
   
 	stringstream answer;
+  
 	if (peaks.empty())
 		return answer.str();
 
@@ -2374,21 +2376,65 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
         
         
+        // When the JSON of the spectrum chart is defined, D3SpectrumExport.cpp/write_spectrum_data_js(...)
+        //  will send the energy calibration as coefficients sometimes, and lower channel energies other
+        //  times.  If coefficients are sent, then the JS computes channel bounds using doubles.
+        //  And somewhat surprisingly, rounding causes visual artifacts of the continuum when
+        //  the 'continuumEnergies' and 'continuumCounts' arrays are used, which are only accurate
+        //  to float levels.  So we will increase accuracy of the 'answer' stream here, which appears
+        //  to be enough to avoid these artifcats, but also commented out is how we could compute
+        //  to double precision to match what happens in the JS.
+        const auto oldprecision = answer.precision();  //probably 6 always
+        answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
+        
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
           answer << (i ? "," : "") << foreground->gamma_channel_lower(i);
-        
         answer << "]," << q << "continuumCounts" << q << ":[";
+        
+        /*
+         //Implementation to compute energies to double precision - doesnt appear to be necessary.
+        const SpecUtils::EnergyCalType caltype = foreground->energy_calibration_model();
+        if(  (caltype == SpecUtils::EnergyCalType::Polynomial
+             || caltype == SpecUtils::EnergyCalType::FullRangeFraction
+             || caltype == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+           && foreground->deviation_pairs().empty() )
+        {
+          const size_t nchannel = foreground->num_gamma_channels();
+          const vector<float> &coefs = foreground->calibration_coeffs();
+          const vector<pair<float,float>> &dev_pairs = foreground->deviation_pairs();
+         
+          answer << "," << q << "continuumEnergies" << q << ":[";
+          for (size_t i = firstbin; i <= lastbin; ++i)
+          {
+            double energy;
+            if( caltype == SpecUtils::EnergyCalType::FullRangeFraction )
+              energy = SpecUtils::fullrangefraction_energy( i, coefs, nchannel, dev_pairs );
+            else
+              energy = SpecUtils::polynomial_energy( i, coefs, dev_pairs );
+            answer << (i ? "," : "") << energy;
+          }
+          answer << "]," << q << "continuumCounts" << q << ":[";
+        }else
+        {
+          answer << "," << q << "continuumEnergies" << q << ":[";
+          for (size_t i = firstbin; i <= lastbin; ++i)
+            answer << (i ? "," : "") << foreground->gamma_channel_lower(i);
+          answer << "]," << q << "continuumCounts" << q << ":[";
+        }
+         */
+        
 #warning "Can make computing continuumCounts for LinearStep so much more efficient"
         for (size_t i = firstbin; i <= lastbin; ++i)
         {
           const float lower_x = foreground->gamma_channel_lower( i );
           const float upper_x = foreground->gamma_channel_upper( i );
           const float cont_counts = continuum->offset_integral( lower_x, upper_x, foreground );
-          
           answer << (i ? "," : "") << cont_counts;
         }
         answer << "]";
+        
+        answer << std::setprecision(9);
       }//if( continuum->type() == PeakContinuum::LinearStep )
       
       break;
@@ -2409,6 +2455,10 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
         lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
         
+        //see comments above in LinearStep section
+        const auto oldprecision = answer.precision();
+        answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
+
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
           answer << (i ? "," : "") << hist->gamma_channel_lower(i);
@@ -2416,6 +2466,8 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         for (size_t i = firstbin; i <= lastbin; ++i)
           answer << (i ? "," : "") << hist->gamma_channel_content(i);
         answer << "]";
+        
+        answer << std::setprecision(9);
       }
     }//case PeakContinuum::External:
   }//switch( continuum->type() )
@@ -3912,7 +3964,7 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       const double roi_upper = upperEnergy();
       
       const double cumulative_data = data->gamma_integral(roi_lower, 0.5*(x0 + x1) );
-      const double roi_data_sum = data->gamma_integral(roi_lower, roi_upper );
+      const double roi_data_sum = data->gamma_integral(roi_lower, roi_upper);
       
       const double frac_data = cumulative_data / roi_data_sum;
       
@@ -3923,7 +3975,12 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       const double offset = m_values[0]*(x1 - x0);
       const double linear_total_area = 0.5*m_values[1]*(roi_1*roi_1 - roi_0*roi_0);
       
-      return offset + frac_roi*linear_total_area*frac_data;
+      // TODO: I'm not quite sure where this next factor of 2 comes from.  We want linear step to
+      //       start and end at the same y-values as 'Linear' with the same coefficients, and to
+      //       make this happen, we need the 2, although I dont niavely see where it comes from.
+      const double not_understood_correction = 2.0;
+      
+      return offset + not_understood_correction*frac_roi*linear_total_area*frac_data;
     }//case LinearStep:
       
     case External:
