@@ -129,6 +129,22 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
                                  const bool setColor,
                                 const bool showingEscapePeakFeature );
   
+/** Refits the peaks from a right-click refit request.
+ Assumes you are in the Wt app primary thread.
+ */
+void refit_peaks_from_right_click( InterSpec * const interspec, const double rightClickEnergy );
+
+/** Changes the continuum type and causes a refit of ROI.
+ 
+ @param interspec The InterSpec instance to work with - it is assumed this function is being called from that apps primary thread.
+ @param rightClickEnergy Energy used to identify a peak, that will in turn identify the ROI.
+ @param continuum_type the #PeakContinuum::OffsetType
+ */
+void change_continuum_type_from_right_click( InterSpec * const interspec,
+                                            const double rightClickEnergy,
+                                            const int continuum_type );
+
+
 /** Enum to tell #fit_template_peaks where the candidate peaks to fit are
    comming from.  This info will be propagated through to the GUI and influence
    what the user can do and see.
@@ -139,7 +155,7 @@ enum class PeakTemplateFitSrc
   CsvFile
 };//enum class PeakTemplateFitSrc
   
-  
+
 /** Fits the template peaks to the passed in data, and then will open a dialog
   to allow the user to select what peaks they want to keep.
  
