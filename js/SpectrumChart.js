@@ -132,12 +132,17 @@ function( childId, parentId )
   try {
     var child = $('#' + childId );
     var parent = $('#' + parentId );
+    if( !child || !parent )
+      return;
     var parentEl = parent.get(0);
     var childEl = child.get(0);
     var can = $('#c'+childId);
     var childCan = can.get(0);
     var parentCan = $('#c'+parentId).get(0);
-
+    
+    if( !can || !parentCan )
+      return;
+    
     //console.log('parentId is ' + parentId + ' childId is ' + childId);
     var scrollParentEl = null;
     var scrollParent = null;

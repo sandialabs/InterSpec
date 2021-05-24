@@ -115,7 +115,7 @@ public:
   
   //indexOfPeak(): returns index of peak passed in; an invalid index if peak
   //  pointed to by 'peak' isnt in this model.  Note that comparison is done
-  //  using the PeakDef memorry location, not the PeakDef attributes.
+  //  using the PeakDef memory location, not the PeakDef attributes.
   Wt::WModelIndex indexOfPeak( const PeakShrdPtr &peak ) const;
   
   std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks() const;
@@ -134,7 +134,7 @@ public:
   //  InterSpec::addPeak(...)
   Wt::WModelIndex addNewPeak( const PeakDef &peak );
   
-  //addPeaks(...): adds mutliple peaks to the model.
+  //addPeaks(...): adds multiple peaks to the model.
   //  Does not assign currently showing reference gamma lines to peaks
   void addPeaks( const std::vector<PeakDef> &peaks );
   
@@ -161,11 +161,51 @@ public:
   //  Throws if the model does not contain a pointer == to the one passed in.
   void removePeak( PeakModel::PeakShrdPtr peak );
   
+  /** Removes all the passed in peaks.
+   
+   Prefer this function call over #removePeak whenever there is more than one peak, to allow (future) undo/redo implementation.
+   
+   Will throw runtime exception if and of the peaks are not owned by this model.
+   */
+  void removePeaks( const std::vector<PeakModel::PeakShrdPtr> &peak );
+  
   //removeAllPeaks(): removes all peaks
   void removeAllPeaks();
+  
+  
+  /** Returns all peaks owned by this model that share a continuum with the peak passed in, including the peak passed in.
+   
+   Throws exception if peak passed in is non-null and not owned by this model.
+   */
+  std::vector<std::shared_ptr<const PeakDef>> peaksSharingRoi( const std::shared_ptr<const PeakDef> &peak );
+  
+  /** Returns all peaks owned by this model that DO NOT share a continuum with the peak passed in.
+   
+   Throws exception if peak passed in is non-null and not owned by this model.
+   */
+  std::vector<std::shared_ptr<const PeakDef>> peaksNotSharingRoi( const std::shared_ptr<const PeakDef> &peak );
+  
+  /** Removes the passed in 'originalPeak', then creates a new peak with values of 'newPeak'.
+   
+   Causes the removeRow() followed by the rowsInserted() signals to be emitted.
+   
+   Throws exception if peak passed in is non-null and not owned by this model.
+   */
+  void updatePeak( const std::shared_ptr<const PeakDef> &originalPeak, const PeakDef &newPeak );
 
+  /** Similar to #updatePeak, but for multiple peaks.
+   
+   Original and new peaks do not have to be the same size.
+   Will potentially cause multiple removeRow() and rowsInserted() signals to be emitted.
+   
+   Throws exception if and original peaks passed are not owned by this model.
+   */
+  void updatePeaks( const std::vector<std::shared_ptr<const PeakDef>> &originalPeaks,
+                   const std::vector<PeakDef> &newPeaks );
+  
+  
   //setPeakFitFor(...): sets wether the specified coefficient should be fit for.
-  //  The original peak is released from memorry (assuming nowhere else has a
+  //  The original peak is released from memory (assuming nowhere else has a
   //  shared pointer to it), and replaced with a new one, but with the
   //  m_fitFor[coef] value changed.  No changed/removed/added signals are
   //  emmitted, and nothing else is done.
@@ -262,6 +302,26 @@ public:
   
   
 protected:
+  
+  /** Adds a new peak to the model, returning the inserted peak and its index.
+   
+   Causes the rowsInserted() signal to be emitted.
+   
+   In the future this function will not modify undo/redo history.
+   */
+  std::pair<std::shared_ptr<const PeakDef>,Wt::WModelIndex> addNewPeakInternal( const PeakDef &peak );
+  
+  /** Removes a peak from the model.
+   
+   Causes the rowsRemoved() signal to be emitted.
+   
+   Throws exception if passed in peak is not owned by this model.
+   
+   In the future this function will not modify undo/redo history.
+   */
+  void removePeakInternal( std::shared_ptr<const PeakDef> peak );
+  
+  
   SpectrumDataModel *m_dataModel;
 
   //m_peaks and m_sortedPeaks contain the same peaks, they just differ in how
