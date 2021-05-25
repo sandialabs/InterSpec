@@ -47,18 +47,33 @@ namespace
 #include <Wt/WStackedWidget>
 #include <Wt/WStackedWidget>
 
+#include "InterSpec/NativeFloatSpinBox.h"
+
 class D3TimeChartFilters : public WContainerWidget
 {
   D3TimeChart *m_parentChart;
+  
+  enum InteracModeIndex
+  {
+    IM_Normal, IM_Zoom, IM_Pan, IM_Select, IM_Add, IM_Remove, IM_NumMode
+  };
+  
   WMenu *m_interactModeMenu;
-  WSelectionBox *m_specTypeSelect;
+  
+  
+  WMenu *m_specTypeSelect;
+  
+  NativeFloatSpinBox *m_lowerEnergy;
+  NativeFloatSpinBox *m_upperEnergy;
   
 public:
   D3TimeChartFilters( D3TimeChart *parent )
     : WContainerWidget( parent ),
       m_parentChart( parent ),
       m_interactModeMenu( nullptr ),
-      m_specTypeSelect( nullptr )
+      m_specTypeSelect( nullptr ),
+      m_lowerEnergy( nullptr ),
+      m_upperEnergy( nullptr )
   {
     assert( parent );
     
@@ -81,65 +96,144 @@ public:
     m_interactModeMenu = new WMenu( instructionsStack, interact );
     m_interactModeMenu->addStyleClass( "InteractMenu" );
     
+    WMenuItem *item = nullptr;
+    WText *instructions = nullptr;
+
+    for( InteracModeIndex index = InteracModeIndex(0); index < IM_NumMode;
+        index = InteracModeIndex(index + 1) )
+    {
+      item = nullptr;
+      
+      switch( index )
+      {
+        case InteracModeIndex::IM_Normal:
+          instructions = new WText( "use left mousebutton..." );
+          item = m_interactModeMenu->addItem( "Normal", instructions );
+          break;
+          
+        case InteracModeIndex::IM_Zoom:
+          instructions = new WText( "Zoom instructions..." );
+          item = m_interactModeMenu->addItem( "Zoom", instructions );
+          break;
+          
+        case InteracModeIndex::IM_Pan:
+          instructions = new WText( "Pan instructions..." );
+          item = m_interactModeMenu->addItem( "Pan", instructions );
+          break;
+          
+        case InteracModeIndex::IM_Select:
+          instructions = new WText( "Select instructions..." );
+          item = m_interactModeMenu->addItem( "Select", instructions );
+          break;
+          
+        case InteracModeIndex::IM_Add:
+          instructions = new WText( "Add Select instructions..." );
+          item = m_interactModeMenu->addItem( "Add", instructions );
+          break;
+          
+        case InteracModeIndex::IM_Remove:
+          instructions = new WText( "Remove Select instructions..." );
+          item = m_interactModeMenu->addItem( "Remove", instructions );
+          break;
+          
+        case InteracModeIndex::IM_NumMode:
+          assert(0);
+          break;
+      }//switch( index )
+      
+      assert( item );
+      item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+      item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
+    }//for( loop over InteracModeIndex index )
     
-    m_specTypeSelect = new WSelectionBox( interact );
-    m_specTypeSelect->setVerticalSize( 3 );
-    m_specTypeSelect->addItem( "Foreground" );
-    m_specTypeSelect->addItem( "Background" );
-    m_specTypeSelect->addItem( "Secondary" );
-    m_specTypeSelect->setSelectionMode( SelectionMode::SingleSelection );
-    m_specTypeSelect->setCurrentIndex( 0 );
-    m_specTypeSelect->setInline( false );
+    
+    
+    // Add menu to allow choose Foreground/Background/Secondary for the "Select", "Add", and "Remove" options
+    m_specTypeSelect = new WMenu( interact );
+    m_specTypeSelect->addStyleClass( "InteractMenu" );
+    item = m_specTypeSelect->addItem( "Fore." );
+    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item = m_specTypeSelect->addItem( "Back." );
+    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item = m_specTypeSelect->addItem( "Sec." );
+    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    m_specTypeSelect->select( m_specTypeSelect->itemAt(0) );
+    m_specTypeSelect->itemSelected().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
     m_specTypeSelect->setHidden( true );
-    m_specTypeSelect->activated().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
+    
     
     interact->addWidget( instructionsStack );
     
-    
-    WText *instructions = new WText( "use left mousebutton..." );
-    WMenuItem *item = m_interactModeMenu->addItem( "Normal", instructions );
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
-    item->triggered().connect( m_specTypeSelect, &WSelectionBox::hide );
-    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
-    
-    instructions = new WText( "Zoom instructions..." );
-    item = m_interactModeMenu->addItem( "Zoom", instructions );
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
-    item->triggered().connect( m_specTypeSelect, &WSelectionBox::hide );
-    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
-    
-    instructions = new WText( "Pan instructions..." );
-    item = m_interactModeMenu->addItem( "Pan", instructions );
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
-    item->triggered().connect( m_specTypeSelect, &WSelectionBox::hide );
-    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
-    
-    instructions = new WText( "Select instructions..." );
-    item = m_interactModeMenu->addItem( "Select", instructions );
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
-    item->triggered().connect( m_specTypeSelect, &WSelectionBox::show );
-    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
-    
-    instructions = new WText( "Add Select instructions..." );
-    item = m_interactModeMenu->addItem( "Add Selection", instructions );
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
-    item->triggered().connect( m_specTypeSelect, &WSelectionBox::show );
-    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
-    
-    instructions = new WText( "Remove Select instructions..." );
-    item = m_interactModeMenu->addItem( "Remove Selection", instructions );
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
-    item->triggered().connect( m_specTypeSelect, &WSelectionBox::show );
-    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
     
     
     WContainerWidget *filterContents = new WContainerWidget();
     WMenuItem *filterTabItem = tabs->addTab(filterContents, "Filter");
     
+    m_lowerEnergy = new NativeFloatSpinBox( filterContents );
+    m_upperEnergy = new NativeFloatSpinBox( filterContents );
+    
+    m_lowerEnergy->setSpinnerHidden( true );
+    m_upperEnergy->setSpinnerHidden( true );
+    
+    m_lowerEnergy->setPlaceholderText( "Lower keV" );
+    m_upperEnergy->setPlaceholderText( "Upper keV" );
+    
+    m_lowerEnergy->setText( "" );
+    m_upperEnergy->setText( "" );
+    
+    m_lowerEnergy->setInline( false );
+    m_upperEnergy->setInline( false );
+    
+    m_lowerEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChanged );
+    m_upperEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChanged );
   }//D3TimeChartFilters
   
   
   void handleInteractionModeChange()
+  {
+    int index = m_interactModeMenu->currentIndex();
+    
+    if( index < 0 ) //probably shouldnt happen, but JIC
+    {
+      WMenuItem *item = m_interactModeMenu->itemAt(0);
+      if( !item )
+        return;
+    
+      index = 0;
+      item->select();
+    }//if( index < 0 )
+    
+    assert( index >= 0 );
+    assert( index < InteracModeIndex::IM_NumMode );
+    
+    //m_specTypeSelect
+    bool hideSpecTypeMenu = true;
+    
+    switch( InteracModeIndex(index) )
+    {
+      case InteracModeIndex::IM_Normal:
+      case InteracModeIndex::IM_Zoom:
+      case InteracModeIndex::IM_Pan:
+        hideSpecTypeMenu = true;
+        break;
+        
+      case InteracModeIndex::IM_Select:
+      case InteracModeIndex::IM_Add:
+      case InteracModeIndex::IM_Remove:
+      case InteracModeIndex::IM_NumMode:
+        hideSpecTypeMenu = false;
+        break;
+    }//switch( index )
+    
+    if( hideSpecTypeMenu != m_specTypeSelect->isHidden() )
+      m_specTypeSelect->setHidden( hideSpecTypeMenu );
+    
+    if( m_parentChart )
+      m_parentChart->setUserInteractionMode( interactionMode() );
+  }//void handleInteractionModeChange()
+  
+  
+  D3TimeChart::UserInteractionMode interactionMode()
   {
     const int index = m_interactModeMenu->currentIndex();
     if( index < 0 )
@@ -147,84 +241,82 @@ public:
       auto item = m_interactModeMenu->itemAt(0);
       if( item )
         item->select();
-      m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::Default );
-      return;
+      return D3TimeChart::UserInteractionMode::Default;
     }
     
-    if( !m_parentChart )
-      return;
+    assert( index >= 0 );
+    assert( index < InteracModeIndex::IM_NumMode );
     
     switch( index )
     {
-      case 0:  //Normal
-        m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::Default );
-        break;
+      case InteracModeIndex::IM_Normal:
+        return D3TimeChart::UserInteractionMode::Default;
         
-      case 1:  //Zoom
-        m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::Zoom );
-        break;
+      case InteracModeIndex::IM_Zoom:
+        return D3TimeChart::UserInteractionMode::Zoom;
         
-      case 2:   //Pan
-        m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::Pan );
-        break;
-        
-      case 3:  //Select
+      case InteracModeIndex::IM_Pan:
+        return D3TimeChart::UserInteractionMode::Pan;
+      
+      case InteracModeIndex::IM_Select:
         switch( m_specTypeSelect->currentIndex() )
         {
-          case 0:
-            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::SelectForeground );
-            break;
-          case 1:
-            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::SelectBackground );
-            break;
-          case 2:
-            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::SelectSecondary );
-            break;
+          case 0: return D3TimeChart::UserInteractionMode::SelectForeground;
+          case 1: return D3TimeChart::UserInteractionMode::SelectBackground;
+          case 2: return D3TimeChart::UserInteractionMode::SelectSecondary;
         }//switch( m_specTypeSelect->currentIndex() )
         break;
         
-      case 4: //Add Select
+      case InteracModeIndex::IM_Add:
         switch( m_specTypeSelect->currentIndex() )
         {
-          case 0:
-            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::AddForeground );
-            break;
-          case 1:
-            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::AddBackground );
-            break;
-          case 2:
-            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::AddSecondary );
-            break;
+          case 0: return D3TimeChart::UserInteractionMode::AddForeground;
+          case 1: return D3TimeChart::UserInteractionMode::AddBackground;
+          case 2: return D3TimeChart::UserInteractionMode::AddSecondary;
         }//switch( m_specTypeSelect->currentIndex() )
         break;
         
-      case 5: //Remove Selection
+      case InteracModeIndex::IM_Remove:
         switch( m_specTypeSelect->currentIndex() )
         {
-          case 0:
-            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::RemoveForeground );
-            break;
-          case 1:
-            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::RemoveBackground );
-            break;
-          case 2:
-            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::RemoveSecondary );
-            break;
+          case 0: return D3TimeChart::UserInteractionMode::RemoveForeground;
+          case 1: return D3TimeChart::UserInteractionMode::RemoveBackground;
+          case 2: return D3TimeChart::UserInteractionMode::RemoveSecondary;
         }//switch( m_specTypeSelect->currentIndex() )
+        break;
+        
+      case InteracModeIndex::IM_NumMode:
+        assert( 0 );
         break;
     }//switch( index )
-  }//void handleInteractionModeChange()
-  
-  
-  D3TimeChart::UserInteractionMode interactionMode() const
-  {
+    
+    assert( 0 );
+    
     return D3TimeChart::UserInteractionMode::Default;
-  }
+  }//D3TimeChart::UserInteractionMode interactionMode()
   
   void resetFilterEnergies()
   {
-    
+    m_lowerEnergy->setText( "" );
+    m_upperEnergy->setText( "" );
   }
+  
+  void energyFilterChanged()
+  {
+    float lowerEnergy = -std::numeric_limits<float>::infinity();
+    float upperEnergy = std::numeric_limits<float>::infinity();
+    
+    if( !m_lowerEnergy->text().empty() )
+      lowerEnergy = m_lowerEnergy->value();
+    
+    if( !m_upperEnergy->text().empty() )
+      upperEnergy = m_upperEnergy->value();
+    
+    if( lowerEnergy > upperEnergy )
+      std::swap( lowerEnergy, upperEnergy );
+    
+    m_parentChart->userChangedEnergyRangeFilter( lowerEnergy, upperEnergy );
+  }//void energyFilterChanged()
   
 };//class D3TimeChartOptions
 
@@ -1271,6 +1363,16 @@ void D3TimeChart::setUserInteractionMode( const UserInteractionMode mode )
   
   doJavaScript( m_jsgraph + ".setUserInteractionMode('" + modestr + "');"  );
 }//void setUserInteractionMode( const UserInteractionMode mode )
+
+
+void D3TimeChart::userChangedEnergyRangeFilter( const float lowerEnergy, const float upperEnergy )
+{
+  //blah blah blah
+  
+  // Also, refacter .VerticalMenu and .InteractMenu into {.HeavyMenu,.LightMenu} and {VerticalMenu, HorizantalMenu}
+  //Also rename LinearStep to FlatStep, add a LinearStep with three coefficients, and a BiLinearStep with four.
+  
+}//void userChangedEnergyRangeFilter( const float lowerEnergy, const float upperEnergy )
 
 
 int D3TimeChart::layoutWidth() const
