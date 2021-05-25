@@ -222,7 +222,7 @@ D3TimeChart = function (elem, options) {
   // current implementation of simplified gesture mode simply disables use of this.highlightOptions and treats any drag gesture as zoom, regardless of keyboard modifier.
   // To add extra functionality to other keys in simplified gesture mode, would need to use and make conditional changes to this.highlightOptions to add new key mappings under simplifiedGestureMode
   if (typeof this.options.useSimplifiedGestures !== "boolean")
-    this.options.useSimplifiedGestures = false;
+    this.options.useSimplifiedGestures = true;
 
   // defines keyboard modifier keys and/or other metadata to use with drag gestures to achieve various highlight selection functionalities.
   // uses JS object to emulate behavior of Set object (e.g. {"none": true} instead of new Set(["none"])) to accommodate ES5
@@ -260,7 +260,7 @@ D3TimeChart = function (elem, options) {
   this.HIGHLIGHT_COLORS = Object.freeze({
     foreground: "rgb(255, 255, 0)",
     background: "rgb(0, 255, 255)",
-    zoom: "rgb(0, 0, 0)",
+    // zoom: "rgb(102,102,102)",
   });
 
   /** COMPONENT STATE */
@@ -282,9 +282,9 @@ D3TimeChart = function (elem, options) {
 
   /** SVG COMPONENT REFERENCES */
   this.svg = d3.select(this.chart).append("svg");
-  this.verticalGridG = this.svg.append("g").attr("class", "grid");
-  this.horizontalLeftGridG = this.svg.append("g").attr("class", "grid");
-  this.horizontalRightGridG = this.svg.append("g").attr("class", "grid");
+  this.verticalGridG = this.svg.append("g").attr("class", "grid xgrid");
+  this.horizontalLeftGridG = this.svg.append("g").attr("class", "grid ygrid");
+  this.horizontalRightGridG = this.svg.append("g").attr("class", "grid ygrid");
   this.linesG = this.svg.append("g").attr("class", "lines");
   this.axisBottomG = this.svg.append("g").attr("class", "axis xaxis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis yaxis");
@@ -295,21 +295,27 @@ D3TimeChart = function (elem, options) {
     .attr("class", "highlight_region");
 
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
-  this.highlightText = this.rectG
-    .append("text")
-    .attr("font-size", 11)
-    .attr("font-weight", "bold");
+  this.highlightText = this.rectG.append("text").attr("class", "chartLineText");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
   this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area on plot area
   this.bottomAxisRect = this.rectG.append("rect"); // rectangle spanning additional interactable area on bottom axis area
 
-  this.hoverToolTip = d3
-    .select(this.chart)
-    .append("div")
-    .attr("id", "hover_info")
-    .attr("class", "tooltip")
-    .style("left", this.margin.left + 20 + "px")
-    .style("top", this.margin.top + "px");
+  this.mouseInfoOptions = {
+    padding: { top: 2, right: 6, bottom: 5, left: 6 },
+  };
+  this.mouseInfoG = this.rectG
+    .append("g")
+    .attr("class", "mouseInfo")
+    .style("pointer-events", "none");
+  this.mouseInfoBox = this.mouseInfoG
+    .append("rect")
+    .attr("x", this.margin.left + 20)
+    .attr("y", this.margin.top)
+    .attr("class", "mouseInfoBox");
+  this.mouseInfoText = this.mouseInfoG
+    .append("text")
+    .attr("x", this.margin.left + 20)
+    .attr("y", this.margin.top + this.mouseInfoOptions.padding.top);
 
   this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
 
@@ -602,6 +608,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     if (
       TOUCH_ANALOGOUS_RIGHTCLICK ||
       (d3.event.type == "dragstart" &&
+        window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
         d3.event.sourceEvent.button == 2)
     ) {
@@ -610,6 +617,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     } else if (
       TOUCH_ANALOGOUS_ALTKEY ||
       (d3.event.type == "dragstart" &&
+        window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
         d3.event.sourceEvent.altKey)
     ) {
@@ -618,6 +626,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     } else if (
       TOUCH_ANALOGOUS_CTRLCLICK ||
       (d3.event.type == "dragstart" &&
+        window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
         d3.event.sourceEvent.ctrlKey)
     ) {
@@ -1193,7 +1202,6 @@ D3TimeChart.prototype.updateChart = function (
         occupancyStartG
           .append("text")
           .text("occ. start")
-          .style("fill", "#dedede");
 
         occupancyStartG
           .append("line")
@@ -1201,14 +1209,12 @@ D3TimeChart.prototype.updateChart = function (
           .attr("y1", this.margin.top)
           .attr("y2", this.state.height - this.margin.bottom)
           .attr("x2", 0)
-          .style("stroke-width", 1)
-          .style("stroke", "#dedede");
 
         var occupancyEndG = occupancyG
           .append("g")
           .attr("class", "occupancy_end_line_group");
 
-        occupancyEndG.append("text").text("occ. end").style("fill", "#dedede");
+        occupancyEndG.append("text").text("occ. end")
 
         occupancyEndG
           .append("line")
@@ -1216,8 +1222,6 @@ D3TimeChart.prototype.updateChart = function (
           .attr("y1", this.margin.top)
           .attr("y2", this.state.height - this.margin.bottom)
           .attr("x2", 0)
-          .style("stroke-width", 1)
-          .style("stroke", "#dedede");
       }
     }
 
@@ -1307,9 +1311,9 @@ D3TimeChart.prototype.updateChart = function (
     verticalGridLines.each(function (d, i) {
       var tickLine = d3.select(this).select("line");
       if (!xTicksGenerated[i].isMajor) {
-        tickLine.attr("stroke", "#f6f6f6");
+        tickLine.classed("minorgrid", true);
       } else {
-        tickLine.attr("stroke", "#d3d3d3");
+        tickLine.classed("minorgrid", false);
       }
     });
   } else {
@@ -1340,7 +1344,6 @@ D3TimeChart.prototype.updateChart = function (
         this.horizontalLeftGridG.selectAll("g.tick");
       horizontalLeftGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
-        tickLine.attr("stroke", "#d3d3d3");
       });
     } else {
       this.horizontalLeftGridG.selectAll("*").remove();
@@ -1420,7 +1423,6 @@ D3TimeChart.prototype.updateChart = function (
         this.horizontalRightGridG.selectAll("g.tick");
       horizontalRightGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
-        tickLine.attr("stroke", "#f6f6f6");
       });
     } else {
       this.horizontalRightGridG.selectAll("*").remove();
@@ -2368,7 +2370,8 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
  */
 D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
   if (this.options.useSimplifiedGestures) {
-    this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
+    this.highlightRect.classed("leftbuttonzoombox", true);
+    // this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
     this.highlightText.text("Zoom in");
   } else {
     var foreground = this.highlightOptions.foreground;
@@ -2382,7 +2385,8 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
       this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.background);
       this.highlightText.text("Select background");
     } else if (zoom && modifier in zoom.modifierKey) {
-      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
+      this.highlightRect.classed("leftbuttonzoombox", true);
+      // this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
       this.highlightText.text("Zoom in");
     }
   }
@@ -2426,6 +2430,7 @@ D3TimeChart.prototype.mouseMoveHighlight = function (width) {
  */
 D3TimeChart.prototype.mouseUpHighlight = function () {
   this.highlightRect.attr("height", 0).attr("width", 0);
+  this.highlightRect.classed("leftbuttonzoombox", false);
   this.highlightText.style("visibility", "hidden");
 };
 
@@ -2493,7 +2498,7 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
  * Handles showing tooltip.
  */
 D3TimeChart.prototype.showToolTip = function () {
-  this.hoverToolTip.style("visibility", "visible");
+  this.mouseInfoG.style("visibility", "visible");
 };
 
 /**
@@ -2503,14 +2508,14 @@ D3TimeChart.prototype.showToolTip = function () {
  * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
  */
 D3TimeChart.prototype.updateToolTip = function (time, data, optargs) {
-  this.hoverToolTip.html(this.createToolTipString(time, data, optargs));
+  this.setMouseInfoText(time, data, optargs);
 };
 
 /**
  * Handler to hide tooltip.
  */
 D3TimeChart.prototype.hideToolTip = function () {
-  this.hoverToolTip.style("visibility", "hidden");
+  this.mouseInfoG.style("visibility", "hidden");
 };
 
 /**
@@ -2520,62 +2525,90 @@ D3TimeChart.prototype.hideToolTip = function () {
  * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
  * @returns the tooltip string
  */
-D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
-  var s =
-    optargs.startTimeStamp != null
-      ? "<div>" + new Date(optargs.startTimeStamp).toLocaleString() + "</div>"
-      : "";
+D3TimeChart.prototype.setMouseInfoText = function (time, data, optargs) {
+  var s = "";
+  if (optargs && optargs.startTimeStamp != null)
+    s += new Date(optargs.startTimeStamp).toLocaleString() + "<\n>";
 
   // If want compression data in the tooltip, uncomment below
   // var compressionIndex = this.state.selection
   // ? this.state.selection.compressionIndex
   // : this.state.data.unzoomedCompressionIndex;
 
-  // s += "<div>Data Compression Level: " + compressionIndex + "</div>";
+  // s += "Data Compression Level: " + compressionIndex + "<\n>";
 
   // // If want sourcetype data in the tooltip, uncomment below
   // s +=
   //   optargs.sourceType != null
-  //     ? "<div>Source: " + this.SOURCE_MAP[optargs.sourceType] + "</div>"
+  //     ? "Source: " + this.SOURCE_MAP[optargs.sourceType] + "<\n>"
   //     : "";
 
-  s += "<div>Time: " + time.toPrecision(4) + " s</div>";
+  s += "Time: " + time.toPrecision(4) + " s<\n>";
 
   // for each detector, give counts
   for (var i = 0; i < data.length; i++) {
     if (typeof data[i].sampleNumber === "number") {
-      s += "<div>Sample Num: " + data[i].sampleNumber.toString();
+      s += "Sample Num: " + data[i].sampleNumber.toString();
     } else {
       var sampleNumbers = Object.keys(data[i].sampleNumber);
       if (sampleNumbers.length > 4) {
         s +=
-          "<div>Sample Nums: " +
+          "Sample Nums: " +
           sampleNumbers[0].toString() +
           "..." +
           sampleNumbers[sampleNumbers.length - 1].toString();
       } else {
-        s += "<div>Sample Nums: " + sampleNumbers.toString();
+        s += "Sample Nums: " + sampleNumbers.toString();
       }
     }
     if (data[i].detName.length > 0) {
-      s += " (" + data[i].detName + ")</div>";
+      s += " (" + data[i].detName + ")";
     }
+    s += "<\n>";
 
-    s += "<div>G CPS: " + data[i].gammaCPS.toPrecision(6);
+    s += "G CPS: " + data[i].gammaCPS.toPrecision(6);
 
     if (data[i].detName.length > 0) {
-      s += " (" + data[i].detName + ")</div>";
+      s += " (" + data[i].detName + ")";
     }
+    s += "<\n>";
 
     if (data[i].neutronCPS != null) {
       // cps of 0 is still valid to display
-      s += "<div>N CPS: " + data[i].neutronCPS.toPrecision(3);
+      s += "N CPS: " + data[i].neutronCPS.toPrecision(3);
 
       if (data[i].detName.length > 0) {
-        s += " (" + data[i].detName + ")</div>";
+        s += " (" + data[i].detName + ")";
       }
+      s += "<\n>";
     }
   }
+
+  var data = s.split("<\n>").filter(Boolean); // filter to remove empty strings
+
+  var padding = this.mouseInfoOptions.padding;
+
+  //enter
+  this.mouseInfoText
+    .selectAll("tspan")
+    .data(data)
+    .enter()
+    .append("tspan")
+    .text((d) => d)
+    .attr("x", this.margin.left + 20 + padding.left)
+    .attr("dy", "1.1em");
+
+  //update
+  this.mouseInfoText.selectAll("tspan").text((d) => d);
+
+  //exit
+  this.mouseInfoText.selectAll("tspan").data(data).exit().remove();
+
+  // set dimensions of info box
+  var dim = this.mouseInfoText.node().getBBox();
+  this.mouseInfoBox
+    .attr("height", dim.height + padding.top + padding.bottom)
+    .attr("width", dim.width + padding.left + padding.right);
 
   return s;
 };
