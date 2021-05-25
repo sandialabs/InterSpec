@@ -32,7 +32,6 @@
 #include <Wt/WTextArea>
 #include <Wt/WTreeNode>
 #include <Wt/WIconPair>
-#include <Wt/WTabWidget>
 #include <Wt/WModelIndex>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>

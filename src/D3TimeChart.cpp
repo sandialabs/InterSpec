@@ -39,6 +39,195 @@ namespace
 }//namespace
 
 
+#include <Wt/WMenu>
+#include <Wt/WText>
+#include <Wt/WMenuItem>
+#include <Wt/WTabWidget>
+#include <Wt/WSelectionBox>
+#include <Wt/WStackedWidget>
+#include <Wt/WStackedWidget>
+
+class D3TimeChartFilters : public WContainerWidget
+{
+  D3TimeChart *m_parentChart;
+  WMenu *m_interactModeMenu;
+  WSelectionBox *m_specTypeSelect;
+  
+public:
+  D3TimeChartFilters( D3TimeChart *parent )
+    : WContainerWidget( parent ),
+      m_parentChart( parent ),
+      m_interactModeMenu( nullptr ),
+      m_specTypeSelect( nullptr )
+  {
+    assert( parent );
+    
+    addStyleClass( "D3TimeChartFilters" );
+    
+    
+    WContainerWidget *closeIcon = new WContainerWidget( this );
+    closeIcon->addStyleClass( "closeicon-wtdefault" );
+    closeIcon->clicked().connect( boost::bind( &D3TimeChart::showFilters, parent, false ) );
+    
+    
+    WTabWidget *tabs = new WTabWidget( this );
+    
+    WContainerWidget *interact = new WContainerWidget();
+    tabs->addTab(interact, "Interact"); //Returns a
+    
+    
+    WStackedWidget *instructionsStack = new WStackedWidget();
+    
+    m_interactModeMenu = new WMenu( instructionsStack, interact );
+    m_interactModeMenu->addStyleClass( "InteractMenu" );
+    
+    
+    m_specTypeSelect = new WSelectionBox( interact );
+    m_specTypeSelect->setVerticalSize( 3 );
+    m_specTypeSelect->addItem( "Foreground" );
+    m_specTypeSelect->addItem( "Background" );
+    m_specTypeSelect->addItem( "Secondary" );
+    m_specTypeSelect->setSelectionMode( SelectionMode::SingleSelection );
+    m_specTypeSelect->setCurrentIndex( 0 );
+    m_specTypeSelect->setInline( false );
+    m_specTypeSelect->setHidden( true );
+    m_specTypeSelect->activated().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
+    
+    interact->addWidget( instructionsStack );
+    
+    
+    WText *instructions = new WText( "use left mousebutton..." );
+    WMenuItem *item = m_interactModeMenu->addItem( "Normal", instructions );
+    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item->triggered().connect( m_specTypeSelect, &WSelectionBox::hide );
+    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
+    
+    instructions = new WText( "Zoom instructions..." );
+    item = m_interactModeMenu->addItem( "Zoom", instructions );
+    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item->triggered().connect( m_specTypeSelect, &WSelectionBox::hide );
+    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
+    
+    instructions = new WText( "Pan instructions..." );
+    item = m_interactModeMenu->addItem( "Pan", instructions );
+    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item->triggered().connect( m_specTypeSelect, &WSelectionBox::hide );
+    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
+    
+    instructions = new WText( "Select instructions..." );
+    item = m_interactModeMenu->addItem( "Select", instructions );
+    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item->triggered().connect( m_specTypeSelect, &WSelectionBox::show );
+    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
+    
+    instructions = new WText( "Add Select instructions..." );
+    item = m_interactModeMenu->addItem( "Add Selection", instructions );
+    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item->triggered().connect( m_specTypeSelect, &WSelectionBox::show );
+    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
+    
+    instructions = new WText( "Remove Select instructions..." );
+    item = m_interactModeMenu->addItem( "Remove Selection", instructions );
+    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item->triggered().connect( m_specTypeSelect, &WSelectionBox::show );
+    item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
+    
+    
+    WContainerWidget *filterContents = new WContainerWidget();
+    WMenuItem *filterTabItem = tabs->addTab(filterContents, "Filter");
+    
+  }//D3TimeChartFilters
+  
+  
+  void handleInteractionModeChange()
+  {
+    const int index = m_interactModeMenu->currentIndex();
+    if( index < 0 )
+    {
+      auto item = m_interactModeMenu->itemAt(0);
+      if( item )
+        item->select();
+      m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::Default );
+      return;
+    }
+    
+    if( !m_parentChart )
+      return;
+    
+    switch( index )
+    {
+      case 0:  //Normal
+        m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::Default );
+        break;
+        
+      case 1:  //Zoom
+        m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::Zoom );
+        break;
+        
+      case 2:   //Pan
+        m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::Pan );
+        break;
+        
+      case 3:  //Select
+        switch( m_specTypeSelect->currentIndex() )
+        {
+          case 0:
+            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::SelectForeground );
+            break;
+          case 1:
+            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::SelectBackground );
+            break;
+          case 2:
+            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::SelectSecondary );
+            break;
+        }//switch( m_specTypeSelect->currentIndex() )
+        break;
+        
+      case 4: //Add Select
+        switch( m_specTypeSelect->currentIndex() )
+        {
+          case 0:
+            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::AddForeground );
+            break;
+          case 1:
+            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::AddBackground );
+            break;
+          case 2:
+            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::AddSecondary );
+            break;
+        }//switch( m_specTypeSelect->currentIndex() )
+        break;
+        
+      case 5: //Remove Selection
+        switch( m_specTypeSelect->currentIndex() )
+        {
+          case 0:
+            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::RemoveForeground );
+            break;
+          case 1:
+            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::RemoveBackground );
+            break;
+          case 2:
+            m_parentChart->setUserInteractionMode( D3TimeChart::UserInteractionMode::RemoveSecondary );
+            break;
+        }//switch( m_specTypeSelect->currentIndex() )
+        break;
+    }//switch( index )
+  }//void handleInteractionModeChange()
+  
+  
+  D3TimeChart::UserInteractionMode interactionMode() const
+  {
+    return D3TimeChart::UserInteractionMode::Default;
+  }
+  
+  void resetFilterEnergies()
+  {
+    
+  }
+  
+};//class D3TimeChartOptions
+
 
 D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
@@ -64,6 +253,9 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_chartResizedJS( nullptr ),
   m_displayedXRangeChangeJS( nullptr ),
   m_jsgraph( jsRef() + ".chart" ),
+  m_chart( nullptr ),
+  m_options( nullptr ),
+  m_showOptionsIcon( nullptr ),
   m_gammaLineColor( 0x00, 0x00, 0x00 ),
   m_neutronLineColor( 0x00, 0x00, 0x00 ),
   m_foregroundHighlightColor( 0x00, 0x00, 0x00 ),
@@ -76,16 +268,26 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_chartBackgroundColor( 0x00, 0x00, 0x00 )
 {
   setLayoutSizeAware( true );
-  addStyleClass( "D3TimeChart" );
+  addStyleClass( "D3TimeChartParent" );
     
-  // Cancel right-click events for the div, we handle it all in JS
-  setAttributeValue( "oncontextmenu",
-                     "event.cancelBubble = true; event.returnValue = false; return false;" );
-  
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   wApp->require( "InterSpec_resources/D3TimeChart.js" );
   wApp->useStyleSheet( "InterSpec_resources/D3TimeChart.css" );
   initChangeableCssRules();
+  
+  m_chart = new WContainerWidget( this );
+  m_chart->addStyleClass( "D3TimeChart" );
+  
+  // Cancel right-click events for the div, we handle it all in JS
+  m_chart->setAttributeValue( "oncontextmenu",
+                    "event.cancelBubble = true; event.returnValue = false; return false;" );
+  
+  m_options = new D3TimeChartFilters( this );
+  m_options->hide();
+  
+  m_showOptionsIcon = new WContainerWidget( this );
+  m_showOptionsIcon->setStyleClass( "ShowD3TimeChartFilters Wt-icon" );
+  m_showOptionsIcon->clicked().connect( boost::bind( &D3TimeChart::showFilters, this, true) );
 }//D3TimeChart(...)
 
 
@@ -107,15 +309,18 @@ void D3TimeChart::defineJavaScript()
   options += ", chartLineWidth: 1.0";  //ToDo: Let this be specified in C+
   options += "}";
   
-  setJavaScriptMember( "chart", "new D3TimeChart(" + jsRef() + "," + options + ");");
-  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+  setJavaScriptMember( "chart", "new D3TimeChart(" + m_chart->jsRef() + "," + options + ");");
+  setJavaScriptMember( "wtResize",
+                       "function(self, w, h, layout){"
+                       " setTimeout( function(){" + m_jsgraph + ".handleResize();},0); "
+                       "}" );
   
   if( !m_chartClickedJS )
   {
-    m_chartClickedJS.reset( new Wt::JSignal<int,int>(this, "timeclicked", false) );
-    m_chartDraggedJS.reset( new Wt::JSignal<int,int,int>(this, "timedragged", false) );
-    m_chartResizedJS.reset( new Wt::JSignal<double,double>(this, "timeresized", false ) );
-    m_displayedXRangeChangeJS.reset( new Wt::JSignal<int,int,int>(this,"timerangechange",false) );
+    m_chartClickedJS.reset( new Wt::JSignal<int,int>(m_chart, "timeclicked", false) );
+    m_chartDraggedJS.reset( new Wt::JSignal<int,int,int>(m_chart, "timedragged", false) );
+    m_chartResizedJS.reset( new Wt::JSignal<double,double>(m_chart, "timeresized", false ) );
+    m_displayedXRangeChangeJS.reset( new Wt::JSignal<int,int,int>(m_chart,"timerangechange",false) );
     
     m_chartClickedJS->connect( this, &D3TimeChart::chartClickedCallback );
     m_chartDraggedJS->connect( this, &D3TimeChart::chartDraggedCallback );
@@ -651,7 +856,7 @@ void D3TimeChart::setDataToClient()
   
   js << "\n\t} );";
   
-  cout << "\n\nWill set time data with JSON=" + js.str() + "\n\n" << endl;
+  // cout << "\n\nWill set time data with JSON=" + js.str() + "\n\n" << endl;
 
   doJavaScript( js.str() );
 }//void setDataToClient()
@@ -1025,6 +1230,47 @@ void D3TimeChart::layoutSizeChanged ( int width, int height )
   m_layoutWidth = width;
   m_layoutHeight = height;
 }//void layoutSizeChanged ( int width, int height )
+
+
+void D3TimeChart::showFilters( const bool show )
+{
+  if( m_showOptionsIcon->isHidden() == show )
+    return;
+  
+  m_showOptionsIcon->setHidden( show );
+  m_options->setHidden( !show );
+  
+  if( !show )
+    m_options->resetFilterEnergies();
+  
+  doJavaScript( "setTimeout( function(){" + m_jsgraph + ".handleResize();},0); " );
+  
+  const auto mode = show ? m_options->interactionMode() : UserInteractionMode::Default;
+  setUserInteractionMode( mode );
+}//void showFilters( const bool show )
+
+
+void D3TimeChart::setUserInteractionMode( const UserInteractionMode mode )
+{
+  string modestr = "";
+  switch( mode )
+  {
+    case UserInteractionMode::Default:          modestr = "Default";          break;
+    case UserInteractionMode::Zoom:             modestr = "Zoom";             break;
+    case UserInteractionMode::Pan:              modestr = "Pan";              break;
+    case UserInteractionMode::SelectForeground: modestr = "SelectForeground"; break;
+    case UserInteractionMode::SelectBackground: modestr = "SelectBackground"; break;
+    case UserInteractionMode::SelectSecondary:  modestr = "SelectSecondary";  break;
+    case UserInteractionMode::AddForeground:    modestr = "AddForeground";    break;
+    case UserInteractionMode::AddBackground:    modestr = "AddBackground";    break;
+    case UserInteractionMode::AddSecondary:     modestr = "AddSecondary";     break;
+    case UserInteractionMode::RemoveForeground: modestr = "RemoveForeground"; break;
+    case UserInteractionMode::RemoveBackground: modestr = "RemoveBackground"; break;
+    case UserInteractionMode::RemoveSecondary:  modestr = "RemoveSecondary";  break;
+  }//switch( mode )
+  
+  doJavaScript( m_jsgraph + ".setUserInteractionMode('" + modestr + "');"  );
+}//void setUserInteractionMode( const UserInteractionMode mode )
 
 
 int D3TimeChart::layoutWidth() const
