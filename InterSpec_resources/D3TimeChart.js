@@ -3073,3 +3073,38 @@ D3TimeChart.prototype.setXAxisZoomSamples = function (firstsample, lastsample) {
     lastsample
   );
 };
+
+
+D3TimeChart.prototype.setUserInteractionMode = function ( mode ) {
+  
+  // This is just a stub function at the moment.
+  console.log( 'Will set user interaction mode to ' + mode );
+  
+  if( mode === "Default" ){
+    
+  }else if( mode === "Zoom" ){
+    
+  }else if( mode === "Pan" ){
+    
+  }else if( mode === "SelectForeground" ){
+    
+  }else if( mode === "SelectBackground" ){
+    
+  }else if( mode === "SelectSecondary" ){
+    
+  }else if( mode === "AddForeground" ){
+    
+  }else if( mode === "AddBackground" ){
+    
+  }else if( mode === "AddSecondary" ){
+    
+  }else if( mode === "RemoveForeground" ){
+    
+  }else if( mode === "RemoveBackground" ){
+    
+  }else if( mode === "RemoveSecondary" ){
+    
+  }else{
+    console.log( 'Invalid option passed to setUserInteractionMode' );
+  }
+};
