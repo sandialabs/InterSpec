@@ -1693,8 +1693,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
     {
       if( isfinal )
       {
-        for( auto p : orig_roi_peaks )
-          m_peakModel->removePeak( p );
+        m_peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : new_roi_initial_peaks )
@@ -1721,8 +1720,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       
       if( isfinal )
       {
-        for( auto p : orig_roi_peaks )
-          m_peakModel->removePeak( p );
+        m_peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : newpeaks )
@@ -1742,10 +1740,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
       
       if( isfinal )
-      {
-        for( auto p : orig_roi_peaks )
-          m_peakModel->removePeak( p );
-      }
+        m_peakModel->removePeaks( orig_roi_peaks );
     }//if( not narrow region ) / else
   }catch( std::exception &e )
   {
@@ -2034,18 +2029,15 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
                 return;
               }
               
-              for( const auto &p : added_peaks )
+              try
               {
-                try
-                {
-                  m_peakModel->removePeak( p );
-                }catch(std::exception &e)
-                {
-                  cerr << "Unexpected error removing peaks - must not be a valid peak any more...: " 
-                       << e.what() << endl;
-                }
-              }//for( const auto &p : added_peaks )
-              
+                m_peakModel->removePeaks( added_peaks );
+              }catch(std::exception &e)
+              {
+                cerr << "Unexpected error removing peaks - must not be a valid peak any more...: "
+                     << e.what() << endl;
+              }
+                
               if( i > 0 )
                 chartFitRoiDragCallback( lower_energy, upper_energy, static_cast<int>(i), true, window_xpx, window_ypx );
             }) );

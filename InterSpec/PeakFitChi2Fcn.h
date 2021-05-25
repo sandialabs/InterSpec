@@ -347,11 +347,6 @@ public:
   //  places in the fit, causing a potential confusion of nuclide ID (or
   //  whether to fit for values, etc), but I'm not convinced this is a huge
   //  problem/concern.
-  //  XXX - The case where an input peak amplitude is specified to not be fit
-  //        for has not been tested, but should be handled correctly in
-  //        principal (*kinda* seems to work, see the
-  //        fit_amp_and_offset_OBEY_FIXING_AMPLITUDES preproccessor variable for
-  //        more information on the status of this ability).
   LinearProblemSubSolveChi2Fcn(
         const std::vector< std::shared_ptr<const PeakDef> > &originalPeaks,
                                std::shared_ptr<const SpecUtils::Measurement> data,

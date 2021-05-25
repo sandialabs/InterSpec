@@ -386,7 +386,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #endif
     m_rightClickMenu( 0 ),
     m_rightClickEnergy( -DBL_MAX ),
-    m_rightClickNuclideSuggestMenu( 0 ),
+    m_rightClickNuclideSuggestMenu( nullptr ),
+    m_rightClickChangeContinuumMenu( nullptr ),
 #if( USE_SIMPLE_NUCLIDE_ASSIST )
     m_leftClickMenu( 0 ),
 #endif
@@ -856,6 +857,20 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickNuclideSuggestMenu = m_rightClickMenu->addPopupMenuItem( "Change Nuclide" );
         m_rightClickMenutItems[i] = m_rightClickNuclideSuggestMenu->parentItem();
         break;
+      case kChangeContinuum:
+      {
+        m_rightClickChangeContinuumMenu = m_rightClickMenu->addPopupMenuItem( "Change Continuum" );
+        m_rightClickMenutItems[i] = m_rightClickChangeContinuumMenu->parentItem();
+        
+        for( auto type = PeakContinuum::OffsetType(0);
+            type <= PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
+        {
+          WMenuItem *item = m_rightClickChangeContinuumMenu->addItem( PeakContinuum::offset_type_label(type) );
+          item->triggered().connect( boost::bind( &InterSpec::handleChangeContinuumTypeFromRightClick, this, type ) );
+        }//for( loop over PeakContinuum::OffsetTypes )
+        break;
+      }//case kChangeContinuum:
+        
       case kAddPeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( "Add Peak" );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::addPeakFromRightClick );
@@ -1644,6 +1659,7 @@ void InterSpec::peakEditFromRightClick()
 
 std::shared_ptr<const PeakDef> InterSpec::nearestPeak( const double energy ) const
 {
+  // Why not just call m_peakModel->nearestPeak(energy)
   std::shared_ptr<const PeakDef> nearPeak;
   double minDE = std::numeric_limits<double>::infinity();
   
@@ -1666,94 +1682,7 @@ std::shared_ptr<const PeakDef> InterSpec::nearestPeak( const double energy ) con
 
 void InterSpec::refitPeakFromRightClick()
 {
-  std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
-  if( !peak )
-  {
-    passMessage( "There was no peak to refit", "", WarningWidget::WarningMsgInfo );
-    return;
-  }
-  
-  PeakShrdVec inpeakOrigs;
-  vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
-  
-  WModelIndex peakIndex;
-  
-  const int npeak = static_cast<int>(m_peakModel->npeaks());
-  for( int peakn = 0; peakn < npeak; ++peakn )
-  {
-    WModelIndex index = m_peakModel->index( peakn, 0 );
-    std::shared_ptr<const PeakDef> thispeak = m_peakModel->peak(index);
-    if( thispeak == peak || peak->continuum() == thispeak->continuum() )
-    {
-      peakIndex = index;
-      inputPeak.push_back( *thispeak );
-      inpeakOrigs.push_back( thispeak );
-    }else
-      fixedPeaks.push_back( *thispeak );
-  }//for( int peak = 0; peak < npeak; ++peak )
-  
-  if( !peakIndex.isValid() || inputPeak.empty() )
-  {
-    passMessage( "Error finding peak to refit", "", WarningWidget::WarningMsgHigh );
-    return;
-  }
-  
-  std::sort( inputPeak.begin(), inputPeak.end(), &PeakDef::lessThanByMean );
-  
-  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
-  
-  if( inputPeak.size() > 1 )
-  {
-    const std::shared_ptr<DetectorPeakResponse> &detector
-                                                = m_dataMeasurement->detector();
-    PeakShrdVec result = refitPeaksThatShareROI( data, detector, inpeakOrigs, 0.25 );
-    
-    if( result.size() == inputPeak.size() )
-    {
-      for( size_t i = 0; i < result.size(); ++i )
-        fixedPeaks.push_back( *result[i] );
-      std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
-      m_peakModel->setPeaks( fixedPeaks );
-      return;
-    }else
-    {
-      cerr << "refitPeaksThatShareROI was not successful" << endl;
-    }//if( result.size() == inputPeak.size() ) / else
-  }//if( inputPeak.size() > 1 )
-  
-  
-//  const double lowE = peak->mean() - 0.1;
-//  const double upE = peak->mean() + 0.1;
-  const double lowE = inputPeak.front().mean() - 0.1;
-  const double upE = inputPeak.back().mean() + 0.1;
-  const double ncausalitysigma = 0.0;
-  const double stat_threshold  = 0.0;
-  const double hypothesis_threshold = 0.0;
-  
-  const bool isRefit = true;
-  
-  outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                               hypothesis_threshold, inputPeak, data,
-                               fixedPeaks, isRefit );
-  if( outputPeak.size() != inputPeak.size() )
-  {
-    WStringStream msg;
-    msg << "Failed to refit peak (became insignificant), from "
-        << int(inputPeak.size()) << " to " << int(outputPeak.size()) << " peaks";
-    passMessage( msg.str(), "", WarningWidget::WarningMsgInfo );
-    return;
-  }//if( outputPeak.size() != 1 )
-  
-  if( inputPeak.size() > 1 )
-  {
-    fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
-    std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
-    m_peakModel->setPeaks( fixedPeaks );
-  }else
-  {
-    m_peakModel->removePeak( peakIndex );
-    addPeak( outputPeak[0], false );
-  }//if( inputPeak.size() > 1 )
+  PeakSearchGuiUtils::refit_peaks_from_right_click( this, m_rightClickEnergy );
 }//void refitPeakFromRightClick()
 
 
@@ -2017,6 +1946,13 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
 }//void makePeakFromRightClickHaveOwnContinuum()
 
 
+void InterSpec::handleChangeContinuumTypeFromRightClick( const int continuum_type )
+{
+  PeakSearchGuiUtils::change_continuum_type_from_right_click( this, m_rightClickEnergy,
+                                                             continuum_type );
+}//InterSpec::handleChangeContinuumTypeFromRightClick(...)
+
+
 void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 {
   std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
@@ -2133,17 +2069,7 @@ void InterSpec::deletePeakFromRightClick()
     return;
   }
 
-  const int npeak = static_cast<int>(m_peakModel->npeaks());
-  for( int peakn = 0; peakn < npeak; ++peakn )
-  {
-    WModelIndex index = m_peakModel->index( peakn, 0 );
-    std::shared_ptr<const PeakDef> thispeak = m_peakModel->peak(index);
-    if( thispeak == peak )
-    {
-      m_peakModel->removePeak( index );
-      return;
-    }
-  }//for( int peak = 0; peak < npeak; ++peak )
+  m_peakModel->removePeak( peak );
 }//void deletePeakFromRightClick()
 
 
@@ -2355,6 +2281,20 @@ void InterSpec::handleRightClick( double energy, double counts,
       case kPeakEdit: case kDeletePeak: case kAddPeak:
 //        m_rightClickMenutItems[i]->setHidden( !peak );
       break;
+        
+      case kChangeContinuum:
+      {
+        if( !m_rightClickChangeContinuumMenu )
+          break;
+        
+        // Disable current continuum type, enable all others
+        const vector<WMenuItem *> items = m_rightClickChangeContinuumMenu->items();
+        const char *labelTxt = PeakContinuum::offset_type_label( peak->continuum()->type() );
+        for( WMenuItem *item : items )
+          item->setDisabled( item->text() == labelTxt );
+        
+        break;
+      }//case kChangeContinuum:
         
       case kChangeNuclide:
       {

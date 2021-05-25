@@ -64,7 +64,7 @@ namespace rapidxml
  */
 struct PeakContinuum
 {
-  enum OffsetType
+  enum OffsetType : int
   {
     NoOffset,
     Constant = 1,  //purposely set to be the size of the expected num paramters
@@ -74,6 +74,9 @@ struct PeakContinuum
     LinearStep,
     External
   };//enum OffsetType
+  
+  /** Text appropriate for use as a label for the continuum type in the gui. */
+  static const char *offset_type_label( const OffsetType type );
   
   PeakContinuum();
   
