@@ -16,29 +16,27 @@
   padding: 1px 2px 2px 4px;
 }
 
-.InteractMenu
-{
-  margin: 0px;
-  list-style-type: none;
-  overflow: auto;
+.D3TimeChartFilters select.SpecType {
+  display: table-row;
 }
 
-.InteractMenu > li
+.D3TimeChartFilters select.SpecType > option {
+  display: table-cell;
+}
+
+.InteractMenu
 {
+  display: flex;
+  flex-wrap: wrap;
+  list-style-type: none;
+  padding: 0;
 }
 
 .InteractMenu li
 {
-  vertical-align:middle;
-}
-
-.InteractMenu > .Wt-separator {
-  height: 0.25em;
-  -webkit-border-radius: 0;
-  -moz-border-radius: 0;
-  border-radius: 0;
-  padding-top: 0px;
-  padding-bottom: 0px;
+  padding-left: 2px;
+  padding-right: 2px;
+  /* vertical-align:middle; */
 }
 
 .InteractMenu a
@@ -46,15 +44,14 @@
   cursor:pointer;
 }
 
+.InteractMenu li :hover
+{
+  border-color: red;
+}
 
 .InteractMenu li.itemselected > a
 {
   color: #E0F5FF;
-}
-
-.InteractMenu li :hover
-{
-  border-color: #eeeeee #eeeeee #dddddd;
 }
 
 .InteractMenu li.itemselected

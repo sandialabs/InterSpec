@@ -216,6 +216,8 @@ protected:
   /** Sets the current user interaction mode.*/
   void setUserInteractionMode( const UserInteractionMode mode );
   
+  /** Called when the user changes energy range to display gross counts for. */
+  void userChangedEnergyRangeFilter( const float lowerEnergy, const float upperEnergy );
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
