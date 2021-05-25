@@ -2416,6 +2416,290 @@ void assign_srcs_from_ref_lines( const std::shared_ptr<const SpecUtils::Measurem
 }//void assign_srcs_from_ref_lines(...)
   
   
+void refit_peaks_from_right_click( InterSpec * const interspec, const double rightClickEnergy )
+{
+  try
+  {
+    PeakModel * const model = interspec->peakModel();
+    const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
+    
+    
+    if( !model || !data || !foreground ) //shouldnt ever happen
+    {
+      passMessage( "No data loaded to refit", "", WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    //shared_ptr<const PeakDef> peak = interspec->nearestPeak( rightClickEnergy );
+    shared_ptr<const PeakDef> peak = model->nearestPeak( rightClickEnergy );
+    if( !peak )
+    {
+      passMessage( "There was no peak to refit", "", WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+    const vector<shared_ptr<const PeakDef>> peaksInRoi = model->peaksSharingRoi( peak );
+    const vector<shared_ptr<const PeakDef>> peaksNotInRoi  = model->peaksNotSharingRoi( peak );
+    
+    assert( peaksInRoi.size() >= 1 );
+    
+    for( const auto &m : peaksInRoi )
+      inputPeak.push_back( *m );
+    
+    for( const auto &m : peaksNotInRoi )
+      fixedPeaks.push_back( *m );
+    
+    std::sort( inputPeak.begin(), inputPeak.end(), &PeakDef::lessThanByMean );
+    
+    
+    
+    if( inputPeak.size() > 1 )
+    {
+      const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
+      const PeakShrdVec result = refitPeaksThatShareROI( data, detector, peaksInRoi, 0.25 );
+      
+      if( result.size() == inputPeak.size() )
+      {
+        for( size_t i = 0; i < result.size(); ++i )
+        fixedPeaks.push_back( *result[i] );
+        std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+        model->setPeaks( fixedPeaks );
+        return;
+      }else
+      {
+        cerr << "refit_peaks_from_right_click was not successful" << endl;
+      }//if( result.size() == inputPeak.size() ) / else
+    }//if( inputPeak.size() > 1 )
+    
+    
+    //  const double lowE = peak->mean() - 0.1;
+    //  const double upE = peak->mean() + 0.1;
+    const double lowE = inputPeak.front().mean() - 0.1;
+    const double upE = inputPeak.back().mean() + 0.1;
+    const double ncausalitysigma = 0.0;
+    const double stat_threshold  = 0.0;
+    const double hypothesis_threshold = 0.0;
+    
+    const bool isRefit = true;
+    
+    outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
+                                 hypothesis_threshold, inputPeak, data,
+                                 fixedPeaks, isRefit );
+    if( outputPeak.size() != inputPeak.size() )
+    {
+      WStringStream msg;
+      msg << "Failed to refit peak (became insignificant), from "
+      << int(inputPeak.size()) << " to " << int(outputPeak.size()) << " peaks";
+      passMessage( msg.str(), "", WarningWidget::WarningMsgInfo );
+      return;
+    }//if( outputPeak.size() != 1 )
+    
+    if( inputPeak.size() > 1 )
+    {
+      fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
+      std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+      model->setPeaks( fixedPeaks );
+    }else
+    {
+      assert( !outputPeak.empty() );
+      
+      model->updatePeak( peak, outputPeak[0] );
+    }//if( inputPeak.size() > 1 )
+  }catch( std::exception &e )
+  {
+    passMessage( "Sorry, error encountered refitting ROI.", "", WarningWidget::WarningMsgInfo );
+    cerr << "Error encountered refitting ROI: " << e.what() << endl;
+  }
+}//void refit_peaks_from_right_click(...)
+
+
+void change_continuum_type_from_right_click( InterSpec * const interspec,
+                                            const double rightClickEnergy,
+                                            const int continuum_type )
+{
+  try
+  {
+    assert( interspec );
+    
+    const PeakContinuum::OffsetType type = static_cast<PeakContinuum::OffsetType>( continuum_type );
+    
+    // Make sure a valid continuum type is passed in, although this check should never fail anyway
+    bool valid_offset = false;
+    switch( type )
+    {
+      case PeakContinuum::NoOffset:   case PeakContinuum::Constant:
+      case PeakContinuum::Linear:     case PeakContinuum::Quadratic:
+      case PeakContinuum::Cubic:      case PeakContinuum::LinearStep:
+      case PeakContinuum::External:
+        valid_offset = true;
+        break;
+    };//enum OffsetType
+    
+    assert( valid_offset );
+    if( !valid_offset )
+    {
+      // Should never happen, but will leave check in for development
+      passMessage( "Unexpected error in InterSpec::handleChangeContinuumTypeFromRightClick"
+                   " - invalid continuum type - not proceeding", "", WarningWidget::WarningMsgHigh );
+      return;
+    }//if( !valid_offset )
+    
+    PeakModel * const model = interspec->peakModel();
+    const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
+    
+    if( !model || !data || !foreground ) //shouldnt ever happen
+    {
+      passMessage( "No data loaded to refit", "", WarningWidget::WarningMsgInfo );
+      return;
+    }
+    
+    
+    std::shared_ptr<const PeakDef> peak = model->nearestPeak( rightClickEnergy );
+    if( !peak || (rightClickEnergy < peak->lowerX()) || (rightClickEnergy > peak->upperX()) )
+    {
+      // Shouldnt happen, but jic
+      passMessage( "There was no ROI at " + std::to_string(rightClickEnergy)
+                  + " keV to modify continuum of", "", WarningWidget::WarningMsgInfo );
+      return;
+    }//if( !peak )
+    
+    
+    if( peak->type() == PeakDef::DefintionType::DataDefined )
+    {
+      PeakDef newpeak = *peak;
+      newpeak.continuum()->setType(type);
+      model->updatePeak( peak, newpeak );
+      return;
+    }//if( peak->type() == PeakDef::DefintionType::DataDefined )
+    
+    
+    const shared_ptr<const PeakContinuum> oldContinuum = peak->continuum();
+    assert( oldContinuum );
+    if( oldContinuum->type() == type )
+    {
+      passMessage( "Continuum is already of type " + string(PeakContinuum::offset_type_label(type)),
+                  "", WarningWidget::WarningMsgInfo)
+      return;
+    }
+    
+    auto newContinuum = make_shared<PeakContinuum>( *oldContinuum );
+    
+    switch( type )
+    {
+      case PeakContinuum::NoOffset:
+      case PeakContinuum::Constant:
+      case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic:
+      case PeakContinuum::Cubic:
+      case PeakContinuum::LinearStep:
+      newContinuum->setType( type );
+      break;
+      
+      case PeakContinuum::External:
+      {
+        newContinuum->setType( type );
+        shared_ptr<SpecUtils::Measurement> continuumHist = estimateContinuum( data );
+        newContinuum->setExternalContinuum( continuumHist );
+        break;
+      }
+    }//case( type )
+    
+    
+    vector<shared_ptr<const PeakDef>> oldPeaksInRoi = model->peaksSharingRoi(peak);
+    vector<shared_ptr<const PeakDef>> newCandidatePeaks;
+    for( const auto &p : oldPeaksInRoi )
+    {
+      auto newPeak = make_shared<PeakDef>( *p );
+      newPeak->setContinuum( newContinuum );
+      newCandidatePeaks.push_back( newPeak );
+    }//for( const auto &p : oldPeaksInRoi )
+    
+    if( newCandidatePeaks.empty() ) //shouldnt happen, but jic
+    {
+      assert( 0 );
+      throw std::runtime_error( "Somehow no input/starting peaks???" );
+    }
+    
+    if( newCandidatePeaks.size() > 1 )
+    {
+      const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
+      const vector<shared_ptr<const PeakDef>> result
+                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, 0.25 );
+      
+      if( result.size() == newCandidatePeaks.size() )
+      {
+        vector<PeakDef> newPeaks;
+        for( const auto &p : result )
+          newPeaks.push_back( *p );
+        
+        model->updatePeaks( oldPeaksInRoi, newPeaks );
+      }else
+      {
+        passMessage( "Changing the continuum type to "
+                    + string(PeakContinuum::offset_type_label(type))
+                    + " caused " + string( newCandidatePeaks.size() > 1 ? "at least one" : "the" )
+                    + " peak to become insignificant.<br />"
+                    "Please use the <b>Peak Editor</b> to make this change.",
+                    "", WarningWidget::WarningMsgInfo);
+      }//if( result.size() == inputPeak.size() ) / else
+      
+      return;
+    }else //if( inputPeak.size() > 1 )
+    {
+      vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+      
+      for( const auto &p : newCandidatePeaks )
+        inputPeak.push_back( *p );
+      
+      const vector<shared_ptr<const PeakDef>> peaksNotInRoi = model->peaksNotSharingRoi( peak );
+      for( const auto &m : peaksNotInRoi )
+        fixedPeaks.push_back( *m );
+      
+      const double lowE = peak->mean() - 0.1;
+      const double upE = peak->mean() + 0.1;
+      const double ncausalitysigma = 0.0;
+      const double stat_threshold  = 0.0;
+      const double hypothesis_threshold = 0.0;
+      
+      const bool isRefit = true; // I think this should help keep peak means from wandering as much
+      
+      outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
+                                   hypothesis_threshold, inputPeak, data,
+                                   fixedPeaks, isRefit );
+      
+      if( outputPeak.empty() )
+      {
+        WStringStream msg;
+        msg << "Niavely changing the continuum type to "
+        << string(PeakContinuum::offset_type_label(type))
+        << " caused the peak to become insignificant.<br />"
+        "Please use the <b>Peak Editor</b> to make this change.";
+        
+        passMessage( msg.str(), "", WarningWidget::WarningMsgInfo );
+        return;
+      }//if( outputPeak.empty() )
+      
+      assert( outputPeak.size() == 1 );
+      
+      if( outputPeak.size() == 1 )
+      {
+        model->updatePeak( peak, outputPeak[0] );
+      }else
+      {
+        assert( 0 );
+        throw std::runtime_error( "Some how fitPeaksInRange didnt return exactly one peak" );
+      }//if( inputPeak.size() == 1 ) / else
+      
+    }//if( inputPeak.size() > 1 ) / else
+  }catch( std::exception &e )
+  {
+    cerr << "Unexpected error changing continuum type: " << e.what() << endl;
+    passMessage( "Unexpected error changing continuum type." , "", WarningWidget::WarningMsgHigh );
+  }
+}//change_continuum_type_from_right_click(...)
 
 
 void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::Measurement> data,

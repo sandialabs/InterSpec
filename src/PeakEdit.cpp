@@ -394,16 +394,7 @@ void PeakEdit::init()
   for( PeakContinuum::OffsetType t = PeakContinuum::OffsetType(0);
        t <= PeakContinuum::External; t = PeakContinuum::OffsetType(t+1) )
   {
-    switch ( t )
-    {
-      case PeakContinuum::NoOffset:   m_continuumType->addItem( "None" );         break;
-      case PeakContinuum::LinearStep: m_continuumType->addItem( "Linear Step" );  break;
-      case PeakContinuum::External:   m_continuumType->addItem( "Global Cont." ); break;
-      case PeakContinuum::Constant:   m_continuumType->addItem( "Constant" );     break;
-      case PeakContinuum::Linear:     m_continuumType->addItem( "Linear" );       break;
-      case PeakContinuum::Quadratic:  m_continuumType->addItem( "Quadratic" );    break;
-      case PeakContinuum::Cubic:      m_continuumType->addItem( "Cubic" );        break;
-    }//switch ( t )
+    m_continuumType->addItem( PeakContinuum::offset_type_label(t) );
   }//for( loop over PeakContinuum::OffsetType )
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+7 );
@@ -1402,8 +1393,7 @@ void PeakEdit::peakTypeChanged()
 
 void PeakEdit::contnuumTypeChanged()
 {
-  PeakContinuum::OffsetType type
-                = PeakContinuum::OffsetType( m_continuumType->currentIndex() );
+  PeakContinuum::OffsetType type = PeakContinuum::OffsetType( m_continuumType->currentIndex() );
   
   switch( type )
   {

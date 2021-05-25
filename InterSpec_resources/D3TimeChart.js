@@ -222,7 +222,7 @@ D3TimeChart = function (elem, options) {
   // current implementation of simplified gesture mode simply disables use of this.highlightOptions and treats any drag gesture as zoom, regardless of keyboard modifier.
   // To add extra functionality to other keys in simplified gesture mode, would need to use and make conditional changes to this.highlightOptions to add new key mappings under simplifiedGestureMode
   if (typeof this.options.useSimplifiedGestures !== "boolean")
-    this.options.useSimplifiedGestures = true;
+    this.options.useSimplifiedGestures = false;
 
   // defines keyboard modifier keys and/or other metadata to use with drag gestures to achieve various highlight selection functionalities.
   // uses JS object to emulate behavior of Set object (e.g. {"none": true} instead of new Set(["none"])) to accommodate ES5
@@ -3105,4 +3105,39 @@ D3TimeChart.prototype.setXAxisZoomSamples = function (firstsample, lastsample) {
     firstsample,
     lastsample
   );
+};
+
+
+D3TimeChart.prototype.setUserInteractionMode = function ( mode ) {
+  
+  // This is just a stub function at the moment.
+  console.log( 'Will set user interaction mode to ' + mode );
+  
+  if( mode === "Default" ){
+    
+  }else if( mode === "Zoom" ){
+    
+  }else if( mode === "Pan" ){
+    
+  }else if( mode === "SelectForeground" ){
+    
+  }else if( mode === "SelectBackground" ){
+    
+  }else if( mode === "SelectSecondary" ){
+    
+  }else if( mode === "AddForeground" ){
+    
+  }else if( mode === "AddBackground" ){
+    
+  }else if( mode === "AddSecondary" ){
+    
+  }else if( mode === "RemoveForeground" ){
+    
+  }else if( mode === "RemoveBackground" ){
+    
+  }else if( mode === "RemoveSecondary" ){
+    
+  }else{
+    console.log( 'Invalid option passed to setUserInteractionMode' );
+  }
 };

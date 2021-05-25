@@ -906,6 +906,7 @@ protected:
   void handleLeftClick( const double energy, const double counts,
                         const double pageX, const double pageY );
   void rightClickMenuClosed();
+  
 #if( USE_SIMPLE_NUCLIDE_ASSIST )
   void leftClickMenuClosed();
 #endif
@@ -915,6 +916,7 @@ protected:
   void addPeakFromRightClick();
   void makePeakFromRightClickHaveOwnContinuum();
   void shareContinuumWithNeighboringPeak( const bool shareWithLeft );
+  void handleChangeContinuumTypeFromRightClick( const int peak_continuum_offset_type );
   
   //updateRightClickNuclidesMenu(): meant to be called from within the
   //  application loop (so wApp is valid).  Sets the contents of the
@@ -1276,6 +1278,7 @@ protected:
     kRefitPeak,
     kRefitROI,
     kChangeNuclide,
+    kChangeContinuum,
     kDeletePeak,
     kAddPeak,
     kShareContinuumWithLeftPeak,
@@ -1288,6 +1291,7 @@ protected:
   double                m_rightClickEnergy;
   Wt::WMenuItem        *m_rightClickMenutItems[kNumRightClickItems];
   PopupDivMenu         *m_rightClickNuclideSuggestMenu;
+  PopupDivMenu         *m_rightClickChangeContinuumMenu;
 #if( USE_SIMPLE_NUCLIDE_ASSIST )
   SimpleNuclideAssistPopup   *m_leftClickMenu;
 #endif

@@ -1,4 +1,79 @@
-.axis > path {
+.D3TimeChartParent {
+  display: flex;
+  flex-wrap: nowrap;
+}
+
+.D3TimeChart {
+  flex-grow: 4;
+  height: 100%;
+  overflow: hidden;
+}
+
+.D3TimeChartFilters {
+  border: 1px solid blue;
+  width: 150px;
+  padding: 1px 2px 2px 4px;
+}
+
+.InteractMenu {
+  margin: 0px;
+  list-style-type: none;
+  overflow: auto;
+}
+
+.InteractMenu > li {
+}
+
+.InteractMenu li {
+  vertical-align: middle;
+}
+
+.InteractMenu > .Wt-separator {
+  height: 0.25em;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  border-radius: 0;
+  padding-top: 0px;
+  padding-bottom: 0px;
+}
+
+.InteractMenu a {
+  cursor: pointer;
+}
+
+.InteractMenu li.itemselected > a {
+  color: #e0f5ff;
+}
+
+.InteractMenu li :hover {
+  border-color: #eeeeee #eeeeee #dddddd;
+}
+
+.InteractMenu li.itemselected {
+  background: #c6c6c6;
+}
+
+.InteractMenu li.itemselected:hover {
+}
+
+.ShowD3TimeChartFilters {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  padding: 0px 0px;
+  width: 24px;
+  height: 24px;
+  background-size: 24px 24px;
+  background-image: url("../InterSpec_resources/images/filter.svg");
+  background-position: 0px center;
+  background-repeat: no-repeat;
+
+  opacity: 0.8;
+  cursor: pointer;
+}
+
+.axis > path,
+.axis line {
   fill: none;
 }
 
@@ -20,20 +95,13 @@
   shape-rendering: crispEdges;
 }
 
-.occupancy_start_line_group line, .occupancy_end_line_group line {
-    stroke: #dedede;
-    stroke-width: 1;
+.occupancy_start_line_group line,
+.occupancy_end_line_group line {
+  stroke: #dedede;
+  stroke-width: 1;
 }
 
-.occupancy_start_line_group text, .occupancy_end_line_group text {
-    fill: #dedede;
-}
-
-#hover_info {
-  padding: 10px;
-  /* border-radius: 5px; */
-  /* background-color: rgba(245, 245, 245, 0.5); */
-  pointer-events: none;
-  position: absolute;
-  /* font-size: 11px; */
+.occupancy_start_line_group text,
+.occupancy_end_line_group text {
+  fill: #dedede;
 }

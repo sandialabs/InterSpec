@@ -33,6 +33,8 @@ namespace SpecUtils
 }//namespace SpecUtils
 
 
+class D3TimeChartFilters; //defined in D3TimeChart.cpp
+
 /**
  Things to handle:
  - Display time series of gamma + neutron gross-count data.
@@ -173,6 +175,48 @@ protected:
   //layoutSizeChanged(...): adjusts display binning if necessary
   virtual void layoutSizeChanged ( int width, int height );
   
+  /** Shows or hides the user-selectable filters to control what the mouse/touch selects and energy range. */
+  void showFilters( const bool show );
+  
+  /** The different modes users can interact with the chart.
+   
+   Note:
+   - in all modes the mouse-wheel continues to zoom/pan the chart.
+   -
+   */
+  enum class UserInteractionMode
+  {
+    /** The "normal" user mode where different modifier keys, or right mouse buttons do different things. */
+    Default,
+    
+    /** Clicking and dragging with the left mouse button, or dragging with single finger will cause chart to zoom in/out (like the
+     right-mouse button, or ctrl+left mouse normally does).
+     */
+    Zoom,
+    
+    /** Clicking and dragging, or tap-and-dragging causes the chart to pan left/right.*/
+    Pan,
+    
+    /** Clicking and dragging with left-mouse button, or a single finger will cause the foreground/background/secondary spectrum
+     to be defined by the drug region.  In this mode, holding the shift key will cause samples to be added to region.
+     */
+    SelectForeground, SelectBackground, SelectSecondary,
+    
+    /** Clicking and dragging with left-mouse button, or a single finger will cause the drug time region to be added to the
+     foreground/background/secondary spectrum (wether or not shift key is held).
+     */
+    AddForeground, AddBackground, AddSecondary,
+    
+    /**
+     
+     */
+    RemoveForeground, RemoveBackground, RemoveSecondary
+  };//enum class UserSelectionMode
+  
+  /** Sets the current user interaction mode.*/
+  void setUserInteractionMode( const UserInteractionMode mode );
+  
+  
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   /** Flags */
@@ -245,6 +289,10 @@ protected:
    */
   const std::string m_jsgraph;
 
+  Wt::WContainerWidget *m_chart;
+  D3TimeChartFilters *m_options;
+  Wt::WContainerWidget *m_showOptionsIcon;
+  
   Wt::WColor m_gammaLineColor;
   Wt::WColor m_neutronLineColor;
   Wt::WColor m_foregroundHighlightColor;
@@ -265,6 +313,8 @@ protected:
      here as they will be options set to the D3 chart during first rendering.
    */
   std::vector<std::string> m_pendingJs;
+  
+  friend class D3TimeChartFilters;
 };//class D3TimeChart_h
 
 

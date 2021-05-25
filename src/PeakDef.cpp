@@ -3701,6 +3701,22 @@ double PeakDef::gaus_integral( const double peak_mean, const double peak_sigma,
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/** Text appropriate for use as a label for the continuum type in the gui. */
+const char *PeakContinuum::offset_type_label( const OffsetType type )
+{
+  switch( type )
+  {
+    case PeakContinuum::NoOffset:   return "None";
+    case PeakContinuum::Constant:   return "Constant";
+    case PeakContinuum::Linear:     return "Linear";
+    case PeakContinuum::Quadratic:  return "Quadratic";
+    case PeakContinuum::Cubic:      return "Cubic";
+    case PeakContinuum::LinearStep: return "Linear Step";
+    case PeakContinuum::External:   return "Global Cont.";
+  }//switch( type )
+  return "InvalidOffsetType";
+}
+
 PeakContinuum::PeakContinuum()
 : m_type( PeakContinuum::NoOffset ),
   m_lowerEnergy( 0.0 ),
@@ -3956,6 +3972,8 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       
       if( !data || !data->num_gamma_channels() )
         throw runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
+      
+      // If you change any of this, make sure you update fit_amp_and_offset(...) as well
       
       // TODO: this is not efficient, tested, or correct if integration limits do not correspond to channel limits
 #warning "TODO: LinearStep offset_integral is not efficient, tested, or correct"
