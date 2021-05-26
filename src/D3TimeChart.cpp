@@ -60,7 +60,7 @@ class D3TimeChartFilters : public WContainerWidget
   
   WMenu *m_interactModeMenu;
   
-  
+  WContainerWidget *m_specTypeDiv;
   WMenu *m_specTypeSelect;
   
   NativeFloatSpinBox *m_lowerEnergy;
@@ -71,6 +71,7 @@ public:
     : WContainerWidget( parent ),
       m_parentChart( parent ),
       m_interactModeMenu( nullptr ),
+      m_specTypeDiv( nullptr ),
       m_specTypeSelect( nullptr ),
       m_lowerEnergy( nullptr ),
       m_upperEnergy( nullptr )
@@ -92,9 +93,13 @@ public:
     
     
     WStackedWidget *instructionsStack = new WStackedWidget();
+    instructionsStack->addStyleClass( "D3TimeInteractInst" );
+    
+    WText *title = new WText( "Interaction mode:", interact );
+    title->addStyleClass( "D3TimeInteractModeText" );
     
     m_interactModeMenu = new WMenu( instructionsStack, interact );
-    m_interactModeMenu->addStyleClass( "InteractMenu" );
+    m_interactModeMenu->addStyleClass( "D3TimeInteractMenu D3TimeInteractModeMenu LightNavMenu" );
     
     WMenuItem *item = nullptr;
     WText *instructions = nullptr;
@@ -107,32 +112,45 @@ public:
       switch( index )
       {
         case InteracModeIndex::IM_Normal:
-          instructions = new WText( "use left mousebutton..." );
+          instructions = new WText( "Left mouse: select<br />"
+                                    "&nbsp;&nbsp;&nbsp;&nbsp;no modifiers: foreground<br />"
+                                    "&nbsp;&nbsp;&nbsp;&nbsp;Option-key: background<br />"
+                                    "&nbsp;&nbsp;&nbsp;&nbsp;???-key: secondary<br />"
+                                    "&nbsp;&nbsp;&nbsp;&nbsp;shift-key: add times<br />"
+                                    "&nbsp;&nbsp;&nbsp;&nbsp;???-key: remove times<br />"
+                                    "&nbsp;&nbsp;&nbsp;&nbsp;control-key: zoom in/out<br />"
+                                    "Right mouse: zoom in/out<br />"
+                                    "Wheel: zoom and left/right<br />" );
           item = m_interactModeMenu->addItem( "Normal", instructions );
           break;
           
         case InteracModeIndex::IM_Zoom:
-          instructions = new WText( "Zoom instructions..." );
+          instructions = new WText( "Click drag right zoom in<br />"
+                                    "Click drag left zoom out<br />"
+                                    "Drag x-axis to pan<br />" );
           item = m_interactModeMenu->addItem( "Zoom", instructions );
           break;
           
         case InteracModeIndex::IM_Pan:
-          instructions = new WText( "Pan instructions..." );
+          instructions = new WText( "Click drag chart left/right<br />");
           item = m_interactModeMenu->addItem( "Pan", instructions );
           break;
           
         case InteracModeIndex::IM_Select:
-          instructions = new WText( "Select instructions..." );
+          instructions = new WText( "Click drag to select<br />"
+                                    "to sum for spectrum.");
           item = m_interactModeMenu->addItem( "Select", instructions );
           break;
           
         case InteracModeIndex::IM_Add:
-          instructions = new WText( "Add Select instructions..." );
+          instructions = new WText( "Click drag to add additional<br />"
+                                    "time periods to spectrum sum.");
           item = m_interactModeMenu->addItem( "Add", instructions );
           break;
           
         case InteracModeIndex::IM_Remove:
-          instructions = new WText( "Remove Select instructions..." );
+          instructions = new WText( "Click drag to remove time<br />"
+                                    "periods from spectrum sum." );
           item = m_interactModeMenu->addItem( "Remove", instructions );
           break;
           
@@ -149,8 +167,14 @@ public:
     
     
     // Add menu to allow choose Foreground/Background/Secondary for the "Select", "Add", and "Remove" options
-    m_specTypeSelect = new WMenu( interact );
-    m_specTypeSelect->addStyleClass( "InteractMenu" );
+    m_specTypeDiv = new WContainerWidget( interact );
+    m_specTypeDiv->setHidden( true );
+    
+    title = new WText( "Spectrum Type:", m_specTypeDiv );
+    title->addStyleClass( "D3TimeInteractSpecTypeText" );
+    
+    m_specTypeSelect = new WMenu( m_specTypeDiv );
+    m_specTypeSelect->addStyleClass( "D3TimeInteractMenu D3TimeInteractSpecTypeMenu LightNavMenu" );
     item = m_specTypeSelect->addItem( "Fore." );
     item->clicked().connect( boost::bind(&WMenuItem::select, item) );
     item = m_specTypeSelect->addItem( "Back." );
@@ -159,7 +183,6 @@ public:
     item->clicked().connect( boost::bind(&WMenuItem::select, item) );
     m_specTypeSelect->select( m_specTypeSelect->itemAt(0) );
     m_specTypeSelect->itemSelected().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
-    m_specTypeSelect->setHidden( true );
     
     
     interact->addWidget( instructionsStack );
@@ -206,7 +229,6 @@ public:
     assert( index >= 0 );
     assert( index < InteracModeIndex::IM_NumMode );
     
-    //m_specTypeSelect
     bool hideSpecTypeMenu = true;
     
     switch( InteracModeIndex(index) )
@@ -225,8 +247,8 @@ public:
         break;
     }//switch( index )
     
-    if( hideSpecTypeMenu != m_specTypeSelect->isHidden() )
-      m_specTypeSelect->setHidden( hideSpecTypeMenu );
+    if( hideSpecTypeMenu != m_specTypeDiv->isHidden() )
+      m_specTypeDiv->setHidden( hideSpecTypeMenu );
     
     if( m_parentChart )
       m_parentChart->setUserInteractionMode( interactionMode() );
@@ -1369,7 +1391,7 @@ void D3TimeChart::userChangedEnergyRangeFilter( const float lowerEnergy, const f
 {
   //blah blah blah
   
-  // Also, refacter .VerticalMenu and .InteractMenu into {.HeavyMenu,.LightMenu} and {VerticalMenu, HorizantalMenu}
+  // Also, refacter .VerticalNavMenu and .InteractMenu into {.HeavyMenu,.LightMenu} and {VerticalNavMenu, HorizantalMenu}
   //Also rename LinearStep to FlatStep, add a LinearStep with three coefficients, and a BiLinearStep with four.
   
 }//void userChangedEnergyRangeFilter( const float lowerEnergy, const float upperEnergy )

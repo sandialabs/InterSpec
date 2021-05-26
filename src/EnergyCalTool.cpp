@@ -3085,7 +3085,7 @@ void EnergyCalTool::doRefreshFromFiles()
       item->clicked().connect( boost::bind(&WMenuItem::select, item) );
       
       m_detectorMenu[i] = new WMenu( m_calInfoDisplayStack, detMenuDiv );
-      m_detectorMenu[i]->addStyleClass( "VerticalMenu DetCalMenu" );
+      m_detectorMenu[i]->addStyleClass( "VerticalNavMenu HeavyNavMenu DetCalMenu" );
       
       m_detectorMenu[i]->itemSelected().connect( this, &EnergyCalTool::updateFitButtonStatus );
     }//for( int i = 0; i < 3; ++i )

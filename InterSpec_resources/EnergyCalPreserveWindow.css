@@ -7,7 +7,7 @@
   overflow: auto;
 }
 
-.EnergyCalPreserve .VerticalMenu
+.EnergyCalPreserve .VerticalNavMenu
 {
   overflow-x: hidden;
   overflow-y: auto;
@@ -19,7 +19,7 @@
   text-overflow: ellipsis;
 }
 
-.EnergyCalPreserve .VerticalMenu li
+.EnergyCalPreserve .VerticalNavMenu li
 {
   height: 1.5em;
   padding-top: 2px;
@@ -58,7 +58,7 @@ table.RecalibCoefTable th
   overflow-y: auto;
 }
 
-.EnergyCalPreserve .VerticalMenu
+.EnergyCalPreserve .VerticalNavMenu
 {
 
 }
