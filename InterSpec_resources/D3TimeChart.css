@@ -92,37 +92,36 @@
   cursor: pointer;
 }
 
-
-.axis path,
+.axis > path,
 .axis line {
-    fill: none;
-    stroke: rgb(0,0,0);
+  fill: none;
 }
 
 .axis text {
-    font-family: sans-serif;
-    font-size: 0.9em;
+  font-family: sans-serif;
+  font-size: 0.9em;
 }
 
 .axis_label {
-    fill: rgb(0,0,0)
+  fill: rgb(0, 0, 0);
 }
 
 .grid path {
-    fill: none;
+  fill: none;
 }
 
 .interaction_area .selection {
-    fill-opacity: .125;
-    shape-rendering: crispEdges;
+  fill-opacity: 0.25;
+  shape-rendering: crispEdges;
 }
 
-#hover_info {
-    padding: 10px;
-    border-radius: 5px;
-    background-color: rgba(245, 245, 245, 0.5);
-    pointer-events: none;
-    position: absolute;
-    font-size: 11px;
+.occupancy_start_line_group line,
+.occupancy_end_line_group line {
+  stroke: #dedede;
+  stroke-width: 1;
+}
 
+.occupancy_start_line_group text,
+.occupancy_end_line_group text {
+  fill: #dedede;
 }
