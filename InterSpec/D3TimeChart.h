@@ -128,7 +128,7 @@ public:
   void setChartMarginColor( const Wt::WColor &color );
   void setChartBackgroundColor( const Wt::WColor &color );
   
-  void setXAxisTitle( const std::string &title );
+  void setXAxisTitle( const std::string &normalTitle, const std::string &compactTitle );
   void setY1AxisTitle( const std::string &title );
   void setY2AxisTitle( const std::string &title );
   
@@ -264,7 +264,7 @@ protected:
   
   std::vector<D3TimeChart::HighlightRegion> m_highlights;
   
-  std::string m_xAxisTitle;
+  std::string m_xAxisTitle, m_compactXAxisTitle;
   std::string m_y1AxisTitle;
   std::string m_y2AxisTitle;
   

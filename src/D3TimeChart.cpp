@@ -355,9 +355,10 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_showHorizontalLines( false ),
   m_spec( nullptr ),
   m_highlights(),
-  m_xAxisTitle( "Real Time (s)"),
-  m_y1AxisTitle( "&gamma; counts"),
-  m_y2AxisTitle( "n counts"),
+  m_xAxisTitle( "Time of Measurement (seconds)"),
+  m_compactXAxisTitle( "Time (seconds)" ),
+  m_y1AxisTitle( "Gamma CPS" ),
+  m_y2AxisTitle( "Neutron CPS"),
   m_chartClicked( this ),
   m_chartDragged( this ),
   m_chartResized( this ),
@@ -414,12 +415,12 @@ D3TimeChart::~D3TimeChart()
 void D3TimeChart::defineJavaScript()
 {
   string options = "{";
-  options += "xtitle: '" + m_xAxisTitle + "'";
+  options += "xtitle: '" + (m_compactXAxis ? m_compactXAxisTitle : m_xAxisTitle) + "'";
   options += ", y1title: '" + m_y1AxisTitle + "'";
   options += ", y2title: '" + m_y2AxisTitle + "'";
   options += ", compactXAxis: " + jsbool(m_compactXAxis);
-  options += ", gridx: " + jsbool(m_showHorizontalLines);
-  options += ", gridy: " + jsbool(m_showVerticalLines);
+  options += ", gridx: " + jsbool(m_showVerticalLines);
+  options += ", gridy: " + jsbool(m_showHorizontalLines);
   options += ", chartLineWidth: 1.0";  //ToDo: Let this be specified in C+
   options += "}";
   
@@ -1309,13 +1310,17 @@ void D3TimeChart::setChartBackgroundColor( const Wt::WColor &color )
 }//setChartBackgroundColor(...)
 
 
-void D3TimeChart::setXAxisTitle( const std::string &title )
+void D3TimeChart::setXAxisTitle( const std::string &title, const std::string &compactTitle )
 {
   m_xAxisTitle = title;
   SpecUtils::ireplace_all( m_xAxisTitle, "'", "&#39;" );
   
+  m_compactXAxisTitle = compactTitle;
+  SpecUtils::ireplace_all( m_compactXAxisTitle, "'", "&#39;" );
+  
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setXAxisTitle('" + m_xAxisTitle + "');" );
+    doJavaScript( m_jsgraph + ".setXAxisTitle('"
+                  + (m_compactXAxis ? m_compactXAxisTitle : m_xAxisTitle) + "');" );
 }//void setXAxisTitle( const std::string &title )
 
 
@@ -1423,10 +1428,17 @@ double D3TimeChart::chartHeightInPixels() const
 
 void D3TimeChart::setCompactAxis( const bool compact )
 {
-  m_compactXAxis = compact;
   if( isRendered() )
+  {
+    if( m_compactXAxis != compact )
+      doJavaScript( m_jsgraph + ".setXAxisTitle('"
+                   + (compact ? m_compactXAxisTitle : m_xAxisTitle) + "');" );
+    
     doJavaScript( m_jsgraph + ".setCompactXAxis(" + jsbool(compact) + ");" );
-}
+  }//if( isRendered() )
+  
+  m_compactXAxis = compact;
+}//void setCompactAxis( compact )
 
 
 bool D3TimeChart::isAxisCompacted() const
