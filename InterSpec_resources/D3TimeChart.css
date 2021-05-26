@@ -16,56 +16,64 @@
   padding: 1px 2px 2px 4px;
 }
 
-.D3TimeChartFilters select.SpecType {
-  display: table-row;
-}
-
-.D3TimeChartFilters select.SpecType > option {
-  display: table-cell;
-}
-
-.InteractMenu
+.D3TimeInteractMenu
 {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  align-content: center;
   list-style-type: none;
   padding: 0;
+  margin: 0;
+  margin-left: 7px;
+  margin-right: 7px;
 }
 
-.InteractMenu li
+.D3TimeInteractModeMenu
+{
+  grid-template-columns: 1fr 1fr;
+}
+
+.D3TimeInteractSpecTypeMenu
+{
+  grid-template-columns: 1fr 1fr 1fr;
+  margin-left: 7px;
+  margin-right: 7px;
+}
+
+
+.D3TimeInteractMenu li
 {
   padding-left: 2px;
   padding-right: 2px;
-  /* vertical-align:middle; */
+  margin: 2px;
+  vertical-align: middle;
+  text-align: center;
+  border-radius: 3px;
 }
 
-.InteractMenu a
+.D3TimeInteractMenu a
 {
   cursor:pointer;
 }
 
-.InteractMenu li :hover
+.D3TimeInteractModeText, .D3TimeInteractSpecTypeText
 {
-  border-color: red;
+  display: block;
+  font-size: smaller;
+  margin-top: 3px;
+  margin-left: 2px;
 }
 
-.InteractMenu li.itemselected > a
+.D3TimeInteractSpecTypeText
 {
-  color: #E0F5FF;
-}
-
-.InteractMenu li.itemselected
-{
-  background: #C6C6C6;
-}
-
-.InteractMenu li.itemselected:hover
-{
+  
 }
 
 
-
-
+.D3TimeInteractInst
+{
+  font-size: smaller;
+  margin-top: 3px;
+}
 
 
 .ShowD3TimeChartFilters {

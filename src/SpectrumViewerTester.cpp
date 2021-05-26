@@ -984,7 +984,7 @@ SpectrumViewerTester::SpectrumViewerTester( InterSpec *viewer,
   stack->setTransitionAnimation( animation, true );
   
   m_sideMenu = new WMenu( stack, Wt::Vertical );
-  m_sideMenu->addStyleClass( "VerticalMenu SideMenu" );
+  m_sideMenu->addStyleClass( "VerticalNavMenu HeavyNavMenu SideMenu" );
   
   WGridLayout *layout = new WGridLayout();
   setLayout( layout );

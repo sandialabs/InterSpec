@@ -411,7 +411,7 @@ padding-left:10px;
   border-top: none;
 }
 
-/* .SideMenu holds all the size information for the elements, while .VerticalMenu holds the styling
+/* .SideMenu holds all the size information for the elements, while .VerticalNavMenu holds the styling
  (color, hover, etc).
 */
 .SideMenu
@@ -442,24 +442,113 @@ padding-left:10px;
 }
 
 
-.VerticalMenu
+/* For navigation-style menu, we break the CSS into two parts:
+ The coloring part: .HeavyNavMenu and .LightNavMenu . These are affected by the color theming (e.g,
+   dark.css has to override).  .HeavyNavMenu is dark buttons and light text in default "light" color
+   theme
+ The actual layout part: .VerticalNavMenu
+ 
+ */
+
+.HeavyNavMenu li
+{
+  color: #ffffff;
+}
+
+.HeavyNavMenu li.item > a
+{
+  color: white;
+}
+
+.HeavyNavMenu li.itemselected > a
+{
+  color: #E0F5FF;
+}
+
+.HeavyNavMenu li :hover
+{
+  border-color: #eeeeee #eeeeee #dddddd;
+}
+
+.HeavyNavMenu li.itemselected
+{
+  background: #C6C6C6;
+}
+
+.HeavyNavMenu li.itemselected:hover
+{
+}
+
+.HeavyNavMenu li.item
+{
+  background: #888888;
+}
+
+.HeavyNavMenu li.item:hover
+{
+  background: #9B9B9B;
+}
+
+
+.LightNavMenu li
+{
+  /* color: #ffffff; */
+  border: 1px solid #e1e1e1;
+}
+
+.LightNavMenu li.item > a
+{
+  /* color: white; */
+}
+
+.LightNavMenu li.itemselected > a
+{
+  color: #E0F5FF;
+}
+
+.LightNavMenu li :hover
+{
+  border-color: #eeeeee #eeeeee #dddddd;
+}
+
+.LightNavMenu li.itemselected
+{
+  background: #C6C6C6;
+}
+
+.LightNavMenu li.itemselected:hover
+{
+}
+
+.LightNavMenu li.item
+{
+  /* background: #888888; */
+}
+
+.HeavyNavMenu li.item:hover
+{
+  background: #9B9B9B;
+}
+
+
+
+.VerticalNavMenu
 {
   margin: 0px;
   list-style-type: none;
   overflow: auto;
 }
 
-.VerticalMenu > li
+.VerticalNavMenu > li
 {
 }
 
-.VerticalMenu li
+.VerticalNavMenu li
 {
-  vertical-align:middle;
-  color: #ffffff;
+  vertical-align: middle;
 }
 
-.VerticalMenu > .Wt-separator {
+.VerticalNavMenu > .Wt-separator {
     height: 0.25em;
     -webkit-border-radius: 0;
     -moz-border-radius: 0;
@@ -468,9 +557,9 @@ padding-left:10px;
     padding-bottom: 0px;
 }
 
-.VerticalMenu a
+.VerticalNavMenu a
 {
-  cursor:pointer;
+  cursor: pointer;
 }
 
 
@@ -491,40 +580,6 @@ ul.Wt-popupmenu > li > a > span > span:hover
  color: white;
 }
 
-
-.VerticalMenu li.item > a
-{
-color: white;
-}
-
-.VerticalMenu li.itemselected > a
-{
-color: #E0F5FF;
-}
-
-.VerticalMenu li :hover
-{
-  border-color: #eeeeee #eeeeee #dddddd;
-}
-
-.VerticalMenu li.itemselected
-{
-background: #C6C6C6;
-}
-  
-.VerticalMenu li.itemselected:hover
-{
-}
-
-.VerticalMenu li.item
-{
-background: #888888;
-}
-
-.VerticalMenu li.item:hover
-{
-background: #9B9B9B;
-}
 
 
 .SampleSpecRow
@@ -1203,7 +1258,7 @@ color: blue;
 /* Customize WTabWidget to look a little more modern/flat */
 br.Wt-tabs-clear
 {
-  /*Fix an undesired display isue with WTabWidget (at least Wt pre 3.3.4)*/
+  /*Fix an undesired display issue with WTabWidget (at least Wt pre 3.3.4)*/
   display: none;
 }
 
@@ -1221,7 +1276,7 @@ br.Wt-tabs-clear
   list-style-type: none;
   background: none;
   border-bottom: 1px solid rgba(136, 136, 136, 1);
-  overflow: visible; /* necassary - took a few hours to figure this out. */
+  overflow: visible; /* necessary - took a few hours to figure this out. */
 }
 
 .Wt-tabs li {

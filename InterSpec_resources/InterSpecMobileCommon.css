@@ -147,7 +147,7 @@
   border-radius: 5px;
 }
 
-.VerticalMenuPhone > li
+.HeavyNavMenuPhone > li
 {
   vertical-align:middle;
   color: #ffffff;
@@ -162,7 +162,7 @@
 }
 
 
-.VerticalMenuPhone > .itemselected
+.HeavyNavMenuPhone > .itemselected
 {
   background: #C6C6C6;
 }
@@ -172,7 +172,7 @@
 {
 }
 
-.VerticalMenuPhone
+.HeavyNavMenuPhone
 {
   list-style-type: none;
   overflow: auto;

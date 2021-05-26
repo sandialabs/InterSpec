@@ -248,7 +248,7 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
     contentstack->setTransitionAnimation( animation );
     
     auto menu = new WMenu( contentstack );
-    menu->addStyleClass( "VerticalMenu" );
+    menu->addStyleClass( "VerticalNavMenu HeavyNavMenu" );
     //menu->itemSelected().connect( this, &... );
     
     layout->addWidget( menu, 0, 0 );

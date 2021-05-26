@@ -172,20 +172,20 @@ ul.Wt-tv-root > li:nth-child(odd) {
   background: rgba(110, 110, 110, 0.5) !important;
 }
 
-ul.VerticalMenu > li.itemselected  {
+ul.HeavyNavMenu > li.itemselected  {
   background: rgb(175,175,175) !important;
 }
 
-ul.VerticalMenu > li.itemselected > a {
+ul.HeavyNavMenu > li.itemselected > a {
   color: rgb(115, 115, 255) !important;
 }
 
 
-ul.VerticalMenu > li.item {
+ul.HeavyNavMenu > li.item {
   background: rgb(124,124,124) !important;
 }
 
-ul.VerticalMenu > li.item:hover  {
+ul.HeavyNavMenu > li.item:hover  {
   background: rgb(135,135,135) !important;
 }
 
