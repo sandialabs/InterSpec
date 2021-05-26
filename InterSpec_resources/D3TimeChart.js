@@ -256,12 +256,25 @@ D3TimeChart = function (elem, options) {
     "Unknown",
   ]);
 
+  this.UserInteractionModeEnum = Object.freeze({
+    DEFAULT: 0,
+    ZOOM: 1,
+    SELECTFOREGROUND: 3,
+    SELECTBACKGROUND: 4,
+    SELECTSECONDARY: 5,
+    REMOVEFOREGROUND: 6,
+    REMOVEBACKGROUND: 7,
+    REMOVESECONDARY: 8,
+  });
+
   // colors used for highlight rectangles for various selection types.
   this.HIGHLIGHT_COLORS = Object.freeze({
     foreground: "rgb(255, 255, 0)",
     background: "rgb(0, 255, 255)",
-    zoom: "rgb(0, 0, 0)",
+    // zoom: "rgb(102,102,102)",
   });
+
+  this.userInteractionMode = this.UserInteractionModeEnum.DEFAULT;
 
   /** COMPONENT STATE */
   // component state. When state changes, the component should usually respond by re-rendering/updating to reflect changes.
@@ -282,9 +295,9 @@ D3TimeChart = function (elem, options) {
 
   /** SVG COMPONENT REFERENCES */
   this.svg = d3.select(this.chart).append("svg");
-  this.verticalGridG = this.svg.append("g").attr("class", "grid");
-  this.horizontalLeftGridG = this.svg.append("g").attr("class", "grid");
-  this.horizontalRightGridG = this.svg.append("g").attr("class", "grid");
+  this.verticalGridG = this.svg.append("g").attr("class", "grid xgrid");
+  this.horizontalLeftGridG = this.svg.append("g").attr("class", "grid ygrid");
+  this.horizontalRightGridG = this.svg.append("g").attr("class", "grid ygrid");
   this.linesG = this.svg.append("g").attr("class", "lines");
   this.axisBottomG = this.svg.append("g").attr("class", "axis xaxis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis yaxis");
@@ -295,27 +308,34 @@ D3TimeChart = function (elem, options) {
     .attr("class", "highlight_region");
 
   this.rectG = this.svg.append("g").attr("class", "interaction_area");
-  this.highlightText = this.rectG
-    .append("text")
-    .attr("font-size", 11)
-    .attr("font-weight", "bold");
+  this.highlightText = this.rectG.append("text").attr("class", "chartLineText");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
   this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area on plot area
   this.bottomAxisRect = this.rectG.append("rect"); // rectangle spanning additional interactable area on bottom axis area
 
-  this.hoverToolTip = d3
-    .select(this.chart)
-    .append("div")
-    .attr("id", "hover_info")
-    .attr("class", "tooltip")
-    .style("left", this.margin.left + 20 + "px")
-    .style("top", this.margin.top + "px");
+  this.mouseInfoOptions = {
+    padding: { top: 2, right: 6, bottom: 5, left: 6 },
+  };
+  this.mouseInfoG = this.rectG
+    .append("g")
+    .attr("class", "mouseInfo")
+    .style("pointer-events", "none");
+  this.mouseInfoBox = this.mouseInfoG
+    .append("rect")
+    .attr("x", this.margin.left + 20)
+    .attr("y", this.margin.top)
+    .attr("class", "mouseInfoBox");
+  this.mouseInfoText = this.mouseInfoG
+    .append("text")
+    .attr("x", this.margin.left + 20)
+    .attr("y", this.margin.top + this.mouseInfoOptions.padding.top);
 
   this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
 
   /** MISC MEMBERS */
-  this.escapeKeyPressed = false;
+  this.cancelSelectionSignalEmitted = false;
   this.shiftKeyHeld = false;
+  this.usingAddSelectionMode = false;
   this.highlightModifier = null; // holds the key pressed in conjunction with a highlight gesture to modify the action
   this.draggedForward = false;
 
@@ -324,7 +344,7 @@ D3TimeChart = function (elem, options) {
   document.addEventListener("keydown", function (evt) {
     evt = evt || window.event;
     if (evt.key === "Escape") {
-      self.escapeKeyPressed = true;
+      self.cancelSelectionSignalEmitted = true;
       d3.select("body").style("cursor", "auto");
       self.mouseUpHighlight();
     } else if (evt.key === "ArrowLeft") {
@@ -502,6 +522,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   // add a clipPath: everything outside of this area will not be drawn
   var clip = this.svg.select("#clip_th");
+  var clipBottomAxis = this.svg.select("#clip_bottom_axis_th");
 
   if (!clip.empty()) {
     // update if already exists
@@ -525,8 +546,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   }
 
   this.linesG.attr("clip-path", "url(#clip_th)");
-  this.highlightRegionsG.attr("clip-path", "url(#clip_th");
-  this.occupancyLinesG.attr("clip-path", "url(#clip_th");
+  this.highlightRegionsG.attr("clip-path", "url(#clip_th)");
+  this.occupancyLinesG.attr("clip-path", "url(#clip_th)");
 
   // if have a selection, choose compression index to use for plotting based on number of points in the selection.
   if (this.state.selection) {
@@ -571,17 +592,16 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
    * Handler for the initiation of a selection gesture.
    */
   var startSelection = () => {
-    if (window.TouchEvent && d3.event instanceof TouchEvent) {
+    if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
 
-    if (this.escapeKeyPressed) this.escapeKeyPressed = false;
+    if (this.cancelSelectionSignalEmitted)
+      this.cancelSelectionSignalEmitted = false;
 
     var coords =
-      window.TouchEvent &&
-      (d3.event instanceof TouchEvent ||
-        d3.event.sourceEvent instanceof TouchEvent)
+      options && options.touch
         ? d3.touches(this.rect.node())[0]
         : d3.mouse(this.rect.node());
     // console.log(coords);
@@ -590,10 +610,14 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     // console.log(d3.event.sourceEvent);
 
     // TODO: add analogous touch gestures to add additional touch functionality
-    var TOUCH_ANALOGOUS_SHIFT = false;
-    var TOUCH_ANALOGOUS_RIGHTCLICK = false;
-    var TOUCH_ANALOGOUS_ALTKEY = false;
-    var TOUCH_ANALOGOUS_CTRLCLICK = false;
+    var TOUCH_ANALOGOUS_SHIFT = this.usingAddSelectionMode === true;
+    var TOUCH_ANALOGOUS_RIGHTCLICK =
+      this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
+    var TOUCH_ANALOGOUS_ALTKEY =
+      this.userInteractionMode ===
+      this.UserInteractionModeEnum.SELECTBACKGROUND;
+    var TOUCH_ANALOGOUS_CTRLCLICK =
+      this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
 
     this.shiftKeyHeld =
       TOUCH_ANALOGOUS_SHIFT ||
@@ -602,6 +626,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     if (
       TOUCH_ANALOGOUS_RIGHTCLICK ||
       (d3.event.type == "dragstart" &&
+        window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
         d3.event.sourceEvent.button == 2)
     ) {
@@ -610,6 +635,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     } else if (
       TOUCH_ANALOGOUS_ALTKEY ||
       (d3.event.type == "dragstart" &&
+        window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
         d3.event.sourceEvent.altKey)
     ) {
@@ -618,6 +644,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     } else if (
       TOUCH_ANALOGOUS_CTRLCLICK ||
       (d3.event.type == "dragstart" &&
+        window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
         d3.event.sourceEvent.ctrlKey)
     ) {
@@ -633,16 +660,14 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
    * Handler for the progression of a selection gesture.
    */
   var moveSelection = () => {
-    if (window.TouchEvent && d3.event instanceof TouchEvent) {
+    if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
 
-    if (!this.escapeKeyPressed) {
+    if (!this.cancelSelectionSignalEmitted) {
       var coords =
-        window.TouchEvent &&
-        (d3.event instanceof TouchEvent ||
-          d3.event.sourceEvent instanceof TouchEvent)
+        options && options.touch
           ? d3.touches(this.rect.node())[0]
           : d3.mouse(this.rect.node());
       brush.setEnd(coords[0]);
@@ -676,16 +701,16 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
    * Handler for the termination of a selection gesture.
    */
 
-  var endSelection = () => {
-    if (window.TouchEvent && d3.event instanceof TouchEvent) {
+  var endSelection = (options) => {
+    if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
     if (brush.extent() != null) {
-      if (this.escapeKeyPressed) {
+      if (this.cancelSelectionSignalEmitted) {
         // clear selections and reset escape key
         brush.clear();
-        this.escapeKeyPressed = false;
+        this.cancelSelectionSignalEmitted = false;
       } else {
         d3.select("body").style("cursor", "auto");
         // console.log(brush.extent());
@@ -748,33 +773,72 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   // initialize new variables for holding new selection and scales from panning
   var newSelection = null;
   var newScale = brush.getScale();
+
+  var startPanDragSelection = (options) => {
+    if (options && options.touch) {
+      d3.event.preventDefault();
+      d3.event.stopPropagation();
+    }
+
+    newSelection = this.state.selection;
+    var coords =
+      options && options.touch
+        ? d3.touches(this.rect.node())[0]
+        : d3.mouse(this.rect.node());
+
+    brush.setStart(coords[0]);
+
+    d3.select("body").style("cursor", "ew-resize");
+  };
+
+  var movePanDragSelection = (options) => {
+    if (options && options.touch) {
+      d3.event.preventDefault();
+      d3.event.stopPropagation();
+    }
+
+    if (newSelection) {
+      var coords =
+        options && options.touch
+          ? d3.touches(this.rect.node())[0]
+          : d3.mouse(this.rect.node());
+
+      brush.setEnd(coords[0]);
+
+      var res = this.handleBrushPanSelection();
+      if (res) {
+        newSelection = res.newSelection;
+        newScale = res.newScale;
+      }
+    }
+  };
+
+  var endPanDragSelection = (options) => {
+    if (options && options.touch) {
+      d3.event.preventDefault();
+      d3.event.stopPropagation();
+    }
+
+    // update selection, update scale
+    if (newSelection != null) {
+      this.state.selection = newSelection;
+      brush.setScale(newScale.xScale);
+      this.updateChart(newScale, newSelection.compressionIndex);
+    }
+    brush.clear();
+  };
+
+  // touch pan drag behavior
+  this.bottomAxisRect
+    .on("touchstart", () => startPanDragSelection({ touch: true }))
+    .on("touchmove", () => movePanDragSelection({ touch: true }))
+    .on("touchend", () => endPanDragSelection({ touch: true }));
+
   var panDrag = d3.behavior
     .drag()
-    .on("dragstart", () => {
-      newSelection = this.state.selection;
-      var coords = d3.mouse(this.rect.node());
-      brush.setStart(coords[0]);
-      d3.select("body").style("cursor", "ew-resize");
-    })
-    .on("drag", () => {
-      if (newSelection) {
-        brush.setEnd(d3.mouse(this.rect.node())[0]);
-        var res = this.handleBrushPanSelection();
-        if (res) {
-          newSelection = res.newSelection;
-          newScale = res.newScale;
-        }
-      }
-    })
-    .on("dragend", () => {
-      // update selection, update scale
-      if (newSelection) {
-        this.state.selection = newSelection;
-        brush.setScale(newScale.xScale);
-        this.updateChart(newScale, newSelection.compressionIndex);
-      }
-      brush.clear();
-    });
+    .on("dragstart", startPanDragSelection)
+    .on("drag", movePanDragSelection)
+    .on("dragend", endPanDragSelection);
 
   this.bottomAxisRect.call(panDrag);
 
@@ -816,6 +880,8 @@ D3TimeChart.prototype.updateChart = function (
 
   var plotWidth = this.state.width - this.margin.left - this.margin.right;
   var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
+
+  var chartDomain = scales.xScale.domain();
 
   // add/update hover interaction based on current scale (or zoom)
   this.rect
@@ -869,17 +935,9 @@ D3TimeChart.prototype.updateChart = function (
       this.state.data.formatted[compressionIndex].detectors[detName].counts;
 
     // only use visible range if zoomed in, otherwise use full range.
-    if (this.state.selection) {
-      var lIdx = this.findDataIndex(
-        this.state.selection.domain[0],
-        compressionIndex
-      );
-      var rIdx = this.findDataIndex(
-        this.state.selection.domain[1],
-        compressionIndex
-      );
-      counts = counts.slice(lIdx * 2, (rIdx + 1) * 2);
-    }
+    var lIdx = this.findDataIndex(chartDomain[0], compressionIndex);
+    var rIdx = this.findDataIndex(chartDomain[1], compressionIndex);
+    counts = counts.slice(lIdx * 2, (rIdx + 1) * 2);
 
     var meta =
       this.state.data.formatted[compressionIndex].detectors[detName].meta;
@@ -991,10 +1049,6 @@ D3TimeChart.prototype.updateChart = function (
     var xStep = xTickVals[1] - xTickVals[0];
     var xTickCount = xTickVals.length;
 
-    var chartDomain = this.state.selection
-      ? this.state.selection.domain
-      : this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
-          .domains.x;
     var xTicksGenerated = this.generateTicks(
       xStart,
       xStep,
@@ -1190,34 +1244,27 @@ D3TimeChart.prototype.updateChart = function (
           .append("g")
           .attr("class", "occupancy_start_line_group");
 
-        occupancyStartG
-          .append("text")
-          .text("occ. start")
-          .style("fill", "#dedede");
+        occupancyStartG.append("text").text("occ. start");
 
         occupancyStartG
           .append("line")
           .attr("x1", 0)
           .attr("y1", this.margin.top)
           .attr("y2", this.state.height - this.margin.bottom)
-          .attr("x2", 0)
-          .style("stroke-width", 1)
-          .style("stroke", "#dedede");
+          .attr("x2", 0);
 
         var occupancyEndG = occupancyG
           .append("g")
           .attr("class", "occupancy_end_line_group");
 
-        occupancyEndG.append("text").text("occ. end").style("fill", "#dedede");
+        occupancyEndG.append("text").text("occ. end");
 
         occupancyEndG
           .append("line")
           .attr("x1", 0)
           .attr("y1", this.margin.top)
           .attr("y2", this.state.height - this.margin.bottom)
-          .attr("x2", 0)
-          .style("stroke-width", 1)
-          .style("stroke", "#dedede");
+          .attr("x2", 0);
       }
     }
 
@@ -1307,9 +1354,9 @@ D3TimeChart.prototype.updateChart = function (
     verticalGridLines.each(function (d, i) {
       var tickLine = d3.select(this).select("line");
       if (!xTicksGenerated[i].isMajor) {
-        tickLine.attr("stroke", "#f6f6f6");
+        tickLine.classed("minorgrid", true);
       } else {
-        tickLine.attr("stroke", "#d3d3d3");
+        tickLine.classed("minorgrid", false);
       }
     });
   } else {
@@ -1340,7 +1387,6 @@ D3TimeChart.prototype.updateChart = function (
         this.horizontalLeftGridG.selectAll("g.tick");
       horizontalLeftGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
-        tickLine.attr("stroke", "#d3d3d3");
       });
     } else {
       this.horizontalLeftGridG.selectAll("*").remove();
@@ -1420,7 +1466,6 @@ D3TimeChart.prototype.updateChart = function (
         this.horizontalRightGridG.selectAll("g.tick");
       horizontalRightGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
-        tickLine.attr("stroke", "#f6f6f6");
       });
     } else {
       this.horizontalRightGridG.selectAll("*").remove();
@@ -2368,7 +2413,8 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
  */
 D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
   if (this.options.useSimplifiedGestures) {
-    this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
+    this.highlightRect.classed("leftbuttonzoombox", true);
+    // this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
     this.highlightText.text("Zoom in");
   } else {
     var foreground = this.highlightOptions.foreground;
@@ -2382,7 +2428,8 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
       this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.background);
       this.highlightText.text("Select background");
     } else if (zoom && modifier in zoom.modifierKey) {
-      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
+      this.highlightRect.classed("leftbuttonzoombox", true);
+      // this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
       this.highlightText.text("Zoom in");
     }
   }
@@ -2426,6 +2473,7 @@ D3TimeChart.prototype.mouseMoveHighlight = function (width) {
  */
 D3TimeChart.prototype.mouseUpHighlight = function () {
   this.highlightRect.attr("height", 0).attr("width", 0);
+  this.highlightRect.classed("leftbuttonzoombox", false);
   this.highlightText.style("visibility", "hidden");
 };
 
@@ -2493,7 +2541,7 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
  * Handles showing tooltip.
  */
 D3TimeChart.prototype.showToolTip = function () {
-  this.hoverToolTip.style("visibility", "visible");
+  this.mouseInfoG.style("visibility", "visible");
 };
 
 /**
@@ -2503,14 +2551,14 @@ D3TimeChart.prototype.showToolTip = function () {
  * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
  */
 D3TimeChart.prototype.updateToolTip = function (time, data, optargs) {
-  this.hoverToolTip.html(this.createToolTipString(time, data, optargs));
+  this.setMouseInfoText(time, data, optargs);
 };
 
 /**
  * Handler to hide tooltip.
  */
 D3TimeChart.prototype.hideToolTip = function () {
-  this.hoverToolTip.style("visibility", "hidden");
+  this.mouseInfoG.style("visibility", "hidden");
 };
 
 /**
@@ -2520,62 +2568,90 @@ D3TimeChart.prototype.hideToolTip = function () {
  * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
  * @returns the tooltip string
  */
-D3TimeChart.prototype.createToolTipString = function (time, data, optargs) {
-  var s =
-    optargs.startTimeStamp != null
-      ? "<div>" + new Date(optargs.startTimeStamp).toLocaleString() + "</div>"
-      : "";
+D3TimeChart.prototype.setMouseInfoText = function (time, data, optargs) {
+  var s = "";
+  if (optargs && optargs.startTimeStamp != null)
+    s += new Date(optargs.startTimeStamp).toLocaleString() + "<\n>";
 
   // If want compression data in the tooltip, uncomment below
   // var compressionIndex = this.state.selection
   // ? this.state.selection.compressionIndex
   // : this.state.data.unzoomedCompressionIndex;
 
-  // s += "<div>Data Compression Level: " + compressionIndex + "</div>";
+  // s += "Data Compression Level: " + compressionIndex + "<\n>";
 
   // // If want sourcetype data in the tooltip, uncomment below
   // s +=
   //   optargs.sourceType != null
-  //     ? "<div>Source: " + this.SOURCE_MAP[optargs.sourceType] + "</div>"
+  //     ? "Source: " + this.SOURCE_MAP[optargs.sourceType] + "<\n>"
   //     : "";
 
-  s += "<div>Time: " + time.toPrecision(4) + " s</div>";
+  s += "Time: " + time.toPrecision(4) + " s<\n>";
 
   // for each detector, give counts
   for (var i = 0; i < data.length; i++) {
     if (typeof data[i].sampleNumber === "number") {
-      s += "<div>Sample Num: " + data[i].sampleNumber.toString();
+      s += "Sample Num: " + data[i].sampleNumber.toString();
     } else {
       var sampleNumbers = Object.keys(data[i].sampleNumber);
       if (sampleNumbers.length > 4) {
         s +=
-          "<div>Sample Nums: " +
+          "Sample Nums: " +
           sampleNumbers[0].toString() +
           "..." +
           sampleNumbers[sampleNumbers.length - 1].toString();
       } else {
-        s += "<div>Sample Nums: " + sampleNumbers.toString();
+        s += "Sample Nums: " + sampleNumbers.toString();
       }
     }
     if (data[i].detName.length > 0) {
-      s += " (" + data[i].detName + ")</div>";
+      s += " (" + data[i].detName + ")";
     }
+    s += "<\n>";
 
-    s += "<div>G CPS: " + data[i].gammaCPS.toPrecision(6);
+    s += "G CPS: " + data[i].gammaCPS.toPrecision(6);
 
     if (data[i].detName.length > 0) {
-      s += " (" + data[i].detName + ")</div>";
+      s += " (" + data[i].detName + ")";
     }
+    s += "<\n>";
 
     if (data[i].neutronCPS != null) {
       // cps of 0 is still valid to display
-      s += "<div>N CPS: " + data[i].neutronCPS.toPrecision(3);
+      s += "N CPS: " + data[i].neutronCPS.toPrecision(3);
 
       if (data[i].detName.length > 0) {
-        s += " (" + data[i].detName + ")</div>";
+        s += " (" + data[i].detName + ")";
       }
+      s += "<\n>";
     }
   }
+
+  var data = s.split("<\n>").filter(Boolean); // filter to remove empty strings
+
+  var padding = this.mouseInfoOptions.padding;
+
+  //enter
+  this.mouseInfoText
+    .selectAll("tspan")
+    .data(data)
+    .enter()
+    .append("tspan")
+    .text((d) => d)
+    .attr("x", this.margin.left + 20 + padding.left)
+    .attr("dy", "1.1em");
+
+  //update
+  this.mouseInfoText.selectAll("tspan").text((d) => d);
+
+  //exit
+  this.mouseInfoText.selectAll("tspan").data(data).exit().remove();
+
+  // set dimensions of info box
+  var dim = this.mouseInfoText.node().getBBox();
+  this.mouseInfoBox
+    .attr("height", dim.height + padding.top + padding.bottom)
+    .attr("width", dim.width + padding.left + padding.right);
 
   return s;
 };
@@ -3074,37 +3150,36 @@ D3TimeChart.prototype.setXAxisZoomSamples = function (firstsample, lastsample) {
   );
 };
 
-
-D3TimeChart.prototype.setUserInteractionMode = function ( mode ) {
-  
+D3TimeChart.prototype.setUserInteractionMode = function (mode) {
   // This is just a stub function at the moment.
-  console.log( 'Will set user interaction mode to ' + mode );
-  
-  if( mode === "Default" ){
-    
-  }else if( mode === "Zoom" ){
-    
-  }else if( mode === "Pan" ){
-    
-  }else if( mode === "SelectForeground" ){
-    
-  }else if( mode === "SelectBackground" ){
-    
-  }else if( mode === "SelectSecondary" ){
-    
-  }else if( mode === "AddForeground" ){
-    
-  }else if( mode === "AddBackground" ){
-    
-  }else if( mode === "AddSecondary" ){
-    
-  }else if( mode === "RemoveForeground" ){
-    
-  }else if( mode === "RemoveBackground" ){
-    
-  }else if( mode === "RemoveSecondary" ){
-    
-  }else{
-    console.log( 'Invalid option passed to setUserInteractionMode' );
+  console.log("Will set user interaction mode to " + mode);
+
+  this.usingAddSelectionMode = false;
+
+  if (mode === "Default") {
+    this.userInteractionMode = this.UserInteractionModeEnum.DEFAULT;
+  } else if (mode === "Zoom") {
+    this.userInteractionMode = this.UserInteractionModeEnum.ZOOM;
+  } else if (mode === "Pan") {
+  } else if (mode === "SelectForeground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTFOREGROUND;
+  } else if (mode === "SelectBackground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTBACKGROUND;
+  } else if (mode === "SelectSecondary") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTSECONDARY;
+  } else if (mode === "AddForeground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTFOREGROUND;
+    this.usingAddSelectionMode = true;
+  } else if (mode === "AddBackground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTBACKGROUND;
+    this.usingAddSelectionMode = true;
+  } else if (mode === "AddSecondary") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTSECONDARY;
+    this.usingAddSelectionMode = true;
+  } else if (mode === "RemoveForeground") {
+  } else if (mode === "RemoveBackground") {
+  } else if (mode === "RemoveSecondary") {
+  } else {
+    console.log("Invalid option passed to setUserInteractionMode");
   }
 };
