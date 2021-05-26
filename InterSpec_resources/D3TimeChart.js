@@ -256,12 +256,25 @@ D3TimeChart = function (elem, options) {
     "Unknown",
   ]);
 
+  this.UserInteractionModeEnum = Object.freeze({
+    DEFAULT: 0,
+    ZOOM: 1,
+    SELECTFOREGROUND: 3,
+    SELECTBACKGROUND: 4,
+    SELECTSECONDARY: 5,
+    REMOVEFOREGROUND: 6,
+    REMOVEBACKGROUND: 7,
+    REMOVESECONDARY: 8,
+  });
+
   // colors used for highlight rectangles for various selection types.
   this.HIGHLIGHT_COLORS = Object.freeze({
     foreground: "rgb(255, 255, 0)",
     background: "rgb(0, 255, 255)",
     // zoom: "rgb(102,102,102)",
   });
+
+  this.userInteractionMode = this.UserInteractionModeEnum.DEFAULT;
 
   /** COMPONENT STATE */
   // component state. When state changes, the component should usually respond by re-rendering/updating to reflect changes.
@@ -320,8 +333,9 @@ D3TimeChart = function (elem, options) {
   this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
 
   /** MISC MEMBERS */
-  this.escapeKeyPressed = false;
+  this.cancelSelectionSignalEmitted = false;
   this.shiftKeyHeld = false;
+  this.usingAddSelectionMode = false;
   this.highlightModifier = null; // holds the key pressed in conjunction with a highlight gesture to modify the action
   this.draggedForward = false;
 
@@ -330,7 +344,7 @@ D3TimeChart = function (elem, options) {
   document.addEventListener("keydown", function (evt) {
     evt = evt || window.event;
     if (evt.key === "Escape") {
-      self.escapeKeyPressed = true;
+      self.cancelSelectionSignalEmitted = true;
       d3.select("body").style("cursor", "auto");
       self.mouseUpHighlight();
     } else if (evt.key === "ArrowLeft") {
@@ -508,6 +522,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   // add a clipPath: everything outside of this area will not be drawn
   var clip = this.svg.select("#clip_th");
+  var clipBottomAxis = this.svg.select("#clip_bottom_axis_th");
 
   if (!clip.empty()) {
     // update if already exists
@@ -531,8 +546,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   }
 
   this.linesG.attr("clip-path", "url(#clip_th)");
-  this.highlightRegionsG.attr("clip-path", "url(#clip_th");
-  this.occupancyLinesG.attr("clip-path", "url(#clip_th");
+  this.highlightRegionsG.attr("clip-path", "url(#clip_th)");
+  this.occupancyLinesG.attr("clip-path", "url(#clip_th)");
 
   // if have a selection, choose compression index to use for plotting based on number of points in the selection.
   if (this.state.selection) {
@@ -577,17 +592,16 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
    * Handler for the initiation of a selection gesture.
    */
   var startSelection = () => {
-    if (window.TouchEvent && d3.event instanceof TouchEvent) {
+    if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
 
-    if (this.escapeKeyPressed) this.escapeKeyPressed = false;
+    if (this.cancelSelectionSignalEmitted)
+      this.cancelSelectionSignalEmitted = false;
 
     var coords =
-      window.TouchEvent &&
-      (d3.event instanceof TouchEvent ||
-        d3.event.sourceEvent instanceof TouchEvent)
+      options && options.touch
         ? d3.touches(this.rect.node())[0]
         : d3.mouse(this.rect.node());
     // console.log(coords);
@@ -596,10 +610,14 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     // console.log(d3.event.sourceEvent);
 
     // TODO: add analogous touch gestures to add additional touch functionality
-    var TOUCH_ANALOGOUS_SHIFT = false;
-    var TOUCH_ANALOGOUS_RIGHTCLICK = false;
-    var TOUCH_ANALOGOUS_ALTKEY = false;
-    var TOUCH_ANALOGOUS_CTRLCLICK = false;
+    var TOUCH_ANALOGOUS_SHIFT = this.usingAddSelectionMode === true;
+    var TOUCH_ANALOGOUS_RIGHTCLICK =
+      this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
+    var TOUCH_ANALOGOUS_ALTKEY =
+      this.userInteractionMode ===
+      this.UserInteractionModeEnum.SELECTBACKGROUND;
+    var TOUCH_ANALOGOUS_CTRLCLICK =
+      this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
 
     this.shiftKeyHeld =
       TOUCH_ANALOGOUS_SHIFT ||
@@ -642,16 +660,14 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
    * Handler for the progression of a selection gesture.
    */
   var moveSelection = () => {
-    if (window.TouchEvent && d3.event instanceof TouchEvent) {
+    if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
 
-    if (!this.escapeKeyPressed) {
+    if (!this.cancelSelectionSignalEmitted) {
       var coords =
-        window.TouchEvent &&
-        (d3.event instanceof TouchEvent ||
-          d3.event.sourceEvent instanceof TouchEvent)
+        options && options.touch
           ? d3.touches(this.rect.node())[0]
           : d3.mouse(this.rect.node());
       brush.setEnd(coords[0]);
@@ -685,16 +701,16 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
    * Handler for the termination of a selection gesture.
    */
 
-  var endSelection = () => {
-    if (window.TouchEvent && d3.event instanceof TouchEvent) {
+  var endSelection = (options) => {
+    if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
     }
     if (brush.extent() != null) {
-      if (this.escapeKeyPressed) {
+      if (this.cancelSelectionSignalEmitted) {
         // clear selections and reset escape key
         brush.clear();
-        this.escapeKeyPressed = false;
+        this.cancelSelectionSignalEmitted = false;
       } else {
         d3.select("body").style("cursor", "auto");
         // console.log(brush.extent());
@@ -757,33 +773,72 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   // initialize new variables for holding new selection and scales from panning
   var newSelection = null;
   var newScale = brush.getScale();
+
+  var startPanDragSelection = (options) => {
+    if (options && options.touch) {
+      d3.event.preventDefault();
+      d3.event.stopPropagation();
+    }
+
+    newSelection = this.state.selection;
+    var coords =
+      options && options.touch
+        ? d3.touches(this.rect.node())[0]
+        : d3.mouse(this.rect.node());
+
+    brush.setStart(coords[0]);
+
+    d3.select("body").style("cursor", "ew-resize");
+  };
+
+  var movePanDragSelection = (options) => {
+    if (options && options.touch) {
+      d3.event.preventDefault();
+      d3.event.stopPropagation();
+    }
+
+    if (newSelection) {
+      var coords =
+        options && options.touch
+          ? d3.touches(this.rect.node())[0]
+          : d3.mouse(this.rect.node());
+
+      brush.setEnd(coords[0]);
+
+      var res = this.handleBrushPanSelection();
+      if (res) {
+        newSelection = res.newSelection;
+        newScale = res.newScale;
+      }
+    }
+  };
+
+  var endPanDragSelection = (options) => {
+    if (options && options.touch) {
+      d3.event.preventDefault();
+      d3.event.stopPropagation();
+    }
+
+    // update selection, update scale
+    if (newSelection != null) {
+      this.state.selection = newSelection;
+      brush.setScale(newScale.xScale);
+      this.updateChart(newScale, newSelection.compressionIndex);
+    }
+    brush.clear();
+  };
+
+  // touch pan drag behavior
+  this.bottomAxisRect
+    .on("touchstart", () => startPanDragSelection({ touch: true }))
+    .on("touchmove", () => movePanDragSelection({ touch: true }))
+    .on("touchend", () => endPanDragSelection({ touch: true }));
+
   var panDrag = d3.behavior
     .drag()
-    .on("dragstart", () => {
-      newSelection = this.state.selection;
-      var coords = d3.mouse(this.rect.node());
-      brush.setStart(coords[0]);
-      d3.select("body").style("cursor", "ew-resize");
-    })
-    .on("drag", () => {
-      if (newSelection) {
-        brush.setEnd(d3.mouse(this.rect.node())[0]);
-        var res = this.handleBrushPanSelection();
-        if (res) {
-          newSelection = res.newSelection;
-          newScale = res.newScale;
-        }
-      }
-    })
-    .on("dragend", () => {
-      // update selection, update scale
-      if (newSelection) {
-        this.state.selection = newSelection;
-        brush.setScale(newScale.xScale);
-        this.updateChart(newScale, newSelection.compressionIndex);
-      }
-      brush.clear();
-    });
+    .on("dragstart", startPanDragSelection)
+    .on("drag", movePanDragSelection)
+    .on("dragend", endPanDragSelection);
 
   this.bottomAxisRect.call(panDrag);
 
@@ -825,6 +880,8 @@ D3TimeChart.prototype.updateChart = function (
 
   var plotWidth = this.state.width - this.margin.left - this.margin.right;
   var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
+
+  var chartDomain = scales.xScale.domain();
 
   // add/update hover interaction based on current scale (or zoom)
   this.rect
@@ -878,17 +935,9 @@ D3TimeChart.prototype.updateChart = function (
       this.state.data.formatted[compressionIndex].detectors[detName].counts;
 
     // only use visible range if zoomed in, otherwise use full range.
-    if (this.state.selection) {
-      var lIdx = this.findDataIndex(
-        this.state.selection.domain[0],
-        compressionIndex
-      );
-      var rIdx = this.findDataIndex(
-        this.state.selection.domain[1],
-        compressionIndex
-      );
-      counts = counts.slice(lIdx * 2, (rIdx + 1) * 2);
-    }
+    var lIdx = this.findDataIndex(chartDomain[0], compressionIndex);
+    var rIdx = this.findDataIndex(chartDomain[1], compressionIndex);
+    counts = counts.slice(lIdx * 2, (rIdx + 1) * 2);
 
     var meta =
       this.state.data.formatted[compressionIndex].detectors[detName].meta;
@@ -1000,10 +1049,6 @@ D3TimeChart.prototype.updateChart = function (
     var xStep = xTickVals[1] - xTickVals[0];
     var xTickCount = xTickVals.length;
 
-    var chartDomain = this.state.selection
-      ? this.state.selection.domain
-      : this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
-          .domains.x;
     var xTicksGenerated = this.generateTicks(
       xStart,
       xStep,
@@ -1199,29 +1244,27 @@ D3TimeChart.prototype.updateChart = function (
           .append("g")
           .attr("class", "occupancy_start_line_group");
 
-        occupancyStartG
-          .append("text")
-          .text("occ. start")
+        occupancyStartG.append("text").text("occ. start");
 
         occupancyStartG
           .append("line")
           .attr("x1", 0)
           .attr("y1", this.margin.top)
           .attr("y2", this.state.height - this.margin.bottom)
-          .attr("x2", 0)
+          .attr("x2", 0);
 
         var occupancyEndG = occupancyG
           .append("g")
           .attr("class", "occupancy_end_line_group");
 
-        occupancyEndG.append("text").text("occ. end")
+        occupancyEndG.append("text").text("occ. end");
 
         occupancyEndG
           .append("line")
           .attr("x1", 0)
           .attr("y1", this.margin.top)
           .attr("y2", this.state.height - this.margin.bottom)
-          .attr("x2", 0)
+          .attr("x2", 0);
       }
     }
 
@@ -3107,37 +3150,36 @@ D3TimeChart.prototype.setXAxisZoomSamples = function (firstsample, lastsample) {
   );
 };
 
-
-D3TimeChart.prototype.setUserInteractionMode = function ( mode ) {
-  
+D3TimeChart.prototype.setUserInteractionMode = function (mode) {
   // This is just a stub function at the moment.
-  console.log( 'Will set user interaction mode to ' + mode );
-  
-  if( mode === "Default" ){
-    
-  }else if( mode === "Zoom" ){
-    
-  }else if( mode === "Pan" ){
-    
-  }else if( mode === "SelectForeground" ){
-    
-  }else if( mode === "SelectBackground" ){
-    
-  }else if( mode === "SelectSecondary" ){
-    
-  }else if( mode === "AddForeground" ){
-    
-  }else if( mode === "AddBackground" ){
-    
-  }else if( mode === "AddSecondary" ){
-    
-  }else if( mode === "RemoveForeground" ){
-    
-  }else if( mode === "RemoveBackground" ){
-    
-  }else if( mode === "RemoveSecondary" ){
-    
-  }else{
-    console.log( 'Invalid option passed to setUserInteractionMode' );
+  console.log("Will set user interaction mode to " + mode);
+
+  this.usingAddSelectionMode = false;
+
+  if (mode === "Default") {
+    this.userInteractionMode = this.UserInteractionModeEnum.DEFAULT;
+  } else if (mode === "Zoom") {
+    this.userInteractionMode = this.UserInteractionModeEnum.ZOOM;
+  } else if (mode === "Pan") {
+  } else if (mode === "SelectForeground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTFOREGROUND;
+  } else if (mode === "SelectBackground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTBACKGROUND;
+  } else if (mode === "SelectSecondary") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTSECONDARY;
+  } else if (mode === "AddForeground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTFOREGROUND;
+    this.usingAddSelectionMode = true;
+  } else if (mode === "AddBackground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTBACKGROUND;
+    this.usingAddSelectionMode = true;
+  } else if (mode === "AddSecondary") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTSECONDARY;
+    this.usingAddSelectionMode = true;
+  } else if (mode === "RemoveForeground") {
+  } else if (mode === "RemoveBackground") {
+  } else if (mode === "RemoveSecondary") {
+  } else {
+    console.log("Invalid option passed to setUserInteractionMode");
   }
 };
