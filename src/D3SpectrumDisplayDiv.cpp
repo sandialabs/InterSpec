@@ -261,8 +261,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", yscale: " + string(m_yAxisIsLog ? "'log'" : "'lin'");
   options += ", backgroundSubtract: " + jsbool( m_backgroundSubtract );
   options += ", showLegend: " + jsbool(m_legendEnabled);
-  options += ", gridx: " + jsbool(m_showHorizontalLines);
-  options += ", gridy: " + jsbool(m_showVerticalLines);
+  options += ", gridx: " + jsbool(m_showVerticalLines);
+  options += ", gridy: " + jsbool(m_showHorizontalLines);
   options += ", showXAxisSliderChart: " + jsbool(m_showXAxisSliderChart);
   options += ", scaleBackgroundSecondary: " + jsbool(m_showYAxisScalers);
   options += ", wheelScrollYAxis: true";

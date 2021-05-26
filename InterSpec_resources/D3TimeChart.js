@@ -3095,21 +3095,31 @@ D3TimeChart.prototype.generateTicks = function (
 // Unimplemented
 D3TimeChart.prototype.setXAxisTitle = function (title) {
   this.options.xtitle = title;
-  this.reinitializeChart();
+  
+  var axisLabelX = this.svg.select("#th_label_x");
+  
   //redraw x-title
+  if (axisLabelX.empty()) {
+    if( this.state.data.formatted )
+      this.reinitializeChart();
+  }else{
+    axisLabelX.text(title);
+  }  
 };
 
 // Unimplemented
 D3TimeChart.prototype.setY1AxisTitle = function (title) {
   this.options.y1title = title;
-  this.reinitializeChart();
+  if( this.state.data.formatted )
+    this.reinitializeChart();
   //redraw y1-title (e.g., gamma CPS axis title)
 };
 
 // Unimplemented
 D3TimeChart.prototype.setY2AxisTitle = function () {
   this.options.y2title = title;
-  this.reinitializeChart();
+  if( this.state.data.formatted )
+    this.reinitializeChart();
   //redraw y2-title (e.g., neutron CPS axis title)
 };
 
@@ -3120,18 +3130,21 @@ D3TimeChart.prototype.setY2AxisTitle = function () {
 D3TimeChart.prototype.setCompactXAxis = function (compact) {
   //Make x-zis title comapact or not
   this.options.compactXAxis = compact;
-  this.reinitializeChart();
+  if( this.state.data.formatted )
+    this.reinitializeChart();
 };
 
 D3TimeChart.prototype.setGridX = function (show) {
   this.options.gridx = show;
-  this.reinitializeChart();
+  if( this.state.data.formatted )
+    this.reinitializeChart();
   //add/remove horizantal grid lines
 };
 
 D3TimeChart.prototype.setGridY = function (show) {
   this.options.gridy = show;
-  this.reinitializeChart();
+  if( this.state.data.formatted )
+    this.reinitializeChart();
   //add/remove vertical grid lines
 };
 

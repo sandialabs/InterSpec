@@ -772,7 +772,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_layout->addWidget( m_timeSeries, m_layout->rowCount(), 0 );
   
 #if( USE_SPECTRUM_CHART_D3 )
-  m_timeSeries->setY1AxisTitle( "Gamma CPS" );
+  // No need to updated the default axis titles
+  //m_timeSeries->setY1AxisTitle( "Gamma CPS" );
+  //m_timeSeries->setY2AxisTitle( "Neutron CPS" );
+  //m_timeSeries->setXAxisTitle( "Time of Measurement (seconds)", "Time (seconds)" );
+  
   m_timeSeries->chartDragged().connect( this, &InterSpec::timeChartDragged );
   m_timeSeries->chartClicked().connect( this, &InterSpec::timeChartClicked );
 #else
@@ -798,14 +802,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
                    SpecUtils::SpectrumType::Background ) );
   m_timeSeries->setYAxisTitle( "Gamma CPS" );
   m_timeSeries->setAutoAdjustDisplayRebinFactor( true );
+  
+  m_timeSeries->setXAxisTitle( "Time of Measurement (seconds)" );
+  m_timeSeries->setXAxisTitle( "Real Time of Measurement (seconds)" );
+  m_timeSeries->setY2AxisTitle( "Neutron CPS" );
 #endif //USE_SPECTRUM_CHART_D3 / else
   
   m_spectrum->setXAxisTitle( "Energy (keV)" );
   m_spectrum->setYAxisTitle( "Counts/Channel" );
-  m_timeSeries->setXAxisTitle( "Real Time of Measurement (seconds)" );
-  m_timeSeries->setY2AxisTitle( "Neutron CPS" );
   m_spectrum->setXAxisTitle( "Energy (keV)" );
   m_spectrum->setYAxisTitle( "Counts/Channel" );
+  
 
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->enableLegend();
@@ -3376,10 +3383,14 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #endif
     
 //    bool logY = (entry->shownDisplayFeatures & UserState::kLogSpectrumCounts);
-//    bool grid = (entry->shownDisplayFeatures & UserState::kGridLines);
-//    cerr << "logY=" << logY << endl;
 //    m_spectrum->setYAxisLog( logY );
-//    m_spectrum->showGridLines( grid );
+    
+    const bool vertGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
+    const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
+    m_spectrum->showVerticalLines( vertGridLines );
+    m_spectrum->showHorizontalLines( horizontalGridLines );
+    m_timeSeries->showVerticalLines( vertGridLines );
+    m_timeSeries->showHorizontalLines( horizontalGridLines );
     
     if( (entry->shownDisplayFeatures & UserState::kSpectrumLegend) )
     {

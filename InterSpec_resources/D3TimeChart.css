@@ -84,7 +84,7 @@
   width: 24px;
   height: 24px;
   background-size: 24px 24px;
-  background-image: url('../InterSpec_resources/images/filter.svg');
+  background-image: url("../InterSpec_resources/images/filter.svg");
   background-position: 0px center;
   background-repeat: no-repeat;
     
