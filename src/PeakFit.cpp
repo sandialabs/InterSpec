@@ -407,7 +407,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       inpeaks.insert( inpeaks.end(), candidates.begin()+i+1, candidates.end() );
       inpeaks.push_back( peak );
       
-      const double nsigma = (meas->num_gamma_channels()<3000) ? 5.0 : 10.0;
+      const double nsigma = (meas->num_gamma_channels() < HIGH_RES_NUM_CHANNELS) ? 5.0 : 10.0;
       const vector< vector<std::shared_ptr<const PeakDef> > > disconnectedpeaks
                               = causilyDisconnectedPeaks(  nsigma, true, inpeaks );
       
@@ -489,7 +489,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     candidates.swap( nextcandidates );
   }//while( !candidates.empty() )
   
-  if( meas->num_gamma_channels() > 3000 )
+  if( meas->num_gamma_channels() > HIGH_RES_NUM_CHANNELS )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
   
   
@@ -581,7 +581,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
               &PeakDef::lessThanByMeanShrdPtr );
   }//while( !candidates.empty() )
   
-  if( meas->num_gamma_channels() > 3000 )
+  if( meas->num_gamma_channels() > HIGH_RES_NUM_CHANNELS )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
   
   return fitpeakvec;
@@ -1110,7 +1110,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
       inputPrams.Add( "P3",  0.0, 0.25 );
   }//if( intputSharesContinuum ) / else
   
-  const bool isHpge = (dataH->num_gamma_channels() > 4094);
+  const bool isHpge = (dataH->num_gamma_channels() > HIGH_RES_NUM_CHANNELS);
   
   for( size_t i = 0; i < inpeaks.size(); ++i )
   {
@@ -1252,7 +1252,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, x0, x1 );
   
   
-  const bool isHpge = (dataH->num_gamma_channels() > 4094);
+  const bool isHpge = (dataH->num_gamma_channels() > HIGH_RES_NUM_CHANNELS);
   
   float minw_lower, maxw_lower, minw_upper, maxw_upper;
   expected_peak_width_limits( x0, isHpge, minw_lower, maxw_lower );
@@ -1721,7 +1721,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
         const double xbinlow = data->gamma_channel_lower(channel);
         const double xbinup = data->gamma_channel_upper(channel);
         const double ndata = data->gamma_channel_content(channel);
-        const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
+        const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
         
         double npeak = 0.0;
         for( const PeakShrdPtr &peak : peaks )
@@ -1750,7 +1750,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
             predicted[channel] = 0.0;
           const double xbinlow = data->gamma_channel_lower(channel);
           const double xbinup = data->gamma_channel_upper(channel);
-          const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
+          const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
           predicted[channel] += ncontinuum + peak->gauss_integral( xbinlow, xbinup );
           if( peak->skewType() == PeakDef::LandauSkew )
             predicted[channel] += peak->skew_integral( xbinlow, xbinup );
@@ -1965,7 +1965,7 @@ double evaluate_chi2dof_for_range( const std::vector<PeakDef> &peaks,
       if( !continuums.count( contptr ) )
       {
         continuums.insert( contptr );
-        y_pred += contptr->offset_integral(x0, x1);
+        y_pred += contptr->offset_integral(x0, x1, dataH);
       }
     }//for( size_t j = 0; j < peaks.size(); ++j )
     
@@ -2062,7 +2062,7 @@ void find_roi_for_2nd_deriv_candidate(
     throw runtime_error( "find_roi_for_2nd_deriv_candidate: invalid input" );
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = (nchannel > 3000);
+  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
   
   const size_t meanchannel = data->find_gamma_channel( peakmean );
   
@@ -2437,7 +2437,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
   roiLower = roiUpper = -1.0;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > 3000);
+  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);
   
   double minEnergy = mean0 - 2.0*sigma0 - 20.0/pixelPerKev;
   double maxEnergy = mean0 + 2.0*sigma0 + 20.0/pixelPerKev;
@@ -2684,7 +2684,7 @@ void get_candidate_peak_estimates_for_user_click(
   const double upper_energy_mult = 0.2;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > 3000);
+  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);
   
   const size_t midbin = dataH->find_gamma_channel( x );
   
@@ -2804,7 +2804,7 @@ void fit_peak_for_user_click( PeakShrdVec &results,
   const size_t nchannels = dataH->num_gamma_channels();
   const size_t midbin = dataH->find_gamma_channel( mean0 );
   const float binwidth = dataH->gamma_channel_width( midbin );
-  const bool highres = (nchannels > 3000);
+  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);
   const size_t nFitPeaks = coFitPeaks.size() + 1;
   
   //The below should probably go off the number of bins in the ROI
@@ -3636,8 +3636,8 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     // (being lazy and just integrating, rather than evaluating)
     const double ptipval = peak->gauss_integral( mean-0.1*sigma, mean+0.1*sigma );
     const double p2val = peak->gauss_integral( mean+1.9*sigma, mean+2.1*sigma );
-    const double conttipval = peak->offset_integral( mean-0.1*sigma, mean+0.1*sigma );
-    const double cont2val = peak->offset_integral( mean+1.9*sigma, mean+2.1*sigma );
+    const double conttipval = peak->offset_integral( mean-0.1*sigma, mean+0.1*sigma, dataH );
+    const double cont2val = peak->offset_integral( mean+1.9*sigma, mean+2.1*sigma, dataH );
     const double contdiff = conttipval - cont2val;
     const double peakdiff = ptipval - p2val;
     
@@ -3647,8 +3647,8 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     const double roi_lower = peak->lowerX();
     const double roi_upper = peak->upperX();
     
-    const double below_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower );
-    const double above_roi_cont_area = peak->continuum()->offset_integral( roi_upper, roi_upper + sigma );
+    const double below_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower, dataH );
+    const double above_roi_cont_area = peak->continuum()->offset_integral( roi_upper, roi_upper + sigma, dataH );
     const double below_roi_data_area = dataH->gamma_integral( roi_lower - sigma, roi_lower );
     const double above_roi_data_area = dataH->gamma_integral( roi_upper, roi_upper + sigma );
     
@@ -3836,7 +3836,7 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
   
     for( size_t i = startchannel; i <= endchannel; ++i )
     {
-      const double val = continuum->offset_integral( energies[i], energies[i+1] );
+      const double val = continuum->offset_integral( energies[i], energies[i+1], dataH );
       if( val < minval )
       {
         minval = val;
@@ -3845,9 +3845,9 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
     }//for( size_t i = startchannel; i <= endchannel; ++i )
   
     const double lowedgeval = continuum->offset_integral( energies[startchannel],
-                                                    energies[startchannel+1] );
+                                                    energies[startchannel+1], dataH );
     const double highedgeval = continuum->offset_integral( energies[endchannel],
-                                                    energies[endchannel+1] );
+                                                    energies[endchannel+1], dataH );
   
     //THe below 0.5 and 10.0 are based off nearly nothing
     if( minval < 0.5*lowedgeval && minval < 0.5*highedgeval
@@ -4189,7 +4189,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   const double core_end = std::min( mean + fwhm, peak->upperX() );
   
 
-  const bool debug_this_peak = fabs(mean - 32.9752) < 2.5;
+  const bool debug_this_peak = false; //fabs(mean - 32.9752) < 2.5;
   
   if( debug_this_peak )
     cout << "debug_this_peak" << endl;
@@ -4557,7 +4557,6 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   bool lowstatregion = false;
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > 3000);
   
   double sigma0, mean0, area0;
   get_candidate_peak_estimates_for_user_click( sigma0, mean0, area0, x,
@@ -4607,6 +4606,13 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   if( initialfitpeaks.empty() )
     return pair<PeakShrdVec,PeakShrdVec>();
+  
+  // Using the number of channels to determine if high-resolution isnt a great method, as its not
+  //  uncommon for LaBr systems to have 4096 channels.  We should probably define some resolution
+  //  function that is the worst possible possible for high-resolution detectors, and threshold off
+  //  of this
+  const bool highres = (nchannels > 5000);  //any system above 4096 channels has to be HPGe, right?
+  
   
   if( initialfitpeaks.size() > 1 )
   {
@@ -4718,7 +4724,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
     return;
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = (nchannel > 3000);
+  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -5054,7 +5060,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
     return candidates;
   
   const size_t nchannel = dataH->num_gamma_channels();
-  const bool highres = (nchannel > 3000);
+  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -5433,7 +5439,7 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
       nfitpeak += peaks[i]->gauss_integral( xbinlow, xbinup );
     
     const double ndata = data->gamma_channel_content( channel );
-    const double ncontinuim = continuum->offset_integral( xbinlow, xbinup );
+    const double ncontinuim = continuum->offset_integral( xbinlow, xbinup, data );
     
     const double datauncert = std::max( ndata, 1.0 );
     const double nabove = (ndata - ncontinuim - nfitpeak);
@@ -5933,13 +5939,12 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
         
         
 double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
-                                  const int polynomial_order,
+                                  const int num_polynomial_terms,
+                                  const bool step_continuum,
                                   const double ref_energy,
                                   const vector<double> &means,
                                   const vector<double> &sigmas,
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
                                   const vector<PeakDef> &fixedAmpPeaks,
-#endif
                                   std::vector<double> &amplitudes,
                                   std::vector<double> &continuum_coeffs,
                                   std::vector<double> &amplitudes_uncerts,
@@ -5948,11 +5953,21 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   if( sigmas.size() != means.size() )
     throw runtime_error( "fit_amp_and_offset: invalid input" );
   
+  if( step_continuum && (num_polynomial_terms != 2) )
+    throw runtime_error( "fit_amp_and_offset: Only polynomial with 2 terms (e.g., linear) is"
+                         " supported for step continuums at the moment" );
+  
+  if( num_polynomial_terms < 0 )
+    throw runtime_error( "fit_amp_and_offset: continuum must have at least 0 (e.g., no continuum) terms" );
+  
+  if( num_polynomial_terms > 4 )
+    throw runtime_error( "fit_amp_and_offset: you asked for a higher order polynomial continuum than reasonable" );
+  
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
   //
-  //Implementation is quite inneficient
+  //Implementation is quite inefficient
   //
-  //Current implemementation is not necassarily numerically the most accurate or
+  //Current implementation is not necessarily numerically the most accurate or
   //  the best when there are near degeneracies.  Should switch to using SVD for
   //  solving.
   //
@@ -5971,7 +5986,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   
   using namespace boost::numeric;
   const size_t npeaks = sigmas.size();
-  const size_t npoly = static_cast<size_t>( polynomial_order + 1 );
+  const size_t npoly = static_cast<size_t>( num_polynomial_terms );
   const int nfit_terms = npoly + npeaks;
   
 #if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
@@ -5993,19 +6008,63 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //    cerr << "{" << means[i] << ", " << sigmas[i] << "}, ";
   //  cerr << endl << endl;
   
+  double step_roi_data_sum = 0.0, step_cumulative_data = 0.0;
+  
+  const double roi_lower = x[0];
+  const double roi_upper = x[nbin];
+  if( step_continuum )
+  {
+    for( size_t row = 0; row < nbin; ++row )
+      step_roi_data_sum += data[row];
+  }
+  
+  
   for( size_t row = 0; row < nbin; ++row )
   {
     double dataval = data[row];
     const double x0 = x[row];
     const double x1 = x[row+1];
-    const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
     
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
-    //I havent actually reasoned through the algorithm to see if this is the
-    //  correct way to subtract off fixed ampluitude peaks.
+    //const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+    double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+  
+    if( step_continuum )
+      step_cumulative_data += dataval;
+    
+/*
+    // If data is zero, or negative, lets look for the nearest non-zero bin, within 5 bins of here
+    //  This situation might happen more often after a hard background subtraction.
+    //
+    //  TODO: this doesnt fix the one-example I was looking at - perhaps need to try ignoring a
+    //        region. Maybe try looking for regions that are anomalously low (e.g., essentially
+    //        zero), and just ignore them if they are extremely below surrounding region.
+    //
+    const double non_poisson_threshold = 0.5; //FLT_EPSILON
+    const double significant_stats_threshold = 5.0;
+  
+    if( dataval < non_poisson_threshold )
+    {
+      double nearest_data = dataval;
+      
+      for( size_t i = 1; (i <= 5) && (nearest_data < significant_stats_threshold); ++i )
+      {
+        if( ((row + i) < nbin) && (data[row+i] > significant_stats_threshold) )
+          nearest_data = data[row+i];
+        
+        if( i <= row && (data[row-i] > significant_stats_threshold) )
+          nearest_data = data[row-i];
+      }//for( size_t i = 1; (i <= 5) && (nearest_data < non_poisson_threshold); ++i )
+      
+      if( nearest_data > non_poisson_threshold )
+        uncert = sqrt(nearest_data);
+    }//if( dataval < FLT_EPSILON )
+*/
+    
+
+    //TODO: I havent actually reasoned through the algorithm to see if this is the
+    //      correct way to subtract off fixed-amplitude peaks.
     for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
       dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
-#endif
     
     b(row) = ((dataval > 0.0 ? dataval : 0.0) / uncert);
     
@@ -6014,7 +6073,27 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       const double exp = col + 1.0;
       const double x0cont = x0 - ref_energy;
       const double x1cont = x1 - ref_energy;
-      A(row,col) = (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp)) / uncert;
+      
+      if( step_continuum && (col == 1) )
+      {
+        // This logic mirrors that of PeakContinuum::offset_integral(...)
+        // If you change it in one place - change it in both places
+        //
+        // In principle, we could make the step function be more general polynomial order, but since
+        //  as of 20210520 its calculation isnt totally finalized, we'll keep it limited to just
+        //  linear to not introduce complications.
+        const double frac_data = (step_cumulative_data - 0.5*data[row]) / step_roi_data_sum;
+        const double roi_0 = roi_lower - ref_energy;
+        const double roi_1 = roi_upper - ref_energy;
+        const double frac_roi = (x1 - x0) / (roi_upper - roi_lower);
+        const double linear_total_area = 0.5*(roi_1*roi_1 - roi_0*roi_0);
+        const double not_understood_correction = 2.0;
+         
+        A(row,col) = not_understood_correction*frac_roi*linear_total_area*frac_data / uncert;
+      }else
+      {
+        A(row,col) = (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp)) / uncert;
+      }
     }//for( int order = 0; order < maxorder; ++order )
     
     for( size_t i = 0; i < npeaks; ++i )
@@ -6184,10 +6263,8 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       y_pred += a(col) * PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 );
     }
     
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
     for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
       y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
-#endif
     
     //    cerr << "bin " << bin << " predicted " << y_pred << " data=" << data[bin] << endl;
     const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
@@ -6365,7 +6442,7 @@ bool chi2_significance_test( PeakDef peak,
             
             m_fixed_peaks = fixed_peaks;
             
-            const bool highres = (m_x->size() > 3000);
+            const bool highres = (m_x->size() > HIGH_RES_NUM_CHANNELS);
             
             m_side_bins           = highres ? 7    : 10;
             m_smooth_order        = highres ? 3    : 2;
@@ -6404,7 +6481,7 @@ bool chi2_significance_test( PeakDef peak,
             vector<PeakDef> candidates;
             
             const int nchannel = static_cast<int>( channel_counts.size() );
-            const bool highres = (nchannel > 3000);
+            const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
             
             vector<float> second_deriv;
             second_derivative( channel_counts, second_deriv );
@@ -6650,7 +6727,7 @@ bool chi2_significance_test( PeakDef peak,
 #endif
             
             
-            const bool highres = (m_x->size() > 3000);
+            const bool highres = (m_x->size() > HIGH_RES_NUM_CHANNELS);
             
             const size_t npeaks = m_fixed_peaks.size() + m_candidates.size();
             
@@ -6917,7 +6994,7 @@ bool chi2_significance_test( PeakDef peak,
             meanwidth /= npeaks;
             const double span = m_x->back() - m_x->front();
             const double meanbinwidth = span / m_x->size();
-            const bool highres = (m_x->size() > 3000);
+            const bool highres = (m_x->size() > HIGH_RES_NUM_CHANNELS);
             
             switch( m_resolution_type )
             {
@@ -7000,7 +7077,21 @@ bool chi2_significance_test( PeakDef peak,
             assert( peaks.size() );
             
             std::shared_ptr<const PeakContinuum> cont = peaks[0].continuum();
-            const int polynomial_order = cont->type() - PeakContinuum::Constant;
+            
+            const int num_polynomial_terms = ([&cont]() -> int {
+              switch( cont->type() )
+              {
+                case PeakContinuum::NoOffset: case PeakContinuum::External:
+                  return 0;
+                  
+                case PeakContinuum::Constant: case PeakContinuum::Linear:
+                case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+                  return cont->type() - PeakContinuum::NoOffset;
+                  
+                case PeakContinuum::LinearStep:
+                  return 2;
+              }//switch( cont->type() )
+            })();
             
             std::vector<double> means, sigmas;
             
@@ -7080,12 +7171,11 @@ bool chi2_significance_test( PeakDef peak,
               try
               {
                 chi2 = fit_amp_and_offset( x_start, y_start, nregionbin,
-                                          polynomial_order,
+                                          num_polynomial_terms,
+                                          (cont->type() == PeakContinuum::LinearStep),
                                           cont->lowerEnergy(),
                                           means, sigmas,
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
                                           fixedAmpPeaks,
-#endif
                                           amplitudes,
                                           continuum_coeffs,
                                           amplitudes_uncerts,
@@ -7316,7 +7406,7 @@ bool chi2_significance_test( PeakDef peak,
             {
               const float loweredge = (*m_x)[bin];
               const float upperedge = (*m_x)[bin+1];
-              const double continuumarea = continuum->offset_integral( loweredge, upperedge );
+              const double continuumarea = continuum->offset_integral( loweredge, upperedge, m_meas );
               const double peakarea = peak.gauss_integral( loweredge, upperedge );
               double otherPeakArea = 0.0;
               for( size_t i = 0; i < other_peaks.size(); ++i )
@@ -7464,7 +7554,7 @@ bool chi2_significance_test( PeakDef peak,
             if( !meas || !meas->gamma_counts() )
               return origpeaks;
             
-            const bool highres = (meas->gamma_counts()->size() > 2050);
+            const bool highres = (meas->gamma_counts()->size() > HIGH_RES_NUM_CHANNELS);
             
             
             const double min_chi2_dof_thresh         = highres ? 0.2   : 3.5;
@@ -7701,20 +7791,20 @@ bool chi2_significance_test( PeakDef peak,
                   means.push_back( energy );
                   sigmas.push_back( sigma );
                   
-                  int polynomial_order = 1;  //linear
-                  
+                  int num_polynomial_terms = 2;  //linear
+                  const bool step_continuum = false;
                   /*
                    if( means.size() > 2 )
-                   polynomial_order = 2;
+                   num_polynomial_terms = 3;
                    if( nbin > 15 )  //15 is arbitrarily chosen right now
-                   polynomial_order = 2;
+                   num_polynomial_terms = 3;
                    */
                   
                   const double chi2 =  fit_amp_and_offset( x_start, data, nbin,
-                                                          polynomial_order, energy, means, sigmas,
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
+                                                          num_polynomial_terms,
+                                                          step_continuum,
+                                                          energy, means, sigmas,
                                                           fixedAmpPeaks,
-#endif
                                                           amplitudes, continuum_coeffs,
                                                           amplitudes_uncerts, continuum_coeffs_uncerts );
                   
@@ -7744,10 +7834,8 @@ bool chi2_significance_test( PeakDef peak,
                     for( size_t i = 0; i < (amplitudes.size()-1); ++i )
                       y_pred += amplitudes[i]*PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 );
                     
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
                     for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
                       y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
-#endif
                     
                     withoutpeakchi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
                     

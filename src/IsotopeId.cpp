@@ -110,7 +110,7 @@ double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr
   {
     double lowx(0.0), upperx(0.0);
     findROIEnergyLimits( lowx, upperx, *peak, data );
-    contArea = peak->offset_integral( lowx, upperx );
+    contArea = peak->offset_integral( lowx, upperx, data );
   }else
   {
     const double lowerx = (peak->gausPeak() ? (peak->mean()-3.0*peak->sigma()) : peak->lowerX());
@@ -526,7 +526,7 @@ void findCandidates( vector<string> &suggestednucs,
       string csvfilename = SpecUtils::append_path( basename, "HPGe 40%/Efficiency.csv" );
       string datFilename = SpecUtils::append_path( basename, "HPGe 40%/Detector.dat" );
       
-      if( data->num_gamma_channels() <= 2050 )
+      if( data->num_gamma_channels() < HIGH_RES_NUM_CHANNELS )
       {
         csvfilename = SpecUtils::append_path( basename, "NaI 3x3/Efficiency.csv" );
         datFilename = SpecUtils::append_path( basename, "NaI 3x3/Detector.dat" );

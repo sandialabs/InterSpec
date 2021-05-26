@@ -129,8 +129,8 @@ namespace InterSpecServer
    \returns number of files opened.
    Will be zero if files were not valid spectrum files.
    -1 if files_json is invalid format.
-   -2 if session_token is invalid (however, currently will ask ALL
-   sessions to open the files... ToDo: decide on this behaviour).
+   -2 if session_token is invalid (however, for everywhere besides iOS, currently asks ALL
+   sessions to open the files... ToDo: decide on this behavior).
    */
   int open_file_in_session( const char *session_token, const char *files_json );
 }//namespace InterSpecServer

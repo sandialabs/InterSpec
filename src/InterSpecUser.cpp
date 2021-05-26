@@ -792,12 +792,14 @@ void UserFileInDb::removeWriteProtection( Wt::Dbo::ptr<UserFileInDb> ptr )
 
 
 Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
-                                                   Dbo::ptr<UserFileInDb> orig,
+                                                  Dbo::ptr<UserFileInDb> orig,
+                                                  DataBaseUtils::DbSession &sqldb,
                                                   bool isSaveState )
 {
   if( !orig )
     return orig;
-  Dbo::Session *session = orig.session();
+  
+  auto session = sqldb.session();
   if( !session )
     throw runtime_error( "UserFileInDb::makeDeepWriteProtectedCopyInDatabase():"
                           " invalid input.");
@@ -827,7 +829,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
 
   newfile->snapshotParent = orig->snapshotParent;
   
-  Dbo::Transaction transaction( *orig.session() );
+  DataBaseUtils::DbTransaction transaction( sqldb );
   
   try
   {

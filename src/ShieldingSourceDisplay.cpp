@@ -2338,6 +2338,9 @@ void SourceFitModel::setSharredAgeNuclide( const SandiaDecay::Nuclide *dependant
   if( row < 0 )
     return;
   
+  if( PeakDef::ageFitNotAllowed( dependantNuc ) )
+    definingNuc = nullptr;
+  
   if( definingNuc )
   {
     const int definingRow = nuclideIndex( definingNuc );
@@ -2358,7 +2361,7 @@ void SourceFitModel::setSharredAgeNuclide( const SandiaDecay::Nuclide *dependant
                          " defining nuclides must have same atomic number" );
   
   iso.ageDefiningNuc = definingNuc;
-  dataChanged().emit( createIndex(row,kAge,(void *)0),
+  dataChanged().emit( createIndex(row,kFitAge,(void *)0),
                       createIndex(row,kAgeUncertainty,(void *)0) );
 }//void makeAgeFitable( const SandiaDecay::Nuclide *nuc, bool fit )
 
@@ -2415,13 +2418,13 @@ void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
   if( !m_sameAgeForIsotopes )
   {
     for( size_t i = 0; i < m_nuclides.size(); ++i )
-      setSharredAgeNuclide( m_nuclides[i].nuclide, NULL );
+      setSharredAgeNuclide( m_nuclides[i].nuclide, nullptr );
     return;
   }//if( !m_sameAgeForIsotopes )
   
   //construct map from element number to isotopes being fit for
   //if there is more than one isotope, choose the youngest age to assign to
-  //all of the isotopes.  Do the assignemnet and update the chart
+  //all of the isotopes.  Do the assignment and update the chart
   typedef map< int, vector<const SandiaDecay::Nuclide *> > ElToNucMap_t;
   ElToNucMap_t elToNucMap;
   
@@ -2435,14 +2438,24 @@ void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
   {
     const vector<const SandiaDecay::Nuclide *> &nucs = vt.second;
     if( nucs.size() < 2 )
+    {
+      if( !nucs.empty() )
+        setSharredAgeNuclide( nucs[0], nullptr );
       continue;
+    }
     
     bool fitAgeWanted = false;
-    size_t minIndex = 0;
+    size_t minIndex = 0, numSharingAge = 0;
     double minAge = std::numeric_limits<double>::infinity();
     for( size_t i = 0; i < nucs.size(); ++i )
     {
       const SandiaDecay::Nuclide *nuc = nucs[i];
+      if( PeakDef::ageFitNotAllowed( nuc ) )
+      {
+        setSharredAgeNuclide( nuc, nullptr ); // jic, I guess, but not really needed, probably
+        continue;
+      }
+        
       const int ind = nuclideIndex( nuc );
       const double thisage = age( ind );
       if( thisage < minAge )
@@ -2450,14 +2463,21 @@ void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
         minIndex = i;
         minAge = thisage;
       }//if( age < minAge )
+      
+      numSharingAge += 1;
       fitAgeWanted = (fitAgeWanted || fitAge(ind));
     }//for( const SandiaDecay::Nuclide *nuc : nucs )
     
     for( size_t i = 0; i < nucs.size(); ++i )
     {
       const SandiaDecay::Nuclide *nuc = nucs[i];
-      
-      if( i == minIndex )
+      if( PeakDef::ageFitNotAllowed( nuc ) )
+        continue;
+        
+      if( numSharingAge < 2 )
+      {
+        setSharredAgeNuclide( nuc, nullptr );
+      }else if( i == minIndex )
       {
         WModelIndex ind = index( nuc, SourceFitModel::kAge );
         setData( ind, fitAgeWanted );
@@ -2497,6 +2517,7 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
   newIso.fitActivity = true;
   newIso.nuclide = peak->parentNuclide();
   newIso.age = PeakDef::defaultDecayTime( newIso.nuclide );
+  newIso.ageDefiningNuc = nullptr;
   newIso.fitAge = false;
   newIso.ageIsFittable = !PeakDef::ageFitNotAllowed( newIso.nuclide );
   
@@ -2517,13 +2538,13 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
   if( m_previousResults.size() > 100 )
     m_previousResults.clear();
   
-  if( m_sameAgeForIsotopes )
+  if( m_sameAgeForIsotopes && newIso.ageIsFittable )
   {
     vector<size_t> thisElementIndexs;
     for( size_t i = 0; i < m_nuclides.size(); ++i )
     {
       const IsoFitStruct &iso = m_nuclides[i];
-      if( iso.nuclide->atomicNumber == newIso.nuclide->atomicNumber )
+      if( iso.ageIsFittable && (iso.nuclide->atomicNumber == newIso.nuclide->atomicNumber) )
       {
         thisElementIndexs.push_back( i );
         if( !iso.ageDefiningNuc )
@@ -2542,7 +2563,7 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
 //      else
 //        newIso.ageDefiningNuc = previso.nuclide;
     }//if( !newIso.ageDefiningNuc && !thisElementIndexs.empty() )
-  }//if( m_sameAgeForIsotopes )
+  }//if( m_sameAgeForIsotopes && newIso.ageIsFittable )
   
   
   
@@ -2558,6 +2579,7 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
         progeny.insert( trans->parent );
     }
   }//for( loop over peaks)
+  
   newIso.numProgenyPeaksSelected = progeny.size();
   
   std::vector<IsoFitStruct>::iterator pos;
@@ -2767,7 +2789,7 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
   for( const IsoFitStruct &ifs : m_nuclides )
     postisotopes.push_back( ifs.nuclide );
   
-  if( m_sameAgeForIsotopes && (preisotopes.size()!=postisotopes.size()) )
+  if( m_sameAgeForIsotopes && (preisotopes.size() != postisotopes.size()) )
   {
     vector<const SandiaDecay::Nuclide *> removednucs, addednucs;
     for( const SandiaDecay::Nuclide *nuc : preisotopes )
@@ -2790,7 +2812,7 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
       
       for( IsoFitStruct &ifs : m_nuclides )
       {
-        if( ifs.nuclide->atomicNumber == nuc->atomicNumber )
+        if( ifs.ageIsFittable && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
         {
           if( ifs.age < minage )
           {
@@ -2805,7 +2827,7 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
       {
         for( IsoFitStruct &ifs : m_nuclides )
         {
-          if( ifs.nuclide->atomicNumber == nuc->atomicNumber )
+          if( ifs.ageIsFittable && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
             setSharredAgeNuclide( ifs.nuclide, defining );
         }//for( IsoFitStruct &ifs : m_nuclides )
       }//if( removedADefining )
@@ -2813,12 +2835,17 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
     
     for( const SandiaDecay::Nuclide *nuc : addednucs )
     {
+      if( PeakDef::ageFitNotAllowed( nuc ) )
+        continue;
+      
       const SandiaDecay::Nuclide *defining = NULL;
       double minage = std::numeric_limits<double>::infinity();
       
       for( IsoFitStruct &ifs : m_nuclides )
       {
-        if( (ifs.age<minage) && (ifs.nuclide->atomicNumber==nuc->atomicNumber) )
+        if( ifs.ageIsFittable
+           && (ifs.age < minage)
+           && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
         {
           minage = ifs.age;
           defining = ifs.nuclide;
@@ -2829,10 +2856,12 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
         defining = nuc;
       
       for( IsoFitStruct &ifs : m_nuclides )
-        if( ifs.nuclide->atomicNumber == nuc->atomicNumber )
+      {
+        if( ifs.ageIsFittable && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
           setSharredAgeNuclide( ifs.nuclide, defining );
+      }
     }//for( const SandiaDecay::Nuclide *nuc : addednucs )
-  }//if( m_sameAgeForIsotopes && (preisotopes!=postisotopes) )
+  }//if( m_sameAgeForIsotopes && (preisotopes != postisotopes) )
   
   
   if( npreisotopes == m_nuclides.size() )
@@ -4776,8 +4805,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
   //Also, if you change the model any while this window is open - bad things will happen.
   
   AuxWindow *window = new AuxWindow( "Input Truth Values",
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                     | AuxWindowProperties::TabletModal) );
+                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                     | AuxWindowProperties::TabletNotFullScreen) );
   
   WContainerWidget *contents = window->contents();
   
@@ -5265,7 +5294,7 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
   
   if( nQuantitiesCan != nFitQuantities )
   {
-    cerr << "Dont have: nQuantitiesCan != nFitQuantities" << nQuantitiesCan << " != " << nFitQuantities << endl;
+    cerr << "Dont have: nQuantitiesCan != nFitQuantities (" << nQuantitiesCan << " != " << nFitQuantities << ")" << endl;
     isValid = false;
   }
   
@@ -5860,8 +5889,8 @@ void ShieldingSourceDisplay::modelUploadError( const ::int64_t size_tried,
 void ShieldingSourceDisplay::startModelUpload()
 {
   AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model",
-                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                        | AuxWindowProperties::TabletModal) );
+                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                        | AuxWindowProperties::TabletNotFullScreen) );
   
   WContainerWidget *contents = window->contents();
   WFileUpload *upload = new WFileUpload( contents );
@@ -6080,7 +6109,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
   WTextArea *summary = NULL;
   WPushButton *accept = NULL, *cancel = NULL, *del = NULL;
   AuxWindow *window = new AuxWindow( "Previously Saved Models",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
   
   try
   {
@@ -6322,8 +6351,8 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   }//if( m_modelInDb && !prompt )
   
   AuxWindow *window = new AuxWindow( "Import Source Shielding XML Model",
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                   | AuxWindowProperties::TabletModal
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                   | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse) );
   WContainerWidget *contents = window->contents();
   window->centerWindow();
@@ -8202,6 +8231,8 @@ ShieldingSourceDisplay::Chi2FcnShrdPtr ShieldingSourceDisplay::shieldingFitnessF
       ageStep = std::min( ageStep, 0.1*maxAge );
       if( age > 0 )
         ageStep = std::min( 0.1*age, ageStep );
+      
+      // cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
       
       inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
     }else if( hasOwnAge )

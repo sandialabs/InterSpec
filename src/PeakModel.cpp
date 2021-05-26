@@ -680,7 +680,7 @@ PeakModel::PeakShrdPtr PeakModel::peakPtr( const size_t peakn ) const
 PeakModel::PeakShrdPtr PeakModel::nearestPeak( double energy ) const
 {
   if( !m_peaks || m_peaks->empty() )
-    return PeakShrdPtr();
+    return nullptr;
   
   boost::function<bool( const PeakShrdPtr &, const PeakShrdPtr &)> meansort;
   shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
@@ -816,11 +816,17 @@ void PeakModel::notifySpecMeasOfPeakChange()
 
 WModelIndex PeakModel::addNewPeak( const PeakDef &peak )
 {
+  return addNewPeakInternal( peak ).second;
+}
+
+
+std::pair<std::shared_ptr<const PeakDef>,Wt::WModelIndex> PeakModel::addNewPeakInternal( const PeakDef &peak )
+{
   if( !m_peaks )
     throw runtime_error( "Set a primary spectrum before adding peak" );
 
   if( !isWithinRange( peak ) )
-    return WModelIndex();
+    return { nullptr, WModelIndex{} };
 
   notifySpecMeasOfPeakChange();
   
@@ -847,13 +853,15 @@ WModelIndex PeakModel::addNewPeak( const PeakDef &peak )
   m_sortedPeaks.insert( sort_pos, peak_ptr );
   endInsertRows();
   
-  return index( indexpos, 0 );
-}//void addPeak( const PeakDef &peak )
+  return {peak_ptr, index( indexpos, 0 )};
+  //return index( indexpos, 0 );
+}//void addNewPeakInternal( const PeakDef &peak )
 
 
 
 void PeakModel::addPeaks( const vector<PeakDef> &peaks )
 {
+  
   for( size_t i = 0; i < peaks.size(); ++i )
     addNewPeak( peaks[i] );
 }//void addPeaks( const vector<PeakDef> &peaks )
@@ -976,11 +984,37 @@ void PeakModel::removePeak( Wt::WModelIndex index )
   if( !index.isValid() )
     throw std::runtime_error( "PeakModel::removePeak(): non-valid index" );
 
+  const int row = index.row();
+  if( row < 0 || (static_cast<size_t>(row) >= m_sortedPeaks.size()) )
+    throw std::runtime_error( "PeakModel::removePeak(): invalid index row." );
   
-  PeakShrdPtr peak = m_sortedPeaks.at( index.row() );
+  PeakShrdPtr peak = m_sortedPeaks[row];
   
-  std::deque< PeakShrdPtr >::iterator energy_pos = find( m_peaks->begin(), m_peaks->end(), peak );
-  assert( energy_pos != m_peaks->end() );
+  removePeakInternal( peak );
+}//void removePeak( Wt::WModelIndex index )
+
+
+void PeakModel::removePeak( PeakModel::PeakShrdPtr peak )
+{
+  removePeakInternal( peak );
+}//void removePeak( PeakModel::PeakShrdPtr peak )
+
+
+void PeakModel::removePeakInternal( PeakModel::PeakShrdPtr peak )
+{
+  if( !peak )
+    throw std::runtime_error( "PeakModel::removePeakInternal: invalid peak passed in." );
+  
+  if( !m_peaks )
+    throw std::runtime_error( "PeakModel::removePeakInternal: data not set." );
+  
+  const WModelIndex index = indexOfPeak( peak );
+  if( !index.isValid() )
+    throw std::runtime_error( "PeakModel::removePeakInternal: peak passed in doesnt belong to model." );
+  
+  std::deque< PeakShrdPtr >::iterator energy_pos = find( begin(*m_peaks), end(*m_peaks), peak );
+  if( energy_pos == m_peaks->end() )
+    throw std::runtime_error( "PeakModel::removePeakInternal: peak passed in doesnt belong to model (or logic error sorting m_peaks)." );
   
   beginRemoveRows( WModelIndex(), index.row(), index.row() );
   m_peaks->erase( energy_pos );
@@ -988,30 +1022,92 @@ void PeakModel::removePeak( Wt::WModelIndex index )
   endRemoveRows();
   
   notifySpecMeasOfPeakChange();
-}//void removePeak( Wt::WModelIndex index )
-
-
-void PeakModel::removePeak( PeakModel::PeakShrdPtr peak )
-{
-  const size_t n = npeaks();
-  for( size_t i = 0; i < n; ++ i )
-  {
-    if( peak == peakPtr(i) )
-    {
-      removePeak(i);
-      return;
-    }//if( peak == peakPtr(i) )
-  }//for( size_t i = 0; i < n; ++ i )
-
-  throw runtime_error( "PeakModel::removePeak(PeakShrdPtr):"
-                       " input peak not in model" );
-}//void PeakModel::removePeak( PeakModel::PeakShrdPtr peak )
+}//void removePeakInternal( PeakModel::PeakShrdPtr peak )
 
 
 void PeakModel::removeAllPeaks()
 {
-  setPeaks( vector<PeakDef>() );
+  setPeaks( vector<PeakDef>{} );
 }//void removeAllPeaks()
+
+
+void PeakModel::removePeaks( const std::vector<PeakModel::PeakShrdPtr> &peaks )
+{
+  for( const auto &p : peaks )
+    removePeakInternal( p );
+}//void removePeaks( const std::vector<PeakModel::PeakShrdPtr> &peak )
+
+
+
+vector<shared_ptr<const PeakDef>> PeakModel::peaksSharingRoi( const std::shared_ptr<const PeakDef> &peak )
+{
+  vector<shared_ptr<const PeakDef>> answer;
+  
+  if( !peak || !m_peaks )
+    return answer;
+  
+  bool found = false;
+  for( auto &p : *m_peaks )
+  {
+    found |= (p == peak);
+    if( p->continuum() == peak->continuum() )
+      answer.push_back( p );
+  }
+  
+  if( !found )
+    throw std::runtime_error( "PeakModel::peaksSharingRoi: passed in peak not owned by this model." );
+  
+  return answer;
+}//peaksSharingRoi( peak )
+
+
+std::vector<std::shared_ptr<const PeakDef>> PeakModel::peaksNotSharingRoi( const std::shared_ptr<const PeakDef> &peak )
+{
+  vector<shared_ptr<const PeakDef>> answer;
+  
+  if( !m_peaks )
+    return answer;
+  
+  if( !peak )
+  {
+    for( auto &p : *m_peaks )
+      answer.push_back( p );
+    return answer;
+  }
+  
+  bool found = false;
+  for( auto &p : *m_peaks )
+  {
+    found |= (p == peak);
+    if( p->continuum() != peak->continuum() )
+    {
+      assert( p != peak );
+      answer.push_back( p );
+    }//if( p->continuum() != peak->continuum() )
+  }//for( auto &p : *m_peaks )
+  
+  if( !found )
+    throw std::runtime_error( "PeakModel::peaksNotSharingRoi: passed in peak not owned by this model." );
+  
+  return answer;
+}//peaksNotSharingRoi( peak )
+
+
+void PeakModel::updatePeak( const std::shared_ptr<const PeakDef> &originalPeak, const PeakDef &newPeak )
+{
+  removePeakInternal( originalPeak );
+  addNewPeak( newPeak );
+}//updatePeak( originalPeak, newPeak )
+
+
+void PeakModel::updatePeaks( const std::vector<std::shared_ptr<const PeakDef>> &originalPeaks,
+                 const std::vector<PeakDef> &newPeaks )
+{
+  for( const auto &p : originalPeaks )
+    removePeakInternal( p );
+  for( const auto &p : newPeaks )
+    addNewPeakInternal( p );
+}//void updatePeaks(...)
 
 
 void PeakModel::setPeakFitFor( const Wt::WModelIndex index,
@@ -1171,7 +1267,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         {
           double lowx(0.0), upperx(0.0);
           findROIEnergyLimits( lowx, upperx, *peak, dataH );
-          contArea = peak->offset_integral( lowx, upperx );
+          contArea = peak->offset_integral( lowx, upperx, dataH );
         }else
         {
           std::shared_ptr<const SpecUtils::Measurement> continuum = m_dataModel->getBackground();
@@ -1304,16 +1400,22 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     }//case kPhotoPeakEnergy:
 
     case kUseForShieldingSourceFit:
+    {
       // Make so we only "use for shielding/source fit" show checkbox for decay gammas and x-rays,
       //  and not for peaks with no source associated, or with florescence x-rays, or for reactions
-      if( !peak->nuclearTransition() || !peak->parentNuclide() || (peak->decayParticleIndex() < 0) )
-        return boost::any();
       
       switch( peak->sourceGammaType() )
       {
         case PeakDef::NormalGamma:
         case PeakDef::XrayGamma:
+          if( !peak->nuclearTransition() || !peak->parentNuclide() || (peak->decayParticleIndex() < 0) )
+            return boost::any();
+          break;
+          
         case PeakDef::AnnihilationGamma:
+          // Annihilation gammas wont have a nuclearTransition or decay particle index associated with them
+          if( !peak->parentNuclide() )
+            return boost::any();
           break;
         
         case PeakDef::SingleEscapeGamma:
@@ -1324,6 +1426,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       }//switch( peak->sourceGammaType() )
       
       return peak->useForShieldingSourceFit();
+    }//case kUseForShieldingSourceFit:
 
     case kUseForCalibration:
       return peak->useForCalibration();
@@ -1403,19 +1506,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     }//case kRoiCounts:
       
     case kContinuumType:
-    {
-      switch( peak->continuum()->type() )
-      {
-        case PeakContinuum::NoOffset:   return WString( "None" );
-        case PeakContinuum::Constant:   return WString( "Constant" );
-        case PeakContinuum::Linear:     return WString( "Linear" );
-        case PeakContinuum::Quadratic:  return WString( "Quadratic" );
-        case PeakContinuum::Cubic:      return WString( "Cubic" );
-        case PeakContinuum::External:   return WString( "Global Cont." );
-      }//switch( peak->offsetType() )
-      
-      return boost::any();
-    }//case kContinuumType:
+      return WString( PeakContinuum::offset_type_label(peak->continuum()->type()) );
       
     case kNumColumns:
       return any();
@@ -1681,8 +1772,7 @@ bool PeakModel::setData( const WModelIndex &index,
   
   try
   {
-    if( (role != Wt::EditRole)
-        && (role != Wt::CheckStateRole) )
+    if( (role != Wt::EditRole) && (role != Wt::CheckStateRole) )
       return false;
 
     const int row = index.row();
@@ -2336,8 +2426,14 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
         lhs_area = data->gamma_integral( lhs->lowerX(), lhs->upperX() );
       }else
       {
-        rhs_area = rhs->offset_integral( rhs->lowerX(), rhs->upperX() );
-        lhs_area = lhs->offset_integral( lhs->lowerX(), lhs->upperX() );
+        try
+        {
+          rhs_area = rhs->offset_integral( rhs->lowerX(), rhs->upperX(), data );
+          lhs_area = lhs->offset_integral( lhs->lowerX(), lhs->upperX(), data );
+        }catch(...)
+        {
+          //Will only fail for LinearStep continuum - which I doubt we will ever get here anyway.
+        }
       }
       
       return (asscend ? (lhs_area<rhs_area) : (lhs_area>rhs_area));

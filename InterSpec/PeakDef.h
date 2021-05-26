@@ -64,15 +64,19 @@ namespace rapidxml
  */
 struct PeakContinuum
 {
-  enum OffsetType
+  enum OffsetType : int
   {
     NoOffset,
     Constant = 1,  //purposely set to be the size of the expected num paramters
     Linear,
     Quadratic,
     Cubic,
+    LinearStep,
     External
   };//enum OffsetType
+  
+  /** Text appropriate for use as a label for the continuum type in the gui. */
+  static const char *offset_type_label( const OffsetType type );
   
   PeakContinuum();
   
@@ -135,7 +139,9 @@ struct PeakContinuum
   //  the contonuum density will be returned.  If globally defined continuum,
   //  then the integral will be returned, using linear interpolation for
   //  ranges not exactly on the bin edges.
-  double offset_integral( const double x0, const double x1 ) const;
+  //  If LinearStep, then data histogram is necassary
+  double offset_integral( const double x0, const double x1,
+                          const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
   
   //defined: returns true if a _valid_ polynomial or external continuum type
   bool defined() const;
@@ -143,7 +149,7 @@ struct PeakContinuum
   //energyRangeDefined: returns if an energy range has explicitely been set
   bool energyRangeDefined() const;
   
-  //isPolynomial:
+  /** Returns true if Constant, Linear, Quadratic, Cubic, or LinearStep: */
   bool isPolynomial() const;
   
   double lowerEnergy() const { return m_lowerEnergy; }
@@ -247,6 +253,22 @@ double skewedGaussianIntegral( double x0,  //x-value to start integrating at
                                double width, //
                                double skewness  //must be >= 0.03*width
                               );
+
+
+/** TODO: Define and implement this function
+ 
+ @param fwhm The real or estimated FWHM of the peak
+ @param energy The mean of the peak
+ @param nchannel The number of channels in the spectrum.  If specified as zero, will not be used.
+ @returns Whether this peak is likely to be from a HPGe detector or not.
+ */
+//bool is_high_resolution_peak( const float fwhm, const float energy, const size_t nchannel );
+//
+// OR
+/** Returns true if the energy per channel is more inline with a high resolution system.
+ */
+//bool is_high_resolution( const std::shared_ptr<const SpecUtils::Measurement> &data );
+//
 
 
 //findROILimit(...): returns the channel number that should be the extent of the
@@ -556,7 +578,8 @@ public:
   
   
   //offset_integral(): gives area of the continuum component between x0 and x1.
-  double offset_integral( const double x0, const double x1 ) const;
+  double offset_integral( const double x0, const double x1,
+                          const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
 
   inline bool fitFor( CoefficientType type ) const;
   inline void setFitFor( CoefficientType type, bool fit );

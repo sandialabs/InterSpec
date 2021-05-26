@@ -3683,7 +3683,8 @@ void SpectrumChart::loadPeakInfoToClient() const
       }//if( data && th1Model )
 
       double contarea = 0;
-      contarea = peak.offset_integral( lowx, upperx );
+      if( (peak.continuum()->type() != PeakContinuum::LinearStep) || data )
+        contarea = peak.offset_integral( lowx, upperx, data );
 
       double lowe = 0.0, highe = 0.0;
       findROIEnergyLimits( lowe, highe, peak, data );
@@ -4023,6 +4024,7 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
       
     case PeakContinuum::Constant:   case PeakContinuum::Linear:
     case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+    case PeakContinuum::LinearStep:
     case PeakContinuum::External:
     {
       vector<WPointF> path;
@@ -4032,7 +4034,7 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
         const double rowUpperX = rowLowX + th1Model->rowWidth( row );
         const double lowerx = std::max( rowLowX, axisMinX );
         const double upperx = std::min( rowUpperX, axisMaxX );
-        const double contheight = continuum->offset_integral( rowLowX, rowUpperX );
+        const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data );
       
         const WPointF startPoint = mapToDevice( lowerx, contheight );
         const WPointF endPoint = mapToDevice( upperx, contheight );
@@ -4066,7 +4068,7 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
     const double lowerx = std::max( rowLowX, axisMinX );
     const double upperx = std::min( rowUpperX, axisMaxX );
     const boost::any dataheightany = th1Model->displayBinValue( row, SpectrumDataModel::DATA_COLUMN );
-    const double contheight = continuum->offset_integral( rowLowX, rowUpperX );
+    const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data );
     const double dataheight = asNumber( dataheightany );
     
     if( dataheightany.empty() )
@@ -4130,7 +4132,17 @@ double SpectrumChart::peakBackgroundVal( const int row, const PeakDef &peak,
   const double bin_x_min = th1Model->rowLowEdge( row );
   const double bin_x_max = bin_x_min + th1Model->rowWidth( row );
   
-  double yval = peak.offset_integral( bin_x_min, bin_x_max );
+  
+  double yval = 0.0;
+  if( peak.continuum()->type() == PeakContinuum::LinearStep )
+  {
+    shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
+    if( data )
+      yval = peak.offset_integral( bin_x_min, bin_x_max, data );
+  }else
+  {
+    yval = peak.offset_integral( bin_x_min, bin_x_max, nullptr );
+  }
   
   if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
     yval -= th1Model->data( row, th1Model->backgroundColumn() );
@@ -4641,11 +4653,12 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
   double axisMinX, axisMaxX, axisMinY, axisMaxY;
   visibleRange( axisMinX, axisMaxX, axisMinY, axisMaxY );
   
-  const SpectrumDataModel *th1Model
-                           = dynamic_cast<const SpectrumDataModel *>( model() );
+  const SpectrumDataModel *th1Model  = dynamic_cast<const SpectrumDataModel *>( model() );
   
   assert( th1Model );
   assert( std::is_sorted( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr ) );
+  
+  std::shared_ptr<const Measurement> data = th1Model->getData();
   
   bool hadGlobalCont = false;
   const bool sharedContinuum = (peaks.size()>1);
@@ -4707,7 +4720,15 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       const double bin_x_max = bin_x_min + bin_width;
       const double bin_center = bin_x_min + 0.5*bin_width;
       
-      double cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max );
+      double cont_y = 0.0;
+      if( peaks[0]->continuum()->type() == PeakContinuum::LinearStep )
+      {
+        if( data )
+          cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max, data );
+      }else
+      {
+        cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max, data );
+      }
       
       if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
         cont_y -= th1Model->data( row, th1Model->backgroundColumn() );

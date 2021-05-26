@@ -552,6 +552,11 @@ namespace InterSpecServer
     {
       //I dont know why we would get here... but lets deal with it JIC
       cerr << "There is no app with externalid=" << externalid << endl;
+      
+#if( IOS )
+      return -2;
+#endif
+      
       Wt::WServer *server = Wt::WServer::instance();
       if( server )
       {

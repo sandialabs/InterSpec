@@ -927,11 +927,14 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
 
   
   assert( (orig_cal->type() == EnergyCalType::FullRangeFraction)
-          || (orig_cal->type() == EnergyCalType::Polynomial) );
+          || (orig_cal->type() == EnergyCalType::Polynomial)
+          || (orig_cal->type() == EnergyCalType::UnspecifiedUsingDefaultPolynomial) );
   assert( (new_cal->type() == EnergyCalType::FullRangeFraction)
-          || (new_cal->type() == EnergyCalType::Polynomial) );
+          || (new_cal->type() == EnergyCalType::Polynomial)
+          || (new_cal->type() == EnergyCalType::UnspecifiedUsingDefaultPolynomial) );
   assert( (other_cal->type() == EnergyCalType::FullRangeFraction)
-          || (other_cal->type() == EnergyCalType::Polynomial) );
+          || (other_cal->type() == EnergyCalType::Polynomial)
+          || (other_cal->type() == EnergyCalType::UnspecifiedUsingDefaultPolynomial) );
 
   const double accuracy = 0.00001;
   const size_t order = std::max( other_coeffs.size(),

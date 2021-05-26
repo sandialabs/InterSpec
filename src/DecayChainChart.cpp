@@ -42,6 +42,7 @@
 #include <Wt/Chart/WAxis>
 #include <Wt/WPushButton>
 #include <Wt/WPaintDevice>
+#include <Wt/WApplication>
 #include <Wt/WStringStream>
 #include <Wt/WContainerWidget>
 #include <Wt/Chart/WCartesianChart>
@@ -54,7 +55,6 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
 #include "SpecUtils/StringAlgo.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayChainChart.h"
@@ -205,11 +205,7 @@ const SandiaDecay::Nuclide *DecayChainChart::nuclide() const
 
 void DecayChainChart::colorThemeChanged()
 {
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-  if( !app )
-    return;
-  
-  InterSpec *interspec = app->viewer();
+  InterSpec *interspec = InterSpec::instance();
   if( !interspec )
     return;
   
@@ -421,9 +417,8 @@ void DecayChainChart::defineJavaScript()
 {
   m_jsLoaded = true;
   
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-  const bool isMobile = app && app->isMobile();
-  InterSpec *interspec = app ? app->viewer() : nullptr;
+  InterSpec *interspec = InterSpec::instance();
+  const bool isMobile = interspec && interspec->isMobile();
   
   shared_ptr<const ColorTheme> theme;
   if( interspec )  //should always be valid, but jic
@@ -548,8 +543,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   if( !nuclide )
     return;
   
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-  InterSpec *interspec = app ? app->viewer() : nullptr;
+  InterSpec *interspec = InterSpec::instance();
   if( !interspec )  //shouldnt ever happen, but jic
     return;
   
@@ -559,7 +553,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   const double wh = 0.65*interspec->renderedHeight();
   
   Wt::WFlags<AuxWindowProperties> windowProp
-  = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+  = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
   | AuxWindowProperties::DisableCollapse
   | AuxWindowProperties::SetCloseable
   | AuxWindowProperties::EnableResize;

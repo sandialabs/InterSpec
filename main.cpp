@@ -82,7 +82,7 @@ int main( int argc, char **argv )
 #endif //#if( ANDROID )
   
   std::cout << std::showbase << std::hex << "Running with Wt version "
-            << WT_VERSION << ", from executable compiled on "
+            << WT_VERSION << std::dec << ", from executable compiled on "
             << __DATE__ << std::endl;
   
 #if( PERFORM_DEVELOPER_CHECKS )

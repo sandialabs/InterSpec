@@ -73,6 +73,8 @@
 
 #if ( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
+#else
+#include "InterSpec/SpectrumDisplayDiv.h"
 #endif
 
 using namespace std;

@@ -84,12 +84,7 @@ option(
 )
 option(
     USE_ELECTRON_NATIVE_MENU
-    "Mirrors WMenus with Electrons native Menu (not fully implemented)"
-    OFF
-)
-option(
-    USE_ELECTRON_HTML_MENU
-    "Customizes WMenu to act closer to OS application menu, and reduces size of application titlebar (implementation in progress)"
+    "Mirrors WMenus with Electrons native Menu (not fully implemented); if off will use HTML based menus"
     OFF
 )
 option(
@@ -134,7 +129,7 @@ option(
     "Enable 3D chart or searchmode/passthrough data.  Requires Wt >=3.3.4 compiled with WebGL/OpenGL support"
     ON
 )
-option(USE_TERMINAL_WIDGET "Enables use of terminal widget" OFF)
+option(USE_TERMINAL_WIDGET "Enables use of terminal widget" ON)
 set(SpecUtils_ENABLE_D3_CHART ON
     CACHE BOOL "Enables use of exporting D3 HTML files"
 )
@@ -274,9 +269,6 @@ if(ANDROID)
         ${BOOST_LIB_START}unit_test_framework${BOOST_LIB_END}
     )
     set(Boost_SIGNALS_LIBRARY_RELEASE ${BOOST_LIB_START}signals${BOOST_LIB_END})
-    set(Boost_SERIALIZATION_LIBRARY_RELEASE
-        ${BOOST_LIB_START}serialization${BOOST_LIB_END}
-    )
     set(Wt_INCLUDE_DIR=${USRPREFIX}/include)
     set(Wt_LIBRARY=${USRPREFIX}/lib/libwt.a)
     set(Wt_TEST_LIBRARY=${USRPREFIX}/lib/libwttest.a)
@@ -286,7 +278,7 @@ if(ANDROID)
 endif(ANDROID)
 
 if(IOS)
-    set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "7.0"
+    set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "10.2"
         CACHE STRING "Set the minimum deployment target value."
         FORCE
     )
@@ -321,9 +313,9 @@ if(IOS)
     set(SHARED_LIBS OFF)
     set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${Boost_DIR})
     set(SUPPORT_ZIPPED_SPECTRUM_FILES ON)
-    set(USE_TERMINAL_WIDGET OFF)
     set(SpecUtils_ENABLE_D3_CHART ON)
-    set(USE_SPECTRUM_CHART_D3 ON)
+    set(USE_SPECTRUM_CHART_D3 OFF)
+    set(USE_GOOGLE_MAP OFF)
 
     #if you change this IPHONEOS_DEPLOYMENT_TARGET also change the variable in
     # iosbuild.rb everywhere, and in the Xcode project.
@@ -340,7 +332,6 @@ if(BUILD_AS_OSX_APP)
     set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(USE_OSX_NATIVE_MENU ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-    set(USE_TERMINAL_WIDGET OFF)
     set(SpecUtils_ENABLE_D3_CHART ON)
     set(USE_SPECTRUM_CHART_D3 ON)
 endif(BUILD_AS_OSX_APP)
@@ -359,18 +350,8 @@ if(BUILD_AS_ELECTRON_APP)
     set(ALLOW_URL_TO_FILESYSTEM_MAP ON)
     set(USE_OSX_NATIVE_MENU OFF)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-    set(USE_TERMINAL_WIDGET OFF)
     set(SpecUtils_ENABLE_D3_CHART ON)
     set(USE_SPECTRUM_CHART_D3 ON)
-    if( (NOT USE_ELECTRON_NATIVE_MENU AND NOT USE_ELECTRON_HTML_MENU) OR (USE_ELECTRON_NATIVE_MENU AND USE_ELECTRON_HTML_MENU) )
-        if(APPLE)
-            set(USE_ELECTRON_NATIVE_MENU ON)
-            set(USE_ELECTRON_HTML_MENU OFF)
-        else(APPLE)
-            set(USE_ELECTRON_NATIVE_MENU ON)
-            set(USE_ELECTRON_HTML_MENU OFF)
-        endif(APPLE)
-    endif( (NOT USE_ELECTRON_NATIVE_MENU AND NOT USE_ELECTRON_HTML_MENU) OR (USE_ELECTRON_NATIVE_MENU AND USE_ELECTRON_HTML_MENU) )
     set(INCLUDE_ANALYSIS_TEST_SUITE OFF)
 endif(BUILD_AS_ELECTRON_APP)
 
@@ -383,7 +364,6 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     set(TRY_TO_STATIC_LINK ON)
     set(PERFORM_DEVELOPER_CHECKS ON)
     set(USE_SPECRUM_FILE_QUERY_WIDGET ON)
-    set(USE_TERMINAL_WIDGET ON)
     set(SpecUtils_ENABLE_D3_CHART ON)
     set(USE_SPECTRUM_CHART_D3 ON)
 endif(BUILD_AS_UNIT_TEST_SUITE)
@@ -757,7 +737,7 @@ include(cmake/DeployJsAndCss.cmake)
 
 list(APPEND sources external_libs/SpecUtils/d3_resources/d3.v3.min.js)
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/d3.v3.min.js"
-                    "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/${_file}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/d3.v3.min.js"
 )
 
 if(USE_SPECTRUM_CHART_D3)
@@ -772,8 +752,11 @@ if(USE_SPECTRUM_CHART_D3)
         external_libs/SpecUtils/d3_resources/SpectrumChartD3.js
         external_libs/SpecUtils/d3_resources/SpectrumChartD3.css
         external_libs/SpecUtils/d3_resources/SpectrumChartD3StandAlone.css
+        src/D3TimeChart.cpp
     )
-    list(APPEND headers InterSpec/D3SpectrumDisplayDiv.h)
+    list( APPEND headers InterSpec/D3SpectrumDisplayDiv.h InterSpec/D3TimeChart.h )
+
+    list( APPEND OTHER_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
 
     deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"
@@ -1125,10 +1108,9 @@ elseif(BUILD_AS_ELECTRON_APP)
         target/electron/ElectronUtils.h
     )
     
-    if( USE_ELECTRON_HTML_MENU )
-        list( APPEND sources js/ElectronHtmlMenu.js )
-    endif( USE_ELECTRON_HTML_MENU )
-    
+    if( NOT USE_ELECTRON_NATIVE_MENU )
+      list( APPEND sources js/AppHtmlMenu.js )
+    endif( NOT USE_ELECTRON_NATIVE_MENU )
     
     if( INTERSPEC_LIBRARY_STATIC )
         add_library(InterSpecLib STATIC ${sources} ${headers})
@@ -1307,7 +1289,7 @@ if(TRY_TO_STATIC_LINK)
             ${Boost_RANDOM_LIBRARY}
             ${Boost_PROGRAM_OPTIONS_LIBRARY}
             ${LIBZ_LIBRARY}
-            /usr/lib/libSystem.B.dylib
+            libSystem.B.dylib
             /System/Library/Frameworks/Carbon.framework/Versions/A/Carbon
             /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation
         )
@@ -1443,13 +1425,13 @@ if(BUILD_AS_UNIT_TEST_SUITE)
     add_subdirectory(testing)
 endif(BUILD_AS_UNIT_TEST_SUITE)
 
-set(OTHER_SUPPORT_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/README.md
-    ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
-)
+list( APPEND OTHER_SUPPORT_FILES
+     ${CMAKE_CURRENT_SOURCE_DIR}/README.md
+     ${CMAKE_CURRENT_SOURCE_DIR}/data/default_preferences.xml
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/themes/dark/dark.css
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/copyright_and_about.xml
+     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/use_instructions.xml
+  )
 
 FILE(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*.css )
 list(FILTER CSS_FILES EXCLUDE REGEX ".*SpectrumChartD3.*css")

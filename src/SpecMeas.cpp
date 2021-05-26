@@ -1429,9 +1429,7 @@ bool SpecMeas::load_N42_from_data( char *data, char *data_end )
     return false;
   }catch( std::exception &e )
   {
-    cerr << "Caught: " << e.what() << endl;
-    
-   rapidxml::print( cout, doc, 0 );
+    // rapidxml::print( cout, doc, 0 );
     
     cerr << "Caught: " << e.what() << endl;
     

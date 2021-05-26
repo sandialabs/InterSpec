@@ -83,7 +83,7 @@ static_assert( int(PeakEdit::Chi2DOF)         == int(PeakDef::Chi2DOF),
 PeakEditWindow::PeakEditWindow( const double energy,
                                 PeakModel *peakmodel,
                                 InterSpec *viewer )
-  : AuxWindow( "Peak Editor", WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal) | AuxWindowProperties::DisableCollapse  )
+  : AuxWindow( "Peak Editor", WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen) | AuxWindowProperties::DisableCollapse  )
 {
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   
@@ -394,15 +394,7 @@ void PeakEdit::init()
   for( PeakContinuum::OffsetType t = PeakContinuum::OffsetType(0);
        t <= PeakContinuum::External; t = PeakContinuum::OffsetType(t+1) )
   {
-    switch ( t )
-    {
-      case PeakContinuum::NoOffset:  m_continuumType->addItem( "None" );         break;
-      case PeakContinuum::External:  m_continuumType->addItem( "Global Cont." ); break;
-      case PeakContinuum::Constant:  m_continuumType->addItem( "Constant" );     break;
-      case PeakContinuum::Linear:    m_continuumType->addItem( "Linear" );       break;
-      case PeakContinuum::Quadratic: m_continuumType->addItem( "Quadratic" );  break;
-      case PeakContinuum::Cubic:     m_continuumType->addItem( "Cubic" );        break;
-    }//switch ( t )
+    m_continuumType->addItem( PeakContinuum::offset_type_label(t) );
   }//for( loop over PeakContinuum::OffsetType )
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+7 );
@@ -802,9 +794,12 @@ void PeakEdit::refreshPeakInfo()
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
       {
         const PeakContinuum::OffsetType type = continuum->type();
+        
         const int coefnum = t - PeakEdit::OffsetPolynomial0;
-        const bool hide = (type==PeakContinuum::External)
-                          || (coefnum>=type);
+        const bool hide = ( (type==PeakContinuum::External)
+                            || (coefnum>=type)
+                            || ((type == PeakContinuum::LinearStep) && (coefnum > 1)) );
+        
         row->setHidden( hide );
         
         if( hide )
@@ -1398,8 +1393,7 @@ void PeakEdit::peakTypeChanged()
 
 void PeakEdit::contnuumTypeChanged()
 {
-  PeakContinuum::OffsetType type
-                = PeakContinuum::OffsetType( m_continuumType->currentIndex() );
+  PeakContinuum::OffsetType type = PeakContinuum::OffsetType( m_continuumType->currentIndex() );
   
   switch( type )
   {
@@ -1421,6 +1415,7 @@ void PeakEdit::contnuumTypeChanged()
     break;
     
     case PeakContinuum::Linear:
+    case PeakContinuum::LinearStep:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial1)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial2)->setHidden( true );
@@ -1530,14 +1525,20 @@ void PeakEdit::skewTypeChanged()
               case PeakContinuum::External:
 //                if( continuum )
 //                  contArea = integral( continuum, lowe, upe );
-                contArea = continuum->offset_integral( lowe, upe );
+                contArea = continuum->offset_integral( lowe, upe, nullptr );
                 break;
                 
               case PeakContinuum::Constant: case PeakContinuum::Linear:
               case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
 //                contArea = m_currentPeak.offset_integral( lowe, upe );
-                contArea = continuum->offset_integral( lowe, upe );
+                contArea = continuum->offset_integral( lowe, upe, nullptr );
                 break;
+                
+              case PeakContinuum::LinearStep:
+              {
+                std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+                contArea = continuum->offset_integral( lowe, upe, data );
+              }
             }//switch( m_currentPeak.offsetType() )
             
             if( dataArea > contArea )
@@ -1817,7 +1818,7 @@ void PeakEdit::setAmplitudeForDataDefinedPeak()
     const float lowere = max( data->gamma_channel_lower(channel), roilower );
     const float uppere = min( data->gamma_channel_upper(channel), roiupper );
     const double dataarea = gamma_integral( data, lowere, uppere );
-    const double contarea = continuum->offset_integral( lowere, uppere );
+    const double contarea = continuum->offset_integral( lowere, uppere, data );
     datasum += max( 0.0, dataarea);
     peaksum += max( 0.0, (dataarea-contarea));
   }//for( int bin = lowerbin; bin <= upperbin; ++bin )
@@ -1838,8 +1839,7 @@ void PeakEdit::apply()
     {
   std::shared_ptr<PeakContinuum> continuum = m_currentPeak.continuum();
   
-  const PeakContinuum::OffsetType offset
-                  = PeakContinuum::OffsetType(m_continuumType->currentIndex());
+  const PeakContinuum::OffsetType offset = PeakContinuum::OffsetType(m_continuumType->currentIndex());
   if( offset != continuum->type() )
   {
     continuum->setType( offset );
@@ -1879,27 +1879,16 @@ void PeakEdit::apply()
         
       case PeakContinuum::Constant:
       case PeakContinuum::Linear:
-      {
-//        double refEnrgy = continuum->referenceEnergy();
-//        vector<double> pars = continuum->parameters();
-//        vector<double> errors = continuum->unertainties();
-//        for( size_t i = 0; i < pars.size(); ++i )
-//          if( pars[i] == 0 )
-//            pars[i] = 0.1;
-//        continuum->setParameters( refEnrgy, pars, errors );
-        break;
-      }//
-      
       case PeakContinuum::Quadratic:
       case PeakContinuum::Cubic:
+      case PeakContinuum::LinearStep:
         break;
     }//switch( offset )
   }//if( offset != m_currentPeak.offsetType() )
   
   
   
-  const PeakDef::SkewType skewType
-                             = PeakDef::SkewType( m_skewType->currentIndex() );
+  const PeakDef::SkewType skewType = PeakDef::SkewType( m_skewType->currentIndex() );
   if( skewType != m_currentPeak.skewType() )
   {
     cerr << "PeakEdit::apply(): handle skew type change better" << endl;

@@ -52,6 +52,7 @@ typedef std::vector< std::shared_ptr<const PeakDef> > PeakShrdVec;
 
 //XXX - should put everything in this file into a namespace
 
+
 struct SavitzyGolayCoeffs
 {
   const int num_left;          //number of coef. to left of current point
@@ -304,27 +305,28 @@ double fit_to_polynomial( const float *x, const float *y, const size_t nbin,
 double evaluate_polynomial( const double x,
                            const std::vector<double> &poly_coeffs );
 
-//fit_amp_and_offset(...): Fits the continuum and amplitude of peaks with
-//  specified means and sigmas, over the data range specified.  Uses a
-//  matrix based linear regression fitter to perform minization.
-//  Currently the implementation is reasonably inefficient.
-//May throw exception in not well possed input.
 
-#define fit_amp_and_offset_OBEY_FIXING_AMPLITUDES 1
-
-//fit_amp_and_offset_OBEY_FIXING_AMPLITUDES has not yet been tested 20140412,
-//  or been checked that the fixed amplitude peaks are subtracted from data
-//  correctly while keeping statistical uncertainty correct.
-//It *kinda* seems to work, but I'll leave this ugly preproccessor macro in
-//  to remind myself to check it out some more.
-double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
-                           const int polynomial_order,
+/** Fits the continuum and amplitude of peaks with specified means and sigmas, over the data range specified.  Uses a
+ matrix based linear regression fitter to perform minization.
+ 
+ @param energies The lower-channel energies of ROI.  ROI defined by energies[0] to energies[nbin]. Must be of at least length nbin+1.
+ @param data The channel counts of the ROI.  Must be of at least length nbin.
+ @param nbin The number of channels in the ROI.
+ @param num_polynomial_terms The number of polynomial continuum terms to fit for.
+        0 is no continuum (untested), 1 is constant, 2 is linear sloped continuum, etc
+ @param step_continuum Specifies whether or not a step in the continuum is to be used.  Currently
+ 
+ Currently the implementation is reasonably inefficient.
+ 
+ Throws exception upon ill-posed input.
+ */
+double fit_amp_and_offset( const float *energies, const float *data, const size_t nbin,
+                           const int num_polynomial_terms,
+                           const bool step_continuum,
                            const double ref_energy,
                            const std::vector<double> &means,
                            const std::vector<double> &sigmas,
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
                            const std::vector<PeakDef> &fixedAmpPeaks,
-#endif
                            std::vector<double> &amplitudes,
                            std::vector<double> &continuum_coeffs,
                            std::vector<double> &amplitudes_uncerts,

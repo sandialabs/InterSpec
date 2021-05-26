@@ -102,6 +102,15 @@ using namespace Wt;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
+#if( BUILD_AS_ELECTRON_APP )
+WT_DECLARE_WT_MEMBER
+(IsElectronInstance, Wt::JavaScriptFunction, "IsElectronInstance",
+  function() {
+   return (typeof window !== 'undefined' && typeof window.process === 'object' && window.process.type === 'renderer');
+} );
+#endif
+
+
 namespace
 {
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
@@ -216,19 +225,22 @@ bool InterSpecApp::checkExternalTokenFromUrl()
 void InterSpecApp::setupDomEnvironment()
 {
 #if( BUILD_AS_ELECTRON_APP )
+  LOAD_JAVASCRIPT(wApp, "InterSpecApp.cpp", "InterSpecApp", wtjsIsElectronInstance);
+  
   //To make nodeIntegration=true work:
   //  https://stackoverflow.com/questions/32621988/electron-jquery-is-not-defined
+  const char *fixElectronJs =
+  "if( Wt.WT.IsElectronInstance() )"
+    "if (typeof module === 'object') {window.module = module; module = undefined;}";
+  doJavaScript( fixElectronJs, false );
+  
   if( isPrimaryWindowInstance() )
   {
-    // \TODO: when/if we allow multiple electron windows, need to upgrade from using
-    //        isPrimaryWindowInstance() to something that says if it is an electron window
-    doJavaScript( "if (typeof module === 'object') {window.module = module; module = undefined;}", false );
-    
 #if( USING_ELECTRON_NATIVE_MENU )
     //Some support to use native menu...
     doJavaScript( "const { remote, ipcRenderer } = require('electron');const {Menu, MenuItem} = remote;", false );
 #else
-    doJavaScript( "const { remote, ipcRenderer} = require('electron'); ", false );
+    doJavaScript( "const { remote, ipcRenderer } = require('electron'); ", false );
 #endif
   }//if( isPrimaryWindowInstance() )
   
@@ -567,7 +579,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         if( promptLoad )
         {
           //Create a dialog asking if the user wants to pick up
-          AuxWindow *loadStateDialog = new AuxWindow( "Load previous state?", (AuxWindowProperties::IsAlwaysModal | AuxWindowProperties::TabletModal) );
+          AuxWindow *loadStateDialog = new AuxWindow( "Load previous state?", (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
         
           WContainerWidget *dialogDiv = loadStateDialog->contents();
           

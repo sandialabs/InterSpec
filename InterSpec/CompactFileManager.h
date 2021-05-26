@@ -45,21 +45,19 @@ namespace SpecUtils{ enum class SpectrumType : int; }
 
 class SpecMeas;
 class InterSpec;
-class SpectraFileModel;
 class SpecMeasManager;
+class SpectraFileModel;
+class NativeFloatSpinBox;
 
-
+/** This is the "Spectrum Files" tab implementation.
+ 
+ TODO:
+   - allow selecting which detectors to display, for each of the display types
+ */
 class CompactFileManager : public Wt::WContainerWidget
 {
-  /****************************************************************************\
-  | CompactFileManager is a highly stripped down file manager for use in the
-  | tool tab.
-  | The main file manager is to big for tool tab space. It is intended to do only
-  | simple functions: set fore/back ground and secondary spectrums, do uploads
-  \****************************************************************************/
-
 public:
-  enum DisplayMode{ TopToBottom, LeftToRight, Tabbed };
+  enum DisplayMode{ LeftToRight, Tabbed };
   
   CompactFileManager( SpecMeasManager *fullFileManager,
                       InterSpec *hostViewer,
@@ -114,7 +112,7 @@ private:
   Wt::WLineEdit *m_displaySampleNumEdits[3];
   Wt::WInteractWidget *m_nextSampleNumButtons[3];
   Wt::WInteractWidget *m_prevSampleNumButtons[3];
-  Wt::WDoubleSpinBox *m_scaleValueTxt[3];  //could use a WInPlaceEdit
+  NativeFloatSpinBox *m_scaleValueTxt[3];  //could use a WInPlaceEdit
   Wt::WPushButton *m_rescaleByLiveTime[3];
   
   //We want to avoid un-necassarily re-loading the data on blur of the sample
@@ -129,7 +127,7 @@ private:
   //  detector, if the measurment has a title, it will be displayed using
   //  m_foregroundTitle.  In the future it may be worth while to make this a
   //  WInPlaceEdit to allow the user an easy way to change it.
-  Wt::WText *m_foregroundTitle;
+  Wt::WText *m_titles[3];
   
   // A link to the file manager, as that's where everything's stored
   SpectraFileModel *m_files;

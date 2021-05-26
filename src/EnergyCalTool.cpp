@@ -2442,7 +2442,49 @@ void EnergyCalTool::fitCoefficients()
     if( !caldisp )  //shouldnt ever happen, but JIC
       throw runtime_error( "Unexpected error determining current calibration" );
     
+    // The spectrum may not be displaying the detector we are currently seeing the calibration for
+    //  lets make sure of this, and if so, switch to one we are displaying
+    string detname = caldisp->detectorName();
+    int previousSpecTypeInd = m_specTypeMenu ? m_specTypeMenu->currentIndex() : 0;
+    const auto type = (previousSpecTypeInd == 1)
+                          ? SpecUtils::SpectrumType::Background
+                          : (previousSpecTypeInd==2
+                            ? SpecUtils::SpectrumType::SecondForeground
+                            : SpecUtils::SpectrumType::Foreground);
+    const vector<string> displayed = m_interspec->detectorsToDisplay( type );
+    
+    if( std::find(begin(displayed), end(displayed), detname) == end(displayed) )
+    {
+      if( previousSpecTypeInd >= 0
+         && previousSpecTypeInd < 3
+         && m_detectorMenu[previousSpecTypeInd] )
+      {
+        for( WMenuItem *item : m_detectorMenu[previousSpecTypeInd]->items() )
+        {
+          const string thisdetname = item->text().toUTF8();
+          if( std::find(begin(displayed), end(displayed), thisdetname) != end(displayed) )
+          {
+            item->select();
+            cout << "Starting from " << caldisp << endl;
+            caldisp = dynamic_cast<EnergyCalImp::CalDisplay *>( m_calInfoDisplayStack->currentWidget() );
+            cout << "  we moved to " << caldisp << endl;
+            if( !caldisp )  //shouldnt ever happen, but JIC
+              throw runtime_error( "Unexpected error determining current calibration" );
+            
+            detname = caldisp->detectorName();
+          }//if( we found a displayed detector )
+        }//for( loop over menu items to find a displayed detector )
+      }else
+      {
+        throw runtime_error( "Please select calibration of a displayed detector" );
+      }
+    }//if( std::find(begin(displayed), end(displayed), detname) == end(displayed) )
+    
+        
     auto original_cal = caldisp->lastSetCalibration();
+    
+    
+    
     switch( original_cal->type() )
     {
       case SpecUtils::EnergyCalType::LowerChannelEdge:
@@ -3043,7 +3085,7 @@ void EnergyCalTool::doRefreshFromFiles()
       item->clicked().connect( boost::bind(&WMenuItem::select, item) );
       
       m_detectorMenu[i] = new WMenu( m_calInfoDisplayStack, detMenuDiv );
-      m_detectorMenu[i]->addStyleClass( "VerticalMenu DetCalMenu" );
+      m_detectorMenu[i]->addStyleClass( "VerticalNavMenu HeavyNavMenu DetCalMenu" );
       
       m_detectorMenu[i]->itemSelected().connect( this, &EnergyCalTool::updateFitButtonStatus );
     }//for( int i = 0; i < 3; ++i )

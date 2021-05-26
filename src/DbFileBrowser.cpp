@@ -32,7 +32,6 @@
 #include <Wt/WTextArea>
 #include <Wt/WTreeNode>
 #include <Wt/WIconPair>
-#include <Wt/WTabWidget>
 #include <Wt/WModelIndex>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
@@ -187,8 +186,8 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_snapshotTable->setTreeRoot(root);
     m_snapshotTable->setSelectionMode(Wt::SingleSelection);
     m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
-      
-    Dbo::Transaction transaction( *m_session->session() );
+    
+    DataBaseUtils::DbTransaction transaction( *m_session );
     Dbo::collection< Dbo::ptr<UserState> > query;
     
     if( m_header && !m_header->m_uuid.empty())
@@ -631,8 +630,8 @@ void SnapshotBrowser::startDeleteSelected()
     AuxWindow::deleteAuxWindow( m_editWindow );
   
   m_editWindow = new AuxWindow( title,
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
   WTreeNode *node = *begin(selection);
   WText *label = node->label();
@@ -704,8 +703,8 @@ void SnapshotBrowser::startEditSelected()
     AuxWindow::deleteAuxWindow( m_editWindow );
   
   m_editWindow = new AuxWindow( title,
-                               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+                               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
   m_editWindow->setWidth( std::min(425, std::max(m_viewer->renderedWidth(), 250)) );
   m_editWindow->setHeight( std::min(250, std::max(m_viewer->renderedHeight(), 150)) );
@@ -792,7 +791,8 @@ std::shared_ptr<SpecMeas> SnapshotBrowser::retrieveMeas( const int dbid )
     
     try
     {
-      Dbo::Transaction transaction( *m_session->session() );
+      DataBaseUtils::DbTransaction transaction( *m_session );
+      
       Dbo::ptr<UserFileInDb> dbsnapshot = m_session->session()->find<UserFileInDb>()
       .where( "id = ?" )
       .bind( dbid );
