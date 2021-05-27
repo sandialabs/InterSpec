@@ -389,6 +389,7 @@ D3TimeChart.prototype.WtEmit = function (elem, event) {
  */
 D3TimeChart.prototype.setData = function (rawData) {
   try {
+    console.log(rawData);
     //See the c++ function D3TimeChart::setData()
     if (!this.isValidRawData(rawData)) {
       throw new ValidationError("Structure of raw data is not valid.");
@@ -857,6 +858,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   };
 
   // Finally, initialization finished-- update chart
+  this.updateFilterInfo();
   this.updateChart(scales, compressionIndex, options);
 };
 
@@ -1520,58 +1522,77 @@ D3TimeChart.prototype.updateChart = function (
     this.axisRightG.selectAll("*").remove();
     this.svg.select("#th_label_y2").remove();
   } // if (HAS_NEUTRON)
-  
+};
+
+D3TimeChart.prototype.updateFilterInfo = function () {
   /* If there is a gamma energy range sum applied, make some text to notify user of this */
-  if( this.state.data && this.state.data.raw ) {
-    const haveLowFilter = (typeof this.state.data.raw.filterLowerEnergy === "number");
-    const haveHighFilter = (typeof this.state.data.raw.filterUpperEnergy === "number");
-    
-    if( haveLowFilter || haveHighFilter ) {
-      
-      if( !this.filterInfo ){
-        this.filterInfo = this.svg.append("g")
-          .attr("class", "mouseInfo");
-      
-        this.filterInfoBox = this.filterInfo.append('rect')
+  console.log("Here")
+  if (this.state.data && this.state.data.raw) {
+    const haveLowFilter =
+      typeof this.state.data.raw.filterLowerEnergy === "number";
+    const haveHighFilter =
+      typeof this.state.data.raw.filterUpperEnergy === "number";
+
+    if (haveLowFilter || haveHighFilter) {
+      if (!this.filterInfo) {
+        this.filterInfo = this.svg.append("g").attr("class", "mouseInfo");
+
+        this.filterInfoBox = this.filterInfo
+          .append("rect")
           .attr("class", "mouseInfoBox")
           .attr("height", "2.25em")
-          .attr("y","-2em");
-      
-        this.filterInfoTxt = this.filterInfo.append("text").attr('dy', "-0.5em");
+          .attr("y", "-2em");
+
+        this.filterInfoTxt = this.filterInfo
+          .append("text")
+          .attr("dy", "-0.5em");
       }
-      
+
       let txt = "";
-      if( haveLowFilter && haveHighFilter ){
-        txt = "Gammas summed from " + this.state.data.raw.filterLowerEnergy + " keV to " + this.state.data.raw.filterUpperEnergy + " keV";
-      }else if( haveLowFilter ){
-        txt = "Gammas summed above " + this.state.data.raw.filterLowerEnergy + " keV";
-      }else if( haveHighFilter ){
-        txt = "Gammas summed below " + this.state.data.raw.filterUpperEnergy + " keV";
+      if (haveLowFilter && haveHighFilter) {
+        txt =
+          "Gammas summed from " +
+          this.state.data.raw.filterLowerEnergy +
+          " keV to " +
+          this.state.data.raw.filterUpperEnergy +
+          " keV";
+      } else if (haveLowFilter) {
+        txt =
+          "Gammas summed above " +
+          this.state.data.raw.filterLowerEnergy +
+          " keV";
+      } else if (haveHighFilter) {
+        txt =
+          "Gammas summed below " +
+          this.state.data.raw.filterUpperEnergy +
+          " keV";
       }
-     
-     let xmmsglen = this.filterInfoTxt
-                        .text(txt)
-                        .node()
-                        .getComputedTextLength();
-     
-     this.filterInfo.attr("transform","translate(" + (this.state.width-50) + ", 25)");
-     
-     this.filterInfoTxt.attr('dx', -xmmsglen );
-     
-     /*Resize the box to match the text size */
-     this.filterInfoBox
-         .attr('width', xmmsglen + 10 )
-         .attr('x', -xmmsglen - 5 );
-     
-    } else if( this.filterInfo ) {
+
+      let xmmsglen = this.filterInfoTxt.text(txt).node().getBBox().width;
+
+      let ymmsglen = this.filterInfoTxt.node().getBBox().height;
+
+      let rightOffset =
+        this.axisRightG.node().getBBox().width + this.margin.right;
+
+      let topOffset = ymmsglen + this.margin.top;
+
+      this.filterInfo.attr(
+        "transform",
+        "translate(" + (this.state.width - rightOffset) + ", " + topOffset + ")"
+      );
+
+      this.filterInfoTxt.attr("dx", -xmmsglen);
+
+      /*Resize the box to match the text size */
+      this.filterInfoBox.attr("width", xmmsglen + 10).attr("x", -xmmsglen - 5);
+    } else if (this.filterInfo) {
       this.filterInfo.remove();
       this.filterInfo = null;
       this.filterInfoBox = null;
       this.filterInfoTxt = null;
     }
   }
-  
-  
 };
 
 // HELPERS, CALLBACKS, AND EVENT HANDLERS //
@@ -3147,31 +3168,28 @@ D3TimeChart.prototype.generateTicks = function (
 // Unimplemented
 D3TimeChart.prototype.setXAxisTitle = function (title) {
   this.options.xtitle = title;
-  
+
   var axisLabelX = this.svg.select("#th_label_x");
-  
+
   //redraw x-title
   if (axisLabelX.empty()) {
-    if( this.state.data.formatted )
-      this.reinitializeChart();
-  }else{
+    if (this.state.data.formatted) this.reinitializeChart();
+  } else {
     axisLabelX.text(title);
-  }  
+  }
 };
 
 // Unimplemented
 D3TimeChart.prototype.setY1AxisTitle = function (title) {
   this.options.y1title = title;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
   //redraw y1-title (e.g., gamma CPS axis title)
 };
 
 // Unimplemented
 D3TimeChart.prototype.setY2AxisTitle = function () {
   this.options.y2title = title;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
   //redraw y2-title (e.g., neutron CPS axis title)
 };
 
@@ -3182,21 +3200,18 @@ D3TimeChart.prototype.setY2AxisTitle = function () {
 D3TimeChart.prototype.setCompactXAxis = function (compact) {
   //Make x-zis title comapact or not
   this.options.compactXAxis = compact;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
 };
 
 D3TimeChart.prototype.setGridX = function (show) {
   this.options.gridx = show;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
   //add/remove horizantal grid lines
 };
 
 D3TimeChart.prototype.setGridY = function (show) {
   this.options.gridy = show;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
   //add/remove vertical grid lines
 };
 
