@@ -8,6 +8,8 @@
 #include <vector>
 #include <utility>
 
+//#include <boost/optional.hpp>
+
 #include <Wt/WColor>
 #include <Wt/WEvent>
 #include <Wt/WSignal>
@@ -107,6 +109,10 @@ public:
    */
   Wt::Signal<int/*start sample number*/,int/*end sample number*/,int/*samples per channel*/> &displayedXRangeChange();
   
+  /** Signal emitted when the user changes the gamma energy range that should be summed for to create this gross count chart. */
+  //Wt::Signal<boost::optional<float>,boost::optional<float>> &energyRangeFilterChanged();
+  
+  
   
   static std::vector<std::pair<int,int>> sampleNumberRangesWithOccupancyStatus(
                                                 const SpecUtils::OccupancyStatus status,
@@ -152,6 +158,10 @@ public:
   bool horizontalLinesShowing() const;
   
   void setXAxisRangeSamples( const int min_sample_num, const int max_sample_num );
+  
+  /** Returns the current user-entered gamma energy range that should be summed to create this gross count chart. */
+  //std::pair<boost::optional<float>,boost::optional<float>> energyRangeFilters();
+  
   
   /** Override WWebWidget::doJavaScript() to wait until this widget has been rendered before
    executing javascript so we can be sure all the JS objects we need are created.
@@ -217,7 +227,9 @@ protected:
   void setUserInteractionMode( const UserInteractionMode mode );
   
   /** Called when the user changes energy range to display gross counts for. */
-  void userChangedEnergyRangeFilter( const float lowerEnergy, const float upperEnergy );
+  //void userChangedEnergyRangeFilterCallback( const boost::optional<float> lowerEnergy,
+  //                                           const boost::optional<float> upperEnergy );
+  void userChangedEnergyRangeFilterCallback();
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -273,6 +285,7 @@ protected:
   Wt::Signal<int/*start sample number*/,int/*end sample number*/,Wt::WFlags<Wt::KeyboardModifier>> m_chartDragged;
   Wt::Signal<double/*chart width px*/,double/*chart height px*/> m_chartResized;
   Wt::Signal<int/*start sample number*/,int/*end sample number*/,int/*samples per channel*/> m_displayedXRangeChange;
+  //Wt::Signal<boost::optional<float> /*lower keV*/,boost::optional<float>/*upper keV*/> m_energyRangeFilterChanged;
   
   // Signals called from JS to propogate infromation to the C++
   std::unique_ptr<Wt::JSignal<int,int>>       m_chartClickedJS;
