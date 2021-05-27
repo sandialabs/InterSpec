@@ -259,6 +259,7 @@ D3TimeChart = function (elem, options) {
   this.UserInteractionModeEnum = Object.freeze({
     DEFAULT: 0,
     ZOOM: 1,
+    PAN: 2,
     SELECTFOREGROUND: 3,
     SELECTBACKGROUND: 4,
     SELECTSECONDARY: 5,
@@ -311,7 +312,7 @@ D3TimeChart = function (elem, options) {
   this.highlightText = this.rectG.append("text").attr("class", "chartLineText");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
   this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area on plot area
-  this.bottomAxisRect = this.rectG.append("rect"); // rectangle spanning additional interactable area on bottom axis area
+  this.bottomAxisRect = this.rectG.append("rect").attr("class", "panbox"); // rectangle spanning additional interactable area on bottom axis area
 
   this.mouseInfoOptions = {
     padding: { top: 2, right: 6, bottom: 5, left: 6 },
@@ -842,6 +843,16 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     .on("dragend", endPanDragSelection);
 
   this.bottomAxisRect.call(panDrag);
+
+  // Special behavior for PAN mode.
+  if (this.userInteractionMode === this.UserInteractionModeEnum.PAN) {
+    this.rect
+    .on("touchstart", () => startPanDragSelection({ touch: true }))
+    .on("touchmove", () => movePanDragSelection({ touch: true }))
+    .on("touchend", () => endPanDragSelection({ touch: true }));
+
+    this.rect.call(panDrag);
+  }
 
   this.bottomAxisRect
     .on("mouseover", () => {
@@ -3236,11 +3247,14 @@ D3TimeChart.prototype.setUserInteractionMode = function (mode) {
 
   this.usingAddSelectionMode = false;
 
+  var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
+
   if (mode === "Default") {
     this.userInteractionMode = this.UserInteractionModeEnum.DEFAULT;
   } else if (mode === "Zoom") {
     this.userInteractionMode = this.UserInteractionModeEnum.ZOOM;
   } else if (mode === "Pan") {
+    this.userInteractionMode = this.UserInteractionModeEnum.PAN;
   } else if (mode === "SelectForeground") {
     this.userInteractionMode = this.UserInteractionModeEnum.SELECTFOREGROUND;
   } else if (mode === "SelectBackground") {
@@ -3262,4 +3276,5 @@ D3TimeChart.prototype.setUserInteractionMode = function (mode) {
   } else {
     console.log("Invalid option passed to setUserInteractionMode");
   }
+  this.reinitializeChart();
 };
