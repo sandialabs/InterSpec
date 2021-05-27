@@ -99,12 +99,79 @@ using namespace Wt;
 namespace
 {
 
+void local_eqn_from_offsets( size_t lowchannel,
+                                     size_t highchannel,
+                                     const double peakMean,
+                                     const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                     const size_t num_side_channel,
+                                     double &m, double &b )
+{
+  double x1  = data->gamma_channel_lower( lowchannel ) - peakMean;
+  const double dx1 = data->gamma_channel_width( lowchannel );
+  
+  //XXX - hack! below 'c' will be inf if the following check would fail; I
+  //      really should work out how to fix this properly with math, but for
+  //      right now I'll fudge it, which will toss the answer off a bit, but
+  //      whatever.
+  if( fabs(2.0*x1*dx1 + dx1*dx1) < DBL_EPSILON )
+  {
+    static int ntimes = 0;
+    if( ntimes++ < 4 )
+      cerr << "Should fix math in local_eqn_from_offsets" << endl;
+    x1 = data->gamma_channel_lower( lowchannel+1 ) - peakMean;
+  }
+  
+  const double x2  = data->gamma_channel_lower( highchannel ) - peakMean;
+  
+  const double dx2 = data->gamma_channel_width( highchannel );
+  
+  if( (2*num_side_channel + 1) > data->num_gamma_channels() )
+    throw std::runtime_error( "Too many side channels specified" );
+  
+  if( lowchannel <= num_side_channel )
+    lowchannel = num_side_channel + 1;
+  highchannel = std::min( highchannel, data->num_gamma_channels() - 1 - num_side_channel );
+  
+  if( lowchannel >= highchannel )
+    throw runtime_error( "Lower channel is above upper channel" );
+  
+  const double nbinInv = 1.0 / num_side_channel;
+  const double lower_region_sum = data->gamma_channels_sum( lowchannel - num_side_channel, lowchannel - 1 );
+  const double upper_region_sum = data->gamma_channels_sum( highchannel + 1, highchannel + num_side_channel);
+  const double y1 = nbinInv * lower_region_sum;
+  const double y2 = nbinInv * upper_region_sum;
+  
+  cout << "lowchannel=" << lowchannel << ", highchannel=" << highchannel << ", num_side_channel=" << num_side_channel << endl;
+  cout << "Pre lower ROI: ";
+  for( auto i = lowchannel - num_side_channel; i <= (lowchannel - 1); ++i )
+    cout << i << ", ";
+  cout << "  --> " << lower_region_sum << endl;
+  cout << "Post upper ROI: ";
+  for( auto i = highchannel + 1; i <= (highchannel + num_side_channel); ++i )
+    cout << i << ", ";
+  cout << "  --> " << upper_region_sum << endl;
+  
+  
+  const double c = (2.0*x2*dx2 + dx2*dx2)/(2.0*x1*dx1 + dx1*dx1);
+  b = (y2-y1*c)/(dx2-dx1*c);
+  m = 2.0*(y1-b*dx1)/(2.0*x1*dx1+dx1*dx1);
+  
+  if( IsNan(m) || IsInf(m) || IsNan(b) || IsInf(b) )
+  {
+    cerr << "local_eqn_from_offsets(...): Invalid results" << endl;
+    m = b = 0.0;
+  }
+}//eqn_from_offsets(...)
+
+
 class MdaPeakRow : public WContainerWidget
 {
 public:
   const float m_energy;
+  const double m_distance;
   const double m_gammas_per_bq;
   const float m_fwhm;
+  std::shared_ptr<DetectorPeakResponse> m_drf;
   WCheckBox *m_use;
   NativeFloatSpinBox *m_roi_start;
   NativeFloatSpinBox *m_roi_end;
@@ -124,31 +191,54 @@ public:
     const float roi_lower_energy = m_roi_start->value();
     const float roi_upper_energy = m_roi_end->value();
     
-    const size_t nsidebin = 1;
+    const size_t nsidebin = 5;
     const size_t nchannels = m_meas->num_gamma_channels();
     
     // \TODO: check that we are getting the right channels, and not off by one or something.
     size_t lower_bin = m_meas->find_gamma_channel(roi_lower_energy);
-    lower_bin = ((lower_bin > (2*nsidebin+1)) ? (lower_bin - nsidebin) : (nsidebin + 1));
+    //lower_bin = ((lower_bin > (2*nsidebin+1)) ? (lower_bin - nsidebin) : (nsidebin + 1));
     
-    size_t upper_bin = m_meas->find_gamma_channel(roi_lower_energy);
-    upper_bin = ((upper_bin < (nchannels - 2*nsidebin - 1)) ? (upper_bin + nsidebin) : (nchannels - nsidebin - 1));
+    size_t upper_bin = m_meas->find_gamma_channel(roi_upper_energy);
+    //upper_bin = ((upper_bin < (nchannels - 2*nsidebin - 1)) ? (upper_bin + nsidebin) : (nchannels - nsidebin - 1));
     
     lower_bin = std::min( lower_bin, nchannels - nsidebin - 1 );
     upper_bin = std::max( upper_bin, nsidebin + 1 );
     
     double coefs[2];
-    PeakContinuum::eqn_from_offsets( lower_bin, upper_bin, m_energy, m_meas, nsidebin, coefs[1], coefs[0] );
+    local_eqn_from_offsets( lower_bin, upper_bin, m_energy, m_meas, nsidebin, coefs[1], coefs[0] );
+    
+    //double continuum = PeakContinuum::offset_eqn_integral( coefs,
+    //                                   PeakContinuum::OffsetType::Linear,
+    //                                   roi_lower_energy, roi_upper_energy, m_energy );
+    //const double data_area = m_meas->gamma_integral(roi_lower_energy, roi_upper_energy);
     
     double continuum = PeakContinuum::offset_eqn_integral( coefs,
-                                       PeakContinuum::OffsetType::Linear,
-                                       roi_lower_energy, roi_upper_energy, m_energy );
-    const double data_area = m_meas->gamma_integral(roi_lower_energy, roi_upper_energy);
+                                           PeakContinuum::OffsetType::Linear,
+                                           m_meas->gamma_channel_lower(lower_bin),
+                                           m_meas->gamma_channel_upper(upper_bin),
+                                           m_energy );
+    const double data_area = m_meas->gamma_channels_sum(lower_bin, upper_bin);
     
+    /*
+    auto energy_cal = m_meas->energy_calibration();
+    const double meanchannel = energy_cal->channel_for_energy(m_energy);
+    const double gad_peak_region = 10.39;
+    const double gad_lower_channel = meanchannel - 0.5*gad_peak_region;
+    const double gad_upper_channel = meanchannel + 0.5*gad_peak_region;
+    const double gad_lower_energy = energy_cal->energy_for_channel(gad_lower_channel);
+    const double gad_upper_energy = energy_cal->energy_for_channel(gad_upper_channel);
+    
+    cout << "(gad_upper_energy - gad_lower_energy)/fwhm(" << m_energy << " keV)=" << (gad_upper_energy - gad_lower_energy)/m_drf->peakResolutionFWHM(m_energy) << endl;
+    
+    cout << "For " << m_energy << " keV, ROI is " << (1 + upper_bin - lower_bin)
+    << " channels centered around channel " << meanchannel
+    << ". Gadras region would be from " << gad_lower_energy << " to " << gad_upper_energy << " keV"
+    << " (channels " << gad_lower_channel << " to " << gad_upper_channel << ")"
+    << endl;
     
     cout << "Predicted continuum area=" << continuum << " vs data " << data_area << endl;
-    
-    continuum = data_area;
+    */
+    //continuum = data_area;
     
     m_simpleMda = (2.71 + 4.65*sqrt(continuum))/m_gammas_per_bq;
     if( IsInf(m_simpleMda) || IsInf(m_simpleMda) )
@@ -157,6 +247,26 @@ public:
     cout << "mda(" << m_energy << ") = " << mdastr << endl;
     
     m_poisonLimit->setText( "Simple MDA=" + mdastr );
+    
+    cout << endl << endl;
+    cout << "Gross Counts in Peak Foreground: " << data_area << endl;
+    //cout << "Gross Counts in Peak Background: 0
+    cout << "Gross Counts in Continuum Foreground: " << continuum << endl;
+    //Gross Counts in Continuum Background: 0
+    //Variance in Peak Region: 9.062885
+    //Variance in Continuum Region: 8.400412
+    cout << "Detector Efficiency at Energy: " << m_drf->intrinsicEfficiency(m_energy) << endl;
+    //Range of Gammas Entering Detector: (0, 0.4153258)
+    cout << "Solid Angle: " << m_drf->fractionalSolidAngle(m_drf->detectorDiameter(), m_distance) << endl;
+    //Range of Gammas from Source: (0, 1607.631)
+    cout << "Gamma Emission Rate per Ci of Source: " << (PhysicalUnits::curie * m_gammas_per_bq / m_meas->live_time())/m_drf->efficiency(m_energy, m_distance) << endl;
+    //Transmission through Shielding: 1
+    cout << "Number of counts limit: " << m_simpleMda*m_gammas_per_bq << endl;
+    
+    // Need to propagate continuum uncertainty to get variance in peak region.
+    // Make a single-peak limit section that gives some of the information above, and maybe draws the limiting peak.
+    // Also need to make limit used settable.
+    // Need to add in if it passes the critical limit what it is.
     
     /*
     boost::uintmax_t max_iter = 1000;
@@ -181,15 +291,18 @@ public:
   }
   
 public:
-  MdaPeakRow( const float energy, const double gammasPerBq ,
-              const float fwhm,
+  MdaPeakRow( const float energy, const double gammasPerBq,
+             const double distance,
               float roi_start, float roi_end,
               shared_ptr<const SpecUtils::Measurement> meas,
+              std::shared_ptr<DetectorPeakResponse> drf,
              Wt::WContainerWidget *parent = nullptr )
   : WContainerWidget( parent ),
   m_energy( energy ),
+  m_distance( distance ),
   m_gammas_per_bq( gammasPerBq ),
-  m_fwhm( fwhm ),
+  m_fwhm( drf->peakResolutionFWHM(energy) ),
+  m_drf( drf ),
   m_simpleMda( -1.0 ),
   m_meas( meas ),
   m_changed( this )
@@ -854,8 +967,8 @@ void DetectionConfidenceTool::handleInputChange()
     const float energy = get<0>(line);
     const double countsPerBq = get<1>(line)*spec->live_time();
     const float fwhm = drf->peakResolutionFWHM(energy);
-    float roi_start = energy - 1.5*fwhm;
-    float roi_end = energy + 1.5*fwhm;
+    float roi_start = energy - 1.125*fwhm;
+    float roi_end = energy + 1.125*fwhm;
     bool use = false;
     
     for( const auto &oldval : oldvalues )
@@ -870,7 +983,7 @@ void DetectionConfidenceTool::handleInputChange()
     }//for( const auto &oldval : oldvalues )
     
     
-    auto row = new MdaPeakRow( energy, countsPerBq , fwhm, roi_start, roi_end, spec, m_peaks );
+    auto row = new MdaPeakRow( energy, countsPerBq, distance, roi_start, roi_end, spec, drf, m_peaks );
     row->m_use->setChecked(use);
     row->m_changed.connect( this, &DetectionConfidenceTool::scheduleCalcUpdate );
   }//for( const auto &line : lines )
