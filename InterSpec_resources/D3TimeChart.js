@@ -1520,6 +1520,58 @@ D3TimeChart.prototype.updateChart = function (
     this.axisRightG.selectAll("*").remove();
     this.svg.select("#th_label_y2").remove();
   } // if (HAS_NEUTRON)
+  
+  /* If there is a gamma energy range sum applied, make some text to notify user of this */
+  if( this.state.data && this.state.data.raw ) {
+    const haveLowFilter = (typeof this.state.data.raw.filterLowerEnergy === "number");
+    const haveHighFilter = (typeof this.state.data.raw.filterUpperEnergy === "number");
+    
+    if( haveLowFilter || haveHighFilter ) {
+      
+      if( !this.filterInfo ){
+        this.filterInfo = this.svg.append("g")
+          .attr("class", "mouseInfo");
+      
+        this.filterInfoBox = this.filterInfo.append('rect')
+          .attr("class", "mouseInfoBox")
+          .attr("height", "2.25em")
+          .attr("y","-2em");
+      
+        this.filterInfoTxt = this.filterInfo.append("text").attr('dy', "-0.5em");
+      }
+      
+      let txt = "";
+      if( haveLowFilter && haveHighFilter ){
+        txt = "Gammas summed from " + this.state.data.raw.filterLowerEnergy + " keV to " + this.state.data.raw.filterUpperEnergy + " keV";
+      }else if( haveLowFilter ){
+        txt = "Gammas summed above " + this.state.data.raw.filterLowerEnergy + " keV";
+      }else if( haveHighFilter ){
+        txt = "Gammas summed below " + this.state.data.raw.filterUpperEnergy + " keV";
+      }
+     
+     let xmmsglen = this.filterInfoTxt
+                        .text(txt)
+                        .node()
+                        .getComputedTextLength();
+     
+     this.filterInfo.attr("transform","translate(" + (this.state.width-50) + ", 25)");
+     
+     this.filterInfoTxt.attr('dx', -xmmsglen );
+     
+     /*Resize the box to match the text size */
+     this.filterInfoBox
+         .attr('width', xmmsglen + 10 )
+         .attr('x', -xmmsglen - 5 );
+     
+    } else if( this.filterInfo ) {
+      this.filterInfo.remove();
+      this.filterInfo = null;
+      this.filterInfoBox = null;
+      this.filterInfoTxt = null;
+    }
+  }
+  
+  
 };
 
 // HELPERS, CALLBACKS, AND EVENT HANDLERS //
