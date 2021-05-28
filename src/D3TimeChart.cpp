@@ -358,6 +358,20 @@ public:
   
   void energyFilterChangedCallback()
   {
+    if( !m_lowerEnergy->text().empty() && !m_upperEnergy->text().empty() )
+    {
+      if( fabs(m_lowerEnergy->value() - m_upperEnergy->value()) < 0.1 )
+      {
+        m_lowerEnergy->setText( "" );
+        m_upperEnergy->setText( "" );
+        
+        auto interspec = InterSpec::instance();
+        const char *msg = "Energy sum range must be larger than 0.1 keV.";
+        if( interspec )
+          interspec->logMessage( msg, "", 3 );
+      }//
+    }//if( both lower and upper energies are specified )
+    
     const bool emptyInput = (m_lowerEnergy->text().empty() && m_upperEnergy->text().empty());
     //m_clearEnergyFilterBtn->setEnabled( notEmpty );
     m_clearEnergyFilterBtn->setHidden( emptyInput );

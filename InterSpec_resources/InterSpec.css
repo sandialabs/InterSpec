@@ -995,6 +995,7 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
   background: #FFFFFF;
   color: black;
   border: none;
+  vertical-align: top; /* necessary or else on Safari the titlebar border will be partially overlapped - not entirely sure why*/
   -moz-border-radius: 2px;
   -webkit-border-radius: 2px;
   border-radius: 2px;

@@ -1537,7 +1537,6 @@ D3TimeChart.prototype.updateChart = function (
 
 D3TimeChart.prototype.updateFilterInfo = function () {
   /* If there is a gamma energy range sum applied, make some text to notify user of this */
-  console.log("Here")
   if (this.state.data && this.state.data.raw) {
     const haveLowFilter =
       typeof this.state.data.raw.filterLowerEnergy === "number";
@@ -1556,7 +1555,7 @@ D3TimeChart.prototype.updateFilterInfo = function () {
 
         this.filterInfoTxt = this.filterInfo
           .append("text")
-          .attr("dy", "-0.5em");
+          .attr("dy", "-0.25em");
       }
 
       let txt = "";
@@ -1583,8 +1582,9 @@ D3TimeChart.prototype.updateFilterInfo = function () {
 
       let ymmsglen = this.filterInfoTxt.node().getBBox().height;
 
+      /* Add extra 40px to keep from overlapping the show-filters button when filters are closed. */
       let rightOffset =
-        this.axisRightG.node().getBBox().width + this.margin.right;
+        this.axisRightG.node().getBBox().width + this.margin.right + 40;
 
       let topOffset = ymmsglen + this.margin.top;
 
