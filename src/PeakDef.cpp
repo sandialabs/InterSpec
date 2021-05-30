@@ -4287,25 +4287,42 @@ void PeakContinuum::translate_offset_polynomial( double *new_coefs,
   switch( type )
   {
     case NoOffset:
-    case External:
-      throw runtime_error( "translate_offset_polynomial invalid offset type" );
+      return;
+    
+    case Constant:
+      new_coefs[0] = old_coefs[0];
+      break;
       
-    case Quadratic:
-    case Cubic:
-    case FlatStep:
-    case LinearStep:
-    case BiLinearStep:
-      throw runtime_error( "translate_offset_polynomial does not yet support "
-                           "quadratic or cubic polynomials" );
-        
     case Linear:
       new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
       new_coefs[1] = old_coefs[1];
       break;
       
-    case Constant:
-      new_coefs[0] = old_coefs[0];
+    case Quadratic:
+    case Cubic:
+      throw runtime_error( "translate_offset_polynomial does not yet support "
+                           "quadratic or cubic polynomials" );
+    
+    case LinearStep:
+      new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
+      new_coefs[1] = old_coefs[1];
+      new_coefs[2] = old_coefs[2];
       break;
+      
+    case BiLinearStep:
+      new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
+      new_coefs[1] = old_coefs[1];
+      new_coefs[2] = old_coefs[2] + old_coefs[3] * (new_center - old_center);
+      new_coefs[3] = old_coefs[3];
+      break;
+    
+    case FlatStep:
+      new_coefs[0] = old_coefs[0];
+      new_coefs[1] = old_coefs[1];
+      break;
+      
+    case External:
+      throw runtime_error( "translate_offset_polynomial does not support external continuum" );
   }//switch( type )
 }//void translate_offset_polynomial(...)
 

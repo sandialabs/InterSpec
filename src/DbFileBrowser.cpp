@@ -66,6 +66,7 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   WGridLayout *layout = stretcher();
   layout->setContentsMargins(0, 0, 0, 0);
   
+  
   try
   {
     m_factory = new SnapshotBrowser( manager, viewer, type, header, footer(), nullptr );
@@ -74,7 +75,7 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   {
     m_factory = nullptr;
     WText *tt = new WText( "<b>Error creating SnapshotBrowser</b> - sorry :("
-                           "<br />Error: " + string(e.what()) );
+                          "<br />Error: " + string(e.what()) );
     layout->addWidget( tt, 0, 0 );
   }catch( ... )
   {
@@ -103,6 +104,75 @@ int DbFileBrowser::numSnapshots() const
 {
   return m_factory ? m_factory->numSnaphots() : 0;
 }
+
+
+/** Returns query to find user states.
+ If a valid header is passed in, then the query returns all of the snapshots for that specific spectrum.
+ If a header is not passed in, then query returns all saved states for the user (just the upper level states, not their snapshots)/
+ 
+ Note, I'm pretty sure you need an active transaction before calling this function - e.g.,
+ 
+ DataBaseUtils::DbTransaction transaction( *m_session );
+ */
+Dbo::collection< Dbo::ptr<UserState> > get_user_states_collection( Dbo::ptr<InterSpecUser> user, std::shared_ptr<DataBaseUtils::DbSession> &session, std::shared_ptr<const SpectraFileHeader> header )
+{
+  Dbo::collection< Dbo::ptr<UserState> > query;
+  
+  if( !session || !user )
+    return query;
+  
+  if( header && !header->m_uuid.empty())
+  { //uuid filter for snapshots with foreground uuid
+    const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
+    query = session->session()->query<Dbo::ptr<UserState> >(
+              "SELECT DISTINCT A FROM UserState A JOIN UserFileInDb B "
+              "ON (A.ForegroundId = B.id OR A.BackgroundId = B.id OR A.SecondForegroundId = B.id) "
+              "AND B.UUID = ? "
+              "LEFT JOIN UserState C "
+              "ON (C.ForegroundId = B.id OR C.BackgroundId = B.id OR C.SecondForegroundId = B.id) "
+              "AND C.SnapshotTagParent_id = A.id")
+            .bind(header->m_uuid)
+            .where(stateQueryTxt)
+            .bind( user.id() )
+            .bind(int(UserState::kUserSaved));
+  }else
+  {
+    //No related hash/uuid filtering
+    const char *stateQueryTxt = "InterSpecUser_id = ? AND StateType = ? AND SnapshotTagParent_id IS NULL";
+    query = session->session()->find<UserState>()
+            .where( stateQueryTxt )
+            .bind( user.id() ).bind(int(UserState::kUserSaved));
+  }//uuid filter for snapshots with foreground uuid
+  
+  return query;
+}//get_user_states_collection(...)
+
+
+size_t SnapshotBrowser::num_saved_states( InterSpec *viewer,
+                                          shared_ptr<DataBaseUtils::DbSession> session,
+                                          shared_ptr<const SpectraFileHeader> header )
+{
+  if( !session || !viewer )
+    return 0;
+  
+  size_t num_states = 0;
+  
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *session );
+    
+    Dbo::collection< Dbo::ptr<UserState> > query = get_user_states_collection( viewer->m_user, session, header );
+    
+    num_states = query.size();
+    
+    transaction.commit();
+  }catch( std::exception &e )
+  {
+    cerr << "\n\n\nSnapshotBrowser::num_saved_states: caught exception I wasnt expecting to:\n\t" << e.what() << "\n\n\n" << endl;
+  }//
+  
+  return num_states;
+}//size_t num_saved_states(...)
 
 
 /*
@@ -145,7 +215,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   layout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( layout );
   
-  //We have to create a independant Dbo::Session for this class since the
+  //We have to create a independent Dbo::Session for this class since the
   //  m_viewer->m_user.session() could be used in other threads, messing
   //  things up (Dbo::Session is not thread safe).
   m_session.reset( new DataBaseUtils::DbSession( *m_viewer->sql() ) );
@@ -153,7 +223,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   int row = 0;
   if( m_header && !m_header->m_uuid.empty() )
   {
-    auto txt = new WText("It looks like you have previously loaded and modifed this spectrum file, would you like to resume your previous work?");
+    auto txt = new WText("It looks like you have previously loaded and modified this spectrum file, would you like to resume your previous work?");
     layout->addWidget( txt, row++, 0);
   }//if( we want to load a specific state )
   
@@ -188,55 +258,13 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
     
     DataBaseUtils::DbTransaction transaction( *m_session );
-    Dbo::collection< Dbo::ptr<UserState> > query;
     
-    if( m_header && !m_header->m_uuid.empty())
-    { //uuid filter for snapshots with foreground uuid
-      const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
-      query = m_session->session()->query<Dbo::ptr<UserState> >(
-                       "SELECT DISTINCT A FROM UserState A JOIN UserFileInDb B "
-                         "ON (A.ForegroundId = B.id OR A.BackgroundId = B.id OR A.SecondForegroundId = B.id) "
-                         "AND B.UUID = ? "
-                         "LEFT JOIN UserState C "
-                         "ON (C.ForegroundId = B.id OR C.BackgroundId = B.id OR C.SecondForegroundId = B.id) "
-                         "AND C.SnapshotTagParent_id = A.id")
-                      .bind(m_header->m_uuid)
-                      .where(stateQueryTxt)
-                      .bind( user.id() )
-                      .bind(int(UserState::kUserSaved));
-    }else
-    {
-      //No related hash/uuid filtering
-      const char *stateQueryTxt = "InterSpecUser_id = ? AND StateType = ? AND SnapshotTagParent_id IS NULL";
-      query = m_session->session()->find<UserState>()
-      .where( stateQueryTxt )
-      .bind( user.id() ).bind(int(UserState::kUserSaved));
-    } //uuid filter for snapshots with foreground uuid
+    Dbo::collection< Dbo::ptr<UserState> > query = get_user_states_collection( m_viewer->m_user, m_session, m_header );
     
     m_nrows = query.size(); //save for future query
     
     if( m_nrows == 0 )
-    {
-      if( m_header && !m_header->m_uuid.empty() )
-      {
-        //This prevents the case where the checkIfPreviouslyOpened() is true,
-        //  but the previous opened file is a kEndofSessionTemp, so will not
-        //  show in the dialog.
-        
-        //XXX - I really dont like how this is currently handled.
-        //      Right now NOT throwing a std::exception, so it doesnt get caught
-        //      by this try/catch block, so I'm not really sure if all resources
-        //      get cleaned up.
-        //    - We should allow asking user if they want to load an end of
-        //      session state (there auto store session preference should cover this)
-        //    - this is all a mess!
-        
-        throw "Nothing to display";
-      }else
-      {
-        layout->addWidget( new WLabel("No saved application states"), row++, 0 );
-      }//m_uuid.empty()
-    }//if( m_nrows == 0 )
+      layout->addWidget( new WLabel("No saved application states"), row++, 0 );
     
     
     //Some sudo-styling for if we want to style this - or if we implement this as a WTreeView
@@ -441,6 +469,27 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   {
     if( !buttonBar )
       delete footer;
+    
+    // Remove and clear all children widgets so we dont leak memory
+    clear();
+    
+    m_loadSnapshotButton = nullptr;
+    m_loadSpectraButton = nullptr;
+    m_renameButton = nullptr;
+    m_buttonGroup = nullptr;
+    m_buttonbox = nullptr;
+    m_snapshotTable = nullptr;
+    m_descriptionLabel = nullptr;
+    m_timeLabel = nullptr;
+    m_relatedSpectraLayout = nullptr;
+    //m_type = type;
+    //m_header = header ),
+    //m_finished( this ),
+    m_editWindow = nullptr;
+    m_nrows = 0;
+    
+    WText *txt = new WText( "Unexpected error creating database spectrum file browser", this );
+    txt->setAttributeValue( "style", "color: red; font-weight: bold; font-size: 22px;" );
     
     passMessage( (string("Error creating database spectrum file browser: ") + e.what()).c_str(),
                 "", WarningWidget::WarningMsgHigh );
