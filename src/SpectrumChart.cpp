@@ -3683,8 +3683,21 @@ void SpectrumChart::loadPeakInfoToClient() const
       }//if( data && th1Model )
 
       double contarea = 0;
-      if( (peak.continuum()->type() != PeakContinuum::LinearStep) || data )
-        contarea = peak.offset_integral( lowx, upperx, data );
+      switch( peak.continuum()->type() )
+      {
+        case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
+        case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
+        case PeakContinuum::Cubic:        case PeakContinuum::External:
+          contarea = peak.offset_integral( lowx, upperx, data );
+          break;
+          
+        case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+        case PeakContinuum::BiLinearStep:
+          if( data )
+            contarea = peak.offset_integral( lowx, upperx, data );
+          break;
+      }//switch( peak.continuum()->type() )
+      
 
       double lowe = 0.0, highe = 0.0;
       findROIEnergyLimits( lowe, highe, peak, data );
@@ -4022,10 +4035,10 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
     case PeakContinuum::NoOffset:
     break;
       
-    case PeakContinuum::Constant:   case PeakContinuum::Linear:
-    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-    case PeakContinuum::LinearStep:
-    case PeakContinuum::External:
+    case PeakContinuum::Constant:     case PeakContinuum::Linear:
+    case PeakContinuum::Quadratic:    case PeakContinuum::Cubic:
+    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep: case PeakContinuum::External:
     {
       vector<WPointF> path;
       for( int row = lowerrow; row <= upperrow; ++row )
@@ -4134,15 +4147,24 @@ double SpectrumChart::peakBackgroundVal( const int row, const PeakDef &peak,
   
   
   double yval = 0.0;
-  if( peak.continuum()->type() == PeakContinuum::LinearStep )
+  
+  switch( peak.continuum()->type() )
   {
-    shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
-    if( data )
-      yval = peak.offset_integral( bin_x_min, bin_x_max, data );
-  }else
-  {
-    yval = peak.offset_integral( bin_x_min, bin_x_max, nullptr );
-  }
+    case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
+    case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
+    case PeakContinuum::Cubic:        case PeakContinuum::External:
+      yval = peak.offset_integral( bin_x_min, bin_x_max, nullptr );
+      break;
+    
+    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
+    {
+      shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
+      if( data )
+        yval = peak.offset_integral( bin_x_min, bin_x_max, data );
+      break;
+    }
+  }//switch( peak.continuum()->type() )
   
   if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
     yval -= th1Model->data( row, th1Model->backgroundColumn() );
@@ -4721,14 +4743,24 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       const double bin_center = bin_x_min + 0.5*bin_width;
       
       double cont_y = 0.0;
-      if( peaks[0]->continuum()->type() == PeakContinuum::LinearStep )
+      
+      switch( peaks[0]->continuum()->type() )
       {
-        if( data )
+        case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
+        case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
+        case PeakContinuum::Cubic:        case PeakContinuum::External:
           cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max, data );
-      }else
-      {
-        cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max, data );
-      }
+          break;
+          
+        case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+        case PeakContinuum::BiLinearStep:
+        {
+          if( data )
+            cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max, data );
+          break;
+        }
+      }//switch( peak.continuum()->type() )
+      
       
       if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
         cont_y -= th1Model->data( row, th1Model->backgroundColumn() );

@@ -106,7 +106,7 @@ double minDetectableCounts( double energy, double sigma, std::shared_ptr<const S
 double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr<const SpecUtils::Measurement> data )
 {
   double contArea = 0.0;
-  if( peak->continuum()->defined() )
+  if( peak->continuum()->parametersProbablySet() )
   {
     double lowx(0.0), upperx(0.0);
     findROIEnergyLimits( lowx, upperx, *peak, data );
@@ -263,6 +263,9 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
     //  increment accounted_for
     
     const double energy = source_gammas[i].energy;
+    if( energy < 1.0 )
+      continue;
+    
     const double exp_resolution = (hasResolutionResponse ? response->peakResolutionSigma( energy ) : float((highE-lowE)/3.0) );
     const double det_eff = (!!response ? response->efficiency( energy, distance ) : 1.0);
     const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, energy );

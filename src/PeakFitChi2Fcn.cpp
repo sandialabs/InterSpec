@@ -977,8 +977,10 @@ MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<cons
       m_numOffset = static_cast<int>(m_offsetType);
     break;
     
+    case PeakContinuum::FlatStep:
     case PeakContinuum::LinearStep:
-      m_numOffset = 2;
+    case PeakContinuum::BiLinearStep:
+      m_numOffset = 2 + (m_offsetType - PeakContinuum::FlatStep);
     break;
   }//switch( m_offsetType )
 }//MultiPeakFitChi2Fcn constructpor
@@ -1398,9 +1400,10 @@ void LinearProblemSubSolveChi2Fcn::init( std::shared_ptr<const SpecUtils::Measur
   
   switch( m_offsetType )
   {
-    case PeakContinuum::Constant: case PeakContinuum::Linear:
-    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-    case PeakContinuum::LinearStep:
+    case PeakContinuum::Constant:     case PeakContinuum::Linear:
+    case PeakContinuum::Quadratic:    case PeakContinuum::Cubic:
+    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
     break;
       
     case PeakContinuum::NoOffset: case PeakContinuum::External:
@@ -1581,11 +1584,27 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
         return m_offsetType - PeakContinuum::NoOffset;
         
+      case PeakContinuum::FlatStep:
       case PeakContinuum::LinearStep:
-        return 2;
+      case PeakContinuum::BiLinearStep:
+        return 2 + (m_offsetType - PeakContinuum::FlatStep);
     }//switch( cont->type() )
   })();
-  const bool step_continuum = (m_offsetType == PeakContinuum::LinearStep);
+  
+  const bool step_continuum = ([this]() -> int {
+    switch( m_offsetType )
+    {
+      case PeakContinuum::NoOffset: case PeakContinuum::External:
+      case PeakContinuum::Constant: case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+        return false;
+        
+      case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep:
+      case PeakContinuum::BiLinearStep:
+        return true;
+    }//switch( cont->type() )
+  })();
   
   vector<double> amps, offsets, amps_uncerts, offsets_uncerts;
   
