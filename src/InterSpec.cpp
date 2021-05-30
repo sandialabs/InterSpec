@@ -5656,7 +5656,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_layout->setRowStretch( row, 5 );
     
     m_layout->setVerticalSpacing( layoutVertSpacing );
-    if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amoutn of space between the menu bar and the chart
+    if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amount of space between the menu bar and the chart
       m_spectrum->setMargin( -layoutVertSpacing, Wt::Top );
     
     //Without using the wrapper below, the tabs widget will change height, even
@@ -5791,6 +5791,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   m_spectrum->scheduleUpdateForeground();
   m_spectrum->scheduleUpdateBackground();
   m_spectrum->scheduleUpdateSecondData();
+  
+  m_timeSeries->scheduleRenderAll();
 #endif
 }//void setToolTabsVisible( bool showToolTabs )
 
@@ -10689,7 +10691,9 @@ void InterSpec::setChartSpacing()
       }
     }//for( int i = 0; i < m_layout->count(); ++i )
     
-    //wait, did m_chartsLayout get deleted?
+    // Cleanup m_chartsLayout - looks like this cleans up all the memory (e.g., no danglers from the
+    //  call to m_layout->removeItem( t ) above).
+    delete m_chartsLayout;
     
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
