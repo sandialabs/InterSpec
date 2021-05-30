@@ -4092,6 +4092,12 @@ void SpecMeasManager::browseDatabaseSpectrumFiles( SpecUtils::SpectrumType type 
 
 void SpecMeasManager::showPreviousDatabaseSpectrumFiles( SpecUtils::SpectrumType type, std::shared_ptr<SpectraFileHeader> header )
 {
+  const size_t num_states = SnapshotBrowser::num_saved_states( m_viewer, m_viewer->sql(), header );
+  
+  if( !num_states )
+    return;
+  
+  
   DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, type, header );
   
   // \TODO: come up with a way to check if there are any states before going through and creating

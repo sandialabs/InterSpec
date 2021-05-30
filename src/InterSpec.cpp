@@ -9923,11 +9923,6 @@ void InterSpec::searchForSinglePeak( const double x )
     if( !p->parentNuclide() && !p->reaction() && !p->xrayElement() )
       addPeak( *p, true );
   }
-  
-  
-#if( USE_SPECTRUM_CHART_D3 )
-  //m_spectrum->updateData();
-#endif
 }//void searchForSinglePeak( const double x )
 
 
@@ -10382,11 +10377,6 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   
   
   m_peakModel->setPeaks( all_peaks );
-#if( USE_SPECTRUM_CHART_D3 )
-  //m_spectrum->updateData();
-#endif
-  
-//  m_peakModel->setPeaks( newpeaks );
 }//void excludePeaksFromRange( const double x0, const double x1 )
 
 
