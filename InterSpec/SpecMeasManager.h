@@ -406,8 +406,6 @@ private:
   Wt::WContainerWidget *createButtonBar();
   void deleteSpectrumManager();
   Wt::WContainerWidget *createTreeViewDiv();
-  void createInfoHandler();
-  void refreshAdditionalInfo( bool clearInfo = false );
 
   
 protected:
