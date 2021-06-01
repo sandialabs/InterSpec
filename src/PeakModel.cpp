@@ -451,26 +451,30 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
     string nuclide;
     char energy[32];
     energy[0] = '\0';
-    try
+    
+    if( peak.hasSourceGammaAssigned() )
     {
-      const float gammaEnergy = peak.gammaParticleEnergy();
-      snprintf( energy, sizeof(energy), "%.2f", gammaEnergy );
-      
-      if( peak.parentNuclide()
-          && (peak.decayParticle() || peak.sourceGammaType()==PeakDef::AnnihilationGamma) )
+      try
       {
-        nuclide = peak.parentNuclide()->symbol;
-      }else if( peak.reaction() )
+        const float gammaEnergy = peak.gammaParticleEnergy();
+        snprintf( energy, sizeof(energy), "%.2f", gammaEnergy );
+        
+        if( peak.parentNuclide()
+           && (peak.decayParticle() || peak.sourceGammaType()==PeakDef::AnnihilationGamma) )
+        {
+          nuclide = peak.parentNuclide()->symbol;
+        }else if( peak.reaction() )
+        {
+          nuclide = peak.reaction()->name();
+          SpecUtils::ireplace_all( nuclide, ",", " " );
+        }else if( peak.xrayElement() )
+        {
+          nuclide = peak.xrayElement()->symbol + "-xray";
+        }
+      }catch( std::exception & )
       {
-        nuclide = peak.reaction()->name();
-        SpecUtils::ireplace_all( nuclide, ",", " " );
-      }else if( peak.xrayElement() )
-      {
-        nuclide = peak.xrayElement()->symbol + "-xray";
-      }
-    }catch( std::exception & )
-    {
-    }//try / catch
+      }//try / catch
+    }//if( peak.hasSourceGammaAssigned() )
     
     char buffer[32];
     snprintf( buffer, sizeof(buffer), "%.2f", peak.mean() );
@@ -1263,7 +1267,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         if( !dataH )
           return boost::any();
         
-        if( peak->continuum()->defined() )
+        if( peak->continuum()->parametersProbablySet() )
         {
           double lowx(0.0), upperx(0.0);
           findROIEnergyLimits( lowx, upperx, *peak, dataH );
@@ -1351,6 +1355,9 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
 
     case kDifference:
     {
+      if( !peak->hasSourceGammaAssigned() )
+        return boost::any();
+      
       try
       {
         const float energy = peak->gammaParticleEnergy() - peak->mean();
@@ -1365,6 +1372,9 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kPhotoPeakEnergy:
     {
+      if( !peak->hasSourceGammaAssigned() )
+        return boost::any();
+      
       try
       {
         float energy = peak->gammaParticleEnergy();
@@ -2432,7 +2442,7 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
           lhs_area = lhs->offset_integral( lhs->lowerX(), lhs->upperX(), data );
         }catch(...)
         {
-          //Will only fail for LinearStep continuum - which I doubt we will ever get here anyway.
+          //Will only fail for FlatStep, LinearStep, and BiLinearStep continuum - which I doubt we will ever get here anyway.
         }
       }
       
@@ -2462,11 +2472,13 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       float lhsEnergy = 0.0f, rhsEnergy = 0.0f;
       try
       {
-        lhsEnergy = lhs->gammaParticleEnergy();
+        if( lhs->hasSourceGammaAssigned() )
+          lhsEnergy = lhs->gammaParticleEnergy();
       }catch(std::exception &){}
       try
       {
-        rhsEnergy = rhs->gammaParticleEnergy();
+        if( rhs->hasSourceGammaAssigned() )
+          rhsEnergy = rhs->gammaParticleEnergy();
       }catch(std::exception &){}
       
       if( lhs == rhs )
@@ -2482,11 +2494,13 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       
       try
       {
-        lhsdiff = lhs->gammaParticleEnergy() - lhs->mean();
+        if( lhs->hasSourceGammaAssigned() )
+          lhsdiff = lhs->gammaParticleEnergy() - lhs->mean();
       }catch(std::exception &){}
       try
       {
-        rhsdiff = rhs->gammaParticleEnergy() - rhs->mean();
+        if( rhs->hasSourceGammaAssigned() )
+          rhsdiff = rhs->gammaParticleEnergy() - rhs->mean();
       }catch(std::exception &){}
       
       const bool thisorder = (lhsdiff < rhsdiff);

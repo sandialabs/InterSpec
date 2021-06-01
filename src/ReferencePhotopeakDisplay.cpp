@@ -2109,7 +2109,7 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
       if( node && node->value() )
       {
         const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-        if( db )
+        if( db && node->value_size() )
           nuc = db->nuclide( node->value() );
         m_nuclideEdit->setText( node->value() );
       }

@@ -1135,13 +1135,15 @@ string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak,
 
   switch( peak.continuum()->type() )
   {
-    case PeakContinuum::NoOffset:   strm << "None</td></tr>\n";       break;
-    case PeakContinuum::Constant:   strm << "Constant</td></tr>\n";   break;
-    case PeakContinuum::Linear:     strm << "Linear</td></tr>\n";     break;
-    case PeakContinuum::Quadratic:  strm << "Quadratic</td></tr>\n";  break;
-    case PeakContinuum::Cubic:      strm << "Cubic</td></tr>\n";      break;
-    case PeakContinuum::LinearStep: strm << "Linear Step</td></tr>\n"; break;
-    case PeakContinuum::External:   strm << "Global</td></tr>\n";     break;
+    case PeakContinuum::NoOffset:     strm << "None</td></tr>\n";           break;
+    case PeakContinuum::Constant:     strm << "Constant</td></tr>\n";       break;
+    case PeakContinuum::Linear:       strm << "Linear</td></tr>\n";         break;
+    case PeakContinuum::Quadratic:    strm << "Quadratic</td></tr>\n";      break;
+    case PeakContinuum::Cubic:        strm << "Cubic</td></tr>\n";          break;
+    case PeakContinuum::FlatStep:     strm << "Flat Step</td></tr>\n";      break;
+    case PeakContinuum::LinearStep:   strm << "Linear Step</td></tr>\n";    break;
+    case PeakContinuum::BiLinearStep: strm << "Bi-linear Step</td></tr>\n"; break;
+    case PeakContinuum::External:     strm << "Global</td></tr>\n";         break;
   }//switch( peak.continuum()->type() )
   
   double offset_area = 0.0;
@@ -1151,7 +1153,7 @@ string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak,
     peak.continuum()->offset_integral(peak.lowerX(), peak.upperX(), data);
   }catch(...)
   {
-    //can only get here for PeakContinuum::LinearStep with invalid data
+    //can only get here for PeakContinuum::FlatStep/LinearStep/BiLinearStep with invalid data
   }
   
   strm << startrow << "Cont. Area" << starttd << offset_area << "</td></tr>\n";

@@ -965,12 +965,19 @@ const Material *ShieldingSelect::material( const std::string &text )
 std::shared_ptr<Material> ShieldingSelect::material()
 {
   if( m_isGenericMaterial )
-    return std::shared_ptr<Material>();
+    return nullptr;
 
   const string text = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
-  if( m_currentMaterial && text==m_currentMaterialDescrip )
+  if( m_currentMaterial && (text == m_currentMaterialDescrip) )
     return m_currentMaterial;
 
+  if( text.empty() )
+  {
+    m_currentMaterial.reset();
+    m_currentMaterialDescrip = "";
+    return m_currentMaterial;
+  }
+  
   const Material *mat = material( text );
   
   if( mat )
