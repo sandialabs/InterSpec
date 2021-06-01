@@ -523,16 +523,15 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   // add a clipPath: everything outside of this area will not be drawn
   var clip = this.svg.select("#clip_th");
-  var clipBottomAxis = this.svg.select("#clip_bottom_axis_th");
 
   if (!clip.empty()) {
     // update if already exists
     clip
       .select("rect")
       .attr("width", plotWidth)
-      .attr("height", plotHeight)
+      .attr("height", plotHeight + 1) // add 1 to accommodate extra pixel of line path
       .attr("x", this.margin.left)
-      .attr("y", this.margin.top);
+      .attr("y", this.margin.top - 1);
   } else {
     // else create new
     this.svg
@@ -541,9 +540,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       .attr("id", "clip_th")
       .append("svg:rect")
       .attr("width", plotWidth)
-      .attr("height", plotHeight)
+      .attr("height", plotHeight + 1)
       .attr("x", this.margin.left)
-      .attr("y", this.margin.top);
+      .attr("y", this.margin.top - 1);
   }
 
   this.linesG.attr("clip-path", "url(#clip_th)");
@@ -561,31 +560,30 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     );
   }
 
-  // get scales
-  var domains = this.state.selection
-    ? {
-        x: this.state.selection.domain,
-        yGamma:
-          this.state.data.formatted[this.state.selection.compressionIndex]
-            .domains.yGamma,
-        yNeutron:
-          this.state.data.formatted[this.state.selection.compressionIndex]
-            .domains.yNeutron,
-      }
-    : this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
-        .domains;
-
-  var scales = this.getScales(domains);
+  // get scales to use
+  var brush = this.state.brush;
 
   var compressionIndex = this.state.selection
     ? this.state.selection.compressionIndex
     : this.state.data.unzoomedCompressionIndex;
 
-  var brush = this.state.brush;
-
-  // set scale of brush
-  brush.setScale(scales.xScale);
-
+  if (this.state.selection) {
+    // use only data in view
+    var xDomain = this.state.selection.domain;
+    var yDomains = this.getYDomainsInRange(xDomain, compressionIndex);
+    var fullDomain = {
+      x: xDomain,
+      yGamma: yDomains.yGammaDomain,
+      yNeutron: yDomains.yNeutronDomain,
+    };
+    var scales = this.getScales(fullDomain);
+    brush.setScale(scales.xScale);
+  } else {
+    // use all data
+    var fullDomain = this.state.data.formatted[compressionIndex].domains;
+    var scales = this.getScales(fullDomain);
+    brush.setScale(scales.xScale);
+  }
   // DEFINE HANDLERS AND LISTENERS
   // TODO: To add additional touch functionality, add analogous touch gestures (to right click, alt key, ctrl key-- to perform zoom and background selection)
 
@@ -846,9 +844,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   // Special behavior for PAN mode.
   if (this.userInteractionMode === this.UserInteractionModeEnum.PAN) {
     this.rect
-    .on("touchstart", () => startPanDragSelection({ touch: true }))
-    .on("touchmove", () => movePanDragSelection({ touch: true }))
-    .on("touchend", () => endPanDragSelection({ touch: true }));
+      .on("touchstart", () => startPanDragSelection({ touch: true }))
+      .on("touchmove", () => movePanDragSelection({ touch: true }))
+      .on("touchend", () => endPanDragSelection({ touch: true }));
 
     this.rect.call(panDrag);
   }
@@ -1530,6 +1528,7 @@ D3TimeChart.prototype.updateChart = function (
     } // if (!axisLabelY2.empty())
   } else {
     this.axisRightG.selectAll("*").remove();
+    this.horizontalRightGridG.selectAll("*").remove();
     this.svg.select("#th_label_y2").remove();
   } // if (HAS_NEUTRON)
 };
@@ -1986,13 +1985,50 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
     }
   }
 
-  var gammaInterval = [0, yMaxGamma]
-  var yNeutronInterval = [0, yMaxNeutron]
-
   return {
     x: [xMin, xMax],
-    yGamma: gammaInterval,
-    yNeutron: yNeutronInterval,
+    yGamma: [0, yMaxGamma],
+    yNeutron: [0, yMaxNeutron],
+  };
+};
+
+D3TimeChart.prototype.getYDomainsInRange = function (
+  xDomain,
+  compressionIndex
+) {
+  // conditions: lIdx <= rIdx. xDomain defined. compressionIndex is defined
+  var compIdx =
+    compressionIndex != null
+      ? compressionIndex
+      : this.state.data.unzoomedCompressionIndex;
+
+  // get the indices of the data from the xDomain
+  var lIdx = this.findDataIndex(xDomain[0], compIdx);
+  var rIdx = this.findDataIndex(xDomain[1], compIdx);
+
+  var gammaLow = Number.MAX_SAFE_INTEGER;
+  var gammaHigh = Number.MIN_SAFE_INTEGER;
+  var neutronLow = Number.MAX_SAFE_INTEGER;
+  var neutronHigh = Number.MIN_SAFE_INTEGER;
+
+  var data = this.state.data.formatted[compIdx];
+
+  // get the max's and min's over all detectors
+  for (var detName in data.detectors) {
+    var countsData = data.detectors[detName].counts;
+    for (var i = lIdx; i <= rIdx; i++) {
+      var gammaCPS = countsData[2 * i].gammaCPS;
+      var neutronCPS = countsData[2 * i].neutronCPS;
+      if (gammaCPS < gammaLow) gammaLow = gammaCPS;
+      if (gammaCPS > gammaHigh) gammaHigh = gammaCPS;
+      if (neutronCPS < neutronLow) neutronLow = neutronCPS;
+      if (neutronCPS > neutronHigh) neutronHigh = neutronCPS;
+    }
+  }
+
+  return {
+    yGammaDomain: [gammaLow, gammaHigh],
+    yNeutronDomain: [neutronLow, neutronHigh],
   };
 };
 
@@ -2047,14 +2083,11 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
     if (sourceTypes && i === 0 && sourceTypes[i] === 2) {
       // center so background is not started at 0
       // to reduce long lead-in for plotting, replace with a smaller value inside realTimeIntervals and then record the true backgroundDuration in this.state for future reference:
-      var meanIntervalTime = this.getMeanIntervalTime(
-        realTimes,
-        sourceTypes
-      );
-    
+      var meanIntervalTime = this.getMeanIntervalTime(realTimes, sourceTypes);
+
       var leadTime = Math.max(
         -realTimes[i],
-        -meanIntervalTime*realTimes.length * 0.12
+        -meanIntervalTime * realTimes.length * 0.12
       );
       this.state.data.backgroundDuration = realTimes[i];
       realTimeIntervals[i] = [leadTime, 0];
@@ -2123,10 +2156,12 @@ D3TimeChart.prototype.shiftSelection = function (n) {
     // update selection, update brush scale, update chart
     this.state.selection.domain = domain;
 
+    var yDomains = this.getYDomainsInRange(domain, compressionIndex);
+
     var fullDomain = {
       x: domain,
-      yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-      yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
+      yGamma: yDomains.yGammaDomain,
+      yNeutron: yDomains.yNeutronDomain,
     };
     var scale = this.getScales(fullDomain);
     this.state.brush.setScale(scale.xScale);
@@ -2230,15 +2265,6 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
 
   var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
 
-  // obtain new scales, update brush, update selection
-  var scales = this.getScales({
-    x: [newLeftExtent, newRightExtent],
-    yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-    yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-  });
-
-  brush.setScale(scales.xScale);
-
   if (
     this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
       .x[0] === newLeftExtent &&
@@ -2253,6 +2279,22 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
       compressionIndex: compressionIndex,
     };
   }
+
+  if (this.state.selection) {
+    // use only data in view
+    var xDomain = [newLeftExtent, newRightExtent];
+    var yDomains = this.getYDomainsInRange(xDomain, compressionIndex);
+    var fullDomain = {
+      x: xDomain,
+      yGamma: yDomains.yGammaDomain,
+      yNeutron: yDomains.yNeutronDomain,
+    };
+  } else {
+    // use all data
+    var fullDomain = this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains;
+  }
+  var scales = this.getScales(fullDomain);
+  brush.setScale(scales.xScale);
 
   // update chart
   this.updateChart(scales, compressionIndex);
@@ -2325,12 +2367,17 @@ D3TimeChart.prototype.handleBrushZoom = function () {
         Math.log2(Math.ceil(nPoints / plotWidth))
       );
 
-      // calculate new scale. Update brush
-      var scales = this.getScales({
+      // calculate new scale. Update brush and selection. Update chart
+      var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
+
+      var fullDomain = {
         x: newExtent,
-        yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-        yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-      });
+        yGamma: yDomains.yGammaDomain,
+        yNeutron: yDomains.yNeutronDomain,
+      };
+
+      var scales = this.getScales(fullDomain);
+
       this.state.selection = {
         domain: newExtent,
         compressionIndex: compressionIndex,
@@ -2385,13 +2432,20 @@ D3TimeChart.prototype.handleBrushZoom = function () {
       compressionIndex: compressionIndex,
     };
 
-    var scales = this.getScales({
-      x: this.state.selection.domain,
-      yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-      yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-    });
+    // update scales, update brush, and update chart
+    var yDomains = this.getYDomainsInRange(
+      this.state.selection.domain,
+      compressionIndex
+    );
 
-    // update brush scale
+    var fullDomain = {
+      x: this.state.selection.domain,
+      yGamma: yDomains.yGammaDomain,
+      yNeutron: yDomains.yNeutronDomain,
+    };
+
+    var scales = this.getScales(fullDomain);
+
     brush.setScale(scales.xScale);
     this.updateChart(scales, compressionIndex);
   }
@@ -2414,15 +2468,19 @@ D3TimeChart.prototype.handleDragForwardZoom = function () {
 
     //re-render the chart at default position if needed (prior to any drag-back zoomout occuring)
     if (this.state.selection) {
-      var scales = this.getScales({
-        x: this.state.selection.domain,
-        yGamma:
-          this.state.data.formatted[this.state.selection.compressionIndex]
-            .domains.yGamma,
-        yNeutron:
-          this.state.data.formatted[this.state.selection.compressionIndex]
-            .domains.yNeutron,
-      });
+      var xDomain = this.state.selection.domain;
+      var yDomains = this.getYDomainsInRange(
+        xDomain,
+        this.state.selection.compressionIndex
+      );
+
+      var fullDomain = {
+        x: xDomain,
+        yGamma: yDomains.yGammaDomain,
+        yNeutron: yDomains.yNeutronDomain,
+      };
+
+      var scales = this.getScales(fullDomain);
 
       this.updateChart(scales, this.state.selection.compressionIndex);
     }
@@ -2486,11 +2544,15 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
 
   var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
 
-  var scales = this.getScales({
+  var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
+
+  var fullDomain = {
     x: newExtent,
-    yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-    yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-  });
+    yGamma: yDomains.yGammaDomain,
+    yNeutron: yDomains.yNeutronDomain,
+  };
+
+  var scales = this.getScales(fullDomain);
 
   this.updateChart(scales, compressionIndex);
 };
@@ -2607,11 +2669,15 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
   var newExtent = [newLeftExtent, newRightExtent];
 
   // update chart
-  var scales = this.getScales({
+  var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
+
+  var fullDomain = {
     x: newExtent,
-    yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-    yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-  });
+    yGamma: yDomains.yGammaDomain,
+    yNeutron: yDomains.yNeutronDomain,
+  };
+
+  var scales = this.getScales(fullDomain);
 
   this.updateChart(scales, compressionIndex);
 
