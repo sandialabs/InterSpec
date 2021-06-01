@@ -444,10 +444,10 @@ D3TimeChart.prototype.handleResize = function () {
   // ...
   // Make sure to update the C++ code of the changed plotting size.
   try {
-    // console.log("Resized!");
+    // console.log( "Resized! New size={" + this.chart.clientWidth + "," + this.chart.clientHeight + "}" );
     this.state.height = this.chart.clientHeight;
     this.state.width = this.chart.clientWidth;
-
+    
     this.reinitializeChart();
   } catch (err) {
     if (err instanceof ValidationError) {
