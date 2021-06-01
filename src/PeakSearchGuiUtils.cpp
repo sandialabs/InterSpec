@@ -2531,7 +2531,8 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     {
       case PeakContinuum::NoOffset:   case PeakContinuum::Constant:
       case PeakContinuum::Linear:     case PeakContinuum::Quadratic:
-      case PeakContinuum::Cubic:      case PeakContinuum::LinearStep:
+      case PeakContinuum::Cubic:      case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
       case PeakContinuum::External:
         valid_offset = true;
         break;
@@ -2589,13 +2590,11 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     
     switch( type )
     {
-      case PeakContinuum::NoOffset:
-      case PeakContinuum::Constant:
-      case PeakContinuum::Linear:
-      case PeakContinuum::Quadratic:
-      case PeakContinuum::Cubic:
-      case PeakContinuum::LinearStep:
-      newContinuum->setType( type );
+      case PeakContinuum::NoOffset:   case PeakContinuum::Constant:
+      case PeakContinuum::Linear:     case PeakContinuum::Quadratic:
+      case PeakContinuum::Cubic:      case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
+        newContinuum->setType( type );
       break;
       
       case PeakContinuum::External:
