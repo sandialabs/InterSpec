@@ -390,7 +390,6 @@ D3TimeChart.prototype.WtEmit = function (elem, event) {
  */
 D3TimeChart.prototype.setData = function (rawData) {
   try {
-    console.log(rawData);
     //See the c++ function D3TimeChart::setData()
     if (!this.isValidRawData(rawData)) {
       throw new ValidationError("Structure of raw data is not valid.");
@@ -1987,8 +1986,8 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
     }
   }
 
-  var gammaInterval = yMaxGamma > 0 ? [0, yMaxGamma] : undefined;
-  var yNeutronInterval = yMaxNeutron > 0 ? [0, yMaxNeutron] : undefined;
+  var gammaInterval = [0, yMaxGamma]
+  var yNeutronInterval = [0, yMaxNeutron]
 
   return {
     x: [xMin, xMax],
@@ -2048,9 +2047,14 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
     if (sourceTypes && i === 0 && sourceTypes[i] === 2) {
       // center so background is not started at 0
       // to reduce long lead-in for plotting, replace with a smaller value inside realTimeIntervals and then record the true backgroundDuration in this.state for future reference:
+      var meanIntervalTime = this.getMeanIntervalTime(
+        realTimes,
+        sourceTypes
+      );
+    
       var leadTime = Math.max(
         -realTimes[i],
-        -Math.floor(realTimes.length * 0.12)
+        -meanIntervalTime*realTimes.length * 0.12
       );
       this.state.data.backgroundDuration = realTimes[i];
       realTimeIntervals[i] = [leadTime, 0];
