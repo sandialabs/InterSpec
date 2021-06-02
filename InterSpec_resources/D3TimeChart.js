@@ -233,8 +233,11 @@ D3TimeChart = function (elem, options) {
     background: {
       modifierKey: { altKey: true },
     },
+    removeForeground: {
+      modifierKey: { ctrlKey: true },
+    },
     zoom: {
-      modifierKey: { ctrlKey: true, rightClick: true },
+      modifierKey: { rightClick: true },
     },
   };
 
@@ -272,6 +275,7 @@ D3TimeChart = function (elem, options) {
   this.HIGHLIGHT_COLORS = Object.freeze({
     foreground: "rgb(255, 255, 0)",
     background: "rgb(0, 255, 255)",
+    removeForeground: "rgb(255, 0, 0)",
     // zoom: "rgb(102,102,102)",
   });
 
@@ -616,21 +620,23 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       this.userInteractionMode ===
       this.UserInteractionModeEnum.SELECTBACKGROUND;
     var TOUCH_ANALOGOUS_CTRLCLICK =
-      this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
+      this.userInteractionMode ===
+      this.UserInteractionModeEnum.REMOVEFOREGROUND;
 
     this.shiftKeyHeld =
       TOUCH_ANALOGOUS_SHIFT ||
       (d3.event.sourceEvent && d3.event.sourceEvent.shiftKey);
 
     if (
-      TOUCH_ANALOGOUS_RIGHTCLICK ||
+      TOUCH_ANALOGOUS_CTRLCLICK ||
       (d3.event.type == "dragstart" &&
         window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
-        d3.event.sourceEvent.button == 2)
+        d3.event.sourceEvent.ctrlKey &&
+        !this.shiftKeyHeld)
     ) {
-      this.highlightModifier = "rightClick";
-      this.mouseDownHighlight(coords[0], "rightClick");
+      this.highlightModifier = "ctrlKey";
+      this.mouseDownHighlight(coords[0], "ctrlKey");
     } else if (
       TOUCH_ANALOGOUS_ALTKEY ||
       (d3.event.type == "dragstart" &&
@@ -641,14 +647,15 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       this.highlightModifier = "altKey";
       this.mouseDownHighlight(coords[0], "altKey");
     } else if (
-      TOUCH_ANALOGOUS_CTRLCLICK ||
+      TOUCH_ANALOGOUS_RIGHTCLICK ||
       (d3.event.type == "dragstart" &&
         window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
-        d3.event.sourceEvent.ctrlKey)
+        d3.event.sourceEvent.button === 2 &&
+        d3.event.sourceEvent.ctrlKey === false) // ctrlKey needed to be false, since in FireFox ctrlKey + click triggers button == 2 also (i.e. right-click)
     ) {
-      this.highlightModifier = "ctrlKey";
-      this.mouseDownHighlight(coords[0], "ctrlKey");
+      this.highlightModifier = "rightClick";
+      this.mouseDownHighlight(coords[0], "rightClick");
     } else {
       this.highlightModifier = "none";
       this.mouseDownHighlight(coords[0], "none");
@@ -730,9 +737,11 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
             // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
             // handle foreground or background selection
 
+            // Defined from docs on Wt::KeyboardModifier
             var keyModifierMap = {
               altKey: 0x4,
               shiftKey: 0x1,
+              ctrlKey: 0x2,
               none: 0x0,
             };
             this.WtEmit(
@@ -2291,7 +2300,9 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
     };
   } else {
     // use all data
-    var fullDomain = this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains;
+    var fullDomain =
+      this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
+        .domains;
   }
   var scales = this.getScales(fullDomain);
   brush.setScale(scales.xScale);
@@ -2569,6 +2580,7 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
   } else {
     var foreground = this.highlightOptions.foreground;
     var background = this.highlightOptions.background;
+    var removeForeground = this.highlightOptions.removeForeground;
     var zoom = this.highlightOptions.zoom;
 
     if (foreground && modifier in foreground.modifierKey) {
@@ -2577,6 +2589,9 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
     } else if (background && modifier in background.modifierKey) {
       this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.background);
       this.highlightText.text("Select background");
+    } else if (removeForeground && modifier in removeForeground.modifierKey) {
+      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.removeForeground);
+      this.highlightText.text("Remove foreground");
     } else if (zoom && modifier in zoom.modifierKey) {
       this.highlightRect.classed("leftbuttonzoombox", true);
       // this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
@@ -3341,6 +3356,7 @@ D3TimeChart.prototype.setUserInteractionMode = function (mode) {
     this.userInteractionMode = this.UserInteractionModeEnum.SELECTSECONDARY;
     this.usingAddSelectionMode = true;
   } else if (mode === "RemoveForeground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.REMOVEFOREGROUND;
   } else if (mode === "RemoveBackground") {
   } else if (mode === "RemoveSecondary") {
   } else {
