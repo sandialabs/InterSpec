@@ -51,33 +51,29 @@ using namespace std;
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
 
-WT_DECLARE_WT_MEMBER
-(OnPopupDivShow, Wt::JavaScriptFunction, "OnPopupDivShow",
- function(id,p)
- {
-   try{  //this try catch inserted for for debugging sake (exception on early menu showing when using websockets locally) at some point, and probably isnt necassary
-   $('.PopupDivMenu').each(function(i,v){if(v.id!=id)$(v).hide();} );
-   Wt.WT.BringAboveDialogs(id);
-   $('.PopupMenuParentButton').removeClass('active');
-   if(p) $('#'+p).addClass('active');
-   }catch(e){
-     console.log( 'OnPopupDivShow caught: ' + e );
-   }
-});
 
 WT_DECLARE_WT_MEMBER
 (BringAboveDialogs, Wt::JavaScriptFunction, "BringAboveDialogs",
  function( id )
  {
-   /* bring above all dialogs and popup menus */
+   /* bring above all dialogs and popup menus
+     $('#id').css('z-index') looks to return either a number _as a string_, or the string "auto"
+    */
   
-   var z = 0;
+   let z = 0;
    $('.Wt-dialog, .Wt-popup').each( function(i,v){
-     if( $(v).is(":visible") )
-       z = Math.max( z, $(v).css('z-index') );
+     if( $(v).is(":visible") ){
+       const popz = Number( $(v).css('z-index') );
+       if( !isNaN(popz) )
+         z = Math.max( z, popz );
+     }
    });
   
-   if( z > $('#'+id).css('z-index') ){
+   if( z === 0 )
+     return;
+  
+   const dialz = Number( $('#'+id).css('z-index') );
+   if( isNaN(dialz) || (z > dialz) ){
      $('#'+id).css('z-index',z+1);
    }
 });
@@ -241,6 +237,7 @@ WT_DECLARE_WT_MEMBER
     // Fixup 'popup( WPoint(-10000,-10000) );' call from C++  ...
     //  TODO: users may see small glitch... should fix eventually
     wtapp.positionAtWidget(el.id,btn.id,wtapp.Vertical);
+    Wt.WT.BringAboveDialogs(el.id);
     return; //Nothing more to do
   }
   
@@ -270,6 +267,7 @@ WT_DECLARE_WT_MEMBER
   $(btn).addClass('active');
   if(obj) obj.setHidden(0);
   wtapp.positionAtWidget(el.id,btn.id,wtapp.Vertical);
+  Wt.WT.BringAboveDialogs(el.id);
 });
 
 
@@ -305,6 +303,8 @@ WT_DECLARE_WT_MEMBER
     if(obj) obj.setHidden(0);
     
     wtapp.positionAtWidget(el.id,btn.id,wtapp.Vertical);
+    
+    Wt.WT.BringAboveDialogs(el.id);
   }else{
     $(el).removeClass('current');
     $(btn).removeClass('active');
@@ -677,7 +677,6 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
   {
     addStyleClass( "PopupDivMenu" );
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsBringAboveDialogs);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsOnPopupDivShow);
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAdjustTopPos);
   }//if( mobile ) / else
 
@@ -706,7 +705,7 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
     if( m_mobile)
     {
       if( m_type != TransientMenu )
-        menuParent->clicked().connect( this, &PopupDivMenu::showFromMouseOver );
+        menuParent->clicked().connect( this, &PopupDivMenu::showMobile );
     }else
     {
 #if(USE_OSX_NATIVE_MENU)
@@ -927,29 +926,12 @@ void PopupDivMenu::setHidden( bool hidden, const Wt::WAnimation &animation )
 }//setHidden()
 
 
-void PopupDivMenu::showFromClick()
+void PopupDivMenu::showMobile()
 {
-  doShow( true );
-}
-
-void PopupDivMenu::showFromMouseOver()
-{
-  doShow( false );
-}
-
-
-void PopupDivMenu::doShow( bool clicked )
-{
-  if( !m_menuParent )
-    return;
-
-  if( !m_mobile )
-    doJavaScript( "Wt.WT.OnPopupDivShow('" + id() + "','" + m_menuParent->id() + "');" );
-
   //Note/Hack: This is needed to check if clicked or mouseover.  If clicked,
   //  calling popup() will somehow cause the popupmenu to not show.
   //  I know, weird huh.
-  if( !clicked )
+  if( m_menuParent )
     popup( m_menuParent, Wt::Vertical );
 
   if( m_mobile )
@@ -982,7 +964,10 @@ void PopupDivMenu::parentClicked()
 
 void PopupDivMenu::undoParentClicked()
 {
-  const string undo_js = "Wt.WT.UndoParentClicked('" + id() + "','" + m_menuParent->id() + "');";
+  const string undo_js = "setTimeout( function(){"
+    "Wt.WT.UndoParentClicked('" + id() + "','" + m_menuParent->id() + "');"
+  "}, 0 );";
+  
   doJavaScript( undo_js );
   hide();
 }
@@ -1309,7 +1294,7 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     menu->m_parentItem->clicked().preventDefaultAction();
     menu->m_parentItem->setStyleClass( "submenu" );
     menu->m_parentItem->setMargin(10,Wt::Right);
-    menu->m_parentItem->triggered().connect( menu, &PopupDivMenu::showFromMouseOver );
+    menu->m_parentItem->triggered().connect( menu, &PopupDivMenu::showMobile );
     menu->addPhoneBackItem( this );
   }else
   {

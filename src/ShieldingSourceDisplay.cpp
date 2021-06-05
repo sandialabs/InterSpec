@@ -4280,8 +4280,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   if( m_specViewer->isMobile() )
   {
      m_addItemMenu->addPhoneBackItem( NULL );
-     addItemMenubutton->clicked().connect( m_addItemMenu,
-                                            &PopupDivMenu::showFromClick );
+     addItemMenubutton->clicked().connect( m_addItemMenu, &PopupDivMenu::showMobile );
   } //mobile
   else
   {

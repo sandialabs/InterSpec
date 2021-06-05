@@ -195,15 +195,8 @@ public:
   //  if the parent has been deleteed, or this widget reomved from it.
   Wt::WMenuItem *parentItem();
 
-  //showFromClick() and showFromMouseOver() are convience functions that call
-  //  doShow(bool).  They are hopefully temprary to work around an issue where
-  //  if this->popup(parent,Vertical) is called, then this menu will actually be
-  //  hidden (probably related to Wt calling this function in JS as well...).
-  void showFromClick();
-  void showFromMouseOver();
-  
   //
-  void doShow( bool clicked );
+  void showMobile();
   
   
   void setupDesktopMenuStuff();
