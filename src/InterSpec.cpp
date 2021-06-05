@@ -2456,7 +2456,7 @@ void InterSpec::handleRightClick( double energy, double counts,
   }//for( loop over right click menu items )
   
   if( isMobile() )
-    m_rightClickMenu->showFromMouseOver();
+    m_rightClickMenu->showMobile();
   else
     m_rightClickMenu->popup( WPoint(pageX,pageY) );
 }//void handleRightClick(...)
@@ -5626,6 +5626,10 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
         
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
+    m_chartsLayout->setHorizontalSpacing( 0 );
+    m_chartsLayout->addWidget( m_spectrum, 0, 0 );
+    m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
+    
     if( m_timeSeries->isHidden() )
     {
       m_chartsLayout->setVerticalSpacing( 0 );
@@ -5636,11 +5640,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_chartsLayout->setRowResizable( 0 );
       m_chartsLayout->setVerticalSpacing( layoutVertSpacing );
     }
-    
-    m_chartsLayout->setHorizontalSpacing( 0 );
-    
-    m_chartsLayout->addWidget( m_spectrum, 0, 0 );
-    m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
     
     m_toolsLayout = new WGridLayout();
     m_toolsLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -6960,19 +6959,6 @@ void InterSpec::toggleToolTip( const bool showToolTips )
   }
   
 }//void toggleToolTip( const bool sticky )
-
-
-int InterSpec::paintedWidth() const
-{
-  return max( m_spectrum->layoutWidth(), m_timeSeries->layoutWidth() );
-}//int paintedWidth() const
-
-
-int InterSpec::paintedHeight() const
-{
-  //XXX This isnt correct due to all padding and stuff
-  return m_spectrum->layoutHeight() + m_timeSeries->layoutHeight();
-}//int paintedHeight() const
 
 
 

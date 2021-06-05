@@ -497,9 +497,6 @@ public:
   
   void toggleToolTip( const bool showToolTips );
   
-  int paintedWidth() const;  //Depreciated
-  int paintedHeight() const; //Depreciated //XXX Not correct due to all padding and stuff, but close
-  
   /** Width of the apps window, in pixels. Will return a value of zero if (not yet) available. */
   int renderedWidth() const;
   /** Height of the apps window, in pixels. Will return a value of zero if (not yet) available. */

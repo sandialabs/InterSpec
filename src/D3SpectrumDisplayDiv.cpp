@@ -179,8 +179,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_renderFlags( 0 ),
   m_model( new SpectrumDataModel( this ) ),
   m_peakModel( 0 ),
-  m_layoutWidth( 0 ),
-  m_layoutHeight( 0 ),
   m_compactAxis( false ),
   m_legendEnabled( true ),
   m_yAxisIsLog( true ),
@@ -208,7 +206,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartBackgroundColor(),
   m_defaultPeakColor( 0, 51, 255, 155 )
 {
-  setLayoutSizeAware( true );
   addStyleClass( "SpectrumDisplayDiv" );
   
   // Cancel right-click events for the div, we handle it all in JS
@@ -603,13 +600,6 @@ void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
-void D3SpectrumDisplayDiv::layoutSizeChanged ( int width, int height )
-{
-  m_layoutWidth = width;
-  m_layoutHeight = height;
-}//void layoutSizeChanged ( int width, int height )
-
-
 void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
@@ -634,18 +624,6 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   m_renderFlags = 0;
 }
-
-
-int D3SpectrumDisplayDiv::layoutWidth() const
-{
-  return m_layoutWidth;
-}//int layoutWidth() const
-
-
-int D3SpectrumDisplayDiv::layoutHeight() const
-{
-  return m_layoutHeight;
-}//int layoutHeight() const
 
 
 double D3SpectrumDisplayDiv::xAxisMinimum() const
@@ -2049,7 +2027,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
           if( ismobile )
           {
             menu->addStyleClass( " Wt-popupmenu Wt-outset" );
-            menu->showFromMouseOver();
+            menu->showMobile();
           }else
           {
             menu->addStyleClass( " Wt-popupmenu Wt-outset NumPeakSelect" );
