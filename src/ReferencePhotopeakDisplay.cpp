@@ -73,6 +73,8 @@
 
 #if ( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
+#else
+#include "InterSpec/SpectrumDisplayDiv.h"
 #endif
 
 using namespace std;
@@ -2107,7 +2109,7 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
       if( node && node->value() )
       {
         const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-        if( db )
+        if( db && node->value_size() )
           nuc = db->nuclide( node->value() );
         m_nuclideEdit->setText( node->value() );
       }

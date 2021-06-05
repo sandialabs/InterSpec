@@ -385,8 +385,8 @@ void GammaXsGui::updateDetectorCalc()
     const string energystr = m_energyEdit->text().narrow();
     const string diststr = m_detectorDistance->text().narrow();
     const float energy = static_cast<float>( std::stod( energystr ) );
-    const float dist = static_cast<float>( PhysicalUnits::stringToDistance( diststr ) );
-    float val = m_detector->efficiency( energy, dist );
+    const double dist = PhysicalUnits::stringToDistance( diststr );
+    double val = m_detector->efficiency( energy, dist );
     char buffer[32];
     snprintf( buffer, sizeof(buffer), "%.4g", val );
     m_efficiency->setText( buffer );
@@ -660,7 +660,7 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
                               Wt::WSuggestionPopup *materialSuggestion ,
                               InterSpec* viewer)
   : AuxWindow( "Gamma XS Calc",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) )
 {

@@ -208,7 +208,7 @@ namespace HelpSystem
   
   HelpWindow::HelpWindow(std::string preselect)
    : AuxWindow( "InterSpec Help",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::IsHelpWIndow) ),
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::IsHelpWIndow) ),
      m_tree ( new Wt::WTree() ),
      m_searchText( new Wt::WLineEdit() )
   {

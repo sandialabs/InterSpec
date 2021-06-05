@@ -24,7 +24,6 @@
 #include "InterSpec_config.h"
 
 #include <map>
-#include <regex>
 #include <memory>
 #include <string>
 #include <vector>
@@ -85,6 +84,31 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/DetectorPeakResponse.h"
+
+
+// The regex in GCC 4.8.x does not have working regex...., so we will detect this via
+//    https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions#answer-41186162
+#if defined(_MSC_VER) \
+    || (__cplusplus >= 201103L &&                             \
+        (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
+            (defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) || \
+            defined(_GLIBCXX_REGEX_STATE_LIMIT)           || \
+                (defined(_GLIBCXX_RELEASE)                && \
+                _GLIBCXX_RELEASE > 4))))
+#define HAVE_WORKING_REGEX 1
+#else
+#define HAVE_WORKING_REGEX 0
+#endif
+
+#if( HAVE_WORKING_REGEX )
+#include <regex>
+namespace RegexNs = std;
+#else
+#include <boost/regex.hpp>
+#warning "DetectorEdit using boost regex - support for this compiler will be dropped soon"
+namespace RegexNs = boost;
+#endif
+
 
 using namespace std;
 using namespace Wt;
@@ -1764,11 +1788,14 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_drfTypeStack->addStyleClass( "UseInfoStack DetEditContent" );
   
   m_drfTypeMenu = new WMenu( m_drfTypeStack, Wt::Vertical );
-  m_drfTypeMenu->addStyleClass( "VerticalMenu SideMenu DetEditMenu" );
+  m_drfTypeMenu->addStyleClass( "VerticalNavMenu SideMenu HeavyNavMenu DetEditMenu" );
   WContainerWidget *menuHolder = new WContainerWidget();
   menuHolder->addWidget( m_drfTypeMenu );
-  lowerLayout->addWidget( menuHolder, 0, 0 );
+  lowerLayout->addWidget( menuHolder, 0, 0, 2, 1 );
   lowerLayout->addWidget( m_drfTypeStack, 0, 1 );
+  
+  WContainerWidget *defaultOptions = new WContainerWidget();
+  lowerLayout->addWidget( defaultOptions, 1, 1 );
   
   mainLayout->setRowStretch( 0, 1 );
   lowerLayout->setColumnStretch( 1, 1 );
@@ -2102,9 +2129,10 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   if( meas && !meas->instrument_id().empty() )
   {
-    m_defaultForSerialNumber = new WCheckBox( "Use as default DRF for SN '" + meas->instrument_id() + "'" );
-    m_defaultForSerialNumber->setMargin( 21, Wt::Left );
-    mainLayout->addWidget( m_defaultForSerialNumber, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
+    m_defaultForSerialNumber = new WCheckBox( "Use as default DRF for SN '" + meas->instrument_id() + "'", defaultOptions );
+    //m_defaultForSerialNumber->setMargin( 21, Wt::Left );
+    m_defaultForSerialNumber->setInline( false );
+    //mainLayout->addWidget( m_defaultForSerialNumber, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have serial number )
   
   if( meas && (meas->detector_type()!=DetectorType::Unknown || !meas->instrument_model().empty()) )
@@ -2114,9 +2142,10 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
       model = meas->instrument_model();
     else
       model = detectorTypeToString( meas->detector_type() );
-    m_defaultForDetectorModel = new WCheckBox( "Use as default DRF for model '" + model + "'" );
-    m_defaultForDetectorModel->setMargin( 21, Wt::Left );
-    mainLayout->addWidget( m_defaultForDetectorModel, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
+    m_defaultForDetectorModel = new WCheckBox( "Use as default DRF for model '" + model + "'", defaultOptions );
+    //m_defaultForDetectorModel->setMargin( 21, Wt::Left );
+    m_defaultForDetectorModel->setInline( false );
+    //mainLayout->addWidget( m_defaultForDetectorModel, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have
   
   
@@ -2682,7 +2711,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
 #define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
       const char * const rng_exprsn_txt = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
       
-      std::regex range_expression( rng_exprsn_txt );
+      RegexNs::regex range_expression( rng_exprsn_txt );
       
       while( SpecUtils::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
       {
@@ -2716,8 +2745,8 @@ std::shared_ptr<DetectorPeakResponse> DetectorEdit::checkIfFileIsRelEff( const s
           }
         }//if( start of FWHM section of CSV file )
         
-        std::smatch range_matches;
-        if( std::regex_search( line, range_matches, range_expression ) )
+        RegexNs::smatch range_matches;
+        if( RegexNs::regex_search( line, range_matches, range_expression ) )
         {
           lowerEnergy = std::stof( range_matches[1] );
           upperEnergy = std::stof( range_matches[6] );
@@ -3564,7 +3593,7 @@ DetectorEditWindow::DetectorEditWindow(
                                   InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
   : AuxWindow("Detector Response Function Select",
-              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal),
+              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen),
     m_edit( NULL )
 {
   disableCollapse();

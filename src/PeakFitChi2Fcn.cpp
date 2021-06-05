@@ -468,7 +468,7 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
       const double xbinlow = m_data->gamma_channel_lower(channel);
       const double xbinup = m_data->gamma_channel_upper(channel);
       const double ndata = m_data->gamma_channel_content(channel);
-      const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
+      const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, m_data);
       
       double nfitpeak = 0.0;
       for( const PeakDef *peak : peaks )
@@ -971,9 +971,16 @@ MultiPeakFitChi2Fcn::MultiPeakFitChi2Fcn( const int npeaks, std::shared_ptr<cons
     case PeakContinuum::External:
       throw runtime_error( "MultiPeakFitChi2Fcn: invalid offset type" );
     break;
+    
     case PeakContinuum::Constant:   case PeakContinuum::Linear:
     case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
       m_numOffset = static_cast<int>(m_offsetType);
+    break;
+    
+    case PeakContinuum::FlatStep:
+    case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
+      m_numOffset = 2 + (m_offsetType - PeakContinuum::FlatStep);
     break;
   }//switch( m_offsetType )
 }//MultiPeakFitChi2Fcn constructpor
@@ -1117,7 +1124,7 @@ void MultiPeakFitChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       centroidbins[i] = bin;
       const double lowx = m_binLowerEdge[bin];
       const double highx = m_binUpperEdge[bin];
-      const double contarea = peaks[i].offset_integral( lowx, highx );
+      const double contarea = peaks[i].offset_integral( lowx, highx, m_data );
       
       b(i) = std::max( 0.0, m_dataCounts[bin] - contarea );
     }//for( int i = 0; i < m_npeak; ++i )
@@ -1202,7 +1209,7 @@ double MultiPeakFitChi2Fcn::evalRelBinRange( const size_t beginRelChannel,
       nfitpeak += peaks[i].gauss_integral( xbinlow, xbinup );
     
     const double ndata = m_dataCounts[relchannel];
-    const double ncontinuim = peaks[0].offset_integral( xbinlow, xbinup );
+    const double ncontinuim = peaks[0].offset_integral( xbinlow, xbinup, m_data );
     
     const double datauncert = std::max( ndata, 1.0 );
     const double nabove = (ndata - ncontinuim - nfitpeak);
@@ -1393,9 +1400,12 @@ void LinearProblemSubSolveChi2Fcn::init( std::shared_ptr<const SpecUtils::Measur
   
   switch( m_offsetType )
   {
-    case PeakContinuum::Constant: case PeakContinuum::Linear:
-    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+    case PeakContinuum::Constant:     case PeakContinuum::Linear:
+    case PeakContinuum::Quadratic:    case PeakContinuum::Cubic:
+    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
     break;
+      
     case PeakContinuum::NoOffset: case PeakContinuum::External:
       throw runtime_error( "LinearProblemSubSolveChi2Fcn: invalid offset" );
     break;
@@ -1493,10 +1503,8 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
   for( size_t i = 1; i < m_npeak; ++i )
     peaks[i].setContinuum( peaks[0].continuum() );
   
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
   vector<size_t> indicesOfFittingPeaks;
   vector<PeakDef> fixedamppeaks;
-#endif
   
   vector<double> means, sigmas;
   for( size_t i = 0; i < m_npeak; ++i )
@@ -1505,15 +1513,11 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     if( errors )
       peaks[i].setMeanUncert( errors[i] );
     
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
     if( m_originalPeaks.empty()
        || m_originalPeaks[i]->fitFor(PeakDef::GaussAmplitude) )
     {
       means.push_back( x[i] );
     }
-#else
-    means.push_back( x[i] );
-#endif
   }//for( size_t i = 0; i < m_npeak; ++i )
   
   if( m_npeak < 2 )
@@ -1525,21 +1529,17 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     if( errors )
       peaks[0].setSigmaUncert( errors[m_npeak] );
     
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
     if( m_originalPeaks.empty()
         || m_originalPeaks[0]->fitFor(PeakDef::GaussAmplitude) )
     {
       indicesOfFittingPeaks.push_back( 0 );
-#endif
       sigmas.push_back( sigma );
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
     }else
     {
       peaks[0].setAmplitude( m_originalPeaks[0]->amplitude() );
       peaks[0].inheritUserSelectedOptions( *m_originalPeaks[0], true );
       fixedamppeaks.push_back( peaks[0] );
     }
-#endif
   }else
   {
     for( size_t i = 0; i < m_npeak; ++i )
@@ -1559,7 +1559,6 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
         peaks[i].setSigmaUncert( uncert );
       }//if( errors )
       
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
       if( m_originalPeaks.size()
          && !m_originalPeaks[i]->fitFor(PeakDef::GaussAmplitude) )
       {
@@ -1572,19 +1571,49 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
         indicesOfFittingPeaks.push_back( i );
         sigmas.push_back( sigma );
       }
-#else
-      sigmas.push_back( sigma );
-#endif
     }//for( size_t i = 0; i < m_npeak; ++i )
   }//if( one peak ) / else
   
+  const int num_polynomial_terms = ([this]() -> int {
+    switch( m_offsetType )
+    {
+      case PeakContinuum::NoOffset: case PeakContinuum::External:
+        return 0;
+        
+      case PeakContinuum::Constant: case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+        return m_offsetType - PeakContinuum::NoOffset;
+        
+      case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep:
+      case PeakContinuum::BiLinearStep:
+        return 2 + (m_offsetType - PeakContinuum::FlatStep);
+    }//switch( cont->type() )
+  })();
+  
+  const bool step_continuum = ([this]() -> int {
+    switch( m_offsetType )
+    {
+      case PeakContinuum::NoOffset: case PeakContinuum::External:
+      case PeakContinuum::Constant: case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+        return false;
+        
+      case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep:
+      case PeakContinuum::BiLinearStep:
+        return true;
+    }//switch( cont->type() )
+  })();
+  
   vector<double> amps, offsets, amps_uncerts, offsets_uncerts;
+  
   const double chi2 = fit_amp_and_offset( &m_x[0], &m_y[0], m_nbin,
-                                          m_offsetType-1, m_lowerROI,
+                                         num_polynomial_terms,
+                                         step_continuum,
+                                          m_lowerROI,
                                           means, sigmas,
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
                                          fixedamppeaks,
-#endif
                                          amps, offsets,
                                           amps_uncerts, offsets_uncerts );
   const double chi2Dof = chi2 / dof();
@@ -1593,44 +1622,22 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
   peaks[0].continuum()->setParameters( m_lowerROI, offsets, offsets_uncerts );
   peaks[0].continuum()->setRange( m_lowerROI, m_upperROI );
   
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
   for( size_t j = 0; j < indicesOfFittingPeaks.size(); ++j )
-#else
-  for( size_t i = 0; i < m_npeak; ++i )
-#endif
   {
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
     const size_t i = indicesOfFittingPeaks[j];
     peaks[i].setAmplitude( ((amps[j]>0.0) ? amps[j] : 0.0) );
     peaks[i].setAmplitudeUncert( amps_uncerts[j] );
-#else
-    peaks[i].setAmplitude( ((amps[i]>0.0) ? amps[i] : 0.0) );
-    peaks[i].setAmplitudeUncert( amps_uncerts[i] );
-#endif
-    
-#if(!fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
-    if( m_originalPeaks.size() )
-      peaks[i].inheritUserSelectedOptions( *m_originalPeaks[i], true );
-#endif
   }//for( size_t i = 0; i < m_npeak; ++i )
   
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
   if( m_originalPeaks.size() )
   {
     for( size_t i = 0; i < m_npeak; ++i )
       peaks[i].inheritUserSelectedOptions( *m_originalPeaks[i], true );
   }//if( m_originalPeaks.size() )
-#endif
   
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
   for( size_t j = 0; j < indicesOfFittingPeaks.size(); ++j )
-#else
-  for( size_t i = 0; i < m_npeak; ++i )
-#endif
   {
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
     const size_t i = indicesOfFittingPeaks[j];
-#endif
     peaks[i].set_coefficient( chi2Dof, PeakDef::Chi2DOF );
   }
   

@@ -104,8 +104,11 @@
 .CenterBtnInMblAuxWindowHeader
 {
   /* Center button in footer/header */
-  display: block !important;
-  margin: 0 auto !important;
+  /* display: block !important; */
+  /* margin: 0 auto !important; */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .CenterBtnInMblAuxWindowHeader[disabled]
@@ -144,7 +147,7 @@
   border-radius: 5px;
 }
 
-.VerticalMenuPhone > li
+.HeavyNavMenuPhone > li
 {
   vertical-align:middle;
   color: #ffffff;
@@ -159,7 +162,7 @@
 }
 
 
-.VerticalMenuPhone > .itemselected
+.HeavyNavMenuPhone > .itemselected
 {
   background: #C6C6C6;
 }
@@ -169,7 +172,7 @@
 {
 }
 
-.VerticalMenuPhone
+.HeavyNavMenuPhone
 {
   list-style-type: none;
   overflow: auto;

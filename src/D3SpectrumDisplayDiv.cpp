@@ -110,10 +110,20 @@ WT_DECLARE_WT_MEMBER
       document.body.removeChild(dl);
     }else
     {
-      //console.log( 'svgMarkup=' + svgMarkup );
+      // The getStaticSvg() function does not include the energy slider chart, so we should
+      //  compensate for that height if its showing
+      let height = chart.svg.attr("height");
+      let width = chart.svg.attr("width");
+      
+      if( chart.sliderChart && chart.size && chart.size.sliderChartHeight )
+        height -= chart.size.sliderChartHeight;
+      
+      if( chart.scalerWidget )
+        width -= chart.scalerWidget.node().getBBox().width;
+      
       var canvas = document.createElement("canvas");
-      canvas.width = chart.svg.attr("width");
-      canvas.height = chart.svg.attr("height");
+      canvas.width = width;
+      canvas.height = height;
       chart.chart.appendChild(canvas);
     
       var ctx = canvas.getContext("2d");
@@ -251,8 +261,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", yscale: " + string(m_yAxisIsLog ? "'log'" : "'lin'");
   options += ", backgroundSubtract: " + jsbool( m_backgroundSubtract );
   options += ", showLegend: " + jsbool(m_legendEnabled);
-  options += ", gridx: " + jsbool(m_showHorizontalLines);
-  options += ", gridy: " + jsbool(m_showVerticalLines);
+  options += ", gridx: " + jsbool(m_showVerticalLines);
+  options += ", gridy: " + jsbool(m_showHorizontalLines);
   options += ", showXAxisSliderChart: " + jsbool(m_showXAxisSliderChart);
   options += ", scaleBackgroundSecondary: " + jsbool(m_showYAxisScalers);
   options += ", wheelScrollYAxis: true";
@@ -1364,7 +1374,7 @@ void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "stroke: " + c );
+  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "fill: " + c );
 }
 
 
@@ -1377,7 +1387,7 @@ void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick", "stroke: " + m_axisColor.cssText() );
+  m_cssRules[rulename] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick > line, .yaxistick", "stroke: " + m_axisColor.cssText() );
   
   //ToDo: is setting feature line colors okay like this
   rulename = "FeatureLinesColor";
@@ -1683,8 +1693,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
     {
       if( isfinal )
       {
-        for( auto p : orig_roi_peaks )
-          m_peakModel->removePeak( p );
+        m_peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : new_roi_initial_peaks )
@@ -1711,8 +1720,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       
       if( isfinal )
       {
-        for( auto p : orig_roi_peaks )
-          m_peakModel->removePeak( p );
+        m_peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : newpeaks )
@@ -1732,10 +1740,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
       
       if( isfinal )
-      {
-        for( auto p : orig_roi_peaks )
-          m_peakModel->removePeak( p );
-      }
+        m_peakModel->removePeaks( orig_roi_peaks );
     }//if( not narrow region ) / else
   }catch( std::exception &e )
   {
@@ -1777,7 +1782,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   std::shared_ptr<Measurement> foreground = m_model->getData();
   
   const size_t nchan = foreground->num_gamma_channels();
-  const bool isHpge = (nchan > 4094);
+  const bool isHpge = (nchan > HIGH_RES_NUM_CHANNELS);
   const float erange = upper_energy - lower_energy;
   const float midenergy = 0.5f*(lower_energy + upper_energy);
   
@@ -2024,18 +2029,15 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
                 return;
               }
               
-              for( const auto &p : added_peaks )
+              try
               {
-                try
-                {
-                  m_peakModel->removePeak( p );
-                }catch(std::exception &e)
-                {
-                  cerr << "Unexpected error removing peaks - must not be a valid peak any more...: " 
-                       << e.what() << endl;
-                }
-              }//for( const auto &p : added_peaks )
-              
+                m_peakModel->removePeaks( added_peaks );
+              }catch(std::exception &e)
+              {
+                cerr << "Unexpected error removing peaks - must not be a valid peak any more...: "
+                     << e.what() << endl;
+              }
+                
               if( i > 0 )
                 chartFitRoiDragCallback( lower_energy, upper_energy, static_cast<int>(i), true, window_xpx, window_ypx );
             }) );

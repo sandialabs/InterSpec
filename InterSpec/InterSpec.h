@@ -44,6 +44,9 @@ class AuxWindow;
 class GoogleMap;
 class PeakModel;
 class MaterialDB;
+#if ( USE_SPECTRUM_CHART_D3 )
+class D3TimeChart;
+#endif
 class DecayWindow;
 struct ColorTheme;
 class UserFileInDb;
@@ -143,7 +146,7 @@ public:
   InterSpec( Wt::WContainerWidget *parent = 0 );
 
   ~InterSpec() noexcept(true);
-  
+    
   /** Returns the InterSpec instance cooresponding to the current WApplication instance.
    Will return nullptr if WApplication::instance() is null (e.g., current thread is not in a
    WApplication event loop).
@@ -240,6 +243,19 @@ public:
                                            std::shared_ptr<SpectraFileHeader> header,
                                            const SpecUtils::SpectrumType type );
 
+  // Options for setting the spectrum.
+  //  E.g., what we should potentially prompt the user for.  Like if were opening up a spectrum file
+  //    that belongs to the same detector as previous, then should we ask if the old energy
+  //    calibration should be preserved.  However a lot of the times we're calling #setSpectrum, we
+  //    know we shouldnt bug the user, so we dont want these things checked.
+  enum SetSpectrumOptions
+  {
+    CheckToPreservePreviousEnergyCal = 0x01,
+    CheckForRiidResults = 0x02
+    
+    // TODO: it seems both these options are the same everywhere - maybe go back and just use a bool
+  };//SetSpectrumOptions
+  
   
   //setSpectrum(...) is intended to be the only place m_dataMeasurement,
   //  m_secondDataMeasurement, or m_backgroundMeasurement are set.
@@ -259,7 +275,7 @@ public:
   void setSpectrum( std::shared_ptr<SpecMeas> meas,
                     std::set<int> sample_numbers,
                     const SpecUtils::SpectrumType spec_type,
-                    const bool checkForPrevioudEnergyCalib );
+                    const Wt::WFlags<SetSpectrumOptions> options = 0 );
 
   //reloadCurrentSpectrum(...): reloads the specified spectrum.  This function
   //  is useful when you change teh SpecMeas object (e.x. live or real time),
@@ -278,7 +294,7 @@ public:
 
   //For the 'add*Menu(...)' functions, the menuDiv passed in *must* be a
   //  WContainerWidget or a PopupDivMenu
-  void addFileMenu( Wt::WWidget *menuDiv, bool isMobile );
+  void addFileMenu( Wt::WWidget *menuDiv, const bool isAppTitlebar );
   void addDisplayMenu( Wt::WWidget *menuDiv );
   void addDetectorMenu( Wt::WWidget *menuDiv );
   void addToolsMenu( Wt::WWidget *menuDiv );
@@ -315,6 +331,15 @@ public:
   */
   std::shared_ptr<const SpecUtils::Measurement> displayedHistogram( SpecUtils::SpectrumType spectrum_type ) const;
 
+#if( USE_SPECTRUM_CHART_D3 )
+  /** Returns the sample numbers marked as Foreground, Background, or Secondary (i.e., intrinsic or
+   known), in the foreground spectrum file.
+   This is used for displaying the highlighted regions on the time series chart.
+   */
+  std::set<int> sampleNumbersForTypeFromForegroundFile(
+                                                const SpecUtils::SpectrumType spec_type ) const;
+#endif
+  
 #if( IOS )
   void exportSpecFile();
 #endif
@@ -485,8 +510,9 @@ public:
   void setOverlayCanvasVisible( bool visible );
 #if( !USE_SPECTRUM_CHART_D3 )
   Wt::JSlot *alignSpectrumOverlayCanvas();  //returns NULL if overlay canvas not enabled
-#endif
   Wt::JSlot *alignTimeSeriesOverlayCanvas();
+#endif
+  
 
   
   //displayedSpectrumChanged(): is a singal emitted whenever a spectrum or
@@ -530,9 +556,9 @@ public:
   //  energy spectrum might).
   void setSpectrumScrollingParent( Wt::WContainerWidget *parent );
   void setScrollY( int scrollY );
-#endif  //#if( !USE_SPECTRUM_CHART_D3 )
   
   void setTimeSeriesScrollingParent( Wt::WContainerWidget *parent );
+#endif  //#if( !USE_SPECTRUM_CHART_D3 )
   
   //setDisplayedEnergyRange(): sets the displayed energy range that should be
   //  shown.  Range is not checked for validity. E.g. you should not ask to zoom
@@ -720,9 +746,11 @@ public:
   std::shared_ptr<DataBaseUtils::DbSession> sql();
   
 
-  //refreshDisplayedCharts(): re-displays the data (foreground, background, 2nd)
-  //  keeping the currently displayed energy range.
-  //Useful after calibrations.
+  /** Hard re-displays the foreground, background, and 2nd datas.
+   Displayed energy range will only be changed if the currently displayed range goes past what the data now displays.
+   
+   Useful after calibrations.
+   */
   void refreshDisplayedCharts();
   
 protected:
@@ -760,6 +788,23 @@ protected:
                                            const int sample,
                                            const std::vector<std::string> &detector_names );
   
+#if( USE_SPECTRUM_CHART_D3 )
+  /** Function to call when the time chart is clicked or tapped on.
+   @param sample_start The starting sample number (as defined by the SpecFile) that was drug.
+   @param sample_end The ending sample number (as defined by the SpecFile) that was drug.
+   @param modifiers The keyoard modifier pressed.  Ex.
+          Shift key means: add specified samples to displayed samples
+          Alt (mac option) key means operation being performed is for the background spectrum
+          Conrol means remove the specified samples from being displayed
+   */
+  void timeChartDragged( const int sample_start, const int sample_end,
+                             Wt::WFlags<Wt::KeyboardModifier> modifiers );
+  
+  /** A simple passthrough to #timeChartDragged to handle when time chart is clicked on or tapped.
+   */
+  void timeChartClicked( const int sample_number, Wt::WFlags<Wt::KeyboardModifier> modifiers );
+  
+#else
   //timeRegionsToHighlight(): returns the time ranges for the currently set
   //  sample numbers to display for the SpecUtils::SpectrumType indicated.  For
   //  foreground and background the set SpecMeas must be the same as the
@@ -774,35 +819,34 @@ protected:
    */
   std::vector< std::pair<double,double> > timeRegionsFromFile(
                               const SpecUtils::OccupancyStatus occ_type ) const;
+    
+  std::set<int> timeRangeToSampleNumbers( double t0, double t1 );
   
+  std::vector<std::pair<float,int> > passthroughTimeToSampleNumber() const;
   
-  void displayForegroundData( const bool keep_current_energy_range );
-  void displayBackgroundData();
-  void displaySecondForegroundData();
-  
-  void displayTimeSeriesData( bool updateHighlightRegionsDisplay );
-
   // Inclusive for t0, exclusive for t1, e.g., if you have time slices of 0.1s,
   // and you pass in t0 = 0.1, t1 = 0.2; then only the second time slice will be
   // displayed.
   //emits the m_displayedSpectrumChangedSignal
   void changeTimeRange( const double t0, const double t1,
-                        const SpecUtils::SpectrumType type );
-  
+                         const SpecUtils::SpectrumType type );
+   
   //sampleNumbersToDisplayAddded(...): emitted when user control dragg on the
   //  chart to add more time slices
   void sampleNumbersToDisplayAddded( const double t0, const double t1,
-                                     const SpecUtils::SpectrumType type );
+                                      const SpecUtils::SpectrumType type );
+#endif //if( USE_SPECTRUM_CHART_D3 ) / else
+  
+  void displayForegroundData( const bool keep_current_energy_range );
+  void displaySecondForegroundData();
+  void displayBackgroundData();
+  void displayTimeSeriesData();
+
   
   //detectorsToDisplayChanged(): a callback function for when the user selects a
   //  detector to be displayed or not.
   void detectorsToDisplayChanged();
   
-  //liveTime(): computes the live time that the given sample numbers would have
-  //  with the currently selected detectors
-  //double liveTime( const std::set<int> &samplenums ) const;
-  
-  std::set<int> timeRangeToSampleNumbers( double t0, double t1 );
   
   /** Returns a vector of pairs that indicate the cumulative chart starting time of each interval, and
     the sample number of that interval, for use in the time series chart.
@@ -862,6 +906,7 @@ protected:
   void handleLeftClick( const double energy, const double counts,
                         const double pageX, const double pageY );
   void rightClickMenuClosed();
+  
 #if( USE_SIMPLE_NUCLIDE_ASSIST )
   void leftClickMenuClosed();
 #endif
@@ -871,6 +916,7 @@ protected:
   void addPeakFromRightClick();
   void makePeakFromRightClickHaveOwnContinuum();
   void shareContinuumWithNeighboringPeak( const bool shareWithLeft );
+  void handleChangeContinuumTypeFromRightClick( const int peak_continuum_offset_type );
   
   //updateRightClickNuclidesMenu(): meant to be called from within the
   //  application loop (so wApp is valid).  Sets the contents of the
@@ -990,7 +1036,7 @@ public:
    channel basis, with the resulting spectrum now having incorrect variances.
    */
   void startHardBackgroundSub();
-  void finishHardBackgroundSub();
+  void finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std::shared_ptr<bool> round_counts );
   
 #if( USE_SPECTRUM_CHART_D3 )
   void setXAxisSlider( bool show );
@@ -1095,12 +1141,14 @@ protected:
   void initDragNDrop();
 #endif //#if( !ANDROID && !IOS )
   
+#if( !USE_SPECTRUM_CHART_D3 )
   //initWindowZoomWatcher(): when the browser emits the window.onresize signal,
   //  force the canvas overlays to re-align themselves.
   //  This is necassary when when the user changes zoom-level.
   //  Only slightly more modern browsers emit this, but its rare enough to not
   //  bother wasting time supporting old browsers.
   void initWindowZoomWatcher();
+#endif
   
   void initHotkeySignal();
   void hotkeyPressed( const unsigned int value );
@@ -1119,10 +1167,12 @@ protected:
   PeakModel *m_peakModel;
 #if ( USE_SPECTRUM_CHART_D3 )
   D3SpectrumDisplayDiv *m_spectrum;
+  D3TimeChart *m_timeSeries;
 #else
   SpectrumDisplayDiv   *m_spectrum;
-#endif
   SpectrumDisplayDiv   *m_timeSeries;
+#endif
+  
   PopupDivMenu *m_detectorToShowMenu;
   Wt::WPushButton *m_mobileMenuButton;
   Wt::WPushButton *m_mobileBackButton;
@@ -1228,6 +1278,7 @@ protected:
     kRefitPeak,
     kRefitROI,
     kChangeNuclide,
+    kChangeContinuum,
     kDeletePeak,
     kAddPeak,
     kShareContinuumWithLeftPeak,
@@ -1240,6 +1291,7 @@ protected:
   double                m_rightClickEnergy;
   Wt::WMenuItem        *m_rightClickMenutItems[kNumRightClickItems];
   PopupDivMenu         *m_rightClickNuclideSuggestMenu;
+  PopupDivMenu         *m_rightClickChangeContinuumMenu;
 #if( USE_SIMPLE_NUCLIDE_ASSIST )
   SimpleNuclideAssistPopup   *m_leftClickMenu;
 #endif

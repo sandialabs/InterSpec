@@ -47,7 +47,7 @@ using namespace std;
 
 DecayWindow::DecayWindow( InterSpec *viewer )
 : AuxWindow( "Nuclide Decay Information",
-             //(Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::DisableCollapse) ),
+             //(Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::DisableCollapse) ),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)) ),
   m_activityDiv( 0 )
 {

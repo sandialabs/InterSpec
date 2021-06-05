@@ -108,7 +108,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
 //        m_spooledFiles.push_back( files[i].spoolFileName() );
 //        m_dragCanvas->fileDrop().emit( files[i].clientFileName(), files[i].spoolFileName() );
 //      }
-
+  
   response.setMimeType("text/html; charset=utf-8");
   response.addHeader("Expires", "Sun, 14 Jun 2020 00:00:00 GMT");
   response.addHeader("Cache-Control", "max-age=315360000");
@@ -140,10 +140,23 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       spool_file << request.in().rdbuf();
       spool_file.close();
       const string userName = request.headerValue( "X-File-Name" );
-      m_spooledFiles.push_back( temp_name );
-      if( m_fileDrop )
-        m_fileDrop->emit( userName, temp_name );
-    } else
+      
+      auto app = WApplication::instance();
+      WApplication::UpdateLock lock( app );
+      
+      if( lock )
+      {
+        m_spooledFiles.push_back( temp_name );
+        if( m_fileDrop )
+          m_fileDrop->emit( userName, temp_name );
+      
+        app->triggerUpdate();
+      }else
+      {
+        response.setStatus( 500 );  //Internal Server error
+        output << "App session may be over.";
+      }
+    }else
     {
       response.setStatus( 500 );  //Internal Server error
       output << "Coulnt open temporary file on server";
