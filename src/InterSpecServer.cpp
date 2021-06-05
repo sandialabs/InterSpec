@@ -193,9 +193,6 @@ namespace InterSpecServer
   void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication )
   {
-#ifndef _WIN32
-  #warning "Need to add a (optional) number that the requestor must provide in the URL in order to be served anything - this should probably be the externalid argument"
-#endif
     changeToBaseDir( argc, argv );
     const string xml_config_path = getWtConfigXml( argc, argv );
     
@@ -555,6 +552,11 @@ namespace InterSpecServer
     {
       //I dont know why we would get here... but lets deal with it JIC
       cerr << "There is no app with externalid=" << externalid << endl;
+      
+#if( IOS )
+      return -2;
+#endif
+      
       Wt::WServer *server = Wt::WServer::instance();
       if( server )
       {

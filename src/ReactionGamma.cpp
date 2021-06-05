@@ -556,13 +556,16 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
 
       const SandiaDecay::SandiaDecayDataBase *db = m_decayDatabase;
 
-      rctn.targetNuclide = db->nuclide( nuclide_node->value() );
+      const string nuclide_name = nuclide_node->value();
+      const bool nucNameHasNumbers = (nuclide_name.find_first_of("0123456789") != string::npos);
+      
+      rctn.targetNuclide = nucNameHasNumbers ? db->nuclide(nuclide_name) : nullptr;
       if( rctn.targetNuclide )
       {
         rctn.targetElement = db->element( rctn.targetNuclide->atomicNumber );
       }else
       {
-        rctn.targetElement = db->element( nuclide_node->value() );
+        rctn.targetElement = db->element(nuclide_name);
 //        if( type == NeutronCapture )
 //        check if only one natural nuclide and if so, fill that out
       }//if( the nuclide is listed ) / else
@@ -571,8 +574,12 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
         throw runtime_error( "ReactionGamma::populate_reaction(...) Couldnt "
                              "find a isotope or element for a target" );
 
-      if( product_node && product_node->value() )
-        rctn.productNuclide = db->nuclide( product_node->value() );
+      if( product_node && product_node->value() && product_node->value_size() )
+      {
+        const string name = product_node->value();
+        if( name.find_first_of("0123456789") != string::npos )
+          rctn.productNuclide = db->nuclide( name );
+      }
 
       for( const rapidxml::xml_node<char> *enode = energies_node->first_node( "energy", 6 );
            enode;

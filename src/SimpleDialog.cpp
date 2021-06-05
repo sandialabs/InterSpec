@@ -173,6 +173,9 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   
   show();
   finished().connect( this, &SimpleDialog::startDeleteSelf );
+  
+  // TODO: Wt 3.3.4 doesnt have WDialog::raiseToFront(), should simulate, or fix AuxWindow to
+  //       better respect the DialogCover stuff defined in 
 }//init(...)
 
 

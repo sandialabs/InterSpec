@@ -74,7 +74,6 @@
         "id" : "energy-calibration",
         "title" : "Energy Calibration",
         "help-xml" : "energy_calibration_help.xml",
-        "help-xml-mobile":"energy_calibration_mobile_help.xml",
         "keywords" : "Energy Calibration Tool Calibrate Adjust Offset Peaks Information Offset Linear Quadratic Normalize"
       },
       {

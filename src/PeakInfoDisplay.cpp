@@ -54,6 +54,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
@@ -395,7 +396,7 @@ void PeakInfoDisplay::createNewPeak()
       {
         const string datadir = InterSpec::staticDataDirectory();
         string drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
-        if( nbin <= 2049 )
+        if( nbin <= HIGH_RES_NUM_CHANNELS )
           drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
         
         drf = make_shared<DetectorPeakResponse>();
@@ -404,7 +405,7 @@ void PeakInfoDisplay::createNewPeak()
         return std::min( maxfwhm, std::max(minfwhm,drf->peakResolutionFWHM(energy)) );
       }catch(...)
       {
-        if( nbin <= 2049 )
+        if( nbin <= HIGH_RES_NUM_CHANNELS )
           return std::min( maxfwhm, std::max(minfwhm,2.634f*17.5f*sqrt(energy/661.0f)) );
         return std::min( maxfwhm, std::max(minfwhm,2.634f*0.67f*sqrt(energy/661.0f)) );
       }
@@ -438,7 +439,7 @@ void PeakInfoDisplay::createNewPeak()
   const float maxEnergy = meas->gamma_channel_upper(nbin-1);
   
   AuxWindow *window = new AuxWindow( "Add Peak",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse) );
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   
   WTable *table = new WTable( window->contents() );

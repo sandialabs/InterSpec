@@ -1,3 +1,7 @@
+.RiidDialogTitle 
+{ 
+  white-space: nowrap;
+}
 
 .AnaResultDisplay
 {
@@ -21,6 +25,11 @@
 .RiidNuclideResults
 {
 
+}
+
+.RiidNoResultsTxt
+{
+  padding-left: 15px;
 }
 
 .RiidNuclideTable

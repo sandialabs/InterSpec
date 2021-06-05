@@ -137,7 +137,7 @@ namespace
 
 UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
                               InterSpec* viewer )
-: AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+: AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                          | AuxWindowProperties::EnableResize
                          | AuxWindowProperties::DisableCollapse) ),
   m_session(),
@@ -160,7 +160,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   stack->setTransitionAnimation( animation, true );
   
   m_menu = new WMenu( stack, Wt::Vertical );
-  m_menu->addStyleClass( (m_viewer->isPhone() ? "VerticalMenuPhone SideMenuPhone" : "VerticalMenu SideMenu") );
+  m_menu->addStyleClass( (m_viewer->isPhone() ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone" : "VerticalNavMenu HeavyNavMenu SideMenu") );
   
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
   

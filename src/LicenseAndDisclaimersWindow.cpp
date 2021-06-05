@@ -90,7 +90,7 @@ using namespace std;
 
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int screen_width, int screen_height )
 : AuxWindow("Disclaimers, Licenses, Credit, and Contact",
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
   m_menu( nullptr )
 {
@@ -124,7 +124,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( const bool is_awk, int
   stack->setTransitionAnimation( animation, true );
   
   m_menu = new WMenu( stack, Wt::Vertical );
-  m_menu->addStyleClass( "VerticalMenu SideMenu" );
+  m_menu->addStyleClass( "VerticalNavMenu HeavyNavMenu SideMenu" );
   
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
   

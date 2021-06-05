@@ -40,6 +40,9 @@ namespace Wt
  Shown centered in the middle of the screen.
  
  TODO:
+ - If you create a SimpleDialog by clicking on a button that is in a AuxWindow, the SimpleDialog will be in back of the AuxWindow.  Need
+    to implement raising the SimpleDialog to be on top; in Wt 4.4.0 at least there is a bringToFront() call, but not in 3.3.4.  A work around
+    for this is to post creating the SimpleDialog to WServer, and then SimpleDialog will be created on top..
  - Maybe add a way of cancelling dialog if user clicks outside of the dialog
  - Add option to not show grey cover over the rest of the window
  - Test out more

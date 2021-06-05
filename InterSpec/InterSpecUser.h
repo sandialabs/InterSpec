@@ -540,6 +540,7 @@ public:
   //  ShieldingSourceModels which arent write proteced.
   static Wt::Dbo::ptr<UserFileInDb> makeDeepWriteProtectedCopyInDatabase(
                                             Wt::Dbo::ptr<UserFileInDb> orig,
+                                            DataBaseUtils::DbSession &session,
                                             bool isSaveState );
   
   
@@ -846,13 +847,14 @@ struct UserState
   
   enum ShownDisplayFeatures
   {
-    kDockedWindows       = 0x1,
-    kLogSpectrumCounts   = 0x2,
-    kVerticalGridLines   = 0x4,
-    kHorizontalGridLines = 0x8,
-    kSpectrumLegend      = 0x10,
-    kTimeSeriesLegend    = 0x20,
-    kShowingShieldSourceFit    = 0x40,
+    kDockedWindows          = 0x1,
+    kLogSpectrumCounts      = 0x2,
+    kVerticalGridLines      = 0x4,
+    kHorizontalGridLines    = 0x8,
+    kSpectrumLegend         = 0x10,
+    kTimeSeriesLegend       = 0x20,
+    kShowingShieldSourceFit = 0x40,
+    kShowingEnergySearch    = 0x80
   };//enum ShownDisplayFeatures
   
   //UserState(): default constructor, initializes values to reasonable defaults

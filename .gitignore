@@ -18,6 +18,7 @@ target/electron/node_modules
 target/electron/release-builds
 
 *OUO*
+*ouo*
 .svn
 .vscode
 .idea

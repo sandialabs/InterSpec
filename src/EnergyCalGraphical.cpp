@@ -56,7 +56,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
                             EnergyCalGraphicalConfirm::RecalTypes lastType,
                             float lastEnergy )
 : AuxWindow( "Confirm Recalibration",
-             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                | AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse) ),
   m_calibrator( cal ), m_typeButtons( NULL), m_foregroundOnly( NULL ),
   m_startE( NULL ), m_finalE( NULL ),

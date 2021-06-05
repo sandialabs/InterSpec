@@ -46,6 +46,11 @@ namespace Wt
   class WSvgImage;
 }//namespace Wt
 
+namespace SpecUtils
+{
+  class Measurement;
+}
+
 
 class SpectrumViewerTesterWindow : public AuxWindow
 {
@@ -158,7 +163,8 @@ public:
   
   void updateOverview();
   
-  static std::string makePeakSummarryTable( const PeakDef &peak );
+  static std::string makePeakSummarryTable( const PeakDef &peak,
+                                            const std::shared_ptr<const SpecUtils::Measurement> &data );
   
   static bool peaksAreSimilar( const PeakDef *original, const PeakDef *found );
   static bool compatibleMeans( const PeakDef *orig, const PeakDef *found );
