@@ -989,14 +989,28 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
     
     if( peak.userLabel().size() || peak.gammaParticleEnergy() > 0.0f )
     {
-      //channel should actually be a float (well, thats what Peak Easy uses),
-      //  but for current ease of implementation will just truncate
-      size_t channel = 0;
+      // The channel should be a floating point number
+      double channel = 0.0;
+      const shared_ptr<const SpecUtils::EnergyCalibration> energycal = summed->energy_calibration();
       try
       {
-        channel = summed->find_gamma_channel( peak.gammaParticleEnergy() );
+        if( energycal && (energycal->type() != SpecUtils::EnergyCalType::InvalidEquationType) )
+        {
+          try
+          {
+            if( peak.xrayElement() || peak.nuclearTransition() || peak.reaction() )
+              channel = energycal->channel_for_energy( peak.gammaParticleEnergy() );
+            else
+              channel = energycal->channel_for_energy( peak.mean() );
+          }catch(...)
+          {
+            channel = energycal->channel_for_energy( peak.mean() );
+          }
+        }//if( we have energy calibration info - which we should )
       }catch(...)
       {
+        // We probably shouldnt really get to here unless the peak is outside of reasonable range
+        //  of the energy calibration
         continue;
       }
       
