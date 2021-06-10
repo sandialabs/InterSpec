@@ -64,6 +64,11 @@ public:
 
   int numSnaphots() const;
   
+  /** Returns the number of saved states available. */
+  static size_t num_saved_states( InterSpec *viewer,
+                                 std::shared_ptr<DataBaseUtils::DbSession> session,
+                                 std::shared_ptr<const SpectraFileHeader> header );
+  
 protected:
   void selectionChanged();
   void startDeleteSelected();

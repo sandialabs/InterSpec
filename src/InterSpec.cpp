@@ -355,7 +355,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_warningsWindow( 0 ),
     m_fileManager( 0 ),
     m_layout( 0 ),
+#if( USE_FLEX_CHART_LAYOUT )
+    m_chartsDiv( nullptr ),
+#else
     m_chartsLayout( 0 ),
+#endif
     m_toolsLayout( 0 ),
     m_menuDiv( 0 ),
     m_peakInfoDisplay( 0 ),
@@ -526,14 +530,44 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   m_peakModel  = new PeakModel( this );
 #if( USE_SPECTRUM_CHART_D3 )
+
+#if( USE_FLEX_CHART_LAYOUT )
+  m_chartsDiv = new WContainerWidget();
+  m_chartsDiv->addStyleClass( "ChartsDiv" );
+  
+  /*
+   //If flex layout is used, need to add at least the below to the CSS
+   .ChartsDiv
+   {
+   display: flex;
+   flex-direction: column;
+   flex-wrap: nowrap;
+   }
+   
+   .ChartsDiv > .SpectrumDisplayDiv {
+   flex-grow: 3;
+   overflow: hidden;
+   }
+   
+   .ChartsDiv > .D3TimeChartParent {
+   flex-grow: 2;
+   overflow: hidden;
+   }
+
+   */
+  
+  m_spectrum   = new D3SpectrumDisplayDiv(m_chartsDiv);
+  m_timeSeries = new D3TimeChart(m_chartsDiv);
+#else
   m_spectrum   = new D3SpectrumDisplayDiv();
+  m_timeSeries = new D3TimeChart();
+#endif
+  
   m_peakModel->dataChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
   m_peakModel->rowsRemoved().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
   m_peakModel->rowsInserted().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
   m_peakModel->layoutChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
   m_peakModel->modelReset().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  
-  m_timeSeries = new D3TimeChart();
 #else
   m_spectrum   = new SpectrumDisplayDiv();
   m_spectrum->setPlotAreaPadding( 80, 2, 10, 44 );
@@ -768,8 +802,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   if( m_menuDiv )
     m_layout->addWidget( m_menuDiv, m_layout->rowCount(), 0 );
+  
+#if( USE_FLEX_CHART_LAYOUT )
+  m_layout->addWidget( m_chartsDiv, m_layout->rowCount(), 0 );
+#else
   m_layout->addWidget( m_spectrum, m_layout->rowCount(), 0 );
   m_layout->addWidget( m_timeSeries, m_layout->rowCount(), 0 );
+#endif
   
 #if( USE_SPECTRUM_CHART_D3 )
   // No need to updated the default axis titles
@@ -780,6 +819,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_timeSeries->chartDragged().connect( this, &InterSpec::timeChartDragged );
   m_timeSeries->chartClicked().connect( this, &InterSpec::timeChartClicked );
 #else
+  
   m_timeSeries->enableLegend( false );
   m_timeSeries->showHistogramIntegralsInLegend( false );
   m_timeSeries->setMouseDragHighlights( true, true );
@@ -2456,7 +2496,7 @@ void InterSpec::handleRightClick( double energy, double counts,
   }//for( loop over right click menu items )
   
   if( isMobile() )
-    m_rightClickMenu->showFromMouseOver();
+    m_rightClickMenu->showMobile();
   else
     m_rightClickMenu->popup( WPoint(pageX,pageY) );
 }//void handleRightClick(...)
@@ -5534,8 +5574,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   { //We are showing the tool tabs
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
+    
+#if( USE_FLEX_CHART_LAYOUT )
+    m_layout->removeWidget( m_chartsDiv );
+#else
     m_layout->removeWidget( m_spectrum );
     m_layout->removeWidget( m_timeSeries );
+#endif
     m_layout->clear();
     
     //We have to completely replace m_layout or else the vertical spacing
@@ -5623,24 +5668,26 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     m_energyCalTool->setWideLayout();
     m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
-        
+    
+#if( USE_FLEX_CHART_LAYOUT )
+#else
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
+    m_chartsLayout->setHorizontalSpacing( 0 );
+    m_chartsLayout->addWidget( m_spectrum, 0, 0 );
+    m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
+    
     if( m_timeSeries->isHidden() )
     {
       m_chartsLayout->setVerticalSpacing( 0 );
     }else
     {
-      m_chartsLayout->setRowStretch( 0, 3 );
+      m_chartsLayout->setRowStretch( 0, 20 );
       m_chartsLayout->setRowStretch( 1, 2 );
       m_chartsLayout->setRowResizable( 0 );
       m_chartsLayout->setVerticalSpacing( layoutVertSpacing );
     }
-    
-    m_chartsLayout->setHorizontalSpacing( 0 );
-    
-    m_chartsLayout->addWidget( m_spectrum, 0, 0 );
-    m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
+#endif
     
     m_toolsLayout = new WGridLayout();
     m_toolsLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -5651,12 +5698,18 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     int row = 0;
     if( m_menuDiv )
       m_layout->addWidget( m_menuDiv,  row++, 0 );
+    
+#if( USE_FLEX_CHART_LAYOUT )
+    m_layout->addWidget( m_chartsDiv,  row, 0 );
+#else
     m_layout->addLayout( m_chartsLayout, row, 0 );
+#endif
+    
     m_layout->setRowResizable( row, true );
     m_layout->setRowStretch( row, 5 );
     
     m_layout->setVerticalSpacing( layoutVertSpacing );
-    if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amoutn of space between the menu bar and the chart
+    if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amount of space between the menu bar and the chart
       m_spectrum->setMargin( -layoutVertSpacing, Wt::Top );
     
     //Without using the wrapper below, the tabs widget will change height, even
@@ -5707,8 +5760,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   }else
   {
     //We are hidding the tool tabs
+#if( USE_FLEX_CHART_LAYOUT )
+    m_layout->removeWidget( m_chartsDiv );
+#else
     m_chartsLayout->removeWidget( m_spectrum );
     m_chartsLayout->removeWidget( m_timeSeries );
+    m_chartsLayout = nullptr;
+#endif
     
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
@@ -5725,7 +5783,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_referencePhotopeakLines->clearAllLines();
     
     m_toolsTabs = nullptr;
-    m_chartsLayout = nullptr;
+    
     if( !m_referencePhotopeakLinesWindow )
       m_referencePhotopeakLines = nullptr;
     m_toolsLayout = nullptr;
@@ -5791,6 +5849,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   m_spectrum->scheduleUpdateForeground();
   m_spectrum->scheduleUpdateBackground();
   m_spectrum->scheduleUpdateSecondData();
+  
+  m_timeSeries->scheduleRenderAll();
 #endif
 }//void setToolTabsVisible( bool showToolTabs )
 
@@ -6958,19 +7018,6 @@ void InterSpec::toggleToolTip( const bool showToolTips )
   }
   
 }//void toggleToolTip( const bool sticky )
-
-
-int InterSpec::paintedWidth() const
-{
-  return max( m_spectrum->layoutWidth(), m_timeSeries->layoutWidth() );
-}//int paintedWidth() const
-
-
-int InterSpec::paintedHeight() const
-{
-  //XXX This isnt correct due to all padding and stuff
-  return m_spectrum->layoutHeight() + m_timeSeries->layoutHeight();
-}//int paintedHeight() const
 
 
 
@@ -8259,12 +8306,12 @@ void InterSpec::timeChartDragged( const int sample_start_in, const int sample_en
     action = ActionType::AddSamples;
   else if( modifiers.testFlag(KeyboardModifier::ControlModifier) )
     action = ActionType::RemoveSamples;
-  //else if( modifiers.testFlag(KeyboardModifier::MetaModifier) )//Meta key pressed ("Windows" or "Command" (Mac) key)
-  //  action = ...;
   
-  const auto type = modifiers.testFlag(KeyboardModifier::AltModifier)
-                                 ? SpecUtils::SpectrumType::Background
-                                 : SpecUtils::SpectrumType::Foreground;
+  SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+  if( modifiers.testFlag(KeyboardModifier::AltModifier) )
+    type = SpecUtils::SpectrumType::Background;
+  else if( modifiers.testFlag(KeyboardModifier::MetaModifier) )
+    type = SpecUtils::SpectrumType::SecondForeground;
   
   const int sample_start = std::min( sample_start_in, sample_end_in );
   const int sample_end = std::max( sample_start_in, sample_end_in );
@@ -9923,11 +9970,6 @@ void InterSpec::searchForSinglePeak( const double x )
     if( !p->parentNuclide() && !p->reaction() && !p->xrayElement() )
       addPeak( *p, true );
   }
-  
-  
-#if( USE_SPECTRUM_CHART_D3 )
-  //m_spectrum->updateData();
-#endif
 }//void searchForSinglePeak( const double x )
 
 
@@ -10382,11 +10424,6 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   
   
   m_peakModel->setPeaks( all_peaks );
-#if( USE_SPECTRUM_CHART_D3 )
-  //m_spectrum->updateData();
-#endif
-  
-//  m_peakModel->setPeaks( newpeaks );
 }//void excludePeaksFromRange( const double x0, const double x1 )
 
 
@@ -10680,6 +10717,8 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
 
 void InterSpec::setChartSpacing()
 {
+#if( USE_FLEX_CHART_LAYOUT )
+#else
   const int vertSpacing = (m_timeSeries->isHidden() ? 0 : (isMobile() ? 10 : 5));
 
   //Changing the vertical space doesnt seem to reliably trigger in Wt 3.3.4
@@ -10699,14 +10738,16 @@ void InterSpec::setChartSpacing()
       }
     }//for( int i = 0; i < m_layout->count(); ++i )
     
-    //wait, did m_chartsLayout get deleted?
+    // Cleanup m_chartsLayout - looks like this cleans up all the memory (e.g., no danglers from the
+    //  call to m_layout->removeItem( t ) above).
+    delete m_chartsLayout;
     
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
     m_chartsLayout->setVerticalSpacing( vertSpacing );
     m_chartsLayout->addWidget( m_spectrum, 0, 0 );
     m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
-    m_chartsLayout->setRowStretch( 0, 3 );
+    m_chartsLayout->setRowStretch( 0, 20 );
     m_chartsLayout->setRowStretch( 1, 2 );
     m_chartsLayout->setRowResizable( 0 );
     
@@ -10746,7 +10787,7 @@ void InterSpec::setChartSpacing()
   {
     m_spectrum->setMargin( 0, Wt::Top );
   }
-  
+#endif
 }//void setChartSpacing()
 
 

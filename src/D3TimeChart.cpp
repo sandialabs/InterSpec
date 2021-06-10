@@ -401,10 +401,6 @@ public:
 D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
   m_renderFlags( 0 ),
-  m_layoutWidth( 0 ),
-  m_layoutHeight( 0 ),
-  m_chartWidthPx( 0.0 ),
-  m_chartHeightPx( 0.0 ),
   m_compactXAxis( false ),
   m_showVerticalLines( false ),
   m_showHorizontalLines( false ),
@@ -416,12 +412,10 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_y2AxisTitle( "Neutron CPS"),
   m_chartClicked( this ),
   m_chartDragged( this ),
-  m_chartResized( this ),
   m_displayedXRangeChange( this ),
   //m_energyRangeFilterChanged( this ),
   m_chartClickedJS( nullptr ),
   m_chartDraggedJS( nullptr ),
-  m_chartResizedJS( nullptr ),
   m_displayedXRangeChangeJS( nullptr ),
   m_jsgraph( jsRef() + ".chart" ),
   m_chart( nullptr ),
@@ -438,7 +432,6 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_chartMarginColor( 0x00, 0x00, 0x00 ),
   m_chartBackgroundColor( 0x00, 0x00, 0x00 )
 {
-  setLayoutSizeAware( true );
   addStyleClass( "D3TimeChartParent" );
     
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
@@ -470,6 +463,12 @@ D3TimeChart::~D3TimeChart()
 
 void D3TimeChart::defineJavaScript()
 {
+  //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<svg width=\"400\" height=\"75\" style=\"box-sizing: border-box; \"><rect width=\"300\" height=\"75\" style=\"fill:rgb(0,0,255);stroke-width:3;stroke:rgb(0,0,0)\" /></svg>' ); console.log( 'Added rect' );" );
+  
+  //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<div style=\"box-sizing: border-box; position: absolute; border: 1px solid blue; width: 100px; height: 75px;\" />' );" );
+  //cerr << "\n\nFor debugging - skipping D3TimeChart::defineJavaScript(...) - you need to fix this\n\n";
+  //return;
+  
   string options = "{";
   options += "xtitle: '" + (m_compactXAxis ? m_compactXAxisTitle : m_xAxisTitle) + "'";
   options += ", y1title: '" + m_y1AxisTitle + "'";
@@ -481,21 +480,30 @@ void D3TimeChart::defineJavaScript()
   options += "}";
   
   setJavaScriptMember( "chart", "new D3TimeChart(" + m_chart->jsRef() + "," + options + ");");
-  setJavaScriptMember( "wtResize",
-                       "function(self, w, h, layout){"
-                       " setTimeout( function(){" + m_jsgraph + ".handleResize();},0); "
-                       "}" );
+  
+  //setJavaScriptMember( "wtResize",
+  //                     "function(self, w, h, layout){"
+  //                     " setTimeout( function(){" + m_jsgraph + ".handleResize();},0); "
+  //                     "}" );
+  
+  doJavaScript( ""
+    "const resizeObserver = new ResizeObserver(entries => {"
+      "for (let entry of entries) {"
+        "if( entry.target && (entry.target.id === '" + m_chart->id() + "') )"
+          + m_jsgraph + ".handleResize();"
+      "}"
+    "});"
+    "resizeObserver.observe(" + m_chart->jsRef() + ");"
+  );
   
   if( !m_chartClickedJS )
   {
     m_chartClickedJS.reset( new Wt::JSignal<int,int>(m_chart, "timeclicked", false) );
     m_chartDraggedJS.reset( new Wt::JSignal<int,int,int>(m_chart, "timedragged", false) );
-    m_chartResizedJS.reset( new Wt::JSignal<double,double>(m_chart, "timeresized", false ) );
     m_displayedXRangeChangeJS.reset( new Wt::JSignal<int,int,int>(m_chart,"timerangechange",false) );
     
     m_chartClickedJS->connect( this, &D3TimeChart::chartClickedCallback );
     m_chartDraggedJS->connect( this, &D3TimeChart::chartDraggedCallback );
-    m_chartResizedJS->connect( this, &D3TimeChart::chartResizedCallback );
     m_displayedXRangeChangeJS->connect( this, &D3TimeChart::displayedXRangeChangeCallback );
   }//if( !m_xRangeChangedJS )
   
@@ -508,6 +516,9 @@ void D3TimeChart::defineJavaScript()
 
 void D3TimeChart::doJavaScript( const std::string& js )
 {
+  //cerr << "\n\nFor debugging - skipping D3TimeChart::doJavaScript(...) - you need to fix this\n\n";
+  //return;
+  
   if( isRendered() )
     WContainerWidget::doJavaScript( js );
   else
@@ -1178,12 +1189,6 @@ Wt::Signal<int,int,Wt::WFlags<Wt::KeyboardModifier>> &D3TimeChart::chartDragged(
 }
 
 
-Wt::Signal<double,double> &D3TimeChart::chartResized()
-{
-  return m_chartResized;
-}
-
-
 Wt::Signal<int,int,int> &D3TimeChart::displayedXRangeChange()
 {
   return m_displayedXRangeChange;
@@ -1451,13 +1456,6 @@ void D3TimeChart::setY2AxisTitle( const std::string &title )
 }//void setY2AxisTitle( const std::string &title )
 
 
-void D3TimeChart::layoutSizeChanged ( int width, int height )
-{
-  m_layoutWidth = width;
-  m_layoutHeight = height;
-}//void layoutSizeChanged ( int width, int height )
-
-
 void D3TimeChart::showFilters( const bool show )
 {
   if( !m_options || !m_showOptionsIcon || (m_showOptionsIcon->isHidden() == show) )
@@ -1477,7 +1475,7 @@ void D3TimeChart::showFilters( const bool show )
     //}
   }//if( !show )
   
-  doJavaScript( "setTimeout( function(){" + m_jsgraph + ".handleResize();},0); " );
+  //doJavaScript( "setTimeout( function(){" + m_jsgraph + ".handleResize();},0); " );
   
   const auto mode = show ? m_options->interactionMode() : UserInteractionMode::Default;
   setUserInteractionMode( mode );
@@ -1523,30 +1521,6 @@ void D3TimeChart::userChangedEnergyRangeFilterCallback()
 //    return m_options->energyRangeFilters();
 //  return pair<boost::optional<float>,boost::optional<float>>();
 //}
-
-
-int D3TimeChart::layoutWidth() const
-{
-  return m_layoutWidth;
-}
-
-
-int D3TimeChart::layoutHeight() const
-{
-  return m_layoutHeight;
-}
-
-
-double D3TimeChart::chartWidthInPixels() const
-{
-  return m_chartWidthPx;
-}
-
-
-double D3TimeChart::chartHeightInPixels() const
-{
-  return m_chartHeightPx;
-}
 
 
 void D3TimeChart::setCompactAxis( const bool compact )
@@ -1649,12 +1623,6 @@ void D3TimeChart::chartDraggedCallback( int first_sample_number, int last_sample
 {
   m_chartDragged.emit( first_sample_number, last_sample_number, Wt::WFlags<Wt::KeyboardModifier>(Wt::KeyboardModifier(modifier_keys)) );
 }//chartDraggedCallback(...)
-
-
-void D3TimeChart::chartResizedCallback( double chart_width_px, double chart_height_px )
-{
-  m_chartResized.emit( chart_width_px, chart_height_px );
-}//chartResizedCallback(...)
 
 
 void D3TimeChart::displayedXRangeChangeCallback( int first_sample_number, int last_sample_number, int samples_per_channel )

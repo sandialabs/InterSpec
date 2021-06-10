@@ -51,7 +51,11 @@ using namespace std;
 using SpecUtils::Measurement;
 
 const int PeakDef::sm_xmlSerializationVersion = 0;
-const int PeakContinuum::sm_xmlSerializationVersion = 0;
+
+/** Version 1 adds "FlatStep", "LinearStep", and "BiLinearStep" continuum types
+ 
+ */
+const int PeakContinuum::sm_xmlSerializationVersion = 1;
 
 namespace
 {
@@ -1526,8 +1530,28 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
   char buffer[128];
   xml_node<char> *node = 0;
   xml_node<char> *cont_node = doc->allocate_node( node_element, "PeakContinuum" );
-
-  snprintf( buffer, sizeof(buffer), "%i", sm_xmlSerializationVersion );
+  
+  // A reminder double check these logics when changing PeakContinuum::sm_xmlSerializationVersion
+  static_assert( PeakContinuum::sm_xmlSerializationVersion == 1,
+                "PeakContinuum::toXml needs to be updated for new serialization version." );
+  
+  // For version 1.0.8 and newer InterSpec, we will attempt to let InterSpec v1.0.7 and older be
+  //  able to read the peaks in N42 files, as long as no stepped-continuums are used.
+  int version = PeakContinuum::sm_xmlSerializationVersion;
+  switch( m_type )
+  {
+    case NoOffset: case External: case Constant: case Linear: case Quadratic: case Cubic:
+      // Nothing changed for these continuum types between version 0 and version 1.
+      version = 0;
+      break;
+      
+    case FlatStep: case LinearStep: case BiLinearStep:
+      // These continuums were added for serialization version 1, starting with InterSpec v1.0.8.
+      version = 1;
+      break;
+  }//switch( m_type )
+  
+  snprintf( buffer, sizeof(buffer), "%i", version );
   const char *val = doc->allocate_string( buffer );
   xml_attribute<char> *att = doc->allocate_attribute( "version", val );
   cont_node->append_attribute( att );
@@ -1642,8 +1666,16 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
   if( !att || !att->value() || (sscanf(att->value(), "%i", &version)!=1) )
     throw runtime_error( "PeakContinuum invalid version" );
   
-  if( version != sm_xmlSerializationVersion )
-    throw runtime_error( "Invalid PeakContinuum version" );
+  // A reminder double check these logics when changing PeakContinuum::sm_xmlSerializationVersion
+  static_assert( PeakContinuum::sm_xmlSerializationVersion == 1,
+                "PeakContinuum::toXml needs to be updated for new serialization version." );
+  
+  // Serialization version 1 is backwards compatible with version 0 for de-serialization, so no
+  //  changes to this code is needed.
+  if( (version < 0) || (version > PeakContinuum::sm_xmlSerializationVersion) )
+    throw runtime_error( "Invalid PeakContinuum version: " + std::to_string(version) + ".  "
+                    + "Only up to version " + to_string(PeakContinuum::sm_xmlSerializationVersion)
+                    + " supported." );
   
   att = cont_node->first_attribute( "id", 2 );
   if( !att || !att->value() || (sscanf(att->value(), "%i", &contId)!=1) )
@@ -1761,7 +1793,7 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   xml_node<char> *node = 0;
   xml_node<char> *peak_node = doc->allocate_node( node_element, "Peak" );
   
-  snprintf( buffer, sizeof(buffer), "%i", sm_xmlSerializationVersion );
+  snprintf( buffer, sizeof(buffer), "%i", PeakDef::sm_xmlSerializationVersion );
   const char *val = doc->allocate_string( buffer );
   xml_attribute<char> *att = doc->allocate_attribute( "version", val );
   peak_node->append_attribute( att );
@@ -1982,7 +2014,7 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   if( sscanf( att->value(), "%i", &version ) != 1 )
     throw runtime_error( "Non integer version number" );
   
-  if( version != sm_xmlSerializationVersion )
+  if( version != PeakDef::sm_xmlSerializationVersion )
     throw runtime_error( "Invalid peak version" );
   
   xml_node<char> *node = peak_node->first_node("UserLabel",9);
@@ -4287,25 +4319,42 @@ void PeakContinuum::translate_offset_polynomial( double *new_coefs,
   switch( type )
   {
     case NoOffset:
-    case External:
-      throw runtime_error( "translate_offset_polynomial invalid offset type" );
+      return;
+    
+    case Constant:
+      new_coefs[0] = old_coefs[0];
+      break;
       
-    case Quadratic:
-    case Cubic:
-    case FlatStep:
-    case LinearStep:
-    case BiLinearStep:
-      throw runtime_error( "translate_offset_polynomial does not yet support "
-                           "quadratic or cubic polynomials" );
-        
     case Linear:
       new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
       new_coefs[1] = old_coefs[1];
       break;
       
-    case Constant:
-      new_coefs[0] = old_coefs[0];
+    case Quadratic:
+    case Cubic:
+      throw runtime_error( "translate_offset_polynomial does not yet support "
+                           "quadratic or cubic polynomials" );
+    
+    case LinearStep:
+      new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
+      new_coefs[1] = old_coefs[1];
+      new_coefs[2] = old_coefs[2];
       break;
+      
+    case BiLinearStep:
+      new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
+      new_coefs[1] = old_coefs[1];
+      new_coefs[2] = old_coefs[2] + old_coefs[3] * (new_center - old_center);
+      new_coefs[3] = old_coefs[3];
+      break;
+    
+    case FlatStep:
+      new_coefs[0] = old_coefs[0];
+      new_coefs[1] = old_coefs[1];
+      break;
+      
+    case External:
+      throw runtime_error( "translate_offset_polynomial does not support external continuum" );
   }//switch( type )
 }//void translate_offset_polynomial(...)
 

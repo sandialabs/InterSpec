@@ -989,14 +989,28 @@ bool SpecMeas::write_iaea_spe( std::ostream &output,
     
     if( peak.userLabel().size() || peak.gammaParticleEnergy() > 0.0f )
     {
-      //channel should actually be a float (well, thats what Peak Easy uses),
-      //  but for current ease of implementation will just truncate
-      size_t channel = 0;
+      // The channel should be a floating point number
+      double channel = 0.0;
+      const shared_ptr<const SpecUtils::EnergyCalibration> energycal = summed->energy_calibration();
       try
       {
-        channel = summed->find_gamma_channel( peak.gammaParticleEnergy() );
+        if( energycal && (energycal->type() != SpecUtils::EnergyCalType::InvalidEquationType) )
+        {
+          try
+          {
+            if( peak.xrayElement() || peak.nuclearTransition() || peak.reaction() )
+              channel = energycal->channel_for_energy( peak.gammaParticleEnergy() );
+            else
+              channel = energycal->channel_for_energy( peak.mean() );
+          }catch(...)
+          {
+            channel = energycal->channel_for_energy( peak.mean() );
+          }
+        }//if( we have energy calibration info - which we should )
       }catch(...)
       {
+        // We probably shouldnt really get to here unless the peak is outside of reasonable range
+        //  of the energy calibration
         continue;
       }
       
@@ -1065,12 +1079,22 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   const xml_node<char> *node = node = interspecnode->first_node( "DisplayedSampleNumbers", 22 );
   if( node && node->value() )
   {
-    std::vector<int> contents;
-    SpecUtils::split_to_ints( node->value(), node->value_size(), contents );
-    for( const float t : contents )
+    try
     {
-      if( sample_numbers_.count(t) ) //make sure to not insert any invalid sample numbers
-        m_displayedSampleNumbers->insert( t );
+      std::vector<int> contents;
+      if( !SpecUtils::split_to_ints( node->value(), node->value_size(), contents ) )
+        throw runtime_error( "Invalid list of sample numbers" );
+      
+      for( const float t : contents )
+      {
+        if( sample_numbers_.count(t) ) //make sure to not insert any invalid sample numbers
+          m_displayedSampleNumbers->insert( t );
+      }
+    }catch( std::exception &e )
+    {
+      m_displayedSampleNumbers->clear();
+      parse_warnings_.push_back( "Could not decode InterSpec specific sample numbers"
+                                 " to display in N42 file: " + std::string(e.what()) );
     }
   }//if( node )
   
@@ -1119,27 +1143,56 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   
   node = interspecnode->first_node( "Peaks", 5 );
   if( node )
-    addPeaksFromXml( node );
+  {
+    try
+    {
+      addPeaksFromXml( node );
+    }catch( std::exception &e )
+    {
+      parse_warnings_.push_back( "Could not decode InterSpec specific peaks in N42 file: " + std::string(e.what()) );
+    }
+  }//if( node )
 
   
   node = interspecnode->first_node( "DetectorPeakResponse", 20 );
   if( node )
   {
-    m_detector.reset( new DetectorPeakResponse() );
-    m_detector->fromXml( node );
+    try
+    {
+      m_detector.reset( new DetectorPeakResponse() );
+      m_detector->fromXml( node );
+    }catch( std::exception &e )
+    {
+      m_detector.reset();
+      parse_warnings_.push_back( "Could not decode InterSpec specific detector response function in N42 file: "
+                                 + std::string(e.what()) );
+    }// try / catch
   }else
+  {
     m_detector.reset();
+  }
   
   node = interspecnode->first_node( "ShieldingSourceFit", 18 );
   if( node )
   {
-    m_shieldingSourceModel.reset( new rapidxml::xml_document<char>() );
-    auto model_node = m_shieldingSourceModel->allocate_node(rapidxml::node_element);
-    m_shieldingSourceModel->append_node( model_node );
-    clone_node_deep( node, model_node );
+    try
+    {
+      m_shieldingSourceModel.reset( new rapidxml::xml_document<char>() );
+      auto model_node = m_shieldingSourceModel->allocate_node(rapidxml::node_element);
+      m_shieldingSourceModel->append_node( model_node );
+      clone_node_deep( node, model_node );
+    }catch( std::exception &e )
+    {
+      m_shieldingSourceModel.reset();
+      parse_warnings_.push_back( "Could not decode InterSpec specific Shielding/Source model in N42 file: "
+                                + std::string(e.what()) );
+    }// try / catch
   }else
+  {
     m_shieldingSourceModel.reset();
+  }
 }//void decodeSpecMeasStuffFromXml( ::rapidxml::xml_node<char> *parent )
+
 
 ::rapidxml::xml_node<char> *SpecMeas::appendSampleNumbersToXml(
                                     ::rapidxml::xml_node<char> *interspec_node ) const
@@ -1326,7 +1379,16 @@ void SpecMeas::load_N42_from_doc( rapidxml::xml_document<char> &doc )
     throw runtime_error( "Couldnt Parse" );
   
   if( interspecnode )
-    decodeSpecMeasStuffFromXml( interspecnode );
+  {
+    try
+    {
+      decodeSpecMeasStuffFromXml( interspecnode );
+    }catch( std::exception &e )
+    {
+      parse_warnings_.push_back( "Could not decode InterSpec specific information in N42 file: "
+                                 + std::string(e.what()) );
+    }
+  }//if( interspecnode )
 }//void load_N42_from_doc( rapidxml::xml_document<char> &doc )
 
 
