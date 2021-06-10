@@ -1189,9 +1189,18 @@ protected:
   SpecMeasManager        *m_fileManager; // The file manager
   Wt::WGridLayout        *m_layout;
 
+// 20210604: started playing around with using FLEX layout for just the charts - its not there yet,
+//           but shows some promise.
+#define USE_FLEX_CHART_LAYOUT 0
+  
   //Note: m_chartsLayout may be eliminated; may even be able to eliminate
   //  m_toolsLayout...
+#if( USE_FLEX_CHART_LAYOUT )
+  Wt::WContainerWidget   *m_chartsDiv;
+#else
   Wt::WGridLayout        *m_chartsLayout;
+#endif
+  
   Wt::WGridLayout        *m_toolsLayout;
   Wt::WContainerWidget   *m_menuDiv; // The top menu bar.
 

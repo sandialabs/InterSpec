@@ -298,7 +298,21 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += "}";
   
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
+  
+
+#if( USE_FLEX_CHART_LAYOUT )
+  doJavaScript( ""
+    "const resizeObs" + id() + " = new ResizeObserver(entries => {"
+    "for (let entry of entries) {"
+      "if( entry.target && (entry.target.id === '" + id() + "') )"
+        + m_jsgraph + ".handleResize();"
+      "}"
+    "});"
+    "resizeObs" + id() + ".observe(" + jsRef() + ");"
+  );
+#else
   setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+#endif
   
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   updateReferncePhotoPeakLines();
