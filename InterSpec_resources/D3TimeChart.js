@@ -233,6 +233,9 @@ D3TimeChart = function (elem, options) {
     background: {
       modifierKey: { altKey: true },
     },
+    secondary: {
+      modifierKey: { metaKey: true },
+    },
     removeForeground: {
       modifierKey: { ctrlKey: true },
     },
@@ -275,6 +278,7 @@ D3TimeChart = function (elem, options) {
   this.HIGHLIGHT_COLORS = Object.freeze({
     foreground: "rgb(255, 255, 0)",
     background: "rgb(0, 255, 255)",
+    secondary: "rgb(0, 128, 0)",
     removeForeground: "rgb(255, 0, 0)",
     // zoom: "rgb(102,102,102)",
   });
@@ -344,10 +348,29 @@ D3TimeChart = function (elem, options) {
   this.highlightModifier = null; // holds the key pressed in conjunction with a highlight gesture to modify the action
   this.draggedForward = false;
 
+  // held key modifiers
+  this.keysHeld = {};
+  this.backgroundSelectionKeyHeld = false;
+  this.secondarySelectionKeyHeld = false;
+
   /** GLOBAL LISTENERS */
-  // listeners to support esc canceling of highlighting and arrow-key panning
+  // listeners to support esc canceling of highlighting, held key modifiers, and arrow-key panning
   document.addEventListener("keydown", function (evt) {
     evt = evt || window.event;
+    // record the held unmodified BASE key (no shift key modified) -- this only works so far for alphabetical characters. We need this because otherwise, have observed it leads to some strange behavior when using key combinations.
+    if (
+      evt.shiftKey &&
+      evt.key.length === 1 &&
+      evt.key >= "A" &&
+      evt.key <= "Z"
+    ) {
+      var unmodifiedEventKey = String.fromCharCode(evt.key.charCodeAt() + 32);
+      self.keysHeld[unmodifiedEventKey] = true;
+    } else {
+      self.keysHeld[evt.key] = true;
+    }
+
+    // special handling for other keys
     if (evt.key === "Escape") {
       self.cancelSelectionSignalEmitted = true;
       d3.select("body").style("cursor", "auto");
@@ -356,6 +379,21 @@ D3TimeChart = function (elem, options) {
       self.shiftSelection(-1);
     } else if (evt.key === "ArrowRight") {
       self.shiftSelection(1);
+    }
+  });
+
+  document.addEventListener("keyup", function (evt) {
+    evt = evt || window.event;
+    if (
+      evt.shiftKey &&
+      evt.key.length === 1 &&
+      evt.key >= "A" &&
+      evt.key <= "Z"
+    ) {
+      var unmodifiedEventKey = String.fromCharCode(evt.key.charCodeAt() + 32);
+      delete self.keysHeld[unmodifiedEventKey];
+    } else {
+      delete self.keysHeld[evt.key];
     }
   });
 };
@@ -450,7 +488,7 @@ D3TimeChart.prototype.handleResize = function () {
     // console.log( "Resized! New size={" + this.chart.clientWidth + "," + this.chart.clientHeight + "}" );
     this.state.height = this.chart.clientHeight;
     this.state.width = this.chart.clientWidth;
-    
+
     this.reinitializeChart();
   } catch (err) {
     if (err instanceof ValidationError) {
@@ -610,25 +648,26 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     // console.log(coords);
     brush.setStart(coords[0]);
     d3.select("body").style("cursor", "move");
-    // console.log(d3.event.sourceEvent);
 
     // TODO: add analogous touch gestures to add additional touch functionality
     var TOUCH_ANALOGOUS_SHIFT = this.usingAddSelectionMode === true;
     var TOUCH_ANALOGOUS_RIGHTCLICK =
       this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
-    var TOUCH_ANALOGOUS_ALTKEY =
+    var TOUCH_ANALOGOUS_ALTKEYCLICK =
       this.userInteractionMode ===
       this.UserInteractionModeEnum.SELECTBACKGROUND;
-    var TOUCH_ANALOGOUS_CTRLCLICK =
+    var TOUCH_ANALOGOUS_CTRLKEYCLICK =
       this.userInteractionMode ===
       this.UserInteractionModeEnum.REMOVEFOREGROUND;
+    var TOUCH_ANALOGOUS_METAKEYCLICK =
+      this.userInteractionMode === this.UserInteractionModeEnum.SELECTSECONDARY;
 
     this.shiftKeyHeld =
       TOUCH_ANALOGOUS_SHIFT ||
       (d3.event.sourceEvent && d3.event.sourceEvent.shiftKey);
 
     if (
-      TOUCH_ANALOGOUS_CTRLCLICK ||
+      TOUCH_ANALOGOUS_CTRLKEYCLICK ||
       (d3.event.type == "dragstart" &&
         window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
@@ -638,14 +677,25 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       this.highlightModifier = "ctrlKey";
       this.mouseDownHighlight(coords[0], "ctrlKey");
     } else if (
-      TOUCH_ANALOGOUS_ALTKEY ||
+      TOUCH_ANALOGOUS_ALTKEYCLICK ||
       (d3.event.type == "dragstart" &&
         window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
-        d3.event.sourceEvent.altKey)
+        (d3.event.sourceEvent.altKey || this.keysHeld["b"]))
     ) {
+      // 'b' for background
       this.highlightModifier = "altKey";
       this.mouseDownHighlight(coords[0], "altKey");
+    } else if (
+      TOUCH_ANALOGOUS_METAKEYCLICK ||
+      (d3.event.type == "dragstart" &&
+        window.MouseEvent &&
+        d3.event.sourceEvent instanceof MouseEvent &&
+        this.keysHeld["s"])
+    ) {
+      // 's' for secondary. Avoid using physical meta key as shortcut due to inconsistencies between platforms and browsers.
+      this.highlightModifier = "metaKey";
+      this.mouseDownHighlight(coords[0], "metaKey");
     } else if (
       TOUCH_ANALOGOUS_RIGHTCLICK ||
       (d3.event.type == "dragstart" &&
@@ -740,8 +790,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
             // Defined from docs on Wt::KeyboardModifier
             var keyModifierMap = {
               altKey: 0x4,
-              shiftKey: 0x1,
               ctrlKey: 0x2,
+              metaKey: 0x8,
+              shiftKey: 0x1,
               none: 0x0,
             };
             this.WtEmit(
@@ -2580,6 +2631,7 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
   } else {
     var foreground = this.highlightOptions.foreground;
     var background = this.highlightOptions.background;
+    var secondary = this.highlightOptions.secondary;
     var removeForeground = this.highlightOptions.removeForeground;
     var zoom = this.highlightOptions.zoom;
 
@@ -2589,6 +2641,9 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
     } else if (background && modifier in background.modifierKey) {
       this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.background);
       this.highlightText.text("Select background");
+    } else if (secondary && modifier in secondary.modifierKey) {
+      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.secondary);
+      this.highlightText.text("Select secondary");
     } else if (removeForeground && modifier in removeForeground.modifierKey) {
       this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.removeForeground);
       this.highlightText.text("Remove foreground");
