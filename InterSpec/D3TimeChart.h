@@ -99,11 +99,6 @@ public:
   /** When the user drags on the chart to change the time range the spectrum is displayed for. */
   Wt::Signal<int/*start sample number*/,int/*end sample number*/,Wt::WFlags<Wt::KeyboardModifier>> &chartDragged();
   
-  /** When the chart is resized; gives new width and height of the chart area (e.g., the area inside
-   the axis lines), in pixels.
-   */
-  Wt::Signal<double/*chart width px*/,double/*chart height px*/> &chartResized();
-  
   /**  Signal emitted when the displayed x-axis range changes via a user action; e.g., when zooming
    into or out of a region of interest.
    */
@@ -138,16 +133,6 @@ public:
   void setY1AxisTitle( const std::string &title );
   void setY2AxisTitle( const std::string &title );
   
-  
-  //By default SpectrumDisplayDiv has setLayoutSizeAware(true) set, so if the
-  //  widget is being sized by a Wt layout manager, layoutWidth() and
-  //  layoutHeight() will return this widget width and height respectively
-  int layoutWidth() const;
-  int layoutHeight() const;
-  
-  double chartWidthInPixels() const;
-  double chartHeightInPixels() const;
-  
   void setCompactAxis( const bool compact );
   bool isAxisCompacted() const;
   
@@ -181,9 +166,6 @@ protected:
   
   void setDataToClient();
   void setHighlightRegionsToClient();
-  
-  //layoutSizeChanged(...): adjusts display binning if necessary
-  virtual void layoutSizeChanged ( int width, int height );
   
   /** Shows or hides the user-selectable filters to control what the mouse/touch selects and energy range. */
   void showFilters( const bool show );
@@ -255,8 +237,6 @@ protected:
   /** The width of the plotting area in pixels. */
   double m_chartWidthPx;
   
-  /** The height of the plotting area in pixels. */
-  double m_chartHeightPx;
   
   bool m_compactXAxis;
   bool m_showVerticalLines;
@@ -283,20 +263,17 @@ protected:
   // Signals to hook C++ code to, to be notified when a user action happens
   Wt::Signal<int/*sample number*/,Wt::WFlags<Wt::KeyboardModifier>> m_chartClicked;
   Wt::Signal<int/*start sample number*/,int/*end sample number*/,Wt::WFlags<Wt::KeyboardModifier>> m_chartDragged;
-  Wt::Signal<double/*chart width px*/,double/*chart height px*/> m_chartResized;
   Wt::Signal<int/*start sample number*/,int/*end sample number*/,int/*samples per channel*/> m_displayedXRangeChange;
   //Wt::Signal<boost::optional<float> /*lower keV*/,boost::optional<float>/*upper keV*/> m_energyRangeFilterChanged;
   
   // Signals called from JS to propogate infromation to the C++
   std::unique_ptr<Wt::JSignal<int,int>>       m_chartClickedJS;
   std::unique_ptr<Wt::JSignal<int,int,int>>   m_chartDraggedJS;
-  std::unique_ptr<Wt::JSignal<double,double>> m_chartResizedJS;
   std::unique_ptr<Wt::JSignal<int,int,int>>   m_displayedXRangeChangeJS;
   
   // Functions connected to the JSignal's
   void chartClickedCallback( int sample_number, int modifier_keys );
   void chartDraggedCallback( int first_sample_number, int last_sample_number, int modifier_keys );
-  void chartResizedCallback( double chart_width_px, double chart_height_px );
   void displayedXRangeChangeCallback( int first_sample_number, int last_sample_number, int samples_per_channel );
   
   /** The javascript variable name used to refer to the SpecrtumChartD3 object.

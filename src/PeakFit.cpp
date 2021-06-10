@@ -4624,7 +4624,14 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   //  uncommon for LaBr systems to have 4096 channels.  We should probably define some resolution
   //  function that is the worst possible possible for high-resolution detectors, and threshold off
   //  of this
-  const bool highres = (nchannels > 5000);  //any system above 4096 channels has to be HPGe, right?
+  const float keV_per_channel = (dataH->gamma_energy_max() - dataH->gamma_energy_min()) / dataH->num_gamma_channels();
+  // Plan: if we have
+  //inpeaks
+  
+  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);  //any system above 4096 channels has to be HPGe, right?
+  
+  
+  
   
   
   if( initialfitpeaks.size() > 1 )

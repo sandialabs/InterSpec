@@ -224,8 +224,9 @@ struct PeakContinuum
   
   //translate_offset_polynomial: if you want the exact same polynomial
   //  line, but would like it with reference to a different energy,
-  //  use this funtion.
-  //XXX - Currently only supports constant and linear polynomials.
+  //  use this function.
+  //  TODO: Does NOT support Quadratic, Cubic, or External continuum types 
+  //  TODO: Currently untested
   static void translate_offset_polynomial( double *new_coefs,
                                            const double *old_coefs,
                                            OffsetType type,

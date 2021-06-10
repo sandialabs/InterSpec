@@ -863,14 +863,12 @@ void  SpecMeasManager::startSpectrumManager()
     
     Wt::WContainerWidget *treeDiv   = createTreeViewDiv();
     Wt::WContainerWidget *buttonBar = createButtonBar();
-    createInfoHandler(); // This sets up the m_infoHandler
     
     WContainerWidget * content = m_spectrumManagerWindow->contents();
   
     WGridLayout *layout = m_spectrumManagerWindow->stretcher();
     layout->addWidget(uploadDiv, 0,0);
     layout->addWidget( treeDiv,       1, 0 );
-    //  layout->addWidget( m_infoHandler, 1, 0 );
     layout->addWidget( buttonBar,     2, 0 );
     layout->setRowStretch( 1, 10 );
     
@@ -2583,12 +2581,8 @@ void SpecMeasManager::displayQuickSaveAsDialog()
 } // void SpecMeasManager::displayQuickSaveAsDialog();
 
 
-void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas,
-                                      const bool undisplay )
+void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas, const bool undisplay )
 {
-  //implementation copied from removeSpecMeas(Dbo::ptr<UserFileInDb> remove )
-  refreshAdditionalInfo( true );
-  
   for( int row = 0; row < m_fileModel->rowCount(); ++row )
   {
     std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( row );
@@ -2623,9 +2617,6 @@ void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas,
 // Used to unassign and unload spectrums just deleted from the Spectrum Manager
 void SpecMeasManager::removeSpecMeas(Dbo::ptr<UserFileInDb> remove )
 {
-  // Clear the stuff
-  refreshAdditionalInfo( true );
-  
   //Goes through each loaded state and checks if it's the same one as
   //the removed UserFileInDb
   for( int row = 0; row < m_fileModel->rowCount(); ++row )
@@ -2661,10 +2652,7 @@ void SpecMeasManager::removeSelected()
 {
     const WModelIndexSet selected = m_treeView->selectedIndexes();
     WModelIndexSet selectedFiles;
-    
-    // Clear the stuff
-    refreshAdditionalInfo( true );
-    
+        
     for( const WModelIndex &index : selected )
     {
         const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
@@ -3128,8 +3116,7 @@ void SpecMeasManager::selectionChanged()
           m_saveButton->enable();
           m_saveButton->show();
       }//isSupportFile()
-    // If only one file is selected, update the additional info.
-    refreshAdditionalInfo();
+
   }else
   {
       const bool enableSave = (files.size()==1);
@@ -3139,8 +3126,6 @@ void SpecMeasManager::selectionChanged()
           m_saveButton->setHidden( !enableSave );
       }
       
-      // Otherwise, set it to n/a
-      refreshAdditionalInfo( true );
   } // if( selectedFiles.size() == 1 )
 
   if( selected.size() != toSelect.size() )
@@ -3178,112 +3163,11 @@ void SpecMeasManager::selectionChanged()
 } // void SpecMeasManager::selectionChanged()
 
 
-WText *messageCombiner( const string& label, const string& value )
-{
-  WText *boxxed = new WText( "<b>" + label + ":</b> " + value );
-  boxxed->setPadding( 2 );
-
-  return boxxed;
-} // WText *messageCombiner( const string&, const string& )
-
-
-void SpecMeasManager::refreshAdditionalInfo( bool clearInfo )
-{
-  std::shared_ptr< SpecMeas > selected = selectedToSpecMeas();
-
-  vector< string > info;
-  // If it /isn't/ a clearInfo, there is just one thing selected.
-  if( selected && !clearInfo )
-  {
-    const vector< std::shared_ptr<const SpecUtils::Measurement> > selectedData = selected->measurements();
-    // A handful of these assume that the data will be populated for all of the detectors.
-    // That is, it will just take the first one out of the detector for the dates, as well
-    // as the number of channels.
-
-    // This accounts for potential "mass" samples.
-    if( selectedData.size() > 0 )
-    {
-      info.push_back( boost::posix_time::to_simple_string(
-        selectedData.at(0)->start_time() ).substr( 0, 11 ) ); // Date taken
-      stringstream liveStream, realStream, sizeStream;
-      liveStream << selected->gamma_live_time();
-      realStream << selected->gamma_real_time();
-      sizeStream << selectedData.at(0)->gamma_counts()->size();
-      info.push_back( liveStream.str() ); // Live time
-      info.push_back( realStream.str() ); // Real time
-      info.push_back( sizeStream.str() ); // Number of channels
-      stringstream gammaCounts, neutronCounts, detectorCounts;
-      gammaCounts << fixed << setprecision(0) << selected->gamma_count_sum();
-      neutronCounts << fixed << setprecision(0) << selected->neutron_counts_sum();
-      detectorCounts << selected->detector_names().size();
-      info.push_back( gammaCounts.str() ); // Gamma counts
-      info.push_back( neutronCounts.str() ); // Neutron counts
-      info.push_back( detectorCounts.str() ); // Detector counts
-    }
-    else
-    {
-      clearInfo = true;
-    }
-  }//if( !clearInfo )
-
-  int infoPerRow = 3;
-
-  WGridLayout *boxxyHost = new WGridLayout();
-
-  for( unsigned int i = 0; i < m_labelTags.size(); ++i )
-  {
-    int cS = 225 - 42 * !( i % 2 );
-    WText *boxxy = NULL;
-
-    if( clearInfo || i>=info.size() )
-      boxxy = messageCombiner( m_labelTags.at(i), "n/a" );
-    else
-      boxxy = messageCombiner( m_labelTags.at(i), info.at(i) );
-
-    boxxy->decorationStyle().setBackgroundColor( WColor( cS, cS, cS ) );
-    boxxyHost->addWidget( boxxy, (int)( i / infoPerRow ), i % infoPerRow );
-  }//for( unsigned int i = 0; i < m_labelTags.size(); ++i )
-
-  boxxyHost->setVerticalSpacing( 8 );
-  boxxyHost->setHorizontalSpacing( 10 );
-//  boxxyHost->setRowStretch( 0, -1 );
-//  boxxyHost->setRowStretch( 1, -1 );
-//  boxxyHost->setRowStretch( 2, -1 );
-
-  //Before setting a new layout to m_infoHandler, we have to avoid memorry leaks
-  //  by explicitly deleteing the children of the previous layout, as this is
-  //  not done by Wt (as noted in documentation for WContainerWidget::setLayout)
-  WLayout *prevLayout = m_infoHandler->layout();
-  if( prevLayout )
-    prevLayout->clear();
-
-  m_infoHandler->setLayout( boxxyHost );
-} // void SpecMeasManager::refreshAdditionalInfo()
-
-
-void SpecMeasManager::createInfoHandler()
-{
-  m_infoHandler = new WContainerWidget();
-  m_infoHandler->setStyleClass( "infoHandler" );
-  m_infoHandler->setOverflow( WContainerWidget::OverflowAuto );
-
-  m_labelTags.push_back( "Date taken" );
-  m_labelTags.push_back( "Live time (s)" );
-  m_labelTags.push_back( "Real time (s)" );
-  m_labelTags.push_back( "# of channels" );
-  m_labelTags.push_back( "Gamma counts" );
-  m_labelTags.push_back( "Neutron counts" );
-  m_labelTags.push_back( "# of detectors" );
-
-  refreshAdditionalInfo( true );
-}//void createInfoHandler()
-
-
 void SpecMeasManager::deleteSpectrumManager()
 {
     m_spectrumManagertreeDiv->removeWidget(m_treeView);
     AuxWindow::deleteAuxWindow(m_spectrumManagerWindow);
-    m_spectrumManagerWindow=NULL;
+    m_spectrumManagerWindow = NULL;
 }//deleteSpectrumManager()
 
 
@@ -4092,6 +3976,12 @@ void SpecMeasManager::browseDatabaseSpectrumFiles( SpecUtils::SpectrumType type 
 
 void SpecMeasManager::showPreviousDatabaseSpectrumFiles( SpecUtils::SpectrumType type, std::shared_ptr<SpectraFileHeader> header )
 {
+  const size_t num_states = SnapshotBrowser::num_saved_states( m_viewer, m_viewer->sql(), header );
+  
+  if( !num_states )
+    return;
+  
+  
   DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, type, header );
   
   // \TODO: come up with a way to check if there are any states before going through and creating
