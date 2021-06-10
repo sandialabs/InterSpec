@@ -463,7 +463,10 @@ D3TimeChart::~D3TimeChart()
 
 void D3TimeChart::defineJavaScript()
 {
-  //WWebWidget::doJavaScript( "$(" + jsRef() + ").append('<svg width=\"400\" height=\"75\"><rect width=\"300\" height=\"75\" style=\"fill:rgb(0,0,255);stroke-width:3;stroke:rgb(0,0,0)\" /></svg>' ); console.log( 'Added rect' );" );
+  //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<svg width=\"400\" height=\"75\" style=\"box-sizing: border-box; \"><rect width=\"300\" height=\"75\" style=\"fill:rgb(0,0,255);stroke-width:3;stroke:rgb(0,0,0)\" /></svg>' ); console.log( 'Added rect' );" );
+  
+  //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<div style=\"box-sizing: border-box; position: absolute; border: 1px solid blue; width: 100px; height: 75px;\" />' );" );
+  //cerr << "\n\nFor debugging - skipping D3TimeChart::defineJavaScript(...) - you need to fix this\n\n";
   //return;
   
   string options = "{";
@@ -513,6 +516,9 @@ void D3TimeChart::defineJavaScript()
 
 void D3TimeChart::doJavaScript( const std::string& js )
 {
+  //cerr << "\n\nFor debugging - skipping D3TimeChart::doJavaScript(...) - you need to fix this\n\n";
+  //return;
+  
   if( isRendered() )
     WContainerWidget::doJavaScript( js );
   else
@@ -1469,7 +1475,7 @@ void D3TimeChart::showFilters( const bool show )
     //}
   }//if( !show )
   
-  doJavaScript( "setTimeout( function(){" + m_jsgraph + ".handleResize();},0); " );
+  //doJavaScript( "setTimeout( function(){" + m_jsgraph + ".handleResize();},0); " );
   
   const auto mode = show ? m_options->interactionMode() : UserInteractionMode::Default;
   setUserInteractionMode( mode );
