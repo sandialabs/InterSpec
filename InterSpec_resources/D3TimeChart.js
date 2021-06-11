@@ -236,7 +236,7 @@ D3TimeChart = function (elem, options) {
     secondary: {
       modifierKey: { metaKey: true },
     },
-    removeForeground: {
+    remove: {
       modifierKey: { ctrlKey: true },
     },
     zoom: {
@@ -269,9 +269,6 @@ D3TimeChart = function (elem, options) {
     SELECTFOREGROUND: 3,
     SELECTBACKGROUND: 4,
     SELECTSECONDARY: 5,
-    REMOVEFOREGROUND: 6,
-    REMOVEBACKGROUND: 7,
-    REMOVESECONDARY: 8,
   });
 
   // colors used for highlight rectangles for various selection types.
@@ -279,7 +276,7 @@ D3TimeChart = function (elem, options) {
     foreground: "rgb(255, 255, 0)",
     background: "rgb(0, 255, 255)",
     secondary: "rgb(0, 128, 0)",
-    removeForeground: "rgb(255, 0, 0)",
+    remove: "rgb(255, 0, 0)",
     // zoom: "rgb(102,102,102)",
   });
 
@@ -651,14 +648,12 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
     // TODO: add analogous touch gestures to add additional touch functionality
     var TOUCH_ANALOGOUS_SHIFT = this.usingAddSelectionMode === true;
+    var TOUCH_ANALOGOUS_CTRL = this.usingRemoveSelectionMode === true;
     var TOUCH_ANALOGOUS_RIGHTCLICK =
       this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
     var TOUCH_ANALOGOUS_ALTKEYCLICK =
       this.userInteractionMode ===
       this.UserInteractionModeEnum.SELECTBACKGROUND;
-    var TOUCH_ANALOGOUS_CTRLKEYCLICK =
-      this.userInteractionMode ===
-      this.UserInteractionModeEnum.REMOVEFOREGROUND;
     var TOUCH_ANALOGOUS_METAKEYCLICK =
       this.userInteractionMode === this.UserInteractionModeEnum.SELECTSECONDARY;
 
@@ -666,17 +661,11 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       TOUCH_ANALOGOUS_SHIFT ||
       (d3.event.sourceEvent && d3.event.sourceEvent.shiftKey);
 
+    this.ctrlKeyHeld =
+      TOUCH_ANALOGOUS_CTRL ||
+      (d3.event.sourceEvent && d3.event.sourceEvent.ctrlKey);
+
     if (
-      TOUCH_ANALOGOUS_CTRLKEYCLICK ||
-      (d3.event.type == "dragstart" &&
-        window.MouseEvent &&
-        d3.event.sourceEvent instanceof MouseEvent &&
-        d3.event.sourceEvent.ctrlKey &&
-        !this.shiftKeyHeld)
-    ) {
-      this.highlightModifier = "ctrlKey";
-      this.mouseDownHighlight(coords[0], "ctrlKey");
-    } else if (
       TOUCH_ANALOGOUS_ALTKEYCLICK ||
       (d3.event.type == "dragstart" &&
         window.MouseEvent &&
@@ -795,14 +784,34 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
               shiftKey: 0x1,
               none: 0x0,
             };
-            this.WtEmit(
-              this.chart.id,
-              { name: "timedragged" },
-              this.state.data.formatted[0].sampleNumbers[lIdx],
-              this.state.data.formatted[0].sampleNumbers[rIdx],
-              keyModifierMap[this.highlightModifier] |
-                (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
-            );
+
+            if (this.shiftKeyHeld) {
+              this.WtEmit(
+                this.chart.id,
+                { name: "timedragged" },
+                this.state.data.formatted[0].sampleNumbers[lIdx],
+                this.state.data.formatted[0].sampleNumbers[rIdx],
+                keyModifierMap[this.highlightModifier] |
+                  keyModifierMap["shiftKey"]
+              );
+            } else if (this.ctrlKeyHeld) {
+              this.WtEmit(
+                this.chart.id,
+                { name: "timedragged" },
+                this.state.data.formatted[0].sampleNumbers[lIdx],
+                this.state.data.formatted[0].sampleNumbers[rIdx],
+                keyModifierMap[this.highlightModifier] |
+                  keyModifierMap["ctrlKey"]
+              );
+            } else {
+              this.WtEmit(
+                this.chart.id,
+                { name: "timedragged" },
+                this.state.data.formatted[0].sampleNumbers[lIdx],
+                this.state.data.formatted[0].sampleNumbers[rIdx],
+                keyModifierMap[this.highlightModifier]
+              );
+            }
           }
         }
       }
@@ -812,6 +821,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     brush.clear();
     this.highlightModifier = null;
     this.shiftKeyHeld = false;
+    this.ctrlKeyHeld = false;
   };
 
   // touch drag behavior
@@ -2632,10 +2642,20 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
     var foreground = this.highlightOptions.foreground;
     var background = this.highlightOptions.background;
     var secondary = this.highlightOptions.secondary;
-    var removeForeground = this.highlightOptions.removeForeground;
     var zoom = this.highlightOptions.zoom;
 
-    if (foreground && modifier in foreground.modifierKey) {
+    if (this.ctrlKeyHeld && !this.shiftKeyHeld) {
+      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.remove);
+      var spectrumType = "";
+      if (foreground && modifier in foreground.modifierKey) {
+        spectrumType = " foreground";
+      } else if (background && modifier in background.modifierKey) {
+        spectrumType = " background";
+      } else if (secondary && modifier in secondary.modifierKey) {
+        spectrumType = " secondary";
+      }
+      this.highlightText.text("Remove" + spectrumType);
+    } else if (foreground && modifier in foreground.modifierKey) {
       this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.foreground);
       this.highlightText.text("Select foreground");
     } else if (background && modifier in background.modifierKey) {
@@ -2644,9 +2664,6 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
     } else if (secondary && modifier in secondary.modifierKey) {
       this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.secondary);
       this.highlightText.text("Select secondary");
-    } else if (removeForeground && modifier in removeForeground.modifierKey) {
-      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.removeForeground);
-      this.highlightText.text("Remove foreground");
     } else if (zoom && modifier in zoom.modifierKey) {
       this.highlightRect.classed("leftbuttonzoombox", true);
       // this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
@@ -3201,6 +3218,7 @@ D3TimeChart.prototype.compress = function (data, n) {
  * }
  */
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
+  console.log(regions);
   if (
     !this.state.height ||
     !this.state.width ||
@@ -3386,6 +3404,7 @@ D3TimeChart.prototype.setUserInteractionMode = function (mode) {
   console.log("Will set user interaction mode to " + mode);
 
   this.usingAddSelectionMode = false;
+  this.usingRemoveSelectionMode = false;
 
   var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
 
@@ -3411,9 +3430,14 @@ D3TimeChart.prototype.setUserInteractionMode = function (mode) {
     this.userInteractionMode = this.UserInteractionModeEnum.SELECTSECONDARY;
     this.usingAddSelectionMode = true;
   } else if (mode === "RemoveForeground") {
-    this.userInteractionMode = this.UserInteractionModeEnum.REMOVEFOREGROUND;
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTFOREGROUND;
+    this.usingRemoveSelectionMode = true;
   } else if (mode === "RemoveBackground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTBACKGROUND;
+    this.usingRemoveSelectionMode = true;
   } else if (mode === "RemoveSecondary") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTSECONDARY;
+    this.usingRemoveSelectionMode = true;
   } else {
     console.log("Invalid option passed to setUserInteractionMode");
   }
