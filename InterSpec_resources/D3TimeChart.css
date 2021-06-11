@@ -7,6 +7,10 @@
   flex-grow: 4;
   height: 100%;
   overflow: hidden;
+
+  /* Prevent a finger swipe on the chart making the browser go back in browsing history. */
+  touch-action: none;
+  overscroll-behavior-x: none;
 }
 
 
