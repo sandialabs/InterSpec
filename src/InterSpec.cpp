@@ -8397,22 +8397,43 @@ void InterSpec::timeChartDragged( const int sample_start_in, const int sample_en
   {
     case ActionType::ChangeSamples:
       dispsamples = interaction_samples;
+      changeDisplayedSampleNums( dispsamples, type );
       break;
+      
     case ActionType::AddSamples:
       dispsamples.insert( begin(interaction_samples), end(interaction_samples) );
+      changeDisplayedSampleNums( dispsamples, type );
       break;
+      
     case ActionType::RemoveSamples:
       for( const auto sample : interaction_samples )
         dispsamples.erase(sample);
       
-      //If user erased all the samples - then lets go back to displaying all of that type of samples
-      if( dispsamples.empty() )
-        dispsamples = sampleNumbersForTypeFromForegroundFile(type);
+      if( !dispsamples.empty() )
+      {
+        changeDisplayedSampleNums( dispsamples, type );
+      }else
+      {
+        switch( type )
+        {
+          case SpecUtils::SpectrumType::Foreground:
+            // If user erased all the samples - then lets go back to displaying the default samples.
+            //  We dont want to clear the foreground file, because then we'll lose the time chart
+            //  and the background/secondary spectra too.
+            dispsamples = sampleNumbersForTypeFromForegroundFile(type);
+            changeDisplayedSampleNums( dispsamples, type );
+            break;
+            
+          case SpecUtils::SpectrumType::Background:
+          case SpecUtils::SpectrumType::SecondForeground:
+            setSpectrum( nullptr, std::set<int>{}, type, 0 );
+            break;
+        }//switch( type )
+      }//if( !dispsamples.empty() ) / else
+      
       
       break;
   }//switch( action )
-  
-  changeDisplayedSampleNums( dispsamples, type );
 }//void timeChartDragged(...)
 
 #else
@@ -11548,6 +11569,16 @@ void InterSpec::displaySecondForegroundData()
     //sample_nums.clear();
     if( m_spectrum->secondData() )
       m_spectrum->setSecondData( nullptr, false );
+    
+    if( !m_timeSeries->isHidden() )
+    {
+#if( USE_SPECTRUM_CHART_D3 )
+      m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::SecondForeground );
+#else
+      m_timeSeries->setTimeHighLightRegions( {}, SpecUtils::SpectrumType::SecondForeground );
+#endif
+    }//if( !m_timeSeries->isHidden() )
+    
     return;
   }//if( !m_secondDataMeasurement )
   
@@ -11557,10 +11588,6 @@ void InterSpec::displaySecondForegroundData()
   auto histH = meas->sum_measurements( sample_nums, disp_dets, energy_cal );
   if( histH )
     histH->set_title( "Second Foreground" );
-    
-  const float lt = histH ? histH->live_time() : -1.0f;
-  const float rt = histH ? histH->real_time() : -1.0f;
-  const float neutronCounts = histH ? histH->neutron_counts_sum() : -1.0f;
     
   m_spectrum->setSecondData( histH, false );
   
@@ -11597,8 +11624,18 @@ void InterSpec::displayBackgroundData()
     //disp_samples.clear();
     if( m_spectrum->background() )
       m_spectrum->setBackground( nullptr );
+    
+    if( !m_timeSeries->isHidden() )
+    {
+#if( USE_SPECTRUM_CHART_D3 )
+      m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Background );
+#else
+      m_timeSeries->setTimeHighLightRegions( {}, SpecUtils::SpectrumType::Background );
+#endif
+    }//if( !m_timeSeries->isHidden() )
+    
     return;
-  }
+  }//if( !energy_cal || !m_dataMeasurement )
   
   auto backgroundH = meas->sum_measurements( disp_samples, disp_dets, energy_cal );
   if( backgroundH )
