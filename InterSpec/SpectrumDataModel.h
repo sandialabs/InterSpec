@@ -80,25 +80,15 @@ public:
   
   //setDataHistogram(): also sets m_secondSF and m_backgroundSF to
   //  m_dataLiveTime/m_{Second|Background}LiveTime
-  virtual void setDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
-                                 float liveTime,
-                                 float realTime,
-                                 float neutronCounts );
+  virtual void setDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist );
   
-  //setSecondDataHistogram(): also sets m_secondSF to
-  //  m_dataLiveTime/m_secondDataLiveTime
+  //setSecondDataHistogram(): also sets m_secondSF to m_dataLiveTime/m_secondDataLiveTime
   virtual void setSecondDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts,
-                                       bool ownAxis );
+                                      const bool ownAxis );
   
   //setBackgroundHistogram(): also sets m_backgroundSF to
   //  m_dataLiveTime/m_backgroundLiveTime
-  virtual void setBackgroundHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts );
+  virtual void setBackgroundHistogram( std::shared_ptr<SpecUtils::Measurement> hist );
   
   // Flags for whether the background are getting subtracted.
   void setBackgroundSubtract( const bool subtract = true );
