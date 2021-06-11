@@ -1092,6 +1092,7 @@ void D3TimeChart::setDataToClient()
 void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
                                            const SpecUtils::SpectrumType type )
 {
+  const size_t npre = m_highlights.size();
   m_highlights.erase( std::remove_if( begin(m_highlights), end(m_highlights),
     [type](const D3TimeChart::HighlightRegion &region) -> bool {
       return (region.type == type);
@@ -1099,7 +1100,8 @@ void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
  
   if( sample_numbers.empty() )
   {
-    scheduleHighlightRegionRender();
+    if( npre != m_highlights.size() )
+      scheduleHighlightRegionRender();
     return;
   }
   
