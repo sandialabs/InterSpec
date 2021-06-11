@@ -7097,6 +7097,10 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
       case PeakContinuum::BiLinearStep:
         return 2 + (cont->type() - PeakContinuum::FlatStep);
     }//switch( cont->type() )
+
+    assert(0);
+    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+    return 0;
   })();
   
   const bool isStepContinuum = ([&cont]() -> bool {
@@ -7112,6 +7116,10 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
       case PeakContinuum::BiLinearStep:
         return true;
     }//switch( cont->type() )
+
+    assert( 0 );
+    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+    return 0;
   })();
   
   

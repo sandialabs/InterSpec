@@ -71,3 +71,5 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 target/electron/node_modules/.bin/asar
+
+target/electron/LibInterSpec/
