@@ -1376,3 +1376,21 @@ body.Wt-rtl .Wt-tabs a {
 .Wt-tabs:after { content: ""; display: block; height: 0; clear: both; }
 .Wt-tabs { clear-after: both; }
 
+
+/* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
+.InterSpecFlex {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.InterSpecFlex .SpectrumDisplayDiv {
+  flex-grow: 3;
+  overflow: hidden;
+}
+
+.InterSpecFlex .D3TimeChartParent {
+  flex-grow: 2;
+  overflow: hidden;
+}
+
