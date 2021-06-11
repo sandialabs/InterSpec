@@ -300,7 +300,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
   
 
-#if( USE_FLEX_CHART_LAYOUT )
+#if( USE_CSS_FLEX_LAYOUT )
   doJavaScript( ""
     "const resizeObs" + id() + " = new ResizeObserver(entries => {"
     "for (let entry of entries) {"
