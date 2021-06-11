@@ -354,13 +354,14 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_warnings( 0 ),
     m_warningsWindow( 0 ),
     m_fileManager( 0 ),
-    m_layout( 0 ),
-#if( USE_FLEX_CHART_LAYOUT )
-    m_chartsDiv( nullptr ),
+#if( USE_CSS_FLEX_LAYOUT )
+    m_chartResizer( nullptr ),
+    m_toolsResizer( nullptr ),
 #else
+    m_layout( 0 ),
     m_chartsLayout( 0 ),
-#endif
     m_toolsLayout( 0 ),
+#endif
     m_menuDiv( 0 ),
     m_peakInfoDisplay( 0 ),
     m_peakInfoWindow( 0 ),
@@ -528,40 +529,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   }//end interacting with DB
   
 
-  m_peakModel  = new PeakModel( this );
+  m_peakModel = new PeakModel( this );
 #if( USE_SPECTRUM_CHART_D3 )
-
-#if( USE_FLEX_CHART_LAYOUT )
-  m_chartsDiv = new WContainerWidget();
-  m_chartsDiv->addStyleClass( "ChartsDiv" );
-  
-  /*
-   //If flex layout is used, need to add at least the below to the CSS
-   .ChartsDiv
-   {
-   display: flex;
-   flex-direction: column;
-   flex-wrap: nowrap;
-   }
-   
-   .ChartsDiv > .SpectrumDisplayDiv {
-   flex-grow: 3;
-   overflow: hidden;
-   }
-   
-   .ChartsDiv > .D3TimeChartParent {
-   flex-grow: 2;
-   overflow: hidden;
-   }
-
-   */
-  
-  m_spectrum   = new D3SpectrumDisplayDiv(m_chartsDiv);
-  m_timeSeries = new D3TimeChart(m_chartsDiv);
-#else
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
-#endif
   
   m_peakModel->dataChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
   m_peakModel->rowsRemoved().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
@@ -793,21 +764,106 @@ InterSpec::InterSpec( WContainerWidget *parent )
   indicator->addStyleClass( "LoadingIndicator" );
   app->setLoadingIndicator( indicator );
    
+#if( USE_CSS_FLEX_LAYOUT )
+  addStyleClass( "InterSpecFlex" );
+  
+  if( m_menuDiv )
+    addWidget( m_menuDiv );
+  
+  addWidget( m_spectrum );
+  
+  m_chartResizer = new WContainerWidget( this );
+  m_chartResizer->addStyleClass( "Wt-vsh2" );
+  m_chartResizer->setHeight( 5 );
+  
+  addWidget( m_timeSeries );
+  
+  m_toolsResizer = new WContainerWidget( this );
+  m_toolsResizer->addStyleClass( "Wt-vsh2" );
+  m_toolsResizer->setHeight( 5 );
+  
+  {//begin make tool tabs
+    m_nuclideSearchWindow = nullptr;
+    m_referencePhotopeakLinesWindow = NULL;
+    
+    
+    m_toolsTabs = new WTabWidget( this );
+    
+    CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
+    m_toolsTabs->addTab( compact, FileTabTitle, TabLoadPolicy );
+    
+#if( USE_SPECTRUM_CHART_D3 )
+    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact, _1, _2 ) );
+#endif
+    
+    m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
+    
+    m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
+                                                              m_materialDB.get(),
+                                                              m_shieldingSuggestion,
+                                                              this );
+    setReferenceLineColors( nullptr );
+    
+    //PreLoading is necessary on the m_referencePhotopeakLines widget, so that the
+    //  "Isotope Search" widget will work properly when a nuclide is clicked
+    //  on to display its photpeaks
+    //XXX In Wt 3.3.4 at least, the contents of m_referencePhotopeakLines
+    //  are not actually loaded to the client until the tab is clicked, and I
+    //  cant seem to get this to actually happen.
+    //WMenuItem *refPhotoTab =
+    m_toolsTabs->addTab( m_referencePhotopeakLines, GammaLinesTabTitle, TabLoadPolicy );
+    
+    //refPhotoTab->setIcon("InterSpec_resources/images/reflines.png");
+    
+    m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
+    
+    m_energyCalTool->setWideLayout();
+    m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
+    
+    m_toolsTabs->setHeight( 245 );
+    
+    assert( !m_nuclideSearchContainer );
+    
+    m_nuclideSearchContainer = new WContainerWidget();
+    WGridLayout *isoSearchLayout = new WGridLayout();
+    m_nuclideSearchContainer->setLayout( isoSearchLayout );
+    isoSearchLayout->setContentsMargins( 0, 0, 0, 0 );
+    isoSearchLayout->addWidget( m_nuclideSearch, 0, 0 );
+    m_nuclideSearchContainer->setMargin( 0 );
+    m_nuclideSearchContainer->setPadding( 0 );
+    isoSearchLayout->setRowStretch( 0, 1 );
+    isoSearchLayout->setColumnStretch( 0, 1 );
+    
+    //WMenuItem *nuclideTab =
+    m_toolsTabs->addTab( m_nuclideSearchContainer, NuclideSearchTabTitle, TabLoadPolicy );
+    //    const char *tooltip = "Search for nuclides with constraints on energy, "
+    //                          "branching ratio, and half life.";
+    //    HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
+    
+    //Make sure the current tab is the peak info display
+    m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+  }//end make tool tabs
+  
+  // TODO: need to call wtResize of m_toolsTabs so they will get resized correctly
+  // TODO: 
 
+  
+#else
   m_layout = new WGridLayout();
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setHorizontalSpacing( 0 );
-
-  setLayout( m_layout );
+  m_layout->setVerticalSpacing( 0 );
   
+  setLayout( m_layout );
+
   if( m_menuDiv )
     m_layout->addWidget( m_menuDiv, m_layout->rowCount(), 0 );
-  
-#if( USE_FLEX_CHART_LAYOUT )
-  m_layout->addWidget( m_chartsDiv, m_layout->rowCount(), 0 );
-#else
+
   m_layout->addWidget( m_spectrum, m_layout->rowCount(), 0 );
   m_layout->addWidget( m_timeSeries, m_layout->rowCount(), 0 );
+  
+  m_layout->setRowStretch( m_menuDiv ? 1 : 0, 5 );
+  m_layout->setRowStretch( m_menuDiv ? 2 : 1, 3 );
 #endif
   
 #if( USE_SPECTRUM_CHART_D3 )
@@ -952,14 +1008,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this, _1, _2 ) );
   m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this, _1 ) );
-  
-  
-  
+
   m_timeSeries->setHidden( true );
-  m_layout->setVerticalSpacing( 0 );
   
-  m_layout->setRowStretch( m_menuDiv ? 1 : 0, 5 );
-  m_layout->setRowStretch( m_menuDiv ? 2 : 1, 3 );
   
 #if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
   if( InterSpecApp::isPrimaryWindowInstance() )
@@ -5557,8 +5608,13 @@ void InterSpec::removeToolsTabToMenuItems()
 
 void InterSpec::setToolTabsVisible( bool showToolTabs )
 {
+#if( USE_CSS_FLEX_LAYOUT )
+  if( m_toolsTabs->isVisible() == showToolTabs )
+    return;
+#else
   if( static_cast<bool>(m_toolsTabs) == showToolTabs )
     return;
+#endif
   
   m_toolTabsVisibleItems[0]->setHidden( showToolTabs );
   m_toolTabsVisibleItems[1]->setHidden( !showToolTabs );
@@ -5567,6 +5623,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     removeToolsTabToMenuItems();
   else
     addToolsTabToMenuItems();
+
+#if( USE_CSS_FLEX_LAYOUT )
+  m_toolsTabs->setHidden( !showToolTabs );
+  m_toolsResizer->setHidden( !showToolTabs );
+#else
   
   const int layoutVertSpacing = isMobile() ? 10 : 5;
   
@@ -5574,13 +5635,10 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   { //We are showing the tool tabs
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
-    
-#if( USE_FLEX_CHART_LAYOUT )
-    m_layout->removeWidget( m_chartsDiv );
-#else
+  
     m_layout->removeWidget( m_spectrum );
     m_layout->removeWidget( m_timeSeries );
-#endif
+
     m_layout->clear();
     
     //We have to completely replace m_layout or else the vertical spacing
@@ -5669,8 +5727,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_energyCalTool->setWideLayout();
     m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
     
-#if( USE_FLEX_CHART_LAYOUT )
-#else
     m_chartsLayout = new WGridLayout();
     m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
     m_chartsLayout->setHorizontalSpacing( 0 );
@@ -5687,7 +5743,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_chartsLayout->setRowResizable( 0 );
       m_chartsLayout->setVerticalSpacing( layoutVertSpacing );
     }
-#endif
     
     m_toolsLayout = new WGridLayout();
     m_toolsLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -5699,11 +5754,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv )
       m_layout->addWidget( m_menuDiv,  row++, 0 );
     
-#if( USE_FLEX_CHART_LAYOUT )
-    m_layout->addWidget( m_chartsDiv,  row, 0 );
-#else
     m_layout->addLayout( m_chartsLayout, row, 0 );
-#endif
     
     m_layout->setRowResizable( row, true );
     m_layout->setRowStretch( row, 5 );
@@ -5760,13 +5811,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   }else
   {
     //We are hidding the tool tabs
-#if( USE_FLEX_CHART_LAYOUT )
-    m_layout->removeWidget( m_chartsDiv );
-#else
     m_chartsLayout->removeWidget( m_spectrum );
     m_chartsLayout->removeWidget( m_timeSeries );
     m_chartsLayout = nullptr;
-#endif
     
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
@@ -5852,6 +5899,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   
   m_timeSeries->scheduleRenderAll();
 #endif
+#endif // USE_CSS_FLEX_LAYOUT / else
 }//void setToolTabsVisible( bool showToolTabs )
 
 
@@ -10717,7 +10765,7 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
 
 void InterSpec::setChartSpacing()
 {
-#if( USE_FLEX_CHART_LAYOUT )
+#if( USE_CSS_FLEX_LAYOUT )
 #else
   const int vertSpacing = (m_timeSeries->isHidden() ? 0 : (isMobile() ? 10 : 5));
 
@@ -10799,7 +10847,11 @@ void InterSpec::displayTimeSeriesData()
     if( m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( false );
+#if( USE_CSS_FLEX_LAYOUT )
+      m_chartResizer->setHidden( m_timeSeries->isHidden() );
+#else
       setChartSpacing();
+#endif
     }//if( m_timeSeries->isHidden() )
     
     m_timeSeries->setData( m_dataMeasurement );
@@ -10824,7 +10876,11 @@ void InterSpec::displayTimeSeriesData()
     if( !m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( true );
+#if( USE_CSS_FLEX_LAYOUT )
+      m_chartResizer->setHidden( m_timeSeries->isHidden() );
+#else
       setChartSpacing();
+#endif
     }//if( !m_timeSeries->isHidden() )
   }//if( passthrough ) / else
 #else
@@ -10846,7 +10902,11 @@ void InterSpec::displayTimeSeriesData()
     if( m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( false );
+#if( USE_CSS_FLEX_LAYOUT )
+      m_chartResizer->setHidden( m_timeSeries->isHidden() );
+#else
       setChartSpacing();
+#endif
     }//if( m_timeSeries->isHidden() )
     
     const vector<string> &det_names = m_dataMeasurement->detector_names();
@@ -10971,7 +11031,11 @@ void InterSpec::displayTimeSeriesData()
     if( !m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( true );
+#if( USE_CSS_FLEX_LAYOUT )
+      m_chartResizer->setHidden( m_timeSeries->isHidden() );
+#else
       setChartSpacing();
+#endif
     }//if( !m_timeSeries->isHidden() )
 
     m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::Foreground);
