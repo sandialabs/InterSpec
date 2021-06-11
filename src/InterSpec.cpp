@@ -8975,7 +8975,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       m_secondDataMeasurement = nullptr;
-      m_spectrum->setSecondData( nullptr, -1.0, -1.0, -1.0, false );
+      m_spectrum->setSecondData( nullptr, false );
       
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::SecondForeground,
                                              nullptr, {}, {} );
@@ -8991,7 +8991,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       m_backgroundMeasurement = nullptr;
-      m_spectrum->setBackground( nullptr, -1.0, -1.0, -1.0 );
+      m_spectrum->setBackground( nullptr );
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background, nullptr, {}, {} );
     }//if( nSecondBins )
   }//if( spec_type == SpecUtils::SpectrumType::Foreground )
@@ -11431,7 +11431,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     
     if( m_spectrum->data() )
     {
-      m_spectrum->setData( nullptr, -1.0f, -1.0f, -1.0f, false );
+      m_spectrum->setData( nullptr, false );
       m_peakModel->setPeakFromSpecMeas( nullptr, sample_nums );
     }
     
@@ -11523,7 +11523,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   const float rt = dataH ? dataH->real_time() : 0.0f;
   const float sum_neut = dataH ? dataH->neutron_counts_sum() : 0.0f;
   
-  m_spectrum->setData( dataH, lt, rt, sum_neut, current_energy_range );
+  m_spectrum->setData( dataH, current_energy_range );
   
 #if( USE_SPECTRUM_CHART_D3 )
   if( !m_timeSeries->isHidden() )
@@ -11547,7 +11547,7 @@ void InterSpec::displaySecondForegroundData()
   {
     //sample_nums.clear();
     if( m_spectrum->secondData() )
-      m_spectrum->setSecondData( nullptr, -1.0, -1.0, -1.0, false );
+      m_spectrum->setSecondData( nullptr, false );
     return;
   }//if( !m_secondDataMeasurement )
   
@@ -11562,7 +11562,7 @@ void InterSpec::displaySecondForegroundData()
   const float rt = histH ? histH->real_time() : -1.0f;
   const float neutronCounts = histH ? histH->neutron_counts_sum() : -1.0f;
     
-  m_spectrum->setSecondData( histH, lt, rt, neutronCounts, false );
+  m_spectrum->setSecondData( histH, false );
   
   if( !m_timeSeries->isHidden() )
   {
@@ -11596,7 +11596,7 @@ void InterSpec::displayBackgroundData()
     m_hardBackgroundSub->disable();
     //disp_samples.clear();
     if( m_spectrum->background() )
-      m_spectrum->setBackground( nullptr, -1.0f, -1.0f, -1.0f );
+      m_spectrum->setBackground( nullptr );
     return;
   }
   
@@ -11607,7 +11607,7 @@ void InterSpec::displayBackgroundData()
   const float lt = backgroundH ? backgroundH->live_time() : -1.0f;
   const float rt = backgroundH ? backgroundH->real_time() : -1.0f;
   const float neutronCounts = backgroundH ? backgroundH->neutron_counts_sum() : -1.0f;
-  m_spectrum->setBackground( backgroundH, lt, rt, neutronCounts );
+  m_spectrum->setBackground( backgroundH );
   
   if( !m_timeSeries->isHidden() )
   {

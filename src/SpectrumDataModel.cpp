@@ -89,11 +89,12 @@ Wt::Signal<SpectrumDataModel::ColumnType> &SpectrumDataModel::dataSet()
   return m_dataSet;
 }//Wt::Signal<ColumnType> &dataSet()
 
-void SpectrumDataModel::setDataHistogram( std::shared_ptr<Measurement> hist,
-                                          float liveTime,
-                                          float realTime,
-                                          float neutronCounts )
+void SpectrumDataModel::setDataHistogram( std::shared_ptr<Measurement> hist )
 {
+  const float liveTime = hist ? hist->live_time() : 0.0f;
+  const float realTime = hist ? hist->real_time() : 0.0f;
+  const float neutronCounts = hist ? hist->neutron_counts_sum() : -1.0f;
+  
   // Store the data.
   m_data = hist;
   m_dataLiveTime = liveTime;
@@ -135,12 +136,12 @@ void SpectrumDataModel::setDataHistogram( std::shared_ptr<Measurement> hist,
 }//void setDataHistogram( std::shared_ptr<Measurement> hist )
 
 
-void SpectrumDataModel::setSecondDataHistogram( std::shared_ptr<Measurement> hist,
-                                                float liveTime,
-                                                float realTime,
-                                                float neutronCounts,
-                                                bool ownAxis )
+void SpectrumDataModel::setSecondDataHistogram( std::shared_ptr<Measurement> hist, const bool ownAxis )
 {
+  const float liveTime = hist ? hist->live_time() : 0.0f;
+  const float realTime = hist ? hist->real_time() : 0.0f;
+  const float neutronCounts = hist ? hist->neutron_counts_sum() : -1.0f;
+  
   m_secondDataLiveTime = liveTime;
   m_secondDataRealTime = realTime;
   m_secondDataNeutronCounts = neutronCounts;
@@ -186,11 +187,12 @@ void SpectrumDataModel::setSecondDataHistogram( std::shared_ptr<Measurement> his
 }//void setSecondDataHistogram(...);
 
 
-void SpectrumDataModel::setBackgroundHistogram( std::shared_ptr<Measurement> hist,
-                                                float liveTime,
-                                                float realTime,
-                                                float neutronCounts )
+void SpectrumDataModel::setBackgroundHistogram( std::shared_ptr<Measurement> hist )
 {
+  const float liveTime = hist ? hist->live_time() : 0.0f;
+  const float realTime = hist ? hist->real_time() : 0.0f;
+  const float neutronCounts = hist ? hist->neutron_counts_sum() : -1.0f;
+  
   m_backgroundLiveTime = liveTime;
   m_backgroundRealTime = realTime;
   m_backgroundNeutronCounts = neutronCounts;
@@ -832,9 +834,9 @@ boost::any SpectrumDataModel::headerData( int section, Orientation orientation, 
 void SpectrumDataModel::reset()
 {
   // Reset all of the data fields
-  setDataHistogram( std::shared_ptr<Measurement>(), 0.0, 0.0, 0.0 );
-  setSecondDataHistogram( std::shared_ptr<Measurement>(), 0.0, 0.0, 0.0, false );
-  setBackgroundHistogram( std::shared_ptr<Measurement>(), 0.0, 0.0, 0.0 );
+  setDataHistogram( nullptr );
+  setSecondDataHistogram( nullptr, false );
+  setBackgroundHistogram( nullptr );
 
   modelReset().emit();
 } // voit SpectrumDataModel::reset()
