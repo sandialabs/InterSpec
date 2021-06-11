@@ -1589,6 +1589,10 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       case PeakContinuum::BiLinearStep:
         return 2 + (m_offsetType - PeakContinuum::FlatStep);
     }//switch( cont->type() )
+
+    assert( 0 );
+    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+    return 0;
   })();
   
   const bool step_continuum = ([this]() -> int {
@@ -1604,6 +1608,10 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
       case PeakContinuum::BiLinearStep:
         return true;
     }//switch( cont->type() )
+
+    assert( 0 );
+    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+    return false;
   })();
   
   vector<double> amps, offsets, amps_uncerts, offsets_uncerts;

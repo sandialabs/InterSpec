@@ -2439,8 +2439,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           answer << "]," << q << "continuumCounts" << q << ":[";
         }
          */
-        
+#ifndef _WIN32        
 #warning "Can make computing continuumCounts for FlatStep/LinearStep/BiLinearStep so much more efficient"
+#endif        
         for (size_t i = firstbin; i <= lastbin; ++i)
         {
           const float lower_x = foreground->gamma_channel_lower( i );
@@ -4167,8 +4168,9 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       // If you change any of this, make sure you update fit_amp_and_offset(...) as well
       
       // TODO: this is not efficient, tested, or correct if integration limits do not correspond to channel limits
-#warning "TODO: Flat/Linear/BiLinear-Step offset_integral is not efficient, tested, or correct"
-      
+#ifndef _WIN32  
+      #warning "TODO: Flat/Linear/BiLinear-Step offset_integral is not efficient, tested, or correct"
+#endif
       double roi_lower, roi_upper, cumulative_data, roi_data_sum;
       integrate_for_step( roi_lower, roi_upper, cumulative_data, roi_data_sum );
       
