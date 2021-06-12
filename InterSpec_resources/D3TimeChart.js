@@ -3218,7 +3218,6 @@ D3TimeChart.prototype.compress = function (data, n) {
  * }
  */
 D3TimeChart.prototype.setHighlightRegions = function (regions) {
-  console.log(regions);
   if (
     !this.state.height ||
     !this.state.width ||
