@@ -486,15 +486,16 @@ void D3TimeChart::defineJavaScript()
   //                     " setTimeout( function(){" + m_jsgraph + ".handleResize();},0); "
   //                     "}" );
   
-  doJavaScript( ""
-    "const resizeObserver = new ResizeObserver(entries => {"
+  setJavaScriptMember( "resizeObserver",
+    "new ResizeObserver(entries => {"
       "for (let entry of entries) {"
         "if( entry.target && (entry.target.id === '" + m_chart->id() + "') )"
           + m_jsgraph + ".handleResize();"
       "}"
     "});"
-    "resizeObserver.observe(" + m_chart->jsRef() + ");"
   );
+  
+  callJavaScriptMember( "resizeObserver.observe", m_chart->jsRef() );
   
   if( !m_chartClickedJS )
   {

@@ -1188,17 +1188,15 @@ protected:
   
   SpecMeasManager        *m_fileManager; // The file manager
   
-  // 20210604: started playing around with using FLEX layout for just the charts - its not there yet,
-  //           but shows some promise.
-#define USE_CSS_FLEX_LAYOUT 1
   
-  //Note: m_chartsLayout may be eliminated; may even be able to eliminate
-  //  m_toolsLayout...
 #if( USE_CSS_FLEX_LAYOUT )
   Wt::WContainerWidget *m_chartResizer;
   Wt::WContainerWidget *m_toolsResizer;
 #else
   Wt::WGridLayout        *m_layout;
+  
+  //Note: m_chartsLayout may be eliminated; may even be able to eliminate
+  //  m_toolsLayout...
   Wt::WGridLayout        *m_chartsLayout;
   Wt::WGridLayout        *m_toolsLayout;
 #endif
