@@ -301,15 +301,16 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   
 
 #if( USE_CSS_FLEX_LAYOUT )
-  doJavaScript( ""
-    "const resizeObs" + id() + " = new ResizeObserver(entries => {"
-    "for (let entry of entries) {"
-      "if( entry.target && (entry.target.id === '" + id() + "') )"
-        + m_jsgraph + ".handleResize();"
+  setJavaScriptMember( "resizeObserver",
+    "new ResizeObserver(entries => {"
+      "for (let entry of entries) {"
+        "if( entry.target && (entry.target.id === '" + id() + "') )"
+          + m_jsgraph + ".handleResize();"
       "}"
     "});"
-    "resizeObs" + id() + ".observe(" + jsRef() + ");"
   );
+  
+  callJavaScriptMember( "resizeObserver.observe", jsRef() );
 #else
   setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
 #endif

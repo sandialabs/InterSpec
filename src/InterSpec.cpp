@@ -77,6 +77,10 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WDefaultLoadingIndicator>
 
+#if( USE_CSS_FLEX_LAYOUT )
+#include <Wt/WStackedWidget>
+#endif
+
 #if( USE_DB_TO_STORE_SPECTRA )
 #include <Wt/Json/Array>
 #include <Wt/Json/Value>
@@ -842,6 +846,46 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+    
+    m_toolsTabs->setJavaScriptMember( "wtResize", "function(self,w,h,layout){ console.log( 'wtResize called for tools tab:', w, h, layout ); }" );
+    
+     // An attempt to call into wtResize from ResizeObserver - not working yet - tool tab contents dont expand...
+    const string stackJsRef = m_toolsTabs->contentsStack()->jsRef();
+    m_toolsTabs->setJavaScriptMember( "resizeObserver",
+      "new ResizeObserver(entries => {"
+        "for (let entry of entries) {"
+          "if( entry.target && entry.target.wtResize ) {"
+            "const w = entry.contentRect.width;"
+            "const h = entry.contentRect.height;"
+            "console.log( 'Got resize', entry.target.id, 'for {' + w + ',' + h + '}'  );"
+            "entry.target.wtResize(entry.target, Math.round(w), Math.round(h), true);"
+            "if( (h > 27) && (entry.target.id === '" + m_toolsTabs->id() + "') ){"
+              "$('#" + m_toolsTabs->id() + " > .Wt-stack').each( function(i,el){ "
+                  "$(el).height( Math.round(h - 27) );"
+              "} );"
+                                     
+            "}"
+            "if( (h > 35) && (entry.target.id === '" + m_toolsTabs->id() + "') ){"
+              "$('#" + m_toolsTabs->id() + " > .Wt-stack > div').each( function(i,el){ "
+                "console.log( 'Setting height to ' + (h - 35) ); "
+                "$(el).height( Math.round(h - 35) );"
+              "} );"
+            "}"
+            //"if(" + stackJsRef + " && " + stackJsRef + ".wtResize) {"
+            //  + stackJsRef + ".wtResize(" + stackJsRef + ", Math.round(w), Math.round(h-27), true);"
+            //  "console.log( 'Will call resize for', " + stackJsRef + " );"
+            //"}"
+          "}else console.log( 'no wtResize' );"
+        "}"
+           // "console.log( 'stack=', " + m_toolsTabs->contentsStack()->jsRef() + " );"
+           // "console.log( 'stack wtResize=', " + m_toolsTabs->contentsStack()->jsRef() + ".wtResize );"
+      "});"
+    );
+    
+    m_toolsTabs->callJavaScriptMember( "resizeObserver.observe", m_toolsTabs->jsRef() );
+    //for( int i = 0; i < m_toolsTabs->count(); ++i )
+    //  m_toolsTabs->callJavaScriptMember( "resizeObserver.observe", m_toolsTabs->widget(i)->jsRef() );
+    
   }//end make tool tabs
   
   // TODO: need to call wtResize of m_toolsTabs so they will get resized correctly
@@ -5738,7 +5782,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_chartsLayout->setVerticalSpacing( 0 );
     }else
     {
-      m_chartsLayout->setRowStretch( 0, 20 );
+      m_chartsLayout->setRowStretch( 0, 3 );
       m_chartsLayout->setRowStretch( 1, 2 );
       m_chartsLayout->setRowResizable( 0 );
       m_chartsLayout->setVerticalSpacing( layoutVertSpacing );
@@ -10816,7 +10860,7 @@ void InterSpec::setChartSpacing()
     m_chartsLayout->setVerticalSpacing( vertSpacing );
     m_chartsLayout->addWidget( m_spectrum, 0, 0 );
     m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
-    m_chartsLayout->setRowStretch( 0, 20 );
+    m_chartsLayout->setRowStretch( 0, 3 );
     m_chartsLayout->setRowStretch( 1, 2 );
     m_chartsLayout->setRowResizable( 0 );
     
