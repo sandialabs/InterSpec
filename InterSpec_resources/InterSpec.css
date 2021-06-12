@@ -1385,12 +1385,12 @@ body.Wt-rtl .Wt-tabs a {
 }
 
 .InterSpecFlex .SpectrumDisplayDiv {
-  flex-grow: 3;
+  flex: 3;
   overflow: hidden;
 }
 
 .InterSpecFlex .D3TimeChartParent {
-  flex-grow: 2;
+  flex: 2;
   overflow: hidden;
 }
 
