@@ -363,7 +363,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_toolsResizer( nullptr ),
 #else
     m_layout( 0 ),
-    m_chartsLayout( 0 ),
+    m_charts( nullptr ),
+    m_chartsResize( nullptr ),
     m_toolsLayout( 0 ),
 #endif
     m_menuDiv( 0 ),
@@ -5771,22 +5772,18 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_energyCalTool->setWideLayout();
     m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
     
-    m_chartsLayout = new WGridLayout();
-    m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
-    m_chartsLayout->setHorizontalSpacing( 0 );
-    m_chartsLayout->addWidget( m_spectrum, 0, 0 );
-    m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
+    m_charts = new WContainerWidget();
+    m_charts->addWidget( m_spectrum );
+    m_charts->addStyleClass( "charts" );
+    m_chartsResize = new WContainerWidget( m_charts );
+    m_chartsResize->addStyleClass( "Wt-hrh2" );
+    m_chartsResize->setHeight( isMobile() ? 10 : 5 );
+    m_charts->addWidget( m_timeSeries );
     
-    if( m_timeSeries->isHidden() )
-    {
-      m_chartsLayout->setVerticalSpacing( 0 );
-    }else
-    {
-      m_chartsLayout->setRowStretch( 0, 3 );
-      m_chartsLayout->setRowStretch( 1, 2 );
-      m_chartsLayout->setRowResizable( 0 );
-      m_chartsLayout->setVerticalSpacing( layoutVertSpacing );
-    }
+    m_chartsResize->setHidden( m_timeSeries->isHidden() );
+    
+    LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
+    m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartsResize->id() + "','" + m_timeSeries->id() + "');" );
     
     m_toolsLayout = new WGridLayout();
     m_toolsLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -5798,14 +5795,14 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv )
       m_layout->addWidget( m_menuDiv,  row++, 0 );
     
-    m_layout->addLayout( m_chartsLayout, row, 0 );
+    m_layout->addWidget( m_charts, row, 0 );
     
     m_layout->setRowResizable( row, true );
     m_layout->setRowStretch( row, 5 );
     
     m_layout->setVerticalSpacing( layoutVertSpacing );
     if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amount of space between the menu bar and the chart
-      m_spectrum->setMargin( -layoutVertSpacing, Wt::Top );
+      m_charts->setMargin( -layoutVertSpacing, Wt::Top );
     
     //Without using the wrapper below, the tabs widget will change height, even
     //  if it is explicitly set, when different tabs are clicked (unless a
@@ -5854,10 +5851,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_referencePhotopeakLines->deSerialize( refNucXmlState );
   }else
   {
-    //We are hidding the tool tabs
-    m_chartsLayout->removeWidget( m_spectrum );
-    m_chartsLayout->removeWidget( m_timeSeries );
-    m_chartsLayout = nullptr;
+    //We are hiding the tool tabs
+    m_layout->removeWidget( m_charts );
     
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
@@ -5893,23 +5888,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     int row = -1;
     if( m_menuDiv )
       m_layout->addWidget( m_menuDiv, ++row, 0 );
-    m_layout->addWidget( m_spectrum, ++row, 0 );
+    m_layout->addWidget( m_charts, ++row, 0 );
     m_layout->setRowStretch( row, 5 );
     m_layout->setRowResizable( row );
-    m_layout->addWidget( m_timeSeries, ++row, 0 );
-    m_layout->setRowStretch( row, 3 );
-    if( m_timeSeries->isHidden() )
-    {
-      m_layout->setVerticalSpacing( 0 );
-      if( m_menuDiv && !m_menuDiv->isHidden() )
-        m_spectrum->setMargin( 0, Wt::Top );
-    }else
-    {
-      const int vertSpacing = isMobile() ? 10 : 5;
-      m_layout->setVerticalSpacing( vertSpacing );
-      if( m_menuDiv && !m_menuDiv->isHidden() )
-        m_spectrum->setMargin( -vertSpacing, Wt::Top );
-    }
   }//if( showToolTabs ) / else
   
   if( m_toolsTabs )
@@ -10832,74 +10813,7 @@ void InterSpec::setChartSpacing()
 {
 #if( USE_CSS_FLEX_LAYOUT )
 #else
-  const int vertSpacing = (m_timeSeries->isHidden() ? 0 : (isMobile() ? 10 : 5));
-
-  //Changing the vertical space doesnt seem to reliably trigger in Wt 3.3.4
-  //  so we have to re-create the layout here...
-  if( m_chartsLayout && (m_chartsLayout->verticalSpacing() != vertSpacing) )
-  {
-    m_chartsLayout->removeWidget( m_spectrum );
-    m_chartsLayout->removeWidget( m_timeSeries );
-    
-    for( int i = 0; i < m_layout->count(); ++i )
-    {
-      WLayoutItem *t = m_layout->itemAt(i);
-      if( t->layout() == m_chartsLayout )
-      {
-        m_layout->removeItem( t );
-        break;
-      }
-    }//for( int i = 0; i < m_layout->count(); ++i )
-    
-    // Cleanup m_chartsLayout - looks like this cleans up all the memory (e.g., no danglers from the
-    //  call to m_layout->removeItem( t ) above).
-    delete m_chartsLayout;
-    
-    m_chartsLayout = new WGridLayout();
-    m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
-    m_chartsLayout->setVerticalSpacing( vertSpacing );
-    m_chartsLayout->addWidget( m_spectrum, 0, 0 );
-    m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
-    m_chartsLayout->setRowStretch( 0, 3 );
-    m_chartsLayout->setRowStretch( 1, 2 );
-    m_chartsLayout->setRowResizable( 0 );
-    
-    m_layout->addLayout( m_chartsLayout, m_menuDiv ? 1 : 0, 0 );
-  }else if( !m_chartsLayout && (m_layout->verticalSpacing() != vertSpacing) )
-  {
-    //The tool tabs are not showing
-    if( m_menuDiv )
-      m_layout->removeWidget( m_menuDiv );
-    m_layout->removeWidget( m_spectrum );
-    m_layout->removeWidget( m_timeSeries );
-    
-    delete m_layout;
-    m_layout = new WGridLayout();
-    m_layout->setContentsMargins( 0, 0, 0, 0 );
-    m_layout->setHorizontalSpacing( 0 );
-    
-    if( m_menuDiv )
-      m_layout->addWidget( m_menuDiv, 0, 0 );
-    m_layout->addWidget( m_spectrum, m_layout->rowCount(), 0 );
-    m_layout->setRowResizable( m_layout->rowCount() - 1 );
-    m_layout->setRowStretch( m_layout->rowCount() - 1, 5 );
-    m_layout->addWidget( m_timeSeries, m_layout->rowCount(), 0 );
-    m_layout->setRowStretch( m_layout->rowCount() - 1, 3 );
-    m_layout->setVerticalSpacing( vertSpacing );
-    
-    setLayout( m_layout );
-  }
-  
-  if( m_menuDiv && !m_menuDiv->isHidden() )
-  {
-    if( m_chartsLayout || !m_timeSeries->isHidden() )
-      m_spectrum->setMargin( -vertSpacing, Wt::Top );
-    else
-      m_spectrum->setMargin( 0, Wt::Top );
-  }else
-  {
-    m_spectrum->setMargin( 0, Wt::Top );
-  }
+  m_chartsResize->setHidden( m_timeSeries->isHidden() );
 #endif
 }//void setChartSpacing()
 

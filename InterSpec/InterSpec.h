@@ -1195,9 +1195,8 @@ protected:
 #else
   Wt::WGridLayout        *m_layout;
   
-  //Note: m_chartsLayout may be eliminated; may even be able to eliminate
-  //  m_toolsLayout...
-  Wt::WGridLayout        *m_chartsLayout;
+  Wt::WContainerWidget   *m_charts;
+  Wt::WContainerWidget   *m_chartsResize;
   Wt::WGridLayout        *m_toolsLayout;
 #endif
   

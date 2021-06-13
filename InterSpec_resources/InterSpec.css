@@ -1376,6 +1376,22 @@ body.Wt-rtl .Wt-tabs a {
 .Wt-tabs:after { content: ""; display: block; height: 0; clear: both; }
 .Wt-tabs { clear-after: both; }
 
+/* Some CSS for putting spectrum and time charts in a div with flex layout. */
+.InterSpec .charts {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.InterSpec .charts .SpectrumDisplayDiv {
+  flex: 3;
+  min-height: 0;
+}
+
+.InterSpec .charts .D3TimeChartParent {
+  flex: 2;
+  min-height: 0;
+}
 
 /* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
 .InterSpecFlex {
