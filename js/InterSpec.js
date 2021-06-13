@@ -341,3 +341,79 @@ function(id)
   }
 }
 );
+
+
+WT_DECLARE_WT_MEMBER
+(InitFlexResizer, Wt::JavaScriptFunction, "InitFlexResizer",
+function(resizerid,elid) {
+  
+  // TODO:
+  //  - [ ] Check height to be at least 10px?  Maybe make it be an option
+  //  - [ ] The mouse can easily go out of the resizer, and if it goes into the spectrum chart, we
+  //        will stop getting here, so we either need to up the order of calling events through
+  //        some jQuery version specific hack (see https://stackoverflow.com/questions/2360655/jquery-event-handlers-always-execute-in-order-they-were-bound-any-way-around-t),
+  //        or get the spectrum chart to stop canceling the events, which may take some work.
+  //  - [ ] Allow passing option if element being resized is above or below resizer.
+  //  - [ ] Could probably be made much more flexible, but good enough for now.
+  //  - [ ] listen for 'esc' key, and if so, set back to original height and stop drag
+  let startPosAndSize;
+  const allowTouch = (window.Touch || navigator.maxTouchPoints);
+      
+  function mousePos(e) {
+    if( typeof e.clientX === "number" )
+      return { x: e.clientX, y: e.clientY };
+    else if( e.originalEvent.touches )
+      return { x: e.originalEvent.touches[0].clientX, y: e.originalEvent.touches[0].clientY };
+    return null;
+  }
+      
+  function cancelEvent(e) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+      
+  function handleMouseDown(e) {
+    const el = document.getElementById(elid);
+    const resizer = document.getElementById(resizerid);
+    
+    startPosAndSize = mousePos(e);
+    startPosAndSize.height = el.offsetHeight;
+    el.style.flexBasis = startPosAndSize.height + 'px';
+    el.style.flexShrink = el.style.flexGrow = 0;
+        
+    $(document).bind('mousemove.FlexResize', handleMouseMove);
+    $(document).bind('mouseup.FlexResize', handleMouseUp);
+    if( allowTouch ) {
+      $(document).bind('touchmove.FlexResize', handleMouseMove);
+      $(document).bind('touchend.FlexResize', handleMouseUp);
+    }
+    $(document).bind('selectstart.FlexResize', cancelEvent); // disable selection
+  }
+      
+  function handleMouseMove(e) {
+    const pos = mousePos(e);
+    const el = document.getElementById(elid);
+    
+    const height = (startPosAndSize.height + startPosAndSize.y - pos.y);
+    
+    el.style.flexBasis = height + 'px'
+  }
+      
+  function handleMouseUp(e) {
+    // We could look at element above/bellow resizer, and got back to flex basline of zero but give the grows as the current ratio
+    
+    $(document).unbind('mousemove.FlexResize', handleMouseMove);
+    $(document).unbind('mouseup.FlexResize', handleMouseUp);
+        
+    if( allowTouch ) {
+      $(document).unbind('touchmove.FlexResize', handleMouseMove);
+      $(document).unbind('touchend.FlexResize', handleMouseUp);
+    }
+    $(document).unbind('selectstart.FlexResize', cancelEvent);
+                      
+    return false;
+  }
+
+  $('#' + resizerid).bind('mousedown.FlexResize touchstart.FlexResize', handleMouseDown);
+}
+);

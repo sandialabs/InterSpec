@@ -300,7 +300,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
   
 
-#if( USE_CSS_FLEX_LAYOUT )
+//#if( USE_CSS_FLEX_LAYOUT )
   setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"
       "for (let entry of entries) {"
@@ -311,9 +311,9 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   );
   
   callJavaScriptMember( "resizeObserver.observe", jsRef() );
-#else
-  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
-#endif
+//#else
+//  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+//#endif
   
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   updateReferncePhotoPeakLines();
