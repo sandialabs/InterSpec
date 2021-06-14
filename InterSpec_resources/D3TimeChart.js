@@ -304,6 +304,8 @@ D3TimeChart = function (elem, options) {
   this.verticalGridG = this.svg.append("g").attr("class", "grid xgrid");
   this.horizontalLeftGridG = this.svg.append("g").attr("class", "grid ygrid");
   this.horizontalRightGridG = this.svg.append("g").attr("class", "grid ygrid");
+  this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
+
   this.linesG = this.svg.append("g").attr("class", "lines");
   this.axisBottomG = this.svg.append("g").attr("class", "axis xaxis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis yaxis");
@@ -336,7 +338,6 @@ D3TimeChart = function (elem, options) {
     .attr("x", this.margin.left + 20)
     .attr("y", this.margin.top + this.mouseInfoOptions.padding.top);
 
-  this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
 
   /** MISC MEMBERS */
   this.cancelSelectionSignalEmitted = false;
@@ -1152,6 +1153,10 @@ D3TimeChart.prototype.updateChart = function (
       )
       .attr("id", "th_x-axis")
       .call(xAxis);
+    
+    // update interactable area
+    this.bottomAxisRect
+    .attr("height", this.axisBottomG.node().getBBox().height)
 
     // check whether there is any possibility for axis text overlap
     // if yes, then re-define axes with reduced (half) the current tick count
