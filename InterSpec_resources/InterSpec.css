@@ -1385,12 +1385,12 @@ body.Wt-rtl .Wt-tabs a {
 
 .InterSpec .charts .SpectrumDisplayDiv {
   flex: 3;
-  min-height: 0;
+  min-height: 70px;
 }
 
 .InterSpec .charts .D3TimeChartParent {
   flex: 2;
-  min-height: 0;
+  min-height: 65px;
 }
 
 /* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
