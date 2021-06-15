@@ -356,6 +356,8 @@ function(resizerid,elid) {
   //  - [ ] Allow passing option if element being resized is above or below resizer.
   //  - [ ] Could probably be made much more flexible, but good enough for now.
   //  - [ ] listen for 'esc' key, and if so, set back to original height and stop drag
+  //  - [ ] IF you drag high-enough, the bottom chart will go off the bottom - this needs to be prevented
+  //  - [ ] Unrelated to this, but got "dimensions of D3TimeChart div element are not set." error after resizing chart then switching to non-time chart more.
   let startPosAndSize;
   const allowTouch = (window.Touch || navigator.maxTouchPoints);
       
@@ -393,6 +395,15 @@ function(resizerid,elid) {
   function handleMouseMove(e) {
     const pos = mousePos(e);
     const el = document.getElementById(elid);
+    
+    // See if our hight has already gone too large for the parent, and if so, stop making it go so large.
+    //const parent = el.parentNode;
+    //const parentHeight = parent.height(); //This is useable inner height, after accounting for padding and such.
+    //var children = parent.children;
+    //for( let i = 0; i < children.length; i++ ) {
+    //  const child = children[i];
+    //  const minHeight = window.getComputedStyle(child,null).getPropertyValue("min-height");
+    //}
     
     const height = (startPosAndSize.height + startPosAndSize.y - pos.y);
     
