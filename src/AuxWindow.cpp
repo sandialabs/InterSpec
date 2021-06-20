@@ -1158,6 +1158,12 @@ void AuxWindow::deleteAuxWindow( AuxWindow *window )
 }//void deleteAuxWindow( AuxWindow *window )
 
 
+void AuxWindow::deleteSelf()
+{
+  AuxWindow::deleteAuxWindow( this );
+}
+
+
 void AuxWindow::rejectWhenEscapePressed( bool enable )
 {
 //  WDialog::rejectWhenEscapePressed( enable );
