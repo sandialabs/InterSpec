@@ -70,6 +70,7 @@ class UserFileInDb;
 class PopupDivMenu;
 class SpectraHeader;
 class InterSpec;
+class SimpleDialog;
 class SpecMeasManager;
 class SpectraFileModel;
 class PopupDivMenuItem;
@@ -369,6 +370,11 @@ public:
   void handleFileDrop( const std::string &name,
                        const std::string &spoolName,
                        SpecUtils::SpectrumType type );
+  
+  void handleFileDropWorker( const std::string &name,
+                       const std::string &spoolName,
+                       SpecUtils::SpectrumType type,
+                       SimpleDialog *dialog );
 
 protected:
   //Called from inside displayFile(...) to see if there are options for
