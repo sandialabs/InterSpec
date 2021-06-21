@@ -541,6 +541,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     // console.log(this.state.data.formatted);
     this.state.data.unzoomedCompressionIndex = compressionIndex;
   }
+  console.log(this.state.data.formatted)
 
   // set dimensions of svg element and plot
   this.svg.attr("width", this.state.width).attr("height", this.state.height);
@@ -777,6 +778,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
             // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
             // handle foreground or background selection
 
+            // only enable highlighting if brush forward, for more alignment with expected behavior
             if (lIdx < rIdx) {
               // Defined from docs on Wt::KeyboardModifier
               var keyModifierMap = {
@@ -2981,6 +2983,7 @@ D3TimeChart.prototype.compress = function (data, n) {
   var HAS_OCCUPANCY_DATA = false;
   var HAS_SOURCE_TYPE_DATA = false;
   var HAS_START_TIME_DATA = false;
+  var HAS_GPS_COORD_DATA = false;
 
   // Add optional fields:
   if (data.hasOwnProperty("neutronCounts")) {
@@ -3004,6 +3007,11 @@ D3TimeChart.prototype.compress = function (data, n) {
     out.startTimeOffset = data.startTimeOffset;
     out.startTimes = [];
     HAS_START_TIME_DATA = true;
+  }
+
+  if (data.hasOwnProperty("gpsCoordinates")) {
+    out.gpsCoordinates = [];
+    HAS_GPS_COORD_DATA = true;
   }
 
   // iterate over array with window of size n
@@ -3035,6 +3043,10 @@ D3TimeChart.prototype.compress = function (data, n) {
     }
     if (HAS_SOURCE_TYPE_DATA) {
       out.sourceTypes[outIdx] = data.sourceTypes[i];
+    }
+    if (HAS_GPS_COORD_DATA) {
+      // use GPS coordinate at the start of the compressed interval
+      out.gpsCoordinates[outIdx] = data.gpsCoordinates[i];
     }
     var j = 0;
     while (j < n && i + j < length) {
