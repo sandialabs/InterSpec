@@ -486,15 +486,16 @@ void D3TimeChart::defineJavaScript()
   //                     " setTimeout( function(){" + m_jsgraph + ".handleResize();},0); "
   //                     "}" );
   
-  doJavaScript( ""
-    "const resizeObserver = new ResizeObserver(entries => {"
+  setJavaScriptMember( "resizeObserver",
+    "new ResizeObserver(entries => {"
       "for (let entry of entries) {"
         "if( entry.target && (entry.target.id === '" + m_chart->id() + "') )"
           + m_jsgraph + ".handleResize();"
       "}"
     "});"
-    "resizeObserver.observe(" + m_chart->jsRef() + ");"
   );
+  
+  callJavaScriptMember( "resizeObserver.observe", m_chart->jsRef() );
   
   if( !m_chartClickedJS )
   {
@@ -1092,6 +1093,7 @@ void D3TimeChart::setDataToClient()
 void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
                                            const SpecUtils::SpectrumType type )
 {
+  const size_t npre = m_highlights.size();
   m_highlights.erase( std::remove_if( begin(m_highlights), end(m_highlights),
     [type](const D3TimeChart::HighlightRegion &region) -> bool {
       return (region.type == type);
@@ -1099,7 +1101,8 @@ void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
  
   if( sample_numbers.empty() )
   {
-    scheduleHighlightRegionRender();
+    if( npre != m_highlights.size() )
+      scheduleHighlightRegionRender();
     return;
   }
   

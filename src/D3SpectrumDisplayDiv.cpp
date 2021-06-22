@@ -300,19 +300,20 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
   
 
-#if( USE_CSS_FLEX_LAYOUT )
-  doJavaScript( ""
-    "const resizeObs" + id() + " = new ResizeObserver(entries => {"
-    "for (let entry of entries) {"
-      "if( entry.target && (entry.target.id === '" + id() + "') )"
-        + m_jsgraph + ".handleResize();"
+//#if( USE_CSS_FLEX_LAYOUT )
+  setJavaScriptMember( "resizeObserver",
+    "new ResizeObserver(entries => {"
+      "for (let entry of entries) {"
+        "if( entry.target && (entry.target.id === '" + id() + "') )"
+          + m_jsgraph + ".handleResize();"
       "}"
     "});"
-    "resizeObs" + id() + ".observe(" + jsRef() + ");"
   );
-#else
-  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
-#endif
+  
+  callJavaScriptMember( "resizeObserver.observe", jsRef() );
+//#else
+//  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+//#endif
   
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   updateReferncePhotoPeakLines();
@@ -859,16 +860,12 @@ void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
 
 
 
-void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
-                                 float liveTime,
-                                 float realTime,
-                                 float neutronCounts,
-                                 bool keep_curent_xrange )
+void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist, const bool keep_curent_xrange )
 {
   const float oldBackSF = m_model->backgroundScaledBy();
   const float oldSecondSF = m_model->secondDataScaledBy();
   
-  m_model->setDataHistogram( data_hist, liveTime, realTime, neutronCounts );
+  m_model->setDataHistogram( data_hist );
   
   if( !keep_curent_xrange )
     m_renderFlags |= ResetXDomain;
@@ -1002,12 +999,9 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
 
-void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts )
+void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background )
 {
-  m_model->setBackgroundHistogram( background, liveTime, realTime, neutronCounts );
+  m_model->setBackgroundHistogram( background );
   
   if( !background && m_model->backgroundSubtract() )
     setBackgroundSubtract( false );
@@ -1016,13 +1010,9 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> backgroun
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
-void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts,
-                                       bool ownAxis )
+void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist, const bool ownAxis )
 {
-  m_model->setSecondDataHistogram( hist, liveTime, realTime, neutronCounts, ownAxis );
+  m_model->setSecondDataHistogram( hist, ownAxis );
   
   scheduleUpdateSecondData();
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> background );

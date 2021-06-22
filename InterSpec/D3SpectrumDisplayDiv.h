@@ -94,22 +94,9 @@ public:
   
   void setPeakModel( PeakModel *model );
   
-  /// \TODO: for all setData, setSecondData, and setBackground, get rid of live/real-time arguments
-  ///        and neutron counts.
-  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist,
-               float liveTime,
-               float realTime,
-               float neutronCounts,
-               bool keep_curent_xrange );
-  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist,
-                     float liveTime,
-                     float realTime,
-                     float neutronCounts,
-                     bool ownAxis );
-  void setBackground( std::shared_ptr<SpecUtils::Measurement> background,
-                     float liveTime,
-                     float realTime,
-                     float neutronCounts );
+  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
+  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist, const bool ownAxis );
+  void setBackground( std::shared_ptr<SpecUtils::Measurement> background );
   
   void scheduleUpdateForeground();
   void scheduleUpdateBackground();

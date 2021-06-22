@@ -77,6 +77,10 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WDefaultLoadingIndicator>
 
+#if( USE_CSS_FLEX_LAYOUT )
+#include <Wt/WStackedWidget>
+#endif
+
 #if( USE_DB_TO_STORE_SPECTRA )
 #include <Wt/Json/Array>
 #include <Wt/Json/Value>
@@ -359,7 +363,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_toolsResizer( nullptr ),
 #else
     m_layout( 0 ),
-    m_chartsLayout( 0 ),
+    m_charts( nullptr ),
+    m_chartsResize( nullptr ),
     m_toolsLayout( 0 ),
 #endif
     m_menuDiv( 0 ),
@@ -842,6 +847,46 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+    
+    m_toolsTabs->setJavaScriptMember( "wtResize", "function(self,w,h,layout){ console.log( 'wtResize called for tools tab:', w, h, layout ); }" );
+    
+     // An attempt to call into wtResize from ResizeObserver - not working yet - tool tab contents dont expand...
+    const string stackJsRef = m_toolsTabs->contentsStack()->jsRef();
+    m_toolsTabs->setJavaScriptMember( "resizeObserver",
+      "new ResizeObserver(entries => {"
+        "for (let entry of entries) {"
+          "if( entry.target && entry.target.wtResize ) {"
+            "const w = entry.contentRect.width;"
+            "const h = entry.contentRect.height;"
+            "console.log( 'Got resize', entry.target.id, 'for {' + w + ',' + h + '}'  );"
+            "entry.target.wtResize(entry.target, Math.round(w), Math.round(h), true);"
+            "if( (h > 27) && (entry.target.id === '" + m_toolsTabs->id() + "') ){"
+              "$('#" + m_toolsTabs->id() + " > .Wt-stack').each( function(i,el){ "
+                  "$(el).height( Math.round(h - 27) );"
+              "} );"
+                                     
+            "}"
+            "if( (h > 35) && (entry.target.id === '" + m_toolsTabs->id() + "') ){"
+              "$('#" + m_toolsTabs->id() + " > .Wt-stack > div').each( function(i,el){ "
+                "console.log( 'Setting height to ' + (h - 35) ); "
+                "$(el).height( Math.round(h - 35) );"
+              "} );"
+            "}"
+            //"if(" + stackJsRef + " && " + stackJsRef + ".wtResize) {"
+            //  + stackJsRef + ".wtResize(" + stackJsRef + ", Math.round(w), Math.round(h-27), true);"
+            //  "console.log( 'Will call resize for', " + stackJsRef + " );"
+            //"}"
+          "}else console.log( 'no wtResize' );"
+        "}"
+           // "console.log( 'stack=', " + m_toolsTabs->contentsStack()->jsRef() + " );"
+           // "console.log( 'stack wtResize=', " + m_toolsTabs->contentsStack()->jsRef() + ".wtResize );"
+      "});"
+    );
+    
+    m_toolsTabs->callJavaScriptMember( "resizeObserver.observe", m_toolsTabs->jsRef() );
+    //for( int i = 0; i < m_toolsTabs->count(); ++i )
+    //  m_toolsTabs->callJavaScriptMember( "resizeObserver.observe", m_toolsTabs->widget(i)->jsRef() );
+    
   }//end make tool tabs
   
   // TODO: need to call wtResize of m_toolsTabs so they will get resized correctly
@@ -5727,22 +5772,18 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_energyCalTool->setWideLayout();
     m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
     
-    m_chartsLayout = new WGridLayout();
-    m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
-    m_chartsLayout->setHorizontalSpacing( 0 );
-    m_chartsLayout->addWidget( m_spectrum, 0, 0 );
-    m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
+    m_charts = new WContainerWidget();
+    m_charts->addWidget( m_spectrum );
+    m_charts->addStyleClass( "charts" );
+    m_chartsResize = new WContainerWidget( m_charts );
+    m_chartsResize->addStyleClass( "Wt-hrh2" );
+    m_chartsResize->setHeight( isMobile() ? 10 : 5 );
+    m_charts->addWidget( m_timeSeries );
     
-    if( m_timeSeries->isHidden() )
-    {
-      m_chartsLayout->setVerticalSpacing( 0 );
-    }else
-    {
-      m_chartsLayout->setRowStretch( 0, 20 );
-      m_chartsLayout->setRowStretch( 1, 2 );
-      m_chartsLayout->setRowResizable( 0 );
-      m_chartsLayout->setVerticalSpacing( layoutVertSpacing );
-    }
+    m_chartsResize->setHidden( m_timeSeries->isHidden() );
+    
+    LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
+    m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartsResize->id() + "','" + m_timeSeries->id() + "');" );
     
     m_toolsLayout = new WGridLayout();
     m_toolsLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -5754,14 +5795,14 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv )
       m_layout->addWidget( m_menuDiv,  row++, 0 );
     
-    m_layout->addLayout( m_chartsLayout, row, 0 );
+    m_layout->addWidget( m_charts, row, 0 );
     
     m_layout->setRowResizable( row, true );
     m_layout->setRowStretch( row, 5 );
     
     m_layout->setVerticalSpacing( layoutVertSpacing );
     if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amount of space between the menu bar and the chart
-      m_spectrum->setMargin( -layoutVertSpacing, Wt::Top );
+      m_charts->setMargin( -layoutVertSpacing, Wt::Top );
     
     //Without using the wrapper below, the tabs widget will change height, even
     //  if it is explicitly set, when different tabs are clicked (unless a
@@ -5810,10 +5851,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_referencePhotopeakLines->deSerialize( refNucXmlState );
   }else
   {
-    //We are hidding the tool tabs
-    m_chartsLayout->removeWidget( m_spectrum );
-    m_chartsLayout->removeWidget( m_timeSeries );
-    m_chartsLayout = nullptr;
+    //We are hiding the tool tabs
+    m_layout->removeWidget( m_charts );
     
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
@@ -5849,23 +5888,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     int row = -1;
     if( m_menuDiv )
       m_layout->addWidget( m_menuDiv, ++row, 0 );
-    m_layout->addWidget( m_spectrum, ++row, 0 );
+    m_layout->addWidget( m_charts, ++row, 0 );
     m_layout->setRowStretch( row, 5 );
     m_layout->setRowResizable( row );
-    m_layout->addWidget( m_timeSeries, ++row, 0 );
-    m_layout->setRowStretch( row, 3 );
-    if( m_timeSeries->isHidden() )
-    {
-      m_layout->setVerticalSpacing( 0 );
-      if( m_menuDiv && !m_menuDiv->isHidden() )
-        m_spectrum->setMargin( 0, Wt::Top );
-    }else
-    {
-      const int vertSpacing = isMobile() ? 10 : 5;
-      m_layout->setVerticalSpacing( vertSpacing );
-      if( m_menuDiv && !m_menuDiv->isHidden() )
-        m_spectrum->setMargin( -vertSpacing, Wt::Top );
-    }
   }//if( showToolTabs ) / else
   
   if( m_toolsTabs )
@@ -8397,22 +8422,43 @@ void InterSpec::timeChartDragged( const int sample_start_in, const int sample_en
   {
     case ActionType::ChangeSamples:
       dispsamples = interaction_samples;
+      changeDisplayedSampleNums( dispsamples, type );
       break;
+      
     case ActionType::AddSamples:
       dispsamples.insert( begin(interaction_samples), end(interaction_samples) );
+      changeDisplayedSampleNums( dispsamples, type );
       break;
+      
     case ActionType::RemoveSamples:
       for( const auto sample : interaction_samples )
         dispsamples.erase(sample);
       
-      //If user erased all the samples - then lets go back to displaying all of that type of samples
-      if( dispsamples.empty() )
-        dispsamples = sampleNumbersForTypeFromForegroundFile(type);
+      if( !dispsamples.empty() )
+      {
+        changeDisplayedSampleNums( dispsamples, type );
+      }else
+      {
+        switch( type )
+        {
+          case SpecUtils::SpectrumType::Foreground:
+            // If user erased all the samples - then lets go back to displaying the default samples.
+            //  We dont want to clear the foreground file, because then we'll lose the time chart
+            //  and the background/secondary spectra too.
+            dispsamples = sampleNumbersForTypeFromForegroundFile(type);
+            changeDisplayedSampleNums( dispsamples, type );
+            break;
+            
+          case SpecUtils::SpectrumType::Background:
+          case SpecUtils::SpectrumType::SecondForeground:
+            setSpectrum( nullptr, std::set<int>{}, type, 0 );
+            break;
+        }//switch( type )
+      }//if( !dispsamples.empty() ) / else
+      
       
       break;
   }//switch( action )
-  
-  changeDisplayedSampleNums( dispsamples, type );
 }//void timeChartDragged(...)
 
 #else
@@ -8975,7 +9021,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       m_secondDataMeasurement = nullptr;
-      m_spectrum->setSecondData( nullptr, -1.0, -1.0, -1.0, false );
+      m_spectrum->setSecondData( nullptr, false );
       
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::SecondForeground,
                                              nullptr, {}, {} );
@@ -8991,7 +9037,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       m_backgroundMeasurement = nullptr;
-      m_spectrum->setBackground( nullptr, -1.0, -1.0, -1.0 );
+      m_spectrum->setBackground( nullptr );
       m_displayedSpectrumChangedSignal.emit( SpecUtils::SpectrumType::Background, nullptr, {}, {} );
     }//if( nSecondBins )
   }//if( spec_type == SpecUtils::SpectrumType::Foreground )
@@ -10767,74 +10813,7 @@ void InterSpec::setChartSpacing()
 {
 #if( USE_CSS_FLEX_LAYOUT )
 #else
-  const int vertSpacing = (m_timeSeries->isHidden() ? 0 : (isMobile() ? 10 : 5));
-
-  //Changing the vertical space doesnt seem to reliably trigger in Wt 3.3.4
-  //  so we have to re-create the layout here...
-  if( m_chartsLayout && (m_chartsLayout->verticalSpacing() != vertSpacing) )
-  {
-    m_chartsLayout->removeWidget( m_spectrum );
-    m_chartsLayout->removeWidget( m_timeSeries );
-    
-    for( int i = 0; i < m_layout->count(); ++i )
-    {
-      WLayoutItem *t = m_layout->itemAt(i);
-      if( t->layout() == m_chartsLayout )
-      {
-        m_layout->removeItem( t );
-        break;
-      }
-    }//for( int i = 0; i < m_layout->count(); ++i )
-    
-    // Cleanup m_chartsLayout - looks like this cleans up all the memory (e.g., no danglers from the
-    //  call to m_layout->removeItem( t ) above).
-    delete m_chartsLayout;
-    
-    m_chartsLayout = new WGridLayout();
-    m_chartsLayout->setContentsMargins( 0, 0, 0, 0 );
-    m_chartsLayout->setVerticalSpacing( vertSpacing );
-    m_chartsLayout->addWidget( m_spectrum, 0, 0 );
-    m_chartsLayout->addWidget( m_timeSeries, 1, 0 );
-    m_chartsLayout->setRowStretch( 0, 20 );
-    m_chartsLayout->setRowStretch( 1, 2 );
-    m_chartsLayout->setRowResizable( 0 );
-    
-    m_layout->addLayout( m_chartsLayout, m_menuDiv ? 1 : 0, 0 );
-  }else if( !m_chartsLayout && (m_layout->verticalSpacing() != vertSpacing) )
-  {
-    //The tool tabs are not showing
-    if( m_menuDiv )
-      m_layout->removeWidget( m_menuDiv );
-    m_layout->removeWidget( m_spectrum );
-    m_layout->removeWidget( m_timeSeries );
-    
-    delete m_layout;
-    m_layout = new WGridLayout();
-    m_layout->setContentsMargins( 0, 0, 0, 0 );
-    m_layout->setHorizontalSpacing( 0 );
-    
-    if( m_menuDiv )
-      m_layout->addWidget( m_menuDiv, 0, 0 );
-    m_layout->addWidget( m_spectrum, m_layout->rowCount(), 0 );
-    m_layout->setRowResizable( m_layout->rowCount() - 1 );
-    m_layout->setRowStretch( m_layout->rowCount() - 1, 5 );
-    m_layout->addWidget( m_timeSeries, m_layout->rowCount(), 0 );
-    m_layout->setRowStretch( m_layout->rowCount() - 1, 3 );
-    m_layout->setVerticalSpacing( vertSpacing );
-    
-    setLayout( m_layout );
-  }
-  
-  if( m_menuDiv && !m_menuDiv->isHidden() )
-  {
-    if( m_chartsLayout || !m_timeSeries->isHidden() )
-      m_spectrum->setMargin( -vertSpacing, Wt::Top );
-    else
-      m_spectrum->setMargin( 0, Wt::Top );
-  }else
-  {
-    m_spectrum->setMargin( 0, Wt::Top );
-  }
+  m_chartsResize->setHidden( m_timeSeries->isHidden() );
 #endif
 }//void setChartSpacing()
 
@@ -11431,7 +11410,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     
     if( m_spectrum->data() )
     {
-      m_spectrum->setData( nullptr, -1.0f, -1.0f, -1.0f, false );
+      m_spectrum->setData( nullptr, false );
       m_peakModel->setPeakFromSpecMeas( nullptr, sample_nums );
     }
     
@@ -11523,7 +11502,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   const float rt = dataH ? dataH->real_time() : 0.0f;
   const float sum_neut = dataH ? dataH->neutron_counts_sum() : 0.0f;
   
-  m_spectrum->setData( dataH, lt, rt, sum_neut, current_energy_range );
+  m_spectrum->setData( dataH, current_energy_range );
   
 #if( USE_SPECTRUM_CHART_D3 )
   if( !m_timeSeries->isHidden() )
@@ -11547,7 +11526,17 @@ void InterSpec::displaySecondForegroundData()
   {
     //sample_nums.clear();
     if( m_spectrum->secondData() )
-      m_spectrum->setSecondData( nullptr, -1.0, -1.0, -1.0, false );
+      m_spectrum->setSecondData( nullptr, false );
+    
+    if( !m_timeSeries->isHidden() )
+    {
+#if( USE_SPECTRUM_CHART_D3 )
+      m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::SecondForeground );
+#else
+      m_timeSeries->setTimeHighLightRegions( {}, SpecUtils::SpectrumType::SecondForeground );
+#endif
+    }//if( !m_timeSeries->isHidden() )
+    
     return;
   }//if( !m_secondDataMeasurement )
   
@@ -11558,11 +11547,7 @@ void InterSpec::displaySecondForegroundData()
   if( histH )
     histH->set_title( "Second Foreground" );
     
-  const float lt = histH ? histH->live_time() : -1.0f;
-  const float rt = histH ? histH->real_time() : -1.0f;
-  const float neutronCounts = histH ? histH->neutron_counts_sum() : -1.0f;
-    
-  m_spectrum->setSecondData( histH, lt, rt, neutronCounts, false );
+  m_spectrum->setSecondData( histH, false );
   
   if( !m_timeSeries->isHidden() )
   {
@@ -11596,9 +11581,19 @@ void InterSpec::displayBackgroundData()
     m_hardBackgroundSub->disable();
     //disp_samples.clear();
     if( m_spectrum->background() )
-      m_spectrum->setBackground( nullptr, -1.0f, -1.0f, -1.0f );
+      m_spectrum->setBackground( nullptr );
+    
+    if( !m_timeSeries->isHidden() )
+    {
+#if( USE_SPECTRUM_CHART_D3 )
+      m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Background );
+#else
+      m_timeSeries->setTimeHighLightRegions( {}, SpecUtils::SpectrumType::Background );
+#endif
+    }//if( !m_timeSeries->isHidden() )
+    
     return;
-  }
+  }//if( !energy_cal || !m_dataMeasurement )
   
   auto backgroundH = meas->sum_measurements( disp_samples, disp_dets, energy_cal );
   if( backgroundH )
@@ -11607,7 +11602,7 @@ void InterSpec::displayBackgroundData()
   const float lt = backgroundH ? backgroundH->live_time() : -1.0f;
   const float rt = backgroundH ? backgroundH->real_time() : -1.0f;
   const float neutronCounts = backgroundH ? backgroundH->neutron_counts_sum() : -1.0f;
-  m_spectrum->setBackground( backgroundH, lt, rt, neutronCounts );
+  m_spectrum->setBackground( backgroundH );
   
   if( !m_timeSeries->isHidden() )
   {

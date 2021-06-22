@@ -144,6 +144,9 @@ public:
   // w->finished( boost::bind( &AuxWindow:::deleteAuxWindow, window ) );
   static void deleteAuxWindow( AuxWindow *window );
 
+  /** A convenience function to call #deleteAuxWindow via binding to a signal. */
+  void deleteSelf();
+  
   //rejectWhenEscapePressed(): sets it up so hitting escape will cause the
   //  finished() signal to be emmitted; also hides the dialog
   virtual void rejectWhenEscapePressed( bool enable = true );

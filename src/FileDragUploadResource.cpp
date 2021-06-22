@@ -123,6 +123,46 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
     return;
   }//if( request.tooLarge() )
 
+#if( BUILD_AS_ELECTRON_APP )
+  // See FileUploadFcn in InterSpec.js
+  const string fullpath = request.headerValue("FullFilePath");
+  if( !fullpath.empty() )
+  {
+    bool canRead = false;
+    
+    {// begin test if can read file
+#ifdef _WIN32
+      const std::wstring wname = SpecUtils::convert_from_utf8_to_utf16( fullpath );
+      std::ifstream file( wname.c_str() );
+#else
+      std::ifstream file( fullpath.c_str() );
+#endif
+      canRead = file.good();
+    }// end test if can read file
+    
+    
+    if( canRead ) // if( SpecUtils::is_file(fullpath) )
+    {
+      cout << "Got upload of fullpath='" << fullpath << "'" << endl;
+      
+      auto app = WApplication::instance();
+      WApplication::UpdateLock lock( app );
+      
+      if( m_fileDrop )
+        m_fileDrop->emit( SpecUtils::filename(fullpath), fullpath );
+      
+      app->triggerUpdate();
+    }else
+    {
+      response.setStatus( 406 );
+      output << "Couldnt access filepath";
+      return;
+    }
+    
+    return;
+  }//if( !fullpath.empty() )
+#endif
+  
   const int datalen = request.contentLength();
 
   if( datalen )

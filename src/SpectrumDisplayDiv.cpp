@@ -706,11 +706,7 @@ void SpectrumDisplayDiv::guessAndUpdateDisplayRebinFactor()
 }//void guessAndUpdateDisplayRebinFactor()
 
 
-void SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
-                                  float liveTime,
-                                  float realTime,
-                                  float neutronCounts,
-                                  bool keep_curent_xrange )
+void SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist, const bool keep_curent_xrange )
 {
   if( m_autoAdjustDisplayBinnning )
   {
@@ -744,7 +740,7 @@ void SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
     }//if( data_hist ) / else
   }//if( m_autoAdjustDisplayBinnning )
 
-  m_model->setDataHistogram( data_hist, liveTime, realTime, neutronCounts );
+  m_model->setDataHistogram( data_hist );
 //  enableDisableBackgroundSubtractCB();
   //  setAutoAxisRange();
 
@@ -866,14 +862,11 @@ float SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType spec
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
 
-void SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background,
-                                        float liveTime,
-                                        float realTime,
-                                        float neutronCounts )
+void SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background )
 {
   const bool hadBackground = !!(m_model->getBackground());
 
-  m_model->setBackgroundHistogram( background, liveTime, realTime, neutronCounts );
+  m_model->setBackgroundHistogram( background );
 //  enableDisableBackgroundSubtractCB();
 
   //XXX 2011-10-23 - I dont understand what I was doing below, it should be checked
@@ -894,15 +887,11 @@ void SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background,
 }//void SpectrumDisplayDiv::setBackground(...);
 
 
-void SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist,
-                                        float liveTime,
-                                        float realTime,
-                                        float neutronCounts,
-                                        bool ownAxis )
+void SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist, const bool ownAxis )
 {
   const bool alreadyHad = !!(m_model->getSecondData());
 
-  m_model->setSecondDataHistogram( hist, liveTime, realTime, neutronCounts, ownAxis );
+  m_model->setSecondDataHistogram( hist, ownAxis );
 
   const bool nowHas = !!(m_model->getSecondData());
 

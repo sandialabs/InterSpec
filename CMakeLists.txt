@@ -160,6 +160,11 @@ option(
     "Include support for downloading images of the displayed page"
     OFF
 )
+option(
+    USE_CSS_FLEX_LAYOUT
+    "Use CSS Flex/Grid Layout in-place of Wts layouts were possible (work in progress)"
+    OFF
+)
 
 set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
     CACHE STRING
