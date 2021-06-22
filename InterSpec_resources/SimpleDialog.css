@@ -1,5 +1,6 @@
 .simple-dialog
 {
+  border: none;
   font-size: 16px;
   background-color: #fff;
   border-radius: 10px;
