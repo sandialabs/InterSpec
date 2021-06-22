@@ -2889,7 +2889,7 @@ void EnergyCalTool::doRefreshFromFiles()
     
     if( !m_specTypeMenu )
     {
-      cout << "needStackRefresh: m_specTypeMenu == nullptr" << endl;
+      //cout << "needStackRefresh: m_specTypeMenu == nullptr" << endl;
       needStackRefresh = true;
     }
     
@@ -2898,8 +2898,8 @@ void EnergyCalTool::doRefreshFromFiles()
       WMenuItem *typeItem = m_specTypeMenu->itemAt(i);
       if( !typeItem )
       {
+        //cout << "needStackRefresh: !typeItem" << endl;
         needStackRefresh = true;
-        cout << "needStackRefresh: !typeItem" << endl;
         continue;
       }
       
@@ -2907,15 +2907,15 @@ void EnergyCalTool::doRefreshFromFiles()
       
       if( !detMenu )
       {
+        //cout << "needStackRefresh: !detMenu" << endl;
         needStackRefresh = true;
-        cout << "needStackRefresh: !detMenu" << endl;
         continue;
       }
       
       if( !specTypeInForgrndMenu && ((!detMenu) != (!specfiles[i])) )
       {
+        //cout << "needStackRefresh: (!detMenu != !specfiles[i])" << endl;
         needStackRefresh = true;
-        cout << "needStackRefresh: (!detMenu != !specfiles[i])" << endl;
         continue;
       }
       
@@ -2931,8 +2931,8 @@ void EnergyCalTool::doRefreshFromFiles()
             needStackRefresh = !(item && (item->text() == WString(spec_type_labels_vert[i])));
           }
           
-          if( needStackRefresh )
-            cout << "needStackRefresh: Did not have a menu entry for specfile[" << i << "]" << endl;
+          //if( needStackRefresh )
+          //  cout << "needStackRefresh: Did not have a menu entry for specfile[" << i << "]" << endl;
         }else
         {
           //Make sure none of the widgets have spec_type_labels_vert[i] in them
@@ -2942,8 +2942,8 @@ void EnergyCalTool::doRefreshFromFiles()
             needStackRefresh = (!item || (item->text() == WString(spec_type_labels_vert[i])));
           }
           
-          if( needStackRefresh )
-            cout << "needStackRefresh: For empty place " << i << " had a menu entry, but no spectrum file" << endl;
+          //if( needStackRefresh )
+          //  cout << "needStackRefresh: For empty place " << i << " had a menu entry, but no spectrum file" << endl;
         }//if( specfiles[i] ) / else
       }else
       {
@@ -2962,16 +2962,16 @@ void EnergyCalTool::doRefreshFromFiles()
         {
           //If there is no spectrum file for index i, item should be hidden, and if not need a refresh
           needStackRefresh = !item->isHidden();
-          if( needStackRefresh )
-            cout << "needStackRefresh: item is not hidden for missing spectrum " << i << endl;
+          //if( needStackRefresh )
+          //  cout << "needStackRefresh: item is not hidden for missing spectrum " << i << endl;
           continue;
         }//if( !specfiles[i] )
         
         if( item->isHidden() )
         {
           //If item is hidden, but here we do have a spectrum file, we need a refresh
+          //cout << "needStackRefresh: item is hidden for " << i << endl;
           needStackRefresh = true;
-          cout << "needStackRefresh: item is hidden for " << i << endl;
           continue;
         }//if( item->isHidden() )
         
@@ -2986,8 +2986,8 @@ void EnergyCalTool::doRefreshFromFiles()
         }//for( int j = 0; j < detMenu->count(); ++j )
         
         needStackRefresh = (detsInMenu != disp_det_names[i]);
-        if( needStackRefresh )
-          cout << "needStackRefresh: New det names dont equal old for type=" << i << endl;
+        //if( needStackRefresh )
+        //  cout << "needStackRefresh: New det names dont equal old for type=" << i << endl;
       }//if( specTypeInForgrndMenu ) / else
     }//for( int i = 0; i < 3; ++i )
 
@@ -3002,12 +3002,11 @@ void EnergyCalTool::doRefreshFromFiles()
   
   if( !m_specTypeMenu || (m_specTypeMenu->isHidden() != hideSpecType) )
   {
+    //cout << "needStackRefresh: m_specTypeMenu->isHidden() != hideSpecType" << endl;
     needStackRefresh = true;
-    cout << "needStackRefresh: m_specTypeMenu->isHidden() != hideSpecType" << endl;
   }
   
-  
-  cout << "needStackRefresh=" << needStackRefresh << endl;
+  //cout << "needStackRefresh=" << needStackRefresh << endl;
   
   // TODO: instead of the above logic to catch when we need to refresh (\e.g., create all new)
   //       widgets, should combine it with the logic to create new widgets, but only delte or create
