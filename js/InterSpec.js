@@ -56,6 +56,17 @@ function()
         return;
       }
       
+      function removeUploading(){
+        console.log( 'removeUploading' );
+        $('#Uploading').remove();
+      };
+      
+      
+      function errfcn(){
+        removeUploading();
+        alert( "Error uploading file:" + "\n\t" + xhr.statusText + "\n\tResponse code " + xhr.status + "\n\t" + xhr.responseText );
+      }
+      
       // We want to upload the foreground, then background, then secondary, waiting for each upload
       //  to finish before starting the next.
       var uploadIndex = -1;
@@ -66,20 +77,25 @@ function()
         }
         
         if( uploadIndex >= uploadOrder.length )
+        {
+          removeUploading();
           return;
+        }
         
         var thisUid = uploadOrder[uploadIndex];
-        uploadFileToUrl( $(target).data(thisUid), toUpload[thisUid] );
+        uploadFileToUrl( $(target).data(thisUid), toUpload[thisUid], true );
       };
       
-      function uploadFileToUrl( uploadURL, file ){
+      
+      
+      function uploadFileToUrl( uploadURL, file, lookForPath ){
         if( !uploadURL || !file )
         {
           console.log( 'uploadFileToUrl: - invalid url or file' );
           return;
         }
           
-        console.log( 'uploadFileToUrl: will upload to ' + uploadURL );
+        //console.log( 'uploadFileToUrl: will upload to ' + uploadURL );
         
         var xhr;
         if (window.XMLHttpRequest)
@@ -95,9 +111,37 @@ function()
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
         xhr.setRequestHeader("X-File-Name", file.name);
         
-        var errfcn = function () {
-          alert( "Error uploading file:" + "\n\t" + xhr.statusText + "\n\tResponse code " + xhr.status + "\n\t" + xhr.responseText );
-        };
+//#if( BUILD_AS_ELECTRON_APP ) //C++ preprocessors dont look to work here...
+        if( lookForPath && file.path && !file.path.toLowerCase().includes('fake') ) {
+          // For Electron builds, file.path gives the full path (including filename), so we
+          //   will just upload the path so we can read it in the c++ to avoid lots of copying and
+          //   stuff.  But we also need to fallback, JIC c++ fails for some unforeseen reason.
+          //   See #FileDragUploadResource::handleRequest for the other part of this logic
+          xhr.setRequestHeader("FullFilePath", file.path);
+          
+          
+          // TUESDAY TODO: test this for non ASCII paths
+          // TUESDAY TODO: explicitly trigger a resize event after maximizing window, or putting it back
+          
+          console.log( 'Will send file path, instead of actual file; path: ', file.path );
+          
+          xhr.onload = function(){
+            removeUploading();
+            
+            if( (xhr.readyState === 4) && (xhr.status !== 200) ){
+              console.log( 'Failed to upload via Electron path.' );
+              uploadFileToUrl( uploadURL, file, false );
+            }else if( xhr.readyState === 4 ) {
+              console.log( 'Successfully uploaded path.' );
+            }
+          };
+          
+          xhr.onloadend = removeUploading;
+          
+          xhr.send();
+          return;
+        }//if( have full path on Electron build )
+//#endif
         
         xhr.onerror = errfcn;
         xhr.onload = function(){
@@ -109,6 +153,31 @@ function()
             uploadNextFile();
         };//xhr.onload
         
+        
+        // I'm not totally sure when functions for XMLHttpRequest vs XMLHttpRequest.upload get called
+        // https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest/Using_XMLHttpRequest
+        
+        let lastUpdateTime = 0;
+        xhr.upload.addEventListener('progress', function(pe) {
+          if(pe.lengthComputable) {
+            console.log( 'pe.total=' + pe.total + ', pe.loaded=' + pe.loaded );
+            
+            const currentTime = Date.now();
+            if( (currentTime - lastUpdateTime) > 500 ){
+              lastUpdateTime = currentTime;
+              $('#UploadingProgress').text( Math.trunc(100*pe.loaded/pe.total) + '%' );
+            }
+          }
+        });
+        
+        xhr.upload.addEventListener("load", removeUploading);
+        xhr.upload.addEventListener("error", removeUploading);
+        
+        xhr.addEventListener('abort', removeUploading);
+        xhr.upload.addEventListener("abort", removeUploading);
+        
+        xhr.onloadend = removeUploading;
+        
         //xhr.timeout = 5000;
         //xhr.ontimeout = function () {
         //  console.error("The request to upload file timed out.");
@@ -118,6 +187,15 @@ function()
       };//uploadFileToUrl
       
       uploadNextFile();
+      
+      // Lets indicate to the user that something is going on; even on localhost, uploads speeds are
+      //  only a few MB per second, so a sizable file can take quite a while.
+      $('<div id=\"Uploading\" class=\"Wt-dialogcover UploadProgressCover\">'
+      + '<div class=\"UpFileContents\"><div class=\"UpCenter\"><div class=\"UpDivTxt\">'
+      + '<div>Copying file into InterSpec</div>'
+      + '<div id=\"UploadingProgress\">--%</div>'
+      + '</div></div></div>'
+      + '</div>').appendTo(target);
     }catch(error)
     {
       console.log( "Error in HandleDrop: " + error );
