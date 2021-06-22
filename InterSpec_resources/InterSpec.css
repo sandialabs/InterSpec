@@ -72,6 +72,18 @@ border:1px solid #021a40;
   filter: alpha(opacity=80);
 }
 
+
+.UploadProgressCover
+{
+  width: 100%;
+  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 16777270;
+}
+
+
 .UpDiv
 {
   position: absolute;
@@ -81,7 +93,7 @@ border:1px solid #021a40;
 }
 
 
-.UpCenterDiv
+.UpCenterDiv, .UpCenter
 {
   height: 30%;
   width: 80%;
@@ -90,6 +102,10 @@ border:1px solid #021a40;
   left: 10%;
   vertical-align: middle;
   display:table;
+}
+
+.UpCenterDiv
+{
   -webkit-border-radius: 15px;
   -moz-border-radius: 15px;
   border-radius: 15px;
