@@ -1056,6 +1056,16 @@ void PopupDivMenu::setupDesktopMenuStuff()
   implementStateless( &PopupDivMenu::parentMouseWentOver, &PopupDivMenu::undoParentHoveredOver );
   
   m_menuParent->clicked().connect( this, &PopupDivMenu::parentClicked );
+  
+  m_menuParent->touchStarted().connect( std::bind( [this](){
+    popup( WPoint( -10000, -10000 ) );
+    doJavaScript( 
+      "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");"
+      "Wt.WT.ParentClicked('" + id() + "','" + m_menuParent->id() + "'," WT_CLASS ");" );
+  }));
+  m_menuParent->touchStarted().preventPropagation();
+  m_menuParent->touchStarted().preventDefaultAction();
+
   m_menuParent->mouseWentOver().connect( this, &PopupDivMenu::parentMouseWentOver );
   
   // TODO: see if we can connect to the 'cancel' signal in JS, so we can just do this there
