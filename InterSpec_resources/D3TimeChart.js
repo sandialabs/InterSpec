@@ -538,10 +538,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
         }
       }
     } // if (plotWidth < nPoints)
-    // console.log(this.state.data.formatted);
     this.state.data.unzoomedCompressionIndex = compressionIndex;
   }
-  console.log(this.state.data.formatted)
+  // console.log(this.state.data.formatted)
 
   // set dimensions of svg element and plot
   this.svg.attr("width", this.state.width).attr("height", this.state.height);
