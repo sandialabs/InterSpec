@@ -44,8 +44,7 @@
   border-radius: 2px;
 }
 
-.FluxMoreInfoCB {
-  /* Keep text from doign line breaks... */
-  display: inline-block;
-  width: 15em;
+
+.FluxInfoAmount {
+  min-width: 225px;
 }

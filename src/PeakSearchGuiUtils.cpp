@@ -1981,10 +1981,7 @@ namespace PeakSearchGuiUtils
     peakmodel.setDataModel( &dataModel );
     peakmodel.setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
     
-    const float liveTime = meas->live_time();
-    const float realTime = meas->real_time();
-    const double neutrons = meas->neutron_counts_sum();
-    dataModel.setDataHistogram( meas, liveTime, realTime, neutrons );
+    dataModel.setDataHistogram( meas );
     
     const vector<Chart::WDataSeries> series = dataModel.suggestDataSeries();
     chart.setSeries( series );

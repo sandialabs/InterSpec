@@ -1556,15 +1556,24 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
 }//void handleNonSpectrumFile(...)
 
 
-void SpecMeasManager::handleFileDrop( const std::string &name,
-                                             const std::string &spoolName,
-                                             SpecUtils::SpectrumType type )
+
+void SpecMeasManager::handleFileDropWorker( const std::string &name,
+                     const std::string &spoolName,
+                     SpecUtils::SpectrumType type,
+                     SimpleDialog *dialog )
 {
+  if( dialog )
+    dialog->accept();
+  dialog = nullptr;
+  
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   if( name.length() > 4
      && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
+  {
+    wApp->triggerUpdate();
     return;
+  }
 #endif
   
   assert( WApplication::instance() );
@@ -1583,9 +1592,36 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   {
     if( !handleNonSpectrumFile( name, spoolName ) )
     {
-      displayInvalidFileMsg(name,e.what());
+      displayInvalidFileMsg( name, e.what() );
     }
   }
+
+  wApp->triggerUpdate();
+}//handleFileDropWorker(...)
+
+
+void SpecMeasManager::handleFileDrop( const std::string &name,
+                                             const std::string &spoolName,
+                                             SpecUtils::SpectrumType type )
+{
+  // If file is small, and not csv/txt (these are really slow to parse), dont display the parsing
+  //  message.
+  if( (SpecUtils::file_size(spoolName) < 512*1024)
+     && !SpecUtils::iends_with(name, ".csv") && !SpecUtils::iends_with(name, ".txt") )
+  {
+    handleFileDropWorker( name, spoolName, type, nullptr );
+    return;
+  }
+  
+  // Its a larger file - display a message letting the user know its being parsed.
+  auto dialog = new SimpleDialog( "Parsing File", "Parsing file - this may take a second." );
+  
+  wApp->triggerUpdate();
+  
+  WServer::instance()->post( wApp->sessionId(),
+                             boost::bind( &SpecMeasManager::handleFileDropWorker, this,
+                                          name, spoolName, type, dialog ) );
+  
 }//handleFileDrop(...)
 
 void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string errormsg )
@@ -1594,7 +1630,7 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   string lastpart = SpecUtils::filename(filename);
   if( lastpart.empty() )
     lastpart = filename;
-  if( lastpart.size() > 12 )
+  if( lastpart.size() > 16 )
     lastpart = lastpart.substr(0,9) + "...";
   
   if( errormsg.empty() )
@@ -1603,14 +1639,18 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   lastpart = Wt::Utils::htmlEncode(lastpart);
   errormsg = Wt::Utils::htmlEncode(errormsg);
   
-  stringstream msg;
-  msg << "<p>Sorry, I couldnt parse the file " << lastpart << ":</p>"
-  << "<p>Error: <em>" << errormsg << "</em></p>"
-  << "<p>If you think this is a valid spectrum file, please send it to "
-  << "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>, and"
-  << " we'll try to fix this issue.</p>";
+  string msg =
+  "<p>Sorry, I couldnt parse the file " + lastpart + ":</p>"
+  "<p>Error: <em>" + errormsg + "</em></p>"
+  "<p>If you think this is a valid spectrum file, please send it to "
+  "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>, and"
+  " we'll try to fix this issue.</p>";
   
-  passMessage( msg.str(), "", 2 );
+  //passMessage( msg.str(), "", 2 );
+  
+  SimpleDialog *dialog = new SimpleDialog( "Could Not Parse File", msg );
+  dialog->addButton( "Okay" );
+  wApp->triggerUpdate();
 }//void displayInvalidFileMsg( std::string filename, std::string errormsg )
 
 std::set<int> SpecMeasManager::selectedSampleNumbers() const

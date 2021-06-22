@@ -71,6 +71,8 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   {
     m_factory = new SnapshotBrowser( manager, viewer, type, header, footer(), nullptr );
     layout->addWidget( m_factory, 0, 0 );
+    
+    m_factory->finished().connect( this, &AuxWindow::deleteSelf );
   }catch( std::exception &e )
   {
     m_factory = nullptr;
@@ -88,8 +90,7 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   
   rejectWhenEscapePressed();
   
-  auto deleter = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  finished().connect( std::bind(deleter) );
+  finished().connect( this, &AuxWindow::deleteSelf );
 
   const int width = std::min( 500, static_cast<int>(0.95*viewer->renderedWidth()) );
   const int height = std::min( 475, static_cast<int>(0.95*viewer->renderedHeight()) );
@@ -453,7 +454,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_loadSpectraButton->clicked().connect( boost::bind( &SnapshotBrowser::loadSpectraSelected, this));
     m_loadSpectraButton->disable();
     
-    m_loadSnapshotButton = new WPushButton( "Load App. State", footer);
+    m_loadSnapshotButton = new WPushButton( "Load App State", footer);
     m_loadSnapshotButton->clicked().connect( boost::bind(&SnapshotBrowser::loadSnapshotSelected, this));
     m_loadSnapshotButton->setDefault(true);
     //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.png" );
@@ -968,8 +969,8 @@ void SnapshotBrowser::loadSnapshotSelected()
     WString msg = "Snapshot '";
     msg += dbstate.get()->name;
     msg += "' loaded";
-    passMessage( msg.toUTF8(), "", WarningWidget::WarningMsgInfo );
     
+    passMessage( msg.toUTF8(), "", WarningWidget::WarningMsgInfo );
   }catch( std::exception &e )
   {
     passMessage( "Failed to load state", "", WarningWidget::WarningMsgHigh );

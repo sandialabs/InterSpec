@@ -72,6 +72,18 @@ border:1px solid #021a40;
   filter: alpha(opacity=80);
 }
 
+
+.UploadProgressCover
+{
+  width: 100%;
+  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 16777270;
+}
+
+
 .UpDiv
 {
   position: absolute;
@@ -81,7 +93,7 @@ border:1px solid #021a40;
 }
 
 
-.UpCenterDiv
+.UpCenterDiv, .UpCenter
 {
   height: 30%;
   width: 80%;
@@ -90,6 +102,10 @@ border:1px solid #021a40;
   left: 10%;
   vertical-align: middle;
   display:table;
+}
+
+.UpCenterDiv
+{
   -webkit-border-radius: 15px;
   -moz-border-radius: 15px;
   border-radius: 15px;
@@ -1376,6 +1392,22 @@ body.Wt-rtl .Wt-tabs a {
 .Wt-tabs:after { content: ""; display: block; height: 0; clear: both; }
 .Wt-tabs { clear-after: both; }
 
+/* Some CSS for putting spectrum and time charts in a div with flex layout. */
+.InterSpec .charts {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.InterSpec .charts .SpectrumDisplayDiv {
+  flex: 3;
+  min-height: 70px;
+}
+
+.InterSpec .charts .D3TimeChartParent {
+  flex: 2;
+  min-height: 65px;
+}
 
 /* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
 .InterSpecFlex {
@@ -1385,12 +1417,12 @@ body.Wt-rtl .Wt-tabs a {
 }
 
 .InterSpecFlex .SpectrumDisplayDiv {
-  flex-grow: 3;
+  flex: 3;
   overflow: hidden;
 }
 
 .InterSpecFlex .D3TimeChartParent {
-  flex-grow: 2;
+  flex: 2;
   overflow: hidden;
 }
 

@@ -16,7 +16,7 @@
 
 .D3TimeChartFilters {
   /* border: 1px solid blue; */
-  width: 150px;
+  width: 155px;
   padding: 1px 2px 2px 0px;
   overflow: hidden;
 }
@@ -84,7 +84,8 @@
 .ShowD3TimeChartFilters {
   position: absolute;
   right: 5px;
-  top: 5px;
+  /* top: 5px; If we specify this, the filter icon goes to the top of parent div, so instead well use a margin. */
+  margin-top: 5px;
   padding: 0px 0px;
   width: 24px;
   height: 24px;
@@ -95,6 +96,12 @@
     
   opacity: 0.8;
   cursor: pointer;
+}
+
+.D3TimeChartFilters .closeicon-wtdefault {
+  position: absolute;
+  right: 5px;
+  margin-top: 5px;
 }
 
 .D3TimeChartFilters > div > .Wt-stack {

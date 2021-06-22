@@ -37,6 +37,7 @@
 #include "InterSpec/AuxWindow.h"
 
 //  ToDo:
+//    - Better and more-consistent printing to appropriate number of significant figures.
 //    - Havent fully tested that copying to clipboard will work everywhere.
 //    - Can maybe improve copying to clipboard using the clipboard API.
 //    - Have some capability to automatically fit for a number of pre-defined
@@ -82,6 +83,26 @@ protected:
 class FluxToolWidget : public Wt::WContainerWidget
 {
 public:
+  enum class DisplayInfoLevel
+  {
+    /** Only energy, nuclide, and gammas into 4pi are shown.
+     Gammas into 4pi uncertainty gets its own column in CSV, and is given as a percent uncertainty.
+     */
+    Simple,
+    
+    /** Nuclide, IntrinsicEff, GeometricEff, FluxOnDet columns are NOT shown.
+     Uncertainties get own column in CSV, as actual value (e.g., not percent).
+     */
+    Normal,
+    
+    /** All columns are shown.
+     Uncertainties are placed in their own column in CSV, as the actual value (e.g., not percent).
+     */
+    Extended
+  };//enum class DisplayInfoLevel
+  
+  
+public:
   FluxToolWidget( InterSpec *viewer,
                   Wt::WContainerWidget *parent = 0 );
   
@@ -105,11 +126,16 @@ public:
   
   Wt::Signal<> &tableUpdated();
   
+  DisplayInfoLevel displayInfoLevel() const;
+  
 protected:
   void init();
   void setTableNeedsUpdating();
   void refreshPeakTable();
-  void setMinimalColumnsOnly( const bool minonly );
+  
+  
+  void setDisplayInfoLevel( const DisplayInfoLevel disptype );
+  
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   void tableCopiedToCliboardCallback( const int copied );
 #endif
@@ -132,8 +158,8 @@ protected:
    */
   bool m_needsTableRefresh;
   
-  /** Whether to show all the columns or not. Default no. */
-  bool m_compactColumns;
+  /** What columns to show. */
+  DisplayInfoLevel m_displayInfoLevel;
   
   Wt::Signal<> m_tableUpdated;
   
