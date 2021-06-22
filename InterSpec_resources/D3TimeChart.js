@@ -338,7 +338,6 @@ D3TimeChart = function (elem, options) {
     .attr("x", this.margin.left + 20)
     .attr("y", this.margin.top + this.mouseInfoOptions.padding.top);
 
-
   /** MISC MEMBERS */
   this.cancelSelectionSignalEmitted = false;
   this.shiftKeyHeld = false;
@@ -539,9 +538,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
         }
       }
     } // if (plotWidth < nPoints)
-    // console.log(this.state.data.formatted);
     this.state.data.unzoomedCompressionIndex = compressionIndex;
   }
+  // console.log(this.state.data.formatted)
 
   // set dimensions of svg element and plot
   this.svg.attr("width", this.state.width).attr("height", this.state.height);
@@ -647,9 +646,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     brush.setStart(coords[0]);
     d3.select("body").style("cursor", "move");
 
-    // TODO: add analogous touch gestures to add additional touch functionality
+    // add analogous touch gestures (based on ui-selected interaction mode) to add additional touch functionality
     var TOUCH_ANALOGOUS_SHIFT = this.usingAddSelectionMode === true;
     var TOUCH_ANALOGOUS_CTRL = this.usingRemoveSelectionMode === true;
+
     var TOUCH_ANALOGOUS_RIGHTCLICK =
       this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
     var TOUCH_ANALOGOUS_ALTKEYCLICK =
@@ -777,41 +777,44 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
             // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
             // handle foreground or background selection
 
-            // Defined from docs on Wt::KeyboardModifier
-            var keyModifierMap = {
-              altKey: 0x4,
-              ctrlKey: 0x2,
-              metaKey: 0x8,
-              shiftKey: 0x1,
-              none: 0x0,
-            };
+            // only enable highlighting if brush forward, for more alignment with expected behavior
+            if (lIdx < rIdx) {
+              // Defined from docs on Wt::KeyboardModifier
+              var keyModifierMap = {
+                altKey: 0x4,
+                ctrlKey: 0x2,
+                metaKey: 0x8,
+                shiftKey: 0x1,
+                none: 0x0,
+              };
 
-            if (this.shiftKeyHeld) {
-              this.WtEmit(
-                this.chart.id,
-                { name: "timedragged" },
-                this.state.data.formatted[0].sampleNumbers[lIdx],
-                this.state.data.formatted[0].sampleNumbers[rIdx],
-                keyModifierMap[this.highlightModifier] |
-                  keyModifierMap["shiftKey"]
-              );
-            } else if (this.ctrlKeyHeld) {
-              this.WtEmit(
-                this.chart.id,
-                { name: "timedragged" },
-                this.state.data.formatted[0].sampleNumbers[lIdx],
-                this.state.data.formatted[0].sampleNumbers[rIdx],
-                keyModifierMap[this.highlightModifier] |
-                  keyModifierMap["ctrlKey"]
-              );
-            } else {
-              this.WtEmit(
-                this.chart.id,
-                { name: "timedragged" },
-                this.state.data.formatted[0].sampleNumbers[lIdx],
-                this.state.data.formatted[0].sampleNumbers[rIdx],
-                keyModifierMap[this.highlightModifier]
-              );
+              if (this.shiftKeyHeld) {
+                this.WtEmit(
+                  this.chart.id,
+                  { name: "timedragged" },
+                  this.state.data.formatted[0].sampleNumbers[lIdx],
+                  this.state.data.formatted[0].sampleNumbers[rIdx],
+                  keyModifierMap[this.highlightModifier] |
+                    keyModifierMap["shiftKey"]
+                );
+              } else if (this.ctrlKeyHeld) {
+                this.WtEmit(
+                  this.chart.id,
+                  { name: "timedragged" },
+                  this.state.data.formatted[0].sampleNumbers[lIdx],
+                  this.state.data.formatted[0].sampleNumbers[rIdx],
+                  keyModifierMap[this.highlightModifier] |
+                    keyModifierMap["ctrlKey"]
+                );
+              } else {
+                this.WtEmit(
+                  this.chart.id,
+                  { name: "timedragged" },
+                  this.state.data.formatted[0].sampleNumbers[lIdx],
+                  this.state.data.formatted[0].sampleNumbers[rIdx],
+                  keyModifierMap[this.highlightModifier]
+                );
+              }
             }
           }
         }
@@ -1010,12 +1013,12 @@ D3TimeChart.prototype.updateChart = function (
       this.hideToolTip();
     });
 
-  // plot data
+  /** PLOT DATA */
   for (var detName in this.state.data.formatted[compressionIndex].detectors) {
     var counts =
       this.state.data.formatted[compressionIndex].detectors[detName].counts;
 
-    // only use visible range if zoomed in, otherwise use full range.
+    // only use visible range if zoomed in, otherwise use full range. This is an optimization which is helpful for avoiding wasteful out-of-view data rendering.
     var lIdx = this.findDataIndex(chartDomain[0], compressionIndex);
     var rIdx = this.findDataIndex(chartDomain[1], compressionIndex);
     counts = counts.slice(lIdx * 2, (rIdx + 1) * 2);
@@ -1077,7 +1080,7 @@ D3TimeChart.prototype.updateChart = function (
     }
   }
 
-  // update highlight region rendering
+  /** UPDATE HIGHLIGHT REGIONS RENDERING */
   if (this.state.regions && this.state.data.sampleNumberToIndexMap) {
     // console.log(this.state.regions);
     var chart = this;
@@ -1114,8 +1117,8 @@ D3TimeChart.prototype.updateChart = function (
     });
   }
 
-  // plot axes and labels
-
+  /** PLOT AXES AND LABELS */
+  // Below is a way to create major and minor axis ticks on the x-axis. Somewhat experimental, but seems to work. Still may need some refinement for more dynamic behavior.
   var tickCount = 20;
 
   do {
@@ -1153,13 +1156,9 @@ D3TimeChart.prototype.updateChart = function (
       )
       .attr("id", "th_x-axis")
       .call(xAxis);
-    
-    // update interactable area
-    this.bottomAxisRect
-    .attr("height", this.axisBottomG.node().getBBox().height)
 
-    // check whether there is any possibility for axis text overlap
-    // if yes, then re-define axes with reduced (half) the current tick count
+    // check whether there is any possibility for axis text overlap. (Checks using only the final two tick labels because those would generally signal the potential for overlap)
+    // if yes, then re-define axes with **reduced** (half) the current tick count
     var NUMBER_OF_TICKS_BETWEEN_MAJOR_TICKS = 5; // set this to the number of ticks between major ticks. Helps you get the next visible tick.
 
     var renderedTickCount = this.axisBottomG.selectAll("g.tick").size();
@@ -1184,6 +1183,10 @@ D3TimeChart.prototype.updateChart = function (
       .getBoundingClientRect();
   } while (secondToLastVisibleTickBound.right > lastVisibleTickBound.left);
 
+  // update interactable x-axis area
+  this.bottomAxisRect.attr("height", this.axisBottomG.node().getBBox().height);
+
+  /** DEFINE AND ADD ZOOM INDICATOR TO X-AXIS */
   var xAxisArrowDefs = this.axisBottomG.select("#arrow_defs");
 
   if (xAxisArrowDefs.empty()) {
@@ -1233,6 +1236,7 @@ D3TimeChart.prototype.updateChart = function (
     axisBottomPath.attr("marker-start", null);
   }
 
+  /** ADD X-AXIS TITLES */
   var axisLabelX = this.svg.select("#th_label_x");
 
   if (axisLabelX.empty()) {
@@ -1245,7 +1249,7 @@ D3TimeChart.prototype.updateChart = function (
       .text(this.options.xtitle);
   } // if (!axisLabelX.empty())
 
-  // compute axis label translation to use
+  // compute axis label translation to use depending on if compact option used or not
   var axisLabelXTranslation = this.options.compactXAxis
     ? "translate(" +
       (this.margin.left +
@@ -1269,6 +1273,7 @@ D3TimeChart.prototype.updateChart = function (
 
   axisLabelX.attr("transform", axisLabelXTranslation);
 
+  /** FORMAT X-AXIS TICK LABELS */
   var xLabelBoundingRect = axisLabelX.node().getBoundingClientRect();
 
   var USE_COMPACT_X_AXIS = this.options.compactXAxis;
@@ -1289,6 +1294,18 @@ D3TimeChart.prototype.updateChart = function (
       tickText.attr("visibility", "visible");
     }
   });
+
+  // format minor axis labels x-axis
+  axisBottomTicks.each(function (d, i) {
+    var tickText = d3.select(this).select("text");
+    var tickLine = d3.select(this).select("line");
+    if (!xTicksGenerated[i].isMajor) {
+      tickText.attr("visibility", "hidden");
+      tickLine.attr("y2", 4);
+    }
+  });
+
+  // account for chart displacement due to background/lead-in, and hide any ticks related to it
 
   var dataBackgroundDuration = this.state.data.backgroundDuration;
   var firstTick = this.axisBottomG.select("g.tick:first-child");
@@ -1312,6 +1329,7 @@ D3TimeChart.prototype.updateChart = function (
     }); // axisBottomTicks.each()
   } // if (dataBackgroundDuration != null)
 
+  /** ADD OCCUPANCY STATUS LINES */
   if (this.state.data.raw.occupancies) {
     var occupancies = this.state.data.raw.occupancies;
     if (
@@ -1415,17 +1433,7 @@ D3TimeChart.prototype.updateChart = function (
     this.occupancyLinesG.selectAll(".occupancy_line_group").remove();
   } // if (this.state.data.raw.occupancies)
 
-  // format minor axis labels x-axis
-  axisBottomTicks.each(function (d, i) {
-    var tickText = d3.select(this).select("text");
-    var tickLine = d3.select(this).select("line");
-    if (!xTicksGenerated[i].isMajor) {
-      tickText.attr("visibility", "hidden");
-      tickLine.attr("y2", 4);
-    }
-  });
-
-  // add grid lines
+  /** ADD X-AXIS GRID */
   if (this.options.gridx) {
     this.verticalGridG
       .attr(
@@ -1448,6 +1456,7 @@ D3TimeChart.prototype.updateChart = function (
     this.verticalGridG.selectAll("*").remove();
   }
 
+  /** ADD Y-AXIS COMPONENTS */
   if (HAS_GAMMA) {
     var yAxisLeft = d3.svg
       .axis()
@@ -1487,7 +1496,7 @@ D3TimeChart.prototype.updateChart = function (
           Math.pow(2, compressionIndex) +
           " Samples";
 
-    // if already drawn, just update
+    // if title already drawn, just update
     if (!axisLabelY1.empty()) {
       // reposition
       axisLabelY1
@@ -1565,7 +1574,7 @@ D3TimeChart.prototype.updateChart = function (
           Math.pow(2, compressionIndex) +
           " Samples";
 
-    // if already drawn, just update
+    // if title already drawn, just update
     if (!axisLabelY2.empty()) {
       // reposition
       axisLabelY2
@@ -1608,6 +1617,9 @@ D3TimeChart.prototype.updateChart = function (
   } // if (HAS_NEUTRON)
 };
 
+/**
+ * Handles updating the text and positioning of the applied energy filter display
+ */
 D3TimeChart.prototype.updateFilterInfo = function () {
   /* If there is a gamma energy range sum applied, make some text to notify user of this */
   if (this.state.data && this.state.data.raw) {
@@ -1704,6 +1716,9 @@ D3TimeChart.prototype.updateFilterInfo = function () {
  *                  ],
  *
  *    occupancies: [{...}, {...}]
+ *
+ * ... any additional fields. See D3TimeChart.cpp for updated object schema.
+ *
  * }
  *
  * @param {Object} rawData: data Object passed from Wt
@@ -2784,14 +2799,14 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
 };
 
 /**
- * Handles showing tooltip.
+ * Handles showing mouse-hover tooltip.
  */
 D3TimeChart.prototype.showToolTip = function () {
   this.mouseInfoG.style("visibility", "visible");
 };
 
 /**
- * Handler to update tooltip display.
+ * Handler to update mouse-hover tooltip display.
  * @param {Number} time : real time of measurement (x-axis)
  * @param {Object[]} data : Array of data objects, where each object at minimum has fields: {detName, gammaCPS}. Optional fields: neutronCPS
  * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
@@ -2801,14 +2816,14 @@ D3TimeChart.prototype.updateToolTip = function (time, data, optargs) {
 };
 
 /**
- * Handler to hide tooltip.
+ * Handler to hide mouse-hover tooltip.
  */
 D3TimeChart.prototype.hideToolTip = function () {
   this.mouseInfoG.style("visibility", "hidden");
 };
 
 /**
- * Handler to create tooltip string from data.
+ * Handler to create mouse-hover tooltip string from data.
  * @param {Number} time : real time of measurement (x-axis)
  * @param {Object[]} data : Array of data objects, where each object at minimum has fields: {detName, gammaCPS}. Optional fields: neutronCPS
  * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
@@ -2967,6 +2982,7 @@ D3TimeChart.prototype.compress = function (data, n) {
   var HAS_OCCUPANCY_DATA = false;
   var HAS_SOURCE_TYPE_DATA = false;
   var HAS_START_TIME_DATA = false;
+  var HAS_GPS_COORD_DATA = false;
 
   // Add optional fields:
   if (data.hasOwnProperty("neutronCounts")) {
@@ -2990,6 +3006,11 @@ D3TimeChart.prototype.compress = function (data, n) {
     out.startTimeOffset = data.startTimeOffset;
     out.startTimes = [];
     HAS_START_TIME_DATA = true;
+  }
+
+  if (data.hasOwnProperty("gpsCoordinates")) {
+    out.gpsCoordinates = [];
+    HAS_GPS_COORD_DATA = true;
   }
 
   // iterate over array with window of size n
@@ -3021,6 +3042,10 @@ D3TimeChart.prototype.compress = function (data, n) {
     }
     if (HAS_SOURCE_TYPE_DATA) {
       out.sourceTypes[outIdx] = data.sourceTypes[i];
+    }
+    if (HAS_GPS_COORD_DATA) {
+      // use GPS coordinate at the start of the compressed interval
+      out.gpsCoordinates[outIdx] = data.gpsCoordinates[i];
     }
     var j = 0;
     while (j < n && i + j < length) {
@@ -3338,7 +3363,10 @@ D3TimeChart.prototype.generateTicks = function (
   return tickArray;
 };
 
-// Unimplemented
+/**
+ * Handles setting x-axis title
+ * @param {*} title : string for the new title
+ */
 D3TimeChart.prototype.setXAxisTitle = function (title) {
   this.options.xtitle = title;
 
@@ -3352,15 +3380,21 @@ D3TimeChart.prototype.setXAxisTitle = function (title) {
   }
 };
 
-// Unimplemented
+/**
+ * Handles setting left-side y-axis title
+ * @param {*} title : string for the new title
+ */
 D3TimeChart.prototype.setY1AxisTitle = function (title) {
   this.options.y1title = title;
   if (this.state.data.formatted) this.reinitializeChart();
   //redraw y1-title (e.g., gamma CPS axis title)
 };
 
-// Unimplemented
-D3TimeChart.prototype.setY2AxisTitle = function () {
+/**
+ * Handles setting right-side y-axis title
+ * @param {*} title : string for the new title
+ */
+D3TimeChart.prototype.setY2AxisTitle = function (title) {
   this.options.y2title = title;
   if (this.state.data.formatted) this.reinitializeChart();
   //redraw y2-title (e.g., neutron CPS axis title)
@@ -3376,12 +3410,20 @@ D3TimeChart.prototype.setCompactXAxis = function (compact) {
   if (this.state.data.formatted) this.reinitializeChart();
 };
 
+/**
+ * Handles display of x-grid
+ * @param {*} show : boolean denoting whether or not the grid is displayed
+ */
 D3TimeChart.prototype.setGridX = function (show) {
   this.options.gridx = show;
   if (this.state.data.formatted) this.reinitializeChart();
   //add/remove horizantal grid lines
 };
 
+/**
+ * Handles display of y-grid
+ * @param {*} show : boolean denoting whether or not the grid is displayed
+ */
 D3TimeChart.prototype.setGridY = function (show) {
   this.options.gridy = show;
   if (this.state.data.formatted) this.reinitializeChart();
@@ -3403,6 +3445,10 @@ D3TimeChart.prototype.setXAxisZoomSamples = function (firstsample, lastsample) {
   );
 };
 
+/**
+ * Handles setting/enabling specific interaction modes for the time chart, disabling others.
+ * @param {*} mode : string denoting the mode to set
+ */
 D3TimeChart.prototype.setUserInteractionMode = function (mode) {
   // This is just a stub function at the moment.
   console.log("Will set user interaction mode to " + mode);
