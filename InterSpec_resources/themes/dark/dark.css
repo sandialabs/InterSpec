@@ -262,3 +262,8 @@ ul.HeavyNavMenu > li.item:hover  {
 .app-titlebar .window-controls-container .window-icon-bg .window-icon:hover {
   background-color: rgb(175,175,175) !important;
 }
+
+/* When the app is not the forground app, change title bar color a little to indicate this */
+.app-titlebar.inactive, .app-titlebar.inactive button {
+  background-color: rgb(50,50,51) !important;
+}

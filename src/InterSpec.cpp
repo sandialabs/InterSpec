@@ -364,7 +364,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #else
     m_layout( 0 ),
     m_charts( nullptr ),
-    m_chartsResize( nullptr ),
+    m_chartResizer( nullptr ),
     m_toolsLayout( 0 ),
 #endif
     m_menuDiv( 0 ),
@@ -752,7 +752,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
       
 #if( BUILD_AS_ELECTRON_APP )
       minimizeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
-      closeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').close(); }" );
+      closeIcon->clicked().connect( "function(){ "
+                                   "  console.log('Will close electron window');"
+                                   "  let w = $(window).data('ElectronWindow');"
+                                   "  if( !w ) w = remote.getCurrentWindow();"
+                                   "  w.close();"
+                                   "  console.log('Electron window should have closed');"
+                                   "}" );
 #endif //BUILD_AS_ELECTRON_APP
     }//if( !isAppTitlebar ) / else
   }//if( isMobile() ) / else
@@ -817,8 +823,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
     //  cant seem to get this to actually happen.
     //WMenuItem *refPhotoTab =
     m_toolsTabs->addTab( m_referencePhotopeakLines, GammaLinesTabTitle, TabLoadPolicy );
-    
-    //refPhotoTab->setIcon("InterSpec_resources/images/reflines.png");
     
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
     
@@ -894,6 +898,22 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   
 #else
+  
+
+  m_charts = new WContainerWidget();
+  m_charts->addWidget( m_spectrum );
+  m_charts->addStyleClass( "charts" );
+  m_chartResizer = new WContainerWidget( m_charts );
+  m_chartResizer->addStyleClass( "Wt-hrh2" );
+  m_chartResizer->setHeight( isMobile() ? 10 : 5 );
+  m_charts->addWidget( m_timeSeries );
+  
+  m_chartResizer->setHidden( m_timeSeries->isHidden() );
+  
+  LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
+  m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartResizer->id() + "','" + m_timeSeries->id() + "');" );
+  
+  
   m_layout = new WGridLayout();
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setHorizontalSpacing( 0 );
@@ -903,12 +923,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   if( m_menuDiv )
     m_layout->addWidget( m_menuDiv, m_layout->rowCount(), 0 );
-
-  m_layout->addWidget( m_spectrum, m_layout->rowCount(), 0 );
-  m_layout->addWidget( m_timeSeries, m_layout->rowCount(), 0 );
-  
-  m_layout->setRowStretch( m_menuDiv ? 1 : 0, 5 );
-  m_layout->setRowStretch( m_menuDiv ? 2 : 1, 3 );
+  m_layout->addWidget( m_charts, m_layout->rowCount(), 0 );
+  m_layout->setRowStretch( m_layout->rowCount() - 1, 1 );
 #endif
   
 #if( USE_SPECTRUM_CHART_D3 )
@@ -950,10 +966,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #endif //USE_SPECTRUM_CHART_D3 / else
   
   m_spectrum->setXAxisTitle( "Energy (keV)" );
-  m_spectrum->setYAxisTitle( "Counts/Channel" );
-  m_spectrum->setXAxisTitle( "Energy (keV)" );
-  m_spectrum->setYAxisTitle( "Counts/Channel" );
-  
+  m_spectrum->setYAxisTitle( "Counts" );
 
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum->enableLegend();
@@ -1055,7 +1068,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this, _1 ) );
 
   m_timeSeries->setHidden( true );
-  
+  m_chartResizer->setHidden( m_timeSeries->isHidden() );
   
 #if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
   if( InterSpecApp::isPrimaryWindowInstance() )
@@ -4322,12 +4335,10 @@ void InterSpec::showPeakInfoWindow()
     AuxWindow::addHelpInFooter( m_peakInfoWindow->footer(), "peak-manager" );
     
     WPushButton *b = new WPushButton( CalibrationTabTitle, footer );
-    // b->setIcon(WLink("InterSpec_resources/images/calibrate.png"));
     b->clicked().connect( this, &InterSpec::showEnergyCalWindow );
     b->setFloatSide(Wt::Right);
       
     b = new WPushButton( GammaLinesTabTitle, footer );
-    // b->setIcon(WLink("InterSpec_resources/images/reflines.png"));
     b->clicked().connect( this, &InterSpec::showGammaLinesWindow );
     b->setFloatSide(Wt::Right);
       
@@ -5565,11 +5576,7 @@ void InterSpec::addToolsTabToMenuItems()
   Wt::WMenuItem *item = nullptr;
   const char *tooltip = nullptr, *icon = nullptr;
   
-#if( IOS || ANDROID )
   icon = "InterSpec_resources/images/reflines.svg";
-#else
-  icon = "InterSpec_resources/images/reflines.png";
-#endif
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 0, GammaLinesTabTitle, icon , true );
   item->triggered().connect( boost::bind( &InterSpec::showGammaLinesWindow, this ) );
   tooltip = "Allows user to display x-rays and/or gammas from elements, isotopes, or nuclear reactions."
@@ -5577,22 +5584,14 @@ void InterSpec::addToolsTabToMenuItems()
   HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::RefPhotopeaks)] = item;
   
-#if( IOS || ANDROID )
   icon = "InterSpec_resources/images/peakmanager.svg";
-#else
-  icon = "InterSpec_resources/images/peakmanager.png";
-#endif
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 1, PeakInfoTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showPeakInfoWindow );
   tooltip = "Provides shortcuts to search for and identify peaks. Displays parameters of all fit peaks in a sortable table.";
   HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::PeakManager)] = item;
   
-#if( IOS || ANDROID )
   icon = "InterSpec_resources/images/calibrate.svg";
-#else
-  icon = "InterSpec_resources/images/calibrate.png";
-#endif
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 2, CalibrationTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showEnergyCalWindow );
   tooltip = "Allows user to modify or fit for offset, linear, or quadratic energy calibration terms,"
@@ -5602,12 +5601,7 @@ void InterSpec::addToolsTabToMenuItems()
   HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::EnergyCal)] = item;
   
-#if( IOS || ANDROID )
   icon = "InterSpec_resources/images/magnifier_black.svg";
-#else
-  //macOS (and probably Electron) need PNGs.
-  icon = "InterSpec_resources/images/magnifier_black.png";
-#endif
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 3, NuclideSearchTabTitle, icon, true );
   item->triggered().connect( this, &InterSpec::showNuclideSearchWindow);
   tooltip = "Search for nuclides with constraints on energy, branching ratio, and half life.";
@@ -5615,11 +5609,7 @@ void InterSpec::addToolsTabToMenuItems()
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::NuclideSearch)] = item;
 
   
-#if( IOS || ANDROID )
   icon = "InterSpec_resources/images/auto_peak_search.svg";
-#else
-  icon = "InterSpec_resources/images/auto_peak_search.png";
-#endif
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 4, "Auto Peak Search", icon, true );
   item->triggered().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, this, true ) );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::AutoPeakSearch)] = item;
@@ -5681,9 +5671,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv );
   
-    m_layout->removeWidget( m_spectrum );
-    m_layout->removeWidget( m_timeSeries );
-
+    m_layout->removeWidget( m_charts );
     m_layout->clear();
     
     //We have to completely replace m_layout or else the vertical spacing
@@ -5733,7 +5721,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->addTab( m_peakInfoDisplay, PeakInfoTabTitle, TabLoadPolicy );
 //    const char *tooltip = "Displays parameters of all identified peaks in a sortable table.";
 //    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
-//    peakManTab->setIcon("InterSpec_resources/images/peakmanager.png");
     
     if( m_referencePhotopeakLines )
     {
@@ -5765,25 +5752,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 //                            "provides user with a shortcut to change detector "
 //                            "and account for shielding.";
 //      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
-      //refPhotoTab->setIcon("InterSpec_resources/images/reflines.png");
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
     
     m_energyCalTool->setWideLayout();
     m_toolsTabs->addTab( m_energyCalTool, CalibrationTabTitle, TabLoadPolicy );
-    
-    m_charts = new WContainerWidget();
-    m_charts->addWidget( m_spectrum );
-    m_charts->addStyleClass( "charts" );
-    m_chartsResize = new WContainerWidget( m_charts );
-    m_chartsResize->addStyleClass( "Wt-hrh2" );
-    m_chartsResize->setHeight( isMobile() ? 10 : 5 );
-    m_charts->addWidget( m_timeSeries );
-    
-    m_chartsResize->setHidden( m_timeSeries->isHidden() );
-    
-    LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
-    m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartsResize->id() + "','" + m_timeSeries->id() + "');" );
     
     m_toolsLayout = new WGridLayout();
     m_toolsLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -5796,9 +5769,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_layout->addWidget( m_menuDiv,  row++, 0 );
     
     m_layout->addWidget( m_charts, row, 0 );
-    
     m_layout->setRowResizable( row, true );
-    m_layout->setRowStretch( row, 5 );
+    m_layout->setRowStretch( row, 1 );
     
     m_layout->setVerticalSpacing( layoutVertSpacing );
     if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amount of space between the menu bar and the chart
@@ -5889,9 +5861,16 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv )
       m_layout->addWidget( m_menuDiv, ++row, 0 );
     m_layout->addWidget( m_charts, ++row, 0 );
-    m_layout->setRowStretch( row, 5 );
-    m_layout->setRowResizable( row );
+    m_layout->setRowStretch( row, 1 );
   }//if( showToolTabs ) / else
+  
+  
+  // I'm guessing when the charts were temporarily removed from the DOM (or changed or whatever),
+  //  the bindings to watch for mousedown and touchstart were removed, so lets re-instate them.
+#if( USE_CSS_FLEX_LAYOUT )
+#else
+  m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartResizer->id() + "','" + m_timeSeries->id() + "');" );
+#endif
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
@@ -10809,15 +10788,6 @@ vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
 }//vector<std::pair<float,int> > passthroughTimeToSampleNumber() const
 
 
-void InterSpec::setChartSpacing()
-{
-#if( USE_CSS_FLEX_LAYOUT )
-#else
-  m_chartsResize->setHidden( m_timeSeries->isHidden() );
-#endif
-}//void setChartSpacing()
-
-
 void InterSpec::displayTimeSeriesData()
 {
 #if( USE_SPECTRUM_CHART_D3 )
@@ -10826,11 +10796,7 @@ void InterSpec::displayTimeSeriesData()
     if( m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( false );
-#if( USE_CSS_FLEX_LAYOUT )
       m_chartResizer->setHidden( m_timeSeries->isHidden() );
-#else
-      setChartSpacing();
-#endif
     }//if( m_timeSeries->isHidden() )
     
     m_timeSeries->setData( m_dataMeasurement );
@@ -10855,11 +10821,7 @@ void InterSpec::displayTimeSeriesData()
     if( !m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( true );
-#if( USE_CSS_FLEX_LAYOUT )
       m_chartResizer->setHidden( m_timeSeries->isHidden() );
-#else
-      setChartSpacing();
-#endif
     }//if( !m_timeSeries->isHidden() )
   }//if( passthrough ) / else
 #else
@@ -10881,11 +10843,7 @@ void InterSpec::displayTimeSeriesData()
     if( m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( false );
-#if( USE_CSS_FLEX_LAYOUT )
       m_chartResizer->setHidden( m_timeSeries->isHidden() );
-#else
-      setChartSpacing();
-#endif
     }//if( m_timeSeries->isHidden() )
     
     const vector<string> &det_names = m_dataMeasurement->detector_names();
@@ -11010,11 +10968,7 @@ void InterSpec::displayTimeSeriesData()
     if( !m_timeSeries->isHidden() )
     {
       m_timeSeries->setHidden( true );
-#if( USE_CSS_FLEX_LAYOUT )
       m_chartResizer->setHidden( m_timeSeries->isHidden() );
-#else
-      setChartSpacing();
-#endif
     }//if( !m_timeSeries->isHidden() )
 
     m_timeSeries->clearTimeHighlightRegions(SpecUtils::SpectrumType::Foreground);
