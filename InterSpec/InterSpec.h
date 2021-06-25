@@ -577,8 +577,6 @@ public:
   
   void setToolTabsVisible( bool show );
   bool toolTabsVisible() const;
-
-  void setChartSpacing();
   
   void showMakeDrfWindow();
   void showDetectorEditWindow();
@@ -1196,7 +1194,7 @@ protected:
   Wt::WGridLayout        *m_layout;
   
   Wt::WContainerWidget   *m_charts;
-  Wt::WContainerWidget   *m_chartsResize;
+  Wt::WContainerWidget   *m_chartResizer;
   Wt::WGridLayout        *m_toolsLayout;
 #endif
   

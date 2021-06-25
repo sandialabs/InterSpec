@@ -8,6 +8,10 @@ function(maximized){
     $('.resizer.top,.resizer.left').show();
     $('.window-max-restore').removeClass('window-unmaximize').addClass('window-maximize');
   }
+
+  let f = function(){ window.dispatchEvent(new Event('resize')); };
+  setTimeout( f, 100 );
+  setTimeout( f, 500 );
 }
 );
 

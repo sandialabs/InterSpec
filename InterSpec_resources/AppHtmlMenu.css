@@ -218,11 +218,9 @@
   opacity: .4;
 }
 
+/* When the app is not the forground app, change title bar color a little to indicate this */
 .app-titlebar.inactive, .app-titlebar.inactive button {
   /* For non-dark-mode. */
   background-color: rgb(250, 250, 250) !important;
-  
-  /* For dark-mode. */
-  /* background-color: rgb(50,50,51) !important; */
 }
 
