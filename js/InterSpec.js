@@ -111,17 +111,14 @@ function()
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
         xhr.setRequestHeader("X-File-Name", file.name);
         
+        
 //#if( BUILD_AS_ELECTRON_APP ) //C++ preprocessors dont look to work here...
-        if( lookForPath && file.path && !file.path.toLowerCase().includes('fake') ) {
+        if( lookForPath && (typeof file.path === "string") && (file.path.length > 2) && !file.path.toLowerCase().includes('fake') ) {
           // For Electron builds, file.path gives the full path (including filename), so we
           //   will just upload the path so we can read it in the c++ to avoid lots of copying and
           //   stuff.  But we also need to fallback, JIC c++ fails for some unforeseen reason.
           //   See #FileDragUploadResource::handleRequest for the other part of this logic
-          xhr.setRequestHeader("FullFilePath", file.path);
-          
-          
-          // TUESDAY TODO: test this for non ASCII paths
-          // TUESDAY TODO: explicitly trigger a resize event after maximizing window, or putting it back
+          xhr.setRequestHeader("Is-File-Path", "1" );
           
           console.log( 'Will send file path, instead of actual file; path: ', file.path );
           
@@ -132,13 +129,14 @@ function()
               console.log( 'Failed to upload via Electron path.' );
               uploadFileToUrl( uploadURL, file, false );
             }else if( xhr.readyState === 4 ) {
-              console.log( 'Successfully uploaded path.' );
+              console.log( 'Successfully uploaded path to Electron.' );
             }
           };
           
           xhr.onloadend = removeUploading;
-          
-          xhr.send();
+        
+          const body = JSON.stringify( { fullpath: file.path} );
+          xhr.send(body);
           return;
         }//if( have full path on Electron build )
 //#endif
@@ -160,8 +158,7 @@ function()
         let lastUpdateTime = 0;
         xhr.upload.addEventListener('progress', function(pe) {
           if(pe.lengthComputable) {
-            console.log( 'pe.total=' + pe.total + ', pe.loaded=' + pe.loaded );
-            
+            //console.log( 'pe.total=' + pe.total + ', pe.loaded=' + pe.loaded );
             const currentTime = Date.now();
             if( (currentTime - lastUpdateTime) > 500 ){
               lastUpdateTime = currentTime;
@@ -176,12 +173,37 @@ function()
         xhr.addEventListener('abort', removeUploading);
         xhr.upload.addEventListener("abort", removeUploading);
         
-        xhr.onloadend = removeUploading;
+        // The loadend event is fired when a request has completed, whether successfully (after
+        //  load) or unsuccessfully (after abort or error).
+        //  If server does not send response, then this function will not be called until
+        //   xhr.timeout/xhr.ontimeout get triggered.
+        xhr.addEventListener('loadend', function() {
+          console.log( 'onloadend called: ' + ', readyState=' + xhr.readyState
+          + ', status=' + status + ', responseTxt=' + xhr.responseText );
+          removeUploading();
+        } );//
         
-        //xhr.timeout = 5000;
-        //xhr.ontimeout = function () {
-        //  console.error("The request to upload file timed out.");
-        //};
+
+        // This next function will be called once data is sent to server, but the server doesnt
+        //  have to send the repsonce.
+        xhr.upload.addEventListener('loadend', function() {
+          console.log( 'xhr.upload.loadend called' );
+          removeUploading();
+        });
+        
+        
+        /* Lets set a 1-minute timeout so we will eventually remove the uploading cover...
+         
+         TODO: What we should really do is setup a timeout that fires if 'progress' is never never
+         called with an appropriate status, and then once it does get called set another timer
+         as upload is finished, to get the response.  I.e., get rid of xhr.ontimeout.
+         */
+        xhr.timeout = 60000;
+        xhr.ontimeout = function () {
+          console.error("The request to upload file timed out.");
+          removeUploading();
+        };
+        
           
         xhr.send(file);
       };//uploadFileToUrl
@@ -503,6 +525,10 @@ function(resizerid,elid) {
     return false;
   }
 
-  $('#' + resizerid).bind('mousedown.FlexResize touchstart.FlexResize', handleMouseDown);
+  // Remove the bindings first, JIC this is a duplicate call to initialize the events
+  //  (it doesnt look like this happens, but current code to show/hide tool-tabs is pretty
+  //   fragile, so the off is really just to make sure).
+  $('#' + resizerid).off('mousedown.FlexResize touchstart.FlexResize')
+                    .on('mousedown.FlexResize touchstart.FlexResize', handleMouseDown);
 }
 );

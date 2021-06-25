@@ -31,8 +31,11 @@
 #include <iostream>
 #include <iterator>
 
-
+#include <Wt/Utils>
 #include <Wt/WResource>
+#include <Wt/Json/Value>
+#include <Wt/Json/Parser>
+#include <Wt/Json/Object>
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
 #include <Wt/WPaintDevice>
@@ -42,6 +45,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WCssDecorationStyle>
 #include <Wt/Chart/WAbstractChart>
+
 
 #include "InterSpec/InterSpecApp.h"
 #include "SpecUtils/Filesystem.h"
@@ -123,45 +127,62 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
     return;
   }//if( request.tooLarge() )
 
+  auto app = WApplication::instance();
+  if( !app || !m_fileDrop )
+  {
+    cerr << "Uploaded file to a non Wt-Sesssion - bailing" << endl;
+    response.setStatus( 403 ); //Forbidden
+    return;
+  }//if( !app )
+  
+  
 #if( BUILD_AS_ELECTRON_APP )
   // See FileUploadFcn in InterSpec.js
-  const string fullpath = request.headerValue("FullFilePath");
-  if( !fullpath.empty() )
+  const string isFilePath = request.headerValue("Is-File-Path");
+  
+  if( (isFilePath == "1") || (isFilePath == "true") || (isFilePath == "yes") )
   {
-    bool canRead = false;
-    
-    {// begin test if can read file
-#ifdef _WIN32
-      const std::wstring wname = SpecUtils::convert_from_utf8_to_utf16( fullpath );
-      std::ifstream file( wname.c_str() );
-#else
-      std::ifstream file( fullpath.c_str() );
-#endif
-      canRead = file.good();
-    }// end test if can read file
-    
-    
-    if( canRead ) // if( SpecUtils::is_file(fullpath) )
+    try
     {
-      cout << "Got upload of fullpath='" << fullpath << "'" << endl;
+      std::istreambuf_iterator<char> eos;
+      string body(std::istreambuf_iterator<char>(request.in()), eos);
       
-      auto app = WApplication::instance();
+      Json::Object result;
+      Json::parse( body, result );
+      if( !result.contains("fullpath") )
+        throw std::runtime_error( "Body JSON did not contain a 'fullpath' entry." );
+      
+      const std::string fullpath = result.get("fullpath").toUTF8();
+      
+      {// begin test if can read file
+#ifdef _WIN32
+        const std::wstring wname = SpecUtils::convert_from_utf8_to_utf16( fullpath );
+        std::ifstream file( wname.c_str() );
+#else
+        std::ifstream file( fullpath.c_str() );
+#endif
+        if( !file.good() )
+          throw std::runtime_error( "Could not read '" + fullpath + "'" );
+      }// end test if can read file
+      
+      cout << "Will open spectrum file using path='" << fullpath << "'" << endl;
+      
       WApplication::UpdateLock lock( app );
-      
-      if( m_fileDrop )
-        m_fileDrop->emit( SpecUtils::filename(fullpath), fullpath );
+
+      m_fileDrop->emit( SpecUtils::filename(fullpath), fullpath );
       
       app->triggerUpdate();
-    }else
+    }catch( std::exception &e )
     {
+      cerr << "Failed to parse fullpath POST request: " << e.what() << " - returning status 406.\n";
+      
       response.setStatus( 406 );
-      output << "Couldnt access filepath";
       return;
-    }
+    }//try / catch to figure out how to interpret
     
     return;
-  }//if( !fullpath.empty() )
-#endif
+  }//if( (fullpath == "1") || (fullpath == "true") || (fullpath == "yes") )
+#endif  //BUILD_AS_ELECTRON_APP
   
   const int datalen = request.contentLength();
 
