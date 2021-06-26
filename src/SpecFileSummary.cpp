@@ -283,10 +283,10 @@ void SpecFileSummary::init()
   upperlayout->setColumnStretch( 1, 1 );
   
   m_reloadSpectrum = new WPushButton( "Update Displays", editGroupBox );
-  m_reloadSpectrum->setStyleClass("RefreshIcon");
   m_reloadSpectrum->setToolTip( "The changes made on this screen may not be"
-                               " propogated to othe GUI compnents untill you"
+                               " propagated to the GUI components until you"
                                " reload the spectrum." );
+  m_reloadSpectrum->setIcon( WLink("InterSpec_resources/images/arrow_refresh.svg") );
   m_reloadSpectrum->setFloatSide( Wt::Right );
   m_reloadSpectrum->clicked().connect( this, &SpecFileSummary::reloadCurrentSpectrum );
   m_reloadSpectrum->disable();

@@ -41,22 +41,27 @@ input
 
 
 #qtip-growl-container{
-position: fixed;
-top: 10px; right: 10px;
-z-index: 2000000000; /*super large number, nothing should cover this */
-}
-#qtip-growl-container .qtip{
-position: static;
-min-height: 0;
-overflow: hidden;
-margin: 0 0 5px 0;
+  position: fixed;
+  top: 10px; right: 10px;
+  z-index: 2000000000; /*super large number, nothing should cover this */
 }
 
+#qtip-growl-container .qtip{
+  position: static;
+  min-height: 0;
+  overflow: hidden;
+  margin: 0 0 5px 0;
+}
+
+/* For electron builds, that dont use native menu, make sure warnings are below titlebar. */
+#qtip-growl-container.belowMenu {
+  top: 35px;
+}
 
 
 .imageBorder {
-padding:1px;
-border:1px solid #021a40;
+  padding:1px;
+  border:1px solid #021a40;
 }
 
 .FileUploadCover
@@ -232,21 +237,6 @@ width:100%;
   height: 16px;
 }
 
-/* ------------------------- */
-/* ----    ICON CLASS   ---- */
-/* ------------------------- */
-
-/* The IconClass style is required for the following icons to behave correctly */
-
-.IconClass, .IconClass:hover {
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.IconClass:disabled, .IconClass:disabled:hover {
-
-}
 
 
 /*
@@ -259,31 +249,19 @@ width:100%;
 }
 */
 
-.RefreshIcon,.RefreshIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/arrow_refresh.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
 
 .FooterHelpBtn
 {
   margin-top: 2px;
-  background: white;
-  float: left;
   width: 20px;
   height: 20px;
   cursor:pointer;
-  -webkit-border-radius: 4px;
-  -moz-border-radius: 4px;
-  border-radius: 4px;
+  opacity: 0.6;
 }
 
 .FooterHelpBtn:hover
 {
-  background: none;
+  opacity: 1.0;
 }
 
 /* A question mark help button suitable for displaying in the content of a tool (e.g., in the tools tabs).
@@ -726,6 +704,8 @@ overflow: auto;
 {
 vertical-align: middle;
 margin: 4px;
+width: 16px;
+height: 16px;
 }
 
 .titlebar

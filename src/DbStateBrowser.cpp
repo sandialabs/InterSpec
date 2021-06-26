@@ -122,7 +122,6 @@ DbStateBrowser::DbStateBrowser( InterSpec *viewer, bool testStatesOnly )
 //      footer()->resize( WLength::Auto, WLength(50.0) );
       
       m_loadButton = new WPushButton( "Restore", footer() );
-      m_loadButton->setIcon( "InterSpec_resources/images/database_go.png" );
       m_loadButton->clicked().connect( this, &DbStateBrowser::loadSelected );
       m_loadButton->setFloatSide(Right);
       m_loadButton->disable();

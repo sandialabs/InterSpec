@@ -775,13 +775,13 @@ AuxWindow::AuxWindow( const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProper
   {
     if( !m_isPhone )
     {
-      m_collapseIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help.png") );
-      m_collapseIcon->setStyleClass("helpIconTitleBar");
+      m_collapseIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+      m_collapseIcon->setStyleClass("helpIconTitleBar Wt-icon");
       
       if( m_expandIcon )
       {
-        m_expandIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help.png") );
-        m_expandIcon->setStyleClass("helpIconTitleBar");
+        m_expandIcon->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+        m_expandIcon->setStyleClass("helpIconTitleBar Wt-icon");
       }
     }//if( !m_isPhone )
     
@@ -1365,27 +1365,9 @@ void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
   
   Wt::WImage *image = nullptr;
   
-  if( app && app->isMobile() )
-  {
-    if( app->isAndroid() )
-    {
-      image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/qmark.png"), footer);
-      image->setStyleClass("FooterHelpBtn");
-    }else
-    {
-      image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), footer);
-      image->setStyleClass("FooterHelpBtnMbl");
-      image->setWidth( 20 );
-      image->setHeight( 20 );
-    }
-    
-    image->setFloatSide( Wt::Right );
-  }else
-  {
-    image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/qmark.png"), footer);
-    image->setStyleClass("FooterHelpBtn");
-    image->setFloatSide(Left);
-  }//isMobile
+  image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_minimal.svg"), footer);
+  image->setStyleClass("Wt-icon FooterHelpBtn");
+  image->setFloatSide( (app && app->isMobile()) ? Wt::Right : Wt::Left );
   
   image->setAlternateText("Help");
   image->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, page ) );

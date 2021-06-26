@@ -1170,8 +1170,8 @@ protected:
   
   PopupDivMenu *m_detectorToShowMenu;
   Wt::WPushButton *m_mobileMenuButton;
-  Wt::WPushButton *m_mobileBackButton;
-  Wt::WPushButton *m_mobileForwardButton;
+  Wt::WContainerWidget *m_mobileBackButton;
+  Wt::WContainerWidget *m_mobileForwardButton;
   Wt::WContainerWidget *m_notificationDiv; //has id="qtip-growl-container"
   
   void handleUserIncrementSampleNum( SpecUtils::SpectrumType type, bool increment);

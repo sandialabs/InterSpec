@@ -222,11 +222,6 @@ ul.HeavyNavMenu > li.item:hover  {
   background: black !important;
 }
 
-.FooterHelpBtn {
-  background-image: radial-gradient(white 50%, rgb(44,45,48));
-}
-
-
 .PhoneAuxWindowHeader {
   background-color: rgb(65,65,65) !important; 
 }

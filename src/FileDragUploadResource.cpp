@@ -152,7 +152,8 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       if( !result.contains("fullpath") )
         throw std::runtime_error( "Body JSON did not contain a 'fullpath' entry." );
       
-      const std::string fullpath = result.get("fullpath").toUTF8();
+      const WString wfullpath = result.get("fullpath");
+      const std::string fullpath = wfullpath.toUTF8();
       
       {// begin test if can read file
 #ifdef _WIN32

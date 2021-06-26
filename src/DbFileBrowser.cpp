@@ -361,7 +361,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       if( *snapshotIterator )
       {
         //Create HEAD
-        Wt::WTreeNode *versionNode = new Wt::WTreeNode("HEAD", new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png"), snapshotNode);
+        auto headIcons = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
+        headIcons->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
+        headIcons->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
+      
+        Wt::WTreeNode *versionNode = new Wt::WTreeNode("HEAD", headIcons, snapshotNode);
         
         versionNode->setToolTip((*snapshotIterator)->serializeTime.toString() + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
         
@@ -382,8 +386,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
             versionIterator != snapshots.end(); ++versionIterator )
         {
           const Wt::WString &name = (*versionIterator)->name;
-          auto icon = new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png");
-          versionNode = new Wt::WTreeNode( name, icon, snapshotNode );
+          auto tagIcon = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
+          tagIcon->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
+          tagIcon->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
+          
+          versionNode = new Wt::WTreeNode( name, tagIcon, snapshotNode );
           
           auto tooltip = (*versionIterator)->serializeTime.toString()
                          + (((*versionIterator)->description).empty() ? "" : (" -- " + (*versionIterator)->description));
@@ -457,7 +464,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_loadSnapshotButton = new WPushButton( "Load App State", footer);
     m_loadSnapshotButton->clicked().connect( boost::bind(&SnapshotBrowser::loadSnapshotSelected, this));
     m_loadSnapshotButton->setDefault(true);
-    //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.png" );
+    //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.svg" );
     m_loadSnapshotButton->disable();
     
     if( !buttonBar )
@@ -526,16 +533,16 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
     for( Dbo::collection< Dbo::ptr<UserFileInDb> >::const_iterator spectraIterator = spectras.begin();
         spectraIterator != spectras.end(); ++spectraIterator )
     {
-      Wt::WIconPair *icon = NULL;
+      Wt::WIconPair *icon = nullptr;
       if ((*versionIterator)->foregroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Foreground)
       {
-        icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
+        //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
       }else if ((*versionIterator)->backgroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Background)
       {
-        icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
+        //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
       }else if ((*versionIterator)->secondForegroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::SecondForeground)
       {
-        icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
+        //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
       }else
       {
         //nothing found, so just return

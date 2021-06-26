@@ -1562,21 +1562,33 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
                      SpecUtils::SpectrumType type,
                      SimpleDialog *dialog )
 {
+  assert( WApplication::instance() );
+  
+  //if( dialog )
+  //  dialog->accept();
+  //dialog = nullptr;
+  // TODO: there is a bit of a delay between upkoad completeing, and showing the dialog - should check into that
+  // TODO: check that the dialog is actually deleted correctly in all cases.
   if( dialog )
-    dialog->accept();
-  dialog = nullptr;
+  {
+    auto accept = boost::bind(&SimpleDialog::accept, dialog);
+    WServer::instance()->post( wApp->sessionId(), std::bind([accept](){
+      accept();
+      WApplication::instance()->triggerUpdate();
+    }) );
+    dialog = nullptr;
+  }//if( dialog )
   
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   if( name.length() > 4
      && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
   {
-    wApp->triggerUpdate();
+    WApplication::instance()->triggerUpdate();
     return;
   }
 #endif
   
-  assert( WApplication::instance() );
   
   try
   {
@@ -1595,7 +1607,7 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
       displayInvalidFileMsg( name, e.what() );
     }
   }
-
+  
   wApp->triggerUpdate();
 }//handleFileDropWorker(...)
 
@@ -3284,8 +3296,8 @@ WContainerWidget *SpecMeasManager::createButtonBar()
 
   
   m_combineButton = new Wt::WPushButton("Combine",m_newDiv);
-  m_combineButton->addStyleClass("JoinIcon");
-  m_combineButton->setIcon( "InterSpec_resources/images/arrow_join.png" );
+  m_combineButton->addStyleClass("Wt-icon");
+  m_combineButton->setIcon( "InterSpec_resources/images/arrow_join.svg" );
   m_combineButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
   m_combineButton->setHidden( true, WAnimation() );
 

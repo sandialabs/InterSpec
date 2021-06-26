@@ -162,8 +162,8 @@ void GammaCountDialog::init()
     m_upperEnergy->setRange( xlow, 2.0*xhigh );
   }//if( hist )
   
-  m_nsigmaHelp->setImageLink(Wt::WLink("InterSpec_resources/images/help.png") );
-  m_nsigmaHelp->setStyleClass("helpIconTitleBar");
+  m_nsigmaHelp->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+  m_nsigmaHelp->setStyleClass("Wt-icon");
   m_nsigmaHelp->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
   m_nsigmaHelp->setHidden( true );
   
@@ -217,7 +217,7 @@ void GammaCountDialog::init()
   layout->addWidget( m_backgroundGammaCount, row, 1, 1, 2, AlignLeft );
     
   layout->addWidget( m_sigmaAboveBackground, ++row, 0, 1, 2, AlignCenter );
-  layout->addWidget( m_nsigmaHelp, row, 2, 1, 1, AlignRight );
+  layout->addWidget( m_nsigmaHelp, row, 2, 1, 1, AlignRight | AlignMiddle );
   
   layout->addWidget( m_backgroundLiveTimeScale, ++row, 0, 1, 3, AlignCenter );
   m_backgroundLiveTimeScale->setStyleClass("line-above");
