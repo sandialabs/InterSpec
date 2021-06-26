@@ -465,6 +465,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_notificationDiv = new WContainerWidget();
   m_notificationDiv->setStyleClass("qtipDiv");
   m_notificationDiv->setId("qtip-growl-container");
+  
+#if( BUILD_AS_ELECTRON_APP && !USE_ELECTRON_NATIVE_MENU )
+  m_notificationDiv->addStyleClass( "belowMenu" );
+#endif
+  
   app->domRoot()->addWidget( m_notificationDiv );
   
   if( !isMobile() )
@@ -666,13 +671,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
     // canvas will take over and not propagate the event to close the menu down.
     doJavaScript( "$('body').append('<div class=\"mobilePopupMenuOverlay\" style=\"display: none;\"></div>');" );
     
-    m_mobileBackButton = new WPushButton( "", wApp->domRoot() );
+    m_mobileBackButton = new WContainerWidget( wApp->domRoot() );
     m_mobileBackButton->addStyleClass( "MobilePrevSample btn" );
     m_mobileBackButton->setZIndex( 8388635 );
     m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, SpecUtils::SpectrumType::Foreground, false) );
     m_mobileBackButton->setHidden(true);
       
-    m_mobileForwardButton = new WPushButton( "", wApp->domRoot() );
+    m_mobileForwardButton = new WContainerWidget( wApp->domRoot() );
     m_mobileForwardButton->addStyleClass( "MobileNextSample btn" );
     m_mobileForwardButton->setZIndex( 8388635 );
     m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, SpecUtils::SpectrumType::Foreground, true) );
@@ -752,6 +757,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
       
 #if( BUILD_AS_ELECTRON_APP )
       minimizeIcon->clicked().connect( "function(){ $(window).data('ElectronWindow').minimize(); }" );
+      
+      // Note that this does not work if developer console is open.  Could use
+      //  app.exit(0), or maybe set a timeout for it or something...
       closeIcon->clicked().connect( "function(){ "
                                    "  console.log('Will close electron window');"
                                    "  let w = $(window).data('ElectronWindow');"
@@ -6352,12 +6360,15 @@ void InterSpec::addDisplayMenu( WWidget *parent )
 
 #if( BUILD_AS_ELECTRON_APP )
 #if( PERFORM_DEVELOPER_CHECKS )
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsToggleDevTools);
-  m_displayOptionsPopupDiv->addSeparator();
-  PopupDivMenuItem *devToolItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Dev Tools" );
-  devToolItem->triggered().connect( std::bind( []{
-    wApp->doJavaScript( "Wt.WT.ToggleDevTools();" );
-  }) );
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsToggleDevTools);
+    m_displayOptionsPopupDiv->addSeparator();
+    PopupDivMenuItem *devToolItem = m_displayOptionsPopupDiv->addMenuItem( "Toggle Dev Tools" );
+    devToolItem->triggered().connect( std::bind( []{
+      wApp->doJavaScript( "Wt.WT.ToggleDevTools();" );
+    }) );
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif
 #endif
   
@@ -6818,7 +6829,7 @@ Wt::JSlot *InterSpec::hotkeyJsSlot()
 
 void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
 {
-  PopupDivMenu *menu = parentWidget->addPopupMenuItem( "Peak Labels",  "InterSpec_resources/images/tag_green.png" );
+  PopupDivMenu *menu = parentWidget->addPopupMenuItem( "Peak Labels",  "InterSpec_resources/images/tag.svg" );
   
   
 //  PopupDivMenuItem *item = menu->addMenuItem( "Show User Labels", "", false );
@@ -6938,10 +6949,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 
   m_helpMenuPopup->addSeparator();
   
-  //if( isMobile() )
-  //  item = m_helpMenuPopup->addMenuItem( "Help Contents..." ,  "InterSpec_resources/images/help_mobile.svg");
-  //else
-    item = m_helpMenuPopup->addMenuItem( "Help Contents..." ,  "InterSpec_resources/images/help_small.png");
+  item = m_helpMenuPopup->addMenuItem( "Help Contents..." ,  "InterSpec_resources/images/help_minimal.svg");
   
   item->triggered().connect( boost::bind( &HelpSystem::createHelpWindow, string("getting-started") ) );
 

@@ -57,12 +57,6 @@ img.WhiteIcon[disabled]
   filter: brightness(0) saturate(100%) invert(52%) sepia(5%) saturate(902%) hue-rotate(185deg) brightness(95%) contrast(89%);
 }
 
-.FooterHelpBtnMbl
-{
-  cursor:pointer;
-  margin-top: 2px;
-}
-
 .PhoneAuxWindowFooter
 {
   padding-top: 6px;

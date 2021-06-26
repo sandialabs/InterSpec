@@ -6115,7 +6115,6 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     summary->setHeight( 50 );
     summary->disable();
     accept = new WPushButton( "Load" );
-    accept->setIcon( "InterSpec_resources/images/database_go.png" );
     accept->disable();
   
     cancel = new WPushButton( "Cancel" );

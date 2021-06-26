@@ -473,7 +473,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     item->setId("TutorialVideos");
     item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
-    item->setIcon("InterSpec_resources/images/film.png");
+    //item->setIcon("InterSpec_resources/images/film.png");
     m_menu->addItem( item );
   } //videos
 */
