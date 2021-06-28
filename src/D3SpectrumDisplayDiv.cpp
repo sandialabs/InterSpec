@@ -24,6 +24,7 @@
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/D3SpectrumExport.h"
@@ -1764,7 +1765,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   std::shared_ptr<Measurement> foreground = m_model->getData();
   
   const size_t nchan = foreground->num_gamma_channels();
-  const bool isHpge = (nchan > HIGH_RES_NUM_CHANNELS);
+  const bool isHpge = PeakFitUtils::is_high_res( foreground );
   const float erange = upper_energy - lower_energy;
   const float midenergy = 0.5f*(lower_energy + upper_energy);
   

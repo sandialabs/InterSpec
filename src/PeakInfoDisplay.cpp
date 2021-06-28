@@ -58,6 +58,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
@@ -375,7 +376,7 @@ void PeakInfoDisplay::createNewPeak()
   //  2) see if DRF contains FWHM
   //  3) see if there is a peak above or below, and scale by sqrt
   //  4) Guess based on number of bins.
-  auto estimateFWHM = [this,nbin,minfwhm,maxfwhm]( const float energy ) -> float {
+  auto estimateFWHM = [this,nbin,minfwhm,maxfwhm,meas]( const float energy ) -> float {
     const auto peaks = m_model->peakVec();
     const auto lb = std::lower_bound( begin(peaks), end(peaks), PeakDef(energy,1.0,1.0), &PeakDef::lessThanByMean );
     const auto ub = lb==end(peaks) ? end(peaks) : lb + 1;
@@ -396,7 +397,8 @@ void PeakInfoDisplay::createNewPeak()
       {
         const string datadir = InterSpec::staticDataDirectory();
         string drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
-        if( nbin <= HIGH_RES_NUM_CHANNELS )
+        
+        if( !PeakFitUtils::is_high_res(meas) )
           drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
         
         drf = make_shared<DetectorPeakResponse>();
@@ -405,7 +407,7 @@ void PeakInfoDisplay::createNewPeak()
         return std::min( maxfwhm, std::max(minfwhm,drf->peakResolutionFWHM(energy)) );
       }catch(...)
       {
-        if( nbin <= HIGH_RES_NUM_CHANNELS )
+        if( !PeakFitUtils::is_high_res(meas) )
           return std::min( maxfwhm, std::max(minfwhm,2.634f*17.5f*sqrt(energy/661.0f)) );
         return std::min( maxfwhm, std::max(minfwhm,2.634f*0.67f*sqrt(energy/661.0f)) );
       }

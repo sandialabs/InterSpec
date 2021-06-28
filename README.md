@@ -78,8 +78,7 @@ and [rapidxml](http://rapidxml.sourceforge.net/), are included in this git repos
 [external_libs](https://github.com/sandialabs/interspec/tree/master/external_libs) directory, while 
 the [js](https://github.com/sandialabs/interspec/tree/master/js) directory contains some ECMAScript libraries, including
 [jQuery](https://jquery.org),
-[qTip2](http://qtip2.com),
-[SILK ICONS](http://www.famfamfam.com/lab/icons/silk), and
+[qTip2](http://qtip2.com), and
 [D3](https://d3js.org).
 
 

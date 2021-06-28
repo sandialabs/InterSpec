@@ -1545,7 +1545,7 @@ std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
   
   try
   {
-    //const bool isHPGe = (data && data->num_gamma_channels() > HIGH_RES_NUM_CHANNELS);
+    //const bool isHPGe = PeakFitUtils::is_high_res(data);
     
     double mindist = 99999999.9;
     double nearestEnergy = -999.9;

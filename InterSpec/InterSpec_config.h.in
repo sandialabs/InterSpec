@@ -135,12 +135,5 @@ void log_developer_error( const char *location, const char *error );
 
 #define DATE_TIME_FORMAT_STR "dd/MM/yy hh:mm:ss"
 
-/** Define a number of channels where if the spectrum has more than this, we'll assume this is high-resolution.
- 
- TODO: should instead define an average keV per channel for this purpose.  Some limited energy
- range HPGe detectors may only have 4096 channels.
- */
-#define HIGH_RES_NUM_CHANNELS 5000
-
 
 #endif // InterSpec_config_h
