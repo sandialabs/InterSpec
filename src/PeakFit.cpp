@@ -60,6 +60,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "SpecUtils/SpecFile.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -338,6 +339,9 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
+  
+  const bool highres = PeakFitUtils::is_high_res( meas );
+  
   size_t lower_channel = 0, upper_channel = 0;
   //    ExperimentalPeakSearch::find_spectroscopic_extent( meas, lower_channel, upper_channel );
   //    cout << "Start at " << meas->gamma_channel_center( lower_channel ) << " and going through "
@@ -418,7 +422,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       inpeaks.insert( inpeaks.end(), candidates.begin()+i+1, candidates.end() );
       inpeaks.push_back( peak );
       
-      const double nsigma = (meas->num_gamma_channels() < HIGH_RES_NUM_CHANNELS) ? 5.0 : 10.0;
+      const double nsigma = highres ? 10.0 : 5.0;
       const vector< vector<std::shared_ptr<const PeakDef> > > disconnectedpeaks
                               = causilyDisconnectedPeaks(  nsigma, true, inpeaks );
       
@@ -500,7 +504,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     candidates.swap( nextcandidates );
   }//while( !candidates.empty() )
   
-  if( meas->num_gamma_channels() > HIGH_RES_NUM_CHANNELS )
+  if( highres )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
   
   
@@ -515,6 +519,9 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
+  
+  const bool highres = PeakFitUtils::is_high_res( meas );
+  
   size_t lower_channel = 0, upper_channel = 0;
   vector<PeakPtr> candidates
    = secondDerivativePeakCanidatesWithROI( meas, lower_channel, upper_channel );
@@ -592,7 +599,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
               &PeakDef::lessThanByMeanShrdPtr );
   }//while( !candidates.empty() )
   
-  if( meas->num_gamma_channels() > HIGH_RES_NUM_CHANNELS )
+  if( highres )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
   
   return fitpeakvec;
@@ -1121,7 +1128,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
       inputPrams.Add( "P3",  0.0, 0.25 );
   }//if( intputSharesContinuum ) / else
   
-  const bool isHpge = (dataH->num_gamma_channels() > HIGH_RES_NUM_CHANNELS);
+  const bool isHpge = PeakFitUtils::is_high_res( dataH );
   
   for( size_t i = 0; i < inpeaks.size(); ++i )
   {
@@ -1263,7 +1270,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, x0, x1 );
   
   
-  const bool isHpge = (dataH->num_gamma_channels() > HIGH_RES_NUM_CHANNELS);
+  const bool isHpge = PeakFitUtils::is_high_res( dataH );
   
   float minw_lower, maxw_lower, minw_upper, maxw_upper;
   expected_peak_width_limits( x0, isHpge, minw_lower, maxw_lower );
@@ -2075,7 +2082,7 @@ void find_roi_for_2nd_deriv_candidate(
     throw runtime_error( "find_roi_for_2nd_deriv_candidate: invalid input" );
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( data );
   
   const size_t meanchannel = data->find_gamma_channel( peakmean );
   
@@ -2450,7 +2457,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
   roiLower = roiUpper = -1.0;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   double minEnergy = mean0 - 2.0*sigma0 - 20.0/pixelPerKev;
   double maxEnergy = mean0 + 2.0*sigma0 + 20.0/pixelPerKev;
@@ -2697,7 +2704,7 @@ void get_candidate_peak_estimates_for_user_click(
   const double upper_energy_mult = 0.2;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   const size_t midbin = dataH->find_gamma_channel( x );
   
@@ -2817,7 +2824,7 @@ void fit_peak_for_user_click( PeakShrdVec &results,
   const size_t nchannels = dataH->num_gamma_channels();
   const size_t midbin = dataH->find_gamma_channel( mean0 );
   const float binwidth = dataH->gamma_channel_width( midbin );
-  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   const size_t nFitPeaks = coFitPeaks.size() + 1;
   
   //The below should probably go off the number of bins in the ROI
@@ -4628,11 +4635,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   // Plan: if we have
   //inpeaks
   
-  const bool highres = (nchannels > HIGH_RES_NUM_CHANNELS);  //any system above 4096 channels has to be HPGe, right?
-  
-  
-  
-  
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   if( initialfitpeaks.size() > 1 )
   {
@@ -4744,7 +4747,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
     return;
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( data );
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -5080,7 +5083,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
     return candidates;
   
   const size_t nchannel = dataH->num_gamma_channels();
-  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -6446,7 +6449,7 @@ m_inited( false )
   
   m_fixed_peaks = fixed_peaks;
   
-  const bool highres = (m_x->size() > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( data );
   
   m_side_bins           = highres ? 7    : 10;
   m_smooth_order        = highres ? 3    : 2;
@@ -6485,7 +6488,7 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
   vector<PeakDef> candidates;
   
   const int nchannel = static_cast<int>( channel_counts.size() );
-  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( m_meas );
   
   vector<float> second_deriv;
   second_derivative( channel_counts, second_deriv );
@@ -6731,7 +6734,7 @@ bool AutoPeakSearchChi2Fcn::init()
 #endif
   
   
-  const bool highres = (m_x->size() > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( m_meas );
   
   const size_t npeaks = m_fixed_peaks.size() + m_candidates.size();
   
@@ -6998,7 +7001,7 @@ ROOT::Minuit2::MnUserParameters AutoPeakSearchChi2Fcn::initial_parameters() cons
   meanwidth /= npeaks;
   const double span = m_x->back() - m_x->front();
   const double meanbinwidth = span / m_x->size();
-  const bool highres = (m_x->size() > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res( m_meas );
   
   switch( m_resolution_type )
   {
@@ -7584,8 +7587,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
   if( !meas || !meas->gamma_counts() )
     return origpeaks;
   
-  const bool highres = (meas->gamma_counts()->size() > HIGH_RES_NUM_CHANNELS);
-  
+  const bool highres = PeakFitUtils::is_high_res( meas );
   
   const double min_chi2_dof_thresh         = highres ? 0.2   : 3.5;
   const double min_gross_counts_sig_thresh = highres ? 3.0   : 3;

@@ -214,7 +214,7 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
   bool highres;
   if( num_gamma_channels )
   {
-    highres = (num_gamma_channels > HIGH_RES_NUM_CHANNELS);
+    highres = (num_gamma_channels > 5000);
   }else
   {
     const size_t index = peaks->size() / 2;

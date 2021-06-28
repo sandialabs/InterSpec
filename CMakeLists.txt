@@ -489,6 +489,7 @@ set(sources
     src/CanvasForDragging.cpp
     src/SpecMeas.cpp
     src/PeakFit.cpp
+    src/PeakFitUtils.cpp
     src/PeakDef.cpp
     src/SpectraFileModel.cpp
     src/AuxWindow.cpp
@@ -572,6 +573,7 @@ set(headers
     InterSpec/CanvasForDragging.h
     InterSpec/SpecMeas.h
     InterSpec/PeakFit.h
+    InterSpec/PeakFitUtils.h
     InterSpec/PeakDef.h
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h

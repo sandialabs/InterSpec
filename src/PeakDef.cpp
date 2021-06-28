@@ -40,6 +40,7 @@
 #include "InterSpec/PeakFit.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -467,7 +468,8 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( nchannel<128 )
     throw runtime_error( "findROILimit(...): Invalid input" );
   
-  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res(dataH);
+  
   
   const vector<float> &contents = *dataH->gamma_channel_contents();
   

@@ -128,21 +128,6 @@
   border:2px solid #e1e1e1;
 }
 
-.ShieldAddIcon,.ShieldAddIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/shield_add.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.ShapeSquareAddIcon,.ShapeSquareAddIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/shape_square_add.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
 
 .GearIcon,.GearIcon:hover
 {

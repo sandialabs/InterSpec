@@ -39,6 +39,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -529,7 +530,7 @@ void findCandidates( vector<string> &suggestednucs,
       string csvfilename = SpecUtils::append_path( basename, "HPGe 40%/Efficiency.csv" );
       string datFilename = SpecUtils::append_path( basename, "HPGe 40%/Detector.dat" );
       
-      if( data->num_gamma_channels() < HIGH_RES_NUM_CHANNELS )
+      if( !PeakFitUtils::is_high_res(data) )
       {
         csvfilename = SpecUtils::append_path( basename, "NaI 3x3/Efficiency.csv" );
         datFilename = SpecUtils::append_path( basename, "NaI 3x3/Detector.dat" );

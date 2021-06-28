@@ -115,6 +115,7 @@
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -2683,7 +2684,8 @@ void InterSpec::setIsotopeSearchEnergy( double energy )
       sigma = width;
       
       //For low res spectra make relatively less wide
-      if( !!m_dataMeasurement && (m_dataMeasurement->num_gamma_channels()< HIGH_RES_NUM_CHANNELS) )
+      const auto spectrum = displayedHistogram(SpecUtils::SpectrumType::Foreground);
+      if( m_dataMeasurement && !PeakFitUtils::is_high_res(spectrum) )
         sigma *= 0.35;
     }//if( within 3 sigma of peak )
   }//if( !!peak )
@@ -10563,8 +10565,10 @@ void InterSpec::guessIsotopesForPeaks( WApplication *app )
       DetectorPeakResponse *detPtr = new DetectorPeakResponse();
       detector.reset( detPtr );
     
-      string drf_dir = SpecUtils::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
-      if( data && (data->num_gamma_channels() < HIGH_RES_NUM_CHANNELS) )
+      string drf_dir;
+      if( PeakFitUtils::is_high_res(data) )
+        drf_dir = SpecUtils::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
+      else
         drf_dir = SpecUtils::append_path(sm_staticDataDirectory, "GenericGadrasDetectors/NaI 1x1" );
       
       detPtr->fromGadrasDirectory( drf_dir );

@@ -1,6 +1,6 @@
 {
   "name": "InterSpecAddOn",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Application for interactive gamma spectroscopy",
   "homepage": "https://github.com/sandialabs/InterSpec",
   "main": "main.js",
