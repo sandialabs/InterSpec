@@ -248,8 +248,8 @@ D3TimeChart = function (elem, options) {
   // defines margin dimensions used in rendering of chart.
   this.margin = {
     top: 5,
-    right: 30,
-    bottom: 50,
+    right: 60, /* This gets overridden in formatDataFromRaw based on if there is neutrons or not */
+    bottom: 50, /* overridden in reinitializeChart based on compact x-axis or not */
     left: 60,
   };
 

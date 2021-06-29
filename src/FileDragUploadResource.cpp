@@ -68,9 +68,8 @@ using namespace std;
 
 FileDragUploadResource::FileDragUploadResource( WObject *parent  )
     : WResource( parent ),
-      m_fileDrop( NULL )
+      m_fileDrop( this )
 {
-  m_fileDrop = new Wt::Signal<std::string, std::string>( this );
 }
 
 
@@ -83,13 +82,10 @@ FileDragUploadResource::~FileDragUploadResource()
     if( !success )
       cerr << "Warning, could not delete file '" << m_spooledFiles[i] << "'" << endl;
   }
-
-  if( m_fileDrop )
-    delete m_fileDrop;
 }
 
 
-Wt::Signal<std::string,std::string > *FileDragUploadResource::fileDrop() //<display_name,spool_name>
+Wt::Signal<std::string,std::string > &FileDragUploadResource::fileDrop() //<display_name,spool_name>
 {
   return m_fileDrop;
 }
@@ -98,9 +94,15 @@ Wt::Signal<std::string,std::string > *FileDragUploadResource::fileDrop() //<disp
 void FileDragUploadResource::handleRequest( const Http::Request& request,
                                             Http::Response& response )
 {
-//XXX - It's assuming handleRequest(...) is only called once all the data
-//      is uploaded.
-//XXX - Need to deal with case if the data was spooled to file ? - maybe not?
+// TODO: It's assuming handleRequest(...) is only called once all the data is uploaded; this needs
+//       to be verified.
+  
+// TODO: Currently the client side JS FileUploadFcn(...) function just puts file contents inside the
+//  the POST body, so it doesnt look like files, for all the handling we do here.
+//  We could, and maybe should, use a <form /> to upload the files to take advantage of the
+//  WResource spooling of files, and uploading multiple files and all that, like could be done in
+//  this next bit of commented out text.
+//
 //    std::vector<Http::UploadedFile> files;
 //    std::pair<Http::UploadedFileMap::const_iterator, Http::UploadedFileMap::const_iterator> range
 //               = request.uploadedFiles().equal_range(key);
@@ -110,7 +112,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
 //      if (!files[i].clientFileName().empty())
 //      {
 //        m_spooledFiles.push_back( files[i].spoolFileName() );
-//        m_dragCanvas->fileDrop().emit( files[i].clientFileName(), files[i].spoolFileName() );
+//        m_fileDrop.emit( files[i].clientFileName(), files[i].spoolFileName() );
 //      }
   
   response.setMimeType("text/html; charset=utf-8");
@@ -128,7 +130,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
   }//if( request.tooLarge() )
 
   auto app = WApplication::instance();
-  if( !app || !m_fileDrop )
+  if( !app )
   {
     cerr << "Uploaded file to a non Wt-Sesssion - bailing" << endl;
     response.setStatus( 403 ); //Forbidden
@@ -170,7 +172,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       
       WApplication::UpdateLock lock( app );
 
-      m_fileDrop->emit( SpecUtils::filename(fullpath), fullpath );
+      m_fileDrop.emit( SpecUtils::filename(fullpath), fullpath );
       
       app->triggerUpdate();
     }catch( std::exception &e )
@@ -196,12 +198,14 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
 #else
     ofstream spool_file( temp_name.c_str(), ios::binary|ios::out );
 #endif
-
+    
     if( spool_file.is_open() )
     {
       spool_file << request.in().rdbuf();
       spool_file.close();
       const string userName = request.headerValue( "X-File-Name" );
+      
+      cerr << "\n\n\nuserName = '" << userName << "'\n\n" << endl;
       
       auto app = WApplication::instance();
       WApplication::UpdateLock lock( app );
@@ -209,9 +213,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       if( lock )
       {
         m_spooledFiles.push_back( temp_name );
-        if( m_fileDrop )
-          m_fileDrop->emit( userName, temp_name );
-      
+        m_fileDrop.emit( userName, temp_name );
         app->triggerUpdate();
       }else
       {

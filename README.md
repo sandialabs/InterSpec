@@ -131,7 +131,7 @@ There are also a number of CMake options available to set to control which featu
 Building for iOS and Android are both possible (see the [target](https://github.com/sandialabs/interspec/tree/master/target) directory), and these instructions will be updated in the future.
 
 ## Authors
-Ethan Chan, **William Johnson**, Christian Morte, with
+Ethan Chan, **William Johnson**, David Ka-Ming Lee, Christian Morte, with
 extensive additional support provided by Noel Nachtigal and Edward Walsh.
 
 ## License

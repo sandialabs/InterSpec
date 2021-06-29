@@ -97,14 +97,7 @@ function()
           
         //console.log( 'uploadFileToUrl: will upload to ' + uploadURL );
         
-        var xhr;
-        if (window.XMLHttpRequest)
-          xhr = new XMLHttpRequest();
-        else if (window.ActiveXObject)
-          xhr = new ActiveXObject('MSXML2.XMLHTTP.3.0');
-        else
-          return;
-      
+        var xhr = new XMLHttpRequest();
         xhr.open("POST", uploadURL, true);
         xhr.setRequestHeader("Content-type", "application/x-spectrum");
         xhr.setRequestHeader("Cache-Control", "no-cache");
