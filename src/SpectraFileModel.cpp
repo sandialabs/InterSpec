@@ -1375,10 +1375,10 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
       throw runtime_error( "" );
   }catch(...)
   {
-    stringstream msg;
-    msg << "Could not access the file '"
-        << displayFileName << "', located at '" << filename << "'" << endl;
-    throw runtime_error( msg.str() );
+    cerr << "Could not access the file '"
+         << displayFileName << "', located at '" << filename << "'" << endl;
+    
+    throw runtime_error( "Could not access file '" + displayFileName + "'" );
   }//try / catch
   
   RecursiveLock lock( m_mutex );

@@ -41,6 +41,7 @@
 
 #include <boost/any.hpp>
 #include <boost/range.hpp>
+#include <boost/scope_exit.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <Wt/WLink>
@@ -812,9 +813,9 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_specificResources[static_cast<int>(i)] = (SpecificSpectrumResource *)0;
   
 #if( !ANDROID && !IOS )
-  m_foregroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Foreground ) );
-  m_secondForegroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::SecondForeground ) );
-  m_backgroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Background ) );
+  m_foregroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Foreground ) );
+  m_secondForegroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::SecondForeground ) );
+  m_backgroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Background ) );
 #endif
 
 
@@ -987,7 +988,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
       nbytewritten = read_file_from_zip( zipfilestrm, headers[fileInZip], tmpfilestrm );
     }
     
-    handleFileDrop( fileInZip, tmpfile, type );
+    handleFileDropWorker( fileInZip, tmpfile, type, nullptr, wApp );
     
     SpecUtils::remove_file( tmpfile );
   }catch( std::exception & )
@@ -1146,7 +1147,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       {
         nbytes = ZipArchive::read_file_from_zip( zipfilestrm,
                                         headers.begin()->second, tmpfilestrm );
-        handleFileDrop( fileInZip, tmpfile.string<string>(), type );
+        handleFileDropWorker( fileInZip, tmpfile.string<string>(), type, nullptr, nullptr );
       }catch( std::exception & )
       {
       }
@@ -1560,31 +1561,51 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
 void SpecMeasManager::handleFileDropWorker( const std::string &name,
                      const std::string &spoolName,
                      SpecUtils::SpectrumType type,
-                     SimpleDialog *dialog )
+                     SimpleDialog *dialog,
+                     Wt::WApplication *app )
 {
+  // We are outside of the application loop here - we could parse the spectrum file here, instead
+  //  of during the loop - but this
+  
+  if( !app )
+    app = WApplication::instance();
+  
+  WApplication::UpdateLock lock( app );
+ 
+  if( app && !lock )
+  {
+    cerr << "\n\nFailed to get WApplication::UpdateLock in "
+            "SpecMeasManager::handleFileDropWorker(...) - this really shouldnt happen.\n" << endl;
+    return;
+  }//if( !lock )
+ 
   assert( WApplication::instance() );
   
-  //if( dialog )
-  //  dialog->accept();
-  //dialog = nullptr;
-  // TODO: there is a bit of a delay between upkoad completeing, and showing the dialog - should check into that
-  // TODO: check that the dialog is actually deleted correctly in all cases.
-  if( dialog )
-  {
-    auto accept = boost::bind(&SimpleDialog::accept, dialog);
-    WServer::instance()->post( wApp->sessionId(), std::bind([accept](){
-      accept();
-      WApplication::instance()->triggerUpdate();
-    }) );
-    dialog = nullptr;
-  }//if( dialog )
+  // Make sure we trigger a app update
+  BOOST_SCOPE_EXIT(app,dialog){
+    
+    // TODO: there is a bit of a delay between upload completing, and showing the dialog - should check into that
+    // TODO: check that the dialog is actually deleted correctly in all cases.
+    if( dialog )
+    {
+      auto accept = boost::bind(&SimpleDialog::accept, dialog);
+      WServer::instance()->post( wApp->sessionId(), std::bind([accept](){
+        accept();
+        WApplication::instance()->triggerUpdate();
+      }) );
+      dialog = nullptr;
+    }//if( dialog )
+    
+    WApplication::instance()->triggerUpdate();
+  } BOOST_SCOPE_EXIT_END
+  
+ 
   
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   if( name.length() > 4
      && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
   {
-    WApplication::instance()->triggerUpdate();
     return;
   }
 #endif
@@ -1608,7 +1629,6 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
     }
   }
   
-  wApp->triggerUpdate();
 }//handleFileDropWorker(...)
 
 
@@ -1621,7 +1641,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   if( (SpecUtils::file_size(spoolName) < 512*1024)
      && !SpecUtils::iends_with(name, ".csv") && !SpecUtils::iends_with(name, ".txt") )
   {
-    handleFileDropWorker( name, spoolName, type, nullptr );
+    handleFileDropWorker( name, spoolName, type, nullptr, wApp );
     return;
   }
   
@@ -1630,10 +1650,15 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   
   wApp->triggerUpdate();
   
-  WServer::instance()->post( wApp->sessionId(),
-                             boost::bind( &SpecMeasManager::handleFileDropWorker, this,
-                                          name, spoolName, type, dialog ) );
+// When using WServer::instance()->post(...) it seems the "Parsing File" isnt always shown, but
+//  posting to the ioService and explicitly taking the WApplication::UpdateLock seems to work a
+//  little more reliable - I didnt look into why this is, or how true it is
+//  WServer::instance()->post( wApp->sessionId(),
+//                             boost::bind( &SpecMeasManager::handleFileDropWorker, this,
+//                                          name, spoolName, type, dialog, wApp ) );
   
+  WServer::instance()->ioService().post( boost::bind( &SpecMeasManager::handleFileDropWorker, this,
+                                                    name, spoolName, type, dialog, wApp ) );
 }//handleFileDrop(...)
 
 void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string errormsg )

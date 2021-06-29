@@ -366,7 +366,11 @@ public:
 #endif
   
   //Handles a file dropped onto the application, or finishes opening files from
-  //  filesystem URL.  Does not delete the file after opening.
+  //  filesystem URL.
+  //  Does not delete the file after opening.
+  //  Note: This function may return immediately, posting doing the actual work to another thread.
+  //        If you want to complete the parsing/opening of the file before returning, call
+  //        #handleFileDropWorker.
   void handleFileDrop( const std::string &name,
                        const std::string &spoolName,
                        SpecUtils::SpectrumType type );
@@ -374,7 +378,8 @@ public:
   void handleFileDropWorker( const std::string &name,
                        const std::string &spoolName,
                        SpecUtils::SpectrumType type,
-                       SimpleDialog *dialog );
+                       SimpleDialog *dialog,
+                       Wt::WApplication *app );
 
 protected:
   //Called from inside displayFile(...) to see if there are options for
