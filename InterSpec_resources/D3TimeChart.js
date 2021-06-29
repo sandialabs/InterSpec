@@ -29,6 +29,7 @@ ValidationError = function (message, fileName, lineNumber) {
   Object.setPrototypeOf(instance, Object.getPrototypeOf(this));
   return instance;
 };
+
 ValidationError.prototype = Object.create(Error.prototype, {
   constructor: {
     value: Error,
@@ -247,7 +248,7 @@ D3TimeChart = function (elem, options) {
   // defines margin dimensions used in rendering of chart.
   this.margin = {
     top: 5,
-    right: 60,
+    right: 30,
     bottom: 50,
     left: 60,
   };
@@ -292,7 +293,7 @@ D3TimeChart = function (elem, options) {
       sampleNumberToIndexMap: null,
       unzoomedCompressionIndex: 0,
     },
-    selection: null, // maybe would have been better to have named this "zoom": stores data related to zoom selection (e.g. data domain of magnified area, corresponding compression index to use for plotting this magnified data)
+    selection: null, // maybe would have been better to have named this "zoom": stores data related to zoom selection (e.g. data domain of magnified area, corresponding compression index to use for plotting this magnified data). NOTE: set to null when zoomed all the way out.
     regions: null,
     brush: new BrushX(),
     height: null,
@@ -341,14 +342,14 @@ D3TimeChart = function (elem, options) {
   /** MISC MEMBERS */
   this.cancelSelectionSignalEmitted = false;
   this.shiftKeyHeld = false;
+  this.ctrlKeyHeld = false;
   this.usingAddSelectionMode = false;
+  this.usingRemoveSelectionMode = false;
   this.highlightModifier = null; // holds the key pressed in conjunction with a highlight gesture to modify the action
   this.draggedForward = false;
 
   // held key modifiers
   this.keysHeld = {};
-  this.backgroundSelectionKeyHeld = false;
-  this.secondarySelectionKeyHeld = false;
 
   /** GLOBAL LISTENERS */
   // listeners to support esc canceling of highlighting, held key modifiers, and arrow-key panning
@@ -628,8 +629,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   /**
    * Handler for the initiation of a selection gesture.
-   */
-  var startSelection = () => {
+   */ 
+  var startSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
@@ -705,7 +706,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   /**
    * Handler for the progression of a selection gesture.
    */
-  var moveSelection = () => {
+  var moveSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
@@ -746,7 +747,6 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   /**
    * Handler for the termination of a selection gesture.
    */
-
   var endSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
@@ -830,9 +830,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   // touch drag behavior
   this.rect
-    .on("touchstart", startSelection)
-    .on("touchmove", moveSelection)
-    .on("touchend", endSelection);
+    .on("touchstart", () => startSelection({ touch: true }))
+    .on("touchmove", () => moveSelection({ touch: true }))
+    .on("touchend", () => endSelection({ touch: true }));
 
   // mouse drag behavior
   var selectionDrag = d3.behavior
@@ -915,7 +915,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   this.bottomAxisRect.call(panDrag);
 
-  // Special behavior for PAN mode.
+  // Special behavior for PAN interaction mode.
   if (this.userInteractionMode === this.UserInteractionModeEnum.PAN) {
     this.rect
       .on("touchstart", () => startPanDragSelection({ touch: true }))
@@ -2082,6 +2082,12 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
   };
 };
 
+/**
+ * Gets the minimum and maximum y-values corresponding to the given x-domain and compression index
+ * @param {*} xDomain : Array of x-domain: i.e. [leftEndPoint, rightEndPoint]
+ * @param {*} compressionIndex : index into the formatted data array
+ * @returns Object of y-domains for the gamma and neutron data
+ */
 D3TimeChart.prototype.getYDomainsInRange = function (
   xDomain,
   compressionIndex
