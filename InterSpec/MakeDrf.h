@@ -123,7 +123,7 @@ protected:
   void peakPreviewShown( DrfPeak *peak );
   
   void fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
-                   const size_t num_gamma_channels );
+                   const bool isHighResolution );
   void updateFwhmEqn( std::vector<float> coefs, std::vector<float> uncerts,
                       const double chi2,
                       const int functionalForm, //see DetectorPeakResponse::ResolutionFnctForm

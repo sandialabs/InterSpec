@@ -49,8 +49,8 @@ namespace MakeDrfFit
     Throws exception on error with a kinda explanatory message.
   */
   double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
-                             const size_t num_gamma_channels,
                              const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                             const bool highResolution,
                              const int sqrtEqnOrder,
                              std::vector<float> &result,
                              std::vector<float> &uncerts );
