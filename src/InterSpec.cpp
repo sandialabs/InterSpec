@@ -9958,8 +9958,8 @@ void InterSpec::searchForSinglePeak( const double x )
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
   foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks );
   
-  cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
-       << foundPeaks.second.size() << " peaks to remove" << endl;
+  //cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
+  //     << foundPeaks.second.size() << " peaks to remove" << endl;
   
   if( foundPeaks.first.empty()
       || foundPeaks.second.size() >= foundPeaks.first.size() )
@@ -10123,8 +10123,8 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
                   std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existing,
                   std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks )
 {
-  cerr << "InterSpec::setHintPeaks(...) with "
-       << (!!resultpeaks ? resultpeaks->size() : size_t(0)) << " peaks." << endl;
+  //cerr << "InterSpec::setHintPeaks(...) with "
+  //     << (!!resultpeaks ? resultpeaks->size() : size_t(0)) << " peaks." << endl;
   
 #if( PERFORM_DEVELOPER_CHECKS )
   if( !wApp )

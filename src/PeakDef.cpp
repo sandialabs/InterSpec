@@ -422,13 +422,123 @@ namespace
 #endif
 
 
+
+size_t findROILimitHighRes( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH, bool high )
+{
+  if( !dataH || !dataH->energy_calibration() || !dataH->energy_calibration()->valid() )
+    return 0;
+  
+  const float mean = static_cast<float>( peak.mean() );
+  const float fwhm = static_cast<float>( peak.fwhm() );
+  
+  // The plan is to iterate over the V&V test files and adjust these next quantities to most closely
+  //  match the human selected ROI widths.
+  //  Also, need to investigate highres_shrink_roi(...) to work better, for example the Cs137 peak of a shielded specturm
+  const double min_width_mult = 0.75;
+  const float nominal_fwhm_mult = 2.0f;
+  const float steep_fwhm_mult = 3.5f;
+  const float steep_continuum_limit = 0.35f;
+  const float feature_nsigma_limit = 2.25f;
+  
+  
+  const int direction = high ? 1 : -1;
+  float nominal_low_edge = mean - (nominal_fwhm_mult * fwhm);
+  size_t nominal_low_channel = dataH->find_gamma_channel( nominal_low_edge );
+  
+  float nominal_up_edge = mean + (nominal_fwhm_mult * fwhm);
+  size_t nominal_up_channel = dataH->find_gamma_channel( nominal_up_edge );
+  
+  double nominal_data_area = dataH->gamma_channels_sum( nominal_low_channel, nominal_up_channel );
+  
+  double coefficients[2];
+  const size_t nSideChanel = 1;
+  PeakContinuum::eqn_from_offsets( nominal_low_channel, nominal_up_channel,
+                                   mean, dataH, nSideChanel, coefficients[1], coefficients[0] );
+  
+  // cout << "coefficients[0]=" << coefficients[0] << ", coefficients[1]=" << coefficients[1]
+  //  << "\n\tdataH->gamma_channel_lower(nominal_low_channel)=" << dataH->gamma_channel_lower(nominal_low_channel)
+  //  << "\n\tdataH->gamma_channel_upper(nominal_up_channel)=" << dataH->gamma_channel_upper(nominal_up_channel)
+  //  << endl << endl;
+  
+  double nominal_cont_area = PeakContinuum::offset_eqn_integral( coefficients,
+                                                 PeakContinuum::OffsetType::Linear,
+                                                 dataH->gamma_channel_lower(nominal_low_channel),
+                                                 dataH->gamma_channel_upper(nominal_up_channel),
+                                                 mean );
+  
+  const double nominal_peak_area = (nominal_data_area - nominal_cont_area);
+  const double nominal_uncert_ratio = nominal_peak_area / sqrt(nominal_data_area);
+  
+  //cout << "\n\n\nmean=" << mean << ", nominal_data_area=" << nominal_data_area << endl;
+  //cout << "nominal_peak_area=" << nominal_peak_area << ", nominal_cont_area=" << nominal_cont_area
+  //     << ", nominal_uncert_ratio=" << nominal_uncert_ratio << endl;
+  
+  const double width = dataH->gamma_channel_upper(nominal_up_channel) - dataH->gamma_channel_lower(nominal_low_channel);
+  const double offset_contrib = coefficients[0]*width;
+  const double slope_contrib = 0.5*coefficients[1]*width*width;
+  
+  //cout << "For " << mean << " kev, offset contributes " << offset_contrib << ", while slope contributes "
+  //     << slope_contrib << "--->" << slope_contrib/offset_contrib << endl;
+  
+  if( (offset_contrib <= 0.0) || ((direction*slope_contrib/offset_contrib) > steep_continuum_limit) ) // 0.35 is arbitrary
+  {
+    if( high )
+    {
+      nominal_up_edge = mean + (steep_fwhm_mult * fwhm);
+      nominal_up_channel = dataH->find_gamma_channel( nominal_up_edge );
+    }else
+    {
+      nominal_low_edge = mean - (steep_fwhm_mult * fwhm);
+      nominal_low_channel = dataH->find_gamma_channel( nominal_low_edge );
+    }
+  }//if( coefficients[1] < -30 )
+  
+  
+  const size_t feature_detect_start = dataH->find_gamma_channel( mean + direction*min_width_mult*fwhm );
+  const size_t feature_detect_stop = high ? nominal_up_channel : nominal_low_channel;
+
+  
+  // Feature detect start FWHM mult
+  const size_t nchannel = dataH->num_gamma_channels();
+  const size_t nprev_avrg = 4;
+  for( size_t channel = feature_detect_start; channel != feature_detect_stop; channel += direction )
+  {
+    if( (channel <= nprev_avrg) || ((channel + nprev_avrg + 1) >= nchannel) )
+      continue;
+    
+    const size_t prev_sum_start = channel - direction*nprev_avrg;
+    const size_t prev_sum_end = channel - direction;
+    
+    const float prev_sum = dataH->gamma_channels_sum( prev_sum_start, prev_sum_end );
+    const float val = dataH->gamma_channel_content( channel );
+    const float val_next = dataH->gamma_channel_content( channel + direction );
+
+    const float prev_avrg = prev_sum / nprev_avrg;
+    const float prev_avrg_uncert = std::max( 1.0f*nprev_avrg, std::sqrt(prev_sum) ) / nprev_avrg;
+    
+    const float max_allowable = std::ceil(prev_avrg + feature_nsigma_limit*prev_avrg_uncert) +  0.001f;
+    
+    //cout << "mean=" << mean << ", channel=" << channel << ", prev_avrg(" << prev_sum_start
+    //     <<  "," << prev_sum_end<< ")=" << prev_avrg
+    //     << ", val=" << val << ", nextval=" << val_next << ", max_allowable=" << max_allowable << ""
+    //     << endl;
+    
+    // We'll require two bins to be outside of tolerance
+    if( (val > max_allowable && val_next > max_allowable) )
+      return channel - direction;
+  }//for( int bin = minBin; bin > lastbin; --bin )
+  
+
+  return high ? nominal_up_channel : nominal_low_channel;
+}//findROILimitHighRes(...)
+ 
+
 size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH, bool high )
 {
   if( !peak.gausPeak() )
     return dataH->find_gamma_channel( (high ? peak.upperX() : peak.lowerX()) );
   
 
-  
   //This implemntation is an adaptation of how PCGAP defines a region of
   //  interest.
   //  The basic idea is to include a maximum of 11.75 sigma away from the mean
@@ -444,22 +554,6 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   //  http://www.inl.gov/technicalpublications/Documents/3318133.pdf
   //  http://www.osti.gov/bridge/servlets/purl/800710-Zc4iYJ/native/800710.pdf
   
-  //My _guess_ on how peak easy identifies the region of interest, _not_
-  //  how this function does it.
-  //  1) Default to +- between 7.0 and 7.5 sigma
-  //  2) Starting at ~2.0 sigma from mean, go through and find if there is
-  //     a 'new' feature, and if so, stop the background there.
-  //     A new feature may be indicated by a statistically significant
-  //     increase in counts (relative to background).
-  //  3) Find out if the lower energy tail area should be increased.
-  //     not sure on this, up to about 11.5 sigma from the mean
-  
-  
-  //20150108: wcjohns converted this function from using ROOT style accessors
-  //  (GetBinContent(bin)) to the SpectrumDataStructs style accessors
-  //  (gamma_channel_content(channel)), and using unsigned integers seems to
-  //  work okay, but he didnt carefully check for wrap-around or other issues,
-  //  so is leaving the indexing type as int for now
   typedef int indexing_t;
   //  typedef size_t indexing_t;
   
@@ -478,26 +572,20 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   double lowxrange  = continuum->lowerEnergy();
   double highxrange = continuum->upperEnergy();
   
-  const bool definedRange = (lowxrange!=highxrange);
+  const bool definedRange = (lowxrange != highxrange);
   
   if( definedRange )
-  {
-    if( high )
-      return dataH->find_gamma_channel( highxrange-0.00001 );
-    else
-      return dataH->find_gamma_channel( lowxrange );
-  }//if( definedRange )
+    return dataH->find_gamma_channel( (high ? (highxrange-0.00001) : lowxrange) );
+  
+  if( PeakFitUtils::is_high_res(dataH) )
+    return findROILimitHighRes( peak, dataH, high );
+  
   
   const double mean = peak.mean();
   const double sigma = peak.sigma();
   
   const int direction = high ? 1 : -1;
-  lowxrange = mean + direction*7.5*sigma;//11.75*sigma;
-  
-  //Need to add a mechanism to try and shrink the xrange to only ~7.5 sigma from mean
-  //  when there isnt a lot of ambiguity to the continuum.
-  //(FWHM=2.35*sigma)
-  //May extend to 18.75 sigma (8 FWHM)
+  lowxrange = mean + direction * 7.5*sigma;  //2.3 FWHM
   
   const indexing_t nSideChannel = 1;
   
@@ -525,7 +613,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   
   
 #if( PRINT_ROI_DEBUG_INFO )
-  const bool debug_this_peak = false; //(fabs(peak.mean() - 1155.33) < 1.0) && direction>0;
+  const bool debug_this_peak = (fabs(peak.mean() - 12.15) < 1.0); // && direction>0;
   const vector<float> &energies = *dataH->gamma_channel_energies();
   
   if( debug_this_peak )
@@ -767,67 +855,19 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( (std::abs(int(lastchannel)-mean_channel) > std::abs(good_cont_channel-mean_channel)) )
   {
     const indexing_t nearest_channel = dataH->find_gamma_channel( mean + direction*3.5*sigma );
-    bool isNotDecreasing
-    = isStatisticallyGreaterOrEqual( nearest_channel, good_cont_channel,
-                                    good_cont_channel, lastchannel, dataH, 3.0 );
-    
-    const bool do_slope_check = false;
-    if( do_slope_check )
-    {
-      int near_start = static_cast<int>(min(good_cont_channel,(int)nearest_channel));
-      int near_end = static_cast<int>(max(good_cont_channel,(int)nearest_channel));
-      const int num_near_channel = near_end - near_start;
-      
-      //      indexing_t far_start = min(lastbin,good_cont_bin);
-      //      indexing_t far_end = max(lastbin,good_cont_bin);
-      int far_start = min(lastchannel,nearest_channel);
-      int far_end = max(lastchannel,nearest_channel);
-      const int num_far_channel = far_end - far_start;
-      
-      vector<float> near_data( num_near_channel, 0.0f ), near_x( num_near_channel, 0.0f );
-      vector<float> far_data( num_far_channel, 0.0f ), far_x( num_far_channel, 0.0f );
-      
-      for( int channel = near_start; channel < near_end; ++channel )
-      {
-        near_x[channel-near_start] = dataH->gamma_channel_center(channel);
-        near_x[channel-near_start] = static_cast<float>(channel-near_start+1);
-        near_data[channel-near_start] = contents[channel];
-      }
-      
-      for( int channel = far_start; channel < far_end; ++channel )
-      {
-        far_x[channel-far_start] = dataH->gamma_channel_center( channel );
-        far_x[channel-far_start] = static_cast<float>(channel-far_start+1);
-        far_data[channel-far_start] = contents[channel];
-      }
-      
-      std::vector<double> near_coeffs, near_uncerts;
-      std::vector<double> far_coeffs, far_uncerts;
-      double chi1 = fit_to_polynomial( &(near_x[0]), &(near_data[0]), 
-		                               static_cast<int>(near_x.size()), 1, near_coeffs, near_uncerts );
-      double chi2 = fit_to_polynomial( &(far_x[0]), &(far_data[0]), 
-		                               static_cast<int>(far_data.size()), 1, far_coeffs, far_uncerts );
-      
-      chi1 /= (near_x.size()-2);
-      chi2 /= (far_data.size()-2);
-      
-      const double mult = (high ? 1.0 : -1.0);
-      double uncert = sqrt( near_uncerts[1]*near_uncerts[1] + far_uncerts[1]*far_uncerts[1] );
-      const double lowerx = mult * near_coeffs[1];
-      const double upperx = mult * far_coeffs[1];
-      
-      cerr << "\n\nIsDecreasing=" << !isNotDecreasing
-      << "  nbin=" << near_x.size() << ", " << far_x.size()
-      << ", high=" << high << endl;
-      cerr << "chi1=" << chi1 << ", chi2=" << chi2 << endl;
-      cerr << "lowerx=" << lowerx << ", upperx=" << upperx << ", uncert=" << uncert << ", nsigma=" << (upperx-lowerx)/uncert << endl;
-      cerr << "near_coeffs[1]=" << near_coeffs[1] << " +- " << near_uncerts[1] << endl;
-      cerr << "far_coeffs[1]=" << far_coeffs[1] << " +- " << far_uncerts[1] << endl;
-    }//if( do_slope_check )
+    const bool isNotDecreasing = isStatisticallyGreaterOrEqual( nearest_channel, good_cont_channel,
+                                            good_cont_channel, lastchannel, dataH, 3.0 );
+
     
     
     if( high || isNotDecreasing )
+    {
+#if( PRINT_ROI_DEBUG_INFO )
+      if( debug_this_peak )
+        DebugLog(cerr) << "Setting lastchannel to " << lastchannel << "\n";
+#endif
       lastchannel = good_cont_channel;
+    }
     //    else
     //    {
     //      //now check from 11.75 to to 16.5 sigma, to see if we should include down

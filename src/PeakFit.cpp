@@ -63,6 +63,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "SpecUtils/SpecUtilsAsync.h"
+#include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
@@ -215,7 +216,6 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
     cerr << "filter_anomolous_width_peaks_highres: failed to fit resolution function: " << e.what() << endl;
     return input;
   }
-  cout << "Title=" << meas->title() << endl;
 
   std::vector<std::shared_ptr<const PeakDef> > answer;
   
@@ -254,12 +254,12 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
         continue;
       }
       
-      
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
       cerr << "\tEliminating peak " << i << " of " << npeaks << " with mean="
       << mean << ", fractional error=" << fracerror
       << ", Actual FWHM=" << input[i]->fwhm() << ", fit resolution fwhm=" << width
       << endl;
-      
+#endif
       
       double twoPeaksChi2 = DBL_MAX;
       std::vector<std::shared_ptr<const PeakDef> > twopeaks;
@@ -296,6 +296,7 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
         if( twoPeaksChi2 <= (input[i]->chi2dof() + 1.2)
             && (twopeaks[0]->sigma() < input[i]->sigma()) )
         {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
           cerr << "\tAdding two peaks in its place with chi2=" << twoPeaksChi2
                << " (single peak chi2=" << input[i]->chi2dof() << ")"
                << ", peak0(mean,sigma,amp)={" << twopeaks[0]->mean()
@@ -306,6 +307,7 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
                << "} (expected width " << det.peakResolutionSigma( twopeaks[1]->mean() )
                << ")"
                << endl;
+#endif
           answer.push_back( twopeaks[0] );
           answer.push_back( twopeaks[1] );
         }//if( twoPeaksChi2 <= input[i]->chi2dof() )
@@ -313,8 +315,10 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
         throw runtime_error( "Chi2 didnt improve" );
       }catch( std::exception &e )
       {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
         cerr << "Failed to put two peaks where there was a wide one:"
              << e.what() << endl;
+#endif
         twoPeaksChi2 = DBL_MAX;
       }//try / catch
     }else
@@ -2367,8 +2371,8 @@ void expected_peak_width_limits( const float energy,
   //  function just gives a mutliple of these values.
   //The arrays in this function were generated using the
   //  print_detector_sigma_range() function in developcode.cpp.
-  const float max_width_multple = highres ? 3.0 : 2.0f;
-  const float min_width_multiple = highres ? 0.5f : 0.75f;
+  const float max_width_multple = highres ? 4.0 : 3.0f;
+  const float min_width_multiple = highres ? (energy < 50.0f ? 0.25f : 0.35f) : 0.5f;
   
   const size_t nenergies = 32;
   const float energies[32]
@@ -2709,17 +2713,33 @@ void get_candidate_peak_estimates_for_user_click(
   const size_t midbin = dataH->find_gamma_channel( x );
   
   const double lower_chan_sub = lower_energy_mult*nchannels;
-  const size_t lowchannel = static_cast<size_t>( (lower_chan_sub < midbin) ? (midbin - lower_chan_sub) : 0.0 );
+  size_t lowchannel = static_cast<size_t>( (lower_chan_sub < midbin) ? (midbin - lower_chan_sub) : 0.0 );
   
   const double upper_chan_sub = upper_energy_mult*nchannels;
-  const size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
+  size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
+  
+  float min_sigma_width_kev, max_sigma_width_kev;
+  expected_peak_width_limits( x, highres, min_sigma_width_kev, max_sigma_width_kev );
+  const size_t lower_reasonable_channel = dataH->find_gamma_channel( x - 20*max_sigma_width_kev );
+  const size_t upper_reasonable_channel = dataH->find_gamma_channel( x + 20*max_sigma_width_kev );
+  
+  //cout << "For x=" << x << " keV, {lowchannel=" << lowchannel
+  //     << ", lower_reasonable_channel=" << lower_reasonable_channel
+  //     << "}, {" << highchannel << ", upper_reasonable_channel=" << upper_reasonable_channel << "}"
+  //     << endl;
+  
+  lowchannel = std::max(lowchannel, lower_reasonable_channel);
+  highchannel = std::min( highchannel, upper_reasonable_channel );
+  
   
   const vector<PeakPtr> candidates
        = secondDerivativePeakCanidatesWithROI( dataH, lowchannel, highchannel );
   
-  //XX - hack - right now assuming about a %10% energy resolution for NaI or LaBr,
-  //     and about a 1% for HPGE
-  sigma0 = (highres?(0.005*x):(0.0425*x));
+
+  float min_sigma, max_sigma;
+  expected_peak_width_limits( x, highres, min_sigma, max_sigma );
+  
+  sigma0 = 0.5*(min_sigma + max_sigma);
   mean0 = x;
   area0 = 100.0;
   
@@ -3118,12 +3138,16 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
           
         if( (newChi2Dof < chi2Dof) && (newfitpeaks.size() > 0) )
         {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
           cerr << "Refitign peak dropped chi2/dof from " << chi2Dof << " to " << newChi2Dof << endl;
+#endif
           chi2Dof = newChi2Dof;
           fitpeaks = newfitpeaks;
         }else
         {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
           cerr << "Refit of peaks didnt actually help! newChi2Dof=" << newChi2Dof << " vs chi2Dof=" << chi2Dof << endl;
+#endif
         }
         
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
@@ -3229,7 +3253,7 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
         DebugLog(cout) << "Shrinking from {" <<origRoiLower
         << ", " << origRoiUpper << "} to {" << test_lower_roi << ", "
-        << test_upper_roi << "} made chi2dof go from " << origChi2dof << " to "
+        << test_upper_roi << "} made chi2dof go from " << origFitChi2Dof << " to "
         << testChi2Dof << ", delta_lower_mean=" << delta_lower_mean
         << ", delta_upper_mean=" << delta_upper_mean << "\n";
 #endif
@@ -3255,7 +3279,10 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
               const double linechi2 = fit_to_polynomial( x, y, nchannelsrange,
                                                 1, poly_coeffs, coeff_uncerts );
               const double linchi2dof = linechi2 / (nchannelsrange - 2);
+              
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
               cout << lower_mean << ", Lowerside linchi2dof=" << linchi2dof << ", nLowOriginal=" << nLowOriginal << endl;
+#endif
               
               lowisgood = (linchi2dof < 1.5);
             }//if( tryShrinkLow )
@@ -3273,7 +3300,10 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
                                                         1, poly_coeffs, coeff_uncerts );
               const double linchi2dof = linechi2 / (nchannelsrange - 2);
               
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
               cout << upper_mean << ", Upperside linchi2dof=" << linchi2dof <<", nHighOriginal=" << nHighOriginal << endl;
+#endif
+              
               highisgood = (linchi2dof < 1.5);
             }//if( tryShrinkHigh )
           
@@ -3336,12 +3366,16 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
         
         if( (newChi2Dof < (chi2Dof+0.2)) && (newfitpeaks.size() > 0) )
         {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
           cerr << "Refitign peak dropped chi2/dof from " << chi2Dof << " to " << newChi2Dof << endl;
+#endif
           chi2Dof = newChi2Dof;
           fitpeaks = newfitpeaks;
         }else
         {
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
           cerr << "Refit of peaks didnt actually help! newChi2Dof=" << newChi2Dof << " vs chi2Dof=" << chi2Dof << endl;
+#endif
         }
         
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
@@ -4112,11 +4146,32 @@ PeakRejectionStatus check_highres_multi_peak_fit( const vector<std::shared_ptr<c
     float min_sigma, max_sigma;
     expected_peak_width_limits( mean, true, min_sigma, max_sigma );
     
-    if( sigma < min_sigma || sigma > max_sigma )
+    bool outsideExpectedFwhm = (sigma < min_sigma || sigma > max_sigma);
+    
+    // We checked against reasonable expected FWHM, but incase this failed for some reason,
+    //  we'll give it another opportunity by seeing if channel counts are reasonable.
+    if( outsideExpectedFwhm )
+    {
+      auto cal = dataH->energy_calibration();
+      if( cal && cal->valid() )
+      {
+        // TODO: The valid number of channels in a peak has not been looked at very closely at all
+        const double min_num_channel = 2.5;  // 2.5 seen on HPGe with 4096 channels and 3 MeV scale
+        const double max_num_channel = 15.0; // 12 seen for the 2614 of a 16k channel, 3 MeV spec
+        
+        const double lowerSigmaChannel = cal->channel_for_energy( mean - sigma );
+        const double upperSigmaChannel = cal->channel_for_energy( mean + sigma );
+        const double nchandiff = upperSigmaChannel - lowerSigmaChannel;
+        outsideExpectedFwhm = (nchandiff > min_num_channel && nchandiff < max_num_channel);
+      }
+    
+    }//if( outsideExpectedFwhm )
+    
+    if( outsideExpectedFwhm )
     {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
       DebugLog(cerr) << "check_highres_multi_peak_fit: Failed to fit a peak for the width"
-      << " being out of range (" << mean << ", expected {"
+      << " being out of range (" << sigma << ", expected {"
       << min_sigma << ", " << max_sigma << "})" << "\n";
 #endif
       
@@ -4196,7 +4251,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   const double low_stat_min_nsigma_peak = automated ? 3.5 : 0.5;
   const double med_stat_min_nsigma_peak = automated ? 4.25 : 0.75;
   const double min_core_chi2dof_peak_improvment = automated ? 0.5 : 0.25;
-  const double min_significance_test_width = 10.0;
+  const double min_significance_test_width = 7.5;
   const double min_chi2dof_test_width = 3.0;
   const double max_chi2dof_roi = automated ? 50.0 : 250.0;
   const double max_nsignif_to_apply_chidof_check = 100.0; //based on a single example (80.0 keV peak of example Ba133 spectrum)
@@ -4320,7 +4375,9 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
                                           dataH, lower_channel, upper_channel );
 
     const float lowextent = dataH->gamma_channel_lower( lower_channel );
+#if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     cout << "Lower extent=" << lowextent << endl;
+#endif
     
     const size_t minus1Sigmachannel = dataH->find_gamma_channel( mean - sigma );
     
@@ -4813,15 +4870,15 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
     std::lock_guard<std::mutex> lock( secondderivfilelock );
     ofstream secondderiv( "secondderiv.csv" );
     secondderiv << "Energy,Counts" << endl;
-    const size_t nchannel = dataH->gamma_counts()->size();
+    const size_t nchannel = data->gamma_counts()->size();
     for( size_t bin = 0; bin < nchannel; ++bin )
-      secondderiv << dataH->gamma_channel_lower(bin) << "," << second_deriv[bin] << endl;
+      secondderiv << data->gamma_channel_lower(bin) << "," << second_deriv[bin] << endl;
     vector<float> smoothed;
-    smoothSpectrum( dataH, side_bins, order, 0, smoothed );
+    smoothSpectrum( data, side_bins, order, 0, smoothed );
     ofstream smoothedfile( "smoothed.csv" );
     smoothedfile << "Energy,Counts" << endl;
     for( size_t bin = 0; bin < nchannel; ++bin )
-      smoothedfile << dataH->gamma_channel_lower(bin) << "," << smoothed[bin] << endl;
+      smoothedfile << data->gamma_channel_lower(bin) << "," << smoothed[bin] << endl;
     DebugLog(debugstrm) << "Made smoothed.csv and secondderiv.csv" << "\n";
     //    cerr << "side_bins=" << side_bins << ", order=" << order << endl;
   }
@@ -4842,7 +4899,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
     const float secondDeriv = second_deriv[channel]; //Not dividing by binwidth^2 here,
     
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 3 )
-    DebugLog(debugstrm) << dataH->gamma_channel_lower(channel) << ": secondDeriv=" << secondDeriv
+    DebugLog(debugstrm) << data->gamma_channel_lower(channel) << ": secondDeriv=" << secondDeriv
     << ", secondsum=" << secondsum << ", minval=" << minval << ", firstzero="
     << firstzero << ", channel=" << channel << "\n";
 #endif
@@ -4884,8 +4941,8 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
       const double amplitude = -amp_fake_factor * secondsum / part;
       
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 2 )
-      DebugLog(debugstrm) << "firstzero=" << dataH->gamma_channel_center(firstzero)
-      << ", secondzero=" << dataH->gamma_channel_center(secondzero) << "\n";
+      DebugLog(debugstrm) << "firstzero=" << data->gamma_channel_center(firstzero)
+      << ", secondzero=" << data->gamma_channel_center(secondzero) << "\n";
 #endif
       
       const float lowerEnengy = static_cast<float>( mean - 3.0*sigma );
@@ -4914,12 +4971,11 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
       if( figure_of_merit > threshold_FOM )
       {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 2 )
-        DebugLog(debugstrm) << "Candidate a peak with mean=" << peak->mean()
+        DebugLog(debugstrm) << "Candidate a peak with mean=" << mean
         << ", width=" << sigma
         << ", amplitude=" << amplitude
-        << ", new_amp=" << new_amp
+        << ", new_amp=" << amplitude
         << ", ROI start=" << lowerEnengy << ", ROI end=" << upperEnergy
-        << ", cont_area=" << cont_area
         << ", figure_of_merit=" << figure_of_merit
         << "\n\tKeeping" << "\n";
 #endif
@@ -5002,7 +5058,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
           
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
           if( !passescuts )
-            DebugLog(debugstrm) << "Failing candidate peak, mean=" << peak->mean()
+            DebugLog(debugstrm) << "Failing candidate peak, mean=" << mean
             << ", prevsumratios=" << (-prevpositivesum/secondsum)
             << ", possumratios=" << (-nextpositivesum/secondsum)
             << ", ((secondzero-firstzero)/side_bins)=" << ((secondzero-firstzero)/side_bins)
@@ -5251,7 +5307,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       const double figure_of_merit = 0.68*peak->amplitude()/est_sigma;
 
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 2 )
-      double cont_area = peak->offset_integral( lowerEnengy, upperEnergy );
+      double cont_area = peak->offset_integral( lowerEnengy, upperEnergy, dataH );
       double new_amp = data_area - cont_area;
       DebugLog(debugstrm) << "mean=" << mean << ", amplitude=" << amplitude
             << ", sigma=" << peak->sigma()
