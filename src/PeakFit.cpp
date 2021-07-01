@@ -2720,6 +2720,9 @@ void get_candidate_peak_estimates_for_user_click(
   
   float min_sigma_width_kev, max_sigma_width_kev;
   expected_peak_width_limits( x, highres, min_sigma_width_kev, max_sigma_width_kev );
+  
+  
+  
   const size_t lower_reasonable_channel = dataH->find_gamma_channel( x - 20*max_sigma_width_kev );
   const size_t upper_reasonable_channel = dataH->find_gamma_channel( x + 20*max_sigma_width_kev );
   
@@ -2742,6 +2745,45 @@ void get_candidate_peak_estimates_for_user_click(
   sigma0 = 0.5*(min_sigma + max_sigma);
   mean0 = x;
   area0 = 100.0;
+  
+  bool updatedSigmaFromPrev = false;
+  
+  if( !updatedSigmaFromPrev )
+  {
+    shared_ptr<const PeakDef> leftpeak, rightpeak;
+    
+    for( const shared_ptr<const PeakDef> &p : inpeaks )
+    {
+      if( (p->mean() <= x) && (!leftpeak || fabs(p->mean() - x) < fabs(leftpeak->mean() - x)) )
+        leftpeak = p;
+      
+      if( (p->mean() >= x) && (!rightpeak || fabs(p->mean() - x) < fabs(rightpeak->mean() - x)) )
+        rightpeak = p;
+    }
+    
+    if( leftpeak && rightpeak )
+    {
+      const double dist_between = rightpeak->mean() - leftpeak->mean();
+      const double frac_between = ((x - leftpeak->mean()) / dist_between);
+      const double sigma_diff = rightpeak->sigma() - leftpeak->sigma();
+      
+      updatedSigmaFromPrev = true;
+      sigma0 = leftpeak->sigma() + frac_between*sigma_diff;
+    }
+  }//if( !updatedSigmaFromPrev )
+  
+  
+  if( !updatedSigmaFromPrev )
+  {
+    for( const shared_ptr<const PeakDef> &p : inpeaks )
+    {
+      if( fabs(p->mean() - x) < (10*p->sigma()) ) //10 is arbitrary.
+      {
+        updatedSigmaFromPrev = true;
+        sigma0 = p->sigma();
+      }
+    }//for( const std::shared_ptr<const PeakDef> &p : inpeaks )
+  }//if( !updatedSigmaFromPrev )
   
   if( candidates.size() )
   {
@@ -4092,8 +4134,7 @@ PeakRejectionStatus check_highres_multi_peak_fit( const vector<std::shared_ptr<c
   const double gausarea = newpeak->gauss_integral( mean-sigma, mean+sigma );
   const double dataarea = dataH->gamma_integral( mean-sigma, mean+sigma );
   
-  
-  const bool debug_this_peak = fabs(mean - 729.293) < 2.0;
+  const bool debug_this_peak = false; //fabs(mean - 729.293) < 2.0;
   
   if( debug_this_peak )
     cout << "debug_this_peak" << endl;
@@ -4660,7 +4701,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
     //  do something that takes into account sigma relative to the ROI or
     //  something)
     if( coFitPeaks.size()==1 && fabs(coFitPeaks[0]->mean()-x) < 2.0*sigma0 )
-      sigma0 = coFitPeaks[0]->sigma() / 4.0;
+      sigma0 = coFitPeaks[0]->sigma() / 2.0;
     else
       sigma0 = coFitPeaks[0]->sigma() * nFitPeaks / (nFitPeaks + 1);
     mean0 = x;
