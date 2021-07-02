@@ -107,6 +107,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
@@ -210,7 +211,7 @@ namespace
           if( entry && entry.id() == m_dbentry.id() )
           {
             measurement = header->parseFile();
-            m_manager->displayFile( row, measurement, m_type, false, false, false );
+            m_manager->displayFile( row, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
             m_dialog->hide();
             
             return;
@@ -221,7 +222,7 @@ namespace
         {
           const int modelRow = m_manager->setDbEntry( m_dbentry, header,
                                                      measurement, true );
-          m_manager->displayFile( modelRow, measurement, m_type, false, false, false );
+          m_manager->displayFile( modelRow, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
           m_dialog->hide();
         }catch( exception &e )
         {
@@ -237,6 +238,26 @@ namespace
       //      if( m_dialog )
       //        delete m_dialog;
     }//void dorevert()
+    
+    ~PreviousDbEntry() noexcept(true)
+    {
+      try
+      {
+        m_dbentry.reset();
+      }catch(...)
+      {
+        cerr << "PreviousDbEntry destructo caught exception doing m_dbentry.reset()" << endl;
+      }
+      
+      try
+      {
+        m_header.reset();
+      }catch(...)
+      {
+        cerr << "PreviousDbEntry destructo caught exception doing m_header.reset()" << endl;
+      }
+      
+    }//~PreviousDbEntry()
     
     AuxWindow *m_dialog;
     SpecUtils::SpectrumType m_type;
@@ -270,8 +291,8 @@ namespace
   public:
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
-    : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                       | AuxWindowProperties::PhoneModal | AuxWindowProperties::DisableCollapse) ),
+    : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                       | AuxWindowProperties::PhoneNotFullScreen | AuxWindowProperties::DisableCollapse) ),
       m_fileUpload( 0 ),
       m_manager( manager ),
       m_type( SpectrumType::Foreground )
@@ -427,7 +448,7 @@ class UploadBrowser : public AuxWindow
 public:
   UploadBrowser( SpecMeasManager *manager )
   : AuxWindow( "Import Spectrum Files",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                 | AuxWindowProperties::DisableCollapse
                 | AuxWindowProperties::EnableResize) ),
   m_manager( manager )
@@ -680,7 +701,7 @@ public:
 //            if( meas )
 //            {
 //              thisheader->setMeasurmentInfo( meas );
-//              m_manager->displayFile( row, meas, type, false, true );
+//              m_manager->displayFile( row, meas, type, false, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
 //            }//if( meas )
 //          }//if( snapshot_id )
 //          
@@ -711,7 +732,7 @@ public:
 //    }//if( snapshot_id >= 0 && header )
 //#endif //#if( USE_DB_TO_STORE_SPECTRA )
 //    
-//    m_manager->displayFile( modelrow, measurement, type, false, true );
+//    m_manager->displayFile( modelrow, measurement, type, false, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
 //    
 //    delete this;
 //  }//void loadSelected()
@@ -802,11 +823,11 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
 void  SpecMeasManager::startSpectrumManager()
 {
-    const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
     m_spectrumManagerWindow = new AuxWindow( "Spectrum Manager",
-                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                     | AuxWindowProperties::TabletModal) );
+                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                     | AuxWindowProperties::TabletNotFullScreen) );
     m_spectrumManagerWindow->addStyleClass( "SpecMeasManager" );
     
     WContainerWidget *title = m_spectrumManagerWindow->titleBar();
@@ -826,7 +847,7 @@ void  SpecMeasManager::startSpectrumManager()
     {
       Wt::WPushButton* uploadButton = new Wt::WPushButton("File...",uploadDiv);
       uploadButton->clicked().connect(  this, &SpecMeasManager::uploadSpectrum );
-      HelpSystem::attachToolTipOn(uploadButton, "Import spectrum from file", showToolTipInstantly, HelpSystem::Bottom );
+      HelpSystem::attachToolTipOn(uploadButton, "Import spectrum from file", showToolTips, HelpSystem::ToolTipPosition::Bottom );
       uploadButton->setIcon( "InterSpec_resources/images/file_search.png" );
       uploadButton->setMargin(10,Wt::Left);
     } //isSupportFile()
@@ -834,7 +855,7 @@ void  SpecMeasManager::startSpectrumManager()
 #if( USE_DB_TO_STORE_SPECTRA )
     Wt::WPushButton* importButton = new Wt::WPushButton( "Previous...", uploadDiv );
   importButton->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles, this, SpecUtils::SpectrumType::Foreground ) );
-    HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTipInstantly , HelpSystem::Bottom);
+    HelpSystem::attachToolTipOn(importButton, "Imports previously saved spectrum", showToolTips , HelpSystem::ToolTipPosition::Bottom);
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
     importButton->setMargin(2,Wt::Left);
     
@@ -842,14 +863,12 @@ void  SpecMeasManager::startSpectrumManager()
     
     Wt::WContainerWidget *treeDiv   = createTreeViewDiv();
     Wt::WContainerWidget *buttonBar = createButtonBar();
-    createInfoHandler(); // This sets up the m_infoHandler
     
     WContainerWidget * content = m_spectrumManagerWindow->contents();
   
     WGridLayout *layout = m_spectrumManagerWindow->stretcher();
     layout->addWidget(uploadDiv, 0,0);
     layout->addWidget( treeDiv,       1, 0 );
-    //  layout->addWidget( m_infoHandler, 1, 0 );
     layout->addWidget( buttonBar,     2, 0 );
     layout->setRowStretch( 1, 10 );
     
@@ -1070,7 +1089,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }
     
     AuxWindow *window = new AuxWindow( "Uploaded ZIP File Contents",
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
     window->stretcher()->addWidget( t, 0, 0 );
     //window->stretcher()->addWidget( selection, 1, 0 );
     window->stretcher()->addWidget( table, 1, 0 );
@@ -1212,7 +1231,13 @@ bool check_magic_number( const uint8_t (&magic_num)[N], const uint8_t (&data)[M]
 bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                                              const std::string &fileLocation )
 {
-  ifstream infile( fileLocation.c_str(), ios_base::binary|ios_base::in );
+#ifdef _WIN32
+  const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(fileLocation);
+  std::ifstream infile( wpathstr.c_str(), ios::in | ios::binary );
+#else
+  std::ifstream infile( fileLocation.c_str(), ios::in | ios::binary );
+#endif
+  
   if( !infile )
     return false;
  
@@ -1229,17 +1254,41 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   uint8_t data[1024] = { 0x0 };
   
-  if( !infile.read( (char *)data, std::min(boost::size(data),filesize) ) )
+  if( !infile.read( (char *)data, std::min(sizeof(data), filesize) ) )
   {
     passMessage( "Failed to read non-spectrum file.", "", 2 );
     return true;
   }
   infile.seekg(0);
   
+  //Case insensitive search of 'term' in the header 'data'
+  auto header_contains = [&data]( const std::string &term ) -> bool {
+    const char * const char_start = (const char *)data;
+    const char * const char_end = (const char *)(data + boost::size(data));
+    const auto pos = std::search( char_start, char_end, begin(term), end(term),
+                                 [](unsigned char a, unsigned char b) -> bool {
+      return (std::tolower(a) == std::tolower(b));
+    } );
+    return (pos != char_end);
+  };//header_contains lambda
+  
+#define USE_SIMPLE_DIALOG_FOR_NOT_SPEC 1
+  
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+  SimpleDialog *dialog = new SimpleDialog();
+  dialog->addButton( "Close" );
+  WGridLayout *stretcher = new WGridLayout();
+  stretcher->setContentsMargins( 0, 0, 0, 0 );
+  dialog->contents()->setLayout( stretcher );
+  WText *title = new WText( "Not a spectrum file" );
+  title->addStyleClass( "title" );
+  stretcher->addWidget( title, 0, 0 );
+  
+#else
   
   AuxWindow *w = new AuxWindow( "Not a spectrum file",
-                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                 | AuxWindowProperties::TabletModal
+                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                 | AuxWindowProperties::TabletNotFullScreen
                  | AuxWindowProperties::SetCloseable
                  | AuxWindowProperties::DisableCollapse) );
   w->centerWindow();
@@ -1247,8 +1296,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   WPushButton *b = w->addCloseButtonToFooter();
   b->clicked().connect( w, &AuxWindow::hide );
   w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w ) );
+  WGridLayout *stretcher = w->stretcher();
   if( !m_viewer->isMobile() && m_viewer->renderedWidth() > 400 && m_viewer->renderedHeight() > 250 )
     w->resize( 400, 250 );
+#endif
   
   // const string filename = SpecUtils::filename(displayName);
   
@@ -1268,10 +1319,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     {
       WText *t = new WText( "This looks to be an N42 ICD2 file that contains analysis results rather than raw spectra.<br />"
                             "If you believe this to be a legitimate spectrum file, please email it to <a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a> to support this file type." );
-      w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+      stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       t->setTextAlignment( Wt::AlignCenter );
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+      dialog->show();
+#else
       w->show();
-      
+#endif
       return true;
     }
   }//if( might be ICD2 )
@@ -1321,7 +1375,9 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                       || check_magic_number( data, jpeg5_mn ));
   const bool ispng = check_magic_number( data, png_mn );
   const bool isbmp = check_magic_number( data, bmp_mn );
+  const bool issvg = header_contains( "<svg" );
   
+  // Wt::Utils::guessImageMimeTypeData(<#const std::vector<unsigned char> &header#>)
   
   if( iszip )
   {
@@ -1337,9 +1393,11 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
           "for a version that supports ZIP files.";
 #endif
     WText *t = new WText( msg );
-    w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
     w->show();
+#endif
     
     return true;
   }//if( iszip )
@@ -1352,9 +1410,11 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                       "if you would like support for this archive type added.";
     
     WText *t = new WText( msg );
-    w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
     w->show();
+#endif
     
     return true;
   }//if( israr || istar || iszip7 || isgz )
@@ -1362,22 +1422,24 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( ispdf | isps | istif )
   {
-    const char *msg = "This file looks to be an document file, and not supported by InterSpec.";
+    const char *msg = "This file looks to be a document file, and not supported by InterSpec.";
     WText *t = new WText( msg );
-    w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
     w->show();
+#endif
     
     return true;
   }//if( ispdf | isps | istif )
   
   
-  if( isgif || isjpg || ispng || isbmp )
+  if( isgif || isjpg || ispng || isbmp || issvg )
   {
     const char *msg = "This file looks to be an image, and not a spectrum file.";
     WText *t = new WText( msg );
     t->setTextAlignment( Wt::AlignCenter );
-    w->stretcher()->addWidget( t, 0, 0, AlignCenter | AlignMiddle );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
    
     const size_t max_disp_size = 16*1024*1024;
     
@@ -1388,6 +1450,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       else if( isjpg ) mimetype = "image/jpeg";
       else if( ispng ) mimetype = "image/png";
       else if( isbmp ) mimetype = "image/bmp";
+      else if( issvg ) mimetype = "image/svg+xml";
     
       std::unique_ptr<WImage> image( new WImage() );
       WMemoryResource *resource = new WMemoryResource( mimetype, image.get() );
@@ -1396,49 +1459,47 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       
       if( !m_viewer->isMobile() )
       {
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
         w->resize( WLength::Auto, WLength::Auto );
         w->setMaximumSize( 0.6*m_viewer->renderedWidth(), 0.8*m_viewer->renderedHeight() );
+#endif
       }
       
       if( success )
       {
         resource->setData( totaldata );
         image->setImageLink( WLink(resource) );
-        w->stretcher()->addWidget( image.release(), 1, 0, AlignCenter | AlignMiddle );
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+        const int ww = m_viewer->renderedWidth();
+        const int wh = m_viewer->renderedHeight();
+        if( (ww > 120) && (wh > 120) )
+          image->setMaximumSize( WLength(0.45*ww,WLength::Unit::Pixel), WLength(wh - 120, WLength::Unit::Pixel) );
+#endif
+        stretcher->addWidget( image.release(), stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       }else
       {
-        WText *errort = new WText( "Couldnt read uplaoded file." );
+        WText *errort = new WText( "Couldn't read uploaded file." );
         errort->setTextAlignment( Wt::AlignCenter );
-        w->stretcher()->addWidget( errort, 1, 0 );
+        stretcher->addWidget( errort, stretcher->rowCount(), 0 );
       }
     }else
     {
-      WText *errort = new WText( "Uploaded file was to large to try and display." );
+      WText *errort = new WText( "Uploaded file was too large to try and display." );
       errort->setTextAlignment( Wt::AlignCenter );
-      w->stretcher()->addWidget( errort, 1, 0, AlignCenter | AlignMiddle );
+      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     }//if( filesize < max_disp_size ) / else
     
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
     w->show();
     w->resizeToFitOnScreen();
     w->centerWindowHeavyHanded();
+#endif
     
     return true;
   }//if( isgif || isjpg || ispng || isbmp )
 
   //Check if CSV giving peak ROIs.
   auto currdata = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  
-  //Case insensitive search of 'term' in the header 'data'
-  auto header_contains = [&data]( const std::string &term ) -> bool {
-    const char * const char_start = (const char *)data;
-    const char * const char_end = (const char *)(data + boost::size(data));
-    const auto pos = std::search( char_start, char_end, begin(term), end(term),
-                                  [](unsigned char a, unsigned char b) -> bool {
-                                    return std::tolower(a)==std::tolower(b);
-                                 } );
-    return (pos != char_end);
-  };//header_contains lambda
-  
   
   if( currdata
       //&& SpecUtils::icontains( SpecUtils::file_extension(displayName), "csv" )
@@ -1458,76 +1519,121 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
                   orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
       } ) );
       
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+      delete dialog;
+#else
       delete w;
+#endif
       return true;
     }catch( exception &e )
     {
       WText *errort = new WText( "Uploaded file looked like a Peak CSV file, but was invalid." );
       errort->setTextAlignment( Wt::AlignCenter );
-      w->stretcher()->addWidget( errort, 1, 0, AlignCenter | AlignMiddle );
+      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       
       errort = new WText( string(e.what()) );
       errort->setAttributeValue( "style", "color: red; font-weight: bold; font-family: monospace; " );
       errort->setTextAlignment( Wt::AlignCenter );
-      w->stretcher()->addWidget( errort, 2, 0, AlignCenter | AlignMiddle );
+      stretcher->addWidget( errort, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
       
+#if( !USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
       w->show();
       w->resizeToFitOnScreen();
       w->centerWindowHeavyHanded();
+#endif
+      
+      return true;
     }//try / catch get candidate peaks )
-  }//if( we could possible care about propogating peaks from a CSV file )
+  }//if( we could possible care about propagating peaks from a CSV file )
   
+#if( USE_SIMPLE_DIALOG_FOR_NOT_SPEC )
+  delete dialog;
+#else
   delete w;
+#endif
   
   return false;
-}//void handleNonParsableFile(...)
+}//void handleNonSpectrumFile(...)
 
 
-void SpecMeasManager::handleFileDrop( const std::string &name,
-                                             const std::string &spoolName,
-                                             SpecUtils::SpectrumType type )
+
+void SpecMeasManager::handleFileDropWorker( const std::string &name,
+                     const std::string &spoolName,
+                     SpecUtils::SpectrumType type,
+                     SimpleDialog *dialog )
 {
+  assert( WApplication::instance() );
+  
+  //if( dialog )
+  //  dialog->accept();
+  //dialog = nullptr;
+  // TODO: there is a bit of a delay between upkoad completeing, and showing the dialog - should check into that
+  // TODO: check that the dialog is actually deleted correctly in all cases.
+  if( dialog )
+  {
+    auto accept = boost::bind(&SimpleDialog::accept, dialog);
+    WServer::instance()->post( wApp->sessionId(), std::bind([accept](){
+      accept();
+      WApplication::instance()->triggerUpdate();
+    }) );
+    dialog = nullptr;
+  }//if( dialog )
+  
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   if( name.length() > 4
      && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
+  {
+    WApplication::instance()->triggerUpdate();
     return;
+  }
 #endif
   
-  std::shared_ptr< SpectraFileHeader > header;
-  std::shared_ptr< SpecMeas >   measurement;
-
-  WApplication *app = WApplication::instance();
-  std::unique_ptr< WApplication::UpdateLock > lock;
-  
-  //Should maybe consider posting to the WServer if we arent in the event loop.
-  //WServer::instance()->post( appid, boost::bind( &SpecMeasManager::handleFileDrop, this, name, spoolName, type ) );
-  
-  if( !app )
-    app = dynamic_cast<WApplication *>( m_viewer->parent() );
-  
-  // If the file was uploaded using a POST request to a WResource, then we have to notify
-  // WApplication that we have changed things.
-  if( app )
-    lock.reset( new WApplication::UpdateLock( app ) );
   
   try
   {
+    std::shared_ptr<SpecMeas> measurement;
+    std::shared_ptr<SpectraFileHeader> header;
+    
     const int modelRow = setFile( name, spoolName, header, measurement );
 
-    displayFile( modelRow, measurement, type, true, true, true );
+    displayFile( modelRow, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
     
     //It is the responsibility of the caller to clean up the file.
   }catch( exception &e )
   {
     if( !handleNonSpectrumFile( name, spoolName ) )
     {
-      displayInvalidFileMsg(name,e.what());
+      displayInvalidFileMsg( name, e.what() );
     }
   }
   
-  if( app )
-    app->triggerUpdate();
+  wApp->triggerUpdate();
+}//handleFileDropWorker(...)
+
+
+void SpecMeasManager::handleFileDrop( const std::string &name,
+                                             const std::string &spoolName,
+                                             SpecUtils::SpectrumType type )
+{
+  // If file is small, and not csv/txt (these are really slow to parse), dont display the parsing
+  //  message.
+  if( (SpecUtils::file_size(spoolName) < 512*1024)
+     && !SpecUtils::iends_with(name, ".csv") && !SpecUtils::iends_with(name, ".txt") )
+  {
+    handleFileDropWorker( name, spoolName, type, nullptr );
+    return;
+  }
+  
+  // Its a larger file - display a message letting the user know its being parsed.
+  auto dialog = new SimpleDialog( "Parsing File", "Parsing file - this may take a second." );
+  
+  wApp->triggerUpdate();
+  
+  WServer::instance()->post( wApp->sessionId(),
+                             boost::bind( &SpecMeasManager::handleFileDropWorker, this,
+                                          name, spoolName, type, dialog ) );
+  
 }//handleFileDrop(...)
 
 void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string errormsg )
@@ -1536,7 +1642,7 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   string lastpart = SpecUtils::filename(filename);
   if( lastpart.empty() )
     lastpart = filename;
-  if( lastpart.size() > 12 )
+  if( lastpart.size() > 16 )
     lastpart = lastpart.substr(0,9) + "...";
   
   if( errormsg.empty() )
@@ -1545,14 +1651,18 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   lastpart = Wt::Utils::htmlEncode(lastpart);
   errormsg = Wt::Utils::htmlEncode(errormsg);
   
-  stringstream msg;
-  msg << "<p>Sorry, I couldnt parse the file " << lastpart << ":</p>"
-  << "<p>Error: <em>" << errormsg << "</em></p>"
-  << "<p>If you think this is a valid spectrum file, please send it to "
-  << "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>, and"
-  << " we'll try to fix this issue.</p>";
+  string msg =
+  "<p>Sorry, I couldnt parse the file " + lastpart + ":</p>"
+  "<p>Error: <em>" + errormsg + "</em></p>"
+  "<p>If you think this is a valid spectrum file, please send it to "
+  "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>, and"
+  " we'll try to fix this issue.</p>";
   
-  passMessage( msg.str(), "", 2 );
+  //passMessage( msg.str(), "", 2 );
+  
+  SimpleDialog *dialog = new SimpleDialog( "Could Not Parse File", msg );
+  dialog->addButton( "Okay" );
+  wApp->triggerUpdate();
 }//void displayInvalidFileMsg( std::string filename, std::string errormsg )
 
 std::set<int> SpecMeasManager::selectedSampleNumbers() const
@@ -1687,9 +1797,7 @@ std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
 
 void SpecMeasManager::unDisplay( SpecUtils::SpectrumType type )
 {
-  std::set<int> displaySampleNums;
-  std::shared_ptr<SpecMeas> meas;
-  m_viewer->setSpectrum( meas, displaySampleNums, type, false );
+  m_viewer->setSpectrum( nullptr, {}, type, 0 );
   selectionChanged(); // update buttons
 } // void SpecMeasManager::unDisplay( SpecUtils::SpectrumType type );
 
@@ -1710,22 +1818,17 @@ void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
                                     const bool doPreviousEnergyRangeCheck )
 {
   std::shared_ptr<SpectraFileHeader> header = selectedFile();
-
-  if( !header )
-    return;
-
-  std::shared_ptr<SpecMeas> meas = header->parseFile();
-
-  if( !meas )
-  {
-    cerr << "SpecMeasManager::loadSelected(...)\n\tSerious error, couldnt parse file" << endl;
-    passMessage( "Couldn't parse file!", "", 3 );
-    return;
-  }//if( !meas )
-
+  std::shared_ptr<SpecMeas> meas = header ? header->parseFile() : nullptr;
   const set<int> displaySampleNums = selectedSampleNumbers();
 
-  m_viewer->setSpectrum( meas, displaySampleNums, type, doPreviousEnergyRangeCheck );
+  WFlags<InterSpec::SetSpectrumOptions> options;
+  if( doPreviousEnergyRangeCheck )
+  {
+    options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
+    options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+  }
+  
+  m_viewer->setSpectrum( meas, displaySampleNums, type, options );
 
   addToTempSpectrumInfoCache( meas );
 
@@ -1754,7 +1857,7 @@ void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
     return;
   } // if( row < 0 )
 
-  displayFile( row, measement_ptr, type, true, true, true );
+  displayFile( row, measement_ptr, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
 }//void finishQuickUpload(...)
 
 
@@ -1765,110 +1868,241 @@ void SpecMeasManager::selectEnergyBinning( const string binning,
                                   const bool checkIfPreviouslyOpened,
                                   const bool doPreviousEnergyRangeCheck )
 {
-  if( binning != "Keep All" )
-    meas->keep_energy_cal_variant( binning );
-  
   WModelIndex index = m_fileModel->index( header );
   
   if( !index.isValid() )
   {
     passMessage( "Aborting loading of file after selecting energy binning - "
-                 "the file is no longer available in memory. please report "
-                 "this bug to wcjohns@sandia.gov", "", WarningWidget::WarningMsgHigh );
+                "the file is no longer available in memory. please report "
+                "this bug to interspec@sandia.gov", "", WarningWidget::WarningMsgHigh );
     return;
-  }
+  }//if( !index.isValid() )
   
-  displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck, false );
+  
+  if( binning != "Keep All" )
+  {
+    try
+    {
+      meas->keep_energy_cal_variant( binning );
+    }catch( std::exception &e )
+    {
+      passMessage( "There was an error separating energy cal type; loading all (error: "
+                   + std::string(e.what()) + ")", "", WarningWidget::WarningMsgHigh )
+    }
+    
+    // Trigger a refresh of row info and selected rows in File Manager
+    m_fileModel->removeRows( index.row(), 1 );
+    header->setMeasurmentInfo( meas );
+    m_fileModel->addRow( header );
+    index = m_fileModel->index( header );
+  }//if( binning != "Keep All" ) / else
+  
+  displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
+              SpecMeasManager::VariantChecksToDo::None );
 }//
+
+
+void SpecMeasManager::selectDerivedDataChoice( const SpecMeasManager::DerivedDataToKeep tokeep,
+                             std::shared_ptr<SpectraFileHeader> header,
+                             std::shared_ptr<SpecMeas> meas,
+                             const SpecUtils::SpectrumType type,
+                             const bool checkIfPreviouslyOpened,
+                             const bool doPreviousEnergyRangeCheck )
+{
+  WModelIndex index = m_fileModel->index( header );
+  
+  if( !index.isValid() )
+  {
+    passMessage( "Aborting loading of file after selecting derived data type to keep - "
+                "the file is no longer available in memory. please report "
+                "this bug to interspec@sandia.gov", "", WarningWidget::WarningMsgHigh );
+    return;
+  }//if( !index.isValid() )
+  
+  VariantChecksToDo furtherChecks = VariantChecksToDo::None;
+  switch( tokeep )
+  {
+    case DerivedDataToKeep::All:
+      furtherChecks = VariantChecksToDo::MultipleEnergyCal;
+      break;
+      
+    case DerivedDataToKeep::RawOnly:
+      furtherChecks = VariantChecksToDo::MultipleEnergyCal;
+      break;
+      
+    case DerivedDataToKeep::DerivedOnly:
+      furtherChecks = VariantChecksToDo::None;
+      break;
+  }//switch( tokeep )
+  
+  
+  switch( tokeep )
+  {
+    case DerivedDataToKeep::All:
+      break;
+      
+    case DerivedDataToKeep::RawOnly:
+    case DerivedDataToKeep::DerivedOnly:
+    {
+      const auto keeptype = (tokeep==DerivedDataToKeep::DerivedOnly)
+                            ? SpecUtils::SpecFile::DerivedVariantToKeep::Derived
+                            : SpecUtils::SpecFile::DerivedVariantToKeep::NonDerived;
+      
+      meas->keep_derived_data_variant( keeptype );
+      
+      // Trigger a refresh of row info and selected rows in File Manager
+      m_fileModel->removeRows( index.row(), 1 );
+      header->setMeasurmentInfo( meas );
+      m_fileModel->addRow( header );
+      index = m_fileModel->index( header );
+      break;
+    }
+  }//switch( tokeep )
+  
+  
+  displayFile( index.row(), meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
+              furtherChecks );
+}//void selectDerivedDataChoice(...)
+
 
 
 bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<SpectraFileHeader> header,
                                             std::shared_ptr<SpecMeas> meas,
                                             const SpecUtils::SpectrumType type,
                                             const bool checkIfPreviouslyOpened,
-                                            const bool doPreviousEnergyRangeCheck )
+                                            const bool doPreviousEnergyRangeCheck,
+                                            const VariantChecksToDo viewingChecks )
 {
   if( !header || !meas )
     throw runtime_error( "SpecMeasManager::checkForAndPromptUserForDisplayOptions(): Invalid input" );
   
-  const set<string> cals = meas->energy_cal_variants();
-  
-  if( cals.size() < 2 )
+  if( viewingChecks == VariantChecksToDo::None )
     return false;
   
-  AuxWindow *dialog = new AuxWindow( "Select Binning",
-                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                       | AuxWindowProperties::PhoneModal
-                       | AuxWindowProperties::DisableCollapse) );
-  dialog->rejectWhenEscapePressed( false );
-  dialog->setClosable( false );
-
-  /*
-  const int ww = m_viewer->renderedWidth();
-  const int wh = m_viewer->renderedHeight();
+  bool derivedData = false, energyCal = false;
+  if( viewingChecks == VariantChecksToDo::DerivedDataAndEnergy )
+    derivedData = (meas->contains_derived_data() && meas->contains_non_derived_data());
   
-  if( !m_viewer->isPhone() && ww > 420 && wh > 125 )
+  set<string> cals;
+  
+  if( !derivedData )
   {
-    dialog->setWidth( 420 );
-    dialog->Wt::WCompositeWidget::setMinimumSize( 420, 125 );
+    cals = meas->energy_cal_variants();
+    energyCal = (cals.size() > 1);
   }
-   */
   
-  int ncolwide = static_cast<int>( cals.size() + 1 );
-  if( ncolwide > 4 )
-    ncolwide = 4;
+  if( !derivedData && !energyCal )
+    return false;
+
   
-  //WGridLayout *layout = dialog->stretcher();
-  WTable *table = new WTable( dialog->contents() );
-  dialog->contents()->setPadding( 10 );
-  
-  WText *msg = new WText( "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
-                          "<div style=\"margin-bottom: 10px;\">Please select which one you would like</div>" , XHTMLText );
-  //layout->addWidget( msg, 0, 0, 1, ncolwide );
-  WTableCell *cell = table->elementAt( 0, 0 );
-  cell->addWidget( msg );
-  cell->setColumnSpan( ncolwide );
-  
-  WPushButton *button = new WPushButton( "Keep All" );
-  //layout->addWidget( button, 1, 0 );
-  cell = table->elementAt( 1, 0 );
-  cell->addWidget( button );
-  button->setWidth( WLength(95.0,WLength::Percentage) );
-  button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-  button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
-                                          string("Keep All"), header, meas, type,
-                                          checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
-  
-  int calnum = 1;
-  for( set<string>::const_iterator iter = cals.begin(); iter != cals.end(); ++iter, ++calnum )
+  if( derivedData )
   {
-    const int row = 1 + (calnum / ncolwide);
-    const int col = (calnum % ncolwide);
+    const char *title = "Use Derived Data?";
+    const char *msgtxt
+    = "<div>This file contained &quot;Derived Data&quot; spectra, which are</div>"
+      "<div>usually what is used by the detection system for analysis.</div>"
+      "<div style=\"margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;\">"
+        "What data would you like to load?"
+      "</div>";
     
-    //Make sure the calbration ID isnt too long
-    string label = *iter;
-    SpecUtils::utf8_limit_str_size( label, 15 );
+    SimpleDialog *dialog = new SimpleDialog( title, msgtxt );
+    WPushButton *button = dialog->addButton( "All Data" );
     
-    button = new WPushButton( label );
-    //layout->addWidget( button, row, col );
-    cell = table->elementAt( row, col );
+    button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
+                                           DerivedDataToKeep::All, header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    
+    button = dialog->addButton( "Raw Data" );
+    button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
+                                           DerivedDataToKeep::RawOnly, header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    
+    button = dialog->addButton( "Derived Data" );
+    button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
+                                           DerivedDataToKeep::DerivedOnly, header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    
+    return true;
+  }//if( derivedData )
+
+  const char *title = "Select Binning";
+  const char *msgtxt
+   = "<div style=\"white-space: nowrap;\">Multiple energy binnings were found in the spectrum file.</div>"
+     "<div style=\"margin-top: 10px; margin-bottom: 10px;\">Please select which one you would like</div>";
+  
+  if( cals.size() > 3 )
+  {
+    SimpleDialog *dialog = new SimpleDialog( title );
+    
+    int ncolwide = (derivedData ? 3 : static_cast<int>(cals.size() + 1));
+    if( ncolwide > 4 )
+      ncolwide = 4;
+  
+    WTable *table = new WTable( dialog->contents() );
+  
+    WText *msg = new WText( msgtxt , XHTMLText );
+    //layout->addWidget( msg, 0, 0, 1, ncolwide );
+    WTableCell *cell = table->elementAt( 0, 0 );
+    cell->addWidget( msg );
+    cell->setColumnSpan( ncolwide );
+  
+    WPushButton *button = new WPushButton( "Keep All" );
+    cell = table->elementAt( 1, 0 );
     cell->addWidget( button );
     button->setWidth( WLength(95.0,WLength::Percentage) );
-
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, dialog ) );
-    //Note, using *iter instead of label below.
+  
+    button->clicked().connect( boost::bind( &SimpleDialog::reject, dialog ) );
     button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
-                                            *iter, header, meas, type,
-                                            checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
-  }//for( loop over calibrations )
+                                           string("Keep All"), header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    
+    int calnum = 1;
+    for( set<string>::const_iterator iter = cals.begin(); iter != cals.end(); ++iter, ++calnum )
+    {
+      const int row = 1 + (calnum / ncolwide);
+      const int col = (calnum % ncolwide);
+      
+      //Make sure the calbration ID isnt too long
+      string label = *iter;
+      SpecUtils::utf8_limit_str_size( label, 15 );
+      
+      button = new WPushButton( label );
+      //layout->addWidget( button, row, col );
+      cell = table->elementAt( row, col );
+      cell->addWidget( button );
+      button->setWidth( WLength(95.0,WLength::Percentage) );
+      
+      button->clicked().connect( boost::bind( &SimpleDialog::reject, dialog ) );
+      //Note, using *iter instead of label below.
+      button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
+                                             *iter, header, meas, type,
+                                             checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    }//for( loop over calibrations )
+  }else  //if( cals.size() > 3 )
+  {
+    SimpleDialog *dialog = new SimpleDialog( title );
+    
+    WText *msg = new WText( msgtxt , XHTMLText, dialog->contents() );
+    msg->addStyleClass( "content" );
+    
+    WPushButton *button = dialog->addButton( "Keep All" );
+    button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
+                                           string("Keep All"), header, meas, type,
+                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    
+    for( set<string>::const_iterator iter = cals.begin(); iter != cals.end(); ++iter )
+    {
+      //Make sure the calbration ID isnt too long
+      string label = *iter;
+      SpecUtils::utf8_limit_str_size( label, 15 );
+      
+      button = dialog->addButton( label );
+      button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
+                                             *iter, header, meas, type,
+                                             checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    }//for( loop over calibrations )
+  }// if( cals.size() > 3 ) / else
   
-  dialog->show();
-  
-  if( m_viewer->isMobile() )
-    dialog->titleBar()->hide();
-  
-  dialog->centerWindowHeavyHanded();
-  dialog->resizeToFitOnScreen();
   
   return true;
 }//checkForAndPromptUserForDisplayOptions(...)
@@ -1880,7 +2114,7 @@ void SpecMeasManager::displayFile( int row,
                                    const SpecUtils::SpectrumType type,
                                    bool checkIfPreviouslyOpened,
                                    const bool doPreviousEnergyRangeCheck,
-                                   const bool checkIfAppropriateForViewing )
+                                   const SpecMeasManager::VariantChecksToDo viewingChecks )
 {
   std::shared_ptr<SpecMeas> old_meas = m_viewer->measurment( type );
   std::shared_ptr<SpecMeas>  old_back;
@@ -1895,7 +2129,11 @@ void SpecMeasManager::displayFile( int row,
   
   if( row < 0 && !measement_ptr )
   {
-    m_viewer->setSpectrum( measement_ptr, std::set<int>(), type, true );
+    WFlags<InterSpec::SetSpectrumOptions> options;
+    options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
+    options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+    
+    m_viewer->setSpectrum( measement_ptr, std::set<int>(), type, options );
 
     if( old_meas.use_count() == 1 )
       serializeToTempFile( old_meas );
@@ -1911,11 +2149,10 @@ void SpecMeasManager::displayFile( int row,
   std::shared_ptr<SpectraFileHeader> header;
   header = m_fileModel->fileHeader( row );
 
-  if( !header
-      || (header->measurementIfInMemory() != measement_ptr) )
+  if( !header || (header->measurementIfInMemory() != measement_ptr) )
   {
     const char *msg = "SpecMeasManager::displayFile(...): you must "
-                      "pass in the SpectraFileModel row cooresponding to the "
+                      "pass in the SpectraFileModel row corresponding to the "
                       "MeasurmentInfo object you pass in";
     cerr << msg << endl;
     throw std::runtime_error( msg );
@@ -1953,11 +2190,11 @@ void SpecMeasManager::displayFile( int row,
   }//if( header && checkIfPreviouslyOpened )
   
   
-  if( checkIfAppropriateForViewing && wApp )
+  if( viewingChecks != VariantChecksToDo::None )
   {
     if( checkForAndPromptUserForDisplayOptions( header, measement_ptr,
                                 type, checkIfPreviouslyOpened,
-                               doPreviousEnergyRangeCheck ) )
+                                doPreviousEnergyRangeCheck, viewingChecks ) )
       return;
   }//if( checkIfAppropriateForViewing )
   
@@ -2067,6 +2304,9 @@ void SpecMeasManager::displayFile( int row,
 
       if( passthrough )
       {
+        const bool hasDerived = measement_ptr ? measement_ptr->contains_derived_data() : false;
+        const bool hasNonDerived = measement_ptr ? measement_ptr->contains_non_derived_data() : true;
+        
         int nspectra_header = static_cast<int>( header->m_samples.size() );
 
         // A temporary check...
@@ -2084,13 +2324,14 @@ void SpecMeasManager::displayFile( int row,
           const SpectraHeader &spectra = header->m_samples[sample];
           const bool back = (spectra.spectra_type == SpecUtils::SourceType::Background);
           const bool calib = (spectra.spectra_type == SpecUtils::SourceType::Calibration);
+          const bool unWantedDerived = (hasDerived && hasNonDerived && spectra.is_derived_data);
 
           ncalibration += calib;
 
-          if( back && (type!=SpecUtils::SpectrumType::SecondForeground) )
+          if( back && (type != SpecUtils::SpectrumType::SecondForeground) && !unWantedDerived )
             background_sample_numbers.insert( spectra.sample_number );
 
-          if( back || calib )
+          if( back || calib || unWantedDerived )
             selected.erase( index.child(sample,0) );
         }//for( int sample = 0; sample < nsamples; ++sample )
 
@@ -2100,13 +2341,13 @@ void SpecMeasManager::displayFile( int row,
 
           warningmsgLevel = max( WarningWidget::WarningMsgInfo, warningmsgLevel );
           warningmsg << "The uploaded file contained " << ncalibration
-                       << " calibration samples<br />";
+                       << " calibration or derived-data samples<br />";
 
 
           if( ncalibration == 1 ) warningmsg << "It";
           else                    warningmsg << "They";
           warningmsg  << " will not be displayed.<br />"
-                      << "Use the <b>File Manager</b> to change this.";
+                      << "Use the <b>Spectrum Files</b> tab or <b>File Manager</b> to change this.";
         } // if( ncalibration > 0 )
       }// if( passthrough )
 
@@ -2154,13 +2395,31 @@ void SpecMeasManager::displayFile( int row,
   if( ncandiadate_samples != selected.size() )
     selected.erase( index );
   
+  if( measement_ptr
+     && (type == SpecUtils::SpectrumType::Foreground
+         || type ==SpecUtils::SpectrumType::SecondForeground)
+     && selected.empty() )
+  {
+    // I think this can happen if its passthrough/search data that are all marked background
+    //  We'll just find the first spectrum.
+    const int nspectra_header = static_cast<int>( header->m_samples.size() );
+    for( int sample = 0; selected.empty() && (sample < nspectra_header); ++sample )
+    {
+      const SpectraHeader &spectra = header->m_samples[sample];
+      
+      //Note: we actually are just taking the first sample with non-zero gamma counts, which may
+      //      not be a spectrum.  WE could improve this...
+      if( spectra.gamma_counts_ > FLT_EPSILON )
+        selected.insert( index.child(sample,0) );
+    }//for( loop over to find a spectrum, any spectrum )
+    
+    background_sample_numbers.clear();
+  }//if( selected.empty() )
+  
   m_treeView->setSelectedIndexes( selected );
 
   if( warningmsg.str().size() )
-  {
     passMessage( warningmsg.str(), "SpecMeasManager", warningmsgLevel );
-  }
-  
   
   loadSelected( type, doPreviousEnergyRangeCheck );
 
@@ -2183,9 +2442,15 @@ void SpecMeasManager::displayFile( int row,
 
   if( background_sample_numbers.size() )
   {
-    m_viewer->setSpectrum( measement_ptr,
-                                   background_sample_numbers,
-                                   SpecUtils::SpectrumType::Background, doPreviousEnergyRangeCheck );
+    WFlags<InterSpec::SetSpectrumOptions> options;
+    if( doPreviousEnergyRangeCheck )
+    {
+      options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
+      options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+    }
+    
+    m_viewer->setSpectrum( measement_ptr, background_sample_numbers,
+                           SpecUtils::SpectrumType::Background, options );
   }//if( backgroundIndexs.size() )
   
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -2211,8 +2476,8 @@ void SpecMeasManager::setDisplayedToSelected()
 void SpecMeasManager::displayQuickSaveAsDialog()
 {
   AuxWindow *dialog = new AuxWindow( "Save As...",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-               | AuxWindowProperties::TabletModal
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+               | AuxWindowProperties::TabletNotFullScreen
                | AuxWindowProperties::DisableCollapse) );
   
   dialog->centerWindow();
@@ -2368,12 +2633,8 @@ void SpecMeasManager::displayQuickSaveAsDialog()
 } // void SpecMeasManager::displayQuickSaveAsDialog();
 
 
-void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas,
-                                      const bool undisplay )
+void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas, const bool undisplay )
 {
-  //implementation copied from removeSpecMeas(Dbo::ptr<UserFileInDb> remove )
-  refreshAdditionalInfo( true );
-  
   for( int row = 0; row < m_fileModel->rowCount(); ++row )
   {
     std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( row );
@@ -2408,9 +2669,6 @@ void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas,
 // Used to unassign and unload spectrums just deleted from the Spectrum Manager
 void SpecMeasManager::removeSpecMeas(Dbo::ptr<UserFileInDb> remove )
 {
-  // Clear the stuff
-  refreshAdditionalInfo( true );
-  
   //Goes through each loaded state and checks if it's the same one as
   //the removed UserFileInDb
   for( int row = 0; row < m_fileModel->rowCount(); ++row )
@@ -2446,10 +2704,7 @@ void SpecMeasManager::removeSelected()
 {
     const WModelIndexSet selected = m_treeView->selectedIndexes();
     WModelIndexSet selectedFiles;
-    
-    // Clear the stuff
-    refreshAdditionalInfo( true );
-    
+        
     for( const WModelIndex &index : selected )
     {
         const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
@@ -2913,8 +3168,7 @@ void SpecMeasManager::selectionChanged()
           m_saveButton->enable();
           m_saveButton->show();
       }//isSupportFile()
-    // If only one file is selected, update the additional info.
-    refreshAdditionalInfo();
+
   }else
   {
       const bool enableSave = (files.size()==1);
@@ -2924,8 +3178,6 @@ void SpecMeasManager::selectionChanged()
           m_saveButton->setHidden( !enableSave );
       }
       
-      // Otherwise, set it to n/a
-      refreshAdditionalInfo( true );
   } // if( selectedFiles.size() == 1 )
 
   if( selected.size() != toSelect.size() )
@@ -2963,112 +3215,11 @@ void SpecMeasManager::selectionChanged()
 } // void SpecMeasManager::selectionChanged()
 
 
-WText *messageCombiner( const string& label, const string& value )
-{
-  WText *boxxed = new WText( "<b>" + label + ":</b> " + value );
-  boxxed->setPadding( 2 );
-
-  return boxxed;
-} // WText *messageCombiner( const string&, const string& )
-
-
-void SpecMeasManager::refreshAdditionalInfo( bool clearInfo )
-{
-  std::shared_ptr< SpecMeas > selected = selectedToSpecMeas();
-
-  vector< string > info;
-  // If it /isn't/ a clearInfo, there is just one thing selected.
-  if( selected && !clearInfo )
-  {
-    const vector< std::shared_ptr<const SpecUtils::Measurement> > selectedData = selected->measurements();
-    // A handful of these assume that the data will be populated for all of the detectors.
-    // That is, it will just take the first one out of the detector for the dates, as well
-    // as the number of channels.
-
-    // This accounts for potential "mass" samples.
-    if( selectedData.size() > 0 )
-    {
-      info.push_back( boost::posix_time::to_simple_string(
-        selectedData.at(0)->start_time() ).substr( 0, 11 ) ); // Date taken
-      stringstream liveStream, realStream, sizeStream;
-      liveStream << selected->gamma_live_time();
-      realStream << selected->gamma_real_time();
-      sizeStream << selectedData.at(0)->gamma_counts()->size();
-      info.push_back( liveStream.str() ); // Live time
-      info.push_back( realStream.str() ); // Real time
-      info.push_back( sizeStream.str() ); // Number of channels
-      stringstream gammaCounts, neutronCounts, detectorCounts;
-      gammaCounts << fixed << setprecision(0) << selected->gamma_count_sum();
-      neutronCounts << fixed << setprecision(0) << selected->neutron_counts_sum();
-      detectorCounts << selected->detector_names().size();
-      info.push_back( gammaCounts.str() ); // Gamma counts
-      info.push_back( neutronCounts.str() ); // Neutron counts
-      info.push_back( detectorCounts.str() ); // Detector counts
-    }
-    else
-    {
-      clearInfo = true;
-    }
-  }//if( !clearInfo )
-
-  int infoPerRow = 3;
-
-  WGridLayout *boxxyHost = new WGridLayout();
-
-  for( unsigned int i = 0; i < m_labelTags.size(); ++i )
-  {
-    int cS = 225 - 42 * !( i % 2 );
-    WText *boxxy = NULL;
-
-    if( clearInfo || i>=info.size() )
-      boxxy = messageCombiner( m_labelTags.at(i), "n/a" );
-    else
-      boxxy = messageCombiner( m_labelTags.at(i), info.at(i) );
-
-    boxxy->decorationStyle().setBackgroundColor( WColor( cS, cS, cS ) );
-    boxxyHost->addWidget( boxxy, (int)( i / infoPerRow ), i % infoPerRow );
-  }//for( unsigned int i = 0; i < m_labelTags.size(); ++i )
-
-  boxxyHost->setVerticalSpacing( 8 );
-  boxxyHost->setHorizontalSpacing( 10 );
-//  boxxyHost->setRowStretch( 0, -1 );
-//  boxxyHost->setRowStretch( 1, -1 );
-//  boxxyHost->setRowStretch( 2, -1 );
-
-  //Before setting a new layout to m_infoHandler, we have to avoid memorry leaks
-  //  by explicitly deleteing the children of the previous layout, as this is
-  //  not done by Wt (as noted in documentation for WContainerWidget::setLayout)
-  WLayout *prevLayout = m_infoHandler->layout();
-  if( prevLayout )
-    prevLayout->clear();
-
-  m_infoHandler->setLayout( boxxyHost );
-} // void SpecMeasManager::refreshAdditionalInfo()
-
-
-void SpecMeasManager::createInfoHandler()
-{
-  m_infoHandler = new WContainerWidget();
-  m_infoHandler->setStyleClass( "infoHandler" );
-  m_infoHandler->setOverflow( WContainerWidget::OverflowAuto );
-
-  m_labelTags.push_back( "Date taken" );
-  m_labelTags.push_back( "Live time (s)" );
-  m_labelTags.push_back( "Real time (s)" );
-  m_labelTags.push_back( "# of channels" );
-  m_labelTags.push_back( "Gamma counts" );
-  m_labelTags.push_back( "Neutron counts" );
-  m_labelTags.push_back( "# of detectors" );
-
-  refreshAdditionalInfo( true );
-}//void createInfoHandler()
-
-
 void SpecMeasManager::deleteSpectrumManager()
 {
     m_spectrumManagertreeDiv->removeWidget(m_treeView);
     AuxWindow::deleteAuxWindow(m_spectrumManagerWindow);
-    m_spectrumManagerWindow=NULL;
+    m_spectrumManagerWindow = NULL;
 }//deleteSpectrumManager()
 
 
@@ -3145,8 +3296,8 @@ WContainerWidget *SpecMeasManager::createButtonBar()
 
   
   m_combineButton = new Wt::WPushButton("Combine",m_newDiv);
-  m_combineButton->addStyleClass("JoinIcon");
-  m_combineButton->setIcon( "InterSpec_resources/images/arrow_join.png" );
+  m_combineButton->addStyleClass("Wt-icon");
+  m_combineButton->setIcon( "InterSpec_resources/images/arrow_join.svg" );
   m_combineButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
   m_combineButton->setHidden( true, WAnimation() );
 
@@ -3328,8 +3479,8 @@ void SpecMeasManager::createPreviousSpectraDialog( const std::string sessionID,
                                                   const std::vector< Wt::Dbo::ptr<UserFileInDb> > unModifiedFiles )
 {
   AuxWindow *message = new AuxWindow( "File Viewed Before",
-                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                           | AuxWindowProperties::TabletModal
+                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                           | AuxWindowProperties::TabletNotFullScreen
                            | AuxWindowProperties::DisableCollapse) );
   message->setResizable( false );
   message->rejectWhenEscapePressed();
@@ -3528,8 +3679,9 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
                                  unModifiedFiles ) );
        */
     }
-  }catch( std::exception & )
+  }catch( std::exception &e )
   {
+    cerr << "Error checking if this file had been opened previously: " << e.what() << endl;
     WServer::instance()->post( sessionID,
                               boost::bind( &postErrorMessage,
               string("Error checking if this file had been opened previously"),
@@ -3590,7 +3742,7 @@ int SpecMeasManager::dataUploaded2( Wt::WFileUpload *upload , SpecUtils::Spectru
 {
   std::shared_ptr<SpecMeas> measurement;
   int row= dataUploaded( upload, measurement );
-  displayFile( row, measurement, type, true, true, true );
+  displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
   return row;
 } // int SpecMeasManager::dataUploaded( Wt::WFileUpload )
 
@@ -3621,7 +3773,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     m_treeView->setSelectedIndexes( WModelIndexSet() );    
 //    passMessage( "Successfully uploaded file.", "", 0 );
 
-    displayFile( row, measurement, type, true, true, true );
+    displayFile( row, measurement, type, true, true, SpecMeasManager::VariantChecksToDo::DerivedDataAndEnergy );
   }catch( const std::exception &e )
   {
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )
@@ -3876,7 +4028,22 @@ void SpecMeasManager::browseDatabaseSpectrumFiles( SpecUtils::SpectrumType type 
 
 void SpecMeasManager::showPreviousDatabaseSpectrumFiles( SpecUtils::SpectrumType type, std::shared_ptr<SpectraFileHeader> header )
 {
-  new DbFileBrowser( this, m_viewer, type, header );
+  const size_t num_states = SnapshotBrowser::num_saved_states( m_viewer, m_viewer->sql(), header );
+  
+  if( !num_states )
+    return;
+  
+  
+  DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, type, header );
+  
+  // \TODO: come up with a way to check if there are any states before going through and creating
+  //        the widget and everything.
+  if( browser->numSnapshots() <= 0 )
+  {
+    delete browser;
+    browser = nullptr;
+  }
+  
   wApp->triggerUpdate();
 }
 
@@ -3968,8 +4135,8 @@ void SpecMeasManager::startStoreSpectraAsInDb()
     
     const string typestr = descriptionText(type);
     AuxWindow *window = new AuxWindow( "Save " + typestr + " Spectrum As" ,
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                      | AuxWindowProperties::TabletModal
+                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                      | AuxWindowProperties::TabletNotFullScreen
                                       | AuxWindowProperties::SetCloseable) );
     window->rejectWhenEscapePressed();
     window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
@@ -4151,8 +4318,8 @@ void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
   {
       
       AuxWindow *window = new AuxWindow( "Save Spectrum Version",
-                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
-                           | AuxWindowProperties::IsAlwaysModal) );
+                          (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                           | AuxWindowProperties::IsModal) );
       window->setWidth( 250 );
       
       WGridLayout *layout = window->stretcher();

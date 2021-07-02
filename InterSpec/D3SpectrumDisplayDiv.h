@@ -94,22 +94,9 @@ public:
   
   void setPeakModel( PeakModel *model );
   
-  /// \TODO: for all setData, setSecondData, and setBackground, get rid of live/real-time arguments
-  ///        and neutron counts.
-  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist,
-               float liveTime,
-               float realTime,
-               float neutronCounts,
-               bool keep_curent_xrange );
-  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist,
-                     float liveTime,
-                     float realTime,
-                     float neutronCounts,
-                     bool ownAxis );
-  void setBackground( std::shared_ptr<SpecUtils::Measurement> background,
-                     float liveTime,
-                     float realTime,
-                     float neutronCounts );
+  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
+  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist, const bool ownAxis );
+  void setBackground( std::shared_ptr<SpecUtils::Measurement> background );
   
   void scheduleUpdateForeground();
   void scheduleUpdateBackground();
@@ -170,7 +157,7 @@ public:
   const std::string yAxisTitle() const;
 
   
-  void enableLegend( const bool forceMobileStyle );
+  void enableLegend();
   void disableLegend();
   bool legendIsEnabled() const;
   
@@ -195,13 +182,6 @@ public:
   size_t addDecorativeHighlightRegion( const float lowerx,
                                       const float upperx,
                                       const Wt::WColor &color );
-  
-  
-  //By default SpectrumDisplayDiv has setLayoutSizeAware(true) set, so if the
-  //  widget is being sized by a Wt layout manager, layoutWidth() and
-  //  layoutHeight() will return this widget width and height respectively
-  int layoutWidth() const;
-  int layoutHeight() const;
   
   //For the case of auto-ranging x-axis, the below _may_ return 0 when auto
   //  range is set, but chart hasnt been rendered  (although maybe +-DBL_MAX)
@@ -268,10 +248,11 @@ public:
   void removeAllPeaks();
   
   
-  /** Executes appropriate javascript to generate and download a PNG based on
-   the currently showing spectrum.  PNG generation is done client side.
+  /** Executes appropriate javascript to generate and download a PNG or SVG based on
+   the currently showing spectrum.  PNG or SVG generation is done client side.
    */
-  void saveChartToPng( const std::string &name );
+  void saveChartToImg( const std::string &name, const bool asPng );
+  
   
 protected:
 
@@ -297,9 +278,6 @@ protected:
   
   void setForegroundPeaksToClient();
   
-  //layoutSizeChanged(...): adjusts display binning if necessary
-  virtual void layoutSizeChanged ( int width, int height );
-  
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   /** Flags */
@@ -321,10 +299,6 @@ protected:
   //ToDo: should eliminate use of SpectrumDataModel in this class
   SpectrumDataModel *m_model;
   PeakModel *m_peakModel;
-  
-  int m_layoutWidth;
-  int m_layoutHeight;
-  bool m_autoAdjustDisplayBinnning;
   
   bool m_compactAxis;
   bool m_legendEnabled;
@@ -353,8 +327,8 @@ protected:
   boost::scoped_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
   boost::scoped_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
   boost::scoped_ptr<Wt::JSignal<double, double> > m_doubleLeftClickJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_leftClickJS;
-  boost::scoped_ptr<Wt::JSignal<double,double,int/*pageX*/,int/*pageY*/> > m_rightClickJS;
+  boost::scoped_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_leftClickJS;
+  boost::scoped_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_rightClickJS;
   /** Currently including chart area in pixels in xRange changed from JS; this
       size in pixels is only approximate, since chart may not have been totally layed out
       and rendered when this signal was emmitted.
@@ -399,9 +373,10 @@ protected:
   void chartShiftKeyDragCallback( double x0, double x1 );
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
-  void chartLeftClickCallback( double x, double y, int pageX, int pageY );
+  void chartLeftClickCallback( double x, double y, double pageX, double pageY );
   void chartDoubleLeftClickCallback( double x, double y );
-  void chartRightClickCallback( double x, double y, int pageX, int pageY );
+  void chartRightClickCallback( double x, double y, double pageX,
+                                double pageY );
   void chartRoiDragedCallback( double new_lower_energy, double new_upper_energy,
                                double new_lower_px, double new_upper_px,
                                double original_lower_energy,

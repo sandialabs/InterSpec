@@ -1176,6 +1176,56 @@ double stringToEquivalentDose( const std::string &str, const double sievert_defi
 }//double stringToEquivalentDose( std::string str, double gray_definition )
 
 
+std::string printValueWithUncertainty( double value, double uncert, int nsigfig )
+{
+  // We will explicitly round value/uncert, 
+  //cout << "Value=" << value << ", uncert=" << uncert << ", nsigfig=" << nsigfig << endl;
+  nsigfig = std::max(1,nsigfig);
+  
+  //Get the exponent
+  double valorder = std::floor( std::log10(value) );  //1.2345E-06 will give value -6
+  //cout << "\tvalorder=" << valorder << endl;
+  double normalizer = std::pow( 10.0, -valorder );
+  //cout << "\tnormalizer=" << normalizer << endl;
+  double roundedval = value * normalizer;  //value will now be like 1.2345
+  //cout << "\troundedval_0=" << roundedval << endl;
+  roundedval = std::floor(roundedval * std::pow(10.0,nsigfig-1) + 0.5) / std::pow(10.0,nsigfig-1);
+  //cout << "\troundedval_1=" << roundedval << endl;
+  roundedval /= normalizer;
+  //cout << "\troundedval_2=" << roundedval << endl;
+  
+  // \TODO: Currently, if value uncertainty and uncerainty "overlap" with more than one digit, then
+  //        we will only print uncertainty out to the same decimal order as the value; if they only
+  //        "overlap" by one digit, or not at all, then we will print out one more decimal point
+  //        than value
+  double uncertorder = std::floor( std::log10(uncert) );
+  const double numoverlap = nsigfig - (valorder - uncertorder);
+  //cout << "\tnumoverlap=" << numoverlap << endl;
+  //cout << "\t(valorder - uncertorder)=" << (valorder - uncertorder) << ", (nsigfig - 1)=" << (nsigfig - 1) << endl;
+  double uncertnorm = (numoverlap < 2) ? (normalizer * 10) : normalizer;
+  
+  //cout << "\tuncertnorm=" << uncertnorm << endl;
+  double rounduncert = std::fabs( uncert ) * uncertnorm;
+  //cout << "\trounduncert_1=" << rounduncert << endl;
+  rounduncert = std::floor(rounduncert * std::pow(10.0,nsigfig-1) + 0.5) / std::pow(10.0,nsigfig-1);
+  //cout << "\trounduncert_2=" << rounduncert << endl;
+  rounduncert /= uncertnorm;
+  
+  char buffer[64] = {'\0'};
+  snprintf( buffer, sizeof(buffer), "%.*g \xC2\xB1 %.*g", nsigfig, roundedval, nsigfig, rounduncert );
+  
+  // Incase "%.*g" isnt supprted somewhere, could instead do
+  //char formatflag[64] = {'\0'}, buffer[64] = {'\0'};
+  //snprintf( formatflag, sizeof(formatflag), "%%.%ig \xC2\xB1 %%.%ig", nsigfig, nsigfig );
+  //snprintf( buffer, sizeof(buffer), formatflag, roundedval, rounduncert );
+  
+  //cout << "\tAnswer='" << buffer << "'" << endl << endl;
+  //cout << "(" << value << ", " << uncert << ", " << nsigfig << ") -> '" << buffer << "'" << endl;
+  
+  return buffer;
+}//printValueWithUncertainty(...)
+
+
 const UnitNameValuePair &bestActivityUnit( const double activity,
                                            bool useCurries )
 {

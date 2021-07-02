@@ -58,6 +58,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"  //Only for ALLOW_PEAK_COLOR_DELEGATE
@@ -450,26 +451,30 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
     string nuclide;
     char energy[32];
     energy[0] = '\0';
-    try
+    
+    if( peak.hasSourceGammaAssigned() )
     {
-      const float gammaEnergy = peak.gammaParticleEnergy();
-      snprintf( energy, sizeof(energy), "%.2f", gammaEnergy );
-      
-      if( peak.parentNuclide()
-          && (peak.decayParticle() || peak.sourceGammaType()==PeakDef::AnnihilationGamma) )
+      try
       {
-        nuclide = peak.parentNuclide()->symbol;
-      }else if( peak.reaction() )
+        const float gammaEnergy = peak.gammaParticleEnergy();
+        snprintf( energy, sizeof(energy), "%.2f", gammaEnergy );
+        
+        if( peak.parentNuclide()
+           && (peak.decayParticle() || peak.sourceGammaType()==PeakDef::AnnihilationGamma) )
+        {
+          nuclide = peak.parentNuclide()->symbol;
+        }else if( peak.reaction() )
+        {
+          nuclide = peak.reaction()->name();
+          SpecUtils::ireplace_all( nuclide, ",", " " );
+        }else if( peak.xrayElement() )
+        {
+          nuclide = peak.xrayElement()->symbol + "-xray";
+        }
+      }catch( std::exception & )
       {
-        nuclide = peak.reaction()->name();
-        SpecUtils::ireplace_all( nuclide, ",", " " );
-      }else if( peak.xrayElement() )
-      {
-        nuclide = peak.xrayElement()->symbol + "-xray";
-      }
-    }catch( std::exception & )
-    {
-    }//try / catch
+      }//try / catch
+    }//if( peak.hasSourceGammaAssigned() )
     
     char buffer[32];
     snprintf( buffer, sizeof(buffer), "%.2f", peak.mean() );
@@ -631,8 +636,10 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
   }else
   {
     boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
-    sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder );
-    meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder );
+    
+    shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+    sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder, data );
+    meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder, data );
 
     //Make sure no null peaks
     peaks->erase( std::remove_if( peaks->begin(), peaks->end(), [](std::shared_ptr<const PeakDef> a){return !a;}), peaks->end() );
@@ -677,11 +684,11 @@ PeakModel::PeakShrdPtr PeakModel::peakPtr( const size_t peakn ) const
 PeakModel::PeakShrdPtr PeakModel::nearestPeak( double energy ) const
 {
   if( !m_peaks || m_peaks->empty() )
-    return PeakShrdPtr();
+    return nullptr;
   
   boost::function<bool( const PeakShrdPtr &, const PeakShrdPtr &)> meansort;
-  meansort = boost::bind( &PeakModel::compare, _1, _2, kMean,
-                          Wt::AscendingOrder );
+  shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+  meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder, data );
   PeakDef *new_peak_ptr = new PeakDef();
   PeakShrdPtr peak_ptr( new_peak_ptr );
   new_peak_ptr->setMean( energy );
@@ -813,11 +820,17 @@ void PeakModel::notifySpecMeasOfPeakChange()
 
 WModelIndex PeakModel::addNewPeak( const PeakDef &peak )
 {
+  return addNewPeakInternal( peak ).second;
+}
+
+
+std::pair<std::shared_ptr<const PeakDef>,Wt::WModelIndex> PeakModel::addNewPeakInternal( const PeakDef &peak )
+{
   if( !m_peaks )
     throw runtime_error( "Set a primary spectrum before adding peak" );
 
   if( !isWithinRange( peak ) )
-    return WModelIndex();
+    return { nullptr, WModelIndex{} };
 
   notifySpecMeasOfPeakChange();
   
@@ -828,8 +841,9 @@ WModelIndex PeakModel::addNewPeak( const PeakDef &peak )
   //Need to go through and estimate the Chi2Dof here.
   
   boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
-  sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder );
-  meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder );
+  shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+  sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder, data );
+  meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder, data );
 
   deque< PeakShrdPtr >::iterator mean_pos
          = lower_bound( m_peaks->begin(), m_peaks->end(), peak_ptr, meansort );
@@ -843,13 +857,15 @@ WModelIndex PeakModel::addNewPeak( const PeakDef &peak )
   m_sortedPeaks.insert( sort_pos, peak_ptr );
   endInsertRows();
   
-  return index( indexpos, 0 );
-}//void addPeak( const PeakDef &peak )
+  return {peak_ptr, index( indexpos, 0 )};
+  //return index( indexpos, 0 );
+}//void addNewPeakInternal( const PeakDef &peak )
 
 
 
 void PeakModel::addPeaks( const vector<PeakDef> &peaks )
 {
+  
   for( size_t i = 0; i < peaks.size(); ++i )
     addNewPeak( peaks[i] );
 }//void addPeaks( const vector<PeakDef> &peaks )
@@ -922,8 +938,9 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
 //    need to go through and estimate the chi2DOF here
     
     boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
-    sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder );
-    meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder );
+    shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+    sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, m_sortOrder, data );
+    meansort = boost::bind( &PeakModel::compare, _1, _2, kMean, Wt::AscendingOrder, data );
 
     beginInsertRows( WModelIndex(), 0, int(npeaksadd - 1) );
 
@@ -971,11 +988,37 @@ void PeakModel::removePeak( Wt::WModelIndex index )
   if( !index.isValid() )
     throw std::runtime_error( "PeakModel::removePeak(): non-valid index" );
 
+  const int row = index.row();
+  if( row < 0 || (static_cast<size_t>(row) >= m_sortedPeaks.size()) )
+    throw std::runtime_error( "PeakModel::removePeak(): invalid index row." );
   
-  PeakShrdPtr peak = m_sortedPeaks.at( index.row() );
+  PeakShrdPtr peak = m_sortedPeaks[row];
   
-  std::deque< PeakShrdPtr >::iterator energy_pos = find( m_peaks->begin(), m_peaks->end(), peak );
-  assert( energy_pos != m_peaks->end() );
+  removePeakInternal( peak );
+}//void removePeak( Wt::WModelIndex index )
+
+
+void PeakModel::removePeak( PeakModel::PeakShrdPtr peak )
+{
+  removePeakInternal( peak );
+}//void removePeak( PeakModel::PeakShrdPtr peak )
+
+
+void PeakModel::removePeakInternal( PeakModel::PeakShrdPtr peak )
+{
+  if( !peak )
+    throw std::runtime_error( "PeakModel::removePeakInternal: invalid peak passed in." );
+  
+  if( !m_peaks )
+    throw std::runtime_error( "PeakModel::removePeakInternal: data not set." );
+  
+  const WModelIndex index = indexOfPeak( peak );
+  if( !index.isValid() )
+    throw std::runtime_error( "PeakModel::removePeakInternal: peak passed in doesnt belong to model." );
+  
+  std::deque< PeakShrdPtr >::iterator energy_pos = find( begin(*m_peaks), end(*m_peaks), peak );
+  if( energy_pos == m_peaks->end() )
+    throw std::runtime_error( "PeakModel::removePeakInternal: peak passed in doesnt belong to model (or logic error sorting m_peaks)." );
   
   beginRemoveRows( WModelIndex(), index.row(), index.row() );
   m_peaks->erase( energy_pos );
@@ -983,30 +1026,92 @@ void PeakModel::removePeak( Wt::WModelIndex index )
   endRemoveRows();
   
   notifySpecMeasOfPeakChange();
-}//void removePeak( Wt::WModelIndex index )
-
-
-void PeakModel::removePeak( PeakModel::PeakShrdPtr peak )
-{
-  const size_t n = npeaks();
-  for( size_t i = 0; i < n; ++ i )
-  {
-    if( peak == peakPtr(i) )
-    {
-      removePeak(i);
-      return;
-    }//if( peak == peakPtr(i) )
-  }//for( size_t i = 0; i < n; ++ i )
-
-  throw runtime_error( "PeakModel::removePeak(PeakShrdPtr):"
-                       " input peak not in model" );
-}//void PeakModel::removePeak( PeakModel::PeakShrdPtr peak )
+}//void removePeakInternal( PeakModel::PeakShrdPtr peak )
 
 
 void PeakModel::removeAllPeaks()
 {
-  setPeaks( vector<PeakDef>() );
+  setPeaks( vector<PeakDef>{} );
 }//void removeAllPeaks()
+
+
+void PeakModel::removePeaks( const std::vector<PeakModel::PeakShrdPtr> &peaks )
+{
+  for( const auto &p : peaks )
+    removePeakInternal( p );
+}//void removePeaks( const std::vector<PeakModel::PeakShrdPtr> &peak )
+
+
+
+vector<shared_ptr<const PeakDef>> PeakModel::peaksSharingRoi( const std::shared_ptr<const PeakDef> &peak )
+{
+  vector<shared_ptr<const PeakDef>> answer;
+  
+  if( !peak || !m_peaks )
+    return answer;
+  
+  bool found = false;
+  for( auto &p : *m_peaks )
+  {
+    found |= (p == peak);
+    if( p->continuum() == peak->continuum() )
+      answer.push_back( p );
+  }
+  
+  if( !found )
+    throw std::runtime_error( "PeakModel::peaksSharingRoi: passed in peak not owned by this model." );
+  
+  return answer;
+}//peaksSharingRoi( peak )
+
+
+std::vector<std::shared_ptr<const PeakDef>> PeakModel::peaksNotSharingRoi( const std::shared_ptr<const PeakDef> &peak )
+{
+  vector<shared_ptr<const PeakDef>> answer;
+  
+  if( !m_peaks )
+    return answer;
+  
+  if( !peak )
+  {
+    for( auto &p : *m_peaks )
+      answer.push_back( p );
+    return answer;
+  }
+  
+  bool found = false;
+  for( auto &p : *m_peaks )
+  {
+    found |= (p == peak);
+    if( p->continuum() != peak->continuum() )
+    {
+      assert( p != peak );
+      answer.push_back( p );
+    }//if( p->continuum() != peak->continuum() )
+  }//for( auto &p : *m_peaks )
+  
+  if( !found )
+    throw std::runtime_error( "PeakModel::peaksNotSharingRoi: passed in peak not owned by this model." );
+  
+  return answer;
+}//peaksNotSharingRoi( peak )
+
+
+void PeakModel::updatePeak( const std::shared_ptr<const PeakDef> &originalPeak, const PeakDef &newPeak )
+{
+  removePeakInternal( originalPeak );
+  addNewPeak( newPeak );
+}//updatePeak( originalPeak, newPeak )
+
+
+void PeakModel::updatePeaks( const std::vector<std::shared_ptr<const PeakDef>> &originalPeaks,
+                 const std::vector<PeakDef> &newPeaks )
+{
+  for( const auto &p : originalPeaks )
+    removePeakInternal( p );
+  for( const auto &p : newPeaks )
+    addNewPeakInternal( p );
+}//void updatePeaks(...)
 
 
 void PeakModel::setPeakFitFor( const Wt::WModelIndex index,
@@ -1144,6 +1249,51 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
 
   const PeakShrdPtr &peak = m_sortedPeaks[row];
 
+  
+  auto getPeakArea = [&peak,this]() -> boost::any {
+    switch( peak->type() )
+    {
+      case PeakDef::GaussianDefined:
+        return peak->peakArea();
+        
+      case PeakDef::DataDefined:
+      {
+        if( !m_dataModel )
+          return boost::any();
+        
+        double contArea = 0.0;
+        std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
+        
+        if( !dataH )
+          return boost::any();
+        
+        if( peak->continuum()->parametersProbablySet() )
+        {
+          double lowx(0.0), upperx(0.0);
+          findROIEnergyLimits( lowx, upperx, *peak, dataH );
+          contArea = peak->offset_integral( lowx, upperx, dataH );
+        }else
+        {
+          std::shared_ptr<const SpecUtils::Measurement> continuum = m_dataModel->getBackground();
+          if( continuum )
+          {
+            size_t lower_channel, upper_channel;
+            estimatePeakFitRange( *peak, continuum, lower_channel, upper_channel );
+            contArea = continuum->gamma_channels_sum(lower_channel, upper_channel);
+          }
+        }//if( peak->continuumDefined() ) / else
+        
+        size_t lower_channel, upper_channel;
+        estimatePeakFitRange( *peak, dataH, lower_channel, upper_channel );
+        const double dataArea = dataH->gamma_channels_sum(lower_channel, upper_channel);
+        
+        return (dataArea - contArea);
+      }//case PeakDef::DataDefined:
+    }//switch( peak->type() )
+
+    return boost::any();
+  };//auto getPeakArea lambda
+  
   switch( column )
   {
     case kMean:
@@ -1160,44 +1310,34 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       }//switch( peak->type() )
       
     case kAmplitude:
-      switch( peak->type() )
+      return getPeakArea();
+      
+    case PeakModel::kCps:
+    {
+      boost::any areaAny = getPeakArea();
+      
+      if( areaAny.empty() )
+        return areaAny;
+      
+      const double area = boost::any_cast<double>(areaAny);
+      std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
+      const float liveTime = dataH ? dataH->live_time() : -1.0f;
+      if( liveTime <= 0.0f )
+        return boost::any();
+      
+      const double cps = area / liveTime;
+      const double uncert = peak->amplitudeUncert();
+      
+      char text[64];
+      if( (peak->type() != PeakDef::GaussianDefined) || (uncert <= 0.0) )
       {
-        case PeakDef::GaussianDefined:
-          return peak->peakArea();
-        case PeakDef::DataDefined:
-        {
-          if( !m_dataModel )
-            return boost::any();
-          
-          double contArea = 0.0;
-          std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
-          
-          if( !dataH )
-            return boost::any();
-          
-          if( peak->continuum()->defined() )
-          {
-            double lowx(0.0), upperx(0.0);
-            findROIEnergyLimits( lowx, upperx, *peak, dataH );
-            contArea = peak->offset_integral( lowx, upperx );
-          }else
-          {
-            std::shared_ptr<const SpecUtils::Measurement> continuum = m_dataModel->getBackground();
-            if( continuum )
-            {
-              size_t lower_channel, upper_channel;
-              estimatePeakFitRange( *peak, continuum, lower_channel, upper_channel );
-              contArea = continuum->gamma_channels_sum(lower_channel, upper_channel);
-            }
-          }//if( peak->continuumDefined() ) / else
-          
-          size_t lower_channel, upper_channel;
-          estimatePeakFitRange( *peak, dataH, lower_channel, upper_channel );
-          const double dataArea = dataH->gamma_channels_sum(lower_channel, upper_channel);
-          
-          return (dataArea - contArea);
-        }//case PeakDef::DataDefined:
-      }//switch( peak->type() )
+        snprintf( text, sizeof(text), "%.4g", cps );
+        return WString(text);
+      }
+      const double cpsUncert = uncert / liveTime;
+      const string txt = PhysicalUnits::printValueWithUncertainty( cps, cpsUncert, 4 );
+      return WString::fromUTF8(txt);
+    }//case PeakModel::kCps:
       
     case kIsotope:
     {
@@ -1215,6 +1355,9 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
 
     case kDifference:
     {
+      if( !peak->hasSourceGammaAssigned() )
+        return boost::any();
+      
       try
       {
         const float energy = peak->gammaParticleEnergy() - peak->mean();
@@ -1229,6 +1372,9 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case kPhotoPeakEnergy:
     {
+      if( !peak->hasSourceGammaAssigned() )
+        return boost::any();
+      
       try
       {
         float energy = peak->gammaParticleEnergy();
@@ -1264,7 +1410,33 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     }//case kPhotoPeakEnergy:
 
     case kUseForShieldingSourceFit:
+    {
+      // Make so we only "use for shielding/source fit" show checkbox for decay gammas and x-rays,
+      //  and not for peaks with no source associated, or with florescence x-rays, or for reactions
+      
+      switch( peak->sourceGammaType() )
+      {
+        case PeakDef::NormalGamma:
+        case PeakDef::XrayGamma:
+          if( !peak->nuclearTransition() || !peak->parentNuclide() || (peak->decayParticleIndex() < 0) )
+            return boost::any();
+          break;
+          
+        case PeakDef::AnnihilationGamma:
+          // Annihilation gammas wont have a nuclearTransition or decay particle index associated with them
+          if( !peak->parentNuclide() )
+            return boost::any();
+          break;
+        
+        case PeakDef::SingleEscapeGamma:
+        case PeakDef::DoubleEscapeGamma:
+          // Don't show "use for shielding/source fit" checkbox for single and double escape peaks
+          return boost::any();
+          break;
+      }//switch( peak->sourceGammaType() )
+      
       return peak->useForShieldingSourceFit();
+    }//case kUseForShieldingSourceFit:
 
     case kUseForCalibration:
       return peak->useForCalibration();
@@ -1330,48 +1502,21 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     }//case kLowerX / case kUpperX:
     
       
-    case kContinuumArea:
+    case kRoiCounts:
     {
-      if( peak->continuum()->defined() )
-      {
-        if( !m_dataModel )
-          return boost::any();
-        std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
-        if( !dataH )
-          return boost::any();
-        
-        double lowx(0.0), upperx(0.0);
-        findROIEnergyLimits( lowx, upperx, *peak, dataH );
-        return peak->offset_integral( lowx, upperx );
-      }else
-      {
-        std::shared_ptr<const SpecUtils::Measurement> continuum;
-        if( m_dataModel )
-          continuum = m_dataModel->getBackground();
-        if( !continuum )
-          return WString( "" );
-        
-        size_t lower_channel, upper_channel;
-        estimatePeakFitRange( *peak, continuum, lower_channel, upper_channel );
-        const double area = continuum->gamma_channels_sum( lower_channel, upper_channel );
-        return area;
-      }//if( peak->continuum()->defined() ) / else
-    }//case kContinuumArea:
+      if( !m_dataModel )
+        return boost::any();
+      std::shared_ptr<const SpecUtils::Measurement> dataH = m_dataModel->getData();
+      if( !dataH )
+        return boost::any();
+      
+      double lowx(0.0), upperx(0.0);
+      findROIEnergyLimits( lowx, upperx, *peak, dataH );
+      return dataH->gamma_integral( lowx, upperx );
+    }//case kRoiCounts:
       
     case kContinuumType:
-    {
-      switch( peak->continuum()->type() )
-      {
-        case PeakContinuum::NoOffset:   return WString( "None" );
-        case PeakContinuum::Constant:   return WString( "Constant" );
-        case PeakContinuum::Linear:     return WString( "Linear" );
-        case PeakContinuum::Quadratic:  return WString( "Quadratic" );
-        case PeakContinuum::Cubic:      return WString( "Cubic" );
-        case PeakContinuum::External:   return WString( "Global Cont." );
-      }//switch( peak->offsetType() )
-      
-      return boost::any();
-    }//case kContinuumType:
+      return WString( PeakContinuum::offset_type_label(peak->continuum()->type()) );
       
     case kNumColumns:
       return any();
@@ -1637,8 +1782,7 @@ bool PeakModel::setData( const WModelIndex &index,
   
   try
   {
-    if( (role != Wt::EditRole)
-        && (role != Wt::CheckStateRole) )
+    if( (role != Wt::EditRole) && (role != Wt::CheckStateRole) )
       return false;
 
     const int row = index.row();
@@ -1662,9 +1806,8 @@ bool PeakModel::setData( const WModelIndex &index,
       case kPeakLineColor:
       break;
 
-      case kHasSkew: case kSkewAmount: case kType: case kLowerX: case kUpperX:
-      case kContinuumArea: case kContinuumType:
-      case kNumColumns: case kDifference:
+      case kCps: case kHasSkew: case kSkewAmount: case kType: case kLowerX: case kUpperX:
+      case kRoiCounts: case kContinuumType: case kNumColumns: case kDifference:
       default:
         cerr << "PeakModel::setData(...)\n\tUn Supported column" << endl;
         return false;
@@ -2006,8 +2149,8 @@ bool PeakModel::setData( const WModelIndex &index,
       }
         
       case kHasSkew: case kSkewAmount: case kType:
-      case kLowerX: case kUpperX: case kContinuumArea:
-      case kContinuumType:
+      case kLowerX: case kUpperX: case kRoiCounts:
+      case kCps: case kContinuumType:
       case kNumColumns:
         return false;
     }//switch( section )
@@ -2066,8 +2209,8 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
       return ItemIsUserCheckable | ItemIsSelectable;
 
     case kHasSkew: case kSkewAmount: case kType:
-    case kLowerX: case kUpperX: case kContinuumArea:
-    case kContinuumType:
+    case kLowerX: case kUpperX: case kRoiCounts:
+    case kContinuumType: case kCps:
 #if( !ALLOW_PEAK_COLOR_DELEGATE )
     case kPeakLineColor:
 #endif
@@ -2103,6 +2246,7 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kMean:           return boost::any( WString("Mean") );
       case kFwhm:           return boost::any( WString("FWHM") ); //\x03C3
       case kAmplitude:      return boost::any( WString("Area") );
+      case kCps:            return boost::any( WString("CPS") );
       case kIsotope:        return boost::any( WString("Nuclide") );
       case kPhotoPeakEnergy:return boost::any( WString("Photopeak") );
       case kDifference:     return boost::any( WString("Difference") );
@@ -2116,8 +2260,8 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kType:           return boost::any( WString("Peak Type") );
       case kLowerX:         return boost::any( WString("Lower Energy") );
       case kUpperX:         return boost::any( WString("Upper Energy") );
-      case kContinuumArea:  return boost::any( WString("Continuum Area") );
-      case kContinuumType:  return boost::any( WString("Continuum Type") );
+      case kRoiCounts:      return boost::any( WString("ROI Counts") );
+      case kContinuumType:  return boost::any( WString("Cont. Type") );
       case kNumColumns:     return boost::any();
     }//switch( section )
   } //DisplayRole
@@ -2128,6 +2272,7 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kMean:           return boost::any( WString("Mean Energy") );
       case kFwhm:           return boost::any( WString("Full Width at Half Maximum") ); //\x03C3
       case kAmplitude:      return boost::any( WString("Peak Area") );
+      case kCps:            return boost::any( WString("Peak counts per second") );
       case kIsotope:        return boost::any();
       case kPhotoPeakEnergy:return boost::any( WString("Photopeak Energy") );
       case kDifference:     return boost::any( WString("Difference between photopeak and mean energy") );
@@ -2135,13 +2280,13 @@ boost::any PeakModel::headerData( int section, Orientation orientation, int role
       case kCandidateIsotopes: return boost::any();
       case kUseForCalibration: return boost::any();
       case kPeakLineColor:     return boost::any( WString("Peak color") );
-      case kUserLabel:      return boost::any( WString("User specified label") );
+      case kUserLabel:         return boost::any( WString("User specified label") );
+      case kRoiCounts:         return boost::any( WString("Integral of gamma counts over the region of interest") );
       case kHasSkew:
       case kSkewAmount:
       case kType:
       case kLowerX:
       case kUpperX:
-      case kContinuumArea:
       case kContinuumType:
       case kNumColumns:     return boost::any();
     }//switch( section )
@@ -2214,7 +2359,8 @@ void PeakModel::sort( int col, Wt::SortOrder order )
     m_sortColumn = kMean;
 
   boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn;
-  sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, order );
+  shared_ptr<const SpecUtils::Measurement> data = m_dataModel ? m_dataModel->getData() : nullptr;
+  sortfcn = boost::bind( &PeakModel::compare, _1, _2, m_sortColumn, order, data );
 
   layoutAboutToBeChanged();
   stable_sort( m_sortedPeaks.begin(), m_sortedPeaks.end(), sortfcn );
@@ -2244,7 +2390,8 @@ void PeakModel::sort( int col, Wt::SortOrder order )
 
 
 bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
-                         Columns column, Wt::SortOrder order )
+                         Columns column, Wt::SortOrder order,
+                         const std::shared_ptr<const SpecUtils::Measurement> &data )
 {
   const bool asscend = (order==AscendingOrder);
   
@@ -2262,8 +2409,10 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       return (asscend ? lw<rw : lw>rw);
     }//case kFwhm:
       
+    case kCps:  //We dont have live time, but if peaks are for same spectrum, it doesnt matter
     case kAmplitude:
       return (asscend ? lhs->peakArea()<rhs->peakArea() : lhs->peakArea()>rhs->peakArea());
+      
     case kUserLabel:
       return (asscend ? lhs->userLabel()<rhs->userLabel() : lhs->userLabel()>rhs->userLabel());
     case kPeakLineColor:
@@ -2278,14 +2427,27 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       return (asscend ? lhs->lowerX()<rhs->lowerX() : lhs->lowerX()>rhs->lowerX());
     case kUpperX:
       return (asscend ? lhs->upperX()<rhs->upperX() : lhs->upperX()>rhs->upperX());
-    case kContinuumArea:
+    case kRoiCounts:
     {
       double lhs_area( 0.0 ), rhs_area( 0.0 );
-
-      rhs_area = rhs->offset_integral( rhs->lowerX(), rhs->upperX() );
-      lhs_area = lhs->offset_integral( lhs->lowerX(), lhs->upperX() );
+      if( data )
+      {
+        rhs_area = data->gamma_integral( rhs->lowerX(), rhs->upperX() );
+        lhs_area = data->gamma_integral( lhs->lowerX(), lhs->upperX() );
+      }else
+      {
+        try
+        {
+          rhs_area = rhs->offset_integral( rhs->lowerX(), rhs->upperX(), data );
+          lhs_area = lhs->offset_integral( lhs->lowerX(), lhs->upperX(), data );
+        }catch(...)
+        {
+          //Will only fail for FlatStep, LinearStep, and BiLinearStep continuum - which I doubt we will ever get here anyway.
+        }
+      }
+      
       return (asscend ? (lhs_area<rhs_area) : (lhs_area>rhs_area));
-    }//case kContinuumArea:
+    }//case kRoiCounts:
 
     case kContinuumType:
       return (asscend ? lhs->continuum()->type()<rhs->continuum()->type() : lhs->continuum()->type()>rhs->continuum()->type());
@@ -2294,7 +2456,6 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       const SandiaDecay::Nuclide *lhsParent = lhs->parentNuclide();
       const SandiaDecay::Nuclide *rhsParent = rhs->parentNuclide();
 
-      
       bool thisorder = false;
       if( !lhsParent )
         thisorder = false;
@@ -2311,11 +2472,13 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       float lhsEnergy = 0.0f, rhsEnergy = 0.0f;
       try
       {
-        lhsEnergy = lhs->gammaParticleEnergy();
+        if( lhs->hasSourceGammaAssigned() )
+          lhsEnergy = lhs->gammaParticleEnergy();
       }catch(std::exception &){}
       try
       {
-        rhsEnergy = rhs->gammaParticleEnergy();
+        if( rhs->hasSourceGammaAssigned() )
+          rhsEnergy = rhs->gammaParticleEnergy();
       }catch(std::exception &){}
       
       if( lhs == rhs )
@@ -2331,11 +2494,13 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       
       try
       {
-        lhsdiff = lhs->gammaParticleEnergy() - lhs->mean();
+        if( lhs->hasSourceGammaAssigned() )
+          lhsdiff = lhs->gammaParticleEnergy() - lhs->mean();
       }catch(std::exception &){}
       try
       {
-        rhsdiff = rhs->gammaParticleEnergy() - rhs->mean();
+        if( rhs->hasSourceGammaAssigned() )
+          rhsdiff = rhs->gammaParticleEnergy() - rhs->mean();
       }catch(std::exception &){}
       
       const bool thisorder = (lhsdiff < rhsdiff);

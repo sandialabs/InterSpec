@@ -30,6 +30,9 @@
 /* Since we are using node-addon-api to interface to LibInterSpec, we could use
  standard c++ (namespaced) functions, however to avoid any issues with compiler
  versions or whatever, we will only call extern "C" functions from N-API.
+ 
+ Once you add the function you want into this header/src file, you need to add the
+ wrapper function for it into InterSpecAddOn.cpp.
  */
 
 #ifdef _WIN32
@@ -63,9 +66,11 @@ extern "C"
    */
   LIB_INTERFACE(void) interspec_add_allowed_session_token( const char *session_token );
   
-  /** Returns -1 if invalid token.  Returns +1 if valid token that had never been loaded.  Returns zero if .  */
+  /** Returns 0 if authorized but not alive, 1 if session is alive, -1 if dead, -2 if nor authorized. */
   LIB_INTERFACE(int) interspec_remove_allowed_session_token( const char *session_token );
   
+  /** Returns 1 if session with specified token is alive, otherwise 0 */
+  LIB_INTERFACE(int) interspec_session_is_alive( const char *session_token );
   
   /** Open one or more files from the filesystem.  For macOS this would be
    dropping a file to the app icon in the Finder.  Or on Windows it would be
@@ -84,6 +89,10 @@ extern "C"
    sessions to open the files... ToDo: decide on this behaviour).
    */
   LIB_INTERFACE(int) interspec_open_file( const char *session_token, const char *files_json );
+
+  /** Returns if using the Electron-native menus.  If you are using the HTML-electron menu, will return false.
+   */
+  LIB_INTERFACE(bool) interspec_using_electron_menus();
 }//extern "C"
 
 #endif //#if( BUILD_AS_ELECTRON_APP )
@@ -91,7 +100,7 @@ extern "C"
 
 namespace ElectronUtils
 {
-#if( USE_ELECTRON_NATIVE_MENU )
+#if( USING_ELECTRON_NATIVE_MENU )
   /** Requests main.js to load a new clean session (i.e., don restore any state)
    This is a workaround to when the user requests a new session, the normal
    mechanism in c++ creates duplicate Electron menu items...

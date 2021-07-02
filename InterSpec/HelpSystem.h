@@ -89,31 +89,41 @@ namespace HelpSystem
   //  HelpWindow instance.
   void createHelpWindow( const std::string &preselect = "" );
   
-  //attachToolTipOn(...):  Creates a nice popup whenever the widget passed in
-  //  gets focus or is moused over. The PopupToolBehavior argyment cooresponds
-  //  to if this popup should obey the user preference to either show the popup
-  //  instantly or delay showing it - or if the user prefference should be
-  //  ignored and the popup aways instantly shown.
-  //  The 'showInstantly' argument cooresponds to the users "ShowTooltips"
-  //  preferance, and only matters if type==CanDelayShowing.
-  enum PopupToolBehavior
+
+  enum class ToolTipPrefOverride
   {
     AlwaysShow,
-    CanDelayShowing
+    RespectPreference
   };
   
-  enum PopupPosition
+  enum class ToolTipPosition
   {
     Top,
     Bottom,
     Left,
     Right
   };
+
+  /** Creates a nice popup when the widget passed into this function gets focus, or is moused over.
+   
+   \param widget The widget to add the tooltip to
+   \param text The xhtml text to place in the tooltip.
+   \param enableShowing Should correspond to the users "ShowTooltips" preference.  If false, tooltip wont be trigger-able.
+   \param pos The position, relative to the widget, to place the tooltip
+   \param forceShowing If, for this particular widget, the tooltip should always be shown when moused-over. despite what
+          enableShowing dictates
+   
+   Note: even if tooltip is not enabled, we still load it to the DOM, incase the user enables tooltips later - we could probably avoid
+   cluttering up the DOM by caching server-side, but we'll leave that for the future.
+   
+   Note: when the widget is deleted from memory, server-side, the tooltip will be removed from the DOM client-side.
+   */
   void attachToolTipOn( Wt::WWebWidget* widget,
                        const std::string &text,
-                       const bool showInstantly,
-                       const PopupPosition pos = HelpSystem::Right,
-                       const PopupToolBehavior override = HelpSystem::CanDelayShowing );
+                       const bool enableShowing,
+                       const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
+                       const ToolTipPrefOverride forceShowing
+                                            = HelpSystem::ToolTipPrefOverride::RespectPreference );
   
 } //namespace HelpSystem
 #endif //HelpSystem_h

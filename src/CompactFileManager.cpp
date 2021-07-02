@@ -31,7 +31,6 @@
 #include <Wt/WLabel>
 #include <Wt/WSlider>
 #include <Wt/WLineEdit>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/WComboBox>
 #include <Wt/WTabWidget>
 #include <Wt/WGridLayout>
@@ -55,6 +54,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/CanvasForDragging.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/CompactFileManager.h"
 #if( !ANDROID && !IOS )
 #include "InterSpec/FileDragUploadResource.h"
@@ -69,56 +69,77 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
                                         CompactFileManager::DisplayMode mode,
                                         WContainerWidget *parent )
   : WContainerWidget( parent ),
-    m_foregroundTitle( 0 ),
+    m_selects{ nullptr },
+    m_displayedPreTexts{ nullptr },
+    m_displayedPostTexts{ nullptr },
+    m_sampleDivs{ nullptr },
+    m_displaySampleNumEdits{ nullptr },
+    m_nextSampleNumButtons{ nullptr },
+    m_prevSampleNumButtons{ nullptr },
+    m_scaleValueTxt{ nullptr },
+    m_rescaleByLiveTime{ nullptr },
+    m_previousSampleTxt{ WString() },
+    m_titles{ nullptr },
     m_files( fileManager->model() ),
     m_interspec( hostViewer ),
     m_fullFileManager( fileManager ),
     m_displayMode( mode )
 {
+  wApp->useStyleSheet( "InterSpec_resources/CompactFileManager.css" );
+  
   addStyleClass( "CompactFileManager" );
 
 #if (USE_DB_TO_STORE_SPECTRA)
   std::shared_ptr<DataBaseUtils::DbSession> sql = hostViewer->sql();
 #endif
   
-  const bool showToolTipInstantly
-            = InterSpecUser::preferenceValue<bool>( "ShowTooltips", hostViewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", hostViewer );
   
-  WGridLayout *layout = 0;
-  WTabWidget  *tabWidget = 0;
+  WTabWidget *tabWidget = nullptr;
   switch( m_displayMode )
   {
-    case TopToBottom:
-      break;
-    
     case LeftToRight:
-      layout = new WGridLayout();
-      setLayout( layout );
-      layout->setContentsMargins( 0, 0, 0, 0 );
-      layout->setHorizontalSpacing( 0 );
-      layout->setVerticalSpacing( 0 );
+      // We will use CSS Grid layout to position the Foreground/Background/Secondary portions
+      addStyleClass( "LeftToRight" );
     break;
       
     case Tabbed:
+      // We will use a tabbed widget to hold Foreground/Background/Secondary seperately
+      addStyleClass( "Tabbed" );
       tabWidget = new WTabWidget( this );
     break;
   }//switch( m_displayMode )
   
-  const char *prevArrow = "InterSpec_resources/images/previous_arrow.png";
-  const char *nextArrow = "InterSpec_resources/images/next_arrow.png";
   const char *val_regex = "(\\-?\\d+\\s*((\\-|to|through)\\s*\\d+)?,*\\s*)+";
-  
-//  WPopupWidget *sampleToolTip = 0, *scaleToolTip = 0;
-  
-  WDoubleValidator *dblval = new WDoubleValidator( this );
-  dblval->setRange( 0.0, 10000.0 );
-//  dblval->setInvalidBlankText( "1.0" );
-  
   WRegExpValidator *validator = new WRegExpValidator( val_regex, this );
   validator->setFlags( Wt::MatchCaseInsensitive );
   
   for( int j = 0; j < 3; ++j )
   {
+    WContainerWidget *wrapper = new WContainerWidget();
+    wrapper->addStyleClass( "DispType" );
+    
+    switch( m_displayMode )
+    {
+      case LeftToRight:
+        addWidget( wrapper );
+        break;
+        
+      case Tabbed:
+      {
+        const char *tablabel = 0;
+        switch( j )
+        {
+          case 0: tablabel = "Foreground"; break;
+          case 1: tablabel = "Background"; break;
+          case 2: tablabel = "Second";     break;
+        }//switch( i )
+        
+        tabWidget->addTab( wrapper, tablabel, WTabWidget::PreLoading );
+        break;
+      }//case Tabbed:
+    }//switch( m_displayMode )
+    
     SpecUtils::SpectrumType type;
     WLabel *label = NULL;
 
@@ -126,132 +147,63 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     {
       case 0:
         type = SpecUtils::SpectrumType::Foreground;
-        label = new WLabel( "Foreground:" );
+        wrapper->addStyleClass( "Foreground" );
+        label = new WLabel( "Foreground:", wrapper );
       break;
       
       case 1:
         type = SpecUtils::SpectrumType::Background;
-        label = new WLabel( "Background:" );
+        wrapper->addStyleClass( "Background" );
+        label = new WLabel( "Background:", wrapper );
       break;
       
       case 2:
         type = SpecUtils::SpectrumType::SecondForeground;
-        label = new WLabel( "Second Foreground:" );
+        wrapper->addStyleClass( "Secondary" );
+        label = new WLabel( "Second Foreground:", wrapper );
       break;
     }//switch( i )
     
     const int typeindex = static_cast<int>(type);
     
-    WContainerWidget *wrapper = new WContainerWidget();
-    WGridLayout *wrapperLayout = new WGridLayout(wrapper);
-    wrapperLayout->setVerticalSpacing( 0 );
-    wrapperLayout->setHorizontalSpacing( 0 );
-    wrapperLayout->setContentsMargins(0, 0, 0, 0);
-    wrapper->addStyleClass( "CompactSampleWrapper" );
-    wrapper->setOverflow(Wt::WContainerWidget::OverflowHidden);
-    
     label->setInline( false );
-    wrapperLayout->addWidget( label,0,0 );
-
-    m_selects[typeindex] = new WComboBox(  );
-    wrapperLayout->addWidget( m_selects[typeindex],1,0 );
-    m_selects[typeindex]->setInline( false );
-    m_selects[typeindex]->addStyleClass( "displaySampleSelect" );
-    m_sampleDivs[typeindex] = new WContainerWidget( );
-    wrapperLayout->addWidget( m_sampleDivs[typeindex],2,0 );
-    wrapperLayout->setRowStretch(2, 1);
-    m_sampleDivs[typeindex]->setStyleClass( "displaySampleDiv" );
-
-    m_prevSampleNumButtons[typeindex] = new WImage( prevArrow, m_sampleDivs[typeindex] );
-    m_prevSampleNumButtons[typeindex]->setHiddenKeepsGeometry( true );
-    m_prevSampleNumButtons[typeindex]->setStyleClass( "displayPrevSample" );
     
+    m_selects[typeindex] = new WComboBox( wrapper );
+    m_selects[typeindex]->setInline( false );
+    m_selects[typeindex]->addStyleClass( "SpecFileSelect" );
+    m_selects[typeindex]->setCurrentIndex( -1 );
+    m_selects[typeindex]->activated().connect(
+                  boost::bind( &CompactFileManager::handleFileChangeRequest, this, _1, type ) );
+    
+    m_sampleDivs[typeindex] = new WContainerWidget( wrapper );
+    m_sampleDivs[typeindex]->setStyleClass( "SampleSelectRow" );
+
+    m_prevSampleNumButtons[typeindex] = new WContainerWidget( m_sampleDivs[typeindex] );
+    m_prevSampleNumButtons[typeindex]->setStyleClass( "PrevSampleNum" );
     
     m_prevSampleNumButtons[typeindex]->clicked().connect(
                  boost::bind( &CompactFileManager::handleUserIncrementSampleNum,
                               this, type, false) );
     
-    if( type==SpecUtils::SpectrumType::Foreground && (mode==LeftToRight || mode==Tabbed) )
-    {
-      m_foregroundTitle = new WText( "" );
-      m_foregroundTitle->addStyleClass( "CompactSpecTitle" );
-      m_foregroundTitle->setInline( false );
-      m_foregroundTitle->hide();
-      wrapperLayout->addWidget( m_foregroundTitle,3,0 );
-    }//( type==SpecUtils::SpectrumType::Foreground && mode==LeftToRight )
-    
-    if( mode==TopToBottom || type == SpecUtils::SpectrumType::Foreground )
-    {
-      m_scaleValueTxt[typeindex] = nullptr;
-      m_rescaleByLiveTime[typeindex] = nullptr;
-    }else
-    {
-      WContainerWidget *rowdiv = new WContainerWidget( );
-      wrapperLayout->addWidget( rowdiv,3,0, AlignBottom);
-      WGridLayout *slidelayout = new WGridLayout( rowdiv );
-
-      slidelayout->setHorizontalSpacing(10);
-      slidelayout->setVerticalSpacing(10);
-      m_scaleValueTxt[typeindex] = new WDoubleSpinBox();
-#if (IOS || ANDROID)
-      //can't use m_interspec->isMobile() here, so use #IOS
-      //20150123: on android at least, calling setNativeControl() causes
-      //  a javascript exception (having to do with the validate) when first
-      //  loading the app.
-//      m_scaleValueTxt[type]->setNativeControl(true); //mobile should not show spinner
-#endif
-      m_scaleValueTxt[typeindex]->setSingleStep(0.1);
-      m_scaleValueTxt[typeindex]->setRange( 0.0, 1000000.0 );
-      m_scaleValueTxt[typeindex]->setValidator( dblval );
-      m_scaleValueTxt[typeindex]->addStyleClass( "numberValidator"); //used to detect mobile keyboard
-      m_scaleValueTxt[typeindex]->addStyleClass( "SpecNormTxt" );
-      m_scaleValueTxt[typeindex]->changed().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactor, this, type) );
-      m_scaleValueTxt[typeindex]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type, _1) );
-        
-    
-      HelpSystem::attachToolTipOn( m_scaleValueTxt[typeindex],
-                                  "Factor to scale the spectrum by. Entering an"
-                                  " empty string will cause spectrum to be live"
-                                  " time normalized to foreground spectrum.",
-                                  showToolTipInstantly );
-      
-      WLabel *label = new WLabel( "Scale Factor:" );
-      slidelayout->addWidget( label, 0, 0, AlignLeft | AlignMiddle );
-      slidelayout->addWidget( m_scaleValueTxt[typeindex], 0, 1, AlignLeft | AlignMiddle );
-      
-      m_rescaleByLiveTime[typeindex] = new WPushButton( "Normalize" );
-      m_rescaleByLiveTime[typeindex]->hide();
-      m_rescaleByLiveTime[typeindex]->clicked().connect( boost::bind( &CompactFileManager::handleRenormalizeByLIveTime, this, type) );
-      //20190707: making this button visible adds some jitter to the layout, but
-      //  since this is a rare-ish action, we'll live with it for now.
-      slidelayout->addWidget( m_rescaleByLiveTime[typeindex], 0, 2, AlignCenter | AlignMiddle );
-      
-      slidelayout->setColumnStretch( 1, 1 );
-//      slidelayout->setRowStretch( 1, 1 );
-    
-      m_scaleValueTxt[typeindex]->disable();
-    }//if( type == SpecUtils::SpectrumType::Foreground )
-    
-    
     m_displayedPreTexts[typeindex] = new WText( m_sampleDivs[typeindex] );
     WLineEdit *edit = new WLineEdit( m_sampleDivs[typeindex] );
-    edit->addStyleClass( "displaySampleInput" );
+    edit->addStyleClass( "SampleNumInput" );
     edit->setValidator( validator );
     edit->setAutoComplete( false );
-    m_displaySampleNumEdits[typeindex] = edit;
-  
+    edit->setTextSize( 6 );
+    
     const char *tooltip = "Enter the sample number you'de like displayed here"
                            ". You may enter a range of sample numbers similar"
                            " to '33-39' or '33 to 39'; or CSV sample numbers"
                            " like '34,39,84'";
-    HelpSystem::attachToolTipOn( edit, tooltip, showToolTipInstantly,
-                                   HelpSystem::Bottom );
+    HelpSystem::attachToolTipOn( edit, tooltip, showToolTips, HelpSystem::ToolTipPosition::Bottom );
+    
+    m_displaySampleNumEdits[typeindex] = edit;
     
 
-    m_displaySampleNumEdits[typeindex]->setTextSize( 6 );
     m_displayedPostTexts[typeindex] = new WText( m_sampleDivs[typeindex] );
-    m_nextSampleNumButtons[typeindex] = new WImage( nextArrow, m_sampleDivs[typeindex] );
-    m_nextSampleNumButtons[typeindex]->addStyleClass( "displayNextSample" );
+    m_nextSampleNumButtons[typeindex] = new WContainerWidget( m_sampleDivs[typeindex] );
+    m_nextSampleNumButtons[typeindex]->addStyleClass( "NextNextSample" );
     
     
     m_nextSampleNumButtons[typeindex]->clicked().connect(
@@ -268,110 +220,74 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     
     m_sampleDivs[typeindex]->setHiddenKeepsGeometry( true );
 
-    m_selects[typeindex]->setCurrentIndex( -1 );
-    m_selects[typeindex]->activated().connect(
-                 boost::bind( &CompactFileManager::handleFileChangeRequest,
-                              this, _1, type ) );
 
-
+    m_titles[typeindex] = new WText( "", wrapper );
+    m_titles[typeindex]->addStyleClass( "SpecTitle" );
+    m_titles[typeindex]->setInline( false );
+    m_titles[typeindex]->hide();
     
-    switch( m_displayMode )
+    auto bottomrow = new WContainerWidget( wrapper );
+    bottomrow->addStyleClass( "BottomRow" );
+    
+    if( type == SpecUtils::SpectrumType::Foreground )
     {
-      case TopToBottom:
-        addWidget( wrapper );
-        break;
-        
-      case LeftToRight:
-            
-        if (j!=0)
-            layout->addWidget( wrapper, 0, j, 2,1 );
-        else
-            layout->addWidget( wrapper, 0, j, 1,1);
-        layout->setRowStretch(0, 1);
-        layout->setColumnStretch(j, 1);
-            
-        if (j==0)
-        {
-          //Foreground, add in Manager and Library buttons for quick access
-          WContainerWidget* temp = new WContainerWidget();
-          temp->addStyleClass( "CompactManagerButtons" );
-
-          WGridLayout* layout2 = new WGridLayout();
-          layout2->setContentsMargins(0,0,0,0);
-          temp->setLayout(layout2);
-          
-          auto helpBtn = new WContainerWidget();
-          helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-          helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "compact-file-manager" ) );
-          layout2->addWidget(helpBtn,0,0, Wt::AlignLeft | Wt::AlignBottom );
-          
-          WPushButton *button = new WPushButton(  "Spectrum Manager...");
-            //button->setIcon(Wt::WLink("InterSpec_resources/images/computer.png" ));
-            button->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
-            layout2->addWidget(button,0,1);
-#if( USE_DB_TO_STORE_SPECTRA )
-            WPushButton *button2 = new WPushButton( "Previous...");
-            button2->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
-                                                     m_interspec->fileManager(),
-                                                     SpecUtils::SpectrumType::Foreground ) );
-            layout2->addWidget(button2,0,2);
-#endif
-            layout2->setColumnStretch(1, 1);
-            layout2->setColumnStretch(2, 1);
-            layout->addWidget( temp, 1, j, AlignMiddle );
-        }
-        break;
-        
-      case Tabbed:
-      {
-        const char *tablabel = 0;
-        switch( j )
-        {
-          case 0: tablabel = "Foreground"; break;
-          case 1: tablabel = "Background"; break;
-          case 2: tablabel = "Second";     break;
-        }//switch( i )
-
-        tabWidget->addTab( wrapper, tablabel, WTabWidget::PreLoading );
-        break;
-      }//case Tabbed:
-    }//switch( m_displayMode )
+      m_scaleValueTxt[typeindex] = nullptr;
+      m_rescaleByLiveTime[typeindex] = nullptr;
+    }else
+    {
+      auto scalerow = new WContainerWidget( bottomrow );
+      scalerow->addStyleClass( "ScaleFactorRow" );
+      
+      WLabel *label = new WLabel( "Scale Factor:&nbsp;", scalerow );
+      m_scaleValueTxt[typeindex] = new NativeFloatSpinBox( scalerow );
+      label->setBuddy( m_scaleValueTxt[typeindex] );
+      //m_scaleValueTxt[typeindex]->setSingleStep(0.1);
+      m_scaleValueTxt[typeindex]->setSpinnerHidden( true );
+      m_scaleValueTxt[typeindex]->setRange( 0.0, 1000000.0 );
+      m_scaleValueTxt[typeindex]->addStyleClass( "SpecNormTxt" );
+      m_scaleValueTxt[typeindex]->valueChanged().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactor, this, type) );
+      m_scaleValueTxt[typeindex]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type, _1) );
+      
+      HelpSystem::attachToolTipOn( m_scaleValueTxt[typeindex],
+                                  "Factor to scale the spectrum by. Entering an"
+                                  " empty string will cause spectrum to be live"
+                                  " time normalized to foreground spectrum.",
+                                  showToolTips );
+      
+      
+      m_rescaleByLiveTime[typeindex] = new WPushButton( "Normalize", scalerow );
+      m_rescaleByLiveTime[typeindex]->hide();
+      m_rescaleByLiveTime[typeindex]->clicked().connect( boost::bind( &CompactFileManager::handleRenormalizeByLIveTime, this, type) );
+      m_scaleValueTxt[typeindex]->disable();
+    }//if( type == SpecUtils::SpectrumType::Foreground ) / else
   }//for( int j = 0; j < 3; ++j )
+  
+  
   
   //Lets add in a few more customizations based on the display type
   switch( m_displayMode )
   {
-    case TopToBottom:
-    {
-      //Add a tool tip note, as well as an explicit text not if widget is large
-      //  enough
-      const char *msg = "Drag files onto app to open";
-      const char *tooltip = "";
-      
-      WText *note = new WText( msg );
-      HelpSystem::attachToolTipOn( this, tooltip, showToolTipInstantly );
-      //setToolTip( tooltip );
-
-      
-      note->setAttributeValue( "style", "position:absolute;bottom:5px;"
-                                + note->attributeValue("style"));
-      note->addStyleClass( "CompactInfoTxt" );
-      note->setInline( false );
-      addWidget( note );
-    
-      //should hide note if total widget is less than ~210px.
-      const string jsref = "$('#" + note->id() + "')";
-      const string js = "function(self, w, h, layout){"
-                        "if(h<320) " + jsref + ".hide();"
-                        "else " +  jsref + ".show();}";
-      setJavaScriptMember( "wtResize", js );
-
-      break;
-    }//case TopToBottom:
-      
     case LeftToRight:
-      //Nothing to do here
+    {
+      //Foreground, add in Manager and Library buttons for quick access
+      WContainerWidget *buttons = new WContainerWidget( this );
+      buttons->addStyleClass( "CompactManagerButtons" );
+      
+      auto helpBtn = new WContainerWidget( buttons );
+      helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
+      helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "compact-file-manager" ) );
+      
+      WPushButton *button = new WPushButton(  "Spectrum Manager...", buttons );
+      //button->setIcon(Wt::WLink("InterSpec_resources/images/computer.png" ));
+      button->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
+#if( USE_DB_TO_STORE_SPECTRA )
+      WPushButton *button2 = new WPushButton( "Previous...", buttons );
+      button2->clicked().connect( boost::bind( &SpecMeasManager::browseDatabaseSpectrumFiles,
+                                              m_interspec->fileManager(),
+                                              SpecUtils::SpectrumType::Foreground ) );
+#endif
     break;
+    }//case LeftToRight:
       
     case Tabbed:
     {
@@ -413,11 +329,11 @@ void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumTy
     m_displayedPostTexts[typeindex]->setText( "" );
     m_displaySampleNumEdits[typeindex]->setText( "" );
     std::shared_ptr<SpecMeas> blankptr;
-    m_fullFileManager->displayFile( -1, blankptr, type, false, true, false );
-    if( m_foregroundTitle && (type==SpecUtils::SpectrumType::Foreground) )
+    m_fullFileManager->displayFile( -1, blankptr, type, false, true, SpecMeasManager::VariantChecksToDo::None );
+    if( m_titles[typeindex] )
     {
-      m_foregroundTitle->setText("");
-      m_foregroundTitle->hide();
+      m_titles[typeindex]->setText("");
+      m_titles[typeindex]->hide();
     }//if( type == SpecUtils::SpectrumType::Foreground )
     return;
   }//if( we should unload current file )
@@ -425,7 +341,7 @@ void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumTy
   std::shared_ptr<const SpectraFileHeader> header = m_files->fileHeader(row);
   std::shared_ptr<SpecMeas> meas = header->parseFile();
 
-  m_fullFileManager->displayFile( row, meas, type, false, true, false );
+  m_fullFileManager->displayFile( row, meas, type, false, true, SpecMeasManager::VariantChecksToDo::None );
 }//void handleFileChangeRequest( SpecUtils::SpectrumType type );
 
 /**
@@ -738,8 +654,8 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
   if( typeindex < 0 || typeindex >= 3 )
     throw runtime_error( "CompactFileManager::handleDisplayChange() - totally unexpected error" );
 
-  if( m_foregroundTitle && (spectrum_type==SpecUtils::SpectrumType::Foreground) )
-    m_foregroundTitle->hide();
+  if( m_titles[typeindex] )
+    m_titles[typeindex]->hide();
   
   WComboBox *select = m_selects[typeindex];
   if( !meas )
@@ -796,15 +712,6 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     m_nextSampleNumButtons[typeindex]->setHidden( hideArrows );
     m_prevSampleNumButtons[typeindex]->setHidden( hideArrows );
     
-    switch( m_displayMode )
-    {
-      case TopToBottom:
-        if( m_displayedPreTexts[typeindex]->text() != "Sample " )
-          m_displayedPreTexts[typeindex]->setText( "Sample " );
-      break;
-      case LeftToRight: case Tabbed: break;
-    }//switch( m_displayMode )
-    
     
     WStringStream postMsg, editVal;
     postMsg << "/" << lastNumber; //(int)total_sample_nums.size();
@@ -813,41 +720,49 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     m_displaySampleNumEdits[typeindex]->setText( editVal.str() );
     
     
-    if( spectrum_type == SpecUtils::SpectrumType::Foreground )
+    // Set the title, if there is one
+    WString title;
+    const vector<string> &dets = meas->detector_names();
+    for( size_t i = 0; title.empty() && (i < dets.size()); ++i )
     {
-      WString title;
-      const vector<string> &dets = meas->detector_names();
-      for( size_t i = 0; title.empty() && (i < dets.size()); ++i )
+      auto m = meas->measurement(displayedNumber, dets[i]);
+      if( m && !m->title().empty() )
       {
-        auto m = meas->measurement(displayedNumber, dets[i]);
-        if( m && !m->title().empty() )
+        if( m->title().size() > 128 )  //128 chosen arbitrarily and not tested.
+        {
+          string t = m->title();
+          SpecUtils::utf8_limit_str_size( t, 128 );
           title = WString::fromUTF8( m->title() );
-      }//for( loop over detectors to find title )
+        }else
+        {
+          title = WString::fromUTF8( m->title() );
+        }
+        
+        
+      }
+    }//for( loop over detectors to find title )
 
-      if( m_foregroundTitle )
+    if( m_titles[typeindex] )
+    {
+      m_titles[typeindex]->setText( title );
+      
+      if( title.empty() )
       {
-        m_foregroundTitle->setText( title );
-        if( !title.empty() )
-          m_foregroundTitle->show();
+        if( !m_titles[typeindex]->text().empty() )
+          m_titles[typeindex]->setText( "" );
+      }else
+      {
+        m_titles[typeindex]->setText( "Title: " + title );
+        m_titles[typeindex]->show();
+      }
         
-        if( title.narrow().length() > 70 )
-          m_foregroundTitle->setToolTip( title );
-        else if( !m_foregroundTitle->toolTip().empty() )
-          m_foregroundTitle->setToolTip( "" );
-        
-      }//if( m_foregroundTitle )
-    }//if( spectrum_type == SpecUtils::SpectrumType::Foreground )
+      if( title.narrow().length() > 70 )
+        m_titles[typeindex]->setToolTip( title );
+      else if( !m_titles[typeindex]->toolTip().empty() )
+        m_titles[typeindex]->setToolTip( "" );
+    }//if( m_titles[typeindex] )
   }else if( total_sample_nums.size() == sample_numbers.size() )
   {
-    switch( m_displayMode )
-    {
-      case TopToBottom:
-        if( m_displayedPreTexts[typeindex]->text() != "Sample " )
-          m_displayedPreTexts[typeindex]->setText( "Sample " );
-        break;
-      case LeftToRight: case Tabbed: break;
-    }//switch( m_displayMode )
-    
     char buffer[64];
     const int totalNumber = *(total_sample_nums.rbegin());
     const int lastNumber = *(sample_numbers.rbegin());
@@ -866,16 +781,6 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
   }else
   {
     const int lastNumber = *(total_sample_nums.rbegin());
-    
-    switch( m_displayMode )
-    {
-      case TopToBottom:
-        if( m_displayedPreTexts[typeindex]->text() != "Sample " )
-          m_displayedPreTexts[typeindex]->setText( "Sample " );
-      break;
-      case LeftToRight: case Tabbed:
-      break;
-    }//switch( m_displayMode )
       
     WStringStream postMsg;
     postMsg << "/" << lastNumber;
@@ -889,8 +794,7 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     m_prevSampleNumButtons[typeindex]->setHidden( !added );
   }//else if( meas->passthrough() ){...}
   
-  m_previousSampleTxt[typeindex]
-                               = m_displaySampleNumEdits[typeindex]->text();
+  m_previousSampleTxt[typeindex] = m_displaySampleNumEdits[typeindex]->text();
   
   const double livetimeSF = m_interspec->displayScaleFactor(spectrum_type);
   
@@ -953,7 +857,7 @@ void CompactFileManager::updateDisplayedScaleFactorNumbers( const double sf,
     return;
   
   char buffer[32];
-  snprintf( buffer, sizeof(buffer), "%.2f", sf );
+  snprintf( buffer, sizeof(buffer), "%.4f", sf );
   m_scaleValueTxt[typeindex]->setText( buffer );
 }//void updateDisplayedScaleFactorNumbers(...)
 
@@ -1023,7 +927,9 @@ void CompactFileManager::handleUserEnterdScaleFactorWheel( const SpecUtils::Spec
 {
   int i = e.wheelDelta();
   const int typeindex = static_cast<int>(type);
-  m_scaleValueTxt[typeindex]->setValue(m_scaleValueTxt[typeindex]->value() + m_scaleValueTxt[typeindex]->singleStep()*i);
+  
+  const float oldValue = m_scaleValueTxt[typeindex]->value();
+  m_scaleValueTxt[typeindex]->setValue( oldValue + 0.05*oldValue*i);
   handleUserEnterdScaleFactor(type);
 }//void handleUserEnterdScaleFactor( const SpecUtils::SpectrumType type )
 

@@ -54,9 +54,12 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
@@ -316,49 +319,15 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   if( m_model->rowCount() <= 0 )
     return;
   
-  AuxWindow *window = new AuxWindow( "Confirmation",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::PhoneModal | AuxWindowProperties::DisableCollapse) );
-  window->rejectWhenEscapePressed();
-  WText * text = new WText("Erase All Peaks?");
-  window->stretcher()->addWidget(text,0,0);
+  SimpleDialog *window = new SimpleDialog( "Erase All Peaks?", "" );
+  WPushButton *yes_button = window->addButton( "Yes" );
+  WPushButton *no_button = window->addButton( "No" );
   
-  auto foot = window->footer();
-  
-  WPushButton *yes_button = nullptr, *no_button = nullptr;
-  
-  if( m_viewer->isMobile() )
-  {
-    window->titleBar()->hide();
-    yes_button = new WPushButton( "Yes" );
-    no_button = new WPushButton( "No" );
-    yes_button->setWidth( WLength(50,WLength::Percentage) );
-    no_button->setWidth( WLength(50,WLength::Percentage) );
-    yes_button->setStyleClass( "ModalConfirmBtn" );
-    no_button->setStyleClass( "ModalConfirmBtn" );
-    
-    foot->addWidget( yes_button );
-    foot->addWidget( no_button );
-    foot->addStyleClass( "MobileConfirmFooter" );
-  }else
-  {
-    yes_button = new WPushButton("Yes");
-    foot->addWidget( yes_button );
-    yes_button->setFloatSide(Wt::Right);
-    no_button = window->addCloseButtonToFooter("No");
-  }//if( m_viewer->isMobile() )
-  
-  no_button->clicked().connect( window, &AuxWindow::hide );
-  yes_button->clicked().connect( window, &AuxWindow::hide );
 #if ( USE_SPECTRUM_CHART_D3 )
   yes_button->clicked().connect( boost::bind( &D3SpectrumDisplayDiv::removeAllPeaks, m_spectrumDisplayDiv ) );
 #else
   yes_button->clicked().connect( boost::bind( &PeakModel::removeAllPeaks, m_model ) );
 #endif
-  
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  window->show();
-  window->setMinimumSize(200, WLength::Auto);
-  window->centerWindow();
 }//void confirmRemoveAllPeaks()
 
 
@@ -407,7 +376,7 @@ void PeakInfoDisplay::createNewPeak()
   //  2) see if DRF contains FWHM
   //  3) see if there is a peak above or below, and scale by sqrt
   //  4) Guess based on number of bins.
-  auto estimateFWHM = [this,nbin,minfwhm,maxfwhm]( const float energy ) -> float {
+  auto estimateFWHM = [this,nbin,minfwhm,maxfwhm,meas]( const float energy ) -> float {
     const auto peaks = m_model->peakVec();
     const auto lb = std::lower_bound( begin(peaks), end(peaks), PeakDef(energy,1.0,1.0), &PeakDef::lessThanByMean );
     const auto ub = lb==end(peaks) ? end(peaks) : lb + 1;
@@ -428,7 +397,8 @@ void PeakInfoDisplay::createNewPeak()
       {
         const string datadir = InterSpec::staticDataDirectory();
         string drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/HPGe 40%" );
-        if( nbin <= 2049 )
+        
+        if( !PeakFitUtils::is_high_res(meas) )
           drf_dir = SpecUtils::append_path(datadir, "GenericGadrasDetectors/NaI 1x1" );
         
         drf = make_shared<DetectorPeakResponse>();
@@ -437,7 +407,7 @@ void PeakInfoDisplay::createNewPeak()
         return std::min( maxfwhm, std::max(minfwhm,drf->peakResolutionFWHM(energy)) );
       }catch(...)
       {
-        if( nbin <= 2049 )
+        if( !PeakFitUtils::is_high_res(meas) )
           return std::min( maxfwhm, std::max(minfwhm,2.634f*17.5f*sqrt(energy/661.0f)) );
         return std::min( maxfwhm, std::max(minfwhm,2.634f*0.67f*sqrt(energy/661.0f)) );
       }
@@ -471,7 +441,7 @@ void PeakInfoDisplay::createNewPeak()
   const float maxEnergy = meas->gamma_channel_upper(nbin-1);
   
   AuxWindow *window = new AuxWindow( "Add Peak",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal | AuxWindowProperties::DisableCollapse) );
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   
   WTable *table = new WTable( window->contents() );
@@ -903,7 +873,7 @@ void PeakInfoDisplay::init()
   assert( !m_infoView );
   assert( !m_infoLayout );
 
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   m_infoLayout = new WGridLayout();
   setLayout( m_infoLayout );
@@ -941,14 +911,17 @@ void PeakInfoDisplay::init()
   dblDelagate = new WItemDelegate( m_infoView );
   dblDelagate->setTextFormat( "%.0f" );
   m_infoView->setItemDelegateForColumn( PeakModel::kAmplitude, dblDelagate );
-  m_infoView->setItemDelegateForColumn( PeakModel::kContinuumArea, dblDelagate );
+  m_infoView->setItemDelegateForColumn( PeakModel::kRoiCounts, dblDelagate );
 
   //tweak column widths
   m_infoView->setColumnWidth( PeakModel::kMean,       WLength(8, WLength::FontEx) );
   m_infoView->setColumnWidth( PeakModel::kFwhm,       WLength(9, WLength::FontEx) );
   m_infoView->setColumnWidth( PeakModel::kAmplitude,  WLength(12, WLength::FontEx) );
-
+  m_infoView->setColumnWidth( PeakModel::kCps,        WLength(13, WLength::FontEx) );
+  
+  
   m_infoView->setColumnWidth( PeakModel::kIsotope,    WLength(/*8*/9, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kDifference,    WLength(8, WLength::FontEx) );
   //Note 20131211, wcjohns: closeOnBlur was previoulsy set to false, however
   //  there was a rare crash that happened with the model row was deleted while
   //  the editor was still open.  Hopefully closeOnBlur==true will fix this
@@ -957,7 +930,7 @@ void PeakInfoDisplay::init()
   PhotopeakDelegate *nuclideDelegate = new PhotopeakDelegate( PhotopeakDelegate::NuclideDelegate, closeOnBlur, m_infoView );
   m_infoView->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
 
-  m_infoView->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(12 /*18*/, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(13 /*18*/, WLength::FontEx) );
   PhotopeakDelegate *photopeakDelegate = new PhotopeakDelegate( PhotopeakDelegate::GammaEnergyDelegate, closeOnBlur, m_infoView );
   m_infoView->setItemDelegateForColumn( PeakModel::kPhotoPeakEnergy, photopeakDelegate );
 
@@ -980,10 +953,10 @@ void PeakInfoDisplay::init()
   m_infoView->setColumnHidden( PeakModel::kType, true );
 //  m_infoView->setColumnWidth( PeakModel::kType,       WLength(12, WLength::FontEx) );
   
-  m_infoView->setColumnWidth( PeakModel::kLowerX,     WLength(/*11*/16, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kUpperX,     WLength(/*11*/16, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kContinuumArea, WLength(/*13*/16, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kContinuumType,  WLength(/*11*/16, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kLowerX,     WLength(/*11*/12, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kUpperX,     WLength(/*11*/12, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kRoiCounts,  WLength(8, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kContinuumType,  WLength(/*11*/12, WLength::FontEx) );
 //  m_infoView->setColumnWidth( PeakModel::kNumColumns, WLength(6, WLength::FontEx) );
 //  m_infoView->setColumnAlignment( PeakModel::kMean, AlignRight );
 
@@ -1017,12 +990,13 @@ void PeakInfoDisplay::init()
   //m_searchForPeaks->setMargin(WLength(7),Wt::Left);
   //m_searchForPeaks->setMargin(WLength(3),Wt::Bottom);
   HelpSystem::attachToolTipOn( m_searchForPeaks, "Search for peaks using the automated peak finding "
-                              "algorithm.", showToolTipInstantly, HelpSystem::Top  );
+                              "algorithm.", showToolTips, HelpSystem::ToolTipPosition::Top  );
   m_searchForPeaks->clicked().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, m_viewer, true ) );
 
   
   WPushButton *clearPeaksButton = new WPushButton( "Clear all Peaks", buttonDiv );
-  HelpSystem::attachToolTipOn( clearPeaksButton, "Removes <b>all</b> existing peaks.", showToolTipInstantly, HelpSystem::Top  );
+  HelpSystem::attachToolTipOn( clearPeaksButton, "Removes <b>all</b> existing peaks.",
+                              showToolTips, HelpSystem::ToolTipPosition::Top  );
   
   //clearPeaksButton->setMargin(WLength(2),Wt::Left);
   clearPeaksButton->clicked().connect( this, &PeakInfoDisplay::confirmRemoveAllPeaks );
@@ -1037,7 +1011,7 @@ void PeakInfoDisplay::init()
                               "Assign peak nuclides from reference lines showing. Only applies to "
                               "peaks which do not already have a nuclide associated "
                               "with them." ,
-                              showToolTipInstantly , HelpSystem::Top );
+                              showToolTips , HelpSystem::ToolTipPosition::Top );
   nucFromRefButton->clicked().connect( boost::bind( &PeakInfoDisplay::assignNuclidesFromRefLines, this ) );
   nucFromRefButton->disable();
   
@@ -1061,7 +1035,7 @@ void PeakInfoDisplay::init()
                               "Guess nuclides responsible for peaks. Only applies to "
                               "peaks which do not already have a nuclide associated "
                               "with them.  Works best once all peaks have been fit for." ,
-                              showToolTipInstantly , HelpSystem::Top );
+ showToolTips , HelpSystem::ToolTipPosition::Top );
   button->clicked().connect( boost::bind( &InterSpec::guessIsotopesForPeaks, m_viewer, (WApplication *)0 ) );
 */
   
@@ -1097,12 +1071,12 @@ void PeakInfoDisplay::init()
   }else
   {
     WPushButton *addPeak = new WPushButton( "Add...", buttonDiv );
-    HelpSystem::attachToolTipOn( addPeak, "Manually add a new peak.", showToolTipInstantly, HelpSystem::Top );
+    HelpSystem::attachToolTipOn( addPeak, "Manually add a new peak.", showToolTips, HelpSystem::ToolTipPosition::Top );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
     addPeak->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
     
     WPushButton *delPeak = new WPushButton( "Delete", buttonDiv );
-    HelpSystem::attachToolTipOn( delPeak, "Deletes peak currently being edited.", showToolTipInstantly, HelpSystem::Top  );
+    HelpSystem::attachToolTipOn( delPeak, "Deletes peak currently being edited.", showToolTips, HelpSystem::ToolTipPosition::Top  );
     delPeak->setHiddenKeepsGeometry( true );
     delPeak->clicked().connect( this, &PeakInfoDisplay::deleteSelectedPeak );
     delPeak->setIcon( "InterSpec_resources/images/minus_min_white.png" );
@@ -1147,7 +1121,7 @@ void PeakInfoDisplay::init()
 #endif
   
   csvButton->setText( "CSV" );
-  csvButton->setStyleClass( "CsvLinkBtn" );
+  csvButton->setStyleClass( "LinkBtn" );
   csvButton->disable();
 
   auto enableDisableCsv = [this,csvButton](){
@@ -1164,7 +1138,7 @@ void PeakInfoDisplay::init()
   m_model->layoutChanged().connect( std::bind(enableDisableCsv) );
   
   HelpSystem::attachToolTipOn( csvButton,"Export information about the identified peaks to a "
-                              "comma seperated format.", showToolTipInstantly );
+                              "comma seperated format.", showToolTips );
 #endif
   
 }//init()

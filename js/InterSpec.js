@@ -8,7 +8,8 @@ function()
   var urlIdFromName = function(name)
   {
     var str = name.toLowerCase();
-    if( str.indexOf('i-')===0 || str.indexOf('fore')>-1 || str.indexOf('item')>-1 || str.indexOf('ipc')>-1 || str.indexOf('unk')>-1 || str.indexOf('kwn')>-1 )
+    if( str.indexOf('i-')===0 || str.indexOf('fore')>-1 || str.indexOf('item')>-1
+        || str.indexOf('ipc')>-1 || str.indexOf('unk')>-1 || str.indexOf('inter')>-1  )
       return 'ForegroundUpUrl';
     if( str.indexOf('b-') === 0 || str.indexOf('back')>-1 || str.indexOf('bkg')>-1 || str.indexOf('bgd')>-1 || str.indexOf('bg')>-1 )
       return 'BackgroundUpUrl';
@@ -33,18 +34,18 @@ function()
       
       
       //Go through and make sure we have either one file total, or a max of one
-      //  for each foreground/background/second.  Also, make sure we upload
-      //  foreground first
+      //  for each foreground/background/second.
       var validin = true, uid, filelen = files.length, x, i;
-      var dict = {"ForegroundUpUrl":null, "BackgroundUpUrl":null, "SecondUpUrl":null};
+      var uploadOrder = ["ForegroundUpUrl", "BackgroundUpUrl", "SecondUpUrl"];
+      var toUpload = {"ForegroundUpUrl":null, "BackgroundUpUrl":null, "SecondUpUrl":null};
       
       for(i = 0; i < filelen; ++i)
       {
         uid = filelen>1 ? urlIdFromName(files[i].name) : urlid;
-        if( filelen>1 && (uid===null || (dict[uid]!==null)) )
+        if( filelen>1 && (uid===null || (toUpload[uid]!==null)) )
           validin = false;
         else
-          dict[uid] = i;
+          toUpload[uid] = files[i];
       }
       
       if( !validin )
@@ -54,15 +55,49 @@ function()
                + ' in the file name, and there is at most one of each spectrum type.' );
         return;
       }
-
-      for( uid in dict )
-      {
-        if( dict[uid]===null )
-          continue;
-        var xhr, uploadURL = $(target).data(uid), file = files[dict[uid]];
-        if( !uploadURL )
+      
+      function removeUploading(){
+        console.log( 'removeUploading' );
+        $('#Uploading').remove();
+      };
+      
+      
+      function errfcn(){
+        removeUploading();
+        alert( "Error uploading file:" + "\n\t" + xhr.statusText + "\n\tResponse code " + xhr.status + "\n\t" + xhr.responseText );
+      }
+      
+      // We want to upload the foreground, then background, then secondary, waiting for each upload
+      //  to finish before starting the next.
+      var uploadIndex = -1;
+      
+      function uploadNextFile(){
+        for( ++uploadIndex; (uploadIndex < uploadOrder.length) && (toUpload[uploadOrder[uploadIndex]] === null); ++uploadIndex )
+        {
+        }
+        
+        if( uploadIndex >= uploadOrder.length )
+        {
+          removeUploading();
           return;
-  
+        }
+        
+        var thisUid = uploadOrder[uploadIndex];
+        uploadFileToUrl( $(target).data(thisUid), toUpload[thisUid], true );
+      };
+      
+      
+      
+      function uploadFileToUrl( uploadURL, file, lookForPath ){
+        if( !uploadURL || !file )
+        {
+          console.log( 'uploadFileToUrl: - invalid url or file' );
+          return;
+        }
+          
+        //console.log( 'uploadFileToUrl: will upload to ' + uploadURL );
+        
+        var xhr;
         if (window.XMLHttpRequest)
           xhr = new XMLHttpRequest();
         else if (window.ActiveXObject)
@@ -76,24 +111,113 @@ function()
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
         xhr.setRequestHeader("X-File-Name", file.name);
         
-        var errfcn = function () {
-          alert( "Error uploading file:" + "\n\t" + xhr.statusText + "\n\tResponse code " + xhr.status + "\n\t" + xhr.responseText );
-        };
+        
+//#if( BUILD_AS_ELECTRON_APP ) //C++ preprocessors dont look to work here...
+        if( lookForPath && (typeof file.path === "string") && (file.path.length > 2) && !file.path.toLowerCase().includes('fake') ) {
+          // For Electron builds, file.path gives the full path (including filename), so we
+          //   will just upload the path so we can read it in the c++ to avoid lots of copying and
+          //   stuff.  But we also need to fallback, JIC c++ fails for some unforeseen reason.
+          //   See #FileDragUploadResource::handleRequest for the other part of this logic
+          xhr.setRequestHeader("Is-File-Path", "1" );
+          
+          console.log( 'Will send file path, instead of actual file; path: ', file.path );
+          
+          xhr.onload = function(){
+            removeUploading();
+            
+            if( (xhr.readyState === 4) && (xhr.status !== 200) ){
+              console.log( 'Failed to upload via Electron path.' );
+              uploadFileToUrl( uploadURL, file, false );
+            }else if( xhr.readyState === 4 ) {
+              console.log( 'Successfully uploaded path to Electron.' );
+            }
+          };
+          
+          xhr.onloadend = removeUploading;
+        
+          const body = JSON.stringify( { fullpath: file.path} );
+          xhr.send(body);
+          return;
+        }//if( have full path on Electron build )
+//#endif
         
         xhr.onerror = errfcn;
         xhr.onload = function(){
           //console.log( 'xhr.readyState=' + xhr.readyState + ', xhr.status=' + xhr.status );
           if( (xhr.readyState === 4) && (xhr.status !== 200) )
             errfcn();
+            
+          if( xhr.readyState === 4 )
+            uploadNextFile();
         };//xhr.onload
         
-        //xhr.timeout = 5000;
-        //xhr.ontimeout = function () {
-        //  console.error("The request to upload file timed out.");
-        //};
+        
+        // I'm not totally sure when functions for XMLHttpRequest vs XMLHttpRequest.upload get called
+        // https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest/Using_XMLHttpRequest
+        
+        let lastUpdateTime = 0;
+        xhr.upload.addEventListener('progress', function(pe) {
+          if(pe.lengthComputable) {
+            //console.log( 'pe.total=' + pe.total + ', pe.loaded=' + pe.loaded );
+            const currentTime = Date.now();
+            if( (currentTime - lastUpdateTime) > 500 ){
+              lastUpdateTime = currentTime;
+              $('#UploadingProgress').text( Math.trunc(100*pe.loaded/pe.total) + '%' );
+            }
+          }
+        });
+        
+        xhr.upload.addEventListener("load", removeUploading);
+        xhr.upload.addEventListener("error", removeUploading);
+        
+        xhr.addEventListener('abort', removeUploading);
+        xhr.upload.addEventListener("abort", removeUploading);
+        
+        // The loadend event is fired when a request has completed, whether successfully (after
+        //  load) or unsuccessfully (after abort or error).
+        //  If server does not send response, then this function will not be called until
+        //   xhr.timeout/xhr.ontimeout get triggered.
+        xhr.addEventListener('loadend', function() {
+          console.log( 'onloadend called: ' + ', readyState=' + xhr.readyState
+          + ', status=' + status + ', responseTxt=' + xhr.responseText );
+          removeUploading();
+        } );//
+        
+
+        // This next function will be called once data is sent to server, but the server doesnt
+        //  have to send the repsonce.
+        xhr.upload.addEventListener('loadend', function() {
+          console.log( 'xhr.upload.loadend called' );
+          removeUploading();
+        });
+        
+        
+        /* Lets set a 1-minute timeout so we will eventually remove the uploading cover...
+         
+         TODO: What we should really do is setup a timeout that fires if 'progress' is never never
+         called with an appropriate status, and then once it does get called set another timer
+         as upload is finished, to get the response.  I.e., get rid of xhr.ontimeout.
+         */
+        xhr.timeout = 60000;
+        xhr.ontimeout = function () {
+          console.error("The request to upload file timed out.");
+          removeUploading();
+        };
+        
           
         xhr.send(file);
-      }
+      };//uploadFileToUrl
+      
+      uploadNextFile();
+      
+      // Lets indicate to the user that something is going on; even on localhost, uploads speeds are
+      //  only a few MB per second, so a sizable file can take quite a while.
+      $('<div id=\"Uploading\" class=\"Wt-dialogcover UploadProgressCover\">'
+      + '<div class=\"UpFileContents\"><div class=\"UpCenter\"><div class=\"UpDivTxt\">'
+      + '<div>Copying file into InterSpec</div>'
+      + '<div id=\"UploadingProgress\">--%</div>'
+      + '</div></div></div>'
+      + '</div>').appendTo(target);
     }catch(error)
     {
       console.log( "Error in HandleDrop: " + error );
@@ -315,5 +439,96 @@ function(id)
   {
     Wt.emit( id, {name: 'OsColorThemeChange' }, 'no-support' );
   }
+}
+);
+
+
+WT_DECLARE_WT_MEMBER
+(InitFlexResizer, Wt::JavaScriptFunction, "InitFlexResizer",
+function(resizerid,elid) {
+  
+  // TODO:
+  //  - [ ] Check height to be at least 10px?  Maybe make it be an option
+  //  - [ ] The mouse can easily go out of the resizer, and if it goes into the spectrum chart, we
+  //        will stop getting here, so we either need to up the order of calling events through
+  //        some jQuery version specific hack (see https://stackoverflow.com/questions/2360655/jquery-event-handlers-always-execute-in-order-they-were-bound-any-way-around-t),
+  //        or get the spectrum chart to stop canceling the events, which may take some work.
+  //  - [ ] Allow passing option if element being resized is above or below resizer.
+  //  - [ ] Could probably be made much more flexible, but good enough for now.
+  //  - [ ] listen for 'esc' key, and if so, set back to original height and stop drag
+  //  - [ ] IF you drag high-enough, the bottom chart will go off the bottom - this needs to be prevented
+  //  - [ ] Unrelated to this, but got "dimensions of D3TimeChart div element are not set." error after resizing chart then switching to non-time chart more.
+  let startPosAndSize;
+  const allowTouch = (window.Touch || navigator.maxTouchPoints);
+      
+  function mousePos(e) {
+    if( typeof e.clientX === "number" )
+      return { x: e.clientX, y: e.clientY };
+    else if( e.originalEvent.touches )
+      return { x: e.originalEvent.touches[0].clientX, y: e.originalEvent.touches[0].clientY };
+    return null;
+  }
+      
+  function cancelEvent(e) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+      
+  function handleMouseDown(e) {
+    const el = document.getElementById(elid);
+    const resizer = document.getElementById(resizerid);
+    
+    startPosAndSize = mousePos(e);
+    startPosAndSize.height = el.offsetHeight;
+    el.style.flexBasis = startPosAndSize.height + 'px';
+    el.style.flexShrink = el.style.flexGrow = 0;
+        
+    $(document).bind('mousemove.FlexResize', handleMouseMove);
+    $(document).bind('mouseup.FlexResize', handleMouseUp);
+    if( allowTouch ) {
+      $(document).bind('touchmove.FlexResize', handleMouseMove);
+      $(document).bind('touchend.FlexResize', handleMouseUp);
+    }
+    $(document).bind('selectstart.FlexResize', cancelEvent); // disable selection
+  }
+      
+  function handleMouseMove(e) {
+    const pos = mousePos(e);
+    const el = document.getElementById(elid);
+    
+    // See if our hight has already gone too large for the parent, and if so, stop making it go so large.
+    //const parent = el.parentNode;
+    //const parentHeight = parent.height(); //This is useable inner height, after accounting for padding and such.
+    //var children = parent.children;
+    //for( let i = 0; i < children.length; i++ ) {
+    //  const child = children[i];
+    //  const minHeight = window.getComputedStyle(child,null).getPropertyValue("min-height");
+    //}
+    
+    const height = (startPosAndSize.height + startPosAndSize.y - pos.y);
+    
+    el.style.flexBasis = height + 'px'
+  }
+      
+  function handleMouseUp(e) {
+    // We could look at element above/bellow resizer, and got back to flex basline of zero but give the grows as the current ratio
+    
+    $(document).unbind('mousemove.FlexResize', handleMouseMove);
+    $(document).unbind('mouseup.FlexResize', handleMouseUp);
+        
+    if( allowTouch ) {
+      $(document).unbind('touchmove.FlexResize', handleMouseMove);
+      $(document).unbind('touchend.FlexResize', handleMouseUp);
+    }
+    $(document).unbind('selectstart.FlexResize', cancelEvent);
+                      
+    return false;
+  }
+
+  // Remove the bindings first, JIC this is a duplicate call to initialize the events
+  //  (it doesnt look like this happens, but current code to show/hide tool-tabs is pretty
+  //   fragile, so the off is really just to make sure).
+  $('#' + resizerid).off('mousedown.FlexResize touchstart.FlexResize')
+                    .on('mousedown.FlexResize touchstart.FlexResize', handleMouseDown);
 }
 );

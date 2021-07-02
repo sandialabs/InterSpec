@@ -4,7 +4,6 @@
 #include <vector>
 #include <utility>
 
-#include <Wt/WLabel>
 #include <Wt/WPoint>
 #include <Wt/WServer>
 #include <Wt/WLength>
@@ -25,6 +24,7 @@
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/D3SpectrumExport.h"
@@ -70,84 +70,104 @@ namespace
   
 }//namespace
 
-WT_DECLARE_WT_MEMBER
-(SvgToPngDownload, Wt::JavaScriptFunction, "SvgToPngDownload",
- function(elid,filename)
-{
-  console.log( 'In SvgToPngDownload' );
-  try{
-    var svgchart = $('#' + elid).find('svg')[0];
-    
-    if( svgchart.length === 0 )
-      throw 'Could not find svg';
-    
-    console.log( 'In SvgToPngDownload: svgchart' );
-    if( filename.length === 0 )
-      filename = "spectrum.png"; //ToDo: add in date/time or something.
-    
-    var w = parseFloat(svgchart.getAttribute("width"));
-    var h = parseFloat(svgchart.getAttribute("height"));
-    
-    var canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    //document.body.appendChild(canvas);
-    $('#' + elid)[0].appendChild(canvas);
-    
-    
-    //We will need to propogate all the styles we can dynamically set in the SVG
-    //  to the <defs> section of the new SVG.
-    //This is a real pain - and no wher close to being done.
-    //m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c );
-    //m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() );
-    var chartstyle = getComputedStyle($('#chartarea' + elid)[0]);
-    //This next select doesnt seem to work, so maybe assign an id to the <svg> elements and change how the CSS is set?
-    var svgbackstyle = getComputedStyle( $('#' + elid)[0], , ' > svg' );
-    
-    
-    var svgMarkup = '<svg xmlns="http://www.w3.org/2000/svg"' + ' width="'  + w + '"' + ' height="' + h + '"' + '>'
-    + '<defs><style type="text/css">'
-    + (chartstyle && chartstyle.fill ? '.chartarea{fill: ' + chartstyle.fill + ';}\n' : "")
-    + (svgbackstyle && svgbackstyle.background ? 'svg{ background:' + svgbackstyle.background + '}\n' : "")
-    //+ '.legend{ font-size: 1em; }\n'
-    + '.legendBack{ fill: rgba(245,245,245,0.5); stroke: rgba(185,185,185,0.80); }\n'
-    //+ '.xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis{ stroke: black; }\n'
-    //+ '.xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick { stroke: black; }\n'
-    //+ '.peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine { stroke: black; }\n'
-    //+ '.xgrid > .tick, .ygrid > .tick{ stroke: #b3b3b3;}\n'
-    //+ '.minorgrid{ stroke: #e6e6e6; }\n'
-    + '</style>'
-    + '</defs>'
-    + svgchart.innerHTML.toString()
-    +'</svg>';
 
-    //var serializer = new XMLSerializer();
-    //var svgMarkup = serializer.serializeToString(svgchart);
-     
-    var ctx = canvas.getContext("2d");
-    var img = new Image();
-    var svg = new Blob([svgMarkup], {type: "image/svg+xml;charset=utf-8"});
-    var url = window.URL.createObjectURL(svg);
-    img.onload = function() {
-      ctx.drawImage(img, 0, 0);
-      window.URL.revokeObjectURL(url);
+WT_DECLARE_WT_MEMBER
+(SvgToImgDownload, Wt::JavaScriptFunction, "SvgToImgDownload",
+ function(chart,filename,asPng)
+{
+  // TODO: look at being able to copy to the pasteboard; looks doable.
+  try
+  {
+    // 'chart' is the JS SpectrumChartD3 object
+    // 'chart.chart' is the <div> that holds the spectrum
+    //  and chart.svg is a D3 array with one entry to the actual <svg> element
+    //console.log( 'In SvgToImgDownload: svgchart' );
+    if( filename.length === 0 )
+      filename = "spectrum." + (asPng ? "png" : "svg"); //ToDo: add in date/time or something.
+    
+    let svgMarkup = chart.getStaticSvg();
+    
+    // A heavy-duty version of element.click()
+    function simulateClick( node ) {
+      try {
+        node.dispatchEvent(new MouseEvent('click'));
+      } catch (e) {
+        var evt = document.createEvent('MouseEvents');
+        evt.initMouseEvent('click', true, true, window,
+                            0, 0, 0, 100, 100,
+                            false, false, false, false, 0, null);
+        node.dispatchEvent(evt);
+      }
+    };// function simulateClick()
+    
+    if( !asPng )
+    {
+      var dl = document.createElement("a");
+      document.body.appendChild(dl);
+      dl.target = "_blank";
+      dl.setAttribute("href", "data:image/svg+xml," + encodeURIComponent(svgMarkup) );
+      dl.setAttribute("download", filename);
+      simulateClick(dl);
+      document.body.removeChild(dl);
+    }else
+    {
+      // The getStaticSvg() function does not include the energy slider chart, so we should
+      //  compensate for that height if its showing
+      let height = chart.svg.attr("height");
+      let width = chart.svg.attr("width");
       
-      var dt = canvas.toDataURL('image/png');
-      dt = dt.replace(/^data:image\\/[^;]*/, 'data:application/octet-stream');
-      dt = dt.replace(/^data:application\\/octet-stream/, 'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename='+filename);
+      if( chart.sliderChart && chart.size && chart.size.sliderChartHeight )
+        height -= chart.size.sliderChartHeight;
       
-      var link = document.createElement("a");
-      link.download = filename;
-      link.href = dt;
-      link.target="_blank";
-      link.click();
+      if( chart.scalerWidget )
+        width -= chart.scalerWidget.node().getBBox().width;
       
-      canvas.remove();
-    };
-    img.src = url;
+      var canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      chart.chart.appendChild(canvas);
+    
+      var ctx = canvas.getContext("2d");
+      
+      // The default style in InterSpec doesnt have a background for the SVG (but the dark theme
+      //  does), so start with a solid white background instead of no fill (the default PNG viewer
+      //  in Windows fills in a solid black background in this case, making the PNG look incorrect)
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      var img = new Image();
+      var svg = new Blob([svgMarkup], {type: "image/svg+xml"});
+      var url = window.URL.createObjectURL(svg);
+      
+      // JIC something is messed up we can see it in debug console for development
+      img.onerror = function(e){ console.log( 'img.error: '); console.log(e); };
+      
+      img.onload = function() {
+        ctx.drawImage(img, 0, 0);
+        window.URL.revokeObjectURL(url);
+      
+        var dt = canvas.toDataURL('image/png');
+        dt = dt.replace(/^data:image\\/[^;]*/, 'data:application/octet-stream');
+        dt = dt.replace(/^data:application\\/octet-stream/, 'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename='+filename);
+        canvas.remove();
+      
+        var link = document.createElement("a");
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.download = filename;
+        link.href = dt;
+        link.target="_blank";
+        simulateClick(link);
+      
+        window.URL.revokeObjectURL(link.href);
+        document.body.removeChild(link);
+      };
+      img.src = url;
+    }//if( !asPng ) / else
     
   }catch(e){
-    console.log( 'Error saving PNG from SVG spectrum: ' + e );
+    console.log( 'Error saving PNG or SVG of spectrum: ' );
+    console.log( e );
   }
 }
 );
@@ -160,8 +180,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_renderFlags( 0 ),
   m_model( new SpectrumDataModel( this ) ),
   m_peakModel( 0 ),
-  m_layoutWidth( 0 ),
-  m_layoutHeight( 0 ),
   m_compactAxis( false ),
   m_legendEnabled( true ),
   m_yAxisIsLog( true ),
@@ -189,7 +207,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartBackgroundColor(),
   m_defaultPeakColor( 0, 51, 255, 155 )
 {
-  setLayoutSizeAware( true );
   addStyleClass( "SpectrumDisplayDiv" );
   
   // Cancel right-click events for the div, we handle it all in JS
@@ -242,8 +259,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", yscale: " + string(m_yAxisIsLog ? "'log'" : "'lin'");
   options += ", backgroundSubtract: " + jsbool( m_backgroundSubtract );
   options += ", showLegend: " + jsbool(m_legendEnabled);
-  options += ", gridx: " + jsbool(m_showHorizontalLines);
-  options += ", gridy: " + jsbool(m_showVerticalLines);
+  options += ", gridx: " + jsbool(m_showVerticalLines);
+  options += ", gridy: " + jsbool(m_showHorizontalLines);
   options += ", showXAxisSliderChart: " + jsbool(m_showXAxisSliderChart);
   options += ", scaleBackgroundSecondary: " + jsbool(m_showYAxisScalers);
   options += ", wheelScrollYAxis: true";
@@ -282,7 +299,22 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += "}";
   
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
-  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+  
+
+//#if( USE_CSS_FLEX_LAYOUT )
+  setJavaScriptMember( "resizeObserver",
+    "new ResizeObserver(entries => {"
+      "for (let entry of entries) {"
+        "if( entry.target && (entry.target.id === '" + id() + "') )"
+          + m_jsgraph + ".handleResize();"
+      "}"
+    "});"
+  );
+  
+  callJavaScriptMember( "resizeObserver.observe", jsRef() );
+//#else
+//  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+//#endif
   
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   updateReferncePhotoPeakLines();
@@ -306,13 +338,13 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     m_rightMouseDraggJS.reset( new JSignal<double,double>( this, "rightmousedragged", true ) );
     m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback, this, _1, _2 ) );
     
-    m_leftClickJS.reset( new JSignal<double,double,int,int>( this, "leftclicked", true ) );
+    m_leftClickJS.reset( new JSignal<double,double,double,double>( this, "leftclicked", true ) );
     m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this, _1, _2, _3, _4 ) );
     
     m_doubleLeftClickJS.reset( new JSignal<double,double>( this, "doubleclicked", true ) );
     m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback, this, _1, _2 ) );
     
-    m_rightClickJS.reset( new JSignal<double,double,int,int>( this, "rightclicked", true ) );
+    m_rightClickJS.reset( new JSignal<double,double,double,double>( this, "rightclicked", true ) );
     m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this, _1, _2, _3, _4 ) );
     
     m_roiDraggedJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
@@ -389,7 +421,7 @@ bool D3SpectrumDisplayDiv::legendIsEnabled() const
 }
 
 
-void D3SpectrumDisplayDiv::enableLegend( const bool forceMobileStyle )
+void D3SpectrumDisplayDiv::enableLegend()
 {
   m_legendEnabled = true;
   m_legendEnabledSignal.emit();
@@ -584,13 +616,6 @@ void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
-void D3SpectrumDisplayDiv::layoutSizeChanged ( int width, int height )
-{
-  m_layoutWidth = width;
-  m_layoutHeight = height;
-}//void layoutSizeChanged ( int width, int height )
-
-
 void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
@@ -615,18 +640,6 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   m_renderFlags = 0;
 }
-
-
-int D3SpectrumDisplayDiv::layoutWidth() const
-{
-  return m_layoutWidth;
-}//int layoutWidth() const
-
-
-int D3SpectrumDisplayDiv::layoutHeight() const
-{
-  return m_layoutHeight;
-}//int layoutHeight() const
 
 
 double D3SpectrumDisplayDiv::xAxisMinimum() const
@@ -787,7 +800,8 @@ void D3SpectrumDisplayDiv::setXAxisRange( const double minimum, const double max
   m_xAxisMinimum = minimum;
   m_xAxisMaximum = maximum;
   
-  string js = m_jsgraph + ".setXAxisRange(" + minimumStr + "," + maximumStr + ",false);";
+  string js = m_jsgraph + ".setXAxisRange(" + minimumStr + "," + maximumStr + ",false);"
+              + m_jsgraph + ".redraw()();";
   if( isRendered() )
     doJavaScript( js );
   else
@@ -822,7 +836,8 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
     if( peaks )
     {
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      js = PeakDef::peak_json( inpeaks );
+      std::shared_ptr<Measurement> foreground = m_model->getData();
+      js = PeakDef::peak_json( inpeaks, foreground );
     }
   }
   
@@ -846,16 +861,12 @@ void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
 
 
 
-void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist,
-                                 float liveTime,
-                                 float realTime,
-                                 float neutronCounts,
-                                 bool keep_curent_xrange )
+void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist, const bool keep_curent_xrange )
 {
   const float oldBackSF = m_model->backgroundScaledBy();
   const float oldSecondSF = m_model->secondDataScaledBy();
   
-  m_model->setDataHistogram( data_hist, liveTime, realTime, neutronCounts );
+  m_model->setDataHistogram( data_hist );
   
   if( !keep_curent_xrange )
     m_renderFlags |= ResetXDomain;
@@ -989,30 +1000,20 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
 
-void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts )
+void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background )
 {
-  m_model->setBackgroundHistogram( background, liveTime, realTime, neutronCounts );
+  m_model->setBackgroundHistogram( background );
   
   if( !background && m_model->backgroundSubtract() )
-  {
-    m_backgroundSubtract = false;
-    m_model->setBackgroundSubtract( false );
-  }
+    setBackgroundSubtract( false );
   
   scheduleUpdateBackground();
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
-void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts,
-                                       bool ownAxis )
+void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist, const bool ownAxis )
 {
-  m_model->setSecondDataHistogram( hist, liveTime, realTime, neutronCounts, ownAxis );
+  m_model->setSecondDataHistogram( hist, ownAxis );
   
   scheduleUpdateSecondData();
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> background );
@@ -1219,7 +1220,7 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     if ( m_peakModel ) {
       std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks );
+      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks, data_hist );
     }
     
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(data_hist.get(),foregroundOptions) );
@@ -1356,7 +1357,7 @@ void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "stroke: " + c );
+  m_cssRules[rulename] = style.addRule( ".xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis", "fill: " + c );
 }
 
 
@@ -1369,7 +1370,7 @@ void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick, .yaxistick", "stroke: " + m_axisColor.cssText() );
+  m_cssRules[rulename] = style.addRule( ".xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick > line, .yaxistick", "stroke: " + m_axisColor.cssText() );
   
   //ToDo: is setting feature line colors okay like this
   rulename = "FeatureLinesColor";
@@ -1450,12 +1451,20 @@ void D3SpectrumDisplayDiv::removeAllPeaks()
 }
 
 
-void D3SpectrumDisplayDiv::saveChartToPng( const std::string &filename )
+void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bool asPng )
 {
-  LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsSvgToPngDownload);
+  // For now we grab CSS rules dynamically in the JS, which is tedious and error-prone, but we could
+  //  use the following to get (some of) the rules from C++ land.
+  //string cssrules;
+  //for( const auto &p : m_cssRules )
+  //  cssrules += p.second->selector() + "{ " + p.second->declarations() + " }  ";
+  //cout << "CSS rules: " << cssrules << endl;
+  
+  LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsSvgToImgDownload);
   
   if( isRendered() )
-    doJavaScript( "Wt.WT.SvgToPngDownload('" + id() + "','" + filename +"');" );
+    doJavaScript( "Wt.WT.SvgToImgDownload(" + m_jsgraph + ",'" + filename + "', "
+                  + string(asPng ? "true" : "false") + ");" );
 }//void saveChartToPng( const std::string &name )
 
 
@@ -1553,7 +1562,7 @@ void D3SpectrumDisplayDiv::chartRightMouseDragCallback( double x0, double x1 )
   m_rightMouseDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartRightMouseDragCallback(...)
 
-void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, int pageX, int pageY )
+void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY )
 {
   cout << "chartLeftClickCallback" << endl;
   m_leftClick.emit( x, y, pageX, pageY );
@@ -1565,7 +1574,7 @@ void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y )
   m_doubleLeftClick.emit( x, y );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
-void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, int pageX, int pageY )
+void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY )
 {
   cout << "chartRightClickCallback" << endl;
   m_rightClick.emit( x, y, pageX, pageY );
@@ -1667,8 +1676,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
     {
       if( isfinal )
       {
-        for( auto p : orig_roi_peaks )
-          m_peakModel->removePeak( p );
+        m_peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : new_roi_initial_peaks )
@@ -1677,7 +1685,8 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
         m_peakModel->addPeaks( peaks_to_add );
       }else
       {
-        string adjustRoiJson = PeakDef::gaus_peaks_to_json( new_roi_initial_peaks );
+        std::shared_ptr<Measurement> foreground = m_model->getData();
+        string adjustRoiJson = PeakDef::gaus_peaks_to_json( new_roi_initial_peaks, foreground );
         doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
       }
     }else if( new_upper_px >= (new_lower_px+10) )  //perhaps this should be by percentage of ROI?
@@ -1694,8 +1703,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       
       if( isfinal )
       {
-        for( auto p : orig_roi_peaks )
-          m_peakModel->removePeak( p );
+        m_peakModel->removePeaks( orig_roi_peaks );
         
         std::vector<PeakDef> peaks_to_add;
         for( auto p : newpeaks )
@@ -1704,7 +1712,8 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
         m_peakModel->addPeaks( peaks_to_add );
       }else
       {
-        string adjustRoiJson = PeakDef::gaus_peaks_to_json( newpeaks );
+        std::shared_ptr<Measurement> foreground = m_model->getData();
+        string adjustRoiJson = PeakDef::gaus_peaks_to_json( newpeaks, foreground );
         doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + adjustRoiJson + ");" );
       }
       
@@ -1714,10 +1723,7 @@ void D3SpectrumDisplayDiv::chartRoiDragedCallback( double new_lower_energy, doub
       doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(null);}catch(error){}" );
       
       if( isfinal )
-      {
-        for( auto p : orig_roi_peaks )
-          m_peakModel->removePeak( p );
-      }
+        m_peakModel->removePeaks( orig_roi_peaks );
     }//if( not narrow region ) / else
   }catch( std::exception &e )
   {
@@ -1759,7 +1765,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   std::shared_ptr<Measurement> foreground = m_model->getData();
   
   const size_t nchan = foreground->num_gamma_channels();
-  const bool isHpge = (nchan > 4094);
+  const bool isHpge = PeakFitUtils::is_high_res( foreground );
   const float erange = upper_energy - lower_energy;
   const float midenergy = 0.5f*(lower_energy + upper_energy);
   
@@ -2006,18 +2012,15 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
                 return;
               }
               
-              for( const auto &p : added_peaks )
+              try
               {
-                try
-                {
-                  m_peakModel->removePeak( p );
-                }catch(std::exception &e)
-                {
-                  cerr << "Unexpected error removing peaks - must not be a valid peak any more...: " 
-                       << e.what() << endl;
-                }
-              }//for( const auto &p : added_peaks )
-              
+                m_peakModel->removePeaks( added_peaks );
+              }catch(std::exception &e)
+              {
+                cerr << "Unexpected error removing peaks - must not be a valid peak any more...: "
+                     << e.what() << endl;
+              }
+                
               if( i > 0 )
                 chartFitRoiDragCallback( lower_energy, upper_energy, static_cast<int>(i), true, window_xpx, window_ypx );
             }) );
@@ -2029,7 +2032,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
           if( ismobile )
           {
             menu->addStyleClass( " Wt-popupmenu Wt-outset" );
-            menu->showFromMouseOver();
+            menu->showMobile();
           }else
           {
             menu->addStyleClass( " Wt-popupmenu Wt-outset NumPeakSelect" );
@@ -2043,7 +2046,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       }else
       {
         std::vector<std::shared_ptr<const PeakDef> > peaks( begin(results[best_choice]), end(results[best_choice]) );
-        const string roiJson = PeakDef::gaus_peaks_to_json( peaks );
+        const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
         doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
       }
       
@@ -2066,7 +2069,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
       cont->calc_linear_continuum_eqn( foreground, lower_energy, upper_energy, 0 );
       
       std::vector<std::shared_ptr<const PeakDef> > peaks{ make_shared<const PeakDef>(tmppeak) };
-      const string roiJson = PeakDef::gaus_peaks_to_json( peaks );
+      const string roiJson = PeakDef::gaus_peaks_to_json( peaks, foreground );
       
       doJavaScript( m_jsgraph + ".updateRoiBeingDragged(" + roiJson + ");" );
       m_fitRoiDrag.emit( lower_energy, upper_energy, nForcedPeaks, isfinal );

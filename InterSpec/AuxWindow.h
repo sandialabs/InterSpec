@@ -49,20 +49,18 @@ enum AuxWindowProperties
 {
   /** Window can be modal on phones and tablets. Without this all AuxWindows
       are full screen on phones.
-   \TODO: rename this to something like PhoneNotFullScreen
    */
-  PhoneModal = 0x01,
+  PhoneNotFullScreen = 0x01,
   
   /** Window can be modal on tablets.  Without this all AuxWindows
-   are full screen on tablets (unless PhoneModal is set).
-   \TODO: rename this to something like TabletNotFullScreen
+   are full screen on tablets (unless PhoneNotFullScreen is set).
    */
-  TabletModal = 0x02,
+  TabletNotFullScreen = 0x02,
   
-  /** When set, this window will be modal on PCs (e.g., no interaction with
-   anything behind this window).
+  /** When set, this window will be modal on PCs (e.g., no interaction with anything behind this window), if if not full screen on tablets
+   and phones, will be modal then.
    */
-  IsAlwaysModal = 0x04,
+  IsModal = 0x04,
   
   /** Styles the window to be an InterSpec help window. */
   IsHelpWIndow = 0x08,
@@ -123,7 +121,7 @@ class AuxWindow : public Wt::WDialog
 public:
   //By default AuxWindow will be shown, centered in the window, at 50% of
   //  browser size.  Wt will assume that the window is visible as well, for
-  //  the puprposes of lazy loading of content.
+  //  the purposes of lazy loading of content.
   AuxWindow( const Wt::WString &windowTitle, Wt::WFlags<AuxWindowProperties> properties = Wt::WFlags<AuxWindowProperties>(0) );
   virtual ~AuxWindow();
 
@@ -146,6 +144,9 @@ public:
   // w->finished( boost::bind( &AuxWindow:::deleteAuxWindow, window ) );
   static void deleteAuxWindow( AuxWindow *window );
 
+  /** A convenience function to call #deleteAuxWindow via binding to a signal. */
+  void deleteSelf();
+  
   //rejectWhenEscapePressed(): sets it up so hitting escape will cause the
   //  finished() signal to be emmitted; also hides the dialog
   virtual void rejectWhenEscapePressed( bool enable = true );
@@ -296,11 +297,11 @@ protected:
   bool m_escapeIsReject;
   Wt::Signals::connection m_escapeConnection1, m_escapeConnection2;
   
-  /** Set to true if on a phone, and contructor wasnt called with PhoneModal. */
+  /** Set to true if on a phone, and contructor wasnt called with PhoneNotFullScreen. */
   bool m_isPhone;
   
-  /** Set to true if on a tablet, and contructor wasnt called with PhoneModal or
-      TabletModal.
+  /** Set to true if on a tablet, and contructor wasnt called with PhoneNotFullScreen or
+   TabletNotFullScreen.
    */
   bool m_isTablet;
   

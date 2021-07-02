@@ -104,8 +104,6 @@ public:
   
   virtual void layoutSizeChanged( int width, int height );
   
-  void setTextPenColor( const Wt::WColor &color );
-  
   /** Set the coefficients to draw the FWHM response with.
       Setting with zero coefficients will remove line from chart.
   */
@@ -150,6 +148,7 @@ protected:
   void updateEffEquationToModel();
   void updateFwhmEquationToModel();
   
+  void updateColorTheme( std::shared_ptr<const ColorTheme> theme );
 
   float m_det_diameter;
   float m_det_lower_energy;
@@ -178,9 +177,10 @@ protected:
   
   FwhmCoefType m_fwhmEqnType;
   
-  Wt::WColor m_textPenColor;
-  
   Wt::Signal<double,double> m_xRangeChanged;
+  
+  Wt::WBrush m_chartMarginBrush;
+  Wt::WPen m_textPen;
 };//class WCartesianChart
 
 

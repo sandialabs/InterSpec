@@ -46,7 +46,14 @@ class WarningWidget : public Wt::WContainerWidget
 public:
   enum WarningMsgLevel
   {
-    WarningMsgInfo = 0, WarningMsgLow = 1, WarningMsgMedium = 2, WarningMsgHigh = 3 /*Not actually used anywhere*/, WarningMsgSave = 4
+    WarningMsgInfo = 0,
+    WarningMsgLow = 1,
+    WarningMsgMedium = 2,
+    WarningMsgHigh = 3 /*Not actually used anywhere*/,
+    WarningMsgSave = 4,
+    WarningMsgShowRiid = 5,
+    
+    NumWarningMsgType
   };//enum WarningMsgLevel
   
   static const char *tostr( const WarningMsgLevel level );
@@ -71,8 +78,11 @@ public:
   /** Displays the message to the user in the q-tip popup style.
    Does not check the format or content of the msg, so you need to make sure any potentially bad
    script, or non-XHTML-ness is removed first.
+   
+   @param num_millies The number of milliseconds to have the popup stick around for.
    */
-  static void displayPopupMessageUnsafe( const Wt::WString &msg, const WarningMsgLevel level );
+  static void displayPopupMessageUnsafe( const Wt::WString &msg, const WarningMsgLevel level,
+                                         int num_millies );
   
   
   void setPopupActivity( WarningMsgLevel priority, bool allowed );
@@ -89,8 +99,8 @@ protected:
 
   int m_totalMessages;
 
-  bool m_popupActive[int(WarningMsgSave)+1];
-  bool m_active[int(WarningMsgSave)+1];
+  bool m_popupActive[int(WarningMsgLevel::NumWarningMsgType)];
+  bool m_active[int(WarningMsgLevel::NumWarningMsgType)];
 
   Wt::WGridLayout *m_layout;
   Wt::WStandardItemModel *m_messageModel;

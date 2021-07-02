@@ -32,6 +32,8 @@
 #include <Wt/WStandardItemModel>
 #include <Wt/Chart/WCartesianChart>
 
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -72,8 +74,9 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   m_efficiencyCoefs{},
   m_efficiencyCoefUncerts{},
   m_fwhmEqnType( FwhmCoefType::Gadras ),
-  m_textPenColor( Wt::black ),
-  m_xRangeChanged()
+  m_xRangeChanged(),
+  m_chartMarginBrush(),
+  m_textPen( WColor(GlobalColor::black) )
 {
   //setAutoLayoutEnabled( true );
   setLayoutSizeAware( true );
@@ -128,11 +131,9 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   addSeries( eqn_fwhm_series );
   
   setPlotAreaPadding(0, Wt::Top);
-  setPlotAreaPadding(60, Wt::Bottom);
   setPlotAreaPadding(55, Wt::Right | Wt::Left);
-  
   //axis(Chart::XAxis).setTitle( "Energy (keV)" );
-  setPlotAreaPadding(20, Wt::Bottom);
+  setPlotAreaPadding(25, Wt::Bottom);
   
   axis(Chart::YAxis).setVisible( true );
   axis(Chart::YAxis).setTitle( "Intrinsic Eff." );
@@ -144,6 +145,10 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   axis(Wt::Chart::Y1Axis).setTitleOrientation( Wt::Vertical );
   axis(Wt::Chart::Y2Axis).setTitleOrientation( Wt::Vertical );
 #endif
+  
+  setAxisPadding( 0 );
+  axis(Chart::Y1Axis).setMargin( 0 );
+  axis(Chart::Y2Axis).setMargin( 0 );
   
   m->setHeaderData( sm_energy_col, Wt::Horizontal, boost::any(WString("Energy (keV)")), Wt::DisplayRole );
   m->setHeaderData( sm_data_eff_col, Wt::Horizontal, boost::any(WString("Data Intrinsic Eff.")), Wt::DisplayRole );
@@ -161,6 +166,13 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   updateEqnEnergyToModel();
   updateEffEquationToModel();
   updateFwhmEquationToModel();
+  
+  auto viewer = InterSpec::instance();
+  if( viewer )  //should always be true, but JIC
+  {
+    updateColorTheme( viewer->getColorTheme() );
+    viewer->colorThemeChanged().connect( this, &MakeDrfChart::updateColorTheme );
+  }
 }//MakeDrfChart(...)
 
 
@@ -173,12 +185,6 @@ void MakeDrfChart::layoutSizeChanged( int width, int height )
 {
   //ToDo: customize number of energy points based on chart size
 }//void layoutSizeChanged( int width, int height )
-
-
-void MakeDrfChart::setTextPenColor( const Wt::WColor &color )
-{
-  m_textPenColor = color;
-}
 
 
 void MakeDrfChart::updateYAxisRange()
@@ -403,8 +409,6 @@ void MakeDrfChart::updateEffEquationToModel()
       m->setData( row, sm_equation_eff_neg_uncert_col, lowerval );
     }//if( valid eff value ) / else
   }//for( loop over eqn rows )
-  
-  
 }//void updateEffEquationToModel()
 
 
@@ -439,11 +443,142 @@ void MakeDrfChart::updateFwhmEquationToModel()
 }//void updateFwhmEquationToModel()
 
 
+void MakeDrfChart::updateColorTheme( std::shared_ptr<const ColorTheme> theme )
+{
+  if( !theme )
+    return; //Should reset colors to default, but whatever for now
+  
+  
+  if( theme->spectrumAxisLines.isDefault() )
+    m_textPen = WPen( WColor(GlobalColor::black) );
+  else
+    m_textPen = WPen( theme->spectrumAxisLines );
+  setTextPen( m_textPen );
+  
+  if( theme->spectrumAxisLines.isDefault() )
+  {
+    axis(Chart::XAxis).setPen( WPen(GlobalColor::black) );
+    axis(Chart::YAxis).setPen( WPen(GlobalColor::black) );
+    axis(Chart::Y2Axis).setPen( WPen(GlobalColor::black) );
+  }else
+  {
+    axis(Chart::XAxis).setPen( WPen(theme->spectrumAxisLines) );
+    axis(Chart::YAxis).setPen( WPen(theme->spectrumAxisLines) );
+    axis(Chart::Y2Axis).setPen( WPen(theme->spectrumAxisLines) );
+  }
+  
+  if( theme->spectrumChartMargins.isDefault() )
+    m_chartMarginBrush = WBrush();
+  else
+    m_chartMarginBrush = WBrush(theme->spectrumChartMargins);
+  
+  if( theme->spectrumChartBackground.isDefault() )
+    setBackground( Wt::NoBrush );
+  else
+    setBackground( WBrush(theme->spectrumChartBackground) );
+  
+  auto setSeriesColor = []( Wt::Chart::WDataSeries &s, const WColor &color ){
+    WPen pen = s.pen();
+    WBrush brush = s.brush();
+    pen.setColor( color );
+    brush.setColor( color );
+    s.setPen( pen );
+    s.setBrush( brush );
+  };//setSeriesColor lambda
+  
+  // Data series are drawn with a marker that is the same color as the peak, so we dont need to set
+  //  those colors, but we do need to set the colors of the equation line.
+  //Wt::Chart::WDataSeries &dataEffSeries = series(sm_data_eff_col);
+  //Wt::Chart::WDataSeries &dataFwhmSeries = series(sm_data_fwhm_col);
+  
+  Wt::Chart::WDataSeries &eqnEffSeries = series(sm_equation_eff_col);
+  WColor effcolor = theme->foregroundLine;
+  if( effcolor.isDefault() )
+    effcolor = WColor(GlobalColor::black);
+  setSeriesColor( eqnEffSeries, effcolor );
+  
+  Wt::Chart::WDataSeries &eqnFwhmSeries = series(sm_equation_fwhm_col);
+  WColor fwhmcolor = theme->backgroundLine;
+  if( fwhmcolor.isDefault() )
+    fwhmcolor = WColor(GlobalColor::gray);
+  setSeriesColor( eqnFwhmSeries, fwhmcolor );
+  
+  //Efficiency series not yet implemented
+  //WDataSeries &negEffUncertSeries = series(sm_equation_eff_neg_uncert_col);
+  //WDataSeries &posEffUncertSeries = series(sm_equation_eff_pos_uncert_col);
+  
+  update(); //trigger re-render
+}//void updateColorTheme();
+
+
 void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) const
 {
+  painter.save();
+  
+  painter.setPen( m_textPen ); //TODO: Should make so legend text will be correct color - but doesnt
+  
   WCartesianChart::paint( painter, rectangle );
   
-  painter.save();
+  /// Start color theme support - this code is largely a copy of DecayActivityChart - so if you improve here, improve there
+  /// TODO: should refactor into a common base class to support color theme
+  const double height = painter.window().height();
+  const double width = painter.window().width();
+  
+  auto plotArea = [&]() -> WRectF {
+    int w, h;
+    if( rectangle.isNull() || rectangle.isEmpty() )
+    {
+      w = static_cast<int>( width );
+      h = static_cast<int>( height );
+    }else
+    {
+      w = static_cast<int>( rectangle.width() );
+      h = static_cast<int>( rectangle.height() );
+    }
+    
+    const int padLeft = plotAreaPadding(Left);
+    const int padRight = plotAreaPadding(Right);
+    const int padTop = plotAreaPadding(Top);
+    const int padBottom = plotAreaPadding(Bottom);
+    
+    WRectF area;
+    if( orientation() == Vertical )
+      area = WRectF( padLeft, padTop, std::max(10, w - padLeft - padRight), std::max(10, h - padTop - padBottom) );
+    else
+      area = WRectF( padTop, padRight, std::max(10, w - padTop - padBottom), std::max(10, h - padRight - padLeft) );
+    
+    return area;
+  };//plotArea
+  
+  auto paintMargins = [&](){
+    auto area = plotArea();
+    const double rx = area.x();
+    const double ry = area.y();
+    const double rw = area.width();
+    const double rh = area.height();
+    if( ry > 0 )  //Top strip
+      painter.fillRect( hv(WRectF(rx,0,rw,ry)), m_chartMarginBrush );
+    if( (ry+rh) < rectangle.height() ) //Bottom strip
+      painter.fillRect( hv(WRectF(rx,ry+rh,rw,rectangle.height()-ry)), m_chartMarginBrush );
+    if( rx > 0 )
+      painter.fillRect( hv(WRectF(0,0,rx,rectangle.height())), m_chartMarginBrush );
+    if( (rx+rw) < rectangle.width() )
+      painter.fillRect( hv(WRectF(rx+rw,0,rectangle.width()-rw-rx,rectangle.height())), m_chartMarginBrush );
+  };
+  
+  if( background().style() != NoBrush && m_chartMarginBrush.style() != NoBrush )
+  {
+    paintMargins();
+    painter.fillRect( hv(plotArea()), background() );
+  }else if( background().style() != NoBrush )
+  {
+    painter.fillRect( hv(rectangle), background() );
+  }else if( m_chartMarginBrush.style() != NoBrush )
+  {
+    paintMargins();
+  }
+  /// end color theme support
+  
   
   //Draw error bars
   WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
@@ -460,7 +595,7 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
   
     const WPointF upper_uncert = mapToDevice( energy, eff + uncert );
     const WPointF lower_uncert = mapToDevice( energy, eff - uncert );
-    painter.setPen( WPen(Wt::black) );
+    painter.setPen( m_textPen ); // TODO: should we customize this?
     painter.drawLine( upper_uncert, lower_uncert );
   }
   
@@ -480,7 +615,7 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
     const WPointF right_ll = mapToDevice( maxdata, axis(Chart::YAxis).minimum() );
     const WPointF right_ur = mapToDevice( m_det_upper_energy, axis(Chart::YAxis).maximum() );
     
-    painter.setBrush( WBrush( WColor(123,123,123,25) ) );
+    painter.setBrush( WBrush( WColor(123,123,123,25) ) ); //TODO: get this from the color theme
     painter.setPen( WPen(PenStyle::NoPen) );
     painter.drawRect(left_ll.x(), left_ll.y(), left_ur.x() - left_ll.x(), left_ur.y() - left_ll.y() );
     painter.drawRect(right_ll.x(), right_ll.y(), right_ur.x() - right_ll.x(), right_ur.y() - right_ll.y() );

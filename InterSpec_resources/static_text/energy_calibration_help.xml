@@ -1,70 +1,344 @@
+<!-- SAND2021-1543 O -->
 <div align="center">
-      <h1 id="energy-calibration">
-            <b>Energy Calibration</b>
-      </h1>
-      <hr />
-	  </div>
+   <h1 id="energy-calibration"><b>Energy Calibration</b></h1>
+   <hr />
+</div>
+<p>
+  Correct energy calibration can be critical to properly identify nuclides or other features in spectroscopic data.
+  Unfortunately, sometimes the energy calibration included in spectrum files can be significantly off, leading to difficult or incorrect nuclide identifications.  Or it can be the case that no energy calibration information is included in the spectrum file, leaving it to you to define.
+</p>
+<p>
+  <b>InterSpec</b> provides a number of tools to perform energy calibration on spectra, using the various common ways of specifying the energy calibration.
+</p>
 
-      <div>
-         One way to recalibrate is by
-         <u>navigating</u>
-         to the
-         <b>Peak Manager</b>
-         tab on the bottom tools tabs of the window,
-         <u>selecting</u>
-         <b>ID Nuclides</b>
-         so that the application can identify 
-what it deems to be appropriate nuclides for your given spectrum,
-         <u>navigating</u>
-         to the
-         <b>Energy Calibration</b>
-         tab also on the bottom tools tabs, and then
-         <u>checking/unchecking</u>
-         under 
-&#34;Calib. Peak&#34; the nuclides the application identified that you are in agreement with; checked boxes classify the identity of the nuclide as &#34;true,&#34; unchecked 
-boxes classify the identity as &#34;false.&#34;
-      </div>
-      <div>
-         <ul>
-            You can still manually change the calibration parameters by adjusting the &#34;Offset Term,&#34; &#34;Linear Term,&#34; and &#34;Quad. Term&#34; located on the left 
-half of the tools tab under the
-            <b>Calibration</b>
-            tab.
-         </ul>
+
+<div style="display:table-row">
+<h4>Ways Energy Calibration Can Be Specified</h4>
+<p>
+  <b>InterSpec</b> supports the following methods of spectrum files specifying energy calibration.
+</p>
+<table style="text-align: left; margin-left: 10px;">
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">Polynomial</th>
+    <td style="padding-bottom: 20px;"> The lower energy, in keV, of the <code>i<sup>th</sup></code> channel is given by the equation:
+          <div style="padding-left: 20px; padding-top: 5px; padding-bottom: 4px;">
+            <code>E<sub>i</sub> = C<sub>0</sub> + C<sub>1</sub>&times;i + C<sub>2</sub>&times;i<sup>2</sup>
+                + C<sub>3</sub>&times;i<sup>3</sup> + &hellip;
+            </code>
+          </div>
+          Spectrum files provide the <code>C<sub>j</sub></code> coefficients which can be further modified
+          within <b>InterSpec</b> to increase the accuracy of the energy calibration.
+          <br />
+          At least the first two <code>C<sub>j</sub></code> coefficients must be specified (an offset and linear term)
+          with the use of a third or fourth term not being uncommon.  However, if more than three terms are needed
+          to accurately describe the energy calibration across the full energy range of the spectrum, you should
+          consider the use of non-linear deviation pairs described below.
+          <br />
+          This is the most common method of specifying energy calibration, and is used by N42-2006,
+          N42-2011, SPC, CHN, CNF, and other spectrum file formats.
+    </td>
+  </tr>
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">Full Range Fraction</th>
+    <td style="padding-bottom: 20px;"> The lower energy, in keV, of the <code>i<sup>th</sup></code> channel is given by the equation:
+        <div style="padding-left: 20px; padding-top: 5px; padding-bottom: 4px;">
+          <code>
+            let y = i / nbin;
+            <br />
+            E<sub>i</sub> = C<sub>0</sub> + y&times;C<sub>1</sub> + y<sup>2</sup>&times;C<sub>2</sub>
+                            + y<sup>3</sup>&times;C<sub>3</sub> + C<sub>4</sub>/(1+60&times;y);
+          </code>
+        </div>
+        Similar to polynomial calibration, spectrum files provide at least the first two of the <code>C<sub>j</sub></code>
+        coefficients, and <b>InterSpec</b> allows modification to them to increase the accuracy of the calibration.
+        <br />
+        The advantage of Full Range Fraction over Polynomial is that the coefficients are more easily
+        understood.  <code>C<sub>0</sub></code> is the offset (e.g., the starting energy of the spectrum),
+        <code>C<sub>1</sub></code> gives the energy range of the spectrum (e.x. 3000 for a 3 MeV spectrum),
+        <code>C<sub>2</sub></code> gives the non-linearity of the spectrum, in keV, and so on.
+        The final <code>C<sub>4</sub></code> term is rarely used, but allows accounting for low-energy skew.
+        When the last term is zero, Full Range Fraction and Polynomial energy calibrations can be converted
+        to each other without loss of information.
+        <br />
+        This method of specifying energy calibration is used in PCF files, some N42-2006 files, and a few other niche file formats.
+    </td>
+  </tr>
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">Lower Channel Energies</th>
+    <td style="padding-bottom: 20px;"> The lower energy of each channel is specified by the spectrum file in keV or MeV.
+        <br />
+        When this method of specifying the energy calibration is used by a spectrum file, you must
+        either &quot;linearize&quot; the spectrum, or convert it to either Polynomial or Full Range
+        Fraction before adjusting the calibration.
+        <br />
+        Linearizing the spectrum (e.g., assigning a Polynomial energy calibration with only the first
+        two coefficients) will keep the density of counts, per keV correct, but will likely create
+        non-integer channel counts.
+        <br />
+        Converting to Polynomial or Full Range Fraction calibration can be problematic if the original
+        binning is irregular, or does not match a polynomial form.  When the user selects to convert
+        the energy calibration type, <b>InterSpec</b> will attempt to fit the given channel energies
+        to the user selected order of Polynomial or Full Range Fraction equation, but results are limited
+        to how well the original lower channel energies match the polynomial form; e.g., the density
+        of counts, per keV, may be altered when doing this.
+        <br />
+        This method of specifying energy calibration is commonly used in CSV or text-based formats,
+        and has the advantage of being easy to interpret in spreadsheet or other general purpose
+        applications.
+    </td>
+  </tr>
+</table>
+
+<p> If no energy calibration is specified in the spectrum file, <b>InterSpec</b> may either use a
+detector model specific default calibration, if known, or otherwise will use a 0 to 3000 keV linear
+Polynomial calibration.
+</p>
+
+<p>
+<b>Non-Linear Deviation Pairs</b><br />
+Additionally, for both Polynomial and Full Range Fraction calibrations, <em>Non-Linear Deviation Pairs</em>
+may also be used.
+Non-Linear Deviation Pairs specify a cubic spline that gives an energy dependent correction on-top of
+the Polynomial or Full Range Fraction calibration.
+The deviations are specified as pairs of energy and correction at that energy; the correction between
+the specified pairs are determined using a cubic spline formed from the pairs.
+</p>
+<p>
+For example, if you use the 59 keV Am-241 peak and the 2614 keV Th-232 peak to determine the offset and gain
+of your Polynomial energy calibration, but then the 1460 keV peak is centered at 1450 keV, you
+could then define the deviation pairs <code>[{59,0},{1460,10},{2614,0}]</code>, and then all of the
+peaks would be at the correct energies.  Note the inclusion of zero-keV offset specifications at the
+59 keV and 2614 keV peaks was necessary so their energies would not be changed by the <code>{1460,10}</code> pair.
+</p>
+<p> Non-Linear Deviation Pairs are most often used for scintillation based detectors (NaI, LaBr, CsI, etc)
+to account for intrinsic, crystal specific non-linearities of a detector.  An advantage of using Non-Linear
+Deviation Pairs is that they typically don't change over time, meaning you can use a linear Polynomial
+energy calibration, and just adjust the offset and gain to account for drifts over time due to things
+like temperature, high-voltage variations, etc.
+</p>
 </div>
 
-<div align="center">
-      <h1 id="graphical-recal-dialog">
-            <b>Graphical Recalibration</b>
-      </h1>
-      <hr />
-	  </div>
-
-<img src="InterSpec_resources/static_text/images/Recalib1.png"  class="imageBorder" style="float:left;display:block;max-width:40%; max-height:300px;"/>
-<img src="InterSpec_resources/static_text/images/Recalib2.png"  class="imageBorder"         style="float:left;display:block;max-width:40%; max-height:300px;margin-left:10px;margin-right:10px;"/>
 
 
-<div>
-         To graphically recalibrate a spectrum,
-         <u>right-click</u>
-         on the original energy and
-         <u>drag</u>
-         to the desired modified energy. Once complete, a small window will 
-pop up prompting you to accept the calibration changes you are attempting to incur; on this window you can manually adjust the energy quantities 
-either by 1) directly
-         <u>entering</u>
-         the values into the appropriate boxes, or 2)
-         <u>ticking</u>
-         the arrows for a 1keV perturbation at the upper energy 
-range of the spectrum; once it has been calibrated sufficiently
-         <u>select</u>
-         <b>Accept</b>
-         on the bottom of the pop up window.
-      </div>
-      <div>
-         <ul>
-            If you have multiple calibrations,
-            <u>check/uncheck</u>
-            the previous calibrations you would like to keep in effect at the bottom of the pop-up window(s).
-         </ul>
-      </div>
+<div style="display:table-row">
+<h4>Adjusting Energy Calibration</h4>
+<b>InterSpec</b> provides a number of ways to adjust the energy calibration, including:
+<ul>
+  <li>Manually changing the calibration coefficients.</li>
+  <li>Fitting the coefficients using peaks fit in the spectrum that are associated with a nuclide gamma at a given energy.</li>
+  <li>Graphically dragging the spectrum to the correct energy calibration.</li>
+  <li>Inheriting the energy calibration of a previous spectrum file.</li>
+</ul>
+</div>
+
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/energy_cal_tool_simple.jpg"  class="imageBorder" style="width: 85%" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+The &quot;Energy Calibration&quot; tool for a spectrum that has a linear Polynomial energy calibration defined and that is composed of data from a single detector.  Spectrum files from most hand-held RIID detectors will be similar to this.
+</div>
+</div>
+
+<div style="display:table-row">
+<h4>Manually changing calibration coefficients</h4>
+For Polynomial and Full Range Fraction calibrations, you can simply manually change the coefficients.
+When you are typing in a coefficient entry form, hitting enter, or clicking the mouse outside the
+entry form will result in the energy calibration being updated on the displayed spectrum.  If you have
+entered a value that causes the energy calibration to become invalid (e.x., a channel width becoming
+negative), the value will be reset to its previous value, and a message will be displayed.
+Manually altering coefficients, particularly the gain, can be a quick way to get the spectrum to
+roughly the correct calibration so peaks can then be more-easily associated with nuclides, which
+can then be used to &quot;fit&quot; the coefficients.
+</div>
+
+<div style="display:table-row">
+<h4>Fitting Coefficients Using Peaks</h4>
+A key aspect of using <b>InterSpec</b> is that when you fit for a peak in the spectrum, you can associate
+a nuclide, and specific gamma energy with it.  The easiest way to make this association is by showing
+reference lines of a nuclide before fitting the peak; then when you fit the peak, if it is near a
+reference gamma or x-ray line, the association will automatically be made.  You can also right-click
+on a peak, which will open a context-menu, with a &quot;Change Nuclide&quot; sub-menu that will suggest
+nuclides you can choose, or you can manually specify the nuclide on the &quot;Peak Manager&quot;
+tab, or with the &quot;Peak Editor&quot; tool accessed via the right-click context menu.
+<br />
+After associating peaks with a source gamma or x-ray, you will see these peaks in the &quot;Calibration Peaks&quot; table on the tool.
+Using the check-boxes in the table, you can control which peaks will be used to &quot;fit&quot; for the
+energy coefficients.  And using the check-boxes next to the calibration coefficients, you can determine
+which coefficients you want to fit for.  Any coefficients not checked will remain fixed at their
+displayed values.
+<br />
+Once you have selected peaks to use, and coefficients to fit for (you must select at least as many peaks
+as coefficients you will fit for), pressing the &quot;Fit Coeffs&quot; button in the lower-left-hand
+of the tool will perform the fit and update the spectrum with the new energy calibration.
+The fitting procedure uses the uncertainty of the peak means (determined when the peaks where fit)
+to form a weighted &chi;<sup>2</sup>, which is minimized using the non-linear least squares method, yielding
+the energy calibration coefficients that brings the peaks as close as possible to their true energies.
+The difference between the gammas true energy, and the fit peak are noted in the &quot;Difference&quot;
+column of the peak table.
+</div>
+
+
+<div style="display:table-row">
+<h4>Graphically Dragging the Spectrum to Calibrate</h4>
+If you hold the <code>CTRL + ALT</code> keys and click and drag on the spectrum with the left mouse button,
+you can &quot;drag&quot; it to the correct energy.  It is easiest to click down at the mean of the
+spectrums peak, and drag it to the reference line.
+An example of doing this is shown below.
+After releasing the mouse button, a dialog will be shown to let you choose which energy calibration
+coefficient you wish to change, or if you want to add a non-linear deviation pair.
+
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/Recalib1.png" class="imageBorder" style="max-width:50%; height:250px;"/>
+<img src="InterSpec_resources/static_text/images/Recalib2.png"  class="imageBorder" style="max-width:40%; height:250; margin-left:10px;"/>
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+[Left] An example of <code>CTRL + ALT + dragging</code> a poorly calibrated Co-60 spectrum to the correct energy calibration.
+[Right] After the mouse button is let up, a confirmation dialog will be shown to let you review the changes
+to the calibration that will be made.
+</div>
+</div>
+
+<p>If you <code>CTRL + ALT + drag</code> a second time on the spectrum, within two minutes of the
+first time, and at a reasonably different energy, you will be prompted if you want to
+&quot;preserve&quot; your previous energy  calibration adjustment as well.  An example of how you
+might use this feature is by first using the 239 keV Th-232 peak to adjust the offset by
+<code>CTRL + ALT + dragging</code> that peak to the correct energy, then doing the same thing
+to the 2614 keV, at which time the resulting dialog will give you the option of preserving both actions; <b>InterSpec</b>
+will adjust both the offset and gain coefficients to keep both peaks at the desired energies.
+</p>
+</div>
+
+<div style="display:table-row">
+<h4>Inheriting Energy Calibration from Previous Spectra</h4>
+When you load a new spectrum file, or change spectra within a file, <b>InterSpec</b> will check
+if the new file or spectrum is from the same detector as the previous one, and if the energy calibrations
+differ, you will be prompted if you want to use the energy calibration from the previous spectrum
+with the new spectrum.
+</div>
+
+
+<div style="display:table-row">
+<h4>Complications In Performing Calibrations</h4>
+If the spectrum file you load has only a single spectrum in it, and that is the only spectrum you are
+displaying, the <em>Energy Calibration</em> tool will look like above, with how the displayed
+energy calibration coefficients are applied being un-ambiguous.  However, if your spectrum file
+has spectra from multiple different times, and/or spectra from different gamma detectors, and/or you are
+displaying a background or secondary foreground, the <em>Energy Calibration</em> tool will adjust
+to allow un-ambiguous application of calibration coefficients to the spectra.
+
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/energy_cal_tool.png"  class="imageBorder" style="width: 85%" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+An example of how the <em>Energy Calibration</em> tool will look when displaying a foreground composed from
+multiple gamma detectors (A1, A2, ...), as well as a separate background file.
+The options available in the &quot;<b>Apply Changes To</b>&quot; column will adapt based on your currently loaded
+spectrum files, and detectors or samples you are viewing.
+</div>
+</div>
+<p>
+The options available in the &quot;<b>Apply Changes To</b>&quot; column, that can be seen above,
+will change based on the files, samples, and detectors you are currently viewing; the contents of this
+column allows selecting what spectra any energy calibration changes will be applied to.
+If you wish to apply changes to a sub-set of the detectors given in the spectrum file,
+choose the &quot;<b>View</b>&quot; &rarr; &quot;<b>Detectors</b>&quot; menu to only display the detectors
+you want changes to be applied to (used commonly if one detector of a system was out of calibration).
+You can click on the items in the &quot;<b>Detector</b>&quot; column on this tool to view and change
+the coefficients used for each detector.
+</p>
+<p>
+If you manually edit the coefficients for one detector, <b>InterSpec</b> does the math and applies the
+effective changes to all the other energy calibrations you have selected for changes to be applied to;
+that is, it calculates the changes necessary to the other calibrations so that the relative locations
+of the different spectra are all moved the same amount.  That means adjusting the gain on one of the
+calibrations may cause the offsets and quadratic coefficients to be changed on the other energy
+calibrations.  A similar thing happens when fitting coefficients or graphically dragging the spectrum.
+</p>
+<p>
+However, if you add, remove, or change deviation pairs for a particular detector, those changes are
+not propagated to the other detectors; this is because the deviation pairs are often-times unique
+to a specific detector, so it would not make sense to propagate changes between detectors.
+</p>
+</div>
+
+
+<div style="display:table-row">
+<h4>More Energy Calibration Related Actions</h4>
+The &quot;<b>More Actions</b>&quot; column provides additional energy calibration related actions
+you can take; the contents of this column will dynamically change according to what is possible
+with the spectra you currently are viewing.
+<br />
+Selecting any of these options will start a dialog that will guide you through performing the action.
+Descriptions of each of the possible actions are:
+
+<table style="text-align: left; margin-left: 10px;">
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      Linearize...
+    </th>
+    <td style="padding-bottom: 20px;">
+      This will change the energy boundaries of each channel, so that only the offset and gain
+      energy calibration terms will be non-zero.  The energy location of the peaks and other spectral
+      features will all remain the same, and counts per keV will remain unchanged everywhere, but
+      channel counts will become non-integer.  Non-integer counts do not pose any problems or limitations
+      for doing further analysis in <b>InterSpec</b>.
+    </td>
+  </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      Truncate Energy...
+    </th>
+    <td style="padding-bottom: 20px;">
+    This allows removing channels from the left and/or right side of the spectrum.  Energy calibration
+    coefficients will be re-computed for the new channel range such that the peaks and spectral features
+    will all remain at the original energies.
+    </td>
+  </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      Combine Channels...
+    </th>
+    <td style="padding-bottom: 20px;">
+    This allows combining multiple data channels together.  This is most commonly done on low statistics
+    spectra in order to allow more eye-friendly interpretation of spectral features.  For example if the spectrum
+    starts out at 16,384 channels, you could reduce this down to 8,192 or 4,096 channels.  When doing
+    this the total number of counts in the spectrum remains the same, and the energy calibration coefficients
+    will be re-computed so the energy of peaks and spectral features will all stay the same.
+    </td>
+  </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      To FRF...
+    </th>
+    <td style="padding-bottom: 20px;">
+    This allows converting from using Polynomial energy calibration, to Full Range Fraction calibration.
+    </td>
+  </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      To Polynomial...
+    </th>
+    <td style="padding-bottom: 20px;">
+      This allows converting from using Full Range Fraction energy calibration, to Polynomial calibration.
+    </td>
+  </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      Multi File Cal...
+    </th>
+    <td style="padding-bottom: 20px;">
+      This allows using multiple spectrum files to fit for energy calibration coefficients.  A typical
+      use-case for this is when you have multiple spectra that each have a different calibration
+      sources (e.x., Am-241, Th-232, Co-60, etc), and you would like to use multiple of the spectra to
+      fit for the coefficients.  To do this, first load each spectrum into <b>InterSpec</b> and fit
+      the relevant photo-peaks, associating the correct nuclide and gamma with each peak.  Then
+      once you've done this for all the spectra you want, select this tool, which will then allow
+      you to choose which peaks from which spectra to use to fit for the coefficients.
+    </td>
+  </tr>
+</table>
+</div>
+
+

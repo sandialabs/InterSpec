@@ -1510,38 +1510,44 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
 
 
 
-float DetectorPeakResponse::fractionalSolidAngle( const float detDiam,
-                                                   const float D,
-                                                   const float source_rad )
+double DetectorPeakResponse::fractionalSolidAngle( const double detDiam,
+                                                   const double D,
+                                                   const double source_rad )
 {
   /*
     See also page 119 in Knoll for approximations where source and detector
-    diameters are somewhat comparible to distance of source from detector
+    diameters are somewhat comparable to distance of source from detector
     An unverified implementation of that is:
   */
-  const float alpha = pow(source_rad/D,2.0f);
-  const float beta = pow(0.5f*detDiam/D,2.0f);
-  const float F1 = ((5.0f/16.0f)*beta/pow(1.0f+beta,3.5f)) - ((35.0f/64.0f)*beta*beta/pow(1.0f+beta,4.5f));
-  const float F2 = ((35.0f/128.0f)*beta/pow(1.0f+beta,4.5f)) - ((315.0/256.0)*beta*beta/pow(1.0f+beta,11.0f/12.0f)) + ((1155.0f/1024.0f)*beta*beta*beta/pow(1.0f+beta,6.5f));
+  const double alpha = pow(source_rad/D,2.0);
+  const double beta = pow(0.5*detDiam/D,2.0);
+  const double F1 = ((5.0/16.0)*beta/pow(1.0+beta,3.5)) - ((35.0/64.0)*beta*beta/pow(1.0+beta,4.5));
+  const double F2 = ((35.0/128.0)*beta/pow(1.0+beta,4.5)) - ((315.0/256.0)*beta*beta/pow(1.0+beta,11.0/12.0)) + ((1155.0/1024.0)*beta*beta*beta/pow(1.0+beta,6.5));
 
-  const float omega = 0.5f * ( 1.0f - (1.0f/sqrt(1.0f+beta)) - ((3.0f/8.0f)*alpha*beta/pow(1.0f+beta,2.5f)) + alpha*alpha*F1 - alpha*alpha*alpha*F2 );
+  const double omega = 0.5 * ( 1.0 - (1.0/sqrt(1.0+beta)) - ((3.0/8.0)*alpha*beta/pow(1.0+beta,2.5))
+                       + alpha*alpha*F1 - alpha*alpha*alpha*F2 );
 
   return omega;
 }//float DetectorPeakResponse::fractionalSolidAngle(...)
 
 
-float DetectorPeakResponse::fractionalSolidAngle( const float detDiam,
-                                                  const float D )
+double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const double D )
 {
-  const float r = 0.5f * detDiam;
-  return 0.5f*(1.0f - (D/sqrt(D*D+r*r)));
-}//float fractionalSolidAngle(...)
+  // Using a metric that if you increase the distance by 1%, but get an identical results, you have
+  //  hit the limit of numerical accuracy (not perfect, but whatever), using a 5cm Detector:
+  //  - original float-based implementation: 12.65 m
+  //  - upgrading to doubles: 194698 m
+  //  - dividing the "D" through into the sqrt argument, reduced numerical accuracy for both float
+  //    and double, as did moving the 0.5 through the parenthesis
+  
+  const double r = 0.5 * detDiam;
+  return 0.5*(1.0 - (D/sqrt(D*D+r*r)));
+}//double fractionalSolidAngle(...)
 
 
-float DetectorPeakResponse::efficiency( const float energy,
-                                        const float dist ) const
+double DetectorPeakResponse::efficiency( const float energy, const double dist ) const
 {
-  const float fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist );
+  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist );
   return fracSolidAngle * intrinsicEfficiency( energy );
 }//float efficiency( const float energy ) const
 

@@ -78,6 +78,9 @@
 using namespace Wt;
 using namespace std;
 
+
+
+
 namespace Wt
 {
   namespace Dbo
@@ -319,9 +322,16 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
 {
   using namespace Wt;
   
+  if( !viewer )
+  {
+    UserOption *option = getDefaultUserPreference( name, DeviceType::Desktop );
+    boost::any value = option->value();
+    delete option;
+    return value;
+  }
+
   //This next line is the only reason InterSpec.h needs to be included
   //  above
-  
   Dbo::ptr<InterSpecUser> &user = userFromViewer(viewer);
   std::shared_ptr<DataBaseUtils::DbSession> sql = sqlFromViewer(viewer);
   
@@ -349,8 +359,9 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
   if( pos != prefs.end() )
     return pos->second;
   
-  UserOption *option = getDefaultUserPreference( name, user->m_deviceType );
-  option->m_user = user;
+  UserOption *option_raw = getDefaultUserPreference( name, user->m_deviceType );
+  Wt::Dbo::ptr<UserOption> option( option_raw );
+  option.modify()->m_user = user;
   
   DataBaseUtils::DbTransaction transaction( *sql );
   boost::any value;
@@ -361,6 +372,7 @@ boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec
     user->m_preferences[name] = value;
   }catch( std::exception &e )
   {
+    //
     transaction.rollback();
     throw e;
   }//try / catch
@@ -472,6 +484,24 @@ void InterSpecUser::associateFunction( Wt::Dbo::ptr<InterSpecUser> user,
   }
 }//associateFunction
 
+ 
+void InterSpecUser::addCallbackWhenChanged( const std::string &name,
+                                            boost::function<void(boost::any)> fcn,
+                                            std::shared_ptr<Wt::Signals::connection> conn )
+{
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  
+  Wt::Dbo::ptr<InterSpecUser> &user = viewer->m_user;
+  assert( user );
+  
+  boost::any value = preferenceValueAny( name, viewer ); //call to make sure a valid preference
+  if( value.empty() )  //just to make sure the call isnt optimized away
+    std::cout << "Unexpected failure of preference '" << name << "' to not have a value" << std::endl;
+  
+  user->m_onChangeCallbacks[name].emplace_back( std::move(fcn), std::move(conn) );
+}//addCallbackWhenChanged(...)
+
 
 void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
                                      const std::string &name,
@@ -495,8 +525,8 @@ void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   else
     cb->setChecked( !value );
   
-  boost::function<void()> setchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb, true ) );
-  boost::function<void()> setunchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb, false ) );
+  boost::function<void()> setchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setChecked, cb ) );
+  boost::function<void()> setunchecked = wApp->bind( boost::bind( &Wt::WCheckBox::setUnChecked, cb ) );
   
   std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
     const bool value = boost::any_cast<bool>(valueAny);
@@ -762,12 +792,14 @@ void UserFileInDb::removeWriteProtection( Wt::Dbo::ptr<UserFileInDb> ptr )
 
 
 Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
-                                                   Dbo::ptr<UserFileInDb> orig,
+                                                  Dbo::ptr<UserFileInDb> orig,
+                                                  DataBaseUtils::DbSession &sqldb,
                                                   bool isSaveState )
 {
   if( !orig )
     return orig;
-  Dbo::Session *session = orig.session();
+  
+  auto session = sqldb.session();
   if( !session )
     throw runtime_error( "UserFileInDb::makeDeepWriteProtectedCopyInDatabase():"
                           " invalid input.");
@@ -797,7 +829,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
 
   newfile->snapshotParent = orig->snapshotParent;
   
-  Dbo::Transaction transaction( *orig.session() );
+  DataBaseUtils::DbTransaction transaction( sqldb );
   
   try
   {
@@ -1589,3 +1621,8 @@ void InterSpecUser::setPreviousAccessTime( const boost::posix_time::ptime &utcTi
   m_previousAccessUTC = utcTime;
 }//void setPreviousAccessTime( const boost::posix_time::ptime &utcTime );
 
+
+void InterSpecUser::EmitBindSignal( const std::shared_ptr< Wt::Signals::signal<void(boost::any)> > &s, boost::any value )
+{
+  (*s)(value); //equivalent to emit
+}

@@ -60,6 +60,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "SpecUtils/SpecFile.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -76,8 +77,19 @@ bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
   ublas::matrix<T> A( input );
   ublas::permutation_matrix<std::size_t> pm( A.size1() );
   const size_t res = lu_factorize(A, pm);
+  
   if( res != 0 )
+  {
+    //cout << "Singlular matrix passed in:" << endl;
+    //for( size_t row = 0; row < input.size1(); ++row )
+    //{
+    //  for( size_t col = 0; col < input.size2(); ++col )
+    //    cout << "\t" << input(row,col);
+    //  cout << endl;
+    //}
     return false;
+  }//if( res != 0 )
+  
   inverse.assign( ublas::identity_matrix<T>( A.size1() ) );
   lu_substitute(A, pm, inverse);
   return true;
@@ -327,6 +339,9 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
+  
+  const bool highres = PeakFitUtils::is_high_res( meas );
+  
   size_t lower_channel = 0, upper_channel = 0;
   //    ExperimentalPeakSearch::find_spectroscopic_extent( meas, lower_channel, upper_channel );
   //    cout << "Start at " << meas->gamma_channel_center( lower_channel ) << " and going through "
@@ -407,7 +422,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       inpeaks.insert( inpeaks.end(), candidates.begin()+i+1, candidates.end() );
       inpeaks.push_back( peak );
       
-      const double nsigma = (meas->num_gamma_channels()<3000) ? 5.0 : 10.0;
+      const double nsigma = highres ? 10.0 : 5.0;
       const vector< vector<std::shared_ptr<const PeakDef> > > disconnectedpeaks
                               = causilyDisconnectedPeaks(  nsigma, true, inpeaks );
       
@@ -489,7 +504,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     candidates.swap( nextcandidates );
   }//while( !candidates.empty() )
   
-  if( meas->num_gamma_channels() > 3000 )
+  if( highres )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
   
   
@@ -504,6 +519,9 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
+  
+  const bool highres = PeakFitUtils::is_high_res( meas );
+  
   size_t lower_channel = 0, upper_channel = 0;
   vector<PeakPtr> candidates
    = secondDerivativePeakCanidatesWithROI( meas, lower_channel, upper_channel );
@@ -581,7 +599,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
               &PeakDef::lessThanByMeanShrdPtr );
   }//while( !candidates.empty() )
   
-  if( meas->num_gamma_channels() > 3000 )
+  if( highres )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
   
   return fitpeakvec;
@@ -874,7 +892,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   //chi2fcn.set_reldiff_punish_start( 2.35482 );
   
   vector<PeakDef> inpeaks;
-  double conteqn[2] = { p0, p1 };
+  double conteqn[6] = { p0, p1, 0.0, 0.0, 0.0, 0.0 };
   double initial_cont_area = PeakContinuum::offset_eqn_integral( conteqn, offsetType, start_range, end_range, start_range );
   
   const double totalpeakarea = (areaarea > initial_cont_area)
@@ -1110,7 +1128,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
       inputPrams.Add( "P3",  0.0, 0.25 );
   }//if( intputSharesContinuum ) / else
   
-  const bool isHpge = (dataH->num_gamma_channels() > 4094);
+  const bool isHpge = PeakFitUtils::is_high_res( dataH );
   
   for( size_t i = 0; i < inpeaks.size(); ++i )
   {
@@ -1252,7 +1270,7 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, x0, x1 );
   
   
-  const bool isHpge = (dataH->num_gamma_channels() > 4094);
+  const bool isHpge = PeakFitUtils::is_high_res( dataH );
   
   float minw_lower, maxw_lower, minw_upper, maxw_upper;
   expected_peak_width_limits( x0, isHpge, minw_lower, maxw_lower );
@@ -1721,7 +1739,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
         const double xbinlow = data->gamma_channel_lower(channel);
         const double xbinup = data->gamma_channel_upper(channel);
         const double ndata = data->gamma_channel_content(channel);
-        const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
+        const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
         
         double npeak = 0.0;
         for( const PeakShrdPtr &peak : peaks )
@@ -1750,7 +1768,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
             predicted[channel] = 0.0;
           const double xbinlow = data->gamma_channel_lower(channel);
           const double xbinup = data->gamma_channel_upper(channel);
-          const double ncontinuum = continuum->offset_integral(xbinlow, xbinup);
+          const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
           predicted[channel] += ncontinuum + peak->gauss_integral( xbinlow, xbinup );
           if( peak->skewType() == PeakDef::LandauSkew )
             predicted[channel] += peak->skew_integral( xbinlow, xbinup );
@@ -1895,12 +1913,14 @@ PeakShrdVec refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &da
       cerr << "prechi2Dof=" << prechi2Dof << endl;
       cerr << "postchi2Dof=" << postchi2Dof << endl;
     }
+    
     if( prechi2Dof < postchi2Dof )
     {
       answer.clear();
       return answer;
     }//if( prechi2Dof >= 0.99*postchi2Dof )
     
+      
     for( const PeakPtr peak : answer )
     {
       const double mean = peak->mean();
@@ -1965,7 +1985,7 @@ double evaluate_chi2dof_for_range( const std::vector<PeakDef> &peaks,
       if( !continuums.count( contptr ) )
       {
         continuums.insert( contptr );
-        y_pred += contptr->offset_integral(x0, x1);
+        y_pred += contptr->offset_integral(x0, x1, dataH);
       }
     }//for( size_t j = 0; j < peaks.size(); ++j )
     
@@ -2062,7 +2082,7 @@ void find_roi_for_2nd_deriv_candidate(
     throw runtime_error( "find_roi_for_2nd_deriv_candidate: invalid input" );
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = (nchannel > 3000);
+  const bool highres = PeakFitUtils::is_high_res( data );
   
   const size_t meanchannel = data->find_gamma_channel( peakmean );
   
@@ -2437,7 +2457,7 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
   roiLower = roiUpper = -1.0;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > 3000);
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   double minEnergy = mean0 - 2.0*sigma0 - 20.0/pixelPerKev;
   double maxEnergy = mean0 + 2.0*sigma0 + 20.0/pixelPerKev;
@@ -2684,11 +2704,15 @@ void get_candidate_peak_estimates_for_user_click(
   const double upper_energy_mult = 0.2;
   
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > 3000);
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   const size_t midbin = dataH->find_gamma_channel( x );
-  const size_t lowchannel = midbin - lower_energy_mult*nchannels;
-  const size_t highchannel = midbin + upper_energy_mult*nchannels;
+  
+  const double lower_chan_sub = lower_energy_mult*nchannels;
+  const size_t lowchannel = static_cast<size_t>( (lower_chan_sub < midbin) ? (midbin - lower_chan_sub) : 0.0 );
+  
+  const double upper_chan_sub = upper_energy_mult*nchannels;
+  const size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
   
   const vector<PeakPtr> candidates
        = secondDerivativePeakCanidatesWithROI( dataH, lowchannel, highchannel );
@@ -2800,7 +2824,7 @@ void fit_peak_for_user_click( PeakShrdVec &results,
   const size_t nchannels = dataH->num_gamma_channels();
   const size_t midbin = dataH->find_gamma_channel( mean0 );
   const float binwidth = dataH->gamma_channel_width( midbin );
-  const bool highres = (nchannels > 3000);
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   const size_t nFitPeaks = coFitPeaks.size() + 1;
   
   //The below should probably go off the number of bins in the ROI
@@ -3632,8 +3656,8 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     // (being lazy and just integrating, rather than evaluating)
     const double ptipval = peak->gauss_integral( mean-0.1*sigma, mean+0.1*sigma );
     const double p2val = peak->gauss_integral( mean+1.9*sigma, mean+2.1*sigma );
-    const double conttipval = peak->offset_integral( mean-0.1*sigma, mean+0.1*sigma );
-    const double cont2val = peak->offset_integral( mean+1.9*sigma, mean+2.1*sigma );
+    const double conttipval = peak->offset_integral( mean-0.1*sigma, mean+0.1*sigma, dataH );
+    const double cont2val = peak->offset_integral( mean+1.9*sigma, mean+2.1*sigma, dataH );
     const double contdiff = conttipval - cont2val;
     const double peakdiff = ptipval - p2val;
     
@@ -3643,8 +3667,8 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     const double roi_lower = peak->lowerX();
     const double roi_upper = peak->upperX();
     
-    const double below_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower );
-    const double above_roi_cont_area = peak->continuum()->offset_integral( roi_upper, roi_upper + sigma );
+    const double below_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower, dataH );
+    const double above_roi_cont_area = peak->continuum()->offset_integral( roi_upper, roi_upper + sigma, dataH );
     const double below_roi_data_area = dataH->gamma_integral( roi_lower - sigma, roi_lower );
     const double above_roi_data_area = dataH->gamma_integral( roi_upper, roi_upper + sigma );
     
@@ -3832,7 +3856,7 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
   
     for( size_t i = startchannel; i <= endchannel; ++i )
     {
-      const double val = continuum->offset_integral( energies[i], energies[i+1] );
+      const double val = continuum->offset_integral( energies[i], energies[i+1], dataH );
       if( val < minval )
       {
         minval = val;
@@ -3841,9 +3865,9 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
     }//for( size_t i = startchannel; i <= endchannel; ++i )
   
     const double lowedgeval = continuum->offset_integral( energies[startchannel],
-                                                    energies[startchannel+1] );
+                                                    energies[startchannel+1], dataH );
     const double highedgeval = continuum->offset_integral( energies[endchannel],
-                                                    energies[endchannel+1] );
+                                                    energies[endchannel+1], dataH );
   
     //THe below 0.5 and 10.0 are based off nearly nothing
     if( minval < 0.5*lowedgeval && minval < 0.5*highedgeval
@@ -4185,7 +4209,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   const double core_end = std::min( mean + fwhm, peak->upperX() );
   
 
-  const bool debug_this_peak = fabs(mean - 32.9752) < 2.5;
+  const bool debug_this_peak = false; //fabs(mean - 32.9752) < 2.5;
   
   if( debug_this_peak )
     cout << "debug_this_peak" << endl;
@@ -4553,7 +4577,6 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   bool lowstatregion = false;
   const size_t nchannels = dataH->num_gamma_channels();
-  const bool highres = (nchannels > 3000);
   
   double sigma0, mean0, area0;
   get_candidate_peak_estimates_for_user_click( sigma0, mean0, area0, x,
@@ -4603,6 +4626,16 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   if( initialfitpeaks.empty() )
     return pair<PeakShrdVec,PeakShrdVec>();
+  
+  // Using the number of channels to determine if high-resolution isnt a great method, as its not
+  //  uncommon for LaBr systems to have 4096 channels.  We should probably define some resolution
+  //  function that is the worst possible possible for high-resolution detectors, and threshold off
+  //  of this
+  const float keV_per_channel = (dataH->gamma_energy_max() - dataH->gamma_energy_min()) / dataH->num_gamma_channels();
+  // Plan: if we have
+  //inpeaks
+  
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   if( initialfitpeaks.size() > 1 )
   {
@@ -4714,7 +4747,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
     return;
   
   const size_t nchannel = data->num_gamma_channels();
-  const bool highres = (nchannel > 3000);
+  const bool highres = PeakFitUtils::is_high_res( data );
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -5050,7 +5083,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
     return candidates;
   
   const size_t nchannel = dataH->num_gamma_channels();
-  const bool highres = (nchannel > 3000);
+  const bool highres = PeakFitUtils::is_high_res( dataH );
   
   if( start_channel >= nchannel )
     start_channel = 0;
@@ -5431,7 +5464,7 @@ void set_chi2_dof( std::shared_ptr<const Measurement> data,
         nfitpeak += fitpeaks[peakinds[i]].gauss_integral( xbinlow, xbinup );
       
       const double ndata = data->gamma_channel_content( channel );
-      const double ncontinuim = continuum->offset_integral( xbinlow, xbinup );
+      const double ncontinuim = continuum->offset_integral( xbinlow, xbinup, data );
       
       const double datauncert = std::max( ndata, 1.0 );
       const double nabove = (ndata - ncontinuim - nfitpeak);
@@ -5872,13 +5905,12 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
         
         
 double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
-                                  const int polynomial_order,
+                                  const int num_polynomial_terms,
+                                  const bool step_continuum,
                                   const double ref_energy,
                                   const vector<double> &means,
                                   const vector<double> &sigmas,
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
                                   const vector<PeakDef> &fixedAmpPeaks,
-#endif
                                   std::vector<double> &amplitudes,
                                   std::vector<double> &continuum_coeffs,
                                   std::vector<double> &amplitudes_uncerts,
@@ -5887,11 +5919,20 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   if( sigmas.size() != means.size() )
     throw runtime_error( "fit_amp_and_offset: invalid input" );
   
+  if( step_continuum && ((num_polynomial_terms < 2) || (num_polynomial_terms > 4)) )
+    throw runtime_error( "fit_amp_and_offset: Only 2 to 4 terms are supported for step continuums" );
+  
+  if( num_polynomial_terms < 0 )
+    throw runtime_error( "fit_amp_and_offset: continuum must have at least 0 (e.g., no continuum) terms" );
+  
+  if( num_polynomial_terms > 4 )
+    throw runtime_error( "fit_amp_and_offset: you asked for a higher order polynomial continuum than reasonable" );
+  
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
   //
-  //Implementation is quite inneficient
+  //Implementation is quite inefficient
   //
-  //Current implemementation is not necassarily numerically the most accurate or
+  //Current implementation is not necessarily numerically the most accurate or
   //  the best when there are near degeneracies.  Should switch to using SVD for
   //  solving.
   //
@@ -5910,7 +5951,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   
   using namespace boost::numeric;
   const size_t npeaks = sigmas.size();
-  const size_t npoly = static_cast<size_t>( polynomial_order + 1 );
+  const size_t npoly = static_cast<size_t>( num_polynomial_terms );
   const int nfit_terms = npoly + npeaks;
   
 #if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
@@ -5932,28 +5973,105 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //    cerr << "{" << means[i] << ", " << sigmas[i] << "}, ";
   //  cerr << endl << endl;
   
+  double step_roi_data_sum = 0.0, step_cumulative_data = 0.0;
+  
+  const double roi_lower = x[0];
+  const double roi_upper = x[nbin];
+  if( step_continuum )
+  {
+    for( size_t row = 0; row < nbin; ++row )
+      step_roi_data_sum += data[row];
+  }
+  
+  
   for( size_t row = 0; row < nbin; ++row )
   {
     double dataval = data[row];
+    
     const double x0 = x[row];
     const double x1 = x[row+1];
-    const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
     
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
-    //I havent actually reasoned through the algorithm to see if this is the
-    //  correct way to subtract off fixed ampluitude peaks.
+    const double x0_rel = x0 - ref_energy;
+    const double x1_rel = x1 - ref_energy;
+    
+    //const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+    double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
+  
+    if( step_continuum )
+      step_cumulative_data += dataval;
+    
+/*
+    // If data is zero, or negative, lets look for the nearest non-zero bin, within 5 bins of here
+    //  This situation might happen more often after a hard background subtraction.
+    //
+    //  TODO: this doesnt fix the one-example I was looking at - perhaps need to try ignoring a
+    //        region. Maybe try looking for regions that are anomalously low (e.g., essentially
+    //        zero), and just ignore them if they are extremely below surrounding region.
+    //
+    const double non_poisson_threshold = 0.5; //FLT_EPSILON
+    const double significant_stats_threshold = 5.0;
+  
+    if( dataval < non_poisson_threshold )
+    {
+      double nearest_data = dataval;
+      
+      for( size_t i = 1; (i <= 5) && (nearest_data < significant_stats_threshold); ++i )
+      {
+        if( ((row + i) < nbin) && (data[row+i] > significant_stats_threshold) )
+          nearest_data = data[row+i];
+        
+        if( i <= row && (data[row-i] > significant_stats_threshold) )
+          nearest_data = data[row-i];
+      }//for( size_t i = 1; (i <= 5) && (nearest_data < non_poisson_threshold); ++i )
+      
+      if( nearest_data > non_poisson_threshold )
+        uncert = sqrt(nearest_data);
+    }//if( dataval < FLT_EPSILON )
+*/
+    
+
+    //TODO: I havent actually reasoned through the algorithm to see if this is the
+    //      correct way to subtract off fixed-amplitude peaks.
     for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
       dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
-#endif
     
     b(row) = ((dataval > 0.0 ? dataval : 0.0) / uncert);
     
     for( size_t col = 0; col < npoly; ++col )
     {
       const double exp = col + 1.0;
-      const double x0cont = x0 - ref_energy;
-      const double x1cont = x1 - ref_energy;
-      A(row,col) = (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp)) / uncert;
+      
+      if( step_continuum
+          && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
+          && (col == (num_polynomial_terms - 1)) )
+      {
+        // This logic mirrors that of PeakContinuum::offset_integral(...), and code
+        // If you change it in one place - change it in here, below, and in offset_integral.
+        const double frac_data = (step_cumulative_data - 0.5*data[row]) / step_roi_data_sum;
+        const double contribution = frac_data * (x1 - x0);
+        
+        A(row,col) = contribution / uncert;
+      }else if( step_continuum && (num_polynomial_terms == 4) )
+      {
+        const double frac_data = (step_cumulative_data - 0.5*data[row]) / step_roi_data_sum;
+
+        double contrib = 0.0;
+        switch( col )
+        {
+          case 0: contrib = (1.0 - frac_data) * (x1_rel - x0_rel);                     break;
+          case 1: contrib = 0.5 * (1.0 - frac_data) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
+          case 2: contrib = frac_data * (x1_rel - x0_rel);                             break;
+          case 3: contrib = 0.5 * frac_data * (x1_rel*x1_rel - x0_rel*x0_rel);         break;
+          default: assert( 0 ); break;
+        }//switch( col )
+        
+        A(row,col) = contrib / uncert;
+      }else
+      {
+        const double contribution = (1.0/exp) * (pow(x1_rel,exp) - pow(x0_rel,exp));
+        
+        A(row,col) = contribution / uncert;
+      }
     }//for( int order = 0; order < maxorder; ++order )
     
     for( size_t i = 0; i < npeaks; ++i )
@@ -5963,18 +6081,6 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     }
   }//for( size_t row = 0; row < nbin; ++row )
   
-  //  cerr << "B={";
-  //  for( int i = 0; i < nbin; ++i )
-  //    cerr << b(i) << ",";
-  //  cerr << "};" << endl;
-  //  cerr << "A={" << endl;
-  //  for( int row = 0; row < nbin; ++row )
-  //  {
-  //    for( int col = 0; col < (npeaks+npoly); ++col )
-  //      cerr << A(row,col) << ",";
-  //    cerr << endl;
-  //  }
-  //  cerr  << "};" << endl;
   
 #if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
   const ublas::matrix<double> A_transpose = ublas::trans( A );
@@ -5999,7 +6105,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   try
   {
     //See http://viennacl.sourceforge.net/doc/least-squares_8cpp-example.html#a8 for example
-    //  of better solving things follwing the below commented out lines
+    //  of better solving things following the below commented out lines
     //typedef boost::numeric::ublas::matrix<double>              MatrixType;
     //typedef boost::numeric::ublas::vector<double>              VectorType;
     //boost::numeric::ublas::range ublas_range(0, 3);
@@ -6095,23 +6201,64 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     const size_t coef = npoly + i;
     amplitudes[i] = a(coef);
     amplitudes_uncerts[i] = std::sqrt( C(coef,coef) );
-    //    cerr << "fit_amp_and_offset: peak " << i << " amplitude "
-    //         << amplitudes[i] << " +- " << amplitudes_uncerts[i] << endl;
   }//for( size_t i = 0; i < npeaks; ++i )
   
   double chi2 = 0;
+  step_cumulative_data = 0.0;
   for( size_t bin = 0; bin < nbin; ++bin )
   {
     const double x0 = x[bin];
     const double x1 = x[bin+1];
     
+    double dataval = data[bin];
+    
+    if( step_continuum )
+      step_cumulative_data += dataval;
+    
+    //TODO: I havent actually reasoned through the algorithm to see if this is the
+    //      correct way to subtract off fixed-amplitude peaks.
+    for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
+      dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
+    
     double y_pred = 0.0;
     for( size_t col = 0; col < npoly; ++col )
     {
       const double exp = col + 1.0;
-      const double x0cont = x0 - ref_energy;
-      const double x1cont = x1 - ref_energy;
-      y_pred += a(col) * (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp));
+      const double x0_rel = x0 - ref_energy;
+      const double x1_rel = x1 - ref_energy;
+      
+      if( step_continuum
+         && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
+         && (col == (num_polynomial_terms - 1)) )
+      {
+        // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
+        //  function that defines the matrix, see above for comments
+        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / step_roi_data_sum;
+        const double contribution = frac_data * (x1 - x0);
+        
+        y_pred += a(col)*contribution;
+      }else if( step_continuum && (num_polynomial_terms == 4) )
+      {
+        // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
+        //  function that defines the matrix, see above for comments
+        
+        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / step_roi_data_sum;
+        
+        double contrib = 0.0;
+        switch( col )
+        {
+          case 0: contrib = (1.0 - frac_data) * (x1_rel - x0_rel);                     break;
+          case 1: contrib = 0.5 * (1.0 - frac_data) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
+          case 2: contrib = frac_data * (x1_rel - x0_rel);                             break;
+          case 3: contrib = 0.5 * frac_data * (x1_rel*x1_rel - x0_rel*x0_rel);         break;
+          default: assert( 0 ); break;
+        }//switch( col )
+        
+        y_pred += a(col) * contrib;
+      }else
+      {
+        y_pred += a(col) * (1.0/exp) * (pow(x1_rel,exp) - pow(x0_rel,exp));
+      }//if( step_continuum ) / else
     }//for( int order = 0; order < maxorder; ++order )
     
     if( y_pred < 0.0 )
@@ -6123,10 +6270,8 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       y_pred += a(col) * PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 );
     }
     
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
     for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
       y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
-#endif
     
     //    cerr << "bin " << bin << " predicted " << y_pred << " data=" << data[bin] << endl;
     const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
@@ -6287,2975 +6432,3011 @@ bool chi2_significance_test( PeakDef peak,
 }//bool chi2_significance_test( ... 0
         
         
-        namespace ExperimentalPeakSearch
+namespace ExperimentalPeakSearch
+{
+
+AutoPeakSearchChi2Fcn::AutoPeakSearchChi2Fcn( std::shared_ptr<const Measurement> data,
+                                             const std::vector<PeakDef > &fixed_peaks )
+: ROOT::Minuit2::FCNBase(),
+m_inited( false )
+{
+  if( !data )
+    throw runtime_error( "AutoPeakSearchChi2Fcn: invalid input for construction" );
+  
+  m_meas = data;
+  m_x = data->channel_energies();
+  m_y = data->gamma_counts();
+  
+  m_fixed_peaks = fixed_peaks;
+  
+  const bool highres = PeakFitUtils::is_high_res( data );
+  
+  m_side_bins           = highres ? 7    : 10;
+  m_smooth_order        = highres ? 3    : 2;
+  m_second_deriv_thresh = highres ? -0.02 : 0.05;
+  m_stat_thresh         = highres ? 1.0   : 1.3;
+  m_width_thresh        = 0.0;//highres ? 3.5  : 4.5;
+  
+  m_min_chi2_dof_thresh = 1.5;
+  m_min_gross_counts_sig_thresh = 2.0;
+  m_nsigma_near_group = 3.0;
+}//AutoPeakSearchChi2Fcn
+
+
+size_t AutoPeakSearchChi2Fcn::lower_spectrum_channel() const { return m_lower_channel; }
+size_t AutoPeakSearchChi2Fcn::upper_spectrum_channel() const { return m_upper_channel; }
+size_t AutoPeakSearchChi2Fcn::num_initial_candidate_peaks() const { return m_num_peakstotal; }
+
+void AutoPeakSearchChi2Fcn::second_derivative( const vector<float> &input, vector<float> &results )
+{
+  results.clear();
+  SavitzyGolayCoeffs sgcoeffs( m_side_bins, m_side_bins, m_smooth_order, 2 );
+  sgcoeffs.smooth( &(input[0]), input.size(), results );
+}//void smoothSpectrum(...)
+
+
+
+std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float> &energies,
+                                                            const vector<float> &channel_counts )
+{
+#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
+  static int nwrites = 0;
+  if( nwrites++ < 3 )
+    cerr << "Writing candadte peak info to files" << endl;
+#endif
+  
+  vector<PeakDef> candidates;
+  
+  const int nchannel = static_cast<int>( channel_counts.size() );
+  const bool highres = PeakFitUtils::is_high_res( m_meas );
+  
+  vector<float> second_deriv;
+  second_derivative( channel_counts, second_deriv );
+  
+  {
+    vector<float> results;
+    SavitzyGolayCoeffs sgcoeffs( m_side_bins, m_side_bins, m_smooth_order, 0 );
+    sgcoeffs.smooth( &(channel_counts[0]), channel_counts.size(), results );
+    
+#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
+    ofstream fileout( "smoothout.csv" );
+    fileout << "Energy,Counts" << endl;
+    for( size_t i = 0; i < second_deriv.size(); ++i )
+    fileout << energies[i] << "," << results[i] << endl;
+#endif
+  }
+  
+  {
+#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
+    ofstream fileout( "secondout.csv" );
+    fileout << "Energy,Counts" << endl;
+    for( size_t i = 0; i < second_deriv.size(); ++i )
+    fileout << energies[i] << "," << second_deriv[i] << endl;
+#endif
+  }
+  
+  int minbin = -1, firstzero = -1, secondzero=-1;
+  float secondsum = 0.0f, minval = 9999999999.9f;
+  
+  for( int bin = m_lower_channel; bin < (int)m_upper_channel; ++bin )
+  {
+    const float secondDeriv = second_deriv[bin]; //Not dividing by binwidth^2 here,
+    
+    if( secondDeriv > m_second_deriv_thresh*secondsum
+       && (minval < 99999999999.9)
+       && (secondsum!=0.0) && (firstzero>0)
+       && ((bin-firstzero)>2) )
+    {
+      secondzero = bin;
+      
+      const double mean =  0.5*(energies[minbin] + energies[minbin+1]);
+      const double sigma = 0.5*(energies[secondzero] - energies[firstzero]);
+      
+      //XXX: the below 1.5 is empiracally found, I'm not entirely sure where
+      //     comes from...and infact might be higher
+      const double amp_fake_factor = 1.5;
+      const double deriv_sigma = 0.5*( secondzero - firstzero );
+      const double part = sqrt( 2.0 / ( boost::math::constants::pi<double>() *
+                                       boost::math::constants::e<double>() ) )
+      / ( deriv_sigma * deriv_sigma );
+      const double amplitude = -amp_fake_factor * secondsum / part;
+      
+      
+      PeakDef peak( mean, sigma, amplitude );
+      
+      size_t lower_channel, upper_channel;
+      double lowerEnengy = -999.9, upperEnergy = -999.9;
+      
+      //Set the ROI width here according to the second derivative.
+      if( highres )
+      {
+        int i, j;
+        
+        i = firstzero-1;
+        while( i > 0 && second_deriv[i] > 0.0 )
+          --i;
+        
+        i = i-1;
+        while( i > 0 && second_deriv[i] < 0.0 )
+          --i;
+        
+        j = i-1;
+        while( j > 0 && second_deriv[j] > 0.0 )
+          --j;
+        
+        lower_channel = ((i + j) / 2) + ((i+j)%2);
+        
+        i = secondzero+1;
+        while( i < nchannel && second_deriv[i] > 0.0 )
+          ++i;
+        
+        i = i+1;
+        while( i < nchannel && second_deriv[i] < 0.0 )
+          ++i;
+        
+        upper_channel = i-1;
+        lowerEnengy = 0.5*(energies[lower_channel] + energies[lower_channel+1]);
+        upperEnergy = 0.5*(energies[upper_channel] + energies[upper_channel+1]);
+      }else
+      {
+        /*
+         lowerEnengy = 0.5*(energies[firstzero-1] + energies[firstzero]);
+         for( lowerbin = firstzero-1; lowerbin > 0 && second_deriv[lowerbin] > 0.0f; --lowerbin )
+         lowerEnengy = 0.5*(energies[lowerbin] + energies[lowerbin+1]);
+         ++lowerbin;
+         
+         upperEnergy = 0.5*(energies[secondzero+1] + energies[secondzero+2]);
+         for( upperbin = secondzero+1; upperbin < (nchannel-1) && second_deriv[upperbin] > 0.0f; ++upperbin )
+         upperEnergy = 0.5*(energies[upperbin] + energies[upperbin+1]);
+         */
+        
+        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, m_meas );
+        lower_channel = m_meas->find_gamma_channel( lowerEnengy );
+        upper_channel = m_meas->find_gamma_channel( upperEnergy );
+      }//if( highres ) / else
+      
+      //Clamp the ROI to not get riducuolouse
+      //      lowerEnengy = std::max( lowerEnengy, mean-5.0*sigma );
+      //      upperEnergy = std::min( upperEnergy, mean+5.0*sigma );
+      
+      std::shared_ptr<PeakContinuum> continuum = peak.continuum();
+      continuum->setRange( lowerEnengy, upperEnergy );
+      //      continuum->calc_linear_continuum_eqn( dataH, lowerEnengy, upperEnergy, 1 );
+      
+      double data_area = 0.0;
+      assert( upper_channel < channel_counts.size() );
+      for( size_t i = lower_channel; i <= upper_channel; ++i )
+      data_area += channel_counts[i];
+      
+      double est_sigma = sqrt( std::max(data_area,1.0) );
+      const double figure_of_merit = 0.68*peak.amplitude()/est_sigma;
+      
+      
+      //        cout << "Found lowerEnengy=" << lowerEnengy
+      //        << ", upperEnergy=" << upperEnergy
+      //        << " for mean=" << mean << ", sigma=" << sigma
+      //        << ", FOM="<<figure_of_merit << ", est_sigma=" << est_sigma
+      //        << ", peak.amplitude()=" << peak.amplitude()
+      //        << endl;
+      
+      if( figure_of_merit > m_stat_thresh
+         && ((upperEnergy-lowerEnengy)>m_width_thresh*peak.sigma()) )
+      {
+        //          cout << "Found lowerEnengy=" << lowerEnengy
+        //               << ", upperEnergy=" << upperEnergy
+        //               << " for mean=" << mean << ", sigma=" << sigma << endl;
+        
+        candidates.push_back( peak );
+      }//if( region we were just in passed_threshold )
+      
+      secondsum = 0.0;
+      minval = 9999999999.9f;
+      minbin = secondzero = firstzero = -1;
+    }else
+    {
+      if( bin && (firstzero <= 0) && second_deriv[bin]>0.0 && second_deriv[bin+1]<0.0 )
+      {
+        firstzero = bin;
+      }
+      
+      if( firstzero > 0 )
+      {
+        secondsum += secondDeriv;
+        
+        if( secondDeriv < minval )
         {
-          
-          AutoPeakSearchChi2Fcn::AutoPeakSearchChi2Fcn( std::shared_ptr<const Measurement> data,
-                                                       const std::vector<PeakDef > &fixed_peaks )
-          : ROOT::Minuit2::FCNBase(),
-          m_inited( false )
-          {
-            if( !data )
-              throw runtime_error( "AutoPeakSearchChi2Fcn: invalid input for construction" );
-            
-            m_meas = data;
-            m_x = data->channel_energies();
-            m_y = data->gamma_counts();
-            
-            m_fixed_peaks = fixed_peaks;
-            
-            const bool highres = (m_x->size() > 3000);
-            
-            m_side_bins           = highres ? 7    : 10;
-            m_smooth_order        = highres ? 3    : 2;
-            m_second_deriv_thresh = highres ? -0.02 : 0.05;
-            m_stat_thresh         = highres ? 1.0   : 1.3;
-            m_width_thresh        = 0.0;//highres ? 3.5  : 4.5;
-            
-            m_min_chi2_dof_thresh = 1.5;
-            m_min_gross_counts_sig_thresh = 2.0;
-            m_nsigma_near_group = 3.0;
-          }//AutoPeakSearchChi2Fcn
-          
-          
-          size_t AutoPeakSearchChi2Fcn::lower_spectrum_channel() const { return m_lower_channel; }
-          size_t AutoPeakSearchChi2Fcn::upper_spectrum_channel() const { return m_upper_channel; }
-          size_t AutoPeakSearchChi2Fcn::num_initial_candidate_peaks() const { return m_num_peakstotal; }
-          
-          void AutoPeakSearchChi2Fcn::second_derivative( const vector<float> &input, vector<float> &results )
-          {
-            results.clear();
-            SavitzyGolayCoeffs sgcoeffs( m_side_bins, m_side_bins, m_smooth_order, 2 );
-            sgcoeffs.smooth( &(input[0]), input.size(), results );
-          }//void smoothSpectrum(...)
-          
-          
-          
-          std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float> &energies,
-                                                                      const vector<float> &channel_counts )
-          {
-#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-            static int nwrites = 0;
-            if( nwrites++ < 3 )
-              cerr << "Writing candadte peak info to files" << endl;
-#endif
-            
-            vector<PeakDef> candidates;
-            
-            const int nchannel = static_cast<int>( channel_counts.size() );
-            const bool highres = (nchannel > 3000);
-            
-            vector<float> second_deriv;
-            second_derivative( channel_counts, second_deriv );
-            
-            {
-              vector<float> results;
-              SavitzyGolayCoeffs sgcoeffs( m_side_bins, m_side_bins, m_smooth_order, 0 );
-              sgcoeffs.smooth( &(channel_counts[0]), channel_counts.size(), results );
-              
-#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-              ofstream fileout( "smoothout.csv" );
-              fileout << "Energy,Counts" << endl;
-              for( size_t i = 0; i < second_deriv.size(); ++i )
-                fileout << energies[i] << "," << results[i] << endl;
-#endif
-            }
-            
-            {
-#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-              ofstream fileout( "secondout.csv" );
-              fileout << "Energy,Counts" << endl;
-              for( size_t i = 0; i < second_deriv.size(); ++i )
-                fileout << energies[i] << "," << second_deriv[i] << endl;
-#endif
-            }
-            
-            int minbin = -1, firstzero = -1, secondzero=-1;
-            float secondsum = 0.0f, minval = 9999999999.9f;
-            
-            for( int bin = m_lower_channel; bin < (int)m_upper_channel; ++bin )
-            {
-              const float secondDeriv = second_deriv[bin]; //Not dividing by binwidth^2 here,
-              
-              if( secondDeriv > m_second_deriv_thresh*secondsum
-                 && (minval < 99999999999.9)
-                 && (secondsum!=0.0) && (firstzero>0)
-                 && ((bin-firstzero)>2) )
-              {
-                secondzero = bin;
-                
-                const double mean =  0.5*(energies[minbin] + energies[minbin+1]);
-                const double sigma = 0.5*(energies[secondzero] - energies[firstzero]);
-                
-                //XXX: the below 1.5 is empiracally found, I'm not entirely sure where
-                //     comes from...and infact might be higher
-                const double amp_fake_factor = 1.5;
-                const double deriv_sigma = 0.5*( secondzero - firstzero );
-                const double part = sqrt( 2.0 / ( boost::math::constants::pi<double>() *
-                                                 boost::math::constants::e<double>() ) )
-                / ( deriv_sigma * deriv_sigma );
-                const double amplitude = -amp_fake_factor * secondsum / part;
-                
-                
-                PeakDef peak( mean, sigma, amplitude );
-                
-                size_t lower_channel, upper_channel;
-                double lowerEnengy = -999.9, upperEnergy = -999.9;
-                
-                //Set the ROI width here according to the second derivative.
-                if( highres )
-                {
-                  int i, j;
-                  
-                  i = firstzero-1;
-                  while( i > 0 && second_deriv[i] > 0.0 )
-                    --i;
-                  
-                  i = i-1;
-                  while( i > 0 && second_deriv[i] < 0.0 )
-                    --i;
-                  
-                  j = i-1;
-                  while( j > 0 && second_deriv[j] > 0.0 )
-                    --j;
-                  
-                  lower_channel = ((i + j) / 2) + ((i+j)%2);
-                  
-                  i = secondzero+1;
-                  while( i < nchannel && second_deriv[i] > 0.0 )
-                    ++i;
-                  
-                  i = i+1;
-                  while( i < nchannel && second_deriv[i] < 0.0 )
-                    ++i;
-                  
-                  upper_channel = i-1;
-                  lowerEnengy = 0.5*(energies[lower_channel] + energies[lower_channel+1]);
-                  upperEnergy = 0.5*(energies[upper_channel] + energies[upper_channel+1]);
-                }else
-                {
-                  /*
-                   lowerEnengy = 0.5*(energies[firstzero-1] + energies[firstzero]);
-                   for( lowerbin = firstzero-1; lowerbin > 0 && second_deriv[lowerbin] > 0.0f; --lowerbin )
-                   lowerEnengy = 0.5*(energies[lowerbin] + energies[lowerbin+1]);
-                   ++lowerbin;
-                   
-                   upperEnergy = 0.5*(energies[secondzero+1] + energies[secondzero+2]);
-                   for( upperbin = secondzero+1; upperbin < (nchannel-1) && second_deriv[upperbin] > 0.0f; ++upperbin )
-                   upperEnergy = 0.5*(energies[upperbin] + energies[upperbin+1]);
-                   */
-                  
-                  findROIEnergyLimits( lowerEnengy, upperEnergy, peak, m_meas );
-                  lower_channel = m_meas->find_gamma_channel( lowerEnengy );
-                  upper_channel = m_meas->find_gamma_channel( upperEnergy );
-                }//if( highres ) / else
-                
-                //Clamp the ROI to not get riducuolouse
-                //      lowerEnengy = std::max( lowerEnengy, mean-5.0*sigma );
-                //      upperEnergy = std::min( upperEnergy, mean+5.0*sigma );
-                
-                std::shared_ptr<PeakContinuum> continuum = peak.continuum();
-                continuum->setRange( lowerEnengy, upperEnergy );
-                //      continuum->calc_linear_continuum_eqn( dataH, lowerEnengy, upperEnergy, 1 );
-                
-                double data_area = 0.0;
-                assert( upper_channel < channel_counts.size() );
-                for( size_t i = lower_channel; i <= upper_channel; ++i )
-                  data_area += channel_counts[i];
-                
-                double est_sigma = sqrt( std::max(data_area,1.0) );
-                const double figure_of_merit = 0.68*peak.amplitude()/est_sigma;
-                
-                
-                //        cout << "Found lowerEnengy=" << lowerEnengy
-                //        << ", upperEnergy=" << upperEnergy
-                //        << " for mean=" << mean << ", sigma=" << sigma
-                //        << ", FOM="<<figure_of_merit << ", est_sigma=" << est_sigma
-                //        << ", peak.amplitude()=" << peak.amplitude()
-                //        << endl;
-                
-                if( figure_of_merit > m_stat_thresh
-                   && ((upperEnergy-lowerEnengy)>m_width_thresh*peak.sigma()) )
-                {
-                  //          cout << "Found lowerEnengy=" << lowerEnengy
-                  //               << ", upperEnergy=" << upperEnergy
-                  //               << " for mean=" << mean << ", sigma=" << sigma << endl;
-                  
-                  candidates.push_back( peak );
-                }//if( region we were just in passed_threshold )
-                
-                secondsum = 0.0;
-                minval = 9999999999.9f;
-                minbin = secondzero = firstzero = -1;
-              }else
-              {
-                if( bin && (firstzero <= 0) && second_deriv[bin]>0.0 && second_deriv[bin+1]<0.0 )
-                {
-                  firstzero = bin;
-                }
-                
-                if( firstzero > 0 )
-                {
-                  secondsum += secondDeriv;
-                  
-                  if( secondDeriv < minval )
-                  {
-                    minbin = bin;
-                    minval = secondDeriv;
-                  }
-                }//if( firstzero > 0 )
-              }//if( we are out of region of interest) / else( in region of )
-            }//for( loop over bins )
-            
-            return candidates;
-          }//smoothingCandidatePeaks( std::shared_ptr<const Measurement> dataH,
-          
-          
-          
-          //init(): returns if fitting can proced;
-          bool AutoPeakSearchChi2Fcn::init()
-          {
-            if( m_inited )
-              throw runtime_error( "AutoPeakSearchChi2Fcn: you cant call init twice" );
-            
-            ExperimentalPeakSearch::find_spectroscopic_extent( m_meas, m_lower_channel, m_upper_channel );
-            
-            
-            if( m_fixed_peaks.empty() )
-            {
-              m_candidates = candidate_peaks( *m_x, *m_y );
-            }else
-            {
-              vector<float> y = *m_y;
-              for( size_t i = 0; i < (y.size()-1); ++i )
-              {
-                const float &lowere = (*m_x)[i];
-                const float &uppere = (*m_x)[i+1];
-                const float mide = 0.5f * (lowere + uppere);
-                
-                for( size_t j = 0; j < m_fixed_peaks.size(); ++j )
-                {
-                  if( mide >= m_fixed_peaks[j].lowerX() && mide <= m_fixed_peaks[j].upperX() )
-                  {
-                    const double peakarea = m_fixed_peaks[j].gauss_integral( lowere, uppere );
-                    y[i] = std::max( y[i]-peakarea, 0.0 );
-                  }
-                }//for( size_t j = 0; j < m_fixed_peaks.size(); ++j )
-              }//for( size_t i = 0; i < (y.size()-1); ++i )
-              
-              std::vector<PeakDef> candidates = candidate_peaks( *m_x, y );
-              
-              
-              //Now go through and remove all the candates within 1 sigma of an input put
-              for( size_t i = 0; i < candidates.size(); ++i )
-              {
-                size_t nearest;
-                double neareste = 99999999.9;
-                for( size_t j = 0; j < m_fixed_peaks.size(); ++j )
-                {
-                  const double de = fabs( m_fixed_peaks[j].mean() - candidates[i].mean() );
-                  if( de < neareste )
-                  {
-                    nearest = j;
-                    neareste = de;
-                  }
-                }
-                
-                if( m_fixed_peaks.size() )
-                {
-                  const PeakDef &p = m_fixed_peaks[nearest];
-                  if( fabs(p.mean() - candidates[i].mean()) > 1.0*p.sigma() )
-                    m_candidates.push_back( candidates[i] );
-                }else
-                {
-                  m_candidates.push_back( candidates[i] );
-                }
-              }//for( size_t i = 0; i < candidates.size(); ++i )
-            }//if( m_fixed_peaks.empty() ) / else
-            
-            if( m_candidates.empty() )
-              return false;
-            
+          minbin = bin;
+          minval = secondDeriv;
+        }
+      }//if( firstzero > 0 )
+    }//if( we are out of region of interest) / else( in region of )
+  }//for( loop over bins )
+  
+  return candidates;
+}//smoothingCandidatePeaks( std::shared_ptr<const Measurement> dataH,
+
+
+
+//init(): returns if fitting can proced;
+bool AutoPeakSearchChi2Fcn::init()
+{
+  if( m_inited )
+    throw runtime_error( "AutoPeakSearchChi2Fcn: you cant call init twice" );
+  
+  ExperimentalPeakSearch::find_spectroscopic_extent( m_meas, m_lower_channel, m_upper_channel );
+  
+  
+  if( m_fixed_peaks.empty() )
+  {
+    m_candidates = candidate_peaks( *m_x, *m_y );
+  }else
+  {
+    vector<float> y = *m_y;
+    for( size_t i = 0; i < (y.size()-1); ++i )
+    {
+      const float &lowere = (*m_x)[i];
+      const float &uppere = (*m_x)[i+1];
+      const float mide = 0.5f * (lowere + uppere);
+      
+      for( size_t j = 0; j < m_fixed_peaks.size(); ++j )
+      {
+        if( mide >= m_fixed_peaks[j].lowerX() && mide <= m_fixed_peaks[j].upperX() )
+        {
+          const double peakarea = m_fixed_peaks[j].gauss_integral( lowere, uppere );
+          y[i] = std::max( y[i]-peakarea, 0.0 );
+        }
+      }//for( size_t j = 0; j < m_fixed_peaks.size(); ++j )
+    }//for( size_t i = 0; i < (y.size()-1); ++i )
+    
+    std::vector<PeakDef> candidates = candidate_peaks( *m_x, y );
+    
+    
+    //Now go through and remove all the candates within 1 sigma of an input put
+    for( size_t i = 0; i < candidates.size(); ++i )
+    {
+      size_t nearest;
+      double neareste = 99999999.9;
+      for( size_t j = 0; j < m_fixed_peaks.size(); ++j )
+      {
+        const double de = fabs( m_fixed_peaks[j].mean() - candidates[i].mean() );
+        if( de < neareste )
+        {
+          nearest = j;
+          neareste = de;
+        }
+      }
+      
+      if( m_fixed_peaks.size() )
+      {
+        const PeakDef &p = m_fixed_peaks[nearest];
+        if( fabs(p.mean() - candidates[i].mean()) > 1.0*p.sigma() )
+          m_candidates.push_back( candidates[i] );
+      }else
+      {
+        m_candidates.push_back( candidates[i] );
+      }
+    }//for( size_t i = 0; i < candidates.size(); ++i )
+  }//if( m_fixed_peaks.empty() ) / else
+  
+  if( m_candidates.empty() )
+    return false;
+  
 #if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 2 )
-            for( const PeakDef &p : m_candidates )
-            {
-              cout << "Initial candidate peak { mean: " << p.mean()
-              << ", sigma: " << p.sigma()
-              << ", amplitude: " << p.amplitude()
-              << ", ROI_lower: " << p.continuum()->lowerEnergy()
-              << ", ROI_upper: " << p.continuum()->upperEnergy()
-              << " }" << endl;
-            }//for( const PeakDef &p : m_candidates )
+  for( const PeakDef &p : m_candidates )
+  {
+    cout << "Initial candidate peak { mean: " << p.mean()
+    << ", sigma: " << p.sigma()
+    << ", amplitude: " << p.amplitude()
+    << ", ROI_lower: " << p.continuum()->lowerEnergy()
+    << ", ROI_upper: " << p.continuum()->upperEnergy()
+    << " }" << endl;
+  }//for( const PeakDef &p : m_candidates )
 #endif
-            
-            
-            const bool highres = (m_x->size() > 3000);
-            
-            const size_t npeaks = m_fixed_peaks.size() + m_candidates.size();
-            
-            if( npeaks == 1 )
-              m_resolution_type = Polynomial0thOrder;
-            //    else
-            //      m_resolution_type = SqrtEnergy;
-            else if( npeaks < 4 )
-              m_resolution_type = Polynomial1stOrder;
-            else if( npeaks < 5 || !highres )
-              m_resolution_type = Polynomial2ndOrder;
-            else
-              m_resolution_type = Polynomial3rdOrder;
-            
-            //now we need to group peaks together into common ROI
-            vector<PeakDef> allpeaks;
-            allpeaks.insert( allpeaks.end(), m_candidates.begin(), m_candidates.end() );
-            allpeaks.insert( allpeaks.end(), m_fixed_peaks.begin(), m_fixed_peaks.end() );
-            std::sort( allpeaks.begin(), allpeaks.end(), &PeakDef::lessThanByMean );
-            
-            m_num_peakstotal = allpeaks.size();
-            
-            vector<bool> isfixed;
-            vector<PeakDef> currentgroup;
-            currentgroup.push_back( allpeaks[0] );
-            
-            
-            std::vector<PeakDef>::const_iterator lb, ub;
-            lb = std::lower_bound( m_fixed_peaks.begin(), m_fixed_peaks.end(), allpeaks[0], &PeakDef::lessThanByMean );
-            ub = std::upper_bound( m_fixed_peaks.begin(), m_fixed_peaks.end(), allpeaks[0], &PeakDef::lessThanByMean );
-            isfixed.push_back( (lb != ub) );
-            
-            size_t numpeaksinserted = 1;
-            
-            for( size_t i = 1; i < allpeaks.size(); ++i )
-            {
-              PeakDef p = allpeaks[i];
-              
-              lb = std::lower_bound( m_fixed_peaks.begin(), m_fixed_peaks.end(), p, &PeakDef::lessThanByMean );
-              ub = std::upper_bound( m_fixed_peaks.begin(), m_fixed_peaks.end(), p, &PeakDef::lessThanByMean );
-              
-              const PeakDef &prev = currentgroup.back();
-              
-              const bool overlapping_roi = (p.lowerX() < prev.upperX());
-              const bool isnear = (0.5*(p.mean() - prev.mean()) / (p.sigma() + prev.sigma())) < m_nsigma_near_group;
-              
-              if( overlapping_roi && isnear )
-              {
-                std::shared_ptr<PeakContinuum> cont = currentgroup.back().continuum();
-                cont->setRange( cont->lowerEnergy(), std::max(p.upperX(),cont->upperEnergy()) );
-                p.setContinuum( cont );
-              }else
-              {
-                //        cout << "Adding group of " << isfixed.size() << " to fit for" << endl;
-                m_grouped_isfixed.push_back( isfixed );
-                m_grouped_candidates.push_back( currentgroup );
-                
-                std::shared_ptr<PeakContinuum> cont = currentgroup.back().continuum();
-                
-                //XXX - deciding the order of the continuum is purely a guess right now
-                PeakContinuum::OffsetType type = PeakContinuum::Linear;
-                if( highres )
-                {
-                  if( currentgroup.size() > 2 )
-                    type = PeakContinuum::Quadratic;
-                  if( currentgroup.size() > 4 )
-                    type = PeakContinuum::Cubic;
-                }else
-                {
-                  if( currentgroup.size() > 2 )
-                    type = PeakContinuum::Cubic;
-                }
-                
-                cont->setType( type );
-                
-                isfixed.clear();
-                currentgroup.clear();
-              }//if( p.lowerX() < currentgroup.back().upperX() ) / else
-              
-              ++numpeaksinserted;
-              isfixed.push_back( (lb != ub) );
-              currentgroup.push_back( p );
-            }//for( size_t i = 0; i < allpeaks.size(); ++i )
-            
-            assert( numpeaksinserted == npeaks );
-            
-            std::shared_ptr<PeakContinuum> cont = currentgroup.back().continuum();
-            
-            PeakContinuum::OffsetType type = PeakContinuum::Linear;
-            if( highres )
-            {
-              if( currentgroup.size() > 2 )
-                type = PeakContinuum::Quadratic;
-              if( currentgroup.size() > 4 )
-                type = PeakContinuum::Cubic;
-            }else
-            {
-              if( currentgroup.size() == 2 )
-                type = PeakContinuum::Quadratic;
-              if( currentgroup.size() > 2 )
-                type = PeakContinuum::Cubic;
-            }
-            
-            cont->setType( type );
-            
-            m_grouped_isfixed.push_back( isfixed );
-            m_grouped_candidates.push_back( currentgroup );
-            
-            const float *x_begin = &(*m_x)[0];
-            const float *x_end = (&(*m_x)[0]) + m_x->size();
-            const float *y_begin = &(*m_y)[0];
-            
-            m_nbins_used = 0;
-            for( size_t i = 0; i < m_grouped_candidates.size(); ++i )
-            {
-              std::shared_ptr<const PeakContinuum> cont = m_grouped_candidates[i][0].continuum();
-              const double lowere = cont->lowerEnergy();
-              const double uppere = cont->upperEnergy();
-              
-              const float *x_start = std::upper_bound( x_begin, x_end, lowere );
-              if( x_start > x_begin )
-                --x_start;
-              const float *x_finish = std::upper_bound( x_begin, x_end, uppere );
-              if( x_finish < x_end )
-                ++x_finish;
-              
-              const size_t startbin = x_start - x_begin;
-              const size_t endbin = x_finish - x_begin;
-              const float *y_start  = y_begin + startbin;
-              const float *y_finish = y_begin + endbin;
-              
-              m_group_counts.push_back( std::make_pair(y_start, y_finish) );
-              m_group_energies.push_back( std::make_pair(x_start, x_finish) );
-              
-              m_nbins_used += (x_finish - x_start);
+  
+  
+  const bool highres = PeakFitUtils::is_high_res( m_meas );
+  
+  const size_t npeaks = m_fixed_peaks.size() + m_candidates.size();
+  
+  if( npeaks == 1 )
+    m_resolution_type = Polynomial0thOrder;
+  //    else
+  //      m_resolution_type = SqrtEnergy;
+  else if( npeaks < 4 )
+    m_resolution_type = Polynomial1stOrder;
+  else if( npeaks < 5 || !highres )
+    m_resolution_type = Polynomial2ndOrder;
+  else
+    m_resolution_type = Polynomial3rdOrder;
+  
+  //now we need to group peaks together into common ROI
+  vector<PeakDef> allpeaks;
+  allpeaks.insert( allpeaks.end(), m_candidates.begin(), m_candidates.end() );
+  allpeaks.insert( allpeaks.end(), m_fixed_peaks.begin(), m_fixed_peaks.end() );
+  std::sort( allpeaks.begin(), allpeaks.end(), &PeakDef::lessThanByMean );
+  
+  m_num_peakstotal = allpeaks.size();
+  
+  vector<bool> isfixed;
+  vector<PeakDef> currentgroup;
+  currentgroup.push_back( allpeaks[0] );
+  
+  
+  std::vector<PeakDef>::const_iterator lb, ub;
+  lb = std::lower_bound( m_fixed_peaks.begin(), m_fixed_peaks.end(), allpeaks[0], &PeakDef::lessThanByMean );
+  ub = std::upper_bound( m_fixed_peaks.begin(), m_fixed_peaks.end(), allpeaks[0], &PeakDef::lessThanByMean );
+  isfixed.push_back( (lb != ub) );
+  
+  size_t numpeaksinserted = 1;
+  
+  for( size_t i = 1; i < allpeaks.size(); ++i )
+  {
+    PeakDef p = allpeaks[i];
+    
+    lb = std::lower_bound( m_fixed_peaks.begin(), m_fixed_peaks.end(), p, &PeakDef::lessThanByMean );
+    ub = std::upper_bound( m_fixed_peaks.begin(), m_fixed_peaks.end(), p, &PeakDef::lessThanByMean );
+    
+    const PeakDef &prev = currentgroup.back();
+    
+    const bool overlapping_roi = (p.lowerX() < prev.upperX());
+    const bool isnear = (0.5*(p.mean() - prev.mean()) / (p.sigma() + prev.sigma())) < m_nsigma_near_group;
+    
+    if( overlapping_roi && isnear )
+    {
+      std::shared_ptr<PeakContinuum> cont = currentgroup.back().continuum();
+      cont->setRange( cont->lowerEnergy(), std::max(p.upperX(),cont->upperEnergy()) );
+      p.setContinuum( cont );
+    }else
+    {
+      //        cout << "Adding group of " << isfixed.size() << " to fit for" << endl;
+      m_grouped_isfixed.push_back( isfixed );
+      m_grouped_candidates.push_back( currentgroup );
+      
+      std::shared_ptr<PeakContinuum> cont = currentgroup.back().continuum();
+      
+      //XXX - deciding the order of the continuum is purely a guess right now
+      PeakContinuum::OffsetType type = PeakContinuum::Linear;
+      if( highres )
+      {
+        if( currentgroup.size() > 2 )
+          type = PeakContinuum::Quadratic;
+        if( currentgroup.size() > 4 )
+          type = PeakContinuum::Cubic;
+      }else
+      {
+        if( currentgroup.size() > 2 )
+          type = PeakContinuum::Cubic;
+      }
+      
+      cont->setType( type );
+      
+      isfixed.clear();
+      currentgroup.clear();
+    }//if( p.lowerX() < currentgroup.back().upperX() ) / else
+    
+    ++numpeaksinserted;
+    isfixed.push_back( (lb != ub) );
+    currentgroup.push_back( p );
+  }//for( size_t i = 0; i < allpeaks.size(); ++i )
+  
+  assert( numpeaksinserted == npeaks );
+  
+  std::shared_ptr<PeakContinuum> cont = currentgroup.back().continuum();
+  
+  PeakContinuum::OffsetType type = PeakContinuum::Linear;
+  if( highres )
+  {
+    if( currentgroup.size() > 2 )
+      type = PeakContinuum::Quadratic;
+    if( currentgroup.size() > 4 )
+      type = PeakContinuum::Cubic;
+  }else
+  {
+    if( currentgroup.size() == 2 )
+      type = PeakContinuum::Quadratic;
+    if( currentgroup.size() > 2 )
+      type = PeakContinuum::Cubic;
+  }
+  
+  cont->setType( type );
+  
+  m_grouped_isfixed.push_back( isfixed );
+  m_grouped_candidates.push_back( currentgroup );
+  
+  const float *x_begin = &(*m_x)[0];
+  const float *x_end = (&(*m_x)[0]) + m_x->size();
+  const float *y_begin = &(*m_y)[0];
+  
+  m_nbins_used = 0;
+  for( size_t i = 0; i < m_grouped_candidates.size(); ++i )
+  {
+    std::shared_ptr<const PeakContinuum> cont = m_grouped_candidates[i][0].continuum();
+    const double lowere = cont->lowerEnergy();
+    const double uppere = cont->upperEnergy();
+    
+    const float *x_start = std::upper_bound( x_begin, x_end, lowere );
+    if( x_start > x_begin )
+      --x_start;
+    const float *x_finish = std::upper_bound( x_begin, x_end, uppere );
+    if( x_finish < x_end )
+      ++x_finish;
+    
+    const size_t startbin = x_start - x_begin;
+    const size_t endbin = x_finish - x_begin;
+    const float *y_start  = y_begin + startbin;
+    const float *y_finish = y_begin + endbin;
+    
+    m_group_counts.push_back( std::make_pair(y_start, y_finish) );
+    m_group_energies.push_back( std::make_pair(x_start, x_finish) );
+    
+    m_nbins_used += (x_finish - x_start);
 #if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 2 )
-              cout << "Peak group " << i << " of " << m_grouped_candidates.size()
-              << " has peaks with means { ";
-              for( size_t j = 0; j < m_grouped_candidates[i].size(); ++j )
-                cout << (j==0?"":", ") << m_grouped_candidates[i][j].mean();
-              cout << " } and extends from " << lowere << " to " << uppere  << " keV"
-              << endl;
+    cout << "Peak group " << i << " of " << m_grouped_candidates.size()
+    << " has peaks with means { ";
+    for( size_t j = 0; j < m_grouped_candidates[i].size(); ++j )
+    cout << (j==0?"":", ") << m_grouped_candidates[i][j].mean();
+    cout << " } and extends from " << lowere << " to " << uppere  << " keV"
+    << endl;
 #endif
-            }//for( size_t i = 0; i < m_grouped_candidates.size(); ++i )
-            
-            
-            //    cout << "Will fit for " << m_grouped_isfixed.size() << " groups of peaks."
-            //         << endl;
-            
-            m_inited = true;
-            return true;
-          }//bool init()
-          
-          
-          double AutoPeakSearchChi2Fcn::Up() const
-          {
-            return 1.0;
-          }
-          
-          double AutoPeakSearchChi2Fcn::operator()( const std::vector<double> &params ) const
-          {
-            return eval_chi2( params );
-          }
-          
-          
-          double AutoPeakSearchChi2Fcn::peak_sigma( const double energy, const std::vector<double> &pars ) const
-          {
-            if( pars.empty() )
-              throw runtime_error( "peak_sigma: invalid intput" );
-            
-            double sigma = pars[0];
-            
-            if( m_resolution_type == SqrtEnergy )
-            {
-              if( pars.size() > 1 )
-                sigma += (pars[1] * std::pow(energy, 0.5));
-              
-              if( pars.size() > 2 )
-                sigma += pars[2] / (energy + 10.0);
-            }else
-            {
-              for( size_t i = 1; i < pars.size(); ++i )
-                sigma += (pars[i] * std::pow( energy, static_cast<double>(i) ));
-            }
-            
-            const size_t channel = m_meas->find_gamma_channel(energy);
-            sigma = max( sigma, (double)m_meas->gamma_channel_width(channel) );
-            
-            return sigma;
-          }//double peak_sigma(...)
-          
-          
-          ROOT::Minuit2::MnUserParameters AutoPeakSearchChi2Fcn::initial_parameters() const
-          {
-            //Parameter order:
-            //  Group 1, peak 1 mean
-            //  Group 1, peak 2 mean
-            //  Group 1, ...
-            //  Group 1, peak N mean
-            //  Group 2, peak 1 mean
-            //  Group 2, peak 2 mean
-            //  Group 2, ...
-            //  Group 2, peak M mean
-            //  ...
-            //  Group K, peak J mean
-            //  Peak Resolution parameter 1
-            //  Peak Resolution parameter 2
-            //  Peak Resolution parameter ...
-            //  Peak Resolution parameter L
-            
-            if( !m_inited )
-              throw runtime_error( "AutoPeakSearchChi2Fcn: you must call init before initial_parameters()" );
-            
-            ROOT::Minuit2::MnUserParameters pars;
-            
-            assert( m_grouped_candidates.size() == m_grouped_isfixed.size() );
-            
-            double maxsigma = 0.0;
-            PeakDef leftpeak = m_grouped_candidates[0][0];
-            PeakDef rightpeak = m_grouped_candidates[0][0];
-            
-            for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
-            {
-              const vector<PeakDef> &peaks = m_grouped_candidates[group];
-              const vector<bool> &isfixed = m_grouped_isfixed[group];
-              
-              assert( peaks.size() == isfixed.size() );
-              
-              for( size_t i = 0; i < peaks.size(); ++i )
-              {
-                char buffer[256];
-                snprintf( buffer, sizeof(buffer), "mean_%i_%i", int(group), int(i) );
-                
-                const PeakDef &p = peaks[i];
-                
-                if( p.mean() < leftpeak.mean() )
-                  leftpeak = p;
-                if( p.mean() > rightpeak.mean() )
-                  rightpeak = p;
-                
-                const double mean = p.mean();
-                const double sigma = p.sigma();
-                maxsigma = std::max( maxsigma, sigma );
-                
-                if( isfixed[i] )
-                  pars.Add( buffer, mean, 0.05*sigma, mean-0.2*sigma, mean+0.2*sigma );
-                else
-                  pars.Add( buffer, mean, 0.2*sigma, mean-sigma, mean+sigma );
-              }//for( size_t i = 0; i < peaks.size(); ++i )
-            }//for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
-            
-            size_t npeaks = 0;
-            double meanwidth = 0.0;
-            for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
-            {
-              const vector<PeakDef> &peaks = m_grouped_candidates[group];
-              for( size_t i = 0; i < peaks.size(); ++i )
-              {
-                ++npeaks;
-                meanwidth += peaks[i].sigma();
-              }//for( size_t i = 0; i < peaks.size(); ++i )
-            }//for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
-            
-            meanwidth /= npeaks;
-            const double span = m_x->back() - m_x->front();
-            const double meanbinwidth = span / m_x->size();
-            const bool highres = (m_x->size() > 3000);
-            
-            switch( m_resolution_type )
-            {
-              case Polynomial0thOrder:
-              {
-                const double minwidth = highres ? meanbinwidth : 4*meanbinwidth;
-                pars.Add( "ResolutionZeroth", meanwidth, meanbinwidth,  minwidth, 2.0*maxsigma );
-                
-                break;
-              }//case Polynomial0thOrder:
-                
-              case Polynomial1stOrder:
-              case Polynomial2ndOrder:
-              case Polynomial3rdOrder:
-              {
-                if( npeaks < 2 )
-                  throw std::logic_error( "Need more peaks for Polynomial1stOrder" );
-                
-                double de = rightpeak.mean() - leftpeak.mean();
-                double slope = (rightpeak.sigma() - leftpeak.sigma()) / de;
-                slope = std::max( slope, 0.0 );
-                const double r0 = leftpeak.sigma() - slope*leftpeak.mean();
-                pars.Add( "ResolutionZeroth", r0, meanbinwidth, 0.0, span/10.0 );
-                pars.Add( "ResolutionFirst",  slope, meanbinwidth/span, 0.0, span/10.0 );
-                
-                if( m_resolution_type >= Polynomial2ndOrder )
-                  pars.Add( "ResolutionSecond", 0.0, meanbinwidth, -span/100.0, span/100.0 );
-                
-                if( m_resolution_type >= Polynomial2ndOrder )
-                  pars.Add( "ResolutionSecond", 0.0, meanbinwidth/span/span, -0.05/span/span, 0.05/span/span );
-                
-                if( m_resolution_type == Polynomial3rdOrder )
-                  pars.Add( "ResolutionThird", 0.0, meanbinwidth/span/span/span, -0.05/span/span/span, 0.05/span/span/span );
-                
-                break;
-              }
-                
-              case SqrtEnergy:
-              {
-                if( npeaks < 2 )
-                  throw std::logic_error( "Need more peaks for SqrtEnergy" );
-                
-                //fwhm = a0 + a1*sqrt(e) + a3/(e+10)
-                //fwhm(e_left) - a1*sqrt(e_left) = fwhm(e_right) - a1*sqrt(e_right)
-                //(fwhm(e_left) - fwhm(e_right))/(sqrt(e_left) - sqrt(e_right)) = a2
-                const double a1 = (leftpeak.sigma() - rightpeak.sigma()) / (sqrt(leftpeak.mean()) - sqrt(rightpeak.mean()));
-                const double a0 = leftpeak.sigma() - a1*sqrt(leftpeak.sigma());
-                
-                pars.Add( "ResolutionZeroth", a1, meanbinwidth, 0.0, span/10.0 );
-                pars.Add( "ResolutionFirst",  a0, meanbinwidth/span, -span/10.0, span/10.0 );
-                
-                break;
-              }
-                
-            }//switch( m_resolution_type )
-            
-            
-            return pars;
-          }
-          
-          
-          double AutoPeakSearchChi2Fcn::eval_chi2( const std::vector<double> &params ) const
-          {
-            if( !m_inited )
-              throw runtime_error( "AutoPeakSearchChi2Fcn: you must call init before eval_chi2()" );
-            
-            std::vector<PeakDef > peaks;
-            
-            return pars_to_peaks( peaks, params );
-          }//double eval_chi2( const std::vector<double> &params ) const
-          
-          
-          void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
-                                                     const vector<double> &resolution_coefs,
-                                                     const size_t group,
-                                                     const double *pars,
-                                                     double &chi2,
-                                                     vector<PeakDef> &results ) const
-          {
-            assert( peaks.size() );
-            
-            std::shared_ptr<const PeakContinuum> cont = peaks[0].continuum();
-            const int polynomial_order = cont->type() - PeakContinuum::Constant;
-            
-            std::vector<double> means, sigmas;
-            
-            for( size_t i = 0; i < peaks.size(); ++i )
-            {
-              means.push_back( pars[i] );
-              sigmas.push_back( peak_sigma( pars[i], resolution_coefs) );
-            }
-            
-            const float *x_start = m_group_energies[group].first;
-            const float *x_end = m_group_energies[group].second;
-            const float *y_start = m_group_counts[group].first;
-            
-            const size_t nregionbin = x_end - x_start;
-            
-            const std::vector<PeakDef> fixedAmpPeaks;
-            std::vector<double> amplitudes, amplitudes_uncerts;
-            std::vector<double> continuum_coeffs, continuum_coeffs_uncerts;
-            
+  }//for( size_t i = 0; i < m_grouped_candidates.size(); ++i )
+  
+  
+  //    cout << "Will fit for " << m_grouped_isfixed.size() << " groups of peaks."
+  //         << endl;
+  
+  m_inited = true;
+  return true;
+}//bool init()
+
+
+double AutoPeakSearchChi2Fcn::Up() const
+{
+  return 1.0;
+}
+
+double AutoPeakSearchChi2Fcn::operator()( const std::vector<double> &params ) const
+{
+  return eval_chi2( params );
+}
+
+
+double AutoPeakSearchChi2Fcn::peak_sigma( const double energy, const std::vector<double> &pars ) const
+{
+  if( pars.empty() )
+    throw runtime_error( "peak_sigma: invalid intput" );
+  
+  double sigma = pars[0];
+  
+  if( m_resolution_type == SqrtEnergy )
+  {
+    if( pars.size() > 1 )
+      sigma += (pars[1] * std::pow(energy, 0.5));
+    
+    if( pars.size() > 2 )
+      sigma += pars[2] / (energy + 10.0);
+  }else
+  {
+    for( size_t i = 1; i < pars.size(); ++i )
+    sigma += (pars[i] * std::pow( energy, static_cast<double>(i) ));
+  }
+  
+  const size_t channel = m_meas->find_gamma_channel(energy);
+  sigma = max( sigma, (double)m_meas->gamma_channel_width(channel) );
+  
+  return sigma;
+}//double peak_sigma(...)
+
+
+ROOT::Minuit2::MnUserParameters AutoPeakSearchChi2Fcn::initial_parameters() const
+{
+  //Parameter order:
+  //  Group 1, peak 1 mean
+  //  Group 1, peak 2 mean
+  //  Group 1, ...
+  //  Group 1, peak N mean
+  //  Group 2, peak 1 mean
+  //  Group 2, peak 2 mean
+  //  Group 2, ...
+  //  Group 2, peak M mean
+  //  ...
+  //  Group K, peak J mean
+  //  Peak Resolution parameter 1
+  //  Peak Resolution parameter 2
+  //  Peak Resolution parameter ...
+  //  Peak Resolution parameter L
+  
+  if( !m_inited )
+    throw runtime_error( "AutoPeakSearchChi2Fcn: you must call init before initial_parameters()" );
+  
+  ROOT::Minuit2::MnUserParameters pars;
+  
+  assert( m_grouped_candidates.size() == m_grouped_isfixed.size() );
+  
+  double maxsigma = 0.0;
+  PeakDef leftpeak = m_grouped_candidates[0][0];
+  PeakDef rightpeak = m_grouped_candidates[0][0];
+  
+  for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
+  {
+    const vector<PeakDef> &peaks = m_grouped_candidates[group];
+    const vector<bool> &isfixed = m_grouped_isfixed[group];
+    
+    assert( peaks.size() == isfixed.size() );
+    
+    for( size_t i = 0; i < peaks.size(); ++i )
+    {
+      char buffer[256];
+      snprintf( buffer, sizeof(buffer), "mean_%i_%i", int(group), int(i) );
+      
+      const PeakDef &p = peaks[i];
+      
+      if( p.mean() < leftpeak.mean() )
+        leftpeak = p;
+      if( p.mean() > rightpeak.mean() )
+        rightpeak = p;
+      
+      const double mean = p.mean();
+      const double sigma = p.sigma();
+      maxsigma = std::max( maxsigma, sigma );
+      
+      if( isfixed[i] )
+        pars.Add( buffer, mean, 0.05*sigma, mean-0.2*sigma, mean+0.2*sigma );
+      else
+        pars.Add( buffer, mean, 0.2*sigma, mean-sigma, mean+sigma );
+    }//for( size_t i = 0; i < peaks.size(); ++i )
+  }//for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
+  
+  size_t npeaks = 0;
+  double meanwidth = 0.0;
+  for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
+  {
+    const vector<PeakDef> &peaks = m_grouped_candidates[group];
+    for( size_t i = 0; i < peaks.size(); ++i )
+    {
+      ++npeaks;
+      meanwidth += peaks[i].sigma();
+    }//for( size_t i = 0; i < peaks.size(); ++i )
+  }//for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
+  
+  meanwidth /= npeaks;
+  const double span = m_x->back() - m_x->front();
+  const double meanbinwidth = span / m_x->size();
+  const bool highres = PeakFitUtils::is_high_res( m_meas );
+  
+  switch( m_resolution_type )
+  {
+    case Polynomial0thOrder:
+    {
+      const double minwidth = highres ? meanbinwidth : 4*meanbinwidth;
+      pars.Add( "ResolutionZeroth", meanwidth, meanbinwidth,  minwidth, 2.0*maxsigma );
+      
+      break;
+    }//case Polynomial0thOrder:
+      
+    case Polynomial1stOrder:
+    case Polynomial2ndOrder:
+    case Polynomial3rdOrder:
+    {
+      if( npeaks < 2 )
+        throw std::logic_error( "Need more peaks for Polynomial1stOrder" );
+      
+      double de = rightpeak.mean() - leftpeak.mean();
+      double slope = (rightpeak.sigma() - leftpeak.sigma()) / de;
+      slope = std::max( slope, 0.0 );
+      const double r0 = leftpeak.sigma() - slope*leftpeak.mean();
+      pars.Add( "ResolutionZeroth", r0, meanbinwidth, 0.0, span/10.0 );
+      pars.Add( "ResolutionFirst",  slope, meanbinwidth/span, 0.0, span/10.0 );
+      
+      if( m_resolution_type >= Polynomial2ndOrder )
+        pars.Add( "ResolutionSecond", 0.0, meanbinwidth, -span/100.0, span/100.0 );
+      
+      if( m_resolution_type >= Polynomial2ndOrder )
+        pars.Add( "ResolutionSecond", 0.0, meanbinwidth/span/span, -0.05/span/span, 0.05/span/span );
+      
+      if( m_resolution_type == Polynomial3rdOrder )
+        pars.Add( "ResolutionThird", 0.0, meanbinwidth/span/span/span, -0.05/span/span/span, 0.05/span/span/span );
+      
+      break;
+    }
+      
+    case SqrtEnergy:
+    {
+      if( npeaks < 2 )
+        throw std::logic_error( "Need more peaks for SqrtEnergy" );
+      
+      //fwhm = a0 + a1*sqrt(e) + a3/(e+10)
+      //fwhm(e_left) - a1*sqrt(e_left) = fwhm(e_right) - a1*sqrt(e_right)
+      //(fwhm(e_left) - fwhm(e_right))/(sqrt(e_left) - sqrt(e_right)) = a2
+      const double a1 = (leftpeak.sigma() - rightpeak.sigma()) / (sqrt(leftpeak.mean()) - sqrt(rightpeak.mean()));
+      const double a0 = leftpeak.sigma() - a1*sqrt(leftpeak.sigma());
+      
+      pars.Add( "ResolutionZeroth", a1, meanbinwidth, 0.0, span/10.0 );
+      pars.Add( "ResolutionFirst",  a0, meanbinwidth/span, -span/10.0, span/10.0 );
+      
+      break;
+    }
+      
+  }//switch( m_resolution_type )
+  
+  
+  return pars;
+}
+
+
+double AutoPeakSearchChi2Fcn::eval_chi2( const std::vector<double> &params ) const
+{
+  if( !m_inited )
+    throw runtime_error( "AutoPeakSearchChi2Fcn: you must call init before eval_chi2()" );
+  
+  std::vector<PeakDef > peaks;
+  
+  return pars_to_peaks( peaks, params );
+}//double eval_chi2( const std::vector<double> &params ) const
+
+
+void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
+                                           const vector<double> &resolution_coefs,
+                                           const size_t group,
+                                           const double *pars,
+                                           double &chi2,
+                                           vector<PeakDef> &results ) const
+{
+  assert( peaks.size() );
+  
+  std::shared_ptr<const PeakContinuum> cont = peaks[0].continuum();
+  
+  const int num_polynomial_terms = ([&cont]() -> int {
+    switch( cont->type() )
+    {
+      case PeakContinuum::NoOffset: case PeakContinuum::External:
+        return 0;
+        
+      case PeakContinuum::Constant: case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+        return cont->type() - PeakContinuum::NoOffset;
+        
+      case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep:
+      case PeakContinuum::BiLinearStep:
+        return 2 + (cont->type() - PeakContinuum::FlatStep);
+    }//switch( cont->type() )
+
+    assert(0);
+    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+    return 0;
+  })();
+  
+  const bool isStepContinuum = ([&cont]() -> bool {
+    switch( cont->type() )
+    {
+      case PeakContinuum::NoOffset: case PeakContinuum::External:
+      case PeakContinuum::Constant: case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
+        return false;
+        
+      case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep:
+      case PeakContinuum::BiLinearStep:
+        return true;
+    }//switch( cont->type() )
+
+    assert( 0 );
+    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
+    return 0;
+  })();
+  
+  
+  std::vector<double> means, sigmas;
+  
+  for( size_t i = 0; i < peaks.size(); ++i )
+  {
+    means.push_back( pars[i] );
+    sigmas.push_back( peak_sigma( pars[i], resolution_coefs) );
+  }
+  
+  const float *x_start = m_group_energies[group].first;
+  const float *x_end = m_group_energies[group].second;
+  const float *y_start = m_group_counts[group].first;
+  
+  const size_t nregionbin = x_end - x_start;
+  
+  const std::vector<PeakDef> fixedAmpPeaks;
+  std::vector<double> amplitudes, amplitudes_uncerts;
+  std::vector<double> continuum_coeffs, continuum_coeffs_uncerts;
+  
 #define USE_LLS_TO_FIT_MULTIPLE_PEAKS 1
-            
+  
 #if( !USE_LLS_TO_FIT_MULTIPLE_PEAKS )
-            if( means.size() > 1 )
-            {
-              double datasum = 0.0;
-              for( const float *x = x_start; x != x_end; ++x )
-                datasum += *x;
-              
-              const size_t lower_channel = m_meas->find_gamma_channel( *x_start );
-              const size_t upper_channel = lowerbin + nregionbin;
-              const int npeak = static_cast<int>( means.size() );
-              const PeakContinuum::OffsetType type = cont->type();
-              MultiPeakFitChi2Fcn chifcn( npeak, m_meas, type, lower_channel, upper_channel );
-              
-              
-              ROOT::Minuit2::MnUserParameters inputPrams;
-              if( type >= PeakContinuum::Constant )
-                inputPrams.Add( "P0",  0.5*( (*x_start) + (*(x_end-1)) ) );
-              if( type >= PeakContinuum::Linear )
-                inputPrams.Add( "P1",  0.0 );
-              if( type >= PeakContinuum::Quadratic )
-                inputPrams.Add( "P2",  0.0 );
-              if( type >= PeakContinuum::Cubic )
-                inputPrams.Add( "P3",  0.0 );
-              
-              for( size_t i = 0; i < means.size(); ++i )
-              {
-                const string parnum = std::to_string(i);
-                if( i == 0 )
-                  inputPrams.Add( "sigma" + parnum, sigmas[i] );
-                else
-                  inputPrams.Add( "sigma" + parnum, -sigmas[i] );
-                
-                inputPrams.Add( "mean" + parnum, means[i] );
-                inputPrams.Add( "amplitude" + parnum, 0.25*datasum, 0.1*datasum, 0, datasum );
-              }//for( size_t i = 0; i < inpeaks.size(); ++i )
-              
-              ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-              ROOT::Minuit2::MnStrategy strategy( 0 );
-              ROOT::Minuit2::MnMinimize fitter( chifcn, inputParamState, strategy );
-              ROOT::Minuit2::FunctionMinimum minimum = fitter( 2500, 1.0 );
-              const vector<double> values = fitter.Parameters().Params();
-              const vector<double> errors = fitter.Parameters().Errors();
-              chi2 = chifcn.DoEval( &values[0], false );
-              
-              for( size_t i = 0; i < means.size(); ++i )
-              {
-                amplitudes.push_back( values[type+3*i+2] );
-                amplitudes_uncerts.push_back( errors[type+3*i+2] );
-              }
-              
-              continuum_coeffs.insert( continuum_coeffs.begin(), values.begin(), values.begin() + type );
-              continuum_coeffs_uncerts.insert( continuum_coeffs_uncerts.begin(), errors.begin(), errors.begin() + type );
-            }else
-            {
+  if( means.size() > 1 )
+  {
+    double datasum = 0.0;
+    for( const float *x = x_start; x != x_end; ++x )
+    datasum += *x;
+    
+    const size_t lower_channel = m_meas->find_gamma_channel( *x_start );
+    const size_t upper_channel = lowerbin + nregionbin;
+    const int npeak = static_cast<int>( means.size() );
+    const PeakContinuum::OffsetType type = cont->type();
+    MultiPeakFitChi2Fcn chifcn( npeak, m_meas, type, lower_channel, upper_channel );
+    
+    
+    ROOT::Minuit2::MnUserParameters inputPrams;
+    if( type >= PeakContinuum::Constant )
+      inputPrams.Add( "P0",  0.5*( (*x_start) + (*(x_end-1)) ) );
+    if( type >= PeakContinuum::Linear )
+      inputPrams.Add( "P1",  0.0 );
+    if( type >= PeakContinuum::Quadratic )
+      inputPrams.Add( "P2",  0.0 );
+    if( type >= PeakContinuum::Cubic )
+      inputPrams.Add( "P3",  0.0 );
+    
+    for( size_t i = 0; i < means.size(); ++i )
+    {
+      const string parnum = std::to_string(i);
+      if( i == 0 )
+        inputPrams.Add( "sigma" + parnum, sigmas[i] );
+      else
+        inputPrams.Add( "sigma" + parnum, -sigmas[i] );
+      
+      inputPrams.Add( "mean" + parnum, means[i] );
+      inputPrams.Add( "amplitude" + parnum, 0.25*datasum, 0.1*datasum, 0, datasum );
+    }//for( size_t i = 0; i < inpeaks.size(); ++i )
+    
+    ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
+    ROOT::Minuit2::MnStrategy strategy( 0 );
+    ROOT::Minuit2::MnMinimize fitter( chifcn, inputParamState, strategy );
+    ROOT::Minuit2::FunctionMinimum minimum = fitter( 2500, 1.0 );
+    const vector<double> values = fitter.Parameters().Params();
+    const vector<double> errors = fitter.Parameters().Errors();
+    chi2 = chifcn.DoEval( &values[0], false );
+    
+    for( size_t i = 0; i < means.size(); ++i )
+    {
+      amplitudes.push_back( values[type+3*i+2] );
+      amplitudes_uncerts.push_back( errors[type+3*i+2] );
+    }
+    
+    continuum_coeffs.insert( continuum_coeffs.begin(), values.begin(), values.begin() + type );
+    continuum_coeffs_uncerts.insert( continuum_coeffs_uncerts.begin(), errors.begin(), errors.begin() + type );
+  }else
+  {
 #endif
-              try
-              {
-                chi2 = fit_amp_and_offset( x_start, y_start, nregionbin,
-                                          polynomial_order,
-                                          cont->lowerEnergy(),
-                                          means, sigmas,
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
-                                          fixedAmpPeaks,
-#endif
-                                          amplitudes,
-                                          continuum_coeffs,
-                                          amplitudes_uncerts,
-                                          continuum_coeffs_uncerts );
-              }catch(...)
-              {
-                for( size_t i = 0; i < nregionbin; ++i )
-                  chi2 += y_start[i];
-                amplitudes.clear();
-                amplitudes.resize( means.size(), 0.0 );
-                amplitudes_uncerts = amplitudes;
-                continuum_coeffs = vector<double>( cont->type(), 0.0 );
-                continuum_coeffs_uncerts = continuum_coeffs;
-              }
+    try
+    {
+      chi2 = fit_amp_and_offset( x_start, y_start, nregionbin,
+                                num_polynomial_terms,
+                                isStepContinuum,
+                                cont->lowerEnergy(),
+                                means, sigmas,
+                                fixedAmpPeaks,
+                                amplitudes,
+                                continuum_coeffs,
+                                amplitudes_uncerts,
+                                continuum_coeffs_uncerts );
+    }catch(...)
+    {
+      for( size_t i = 0; i < nregionbin; ++i )
+      chi2 += y_start[i];
+      amplitudes.clear();
+      amplitudes.resize( means.size(), 0.0 );
+      amplitudes_uncerts = amplitudes;
+      continuum_coeffs = vector<double>( cont->type(), 0.0 );
+      continuum_coeffs_uncerts = continuum_coeffs;
+    }
 #if( !USE_LLS_TO_FIT_MULTIPLE_PEAKS )
-            }//if( means.size() > 1 ) / else
+  }//if( means.size() > 1 ) / else
 #endif
-            
-            std::shared_ptr<PeakContinuum> fitcont( new PeakContinuum() );
-            fitcont->setRange( cont->lowerEnergy(), cont->upperEnergy() );
-            fitcont->setType( cont->type() );
-            fitcont->setParameters( cont->lowerEnergy(), continuum_coeffs,
-                                   continuum_coeffs_uncerts );
-            for( size_t i = 0; i < amplitudes.size(); ++i )
-            {
-              PeakDef peak;
-              peak.setContinuum( fitcont );
-              peak.setMean( means[i] );
-              peak.setAmplitude( std::max(amplitudes[i],0.0) );
-              peak.setSigma( sigmas[i] );
-              peak.setAmplitudeUncert( amplitudes_uncerts[i] );
-              
-              results.push_back( peak );
-            }//for( size_t i = 0; i < amplitudes.size(); ++i )
-          }//fit_peak_group()
-          
-          
-          //pars_to_peaks(): returns chi2
-          double AutoPeakSearchChi2Fcn::pars_to_peaks( std::vector<PeakDef> &resultpeaks,
-                                                      const std::vector<double> &pars,
-                                                      const std::vector<double> &errors ) const
-          {
-            resultpeaks.clear();
-            
-            if( !m_inited )
-              throw runtime_error( "AutoPeakSearchChi2Fcn: you must call init before pars_to_peaks()" );
-            
-            if( m_resolution_type != SqrtEnergy )
-              assert( pars.size() == (m_num_peakstotal+m_resolution_type+1) );
-            else
-              assert( pars.size() == (m_num_peakstotal+2) );
-            
-            vector<double> rescoef( pars.begin()+m_num_peakstotal, pars.end() );
-            
-            const size_t ngroups = m_grouped_candidates.size();
-            vector<double> chi2s( ngroups, 0.0 );
-            vector< vector<PeakDef> > peakdefs( ngroups );
-            
-            size_t peakn = 0;
-            
-            SpecUtilsAsync::ThreadPool pool;
-            
-            for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
-            {
-              const vector<PeakDef> &peaks = m_grouped_candidates[group];
-              
-              const double *startpars = &(pars[0]) + peakn;
-              
-              pool.post( boost::bind( &AutoPeakSearchChi2Fcn::fit_peak_group, this,
-                                     boost::cref(peaks), boost::cref(rescoef), group, startpars,
-                                     boost::ref(chi2s[group]), boost::ref(peakdefs[group]) ) );
-              
-              peakn += peaks.size();
-            }//for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
-            
-            pool.join();
-            
-            double chi2 = 0.0;
-            for( size_t i = 0; i < chi2s.size(); ++i )
-            {
-              chi2 += chi2s[i];
-              for( size_t j = 0; j < peakdefs[i].size(); ++j )
-                resultpeaks.push_back( peakdefs[i][j] );
-            }
-            
-            std::sort( resultpeaks.begin(), resultpeaks.end(), &PeakDef::lessThanByMean );
-            chi2 += punishment( resultpeaks );
-            
-            return chi2;
-          }//double pars_to_peaks(...)
-          
-          
-          //punishment(..): the punishment to the chi2 for peaks being to close together
-          //  or not statistically significant
-          double AutoPeakSearchChi2Fcn::punishment( const std::vector<PeakDef> &peaks ) const
-          {
-            vector<double> means( peaks.size() ), sigmas( peaks.size() ), amps( peaks.size() );
-            for( size_t i = 0; i < peaks.size(); ++i )
-            {
-              means[i] = peaks[i].mean();
-              sigmas[i] = peaks[i].sigma();
-              amps[i] = peaks[i].amplitude();
-            }//for( size_t i = 0; i < m_npeak; ++i )
-            
-            const double punishment_chi2 = 2.0*m_nbins_used;
-            
-            double chi2 = closeness_punishment( means, sigmas );
-            
-            //If the peak area is statistically insignificant on the interval
-            //  -1.75sigma to 1.75, then punish!
-            for( size_t i = 0; i < means.size(); ++i )
-            {
-              const double lower_energy = means[i] - 1.75*sigmas[i];
-              const double upper_energy = means[i] + 1.75*sigmas[i];
-              
-              const size_t binstart = lower_bound( m_x->begin(), m_x->end(), lower_energy )
-              - m_x->begin();
-              size_t binend = lower_bound( m_x->begin(), m_x->end(), upper_energy )
-              - m_x->begin();
-              binend = std::min( binend, m_y->size() );
-              
-              double dataarea = 0.0;
-              for( size_t bin = binstart; bin < binend; ++bin )
-                dataarea += (*m_y)[bin];
-              
-              if( peaks[i].amplitude() < 2.0*sqrt(dataarea) )
-              {
-                if( amps[i] <= 1 )
-                  chi2 += 100.0 * punishment_chi2;
-                else
-                  chi2 += 0.5*(sqrt(dataarea)/amps[i]) * punishment_chi2;
-              }//if( peaks[i].amplitude() < 2.0*sqrt(dataarea) )
-            }//for( size_t i = 0; i < peaks.size(); ++i )
-            
-            return chi2;
-          }//punishment(...)
-          
-          
-          double AutoPeakSearchChi2Fcn::closeness_punishment( const vector<double> &means,
-                                                             const vector<double> &sigmas ) const
-          {
-            double chi2 = 0.0;
-            const double punishment_chi2 = 2.0*m_nbins_used;
-            
-            //punish if the peaks are too close.
-            for( size_t i = 1; i < means.size(); ++i )
-            {
-              for( size_t j = 0; j < i; ++j )
-              {
-                const double sigma = 0.5*(sigmas[j] + sigmas[i]);
-                const double dist = fabs(means[j] - means[i]);
-                double reldist = dist / sigma;
-                if( reldist < 0.01 || IsInf(reldist) || IsNan(reldist) )
-                  reldist = 0.01;
-                if( reldist < 1.25 )
-                  chi2 += (punishment_chi2 / reldist);
-              }//for( size_t j = 0; j < i; ++j )
-            }//for( size_t i = 1; i < peaks.size(); ++i )
-            
-            return chi2;
-          }//closeness_punishment(...)
-          
-          //other_peaks may contain peak
-          bool AutoPeakSearchChi2Fcn::significance_test( const PeakDef &peak,
-                                                        std::vector<PeakDef> other_peaks,
-                                                        double *chi2DOF,
-                                                        double *grosCountsSigma
-                                                        ) const
-          {
-            if( !peak.gausPeak() )
-              throw runtime_error( "significance_test can only evaluate gaussian defined peaks" );
-            
-            std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
-            for( size_t i = 0; i < other_peaks.size(); ++i )
-              if( continuum != other_peaks[i].continuum() )
-                throw runtime_error( "significance_test all input peaks must share a continuum" );
-            
-            std::vector<PeakDef>::iterator pos = other_peaks.end();
-            for( size_t i = 0; i < other_peaks.size(); ++i )
-            {
-              const PeakDef &other = other_peaks[i];
-              
-              if( fabs(other.mean() - peak.mean()) < 0.0001
-                 && fabs(other.sigma() - peak.sigma()) < 0.0001 )
-              {
-                pos = other_peaks.begin() + i;
-                break;
-              }
-            }//for( size_t i = 0; i < other_peaks.size(); ++i )
-            
-            //  pos = std::find( other_peaks.begin(), other_peaks.end(), peak );
-            if( pos != other_peaks.end() )
-              other_peaks.erase( pos );
-            
-            //Some basic quality checks
-            if( IsNan(peak.mean()) || IsInf(peak.mean()) )
-              return false;
-            if( IsNan(peak.sigma()) || IsInf(peak.sigma()) )
-              return false;
-            if( IsNan(peak.amplitude()) || IsInf(peak.amplitude()) )
-              return false;
-            if( peak.amplitude() <= 0.0 || peak.sigma() <= 0.0 )
-              return false;
-            
-            double withChi2 = 0.0, withoutChi2 = 0.0;
-            
-            const float *xbegin = &((*m_x)[0]);
-            const float *xend = xbegin + m_x->size();
-            
-            const double lowerEnergy = peak.continuum()->lowerEnergy();
-            const double upperEnergy = peak.continuum()->upperEnergy();
-            
-            const float *begin = std::upper_bound( xbegin, xend, lowerEnergy );
-            if( begin > xbegin )
-              --begin;
-            const float *end = std::upper_bound( xbegin, xend, upperEnergy );
-            if( end < xend )
-              ++end;
-            if( end > (xend-1) )
-              end = (xend-1);
-            
-            if( end <= begin )
-              throw std::logic_error( "significance_test: error finding range" );
-            
-            const size_t endbin = end - xbegin;
-            const size_t startbin = begin - xbegin;
-            for( size_t bin = startbin; bin < endbin; ++bin )
-            {
-              const float loweredge = (*m_x)[bin];
-              const float upperedge = (*m_x)[bin+1];
-              const double continuumarea = continuum->offset_integral( loweredge, upperedge );
-              const double peakarea = peak.gauss_integral( loweredge, upperedge );
-              double otherPeakArea = 0.0;
-              for( size_t i = 0; i < other_peaks.size(); ++i )
-                otherPeakArea += other_peaks[i].gauss_integral( loweredge, upperedge );
-              const double dataarea = std::max( (*m_y)[bin], 1.0f );
-              
-              withChi2 += std::pow(peakarea+otherPeakArea+continuumarea-dataarea, 2.0) / dataarea;
-              withoutChi2 += std::pow(otherPeakArea+continuumarea-dataarea, 2.0) / dataarea;
-            }//for( size_t bin = startbin; bin < endbin; ++bin )
-            
-            withChi2 /= (endbin-startbin);
-            withoutChi2 /= (endbin-startbin);
-            
-            const double deltaChi2 = withoutChi2 - withChi2;
-            
-            
-            
-            begin = std::upper_bound( xbegin, xend, peak.mean()-1.18*peak.sigma() );
-            if( begin > xbegin )
-              --begin;
-            end = std::upper_bound( xbegin, xend, peak.mean()+1.18*peak.sigma() );
-            if( end < xend )
-              ++end;
-            if( end > (xend-1) )
-              end = (xend-1);
-            
-            const size_t beingint = begin-xbegin;
-            const size_t endint = end-xbegin;
-            
-            double datamidarea = 0.0;
-            for( size_t i = beingint; i < endint; ++i )
-              datamidarea += (*m_y)[i];
-            
-            const double gausmidarea = peak.gauss_integral( *begin, *end );
-            
-            const double gross_counts_sig = gausmidarea/sqrt(datamidarea);
-            
-            if( chi2DOF )
-              *chi2DOF = deltaChi2;
-            if( grosCountsSigma )
-              *grosCountsSigma = gross_counts_sig;
-            
-            //    double *chi2DOF = 0,
-            //    double *grosCountsSigma = 0
-            
-            //    cerr << "Peak at mean=" << peak.mean() << ", sigma=" << peak.sigma() << " has deltaChi2=" << deltaChi2
-            //         << ", gausmidarea=" << gausmidarea << ", datamidarea=" << datamidarea
-            //         << ", (gausmidarea/sqrt(datamidarea))=" << (gausmidarea/sqrt(datamidarea))
-            //         << endl;
-            
-            return ((deltaChi2 > m_min_chi2_dof_thresh)
-                    && gross_counts_sig>=m_min_gross_counts_sig_thresh);
-          }//bool significance_test( ... )
-          
-          
-          
-          std::vector<PeakDef> AutoPeakSearchChi2Fcn::filter_peaks( const std::vector<PeakDef> &all_peaks ) const
-          {
-            std::vector<PeakDef> keepers;
-            
-            typedef std::map< std::shared_ptr<const PeakContinuum>, vector<PeakDef> > peakmap_t;
-            peakmap_t peakmap;
-            
-            for( size_t i = 0; i < all_peaks.size(); ++i )
-              peakmap[all_peaks[i].continuum()].push_back( all_peaks[i] );
-            
-            for( const peakmap_t::value_type &t : peakmap )
-            {
-              const vector<PeakDef> &v = t.second;
-              for( size_t i = 0; i < v.size(); ++i )
-                if( significance_test(v[i], v) )
-                  keepers.push_back( v[i] );
-            }
-            
-            std::sort( keepers.begin(), keepers.end(), &PeakDef::lessThanByMean );
-            
-            return keepers;
-          }//filter_peaks(...)
-          
-          
-          bool find_spectroscopic_extent( std::shared_ptr<const Measurement> meas,
-                                         size_t &lower_channel,
-                                         size_t &upper_channel )
-          {
-            if( !meas )
-              return false;
-            
-            const vector<float> &channel_counts = *meas->gamma_counts();
-            const size_t nbin = channel_counts.size();
-            
-            
-            //First detect where spectrum begins
-            const int side_bins = 5;
-            const int order = 2;
-            const int derivative = 2;
-            vector<float> smoothed_2nd;
-            smoothSpectrum( meas, side_bins, order, derivative, smoothed_2nd );
-            
-            size_t channel = 0;
-            while( channel < nbin && smoothed_2nd[channel]>-1.0 )
-              ++channel;
-            
-            //    const size_t first_negative_2nd_deriv = channel;
-            
-            while( channel < nbin && smoothed_2nd[channel]<0.05 )
-              ++channel;
-            //  cerr << "Lower channel = " << meas->channel_energies()->at(channel) << endl;
-            lower_channel = std::min(channel-0,smoothed_2nd.size()-1);
-            
-            if( lower_channel > (nbin/3) )
-            {
-              cout << "The lower threshold bin (" << lower_channel << " of " << nbin
-              << ") is to high, skipping file for further analysis." << endl;
-              lower_channel = upper_channel = 0;
-              return false;
-            }//
-            
-            size_t upperlastchannel = nbin - 1;
-            while( upperlastchannel > 0 && channel_counts[upperlastchannel] < 5.0f )
-              --upperlastchannel;
-            
-            //Start at the turn on energy, but make sure were in a region of the spectra
-            //  with decent statistics (e.g. at least 20 counts per bin)
-            size_t lastchannel = lower_channel;
-            while( lastchannel < nbin && channel_counts[lastchannel] < 20.0 )
-              ++lastchannel;
-            
-            //Now find where the spectrum drops below X counts per channel for a number
-            //  of channels in a row
-            int numbelow = 0;
-            const int nbelowlimit = std::max( int(std::ceil(0.0015*nbin)), 3 );
-            while( lastchannel < (nbin-1) && numbelow <= nbelowlimit )
-              numbelow = (channel_counts[++lastchannel] > 0.1) ? 0 : numbelow + 1;
-            
-            upper_channel = (lastchannel == nbin) ? size_t(nbin-1) : lastchannel;
-            upper_channel = std::max( upper_channel, upperlastchannel+1 );
-            upper_channel = std::min( upper_channel, nbin-1 );
-            
-            return true;
-          }//bool find_spectroscopic_extent(...)
-          
-          std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> meas,
-                                                const std::vector<PeakDef> &origpeaks )
-          {
-            if( !meas || !meas->gamma_counts() )
-              return origpeaks;
-            
-            const bool highres = (meas->gamma_counts()->size() > 2050);
-            
-            
-            const double min_chi2_dof_thresh         = highres ? 0.2   : 3.5;
-            const double min_gross_counts_sig_thresh = highres ? 3.0   : 3;
-            const double above_line_chi2_thresh      = highres ? 4.075 : 4.075;
-            const int side_bins                      = highres ? 7     : 10;
-            const int smooth_order                   = highres ? 3     : 2;
-            const double second_deriv_thresh         = highres ? -0.02 : 0.04;
-            const double stat_thresh                 = highres ? 1.0   : 2;
-            const double width_thresh                = highres ? 0.0   : 0.0;
-            
-            
-            //initial_above_line_chi2_thresh: 3.5,
-            //initial_second_deriv_thresh: 0.05,
-            //initial_stat_thresh: 1.3,
-            //final_min_chi2_dof_thresh: 1.1,
-            //final_min_gross_counts_sig_thresh: 4.5
-            
-            return search_for_peaks( meas, min_chi2_dof_thresh,
-                                    min_gross_counts_sig_thresh,
-                                    above_line_chi2_thresh, side_bins, smooth_order,
-                                    second_deriv_thresh, stat_thresh, width_thresh,
-                                    origpeaks
+  
+  std::shared_ptr<PeakContinuum> fitcont( new PeakContinuum() );
+  fitcont->setRange( cont->lowerEnergy(), cont->upperEnergy() );
+  fitcont->setType( cont->type() );
+  fitcont->setParameters( cont->lowerEnergy(), continuum_coeffs,
+                         continuum_coeffs_uncerts );
+  for( size_t i = 0; i < amplitudes.size(); ++i )
+  {
+    PeakDef peak;
+    peak.setContinuum( fitcont );
+    peak.setMean( means[i] );
+    peak.setAmplitude( std::max(amplitudes[i],0.0) );
+    peak.setSigma( sigmas[i] );
+    peak.setAmplitudeUncert( amplitudes_uncerts[i] );
+    
+    results.push_back( peak );
+  }//for( size_t i = 0; i < amplitudes.size(); ++i )
+}//fit_peak_group()
+
+
+//pars_to_peaks(): returns chi2
+double AutoPeakSearchChi2Fcn::pars_to_peaks( std::vector<PeakDef> &resultpeaks,
+                                            const std::vector<double> &pars,
+                                            const std::vector<double> &errors ) const
+{
+  resultpeaks.clear();
+  
+  if( !m_inited )
+    throw runtime_error( "AutoPeakSearchChi2Fcn: you must call init before pars_to_peaks()" );
+  
+  if( m_resolution_type != SqrtEnergy )
+    assert( pars.size() == (m_num_peakstotal+m_resolution_type+1) );
+  else
+    assert( pars.size() == (m_num_peakstotal+2) );
+  
+  vector<double> rescoef( pars.begin()+m_num_peakstotal, pars.end() );
+  
+  const size_t ngroups = m_grouped_candidates.size();
+  vector<double> chi2s( ngroups, 0.0 );
+  vector< vector<PeakDef> > peakdefs( ngroups );
+  
+  size_t peakn = 0;
+  
+  SpecUtilsAsync::ThreadPool pool;
+  
+  for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
+  {
+    const vector<PeakDef> &peaks = m_grouped_candidates[group];
+    
+    const double *startpars = &(pars[0]) + peakn;
+    
+    pool.post( boost::bind( &AutoPeakSearchChi2Fcn::fit_peak_group, this,
+                           boost::cref(peaks), boost::cref(rescoef), group, startpars,
+                           boost::ref(chi2s[group]), boost::ref(peakdefs[group]) ) );
+    
+    peakn += peaks.size();
+  }//for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
+  
+  pool.join();
+  
+  double chi2 = 0.0;
+  for( size_t i = 0; i < chi2s.size(); ++i )
+  {
+    chi2 += chi2s[i];
+    for( size_t j = 0; j < peakdefs[i].size(); ++j )
+    resultpeaks.push_back( peakdefs[i][j] );
+  }
+  
+  std::sort( resultpeaks.begin(), resultpeaks.end(), &PeakDef::lessThanByMean );
+  chi2 += punishment( resultpeaks );
+  
+  return chi2;
+}//double pars_to_peaks(...)
+
+
+//punishment(..): the punishment to the chi2 for peaks being to close together
+//  or not statistically significant
+double AutoPeakSearchChi2Fcn::punishment( const std::vector<PeakDef> &peaks ) const
+{
+  vector<double> means( peaks.size() ), sigmas( peaks.size() ), amps( peaks.size() );
+  for( size_t i = 0; i < peaks.size(); ++i )
+  {
+    means[i] = peaks[i].mean();
+    sigmas[i] = peaks[i].sigma();
+    amps[i] = peaks[i].amplitude();
+  }//for( size_t i = 0; i < m_npeak; ++i )
+  
+  const double punishment_chi2 = 2.0*m_nbins_used;
+  
+  double chi2 = closeness_punishment( means, sigmas );
+  
+  //If the peak area is statistically insignificant on the interval
+  //  -1.75sigma to 1.75, then punish!
+  for( size_t i = 0; i < means.size(); ++i )
+  {
+    const double lower_energy = means[i] - 1.75*sigmas[i];
+    const double upper_energy = means[i] + 1.75*sigmas[i];
+    
+    const size_t binstart = lower_bound( m_x->begin(), m_x->end(), lower_energy )
+    - m_x->begin();
+    size_t binend = lower_bound( m_x->begin(), m_x->end(), upper_energy )
+    - m_x->begin();
+    binend = std::min( binend, m_y->size() );
+    
+    double dataarea = 0.0;
+    for( size_t bin = binstart; bin < binend; ++bin )
+    dataarea += (*m_y)[bin];
+    
+    if( peaks[i].amplitude() < 2.0*sqrt(dataarea) )
+    {
+      if( amps[i] <= 1 )
+        chi2 += 100.0 * punishment_chi2;
+      else
+        chi2 += 0.5*(sqrt(dataarea)/amps[i]) * punishment_chi2;
+    }//if( peaks[i].amplitude() < 2.0*sqrt(dataarea) )
+  }//for( size_t i = 0; i < peaks.size(); ++i )
+  
+  return chi2;
+}//punishment(...)
+
+
+double AutoPeakSearchChi2Fcn::closeness_punishment( const vector<double> &means,
+                                                   const vector<double> &sigmas ) const
+{
+  double chi2 = 0.0;
+  const double punishment_chi2 = 2.0*m_nbins_used;
+  
+  //punish if the peaks are too close.
+  for( size_t i = 1; i < means.size(); ++i )
+  {
+    for( size_t j = 0; j < i; ++j )
+    {
+      const double sigma = 0.5*(sigmas[j] + sigmas[i]);
+      const double dist = fabs(means[j] - means[i]);
+      double reldist = dist / sigma;
+      if( reldist < 0.01 || IsInf(reldist) || IsNan(reldist) )
+        reldist = 0.01;
+      if( reldist < 1.25 )
+        chi2 += (punishment_chi2 / reldist);
+    }//for( size_t j = 0; j < i; ++j )
+  }//for( size_t i = 1; i < peaks.size(); ++i )
+  
+  return chi2;
+}//closeness_punishment(...)
+
+//other_peaks may contain peak
+bool AutoPeakSearchChi2Fcn::significance_test( const PeakDef &peak,
+                                              std::vector<PeakDef> other_peaks,
+                                              double *chi2DOF,
+                                              double *grosCountsSigma
+                                              ) const
+{
+  if( !peak.gausPeak() )
+    throw runtime_error( "significance_test can only evaluate gaussian defined peaks" );
+  
+  std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
+  for( size_t i = 0; i < other_peaks.size(); ++i )
+  if( continuum != other_peaks[i].continuum() )
+    throw runtime_error( "significance_test all input peaks must share a continuum" );
+  
+  std::vector<PeakDef>::iterator pos = other_peaks.end();
+  for( size_t i = 0; i < other_peaks.size(); ++i )
+  {
+    const PeakDef &other = other_peaks[i];
+    
+    if( fabs(other.mean() - peak.mean()) < 0.0001
+       && fabs(other.sigma() - peak.sigma()) < 0.0001 )
+    {
+      pos = other_peaks.begin() + i;
+      break;
+    }
+  }//for( size_t i = 0; i < other_peaks.size(); ++i )
+  
+  //  pos = std::find( other_peaks.begin(), other_peaks.end(), peak );
+  if( pos != other_peaks.end() )
+    other_peaks.erase( pos );
+  
+  //Some basic quality checks
+  if( IsNan(peak.mean()) || IsInf(peak.mean()) )
+    return false;
+  if( IsNan(peak.sigma()) || IsInf(peak.sigma()) )
+    return false;
+  if( IsNan(peak.amplitude()) || IsInf(peak.amplitude()) )
+    return false;
+  if( peak.amplitude() <= 0.0 || peak.sigma() <= 0.0 )
+    return false;
+  
+  double withChi2 = 0.0, withoutChi2 = 0.0;
+  
+  const float *xbegin = &((*m_x)[0]);
+  const float *xend = xbegin + m_x->size();
+  
+  const double lowerEnergy = peak.continuum()->lowerEnergy();
+  const double upperEnergy = peak.continuum()->upperEnergy();
+  
+  const float *begin = std::upper_bound( xbegin, xend, lowerEnergy );
+  if( begin > xbegin )
+    --begin;
+  const float *end = std::upper_bound( xbegin, xend, upperEnergy );
+  if( end < xend )
+    ++end;
+  if( end > (xend-1) )
+    end = (xend-1);
+  
+  if( end <= begin )
+    throw std::logic_error( "significance_test: error finding range" );
+  
+  const size_t endbin = end - xbegin;
+  const size_t startbin = begin - xbegin;
+  for( size_t bin = startbin; bin < endbin; ++bin )
+  {
+    const float loweredge = (*m_x)[bin];
+    const float upperedge = (*m_x)[bin+1];
+    const double continuumarea = continuum->offset_integral( loweredge, upperedge, m_meas );
+    const double peakarea = peak.gauss_integral( loweredge, upperedge );
+    double otherPeakArea = 0.0;
+    for( size_t i = 0; i < other_peaks.size(); ++i )
+    otherPeakArea += other_peaks[i].gauss_integral( loweredge, upperedge );
+    const double dataarea = std::max( (*m_y)[bin], 1.0f );
+    
+    withChi2 += std::pow(peakarea+otherPeakArea+continuumarea-dataarea, 2.0) / dataarea;
+    withoutChi2 += std::pow(otherPeakArea+continuumarea-dataarea, 2.0) / dataarea;
+  }//for( size_t bin = startbin; bin < endbin; ++bin )
+  
+  withChi2 /= (endbin-startbin);
+  withoutChi2 /= (endbin-startbin);
+  
+  const double deltaChi2 = withoutChi2 - withChi2;
+  
+  
+  
+  begin = std::upper_bound( xbegin, xend, peak.mean()-1.18*peak.sigma() );
+  if( begin > xbegin )
+    --begin;
+  end = std::upper_bound( xbegin, xend, peak.mean()+1.18*peak.sigma() );
+  if( end < xend )
+    ++end;
+  if( end > (xend-1) )
+    end = (xend-1);
+  
+  const size_t beingint = begin-xbegin;
+  const size_t endint = end-xbegin;
+  
+  double datamidarea = 0.0;
+  for( size_t i = beingint; i < endint; ++i )
+  datamidarea += (*m_y)[i];
+  
+  const double gausmidarea = peak.gauss_integral( *begin, *end );
+  
+  const double gross_counts_sig = gausmidarea/sqrt(datamidarea);
+  
+  if( chi2DOF )
+    *chi2DOF = deltaChi2;
+  if( grosCountsSigma )
+    *grosCountsSigma = gross_counts_sig;
+  
+  //    double *chi2DOF = 0,
+  //    double *grosCountsSigma = 0
+  
+  //    cerr << "Peak at mean=" << peak.mean() << ", sigma=" << peak.sigma() << " has deltaChi2=" << deltaChi2
+  //         << ", gausmidarea=" << gausmidarea << ", datamidarea=" << datamidarea
+  //         << ", (gausmidarea/sqrt(datamidarea))=" << (gausmidarea/sqrt(datamidarea))
+  //         << endl;
+  
+  return ((deltaChi2 > m_min_chi2_dof_thresh)
+          && gross_counts_sig>=m_min_gross_counts_sig_thresh);
+}//bool significance_test( ... )
+
+
+
+std::vector<PeakDef> AutoPeakSearchChi2Fcn::filter_peaks( const std::vector<PeakDef> &all_peaks ) const
+{
+  std::vector<PeakDef> keepers;
+  
+  typedef std::map< std::shared_ptr<const PeakContinuum>, vector<PeakDef> > peakmap_t;
+  peakmap_t peakmap;
+  
+  for( size_t i = 0; i < all_peaks.size(); ++i )
+  peakmap[all_peaks[i].continuum()].push_back( all_peaks[i] );
+  
+  for( const peakmap_t::value_type &t : peakmap )
+  {
+    const vector<PeakDef> &v = t.second;
+    for( size_t i = 0; i < v.size(); ++i )
+    if( significance_test(v[i], v) )
+      keepers.push_back( v[i] );
+  }
+  
+  std::sort( keepers.begin(), keepers.end(), &PeakDef::lessThanByMean );
+  
+  return keepers;
+}//filter_peaks(...)
+
+
+bool find_spectroscopic_extent( std::shared_ptr<const Measurement> meas,
+                               size_t &lower_channel,
+                               size_t &upper_channel )
+{
+  if( !meas )
+    return false;
+  
+  const vector<float> &channel_counts = *meas->gamma_counts();
+  const size_t nbin = channel_counts.size();
+  
+  
+  //First detect where spectrum begins
+  const int side_bins = 5;
+  const int order = 2;
+  const int derivative = 2;
+  vector<float> smoothed_2nd;
+  smoothSpectrum( meas, side_bins, order, derivative, smoothed_2nd );
+  
+  size_t channel = 0;
+  while( channel < nbin && smoothed_2nd[channel]>-1.0 )
+    ++channel;
+  
+  //    const size_t first_negative_2nd_deriv = channel;
+  
+  while( channel < nbin && smoothed_2nd[channel]<0.05 )
+    ++channel;
+  //  cerr << "Lower channel = " << meas->channel_energies()->at(channel) << endl;
+  lower_channel = std::min(channel-0,smoothed_2nd.size()-1);
+  
+  if( lower_channel > (nbin/3) )
+  {
+    cout << "The lower threshold bin (" << lower_channel << " of " << nbin
+    << ") is to high, skipping file for further analysis." << endl;
+    lower_channel = upper_channel = 0;
+    return false;
+  }//
+  
+  size_t upperlastchannel = nbin - 1;
+  while( upperlastchannel > 0 && channel_counts[upperlastchannel] < 5.0f )
+    --upperlastchannel;
+  
+  //Start at the turn on energy, but make sure were in a region of the spectra
+  //  with decent statistics (e.g. at least 20 counts per bin)
+  size_t lastchannel = lower_channel;
+  while( lastchannel < nbin && channel_counts[lastchannel] < 20.0 )
+    ++lastchannel;
+  
+  //Now find where the spectrum drops below X counts per channel for a number
+  //  of channels in a row
+  int numbelow = 0;
+  const int nbelowlimit = std::max( int(std::ceil(0.0015*nbin)), 3 );
+  while( lastchannel < (nbin-1) && numbelow <= nbelowlimit )
+    numbelow = (channel_counts[++lastchannel] > 0.1) ? 0 : numbelow + 1;
+  
+  upper_channel = (lastchannel == nbin) ? size_t(nbin-1) : lastchannel;
+  upper_channel = std::max( upper_channel, upperlastchannel+1 );
+  upper_channel = std::min( upper_channel, nbin-1 );
+  
+  return true;
+}//bool find_spectroscopic_extent(...)
+
+std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> meas,
+                                      const std::vector<PeakDef> &origpeaks )
+{
+  if( !meas || !meas->gamma_counts() )
+    return origpeaks;
+  
+  const bool highres = PeakFitUtils::is_high_res( meas );
+  
+  const double min_chi2_dof_thresh         = highres ? 0.2   : 3.5;
+  const double min_gross_counts_sig_thresh = highres ? 3.0   : 3;
+  const double above_line_chi2_thresh      = highres ? 4.075 : 4.075;
+  const int side_bins                      = highres ? 7     : 10;
+  const int smooth_order                   = highres ? 3     : 2;
+  const double second_deriv_thresh         = highres ? -0.02 : 0.04;
+  const double stat_thresh                 = highres ? 1.0   : 2;
+  const double width_thresh                = highres ? 0.0   : 0.0;
+  
+  
+  //initial_above_line_chi2_thresh: 3.5,
+  //initial_second_deriv_thresh: 0.05,
+  //initial_stat_thresh: 1.3,
+  //final_min_chi2_dof_thresh: 1.1,
+  //final_min_gross_counts_sig_thresh: 4.5
+  
+  return search_for_peaks( meas, min_chi2_dof_thresh,
+                          min_gross_counts_sig_thresh,
+                          above_line_chi2_thresh, side_bins, smooth_order,
+                          second_deriv_thresh, stat_thresh, width_thresh,
+                          origpeaks
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-                                    , std::shared_ptr<const DetectorPeakResponse>()
+                          , std::shared_ptr<const DetectorPeakResponse>()
 #endif
-                                    );
-            
-          }//search_for_peaks
-          
-          std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> meas,
-                                                const double min_chi2_dof_thresh,
-                                                const double min_gross_counts_sig_thresh,
-                                                const double above_line_chi2_thresh,
-                                                const int side_bins,
-                                                const int smooth_order,
-                                                const double second_deriv_thresh,
-                                                const double stat_thresh,
-                                                const double width_thresh,
-                                                const std::vector<PeakDef> &origpeaks /*included in result, unmodified, wont have duplciate */
+                          );
+  
+}//search_for_peaks
+
+std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> meas,
+                                      const double min_chi2_dof_thresh,
+                                      const double min_gross_counts_sig_thresh,
+                                      const double above_line_chi2_thresh,
+                                      const int side_bins,
+                                      const int smooth_order,
+                                      const double second_deriv_thresh,
+                                      const double stat_thresh,
+                                      const double width_thresh,
+                                      const std::vector<PeakDef> &origpeaks /*included in result, unmodified, wont have duplciate */
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-                                                , std::shared_ptr<const DetectorPeakResponse> detector
+                                      , std::shared_ptr<const DetectorPeakResponse> detector
 #endif
-                                                )
-          {
-            
-            vector<PeakDef> finalpeaks;
-            
-            if( !meas )
-              throw runtime_error( "search_for_peaks: invalid input" );
-            
-            
-            AutoPeakSearchChi2Fcn chi2fcn( meas, origpeaks );
-            chi2fcn.m_min_chi2_dof_thresh = min_chi2_dof_thresh;
-            chi2fcn.m_min_gross_counts_sig_thresh = min_gross_counts_sig_thresh;
-            chi2fcn.m_nsigma_near_group = 3.0;
-            
-            
-            chi2fcn.m_side_bins = side_bins;
-            chi2fcn.m_smooth_order = smooth_order;
-            chi2fcn.m_second_deriv_thresh = second_deriv_thresh;
-            chi2fcn.m_stat_thresh = stat_thresh;
-            chi2fcn.m_width_thresh = width_thresh;
-            
-            const bool success = chi2fcn.init();  //this is where the initial candidate peaks are actually produced
-            
-            if( !success )
-              throw runtime_error( "Unable to init peak searching" );
-            
-            assert( success );
-            
-            
-            ROOT::Minuit2::MnUserParameters params = chi2fcn.initial_parameters();
-            ROOT::Minuit2::MnUserParameterState inputParamState( params );
-            ROOT::Minuit2::MnStrategy strategy( 2 );
-            
-            ROOT::Minuit2::CombinedMinimizer fitter;
-            unsigned int maxFcnCall = 0;
-            const double tolerance = 0.001;
-            
-            
-            ROOT::Minuit2::FunctionMinimum minimum
-            = fitter.Minimize( chi2fcn, params, strategy, maxFcnCall, tolerance );
-            
-            params = minimum.UserState().Parameters();
-            const vector<double> pars = params.Params();
-            const vector<double> errors = params.Errors();
-            
-            std::vector<PeakDef> resultpeaks;
-            
+)
+{
+  
+  vector<PeakDef> finalpeaks;
+  
+  if( !meas )
+    throw runtime_error( "search_for_peaks: invalid input" );
+  
+  
+  AutoPeakSearchChi2Fcn chi2fcn( meas, origpeaks );
+  chi2fcn.m_min_chi2_dof_thresh = min_chi2_dof_thresh;
+  chi2fcn.m_min_gross_counts_sig_thresh = min_gross_counts_sig_thresh;
+  chi2fcn.m_nsigma_near_group = 3.0;
+  
+  
+  chi2fcn.m_side_bins = side_bins;
+  chi2fcn.m_smooth_order = smooth_order;
+  chi2fcn.m_second_deriv_thresh = second_deriv_thresh;
+  chi2fcn.m_stat_thresh = stat_thresh;
+  chi2fcn.m_width_thresh = width_thresh;
+  
+  const bool success = chi2fcn.init();  //this is where the initial candidate peaks are actually produced
+  
+  if( !success )
+    throw runtime_error( "Unable to init peak searching" );
+  
+  assert( success );
+  
+  
+  ROOT::Minuit2::MnUserParameters params = chi2fcn.initial_parameters();
+  ROOT::Minuit2::MnUserParameterState inputParamState( params );
+  ROOT::Minuit2::MnStrategy strategy( 2 );
+  
+  ROOT::Minuit2::CombinedMinimizer fitter;
+  unsigned int maxFcnCall = 0;
+  const double tolerance = 0.001;
+  
+  
+  ROOT::Minuit2::FunctionMinimum minimum
+  = fitter.Minimize( chi2fcn, params, strategy, maxFcnCall, tolerance );
+  
+  params = minimum.UserState().Parameters();
+  const vector<double> pars = params.Params();
+  const vector<double> errors = params.Errors();
+  
+  std::vector<PeakDef> resultpeaks;
+  
 #if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 1 )
-            const double fitchi2 = chi2fcn.pars_to_peaks( resultpeaks, pars, errors );
-            cerr << "Fit " << resultpeaks.size() << " peaks w/ chi2=" << fitchi2 << endl;
-            for( size_t i = 0; i < resultpeaks.size(); ++i )
-              cerr << "\tunfiltered: mean=" << resultpeaks[i].mean() << ", area=" << resultpeaks[i].amplitude() << endl;
+  const double fitchi2 = chi2fcn.pars_to_peaks( resultpeaks, pars, errors );
+  cerr << "Fit " << resultpeaks.size() << " peaks w/ chi2=" << fitchi2 << endl;
+  for( size_t i = 0; i < resultpeaks.size(); ++i )
+  cerr << "\tunfiltered: mean=" << resultpeaks[i].mean() << ", area=" << resultpeaks[i].amplitude() << endl;
 #endif
-            
-            std::vector<PeakDef> filtered = chi2fcn.filter_peaks( resultpeaks );
-            
+  
+  std::vector<PeakDef> filtered = chi2fcn.filter_peaks( resultpeaks );
+  
 #if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 1 )
-            cerr << "After Filtering there are still " << filtered.size() << " peaks" << endl;
-            for( size_t i = 0; i < filtered.size(); ++i )
-            {
-              cerr << "\tFiltered: mean=" << filtered[i].mean() << ", area=" << filtered[i].amplitude() << endl;
-            }
+  cerr << "After Filtering there are still " << filtered.size() << " peaks" << endl;
+  for( size_t i = 0; i < filtered.size(); ++i )
+  {
+    cerr << "\tFiltered: mean=" << filtered[i].mean() << ", area=" << filtered[i].amplitude() << endl;
+  }
 #endif
-            
-            //Here we should fit for the FWHM funcitonal form if we have a ny peaks
-            finalpeaks = filtered;
-            vector<double> rescoef( pars.begin()+chi2fcn.num_initial_candidate_peaks(), pars.end() );
-            
-            if( filtered.size() )
-            {
-              //get the FWHM as a function of energy
-              //      chi2fcn.m_min_gross_counts_sig_thresh *= 2.0;
-              //      chi2fcn.m_min_chi2_dof_thresh *= 2.0;
-              
-              //Scan the spectrum over the valid range to find candidate peaks, filtering as we go
-              //  -could do something really simple like have a linear continuum that touches
-              //   at +-2 sigma; If there is another peak there, than have it touch its continuum.
-              //   If the
-              vector<double> chi2aboveline, chi2abovelineEnergies, chi2abovelineareas;
-              vector< vector<double> > chi2abovelinecontcoefs;
-              vector< double > chi2abovelinecontstart;
-              
-              const vector<float> &energies = *meas->channel_energies();
-              const vector<float> &spectrum = *meas->gamma_counts();
-              
-              const float lowerenergy = energies.at( chi2fcn.lower_spectrum_channel() );
-              const float upperenergy = energies.at( chi2fcn.upper_spectrum_channel() );
-              
+  
+  //Here we should fit for the FWHM funcitonal form if we have a ny peaks
+  finalpeaks = filtered;
+  vector<double> rescoef( pars.begin()+chi2fcn.num_initial_candidate_peaks(), pars.end() );
+  
+  if( filtered.size() )
+  {
+    //get the FWHM as a function of energy
+    //      chi2fcn.m_min_gross_counts_sig_thresh *= 2.0;
+    //      chi2fcn.m_min_chi2_dof_thresh *= 2.0;
+    
+    //Scan the spectrum over the valid range to find candidate peaks, filtering as we go
+    //  -could do something really simple like have a linear continuum that touches
+    //   at +-2 sigma; If there is another peak there, than have it touch its continuum.
+    //   If the
+    vector<double> chi2aboveline, chi2abovelineEnergies, chi2abovelineareas;
+    vector< vector<double> > chi2abovelinecontcoefs;
+    vector< double > chi2abovelinecontstart;
+    
+    const vector<float> &energies = *meas->channel_energies();
+    const vector<float> &spectrum = *meas->gamma_counts();
+    
+    const float lowerenergy = energies.at( chi2fcn.lower_spectrum_channel() );
+    const float upperenergy = energies.at( chi2fcn.upper_spectrum_channel() );
+    
 #if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 1 )
-              cerr << "Will scan from " << lowerenergy << " to " << upperenergy << " keV" << endl;
-              cerr << "Inital sigma=" << chi2fcn.peak_sigma(lowerenergy,rescoef) << endl;
-              cerr << "Upper sigma=" << chi2fcn.peak_sigma(upperenergy,rescoef) << endl;
+    cerr << "Will scan from " << lowerenergy << " to " << upperenergy << " keV" << endl;
+    cerr << "Inital sigma=" << chi2fcn.peak_sigma(lowerenergy,rescoef) << endl;
+    cerr << "Upper sigma=" << chi2fcn.peak_sigma(upperenergy,rescoef) << endl;
 #endif
-              
+    
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-              ofstream spectrumfile("spectrum.csv");
-              ofstream chi2peakfile("chi2withpeak.csv");
-              ofstream chi2nopeakfile("chi2nopeak.csv");
-              ofstream chi2ratiofile("chi2ratio.csv");
-              ofstream chi2difffile("chi2diff.csv");
-              ofstream linefitfile("linefit.csv");
-              ofstream peakslinefitfile("peakslinefit.csv");
-              ofstream areaabovelinefile("areaaboveline.csv");
-              ofstream issigfile("issig.csv");
-              
-              for( size_t i = 0; i < spectrum.size(); ++i )
-                spectrumfile << energies[i] << "," << spectrum[i] << endl;
-              
-              if( !!detector && detector->hasResolutionInfo() )
-              {
-                ofstream foundfwhm("foundFWHM.csv");
-                ofstream gadrasfwhm("gadrasFWHM.csv");
-                for( size_t i = 0; i < spectrum.size(); ++i )
-                {
-                  foundfwhm << energies[i] << "," << chi2fcn.peak_sigma(energies[i],rescoef) << endl;
-                  gadrasfwhm << energies[i] << "," << detector->peakResolutionSigma(energies[i]) << endl;
-                }
-              }
+    ofstream spectrumfile("spectrum.csv");
+    ofstream chi2peakfile("chi2withpeak.csv");
+    ofstream chi2nopeakfile("chi2nopeak.csv");
+    ofstream chi2ratiofile("chi2ratio.csv");
+    ofstream chi2difffile("chi2diff.csv");
+    ofstream linefitfile("linefit.csv");
+    ofstream peakslinefitfile("peakslinefit.csv");
+    ofstream areaabovelinefile("areaaboveline.csv");
+    ofstream issigfile("issig.csv");
+    
+    for( size_t i = 0; i < spectrum.size(); ++i )
+    spectrumfile << energies[i] << "," << spectrum[i] << endl;
+    
+    if( !!detector && detector->hasResolutionInfo() )
+    {
+      ofstream foundfwhm("foundFWHM.csv");
+      ofstream gadrasfwhm("gadrasFWHM.csv");
+      for( size_t i = 0; i < spectrum.size(); ++i )
+      {
+        foundfwhm << energies[i] << "," << chi2fcn.peak_sigma(energies[i],rescoef) << endl;
+        gadrasfwhm << energies[i] << "," << detector->peakResolutionSigma(energies[i]) << endl;
+      }
+    }
 #endif
-              
-              
-              float deltae = chi2fcn.peak_sigma(lowerenergy,rescoef);
-              for( float energy = lowerenergy + deltae;
-                  energy < upperenergy - deltae;
-                  energy += deltae )
-              {
-                
-                deltae = 0.25*chi2fcn.peak_sigma(energy,rescoef);
-                const size_t channel = meas->find_gamma_channel(energy);
-                const float binwidth = meas->gamma_channel_width(channel);
-                if( deltae < binwidth )
-                  deltae = 1.5*binwidth;
-                
-                const double sigma = chi2fcn.peak_sigma(energy,rescoef);
-                
-                //Fit for a peak
-                vector<PeakDef> existingpeaks = peaksTouchingRange( energy-1.5*sigma, energy+1.5*sigma, finalpeaks );
-                
-                double lower_range = energy - 2.0*sigma;
-                double upper_range = energy + 2.0*sigma;
-                
-                bool isInOtherPeak = false;
-                
-                for( const PeakDef &p : existingpeaks )
-                {
-                  lower_range = std::min( lower_range, p.lowerX() );
-                  upper_range = std::max( upper_range, p.upperX() );
-                  
-                  isInOtherPeak = (isInOtherPeak || (fabs(p.mean()-energy) < 2.0*p.sigma()));
-                }
-                
-                if( isInOtherPeak )
-                {
-                  //          cout << energy << " is in other peak, but not skipping" << endl;
-#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-                  chi2peakfile << energy << "," << 0.2 << endl;
-                  chi2nopeakfile << energy << "," << 0.2 << endl;
-                  
-                  issigfile        << energy << "," << 0 << endl;
-                  chi2peakfile     << energy << "," << 0 << endl;
-                  chi2nopeakfile   << energy << "," << 0 << endl;
-                  peakslinefitfile << energy << "," << 0 << endl;
-                  linefitfile      << energy << "," << 0 << endl;
-#endif
-                  continue;
-                }
-                
-                try
-                {
-                  const std::vector<PeakDef> fixedAmpPeaks;
-                  vector<double> amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts;
-                  
-                  const size_t startbin = lower_bound( energies.begin(), energies.end(), lower_range ) - energies.begin();
-                  const size_t endbin = lower_bound( energies.begin(), energies.end(), upper_range ) - energies.begin();
-                  
-                  assert( startbin != energies.size() );
-                  assert( endbin >= startbin );
-                  
-                  const float *x_start = &(energies[0]) + startbin;
-                  const float *data = &(spectrum[0]) + startbin;
-                  const size_t nbin = endbin - startbin;
-                  
-                  vector<double> means, sigmas;
-                  for( const PeakDef &p : existingpeaks )
-                  {
-                    //            cout << "Not adding to existing peaks" << endl;
-                    means.push_back( p.mean() );
-                    sigmas.push_back( p.sigma() );
-                  }
-                  
-                  means.push_back( energy );
-                  sigmas.push_back( sigma );
-                  
-                  int polynomial_order = 1;  //linear
-                  
-                  /*
-                   if( means.size() > 2 )
-                   polynomial_order = 2;
-                   if( nbin > 15 )  //15 is arbitrarily chosen right now
-                   polynomial_order = 2;
-                   */
-                  
-                  const double chi2 =  fit_amp_and_offset( x_start, data, nbin,
-                                                          polynomial_order, energy, means, sigmas,
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
-                                                          fixedAmpPeaks,
-#endif
-                                                          amplitudes, continuum_coeffs,
-                                                          amplitudes_uncerts, continuum_coeffs_uncerts );
-                  
-                  //we have amplitudes, uncertainties
-                  const double fitamp = amplitudes.back();
-                  const double fitampuncert = amplitudes_uncerts.back();
-                  
-                  double withpeakchi2 = 0.0, withoutpeakchi2 = 0.0;
-                  for( size_t bin = 0; bin < nbin; ++bin )
-                  {
-                    const double x0 = x_start[bin];
-                    const double x1 = x_start[bin+1];
-                    double y_pred = 0.0;
-                    for( size_t col = 0; col < continuum_coeffs.size(); ++col )
-                    {
-                      const double exp = col + 1.0;
-                      const double x0cont = x0 - energy;
-                      const double x1cont = x1 - energy;
-                      y_pred += continuum_coeffs[col] * (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp));
-                    }//for( int order = 0; order < maxorder; ++order )
-                    
-                    const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
-                    
-                    if( y_pred < 0.0 )
-                      y_pred = 0.0;
-                    
-                    for( size_t i = 0; i < (amplitudes.size()-1); ++i )
-                      y_pred += amplitudes[i]*PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 );
-                    
-#if(fit_amp_and_offset_OBEY_FIXING_AMPLITUDES)
-                    for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
-                      y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
-#endif
-                    
-                    withoutpeakchi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
-                    
-                    y_pred += amplitudes.back()*PeakDef::gaus_integral( means.back(), sigmas.back(), 1.0, x0, x1 );
-                    withpeakchi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
-                  }
-                  
-                  double withpeakchi2dof = withpeakchi2 / (nbin+3);
-                  double withoutpeakchi2dof = withoutpeakchi2 / (nbin+2);
-                  
-                  if( fabs(withpeakchi2-chi2) < (0.05*chi2) || fabs(withpeakchi2-chi2)<0.01 )
-                  {
-                    //            cerr << "\n\nFailed chi2 check: withpeakchi2=" << withpeakchi2
-                    //                 << ", chi2=" << chi2 << endl;
-                    continue;
-                  }
-                  
-                  //          const double dataarea = gamma_integral( meas, energy-2.0*sigma, energy+2.0*sigma );
-                  
-                  double linechi2dof = 0.0;
-                  double peakscontheight = 0.0, lineonlyheight = 0.0;
-                  
-                  {
-                    //Here we could try fitting to a straight line, and try to use this to
-                    //  threshold off of as well....
-                    vector<float> lineonlyx, fakedata;
-                    for( size_t i = 0; i < nbin; ++i )
-                      lineonlyx.push_back( x_start[i] - energy );
-                    
-                    std::vector<double> lineonlycoeffs, lineonlyuncerts;
-                    const double linechi2 = fit_to_polynomial( &lineonlyx[0], data,
-                                                              lineonlyx.size(), 1,
-                                                              lineonlycoeffs,
-                                                              lineonlyuncerts );
-                    linechi2dof = linechi2/(lineonlyx.size()-2);
-                    lineonlyheight = lineonlycoeffs[0];
-                    
-                    size_t midenergybin = lower_bound( lineonlyx.begin(), lineonlyx.end(), 0.0 ) - lineonlyx.begin();
-                    for( size_t col = 0; col < continuum_coeffs.size(); ++col )
-                    {
-                      const double exp = col + 1.0;
-                      const double x0cont = lineonlyx[midenergybin];
-                      const double x1cont = lineonlyx[midenergybin+1];
-                      peakscontheight += continuum_coeffs[col] * (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp));
-                    }//for( int order = 0; order < maxorder; ++order )
-                  }
-                  
-                  
-                  PeakDef peak;
-                  peak.setMean( energy );
-                  peak.setSigma( sigma );
-                  peak.setAmplitude( fitamp );
-                  peak.continuum()->setType( PeakContinuum::Linear );
-                  peak.continuum()->setParameters( energy, &continuum_coeffs[0], &continuum_coeffs_uncerts[0] );
-                  double testChi2DOF, testGrosCountsSigma;
-                  vector<PeakDef> neighbors;
-                  /*const bool sig = */chi2fcn.significance_test( peak, neighbors,
-                                                             &testChi2DOF, &testGrosCountsSigma );
-                  
-                  
-                  if( ((fitamp/fitampuncert) < 2.5)
-                     || (fitamp < 0.0)
-                     || (withoutpeakchi2dof-withpeakchi2dof) < 1.0
-                     || withpeakchi2dof > 2.0
-                     || withoutpeakchi2dof < 1.25
-                     /*|| (fitamp/sqrt(dataarea)<4)*/ )
-                  {
-                    withpeakchi2dof = 0.0;
-                    linechi2dof = 0.0;
-                    peakscontheight = 0.0;
-                    lineonlyheight = 0.0;
-                  }else
-                  {
-                    //fuck it, lets add this peak to
-                    finalpeaks.push_back( peak );
-                    
-                    /*
-                     const double sig = fitamp / fitampuncert;
-                     chi2aboveline.push_back( sig );
-                     chi2abovelineEnergies.push_back( energy );
-                     chi2abovelineareas.push_back( fitamp );
-                     chi2abovelinecontcoefs.push_back( vector<double>() );
-                     */
-                    //Then filter them, and refit peaks.  Should we
-                    
-                    //refitPeaksThatShareROI(...);
-                    
-                    //Write a new chi2 class that takes all the candidate peaks,
-                    //  and then decides which peaks to group together, and what
-                    //  detector response function to to use, then it fits for all
-                    //  the peaks using groupings.  Minuit fit parameters will be
-                    //  detector resolution function and peak energies.
-                    //  Can even waite to decide wich peaks are grouped together until
-                    //  parameters are specified.
-                    //  Once the new peaks are fuly fit for, then can filter them an
-                    //  additional time.
-                    //  Once thats all implemented, then can optimize all the
-                    //  parameters.
-                  }
-#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-                  issigfile        << energy << "," << fitamp << endl;
-                  chi2peakfile     << energy << "," << withpeakchi2dof << endl;
-                  chi2nopeakfile   << energy << "," << linechi2dof     << endl;
-                  peakslinefitfile << energy << "," << peakscontheight << endl;
-                  linefitfile      << energy << "," << lineonlyheight  << endl;
-#endif
-                  
-                  if( false )
-                  {//begin computation of straight line, skipping the peak area
-                    //next thing to try, fit a straight line, using about 1 sigma of data,
-                    //  then ~3.5 sigma not in the fit, then another 1 sigma of data, and
-                    //  look for the excess in the middle part, and use this to see if a
-                    //  peak is there (for HPGe, might need something else for NaI).
-                    vector<float> fakex, fakedata;
-                    const double fake_lower_range = energy - 2.5*sigma;
-                    const double fake_upper_range = energy + 2.5*sigma;
-                    
-                    const size_t fakestartbin = lower_bound( energies.begin(), energies.end(), fake_lower_range ) - energies.begin();
-                    const size_t fakeendbin = lower_bound( energies.begin(), energies.end(), fake_upper_range-sigma ) - energies.begin();
-                    
-                    size_t lastlowerbin = 0;
-                    for( size_t i = fakestartbin; fakex.empty() || energies[i] <= (fake_lower_range+sigma); ++i )
-                    {
-                      fakex.push_back( energies[i] );
-                      fakedata.push_back( spectrum[i] );
-                      lastlowerbin = i;
-                    }
-                    
-                    for( size_t i = fakeendbin; i < (fakeendbin+1) || energies[i] <= fake_upper_range; ++i )
-                    {
-                      fakex.push_back( energies[i] );
-                      fakedata.push_back( spectrum[i] );
-                    }
-                    
-                    const double fakeenergyoffset = fakex[0];
-                    chi2abovelinecontstart.push_back( fakeenergyoffset );
-                    for( size_t i = 0; i < fakex.size(); ++i )
-                      fakex[i] -= fakeenergyoffset;
-                    
-                    std::vector<double> fakepoly_coeffs, fakecoeff_uncerts;
-                    /*const double nomiddlefit = */ fit_to_polynomial( &fakex[0], &fakedata[0], fakex.size(), 1,
-                                                                 fakepoly_coeffs,
-                                                                 fakecoeff_uncerts );
-                    
-                    //now integrate the data for energy+-1.5 sigma
-                    //            const double middataarea = gamma_integral( meas, energy-1.5*sigma, energy+1.5*sigma );
-                    
-                    double midcontinuumarea = 0.0, middataarea = 0.0, midcontinuumareaplus = 0.0;
-                    const size_t midnbins = fakeendbin - lastlowerbin;
-                    for( size_t bin = lastlowerbin + 0.2*midnbins;
-                        bin < (fakeendbin-0.2*midnbins); ++bin )
-                    {
-                      double y_pred = 0.0, y_pred_plus = 0.0;
-                      for( size_t i = 0; i < fakepoly_coeffs.size(); ++i )
-                      {
-                        y_pred += fakepoly_coeffs[i] * std::pow( double(energies[bin]-fakeenergyoffset), double(i) );
-                        //                y_pred_plus += (fakepoly_coeffs[i]+fakecoeff_uncerts[i]) * std::pow( double(energies[bin]-fakeenergyoffset), double(i) );
-                      }
-                      
-                      y_pred = std::max( y_pred, 0.0 );
-                      y_pred_plus = y_pred + fakepoly_coeffs[0];
-                      //              y_pred_plus = std::max( y_pred_plus, 0.0 );
-                      
-                      midcontinuumarea += y_pred;
-                      midcontinuumareaplus += y_pred_plus;
-                      middataarea += spectrum[bin];
-                    }
-                    
-                    //            const double midcontinuumarea = (3.0*fakepoly_coeffs[0] + 0.5*(fakepoly_coeffs[1]*( pow(energy+1.5*sigma,2.0))-pow(energy-1.5*sigma,2.0))) / (3.0*sigma);
-                    
-                    //            cout << "nomiddlefit=" << nomiddlefit
-                    //                 << ", for " << fakex.size() << " bins" << endl;
-                    //            cout << "energy=" << energy
-                    //                 << ", midcontinuumarea=" << midcontinuumarea
-                    //                 << ", middataarea=" << middataarea << endl;
-                    //            const double continuum_uncert = fabs(midcontinuumareaplus - midcontinuumarea);
-                    
-                    
-                    const double midpeakarea = std::max(middataarea-midcontinuumarea,0.0);
-                    const double uncert = sqrt(middataarea); //sqrt(continuum_uncert*continuum_uncert + middataarea);
-                    
-                    const double sig = midpeakarea / uncert;
-                    
-                    //double sigmamidarea = std::max(middataarea-midcontinuumarea,0.0) / std::max( sqrt(middataarea), 1.0);
-#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-                    areaabovelinefile << energy << "," << sig << endl;
-#endif
-                    
-                    //            if( energy > 2102.5 && energy < 2103. )
-                    //            {
-                    //              cout << "found it sig=" << sig << endl;
-                    //            }
-                    
-                    chi2aboveline.push_back( sig /*sigmamidarea*/ );
-                    chi2abovelineEnergies.push_back( energy );
-                    chi2abovelineareas.push_back( middataarea-midcontinuumarea );
-                    chi2abovelinecontcoefs.push_back( fakepoly_coeffs );
-                  }//end computation of straight line, skipping the peak area
-                  
-                  
-                }catch( std::exception &e )
-                {
-                  cout << "Caught exception at " << energy << ": " << e.what() << endl;
-                  
-                }
-              }//for( loop over enrgies )
-              
-#if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 0 )
-              cout << "chi2aboveline.size=" << chi2aboveline.size() << endl;
-#endif
-              
-              while( 1 )
-              {
-                vector<double>::iterator maxeleiter = std::max_element( chi2aboveline.begin(), chi2aboveline.end() );
-                
-                if( maxeleiter==chi2aboveline.end() || (*maxeleiter) < above_line_chi2_thresh )
-                  break;
-                
-                const size_t index = maxeleiter - chi2aboveline.begin();
-                //const double maxval = *maxeleiter;
-                
-                const double energy = chi2abovelineEnergies[index];
-                const double area = chi2aboveline[index];
-                
-#if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 1 )
-                cerr << "Adding peak to finalpeaks at energy=" << energy
-                << ", with area " << area << " and sigma value " << maxval << endl;
-#endif
-                
-                const double sigma = chi2fcn.peak_sigma(energy,rescoef);
-                
-                double wsum = 0.0;
-                //zero out +-2 sigma of this max value
-                for( size_t i = index; chi2abovelineEnergies[i] > (energy-2.0*sigma) && i > 1; --i )
-                {
-                  wsum += chi2aboveline[i];
-                  chi2aboveline[i] = 0.0;
-                }
-                
-                for( size_t i = index; chi2abovelineEnergies[i] < (energy+2.0*sigma) && i < chi2abovelineEnergies.size(); ++i )
-                {
-                  wsum += chi2aboveline[i];
-                  chi2aboveline[i] = 0.0;
-                }
-                
-#if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 1 )
-                cout << "\twsum=" << wsum << ", area=" << area << endl;
-#endif
-                
-                if( wsum < 4.0*area )
-                  continue;
-                
-                
-                //Now go through and fit this peak, and add it to finalpeaks...
-                PeakDef newpeak;
-                newpeak.setMean( energy );
-                newpeak.setSigma( sigma );
-                newpeak.setAmplitude( area );
-                newpeak.continuum()->setType( PeakContinuum::Linear );
-                newpeak.continuum()->setParameters( chi2abovelinecontstart[index],
-                                                   chi2abovelinecontcoefs[index],
-                                                   vector<double>() );
-                
-                finalpeaks.push_back( newpeak );
-              }//while( 1 )
-              
-              
-              //Now need to group peaks together, make them share a ROI and call
-              //      std::vector< std::vector<PeakDef> > groupOverlappingPeaks( std::vector<PeakDef> input_peaks );
-              const double ncausality = 2.0;  //XXX - arbitrary
-              std::vector< std::vector<PeakDef> > groupsofpeaks = causilyDisconnectedPeaks( meas->channel_energies()->front(),
-                                                                                           meas->channel_energies()->back(),
-                                                                                           ncausality, false, finalpeaks );
-              
-              finalpeaks.clear();
-              for( size_t i = 0; i < groupsofpeaks.size(); ++i )
-              {
-                double lx = DBL_MAX, ux = -DBL_MAX;
-                for( size_t j = 0; j < groupsofpeaks[i].size(); ++j )
-                {
-                  double lowerEnengy, upperEnergy;
-                  findROIEnergyLimits( lowerEnengy, upperEnergy, groupsofpeaks[i][j], meas );
-                  lx = std::min( lx, lowerEnengy );
-                  ux = std::max( ux, upperEnergy );
-                  if( j )
-                    groupsofpeaks[i][j].setContinuum( groupsofpeaks[i][0].continuum() );
-                }
-                
-                groupsofpeaks[i][0].continuum()->setRange( lx, ux );
-                
-                std::shared_ptr<const DetectorPeakResponse> detctorPtr;
-                std::vector< std::shared_ptr<const PeakDef> > inputpeaks, resultpeaks;
-                
-                for( size_t j = 0; j < groupsofpeaks[i].size(); ++j )
-                  inputpeaks.push_back( std::make_shared<PeakDef>( groupsofpeaks[i][j]) );
-                
-                
-                
-                resultpeaks = refitPeaksThatShareROI( meas, detctorPtr, inputpeaks, 0.25 );
-                
-                for( size_t j = 0; j < resultpeaks.size(); ++j )
-                {
-                  if( (resultpeaks[j]->amplitude()/resultpeaks[j]->amplitudeUncert()) > above_line_chi2_thresh )
-                    finalpeaks.push_back( *resultpeaks[j] );
-                }
-              }
-              
-            }//if( filtered.size() )
-            
-            
-            //now need to filter new peaks that match origpeaks - inefficent
-            //  implementation, but whatever for now
-            //Note that AutoPeakSearchChi2Fcn already took care of most of the work of not duplicating peaks
-            resultpeaks = finalpeaks;
-            finalpeaks.clear();
-            for( const PeakDef &newpeak : resultpeaks )
-            {
-              bool matches = false;
-              for( const PeakDef &oldpeak : origpeaks )
-              {
-                matches |= ((fabs(newpeak.mean()-oldpeak.mean())/oldpeak.fwhm()) < 0.1);
-              }
-              
-              if( !matches )
-                finalpeaks.push_back( newpeak );
-            }//for( size_t i = 0; i < resultpeaks.size(); ++i )
-            
-            finalpeaks.insert( finalpeaks.end(), origpeaks.begin(), origpeaks.end() );
-            std::sort( finalpeaks.begin(), finalpeaks.end(), &PeakDef::lessThanByMean );
-            
-            
-            return finalpeaks;
-          }//vector<PeakDef> search_for_peaks(...)
-        }//namespace ExperimentalPeakSearch
+    
+    
+    float deltae = chi2fcn.peak_sigma(lowerenergy,rescoef);
+    for( float energy = lowerenergy + deltae;
+        energy < upperenergy - deltae;
+        energy += deltae )
+    {
+      
+      deltae = 0.25*chi2fcn.peak_sigma(energy,rescoef);
+      const size_t channel = meas->find_gamma_channel(energy);
+      const float binwidth = meas->gamma_channel_width(channel);
+      if( deltae < binwidth )
+        deltae = 1.5*binwidth;
+      
+      const double sigma = chi2fcn.peak_sigma(energy,rescoef);
+      
+      //Fit for a peak
+      vector<PeakDef> existingpeaks = peaksTouchingRange( energy-1.5*sigma, energy+1.5*sigma, finalpeaks );
+      
+      double lower_range = energy - 2.0*sigma;
+      double upper_range = energy + 2.0*sigma;
+      
+      bool isInOtherPeak = false;
+      
+      for( const PeakDef &p : existingpeaks )
+      {
+        lower_range = std::min( lower_range, p.lowerX() );
+        upper_range = std::max( upper_range, p.upperX() );
         
+        isInOtherPeak = (isInOtherPeak || (fabs(p.mean()-energy) < 2.0*p.sigma()));
+      }
+      
+      if( isInOtherPeak )
+      {
+        //          cout << energy << " is in other peak, but not skipping" << endl;
+#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
+        chi2peakfile << energy << "," << 0.2 << endl;
+        chi2nopeakfile << energy << "," << 0.2 << endl;
         
-        const char *calculateContinuum( float *spectrum, int ssize,
-                                       int numberIterations,
-                                       int direction, int filterOrder,
-                                       bool smoothing,int smoothWindow,
-                                       bool compton )
+        issigfile        << energy << "," << 0 << endl;
+        chi2peakfile     << energy << "," << 0 << endl;
+        chi2nopeakfile   << energy << "," << 0 << endl;
+        peakslinefitfile << energy << "," << 0 << endl;
+        linefitfile      << energy << "," << 0 << endl;
+#endif
+        continue;
+      }
+      
+      try
+      {
+        const std::vector<PeakDef> fixedAmpPeaks;
+        vector<double> amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts;
+        
+        const size_t startbin = lower_bound( energies.begin(), energies.end(), lower_range ) - energies.begin();
+        const size_t endbin = lower_bound( energies.begin(), energies.end(), upper_range ) - energies.begin();
+        
+        assert( startbin != energies.size() );
+        assert( endbin >= startbin );
+        
+        const float *x_start = &(energies[0]) + startbin;
+        const float *data = &(spectrum[0]) + startbin;
+        const size_t nbin = endbin - startbin;
+        
+        vector<double> means, sigmas;
+        for( const PeakDef &p : existingpeaks )
         {
-          
-          //Original Author: Miroslav Morhac   27/05/99
-          //Adapted from TSpectrum  class (specifically the Background function)
-          //  by wcjohnson 20120216, and slowly being converted to multithreaded code...
-          //    basic idea for multithreading:
-          //      -first declare all variables only within scope needed (originally all
-          //       variable decalared at beinging of this funtion) - Mostly done I think
-          //      -break loops up where possible to have each thread work on specific
-          //       portion of the array
-          //      -Will probably want to use a thread_pool to minimize thread overhead
-          //      -Can probably just obptimize the kBackOrder4 portion of the code,
-          //       since this seems to work best anyway
-          //
-          //  See: http://root.cern.ch/root/html/TSpectrum.html for documentation
-          //  ROOT code is licenced under the LGPL, see http://root.cern.ch/root/License.html
-          
-          // April 2012 Notes:
-          // Matthew attempted to optimize/parallelize/thread'ize this function, but
-          // couldn't implement anything that looked like it'd be faster than the serial
-          // version below.  It's not embarassing parallel, and attempts to
-          // parallelize or optimize the parts that are had too much overhead and
-          // ended up slowing things down.  You can continue where Matthew left
-          // off by looking at the following places:
-          // (1) The users/branches/calculateContinuumMt branch, which contains
-          //     code that tried to parallelize the "for" loops.  This slowed things
-          //     down a lot.
-          // (2) Revision -r 6768 in the svn trunk, which contains an attempt to
-          //     add up values in the working_space only once, instead of up to 7
-          //     times. This was slower by about 4x, possible due to sorting the
-          //     fenceposts using insertion sort.  Perhaps a sorting network of
-          //     size 14 or 16 would be faster, but I couldn't find an implementation
-          // There is a "test" called calculateContinuumTest that might be useful
-          // for timing tests and verification of possible data corruption.
-          
-          if (ssize <= 0)
-            return "Wrong Parameters";
-          if (numberIterations < 1)
-            return "Width of Clipping Window Must Be Positive";
-          if (ssize < 2 * numberIterations + 1)
-            return "Too Large Clipping Window";
-          if (smoothing == true && smoothWindow != kBackSmoothing3 && smoothWindow != kBackSmoothing5 && smoothWindow != kBackSmoothing7 && smoothWindow != kBackSmoothing9 && smoothWindow != kBackSmoothing11 && smoothWindow != kBackSmoothing13 && smoothWindow != kBackSmoothing15)
-            return "Incorrect width of smoothing window";
-          
-          
-          float *working_space = new float[2 * ssize];
-          std::unique_ptr<float []> working_space_scoper( working_space );
-          
-          for( int i = 0; i < ssize; i++ )
+          //            cout << "Not adding to existing peaks" << endl;
+          means.push_back( p.mean() );
+          sigmas.push_back( p.sigma() );
+        }
+        
+        means.push_back( energy );
+        sigmas.push_back( sigma );
+        
+        int num_polynomial_terms = 2;  //linear
+        const bool step_continuum = false;
+        /*
+         if( means.size() > 2 )
+         num_polynomial_terms = 3;
+         if( nbin > 15 )  //15 is arbitrarily chosen right now
+         num_polynomial_terms = 3;
+         */
+        
+        const double chi2 =  fit_amp_and_offset( x_start, data, nbin,
+                                                num_polynomial_terms,
+                                                step_continuum,
+                                                energy, means, sigmas,
+                                                fixedAmpPeaks,
+                                                amplitudes, continuum_coeffs,
+                                                amplitudes_uncerts, continuum_coeffs_uncerts );
+        
+        //we have amplitudes, uncertainties
+        const double fitamp = amplitudes.back();
+        const double fitampuncert = amplitudes_uncerts.back();
+        
+        double withpeakchi2 = 0.0, withoutpeakchi2 = 0.0;
+        for( size_t bin = 0; bin < nbin; ++bin )
+        {
+          const double x0 = x_start[bin];
+          const double x1 = x_start[bin+1];
+          double y_pred = 0.0;
+          for( size_t col = 0; col < continuum_coeffs.size(); ++col )
           {
-            working_space[i] = spectrum[i];
-            working_space[i + ssize] = spectrum[i];
-          }//for (i = 0; i < ssize; i++)
+            const double exp = col + 1.0;
+            const double x0cont = x0 - energy;
+            const double x1cont = x1 - energy;
+            y_pred += continuum_coeffs[col] * (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp));
+          }//for( int order = 0; order < maxorder; ++order )
           
-          const int bw=(smoothWindow-1)/2;
+          const double uncert = (data[bin] > 0.0 ? sqrt( data[bin] ) : 1.0);
           
-          int n_iters = (direction == kBackIncreasingWindow) ? 1 : numberIterations;
+          if( y_pred < 0.0 )
+            y_pred = 0.0;
           
-          if (filterOrder == kBackOrder2)
+          for( size_t i = 0; i < (amplitudes.size()-1); ++i )
+          y_pred += amplitudes[i]*PeakDef::gaus_integral( means[i], sigmas[i], 1.0, x0, x1 );
+          
+          for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
+          y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
+          
+          withoutpeakchi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
+          
+          y_pred += amplitudes.back()*PeakDef::gaus_integral( means.back(), sigmas.back(), 1.0, x0, x1 );
+          withpeakchi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
+        }
+        
+        double withpeakchi2dof = withpeakchi2 / (nbin+3);
+        double withoutpeakchi2dof = withoutpeakchi2 / (nbin+2);
+        
+        if( fabs(withpeakchi2-chi2) < (0.05*chi2) || fabs(withpeakchi2-chi2)<0.01 )
+        {
+          //            cerr << "\n\nFailed chi2 check: withpeakchi2=" << withpeakchi2
+          //                 << ", chi2=" << chi2 << endl;
+          continue;
+        }
+        
+        //          const double dataarea = gamma_integral( meas, energy-2.0*sigma, energy+2.0*sigma );
+        
+        double linechi2dof = 0.0;
+        double peakscontheight = 0.0, lineonlyheight = 0.0;
+        
+        {
+          //Here we could try fitting to a straight line, and try to use this to
+          //  threshold off of as well....
+          vector<float> lineonlyx, fakedata;
+          for( size_t i = 0; i < nbin; ++i )
+          lineonlyx.push_back( x_start[i] - energy );
+          
+          std::vector<double> lineonlycoeffs, lineonlyuncerts;
+          const double linechi2 = fit_to_polynomial( &lineonlyx[0], data,
+                                                    lineonlyx.size(), 1,
+                                                    lineonlycoeffs,
+                                                    lineonlyuncerts );
+          linechi2dof = linechi2/(lineonlyx.size()-2);
+          lineonlyheight = lineonlycoeffs[0];
+          
+          size_t midenergybin = lower_bound( lineonlyx.begin(), lineonlyx.end(), 0.0 ) - lineonlyx.begin();
+          for( size_t col = 0; col < continuum_coeffs.size(); ++col )
           {
-            do
-            {
-              for ( int j = n_iters; j < ssize - n_iters; j++)
-              {
-                if (smoothing == false)
-                {
-                  float a = working_space[ssize + j];
-                  float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
-                  if (b < a)
-                    a = b;
-                  working_space[j] = a;
-                }else //if (smoothing == true)
-                {
-                  float a = working_space[ssize + j];
-                  float av = 0;
-                  float men = 0;
-                  for ( int w = j - bw; w <= j + bw; w++)
-                  {
-                    if ( w >= 0 && w < ssize)
-                    {
-                      av += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  av = av / men;
-                  float b = 0;
-                  men = 0;
-                  for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      b += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b = b / men;
-                  float c = 0;
-                  men = 0;
-                  for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++)
-                  {
-                    if ( w >= 0 && w < ssize)
-                    {
-                      c += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c = c / men;
-                  b = (b + c) / 2;
-                  if (b < a)
-                    av = b;
-                  working_space[j]=av;
-                }//if (smoothing == false) / else
-              }//for (j = n_iters; j < ssize - n_iters; j++)
-              
-              for (int j = n_iters; j < ssize - n_iters; j++)
-                working_space[ssize + j] = working_space[j];
-              
-              if (direction == kBackIncreasingWindow)
-                n_iters+=1;
-              else if(direction == kBackDecreasingWindow)
-                n_iters-=1;
-            }while( (direction == kBackIncreasingWindow && n_iters <= numberIterations)
-                   || (direction == kBackDecreasingWindow && n_iters >= 1) );
-          }//if (filterOrder == kBackOrder2)
-          
-          else if (filterOrder == kBackOrder4)
-          {
-            cerr << "kBackOrder4" << endl;
-            do{
-              for (int j = n_iters; j < ssize - n_iters; j++) {
-                if (smoothing == false){
-                  float a = working_space[ssize + j];
-                  float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
-                  float c = 0;
-                  float ai = n_iters / 2;
-                  c -= working_space[ssize + j - (int) (2 * ai)] / 6;
-                  c += 4 * working_space[ssize + j - (int) ai] / 6;
-                  c += 4 * working_space[ssize + j + (int) ai] / 6;
-                  c -= working_space[ssize + j + (int) (2 * ai)] / 6;
-                  if (b < c)
-                    b = c;
-                  if (b < a)
-                    a = b;
-                  working_space[j] = a;
-                }
-                else if (smoothing == true){
-                  float a = working_space[ssize + j];
-                  float ai = n_iters / 2;
-                  float av = 0;
-                  float men = 0;
-                  
-                  for ( int w = j - bw; w <= j + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      av += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  av = av / men;
-                  
-                  
-                  float b = 0;
-                  men = 0;
-                  for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      b += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b = b / men;
-                  
-                  float c = 0;
-                  men = 0;
-                  for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      c += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c = c / men;
-                  b = (b + c) / 2;
-                  
-                  
-                  float b4 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      b4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b4 = b4 / men;
-                  
-                  
-                  float c4 = 0;
-                  men = 0;
-                  for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      c4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c4 = c4 / men;
-                  
-                  
-                  float d4 = 0;
-                  men = 0;
-                  for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      d4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  d4 = d4 / men;
-                  
-                  float e4 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      e4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  e4 = e4 / men;
-                  b4 = (-b4 + 4 * c4 + 4 * d4 - e4) / 6;
-                  if (b < b4)
-                    b = b4;
-                  if (b < a)
-                    av = b;
-                  working_space[j]=av;
-                }
-              }
-              for (int j = n_iters; j < ssize - n_iters; j++)
-                working_space[ssize + j] = working_space[j];
-              if (direction == kBackIncreasingWindow)
-                n_iters+=1;
-              else if(direction == kBackDecreasingWindow)
-                n_iters-=1;
-            }while((direction == kBackIncreasingWindow && n_iters <= numberIterations) || (direction == kBackDecreasingWindow && n_iters >= 1));
-          }
-          
-          else if (filterOrder == kBackOrder6) {
-            do{
-              for (int j = n_iters; j < ssize - n_iters; j++) {
-                
-                if (smoothing == false){
-                  float a = working_space[ssize + j];
-                  float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
-                  float c = 0;
-                  float ai = n_iters / 2;
-                  c -= working_space[ssize + j - (int) (2 * ai)] / 6;
-                  c += 4 * working_space[ssize + j - (int) ai] / 6;
-                  c += 4 * working_space[ssize + j + (int) ai] / 6;
-                  c -= working_space[ssize + j + (int) (2 * ai)] / 6;
-                  float d = 0;
-                  ai = n_iters / 3;
-                  d += working_space[ssize + j - (int) (3 * ai)] / 20;
-                  d -= 6 * working_space[ssize + j - (int) (2 * ai)] / 20;
-                  d += 15 * working_space[ssize + j - (int) ai] / 20;
-                  d += 15 * working_space[ssize + j + (int) ai] / 20;
-                  d -= 6 * working_space[ssize + j + (int) (2 * ai)] / 20;
-                  d += working_space[ssize + j + (int) (3 * ai)] / 20;
-                  if (b < d)
-                    b = d;
-                  if (b < c)
-                    b = c;
-                  if (b < a)
-                    a = b;
-                  working_space[j] = a;
-                }
-                
-                else if (smoothing == true){
-                  float a = working_space[ssize + j];
-                  float av = 0;
-                  float men = 0;
-                  for ( int w = j - bw; w <= j + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      av += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  av = av / men;
-                  float b = 0;
-                  men = 0;
-                  for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      b += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b = b / men;
-                  float c = 0;
-                  men = 0;
-                  for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      c += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c = c / men;
-                  b = (b + c) / 2;
-                  float ai = n_iters / 2;
-                  float b4 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      b4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b4 = b4 / men;
-                  float c4 = 0;
-                  men = 0;
-                  for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      c4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c4 = c4 / men;
-                  float d4 = 0;
-                  men = 0;
-                  for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      d4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  d4 = d4 / men;
-                  float e4 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      e4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  e4 = e4 / men;
-                  b4 = (-b4 + 4 * c4 + 4 * d4 - e4) / 6;
-                  ai = n_iters / 3;
-                  float b6 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(3 * ai) - bw; w <= j - (int)(3 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      b6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b6 = b6 / men;
-                  float c6 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      c6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c6 = c6 / men;
-                  float d6 = 0;
-                  men = 0;
-                  for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      d6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  d6 = d6 / men;
-                  float e6 = 0;
-                  men = 0;
-                  for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      e6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  e6 = e6 / men;
-                  float f6 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      f6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  f6 = f6 / men;
-                  float g6 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(3 * ai) - bw; w <= j + (int)(3 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      g6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  g6 = g6 / men;
-                  b6 = (b6 - 6 * c6 + 15 * d6 + 15 * e6 - 6 * f6 + g6) / 20;
-                  if (b < b6)
-                    b = b6;
-                  if (b < b4)
-                    b = b4;
-                  if (b < a)
-                    av = b;
-                  working_space[j]=av;
-                }
-              }
-              for (int j = n_iters; j < ssize - n_iters; j++)
-                working_space[ssize + j] = working_space[j];
-              if (direction == kBackIncreasingWindow)
-                n_iters+=1;
-              else if(direction == kBackDecreasingWindow)
-                n_iters-=1;
-            }while((direction == kBackIncreasingWindow && n_iters <= numberIterations) || (direction == kBackDecreasingWindow && n_iters >= 1));
-          }
-          
-          else if (filterOrder == kBackOrder8) {
-            do{
-              for (int j = n_iters; j < ssize - n_iters; j++) {
-                if (smoothing == false){
-                  float a = working_space[ssize + j];
-                  float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
-                  float c = 0;
-                  float ai = n_iters / 2;
-                  c -= working_space[ssize + j - (int) (2 * ai)] / 6;
-                  c += 4 * working_space[ssize + j - (int) ai] / 6;
-                  c += 4 * working_space[ssize + j + (int) ai] / 6;
-                  c -= working_space[ssize + j + (int) (2 * ai)] / 6;
-                  float d = 0;
-                  ai = n_iters / 3;
-                  d += working_space[ssize + j - (int) (3 * ai)] / 20;
-                  d -= 6 * working_space[ssize + j - (int) (2 * ai)] / 20;
-                  d += 15 * working_space[ssize + j - (int) ai] / 20;
-                  d += 15 * working_space[ssize + j + (int) ai] / 20;
-                  d -= 6 * working_space[ssize + j + (int) (2 * ai)] / 20;
-                  d += working_space[ssize + j + (int) (3 * ai)] / 20;
-                  float e = 0;
-                  ai = n_iters / 4;
-                  e -= working_space[ssize + j - (int) (4 * ai)] / 70;
-                  e += 8 * working_space[ssize + j - (int) (3 * ai)] / 70;
-                  e -= 28 * working_space[ssize + j - (int) (2 * ai)] / 70;
-                  e += 56 * working_space[ssize + j - (int) ai] / 70;
-                  e += 56 * working_space[ssize + j + (int) ai] / 70;
-                  e -= 28 * working_space[ssize + j + (int) (2 * ai)] / 70;
-                  e += 8 * working_space[ssize + j + (int) (3 * ai)] / 70;
-                  e -= working_space[ssize + j + (int) (4 * ai)] / 70;
-                  if (b < e)
-                    b = e;
-                  if (b < d)
-                    b = d;
-                  if (b < c)
-                    b = c;
-                  if (b < a)
-                    a = b;
-                  working_space[j] = a;
-                }
-                
-                else if (smoothing == true)
-                {
-                  float a = working_space[ssize + j];
-                  float av = 0;
-                  float men = 0;
-                  
-                  for ( int w = j - bw; w <= j + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      av += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  av = av / men;
-                  float b = 0;
-                  men = 0;
-                  for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      b += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b = b / men;
-                  float c = 0;
-                  men = 0;
-                  for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++){
-                    if ( w >= 0 && w < ssize){
-                      c += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c = c / men;
-                  b = (b + c) / 2;
-                  float ai = n_iters / 2;
-                  float b4 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      b4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b4 = b4 / men;
-                  float c4 = 0;
-                  men = 0;
-                  for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      c4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c4 = c4 / men;
-                  float d4 = 0;
-                  men = 0;
-                  for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      d4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  d4 = d4 / men;
-                  float e4 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      e4 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  e4 = e4 / men;
-                  b4 = (-b4 + 4 * c4 + 4 * d4 - e4) / 6;
-                  ai = n_iters / 3;
-                  float b6 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(3 * ai) - bw; w <= j - (int)(3 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      b6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b6 = b6 / men;
-                  float c6 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      c6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c6 = c6 / men;
-                  float d6 = 0;
-                  men = 0;
-                  for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      d6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  d6 = d6 / men;
-                  float e6 = 0;
-                  men = 0;
-                  for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      e6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  e6 = e6 / men;
-                  float f6 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      f6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  f6 = f6 / men;
-                  float g6 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(3 * ai) - bw; w <= j + (int)(3 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      g6 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  g6 = g6 / men;
-                  b6 = (b6 - 6 * c6 + 15 * d6 + 15 * e6 - 6 * f6 + g6) / 20;
-                  ai = n_iters / 4;
-                  float b8 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(4 * ai) - bw; w <= j - (int)(4 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      b8 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  b8 = b8 / men;
-                  float c8 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(3 * ai) - bw; w <= j - (int)(3 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      c8 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  c8 = c8 / men;
-                  float d8 = 0;
-                  men = 0;
-                  for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      d8 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  d8 = d8 / men;
-                  float e8 = 0;
-                  men = 0;
-                  for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      e8 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  e8 = e8 / men;
-                  float f8 = 0;
-                  men = 0;
-                  for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      f8 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  f8 = f8 / men;
-                  float g8 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      g8 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  g8 = g8 / men;
-                  float h8 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(3 * ai) - bw; w <= j + (int)(3 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      h8 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  h8 = h8 / men;
-                  float i8 = 0;
-                  men = 0;
-                  for ( int w = j + (int)(4 * ai) - bw; w <= j + (int)(4 * ai) + bw; w++){
-                    if (w >= 0 && w < ssize){
-                      i8 += working_space[ssize + w];
-                      men +=1;
-                    }
-                  }
-                  i8 = i8 / men;
-                  b8 = ( -b8 + 8 * c8 - 28 * d8 + 56 * e8 - 56 * f8 - 28 * g8 + 8 * h8 - i8)/70;
-                  if (b < b8)
-                    b = b8;
-                  if (b < b6)
-                    b = b6;
-                  if (b < b4)
-                    b = b4;
-                  if (b < a)
-                    av = b;
-                  working_space[j]=av;
-                }
-              }
-              for (int j = n_iters; j < ssize - n_iters; j++)
-                working_space[ssize + j] = working_space[j];
-              if (direction == kBackIncreasingWindow)
-                n_iters += 1;
-              else if(direction == kBackDecreasingWindow)
-                n_iters -= 1;
-            }while((direction == kBackIncreasingWindow && n_iters <= numberIterations) || (direction == kBackDecreasingWindow && n_iters >= 1));
-          }
-          
-          if (compton == true) {
-            int b2 = 0;
-            for (int i = 0; i < ssize; i++){
-              int b1 = b2;
-              float a = working_space[i], b = spectrum[i];
-              
-              //           j = i;
-              
-              if (fabs(a - b) >= 1) {
-                b1 = i - 1;
-                if (b1 < 0)
-                  b1 = 0;
-                float yb1 = working_space[b1];
-                float c = 0.0;
-                int priz = 0;
-                for (b2 = b1 + 1; priz == 0 && b2 < ssize; b2++){
-                  a = working_space[b2], b = spectrum[b2];
-                  c = c + b - yb1;
-                  if (fabs(a - b) < 1) {
-                    priz = 1;
-                    //                    yb2 = b;
-                  }
-                }
-                if (b2 == ssize)
-                  b2 -= 1;
-                
-                float yb2 = working_space[b2];
-                
-                if (yb1 <= yb2)
-                {
-                  c = 0.0;
-                  for (int j = b1; j <= b2; j++){
-                    b = spectrum[j];
-                    c = c + b - yb1;
-                  }
-                  if (c > 1){
-                    c = (yb2 - yb1) / c;
-                    float d = 0.0;
-                    for (int j = b1; j <= b2 && j < ssize; j++){
-                      b = spectrum[j];
-                      d = d + b - yb1;
-                      a = c * d + yb1;
-                      working_space[ssize + j] = a;
-                    }
-                  }
-                }else
-                {
-                  c = 0.0;
-                  for (int j = b2; j >= b1; j--){
-                    b = spectrum[j];
-                    c = c + b - yb2;
-                  }
-                  if (c > 1){
-                    c = (yb1 - yb2) / c;
-                    float d = 0.0;
-                    for (int j = b2;j >= b1 && j >= 0; j--){
-                      b = spectrum[j];
-                      d = d + b - yb2;
-                      a = c * d + yb2;
-                      working_space[ssize + j] = a;
-                    }
-                  }
-                }
-                i=b2;
-              }
-            }
-          }
-          
-          for (int j = 0; j < ssize; j++)
-            spectrum[j] = working_space[ssize + j];
-          //     delete[]working_space;
+            const double exp = col + 1.0;
+            const double x0cont = lineonlyx[midenergybin];
+            const double x1cont = lineonlyx[midenergybin+1];
+            peakscontheight += continuum_coeffs[col] * (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp));
+          }//for( int order = 0; order < maxorder; ++order )
+        }
+        
+        
+        PeakDef peak;
+        peak.setMean( energy );
+        peak.setSigma( sigma );
+        peak.setAmplitude( fitamp );
+        peak.continuum()->setType( PeakContinuum::Linear );
+        peak.continuum()->setParameters( energy, &continuum_coeffs[0], &continuum_coeffs_uncerts[0] );
+        double testChi2DOF, testGrosCountsSigma;
+        vector<PeakDef> neighbors;
+        /*const bool sig = */chi2fcn.significance_test( peak, neighbors,
+                                                       &testChi2DOF, &testGrosCountsSigma );
+        
+        
+        if( ((fitamp/fitampuncert) < 2.5)
+           || (fitamp < 0.0)
+           || (withoutpeakchi2dof-withpeakchi2dof) < 1.0
+           || withpeakchi2dof > 2.0
+           || withoutpeakchi2dof < 1.25
+           /*|| (fitamp/sqrt(dataarea)<4)*/ )
+        {
+          withpeakchi2dof = 0.0;
+          linechi2dof = 0.0;
+          peakscontheight = 0.0;
+          lineonlyheight = 0.0;
+        }else
+        {
+          //fuck it, lets add this peak to
+          finalpeaks.push_back( peak );
           
           /*
-           boost::posix_time::ptime endTime = boost::posix_time::microsec_clock::local_time();
-           boost::posix_time::time_duration durationEnd( endTime.time_of_day() );
-           
-           //   std::cout << "start duration is " << durationStart.total_milliseconds() << std::endl;
-           //   std::cout << "end duration is " << durationEnd.total_milliseconds() << std::endl;
-           
-           boost::posix_time::time_duration duration = durationEnd - durationStart;
-           double seconds = duration.total_milliseconds()/1000.0;
-           std::cout << "****duration is " << seconds << " seconds" << std::endl;
-           string command;
-           stringstream out;
-           out << "banner " << seconds;
-           command = out.str();
-           system( command.c_str() );
+           const double sig = fitamp / fitampuncert;
+           chi2aboveline.push_back( sig );
+           chi2abovelineEnergies.push_back( energy );
+           chi2abovelineareas.push_back( fitamp );
+           chi2abovelinecontcoefs.push_back( vector<double>() );
            */
+          //Then filter them, and refit peaks.  Should we
           
-          return 0;
-        }//const char *calculateContinuum(...)
-        
-        
-        
-        
-        
-        
-        
-        vector<float> findPeaksByRelaxation( float *source,float *destVector, int ssize,
-                                            float sigma, double threshold,
-                                            bool backgroundRemove,int deconIterations,
-                                            bool markov, int averWindow )
-        {
-          //Author: Miroslav Morhac   27/05/99
-          //Adapted from TSpectrum  class (specifically Background)
-          //  by wcjohnson 20120216.
-          //  See: http://root.cern.ch/root/html/TSpectrum.html for documentation
+          //refitPeaksThatShareROI(...);
           
-#define PEAK_WINDOW 1024
-          const int fMaxPeaks = 100;
-          vector<float> fPositionX;
+          //Write a new chi2 class that takes all the candidate peaks,
+          //  and then decides which peaks to group together, and what
+          //  detector response function to to use, then it fits for all
+          //  the peaks using groupings.  Minuit fit parameters will be
+          //  detector resolution function and peak energies.
+          //  Can even waite to decide wich peaks are grouped together until
+          //  parameters are specified.
+          //  Once the new peaks are fuly fit for, then can filter them an
+          //  additional time.
+          //  Once thats all implemented, then can optimize all the
+          //  parameters.
+        }
+#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
+        issigfile        << energy << "," << fitamp << endl;
+        chi2peakfile     << energy << "," << withpeakchi2dof << endl;
+        chi2nopeakfile   << energy << "," << linechi2dof     << endl;
+        peakslinefitfile << energy << "," << peakscontheight << endl;
+        linefitfile      << energy << "," << lineonlyheight  << endl;
+#endif
+        
+        if( false )
+        {//begin computation of straight line, skipping the peak area
+          //next thing to try, fit a straight line, using about 1 sigma of data,
+          //  then ~3.5 sigma not in the fit, then another 1 sigma of data, and
+          //  look for the excess in the middle part, and use this to see if a
+          //  peak is there (for HPGe, might need something else for NaI).
+          vector<float> fakex, fakedata;
+          const double fake_lower_range = energy - 2.5*sigma;
+          const double fake_upper_range = energy + 2.5*sigma;
           
-          int i, j, numberIterations = (int)(7 * sigma + 0.5);
-          double a, b, c;
-          int k, lindex, posit, imin, imax, jmin, jmax, lh_gold, priz;
-          double lda, ldb, ldc, area, maximum, maximum_decon;
-          int xmin, xmax, l, peak_index = 0, size_ext = ssize + 2 * numberIterations, shift = numberIterations, bw = 2;
+          const size_t fakestartbin = lower_bound( energies.begin(), energies.end(), fake_lower_range ) - energies.begin();
+          const size_t fakeendbin = lower_bound( energies.begin(), energies.end(), fake_upper_range-sigma ) - energies.begin();
           
-          double maxch;
-          double nom, nip, nim, sp, sm, plocha = 0;
-          double m0low=0,m1low=0,m2low=0,l0low=0,l1low=0,detlow,av,men;
-          if (sigma < 1) {
-            cerr << "findPeaksByRelaxation(...)\n\t"
-            << "Invalid sigma, must be greater than or equal to 1" << endl;
-            return fPositionX;
+          size_t lastlowerbin = 0;
+          for( size_t i = fakestartbin; fakex.empty() || energies[i] <= (fake_lower_range+sigma); ++i )
+          {
+            fakex.push_back( energies[i] );
+            fakedata.push_back( spectrum[i] );
+            lastlowerbin = i;
           }
           
-          if(threshold<=0 || threshold>=100){
-            cerr << "findPeaksByRelaxation(...)\n\t"
-            << "Invalid threshold, must be positive and less than 100"
-            << endl;
-            return fPositionX;
+          for( size_t i = fakeendbin; i < (fakeendbin+1) || energies[i] <= fake_upper_range; ++i )
+          {
+            fakex.push_back( energies[i] );
+            fakedata.push_back( spectrum[i] );
           }
           
-          j = (int) (5.0 * sigma + 0.5);
-          if (j >= PEAK_WINDOW / 2) {
-            cerr << "findPeaksByRelaxation(...)\n\tToo large sigma" << endl;
-            return fPositionX;
-          }
+          const double fakeenergyoffset = fakex[0];
+          chi2abovelinecontstart.push_back( fakeenergyoffset );
+          for( size_t i = 0; i < fakex.size(); ++i )
+          fakex[i] -= fakeenergyoffset;
           
-          if (markov == true) {
-            if (averWindow <= 0) {
-              cerr << "findPeaksByRelaxation(...)\n\t"
-              << "Averanging window must be positive" << endl;
-              return fPositionX;
+          std::vector<double> fakepoly_coeffs, fakecoeff_uncerts;
+          /*const double nomiddlefit = */ fit_to_polynomial( &fakex[0], &fakedata[0], fakex.size(), 1,
+                                                            fakepoly_coeffs,
+                                                            fakecoeff_uncerts );
+          
+          //now integrate the data for energy+-1.5 sigma
+          //            const double middataarea = gamma_integral( meas, energy-1.5*sigma, energy+1.5*sigma );
+          
+          double midcontinuumarea = 0.0, middataarea = 0.0, midcontinuumareaplus = 0.0;
+          const size_t midnbins = fakeendbin - lastlowerbin;
+          for( size_t bin = lastlowerbin + 0.2*midnbins;
+              bin < (fakeendbin-0.2*midnbins); ++bin )
+          {
+            double y_pred = 0.0, y_pred_plus = 0.0;
+            for( size_t i = 0; i < fakepoly_coeffs.size(); ++i )
+            {
+              y_pred += fakepoly_coeffs[i] * std::pow( double(energies[bin]-fakeenergyoffset), double(i) );
+              //                y_pred_plus += (fakepoly_coeffs[i]+fakecoeff_uncerts[i]) * std::pow( double(energies[bin]-fakeenergyoffset), double(i) );
             }
-          }
-          
-          if(backgroundRemove == true){
-            if(ssize < 2 * numberIterations + 1){
-              cerr << "findPeaksByRelaxation(...)\n\t"
-              << "Too large clipping window" << endl;
-              return fPositionX;
-            }
-          }
-          
-          fPositionX.resize( fMaxPeaks, 0.0 );
-          
-          k = int(2 * sigma+0.5);
-          if(k >= 2){
-            for(i = 0;i < k;i++){
-              a = i,b = source[i];
-              m0low += 1,m1low += a,m2low += a * a,l0low += b,l1low += a * b;
-            }
-            detlow = m0low * m2low - m1low * m1low;
-            if(detlow != 0)
-              l1low = (-l0low * m1low + l1low * m0low) / detlow;
             
-            else
-              l1low = 0;
-            if(l1low > 0)
-              l1low=0;
+            y_pred = std::max( y_pred, 0.0 );
+            y_pred_plus = y_pred + fakepoly_coeffs[0];
+            //              y_pred_plus = std::max( y_pred_plus, 0.0 );
+            
+            midcontinuumarea += y_pred;
+            midcontinuumareaplus += y_pred_plus;
+            middataarea += spectrum[bin];
+          }
+          
+          //            const double midcontinuumarea = (3.0*fakepoly_coeffs[0] + 0.5*(fakepoly_coeffs[1]*( pow(energy+1.5*sigma,2.0))-pow(energy-1.5*sigma,2.0))) / (3.0*sigma);
+          
+          //            cout << "nomiddlefit=" << nomiddlefit
+          //                 << ", for " << fakex.size() << " bins" << endl;
+          //            cout << "energy=" << energy
+          //                 << ", midcontinuumarea=" << midcontinuumarea
+          //                 << ", middataarea=" << middataarea << endl;
+          //            const double continuum_uncert = fabs(midcontinuumareaplus - midcontinuumarea);
+          
+          
+          const double midpeakarea = std::max(middataarea-midcontinuumarea,0.0);
+          const double uncert = sqrt(middataarea); //sqrt(continuum_uncert*continuum_uncert + middataarea);
+          
+          const double sig = midpeakarea / uncert;
+          
+          //double sigmamidarea = std::max(middataarea-midcontinuumarea,0.0) / std::max( sqrt(middataarea), 1.0);
+#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
+          areaabovelinefile << energy << "," << sig << endl;
+#endif
+          
+          //            if( energy > 2102.5 && energy < 2103. )
+          //            {
+          //              cout << "found it sig=" << sig << endl;
+          //            }
+          
+          chi2aboveline.push_back( sig /*sigmamidarea*/ );
+          chi2abovelineEnergies.push_back( energy );
+          chi2abovelineareas.push_back( middataarea-midcontinuumarea );
+          chi2abovelinecontcoefs.push_back( fakepoly_coeffs );
+        }//end computation of straight line, skipping the peak area
+        
+        
+      }catch( std::exception &e )
+      {
+        cout << "Caught exception at " << energy << ": " << e.what() << endl;
+        
+      }
+    }//for( loop over enrgies )
+    
+#if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 0 )
+    cout << "chi2aboveline.size=" << chi2aboveline.size() << endl;
+#endif
+    
+    while( 1 )
+    {
+      vector<double>::iterator maxeleiter = std::max_element( chi2aboveline.begin(), chi2aboveline.end() );
+      
+      if( maxeleiter==chi2aboveline.end() || (*maxeleiter) < above_line_chi2_thresh )
+        break;
+      
+      const size_t index = maxeleiter - chi2aboveline.begin();
+      //const double maxval = *maxeleiter;
+      
+      const double energy = chi2abovelineEnergies[index];
+      const double area = chi2aboveline[index];
+      
+#if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 1 )
+      cerr << "Adding peak to finalpeaks at energy=" << energy
+      << ", with area " << area << " and sigma value " << maxval << endl;
+#endif
+      
+      const double sigma = chi2fcn.peak_sigma(energy,rescoef);
+      
+      double wsum = 0.0;
+      //zero out +-2 sigma of this max value
+      for( size_t i = index; chi2abovelineEnergies[i] > (energy-2.0*sigma) && i > 1; --i )
+      {
+        wsum += chi2aboveline[i];
+        chi2aboveline[i] = 0.0;
+      }
+      
+      for( size_t i = index; chi2abovelineEnergies[i] < (energy+2.0*sigma) && i < chi2abovelineEnergies.size(); ++i )
+      {
+        wsum += chi2aboveline[i];
+        chi2aboveline[i] = 0.0;
+      }
+      
+#if( WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL > 1 )
+      cout << "\twsum=" << wsum << ", area=" << area << endl;
+#endif
+      
+      if( wsum < 4.0*area )
+        continue;
+      
+      
+      //Now go through and fit this peak, and add it to finalpeaks...
+      PeakDef newpeak;
+      newpeak.setMean( energy );
+      newpeak.setSigma( sigma );
+      newpeak.setAmplitude( area );
+      newpeak.continuum()->setType( PeakContinuum::Linear );
+      newpeak.continuum()->setParameters( chi2abovelinecontstart[index],
+                                         chi2abovelinecontcoefs[index],
+                                         vector<double>() );
+      
+      finalpeaks.push_back( newpeak );
+    }//while( 1 )
+    
+    
+    //Now need to group peaks together, make them share a ROI and call
+    //      std::vector< std::vector<PeakDef> > groupOverlappingPeaks( std::vector<PeakDef> input_peaks );
+    const double ncausality = 2.0;  //XXX - arbitrary
+    std::vector< std::vector<PeakDef> > groupsofpeaks = causilyDisconnectedPeaks( meas->channel_energies()->front(),
+                                                                                 meas->channel_energies()->back(),
+                                                                                 ncausality, false, finalpeaks );
+    
+    finalpeaks.clear();
+    for( size_t i = 0; i < groupsofpeaks.size(); ++i )
+    {
+      double lx = DBL_MAX, ux = -DBL_MAX;
+      for( size_t j = 0; j < groupsofpeaks[i].size(); ++j )
+      {
+        double lowerEnengy, upperEnergy;
+        findROIEnergyLimits( lowerEnengy, upperEnergy, groupsofpeaks[i][j], meas );
+        lx = std::min( lx, lowerEnengy );
+        ux = std::max( ux, upperEnergy );
+        if( j )
+          groupsofpeaks[i][j].setContinuum( groupsofpeaks[i][0].continuum() );
+      }
+      
+      groupsofpeaks[i][0].continuum()->setRange( lx, ux );
+      
+      std::shared_ptr<const DetectorPeakResponse> detctorPtr;
+      std::vector< std::shared_ptr<const PeakDef> > inputpeaks, resultpeaks;
+      
+      for( size_t j = 0; j < groupsofpeaks[i].size(); ++j )
+      inputpeaks.push_back( std::make_shared<PeakDef>( groupsofpeaks[i][j]) );
+      
+      
+      
+      resultpeaks = refitPeaksThatShareROI( meas, detctorPtr, inputpeaks, 0.25 );
+      
+      for( size_t j = 0; j < resultpeaks.size(); ++j )
+      {
+        if( (resultpeaks[j]->amplitude()/resultpeaks[j]->amplitudeUncert()) > above_line_chi2_thresh )
+          finalpeaks.push_back( *resultpeaks[j] );
+      }
+    }
+    
+  }//if( filtered.size() )
+  
+  
+  //now need to filter new peaks that match origpeaks - inefficent
+  //  implementation, but whatever for now
+  //Note that AutoPeakSearchChi2Fcn already took care of most of the work of not duplicating peaks
+  resultpeaks = finalpeaks;
+  finalpeaks.clear();
+  for( const PeakDef &newpeak : resultpeaks )
+  {
+    bool matches = false;
+    for( const PeakDef &oldpeak : origpeaks )
+    {
+      matches |= ((fabs(newpeak.mean()-oldpeak.mean())/oldpeak.fwhm()) < 0.1);
+    }
+    
+    if( !matches )
+      finalpeaks.push_back( newpeak );
+  }//for( size_t i = 0; i < resultpeaks.size(); ++i )
+  
+  finalpeaks.insert( finalpeaks.end(), origpeaks.begin(), origpeaks.end() );
+  std::sort( finalpeaks.begin(), finalpeaks.end(), &PeakDef::lessThanByMean );
+  
+  
+  return finalpeaks;
+}//vector<PeakDef> search_for_peaks(...)
+}//namespace ExperimentalPeakSearch
+        
+
+const char *calculateContinuum( float *spectrum, int ssize,
+                               int numberIterations,
+                               int direction, int filterOrder,
+                               bool smoothing,int smoothWindow,
+                               bool compton )
+{
+  
+  //Original Author: Miroslav Morhac   27/05/99
+  //Adapted from TSpectrum  class (specifically the Background function)
+  //  by wcjohnson 20120216, and slowly being converted to multithreaded code...
+  //    basic idea for multithreading:
+  //      -first declare all variables only within scope needed (originally all
+  //       variable decalared at beinging of this funtion) - Mostly done I think
+  //      -break loops up where possible to have each thread work on specific
+  //       portion of the array
+  //      -Will probably want to use a thread_pool to minimize thread overhead
+  //      -Can probably just obptimize the kBackOrder4 portion of the code,
+  //       since this seems to work best anyway
+  //
+  //  See: http://root.cern.ch/root/html/TSpectrum.html for documentation
+  //  ROOT code is licenced under the LGPL, see http://root.cern.ch/root/License.html
+  
+  // April 2012 Notes:
+  // Matthew attempted to optimize/parallelize/thread'ize this function, but
+  // couldn't implement anything that looked like it'd be faster than the serial
+  // version below.  It's not embarassing parallel, and attempts to
+  // parallelize or optimize the parts that are had too much overhead and
+  // ended up slowing things down.  You can continue where Matthew left
+  // off by looking at the following places:
+  // (1) The users/branches/calculateContinuumMt branch, which contains
+  //     code that tried to parallelize the "for" loops.  This slowed things
+  //     down a lot.
+  // (2) Revision -r 6768 in the svn trunk, which contains an attempt to
+  //     add up values in the working_space only once, instead of up to 7
+  //     times. This was slower by about 4x, possible due to sorting the
+  //     fenceposts using insertion sort.  Perhaps a sorting network of
+  //     size 14 or 16 would be faster, but I couldn't find an implementation
+  // There is a "test" called calculateContinuumTest that might be useful
+  // for timing tests and verification of possible data corruption.
+  
+  if (ssize <= 0)
+    return "Wrong Parameters";
+  if (numberIterations < 1)
+    return "Width of Clipping Window Must Be Positive";
+  if (ssize < 2 * numberIterations + 1)
+    return "Too Large Clipping Window";
+  if (smoothing == true && smoothWindow != kBackSmoothing3 && smoothWindow != kBackSmoothing5 && smoothWindow != kBackSmoothing7 && smoothWindow != kBackSmoothing9 && smoothWindow != kBackSmoothing11 && smoothWindow != kBackSmoothing13 && smoothWindow != kBackSmoothing15)
+    return "Incorrect width of smoothing window";
+  
+  
+  float *working_space = new float[2 * ssize];
+  std::unique_ptr<float []> working_space_scoper( working_space );
+  
+  for( int i = 0; i < ssize; i++ )
+  {
+    working_space[i] = spectrum[i];
+    working_space[i + ssize] = spectrum[i];
+  }//for (i = 0; i < ssize; i++)
+  
+  const int bw=(smoothWindow-1)/2;
+  
+  int n_iters = (direction == kBackIncreasingWindow) ? 1 : numberIterations;
+  
+  if (filterOrder == kBackOrder2)
+  {
+    do
+    {
+      for ( int j = n_iters; j < ssize - n_iters; j++)
+      {
+        if (smoothing == false)
+        {
+          float a = working_space[ssize + j];
+          float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
+          if (b < a)
+            a = b;
+          working_space[j] = a;
+        }else //if (smoothing == true)
+        {
+          float a = working_space[ssize + j];
+          float av = 0;
+          float men = 0;
+          for ( int w = j - bw; w <= j + bw; w++)
+          {
+            if ( w >= 0 && w < ssize)
+            {
+              av += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          av = av / men;
+          float b = 0;
+          men = 0;
+          for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
+            if ( w >= 0 && w < ssize){
+              b += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b = b / men;
+          float c = 0;
+          men = 0;
+          for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++)
+          {
+            if ( w >= 0 && w < ssize)
+            {
+              c += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c = c / men;
+          b = (b + c) / 2;
+          if (b < a)
+            av = b;
+          working_space[j]=av;
+        }//if (smoothing == false) / else
+      }//for (j = n_iters; j < ssize - n_iters; j++)
+      
+      for (int j = n_iters; j < ssize - n_iters; j++)
+      working_space[ssize + j] = working_space[j];
+      
+      if (direction == kBackIncreasingWindow)
+        n_iters+=1;
+      else if(direction == kBackDecreasingWindow)
+        n_iters-=1;
+    }while( (direction == kBackIncreasingWindow && n_iters <= numberIterations)
+           || (direction == kBackDecreasingWindow && n_iters >= 1) );
+  }//if (filterOrder == kBackOrder2)
+  
+  else if (filterOrder == kBackOrder4)
+  {
+    cerr << "kBackOrder4" << endl;
+    do{
+      for (int j = n_iters; j < ssize - n_iters; j++) {
+        if (smoothing == false){
+          float a = working_space[ssize + j];
+          float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
+          float c = 0;
+          float ai = n_iters / 2;
+          c -= working_space[ssize + j - (int) (2 * ai)] / 6;
+          c += 4 * working_space[ssize + j - (int) ai] / 6;
+          c += 4 * working_space[ssize + j + (int) ai] / 6;
+          c -= working_space[ssize + j + (int) (2 * ai)] / 6;
+          if (b < c)
+            b = c;
+          if (b < a)
+            a = b;
+          working_space[j] = a;
+        }
+        else if (smoothing == true){
+          float a = working_space[ssize + j];
+          float ai = n_iters / 2;
+          float av = 0;
+          float men = 0;
+          
+          for ( int w = j - bw; w <= j + bw; w++){
+            if ( w >= 0 && w < ssize){
+              av += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          av = av / men;
+          
+          
+          float b = 0;
+          men = 0;
+          for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
+            if ( w >= 0 && w < ssize){
+              b += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b = b / men;
+          
+          float c = 0;
+          men = 0;
+          for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++){
+            if ( w >= 0 && w < ssize){
+              c += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c = c / men;
+          b = (b + c) / 2;
+          
+          
+          float b4 = 0;
+          men = 0;
+          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              b4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b4 = b4 / men;
+          
+          
+          float c4 = 0;
+          men = 0;
+          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              c4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c4 = c4 / men;
+          
+          
+          float d4 = 0;
+          men = 0;
+          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              d4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          d4 = d4 / men;
+          
+          float e4 = 0;
+          men = 0;
+          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              e4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          e4 = e4 / men;
+          b4 = (-b4 + 4 * c4 + 4 * d4 - e4) / 6;
+          if (b < b4)
+            b = b4;
+          if (b < a)
+            av = b;
+          working_space[j]=av;
+        }
+      }
+      for (int j = n_iters; j < ssize - n_iters; j++)
+      working_space[ssize + j] = working_space[j];
+      if (direction == kBackIncreasingWindow)
+        n_iters+=1;
+      else if(direction == kBackDecreasingWindow)
+        n_iters-=1;
+    }while((direction == kBackIncreasingWindow && n_iters <= numberIterations) || (direction == kBackDecreasingWindow && n_iters >= 1));
+  }
+  
+  else if (filterOrder == kBackOrder6) {
+    do{
+      for (int j = n_iters; j < ssize - n_iters; j++) {
+        
+        if (smoothing == false){
+          float a = working_space[ssize + j];
+          float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
+          float c = 0;
+          float ai = n_iters / 2;
+          c -= working_space[ssize + j - (int) (2 * ai)] / 6;
+          c += 4 * working_space[ssize + j - (int) ai] / 6;
+          c += 4 * working_space[ssize + j + (int) ai] / 6;
+          c -= working_space[ssize + j + (int) (2 * ai)] / 6;
+          float d = 0;
+          ai = n_iters / 3;
+          d += working_space[ssize + j - (int) (3 * ai)] / 20;
+          d -= 6 * working_space[ssize + j - (int) (2 * ai)] / 20;
+          d += 15 * working_space[ssize + j - (int) ai] / 20;
+          d += 15 * working_space[ssize + j + (int) ai] / 20;
+          d -= 6 * working_space[ssize + j + (int) (2 * ai)] / 20;
+          d += working_space[ssize + j + (int) (3 * ai)] / 20;
+          if (b < d)
+            b = d;
+          if (b < c)
+            b = c;
+          if (b < a)
+            a = b;
+          working_space[j] = a;
+        }
+        
+        else if (smoothing == true){
+          float a = working_space[ssize + j];
+          float av = 0;
+          float men = 0;
+          for ( int w = j - bw; w <= j + bw; w++){
+            if ( w >= 0 && w < ssize){
+              av += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          av = av / men;
+          float b = 0;
+          men = 0;
+          for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
+            if ( w >= 0 && w < ssize){
+              b += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b = b / men;
+          float c = 0;
+          men = 0;
+          for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++){
+            if ( w >= 0 && w < ssize){
+              c += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c = c / men;
+          b = (b + c) / 2;
+          float ai = n_iters / 2;
+          float b4 = 0;
+          men = 0;
+          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              b4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b4 = b4 / men;
+          float c4 = 0;
+          men = 0;
+          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              c4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c4 = c4 / men;
+          float d4 = 0;
+          men = 0;
+          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              d4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          d4 = d4 / men;
+          float e4 = 0;
+          men = 0;
+          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              e4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          e4 = e4 / men;
+          b4 = (-b4 + 4 * c4 + 4 * d4 - e4) / 6;
+          ai = n_iters / 3;
+          float b6 = 0;
+          men = 0;
+          for ( int w = j - (int)(3 * ai) - bw; w <= j - (int)(3 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              b6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b6 = b6 / men;
+          float c6 = 0;
+          men = 0;
+          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              c6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c6 = c6 / men;
+          float d6 = 0;
+          men = 0;
+          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              d6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          d6 = d6 / men;
+          float e6 = 0;
+          men = 0;
+          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              e6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          e6 = e6 / men;
+          float f6 = 0;
+          men = 0;
+          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              f6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          f6 = f6 / men;
+          float g6 = 0;
+          men = 0;
+          for ( int w = j + (int)(3 * ai) - bw; w <= j + (int)(3 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              g6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          g6 = g6 / men;
+          b6 = (b6 - 6 * c6 + 15 * d6 + 15 * e6 - 6 * f6 + g6) / 20;
+          if (b < b6)
+            b = b6;
+          if (b < b4)
+            b = b4;
+          if (b < a)
+            av = b;
+          working_space[j]=av;
+        }
+      }
+      for (int j = n_iters; j < ssize - n_iters; j++)
+      working_space[ssize + j] = working_space[j];
+      if (direction == kBackIncreasingWindow)
+        n_iters+=1;
+      else if(direction == kBackDecreasingWindow)
+        n_iters-=1;
+    }while((direction == kBackIncreasingWindow && n_iters <= numberIterations) || (direction == kBackDecreasingWindow && n_iters >= 1));
+  }
+  
+  else if (filterOrder == kBackOrder8) {
+    do{
+      for (int j = n_iters; j < ssize - n_iters; j++) {
+        if (smoothing == false){
+          float a = working_space[ssize + j];
+          float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
+          float c = 0;
+          float ai = n_iters / 2;
+          c -= working_space[ssize + j - (int) (2 * ai)] / 6;
+          c += 4 * working_space[ssize + j - (int) ai] / 6;
+          c += 4 * working_space[ssize + j + (int) ai] / 6;
+          c -= working_space[ssize + j + (int) (2 * ai)] / 6;
+          float d = 0;
+          ai = n_iters / 3;
+          d += working_space[ssize + j - (int) (3 * ai)] / 20;
+          d -= 6 * working_space[ssize + j - (int) (2 * ai)] / 20;
+          d += 15 * working_space[ssize + j - (int) ai] / 20;
+          d += 15 * working_space[ssize + j + (int) ai] / 20;
+          d -= 6 * working_space[ssize + j + (int) (2 * ai)] / 20;
+          d += working_space[ssize + j + (int) (3 * ai)] / 20;
+          float e = 0;
+          ai = n_iters / 4;
+          e -= working_space[ssize + j - (int) (4 * ai)] / 70;
+          e += 8 * working_space[ssize + j - (int) (3 * ai)] / 70;
+          e -= 28 * working_space[ssize + j - (int) (2 * ai)] / 70;
+          e += 56 * working_space[ssize + j - (int) ai] / 70;
+          e += 56 * working_space[ssize + j + (int) ai] / 70;
+          e -= 28 * working_space[ssize + j + (int) (2 * ai)] / 70;
+          e += 8 * working_space[ssize + j + (int) (3 * ai)] / 70;
+          e -= working_space[ssize + j + (int) (4 * ai)] / 70;
+          if (b < e)
+            b = e;
+          if (b < d)
+            b = d;
+          if (b < c)
+            b = c;
+          if (b < a)
+            a = b;
+          working_space[j] = a;
+        }
+        
+        else if (smoothing == true)
+        {
+          float a = working_space[ssize + j];
+          float av = 0;
+          float men = 0;
+          
+          for ( int w = j - bw; w <= j + bw; w++){
+            if ( w >= 0 && w < ssize){
+              av += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          av = av / men;
+          float b = 0;
+          men = 0;
+          for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
+            if ( w >= 0 && w < ssize){
+              b += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b = b / men;
+          float c = 0;
+          men = 0;
+          for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++){
+            if ( w >= 0 && w < ssize){
+              c += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c = c / men;
+          b = (b + c) / 2;
+          float ai = n_iters / 2;
+          float b4 = 0;
+          men = 0;
+          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              b4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b4 = b4 / men;
+          float c4 = 0;
+          men = 0;
+          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              c4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c4 = c4 / men;
+          float d4 = 0;
+          men = 0;
+          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              d4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          d4 = d4 / men;
+          float e4 = 0;
+          men = 0;
+          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              e4 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          e4 = e4 / men;
+          b4 = (-b4 + 4 * c4 + 4 * d4 - e4) / 6;
+          ai = n_iters / 3;
+          float b6 = 0;
+          men = 0;
+          for ( int w = j - (int)(3 * ai) - bw; w <= j - (int)(3 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              b6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b6 = b6 / men;
+          float c6 = 0;
+          men = 0;
+          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              c6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c6 = c6 / men;
+          float d6 = 0;
+          men = 0;
+          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              d6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          d6 = d6 / men;
+          float e6 = 0;
+          men = 0;
+          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              e6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          e6 = e6 / men;
+          float f6 = 0;
+          men = 0;
+          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              f6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          f6 = f6 / men;
+          float g6 = 0;
+          men = 0;
+          for ( int w = j + (int)(3 * ai) - bw; w <= j + (int)(3 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              g6 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          g6 = g6 / men;
+          b6 = (b6 - 6 * c6 + 15 * d6 + 15 * e6 - 6 * f6 + g6) / 20;
+          ai = n_iters / 4;
+          float b8 = 0;
+          men = 0;
+          for ( int w = j - (int)(4 * ai) - bw; w <= j - (int)(4 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              b8 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          b8 = b8 / men;
+          float c8 = 0;
+          men = 0;
+          for ( int w = j - (int)(3 * ai) - bw; w <= j - (int)(3 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              c8 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          c8 = c8 / men;
+          float d8 = 0;
+          men = 0;
+          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              d8 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          d8 = d8 / men;
+          float e8 = 0;
+          men = 0;
+          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              e8 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          e8 = e8 / men;
+          float f8 = 0;
+          men = 0;
+          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
+            if (w >= 0 && w < ssize){
+              f8 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          f8 = f8 / men;
+          float g8 = 0;
+          men = 0;
+          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              g8 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          g8 = g8 / men;
+          float h8 = 0;
+          men = 0;
+          for ( int w = j + (int)(3 * ai) - bw; w <= j + (int)(3 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              h8 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          h8 = h8 / men;
+          float i8 = 0;
+          men = 0;
+          for ( int w = j + (int)(4 * ai) - bw; w <= j + (int)(4 * ai) + bw; w++){
+            if (w >= 0 && w < ssize){
+              i8 += working_space[ssize + w];
+              men +=1;
+            }
+          }
+          i8 = i8 / men;
+          b8 = ( -b8 + 8 * c8 - 28 * d8 + 56 * e8 - 56 * f8 - 28 * g8 + 8 * h8 - i8)/70;
+          if (b < b8)
+            b = b8;
+          if (b < b6)
+            b = b6;
+          if (b < b4)
+            b = b4;
+          if (b < a)
+            av = b;
+          working_space[j]=av;
+        }
+      }
+      for (int j = n_iters; j < ssize - n_iters; j++)
+      working_space[ssize + j] = working_space[j];
+      if (direction == kBackIncreasingWindow)
+        n_iters += 1;
+      else if(direction == kBackDecreasingWindow)
+        n_iters -= 1;
+    }while((direction == kBackIncreasingWindow && n_iters <= numberIterations) || (direction == kBackDecreasingWindow && n_iters >= 1));
+  }
+  
+  if (compton == true) {
+    int b2 = 0;
+    for (int i = 0; i < ssize; i++){
+      int b1 = b2;
+      float a = working_space[i], b = spectrum[i];
+      
+      //           j = i;
+      
+      if (fabs(a - b) >= 1) {
+        b1 = i - 1;
+        if (b1 < 0)
+          b1 = 0;
+        float yb1 = working_space[b1];
+        float c = 0.0;
+        int priz = 0;
+        for (b2 = b1 + 1; priz == 0 && b2 < ssize; b2++){
+          a = working_space[b2], b = spectrum[b2];
+          c = c + b - yb1;
+          if (fabs(a - b) < 1) {
+            priz = 1;
+            //                    yb2 = b;
+          }
+        }
+        if (b2 == ssize)
+          b2 -= 1;
+        
+        float yb2 = working_space[b2];
+        
+        if (yb1 <= yb2)
+        {
+          c = 0.0;
+          for (int j = b1; j <= b2; j++){
+            b = spectrum[j];
+            c = c + b - yb1;
+          }
+          if (c > 1){
+            c = (yb2 - yb1) / c;
+            float d = 0.0;
+            for (int j = b1; j <= b2 && j < ssize; j++){
+              b = spectrum[j];
+              d = d + b - yb1;
+              a = c * d + yb1;
+              working_space[ssize + j] = a;
+            }
+          }
+        }else
+        {
+          c = 0.0;
+          for (int j = b2; j >= b1; j--){
+            b = spectrum[j];
+            c = c + b - yb2;
+          }
+          if (c > 1){
+            c = (yb1 - yb2) / c;
+            float d = 0.0;
+            for (int j = b2;j >= b1 && j >= 0; j--){
+              b = spectrum[j];
+              d = d + b - yb2;
+              a = c * d + yb2;
+              working_space[ssize + j] = a;
+            }
+          }
+        }
+        i=b2;
+      }
+    }
+  }
+  
+  for (int j = 0; j < ssize; j++)
+  spectrum[j] = working_space[ssize + j];
+  //     delete[]working_space;
+  
+  /*
+   boost::posix_time::ptime endTime = boost::posix_time::microsec_clock::local_time();
+   boost::posix_time::time_duration durationEnd( endTime.time_of_day() );
+   
+   //   std::cout << "start duration is " << durationStart.total_milliseconds() << std::endl;
+   //   std::cout << "end duration is " << durationEnd.total_milliseconds() << std::endl;
+   
+   boost::posix_time::time_duration duration = durationEnd - durationStart;
+   double seconds = duration.total_milliseconds()/1000.0;
+   std::cout << "****duration is " << seconds << " seconds" << std::endl;
+   string command;
+   stringstream out;
+   out << "banner " << seconds;
+   command = out.str();
+   system( command.c_str() );
+   */
+  
+  return 0;
+}//const char *calculateContinuum(...)
+
+
+
+
+
+
+
+vector<float> findPeaksByRelaxation( float *source,float *destVector, int ssize,
+                                    float sigma, double threshold,
+                                    bool backgroundRemove,int deconIterations,
+                                    bool markov, int averWindow )
+{
+  //Author: Miroslav Morhac   27/05/99
+  //Adapted from TSpectrum  class (specifically Background)
+  //  by wcjohnson 20120216.
+  //  See: http://root.cern.ch/root/html/TSpectrum.html for documentation
+  
+#define PEAK_WINDOW 1024
+  const int fMaxPeaks = 100;
+  vector<float> fPositionX;
+  
+  int i, j, numberIterations = (int)(7 * sigma + 0.5);
+  double a, b, c;
+  int k, lindex, posit, imin, imax, jmin, jmax, lh_gold, priz;
+  double lda, ldb, ldc, area, maximum, maximum_decon;
+  int xmin, xmax, l, peak_index = 0, size_ext = ssize + 2 * numberIterations, shift = numberIterations, bw = 2;
+  
+  double maxch;
+  double nom, nip, nim, sp, sm, plocha = 0;
+  double m0low=0,m1low=0,m2low=0,l0low=0,l1low=0,detlow,av,men;
+  if (sigma < 1) {
+    cerr << "findPeaksByRelaxation(...)\n\t"
+    << "Invalid sigma, must be greater than or equal to 1" << endl;
+    return fPositionX;
+  }
+  
+  if(threshold<=0 || threshold>=100){
+    cerr << "findPeaksByRelaxation(...)\n\t"
+    << "Invalid threshold, must be positive and less than 100"
+    << endl;
+    return fPositionX;
+  }
+  
+  j = (int) (5.0 * sigma + 0.5);
+  if (j >= PEAK_WINDOW / 2) {
+    cerr << "findPeaksByRelaxation(...)\n\tToo large sigma" << endl;
+    return fPositionX;
+  }
+  
+  if (markov == true) {
+    if (averWindow <= 0) {
+      cerr << "findPeaksByRelaxation(...)\n\t"
+      << "Averanging window must be positive" << endl;
+      return fPositionX;
+    }
+  }
+  
+  if(backgroundRemove == true){
+    if(ssize < 2 * numberIterations + 1){
+      cerr << "findPeaksByRelaxation(...)\n\t"
+      << "Too large clipping window" << endl;
+      return fPositionX;
+    }
+  }
+  
+  fPositionX.resize( fMaxPeaks, 0.0 );
+  
+  k = int(2 * sigma+0.5);
+  if(k >= 2){
+    for(i = 0;i < k;i++){
+      a = i,b = source[i];
+      m0low += 1,m1low += a,m2low += a * a,l0low += b,l1low += a * b;
+    }
+    detlow = m0low * m2low - m1low * m1low;
+    if(detlow != 0)
+      l1low = (-l0low * m1low + l1low * m0low) / detlow;
+    
+    else
+      l1low = 0;
+    if(l1low > 0)
+      l1low=0;
+  }
+  
+  else{
+    l1low = 0;
+  }
+  
+  i = (int)(7 * sigma + 0.5);
+  i = 2 * i;
+  double *working_space = new double [7 * (ssize + i)];
+  for (j=0;j<7 * (ssize + i);j++) working_space[j] = 0;
+  for(i = 0; i < size_ext; i++){
+    if(i < shift){
+      a = i - shift;
+      working_space[i + size_ext] = source[0] + l1low * a;
+      if(working_space[i + size_ext] < 0)
+        working_space[i + size_ext]=0;
+    }
+    
+    else if(i >= ssize + shift){
+      a = i - (ssize - 1 + shift);
+      working_space[i + size_ext] = source[ssize - 1];
+      if(working_space[i + size_ext] < 0)
+        working_space[i + size_ext]=0;
+    }
+    
+    else
+      working_space[i + size_ext] = source[i - shift];
+  }
+  
+  if(backgroundRemove == true){
+    for(i = 1; i <= numberIterations; i++){
+      for(j = i; j < size_ext - i; j++){
+        if(markov == false){
+          a = working_space[size_ext + j];
+          b = (working_space[size_ext + j - i] + working_space[size_ext + j + i]) / 2.0;
+          if(b < a)
+            a = b;
+          
+          working_space[j]=a;
+        }
+        
+        else{
+          a = working_space[size_ext + j];
+          av = 0;
+          men = 0;
+          for ( int w = j - bw; w <= j + bw; w++){
+            if ( w >= 0 && w < size_ext){
+              av += working_space[size_ext + w];
+              men +=1;
+            }
+          }
+          av = av / men;
+          b = 0;
+          men = 0;
+          for ( int w = j - i - bw; w <= j - i + bw; w++){
+            if ( w >= 0 && w < size_ext){
+              b += working_space[size_ext + w];
+              men +=1;
+            }
+          }
+          b = b / men;
+          c = 0;
+          men = 0;
+          for ( int w = j + i - bw; w <= j + i + bw; w++){
+            if ( w >= 0 && w < size_ext){
+              c += working_space[size_ext + w];
+              men +=1;
+            }
+          }
+          c = c / men;
+          b = (b + c) / 2;
+          if (b < a)
+            av = b;
+          working_space[j]=av;
+        }
+      }
+      for(j = i; j < size_ext - i; j++)
+      working_space[size_ext + j] = working_space[j];
+    }
+    for(j = 0;j < size_ext; j++){
+      if(j < shift){
+        a = j - shift;
+        b = source[0] + l1low * a;
+        if (b < 0) b = 0;
+        working_space[size_ext + j] = b - working_space[size_ext + j];
+      }
+      
+      else if(j >= ssize + shift){
+        a = j - (ssize - 1 + shift);
+        b = source[ssize - 1];
+        if (b < 0) b = 0;
+        working_space[size_ext + j] = b - working_space[size_ext + j];
+      }
+      
+      else{
+        working_space[size_ext + j] = source[j - shift] - working_space[size_ext + j];
+      }
+    }
+    for(j = 0;j < size_ext; j++){
+      if(working_space[size_ext + j] < 0) working_space[size_ext + j] = 0;
+    }
+  }
+  
+  for(i = 0; i < size_ext; i++){
+    working_space[i + 6*size_ext] = working_space[i + size_ext];
+  }
+  
+  if(markov == true){
+    for(j = 0; j < size_ext; j++)
+    working_space[2 * size_ext + j] = working_space[size_ext + j];
+    xmin = 0,xmax = size_ext - 1;
+    for(i = 0, maxch = 0; i < size_ext; i++){
+      working_space[i] = 0;
+      if(maxch < working_space[2 * size_ext + i])
+        maxch = working_space[2 * size_ext + i];
+      plocha += working_space[2 * size_ext + i];
+    }
+    if(maxch == 0) {
+      delete [] working_space;
+      fPositionX.clear();
+      return fPositionX;;
+    }
+    
+    nom = 1;
+    working_space[xmin] = 1;
+    for(i = xmin; i < xmax; i++){
+      nip = working_space[2 * size_ext + i] / maxch;
+      nim = working_space[2 * size_ext + i + 1] / maxch;
+      sp = 0,sm = 0;
+      for(l = 1; l <= averWindow; l++){
+        if((i + l) > xmax)
+          a = working_space[2 * size_ext + xmax] / maxch;
+        
+        else
+          a = working_space[2 * size_ext + i + l] / maxch;
+        
+        b = a - nip;
+        if(a + nip <= 0)
+          a=1;
+        
+        else
+          a = sqrt(a + nip);
+        
+        b = b / a;
+        b = exp(b);
+        sp = sp + b;
+        if((i - l + 1) < xmin)
+          a = working_space[2 * size_ext + xmin] / maxch;
+        
+        else
+          a = working_space[2 * size_ext + i - l + 1] / maxch;
+        
+        b = a - nim;
+        if(a + nim <= 0)
+          a = 1;
+        
+        else
+          a = sqrt(a + nim);
+        
+        b = b / a;
+        b = exp(b);
+        sm = sm + b;
+      }
+      a = sp / sm;
+      a = working_space[i + 1] = working_space[i] * a;
+      nom = nom + a;
+    }
+    for(i = xmin; i <= xmax; i++){
+      working_space[i] = working_space[i] / nom;
+    }
+    for(j = 0; j < size_ext; j++)
+    working_space[size_ext + j] = working_space[j] * plocha;
+    for(j = 0; j < size_ext; j++){
+      working_space[2 * size_ext + j] = working_space[size_ext + j];
+    }
+    if(backgroundRemove == true){
+      for(i = 1; i <= numberIterations; i++){
+        for(j = i; j < size_ext - i; j++){
+          a = working_space[size_ext + j];
+          b = (working_space[size_ext + j - i] + working_space[size_ext + j + i]) / 2.0;
+          if(b < a)
+            a = b;
+          working_space[j] = a;
+        }
+        for(j = i; j < size_ext - i; j++)
+        working_space[size_ext + j] = working_space[j];
+      }
+      for(j = 0; j < size_ext; j++){
+        working_space[size_ext + j] = working_space[2 * size_ext + j] - working_space[size_ext + j];
+      }
+    }
+  }
+  //deconvolution starts
+  area = 0;
+  lh_gold = -1;
+  posit = 0;
+  maximum = 0;
+  //generate response vector
+  for(i = 0; i < size_ext; i++){
+    lda = (double)i - 3 * sigma;
+    lda = lda * lda / (2 * sigma * sigma);
+    j = (int)(1000 * exp(-lda));
+    lda = j;
+    if(lda != 0)
+      lh_gold = i + 1;
+    
+    working_space[i] = lda;
+    area = area + lda;
+    if(lda > maximum){
+      maximum = lda;
+      posit = i;
+    }
+  }
+  //read source vector
+  for(i = 0; i < size_ext; i++)
+  working_space[2 * size_ext + i] = fabs(working_space[size_ext + i]);
+  //create matrix at*a(vector b)
+  i = lh_gold - 1;
+  if(i > size_ext)
+    i = size_ext;
+  
+  imin = -i,imax = i;
+  for(i = imin; i <= imax; i++){
+    lda = 0;
+    jmin = 0;
+    if(i < 0)
+      jmin = -i;
+    jmax = lh_gold - 1 - i;
+    if(jmax > (lh_gold - 1))
+      jmax = lh_gold - 1;
+    
+    for(j = jmin;j <= jmax; j++){
+      ldb = working_space[j];
+      ldc = working_space[i + j];
+      lda = lda + ldb * ldc;
+    }
+    working_space[size_ext + i - imin] = lda;
+  }
+  //create vector p
+  i = lh_gold - 1;
+  imin = -i,imax = size_ext + i - 1;
+  for(i = imin; i <= imax; i++){
+    lda = 0;
+    for(j = 0; j <= (lh_gold - 1); j++){
+      ldb = working_space[j];
+      k = i + j;
+      if(k >= 0 && k < size_ext){
+        ldc = working_space[2 * size_ext + k];
+        lda = lda + ldb * ldc;
+      }
+      
+    }
+    working_space[4 * size_ext + i - imin] = lda;
+  }
+  //move vector p
+  for(i = imin; i <= imax; i++)
+  working_space[2 * size_ext + i - imin] = working_space[4 * size_ext + i - imin];
+  //initialization of resulting vector
+  for(i = 0; i < size_ext; i++)
+  working_space[i] = 1;
+  //START OF ITERATIONS
+  for(lindex = 0; lindex < deconIterations; lindex++){
+    for(i = 0; i < size_ext; i++){
+      if(fabs(working_space[2 * size_ext + i]) > 0.00001 && fabs(working_space[i]) > 0.00001){
+        lda=0;
+        jmin = lh_gold - 1;
+        if(jmin > i)
+          jmin = i;
+        
+        jmin = -jmin;
+        jmax = lh_gold - 1;
+        if(jmax > (size_ext - 1 - i))
+          jmax=size_ext-1-i;
+        
+        for(j = jmin; j <= jmax; j++){
+          ldb = working_space[j + lh_gold - 1 + size_ext];
+          ldc = working_space[i + j];
+          lda = lda + ldb * ldc;
+        }
+        ldb = working_space[2 * size_ext + i];
+        if(lda != 0)
+          lda = ldb / lda;
+        
+        else
+          lda = 0;
+        
+        ldb = working_space[i];
+        lda = lda * ldb;
+        working_space[3 * size_ext + i] = lda;
+      }
+    }
+    for(i = 0; i < size_ext; i++){
+      working_space[i] = working_space[3 * size_ext + i];
+    }
+  }
+  //shift resulting spectrum
+  for(i=0;i<size_ext;i++){
+    lda = working_space[i];
+    j = i + posit;
+    j = j % size_ext;
+    working_space[size_ext + j] = lda;
+  }
+  //write back resulting spectrum
+  maximum = 0, maximum_decon = 0;
+  j = lh_gold - 1;
+  for(i = 0; i < size_ext - j; i++){
+    if(i >= shift && i < ssize + shift){
+      working_space[i] = area * working_space[size_ext + i + j];
+      if(maximum_decon < working_space[i])
+        maximum_decon = working_space[i];
+      if(maximum < working_space[6 * size_ext + i])
+        maximum = working_space[6 * size_ext + i];
+    }
+    
+    else
+      working_space[i] = 0;
+  }
+  lda=1;
+  if(lda>threshold)
+    lda=threshold;
+  lda=lda/100;
+  
+  //searching for peaks in deconvolved spectrum
+  for(i = 1; i < size_ext - 1; i++){
+    if(working_space[i] > working_space[i - 1] && working_space[i] > working_space[i + 1]){
+      if(i >= shift && i < ssize + shift){
+        if(working_space[i] > lda*maximum_decon && working_space[6 * size_ext + i] > threshold * maximum / 100.0){
+          for(j = i - 1, a = 0, b = 0; j <= i + 1; j++){
+            a += (double)(j - shift) * working_space[j];
+            b += working_space[j];
+          }
+          a = a / b;
+          if(a < 0)
+            a = 0;
+          
+          if(a >= ssize)
+            a = ssize - 1;
+          if(peak_index == 0){
+            fPositionX[0] = a;
+            peak_index = 1;
           }
           
           else{
-            l1low = 0;
-          }
-          
-          i = (int)(7 * sigma + 0.5);
-          i = 2 * i;
-          double *working_space = new double [7 * (ssize + i)];
-          for (j=0;j<7 * (ssize + i);j++) working_space[j] = 0;
-          for(i = 0; i < size_ext; i++){
-            if(i < shift){
-              a = i - shift;
-              working_space[i + size_ext] = source[0] + l1low * a;
-              if(working_space[i + size_ext] < 0)
-                working_space[i + size_ext]=0;
+            for(j = 0, priz = 0; j < peak_index && priz == 0; j++){
+              if(working_space[6 * size_ext + shift + (int)a] > working_space[6 * size_ext + shift + (int)fPositionX[j]])
+                priz = 1;
+            }
+            if(priz == 0){
+              if(j < fMaxPeaks){
+                fPositionX[j] = a;
+              }
             }
             
-            else if(i >= ssize + shift){
-              a = i - (ssize - 1 + shift);
-              working_space[i + size_ext] = source[ssize - 1];
-              if(working_space[i + size_ext] < 0)
-                working_space[i + size_ext]=0;
-            }
-            
-            else
-              working_space[i + size_ext] = source[i - shift];
-          }
-          
-          if(backgroundRemove == true){
-            for(i = 1; i <= numberIterations; i++){
-              for(j = i; j < size_ext - i; j++){
-                if(markov == false){
-                  a = working_space[size_ext + j];
-                  b = (working_space[size_ext + j - i] + working_space[size_ext + j + i]) / 2.0;
-                  if(b < a)
-                    a = b;
-                  
-                  working_space[j]=a;
-                }
-                
-                else{
-                  a = working_space[size_ext + j];
-                  av = 0;
-                  men = 0;
-                  for ( int w = j - bw; w <= j + bw; w++){
-                    if ( w >= 0 && w < size_ext){
-                      av += working_space[size_ext + w];
-                      men +=1;
-                    }
-                  }
-                  av = av / men;
-                  b = 0;
-                  men = 0;
-                  for ( int w = j - i - bw; w <= j - i + bw; w++){
-                    if ( w >= 0 && w < size_ext){
-                      b += working_space[size_ext + w];
-                      men +=1;
-                    }
-                  }
-                  b = b / men;
-                  c = 0;
-                  men = 0;
-                  for ( int w = j + i - bw; w <= j + i + bw; w++){
-                    if ( w >= 0 && w < size_ext){
-                      c += working_space[size_ext + w];
-                      men +=1;
-                    }
-                  }
-                  c = c / men;
-                  b = (b + c) / 2;
-                  if (b < a)
-                    av = b;
-                  working_space[j]=av;
+            else{
+              for(k = peak_index; k >= j; k--){
+                if(k < fMaxPeaks){
+                  fPositionX[k] = fPositionX[k - 1];
                 }
               }
-              for(j = i; j < size_ext - i; j++)
-                working_space[size_ext + j] = working_space[j];
+              fPositionX[j - 1] = a;
             }
-            for(j = 0;j < size_ext; j++){
-              if(j < shift){
-                a = j - shift;
-                b = source[0] + l1low * a;
-                if (b < 0) b = 0;
-                working_space[size_ext + j] = b - working_space[size_ext + j];
-              }
-              
-              else if(j >= ssize + shift){
-                a = j - (ssize - 1 + shift);
-                b = source[ssize - 1];
-                if (b < 0) b = 0;
-                working_space[size_ext + j] = b - working_space[size_ext + j];
-              }
-              
-              else{
-                working_space[size_ext + j] = source[j - shift] - working_space[size_ext + j];
-              }
-            }
-            for(j = 0;j < size_ext; j++){
-              if(working_space[size_ext + j] < 0) working_space[size_ext + j] = 0;
-            }
+            if(peak_index < fMaxPeaks)
+              peak_index += 1;
           }
-          
-          for(i = 0; i < size_ext; i++){
-            working_space[i + 6*size_ext] = working_space[i + size_ext];
-          }
-          
-          if(markov == true){
-            for(j = 0; j < size_ext; j++)
-              working_space[2 * size_ext + j] = working_space[size_ext + j];
-            xmin = 0,xmax = size_ext - 1;
-            for(i = 0, maxch = 0; i < size_ext; i++){
-              working_space[i] = 0;
-              if(maxch < working_space[2 * size_ext + i])
-                maxch = working_space[2 * size_ext + i];
-              plocha += working_space[2 * size_ext + i];
-            }
-            if(maxch == 0) {
-              delete [] working_space;
-              fPositionX.clear();
-              return fPositionX;;
-            }
-            
-            nom = 1;
-            working_space[xmin] = 1;
-            for(i = xmin; i < xmax; i++){
-              nip = working_space[2 * size_ext + i] / maxch;
-              nim = working_space[2 * size_ext + i + 1] / maxch;
-              sp = 0,sm = 0;
-              for(l = 1; l <= averWindow; l++){
-                if((i + l) > xmax)
-                  a = working_space[2 * size_ext + xmax] / maxch;
-                
-                else
-                  a = working_space[2 * size_ext + i + l] / maxch;
-                
-                b = a - nip;
-                if(a + nip <= 0)
-                  a=1;
-                
-                else
-                  a = sqrt(a + nip);
-                
-                b = b / a;
-                b = exp(b);
-                sp = sp + b;
-                if((i - l + 1) < xmin)
-                  a = working_space[2 * size_ext + xmin] / maxch;
-                
-                else
-                  a = working_space[2 * size_ext + i - l + 1] / maxch;
-                
-                b = a - nim;
-                if(a + nim <= 0)
-                  a = 1;
-                
-                else
-                  a = sqrt(a + nim);
-                
-                b = b / a;
-                b = exp(b);
-                sm = sm + b;
-              }
-              a = sp / sm;
-              a = working_space[i + 1] = working_space[i] * a;
-              nom = nom + a;
-            }
-            for(i = xmin; i <= xmax; i++){
-              working_space[i] = working_space[i] / nom;
-            }
-            for(j = 0; j < size_ext; j++)
-              working_space[size_ext + j] = working_space[j] * plocha;
-            for(j = 0; j < size_ext; j++){
-              working_space[2 * size_ext + j] = working_space[size_ext + j];
-            }
-            if(backgroundRemove == true){
-              for(i = 1; i <= numberIterations; i++){
-                for(j = i; j < size_ext - i; j++){
-                  a = working_space[size_ext + j];
-                  b = (working_space[size_ext + j - i] + working_space[size_ext + j + i]) / 2.0;
-                  if(b < a)
-                    a = b;
-                  working_space[j] = a;
-                }
-                for(j = i; j < size_ext - i; j++)
-                  working_space[size_ext + j] = working_space[j];
-              }
-              for(j = 0; j < size_ext; j++){
-                working_space[size_ext + j] = working_space[2 * size_ext + j] - working_space[size_ext + j];
-              }
-            }
-          }
-          //deconvolution starts
-          area = 0;
-          lh_gold = -1;
-          posit = 0;
-          maximum = 0;
-          //generate response vector
-          for(i = 0; i < size_ext; i++){
-            lda = (double)i - 3 * sigma;
-            lda = lda * lda / (2 * sigma * sigma);
-            j = (int)(1000 * exp(-lda));
-            lda = j;
-            if(lda != 0)
-              lh_gold = i + 1;
-            
-            working_space[i] = lda;
-            area = area + lda;
-            if(lda > maximum){
-              maximum = lda;
-              posit = i;
-            }
-          }
-          //read source vector
-          for(i = 0; i < size_ext; i++)
-            working_space[2 * size_ext + i] = fabs(working_space[size_ext + i]);
-          //create matrix at*a(vector b)
-          i = lh_gold - 1;
-          if(i > size_ext)
-            i = size_ext;
-          
-          imin = -i,imax = i;
-          for(i = imin; i <= imax; i++){
-            lda = 0;
-            jmin = 0;
-            if(i < 0)
-              jmin = -i;
-            jmax = lh_gold - 1 - i;
-            if(jmax > (lh_gold - 1))
-              jmax = lh_gold - 1;
-            
-            for(j = jmin;j <= jmax; j++){
-              ldb = working_space[j];
-              ldc = working_space[i + j];
-              lda = lda + ldb * ldc;
-            }
-            working_space[size_ext + i - imin] = lda;
-          }
-          //create vector p
-          i = lh_gold - 1;
-          imin = -i,imax = size_ext + i - 1;
-          for(i = imin; i <= imax; i++){
-            lda = 0;
-            for(j = 0; j <= (lh_gold - 1); j++){
-              ldb = working_space[j];
-              k = i + j;
-              if(k >= 0 && k < size_ext){
-                ldc = working_space[2 * size_ext + k];
-                lda = lda + ldb * ldc;
-              }
-              
-            }
-            working_space[4 * size_ext + i - imin] = lda;
-          }
-          //move vector p
-          for(i = imin; i <= imax; i++)
-            working_space[2 * size_ext + i - imin] = working_space[4 * size_ext + i - imin];
-          //initialization of resulting vector
-          for(i = 0; i < size_ext; i++)
-            working_space[i] = 1;
-          //START OF ITERATIONS
-          for(lindex = 0; lindex < deconIterations; lindex++){
-            for(i = 0; i < size_ext; i++){
-              if(fabs(working_space[2 * size_ext + i]) > 0.00001 && fabs(working_space[i]) > 0.00001){
-                lda=0;
-                jmin = lh_gold - 1;
-                if(jmin > i)
-                  jmin = i;
-                
-                jmin = -jmin;
-                jmax = lh_gold - 1;
-                if(jmax > (size_ext - 1 - i))
-                  jmax=size_ext-1-i;
-                
-                for(j = jmin; j <= jmax; j++){
-                  ldb = working_space[j + lh_gold - 1 + size_ext];
-                  ldc = working_space[i + j];
-                  lda = lda + ldb * ldc;
-                }
-                ldb = working_space[2 * size_ext + i];
-                if(lda != 0)
-                  lda = ldb / lda;
-                
-                else
-                  lda = 0;
-                
-                ldb = working_space[i];
-                lda = lda * ldb;
-                working_space[3 * size_ext + i] = lda;
-              }
-            }
-            for(i = 0; i < size_ext; i++){
-              working_space[i] = working_space[3 * size_ext + i];
-            }
-          }
-          //shift resulting spectrum
-          for(i=0;i<size_ext;i++){
-            lda = working_space[i];
-            j = i + posit;
-            j = j % size_ext;
-            working_space[size_ext + j] = lda;
-          }
-          //write back resulting spectrum
-          maximum = 0, maximum_decon = 0;
-          j = lh_gold - 1;
-          for(i = 0; i < size_ext - j; i++){
-            if(i >= shift && i < ssize + shift){
-              working_space[i] = area * working_space[size_ext + i + j];
-              if(maximum_decon < working_space[i])
-                maximum_decon = working_space[i];
-              if(maximum < working_space[6 * size_ext + i])
-                maximum = working_space[6 * size_ext + i];
-            }
-            
-            else
-              working_space[i] = 0;
-          }
-          lda=1;
-          if(lda>threshold)
-            lda=threshold;
-          lda=lda/100;
-          
-          //searching for peaks in deconvolved spectrum
-          for(i = 1; i < size_ext - 1; i++){
-            if(working_space[i] > working_space[i - 1] && working_space[i] > working_space[i + 1]){
-              if(i >= shift && i < ssize + shift){
-                if(working_space[i] > lda*maximum_decon && working_space[6 * size_ext + i] > threshold * maximum / 100.0){
-                  for(j = i - 1, a = 0, b = 0; j <= i + 1; j++){
-                    a += (double)(j - shift) * working_space[j];
-                    b += working_space[j];
-                  }
-                  a = a / b;
-                  if(a < 0)
-                    a = 0;
-                  
-                  if(a >= ssize)
-                    a = ssize - 1;
-                  if(peak_index == 0){
-                    fPositionX[0] = a;
-                    peak_index = 1;
-                  }
-                  
-                  else{
-                    for(j = 0, priz = 0; j < peak_index && priz == 0; j++){
-                      if(working_space[6 * size_ext + shift + (int)a] > working_space[6 * size_ext + shift + (int)fPositionX[j]])
-                        priz = 1;
-                    }
-                    if(priz == 0){
-                      if(j < fMaxPeaks){
-                        fPositionX[j] = a;
-                      }
-                    }
-                    
-                    else{
-                      for(k = peak_index; k >= j; k--){
-                        if(k < fMaxPeaks){
-                          fPositionX[k] = fPositionX[k - 1];
-                        }
-                      }
-                      fPositionX[j - 1] = a;
-                    }
-                    if(peak_index < fMaxPeaks)
-                      peak_index += 1;
-                  }
-                }
-              }
-            }
-          }
-          
-          for(i = 0; i < ssize; i++) destVector[i] = working_space[i + shift];
-          delete [] working_space;
-          
-          if(peak_index == fMaxPeaks)
-            cerr << "findPeaksByRelaxation(...)\n\tPeak buffer full" << endl;
-          
-          fPositionX.resize( peak_index );
-          
-          return fPositionX;
-        }//vector<float> findPeaksByRelaxation(...)
-        
-        
-        
-        
-        
-        
-        
-        
+        }
+      }
+    }
+  }
+  
+  for(i = 0; i < ssize; i++) destVector[i] = working_space[i + shift];
+  delete [] working_space;
+  
+  if(peak_index == fMaxPeaks)
+    cerr << "findPeaksByRelaxation(...)\n\tPeak buffer full" << endl;
+  
+  fPositionX.resize( peak_index );
+  
+  return fPositionX;
+}//vector<float> findPeaksByRelaxation(...)
+
+
+
+
+
+
+
+
         

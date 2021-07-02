@@ -1,10 +1,89 @@
+<!-- SAND2021-1543 O -->
 <div align="center">
   <h1 id="compact-file-manager">
-    <b>Spectrum File Chooser</b>
+    <b>Spectrum Files tab</b>
   </h1>
   <hr />
 </div>
 
-<div>
-Content about the spectrum file chooser to be placed here
+<div style="display:table-row">
+<h4>Overview</h4>
+This tab allows you to select which spectrum file is displayed for each role (foreground, background,
+secondary), and if a file has multiple samples, which samples to sum together for display.
+</div>
+
+<div style="padding-top: 10px; text-align: center;">
+  <img src="InterSpec_resources/static_text/images/spectrum_files_tab.jpg"  class="imageBorder" style="width: 85%" align="middle" />
+  <div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+    An example screenshot of the <em>Spectrum Files</em> tab.  Here &quot;Unknown_1.n42&quot; is
+    selected as the foreground file, with time samples 24 through 3056 being summed together for display and analysis.
+    Sample 1 of &quot;Background_1.n42&quot; file is being displayed as the background, with a scale
+    factor of 5.06 being applied to compensate for its live time only being about 20% that of the foreground.
+    And on the right, for the secondary spectrum, the selection is being done, allowing you to see all the currently
+    opened spectrum files.
+  </div>
+</div>
+
+
+<div style="display:table-row">
+<h4>InterSpecs Memory Model</h4>
+When you load a spectrum file into <b>InterSpec</b>, either through dragging-and-dropping the file into
+<b>InterSpec</b>, or opening it through the menu, all previous spectra you have open, and all your
+changes to them stay in memory.  That is, using the <em>Spectrum Files</em> tab, or the
+<em>Spectrum Manager</em>, can can switch between spectrum files without losing work you've done,
+like peaks being fit, activity/source models fit, or energy calibrations.
+<p>
+Spectrum files may contain many spectrum within them, maybe from multiple detectors, and/or from
+multiple different points in times.  Each set of spectra within a file with a specific start time
+are assigned a sample number when loading.  So if a spectrum file contains data from multiple
+detectors, like an RPM or search system might, the spectra from each detector will typically be
+synchronized in time, so the spectra from all detectors that start at the same time, will have the
+same sample number.  A combination of a sample number and detector name (see the &quot;View&quot; &rarr;
+&quot;Detectors&quot; menu) will uniquely specify a single spectrum in a spectrum file.
+</p>
+<p>
+<b>InterSpec</b> associates peaks fit for a foreground with the foreground file and set of sample numbers
+currently being shown.  So if you change the sample numbers being shown, your previous peaks will no
+longer be visible; however, if you switch back to the original sample number(s), your previously fit peaks
+will be displayed again.
+</p>
+</div>
+
+<div style="display:table-row">
+<h4>Specifying Sample Numbers</h4>
+If the currently selected spectrum file contains multiple samples, you can choose which ones are
+used for displaying of the spectrum.  If you select multiple time samples, they will be summed
+together.
+<br />
+An example of selecting multiple samples is if you enter the text: &quot;<code>1-4,8,10,13-44</code>&quot;.
+<br />
+This selects samples 1 through 4, 8, 10, and 13 through 44 to be summed together before being displayed for analysis.
+<br />
+If the spectrum file is from a search system or radiation portal monitor, a chart with the time history of
+gamma and neutron counts will be displayed; that chart lets you use your mouse and modification keys
+(e.g., <code>shift</code>, <code>option</code>, <code>alt</code>) to interactively select the samples to
+use as foreground and background; when using the time chart to select regions to use, the sample
+numbers on this <em>Spectrum Files</em> tool will automatically be updated.
+</div>
+
+
+<div style="display:table-row">
+<h4>Scale Factor</h4>
+By default, the background and secondary spectra will be live-time normalized to the foreground when loaded.
+For example, if the live-time of the background is twice as long as the foreground, a scale
+factor of 0.5 will be applied to the number of counts in each channel of the background spectrum when its display.
+This is usually what you want as it makes the two spectrums easily visually compared.
+However, there are times when you will want to manually adjust this, like if the foreground was taken in a
+different location than the background, so you need to scale the background spectrum to account
+for higher or lower terrestrial radiation rates.  You can do this by manually changing the scale factor
+on this <em>Spectrum Files</em> tab, or, more conveniently, you can graphically alter the scale factor by
+selecting the &quot;Show Y-Axis Scalers&quot; options from the &quot;View&quot; menu, which will then display
+some sliders on the spectrum chart that you can drag to do the adjustment in a more intuitive way.
+</div>
+
+<div style="display:table-row">
+<h4>Additional Buttons</h4>
+The &quot;Spectrum Manager...&quot; and &quot;Previous...&quot; buttons on this tab will bring up dialogs that
+allow you to, respectively, perform more advanced spectrum file selection and manipulation, or browse
+<b>InterSpec</b>s internal database for previously saved spectra.
 </div>

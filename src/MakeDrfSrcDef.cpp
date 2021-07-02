@@ -39,6 +39,7 @@
 #include <Wt/WSuggestionPopup>
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -607,7 +608,9 @@ void MakeDrfSrcDef::setDistance( const double dist )
 
 void MakeDrfSrcDef::setActivity( const double act )
 {
-  m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(act) );
+  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const int ndecimals = 4;
+  m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(act, ndecimals, useCi) );
   updateAgedText();
 }//void MakeDrfSrcDef::setActivity( const double dist )
 
@@ -620,7 +623,11 @@ void MakeDrfSrcDef::setAssayInfo( const double activity,
   m_assayDate->setDate( WDateTime::fromPosixTime(assay_date).date() );
   
   if( activity > 0.0 )
-    m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(activity) );
+  {
+    const int ndecimals = 4;
+    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(activity, ndecimals, useCi) );
+  }
   
   updateAgedText();
 }//void setAssayInfo(..);
@@ -725,7 +732,8 @@ std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
     answer += ",";
   
   const double activity = activityAtSpectrumTime();
-  answer += PhysicalUnits::printToBestActivityUnits(activity,5,true);
+  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  answer += PhysicalUnits::printToBestActivityUnits(activity,5,useCi);
   
   if( m_shieldingSelect && m_useShielding->isChecked() )
   {

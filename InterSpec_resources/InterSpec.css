@@ -7,6 +7,11 @@ body
   -webkit-touch-callout: none !important;
 }
 
+/* For when the app requests to go fullscreen in our JS. */
+.Wt-domRoot:fullscreen {
+  background-color: white;
+}
+
 input
 {
   /* border-width: 1px; */
@@ -36,22 +41,27 @@ input
 
 
 #qtip-growl-container{
-position: fixed;
-top: 10px; right: 10px;
-z-index: 2000000000; /*super large number, nothing should cover this */
-}
-#qtip-growl-container .qtip{
-position: static;
-min-height: 0;
-overflow: hidden;
-margin: 0 0 5px 0;
+  position: fixed;
+  top: 10px; right: 10px;
+  z-index: 2000000000; /*super large number, nothing should cover this */
 }
 
+#qtip-growl-container .qtip{
+  position: static;
+  min-height: 0;
+  overflow: hidden;
+  margin: 0 0 5px 0;
+}
+
+/* For electron builds, that dont use native menu, make sure warnings are below titlebar. */
+#qtip-growl-container.belowMenu {
+  top: 35px;
+}
 
 
 .imageBorder {
-padding:1px;
-border:1px solid #021a40;
+  padding:1px;
+  border:1px solid #021a40;
 }
 
 .FileUploadCover
@@ -67,6 +77,18 @@ border:1px solid #021a40;
   filter: alpha(opacity=80);
 }
 
+
+.UploadProgressCover
+{
+  width: 100%;
+  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 16777270;
+}
+
+
 .UpDiv
 {
   position: absolute;
@@ -76,7 +98,7 @@ border:1px solid #021a40;
 }
 
 
-.UpCenterDiv
+.UpCenterDiv, .UpCenter
 {
   height: 30%;
   width: 80%;
@@ -85,6 +107,10 @@ border:1px solid #021a40;
   left: 10%;
   vertical-align: middle;
   display:table;
+}
+
+.UpCenterDiv
+{
   -webkit-border-radius: 15px;
   -moz-border-radius: 15px;
   border-radius: 15px;
@@ -189,21 +215,28 @@ width:100%;
 {
 }
 
-/* ------------------------- */
-/* ----    ICON CLASS   ---- */
-/* ------------------------- */
+.Wt-btn .with-label {
+  font-size: 0.9em;
+  font-weight: bold;
+  vertical-align: middle;
+  border: 1px solid #e1e1e1;
+  color: #FFFFFF;
+  background-color: #888888;
+  border-radius: 5px;
+  height: 23px;
+  white-space: nowrap;
+}
 
-/* The IconClass style is required for the following icons to behave correctly */
 
-.IconClass, .IconClass:hover {
-  background-position: 3px center;
+.Wt-icon {
+  display: inline-block;
+  padding: 0px 8px;
+  margin-right: 8px;
   background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
+  background-position: center left;
+  height: 16px;
 }
 
-.IconClass:disabled, .IconClass:disabled:hover {
-
-}
 
 
 /*
@@ -216,31 +249,19 @@ width:100%;
 }
 */
 
-.RefreshIcon,.RefreshIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/arrow_refresh.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
 
 .FooterHelpBtn
 {
   margin-top: 2px;
-  background: white;
-  float: left;
   width: 20px;
   height: 20px;
   cursor:pointer;
-  -webkit-border-radius: 4px;
-  -moz-border-radius: 4px;
-  border-radius: 4px;
+  opacity: 0.6;
 }
 
 .FooterHelpBtn:hover
 {
-  background: none;
+  opacity: 1.0;
 }
 
 /* A question mark help button suitable for displaying in the content of a tool (e.g., in the tools tabs).
@@ -248,7 +269,7 @@ width:100%;
  */
 .ContentHelpBtn
 {
-  background-image: url('../InterSpec_resources/images/help_minimal.svg');
+  background-image: url('images/help_minimal.svg');
   background-repeat: no-repeat;
   background-position: center;
   height: 16px;
@@ -307,22 +328,6 @@ width:100%;
   user-select: none;
 }
 
-
-
-.PopupDivMenu
-{
-  background-color: #FAFAFA;
-  border: solid 1px #e1e1e1;
-  max-height: 90%;
-  overflow-y: auto;
-}
-
-
-.PopupDivMenuItem-disabled
-{
-background: none;
-color: #D2D2D2;
-}
 
 .NeutDetCbItem
 {
@@ -400,7 +405,7 @@ padding-left:10px;
   border-top: none;
 }
 
-/* .SideMenu holds all the size information for the elements, while .VerticalMenu holds the styling
+/* .SideMenu holds all the size information for the elements, while .VerticalNavMenu holds the styling
  (color, hover, etc).
 */
 .SideMenu
@@ -431,24 +436,113 @@ padding-left:10px;
 }
 
 
-.VerticalMenu
+/* For navigation-style menu, we break the CSS into two parts:
+ The coloring part: .HeavyNavMenu and .LightNavMenu . These are affected by the color theming (e.g,
+   dark.css has to override).  .HeavyNavMenu is dark buttons and light text in default "light" color
+   theme
+ The actual layout part: .VerticalNavMenu
+ 
+ */
+
+.HeavyNavMenu li
+{
+  color: #ffffff;
+}
+
+.HeavyNavMenu li.item > a
+{
+  color: white;
+}
+
+.HeavyNavMenu li.itemselected > a
+{
+  color: #E0F5FF;
+}
+
+.HeavyNavMenu li :hover
+{
+  border-color: #eeeeee #eeeeee #dddddd;
+}
+
+.HeavyNavMenu li.itemselected
+{
+  background: #C6C6C6;
+}
+
+.HeavyNavMenu li.itemselected:hover
+{
+}
+
+.HeavyNavMenu li.item
+{
+  background: #888888;
+}
+
+.HeavyNavMenu li.item:hover
+{
+  background: #9B9B9B;
+}
+
+
+.LightNavMenu li
+{
+  /* color: #ffffff; */
+  border: 1px solid #e1e1e1;
+}
+
+.LightNavMenu li.item > a
+{
+  /* color: white; */
+}
+
+.LightNavMenu li.itemselected > a
+{
+  color: #E0F5FF;
+}
+
+.LightNavMenu li :hover
+{
+  border-color: #eeeeee #eeeeee #dddddd;
+}
+
+.LightNavMenu li.itemselected
+{
+  background: #C6C6C6;
+}
+
+.LightNavMenu li.itemselected:hover
+{
+}
+
+.LightNavMenu li.item
+{
+  /* background: #888888; */
+}
+
+.HeavyNavMenu li.item:hover
+{
+  background: #9B9B9B;
+}
+
+
+
+.VerticalNavMenu
 {
   margin: 0px;
   list-style-type: none;
   overflow: auto;
 }
 
-.VerticalMenu > li
+.VerticalNavMenu > li
 {
 }
 
-.VerticalMenu li
+.VerticalNavMenu li
 {
-  vertical-align:middle;
-  color: #ffffff;
+  vertical-align: middle;
 }
 
-.VerticalMenu > .Wt-separator {
+.VerticalNavMenu > .Wt-separator {
     height: 0.25em;
     -webkit-border-radius: 0;
     -moz-border-radius: 0;
@@ -457,9 +551,9 @@ padding-left:10px;
     padding-bottom: 0px;
 }
 
-.VerticalMenu a
+.VerticalNavMenu a
 {
-  cursor:pointer;
+  cursor: pointer;
 }
 
 
@@ -480,40 +574,6 @@ ul.Wt-popupmenu > li > a > span > span:hover
  color: white;
 }
 
-
-.VerticalMenu li.item > a
-{
-color: white;
-}
-
-.VerticalMenu li.itemselected > a
-{
-color: #E0F5FF;
-}
-
-.VerticalMenu li :hover
-{
-  border-color: #eeeeee #eeeeee #dddddd;
-}
-
-.VerticalMenu li.itemselected
-{
-background: #C6C6C6;
-}
-  
-.VerticalMenu li.itemselected:hover
-{
-}
-
-.VerticalMenu li.item
-{
-background: #888888;
-}
-
-.VerticalMenu li.item:hover
-{
-background: #9B9B9B;
-}
 
 
 .SampleSpecRow
@@ -575,7 +635,8 @@ background: #9B9B9B;
 }
 
 
-.CsvLinkBtn, .CsvLinkBtn:hover {
+/* A button that shows up as a link. */
+.LinkBtn, .LinkBtn:hover {
   float: right;
   background: none !important;
   border: none !important;
@@ -643,6 +704,8 @@ overflow: auto;
 {
 vertical-align: middle;
 margin: 4px;
+width: 16px;
+height: 16px;
 }
 
 .titlebar
@@ -790,10 +853,26 @@ h1
 -webkit-margin-end: 0px;
 }
 
-/*table*/
-/*{*/
-/*  border-spacing: 0;*/
-/*}*/
+.Wt-tableview .Wt-spacer
+{
+  /* background: white;*/
+}
+
+
+.HideSpinners .HideSpinners
+{
+  width: 8em;
+  /* remove the up/down spinbox for Firefox - if you re-enable this, also re-enable the c++ code to set step size */
+  -moz-appearance: textfield;
+}
+
+input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner-spin-button
+{
+  /* Remove the up/down arrow on spin box for Chrome, Safari, Edge, Opera - if you re-enable this, also re-enable the c++ code to set step size */
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 
 .clearsession
 {
@@ -815,75 +894,123 @@ h1
   background-color: #EEEEEE;
 }
 
-
-div.TopMenuDiv
+/* The MenuBar CSS class is added to the title bar both for browser-based, and Electron based (that
+ use HTML menu) app sessions
+ */
+.MenuBar
 {
-/*  padding-bottom: 0.2em;*/
   border-bottom: 1px solid grey;
+  background: #FFF;
+}
+
+/* The WebMenuBar CSS class is added to the title bar, for browser-based desktop app sessions (e.g.,
+ not added for electron builds that use HTML menus)
+ */
+.WebMenuBar
+{
+  padding-left: 8px;
+  height: 24px;  /*pics are 18px with 3px top padding*/
+  font-size: 15px;
   padding-top: 0px;
 }
 
 
-span.MenuLabel
+/* This is the SNL logo that is placed on the right-hand side of the title bar on desktop browser-based sessions. */
+.SnlWebMenuBarLogo
 {
-/*  border: 1px solid blue; */
-padding-left: 1.0ex;
-padding-right: 1.0ex;
-}
-
-span.MenuLabelSelected
-{
-  color: white;
-  background: grey;
-}
-
-.Wt-tableview .Wt-spacer 
-{
-/* background: white;*/
+  padding-top: 3px;
+  padding-right: 8px;
+  float: right;
 }
 
 
-.URLogo
+
+/* The PopupDivMenu or PopupDivMenuPhone CSS class is added to the actual popup div that holds the
+   menu items for all instances of the C++ PopupDivMenu class.  
+ 
+ AppMenu CSS class is added to the same popup divs, but only for the app-level menus (i.e. "InterSpec",
+ "View", "Tools", and "Help") on non-mobile.
+ */
+.PopupDivMenu
 {
-    padding-top: 3px;
-    padding-right: 8px;
+  background-color: #FAFAFA;
+  border: solid 1px #e1e1e1;
+  max-height: 90%;
+  overflow-y: auto;
+}
+
+/* Add a drop-shadow for the app-level menus. */
+.PopupDivMenu.AppMenu
+{
+  box-shadow: 0 5px 5px -3px rgba(0,0,0,.2), 0 8px 10px 1px rgba(0,0,0,.14), 0 3px 14px 2px rgba(0,0,0,.12);
+}
+
+/* Add a slightly more petite drop shadow for sub-menus.
+ TODO: it would be nice to move the sub-menu to the right by a couple pixels, but I dont see how to hack the CSS so the Wt.fitToWindow JS function wont clober the efforts
+ */
+.PopupDivMenu.AppSubMenu
+{
+  box-shadow: 0 5px 3px -3px rgba(0,0,0,.12), 4px 8px 6px 1px rgba(0,0,0,.08), 5px 3px 6px 1px rgba(0,0,0,.06);
+}
+
+/*
+ TODO: it would be nice to hide separators that are at the bottom and top of menus; this happens when all the menu items above or below the separator is hidden.  For some reason selectors like the next dont actually function (but they will aw part of a jQuery selector).
+.PopupDivMenu > li.Wt-separator:visible:last
+{
+  border-top: 0px;
+  border-bottom: 0px;
+  margin: 0px 0px;
+}
+ */
+
+.PopupDivMenuItem-disabled
+{
+  background: none;
+  color: #D2D2D2;
+}
+
+.PopupDivMenu li
+{
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.PopupDivMenu li.Wt-separator
+{
+  padding-top: 0px;
+  padding-bottom: 0px;
 }
 
 
 .PopupMenuParentButton, .PopupMenuParentButton:hover
 {
-  height: 23px; /*leave 1 px for UpperMenuDivWithLogos lower border */
+  height: 23px; /*leave 1 px for WebMenuBar lower border */
   padding: 4px 8px 3px 8px;
   margin:0px 0px;
   font-weight:normal;
-  background: #FFFFFF; color: black;
+  background: #FFFFFF;
+  color: black;
   border: none;
-  -moz-border-radius: 0px;
-  -webkit-border-radius: 0px;
-  border-radius: 0px;
+  vertical-align: top; /* necessary or else on Safari the titlebar border will be partially overlapped - not entirely sure why*/
+  -moz-border-radius: 2px;
+  -webkit-border-radius: 2px;
+  border-radius: 2px;
   
   -moz-box-shadow: none !important;
   -webkit-box-shadow: none !important;
   box-shadow: none !important;
   outline: none;
-
 }
 
-.UpperMenuDivWithLogos
+
+.PopupMenuParentButton:hover:not(.active)
 {
-  height: 24px;  /*pics are 18px with 3px top padding*/
-  font-size: 15px;
-  padding-top: 0px;
-  border-bottom: 1px solid grey;
-  background: #FFF;
+  background: rgba(128, 128, 128, 0.25);
 }
-
-
-/*.PopupMenuParentButton:hover{background: #E6E6E6;}*/
 
 .PopupMenuParentButton.active
 {
-  background: grey;
+  background: rgba(128, 128, 128, 1.0);
   
   -moz-box-shadow: none !important;
   -webkit-box-shadow: none !important;
@@ -1009,34 +1136,6 @@ cursor: default;
 }
 
 
-
-
-.CompactFileManager
-{
-  padding-top: 5px;
-  padding-left: 5px;
-  margin-right: -1px;
-  padding-bottom: 3px;
-  overflow-y: hidden;
-}
-
-
-div.CompactSampleWrapper
-{
-  border-color: grey;
-  border-style: ridge;
-  border-width: 1px;
-  padding: 5px;
-  margin-right: 5px;
-}
-
-
-.CompactManagerButtons
-{
-  margin-right: 5px;
-  margin-top: 3px;
-}
-
 .img-centered
 {
   display: block;
@@ -1044,64 +1143,6 @@ div.CompactSampleWrapper
   margin-right: auto;
   text-align: centered;
 }
-
-div.displaySampleDiv  
-{
-  /*Used in the CompactFileManager class*/
-  text-align: center;
-  padding-top: 5px;
-  /*display: block;*/
-  /*margin-left: auto;*/
-  /*margin-right: auto;*/
-}
-
-.displaySampleSelect
-{
-  width: 95%;
-}
-
-.displayPrevSample
-{
-  position: relative;
-  top: 6px;
-  width: 22px;
-  height: 22px;
-  margin-right: 10px;
-}
-
-.displayNextSample
-{
-  position: relative;
-  top: 6px;
-  width: 22px;
-  height: 22px;
-  margin-left: 10px;
-}
-
-.displaySampleInput
-{
-}
-
-
-.CompactInfoTxt
-{
-  color: gray;
-  /*vertical-align: text-bottom;*/
-  /*position: absolute;*/
-  /*bottom: 5px;*/
-}
-
-.CompactSpecTitle
-{
-  text-overflow: ellipsis;
-}
-
-
-.SpecNormTxt
-{
-  width: 5em;
-}
-
 
 
 /*
@@ -1214,7 +1255,7 @@ color: blue;
 /* Customize WTabWidget to look a little more modern/flat */
 br.Wt-tabs-clear
 {
-  /*Fix an undesired display isue with WTabWidget (at least Wt pre 3.3.4)*/
+  /*Fix an undesired display issue with WTabWidget (at least Wt pre 3.3.4)*/
   display: none;
 }
 
@@ -1232,7 +1273,7 @@ br.Wt-tabs-clear
   list-style-type: none;
   background: none;
   border-bottom: 1px solid rgba(136, 136, 136, 1);
-  overflow: visible; /* necassary - took a few hours to figure this out. */
+  overflow: visible; /* necessary - took a few hours to figure this out. */
 }
 
 .Wt-tabs li {
@@ -1330,4 +1371,38 @@ body.Wt-rtl .Wt-tabs a {
 
 .Wt-tabs:after { content: ""; display: block; height: 0; clear: both; }
 .Wt-tabs { clear-after: both; }
+
+/* Some CSS for putting spectrum and time charts in a div with flex layout. */
+.InterSpec .charts {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.InterSpec .charts .SpectrumDisplayDiv {
+  flex: 3;
+  min-height: 70px;
+}
+
+.InterSpec .charts .D3TimeChartParent {
+  flex: 2;
+  min-height: 65px;
+}
+
+/* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
+.InterSpecFlex {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.InterSpecFlex .SpectrumDisplayDiv {
+  flex: 3;
+  overflow: hidden;
+}
+
+.InterSpecFlex .D3TimeChartParent {
+  flex: 2;
+  overflow: hidden;
+}
 

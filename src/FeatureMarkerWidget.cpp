@@ -50,7 +50,7 @@ using namespace std;
 
 FeatureMarkerWindow::FeatureMarkerWindow( InterSpec *viewer )
   : AuxWindow( "Feature Markers",
-    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
      | AuxWindowProperties::SetCloseable
      | AuxWindowProperties::DisableCollapse) ),
     m_feature( nullptr )
@@ -62,7 +62,15 @@ FeatureMarkerWindow::FeatureMarkerWindow( InterSpec *viewer )
   rejectWhenEscapePressed( false );
   
   m_feature = new FeatureMarkerWidget( viewer, contents() );
-  m_feature->setHeight( WLength(100,WLength::Percentage) );
+  //m_feature->setHeight( WLength(100,WLength::Percentage) );
+  
+  // This next call seems to help resize the window to show all the contents, otherwise "Sum Peak"
+  //  will hang-off the bottom of the window.  Definitely a hack.
+  doJavaScript( "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 0 );"
+                "setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 50 );" );
+  
+  if( viewer->isMobile() )
+    setModal( false );
   
   show();
   

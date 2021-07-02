@@ -1,5 +1,13 @@
-.Wt-domRoot, .dialog-layout { 
-  background: rgb(44,45,48); 
+.Wt-domRoot, .dialog-layout, .Wt-panel .body {
+  background: rgb(44,45,48) !important; 
+  color: white;
+}
+
+/* On Safari if we out .Wt-domRoot:fullscreen in with the list of the above, it makes the statement
+ fail for some reason, so we'll keep it separate, even though the contents are identical to above.
+ */
+.Wt-domRoot:fullscreen {
+  background: rgb(44,45,48) !important;
   color: white;
 }
 
@@ -7,7 +15,7 @@ h1 {
   color: white;
 }
 
-select, .displaySampleSelect {
+select {
   color: white !important;
   background: rgb(86,88,90) !important;
 }
@@ -26,7 +34,7 @@ button[disabled] {
   filter: grayscale(0%);
 }
 
-input[type="text"], textarea {
+input[type="text"], input[type="number"], numbertextarea, textarea {
   background-color: rgb(59,60,63) !important; 
   border-top: solid 1px rgb(61,62,64) !important; 
   border-left: none !important; 
@@ -61,13 +69,18 @@ a:hover, .InfoLink:hover {
 /* button > img { filter: invert(100%); }  */
 
 
-.UpperMenuDivWithLogos, .PopupMenuParentButton {
+.MenuBar, .PopupMenuParentButton {
   background-color: rgb(65,65,65) !important; 
   color: rgb(230,230,230) !important;
 }
 
-.PopupMenuParentButton:hover, .PopupMenuParentButton.active {
+.PopupMenuParentButton.active {
   background-color: rgb(18,101,200) !important;
+}
+
+.PopupMenuParentButton:hover:not(.active)
+{
+  background-color: rgba(18,101,200,0.25) !important;
 }
 
 .Wt-popup.Wt-outset {
@@ -145,7 +158,7 @@ ul.Wt-tv-root > li:nth-child(odd) {
   color: rgb(197,198,201);
 }
 
-.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th {
+.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th, .DevPairTitle, .CalDisplay .CalType, .DetHdr {
   background-color: rgb( 80, 81, 94 );
 }
 
@@ -159,29 +172,23 @@ ul.Wt-tv-root > li:nth-child(odd) {
   background: rgba(110, 110, 110, 0.5) !important;
 }
 
-ul.VerticalMenu > li.itemselected  {
+ul.HeavyNavMenu > li.itemselected  {
   background: rgb(175,175,175) !important;
 }
 
-ul.VerticalMenu > li.itemselected > a {
+ul.HeavyNavMenu > li.itemselected > a {
   color: rgb(115, 115, 255) !important;
 }
 
 
-ul.VerticalMenu > li.item {
+ul.HeavyNavMenu > li.item {
   background: rgb(124,124,124) !important;
 }
 
-ul.VerticalMenu > li.item:hover  {
+ul.HeavyNavMenu > li.item:hover  {
   background: rgb(135,135,135) !important;
 }
 
-
-
-
-.DevPairTitle {
-  background-color: rgb( 80, 81, 94 );
-}
 
 .DetectorDisplay{
   background: rgb(70,70,77); 
@@ -202,19 +209,18 @@ ul.VerticalMenu > li.item:hover  {
   color: rgb(197,198,201);
 }
 
-.CsvLinkBtn {
+.LinkBtn {
   color: black;
   filter: invert(100%);
 }
 
-.DoseAnswerTxt {
+.DoseAnswerTxt, .DoseCalcRuntimeCheckFailMsg {
   color: black;
 }
 
-.FooterHelpBtn {
-  background-image: radial-gradient(white 50%, rgb(44,45,48));
+.MakeDrfEqnAnswer {
+  background: black !important;
 }
-
 
 .PhoneAuxWindowHeader {
   background-color: rgb(65,65,65) !important; 
@@ -240,3 +246,19 @@ ul.VerticalMenu > li.item:hover  {
 
 
 /* .AuxWindow-content.Decay { background: rgb(230,230,230) !important; } */
+
+
+/* When using a HTML app menu-bar, fix up close button background color on hover */
+.app-titlebar .window-controls-container .window-icon-bg .window-icon.window-close:hover {
+  background-color: rgb(57,207,207) !important;
+}
+
+/* When using a HTML app menu-bar, fix up minimize and maximize buttons on hover */
+.app-titlebar .window-controls-container .window-icon-bg .window-icon:hover {
+  background-color: rgb(175,175,175) !important;
+}
+
+/* When the app is not the forground app, change title bar color a little to indicate this */
+.app-titlebar.inactive, .app-titlebar.inactive button {
+  background-color: rgb(50,50,51) !important;
+}

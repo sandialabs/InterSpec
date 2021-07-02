@@ -37,7 +37,7 @@ namespace Wt
 }
 
 
-//Limitations of enabling USE_OSX_NATIVE_MENU or USE_ELECTRON_NATIVE_MENU:
+//Limitations of enabling USE_OSX_NATIVE_MENU or USING_ELECTRON_NATIVE_MENU:
 //  -disabling the closing of the menu when an item is selected isn't supported.
 //  -CheckBox items must be created through passing a WCheckBox to
 //   PopupDivMenu::addWidget(...).
@@ -46,7 +46,7 @@ namespace Wt
 //  -USE_OSX_NATIVE_MENU implementation casts the objective-c pointers to void*
 //   pointers, I tried doing some forward declartions using things similar to
 //   'typedef struct objc_object NSMenu', but then ran into linking errors.
-//  -USE_ELECTRON_NATIVE_MENU implementation currently expects top level menus
+//  -USING_ELECTRON_NATIVE_MENU implementation currently expects top level menus
 //   to already exist (probably easy to fix).
 
 class PopupDivMenu : public Wt::WPopupMenu
@@ -95,7 +95,7 @@ public:
    */
   bool removeSeperator( Wt::WMenuItem *sepertor );
   
-#if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
+#if( USING_ELECTRON_NATIVE_MENU )
   enum class MenuRole{
     Quit, ResetZoom, ZoomIn, ZoomOut, ToggleFullscreen,
     Cut, Copy, Past, ToggleDevTools,
@@ -187,7 +187,6 @@ public:
   //  on item activation though.
   virtual bool isHidden() const;
   
-  void hideMenuAndParents();
   
   //parentItem(): if this PopupDivMenu is a sub menu of another PopupDivMenu,
   //  and was created by calling addPopupMenuItem(...) on the parent, then
@@ -196,19 +195,23 @@ public:
   //  if the parent has been deleteed, or this widget reomved from it.
   Wt::WMenuItem *parentItem();
 
-  //showFromClick() and showFromMouseOver() are convience functions that call
-  //  doShow(bool).  They are hopefully temprary to work around an issue where
-  //  if this->popup(parent,Vertical) is called, then this menu will actually be
-  //  hidden (probably related to Wt calling this function in JS as well...).
-  void showFromClick();
-  void showFromMouseOver();
-  
   //
-  void doShow( bool clicked );
+  void showMobile();
+  
+  
+  void setupDesktopMenuStuff();
+  
+  void parentClicked();
+  void undoParentClicked();
+  
+  void parentMouseWentOver();
+  void undoParentHoveredOver();
+  
 protected:
-  //Some functions primarily intended ot allow implementing stateless slots
+  void desktopDoHide();
 
-  void doHide();
+  void mobileDoHide();
+  void mobileHideMenuAndParents();
   
   Wt::WMenuItem *m_parentItem;
   Wt::WPushButton *m_menuParent;
@@ -218,7 +221,7 @@ protected:
   friend class PopupDivMenuItem;
 #endif
   
-#if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
+#if( USING_ELECTRON_NATIVE_MENU )
   bool m_hasElectronCounterpart;
 #endif
 
@@ -277,7 +280,7 @@ protected:
   friend class PopupDivMenu;
 #endif
   
-#if(BUILD_AS_ELECTRON_APP && USE_ELECTRON_NATIVE_MENU)
+#if( USING_ELECTRON_NATIVE_MENU )
   friend class PopupDivMenu;
   bool m_hasElectronItem;
 

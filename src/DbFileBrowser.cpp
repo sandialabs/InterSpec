@@ -32,7 +32,6 @@
 #include <Wt/WTextArea>
 #include <Wt/WTreeNode>
 #include <Wt/WIconPair>
-#include <Wt/WTabWidget>
 #include <Wt/WModelIndex>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
@@ -67,19 +66,23 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   WGridLayout *layout = stretcher();
   layout->setContentsMargins(0, 0, 0, 0);
   
+  
   try
   {
     m_factory = new SnapshotBrowser( manager, viewer, type, header, footer(), nullptr );
     layout->addWidget( m_factory, 0, 0 );
     
-    auto hider = wApp->bind( boost::bind( &AuxWindow::hide, this ) );
-    
-    m_factory->finished().connect( std::bind( [hider](){hider();} ) );
+    m_factory->finished().connect( this, &AuxWindow::deleteSelf );
+  }catch( std::exception &e )
+  {
+    m_factory = nullptr;
+    WText *tt = new WText( "<b>Error creating SnapshotBrowser</b> - sorry :("
+                          "<br />Error: " + string(e.what()) );
+    layout->addWidget( tt, 0, 0 );
   }catch( ... )
   {
-    //In case something goes wrong inside SnapshotBrowser, we delete this window
-    AuxWindow::deleteAuxWindow(this);
-    return;
+    WText *tt = new WText( "<b>Unexpected issue creating SnapshotBrowser</b> - sorry :(" );
+    layout->addWidget( tt, 0, 0 );
   }
   
   WPushButton *cancel = addCloseButtonToFooter();
@@ -87,8 +90,7 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   
   rejectWhenEscapePressed();
   
-  auto deleter = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  finished().connect( std::bind([deleter](){ deleter(); }) );
+  finished().connect( this, &AuxWindow::deleteSelf );
 
   const int width = std::min( 500, static_cast<int>(0.95*viewer->renderedWidth()) );
   const int height = std::min( 475, static_cast<int>(0.95*viewer->renderedHeight()) );
@@ -97,6 +99,82 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   centerWindow();
   show();
 }//DbFileBrowser
+
+
+int DbFileBrowser::numSnapshots() const
+{
+  return m_factory ? m_factory->numSnaphots() : 0;
+}
+
+
+/** Returns query to find user states.
+ If a valid header is passed in, then the query returns all of the snapshots for that specific spectrum.
+ If a header is not passed in, then query returns all saved states for the user (just the upper level states, not their snapshots)/
+ 
+ Note, I'm pretty sure you need an active transaction before calling this function - e.g.,
+ 
+ DataBaseUtils::DbTransaction transaction( *m_session );
+ */
+Dbo::collection< Dbo::ptr<UserState> > get_user_states_collection( Dbo::ptr<InterSpecUser> user, std::shared_ptr<DataBaseUtils::DbSession> &session, std::shared_ptr<const SpectraFileHeader> header )
+{
+  Dbo::collection< Dbo::ptr<UserState> > query;
+  
+  if( !session || !user )
+    return query;
+  
+  if( header && !header->m_uuid.empty())
+  { //uuid filter for snapshots with foreground uuid
+    const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
+    query = session->session()->query<Dbo::ptr<UserState> >(
+              "SELECT DISTINCT A FROM UserState A JOIN UserFileInDb B "
+              "ON (A.ForegroundId = B.id OR A.BackgroundId = B.id OR A.SecondForegroundId = B.id) "
+              "AND B.UUID = ? "
+              "LEFT JOIN UserState C "
+              "ON (C.ForegroundId = B.id OR C.BackgroundId = B.id OR C.SecondForegroundId = B.id) "
+              "AND C.SnapshotTagParent_id = A.id")
+            .bind(header->m_uuid)
+            .where(stateQueryTxt)
+            .bind( user.id() )
+            .bind(int(UserState::kUserSaved));
+  }else
+  {
+    //No related hash/uuid filtering
+    const char *stateQueryTxt = "InterSpecUser_id = ? AND StateType = ? AND SnapshotTagParent_id IS NULL";
+    query = session->session()->find<UserState>()
+            .where( stateQueryTxt )
+            .bind( user.id() ).bind(int(UserState::kUserSaved));
+  }//uuid filter for snapshots with foreground uuid
+  
+  return query;
+}//get_user_states_collection(...)
+
+
+size_t SnapshotBrowser::num_saved_states( InterSpec *viewer,
+                                          shared_ptr<DataBaseUtils::DbSession> session,
+                                          shared_ptr<const SpectraFileHeader> header )
+{
+  if( !session || !viewer )
+    return 0;
+  
+  size_t num_states = 0;
+  
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *session );
+    
+    Dbo::collection< Dbo::ptr<UserState> > query = get_user_states_collection( viewer->m_user, session, header );
+    
+    num_states = query.size();
+    
+    transaction.commit();
+  }catch( std::exception &e )
+  {
+    cerr << "\n\n\nSnapshotBrowser::num_saved_states: caught exception I wasnt expecting to:\n\t" << e.what() << "\n\n\n" << endl;
+  }//
+  
+  return num_states;
+}//size_t num_saved_states(...)
+
 
 /*
 SnapshotBrowser is the refactored class to create the UI for loading snapshot/spectra
@@ -138,7 +216,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   layout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( layout );
   
-  //We have to create a independant Dbo::Session for this class since the
+  //We have to create a independent Dbo::Session for this class since the
   //  m_viewer->m_user.session() could be used in other threads, messing
   //  things up (Dbo::Session is not thread safe).
   m_session.reset( new DataBaseUtils::DbSession( *m_viewer->sql() ) );
@@ -146,7 +224,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   int row = 0;
   if( m_header && !m_header->m_uuid.empty() )
   {
-    auto txt = new WText("It looks like you have previously loaded and modifed this spectrum file, would you like to resume your previous work?");
+    auto txt = new WText("It looks like you have previously loaded and modified this spectrum file, would you like to resume your previous work?");
     layout->addWidget( txt, row++, 0);
   }//if( we want to load a specific state )
   
@@ -179,57 +257,15 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_snapshotTable->setTreeRoot(root);
     m_snapshotTable->setSelectionMode(Wt::SingleSelection);
     m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
-      
-    Dbo::Transaction transaction( *m_session->session() );
-    Dbo::collection< Dbo::ptr<UserState> > query;
     
-    if( m_header && !m_header->m_uuid.empty())
-    { //uuid filter for snapshots with foreground uuid
-      const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
-      query = m_session->session()->query<Dbo::ptr<UserState> >(
-                       "SELECT DISTINCT A FROM UserState A JOIN UserFileInDb B "
-                         "ON (A.ForegroundId = B.id OR A.BackgroundId = B.id OR A.SecondForegroundId = B.id) "
-                         "AND B.UUID = ? "
-                         "LEFT JOIN UserState C "
-                         "ON (C.ForegroundId = B.id OR C.BackgroundId = B.id OR C.SecondForegroundId = B.id) "
-                         "AND C.SnapshotTagParent_id = A.id")
-                      .bind(m_header->m_uuid)
-                      .where(stateQueryTxt)
-                      .bind( user.id() )
-                      .bind(int(UserState::kUserSaved));
-    }else
-    {
-      //No related hash/uuid filtering
-      const char *stateQueryTxt = "InterSpecUser_id = ? AND StateType = ? AND SnapshotTagParent_id IS NULL";
-      query = m_session->session()->find<UserState>()
-      .where( stateQueryTxt )
-      .bind( user.id() ).bind(int(UserState::kUserSaved));
-    } //uuid filter for snapshots with foreground uuid
+    DataBaseUtils::DbTransaction transaction( *m_session );
+    
+    Dbo::collection< Dbo::ptr<UserState> > query = get_user_states_collection( m_viewer->m_user, m_session, m_header );
     
     m_nrows = query.size(); //save for future query
     
     if( m_nrows == 0 )
-    {
-      if( m_header && !m_header->m_uuid.empty() )
-      {
-        //This prevents the case where the checkIfPreviouslyOpened() is true,
-        //  but the previous opened file is a kEndofSessionTemp, so will not
-        //  show in the dialog.
-        
-        //XXX - I really dont like how this is currently handled.
-        //      Right now NOT throwing a std::exception, so it doesnt get caught
-        //      by this try/catch block, so I'm not really sure if all resources
-        //      get cleaned up.
-        //    - We should allow asking user if they want to load an end of
-        //      session state (there auto store session preference should cover this)
-        //    - this is all a mess!
-        
-        throw "Nothing to display";
-      }else
-      {
-        layout->addWidget( new WLabel("No saved application states"), row++, 0 );
-      }//m_uuid.empty()
-    }//if( m_nrows == 0 )
+      layout->addWidget( new WLabel("No saved application states"), row++, 0 );
     
     
     //Some sudo-styling for if we want to style this - or if we implement this as a WTreeView
@@ -325,7 +361,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       if( *snapshotIterator )
       {
         //Create HEAD
-        Wt::WTreeNode *versionNode = new Wt::WTreeNode("HEAD", new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png"), snapshotNode);
+        auto headIcons = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
+        headIcons->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
+        headIcons->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
+      
+        Wt::WTreeNode *versionNode = new Wt::WTreeNode("HEAD", headIcons, snapshotNode);
         
         versionNode->setToolTip((*snapshotIterator)->serializeTime.toString() + (((*snapshotIterator)->description).empty()?"":(" -- " + (*snapshotIterator)->description)));
         
@@ -346,8 +386,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
             versionIterator != snapshots.end(); ++versionIterator )
         {
           const Wt::WString &name = (*versionIterator)->name;
-          auto icon = new Wt::WIconPair("InterSpec_resources/images/time.png","InterSpec_resources/images/time.png");
-          versionNode = new Wt::WTreeNode( name, icon, snapshotNode );
+          auto tagIcon = new Wt::WIconPair("InterSpec_resources/images/time.svg","InterSpec_resources/images/time.svg");
+          tagIcon->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
+          tagIcon->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
+          
+          versionNode = new Wt::WTreeNode( name, tagIcon, snapshotNode );
           
           auto tooltip = (*versionIterator)->serializeTime.toString()
                          + (((*versionIterator)->description).empty() ? "" : (" -- " + (*versionIterator)->description));
@@ -418,10 +461,10 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_loadSpectraButton->clicked().connect( boost::bind( &SnapshotBrowser::loadSpectraSelected, this));
     m_loadSpectraButton->disable();
     
-    m_loadSnapshotButton = new WPushButton( "Load App. State", footer);
+    m_loadSnapshotButton = new WPushButton( "Load App State", footer);
     m_loadSnapshotButton->clicked().connect( boost::bind(&SnapshotBrowser::loadSnapshotSelected, this));
     m_loadSnapshotButton->setDefault(true);
-    //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.png" );
+    //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.svg" );
     m_loadSnapshotButton->disable();
     
     if( !buttonBar )
@@ -434,6 +477,27 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   {
     if( !buttonBar )
       delete footer;
+    
+    // Remove and clear all children widgets so we dont leak memory
+    clear();
+    
+    m_loadSnapshotButton = nullptr;
+    m_loadSpectraButton = nullptr;
+    m_renameButton = nullptr;
+    m_buttonGroup = nullptr;
+    m_buttonbox = nullptr;
+    m_snapshotTable = nullptr;
+    m_descriptionLabel = nullptr;
+    m_timeLabel = nullptr;
+    m_relatedSpectraLayout = nullptr;
+    //m_type = type;
+    //m_header = header ),
+    //m_finished( this ),
+    m_editWindow = nullptr;
+    m_nrows = 0;
+    
+    WText *txt = new WText( "Unexpected error creating database spectrum file browser", this );
+    txt->setAttributeValue( "style", "color: red; font-weight: bold; font-size: 22px;" );
     
     passMessage( (string("Error creating database spectrum file browser: ") + e.what()).c_str(),
                 "", WarningWidget::WarningMsgHigh );
@@ -469,16 +533,16 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
     for( Dbo::collection< Dbo::ptr<UserFileInDb> >::const_iterator spectraIterator = spectras.begin();
         spectraIterator != spectras.end(); ++spectraIterator )
     {
-      Wt::WIconPair *icon = NULL;
+      Wt::WIconPair *icon = nullptr;
       if ((*versionIterator)->foregroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Foreground)
       {
-        icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
+        //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
       }else if ((*versionIterator)->backgroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Background)
       {
-        icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
+        //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
       }else if ((*versionIterator)->secondForegroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::SecondForeground)
       {
-        icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
+        //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
       }else
       {
         //nothing found, so just return
@@ -623,8 +687,8 @@ void SnapshotBrowser::startDeleteSelected()
     AuxWindow::deleteAuxWindow( m_editWindow );
   
   m_editWindow = new AuxWindow( title,
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                  | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
   WTreeNode *node = *begin(selection);
   WText *label = node->label();
@@ -696,8 +760,8 @@ void SnapshotBrowser::startEditSelected()
     AuxWindow::deleteAuxWindow( m_editWindow );
   
   m_editWindow = new AuxWindow( title,
-                               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneModal) );
+                               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
   m_editWindow->setWidth( std::min(425, std::max(m_viewer->renderedWidth(), 250)) );
   m_editWindow->setHeight( std::min(250, std::max(m_viewer->renderedHeight(), 150)) );
@@ -784,7 +848,8 @@ std::shared_ptr<SpecMeas> SnapshotBrowser::retrieveMeas( const int dbid )
     
     try
     {
-      Dbo::Transaction transaction( *m_session->session() );
+      DataBaseUtils::DbTransaction transaction( *m_session );
+      
       Dbo::ptr<UserFileInDb> dbsnapshot = m_session->session()->find<UserFileInDb>()
       .where( "id = ?" )
       .bind( dbid );
@@ -911,8 +976,8 @@ void SnapshotBrowser::loadSnapshotSelected()
     WString msg = "Snapshot '";
     msg += dbstate.get()->name;
     msg += "' loaded";
-    passMessage( msg.toUTF8(), "", WarningWidget::WarningMsgInfo );
     
+    passMessage( msg.toUTF8(), "", WarningWidget::WarningMsgInfo );
   }catch( std::exception &e )
   {
     passMessage( "Failed to load state", "", WarningWidget::WarningMsgHigh );
@@ -991,7 +1056,7 @@ void SnapshotBrowser::loadSpectraSelected()
                         if( meas )
                         {
                             thisheader->setMeasurmentInfo( meas );
-                            m_manager->displayFile( row, meas, type, false, false, false );
+                            m_manager->displayFile( row, meas, type, false, false, SpecMeasManager::VariantChecksToDo::None );
                         }//if( meas )
                     }//if( snapshot_id )
                     
@@ -1006,7 +1071,7 @@ void SnapshotBrowser::loadSpectraSelected()
         if( modelrow < 0 )
             modelrow = m_manager->setDbEntry( dbfile, header, measurement, true );
         
-        m_manager->displayFile( modelrow, measurement, type, false, false, false );
+        m_manager->displayFile( modelrow, measurement, type, false, false, SpecMeasManager::VariantChecksToDo::None );
     }
     else
     {
@@ -1034,7 +1099,7 @@ void SnapshotBrowser::loadSpectraSelected()
                 if( entry && entry.id() == dbfile.id() )
                 {
                     measurement = header->parseFile();
-                    m_manager->displayFile( row, measurement, SpecUtils::SpectrumType::Foreground, false, false, false );
+                    m_manager->displayFile( row, measurement, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
                     m_finished.emit();
                     return;
                 }//if( entry.id() == dbfile.id() )
@@ -1044,7 +1109,7 @@ void SnapshotBrowser::loadSpectraSelected()
             {
                 const int modelRow = m_manager->setDbEntry( dbfile, header,
                                                            measurement, true );
-                m_manager->displayFile( modelRow, measurement, SpecUtils::SpectrumType::Foreground, false, false, false );
+                m_manager->displayFile( modelRow, measurement, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
                 
             }catch( exception &e )
             {

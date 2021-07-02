@@ -1,0 +1,137 @@
+.CompactFileManager {
+  padding-top: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  padding-bottom: 3px;
+  /* overflow-y: hidden; */
+}
+
+.CompactFileManager.Tabbed{
+}
+
+.CompactFileManager.LeftToRight{
+  display: grid;
+  /* We need to keep too long of file selectors of titles from forcing each display from overgrowing its allotted 1/3 of width. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-column-gap: 5px;
+  grid-auto-rows: minmax(100px, auto) 23px;
+}
+
+.CompactFileManager div.DispType {
+  border-color: grey;
+  border-style: ridge;
+  border-width: 1px;
+  padding: 5px;
+  
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around
+}
+
+.CompactFileManager.LeftToRight div.DispType.Foreground {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.CompactFileManager.LeftToRight div.DispType.Background {
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+
+.CompactFileManager.LeftToRight div.DispType.Secondary {
+  grid-column: 3;
+  grid-row: 1 / 3;
+}
+
+div.DispType > div {
+  margin-top: 2px;
+  margin-left: 5px;
+  margin-right: 5px;
+}
+
+.CompactManagerButtons {
+}
+
+.CompactManagerButtons > button {
+  
+}
+
+.CompactManagerButtons .ContentHelpBtn {
+  position: relative;
+  top: 7px;
+}
+
+.CompactFileManager.LeftToRight .CompactManagerButtons {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+div.DispType .SpecFileSelect{
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+
+div.DispType div.SampleSelectRow {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: center;
+  margin-top: 12px;
+}
+
+div.SampleSelectRow .PrevSampleNum{
+  margin-right: 5px;
+  width: 22px;
+  height: 22px;
+  background-image: url('images/previous_arrow.png');
+  background-repeat: no-repeat;
+  display: inline-block;
+}
+
+div.SampleSelectRow .SampleNumInput {
+}
+
+div.SampleSelectRow .NextNextSample{
+  margin-left: 5px;
+  width: 22px;
+  height: 22px;
+  background-image: url('images/next_arrow.png');
+  background-repeat: no-repeat;
+  display: inline-block;
+}
+
+div.DispType .SpecTitle {
+  margin-top: 15px;
+  /* white-space: nowrap; */ /* having the title be a single line with ellipses doesnt seem to work quite right */
+  text-overflow: ellipsis;
+}
+
+div.DispType .BottomRow {
+  flex-grow: 1;
+  
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: flex-end;
+}
+
+div.DispType .BottomRow > div {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+div.DispType .BottomRow > div > button{
+  margin-left: 10px;
+}
+
+div.DispType div.ScaleFactorRow{
+  /* Make it so when the "Normalize" button disappears and reapears its doesnt cause this rows contents to move around a little. */
+  height: 23px;
+}
+
+.SpecNormTxt {
+  width: 5em;
+}

@@ -1,0 +1,20 @@
+--- wt-3.3.4/src/Wt/Dbo/ptr.C.orig	2020-11-15 12:56:12.000000000 -0800
++++ wt-3.3.4/src/Wt/Dbo/ptr.C	2020-11-15 14:40:47.000000000 -0800
+@@ -12,7 +12,7 @@
+ namespace Wt {
+   namespace Dbo {
+ 
+-MetaDboBase::~MetaDboBase()
++MetaDboBase::~MetaDboBase() noexcept(false)
+ { }
+ 
+ void MetaDboBase::incRef()
+@@ -85,7 +85,7 @@
+   }
+ }
+ 
+-ptr_base::~ptr_base()
++ptr_base::~ptr_base() noexcept(false)
+ { }
+ 
+   }
