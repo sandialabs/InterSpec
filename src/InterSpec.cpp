@@ -4502,17 +4502,19 @@ void InterSpec::startStoreTestStateInDb()
 {
   if( m_currentStateID >= 0 )
   {
-    AuxWindow *window = new AuxWindow( "Warning", AuxWindowProperties::PhoneModal );
+    AuxWindow *window = new AuxWindow( "Warning",
+                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+                                       | AuxWindowProperties::DisableCollapse) );
     WText *t = new WText( "Overwrite current test state?", window->contents() );
     t->setInline( false );
     
     window->setClosable( false );
 
-    WPushButton *button = new WPushButton( "Yes", window->footer() );
+    WPushButton *button = new WPushButton( "Overwrite", window->footer() );
     button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, false, true, false ) );
     
-    button = new WPushButton( "No", window->footer() );
+    button = new WPushButton( "Create New", window->footer() );
     button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, true, false, false ) );
     
@@ -4780,7 +4782,10 @@ void InterSpec::startStoreStateInDb( const bool forTesting,
     return;
   }//if( state )
   
-  AuxWindow *window = new AuxWindow( "Create Snapshot", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal) | AuxWindowProperties::TabletModal) );
+  AuxWindow *window = new AuxWindow( "Create Snapshot",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+                                      | AuxWindowProperties::TabletModal
+                                      | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
