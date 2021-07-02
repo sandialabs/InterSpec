@@ -237,6 +237,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     WLineEdit *edit = new WLineEdit( m_sampleDivs[typeindex] );
     edit->addStyleClass( "displaySampleInput" );
     edit->setValidator( validator );
+    edit->setAutoComplete( false );
     m_displaySampleNumEdits[typeindex] = edit;
   
     const char *tooltip = "Enter the sample number you'de like displayed here"
