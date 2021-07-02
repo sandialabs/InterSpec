@@ -1,0 +1,17 @@
+--- darwin.jam.orig	2021-03-27 10:30:25.000000000 -0700
++++ darwin.jam	2021-03-27 10:30:35.000000000 -0700
+@@ -140,12 +140,12 @@
+     # - GCC 4.0 and higher in Darwin does not have -fcoalesce-templates.
+     if $(real-version) < "4.0.0"
+     {
+-        flags darwin.compile.c++ OPTIONS $(condition) : -fcoalesce-templates ;
++        #flags darwin.compile.c++ OPTIONS $(condition) : -fcoalesce-templates ;
+     }
+     # - GCC 4.2 and higher in Darwin does not have -Wno-long-double.
+     if $(real-version) < "4.2.0"
+     {
+-        flags darwin.compile OPTIONS $(condition) : -Wno-long-double ;
++        #flags darwin.compile OPTIONS $(condition) : -Wno-long-double ;
+     }
+     # - GCC on Darwin with -pedantic, suppress unsupported long long warning
+     flags darwin.compile OPTIONS $(condition)/<warnings>all : -Wno-long-long ;

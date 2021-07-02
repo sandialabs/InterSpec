@@ -80,25 +80,15 @@ public:
   
   //setDataHistogram(): also sets m_secondSF and m_backgroundSF to
   //  m_dataLiveTime/m_{Second|Background}LiveTime
-  virtual void setDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
-                                 float liveTime,
-                                 float realTime,
-                                 float neutronCounts );
+  void setDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist );
   
-  //setSecondDataHistogram(): also sets m_secondSF to
-  //  m_dataLiveTime/m_secondDataLiveTime
-  virtual void setSecondDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts,
-                                       bool ownAxis );
+  //setSecondDataHistogram(): also sets m_secondSF to m_dataLiveTime/m_secondDataLiveTime
+  void setSecondDataHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
+                                      const bool ownAxis );
   
   //setBackgroundHistogram(): also sets m_backgroundSF to
   //  m_dataLiveTime/m_backgroundLiveTime
-  virtual void setBackgroundHistogram( std::shared_ptr<SpecUtils::Measurement> hist,
-                                       float liveTime,
-                                       float realTime,
-                                       float neutronCounts );
+  void setBackgroundHistogram( std::shared_ptr<SpecUtils::Measurement> hist );
   
   // Flags for whether the background are getting subtracted.
   void setBackgroundSubtract( const bool subtract = true );
@@ -108,28 +98,28 @@ public:
 
   // The following functions will return an empty std::shared_ptr<SpecUtils::Measurement> if the data histogram
   // was not previously set.
-  virtual std::shared_ptr<SpecUtils::Measurement>      getData();
-  virtual std::shared_ptr<SpecUtils::Measurement>      getSecondData();
-  virtual std::shared_ptr<SpecUtils::Measurement>      getBackground();
+  std::shared_ptr<SpecUtils::Measurement>      getData();
+  std::shared_ptr<SpecUtils::Measurement>      getSecondData();
+  std::shared_ptr<SpecUtils::Measurement>      getBackground();
 
-  virtual std::shared_ptr<const SpecUtils::Measurement> getData()       const;
-  virtual std::shared_ptr<const SpecUtils::Measurement> getSecondData() const;
-  virtual std::shared_ptr<const SpecUtils::Measurement> getBackground() const;
+  std::shared_ptr<const SpecUtils::Measurement> getData()       const;
+  std::shared_ptr<const SpecUtils::Measurement> getSecondData() const;
+  std::shared_ptr<const SpecUtils::Measurement> getBackground() const;
 
-  virtual float dataRealTime() const;
-  virtual float dataLiveTime() const;
-  virtual float dataNeutronCounts() const;
+  float dataRealTime() const;
+  float dataLiveTime() const;
+  float dataNeutronCounts() const;
 
-  virtual float secondDataRealTime() const;
-  virtual float secondDataLiveTime() const;
-  virtual float secondDataNeutronCounts() const; //actual measurment, NOT scaled by secondDataScaledBy();
+  float secondDataRealTime() const;
+  float secondDataLiveTime() const;
+  float secondDataNeutronCounts() const; //actual measurment, NOT scaled by secondDataScaledBy();
 
-  virtual float backgroundRealTime() const;
-  virtual float backgroundLiveTime() const;
-  virtual float backgroundNeutronCounts() const;  //actual measurment, NOT scaled by backgroundScaledBy();
+  float backgroundRealTime() const;
+  float backgroundLiveTime() const;
+  float backgroundNeutronCounts() const;  //actual measurment, NOT scaled by backgroundScaledBy();
 
-  virtual float secondDataScaledBy() const;  //returns m_secondSF
-  virtual float backgroundScaledBy() const;  //returns m_backgroundSF
+  float secondDataScaledBy() const;  //returns m_secondSF
+  float backgroundScaledBy() const;  //returns m_backgroundSF
   
   //Scale factors set in setSecondDataScaleFactor() and
   //  setBackgroundDataScaleFactor() multiply the live time scale factor.
@@ -162,7 +152,7 @@ public:
   void setSecondarySpectrumColor( const Wt::WColor &color );
   
   std::vector< Wt::Chart::WDataSeries > suggestDataSeries() const;
-  virtual bool secondDataOwnAxis() const;
+  bool secondDataOwnAxis() const;
 
   // Find which histogram is defining the x-axis by moving through priorities.
   std::shared_ptr<SpecUtils::Measurement>      histUsedForXAxis();
@@ -199,8 +189,8 @@ public:
 
   void addIntegralOfHistogramToLegend( const bool doIt = true );
 
-  virtual int  rebinFactor() const;
-  virtual void setRebinFactor( const int factor );
+  int  rebinFactor() const;
+  void setRebinFactor( const int factor );
   
   // Checks for whether a given column is actually populated.
   bool columnHasData( int column ) const;

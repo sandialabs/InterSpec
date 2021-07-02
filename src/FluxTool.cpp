@@ -18,6 +18,8 @@
 #include <Wt/WModelIndex>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
+#include <Wt/WButtonGroup>
+#include <Wt/WRadioButton>
 #include <Wt/WApplication>
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
@@ -135,30 +137,118 @@ namespace FluxToolImp
   };//struct index_compare
   
   
-  bool showFluxColumnInCompact( const FluxToolWidget::FluxColumns col )
+  bool showFluxColumn( FluxToolWidget::DisplayInfoLevel disptype, const FluxToolWidget::FluxColumns col )
   {
-    switch( col )
+    switch( disptype )
     {
-      case FluxToolWidget::FluxColumns::FluxEnergyCol:
-      case FluxToolWidget::FluxColumns::FluxPeakCpsCol:
-      case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
-      case FluxToolWidget::FluxColumns::FluxGammasInto4PiCol:
-        return true;
+      case FluxToolWidget::DisplayInfoLevel::Simple:
+        switch( col )
+        {
+          case FluxToolWidget::FluxColumns::FluxEnergyCol:
+          case FluxToolWidget::FluxColumns::FluxNuclideCol:
+          case FluxToolWidget::FluxColumns::FluxGammasInto4PiCol:
+            return true;
+            break;
+          
+          case FluxToolWidget::FluxColumns::FluxPeakCpsCol:
+          case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
+          case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
+          case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
+          case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
+          case FluxToolWidget::FluxColumns::FluxNumColumns:
+            return false;
+            break;
+        }//switch( col )
+        
         break;
         
-      case FluxToolWidget::FluxColumns::FluxNuclideCol:
-      case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
-      case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
-      case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
-      case FluxToolWidget::FluxColumns::FluxNumColumns:
-        return false;
+      case FluxToolWidget::DisplayInfoLevel::Normal:
+        switch( col )
+        {
+          case FluxToolWidget::FluxColumns::FluxEnergyCol:
+          case FluxToolWidget::FluxColumns::FluxPeakCpsCol:
+          case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
+          case FluxToolWidget::FluxColumns::FluxGammasInto4PiCol:
+            return true;
+            break;
+            
+          case FluxToolWidget::FluxColumns::FluxNuclideCol:
+          case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
+          case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
+          case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
+          case FluxToolWidget::FluxColumns::FluxNumColumns:
+            return false;
+            break;
+        }//switch( col )
+        
         break;
-    }//switch( col )
+        
+      case FluxToolWidget::DisplayInfoLevel::Extended:
+        return (col != FluxToolWidget::FluxColumns::FluxNumColumns); //e.g., always true
+        break;
+    }//switch( disptype )
+    
     
     return false;
-  }//bool showFluxColumnInCompact( const FluxToolWidget::FluxColumns col )
+  }//bool showFluxColumn( const FluxToolWidget::FluxColumns col )
   
-  
+  std::string print_value( const double value, const double uncert )
+  {
+    int nsigfigs = 6;
+    char buffer[256] = { '\0' };
+    
+    const bool haveUncert = ((uncert > std::numeric_limits<double>::epsilon())
+                             && (value > 0.0) && !(std::isinf)(value) && !(std::isnan)(value) );
+    if( haveUncert )
+    {
+      //We'll be conservative and add at least one extra sig fig by using the nsigfigs to be
+      //  number of digits after the decimal when printed in scientific notation.
+      nsigfigs = static_cast<int>( std::round( std::log10( value / uncert ) + 0.5 ) );
+      nsigfigs = std::min( std::max( nsigfigs, 3 ), 9 ); //clamp num sig figs between 3 and 9
+    }//if( haveUncert )
+    
+    snprintf( buffer, sizeof(buffer), "%.*G", nsigfigs, value );
+    
+    return buffer;
+  }//print_value(...)
+
+
+  std::string print_uncert( const double value, const double uncert, const bool uncertAsPercent )
+  {
+    const bool haveUncert = ((uncert > std::numeric_limits<double>::epsilon())
+                             && (value > 0.0) && !(std::isinf)(value) && !(std::isnan)(value) );
+    
+    if( !haveUncert )
+      return "";
+    
+    int nsigfigs = 6;
+    char buffer[256] = { '\0' };
+    
+    
+    //We'll be conservative and add at least one extra sig fig by using the nsigfigs to be
+    //  number of digits after the decimal when printed in scientific notation.
+    nsigfigs = static_cast<int>( std::round( std::log10( value / uncert ) + 0.5 ) );
+    nsigfigs = std::min( std::max( nsigfigs, 3 ), 9 ); //clamp num sig figs between 3 and 9
+    
+    if( uncertAsPercent )
+    {
+      const double percentUncert = 100.0 * uncert / value;
+      
+      if( percentUncert > 10 )
+        snprintf( buffer, sizeof(buffer), "%.1f%%", percentUncert );
+      else if( percentUncert > 1 )
+        snprintf( buffer, sizeof(buffer), "%.2f%%", percentUncert );
+      else
+        snprintf( buffer, sizeof(buffer), "%.*G%%", nsigfigs, percentUncert );
+    }else
+    {
+      snprintf( buffer, sizeof(buffer), "%.*G", nsigfigs, uncert );
+    }
+    
+  return buffer;
+}//print_uncert(...)
+
+
   class FluxModel : public  Wt::WAbstractItemModel
   {
   protected:
@@ -326,9 +416,11 @@ namespace FluxToolImp
   
   class FluxRenderDelegate : public WAbstractItemDelegate
   {
+    FluxToolWidget *m_fluxTool;
   public:
     FluxRenderDelegate( FluxToolWidget *parent )
-    : WAbstractItemDelegate( parent )
+    : WAbstractItemDelegate( parent ),
+      m_fluxTool( parent )
     {
     }
     
@@ -376,27 +468,39 @@ namespace FluxToolImp
         {
           return oldwidget;
         }
+      
         
-        
-        char buffer[128];
         if( index.column() == FluxToolWidget::FluxColumns::FluxEnergyCol )
         {
+          char buffer[64];
           snprintf( buffer, sizeof(buffer), "%.2f", val );
+          valstr = WString::fromUTF8(buffer);
         }else
         {
           if( hasUncert )
-            snprintf( buffer, sizeof(buffer), "%.4g &plusmn; %.1f", val, uncert );
-          else
-            snprintf( buffer, sizeof(buffer), "%.4g", val );
-        }
-        valstr = WString::fromUTF8(buffer);
+          {
+            const bool uncertAsPercent = (m_fluxTool
+                  && (m_fluxTool->displayInfoLevel() == FluxToolWidget::DisplayInfoLevel::Simple));
+            
+            const string tmpstr = print_value( val, uncert )
+                                  + " &plusmn; "
+                                  + print_uncert( val, uncert, uncertAsPercent );
+            
+            valstr = WString::fromUTF8( tmpstr );
+          }else
+          {
+            valstr = WString::fromUTF8( print_value( val, -1.0 ) );
+          }
+        }//if( index.column() == FluxToolWidget::FluxColumns::FluxEnergyCol )
       }//if( nucname ) / else
       
       
       oldwidget->setText( valstr );
       return oldwidget;
     }//WWidget *update(...)
-  };
+  };//class FluxRenderDelegate
+
+
   
   class FluxCsvResource : public Wt::WResource
   {
@@ -415,7 +519,7 @@ namespace FluxToolImp
       beingDeleted();
     }
     
-    static void data_to_strm( FluxToolWidget *tool, std::ostream &strm, const bool html, const bool compact )
+    static void data_to_strm( FluxToolWidget *tool, std::ostream &strm, const bool html, const FluxToolWidget::DisplayInfoLevel disptype )
     {
       const string eol_char = html ? "\\n" : "\r\n"; //for windows - could potentially customize this for the users operating system
       
@@ -427,7 +531,7 @@ namespace FluxToolImp
       {
         const WString &colname = tool->m_colnamesCsv[col];
         
-        if( compact && !FluxToolImp::showFluxColumnInCompact(col) )
+        if( !FluxToolImp::showFluxColumn(disptype, col) )
           continue;
         
         if( html )
@@ -449,13 +553,24 @@ namespace FluxToolImp
           case FluxToolWidget::FluxFluxOnDetCol:
           case FluxToolWidget::FluxFluxPerCm2PerSCol:
           case FluxToolWidget::FluxGammasInto4PiCol:
-            if( !compact )
+            switch( disptype )
             {
-              if( html )
-                strm << "</th><th>" << (colname + " Uncertainty");
-              else
-                strm << "," << (colname + " Uncertainty");
-            }//
+              case FluxToolWidget::DisplayInfoLevel::Simple:
+                if( html )
+                  strm << "</th><th> Uncert (%)";
+                else
+                  strm << ", Uncert (%)";
+                break;
+              
+              case FluxToolWidget::DisplayInfoLevel::Normal:
+              case FluxToolWidget::DisplayInfoLevel::Extended:
+                if( html )
+                  strm << "</th><th>" << (colname + " Uncertainty");
+                else
+                  strm << "," << (colname + " Uncertainty");
+                break;
+            }//switch( disptype )
+            
             break;
         }//switch( col )
       }//for( loop over columns )
@@ -472,13 +587,46 @@ namespace FluxToolImp
         for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
             col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
         {
-          if( compact && !FluxToolImp::showFluxColumnInCompact(col) )
+          if( !FluxToolImp::showFluxColumn(disptype, col) )
             continue;
           
           const double data = tool->m_data[row][col];
           const double uncert = tool->m_uncertainties[row][col];
           
-          const std::string datastr = (col==FluxToolWidget::FluxColumns::FluxNuclideCol ? tool->m_nucNames[row] : std::to_string(data));
+          
+          std::string datastr;
+          
+          switch( col )
+          {
+            case FluxToolWidget::FluxEnergyCol:
+            {
+              char buffer[128] = { '\0' };
+              snprintf( buffer, sizeof(buffer), "%.2f", data );
+              datastr = buffer;
+              break;
+            }
+              
+            case FluxToolWidget::FluxNuclideCol:
+              datastr = tool->m_nucNames[row];
+              if( !html )
+                SpecUtils::ireplace_all( datastr, ",", " " );
+              break;
+              
+            case FluxToolWidget::FluxPeakCpsCol:
+            case FluxToolWidget::FluxIntrinsicEffCol:
+            case FluxToolWidget::FluxGeometricEffCol:
+            case FluxToolWidget::FluxFluxOnDetCol:
+            case FluxToolWidget::FluxFluxPerCm2PerSCol:
+            case FluxToolWidget::FluxGammasInto4PiCol:
+            {
+              datastr = print_value( data, uncert );
+              break;
+            }
+              
+            case FluxToolWidget::FluxNumColumns: //wont get here, but whatever
+              break;
+          }//switch( col )
+          
           
           if( html )
             strm << (col==0 ? "<td>" : "</td><td>") << datastr;
@@ -499,19 +647,18 @@ namespace FluxToolImp
             case FluxToolWidget::FluxFluxPerCm2PerSCol:
             case FluxToolWidget::FluxGammasInto4PiCol:
             {
-              if( compact )
+              switch( disptype )
               {
-                if( uncert > std::numeric_limits<double>::epsilon() )
-                  strm << " &plusmn; " << std::to_string(uncert);
-              }else
-              {
-                if( html )
-                  strm << "</td><td>";
-                else
-                  strm << ",";
-                if( uncert > std::numeric_limits<double>::epsilon() )
-                  strm << std::to_string(uncert);
-              }
+                case FluxToolWidget::DisplayInfoLevel::Simple:
+                  strm << (html ? "</td><td>" : ",") << print_uncert( data, uncert, true );
+                  break;
+                  
+                case FluxToolWidget::DisplayInfoLevel::Normal:
+                case FluxToolWidget::DisplayInfoLevel::Extended:
+                  strm << (html ? "</td><td>" : ",") << print_uncert( data, uncert, false );
+                  break;
+              }//switch( disptype )
+              
               break;
             }//case CPS, FluxOnDet, FluxPerArea, GammasInto 4pi
           }//switch( col )
@@ -547,19 +694,22 @@ namespace FluxToolImp
       }
       filename += "flux.csv";
       
-      
       suggestFileName( filename, WResource::Attachment );
       
-      data_to_strm( m_fluxtool, response.out(), false, false );
+      FluxToolWidget::DisplayInfoLevel disptype = FluxToolWidget::DisplayInfoLevel::Extended;
+      if( m_fluxtool )
+        disptype = m_fluxtool->m_displayInfoLevel;
+      
+      data_to_strm( m_fluxtool, response.out(), false, disptype );
     }//handleRequest(...)
     
-  };//class class FluxCsvResource
+  };//class FluxCsvResource
 }//namespace
 
 
 FluxToolWindow::FluxToolWindow( InterSpec *viewer )
 : AuxWindow( "Flux Tool",
-  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
    | AuxWindowProperties::SetCloseable
    | AuxWindowProperties::DisableCollapse) ),
   m_fluxTool( nullptr )
@@ -589,8 +739,8 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
 #endif
   
   csvButton->setText( "CSV" );
-  csvButton->setStyleClass( "CsvLinkBtn" );
-  csvButton->setAttributeValue( "style", "float: none;" );  //Keep the CSV download to the left side of the close button.  .CsvLinkBtn style class has the button float right..
+  csvButton->setStyleClass( "LinkBtn" );
+  csvButton->setAttributeValue( "style", "float: none;" );  //Keep the CSV download to the left side of the close button.  .LinkBtn style class has the button float right..
   
   auto enableDisableCsv = [csvButton,this](){
     csvButton->setDisabled( m_fluxTool->m_data.empty() );
@@ -635,7 +785,7 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
     m_infoCopied( this, "infocopied", true ),
 #endif
     m_needsTableRefresh( true ),
-    m_compactColumns( false ),
+    m_displayInfoLevel( DisplayInfoLevel::Normal ),
     m_tableUpdated( this )
 {
   init();
@@ -652,6 +802,10 @@ Wt::Signal<> &FluxToolWidget::tableUpdated()
   return m_tableUpdated;
 }
 
+FluxToolWidget::DisplayInfoLevel FluxToolWidget::displayInfoLevel() const
+{
+  return m_displayInfoLevel;
+}
 
 void FluxToolWidget::init()
 {
@@ -701,7 +855,7 @@ void FluxToolWidget::init()
   
   wApp->useStyleSheet( "InterSpec_resources/FluxTool.css" );
   
-  const bool showToolTipInstantly = m_interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
+  const bool showToolTips = m_interspec ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec ) : false;
   
   addStyleClass( "FluxToolWidget" );
   
@@ -740,7 +894,7 @@ void FluxToolWidget::init()
                               " followed by units; valid units are: meters, m, cm, mm, km, feet,"
                               " ft, ', in, inches, or \".  You may also add multiple distances,"
                               " such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to "
-                              " 40inches and 15.6cm respectively.", showToolTipInstantly );
+                              " 40inches and 15.6cm respectively.", showToolTips );
   m_distance->changed().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   m_distance->enterPressed().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   
@@ -781,42 +935,39 @@ void FluxToolWidget::init()
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   layout->addWidget( m_table, 1, 0, 1, 2 );
 #else
-  layout->addWidget( m_table, 1, 0 );
+  layout->addWidget( m_table, 1, 0, 1, 1 );
 #endif
   layout->setRowStretch( 1, 1 );
   
-  WCheckBox *cb = new WCheckBox( "show more info" );
-  cb->addStyleClass( "FluxMoreInfoCB" );
-  cb->setChecked( false );
-  cb->changed().connect( std::bind( [this,cb](){
-    setMinimalColumnsOnly( !cb->isChecked() );
+  WContainerWidget *buttonBox = new WContainerWidget();
+  buttonBox->addStyleClass( "FluxInfoAmount" );
+  
+  WRadioButton *simpleInfo = new WRadioButton( "Simple", buttonBox );
+  WRadioButton *standardInfo = new WRadioButton( "Standard", buttonBox );
+  WRadioButton *moreInfo = new WRadioButton( "More", buttonBox );
+  
+  WButtonGroup *btnGrp = new WButtonGroup( buttonBox );
+  btnGrp->addButton( simpleInfo, static_cast<int>(DisplayInfoLevel::Simple) );
+  btnGrp->addButton( standardInfo, static_cast<int>(DisplayInfoLevel::Normal) );
+  btnGrp->addButton( moreInfo, static_cast<int>(DisplayInfoLevel::Extended) );
+  btnGrp->setCheckedButton( standardInfo );
+
+  btnGrp->checkedChanged().connect( std::bind( [this,btnGrp](){
+    const auto level = static_cast<DisplayInfoLevel>( btnGrp->checkedId() );
+    
+    assert( (level == DisplayInfoLevel::Simple)
+           || (level == DisplayInfoLevel::Normal)
+           || (level == DisplayInfoLevel::Extended) );
+    
+    setDisplayInfoLevel( level );
   }) );
   
-#if( FLUX_USE_COPY_TO_CLIPBOARD )
-  layout->addWidget( cb, 2, 1, AlignRight | AlignMiddle );
-#else
-  layout->addWidget( cb, 2, 0, AlignRight );
-#endif
-
-  for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
-  {
-    WLength length;
-    switch( col )
-    {
-      case FluxEnergyCol:         length = WLength(7.5, WLength::FontEm); break;
-      case FluxNuclideCol:        length = WLength(5.0, WLength::FontEm); break;
-      case FluxPeakCpsCol:        length = WLength(7.5, WLength::FontEm); break;
-      case FluxIntrinsicEffCol:   length = WLength(6.5, WLength::FontEm); break;
-      case FluxGeometricEffCol:   length = WLength(6.5, WLength::FontEm); break;
-      case FluxFluxOnDetCol:      length = WLength(7.5, WLength::FontEm); break;
-      case FluxFluxPerCm2PerSCol: length = WLength(9.0, WLength::FontEm); break;
-      case FluxGammasInto4PiCol:  length = WLength(9.0, WLength::FontEm); break;
-      case FluxNumColumns:        break;
-    }//switch( col )
-    
-    m_table->setColumnWidth( col, length);
-  }//for( loop over columns )
   
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  layout->addWidget( buttonBox, 2, 1, AlignRight | AlignMiddle );
+#else
+  layout->addWidget( buttonBox, 2, 0, AlignRight );
+#endif
   
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   LOAD_JAVASCRIPT(wApp, "FluxTool.cpp", "FluxTool", wtjsCopyFluxDataTextToClipboard );
@@ -831,8 +982,8 @@ void FluxToolWidget::init()
   m_infoCopied.connect( boost::bind( &FluxToolWidget::tableCopiedToCliboardCallback, this, _1 ) );
 #endif
   
-  m_compactColumns = false; //set false so setMinimalColumnsOnly(true) will do work
-  setMinimalColumnsOnly( true );
+  m_displayInfoLevel = DisplayInfoLevel::Simple; //set to simple so #setDisplayInfoLevel(...) will do its work
+  setDisplayInfoLevel( DisplayInfoLevel::Normal );
 }//void init()
 
 
@@ -862,10 +1013,10 @@ void FluxToolWidget::refreshPeakTable()
   
   m_msg->setText( "" );
   
-  float distance = static_cast<float>( 1.0*PhysicalUnits::meter );
+  double distance = 1.0*PhysicalUnits::meter;
   try
   {
-    distance = static_cast<float>( PhysicalUnits::stringToDistance( m_distance->text().toUTF8() ) );
+    distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
   }catch(...)
   {
     m_msg->setText( "Invalid Distance" );
@@ -970,7 +1121,7 @@ void FluxToolWidget::refreshPeakTable()
   
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   stringstream pastebrdtxt;
-  FluxToolImp::FluxCsvResource::data_to_strm( this, pastebrdtxt, true, m_compactColumns );
+  FluxToolImp::FluxCsvResource::data_to_strm( this, pastebrdtxt, true, m_displayInfoLevel );
   m_copyBtn->doJavaScript( "$('#" + m_copyBtn->id() + "').data('TableData','" + pastebrdtxt.str() + "');" );
 #endif
   
@@ -980,23 +1131,39 @@ void FluxToolWidget::refreshPeakTable()
 
 
 
-void FluxToolWidget::setMinimalColumnsOnly( const bool minonly )
+void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype )
 {
-  if( minonly == m_compactColumns )
+  if( disptype == m_displayInfoLevel )
     return;
   
-  m_compactColumns = minonly;
+  m_displayInfoLevel = disptype;
   
   setTableNeedsUpdating();
   
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
   {
-    const bool show = (FluxToolImp::showFluxColumnInCompact(col) || !m_compactColumns);
+    const bool show = FluxToolImp::showFluxColumn(m_displayInfoLevel, col);
     m_table->setColumnHidden( col, !show );
+    
+    WLength length;
+    switch( col )
+    {
+      case FluxEnergyCol:         length = WLength(7.5, WLength::FontEm); break;
+      case FluxNuclideCol:        length = WLength(5.0, WLength::FontEm); break;
+      case FluxPeakCpsCol:        length = WLength(7.5, WLength::FontEm); break;
+      case FluxIntrinsicEffCol:   length = WLength(6.5, WLength::FontEm); break;
+      case FluxGeometricEffCol:   length = WLength(6.5, WLength::FontEm); break;
+      case FluxFluxOnDetCol:      length = WLength(7.5, WLength::FontEm); break;
+      case FluxFluxPerCm2PerSCol: length = WLength(9.0, WLength::FontEm); break;
+      case FluxGammasInto4PiCol:  length = WLength(9.0, WLength::FontEm); break;
+      case FluxNumColumns:        break;
+    }//switch( col )
+      
+    m_table->setColumnWidth( col, length);
   }//for( loop over columns )
   
   m_table->refreshColWidthLayout();
-}//void setMinimalColumnsOnly( const bool minonly )
+}//void setDisplayInfoLevel( const bool minonly )
 
 
 #if( FLUX_USE_COPY_TO_CLIPBOARD )

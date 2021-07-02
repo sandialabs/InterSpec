@@ -19,6 +19,7 @@
 
 
 using namespace std;
+using SpecUtils::Measurement;
 
 #define foreach         BOOST_FOREACH
 #define reverse_foreach BOOST_REVERSE_FOREACH
@@ -519,10 +520,8 @@ void QLPeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &c
       throw runtime_error( "Spectrum node expected under ExternalContinuum" );
     std::shared_ptr<Measurement> meas = std::make_shared<Measurement>();
     m_externalContinuum = meas;
-    meas->set_2006_N42_spectrum_node_info( node );
     
-    if( !meas->channel_energies() || meas->channel_energies()->empty() )
-      meas->popuplate_channel_energies_from_coeffs();    
+    meas->set_info_from_2006_N42_spectrum_node( node );
   }//if( node )
 }//void QLPeakContinuum::fromXml(...)
 

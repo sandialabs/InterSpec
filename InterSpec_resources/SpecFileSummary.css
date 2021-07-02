@@ -12,3 +12,10 @@
   font-weight:bold;
 }
 
+div.displaySampleDiv
+{
+  text-align: center;
+  padding-top: 5px;
+}
+
+

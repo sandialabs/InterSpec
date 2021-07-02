@@ -23,9 +23,9 @@ struct QLPeakContinuum;
 void log_error_message( const std::string &message, const std::string &source, const int priority );
 
 
-class QLSpecMeas : public MeasurementInfo
+class QLSpecMeas : public SpecUtils::SpecFile
 {
-/* Adds storing peaks to the MeasurementInfo class.  Used more extensively in
+/* Adds storing peaks to the SpecUtils::SpecFile class.  Used more extensively in
    InterSpec.
 */
   
@@ -53,13 +53,13 @@ public:
   //load_N42_from_data(...): raw xml file data - must be 0 terminated
   virtual bool load_N42_from_data( char *data );
 
-  std::shared_ptr<Measurement> continuum();
+  std::shared_ptr<SpecUtils::Measurement> continuum();
   bool continuumVisible() const;
 
   const std::set<int> &displayedSampleNumbers() const;
 
   virtual void cleanup_after_load( const unsigned int flags
-                                         = MeasurementInfo::StandardCleanup );
+                                         = SpecUtils::SpecFile::StandardCleanup );
   
   std::shared_ptr< std::deque< std::shared_ptr<const QLPeakDef> > >
                                  peaks( const std::set<int> &samplenums );
@@ -83,7 +83,7 @@ public:
   std::shared_ptr< const PeakDeque > automatedSearchPeaks(
                                         const std::set<int> &samplenums ) const;
 
-  //peaksHaveBeenAdded(): marks this MeasurementInfo object as
+  //peaksHaveBeenAdded(): marks this SpecUtils::SpecFile object as
   void setModified();
 
   

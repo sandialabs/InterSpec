@@ -39,6 +39,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -106,11 +107,11 @@ double minDetectableCounts( double energy, double sigma, std::shared_ptr<const S
 double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr<const SpecUtils::Measurement> data )
 {
   double contArea = 0.0;
-  if( peak->continuum()->defined() )
+  if( peak->continuum()->parametersProbablySet() )
   {
     double lowx(0.0), upperx(0.0);
     findROIEnergyLimits( lowx, upperx, *peak, data );
-    contArea = peak->offset_integral( lowx, upperx );
+    contArea = peak->offset_integral( lowx, upperx, data );
   }else
   {
     const double lowerx = (peak->gausPeak() ? (peak->mean()-3.0*peak->sigma()) : peak->lowerX());
@@ -245,7 +246,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
   if( expectedAbund == 0.0 )
     throw runtime_error( "fractionDetectedWeight(...): Peak with no candiates" );
   
-  const double det_sf = (!!response ? response->efficiency( mean, distance ) : 1.0f);
+  const double det_sf = (!!response ? response->efficiency( mean, distance ) : 1.0);
   const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, mean );
   const double shielding_sf = exp( -shielding_ad * xs );
   const double sf = test_peak->peakArea() / shielding_sf / det_sf /expectedAbund;
@@ -263,8 +264,11 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
     //  increment accounted_for
     
     const double energy = source_gammas[i].energy;
+    if( energy < 1.0 )
+      continue;
+    
     const double exp_resolution = (hasResolutionResponse ? response->peakResolutionSigma( energy ) : float((highE-lowE)/3.0) );
-    const double det_eff = (!!response ? response->efficiency( energy, distance ) : 1.0f);
+    const double det_eff = (!!response ? response->efficiency( energy, distance ) : 1.0);
     const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, energy );
     const double transmition = exp( -shielding_ad * xs );
     
@@ -526,7 +530,7 @@ void findCandidates( vector<string> &suggestednucs,
       string csvfilename = SpecUtils::append_path( basename, "HPGe 40%/Efficiency.csv" );
       string datFilename = SpecUtils::append_path( basename, "HPGe 40%/Detector.dat" );
       
-      if( data->num_gamma_channels() <= 2050 )
+      if( !PeakFitUtils::is_high_res(data) )
       {
         csvfilename = SpecUtils::append_path( basename, "NaI 3x3/Efficiency.csv" );
         datFilename = SpecUtils::append_path( basename, "NaI 3x3/Detector.dat" );

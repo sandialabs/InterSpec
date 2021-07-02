@@ -575,7 +575,11 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
         const float mass_fraction = static_cast<float>(percentage / 100.0);
 
         const SandiaDecay::Element *element = NULL;
-        const SandiaDecay::Nuclide *nuc = db->nuclide( symbol );
+        bool hasNumber = false;
+        for( const char c : symbol )
+          hasNumber |= ((c >= '0') && (c <= '9'));
+        
+        const SandiaDecay::Nuclide *nuc = hasNumber ? db->nuclide( symbol ) : nullptr;
         if( !nuc )
           element = db->element( symbol );
 

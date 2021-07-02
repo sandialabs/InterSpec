@@ -43,11 +43,12 @@
 #include "QLSpectrumChart.h"
 #include "SpecUtils/SpecFile.h"
 #include "QLSpectrumDataModel.h"
-#include "SpecUtils/UtilityFunctions.h"
-
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 using namespace std;
 using namespace Wt;
+using SpecUtils::Measurement;
 
 enum SpecRenderType
 {
@@ -125,6 +126,7 @@ bool renderTimeSeries( ImageType &image, std::shared_ptr<QLSpecMeas> meas )
   
   const size_t num_samples = sample_numbers_vec.size();
   const std::vector<int> &det_numbers = meas->detector_numbers();
+  const vector<string> &det_names = meas->detector_names();
   
   if( num_samples < 2 )
   {
@@ -149,14 +151,14 @@ bool renderTimeSeries( ImageType &image, std::shared_ptr<QLSpecMeas> meas )
       if( thismeas && thismeas->real_time() > 0.0 )
         ++ndet;
       if( thismeas )
-        is_occ = (is_occ || (thismeas->occupied() == Measurement::Occupied));
+        is_occ = (is_occ || (thismeas->occupied() == SpecUtils::OccupancyStatus::Occupied));
     }
     if( !ndet )
       ndet = 1;
     
     set<int> thisset;
     thisset.insert( sample_numbers_vec[i] );
-    auto sum = meas->sum_measurements( thisset, det_numbers );
+    auto sum = meas->sum_measurements( thisset, det_names, nullptr );
     if( !sum )
       continue;
     
@@ -166,24 +168,30 @@ bool renderTimeSeries( ImageType &image, std::shared_ptr<QLSpecMeas> meas )
     contained_neutrons = (contained_neutrons || sum->contained_neutron());
     (*gamma_counts)[i] = sum->gamma_count_sum() / real_time;
     (*neutron_counts)[i] = sum->neutron_counts_sum() / real_time;
-    is_occupied[i] = is_occ;//(sum->occupied() == Measurement::Occupied);
+    is_occupied[i] = is_occ;//(sum->occupied() == SpecUtils::Measurement::Occupied);
     (*time_values)[i] = time_sum;
     time_sum += real_time;
   }//for( const int sample : sample_numbers )
   
   (*time_values)[num_samples] = time_sum;
   
-  auto gammaH   = std::make_shared<Measurement>();
-  auto neutronH = std::make_shared<Measurement>();
+  auto gammaH   = std::make_shared<SpecUtils::Measurement>();
+  auto neutronH = std::make_shared<SpecUtils::Measurement>();
     
   gammaH->set_title( "Gammas" );
   neutronH->set_title( "Neutrons" );
   
-  gammaH->set_channel_energies( time_values );
-  neutronH->set_channel_energies( time_values );
     
   gammaH->set_gamma_counts( gamma_counts, 0.0f, 0.0f );
   neutronH->set_gamma_counts( neutron_counts, 0.0f, 0.0f );
+  
+  auto timecal = make_shared<SpecUtils::EnergyCalibration>();
+  timecal->set_lower_channel_energy( num_samples, *time_values );
+  
+  gammaH->set_energy_calibration( timecal );
+  neutronH->set_energy_calibration( timecal );
+  
+  
   
   QLSpectrumDataModel dataModel;
   QLSpectrumChart chart;
@@ -276,8 +284,8 @@ bool renderTimeSeries( ImageType &image, std::shared_ptr<QLSpecMeas> meas )
 //Returns true if successful, false otherwise.
 template <class ImageType>
 bool renderSpectrum( ImageType &image,
-                     std::shared_ptr<Measurement> foreground,
-                     std::shared_ptr<Measurement> background,
+                     std::shared_ptr<SpecUtils::Measurement> foreground,
+                     std::shared_ptr<SpecUtils::Measurement> background,
                      std::shared_ptr< std::deque<std::shared_ptr<const QLPeakDef> > > peaks,
                      const bool legend )
 {
@@ -292,10 +300,10 @@ bool renderSpectrum( ImageType &image,
   const float width = image.width().toPixels();
   const float height = image.height().toPixels();
   
-  std::shared_ptr<Measurement> meas, back;
-  meas = std::make_shared<Measurement>( *foreground );
+  std::shared_ptr<SpecUtils::Measurement> meas, back;
+  meas = std::make_shared<SpecUtils::Measurement>( *foreground );
   if( background )
-    back = std::make_shared<Measurement>( *background );
+    back = std::make_shared<SpecUtils::Measurement>( *background );
   
   if( legend )
   {
@@ -318,7 +326,7 @@ bool renderSpectrum( ImageType &image,
   //128 pixels -> 170.666667
   
   std::shared_ptr<QLSpecMeas> specmeas = std::make_shared<QLSpecMeas>();
-  specmeas->add_measurment( meas, true );
+  specmeas->add_measurement( meas, true );
   if( peaks )
     specmeas->setPeaks( *peaks, specmeas->sample_numbers() );
   
@@ -459,7 +467,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
   std::shared_ptr< std::deque<std::shared_ptr<const QLPeakDef> > > peaks;
   
   
-  if( !spec->load_file( filename, kAutoParser, filename ) )
+  if( !spec->load_file( filename, SpecUtils::ParserType::Auto, filename ) )
   {
     printf( "Failed to parse '%s' as a spectrum file.\n", filename );
     return;
@@ -474,7 +482,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
   const std::set<int> &samplenums = spec->sample_numbers();
   
   std::set<int> foreground_sample_numbers, background_sample_numbers, intrinsic_sample_numbers;
-  std::shared_ptr<Measurement> foreground, background;
+  std::shared_ptr<SpecUtils::Measurement> foreground, background;
 
   if( spec->passthrough() )
   {
@@ -484,7 +492,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
       for( int detnum : spec->detector_numbers() )
       {
         auto m = spec->measurement( sample, detnum );
-        occupied = (occupied || (m && (m->occupied()== Measurement::Occupied || m->source_type()==Measurement::Foreground)));
+        occupied = (occupied || (m && (m->occupied()== SpecUtils::OccupancyStatus::Occupied || m->source_type()==SpecUtils::SourceType::Foreground)));
       }
       if( occupied )
         foreground_sample_numbers.insert( sample );
@@ -503,7 +511,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
       for( int sample : samplenums )
       {
         bool has_meas = false;
-        Measurement::SourceType type = Measurement::UnknownSourceType;
+        SpecUtils::SourceType type = SpecUtils::SourceType::Unknown;
         
         for( int detnum : spec->detector_numbers() )
         {
@@ -520,7 +528,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
         
         switch( type )
         {
-          case Measurement::IntrinsicActivity:
+          case SpecUtils::SourceType::IntrinsicActivity:
             //lets try to not show intrinsic activity by default
             if( hasIntrinsic )
               continue;
@@ -528,25 +536,25 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
             intrinsicrow = sample;
             break;
             
-          case Measurement::Foreground:
+          case SpecUtils::SourceType::Foreground:
             if( hasForeground )
               continue;
             hasForeground = true;
             childrow = sample;
             break;
             
-          case Measurement::Background:
+          case SpecUtils::SourceType::Background:
             if( hasBackground )
               continue;
             hasBackground = true;
             backrow = sample;
             break;
             
-          case Measurement::Calibration:
+          case SpecUtils::SourceType::Calibration:
             //do nothing
             break;
             
-          case Measurement::UnknownSourceType:
+          case SpecUtils::SourceType::Unknown:
             if( childrow < -999 )
               childrow = sample;
             break;
@@ -573,7 +581,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
     return;
   }
 
-  const vector<bool> detectors_to_use( spec->detector_names().size(), true );
+  const vector<string> &detectors_to_use = spec->detector_names();
   
   if( foreground_sample_numbers.size()==1 && detectors_to_use.size()==1 )
   {
@@ -582,11 +590,11 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
       foreground = std::make_shared<Measurement>( *m );
   }else
   {
-    foreground = spec->sum_measurements( foreground_sample_numbers, detectors_to_use );
+    foreground = spec->sum_measurements( foreground_sample_numbers, detectors_to_use, nullptr );
   }
   
   if( background_sample_numbers.size() )
-    background = spec->sum_measurements( background_sample_numbers, detectors_to_use );
+    background = spec->sum_measurements( background_sample_numbers, detectors_to_use, nullptr );
   
   if( !foreground )
   {
@@ -635,7 +643,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
         }
       }//if( spec->passthrough() )
     
-      string fname = UtilityFunctions::filename(filename);
+      string fname = SpecUtils::filename(filename);
       stringstream resultstrm;
       fname = Wt::Utils::htmlEncode(fname);
     
@@ -734,7 +742,7 @@ void render_spec_file_to_preview( uint8_t **result, size_t *result_size,
                 foreground = std::make_shared<Measurement>( *m );
             }else
             {
-              foreground = spec->sum_measurements( thissamplenums, detectors_to_use );
+              foreground = spec->sum_measurements( thissamplenums, detectors_to_use, nullptr );
             }
             
             if( !foreground )

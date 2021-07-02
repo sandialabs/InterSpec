@@ -146,6 +146,7 @@ SpectraHeader::SpectraHeader()
   sample_number = -1;
   gamma_counts_ = neutron_counts_ = 0.0;
   spectra_type = SpecUtils::SourceType::Unknown;
+  is_derived_data = false;
 }//SpectraHeader default constructor
 
 
@@ -162,7 +163,7 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Mea
   sample_number = -1;
   gamma_counts_ = neutron_counts_ = 0.0;
   spectra_type = SpecUtils::SourceType::Unknown;
-
+  is_derived_data = false;
 
   for( const std::shared_ptr<const SpecUtils::Measurement> &m : measurements )
   {
@@ -173,8 +174,9 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Mea
     neutron_counts_ += m->neutron_counts_sum();
     detector_names.push_back( m->detector_name() );
     detector_numbers_.push_back( m->detector_number() );
-
     spectra_type = m->source_type();
+    if( m->derived_data_properties() )
+      is_derived_data = true;
 
     for( size_t i = 0; i < m->remarks().size(); ++i )
     {
@@ -242,7 +244,7 @@ SpectraFileHeader::SpectraFileHeader( Wt::Dbo::ptr<InterSpecUser> user,
 }//SpectraFileHeader constructor
 
 
-SpectraFileHeader::~SpectraFileHeader()
+SpectraFileHeader::~SpectraFileHeader() noexcept(true)
 {
   try
   {
@@ -285,9 +287,9 @@ SpectraFileHeader::~SpectraFileHeader()
         {
           saveToDatabaseFromTempFile();
           //passMessage ("memObj saveToDatabaseFromTempFile", "", WarningWidget::WarningMsgMedium);
-            WString msg = "Autosaved previously opened spectra '";
-            msg += (!!memObj ? memObj->filename() : fileSystemLocation);
-            msg += "'";
+            //WString msg = "Autosaved previously opened spectra '";
+            //msg += (!!memObj ? memObj->filename() : fileSystemLocation);
+            //msg += "'";
             //passMessage( msg, "", WarningWidget::WarningMsgInfo );
         }
         else //probably shouldnt happen
@@ -317,9 +319,9 @@ SpectraFileHeader::~SpectraFileHeader()
       if( !status )
         throw runtime_error( m_fileSystemLocation + " didn't exist to delete" );
     }// if we should delete the file
-  }catch( std::exception &e )
+  }catch( ... )
   {
-    cerr << "\n~SpectraFileHeader() caught: " << e.what() << endl;
+    //cerr << "\n~SpectraFileHeader() caught: " << e.what() << endl;
   }
 }//SpectraFileHeader destructor
 
@@ -768,28 +770,27 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   if( !fileDbEntry )
   {
     UserFileInDb *info = new UserFileInDb();
+    Dbo::ptr<UserFileInDb> info_dbo_ptr( info );
     setBasicFileInDbInfo( info );  //takes lock of m_mutex during execution
     UserFileInDbData *data = new UserFileInDbData();
+    Dbo::ptr<UserFileInDbData> data_dbo_ptr( data );
     
     try
     {
-      data->setFileData( meas,
-                        UserFileInDbData::sm_defaultSerializationFormat );
+      data->setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat );
     }catch( FileToLargeForDbException &e )
     {
-      delete data;
       throw e;
     }catch( std::exception &e )
     {
-      delete data;
       throw runtime_error( e.what() );
     }//try / catch
     
     {
       DataBaseUtils::DbTransaction transaction( *m_sql );
-      fileDbEntry = m_sql->session()->add( info );
+      fileDbEntry = m_sql->session()->add( info_dbo_ptr );
       data->fileInfo = fileDbEntry;
-      Dbo::ptr<UserFileInDbData> dataPtr = m_sql->session()->add( data );
+      Dbo::ptr<UserFileInDbData> dataPtr = m_sql->session()->add( data_dbo_ptr );
       transaction.commit();
     }
   }else
@@ -1180,7 +1181,7 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
     success = true;
 //    success = info->save_native_file( tempfile.generic_string() );
     boost::function<void()> error_callback = boost::bind( &SpectraFileHeader::errorSavingCallback, this, tempfile, info );
-    SpecMeas::save2012N42FileInSlaveThread( info, tempfile, error_callback );
+    SpecMeas::save2012N42FileInClientThread( info, tempfile, error_callback );
     
 //#if( USE_DB_TO_STORE_SPECTRA )
 //    if( m_app && shouldSaveToDb() )
@@ -1273,6 +1274,11 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
     m_uuid = m_uuid.substr( 0, UserFileInDb::sm_maxUuidLength );
   
   m_modifiedSinceDecode = info->modified_since_decode();
+  
+  // Incase we are updating an already filled out entity, clear out some variables we will fill in
+  m_samples.clear();
+  m_hasNeutronDetector = false;
+  m_spectrumTime = Wt::WDateTime();
   
   for( const int sample : sample_numbers )
   {
@@ -1942,7 +1948,7 @@ bool SpectraFileModel::removeRows( int row, int count, const WModelIndex &parent
     return false;
   }//if( count <= 0 )
 
-  const int lastRow = row+count-1;
+  const int lastRow = row + count - 1;
 
   /*
   //I wouldn't have guessed we would have to do this, but if we don't also
@@ -2538,7 +2544,8 @@ void DownloadSpectrumResource::handle_resource_request(
           if( peaks )
           {
             vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-            options.peaks_json = PeakDef::peak_json( inpeaks );
+            std::shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+            options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
           }
           
           measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );

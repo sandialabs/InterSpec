@@ -168,16 +168,9 @@ This InterSpec Software was developed with funds from the Science and Technology
       </div>
     </li>
 
-    <li><b><a href="http://www.famfamfam.com/lab/icons/silk/" target="_blank">FamFamFam Silk</a> 1.3:</b> free icon set.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>Silk</b> provides many of the colorful icons used through <b>InterSpec</b>.
-        <b>Silk</b> is licensed under the <a href="https://creativecommons.org/licenses/by/2.5/" target="_blank">Creative Commons 2.5 License</a>.
-      </div>
-    </li>
-
     <li><b><a href="https://d3js.org/" target="_blank">d3.js</a>:</b> a JavaScript charting library.
       <div style="margin-left: 1em; font-size: small;">
-        <b>d3.js</b> is potentially included when exporting spectrum files as HTML files.
+        <b>d3.js</b> powers rendering and interactions of the spectrum chart, gross-count time chart, and decay tool.
         <b>d3.js</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
       </div>
     </li>

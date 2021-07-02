@@ -56,7 +56,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
                             EnergyCalGraphicalConfirm::RecalTypes lastType,
                             float lastEnergy )
 : AuxWindow( "Confirm Recalibration",
-             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                | AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse) ),
   m_calibrator( cal ), m_typeButtons( NULL), m_foregroundOnly( NULL ),
   m_startE( NULL ), m_finalE( NULL ),
@@ -133,11 +133,11 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
     m_preserveLastCal->setInline( false );
     m_preserveLastCal->setStyleClass( "PreserveLastCalCb" );
     
-    const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", viewer );
+    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", viewer );
 
     HelpSystem::attachToolTipOn( m_preserveLastCal,"This is only possible if a offset or"
                                 " linear term adjustment was previously"
-                                " made within the last 2 minutes.", showToolTipInstantly );
+                                " made within the last 2 minutes.", showToolTips );
     m_preserveLastCal->setChecked();
     buttonBox->disable();
     m_preserveLastCal->checked().connect( buttonBox, &WWidget::disable );

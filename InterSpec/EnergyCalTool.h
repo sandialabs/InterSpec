@@ -116,7 +116,6 @@ namespace EnergyCalImp
  - [implemented but not enabled] By default dont show deviation pairs display unless a detector has
    them defined; maybe a "+ deviation pairs" button or something incase user wants to show them
  - Implement undu...
- - Implement more actions...
  */
 
 enum class MoreActionsIndex : int

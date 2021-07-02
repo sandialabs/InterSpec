@@ -68,6 +68,13 @@ namespace MassAttenuation
   static const int sm_max_xs_atomic_number = 98;
 #endif
 
+/** As of 20201124, the valid energy ranges of the various process, for each element is at least the following:
+    - Compton has range 1 to 100000
+    - Rayleigh has range 1.00331 to 35436.5
+    - PhotoElectric has range 1 to 73282.4
+    - PairProd has range 1025.12 to 100000
+ */
+
   enum class GammaEmProcces : int
   {
     ComptonScatter,
@@ -85,10 +92,10 @@ namespace MassAttenuation
    * To calculate the
    *
    *  Will throw ErrorLoadingDataException if the XS data cannot be loaded.
-   *  Will throw std::runtime_error if atomic_number or energy is out of range.
+   *  Will throw std::runtime_error if atomic_number or energy is less than 1.01 keV, or larger than 100 MeV.
    *
    * \param atomic_number Atomic number ranging from 1 to 98, inclusive
-   * \param energy Energy (in keV)
+   * \param energy Energy (in keV), between 1.01 and 100,000.
    * \returns The mass attenuation coefficient for:
    *          compton + pair production + photo electric.
    */

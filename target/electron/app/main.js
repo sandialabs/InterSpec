@@ -34,7 +34,7 @@
    - Test the window positon stuff with multiple displays.
    - Setup to allow multiple windows (but dont actually allow yet)
      - Make so a request for a new session is sent to C++, which then sends back
-       a URL (which includes the externalid token) to connect to
+       a URL (which includes the apptoken token) to connect to
  */
 
 const electron = require('electron')
@@ -74,7 +74,7 @@ global.__basedir = __dirname;
 //   handled in most places)
 let mainWindow
 
-//Create the 'externalid' we will designate for the main window
+//Create the 'apptoken' we will designate for the main window
 const crypto = require('crypto');
 var session_token = null;
 
@@ -226,6 +226,12 @@ function get_launch_options(){
 
 function doMenuStuff(currentwindow){
   console.log( 'Doing doMenuStuff' );
+  
+  if( !interspec.usingElectronMenus() ){
+    console.log( 'Not using ElectronMenus - bailing' );
+    return;
+  }
+
   currentwindow.setMenu(null);
   
   const template = [{label: 'Edit', submenu: [{role: 'cut'},{role: 'copy'},{role: 'paste'}]},
@@ -255,6 +261,7 @@ function doMenuStuff(currentwindow){
   //Menu.getApplicationMenu()
   const menubar = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menubar)
+  console.log( 'Have set ElectronMenus' );
 }
 
 
@@ -282,7 +289,8 @@ function createWindow () {
 
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
-  windowPrefs.webPreferences = {nodeIntegration: true, nativeWindowOpen: true, enableRemoteModule: true, spellcheck: false };
+  windowPrefs.frame = ((process.platform == 'darwin') || interspec.usingElectronMenus());
+  windowPrefs.webPreferences = { nodeIntegration: true, nativeWindowOpen: true, enableRemoteModule: true, spellcheck: false };
 
   mainWindow = new BrowserWindow( windowPrefs );
   
@@ -309,27 +317,27 @@ function createWindow () {
       session_token = session_token_buf.toString('hex');
       interspec.addSessionToken( session_token );
       
-      let msg = interspec_url  + "?externalid=" + session_token;
+      let url_to_load = interspec_url  + "?apptoken=" + session_token + "&primary=yes";
       if( initial_file_to_open && ((typeof initial_file_to_open === 'string') || initial_file_to_open.length==1) ) {
         let filepath = (typeof initial_file_to_open === 'string') ? initial_file_to_open : initial_file_to_open[0];
-        msg += "&specfilename=" + encodeURI(filepath);
+        url_to_load += "&specfilename=" + encodeURI(filepath);
         initial_file_to_open = null;
       }
 
       //See https://github.com/electron/electron/blob/master/docs/tutorial/mojave-dark-mode-guide.md
       //  For implementing dark mode (leaving out for the moment since havent had time to test)
       //if( systemPreferences.isDarkMode() )
-      //  msg += "&colortheme=dark";
+      //  url_to_load += "&colortheme=dark";
       //Actually should use nativeTheme.shouldUseDarkColors
       //  see https://github.com/electron/electron/blob/master/docs/api/native-theme.md#nativethemeshouldusedarkcolors-readonly
       
       if( !allowRestore )
-        msg += "&restore=no";
+      url_to_load += "&restore=no";
       
-      console.log('Will Load ' + msg);
+      console.log('Will Load ' + url_to_load);
       
       doMenuStuff(mainWindow);
-      mainWindow.loadURL( msg );
+      mainWindow.loadURL( url_to_load );
     } else {
       let workingdir = path.dirname(require.main.filename);
       mainWindow.loadURL( "file://" + path.join(workingdir, "loading.html") );
@@ -364,7 +372,15 @@ function createWindow () {
   
   
   // Open the developer tools.
-  // mainWindow.webContents.openDevTools({mode: "bottom"})
+  // mainWindow.webContents.openDevTools({mode: "bottom"});
+
+  // A nice way to have the renderes console.log show up on the command line
+  //  when running for development.
+  //mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+  //  //https://www.electronjs.org/docs/api/web-contents#event-console-message  
+  //  //console.log( sourceId+ " ("+line+"): " + message );
+  //  console.log( "From renderer: " + message );
+  //});
 
   // Emitted when the window is closed.
   mainWindow.on('closed', function () {
@@ -398,6 +414,11 @@ function createWindow () {
       //We seem to only get here if the JS application dies and the message saying
       // "The application has stopped running, would you like to restart?" and
       // the user clicks okay.
+      // OR if we create a link in the app somewhere (like for a CSV file) and dont
+      //   call WAnchor::setTarget(AnchorTarget::TargetNewWindow) for the link (and in 
+      //   this case we can probably see if the URL looks somethign like:
+      //   http://127.0.0.1:57851/?wtd=oiaGAdsaiwqAs&request=resource&resource=asSaEwq&rand=65
+      //   but I didnt bother about this yet)
       //(as of 20191012 only tested by calling wApp->quit() from c++).
       doMenuStuff(mainWindow);
     }
@@ -488,9 +509,9 @@ function createWindow () {
     if( currentURL.includes("loading.html") )
       return;
   
-    if( currentURL.includes("externalid="+session_token) ){
+    if( currentURL.includes("apptoken="+session_token) ){
       //We have found main window.  Lets be conservative though and not require
-      //  the URL have this options.
+      //  the URL have this options.  We could also look to require "primary=yes"
     }
   
     page_loaded = true;
@@ -642,7 +663,7 @@ app.on('ready', function(){
     interspec.removeSessionToken( oldtoken );
     interspec.addSessionToken( session_token );
     doMenuStuff(mainWindow);
-    mainWindow.loadURL( interspec_url + "?externalid=" + session_token + "&restore=no");
+    mainWindow.loadURL( interspec_url + "?apptoken=" + session_token + "&restore=no&primary=yes");
   } );
 
   ipcMain.on('SessionFinishedLoading', function(evt, token ){
@@ -673,6 +694,50 @@ app.on('ready', function(){
     console.log( timestamp + msg );
   } );
   
+  ipcMain.on('OpenInExternalBrowser', function(evt, token ){
+    console.log( `Will try to open ${interspec_url} in external browser` );
+    
+    electron.shell.openExternal(interspec_url);
+    console.log( `Should have opened external URL...` );
+    
+    /*
+     //The pure node way to do this is below - I think it can be deleted once the above is tested.
+    const { exec } = require('child_process');
+    let command = '';
+    
+    switch( process.platform )
+    {
+      case 'android':
+      case 'linux':
+        command =  `xdg-open ${interspec_url}`;
+        break;
+        
+      case 'darwin':
+        command = `open ${interspec_url}`;
+        break;
+        
+      case 'win32':
+        command `cmd /c start ${interspec_url}`;
+        break;
+        
+      default:
+        console.log( "Unsupported platform for opening URL" );
+        return;
+    }//switch( process.platform )
+    
+    exec( command, (error, stdout, stderr) => {
+      if (error)
+      {
+        console.log( 'Couldnt open InterSpec URL in external browser: ' + error );
+        return;
+      }
+      
+      console.log( `stdout: ${stdout}` );
+      console.log( `stderr: ${stderr}` );
+      console.log( `Have opened ${interspec_url} in external browser (hopefully)` );
+    } );
+    */
+  } );
   //"ServerKilled"
 });
 

@@ -47,7 +47,7 @@ void log_error_message( const std::string &message, const std::string &source, c
 
 
 QLSpecMeas::QLSpecMeas()
-  : MeasurementInfo()
+  : SpecUtils::SpecFile()
 {
   m_peaks.reset( new SampleNumsToPeakMap() );
   
@@ -56,7 +56,7 @@ QLSpecMeas::QLSpecMeas()
 
 
 QLSpecMeas::QLSpecMeas( const QLSpecMeas &rhs )
-  : MeasurementInfo( rhs )
+  : SpecUtils::SpecFile( rhs )
 {
   assert(0);
 }
@@ -486,7 +486,7 @@ void QLSpecMeas::setModified()
 
 void QLSpecMeas::cleanup_after_load( const unsigned int flags )
 {
-  MeasurementInfo::cleanup_after_load( flags );
+  SpecUtils::SpecFile::cleanup_after_load( flags );
 
   //should detect if the detector was loaded, and if not, if we know the type,
   //  we could then load it.

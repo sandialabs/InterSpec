@@ -9,6 +9,16 @@
   padding: 2px;
 }
 
+
+.SnapshotIcon
+{
+ margin: 0;
+ padding: 0;
+ padding-top: 1px;
+ padding-left: 2px;
+ padding-right: 1px;
+}
+
 .SnapshotTime
 {
   border-top: solid 1px #e1e1e1; 

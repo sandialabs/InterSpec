@@ -137,7 +137,7 @@ namespace
 
 UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
                               InterSpec* viewer )
-: AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
+: AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                          | AuxWindowProperties::EnableResize
                          | AuxWindowProperties::DisableCollapse) ),
   m_session(),
@@ -160,7 +160,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   stack->setTransitionAnimation( animation, true );
   
   m_menu = new WMenu( stack, Wt::Vertical );
-  m_menu->addStyleClass( (m_viewer->isPhone() ? "VerticalMenuPhone SideMenuPhone" : "VerticalMenu SideMenu") );
+  m_menu->addStyleClass( (m_viewer->isPhone() ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone" : "VerticalNavMenu HeavyNavMenu SideMenu") );
   
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
   
@@ -473,7 +473,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     item->setId("TutorialVideos");
     item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
-    item->setIcon("InterSpec_resources/images/film.png");
+    //item->setIcon("InterSpec_resources/images/film.png");
     m_menu->addItem( item );
   } //videos
 */
@@ -532,15 +532,15 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
         const Json::Value &image = info.get( "img" );
         const Json::Value &desc_id = info.get( "desc_message_id" );
           
-        if( title.isNull() || image.isNull() )
+        if( title.isNull() && image.isNull() )
         {
           cerr << "makeItem found a null key or file string, "
                   "you may want to check use_instructions.xml" << endl;
           continue;
         }//if( binding.isNull() || file.isNull() )
           
-        const WString titlestr = title;
-        const WString imagestr = image;
+        const WString titlestr = title.orIfNull( "" );
+        const WString imagestr = image.orIfNull( "" );
         string descstr = "";
           
         if( !desc_id.isNull() )
@@ -551,11 +551,15 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
         samplesContainer->setMargin(15,Wt::Top);
         samplesContainer->setOverflow(WContainerWidget::OverflowAuto);
         
-        WImage* img = new WImage( imagestr.toUTF8() );
-        img->setMaximumSize(WLength(300), WLength::Auto);
-        samplesContainer->addWidget(img);
-        img->setStyleClass("img-centered");
-        if (!descstr.empty())
+        if( !imagestr.empty() )
+        {
+          WImage* img = new WImage( imagestr.toUTF8() );
+          img->setMaximumSize(WLength(300), WLength::Auto);
+          samplesContainer->addWidget(img);
+          img->setStyleClass("img-centered");
+        }//if( !imagestr.empty() )
+        
+        if( !descstr.empty() )
         {
           WText* txt = new WText( descstr, XHTMLUnsafeText );
           txt->setStyleClass("img-centered");

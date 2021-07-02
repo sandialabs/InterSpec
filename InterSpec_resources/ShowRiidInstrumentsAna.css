@@ -1,0 +1,62 @@
+.RiidDialogTitle 
+{ 
+  white-space: nowrap;
+}
+
+.AnaResultDisplay
+{
+}
+
+.AlgoInfoTitle
+{
+  margin-top: 10px;
+  margin-bottom: 5px;
+  font-weight: bold;
+  font-size: larger;
+}
+
+.AlgoInfoTbl
+{
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 15px;
+}
+
+.RiidNuclideResults
+{
+
+}
+
+.RiidNoResultsTxt
+{
+  padding-left: 15px;
+}
+
+.RiidNuclideTable
+{
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin-bottom: 10px;
+}
+
+
+.AlgoInfoTbl th, .AlgoInfoTbl td,
+.RiidNuclideTable th, .RiidNuclideTable td {
+    padding-top: 2px;
+    padding-bottom: 2px;
+    text-align: left;
+}
+.AlgoInfoTbl th, .RiidNuclideTable th {
+    padding-left: 15px;
+    padding-right: 10px;
+}
+
+.AlgoInfoLabel
+{
+  font-weight: bold;
+}
+
+.AlgoInfoTxt
+{
+
+}

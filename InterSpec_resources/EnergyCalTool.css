@@ -331,6 +331,7 @@ color: #E0F5FF;
 .CoefContent .CoefDisplay
 {
   white-space: nowrap;
+  padding: 3px 2px 2px 2px;
 }
 
 
@@ -341,10 +342,6 @@ color: #E0F5FF;
 }
 
 
-.CoefDisplay .CoefInput
-{
-  width: 8em;
-}
 
 .CoefFit
 {

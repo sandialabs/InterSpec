@@ -25,7 +25,6 @@
 
 #include <set>
 #include <deque>
-#include <regex>
 #include <fstream>
 
 #include <Wt/WText>
@@ -80,6 +79,29 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
+
+// The regex in GCC 4.8.x does not have working regex...., so we will detect this via
+//    https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions#answer-41186162
+#if defined(_MSC_VER) \
+    || (__cplusplus >= 201103L &&                             \
+        (!defined(__GLIBCXX__) || (__cplusplus >= 201402L) || \
+          (defined(_GLIBCXX_REGEX_DFS_QUANTIFIERS_LIMIT) || \
+            defined(_GLIBCXX_REGEX_STATE_LIMIT)           || \
+            (defined(_GLIBCXX_RELEASE)                && \
+            _GLIBCXX_RELEASE > 4))))
+#define HAVE_WORKING_REGEX 1
+#else
+#define HAVE_WORKING_REGEX 0
+#endif
+
+#if( HAVE_WORKING_REGEX )
+#include <regex>
+namespace RegexNs = std;
+#else
+#include <boost/regex.hpp>
+#warning "MakeDrf using boost regex - support for this compiler will be dropped soon"
+namespace RegexNs = boost;
+#endif
 
 using namespace std;
 using namespace Wt;
@@ -791,10 +813,10 @@ namespace
               SpecUtils::trim( remark );
               
               //Look for a string like "Age= 13y 5d 3s something something something"
-              std::smatch mtch;
-              std::regex expr( string(".+(Age\\s*\\=\\s*(") + PhysicalUnits::sm_timeDurationRegex + ")).*?", std::regex::icase );
+              RegexNs::smatch mtch;
+              RegexNs::regex expr( string(".+(Age\\s*\\=\\s*(") + PhysicalUnits::sm_timeDurationRegex + ")).*?", RegexNs::regex::icase );
                 
-              if( std::regex_match( remark, mtch, expr ) )
+              if( RegexNs::regex_match( remark, mtch, expr ) )
               {
                 try
                 {
@@ -831,9 +853,9 @@ namespace
               
               /*
                //Untested regex quivalent (or maybe a bit stricter) of the above.
-               std::smatch shieldmtch;
-               std::regex expr( ".+({\\s*[+]?[0-9]*\\.?[0-9]+\\s*,\\s*[+]?[0-9]*\\.?[0-9]+\\s*}).*?" );  //could be optimized, and extended to arbitrary number of floats
-               if( std::regex_match( remark, shieldmtch, expr ) )
+               RegexNs::smatch shieldmtch;
+               RegexNs::regex expr( ".+({\\s*[+]?[0-9]*\\.?[0-9]+\\s*,\\s*[+]?[0-9]*\\.?[0-9]+\\s*}).*?" );  //could be optimized, and extended to arbitrary number of floats
+               if( RegexNs::regex_match( remark, shieldmtch, expr ) )
                {
                  shielding = shieldmtch[1].str();
                  const size_t removepos = remark.find( shielding );
@@ -874,9 +896,9 @@ namespace
                   SpecUtils::trim( activitystr );
                   
                   //search for a positive decimal number foloowed by some letters; take fir occirance
-                  std::smatch mtch;
-                  std::regex expr( "(\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?)\\s*([a-zA-Z \\-]+)" );
-                  if( std::regex_search( activitystr, mtch, expr ) )
+                  RegexNs::smatch mtch;
+                  RegexNs::regex expr( "(\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?)\\s*([a-zA-Z \\-]+)" );
+                  if( RegexNs::regex_search( activitystr, mtch, expr ) )
                     activitystr = SpecUtils::trim_copy( mtch[0] );
                   
                   activity = PhysicalUnits::stringToActivity( activitystr );
@@ -1418,7 +1440,7 @@ MakeDrf::~MakeDrf()
 AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt::WSuggestionPopup *materialSuggest )
 {
   AuxWindow *window = new AuxWindow( "Create Detector Response Function",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletModal)
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::EnableResize) );
@@ -1464,8 +1486,8 @@ AuxWindow *MakeDrf::makeDrfWindow( InterSpec *viewer, MaterialDB *materialDB, Wt
 
 void MakeDrf::startSaveAs()
 {
-  Wt::WFlags<AuxWindowProperties> windowprop = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsAlwaysModal)
-                                               | AuxWindowProperties::PhoneModal
+  Wt::WFlags<AuxWindowProperties> windowprop = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                               | AuxWindowProperties::PhoneNotFullScreen
                                                | AuxWindowProperties::SetCloseable
                                                | AuxWindowProperties::DisableCollapse;
   if( m_effEqnCoefs.empty() )
@@ -1515,7 +1537,7 @@ void MakeDrf::startSaveAs()
   const char *tooltip = "Name of the detector response function to save to <em>InterSpecs</em>"
                         " internal database so you can use the response function later."
                         "  Name must be a valid filename (e.g., no \\\\, /, :, etc. characters).";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   cell = table->elementAt(1, 0);
   label = new WLabel( "Description", cell );
@@ -1529,7 +1551,7 @@ void MakeDrf::startSaveAs()
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Optional description of the DRF to help remind yourself of details when you use the DRF in the future.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   std::shared_ptr<const SpecMeas> representative_meas;
   
@@ -1572,7 +1594,7 @@ void MakeDrf::startSaveAs()
       tooltip = "Make it so when spectra from a detector with a matching serial"
                 " number is loaded into InterSpec, this detector response function"
                 " will automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
     }//if( serial_number.size() )
     
     string model;
@@ -1593,7 +1615,7 @@ void MakeDrf::startSaveAs()
       tooltip = "Make it so when spectra from this model detector is loaded"
                 " into InterSpec, this detector response function will"
                 " automatically be loaded and used.";
-      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+      HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
     }//if( !model.empty() )
   }//if( representative_meas )
   
@@ -1602,7 +1624,8 @@ void MakeDrf::startSaveAs()
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
-  new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
+  WAnchor *n42anchor = new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
+  n42anchor->setTarget( AnchorTarget::TargetNewWindow );
   
   cell = table->elementAt(currentRow, 2);
   help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
@@ -1611,13 +1634,14 @@ void MakeDrf::startSaveAs()
             "  Source and shielding information is also usually stored into the file as well to,"
             " in principal, except for detector diameter and equation orders,"
             " provide all the input information used to create the DRF.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
   CsvDrfDownloadResource *csvResource = new CsvDrfDownloadResource( this );
-  new WAnchor( csvResource, "Export DRF as CSV.", cell );
+  WAnchor *csvanchor = new WAnchor( csvResource, "Export DRF as CSV.", cell );
+  csvanchor->setTarget( AnchorTarget::TargetNewWindow );
   
   auto updateName = [name,csvResource,n42Resource](){
     if( name->validate() == Wt::WValidator::Valid )
@@ -1650,12 +1674,13 @@ void MakeDrf::startSaveAs()
   help->addStyleClass( "MakeDrfSaveHelp" );
   tooltip = "Exports the DRF into a CSV file that contains all of the information of the DRF."
             " Especially useful for using with other tools.";
-  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::Left );
+  HelpSystem::attachToolTipOn( help, tooltip, true, HelpSystem::ToolTipPosition::Left );
   
   
   WPushButton *b = w->addCloseButtonToFooter( "Cancel" );
   b->clicked().connect( w, &AuxWindow::hide );
   
+  // TODO: Need to display messsage to user about how it is saved, how to access it again, and figure out why menus go away for people (maybe only on Windows?) - also should consider not closing AuxWindow - also fix assay date being invalid error (seems to cause uncaught exception).
   auto doSave = [this, w, validator, name, description,
                  def_for_serial_cb, def_for_model_cb,
                  representative_meas ](){
@@ -1755,7 +1780,7 @@ void MakeDrf::startSaveAs()
     
     if( def_for_model_cb && def_for_model_cb->isChecked() && representative_meas )
     {
-       UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
       WServer::instance()->ioService().post( std::bind( [=](){
         DetectorEdit::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
       } ) );
@@ -1763,8 +1788,9 @@ void MakeDrf::startSaveAs()
     
     w->hide();
     
-    m_finished.emit();
-  };
+    //m_finished.emit();
+    passMessage( "Saved '" + drfname + "' to the internal database.", "", 0 );
+  };//auto doSave
   
   WPushButton *save = w->addCloseButtonToFooter( "Save" );
   save->clicked().connect( std::bind(doSave) );
@@ -2622,7 +2648,7 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
         if( distance > 0.0 )
         {
           string title = m->title();
-          std::smatch mtch;
+          RegexNs::smatch mtch;
           
           string regexstr = PhysicalUnits::sm_distanceRegex;
           if( regexstr.size()>1 && regexstr[0]=='^')
@@ -2631,9 +2657,9 @@ std::shared_ptr<SpecMeas> MakeDrf::assembleCalFile()
             regexstr = regexstr.substr(0,regexstr.size()-1);
           regexstr = string(".+(@\\s*") + regexstr + ").*?";
           
-          std::regex expr( regexstr, std::regex::icase );
+          RegexNs::regex expr( regexstr, RegexNs::regex::icase );
           
-          if( std::regex_match( title, mtch, expr ) )
+          if( RegexNs::regex_match( title, mtch, expr ) )
           {
             size_t distpos = title.find( mtch[1].str() );
             title = SpecUtils::trim_copy( title.substr(0,distpos) )

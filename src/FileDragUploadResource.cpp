@@ -31,8 +31,11 @@
 #include <iostream>
 #include <iterator>
 
-
+#include <Wt/Utils>
 #include <Wt/WResource>
+#include <Wt/Json/Value>
+#include <Wt/Json/Parser>
+#include <Wt/Json/Object>
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
 #include <Wt/WPaintDevice>
@@ -42,6 +45,7 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WCssDecorationStyle>
 #include <Wt/Chart/WAbstractChart>
+
 
 #include "InterSpec/InterSpecApp.h"
 #include "SpecUtils/Filesystem.h"
@@ -108,7 +112,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
 //        m_spooledFiles.push_back( files[i].spoolFileName() );
 //        m_dragCanvas->fileDrop().emit( files[i].clientFileName(), files[i].spoolFileName() );
 //      }
-
+  
   response.setMimeType("text/html; charset=utf-8");
   response.addHeader("Expires", "Sun, 14 Jun 2020 00:00:00 GMT");
   response.addHeader("Cache-Control", "max-age=315360000");
@@ -123,6 +127,64 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
     return;
   }//if( request.tooLarge() )
 
+  auto app = WApplication::instance();
+  if( !app || !m_fileDrop )
+  {
+    cerr << "Uploaded file to a non Wt-Sesssion - bailing" << endl;
+    response.setStatus( 403 ); //Forbidden
+    return;
+  }//if( !app )
+  
+  
+#if( BUILD_AS_ELECTRON_APP )
+  // See FileUploadFcn in InterSpec.js
+  const string isFilePath = request.headerValue("Is-File-Path");
+  
+  if( (isFilePath == "1") || (isFilePath == "true") || (isFilePath == "yes") )
+  {
+    try
+    {
+      std::istreambuf_iterator<char> eos;
+      string body(std::istreambuf_iterator<char>(request.in()), eos);
+      
+      Json::Object result;
+      Json::parse( body, result );
+      if( !result.contains("fullpath") )
+        throw std::runtime_error( "Body JSON did not contain a 'fullpath' entry." );
+      
+      const WString wfullpath = result.get("fullpath");
+      const std::string fullpath = wfullpath.toUTF8();
+      
+      {// begin test if can read file
+#ifdef _WIN32
+        const std::wstring wname = SpecUtils::convert_from_utf8_to_utf16( fullpath );
+        std::ifstream file( wname.c_str() );
+#else
+        std::ifstream file( fullpath.c_str() );
+#endif
+        if( !file.good() )
+          throw std::runtime_error( "Could not read '" + fullpath + "'" );
+      }// end test if can read file
+      
+      cout << "Will open spectrum file using path='" << fullpath << "'" << endl;
+      
+      WApplication::UpdateLock lock( app );
+
+      m_fileDrop->emit( SpecUtils::filename(fullpath), fullpath );
+      
+      app->triggerUpdate();
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to parse fullpath POST request: " << e.what() << " - returning status 406.\n";
+      
+      response.setStatus( 406 );
+      return;
+    }//try / catch to figure out how to interpret
+    
+    return;
+  }//if( (fullpath == "1") || (fullpath == "true") || (fullpath == "yes") )
+#endif  //BUILD_AS_ELECTRON_APP
+  
   const int datalen = request.contentLength();
 
   if( datalen )
@@ -140,10 +202,23 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       spool_file << request.in().rdbuf();
       spool_file.close();
       const string userName = request.headerValue( "X-File-Name" );
-      m_spooledFiles.push_back( temp_name );
-      if( m_fileDrop )
-        m_fileDrop->emit( userName, temp_name );
-    } else
+      
+      auto app = WApplication::instance();
+      WApplication::UpdateLock lock( app );
+      
+      if( lock )
+      {
+        m_spooledFiles.push_back( temp_name );
+        if( m_fileDrop )
+          m_fileDrop->emit( userName, temp_name );
+      
+        app->triggerUpdate();
+      }else
+      {
+        response.setStatus( 500 );  //Internal Server error
+        output << "App session may be over.";
+      }
+    }else
     {
       response.setStatus( 500 );  //Internal Server error
       output << "Coulnt open temporary file on server";

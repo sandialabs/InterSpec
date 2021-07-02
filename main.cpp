@@ -82,7 +82,7 @@ int main( int argc, char **argv )
 #endif //#if( ANDROID )
   
   std::cout << std::showbase << std::hex << "Running with Wt version "
-            << WT_VERSION << ", from executable compiled on "
+            << WT_VERSION << std::dec << ", from executable compiled on "
             << __DATE__ << std::endl;
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -91,11 +91,33 @@ int main( int argc, char **argv )
 
   std::cout << std::endl;
   
-#if(WT_VERSION>=0x3030300)
+#if( WT_VERSION >= 0x3030300 )
   //Make it so WString defaults to assuming std::string or char * are UTF8
   //  encoded, rather than the system encoding.
   Wt::WString::setDefaultEncoding( Wt::UTF8 );
 #endif
+  
+#if( BUILD_AS_LOCAL_SERVER )
+  // For development we'll put in some default command line argument that assume the CWD is
+  //  either the base InterSpec code directory, or the CMake build directory.
+  std::string def_args[] = { argv[0], "--docroot=.", "--http-address=127.0.0.1",
+    "--http-port=8080", "--config=./data/config/wt_config_localweb.xml", "--accesslog=-",
+    "--no-compression"
+  };
+  const size_t default_argc = sizeof(def_args) / sizeof(def_args[0]);
+  char *default_argv[default_argc] = { nullptr };
+  
+  if( argc == 1 )
+  {
+    std::cout << "Using default set of command line arguments\n" << std::endl;
+    
+    for( size_t i = 0; i < default_argc; ++i )
+      default_argv[i] = &(def_args[i].front());
+    
+    argc = static_cast<int>( default_argc );
+    argv = default_argv;
+  }//if( no command line arguments were given ).
+#endif //BUILD_AS_LOCAL_SERVER
   
   processCustomArgs( argc, argv );
   

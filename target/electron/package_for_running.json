@@ -1,6 +1,6 @@
 {
   "name": "InterSpec",
-  "version": "1.0.5",
+  "version": "1.0.8",
   "description": "Application for interactive gamma spectroscopy",
   "homepage": "https://github.com/sandialabs/InterSpec",
   "main": "main.js",

@@ -184,9 +184,41 @@ void getXAxisLabelTicks( const SpectrumChart *chart,
       
     WString t;
     
-    if( i>=0 && (i % subdashes == 0) ){
-      t = axis.label(v);
-    }
+    if( i>=0 && ((i % subdashes) == 0) )
+    {
+      if( renderInterval < 1.0 )
+      {
+        //If x-range is more than 10, but we have more than 10 labels, then labelFormat flag is
+        //  "%.0f", meaining no decimals, but we need decimals or else multiple ticks will have same
+        //  label - so here we will .
+        //  The intervals should almost always be something like 0.1, 0.2, etc, but because I didnt
+        //  go through the logic totally yet to make sure, I'll leave in a default catchall that
+        //  will print to four places, and then just remove trailing zeros.
+        const char *fmtflag = "%.4f";
+        bool removetrail = false;
+        if( renderInterval == 0.1 || renderInterval == 0.2 || renderInterval == 0.5 )
+          fmtflag = "%.1f";
+        else if( renderInterval == 0.25 )
+          fmtflag = "%.2f";
+        else
+          removetrail = true;
+        
+        char buffer[32] = { '\0' };
+        int nchar = snprintf( buffer, sizeof(buffer), fmtflag, v );
+        
+        //Remove trailing zeros
+        if( removetrail && (--nchar > 0) && (nchar < static_cast<int>(sizeof(buffer))) )
+        {
+          while( (nchar > 0) && ((buffer[nchar] == '0') || (buffer[nchar] == '.')) )
+            buffer[nchar--] = '\0';
+        }
+        
+        t = buffer;
+      }else
+      {
+        t = axis.label(v);
+      }
+    }//If( a major tick )
     
     ticks.push_back(MyTickLabel(v, i % subdashes == 0 ? MyTickLabel::Long : MyTickLabel::Short, t));
   }//for( intervals to draw ticks for )
@@ -3651,7 +3683,21 @@ void SpectrumChart::loadPeakInfoToClient() const
       }//if( data && th1Model )
 
       double contarea = 0;
-      contarea = peak.offset_integral( lowx, upperx );
+      switch( peak.continuum()->type() )
+      {
+        case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
+        case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
+        case PeakContinuum::Cubic:        case PeakContinuum::External:
+          contarea = peak.offset_integral( lowx, upperx, data );
+          break;
+          
+        case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+        case PeakContinuum::BiLinearStep:
+          if( data )
+            contarea = peak.offset_integral( lowx, upperx, data );
+          break;
+      }//switch( peak.continuum()->type() )
+      
 
       double lowe = 0.0, highe = 0.0;
       findROIEnergyLimits( lowe, highe, peak, data );
@@ -3989,9 +4035,10 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
     case PeakContinuum::NoOffset:
     break;
       
-    case PeakContinuum::Constant:   case PeakContinuum::Linear:
-    case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-    case PeakContinuum::External:
+    case PeakContinuum::Constant:     case PeakContinuum::Linear:
+    case PeakContinuum::Quadratic:    case PeakContinuum::Cubic:
+    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep: case PeakContinuum::External:
     {
       vector<WPointF> path;
       for( int row = lowerrow; row <= upperrow; ++row )
@@ -4000,7 +4047,7 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
         const double rowUpperX = rowLowX + th1Model->rowWidth( row );
         const double lowerx = std::max( rowLowX, axisMinX );
         const double upperx = std::min( rowUpperX, axisMaxX );
-        const double contheight = continuum->offset_integral( rowLowX, rowUpperX );
+        const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data );
       
         const WPointF startPoint = mapToDevice( lowerx, contheight );
         const WPointF endPoint = mapToDevice( upperx, contheight );
@@ -4034,7 +4081,7 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
     const double lowerx = std::max( rowLowX, axisMinX );
     const double upperx = std::min( rowUpperX, axisMaxX );
     const boost::any dataheightany = th1Model->displayBinValue( row, SpectrumDataModel::DATA_COLUMN );
-    const double contheight = continuum->offset_integral( rowLowX, rowUpperX );
+    const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data );
     const double dataheight = asNumber( dataheightany );
     
     if( dataheightany.empty() )
@@ -4098,7 +4145,26 @@ double SpectrumChart::peakBackgroundVal( const int row, const PeakDef &peak,
   const double bin_x_min = th1Model->rowLowEdge( row );
   const double bin_x_max = bin_x_min + th1Model->rowWidth( row );
   
-  double yval = peak.offset_integral( bin_x_min, bin_x_max );
+  
+  double yval = 0.0;
+  
+  switch( peak.continuum()->type() )
+  {
+    case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
+    case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
+    case PeakContinuum::Cubic:        case PeakContinuum::External:
+      yval = peak.offset_integral( bin_x_min, bin_x_max, nullptr );
+      break;
+    
+    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
+    {
+      shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
+      if( data )
+        yval = peak.offset_integral( bin_x_min, bin_x_max, data );
+      break;
+    }
+  }//switch( peak.continuum()->type() )
   
   if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
     yval -= th1Model->data( row, th1Model->backgroundColumn() );
@@ -4609,11 +4675,12 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
   double axisMinX, axisMaxX, axisMinY, axisMaxY;
   visibleRange( axisMinX, axisMaxX, axisMinY, axisMaxY );
   
-  const SpectrumDataModel *th1Model
-                           = dynamic_cast<const SpectrumDataModel *>( model() );
+  const SpectrumDataModel *th1Model  = dynamic_cast<const SpectrumDataModel *>( model() );
   
   assert( th1Model );
   assert( std::is_sorted( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr ) );
+  
+  std::shared_ptr<const Measurement> data = th1Model->getData();
   
   bool hadGlobalCont = false;
   const bool sharedContinuum = (peaks.size()>1);
@@ -4675,7 +4742,25 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       const double bin_x_max = bin_x_min + bin_width;
       const double bin_center = bin_x_min + 0.5*bin_width;
       
-      double cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max );
+      double cont_y = 0.0;
+      
+      switch( peaks[0]->continuum()->type() )
+      {
+        case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
+        case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
+        case PeakContinuum::Cubic:        case PeakContinuum::External:
+          cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max, data );
+          break;
+          
+        case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+        case PeakContinuum::BiLinearStep:
+        {
+          if( data )
+            cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max, data );
+          break;
+        }
+      }//switch( peak.continuum()->type() )
+      
       
       if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
         cont_y -= th1Model->data( row, th1Model->backgroundColumn() );

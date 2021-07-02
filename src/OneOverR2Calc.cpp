@@ -48,7 +48,7 @@ using namespace std;
 
 OneOverR2Calc::OneOverR2Calc()
   : AuxWindow( "1/r<sup>2</sup> Calculator",
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneModal)
+              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) ),
     m_nearMeasurement( NULL ),
@@ -78,7 +78,7 @@ OneOverR2Calc::OneOverR2Calc()
   WTableCell *cell = layoutTable->elementAt( 0, 0 );
   WText *label = new WText( "Near Measurement Intensity:", cell );
   
-  //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTipInstantly );
+  //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTips );
   
   cell = layoutTable->elementAt( 0, 1 );
   m_nearMeasurement = new WDoubleSpinBox( cell );
@@ -143,7 +143,7 @@ OneOverR2Calc::OneOverR2Calc()
   label = new WText( "Power Law");
   powerLayout->addWidget( label, 0, 0 );
   powerLayout->addWidget( m_powerLawSelect, 0, 1 );
-  m_powerLawSelect->addItem( WString::fromUTF8("Low Scatter or using Peak Area, 1/r\u00B2") );
+  m_powerLawSelect->addItem( "Low Scatter or using Peak Area, 1/r^2" );
   m_powerLawSelect->addItem( "Mid Scatter Dose Rate, 1/r^1.85" );
   m_powerLawSelect->addItem( "High Scatter Dose Rate, 1/r^1.65" );
   m_powerLawSelect->setCurrentIndex( 0 );
@@ -182,21 +182,20 @@ OneOverR2Calc::OneOverR2Calc()
   
   show();
   
-  
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
-  const bool isPhone = (app && app->isPhone());
+  InterSpec *viewer = InterSpec::instance();
+  const bool isPhone = (viewer && viewer->isPhone());
   
   if( isPhone )
   {
     titleBar()->hide();
     
-    InterSpec *viewer = app->viewer();
     if( viewer )
     {
       /* For some reason CSS seems to fail resizing AuxWindows properly, so we have to do it in c++ */
       
       float safeAreas[4] = { 0.0f };
 #if( IOS )
+      InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
       InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
       app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
 #endif
@@ -213,7 +212,7 @@ OneOverR2Calc::OneOverR2Calc()
   }//if( isPhone ) / else
   
   //Keep the keyboard form popping up
-  if( app && app->isMobile() )
+  if( viewer && viewer->isMobile() )
   {
     closeButton->setFocus();
     closeButton->setFloatSide( Wt::Left ); //The "DialogClose" style class defaults to floating to the right, same as the help icon

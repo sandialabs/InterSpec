@@ -36,4 +36,5 @@
  <pref name="CompactXAxis" type="Boolean">false</pref>
  <pref name="ShowYAxisScalers" type="Boolean">true</pref>
  <pref name="AskPropagatePeaks" type="Boolean">false</pref>
+ <pref name="DisplayBecquerel" type="Boolean">false</pref>
 </preferences>

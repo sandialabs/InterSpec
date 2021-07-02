@@ -107,6 +107,7 @@ public:
   std::vector<int> detector_numbers_;
   std::string  remarks;
   Wt::WDateTime start_time;
+  bool is_derived_data;
 };//struct SpectraHeader
 
 
@@ -132,7 +133,7 @@ public:
                      bool keepInMemmory,
                      InterSpec *viewer );
 
-  virtual ~SpectraFileHeader();
+  virtual ~SpectraFileHeader() noexcept(true);
 
   //setFile thows std::runtime_error(..) on failure.  File passed in does
   //  not need to persist on the file system past calling this function.

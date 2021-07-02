@@ -344,8 +344,13 @@
            This feature is still experimental: the Web Sockets RFC is
            still a draft. Wt implements up to version 17 of the draft
 	   (latest as of November 2011).
+
+	   wcjohns note: enabling WebSockets causes 'implementStateless' calls to
+	                 emit the JS twice (I think once in the JS when the call
+					 originates, and once after going back to C++) - but when
+					 WebSockets is false, the JS will only be emitted once.
 	  -->
-	<web-sockets>true</web-sockets>
+	<web-sockets>false</web-sockets>
 
 	<!-- Enables the detection of webgl-capabilites.
 
@@ -518,10 +523,17 @@
          user-agent, using a regular expression. You can have multiple
          set-meta-headers definitions.
 
-	 -->
+	 --> 
+	 <!-- I havent yet found the magical set of CSP that will quite Electron warnings down when node integration is enabled; the solution is to go through and disable the node-integration probably
+	 <meta-headers user-agent=".*">
+	  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost http://127.0.0.1" />
+	 </meta-headers>
+	-->
+
 	<meta-headers user-agent=".*MSIE.*">
 	  <meta name="robots" content="noindex" />
 	</meta-headers>
+	
 
 	<!-- Runtime Properties
      

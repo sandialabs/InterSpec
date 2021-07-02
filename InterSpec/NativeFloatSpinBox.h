@@ -61,6 +61,13 @@ public:
   
   virtual void setPlaceholderText( const Wt::WString &placeholder );
           
+  /** Hides the up and down step arrows in the spin box.
+   
+   \TODO: determine if we should remove "step" attribute, or how that affects things when spinners
+          are hidden (especially on FireFox)
+   */
+  void setSpinnerHidden( const bool hidden = true );
+  
   /** Signal emitted when the entered value changes from the client side.
    Not triggered when #setValue is called from the c++.
    

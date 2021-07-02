@@ -158,10 +158,10 @@ class PointSourceShieldingChi2Fcn
 //-Age of nuclide 0
 //-Activity (in MBq) nuclide 1
 //-Age of nuclide 1 (if negative, must be negative value of one plue index of
-//                   master nuclide; e.g., a negative int.  Hacky, but whatever)
+//                   defining nuclide; e.g., a negative int.  Hacky, but whatever)
 // ...
 //if material 0 normal material (if Material* is non-NULL pointer)
-//    -Material Thinckness
+//    -Material Thickness
 //#if( USE_CONSISTEN_NUM_SHIELDING_PARS )
 //  -ignored parameter here
 //#endif

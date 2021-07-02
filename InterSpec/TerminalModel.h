@@ -34,7 +34,6 @@
 #include "InterSpec_config.h"
 
 #include <map>
-#include <regex>
 #include <array>
 #include <tuple>
 #include <string>
@@ -42,7 +41,6 @@
 #include <memory>
 #include <algorithm>
 
-#include <boost/math/distributions/chi_squared.hpp>
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
@@ -50,6 +48,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
+
 
 //Forward declarations
 class InterSpec;
@@ -120,6 +119,7 @@ public:  // Function methods (for parser, can combine with expressions)
     double gammaChannelHigherEnergyAt( const double channel );
     double gammaChannelWidthFor( const std::string& histogram, const double channel );
     double gammaChannelWidthAt( const double channel );
+    double gammaEnergyForChannelAt( const double channel );
     double gammaIntegralAt( const double energyLow, const double energyHigh );
     double gammaIntegralFor( const std::string& histogram, const double energyLow, const double energyHigh );
     double gammaSumAt( const double startBin, const double endBin );
@@ -128,7 +128,12 @@ public:  // Function methods (for parser, can combine with expressions)
     double gammaMinFor( const std::string& histogram );
     double gammaMax();
     double gammaMaxFor( const std::string& histogram );
-    
+  
+  double drfFWHM( const double energy );
+  double drfIntrinsicEff( const double energy );
+  double drfGeometricEff( const std::string &distance );
+  double drfEfficiency( const double energy, const std::string &distance );
+  
 protected:  /* Command methods (complete actions on Spectrum, cannot be used with parser)
              To add a new command in the Terminal tool:
                  1. Add the corresponding CommandType enum inside the TerminalModel Header file.
@@ -168,7 +173,7 @@ protected:  /* Command methods (complete actions on Spectrum, cannot be used wit
     std::string clearVar      ( const std::string& arguments );
     
     void addCommand(const std::string& command, CommandType type);
-    const std::regex commandRegex();
+    std::string commandRegex();
     std::string doCommand(const std::string& input);
     
     
@@ -206,6 +211,7 @@ protected:  // Internal helper methods
     float gammaChannelCentralEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
     float gammaChannelHigherEnergy( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
     float gammaChannelWidth( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
+    float gammaEnergyForChannel( std::shared_ptr<const SpecUtils::Measurement> histogram, const double channel );
     float gammaIntegral( std::shared_ptr<const SpecUtils::Measurement> histogram, const double energyLow, const double energyHigh );  // continous sum (energy)
     float gammaSum( std::shared_ptr<const SpecUtils::Measurement> histogram, const double startBin, const double endBin );            // discrete sum (bins)
     

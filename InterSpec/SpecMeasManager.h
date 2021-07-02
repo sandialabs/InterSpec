@@ -70,6 +70,7 @@ class UserFileInDb;
 class PopupDivMenu;
 class SpectraHeader;
 class InterSpec;
+class SimpleDialog;
 class SpecMeasManager;
 class SpectraFileModel;
 class PopupDivMenuItem;
@@ -185,6 +186,13 @@ public:
   bool handleNonSpectrumFile( const std::string &displayName,
                               const std::string &fileLocation );
   
+  enum class VariantChecksToDo
+  {
+    None = 0,
+    MultipleEnergyCal = 1,
+    DerivedDataAndEnergy = 2
+  };
+  
   // displayFile(...) displays the file passed in as specified type, if it can.
   //  --if kForground is specified and the measurment contains a background
   //    spectrum then the background will be loaded as well (as seperate graph).
@@ -223,7 +231,7 @@ public:
                     const SpecUtils::SpectrumType type,
                     bool checkIfPreviouslyOpened,
                     const bool doPreviousEnergyRangeCheck,
-                    const bool checkIfAppropriateForViewing
+                    const VariantChecksToDo viewingChecks
                     );
 
   std::shared_ptr<SpectraFileHeader> selectedFile() const; //returns first file selected (I think)
@@ -362,6 +370,11 @@ public:
   void handleFileDrop( const std::string &name,
                        const std::string &spoolName,
                        SpecUtils::SpectrumType type );
+  
+  void handleFileDropWorker( const std::string &name,
+                       const std::string &spoolName,
+                       SpecUtils::SpectrumType type,
+                       SimpleDialog *dialog );
 
 protected:
   //Called from inside displayFile(...) to see if there are options for
@@ -370,12 +383,13 @@ protected:
   //Returns true if the user needs to be prompted, false if loading file can
   //  be continued.
   //
-  //Throws excpetion if any input is invalid.
+  //Throws exception if any input is invalid.
   bool checkForAndPromptUserForDisplayOptions( std::shared_ptr<SpectraFileHeader> header,
                                               std::shared_ptr<SpecMeas> measement_ptr,
                                               const SpecUtils::SpectrumType type,
                                               const bool checkIfPreviouslyOpened,
-                                              const bool doPreviousEnergyRangeCheck );
+                                              const bool doPreviousEnergyRangeCheck,
+                                              const VariantChecksToDo viewingChecks );
 
   void selectEnergyBinning( const std::string binning,
                             std::shared_ptr<SpectraFileHeader> header,
@@ -384,13 +398,20 @@ protected:
                             const bool checkIfPreviouslyOpened,
                             const bool doPreviousEnergyRangeCheck );
   
+  enum class DerivedDataToKeep{ All, RawOnly, DerivedOnly };
+  void selectDerivedDataChoice( const DerivedDataToKeep tokeep,
+                           std::shared_ptr<SpectraFileHeader> header,
+                           std::shared_ptr<SpecMeas> meas,
+                           const SpecUtils::SpectrumType type,
+                           const bool checkIfPreviouslyOpened,
+                           const bool doPreviousEnergyRangeCheck );
+  
+  
 private:
   AuxWindow* m_spectrumManagerWindow;
   Wt::WContainerWidget *createButtonBar();
   void deleteSpectrumManager();
   Wt::WContainerWidget *createTreeViewDiv();
-  void createInfoHandler();
-  void refreshAdditionalInfo( bool clearInfo = false );
 
   
 protected:

@@ -433,7 +433,7 @@ public:
     m_label->addStyleClass( "CoefLabel" );
     
     m_value = new NativeFloatSpinBox( this );
-    m_value->addStyleClass( "CoefInput" );
+    m_value->setSpinnerHidden( true );
     
     m_fit = new WCheckBox( "Fit", this );
     m_fit->addStyleClass( "CoefFit" );
@@ -492,7 +492,7 @@ public:
     
     m_type = new WText( "&nbsp;", coefDiv );
     m_type->setInline( false );
-    m_type->addStyleClass( "CalType Wt-itemview Wt-header Wt-label" );
+    m_type->addStyleClass( "Wt-itemview Wt-header Wt-label CalType" );
     
     m_coefficients = new WContainerWidget( coefDiv );
     m_coefficients->addStyleClass( "CoefContent" );
@@ -500,9 +500,12 @@ public:
     m_devPairs = new DeviationPairDisplay();
     
 #if( HIDE_EMPTY_DEV_PAIRS )
+    //For files with multiple detectors, the "Add dev. pairs" buttons doesnt show up right
+    // for the detectors not currently showing - I guess should toggle dev pairs for all detectors.
     m_devPairs->setHidden( true );
-    m_addPairs = new WPushButton( "Add Dev. Pairs" );
-    m_addPairs->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
+    m_addPairs = new WPushButton( "Add dev. pairs" );
+    m_addPairs->addStyleClass( "LinkBtn" );
+    //m_addPairs->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
     m_addPairs->setHidden( true );
     m_addPairs->clicked().connect( this, &CalDisplay::showDevPairs );
 #endif
@@ -688,8 +691,10 @@ public:
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::FullRangeFraction:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+#if( !HIDE_EMPTY_DEV_PAIRS )
         if( m_devPairs->isHidden() )
           m_devPairs->show();
+#endif
         if( m_convertMsg )
         {
           delete m_convertMsg;
@@ -754,12 +759,22 @@ public:
       disp->m_fit->checked().connect( m_tool, &EnergyCalTool::updateFitButtonStatus );
       disp->m_fit->unChecked().connect( m_tool, &EnergyCalTool::updateFitButtonStatus );
       
+      /* Note: if the user uses the up.down arrows in a NativeFloatSpinBox to change values, things
+               get all messed up (new values get set via c++ messing  up current values, or the
+               valueChanged() callback gets called like 10 times per second, causing changes faster
+               than everything can keep up, and just generally poor working), so for now I have
+               disabled these spinners via #NativeFloatSpinBox::setSpinnerHidden()
+       */
       disp->m_value->valueChanged().connect( boost::bind(&EnergyCalTool::userChangedCoefficient, m_tool, coefnum, this) );
     }
     
     
     //Set the step size to move the upper range of energy by about 1 keV per step
     // Set up the little tick/spin/whatever boxes
+    /*
+     //The NativeFloatSpinBox::setSpinnerHidden() call is currently removing the spin-box up/down
+     //  arrow, so we wont set the step-size, as on Firefox if we fit for a value, then it will turn
+     //  red if the new value doesnt hit on the step size
     for( size_t i = 0; i < coef_disps.size(); ++i )
     {
       CoefDisplay *disp = coef_disps[i];
@@ -789,6 +804,8 @@ public:
       
       disp->m_value->setSingleStep( stepsize );
     }//for( int i = 0; i < sm_numCoefs; ++i )
+     */
+    
   }//updateToGui(...)
   
   
@@ -890,7 +907,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   
   
-  const bool showToolTipInstantly = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setVerticalSpacing( 0 );
@@ -984,7 +1001,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     m_moreActions[static_cast<int>(index)]->clicked().connect( boost::bind(&EnergyCalTool::moreActionBtnClicked, this, index) );
     
     if( tooltip )
-      HelpSystem::attachToolTipOn( holder, tooltip, showToolTipInstantly );
+      HelpSystem::attachToolTipOn( holder, tooltip, showToolTips );
   }//for( loop over more actions )
   
   WContainerWidget *btndiv = new WContainerWidget();
@@ -1004,7 +1021,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   HelpSystem::attachToolTipOn( m_fitCalBtn, "Uses the expected energy of photopeaks "
   "associated with the fit peaks to fit for the energy coefficients.  This button is disabled if no"
   " coefficients are selected to fit for, or less peaks than coefficents are selected.",
-  showToolTipInstantly );
+                              showToolTips );
   
   
   
@@ -1585,13 +1602,16 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
   {
     //Shouldnt ever happen; check is for development
     string msg = "There was an internal error updating energy calibration - energy cal"
-    " associated with GUI wasnt updated - energy calibation state is suspect";
+    " associated with GUI wasn't updated - energy calibration state is suspect";
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, msg.c_str() );
 #endif
     
     m_interspec->logMessage( msg, "", 3 );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
     assert( 0 );
+#endif
   }//if( updated_cals.find(disp_prev_cal) == end(updated_cals) )
   
   
@@ -1888,8 +1908,61 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
 
 void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display )
 {
+  cout << "EnergyCalTool::userChangedCoefficient" << endl;
   using namespace SpecUtils;
   assert( coefnum < 10 );  //If we ever allow lower channel energy adjustment this will need to be removed
+  
+  shared_ptr<const EnergyCalibration> disp_prev_cal = display->lastSetCalibration();
+  if( !disp_prev_cal )
+  {
+    cerr << "unexpected error getting updaettd energy calibration coefficents" << endl;
+    m_interspec->logMessage( "Unexpected error retrieving previous calibration coefficients - not applying changes", "", 2 );
+    doRefreshFromFiles();
+    return;
+  }//if( !disp_prev_cal )
+  
+  
+  {// Begin check to make sure the changed energy cal is actually checked for it to be applied to...
+    bool willBeAppliedToDisplay = false;
+    const std::string &detname = display->detectorName();
+    const SpecUtils::SpectrumType type = display->spectrumType();
+    std::shared_ptr<SpecMeas> cal_disp_meas = m_interspec->measurment(type);
+    assert( cal_disp_meas );
+    
+    for( const MeasToApplyCoefChangeTo &delta : measurementsToApplyCoeffChangeTo() )
+    {
+      const shared_ptr<SpecMeas> &meas = delta.meas;
+      if( meas != cal_disp_meas )
+        continue;
+      
+      const set<string> &detectors = delta.detectors;
+      if( !detectors.count(detname) )
+        continue;
+      
+      // Actually, I think if we're here, we're probably good, but we'll check a little deeper to
+      //   make sure check in EnergyCalTool::applyCalChange will be satisfied
+      const set<int> &samples = delta.sample_numbers;
+      for( const int sample : samples )
+      {
+        auto m = meas->measurement( sample, detname);
+        willBeAppliedToDisplay = (m && (m->energy_calibration() == disp_prev_cal));
+        if( willBeAppliedToDisplay )
+          break;
+      }//for( const int sample : samples )
+    
+      if( willBeAppliedToDisplay )
+        break;
+    }//for( loop over changes )
+    
+    if( !willBeAppliedToDisplay )
+    {
+      m_interspec->logMessage( "It looks like the energy calibration you changed isn't marked"
+                               " for changes to be applied to; please correct that.", "", 2 );
+      doRefreshFromFiles();
+      return;
+    }
+  }// End check to make sure the changed energy cal is actually checked for it to be applied to...
+  
   
   m_lastGraphicalRecal = 0;
   m_lastGraphicalRecalType = EnergyCalGraphicalConfirm::NumRecalTypes;
@@ -1898,13 +1971,6 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   vector<float> dispcoefs = display->displayedCoefficents();
   if( dispcoefs.size() <= coefnum )
     dispcoefs.resize( coefnum+1, 0.0f );
-  
-  shared_ptr<const EnergyCalibration> disp_prev_cal = display->lastSetCalibration();
-  if( !disp_prev_cal )
-  {
-    cerr << "unexpected error getting updaettd energy calibration coefficents" << endl;
-    return;
-  }
   
   vector<float> prev_disp_coefs = disp_prev_cal->coefficients();
   if( prev_disp_coefs.size() <= coefnum )
@@ -2159,7 +2225,7 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   if( num_updated == 0 )
   {
     display->updateToGui( old_cal );
-    m_interspec->logMessage( "There was an eror setting deviation pairs for this detector.", "", 2 );
+    m_interspec->logMessage( "There was an error setting deviation pairs for this detector.", "", 2 );
     return;
   }
   
@@ -2306,6 +2372,10 @@ void EnergyCalTool::specTypeToDisplayForChanged()
 
 bool EnergyCalTool::canDoEnergyFit()
 {
+  // Check that "Apply Changes To" for the "Foreground" is checked, otherwise fitting makes no sense
+  if( !m_applyToCbs[ApplyToCbIndex::ApplyToForeground]->isChecked() )
+    return false;
+  
   // Check if there are any peaks currently showing.
   shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks = m_peakModel->peaks();
   if( !peaks )
@@ -2372,7 +2442,49 @@ void EnergyCalTool::fitCoefficients()
     if( !caldisp )  //shouldnt ever happen, but JIC
       throw runtime_error( "Unexpected error determining current calibration" );
     
+    // The spectrum may not be displaying the detector we are currently seeing the calibration for
+    //  lets make sure of this, and if so, switch to one we are displaying
+    string detname = caldisp->detectorName();
+    int previousSpecTypeInd = m_specTypeMenu ? m_specTypeMenu->currentIndex() : 0;
+    const auto type = (previousSpecTypeInd == 1)
+                          ? SpecUtils::SpectrumType::Background
+                          : (previousSpecTypeInd==2
+                            ? SpecUtils::SpectrumType::SecondForeground
+                            : SpecUtils::SpectrumType::Foreground);
+    const vector<string> displayed = m_interspec->detectorsToDisplay( type );
+    
+    if( std::find(begin(displayed), end(displayed), detname) == end(displayed) )
+    {
+      if( previousSpecTypeInd >= 0
+         && previousSpecTypeInd < 3
+         && m_detectorMenu[previousSpecTypeInd] )
+      {
+        for( WMenuItem *item : m_detectorMenu[previousSpecTypeInd]->items() )
+        {
+          const string thisdetname = item->text().toUTF8();
+          if( std::find(begin(displayed), end(displayed), thisdetname) != end(displayed) )
+          {
+            item->select();
+            cout << "Starting from " << caldisp << endl;
+            caldisp = dynamic_cast<EnergyCalImp::CalDisplay *>( m_calInfoDisplayStack->currentWidget() );
+            cout << "  we moved to " << caldisp << endl;
+            if( !caldisp )  //shouldnt ever happen, but JIC
+              throw runtime_error( "Unexpected error determining current calibration" );
+            
+            detname = caldisp->detectorName();
+          }//if( we found a displayed detector )
+        }//for( loop over menu items to find a displayed detector )
+      }else
+      {
+        throw runtime_error( "Please select calibration of a displayed detector" );
+      }
+    }//if( std::find(begin(displayed), end(displayed), detname) == end(displayed) )
+    
+        
     auto original_cal = caldisp->lastSetCalibration();
+    
+    
+    
     switch( original_cal->type() )
     {
       case SpecUtils::EnergyCalType::LowerChannelEdge:
@@ -2635,9 +2747,8 @@ void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
     m_graphicalRecal = nullptr;
   }//if( m_graphicalRecal )
   
-  const bool showToolTipInstantly
-  = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
-  if( showToolTipInstantly )
+  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  if( showToolTips )
   {
 #if( USE_SPECTRUM_CHART_D3 )
     m_interspec->logMessage( "If you recalibrate again by ALT+CTRL+DRAG on"
@@ -2650,7 +2761,7 @@ void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
                             " option of preserving the effects of this calibration"
                             " as well.", "", 1 );
 #endif
-  }//if( showToolTipInstantly )
+  }//if( showToolTips )
 }//void deleteGraphicalRecalConfirmWindow()
 
 
@@ -2696,6 +2807,15 @@ string EnergyCalTool::applyToSummaryTxt() const
 
 void EnergyCalTool::doRefreshFromFiles()
 {
+  //Labels for horizantal labels when you have mutliple spectra shown, and at least one of them has
+  //  more than one detectors
+  const char * const spec_type_labels[3] = {"For.","Back","Sec."};
+  const char * const spec_type_labels_vert[3] = {"Foreground", "Background", "Secondary"};
+  
+  
+  
+  
+  
   string prevdet[3];
   int previousSpecInd = m_specTypeMenu ? m_specTypeMenu->currentIndex() : 0;
   
@@ -2735,16 +2855,164 @@ void EnergyCalTool::doRefreshFromFiles()
   
   const bool isWide = (m_tallLayoutContent ? false : true);
   
+  //If each spectrum file has only a single detector, then instead of having vertical menu display
+  //  detector name, we will have "For.", "Back", "Sec."
+  bool specTypeInForgrndMenu = true;
+  
   //If we try to re-use the menu and stacks, for some reason the calibration coefficents wont show
   //  up if we alter which background/secondary spectra are showing... not sure why, but for the
   //  moment we'll just re-create the menus and stacks... not great, but works, for the moment.
-  //
+  bool needStackRefresh = false;
+  
+  // Get the detector names, for the displayed sample numbers, for each spectrum type
+  set<string> disp_det_names[3];
+  
+  int nFilesWithCalInfo = 0;
+  
   // We want to preserve wich "Fit" check boxes are set.
   map< pair<SpecUtils::SpectrumType,string>, set<size_t> > set_fit_for_cbs;
   
-  bool specTypeInForgrndMenu = true;
   
-  {//begin codeblock to refresh the stacks
+  {//begin code-block to see if we need to refresh stack
+    
+    //TODO: need to check that isWide hasnt changed, and if it has set needStackRefresh=true
+    
+    //Check if we can put "For.", "Back", "Sec." on the vertical menu instead of detector names
+    for( int i = 0; i < 3; ++i )
+    {
+      disp_det_names[i] = gammaDetectorsForDisplayedSamples( spectypes[i] );
+      specTypeInForgrndMenu = (specTypeInForgrndMenu && (disp_det_names[i].size() <= 1));
+      
+      if( !disp_det_names[i].empty() )
+        nFilesWithCalInfo += 1;
+    }//for( int i = 0; i < 3; ++i )
+    
+    if( !m_specTypeMenu )
+    {
+      //cout << "needStackRefresh: m_specTypeMenu == nullptr" << endl;
+      needStackRefresh = true;
+    }
+    
+    for( int i = 0; !needStackRefresh && (i < 3); ++i )
+    {
+      WMenuItem *typeItem = m_specTypeMenu->itemAt(i);
+      if( !typeItem )
+      {
+        //cout << "needStackRefresh: !typeItem" << endl;
+        needStackRefresh = true;
+        continue;
+      }
+      
+      WMenu *detMenu = m_detectorMenu[(specTypeInForgrndMenu ? 0 : i)];
+      
+      if( !detMenu )
+      {
+        //cout << "needStackRefresh: !detMenu" << endl;
+        needStackRefresh = true;
+        continue;
+      }
+      
+      if( !specTypeInForgrndMenu && ((!detMenu) != (!specfiles[i])) )
+      {
+        //cout << "needStackRefresh: (!detMenu != !specfiles[i])" << endl;
+        needStackRefresh = true;
+        continue;
+      }
+      
+      if( specTypeInForgrndMenu )
+      {
+        if( specfiles[i] )
+        {
+          //Make sure one of the widgets have spec_type_labels_vert[i] in it
+          needStackRefresh = true;
+          for( int w = 0; needStackRefresh && (w < detMenu->count()); ++w )
+          {
+            auto item = detMenu->itemAt(w);
+            needStackRefresh = !(item && (item->text() == WString(spec_type_labels_vert[i])));
+          }
+          
+          //if( needStackRefresh )
+          //  cout << "needStackRefresh: Did not have a menu entry for specfile[" << i << "]" << endl;
+        }else
+        {
+          //Make sure none of the widgets have spec_type_labels_vert[i] in them
+          for( int w = 0; !needStackRefresh && (w < detMenu->count()); ++w )
+          {
+            auto item = detMenu->itemAt(w);
+            needStackRefresh = (!item || (item->text() == WString(spec_type_labels_vert[i])));
+          }
+          
+          //if( needStackRefresh )
+          //  cout << "needStackRefresh: For empty place " << i << " had a menu entry, but no spectrum file" << endl;
+        }//if( specfiles[i] ) / else
+      }else
+      {
+        assert( m_specTypeMenu );
+        WMenuItem *item = m_specTypeMenu->itemAt(i);
+        assert( item );
+     
+        if( !item )
+        {
+          //Shouldnt ever get here I think
+          needStackRefresh = true;
+          continue;
+        }//if( !item )
+        
+        if( !specfiles[i] )
+        {
+          //If there is no spectrum file for index i, item should be hidden, and if not need a refresh
+          needStackRefresh = !item->isHidden();
+          //if( needStackRefresh )
+          //  cout << "needStackRefresh: item is not hidden for missing spectrum " << i << endl;
+          continue;
+        }//if( !specfiles[i] )
+        
+        if( item->isHidden() )
+        {
+          //If item is hidden, but here we do have a spectrum file, we need a refresh
+          //cout << "needStackRefresh: item is hidden for " << i << endl;
+          needStackRefresh = true;
+          continue;
+        }//if( item->isHidden() )
+        
+        
+        //Need to check all the detectors are the same names
+        set<string> detsInMenu;
+        for( int j = 0; j < detMenu->count(); ++j )
+        {
+          auto detitem = detMenu->itemAt(j);
+          if( detitem )
+            detsInMenu.insert( detitem->text().toUTF8() );
+        }//for( int j = 0; j < detMenu->count(); ++j )
+        
+        needStackRefresh = (detsInMenu != disp_det_names[i]);
+        //if( needStackRefresh )
+        //  cout << "needStackRefresh: New det names dont equal old for type=" << i << endl;
+      }//if( specTypeInForgrndMenu ) / else
+    }//for( int i = 0; i < 3; ++i )
+
+    
+  }//end code-block to see if we need to refresh stack
+  
+  //Dont show spectype menu (the vertical "For.", "Back", "Sec." menu), if we dont need to
+  const bool hideSpecType = ( specTypeInForgrndMenu
+                             || (nFilesWithCalInfo < 2)
+                             || ( (!specfiles[1] || (specfiles[0]==specfiles[1]))
+                                 && (!specfiles[2] || (specfiles[0]==specfiles[2]))) );
+  
+  if( !m_specTypeMenu || (m_specTypeMenu->isHidden() != hideSpecType) )
+  {
+    //cout << "needStackRefresh: m_specTypeMenu->isHidden() != hideSpecType" << endl;
+    needStackRefresh = true;
+  }
+  
+  //cout << "needStackRefresh=" << needStackRefresh << endl;
+  
+  // TODO: instead of the above logic to catch when we need to refresh (\e.g., create all new)
+  //       widgets, should combine it with the logic to create new widgets, but only delte or create
+  
+  if( needStackRefresh )
+  {
     for( int i = 0; i < 3; ++i )
     {
       if( m_detectorMenu[i] )
@@ -2766,7 +3034,8 @@ void EnergyCalTool::doRefreshFromFiles()
         delete m_detectorMenu[i];
       }
       m_detectorMenu[i] = nullptr;
-    }
+    }//for( int i = 0; i < 3; ++i )
+    
     delete m_specTypeMenuStack;
     delete m_specTypeMenu;
     m_specTypeMenuStack = nullptr;
@@ -2794,8 +3063,6 @@ void EnergyCalTool::doRefreshFromFiles()
     m_calInfoDisplayStack->setTransitionAnimation( animation );
     callayout->addWidget( m_calInfoDisplayStack, 1, 1 );
     
-    const char * const labels[3] = {"For.","Back","Sec."};
-    
     /// \TODO: only create these menus when actually needed, so we wont need to
     for( int i = 0; i < 3; ++i )
     {
@@ -2809,24 +3076,21 @@ void EnergyCalTool::doRefreshFromFiles()
         continue;
       }
       
-      const SpecUtils::SpectrumType type = spectypes[i];
-      const set<string> detectors = gammaDetectorsForDisplayedSamples(type);
-      if( detectors.size() > 1 )
-        specTypeInForgrndMenu = false;
-      
       WContainerWidget *detMenuDiv = new WContainerWidget();  //this holds the WMenu for this SpecFile
       detMenuDiv->addStyleClass( "DetMenuDiv" );
       
-      WMenuItem *item = m_specTypeMenu->addItem( labels[i], detMenuDiv, WMenuItem::LoadPolicy::PreLoading );
+      WMenuItem *item = m_specTypeMenu->addItem( spec_type_labels[i], detMenuDiv, WMenuItem::LoadPolicy::PreLoading );
       //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
       item->clicked().connect( boost::bind(&WMenuItem::select, item) );
       
       m_detectorMenu[i] = new WMenu( m_calInfoDisplayStack, detMenuDiv );
-      m_detectorMenu[i]->addStyleClass( "VerticalMenu DetCalMenu" );
+      m_detectorMenu[i]->addStyleClass( "VerticalNavMenu HeavyNavMenu DetCalMenu" );
       
       m_detectorMenu[i]->itemSelected().connect( this, &EnergyCalTool::updateFitButtonStatus );
     }//for( int i = 0; i < 3; ++i )
-  }//end codeblock to refresh the stacks
+  }//if( needStackRefresh )
+  
+
   
   if( !specfiles[0] )
   {
@@ -2843,7 +3107,6 @@ void EnergyCalTool::doRefreshFromFiles()
   }
   
   
-  int nFilesWithCalInfo = 0;
   bool selectedDetToShowCalFor = false;
   bool hasFRFCal = false, hasPolyCal = false, hasLowerChanCal = false;
   
@@ -2865,7 +3128,7 @@ void EnergyCalTool::doRefreshFromFiles()
     assert( meas );
     
     const set<int> &samples = m_interspec->displayedSamples(type);
-    const set<string> detectors = gammaDetectorsForDisplayedSamples(type);
+    const set<string> &detectors = disp_det_names[i];
     
     specdetnames[i] = detectors;
     
@@ -2877,7 +3140,6 @@ void EnergyCalTool::doRefreshFromFiles()
       continue;
     }
     
-    nFilesWithCalInfo += 1;
 
     assert( specItem );
     specItem->setHidden( false );
@@ -2890,7 +3152,7 @@ void EnergyCalTool::doRefreshFromFiles()
         if( !m || (m->num_gamma_channels() <= 4) )
           continue;
         
-        auto calcontent = new EnergyCalImp::CalDisplay( this, type, detname, isWide );
+        shared_ptr<const SpecUtils::EnergyCalibration> energycal = m->energy_calibration();
         
         string displayname = detname;
         
@@ -2899,25 +3161,50 @@ void EnergyCalTool::doRefreshFromFiles()
           /// \TODO: when specTypeInForgrndMenu is true, we may not match detector name because
           ///        we are getting the menu item text above and assuming the detector name.
           ///        should fix this.
-          switch( type )
-          {
-            case SpecUtils::SpectrumType::Foreground:       displayname = "Foreground"; break;
-            case SpecUtils::SpectrumType::SecondForeground: displayname = "Secondary";  break;
-            case SpecUtils::SpectrumType::Background:       displayname = "Background"; break;
-          }//switch( type )
+          displayname = spec_type_labels_vert[i];
         }//if( specTypeInForgrndMenu )
         
-        WMenuItem *item = detMenu->addItem( WString::fromUTF8(displayname), calcontent, WMenuItem::LoadPolicy::PreLoading );
+        WMenuItem *item = nullptr;
+        if( !needStackRefresh )
+        {
+          for( int j = 0; !item && (j < detMenu->count()); ++j )
+          {
+            auto jitem = detMenu->itemAt(j);
+            if( jitem && (jitem->text() == WString(displayname)) )
+              item = jitem;
+          }
+        }//if( !needStackRefresh )
         
-        //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-        item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+        if( item )
+        {
+          WWidget *ww = item->contents();
+          EnergyCalImp::CalDisplay *calcontent = dynamic_cast<EnergyCalImp::CalDisplay *>(ww);
+          assert( calcontent );
+          if( calcontent )
+            calcontent->updateToGui( energycal );
+          else
+            item = nullptr;
+        }//if( item )
         
-        shared_ptr<const SpecUtils::EnergyCalibration> energycal = m->energy_calibration();
-        calcontent->updateToGui( energycal );
-        
-        const auto fitfor_iter = set_fit_for_cbs.find( {type,displayname} );
-        if( fitfor_iter != end(set_fit_for_cbs) )
-          calcontent->setFitFor( fitfor_iter->second );
+        if( !item )
+        {
+          auto calcontent = new EnergyCalImp::CalDisplay( this, type, detname, isWide );
+          item = detMenu->addItem( WString::fromUTF8(displayname), calcontent, WMenuItem::LoadPolicy::PreLoading );
+          //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
+          item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+          calcontent->updateToGui( energycal );
+          
+          const auto fitfor_iter = set_fit_for_cbs.find( {type,displayname} );
+          if( fitfor_iter != end(set_fit_for_cbs) )
+            calcontent->setFitFor( fitfor_iter->second );
+          
+          if( (displayname == prevdet[i]) && (i == previousSpecInd) )
+          {
+            m_specTypeMenu->select( previousSpecInd );
+            detMenu->select( item );
+            selectedDetToShowCalFor = true;
+          }
+        }//if( !item )
         
         if( energycal )
         {
@@ -2940,37 +3227,20 @@ void EnergyCalTool::doRefreshFromFiles()
               break;
           }//switch( energycal->type() )
         }//if( energycal )
-        
-        
-        if( (displayname == prevdet[i]) && (i == previousSpecInd) )
-        {
-          m_specTypeMenu->select( previousSpecInd );
-          detMenu->select( item );
-          selectedDetToShowCalFor = true;
-        }
-        
+      
         break;
       }
     }//for( const string &detname : detectors )
   }//for( int i = 0; i < 3; ++i )
   
-  if( !selectedDetToShowCalFor && m_detectorMenu[0] && m_detectorMenu[0]->count() )
+  if( needStackRefresh && !selectedDetToShowCalFor && m_detectorMenu[0] && m_detectorMenu[0]->count() )
   {
     m_specTypeMenu->select( 0 );
     m_detectorMenu[0]->select( 0 );
   }
   
   setShowNoCalInfo( !nFilesWithCalInfo );
-  
-  
-  
-  
-  //Dont show spectype menu if we dont need to
-  const bool showSpecType = ( specTypeInForgrndMenu
-                              || (nFilesWithCalInfo < 2)
-                              || ( (!specfiles[1] || (specfiles[0]==specfiles[1]))
-                                    && (!specfiles[2] || (specfiles[0]==specfiles[2]))) );
-  m_specTypeMenu->setHidden( showSpecType );
+  m_specTypeMenu->setHidden( hideSpecType );
   
   bool anyApplyToCbShown = false;
   for( ApplyToCbIndex index = static_cast<ApplyToCbIndex>(0);
@@ -3216,6 +3486,9 @@ void EnergyCalTool::applyToCbChanged( const EnergyCalTool::ApplyToCbIndex index 
   switch( index )
   {
     case EnergyCalTool::ApplyToForeground:
+      updateFitButtonStatus();
+      break;
+      
     case EnergyCalTool::ApplyToBackground:
     case EnergyCalTool::ApplyToSecondary:
       break;

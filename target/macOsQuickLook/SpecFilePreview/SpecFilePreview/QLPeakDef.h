@@ -6,6 +6,7 @@
  functionality.
  */
 
+#include <map>
 #include <memory>
 #include <vector>
 #include <utility>
@@ -14,7 +15,7 @@
 
 //Forward declaration
 class QLPeakDef;
-class Measurement;
+namespace SpecUtils{ class Measurement; }
 
 namespace rapidxml
 {
@@ -73,10 +74,10 @@ struct QLPeakContinuum
   const std::vector<double> &parameters() const { return m_values; }
   const std::vector<double> &unertainties() const { return m_uncertainties; }
   std::vector<bool> fitForParameter() const { return m_fitForValue; }
-  std::shared_ptr<const Measurement> externalContinuum() const { return m_externalContinuum; }
+  std::shared_ptr<const SpecUtils::Measurement> externalContinuum() const { return m_externalContinuum; }
   
   //setGlobalContinuum: throws if not a External OffsetType.
-  void setExternalContinuum( const std::shared_ptr<const Measurement> &data );
+  void setExternalContinuum( const std::shared_ptr<const SpecUtils::Measurement> &data );
  
   //setRange: sets the energy range this continuum is applicable for
   void setRange( const double lowerenergy, const double upperenergy );
@@ -87,7 +88,7 @@ struct QLPeakContinuum
   //  nSideBinToAverage is the number of bins on each side of x0_bin and x1_bin
   //  that should be used to find data y-hieght for that respective side of
   //  continuum
-  void calc_linear_continuum_eqn( const std::shared_ptr<const Measurement> &data,
+  void calc_linear_continuum_eqn( const std::shared_ptr<const SpecUtils::Measurement> &data,
                                   const double x0, const double x1,
                                   const int nSideBinToAverage );
 
@@ -119,7 +120,7 @@ struct QLPeakContinuum
   static void eqn_from_offsets( size_t lowchannel,
                                 size_t highchannel,
                                 const double referenceEnergy,
-                                const std::shared_ptr<const Measurement> &data,
+                                const std::shared_ptr<const SpecUtils::Measurement> &data,
                                 const size_t nbinEachSide,
                                 double &m, double &y0 );
   
@@ -175,7 +176,7 @@ protected:
   //  XXX - need to verify when writing a QLSpecMeas object to a native file, if
   //        multiple peaks share a global continuum, it is only written once in
   //        the file.
-  std::shared_ptr<const Measurement> m_externalContinuum;
+  std::shared_ptr<const SpecUtils::Measurement> m_externalContinuum;
   
   static const int sm_xmlSerializationVersion;
 };//struct QLPeakContinuum
@@ -256,7 +257,7 @@ public:
   //  strait line spanning lowerx and upperx will be used.
   //This usage of QLPeakDef has not been well tested
   QLPeakDef( double lowerx, double upperx, double mean,
-            std::shared_ptr<const Measurement> data, std::shared_ptr<const Measurement> background );
+            std::shared_ptr<const SpecUtils::Measurement> data, std::shared_ptr<const SpecUtils::Measurement> background );
 
 //  QLPeakDef( const QLPeakDef &rhs );
 //  const QLPeakDef &operator=( const QLPeakDef &rhs );

@@ -1,0 +1,47 @@
+--- src/Wt/Dbo/ptr.orig	2020-12-03 12:46:51.000000000 -0800
++++ src/Wt/Dbo/ptr	2020-12-03 12:51:43.000000000 -0800
+@@ -33,7 +33,7 @@
+ 				     const std::string& needle);
+ 
+   struct WTDBO_API ParameterBase {
+-    virtual ~ParameterBase();
++    virtual ~ParameterBase() noexcept(false);
+     virtual ParameterBase *clone() const = 0;
+     virtual void bind(SaveBaseAction& binder) = 0;
+   };
+@@ -86,7 +86,7 @@
+     : session_(session), version_(version), state_(state), refCount_(0)
+   { }
+ 
+-  virtual ~MetaDboBase();
++  virtual ~MetaDboBase() noexcept(false);
+ 
+   virtual void flush() = 0;
+   virtual void bindId(SqlStatement *statement, int& column) = 0;
+@@ -343,7 +343,7 @@
+   typedef typename dbo_traits<C>::IdType IdType;
+ 
+   MetaDbo(C *obj);
+-  virtual ~MetaDbo();
++  virtual ~MetaDbo() noexcept(false);
+ 
+   virtual void flush();
+   virtual void bindId(SqlStatement *statement, int& column);
+@@ -481,7 +481,7 @@
+ {
+ public:
+   ptr_base() { }
+-  virtual ~ptr_base();
++  virtual ~ptr_base() noexcept(false);
+ 
+   virtual void transactionDone(bool success) = 0;
+ };
+@@ -576,7 +576,7 @@
+    * This method will delete the transient copy of the database object if
+    * it is not referenced by any other pointer.
+    */
+-  virtual ~ptr();
++  virtual ~ptr() noexcept(false);
+ 
+   /*! \brief Resets the pointer.
+    *
