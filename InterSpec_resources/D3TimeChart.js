@@ -215,7 +215,7 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
 
-  // minimum selection width option. Default value taken from D3SpectrumChart
+  // minimum selection width option. Currently only applies to "zoom" selection. Default value copied from D3SpectrumChart
   if (typeof this.options.minSelectionWidth !== "number")
     this.options.minSelectionWidth = 8;
 
@@ -293,7 +293,7 @@ D3TimeChart = function (elem, options) {
       sampleNumberToIndexMap: null,
       unzoomedCompressionIndex: 0,
     },
-    selection: null, // maybe would have been better to have named this "zoom": stores data related to zoom selection (e.g. data domain of magnified area, corresponding compression index to use for plotting this magnified data). NOTE: set to null when zoomed all the way out.
+    selection: null, // maybe would have been better to have named this "zoom": stores data related to zoom selection (e.g. x data domain of magnified area, corresponding compression index to use for plotting this magnified data). IMPORTANT NOTE: set to null when zoomed all the way out.
     regions: null,
     brush: new BrushX(),
     height: null,
@@ -362,6 +362,7 @@ D3TimeChart = function (elem, options) {
       evt.key >= "A" &&
       evt.key <= "Z"
     ) {
+      // convert uppercase char to lowercase
       var unmodifiedEventKey = String.fromCharCode(evt.key.charCodeAt() + 32);
       self.keysHeld[unmodifiedEventKey] = true;
     } else {
@@ -388,6 +389,7 @@ D3TimeChart = function (elem, options) {
       evt.key >= "A" &&
       evt.key <= "Z"
     ) {
+      // convert uppercase char to lowercase
       var unmodifiedEventKey = String.fromCharCode(evt.key.charCodeAt() + 32);
       delete self.keysHeld[unmodifiedEventKey];
     } else {
@@ -625,10 +627,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     brush.setScale(scales.xScale);
   }
   // DEFINE HANDLERS AND LISTENERS
-  // TODO: To add additional touch functionality, add analogous touch gestures (to right click, alt key, ctrl key-- to perform zoom and background selection)
 
   /**
-   * Handler for the initiation of a selection gesture.
+   * Callback for handling the initiation of a selection gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
    */ 
   var startSelection = (options) => {
     if (options && options.touch) {
@@ -704,7 +706,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   };
 
   /**
-   * Handler for the progression of a selection gesture.
+   * Callback for handling the progression of a selection gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
    */
   var moveSelection = (options) => {
     if (options && options.touch) {
@@ -745,7 +748,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   };
 
   /**
-   * Handler for the termination of a selection gesture.
+   * Callback for handling the termination of a selection gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
    */
   var endSelection = (options) => {
     if (options && options.touch) {
@@ -778,7 +782,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
             // handle foreground or background selection
 
             // only enable highlighting if brush forward, for more alignment with expected behavior
-            if (lIdx < rIdx) {
+            if (brush.getStart() <= brush.getEnd()) {
               // Defined from docs on Wt::KeyboardModifier
               var keyModifierMap = {
                 altKey: 0x4,
@@ -847,6 +851,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   var newSelection = null;
   var newScale = brush.getScale();
 
+  /**
+   * Callback for handling the initiation of a panning gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
+   */
   var startPanDragSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
@@ -864,6 +872,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     d3.select("body").style("cursor", "ew-resize");
   };
 
+  /**
+   * Callback for handling the progression of a panning gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
+   */
   var movePanDragSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
@@ -886,6 +898,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     }
   };
 
+  /**
+   * Callback for handling the termination of a panning gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
+   */
   var endPanDragSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
@@ -915,7 +931,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   this.bottomAxisRect.call(panDrag);
 
-  // Special behavior for PAN interaction mode.
+  // Special behavior for PAN interaction mode, which allows panning by dragging on the main interaction area of the chart
   if (this.userInteractionMode === this.UserInteractionModeEnum.PAN) {
     this.rect
       .on("touchstart", () => startPanDragSelection({ touch: true }))
@@ -1481,6 +1497,7 @@ D3TimeChart.prototype.updateChart = function (
         this.horizontalLeftGridG.selectAll("g.tick");
       horizontalLeftGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
+        // special handling for grid lines would be added here. (e.g. classifying grid lines as minor or major)
       });
     } else {
       this.horizontalLeftGridG.selectAll("*").remove();
@@ -1560,6 +1577,7 @@ D3TimeChart.prototype.updateChart = function (
         this.horizontalRightGridG.selectAll("g.tick");
       horizontalRightGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
+        // special handling for grid lines would be added here. (e.g. classifying grid lines as minor or major)
       });
     } else {
       this.horizontalRightGridG.selectAll("*").remove();
@@ -2310,8 +2328,8 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var zoomStepSize =
     0.001 * Math.exp(2, this.state.data.unzoomedCompressionIndex);
 
-  let newLeftExtent;
-  let newRightExtent;
+  var newLeftExtent = null;
+  var newRightExtent = null;
 
   if (Math.abs(deltaY) >= Math.abs(deltaX)) {
     // if scroll vertical, zoom
@@ -2327,7 +2345,7 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
     );
   } else {
     // if scroll horizontal, pan
-    let panStepSize =
+    var panStepSize =
       deltaX *
       0.1 *
       this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
