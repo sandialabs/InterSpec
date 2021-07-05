@@ -272,6 +272,9 @@ void InterSpecApp::setupDomEnvironment()
   require("InterSpec_resources/assets/js/jquery.qtip.min.js");
   require("InterSpec_resources/assets/js/imagesloaded.pkg.min.js");
   
+  // For older browsers (primarily the WkWebView for macOS Mojave (10.14) and older).
+  require("InterSpec_resources/assets/js/resize-observer-polyfill/ResizeObserver.js", "ResizeObserver");
+  
   useStyleSheet( "InterSpec_resources/InterSpec.css" );
   doJavaScript( "if(typeof console==='undefined'){console={log:function(){}};}" );
   
