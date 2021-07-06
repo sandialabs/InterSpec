@@ -72,4 +72,11 @@ xcuserdata/
 *.dSYM
 target/electron/node_modules/.bin/asar
 
+# Incase you copy Wt resource directory to base code dir
+resources/
+
 target/electron/LibInterSpec/
+InterSpec_resources/SpectrumChartD3.js
+InterSpec_resources/SpectrumChartD3.css
+InterSpecUserData.db
+InterSpec_resources/d3.v3.min.js
