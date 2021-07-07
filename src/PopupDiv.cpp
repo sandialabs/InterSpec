@@ -682,6 +682,8 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
 
 #if( USING_ELECTRON_NATIVE_MENU || USE_OSX_NATIVE_MENU )
   const bool useNativeMenu = InterSpecApp::isPrimaryWindowInstance();
+#else
+  const bool useNativeMenu = false;
 #endif
   
 #if( USING_ELECTRON_NATIVE_MENU )
@@ -704,8 +706,16 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
   {
     if( m_mobile)
     {
-      if( m_type != TransientMenu )
-        menuParent->clicked().connect( this, &PopupDivMenu::showMobile );
+      switch( m_type )
+      {
+        case AppLevelMenu:
+          menuParent->clicked().connect( this, &PopupDivMenu::showMobile );
+          break;
+          
+        case TransientMenu:
+          menuParent->setMenu( this );
+          break;
+      }//switch( m_type )
     }else
     {
 #if(USE_OSX_NATIVE_MENU)
@@ -728,7 +738,10 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
       }
 #endif
       
-      setupDesktopMenuStuff();
+      if( !useNativeMenu && (menutype == AppLevelMenu) )
+        setupDesktopMenuStuff();
+      else
+        menuParent->setMenu( this );
     } //if( m_mobile) / else
   }else //if( menuParent )
   {
