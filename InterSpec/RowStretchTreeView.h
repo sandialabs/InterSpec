@@ -42,7 +42,7 @@ class RowStretchTreeView : public Wt::WTreeView
    */
 
 public:
-  RowStretchTreeView();
+  RowStretchTreeView( Wt::WContainerWidget *parent = nullptr );
   virtual ~RowStretchTreeView(){}
   
   //Setting the width of a column will ensure it is never narrower

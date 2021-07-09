@@ -57,8 +57,8 @@ WT_DECLARE_WT_MEMBER(TreeViewCheckWidth, Wt::JavaScriptFunction, "TreeViewCheckW
 );
 
 
-RowStretchTreeView::RowStretchTreeView(/*std::string[] str*/)
-  : WTreeView(),
+RowStretchTreeView::RowStretchTreeView( WContainerWidget *parent )
+  : WTreeView( parent ),
     m_rowWidthPx( -1 ),
     m_hasScrollBar( true ),
     m_scrollBarWidth( -1 ),
@@ -182,6 +182,8 @@ void RowStretchTreeView::render(	Wt::WFlags<Wt::RenderFlag> flags )
     //Redefine the wtResize so this way adjusting column sizes saves one client
     //  to server round trip.
     //  Note that this JS is only checked to be valid Wt 3.3.1 through 3.3.4
+    //  The WT_RESIZE_JS member seems to be called even if a CSS flex layout
+    //  is controlling the size of the item.
     setJavaScriptMember(WT_RESIZE_JS,
                         "function(self,w,h) {"
                         "$(self).data('obj').wtResize();"

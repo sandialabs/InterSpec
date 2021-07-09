@@ -24,12 +24,10 @@
 #include "InterSpec_config.h"
 
 #include <set>
-#include <map>
 #include <vector>
 #include <sstream>
 
 #include <Wt/WText>
-#include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WString>
 #include <Wt/WServer>
@@ -37,7 +35,6 @@
 #include <Wt/WCheckBox>
 #include <Wt/WIOService>
 #include <Wt/WPushButton>
-#include <Wt/WGridLayout>
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
@@ -64,7 +61,7 @@
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
 
-#if ( USE_SPECTRUM_CHART_D3 )
+#if( USE_SPECTRUM_CHART_D3 )
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #else
 #include "InterSpec/SpectrumDisplayDiv.h"
@@ -117,41 +114,28 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
 {
   addStyleClass( "SearchEnergy" );
   
-  WGridLayout *layout = new WGridLayout();
-  setLayout( layout );
-  
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setVerticalSpacing( 0 );
-  layout->setHorizontalSpacing( 0 );
-  
-  WLabel *label = new WLabel( "Energy" );
+  WLabel *label = new WLabel( "Energy", this );
   label->addStyleClass( "SearchEnergyLabel" );
-  layout->addWidget( label, 0, 0, Wt::AlignMiddle );
   
-  m_energy = new NativeFloatSpinBox();
-  layout->addWidget( m_energy, 0, 1 /*, Wt::AlignMiddle */ );
+  m_energy = new NativeFloatSpinBox( this );
   label->setBuddy( m_energy );
   m_energy->setMinimum( 0.0f );
   m_energy->setMaximum( 1000000.0f );
-  m_energy->setTextSize( 5 );
   m_energy->enterPressed().connect( this, &SearchEnergy::emitEnter );
   
-  label = new WLabel( "+/-" );
+  label = new WLabel( "+/-", this );
   label->addStyleClass( "SearchEnergyWindowLabel" );
-  layout->addWidget( label, 0, 2, Wt::AlignMiddle );
-  m_window = new NativeFloatSpinBox();
-  layout->addWidget( m_window, 0, 3/*, Wt::AlignMiddle*/ );
+  
+  m_window = new NativeFloatSpinBox( this );
   label->setBuddy( m_window );
   
   m_window->setMinimum( 0.0f );
   m_window->setMaximum( 1000000.0f );
   m_window->setValue( 10.0f );
-  m_window->setTextSize( 7 );
   m_window->enterPressed().connect( this, &SearchEnergy::emitEnter );
   
-  label = new WLabel( "keV" );
+  label = new WLabel( "keV", this );
   label->addStyleClass( "KeVLabel" );
-  layout->addWidget( label, 0, 4, Wt::AlignMiddle );
   
   m_energy->valueChanged().connect( this, &SearchEnergy::emitChanged );
   m_window->valueChanged().connect( this, &SearchEnergy::emitChanged );
@@ -161,24 +145,22 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   m_window->focussed().connect( this, &SearchEnergy::emitGotFocus );
   clicked().connect( this, &SearchEnergy::emitGotFocus );
     
-  //WContainerWidget *adsubdiv = new WContainerWidget(   );
-
-  m_removeIcn = new WContainerWidget(); //needed or else button wont show up
+  // Add a spacer incase we get wider than we could reasonable want to grow the text inputs, so
+  //  there will be a space between the window input and the add/remove buttons.
+  WContainerWidget *spacer = new WContainerWidget( this );
+  spacer->addStyleClass( "SearchEnergySpacer" );
+  
+  m_removeIcn = new WContainerWidget( this ); //needed or else button wont show up
   m_removeIcn->setStyleClass( "DeleteSearchEnergy Wt-icon" );
   m_removeIcn->clicked().connect( this, &SearchEnergy::emitRemove );
   m_removeIcn->clicked().preventPropagation();  //make it so we wont emit gotFocus()
-  layout->addWidget( m_removeIcn, 0, 5, Wt::AlignMiddle );
   
-  m_addAnotherIcn = new WContainerWidget(); //needed or else button wont show up
+  m_addAnotherIcn = new WContainerWidget( this ); //needed or else button wont show up
   m_addAnotherIcn->setStyleClass( "AddSearchEnergy Wt-icon" );
   m_addAnotherIcn->clicked().connect( this, &SearchEnergy::emitAddAnother );
   m_addAnotherIcn->clicked().preventPropagation(); //make it so we wont emit gotFocus(), which would
                                                    // keep new search energy from getting focus due
                                                    // order of handling signal callbacks
-  layout->addWidget( m_addAnotherIcn, 0, 6, Wt::AlignMiddle );
-  
-  layout->setColumnStretch( 1, 1 );
-  layout->setColumnStretch( 3, 1 );
 }//SearchEnergy constructor
 
 
@@ -285,106 +267,56 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   
   addStyleClass( "IsotopeSearchByEnergy" );
   
-  WContainerWidget *searchEnergiesDiv = new WContainerWidget();
-    
-  //This is needed to prevent it from collapsing!
-  searchEnergiesDiv->setMinimumSize(370, Wt::WLength::Auto);
+  WContainerWidget *searchConditions = new WContainerWidget( this );
+  searchConditions->setStyleClass( "IsotopeSearchConditions" );
   
-  WGridLayout* searchEnergiesDivLayout = new WGridLayout();
-  searchEnergiesDiv->setLayout(searchEnergiesDivLayout);
- 
-  searchEnergiesDivLayout->setContentsMargins( 0,0,0,0 );
-//  searchEnergiesDiv->setInline( true );
-//  searchEnergiesDiv->addStyleClass( "SearchEnergiesLeftDiv" );
+  m_searchEnergies = new WContainerWidget( searchConditions );
+  m_searchEnergies->setStyleClass( "IsotopeSearchEnergies" );
   
-  m_searchEnergies = new WContainerWidget(  );
-  m_searchEnergies->setOverflow( WContainerWidget::OverflowAuto );
-  searchEnergiesDivLayout->addWidget(m_searchEnergies,0,0);
-  searchEnergiesDivLayout->setRowStretch(0, 1);
-  searchEnergiesDivLayout->setColumnStretch(0, 1);
-//  m_searchEnergies->addStyleClass( "SearchEnergies" );
-
-  WContainerWidget *buttonDiv = new WContainerWidget(  );
-
-//  WCssDecorationStyle boxxyDeco;
-//  boxxyDeco.setBackgroundColor( WColor( color, color, color ) );
-//  
-//  WString msgstr = prefix + body + /*timestamp +*/ suffix;
-//  
-////  WText *boxxy = new WText( msgstr, Wt::XHTMLUnsafeText );
-//  buttonDiv->setDecorationStyle( boxxyDeco );
   
-  searchEnergiesDivLayout->addWidget(buttonDiv,1,0);
-  WGridLayout *buttonDivLayout = new WGridLayout();
-  buttonDiv->setLayout(buttonDivLayout);
-  buttonDivLayout->setContentsMargins(1, 3, 0, 0);
-//  buttonDiv->addStyleClass( "SearchEnergiesButtonDiv" );
-  
-  //XXX - the srcDiv and the searchEnergiesDiv can overlap in the case the
-  //      window/tool-bar height isnt very much.  Since this will only happen
-  //      when a bunch of energies are searched for, I wont worry about it
-  m_gammas = new WCheckBox( "Gammas" );
-  buttonDivLayout->addWidget(m_gammas,0,0,1,2, AlignMiddle);
-//  m_gammas->addStyleClass( "IsoSearchSrcCB" );
-  //  m_gammas->setFloatSide(Wt::Right);
-  m_gammas->setChecked();
+  WContainerWidget *sourceTypes = new WContainerWidget( searchConditions );
+  sourceTypes->setStyleClass( "IsotopeSourceTypes" );
+  m_gammas = new WCheckBox( "Gammas", sourceTypes );
   m_gammas->checked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_gammas->unChecked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
+  m_gammas->setChecked();
 
-  m_xrays = new WCheckBox( "X-rays" );
-  buttonDivLayout->addWidget(m_xrays,0,2,1,2, AlignMiddle);
-
-//  m_xrays->addStyleClass( "IsoSearchSrcCB" );
-  //  m_xrays->setFloatSide(Wt::Right);
-  m_xrays->setChecked();
+  m_xrays = new WCheckBox( "X-rays", sourceTypes );
   m_xrays->checked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_xrays->unChecked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
+  m_xrays->setChecked();
   
-  m_reactions = new WCheckBox( "Reactions" );
-    buttonDivLayout->addWidget(m_reactions,0,4, AlignMiddle);
-//  m_reactions->addStyleClass( "IsoSearchSrcCB" );
-//  m_reactions->setFloatSide(Wt::Right);
-  //  m_reactions->setChecked();
+  m_reactions = new WCheckBox( "Reactions", sourceTypes );
   m_reactions->checked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_reactions->unChecked().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
+//  m_reactions->setChecked();
 
-  SearchEnergy *enrgy = new SearchEnergy( m_searchEnergies );
-  enrgy->enter().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
-  enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
-  enrgy->gotFocus().connect(
-                boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus,
-                                        this, enrgy ) );
-  enrgy->remove().connect(
-                        boost::bind( &IsotopeSearchByEnergy::removeSearchEnergy,
-                                      this, enrgy) );
-  enrgy->addStyleClass( ActiveSearchEnergyClass );
-  enrgy->disableRemove();
   
+  WContainerWidget *searchOptions = new WContainerWidget( searchConditions );
+  searchOptions->setStyleClass( "IsotopeSearchMinimums" );
+
   
-  auto helpBtn = new WContainerWidget();
+  auto helpBtn = new WContainerWidget( searchOptions );
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
   helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "nuclide-search-dialog" ) );
-  buttonDivLayout->addWidget(helpBtn,1,0, Wt::AlignLeft | Wt::AlignBottom );
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
-  WLabel *label = new WLabel( "Min. BR" );
+  WContainerWidget *optionDiv = new WContainerWidget( searchOptions );
+  WLabel *label = new WLabel( "Min. BR", optionDiv );
 //  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips , HelpSystem::ToolTipPosition::Top);
-   buttonDivLayout->addWidget(label,1,1, Wt::AlignMiddle | Wt::AlignRight );
 
-  m_minBranchRatio = new NativeFloatSpinBox();
-  //m_minBranchRatio->setNativeControl(true);
+  m_minBranchRatio = new NativeFloatSpinBox( optionDiv );
   string tip = "Minimum branching ratio.";
   HelpSystem::attachToolTipOn( m_minBranchRatio, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
-  buttonDivLayout->addWidget(m_minBranchRatio,1,2);
-
-  m_minBranchRatio->setWidth( 35 );
+  
   m_minBranchRatio->setValue( m_minBr );
   m_minBranchRatio->setRange( 0.0f, 1.0f );
   m_minBranchRatio->setSingleStep( 0.1f );
   label->setBuddy( m_minBranchRatio );
   
-  label = new WLabel( "Min. HL" );
+  optionDiv = new WContainerWidget( searchOptions );
+  label = new WLabel( "Min. HL", optionDiv );
  
   tip = "Minimum half life of nuclides to be searched.<br />"
     "<div>Age can be specified using a combination of time units, "
@@ -401,19 +333,14 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
     "</div>";
 //    HelpSystem::attachToolTipOn( label, tip, showToolTips , HelpSystem::ToolTipPosition::Top);
 
-  buttonDivLayout->addWidget(label,1,3, Wt::AlignMiddle | Wt::AlignRight );
-  m_minHalfLife = new WLineEdit( "6000 s" );
+  m_minHalfLife = new WLineEdit( "6000 s", optionDiv );
   HelpSystem::attachToolTipOn( m_minHalfLife, tip, showToolTips , HelpSystem::ToolTipPosition::Top );
 
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_timeDurationRegex, this );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_minHalfLife->setValidator(validator);
-    
-    
-  buttonDivLayout->addWidget(m_minHalfLife,1,4);
-  m_minHalfLife->setWidth( 55 );
+  
   label->setBuddy( m_minHalfLife );
-  //XXX should set WRegExpValidator for m_minHalfLife here.
 
   m_minBranchRatio->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_minBranchRatio->valueChanged().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
@@ -423,16 +350,12 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minHalfLife->changed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_minHalfLife->enterPressed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_minHalfLife->blurred().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
-
-  
-  m_searching = new WText( "Searching", helpBtn );
-  //buttonDivLayout->addWidget( m_searching, 1, 4, AlignCenter | AlignMiddle );
-  m_searching->addStyleClass( "SearchingEnergiesTxt" );
-  enrgy->changed().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
   
   m_model = new IsotopeSearchByEnergyModel( this );
   
-  m_results = new RowStretchTreeView();
+  // Even though we are using a CSS flex layout to control the size of the m_results table, the JS
+  //  wtResize function will be called on this RowStretchTreeView.
+  m_results = new RowStretchTreeView( this );
   m_results->setRootIsDecorated(false); //makes the tree look like a table! :)
   
   m_results->setModel( m_model );
@@ -492,22 +415,25 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_results->setSelectionBehavior( Wt::SelectRows );
   m_results->selectionChanged().connect( this, &IsotopeSearchByEnergy::resultSelectionChanged );
   
-  m_searching->hide();
-    
-  //XXX - I would like to just add searchEnergiesDiv and tableHolder to *this,
-  //  however I cant quite get the CSS right for both Webkit and FireFox, so
-  //  I am temporarily using a WGridLayout.
-//  addWidget( searchEnergiesDiv );
-//  addWidget( tableHolder );
-  WGridLayout *layout = new WGridLayout();
-  layout->setContentsMargins( 0, 0, 0, 0 );
-  setLayout( layout );
-  layout->addWidget( searchEnergiesDiv, 0, 0 );
-  layout->addWidget( m_results, 0, 1 );
-  layout->setColumnStretch( 1, 1 );
-  layout->setHorizontalSpacing( 0 );
-  layout->setVerticalSpacing( 0 );
   
+  m_searching = new WText( "Searching", this );
+  m_searching->addStyleClass( "IsotopeSearchInProgress" );
+  m_searching->setInline( false );
+  m_searching->hide();
+  
+  
+  // Add in one non-removable search energy
+  SearchEnergy *enrgy = new SearchEnergy( m_searchEnergies );
+  enrgy->enter().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
+  enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
+  enrgy->gotFocus().connect( boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus,
+                                        this, enrgy ) );
+  enrgy->remove().connect( boost::bind( &IsotopeSearchByEnergy::removeSearchEnergy, this, enrgy) );
+  enrgy->addStyleClass( ActiveSearchEnergyClass );
+  enrgy->disableRemove();
+  enrgy->changed().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
+
+
   minBrOrHlChanged();
 }//IsotopeSearchByEnergy constuctor
 
@@ -852,19 +778,19 @@ void IsotopeSearchByEnergy::deSerialize( std::string &xml_data,
 
     node = base_node->first_node( "IncludeGammas", 13 );
     if( node && node->value() && strlen(node->value()))
-      m_gammas->setChecked( (node->value()[0] == '1') );
+      m_gammas->setChecked( (node->value()[0] != '0') );
     else
       throw runtime_error( "Missing/invalid IncludeGammas node" );
 
     node = base_node->first_node( "IncludeXRays", 12 );
     if( node && node->value() && strlen(node->value()))
-      m_xrays->setChecked( (node->value()[0] == '1') );
+      m_xrays->setChecked( (node->value()[0] != '0') );
     else
       throw runtime_error( "Missing/invalid IncludeXRays node" );
     
     node = base_node->first_node( "IncludeReactions", 16 );
     if( node && node->value() && strlen(node->value()))
-      m_reactions->setChecked( (node->value()[0] == '1') );
+      m_reactions->setChecked( (node->value()[0] != '0') );
     else
       throw runtime_error( "Missing/invalid IncludeXRays node" );
     
@@ -1097,7 +1023,7 @@ void IsotopeSearchByEnergy::hideSearchingTxt( const int searchNum )
 IsotopeSearchByEnergy::~IsotopeSearchByEnergy()
 {
   
-}//IsotopeSearchByEnergy destuctor
+}//IsotopeSearchByEnergy destructor
 
 
 

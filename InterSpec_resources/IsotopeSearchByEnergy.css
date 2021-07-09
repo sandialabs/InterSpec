@@ -1,70 +1,97 @@
 .IsotopeSearchByEnergy
 {
-  overflow-x: hidden;
+  /* This is the parent div of the whole tool. It hold .IsotopeSearchConditions and .IsotopeSearchResultTable */
+  display: flex;
+  flex-flow: row nowrap;
+  
   margin-top: 5px;
   margin-bottom: 3px;
   margin-right: 4px;
   margin-left: 4px;
 }
 
-.SearchEnergiesLeftDiv
+.IsotopeSearchConditions
 {
-  border: 2px solid #e1e1e1;
-  width: 25.7em;
-  height: 100%;
-}
-
-.IsoSearchSrcCB
-{
-  padding-right: 5px;
-  padding-top: 2px;
+  /* This is the div that holds the energies, source types, and BR/HL options. */
+  display: flex;
+  flex-flow: column nowrap;
+  
+  width: 325px;
 }
 
 
-.SearchEnergies
+.IsotopeSearchEnergies
 {
-  border: 1px solid #e1e1e1;
+  /* This div holds all the search energies. */
+  flex: 1 1 auto;
   overflow-y: auto;
-  width: 25.2em;
 }
 
-.SearchEnergiesButtonDiv
+.IsotopeSourceTypes
 {
- position:absolute;
- bottom: 0; 
- right: 0;
- left: 0;
- width: 25em;
- padding-bottom: 5px;
+  /* This is the div that holds the "Gammas", "X-rays", and "Reaction" check boxes. */
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: space-between;
+  padding-left: 7px;
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 
-.SearchEnergy
+.IsotopeSearchMinimums
 {
-  border: 1px solid #e1e1e1;
-  margin: 2px;
-  margin-top: 0px;
-  margin-bottom: 5px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  /* This div holds the help icon and BR/HL options. */
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: space-between;
+  padding-left: 1px;
+}
+
+.IsotopeSearchMinimums label
+{
+  /* The labels for "Min. BR" and "Min. HL" */
+  margin-right: 4px;
+  text-align:center;
+  vertical-align:middle;
+}
+
+.IsotopeSearchMinimums input
+{
+  font-size: 0.95em;
+  width: 55px;
+}
+
+.IsotopeSearchMinimums > .ContentHelpBtn
+{
+  margin-top: auto;  /* Push to bottom of row */
 }
 
 
-/* Displayed while a search is in progress */
-.SearchingEnergiesTxt
+.IsotopeSearchInProgress
 {
+  /* Displayed only while a search is in progress */
   background: red;
   color: white;
+  
+  padding-right: 5px;
+  padding-left: 5px;
+  
+  position: absolute;
+  right: 50%;
+  top: 40%;
+  height: 30px;
+  line-height: 30px;
+  padding-left: 8px;
+  padding-right: 8px;
+  text-align: center;
   vertical-align: middle;
 }
 
-.MinBrLabel
-{
-  margin-left: 0.5em;
-  margin-right: 0.1em;
-}
 
 .IsotopeSearchResultTable
 {
+  flex: 1 1 auto;
+  
   border: 2px solid #e1e1e1;
   margin-left: 5px;
 }
@@ -72,7 +99,6 @@
 
 .ActiveSearchEnergy
 {
-  background: blue; /*for IEs sake*/
   background: rgba(36, 169, 211, 0.25);
 }
 
@@ -82,13 +108,11 @@
   opacity: 0.6;
   cursor:pointer;
   background-repeat: no-repeat;
-  width: 16px;  /* width of the image plus a little extra padding */
   height: 21px;
 }
 
 .AddSearchEnergy
 {
-  margin-left: -4px;
   background-image: url('../InterSpec_resources/images/plus_min_black.svg');
 }
 
@@ -109,19 +133,48 @@ div.AddSearchEnergy.Wt-disabled, div.DeleteSearchEnergy.Wt-disabled
 }
 
 
+.SearchEnergy
+{
+  border: 1px solid #e1e1e1;
+  margin: 2px;
+  margin-top: 0px;
+  margin-bottom: 5px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  
+  display: flex;
+  flex-flow: row nowrap;
+}
+
 .SearchEnergyLabel
 {
   padding-left: 5px;
   padding-right: 5px;
+  align-self: center;
 }
 
 .SearchEnergyWindowLabel
 {
  padding-left: 5px;
  padding-right: 5px;
+ align-self: center;
 }
 
 .KeVLabel
 {
   padding-left: 5px;
+  align-self: center;
+}
+
+.SearchEnergy input
+{
+  /* This is the search energy and window inputs */
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 125px;
+}
+
+.SearchEnergySpacer
+{
+  flex: 1 10 auto;
 }
