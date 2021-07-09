@@ -1399,6 +1399,31 @@ const std::string &InterSpecUser::userName() const
   return m_userName;
 }
 
+
+int InterSpecUser::accessCount() const
+{
+  return m_accessCount;
+}
+
+
+boost::posix_time::time_duration InterSpecUser::totalTimeInApp() const
+{
+  return m_totalTimeInApp;
+}
+
+
+int InterSpecUser::numSpectraFilesOpened() const
+{
+  return m_spectraFilesOpened;
+}
+
+
+boost::posix_time::ptime InterSpecUser::firstAccessUTC() const
+{
+  return m_firstAccessUTC;
+}
+
+
 Wt::Dbo::ptr<InterSpecUser> &InterSpecUser::userFromViewer( InterSpec *viewer )
 {
   static Dbo::ptr<InterSpecUser> dummy;

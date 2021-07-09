@@ -900,6 +900,11 @@ InterSpec *InterSpecApp::viewer()
 }//InterSpec* viewer()
 
 
+boost::posix_time::time_duration InterSpecApp::activeTimeInCurrentSession() const
+{
+  return m_activeTimeInSession;
+}
+
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
 std::string InterSpecApp::externalToken()
 {

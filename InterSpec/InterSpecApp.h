@@ -103,6 +103,8 @@ public:
 
   InterSpec *viewer();
 
+  boost::posix_time::time_duration activeTimeInCurrentSession() const;
+  
   
   //userNameFromOS(): Caution, will return 'apache' if being served, from
   //  an apache server, 'mobile' if on a iOS device, or blank upon failure.
