@@ -423,15 +423,11 @@ public:
   
   //loadTestStateFromN42(): Attempts to load a state previously saved to an
   //  XML file via storeTestStateToN42
-  void loadTestStateFromN42( std::istream &input );
+  void loadTestStateFromN42( const std::string filename );
   
   //startN42TestStates(): creates dialog that lists files ending in '.n42' in
   //  the 'analysis_tests' folder so the user can select and then load one.
   void startN42TestStates();
-  
-  //loadN42TestState(): loads the test state N42 at path specified.
-  //  Will throw if any issues
-  void loadN42TestState( const std::string &filename );
 #endif
   
   

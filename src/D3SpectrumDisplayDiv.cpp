@@ -313,7 +313,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   
   callJavaScriptMember( "resizeObserver.observe", jsRef() );
 //#else
-//  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+//  setJavaScriptMember( WT_RESIZE_JS, "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
 //#endif
   
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )

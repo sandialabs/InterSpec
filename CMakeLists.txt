@@ -898,6 +898,7 @@ elseif(BUILD_AS_OSX_APP)
         GLOB_RECURSE INTERSPEC_RES_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*"
     )
+    list( APPEND INTERSPEC_RES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.html )
     file(
         GLOB_RECURSE EXAMPLE_RES_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/example_spectra/*"
@@ -1037,7 +1038,7 @@ elseif(BUILD_AS_OSX_APP)
 
     #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
     #math(EXPR MACOS_BUNDLE_VERSION_NUMBER "100*(${PROJECT_VERSION_MAJOR}-1) + 10*${PROJECT_VERSION_MINOR} + ${PROJECT_VERSION_PATCH}" )
-    set(MACOS_BUNDLE_VERSION_NUMBER 9)
+    set(MACOS_BUNDLE_VERSION_NUMBER 10)
 
     set_target_properties(
         InterSpecExe

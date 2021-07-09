@@ -1657,7 +1657,6 @@ DetectorEdit::DetectorEdit( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
   
-  setOverflow(Wt::WContainerWidget::OverflowAuto);
   WGridLayout *mainLayout = new WGridLayout();
   
   setLayout( mainLayout );

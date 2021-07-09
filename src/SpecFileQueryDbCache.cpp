@@ -1698,7 +1698,8 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
     }//end check in DB
   }catch( Wt::Dbo::Exception &e )
   {
-    cerr << "Caught Dbo::Exception in spec_file_info: " << e.what() << endl;
+    cerr << "Caught Dbo::Exception in spec_file_info: '" << e.what() <<"', backend code: '"
+         << e.code() << "'" << endl;
     info->fill_info_from_file( filepath );
     info->fill_event_xml_filter_values( filepath, m_xmlfilters );
   }catch( std::exception &e )

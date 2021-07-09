@@ -2713,7 +2713,8 @@ void get_candidate_peak_estimates_for_user_click(
   const size_t midbin = dataH->find_gamma_channel( x );
   
   const double lower_chan_sub = lower_energy_mult*nchannels;
-  size_t lowchannel = static_cast<size_t>( (lower_chan_sub < midbin) ? (midbin - lower_chan_sub) : 0.0 );
+  assert( lower_chan_sub > 0 );
+  size_t lowchannel = ((lower_chan_sub < midbin) ? (midbin - static_cast<size_t>(std::round(lower_chan_sub))) : 0);
   
   const double upper_chan_sub = upper_energy_mult*nchannels;
   size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
@@ -2742,7 +2743,7 @@ void get_candidate_peak_estimates_for_user_click(
   float min_sigma, max_sigma;
   expected_peak_width_limits( x, highres, min_sigma, max_sigma );
   
-  sigma0 = 0.5*(min_sigma + max_sigma);
+  sigma0 = 0.5*(min_sigma + max_sigma) * (highres ? 0.20 : 0.25);  //expected_peak_width_limits multiplies max width by  4 for highres, and 3 for lowres
   mean0 = x;
   area0 = 100.0;
   
@@ -2784,6 +2785,9 @@ void get_candidate_peak_estimates_for_user_click(
       }
     }//for( const std::shared_ptr<const PeakDef> &p : inpeaks )
   }//if( !updatedSigmaFromPrev )
+  
+  if( sigma0 <= 0.0 )
+    sigma0 = 1.0;  //JIC, shouldnt ever happen
   
   if( candidates.size() )
   {

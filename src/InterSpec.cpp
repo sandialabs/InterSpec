@@ -861,7 +861,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
     
-    m_toolsTabs->setJavaScriptMember( "wtResize", "function(self,w,h,layout){ console.log( 'wtResize called for tools tab:', w, h, layout ); }" );
+    m_toolsTabs->setJavaScriptMember( WT_RESIZE_JS, "function(self,w,h,layout){ console.log( 'wtResize called for tools tab:', w, h, layout ); }" );
     
      // An attempt to call into wtResize from ResizeObserver - not working yet - tool tab contents dont expand...
     const string stackJsRef = m_toolsTabs->contentsStack()->jsRef();
@@ -4593,22 +4593,32 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
 
 
 
-void InterSpec::loadTestStateFromN42( std::istream &input )
+void InterSpec::loadTestStateFromN42( const std::string filename )
 {
   using namespace rapidxml;
   try
   {
-    rapidxml::file<char> input_file( input );
-    
-    xml_document<char> doc;
-    doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
-    xml_node<char> *doc_node = doc.first_node();
-    
     std::shared_ptr<SpecMeas> meas = std::make_shared<SpecMeas>();
-    const bool loaded = meas->load_from_N42_document( doc_node );
+    
+    // TODO: If we call load_from_N42_document(...), the sample numbers get all messed up and we
+    //       cant match peaks and displayed samples up right - I'm not sure why this is at the
+    //       moment, probably some virtual call issue or something, but for the moment will just
+    //       patch through it and re-parse the XML a second time.
+    //const bool loaded = meas->load_from_N42_document( doc_node );
+    const bool loaded = meas->load_file( filename, SpecUtils::ParserType::N42_2012, ".n42" );
     
     if( !loaded )
       throw runtime_error( "Failed to load SpecMeas from XML document" );
+    
+    
+    std::vector<char> data;
+    SpecUtils::load_file_data( filename.c_str(), data );
+    
+    xml_document<char> doc;
+    char * const data_start = &data.front();
+    char * const data_end = data_start + data.size();
+    doc.parse<rapidxml::parse_trim_whitespace|rapidxml::allow_sloppy_parse>( data_start, data_end );
+    xml_node<char> *doc_node = doc.first_node();
     
     const xml_node<char> *RadInstrumentData = doc.first_node( "RadInstrumentData", 17 );
     
@@ -4619,7 +4629,7 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     if( !InterSpecNode )
       throw runtime_error( "Error trying to retrieve DHS:InterSpec node" );
 
-    meas->decodeSpecMeasStuffFromXml( InterSpecNode );
+    //meas->decodeSpecMeasStuffFromXml( InterSpecNode );
     
     const xml_attribute<char> *attr = InterSpecNode->first_attribute( "ForTesting" );
     if( !attr || !attr->value()
@@ -4694,8 +4704,7 @@ void InterSpec::loadTestStateFromN42( std::istream &input )
     
     const std::set<int> &dispsamples = meas->displayedSampleNumbers();
     
-    
-    setSpectrum( meas, meas->displayedSampleNumbers(), SpecUtils::SpectrumType::Foreground, 0 );
+    setSpectrum( meas, dispsamples, SpecUtils::SpectrumType::Foreground, 0 );
     
     if( backgroundsamplenums.size() )
       setSpectrum( meas, backgroundsamplenums, SpecUtils::SpectrumType::Background, 0 );
@@ -4732,7 +4741,7 @@ namespace
   {
     const string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
     const string filename = SpecUtils::append_path( path_to_tests, filesbox->currentText().toUTF8() );
-    viewer->loadN42TestState( filename );
+    viewer->loadTestStateFromN42( filename );
     delete window;
   }
 }
@@ -4782,24 +4791,6 @@ void InterSpec::startN42TestStates()
   window->show();
   window->centerWindow();
 }//void startN42TestStates()
-
-
-void InterSpec::loadN42TestState( const std::string &filename )
-{
-  if( filename.empty() )
-    return;
-  
-#ifdef _WIN32
-  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-  ifstream input( wfilename.c_str(), ios::in | ios::binary );
-#else
-  ifstream input( filename.c_str(), ios::in | ios::binary );
-#endif
-  if( !input.is_open() )
-    throw runtime_error( "Couldnt open test state file: " + filename );
-  
-  loadTestStateFromN42( input );
-}//void loadN42TestState( const std::string &filename )
 
 
 
