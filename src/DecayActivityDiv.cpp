@@ -1007,7 +1007,7 @@ namespace
       ""  "}else{ console.log('ChartAndLegendHolder: couldnt resize chart, please look into.'); }"
       ""  + legref + ".css('max-height',(h-" + extraheight + ") +'px');"
       "" "}";
-      setJavaScriptMember( "wtResize", js );
+      setJavaScriptMember( WT_RESIZE_JS, js );
     }//ChartAndLegendHolder constructor
     
     

@@ -481,7 +481,7 @@ void D3TimeChart::defineJavaScript()
   
   setJavaScriptMember( "chart", "new D3TimeChart(" + m_chart->jsRef() + "," + options + ");");
   
-  //setJavaScriptMember( "wtResize",
+  //setJavaScriptMember( WT_RESIZE_JS,
   //                     "function(self, w, h, layout){"
   //                     " setTimeout( function(){" + m_jsgraph + ".handleResize();},0); "
   //                     "}" );
@@ -856,7 +856,10 @@ void D3TimeChart::setDataToClient()
   if( anyStartTimeKnown )
   {
     //doubles have 53 bits of integer precision - should be fine
-    js << ",\n\t\"startTimeOffset\": " << startTimesOffset;
+    // long long int should be at least 64 bits, and otherwise int64_t may not be supported
+    // by WStringStream.
+    assert( static_cast<long long>(startTimesOffset) == (startTimesOffset) );
+    js << ",\n\t\"startTimeOffset\": " << static_cast<long long>(startTimesOffset);
     js << ",\n\t\"startTimes\": ";
     for( size_t i = 0; i < startTimes.size(); ++i )
     {
@@ -864,7 +867,7 @@ void D3TimeChart::setDataToClient()
       if( startTimes[i] == std::numeric_limits<int64_t>::min() )
         js << "null";
       else
-        js << startTimes[i];
+        js << static_cast<long long>(startTimes[i]);
     }
     js << "]";
   }//if( anyStartTimeKnown )
