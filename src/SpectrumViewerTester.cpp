@@ -167,7 +167,12 @@ bool SpectrumViewerTester::compatibleMeans( const PeakDef *original,
                                             const PeakDef *found )
 {
   const double meanDiff = fabs(original->mean() - found->mean());
-  return meanDiff < sm_mean_max_nsigma_diff*original->sigma();
+  const bool compatible = (meanDiff < sm_mean_max_nsigma_diff*original->sigma());
+  //if( !compatible )
+  //  cerr << "Not compatible mean: original->mean()=" << original->mean()
+  //       << ", found->mean()=" << found->mean() << ", sigma=" << original->sigma() << endl;
+
+  return compatible;
 }
 
 bool SpectrumViewerTester::compatibleAmplitudes( const PeakDef *original,
@@ -1181,6 +1186,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
   PeakModel *peakModel = m_viewer->m_peakModel;
   
   const auto data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  assert( data );
   
   if( !peakModel->peaks() || peakModel->peaks()->empty() )
     return score;
@@ -1214,6 +1220,21 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
     int meanNotCompat = 0, ampNotCompat = 0,
         lowerRoiNotCompat = 0, upperRoiNotCompat = 0,
         widthsNotCompat = 0;
+    
+    // TODO: make sure the ROI is at least ~45px (a guess) wide so for tiny peaks the
+    //       uncertainty applied to where the user clicked isnt too huge.
+    const float wantedRoiWidthPx = 45;
+    const float spectrumLowestEnergy = data->gamma_energy_min();
+    const float spectrumHighestEnergy = data->gamma_energy_max();
+    const double chartWidthPx = std::max( m_viewer->m_spectrum->chartWidthInPixels(), 640.0 );
+    const double roiWidth = peak->upperX() - peak->lowerX();
+    const double targetKevPerPx = roiWidth / wantedRoiWidthPx;
+    const double targetEnergyRange = chartWidthPx * targetKevPerPx;
+    const double targetDisplayLowerEnergy = peak->mean() - 0.5*targetEnergyRange;
+    const double targetDisplayUpperEnergy = peak->mean() + 0.5*targetEnergyRange;
+    cout << "targetDisplayLowerEnergy=" << targetDisplayLowerEnergy << ", targetDisplayUpperEnergy=" << targetDisplayUpperEnergy << ", peak->mean()=" << peak->mean() << ", chartWidthPx=" << chartWidthPx << ", roiWidth=" << roiWidth << endl;
+    
+    m_viewer->setDisplayedEnergyRange( targetDisplayLowerEnergy, targetDisplayUpperEnergy );
     
     for( int attempt = 0; attempt < sm_num_manual_click; ++attempt )
     {

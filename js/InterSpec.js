@@ -27,7 +27,6 @@ function()
 
       if( !files || !files.length )
       {
-        console.log( evt );
         console.log( "uploadFcn: no files for some reason." );
         return;
       }

@@ -1085,7 +1085,7 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
       if( !SpecUtils::split_to_ints( node->value(), node->value_size(), contents ) )
         throw runtime_error( "Invalid list of sample numbers" );
       
-      for( const float t : contents )
+      for( const int t : contents )
       {
         if( sample_numbers_.count(t) ) //make sure to not insert any invalid sample numbers
           m_displayedSampleNumbers->insert( t );

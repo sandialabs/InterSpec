@@ -118,7 +118,7 @@ SpectrumDisplayDiv::SpectrumDisplayDiv( WContainerWidget *parent )
       }
   });
   
-  setJavaScriptMember( "wtResize", js );
+  setJavaScriptMember( WT_RESIZE_JS, js );
 //#endif
   
 #else
@@ -142,7 +142,7 @@ SpectrumDisplayDiv::SpectrumDisplayDiv( WContainerWidget *parent )
   ""     "if(probNode){try{probNode.style.overflowY='hidden';}catch(e){};}"
   ""   "}"
   "" "}";
-  setJavaScriptMember( "wtResize", js );
+  setJavaScriptMember( WT_RESIZE_JS, js );
 #endif
 
 //  setPlotAreaPadding( 80, 2, 10, 42 );
