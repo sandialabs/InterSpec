@@ -53,10 +53,6 @@
 #include "InterSpec/FileDragUploadResource.h"
 #endif
 
-#ifdef _WIN32
-#include "SpecUtils/StringAlgo.h"
-#endif
-
 using namespace Wt;
 using namespace std;
 
@@ -146,6 +142,18 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
   {
     try
     {
+      // We'll make sure this is the primary electron instance making this request, jic
+      if( !InterSpecApp::isPrimaryWindowInstance() )
+        throw runtime_error( "Opening via full path only allowed for primary instance" );
+      
+      // We'll also double check the request is from this computer (which should already be ensured
+      //  by checking the primary instance, but jic)
+      const string clientAddress = request.clientAddress();  //'127.0.0.1'
+      //const string &clientAddress = wApp->environment().clientAddress();
+      if( clientAddress.find("127.0.0.1") == std::string::npos )
+        throw runtime_error( "Opening via full path only allowed from localhost" );
+
+      
       std::istreambuf_iterator<char> eos;
       string body(std::istreambuf_iterator<char>(request.in()), eos);
       
