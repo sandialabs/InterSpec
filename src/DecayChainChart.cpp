@@ -443,7 +443,7 @@ void DecayChainChart::defineJavaScript()
   
   
   setJavaScriptMember( "chart", "new DecayChainChart(" + jsRef() + "," + options + ");");
-  setJavaScriptMember( "wtResize", "function(self, w, h, layout){ " + jsRef() + ".chart.handleResize();}" );
+  setJavaScriptMember( WT_RESIZE_JS, "function(self, w, h, layout){ " + jsRef() + ".chart.handleResize();}" );
   
   for( const string &js : m_pendingJs )
     WContainerWidget::doJavaScript( js );
