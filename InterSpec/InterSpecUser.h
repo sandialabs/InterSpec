@@ -205,6 +205,29 @@ public:
   
   const std::string &userName() const;
   
+  /** The number of new InterSpec sessions that has been created for this user. */
+  int accessCount() const;
+  
+  /** Approximate total amount of time user has actively used the app before the current session.
+   
+   Counts time between user generated events in the app, but only if less than 5 minutes between interactions.
+   See #InterSpecApp::notify for implementation of when time is added.
+   
+   This value is only incremented #InterSpecApp::prepareForEndOfSession, so it does not include time from the current session.
+   */
+  boost::posix_time::time_duration totalTimeInApp() const;
+  
+  /** Approximate number of spectrum files opened.
+   
+   The count is only incremented if #SpecMeasManager::checkIfPreviouslyOpened is called after opening a file, which is only
+   called some of the time from #SpecMeasManager::displayFile, specifically I think only when files are opened from the
+   filesystem.
+   */
+  int numSpectraFilesOpened() const;
+  
+  /** The UTC time when this user was first created in the database. */
+  boost::posix_time::ptime firstAccessUTC() const;
+  
   //userFromViewer: a simple helper function to return the user from a
   //  spectrum viewer pointer; necessary to break a "Member access into
   //  incomplete type 'InterSpec'" issue.
