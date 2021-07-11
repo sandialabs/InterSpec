@@ -94,11 +94,9 @@ public:
   
   void setPeakModel( PeakModel *model );
   
-  /// \TODO: for all setData, setSecondData, and setBackground, get rid of live/real-time arguments
-  ///        and neutron counts.
-  void setData( std::shared_ptr<const SpecUtils::Measurement> data_hist, bool keep_curent_xrange );
-  void setSecondData( std::shared_ptr<const SpecUtils::Measurement> hist, bool ownAxis );
-  void setBackground( std::shared_ptr<const SpecUtils::Measurement> background );
+  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
+  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist, const bool ownAxis );
+  void setBackground( std::shared_ptr<SpecUtils::Measurement> background );
   
   void scheduleUpdateForeground();
   void scheduleUpdateBackground();
@@ -181,13 +179,6 @@ public:
   size_t addDecorativeHighlightRegion( const float lowerx,
                                       const float upperx,
                                       const Wt::WColor &color );
-  
-  
-  //By default SpectrumDisplayDiv has setLayoutSizeAware(true) set, so if the
-  //  widget is being sized by a Wt layout manager, layoutWidth() and
-  //  layoutHeight() will return this widget width and height respectively
-  int layoutWidth() const;
-  int layoutHeight() const;
   
   //For the case of auto-ranging x-axis, the below _may_ return 0 when auto
   //  range is set, but chart hasnt been rendered  (although maybe +-DBL_MAX)
@@ -284,9 +275,6 @@ protected:
   
   void setForegroundPeaksToClient();
   
-  //layoutSizeChanged(...): adjusts display binning if necessary
-  virtual void layoutSizeChanged ( int width, int height );
-  
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   /** Flags */
@@ -308,9 +296,6 @@ protected:
   //ToDo: should eliminate use of SpectrumDataModel in this class
   SpectrumDataModel *m_model;
   PeakModel *m_peakModel;
-  
-  int m_layoutWidth;
-  int m_layoutHeight;
   
   bool m_compactAxis;
   bool m_legendEnabled;

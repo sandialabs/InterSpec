@@ -46,7 +46,7 @@ class FileDragUploadResource : public Wt::WResource
 public:
   FileDragUploadResource( Wt::WObject *parent  );
   virtual ~FileDragUploadResource();
-  Wt::Signal<std::string,std::string > *fileDrop(); //<display_name,spool_name>
+  Wt::Signal<std::string,std::string > &fileDrop(); //<display_name,spool_name>
 
 protected:
   //XXX - It's assuming handleRequest(...) is only called once all the data
@@ -56,7 +56,7 @@ protected:
 
 private:
   std::vector<std::string> m_spooledFiles;
-  Wt::Signal< std::string, std::string >  *m_fileDrop;  //<display_name,spool_name>
+  Wt::Signal< std::string, std::string > m_fileDrop;  //<display_name,spool_name>
 };//class FileDragUploadResource ...
 
 

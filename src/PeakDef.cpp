@@ -40,6 +40,7 @@
 #include "InterSpec/PeakFit.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -51,7 +52,11 @@ using namespace std;
 using SpecUtils::Measurement;
 
 const int PeakDef::sm_xmlSerializationVersion = 0;
-const int PeakContinuum::sm_xmlSerializationVersion = 0;
+
+/** Version 1 adds "FlatStep", "LinearStep", and "BiLinearStep" continuum types
+ 
+ */
+const int PeakContinuum::sm_xmlSerializationVersion = 1;
 
 namespace
 {
@@ -417,13 +422,123 @@ namespace
 #endif
 
 
+
+size_t findROILimitHighRes( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH, bool high )
+{
+  if( !dataH || !dataH->energy_calibration() || !dataH->energy_calibration()->valid() )
+    return 0;
+  
+  const float mean = static_cast<float>( peak.mean() );
+  const float fwhm = static_cast<float>( peak.fwhm() );
+  
+  // The plan is to iterate over the V&V test files and adjust these next quantities to most closely
+  //  match the human selected ROI widths.
+  //  Also, need to investigate highres_shrink_roi(...) to work better, for example the Cs137 peak of a shielded specturm
+  const double min_width_mult = 0.75;
+  const float nominal_fwhm_mult = 2.0f;
+  const float steep_fwhm_mult = 3.5f;
+  const float steep_continuum_limit = 0.35f;
+  const float feature_nsigma_limit = 2.25f;
+  
+  
+  const int direction = high ? 1 : -1;
+  float nominal_low_edge = mean - (nominal_fwhm_mult * fwhm);
+  size_t nominal_low_channel = dataH->find_gamma_channel( nominal_low_edge );
+  
+  float nominal_up_edge = mean + (nominal_fwhm_mult * fwhm);
+  size_t nominal_up_channel = dataH->find_gamma_channel( nominal_up_edge );
+  
+  double nominal_data_area = dataH->gamma_channels_sum( nominal_low_channel, nominal_up_channel );
+  
+  double coefficients[2];
+  const size_t nSideChanel = 1;
+  PeakContinuum::eqn_from_offsets( nominal_low_channel, nominal_up_channel,
+                                   mean, dataH, nSideChanel, coefficients[1], coefficients[0] );
+  
+  // cout << "coefficients[0]=" << coefficients[0] << ", coefficients[1]=" << coefficients[1]
+  //  << "\n\tdataH->gamma_channel_lower(nominal_low_channel)=" << dataH->gamma_channel_lower(nominal_low_channel)
+  //  << "\n\tdataH->gamma_channel_upper(nominal_up_channel)=" << dataH->gamma_channel_upper(nominal_up_channel)
+  //  << endl << endl;
+  
+  double nominal_cont_area = PeakContinuum::offset_eqn_integral( coefficients,
+                                                 PeakContinuum::OffsetType::Linear,
+                                                 dataH->gamma_channel_lower(nominal_low_channel),
+                                                 dataH->gamma_channel_upper(nominal_up_channel),
+                                                 mean );
+  
+  const double nominal_peak_area = (nominal_data_area - nominal_cont_area);
+  const double nominal_uncert_ratio = nominal_peak_area / sqrt(nominal_data_area);
+  
+  //cout << "\n\n\nmean=" << mean << ", nominal_data_area=" << nominal_data_area << endl;
+  //cout << "nominal_peak_area=" << nominal_peak_area << ", nominal_cont_area=" << nominal_cont_area
+  //     << ", nominal_uncert_ratio=" << nominal_uncert_ratio << endl;
+  
+  const double width = dataH->gamma_channel_upper(nominal_up_channel) - dataH->gamma_channel_lower(nominal_low_channel);
+  const double offset_contrib = coefficients[0]*width;
+  const double slope_contrib = 0.5*coefficients[1]*width*width;
+  
+  //cout << "For " << mean << " kev, offset contributes " << offset_contrib << ", while slope contributes "
+  //     << slope_contrib << "--->" << slope_contrib/offset_contrib << endl;
+  
+  if( (offset_contrib <= 0.0) || ((direction*slope_contrib/offset_contrib) > steep_continuum_limit) ) // 0.35 is arbitrary
+  {
+    if( high )
+    {
+      nominal_up_edge = mean + (steep_fwhm_mult * fwhm);
+      nominal_up_channel = dataH->find_gamma_channel( nominal_up_edge );
+    }else
+    {
+      nominal_low_edge = mean - (steep_fwhm_mult * fwhm);
+      nominal_low_channel = dataH->find_gamma_channel( nominal_low_edge );
+    }
+  }//if( coefficients[1] < -30 )
+  
+  
+  const size_t feature_detect_start = dataH->find_gamma_channel( mean + direction*min_width_mult*fwhm );
+  const size_t feature_detect_stop = high ? nominal_up_channel : nominal_low_channel;
+
+  
+  // Feature detect start FWHM mult
+  const size_t nchannel = dataH->num_gamma_channels();
+  const size_t nprev_avrg = 4;
+  for( size_t channel = feature_detect_start; channel != feature_detect_stop; channel += direction )
+  {
+    if( (channel <= nprev_avrg) || ((channel + nprev_avrg + 1) >= nchannel) )
+      continue;
+    
+    const size_t prev_sum_start = channel - direction*nprev_avrg;
+    const size_t prev_sum_end = channel - direction;
+    
+    const float prev_sum = dataH->gamma_channels_sum( prev_sum_start, prev_sum_end );
+    const float val = dataH->gamma_channel_content( channel );
+    const float val_next = dataH->gamma_channel_content( channel + direction );
+
+    const float prev_avrg = prev_sum / nprev_avrg;
+    const float prev_avrg_uncert = std::max( 1.0f*nprev_avrg, std::sqrt(prev_sum) ) / nprev_avrg;
+    
+    const float max_allowable = std::ceil(prev_avrg + feature_nsigma_limit*prev_avrg_uncert) +  0.001f;
+    
+    //cout << "mean=" << mean << ", channel=" << channel << ", prev_avrg(" << prev_sum_start
+    //     <<  "," << prev_sum_end<< ")=" << prev_avrg
+    //     << ", val=" << val << ", nextval=" << val_next << ", max_allowable=" << max_allowable << ""
+    //     << endl;
+    
+    // We'll require two bins to be outside of tolerance
+    if( (val > max_allowable && val_next > max_allowable) )
+      return channel - direction;
+  }//for( int bin = minBin; bin > lastbin; --bin )
+  
+
+  return high ? nominal_up_channel : nominal_low_channel;
+}//findROILimitHighRes(...)
+ 
+
 size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH, bool high )
 {
   if( !peak.gausPeak() )
     return dataH->find_gamma_channel( (high ? peak.upperX() : peak.lowerX()) );
   
 
-  
   //This implemntation is an adaptation of how PCGAP defines a region of
   //  interest.
   //  The basic idea is to include a maximum of 11.75 sigma away from the mean
@@ -439,22 +554,6 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   //  http://www.inl.gov/technicalpublications/Documents/3318133.pdf
   //  http://www.osti.gov/bridge/servlets/purl/800710-Zc4iYJ/native/800710.pdf
   
-  //My _guess_ on how peak easy identifies the region of interest, _not_
-  //  how this function does it.
-  //  1) Default to +- between 7.0 and 7.5 sigma
-  //  2) Starting at ~2.0 sigma from mean, go through and find if there is
-  //     a 'new' feature, and if so, stop the background there.
-  //     A new feature may be indicated by a statistically significant
-  //     increase in counts (relative to background).
-  //  3) Find out if the lower energy tail area should be increased.
-  //     not sure on this, up to about 11.5 sigma from the mean
-  
-  
-  //20150108: wcjohns converted this function from using ROOT style accessors
-  //  (GetBinContent(bin)) to the SpectrumDataStructs style accessors
-  //  (gamma_channel_content(channel)), and using unsigned integers seems to
-  //  work okay, but he didnt carefully check for wrap-around or other issues,
-  //  so is leaving the indexing type as int for now
   typedef int indexing_t;
   //  typedef size_t indexing_t;
   
@@ -463,7 +562,8 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( nchannel<128 )
     throw runtime_error( "findROILimit(...): Invalid input" );
   
-  const bool highres = (nchannel > HIGH_RES_NUM_CHANNELS);
+  const bool highres = PeakFitUtils::is_high_res(dataH);
+  
   
   const vector<float> &contents = *dataH->gamma_channel_contents();
   
@@ -472,26 +572,20 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   double lowxrange  = continuum->lowerEnergy();
   double highxrange = continuum->upperEnergy();
   
-  const bool definedRange = (lowxrange!=highxrange);
+  const bool definedRange = (lowxrange != highxrange);
   
   if( definedRange )
-  {
-    if( high )
-      return dataH->find_gamma_channel( highxrange-0.00001 );
-    else
-      return dataH->find_gamma_channel( lowxrange );
-  }//if( definedRange )
+    return dataH->find_gamma_channel( (high ? (highxrange-0.00001) : lowxrange) );
+  
+  if( PeakFitUtils::is_high_res(dataH) )
+    return findROILimitHighRes( peak, dataH, high );
+  
   
   const double mean = peak.mean();
   const double sigma = peak.sigma();
   
   const int direction = high ? 1 : -1;
-  lowxrange = mean + direction*7.5*sigma;//11.75*sigma;
-  
-  //Need to add a mechanism to try and shrink the xrange to only ~7.5 sigma from mean
-  //  when there isnt a lot of ambiguity to the continuum.
-  //(FWHM=2.35*sigma)
-  //May extend to 18.75 sigma (8 FWHM)
+  lowxrange = mean + direction * 7.5*sigma;  //2.3 FWHM
   
   const indexing_t nSideChannel = 1;
   
@@ -519,7 +613,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   
   
 #if( PRINT_ROI_DEBUG_INFO )
-  const bool debug_this_peak = false; //(fabs(peak.mean() - 1155.33) < 1.0) && direction>0;
+  const bool debug_this_peak = (fabs(peak.mean() - 12.15) < 1.0); // && direction>0;
   const vector<float> &energies = *dataH->gamma_channel_energies();
   
   if( debug_this_peak )
@@ -761,67 +855,19 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( (std::abs(int(lastchannel)-mean_channel) > std::abs(good_cont_channel-mean_channel)) )
   {
     const indexing_t nearest_channel = dataH->find_gamma_channel( mean + direction*3.5*sigma );
-    bool isNotDecreasing
-    = isStatisticallyGreaterOrEqual( nearest_channel, good_cont_channel,
-                                    good_cont_channel, lastchannel, dataH, 3.0 );
-    
-    const bool do_slope_check = false;
-    if( do_slope_check )
-    {
-      int near_start = static_cast<int>(min(good_cont_channel,(int)nearest_channel));
-      int near_end = static_cast<int>(max(good_cont_channel,(int)nearest_channel));
-      const int num_near_channel = near_end - near_start;
-      
-      //      indexing_t far_start = min(lastbin,good_cont_bin);
-      //      indexing_t far_end = max(lastbin,good_cont_bin);
-      int far_start = min(lastchannel,nearest_channel);
-      int far_end = max(lastchannel,nearest_channel);
-      const int num_far_channel = far_end - far_start;
-      
-      vector<float> near_data( num_near_channel, 0.0f ), near_x( num_near_channel, 0.0f );
-      vector<float> far_data( num_far_channel, 0.0f ), far_x( num_far_channel, 0.0f );
-      
-      for( int channel = near_start; channel < near_end; ++channel )
-      {
-        near_x[channel-near_start] = dataH->gamma_channel_center(channel);
-        near_x[channel-near_start] = static_cast<float>(channel-near_start+1);
-        near_data[channel-near_start] = contents[channel];
-      }
-      
-      for( int channel = far_start; channel < far_end; ++channel )
-      {
-        far_x[channel-far_start] = dataH->gamma_channel_center( channel );
-        far_x[channel-far_start] = static_cast<float>(channel-far_start+1);
-        far_data[channel-far_start] = contents[channel];
-      }
-      
-      std::vector<double> near_coeffs, near_uncerts;
-      std::vector<double> far_coeffs, far_uncerts;
-      double chi1 = fit_to_polynomial( &(near_x[0]), &(near_data[0]), 
-		                               static_cast<int>(near_x.size()), 1, near_coeffs, near_uncerts );
-      double chi2 = fit_to_polynomial( &(far_x[0]), &(far_data[0]), 
-		                               static_cast<int>(far_data.size()), 1, far_coeffs, far_uncerts );
-      
-      chi1 /= (near_x.size()-2);
-      chi2 /= (far_data.size()-2);
-      
-      const double mult = (high ? 1.0 : -1.0);
-      double uncert = sqrt( near_uncerts[1]*near_uncerts[1] + far_uncerts[1]*far_uncerts[1] );
-      const double lowerx = mult * near_coeffs[1];
-      const double upperx = mult * far_coeffs[1];
-      
-      cerr << "\n\nIsDecreasing=" << !isNotDecreasing
-      << "  nbin=" << near_x.size() << ", " << far_x.size()
-      << ", high=" << high << endl;
-      cerr << "chi1=" << chi1 << ", chi2=" << chi2 << endl;
-      cerr << "lowerx=" << lowerx << ", upperx=" << upperx << ", uncert=" << uncert << ", nsigma=" << (upperx-lowerx)/uncert << endl;
-      cerr << "near_coeffs[1]=" << near_coeffs[1] << " +- " << near_uncerts[1] << endl;
-      cerr << "far_coeffs[1]=" << far_coeffs[1] << " +- " << far_uncerts[1] << endl;
-    }//if( do_slope_check )
+    const bool isNotDecreasing = isStatisticallyGreaterOrEqual( nearest_channel, good_cont_channel,
+                                            good_cont_channel, lastchannel, dataH, 3.0 );
+
     
     
     if( high || isNotDecreasing )
+    {
+#if( PRINT_ROI_DEBUG_INFO )
+      if( debug_this_peak )
+        DebugLog(cerr) << "Setting lastchannel to " << lastchannel << "\n";
+#endif
       lastchannel = good_cont_channel;
+    }
     //    else
     //    {
     //      //now check from 11.75 to to 16.5 sigma, to see if we should include down
@@ -977,19 +1023,24 @@ ostream &operator<<( std::ostream &stream, const PeakContinuum &cont )
       stream << "Globally defined continuum";
     break;
       
+    case PeakContinuum::FlatStep:
     case PeakContinuum::LinearStep:
-      stream << "Linear step with coefficients {";
+    case PeakContinuum::BiLinearStep:
+    {
+      const char * const names[] = {"Flat", "Linear", "Bi-linear"};
+      stream << names[cont.type() - PeakContinuum::FlatStep] << " step with coefficients {";
       for( size_t i = 0; i < cont.m_values.size(); ++i )
         stream << (i?", ":"") << cont.m_values[i];
-      stream << "} relative to " << cont.m_refernceEnergy << " keV";
+      stream << "} relative to " << cont.m_referenceEnergy << " keV";
       break;
+    }
       
     case PeakContinuum::Constant:   case PeakContinuum::Linear:
     case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
       stream << "Polynomial continuum with values {";
       for( size_t i = 0; i < cont.m_values.size(); ++i )
         stream << (i?", ":"") << cont.m_values[i];
-      stream << "} relative to " << cont.m_refernceEnergy << " keV";
+      stream << "} relative to " << cont.m_referenceEnergy << " keV";
     break;
   }//switch( m_type )
 
@@ -1247,11 +1298,11 @@ void PeakContinuum::equalEnough( const PeakContinuum &lhs, const PeakContinuum &
     throw runtime_error( buffer );
   }
 
-  if( fabs(lhs.m_refernceEnergy - rhs.m_refernceEnergy) > 0.0001 )
+  if( fabs(lhs.m_referenceEnergy - rhs.m_referenceEnergy) > 0.0001 )
   {
     snprintf(buffer, sizeof(buffer),
              "PeakContinuum reference energy of LHS (%1.8E keV) vs RHS (%1.8E keV) doesnt match.",
-             lhs.m_refernceEnergy, rhs.m_refernceEnergy );
+             lhs.m_referenceEnergy, rhs.m_referenceEnergy );
     throw runtime_error( buffer );
   }
   
@@ -1521,8 +1572,28 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
   char buffer[128];
   xml_node<char> *node = 0;
   xml_node<char> *cont_node = doc->allocate_node( node_element, "PeakContinuum" );
-
-  snprintf( buffer, sizeof(buffer), "%i", sm_xmlSerializationVersion );
+  
+  // A reminder double check these logics when changing PeakContinuum::sm_xmlSerializationVersion
+  static_assert( PeakContinuum::sm_xmlSerializationVersion == 1,
+                "PeakContinuum::toXml needs to be updated for new serialization version." );
+  
+  // For version 1.0.8 and newer InterSpec, we will attempt to let InterSpec v1.0.7 and older be
+  //  able to read the peaks in N42 files, as long as no stepped-continuums are used.
+  int version = PeakContinuum::sm_xmlSerializationVersion;
+  switch( m_type )
+  {
+    case NoOffset: case External: case Constant: case Linear: case Quadratic: case Cubic:
+      // Nothing changed for these continuum types between version 0 and version 1.
+      version = 0;
+      break;
+      
+    case FlatStep: case LinearStep: case BiLinearStep:
+      // These continuums were added for serialization version 1, starting with InterSpec v1.0.8.
+      version = 1;
+      break;
+  }//switch( m_type )
+  
+  snprintf( buffer, sizeof(buffer), "%i", version );
   const char *val = doc->allocate_string( buffer );
   xml_attribute<char> *att = doc->allocate_attribute( "version", val );
   cont_node->append_attribute( att );
@@ -1534,18 +1605,7 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
     
   parent->append_node( cont_node );
   
-  const char *type = 0;
-  switch( m_type )
-  {
-    case NoOffset:   type = "NoOffset";   break;
-    case Constant:   type = "Constant";   break;
-    case Linear:     type = "Linear";     break;
-    case Quadratic:  type = "Quardratic"; break;  //Note mispelling of "Quardratic" is left for backwards compatibility (InterSpec v1.0.6 and before), but should eventually be fixed...
-    case Cubic:      type = "Cubic";      break;
-    case LinearStep: type = "LinearStep"; break;
-    case External:   type = "External";   break;
-  }//switch( m_type )
-  
+  const char *type = offset_type_str(m_type);
   node = doc->allocate_node( node_element, "Type", type );
   cont_node->append_node( node );
   
@@ -1559,7 +1619,7 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
   node = doc->allocate_node( node_element, "UpperEnergy", val );
   cont_node->append_node( node );
   
-  snprintf( buffer, sizeof(buffer), "%1.8e", m_refernceEnergy );
+  snprintf( buffer, sizeof(buffer), "%1.8e", m_referenceEnergy );
   val = doc->allocate_string( buffer );
   node = doc->allocate_node( node_element, "ReferenceEnergy", val );
   cont_node->append_node( node );
@@ -1648,8 +1708,16 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
   if( !att || !att->value() || (sscanf(att->value(), "%i", &version)!=1) )
     throw runtime_error( "PeakContinuum invalid version" );
   
-  if( version != sm_xmlSerializationVersion )
-    throw runtime_error( "Invalid PeakContinuum version" );
+  // A reminder double check these logics when changing PeakContinuum::sm_xmlSerializationVersion
+  static_assert( PeakContinuum::sm_xmlSerializationVersion == 1,
+                "PeakContinuum::toXml needs to be updated for new serialization version." );
+  
+  // Serialization version 1 is backwards compatible with version 0 for de-serialization, so no
+  //  changes to this code is needed.
+  if( (version < 0) || (version > PeakContinuum::sm_xmlSerializationVersion) )
+    throw runtime_error( "Invalid PeakContinuum version: " + std::to_string(version) + ".  "
+                    + "Only up to version " + to_string(PeakContinuum::sm_xmlSerializationVersion)
+                    + " supported." );
   
   att = cont_node->first_attribute( "id", 2 );
   if( !att || !att->value() || (sscanf(att->value(), "%i", &contId)!=1) )
@@ -1660,23 +1728,7 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
   if( !node || !node->value() )
     throw runtime_error( "PeakContinuum not Type node" );
   
-  if( compare(node->value(),node->value_size(),"NoOffset",8,false) )
-    m_type = NoOffset;
-  else if( compare(node->value(),node->value_size(),"Constant",8,false) )
-    m_type = Constant;
-  else if( compare(node->value(),node->value_size(),"Linear",6,false) )
-    m_type = Linear;
-  else if( compare(node->value(),node->value_size(),"Quardratic",10,false)
-           || compare(node->value(),node->value_size(),"Quadratic",9,false) )
-    m_type = Quadratic;
-  else if( compare(node->value(),node->value_size(),"Cubic",5,false) )
-    m_type = Cubic;
-  else if( compare(node->value(),node->value_size(),"LinearStep",10,false) )
-    m_type = LinearStep;
-  else if( compare(node->value(),node->value_size(),"External",8,false) )
-    m_type = External;
-  else
-    throw runtime_error( "Invalid continuum type" );
+  m_type = str_to_offset_type_str( node->value(), node->value_size() );
   
   float dummyval;
   node = cont_node->first_node( "LowerEnergy", 11 );
@@ -1692,7 +1744,7 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
   node = cont_node->first_node( "ReferenceEnergy", 15 );
   if( !node || !node->value() || (sscanf(node->value(),"%e",&dummyval) != 1) )
     throw runtime_error( "Continuum didnt have ReferenceEnergy" );
-  m_refernceEnergy = dummyval;
+  m_referenceEnergy = dummyval;
   
   if( m_type != NoOffset && m_type != External )
   {
@@ -1783,7 +1835,7 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   xml_node<char> *node = 0;
   xml_node<char> *peak_node = doc->allocate_node( node_element, "Peak" );
   
-  snprintf( buffer, sizeof(buffer), "%i", sm_xmlSerializationVersion );
+  snprintf( buffer, sizeof(buffer), "%i", PeakDef::sm_xmlSerializationVersion );
   const char *val = doc->allocate_string( buffer );
   xml_attribute<char> *att = doc->allocate_attribute( "version", val );
   peak_node->append_attribute( att );
@@ -2004,7 +2056,7 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   if( sscanf( att->value(), "%i", &version ) != 1 )
     throw runtime_error( "Non integer version number" );
   
-  if( version != sm_xmlSerializationVersion )
+  if( version != PeakDef::sm_xmlSerializationVersion )
     throw runtime_error( "Invalid peak version" );
   
   xml_node<char> *node = peak_node->first_node("UserLabel",9);
@@ -2300,18 +2352,20 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 	const char *q = "\""; // for creating valid json format
 
 	answer << "{" << q << "type" << q << ":" << q;
-	switch (continuum->type())
+	switch( continuum->type() )
 	{
-	  case PeakContinuum::NoOffset:   answer << "NoOffset";   break;
-	  case PeakContinuum::Constant:   answer << "Constant";   break;
-	  case PeakContinuum::Linear:     answer << "Linear";     break;
-	  case PeakContinuum::Quadratic:  answer << "Quadratic";  break;
-	  case PeakContinuum::Cubic:      answer << "Cubic";      break;
-    case PeakContinuum::LinearStep: answer << "LinearStep"; break;
-	  case PeakContinuum::External:   answer << "External";   break;
+	  case PeakContinuum::NoOffset:     answer << "NoOffset";     break;
+	  case PeakContinuum::Constant:     answer << "Constant";     break;
+	  case PeakContinuum::Linear:       answer << "Linear";       break;
+	  case PeakContinuum::Quadratic:    answer << "Quadratic";    break;
+	  case PeakContinuum::Cubic:        answer << "Cubic";        break;
+    case PeakContinuum::FlatStep:     answer << "FlatStep";     break;
+    case PeakContinuum::LinearStep:   answer << "LinearStep";   break;
+    case PeakContinuum::BiLinearStep: answer << "BiLinearStep"; break;
+	  case PeakContinuum::External:     answer << "External";     break;
 	}//switch( continuum->type() )
 	answer << q << "," << q << "lowerEnergy" << q << ":" << continuum->lowerEnergy()
-		<< "," << q << "upperEnergy" << q << ":" << continuum->upperEnergy();
+         << "," << q << "upperEnergy" << q << ":" << continuum->upperEnergy();
   
   
   if( foreground && foreground->channel_energies() && foreground->channel_energies()->size() > 2 )
@@ -2335,7 +2389,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     case PeakContinuum::Linear:
     case PeakContinuum::Quadratic:
     case PeakContinuum::Cubic:
+    case PeakContinuum::FlatStep:
     case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
     {
       if( IsInf(continuum->referenceEnergy()) || IsNan(continuum->referenceEnergy()) )
         throw runtime_error( "Continuum reference energy is invalid" );
@@ -2361,7 +2417,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         answer << (i ? "," : "") << (continuum->fitForParameter()[i] ? "true" : "false");
       answer << "]";
       
-      if( (continuum->type() == PeakContinuum::LinearStep)
+      if( ((continuum->type() == PeakContinuum::FlatStep)
+           || (continuum->type() == PeakContinuum::LinearStep)
+           || (continuum->type() == PeakContinuum::BiLinearStep) )
          && foreground && foreground->num_gamma_channels() )
       {
         const size_t nchannel = foreground->num_gamma_channels();
@@ -2423,8 +2481,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           answer << "]," << q << "continuumCounts" << q << ":[";
         }
          */
-        
-#warning "Can make computing continuumCounts for LinearStep so much more efficient"
+#ifndef _WIN32        
+#warning "Can make computing continuumCounts for FlatStep/LinearStep/BiLinearStep so much more efficient"
+#endif        
         for (size_t i = firstbin; i <= lastbin; ++i)
         {
           const float lower_x = foreground->gamma_channel_lower( i );
@@ -2435,7 +2494,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         answer << "]";
         
         answer << std::setprecision(9);
-      }//if( continuum->type() == PeakContinuum::LinearStep )
+      }//if( continuum->type() == FlatStep/LinearStep/BiLinearStep )
       
       break;
     }//polynomial continuum
@@ -2455,7 +2514,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
         lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
         
-        //see comments above in LinearStep section
+        //see comments above in FlatStep section
         const auto oldprecision = answer.precision();
         answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
 
@@ -3518,26 +3577,25 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
 }//void inheritUserSelectedOptions(...)
 
 
-bool PeakContinuum::defined() const
+bool PeakContinuum::parametersProbablySet() const
 {
   switch( m_type )
   {
     case NoOffset:
-      return false;
-      
-    case Cubic:
-      if( m_values[3] != 0.0)
-        return true;
-    case Quadratic:
-      if( m_values[2] != 0.0)
-        return true;
-    case Linear:
-    case LinearStep:
-      if( m_values[1] != 0.0)
-        return true;
-    case Constant:
-      return (m_values[0] != 0.0);
-    break;
+      return true;
+    
+    case Constant:     case Linear:
+    case Quadratic:    case Cubic:
+    case FlatStep:     case LinearStep:
+    case BiLinearStep:
+    {
+      for( const auto &v : m_values )
+      {
+        if( v != 0.0 )
+          return true;
+      }
+      break;
+    }// polynomial or step continuum
     
     case External:
       return !!m_externalContinuum;
@@ -3546,7 +3604,6 @@ bool PeakContinuum::defined() const
   
   return false;
 }//bool defined() const
-
 
 
 
@@ -3702,26 +3759,97 @@ double PeakDef::gaus_integral( const double peak_mean, const double peak_sigma,
 ////////////////////////////////////////////////////////////////////////////////
 
 /** Text appropriate for use as a label for the continuum type in the gui. */
-const char *PeakContinuum::offset_type_label( const OffsetType type )
+const char *PeakContinuum::offset_type_label( const PeakContinuum::OffsetType type )
 {
   switch( type )
   {
-    case PeakContinuum::NoOffset:   return "None";
-    case PeakContinuum::Constant:   return "Constant";
-    case PeakContinuum::Linear:     return "Linear";
-    case PeakContinuum::Quadratic:  return "Quadratic";
-    case PeakContinuum::Cubic:      return "Cubic";
-    case PeakContinuum::LinearStep: return "Linear Step";
-    case PeakContinuum::External:   return "Global Cont.";
+    case PeakContinuum::NoOffset:     return "None";
+    case PeakContinuum::Constant:     return "Constant";
+    case PeakContinuum::Linear:       return "Linear";
+    case PeakContinuum::Quadratic:    return "Quadratic";
+    case PeakContinuum::Cubic:        return "Cubic";
+    case PeakContinuum::FlatStep:     return "Flat Step";
+    case PeakContinuum::LinearStep:   return "Linear Step";
+    case PeakContinuum::BiLinearStep: return "Bi-linear Step";
+    case PeakContinuum::External:     return "Global Cont.";
   }//switch( type )
   return "InvalidOffsetType";
 }
+
+
+const char *PeakContinuum::offset_type_str( const PeakContinuum::OffsetType type )
+{
+  switch( type )
+  {
+    case NoOffset:     return "NoOffset";
+    case Constant:     return "Constant";
+    case Linear:       return "Linear";
+    case Quadratic:    return "Quardratic"; //Note mispelling of "Quardratic" is left for backwards compatibility (InterSpec v1.0.6 and before), but should eventually be fixed...
+    case Cubic:        return "Cubic";
+    case FlatStep:     return "FlatStep";
+    case LinearStep:   return "LinearStep";
+    case BiLinearStep: return "BiLinearStep";
+    case External:     return "External";
+  }//switch( m_type )
+  
+  return "InvalidOffsetType";
+}
+
+PeakContinuum::OffsetType PeakContinuum::str_to_offset_type_str( const char * const str, const size_t len )
+{
+  using ::rapidxml::internal::compare;
+  
+  /*
+   // Alternative implementation for this function that is untested
+  for( OffsetType type = OffsetType(0); type <= External; type = OffsetType(type+1) )
+  {
+    const char * const teststr = offset_type_str(type);
+    const size_t teststr_len = strlen(teststr);
+    if( compare(str,len,teststr,teststr_len,false) )
+      return type;
+  }
+  if( compare(str,len,"Quadratic",9,false) )
+    return PeakContinuum::Quadratic;
+  throw runtime_error( "Invalid continuum type" );
+  */
+  
+  if( compare(str,len,"NoOffset",8,false) )
+    return PeakContinuum::NoOffset;
+  
+  if( compare(str,len,"Constant",8,false) )
+    return PeakContinuum::Constant;
+  
+  if( compare(str,len,"Linear",6,false) )
+    return PeakContinuum::Linear;
+  
+  if( compare(str,len,"Quardratic",10,false) || compare(str,len,"Quadratic",9,false) )
+    return PeakContinuum::Quadratic;
+  
+  if( compare(str,len,"Cubic",5,false) )
+    return PeakContinuum::Cubic;
+  
+  if( compare(str,len,"FlatStep",8,false) )
+    return PeakContinuum::FlatStep;
+  
+  if( compare(str,len,"LinearStep",10,false) )
+    return PeakContinuum::LinearStep;
+  
+  if( compare(str,len,"BiLinearStep",12,false) )
+    return PeakContinuum::BiLinearStep;
+  
+  if( compare(str,len,"External",8,false) )
+    return PeakContinuum::External;
+  
+  throw runtime_error( "Invalid continuum type" );
+}//str_to_offset_type_str(...)
+
+
 
 PeakContinuum::PeakContinuum()
 : m_type( PeakContinuum::NoOffset ),
   m_lowerEnergy( 0.0 ),
   m_upperEnergy( 0.0 ),
-  m_refernceEnergy( 0.0 )
+  m_referenceEnergy( 0.0 )
 {
 }//PeakContinuum constructor
 
@@ -3731,7 +3859,7 @@ bool PeakContinuum::operator==( const PeakContinuum &rhs ) const
          && m_lowerEnergy == rhs.m_lowerEnergy
          && m_lowerEnergy == rhs.m_lowerEnergy
          && m_upperEnergy == rhs.m_upperEnergy
-         && m_refernceEnergy == rhs.m_refernceEnergy
+         && m_referenceEnergy == rhs.m_referenceEnergy
          && m_values == rhs.m_values
          && m_uncertainties == rhs.m_uncertainties
          && m_fitForValue == rhs.m_fitForValue
@@ -3749,7 +3877,7 @@ void PeakContinuum::setParameters( double referenceEnergy,
       throw runtime_error( "PeakContinuum::setParameters invalid m_type" );
       
     case Constant:   case Linear:
-    case Quadratic: case Cubic:
+    case Quadratic:  case Cubic:
       if( x.size() != static_cast<size_t>(m_type) )
         throw runtime_error( "PeakContinuum::setParameters invalid parameter size" );
       
@@ -3757,17 +3885,23 @@ void PeakContinuum::setParameters( double referenceEnergy,
         throw runtime_error( "PeakContinuum::setParameters invalid uncert size" );
     break;
       
+    case FlatStep:
     case LinearStep:
-      if( x.size() != 2 )
-        throw runtime_error( "PeakContinuum::setParameters invalid parameter size for LinearStep" );
+    case BiLinearStep:
+    {
+      const size_t numpars = 2 + (m_type - FlatStep);
+      if( x.size() != numpars )
+        throw runtime_error( "PeakContinuum::setParameters invalid parameter size for stepped continuum" );
       
-      if( !uncertainties.empty() && (uncertainties.size() != 2) )
-        throw runtime_error( "PeakContinuum::setParameters invalid uncert size for LinearStep" );
-    break;
+      if( !uncertainties.empty() && (uncertainties.size() != numpars) )
+        throw runtime_error( "PeakContinuum::setParameters invalid uncert size for stepped continuum" );
+    
+      break;
+    }//case Flat/Linear/BiLinear-step
   };//switch( m_type )
   
   m_values = x;
-  m_refernceEnergy = referenceEnergy;
+  m_referenceEnergy = referenceEnergy;
   m_fitForValue.resize( m_values.size(), true );
   m_uncertainties = uncertainties;
   m_uncertainties.resize( m_values.size(), 0.0 );
@@ -3824,11 +3958,16 @@ void PeakContinuum::setParameters( double referenceEnergy,
         uncerts.insert( end(uncerts), uncertainties, uncertainties+m_type );
       break;
       
+    case FlatStep:
     case LinearStep:
-      values.insert( end(values), parameters, parameters + 2 );
+    case BiLinearStep:
+    {
+      const size_t npars = 2 + (m_type - FlatStep);
+      values.insert( end(values), parameters, parameters + npars );
       if( uncertainties )
-        uncerts.insert( end(uncerts), uncertainties, uncertainties + 2 );
+        uncerts.insert( end(uncerts), uncertainties, uncertainties + npars );
       break;
+    }
   };//switch( m_type )
   
   setParameters( referenceEnergy, values, uncerts );
@@ -3868,7 +4007,8 @@ bool PeakContinuum::isPolynomial() const
       
     case Constant:   case Linear:
     case Quadratic: case Cubic:
-    case LinearStep:
+    case FlatStep:  case LinearStep:
+    case BiLinearStep:
       return true;
       
     break;
@@ -3880,6 +4020,8 @@ bool PeakContinuum::isPolynomial() const
 
 void PeakContinuum::setType( PeakContinuum::OffsetType type )
 {
+  const PeakContinuum::OffsetType oldType = m_type;
+  
   m_type = type;
   
   switch( m_type )
@@ -3889,7 +4031,7 @@ void PeakContinuum::setType( PeakContinuum::OffsetType type )
       m_uncertainties.clear();
       m_fitForValue.clear();
       m_externalContinuum.reset();
-      //m_lowerEnergy = m_upperEnergy = m_refernceEnergy = 0.0;
+      //m_lowerEnergy = m_upperEnergy = m_referenceEnergy = 0.0;
     break;
       
     case Constant:
@@ -3904,34 +4046,86 @@ void PeakContinuum::setType( PeakContinuum::OffsetType type )
       m_uncertainties.resize( 2, 0.0 );
       m_fitForValue.resize( 2, true );
       m_externalContinuum.reset();
-      break;
       
-    case LinearStep:
-      m_values.resize( 2, 0.0 );
-      m_uncertainties.resize( 2, 0.0 );
-      m_fitForValue.resize( 2, true );
-      m_externalContinuum.reset();
-    break;
+      if( oldType == FlatStep )
+        m_values[1] = m_uncertainties[1] = 0.0;
+      break;
       
     case Quadratic:
       m_values.resize( 3, 0.0 );
       m_uncertainties.resize( 3, 0.0 );
       m_fitForValue.resize( 3, true );
       m_externalContinuum.reset();
-    break;
-    
+      if( (oldType == BiLinearStep) || (oldType == LinearStep) )
+        m_values[2] = m_uncertainties[2] = 0.0;
+      break;
+      
     case Cubic:
       m_values.resize( 4, 0.0 );
       m_uncertainties.resize( 4, 0.0 );
       m_fitForValue.resize( 4, true );
       m_externalContinuum.reset();
+      if( oldType == BiLinearStep )
+        m_values[2] = m_values[3] = m_uncertainties[2] = m_uncertainties[3] = 0.0;
+      break;
+      
+    case FlatStep:
+      if( (oldType == LinearStep) && (m_values.size() > 2) ) //Preserve the amount of "step"
+      {
+        m_values[1] = m_values[2];
+        m_uncertainties[1] = m_uncertainties[2];
+      }else
+      {
+        if( (m_values.size() > 1) && (m_uncertainties.size() > 1) )
+          m_values[1] = m_uncertainties[1] = 0.0;
+      }
+      
+      m_values.resize( 2, 0.0 );
+      m_uncertainties.resize( 2, 0.0 );
+      m_fitForValue.resize( 2, true );
+      m_externalContinuum.reset();
     break;
+      
+    case LinearStep:
+      m_values.resize( 3, 0.0 );
+      m_uncertainties.resize( 3, 0.0 );
+      m_fitForValue.resize( 3, true );
+      m_externalContinuum.reset();
+      
+      if( oldType == FlatStep ) //Preserve the amount of "step"
+      {
+        m_values[2] = m_values[1];
+        m_uncertainties[2] = m_uncertainties[1];
+        m_values[1] = m_uncertainties[1] = 0.0;
+      }else
+      {
+        //If going from BiLinear/Quadratic/Cubic to LinearStep the last parameter makes no sense to keep around
+        m_values[2] = m_uncertainties[2] = 0.0;
+      }
+      
+      break;
+      
+    case BiLinearStep:
+      if( (oldType == FlatStep) && (m_values.size() > 1) )
+        m_values[1] = m_uncertainties[1] = 0.0;
+         
+      m_values.resize( 4, 0.0 );
+      m_uncertainties.resize( 4, 0.0 );
+      m_fitForValue.resize( 4, true );
+      m_externalContinuum.reset();
+      //If going from Cubic to BiLinearStep the last two parameters makes no sense to keep around
+      //  so just the right line equal to the left line
+      m_values[2] = m_values[0];
+      m_values[3] = m_values[1];
+      m_uncertainties[2] = m_uncertainties[0];
+      m_uncertainties[3] = m_uncertainties[1];
+      break;
       
     case External:
       m_values.clear();
       m_uncertainties.clear();
       m_fitForValue.clear();
-      m_refernceEnergy = 0.0;
+      m_referenceEnergy = 0.0;
     break;
   };//switch( m_type )
   
@@ -3941,7 +4135,7 @@ void PeakContinuum::calc_linear_continuum_eqn( const std::shared_ptr<const Measu
                                         const double x0, const double x1,
                                         const int nbin )
 {
-  m_refernceEnergy = x0;
+  m_referenceEnergy = x0;
   m_lowerEnergy = x0;
   m_upperEnergy = x1;
   m_type = PeakContinuum::Linear;
@@ -3951,24 +4145,64 @@ void PeakContinuum::calc_linear_continuum_eqn( const std::shared_ptr<const Measu
   const size_t xlowchannel = data->find_gamma_channel( (float)x0 );
   const size_t xhighchannel = data->find_gamma_channel( (float)x1 );
   
-  eqn_from_offsets( xlowchannel, xhighchannel, m_refernceEnergy, data, nbin, m_values[1], m_values[0] );
+  eqn_from_offsets( xlowchannel, xhighchannel, m_referenceEnergy, data, nbin, m_values[1], m_values[0] );
 }//void calc_continuum_eqn(...)
 
 
 double PeakContinuum::offset_integral( const double x0, const double x1,
                                        const std::shared_ptr<const SpecUtils::Measurement> &data  ) const
 {
+  
+  // A lambda to integrate data for step function continuums
+  auto integrate_for_step = [this,x0,x1,data]( double &roi_lower, double &roi_upper, double &cumulative_data, double &roi_data_sum ) {
+    
+    if( !data || !data->num_gamma_channels() )
+      throw runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
+    
+    roi_lower = lowerEnergy();
+    roi_upper = upperEnergy();
+    
+    // To be consistent with how fit_amp_and_offset(...) handles things, we will do our own
+    //  summing here, rather than calling Measurement::gamma_integral.
+    const vector<float> &counts = *data->gamma_counts();
+    const size_t mid_channel = data->find_gamma_channel( 0.5*(x0 + x1) );
+    const size_t lower_channel = data->find_gamma_channel( roi_lower );
+    const size_t upper_channel = data->find_gamma_channel( roi_upper );
+    
+    // Adjusting roi_lower and roi_upper for rounding to channel edges to match fit_amp_and_offset(...)
+    roi_lower = data->gamma_channel_lower(lower_channel);
+    roi_upper = data->gamma_channel_upper(upper_channel);
+    
+    //assert( mid_channel >= lower_channel ); //PeakDef::gaus_peaks_to_json will call a few channels below and above ROI extents
+    //assert( mid_channel <= upper_channel );
+    assert( lower_channel <= upper_channel );
+    assert( upper_channel < counts.size() );
+    
+    cumulative_data = 0.0;
+    roi_data_sum = 0.0;
+    for( size_t i = lower_channel; i <= upper_channel; ++i )
+    {
+      roi_data_sum += counts[i];
+      cumulative_data += (i < mid_channel) ? counts[i] : 0.0f;
+    }
+    
+    if( (mid_channel >= lower_channel) && (mid_channel <= upper_channel) )
+      cumulative_data += 0.5*counts[mid_channel];
+  };//integrate_for_step lamda
+  
+  
   switch( m_type )
   {
     case NoOffset:
       return 0.0;
     
     case Constant: case Linear: case Quadratic: case Cubic:
-      return offset_eqn_integral( &(m_values[0]), m_type, x0, x1, m_refernceEnergy );
-      
+      return offset_eqn_integral( &(m_values[0]), m_type, x0, x1, m_referenceEnergy );
+    
+    case FlatStep:
     case LinearStep:
     {
-      assert( m_values.size() == 2 );
+      assert( m_values.size() == (2 + (m_type - FlatStep)) );
       
       if( !data || !data->num_gamma_channels() )
         throw runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
@@ -3976,30 +4210,47 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       // If you change any of this, make sure you update fit_amp_and_offset(...) as well
       
       // TODO: this is not efficient, tested, or correct if integration limits do not correspond to channel limits
-#warning "TODO: LinearStep offset_integral is not efficient, tested, or correct"
+#ifndef _WIN32  
+      #warning "TODO: Flat/Linear/BiLinear-Step offset_integral is not efficient, tested, or correct"
+#endif
+      double roi_lower, roi_upper, cumulative_data, roi_data_sum;
+      integrate_for_step( roi_lower, roi_upper, cumulative_data, roi_data_sum );
       
-      const double roi_lower = lowerEnergy();
-      const double roi_upper = upperEnergy();
-      
-      const double cumulative_data = data->gamma_integral(roi_lower, 0.5*(x0 + x1) );
-      const double roi_data_sum = data->gamma_integral(roi_lower, roi_upper);
+      const double x0_rel = x0 - m_referenceEnergy;
+      const double x1_rel = x1 - m_referenceEnergy;
       
       const double frac_data = cumulative_data / roi_data_sum;
       
-      const double roi_0 = roi_lower - m_refernceEnergy;
-      const double roi_1 = roi_upper - m_refernceEnergy;
-      const double frac_roi = (x1 - x0) / (roi_upper - roi_lower);
+      const double offset = m_values[0]*(x1_rel - x0_rel);
+      const double linear = ((m_type == FlatStep) ? 0.0 :  0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
+      const size_t step_index = ((m_type == FlatStep) ? 1 : 2);
+      const double step_contribution = m_values[step_index] * frac_data * (x1_rel - x0_rel);
+       
+      const double answer = offset + linear + step_contribution;
       
-      const double offset = m_values[0]*(x1 - x0);
-      const double linear_total_area = 0.5*m_values[1]*(roi_1*roi_1 - roi_0*roi_0);
+      return std::max( answer, 0.0 );
+    }//case FlatStep and LinearStep
+
       
-      // TODO: I'm not quite sure where this next factor of 2 comes from.  We want linear step to
-      //       start and end at the same y-values as 'Linear' with the same coefficients, and to
-      //       make this happen, we need the 2, although I dont niavely see where it comes from.
-      const double not_understood_correction = 2.0;
+    case BiLinearStep:
+    {
+      assert( m_values.size() == 4 );
       
-      return offset + not_understood_correction*frac_roi*linear_total_area*frac_data;
-    }//case LinearStep:
+      double roi_lower, roi_upper, cumulative_data, roi_data_sum;
+      integrate_for_step( roi_lower, roi_upper, cumulative_data, roi_data_sum );
+      
+      const double x0_rel = x0 - m_referenceEnergy;
+      const double x1_rel = x1 - m_referenceEnergy;
+      
+      const double frac_data = cumulative_data / roi_data_sum;
+      
+      const double left_poly = m_values[0]*(x1_rel - x0_rel) + 0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
+      const double right_poly = m_values[2]*(x1_rel - x0_rel) + 0.5*m_values[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
+      
+      const double contrib = ((1.0 - frac_data) * left_poly) + (frac_data * right_poly);
+      
+      return contrib;
+    }//case BiLinearStep:
       
     case External:
       if( !m_externalContinuum )
@@ -4076,7 +4327,7 @@ double PeakContinuum::offset_eqn_integral( const double *coefs,
   
   switch( type )
   {
-    case NoOffset: case External: case LinearStep:
+    case NoOffset: case External: case FlatStep: case LinearStep: case BiLinearStep:
       throw runtime_error( "PeakContinuum::offset_eqn_integral(...) may only be"
                           " called for polynomial backgrounds" );
       
@@ -4112,25 +4363,42 @@ void PeakContinuum::translate_offset_polynomial( double *new_coefs,
   switch( type )
   {
     case NoOffset:
-    case External:
-      throw runtime_error( "translate_offset_polynomial invalid offset type" );
+      return;
+    
+    case Constant:
+      new_coefs[0] = old_coefs[0];
+      break;
+      
+    case Linear:
+      new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
+      new_coefs[1] = old_coefs[1];
+      break;
       
     case Quadratic:
     case Cubic:
       throw runtime_error( "translate_offset_polynomial does not yet support "
                            "quadratic or cubic polynomials" );
-      
-    case Linear:
+    
     case LinearStep:
-    {
       new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
       new_coefs[1] = old_coefs[1];
+      new_coefs[2] = old_coefs[2];
       break;
-    }//case Linear:
       
-    case Constant:
-      new_coefs[0] = old_coefs[0];
+    case BiLinearStep:
+      new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
+      new_coefs[1] = old_coefs[1];
+      new_coefs[2] = old_coefs[2] + old_coefs[3] * (new_center - old_center);
+      new_coefs[3] = old_coefs[3];
       break;
+    
+    case FlatStep:
+      new_coefs[0] = old_coefs[0];
+      new_coefs[1] = old_coefs[1];
+      break;
+      
+    case External:
+      throw runtime_error( "translate_offset_polynomial does not support external continuum" );
   }//switch( type )
 }//void translate_offset_polynomial(...)
 

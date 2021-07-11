@@ -89,10 +89,10 @@ Wt::Signal<SpectrumDataModel::ColumnType> &SpectrumDataModel::dataSet()
   return m_dataSet;
 }//Wt::Signal<ColumnType> &dataSet()
 
-void SpectrumDataModel::setDataHistogram( std::shared_ptr<const Measurement> hist )
+void SpectrumDataModel::setDataHistogram( std::shared_ptr<Measurement> hist )
 {
-  const float liveTime = hist ? hist->live_time() : -1.0f;
-  const float realTime = hist ? hist->real_time() : -1.0f;
+  const float liveTime = hist ? hist->live_time() : 0.0f;
+  const float realTime = hist ? hist->real_time() : 0.0f;
   const float neutronCounts = hist ? hist->neutron_counts_sum() : -1.0f;
   
   // Store the data.
@@ -136,11 +136,10 @@ void SpectrumDataModel::setDataHistogram( std::shared_ptr<const Measurement> his
 }//void setDataHistogram( std::shared_ptr<Measurement> hist )
 
 
-void SpectrumDataModel::setSecondDataHistogram( std::shared_ptr<const Measurement> hist,
-                                                bool ownAxis )
+void SpectrumDataModel::setSecondDataHistogram( std::shared_ptr<Measurement> hist, const bool ownAxis )
 {
-  const float liveTime = hist ? hist->live_time() : -1.0f;
-  const float realTime = hist ? hist->real_time() : -1.0f;
+  const float liveTime = hist ? hist->live_time() : 0.0f;
+  const float realTime = hist ? hist->real_time() : 0.0f;
   const float neutronCounts = hist ? hist->neutron_counts_sum() : -1.0f;
   
   m_secondDataLiveTime = liveTime;
@@ -188,10 +187,10 @@ void SpectrumDataModel::setSecondDataHistogram( std::shared_ptr<const Measuremen
 }//void setSecondDataHistogram(...);
 
 
-void SpectrumDataModel::setBackgroundHistogram( std::shared_ptr<const Measurement> hist )
+void SpectrumDataModel::setBackgroundHistogram( std::shared_ptr<Measurement> hist )
 {
-  const float liveTime = hist ? hist->live_time() : -1.0f;
-  const float realTime = hist ? hist->real_time() : -1.0f;
+  const float liveTime = hist ? hist->live_time() : 0.0f;
+  const float realTime = hist ? hist->real_time() : 0.0f;
   const float neutronCounts = hist ? hist->neutron_counts_sum() : -1.0f;
   
   m_backgroundLiveTime = liveTime;

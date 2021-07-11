@@ -222,11 +222,6 @@ ul.HeavyNavMenu > li.item:hover  {
   background: black !important;
 }
 
-.FooterHelpBtn {
-  background-image: radial-gradient(white 50%, rgb(44,45,48));
-}
-
-
 .PhoneAuxWindowHeader {
   background-color: rgb(65,65,65) !important; 
 }
@@ -261,4 +256,9 @@ ul.HeavyNavMenu > li.item:hover  {
 /* When using a HTML app menu-bar, fix up minimize and maximize buttons on hover */
 .app-titlebar .window-controls-container .window-icon-bg .window-icon:hover {
   background-color: rgb(175,175,175) !important;
+}
+
+/* When the app is not the forground app, change title bar color a little to indicate this */
+.app-titlebar.inactive, .app-titlebar.inactive button {
+  background-color: rgb(50,50,51) !important;
 }

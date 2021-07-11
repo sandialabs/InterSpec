@@ -45,11 +45,11 @@ namespace Wt
   class WText;
   class WCheckBox;
   class WLineEdit;
-  class WTreeView;
   class WPushButton;
 }//namespace Wt
 
 class InterSpec;
+class RowStretchTreeView;
 class NativeFloatSpinBox;
 class IsotopeSearchByEnergyModel;
 
@@ -187,7 +187,7 @@ protected:
   Wt::WContainerWidget *m_searchEnergies;
   int m_currentSearch;
   Wt::WText *m_searching;
-  Wt::WTreeView *m_results;
+  RowStretchTreeView *m_results;
   NativeFloatSpinBox *m_minBranchRatio;
   Wt::WLineEdit *m_minHalfLife;
   IsotopeSearchByEnergyModel *m_model;

@@ -41,22 +41,27 @@ input
 
 
 #qtip-growl-container{
-position: fixed;
-top: 10px; right: 10px;
-z-index: 2000000000; /*super large number, nothing should cover this */
-}
-#qtip-growl-container .qtip{
-position: static;
-min-height: 0;
-overflow: hidden;
-margin: 0 0 5px 0;
+  position: fixed;
+  top: 10px; right: 10px;
+  z-index: 2000000000; /*super large number, nothing should cover this */
 }
 
+#qtip-growl-container .qtip{
+  position: static;
+  min-height: 0;
+  overflow: hidden;
+  margin: 0 0 5px 0;
+}
+
+/* For electron builds, that dont use native menu, make sure warnings are below titlebar. */
+#qtip-growl-container.belowMenu {
+  top: 35px;
+}
 
 
 .imageBorder {
-padding:1px;
-border:1px solid #021a40;
+  padding:1px;
+  border:1px solid #021a40;
 }
 
 .FileUploadCover
@@ -72,6 +77,18 @@ border:1px solid #021a40;
   filter: alpha(opacity=80);
 }
 
+
+.UploadProgressCover
+{
+  width: 100%;
+  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 16777270;
+}
+
+
 .UpDiv
 {
   position: absolute;
@@ -81,7 +98,7 @@ border:1px solid #021a40;
 }
 
 
-.UpCenterDiv
+.UpCenterDiv, .UpCenter
 {
   height: 30%;
   width: 80%;
@@ -90,6 +107,10 @@ border:1px solid #021a40;
   left: 10%;
   vertical-align: middle;
   display:table;
+}
+
+.UpCenterDiv
+{
   -webkit-border-radius: 15px;
   -moz-border-radius: 15px;
   border-radius: 15px;
@@ -216,21 +237,6 @@ width:100%;
   height: 16px;
 }
 
-/* ------------------------- */
-/* ----    ICON CLASS   ---- */
-/* ------------------------- */
-
-/* The IconClass style is required for the following icons to behave correctly */
-
-.IconClass, .IconClass:hover {
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
-.IconClass:disabled, .IconClass:disabled:hover {
-
-}
 
 
 /*
@@ -243,31 +249,19 @@ width:100%;
 }
 */
 
-.RefreshIcon,.RefreshIcon:hover
-{
-  background-image: url('../InterSpec_resources/images/arrow_refresh.png');
-  background-position: 3px center;
-  background-repeat: no-repeat;
-  padding-left: 21px;  /* width of the image plus a little extra padding */
-}
-
 
 .FooterHelpBtn
 {
   margin-top: 2px;
-  background: white;
-  float: left;
   width: 20px;
   height: 20px;
   cursor:pointer;
-  -webkit-border-radius: 4px;
-  -moz-border-radius: 4px;
-  border-radius: 4px;
+  opacity: 0.6;
 }
 
 .FooterHelpBtn:hover
 {
-  background: none;
+  opacity: 1.0;
 }
 
 /* A question mark help button suitable for displaying in the content of a tool (e.g., in the tools tabs).
@@ -710,6 +704,8 @@ overflow: auto;
 {
 vertical-align: middle;
 margin: 4px;
+width: 16px;
+height: 16px;
 }
 
 .titlebar
@@ -995,6 +991,7 @@ input.HideSpinners::-webkit-outer-spin-button, input.HideSpinners::-webkit-inner
   background: #FFFFFF;
   color: black;
   border: none;
+  vertical-align: top; /* necessary or else on Safari the titlebar border will be partially overlapped - not entirely sure why*/
   -moz-border-radius: 2px;
   -webkit-border-radius: 2px;
   border-radius: 2px;
@@ -1374,4 +1371,38 @@ body.Wt-rtl .Wt-tabs a {
 
 .Wt-tabs:after { content: ""; display: block; height: 0; clear: both; }
 .Wt-tabs { clear-after: both; }
+
+/* Some CSS for putting spectrum and time charts in a div with flex layout. */
+.InterSpec .charts {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.InterSpec .charts .SpectrumDisplayDiv {
+  flex: 3;
+  min-height: 70px;
+}
+
+.InterSpec .charts .D3TimeChartParent {
+  flex: 2;
+  min-height: 65px;
+}
+
+/* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
+.InterSpecFlex {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.InterSpecFlex .SpectrumDisplayDiv {
+  flex: 3;
+  overflow: hidden;
+}
+
+.InterSpecFlex .D3TimeChartParent {
+  flex: 2;
+  overflow: hidden;
+}
 

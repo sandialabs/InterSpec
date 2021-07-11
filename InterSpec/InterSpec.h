@@ -423,15 +423,11 @@ public:
   
   //loadTestStateFromN42(): Attempts to load a state previously saved to an
   //  XML file via storeTestStateToN42
-  void loadTestStateFromN42( std::istream &input );
+  void loadTestStateFromN42( const std::string filename );
   
   //startN42TestStates(): creates dialog that lists files ending in '.n42' in
   //  the 'analysis_tests' folder so the user can select and then load one.
   void startN42TestStates();
-  
-  //loadN42TestState(): loads the test state N42 at path specified.
-  //  Will throw if any issues
-  void loadN42TestState( const std::string &filename );
 #endif
   
   
@@ -496,9 +492,6 @@ public:
   virtual Wt::Signal< Wt::WString, Wt::WString, int > &messageLogged();
   
   void toggleToolTip( const bool showToolTips );
-  
-  int paintedWidth() const;  //Depreciated
-  int paintedHeight() const; //Depreciated //XXX Not correct due to all padding and stuff, but close
   
   /** Width of the apps window, in pixels. Will return a value of zero if (not yet) available. */
   int renderedWidth() const;
@@ -580,8 +573,6 @@ public:
   
   void setToolTabsVisible( bool show );
   bool toolTabsVisible() const;
-
-  void setChartSpacing();
   
   void showMakeDrfWindow();
   void showDetectorEditWindow();
@@ -1176,8 +1167,8 @@ protected:
   
   PopupDivMenu *m_detectorToShowMenu;
   Wt::WPushButton *m_mobileMenuButton;
-  Wt::WPushButton *m_mobileBackButton;
-  Wt::WPushButton *m_mobileForwardButton;
+  Wt::WContainerWidget *m_mobileBackButton;
+  Wt::WContainerWidget *m_mobileForwardButton;
   Wt::WContainerWidget *m_notificationDiv; //has id="qtip-growl-container"
   
   void handleUserIncrementSampleNum( SpecUtils::SpectrumType type, bool increment);
@@ -1191,12 +1182,19 @@ protected:
   AuxWindow              *m_warningsWindow;
   
   SpecMeasManager        *m_fileManager; // The file manager
+  
+  
+#if( USE_CSS_FLEX_LAYOUT )
+  Wt::WContainerWidget *m_chartResizer;
+  Wt::WContainerWidget *m_toolsResizer;
+#else
   Wt::WGridLayout        *m_layout;
-
-  //Note: m_chartsLayout may be eliminated; may even be able to eliminate
-  //  m_toolsLayout...
-  Wt::WGridLayout        *m_chartsLayout;
+  
+  Wt::WContainerWidget   *m_charts;
+  Wt::WContainerWidget   *m_chartResizer;
   Wt::WGridLayout        *m_toolsLayout;
+#endif
+  
   Wt::WContainerWidget   *m_menuDiv; // The top menu bar.
 
   //m_peakInfoWindow is deleted when tool tabs are shown because the layout

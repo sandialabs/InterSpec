@@ -35,6 +35,7 @@
 #include <Wt/WAnimation>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
+#include <Wt/WEnvironment>
 #include <Wt/WApplication>
 #include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
@@ -44,10 +45,12 @@
 #include <Wt/WServer>
 #endif
 
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
@@ -354,6 +357,40 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     SpecUtils::ireplace_all( staticdir, "/", "\\" );
 #endif
     
+    
+#if( USE_DB_TO_STORE_SPECTRA )
+    bool displayStats = false;
+    string totalUserTime, totalFilesOpened, totalSessions, firstAccess;
+    
+    InterSpec *viewer = InterSpec::instance();
+    Dbo::ptr<InterSpecUser> user = ((app && viewer) ? viewer->m_user : Dbo::ptr<InterSpecUser>());
+    if( user )
+    {
+      try
+      {
+        totalSessions = std::to_string( user->accessCount() );
+        totalFilesOpened = std::to_string( user->numSpectraFilesOpened() );
+        boost::posix_time::time_duration totaltime = user->totalTimeInApp();
+        // Note that if user has multiple sessions going, this next line wont be exactly correct, but close enough.
+        totaltime += app->activeTimeInCurrentSession();
+        totalUserTime = PhysicalUnits::printToBestTimeUnits( totaltime.total_seconds() );
+        
+        const WDateTime utcStartTime = WDateTime::fromPosixTime( user->firstAccessUTC() );
+        const int offset = app->environment().timeZoneOffset();
+        firstAccess = utcStartTime.addSecs(60*offset).toString( "dd-MMM-yyyy" ).toUTF8();
+        
+        // The alternative of using WLocalDateTime leaves the time in UTC...
+        //const WLocalDateTime localStartTime = utcStartTime.toLocalTime();
+        //firstAccess = localStartTime.toString("dd-MMM-yyyy").toUTF8();
+        
+        displayStats = true;
+      }catch(...)
+      {
+        // Dont expect this to ever really happen.
+      }//try / catch
+    }//if( app && viewer && viewer->m_user )
+#endif
+    
     auto server = WServer::instance();
     const int httpPort = server ? server->httpPort() : 0;
     
@@ -380,6 +417,49 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     "<div style=\"" + style + "\">http://127.0.0.1:" + std::to_string(httpPort) + "</div>"
     "</p>"
     ;
+    
+#if( USE_DB_TO_STORE_SPECTRA )
+    if( displayStats )
+    {
+      contents += "<div style=\"margin-top: 10px\"><p>"
+      "You have actively used InterSpec for approximately "
+      + totalUserTime + ", to open " + totalFilesOpened
+      + " files, over " + totalSessions + " sessions since " + firstAccess + "."
+      "</p></div>";
+    }//if( displayStats )
+#endif //if( USE_DB_TO_STORE_SPECTRA )
+    
+    
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+    // Statement here would depend on web-server policies
+#else
+    contents +=
+    "<div style=\"margin-top: 10px\"><p>"
+    "InterSpec does not send or receive data external to your device"
+#if( USE_GOOGLE_MAP )
+    ", except when the Google Maps feature is used"
+#endif
+    "."
+    
+#if( USE_DB_TO_STORE_SPECTRA )
+    "<br />InterSpec does locally"
+    " store preferences, spectra you load, saved app states, and use"
+    " statistics."
+    " This information does not leave your device, and can be deleted by removing the user data"
+    " directory shown above."
+#endif
+    
+#if( USE_GOOGLE_MAP )
+    "<br />When the Google Maps feature is used, the spectrum file location information is sent to"
+    " Google in order to receive maps of the relevant location."
+#endif
+    "</p></div>";
+    
+#endif //#if( BUILD_FOR_WEB_DEPLOYMENT ) / else
+
+    
+    
+    
   }else
   {
     contents = "Error retrieving directory data";

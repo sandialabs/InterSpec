@@ -41,6 +41,7 @@
 
 #include <boost/any.hpp>
 #include <boost/range.hpp>
+#include <boost/scope_exit.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <Wt/WLink>
@@ -812,9 +813,9 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_specificResources[static_cast<int>(i)] = (SpecificSpectrumResource *)0;
   
 #if( !ANDROID && !IOS )
-  m_foregroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Foreground ) );
-  m_secondForegroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::SecondForeground ) );
-  m_backgroundDragNDrop->fileDrop()->connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Background ) );
+  m_foregroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Foreground ) );
+  m_secondForegroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::SecondForeground ) );
+  m_backgroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this, _1, _2, SpectrumType::Background ) );
 #endif
 
 
@@ -863,14 +864,12 @@ void  SpecMeasManager::startSpectrumManager()
     
     Wt::WContainerWidget *treeDiv   = createTreeViewDiv();
     Wt::WContainerWidget *buttonBar = createButtonBar();
-    createInfoHandler(); // This sets up the m_infoHandler
     
     WContainerWidget * content = m_spectrumManagerWindow->contents();
   
     WGridLayout *layout = m_spectrumManagerWindow->stretcher();
     layout->addWidget(uploadDiv, 0,0);
     layout->addWidget( treeDiv,       1, 0 );
-    //  layout->addWidget( m_infoHandler, 1, 0 );
     layout->addWidget( buttonBar,     2, 0 );
     layout->setRowStretch( 1, 10 );
     
@@ -989,7 +988,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
       nbytewritten = read_file_from_zip( zipfilestrm, headers[fileInZip], tmpfilestrm );
     }
     
-    handleFileDrop( fileInZip, tmpfile, type );
+    handleFileDropWorker( fileInZip, tmpfile, type, nullptr, wApp );
     
     SpecUtils::remove_file( tmpfile );
   }catch( std::exception & )
@@ -1148,7 +1147,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       {
         nbytes = ZipArchive::read_file_from_zip( zipfilestrm,
                                         headers.begin()->second, tmpfilestrm );
-        handleFileDrop( fileInZip, tmpfile.string<string>(), type );
+        handleFileDropWorker( fileInZip, tmpfile.string<string>(), type, nullptr, nullptr );
       }catch( std::exception & )
       {
       }
@@ -1558,18 +1557,59 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
 }//void handleNonSpectrumFile(...)
 
 
-void SpecMeasManager::handleFileDrop( const std::string &name,
-                                             const std::string &spoolName,
-                                             SpecUtils::SpectrumType type )
+
+void SpecMeasManager::handleFileDropWorker( const std::string &name,
+                     const std::string &spoolName,
+                     SpecUtils::SpectrumType type,
+                     SimpleDialog *dialog,
+                     Wt::WApplication *app )
 {
+  // We are outside of the application loop here - we could parse the spectrum file here, instead
+  //  of during the loop - but this
+  
+  if( !app )
+    app = WApplication::instance();
+  
+  WApplication::UpdateLock lock( app );
+ 
+  if( app && !lock )
+  {
+    cerr << "\n\nFailed to get WApplication::UpdateLock in "
+            "SpecMeasManager::handleFileDropWorker(...) - this really shouldnt happen.\n" << endl;
+    return;
+  }//if( !lock )
+ 
+  assert( WApplication::instance() );
+  
+  // Make sure we trigger a app update
+  BOOST_SCOPE_EXIT(app,dialog){
+    
+    // TODO: there is a bit of a delay between upload completing, and showing the dialog - should check into that
+    // TODO: check that the dialog is actually deleted correctly in all cases.
+    if( dialog )
+    {
+      auto accept = boost::bind(&SimpleDialog::accept, dialog);
+      WServer::instance()->post( wApp->sessionId(), std::bind([accept](){
+        accept();
+        WApplication::instance()->triggerUpdate();
+      }) );
+      dialog = nullptr;
+    }//if( dialog )
+    
+    WApplication::instance()->triggerUpdate();
+  } BOOST_SCOPE_EXIT_END
+  
+ 
+  
 #if( SUPPORT_ZIPPED_SPECTRUM_FILES )
   if( name.length() > 4
      && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
      && handleZippedFile( name, spoolName, type ) )
+  {
     return;
+  }
 #endif
   
-  assert( WApplication::instance() );
   
   try
   {
@@ -1585,9 +1625,40 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   {
     if( !handleNonSpectrumFile( name, spoolName ) )
     {
-      displayInvalidFileMsg(name,e.what());
+      displayInvalidFileMsg( name, e.what() );
     }
   }
+  
+}//handleFileDropWorker(...)
+
+
+void SpecMeasManager::handleFileDrop( const std::string &name,
+                                             const std::string &spoolName,
+                                             SpecUtils::SpectrumType type )
+{
+  // If file is small, and not csv/txt (these are really slow to parse), dont display the parsing
+  //  message.
+  if( (SpecUtils::file_size(spoolName) < 512*1024)
+     && !SpecUtils::iends_with(name, ".csv") && !SpecUtils::iends_with(name, ".txt") )
+  {
+    handleFileDropWorker( name, spoolName, type, nullptr, wApp );
+    return;
+  }
+  
+  // Its a larger file - display a message letting the user know its being parsed.
+  auto dialog = new SimpleDialog( "Parsing File", "Parsing file - this may take a second." );
+  
+  wApp->triggerUpdate();
+  
+// When using WServer::instance()->post(...) it seems the "Parsing File" isnt always shown, but
+//  posting to the ioService and explicitly taking the WApplication::UpdateLock seems to work a
+//  little more reliable - I didnt look into why this is, or how true it is
+//  WServer::instance()->post( wApp->sessionId(),
+//                             boost::bind( &SpecMeasManager::handleFileDropWorker, this,
+//                                          name, spoolName, type, dialog, wApp ) );
+  
+  WServer::instance()->ioService().post( boost::bind( &SpecMeasManager::handleFileDropWorker, this,
+                                                    name, spoolName, type, dialog, wApp ) );
 }//handleFileDrop(...)
 
 void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string errormsg )
@@ -1596,7 +1667,7 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   string lastpart = SpecUtils::filename(filename);
   if( lastpart.empty() )
     lastpart = filename;
-  if( lastpart.size() > 12 )
+  if( lastpart.size() > 16 )
     lastpart = lastpart.substr(0,9) + "...";
   
   if( errormsg.empty() )
@@ -1605,14 +1676,18 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   lastpart = Wt::Utils::htmlEncode(lastpart);
   errormsg = Wt::Utils::htmlEncode(errormsg);
   
-  stringstream msg;
-  msg << "<p>Sorry, I couldnt parse the file " << lastpart << ":</p>"
-  << "<p>Error: <em>" << errormsg << "</em></p>"
-  << "<p>If you think this is a valid spectrum file, please send it to "
-  << "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>, and"
-  << " we'll try to fix this issue.</p>";
+  string msg =
+  "<p>Sorry, I couldnt parse the file " + lastpart + ":</p>"
+  "<p>Error: <em>" + errormsg + "</em></p>"
+  "<p>If you think this is a valid spectrum file, please send it to "
+  "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a>, and"
+  " we'll try to fix this issue.</p>";
   
-  passMessage( msg.str(), "", 2 );
+  //passMessage( msg.str(), "", 2 );
+  
+  SimpleDialog *dialog = new SimpleDialog( "Could Not Parse File", msg );
+  dialog->addButton( "Okay" );
+  wApp->triggerUpdate();
 }//void displayInvalidFileMsg( std::string filename, std::string errormsg )
 
 std::set<int> SpecMeasManager::selectedSampleNumbers() const
@@ -2583,12 +2658,8 @@ void SpecMeasManager::displayQuickSaveAsDialog()
 } // void SpecMeasManager::displayQuickSaveAsDialog();
 
 
-void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas,
-                                      const bool undisplay )
+void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas, const bool undisplay )
 {
-  //implementation copied from removeSpecMeas(Dbo::ptr<UserFileInDb> remove )
-  refreshAdditionalInfo( true );
-  
   for( int row = 0; row < m_fileModel->rowCount(); ++row )
   {
     std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( row );
@@ -2623,9 +2694,6 @@ void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas,
 // Used to unassign and unload spectrums just deleted from the Spectrum Manager
 void SpecMeasManager::removeSpecMeas(Dbo::ptr<UserFileInDb> remove )
 {
-  // Clear the stuff
-  refreshAdditionalInfo( true );
-  
   //Goes through each loaded state and checks if it's the same one as
   //the removed UserFileInDb
   for( int row = 0; row < m_fileModel->rowCount(); ++row )
@@ -2661,10 +2729,7 @@ void SpecMeasManager::removeSelected()
 {
     const WModelIndexSet selected = m_treeView->selectedIndexes();
     WModelIndexSet selectedFiles;
-    
-    // Clear the stuff
-    refreshAdditionalInfo( true );
-    
+        
     for( const WModelIndex &index : selected )
     {
         const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
@@ -3128,8 +3193,7 @@ void SpecMeasManager::selectionChanged()
           m_saveButton->enable();
           m_saveButton->show();
       }//isSupportFile()
-    // If only one file is selected, update the additional info.
-    refreshAdditionalInfo();
+
   }else
   {
       const bool enableSave = (files.size()==1);
@@ -3139,8 +3203,6 @@ void SpecMeasManager::selectionChanged()
           m_saveButton->setHidden( !enableSave );
       }
       
-      // Otherwise, set it to n/a
-      refreshAdditionalInfo( true );
   } // if( selectedFiles.size() == 1 )
 
   if( selected.size() != toSelect.size() )
@@ -3178,112 +3240,11 @@ void SpecMeasManager::selectionChanged()
 } // void SpecMeasManager::selectionChanged()
 
 
-WText *messageCombiner( const string& label, const string& value )
-{
-  WText *boxxed = new WText( "<b>" + label + ":</b> " + value );
-  boxxed->setPadding( 2 );
-
-  return boxxed;
-} // WText *messageCombiner( const string&, const string& )
-
-
-void SpecMeasManager::refreshAdditionalInfo( bool clearInfo )
-{
-  std::shared_ptr< SpecMeas > selected = selectedToSpecMeas();
-
-  vector< string > info;
-  // If it /isn't/ a clearInfo, there is just one thing selected.
-  if( selected && !clearInfo )
-  {
-    const vector< std::shared_ptr<const SpecUtils::Measurement> > selectedData = selected->measurements();
-    // A handful of these assume that the data will be populated for all of the detectors.
-    // That is, it will just take the first one out of the detector for the dates, as well
-    // as the number of channels.
-
-    // This accounts for potential "mass" samples.
-    if( selectedData.size() > 0 )
-    {
-      info.push_back( boost::posix_time::to_simple_string(
-        selectedData.at(0)->start_time() ).substr( 0, 11 ) ); // Date taken
-      stringstream liveStream, realStream, sizeStream;
-      liveStream << selected->gamma_live_time();
-      realStream << selected->gamma_real_time();
-      sizeStream << selectedData.at(0)->gamma_counts()->size();
-      info.push_back( liveStream.str() ); // Live time
-      info.push_back( realStream.str() ); // Real time
-      info.push_back( sizeStream.str() ); // Number of channels
-      stringstream gammaCounts, neutronCounts, detectorCounts;
-      gammaCounts << fixed << setprecision(0) << selected->gamma_count_sum();
-      neutronCounts << fixed << setprecision(0) << selected->neutron_counts_sum();
-      detectorCounts << selected->detector_names().size();
-      info.push_back( gammaCounts.str() ); // Gamma counts
-      info.push_back( neutronCounts.str() ); // Neutron counts
-      info.push_back( detectorCounts.str() ); // Detector counts
-    }
-    else
-    {
-      clearInfo = true;
-    }
-  }//if( !clearInfo )
-
-  int infoPerRow = 3;
-
-  WGridLayout *boxxyHost = new WGridLayout();
-
-  for( unsigned int i = 0; i < m_labelTags.size(); ++i )
-  {
-    int cS = 225 - 42 * !( i % 2 );
-    WText *boxxy = NULL;
-
-    if( clearInfo || i>=info.size() )
-      boxxy = messageCombiner( m_labelTags.at(i), "n/a" );
-    else
-      boxxy = messageCombiner( m_labelTags.at(i), info.at(i) );
-
-    boxxy->decorationStyle().setBackgroundColor( WColor( cS, cS, cS ) );
-    boxxyHost->addWidget( boxxy, (int)( i / infoPerRow ), i % infoPerRow );
-  }//for( unsigned int i = 0; i < m_labelTags.size(); ++i )
-
-  boxxyHost->setVerticalSpacing( 8 );
-  boxxyHost->setHorizontalSpacing( 10 );
-//  boxxyHost->setRowStretch( 0, -1 );
-//  boxxyHost->setRowStretch( 1, -1 );
-//  boxxyHost->setRowStretch( 2, -1 );
-
-  //Before setting a new layout to m_infoHandler, we have to avoid memorry leaks
-  //  by explicitly deleteing the children of the previous layout, as this is
-  //  not done by Wt (as noted in documentation for WContainerWidget::setLayout)
-  WLayout *prevLayout = m_infoHandler->layout();
-  if( prevLayout )
-    prevLayout->clear();
-
-  m_infoHandler->setLayout( boxxyHost );
-} // void SpecMeasManager::refreshAdditionalInfo()
-
-
-void SpecMeasManager::createInfoHandler()
-{
-  m_infoHandler = new WContainerWidget();
-  m_infoHandler->setStyleClass( "infoHandler" );
-  m_infoHandler->setOverflow( WContainerWidget::OverflowAuto );
-
-  m_labelTags.push_back( "Date taken" );
-  m_labelTags.push_back( "Live time (s)" );
-  m_labelTags.push_back( "Real time (s)" );
-  m_labelTags.push_back( "# of channels" );
-  m_labelTags.push_back( "Gamma counts" );
-  m_labelTags.push_back( "Neutron counts" );
-  m_labelTags.push_back( "# of detectors" );
-
-  refreshAdditionalInfo( true );
-}//void createInfoHandler()
-
-
 void SpecMeasManager::deleteSpectrumManager()
 {
     m_spectrumManagertreeDiv->removeWidget(m_treeView);
     AuxWindow::deleteAuxWindow(m_spectrumManagerWindow);
-    m_spectrumManagerWindow=NULL;
+    m_spectrumManagerWindow = NULL;
 }//deleteSpectrumManager()
 
 
@@ -3360,8 +3321,8 @@ WContainerWidget *SpecMeasManager::createButtonBar()
 
   
   m_combineButton = new Wt::WPushButton("Combine",m_newDiv);
-  m_combineButton->addStyleClass("JoinIcon");
-  m_combineButton->setIcon( "InterSpec_resources/images/arrow_join.png" );
+  m_combineButton->addStyleClass("Wt-icon");
+  m_combineButton->setIcon( "InterSpec_resources/images/arrow_join.svg" );
   m_combineButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
   m_combineButton->setHidden( true, WAnimation() );
 
@@ -4092,6 +4053,12 @@ void SpecMeasManager::browseDatabaseSpectrumFiles( SpecUtils::SpectrumType type 
 
 void SpecMeasManager::showPreviousDatabaseSpectrumFiles( SpecUtils::SpectrumType type, std::shared_ptr<SpectraFileHeader> header )
 {
+  const size_t num_states = SnapshotBrowser::num_saved_states( m_viewer, m_viewer->sql(), header );
+  
+  if( !num_states )
+    return;
+  
+  
   DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, type, header );
   
   // \TODO: come up with a way to check if there are any states before going through and creating

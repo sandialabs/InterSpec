@@ -976,12 +976,19 @@ const Material *ShieldingSelect::material( const std::string &text )
 std::shared_ptr<Material> ShieldingSelect::material()
 {
   if( m_isGenericMaterial )
-    return std::shared_ptr<Material>();
+    return nullptr;
 
   const string text = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
-  if( m_currentMaterial && text==m_currentMaterialDescrip )
+  if( m_currentMaterial && (text == m_currentMaterialDescrip) )
     return m_currentMaterial;
 
+  if( text.empty() )
+  {
+    m_currentMaterial.reset();
+    m_currentMaterialDescrip = "";
+    return m_currentMaterial;
+  }
+  
   const Material *mat = material( text );
   
   if( mat )
@@ -4284,8 +4291,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   if( m_specViewer->isMobile() )
   {
      m_addItemMenu->addPhoneBackItem( NULL );
-     addItemMenubutton->clicked().connect( m_addItemMenu,
-                                            &PopupDivMenu::showFromClick );
+     addItemMenubutton->clicked().connect( m_addItemMenu, &PopupDivMenu::showMobile );
   } //mobile
   else
   {
@@ -4324,35 +4330,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
             " sources in the center.";
   HelpSystem::attachToolTipOn( m_shieldingSelects,tooltip, showToolTips );
 
-#define  SPLIT_BUTTON_SHIELDING_ADD 0
-
-#if( SPLIT_BUTTON_SHIELDING_ADD )
-  WSplitButton *addShielding = new WSplitButton();
-  tooltip = "Adds a shielding that allows you to select from a database, or"
-            " enter a chemical formula.  See drop down menu to add a generic"
-            " shielding defined by atomic number and areal density.";
-  HelpSystem::attachToolTipOn( addShielding->actionButton(), tooltip, showToolTips );
-  addShielding->actionButton()->setText( "Add Shielding" );
-  addShielding->actionButton()->clicked()
-                .connect( this, &ShieldingSourceDisplay::doAddShielding );
-  PopupDivMenu *shieldMenu = new PopupDivMenu( addShielding->dropDownButton(), PopupDivMenu::TransientMenu );
-  WMenuItem *materialitem = shieldMenu->addItem( "Material" );
-  materialitem->triggered().connect( this, &ShieldingSourceDisplay::doAddShielding );
-  materialitem->setIcon( "InterSpec_resources/images/shield_add.png" );
-  static_assert( 0, "Disabling SPLIT_BUTTON_SHIELDING_ADD during fits not done yet" );
-  WMenuItem *genericitem = shieldMenu->addItem( "Generic AN, AD" );
-  genericitem->triggered().connect( this, &ShieldingSourceDisplay::addGenericShielding );
-  genericitem->setIcon( "InterSpec_resources/images/shape_square_add.png" );
-  
-  //has style class "dropdown-toggle"
-#else
-  
   WLabel *addShieldingLabel = new WLabel( "Add Shielding:" );
   m_addMaterialShielding = new WPushButton( "Material" );
   HelpSystem::attachToolTipOn( m_addMaterialShielding,
               "Choose from a library of predefined common shielding materials.",
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
-  //m_addMaterialShielding->setStyleClass("ShieldAddIcon");
   m_addMaterialShielding->setIcon( "InterSpec_resources/images/shield_white.png" );
   m_addMaterialShielding->clicked().connect( this,
                                       &ShieldingSourceDisplay::doAddShielding );
@@ -4361,11 +4343,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   HelpSystem::attachToolTipOn( m_addGenericShielding,
               "Allows you to define and fit for atomic number and areal density.",
                               showToolTips , HelpSystem::ToolTipPosition::Top );
-  //m_addGenericShielding->setStyleClass("ShapeSquareAddIcon");
   m_addGenericShielding->setIcon( "InterSpec_resources/images/atom_white.png" );
   m_addGenericShielding->clicked().connect( this,
                                      &ShieldingSourceDisplay::addGenericShielding );
-#endif
   
   
   m_fitModelButton = new WPushButton( "Perform Model Fit" );
@@ -6120,7 +6100,6 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     summary->setHeight( 50 );
     summary->disable();
     accept = new WPushButton( "Load" );
-    accept->setIcon( "InterSpec_resources/images/database_go.png" );
     accept->disable();
   
     cancel = new WPushButton( "Cancel" );

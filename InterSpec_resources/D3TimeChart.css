@@ -7,13 +7,22 @@
   flex-grow: 4;
   height: 100%;
   overflow: hidden;
+
+  /* Prevent a finger swipe on the chart making the browser go back in browsing history. */
+  touch-action: none;
+  overscroll-behavior-x: none;
 }
 
 
 .D3TimeChartFilters {
-  border: 1px solid blue;
-  width: 150px;
-  padding: 1px 2px 2px 4px;
+  /* border: 1px solid blue; */
+  width: 155px;
+  padding: 1px 2px 2px 0px;
+  overflow: hidden;
+}
+
+.D3TimeFiltersTab {
+  height: 100%;
 }
 
 .D3TimeInteractMenu
@@ -50,22 +59,18 @@
   border-radius: 3px;
 }
 
-.D3TimeInteractMenu a
-{
+.D3TimeInteractMenu a {
   cursor:pointer;
 }
 
-.D3TimeInteractModeText, .D3TimeInteractSpecTypeText
-{
+.D3TimeInteractModeText, .D3TimeInteractSpecTypeText {
   display: block;
   font-size: smaller;
-  margin-top: 3px;
-  margin-left: 2px;
+  /* margin-left: 2px; */
 }
 
-.D3TimeInteractSpecTypeText
-{
-  
+.D3TimeInteractSpecTypeText {
+  margin-top: 3px;
 }
 
 
@@ -79,7 +84,8 @@
 .ShowD3TimeChartFilters {
   position: absolute;
   right: 5px;
-  top: 5px;
+  /* top: 5px; If we specify this, the filter icon goes to the top of parent div, so instead well use a margin. */
+  margin-top: 5px;
   padding: 0px 0px;
   width: 24px;
   height: 24px;
@@ -91,6 +97,43 @@
   opacity: 0.8;
   cursor: pointer;
 }
+
+.D3TimeChartFilters .closeicon-wtdefault {
+  position: absolute;
+  right: 5px;
+  margin-top: 5px;
+}
+
+.D3TimeChartFilters > div > .Wt-stack {
+  height: 100%;
+  border-left: 1px solid rgba(136, 136, 136, 1);
+}
+
+.D3TimeInteractTab {
+  overflow: hidden;
+  padding-top: 3px;
+  padding-left: 3px;
+}
+
+.D3TimeFilterTab {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 5px;
+}
+
+
+.D3TimeFilterTab > input {
+  margin-left: 40px;
+  margin-bottom: 5px;
+}
+
+.D3TimeFilterClear {
+  margin-top: 10px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 
 .axis > path,
 .axis line {

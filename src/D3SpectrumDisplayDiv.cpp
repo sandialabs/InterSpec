@@ -24,6 +24,7 @@
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/D3SpectrumExport.h"
@@ -179,8 +180,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_renderFlags( 0 ),
   m_model( new SpectrumDataModel( this ) ),
   m_peakModel( 0 ),
-  m_layoutWidth( 0 ),
-  m_layoutHeight( 0 ),
   m_compactAxis( false ),
   m_legendEnabled( true ),
   m_yAxisIsLog( true ),
@@ -208,7 +207,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartBackgroundColor(),
   m_defaultPeakColor( 0, 51, 255, 155 )
 {
-  setLayoutSizeAware( true );
   addStyleClass( "SpectrumDisplayDiv" );
   
   // Cancel right-click events for the div, we handle it all in JS
@@ -301,7 +299,22 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += "}";
   
   setJavaScriptMember( "chart", "new SpectrumChartD3(" + jsRef() + "," + options + ");");
-  setJavaScriptMember( "wtResize", "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+  
+
+//#if( USE_CSS_FLEX_LAYOUT )
+  setJavaScriptMember( "resizeObserver",
+    "new ResizeObserver(entries => {"
+      "for (let entry of entries) {"
+        "if( entry.target && (entry.target.id === '" + id() + "') )"
+          + m_jsgraph + ".handleResize();"
+      "}"
+    "});"
+  );
+  
+  callJavaScriptMember( "resizeObserver.observe", jsRef() );
+//#else
+//  setJavaScriptMember( WT_RESIZE_JS, "function(self, w, h, layout){" + m_jsgraph + ".handleResize();}" );
+//#endif
   
 #if( RENDER_REFERENCE_PHOTOPEAKS_SERVERSIDE )
   updateReferncePhotoPeakLines();
@@ -609,13 +622,6 @@ void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
-void D3SpectrumDisplayDiv::layoutSizeChanged ( int width, int height )
-{
-  m_layoutWidth = width;
-  m_layoutHeight = height;
-}//void layoutSizeChanged ( int width, int height )
-
-
 void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
@@ -640,18 +646,6 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   m_renderFlags = 0;
 }
-
-
-int D3SpectrumDisplayDiv::layoutWidth() const
-{
-  return m_layoutWidth;
-}//int layoutWidth() const
-
-
-int D3SpectrumDisplayDiv::layoutHeight() const
-{
-  return m_layoutHeight;
-}//int layoutHeight() const
 
 
 double D3SpectrumDisplayDiv::xAxisMinimum() const
@@ -873,8 +867,7 @@ void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
 
 
 
-void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist,
-                                 bool keep_curent_xrange )
+void D3SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist, const bool keep_curent_xrange )
 {
   const float oldBackSF = m_model->backgroundScaledBy();
   const float oldSecondSF = m_model->secondDataScaledBy();
@@ -995,7 +988,7 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
 
-void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> background )
+void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background )
 {
   m_model->setBackgroundHistogram( background );
   
@@ -1006,7 +999,7 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> bac
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
-void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> hist, bool ownAxis )
+void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist, const bool ownAxis )
 {
   m_model->setSecondDataHistogram( hist, ownAxis );
   
@@ -1762,7 +1755,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
   std::shared_ptr<const Measurement> foreground = m_model->getData();
   
   const size_t nchan = foreground->num_gamma_channels();
-  const bool isHpge = (nchan > HIGH_RES_NUM_CHANNELS);
+  const bool isHpge = PeakFitUtils::is_high_res( foreground );
   const float erange = upper_energy - lower_energy;
   const float midenergy = 0.5f*(lower_energy + upper_energy);
   
@@ -2029,7 +2022,7 @@ void D3SpectrumDisplayDiv::chartFitRoiDragCallback( double lower_energy, double 
           if( ismobile )
           {
             menu->addStyleClass( " Wt-popupmenu Wt-outset" );
-            menu->showFromMouseOver();
+            menu->showMobile();
           }else
           {
             menu->addStyleClass( " Wt-popupmenu Wt-outset NumPeakSelect" );

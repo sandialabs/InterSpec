@@ -475,6 +475,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     
     /*
      //Right now drag-n-drop from Outlook does not work - should investigate this:
+     // Probably need to sub-class WKWebView, and then do something like 
      //https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/DragandDrop/Tasks/acceptingdrags.html#//apple_ref/doc/uid/20000993-BABHHIHC
     [_InterSpecWebView registerForDraggedTypes:[NSArray arrayWithObjects:
                       NSStringPboardType, NSFilenamesPboardType, NSTIFFPboardType,
@@ -483,7 +484,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
                       NSHTMLPboardType, NSURLPboardType, NSPDFPboardType,
                       NSMultipleTextSelectionPboardType, NSPostScriptPboardType,
                       NSVCardPboardType, NSInkTextPboardType, NSFilesPromisePboardType,
-                      NSPasteboardTypeFindPanelSearchOptions, nil]];
+                      NSPasteboardTypeFindPanelSearchOptions, nil]];  // NSFilenamesPboardType is probably mostly what is needed
 
     - (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender {
       NSPasteboard *pboard;

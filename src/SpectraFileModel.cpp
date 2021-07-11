@@ -770,28 +770,27 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   if( !fileDbEntry )
   {
     UserFileInDb *info = new UserFileInDb();
+    Dbo::ptr<UserFileInDb> info_dbo_ptr( info );
     setBasicFileInDbInfo( info );  //takes lock of m_mutex during execution
     UserFileInDbData *data = new UserFileInDbData();
+    Dbo::ptr<UserFileInDbData> data_dbo_ptr( data );
     
     try
     {
-      data->setFileData( meas,
-                        UserFileInDbData::sm_defaultSerializationFormat );
+      data->setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat );
     }catch( FileToLargeForDbException &e )
     {
-      delete data;
       throw e;
     }catch( std::exception &e )
     {
-      delete data;
       throw runtime_error( e.what() );
     }//try / catch
     
     {
       DataBaseUtils::DbTransaction transaction( *m_sql );
-      fileDbEntry = m_sql->session()->add( info );
+      fileDbEntry = m_sql->session()->add( info_dbo_ptr );
       data->fileInfo = fileDbEntry;
-      Dbo::ptr<UserFileInDbData> dataPtr = m_sql->session()->add( data );
+      Dbo::ptr<UserFileInDbData> dataPtr = m_sql->session()->add( data_dbo_ptr );
       transaction.commit();
     }
   }else
@@ -1376,10 +1375,10 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
       throw runtime_error( "" );
   }catch(...)
   {
-    stringstream msg;
-    msg << "Could not access the file '"
-        << displayFileName << "', located at '" << filename << "'" << endl;
-    throw runtime_error( msg.str() );
+    cerr << "Could not access the file '"
+         << displayFileName << "', located at '" << filename << "'" << endl;
+    
+    throw runtime_error( "Could not access file '" + displayFileName + "'" );
   }//try / catch
   
   RecursiveLock lock( m_mutex );

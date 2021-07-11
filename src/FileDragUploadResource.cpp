@@ -31,8 +31,11 @@
 #include <iostream>
 #include <iterator>
 
-
+#include <Wt/Utils>
 #include <Wt/WResource>
+#include <Wt/Json/Value>
+#include <Wt/Json/Parser>
+#include <Wt/Json/Object>
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
 #include <Wt/WPaintDevice>
@@ -43,14 +46,11 @@
 #include <Wt/WCssDecorationStyle>
 #include <Wt/Chart/WAbstractChart>
 
+
 #include "InterSpec/InterSpecApp.h"
 #include "SpecUtils/Filesystem.h"
 #if( !ANDROID && !IOS )
 #include "InterSpec/FileDragUploadResource.h"
-#endif
-
-#ifdef _WIN32
-#include "SpecUtils/StringAlgo.h"
 #endif
 
 using namespace Wt;
@@ -64,9 +64,8 @@ using namespace std;
 
 FileDragUploadResource::FileDragUploadResource( WObject *parent  )
     : WResource( parent ),
-      m_fileDrop( NULL )
+      m_fileDrop( this )
 {
-  m_fileDrop = new Wt::Signal<std::string, std::string>( this );
 }
 
 
@@ -79,13 +78,10 @@ FileDragUploadResource::~FileDragUploadResource()
     if( !success )
       cerr << "Warning, could not delete file '" << m_spooledFiles[i] << "'" << endl;
   }
-
-  if( m_fileDrop )
-    delete m_fileDrop;
 }
 
 
-Wt::Signal<std::string,std::string > *FileDragUploadResource::fileDrop() //<display_name,spool_name>
+Wt::Signal<std::string,std::string > &FileDragUploadResource::fileDrop() //<display_name,spool_name>
 {
   return m_fileDrop;
 }
@@ -94,9 +90,15 @@ Wt::Signal<std::string,std::string > *FileDragUploadResource::fileDrop() //<disp
 void FileDragUploadResource::handleRequest( const Http::Request& request,
                                             Http::Response& response )
 {
-//XXX - It's assuming handleRequest(...) is only called once all the data
-//      is uploaded.
-//XXX - Need to deal with case if the data was spooled to file ? - maybe not?
+// TODO: It's assuming handleRequest(...) is only called once all the data is uploaded; this needs
+//       to be verified.
+  
+// TODO: Currently the client side JS FileUploadFcn(...) function just puts file contents inside the
+//  the POST body, so it doesnt look like files, for all the handling we do here.
+//  We could, and maybe should, use a <form /> to upload the files to take advantage of the
+//  WResource spooling of files, and uploading multiple files and all that, like could be done in
+//  this next bit of commented out text.
+//
 //    std::vector<Http::UploadedFile> files;
 //    std::pair<Http::UploadedFileMap::const_iterator, Http::UploadedFileMap::const_iterator> range
 //               = request.uploadedFiles().equal_range(key);
@@ -106,7 +108,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
 //      if (!files[i].clientFileName().empty())
 //      {
 //        m_spooledFiles.push_back( files[i].spoolFileName() );
-//        m_dragCanvas->fileDrop().emit( files[i].clientFileName(), files[i].spoolFileName() );
+//        m_fileDrop.emit( files[i].clientFileName(), files[i].spoolFileName() );
 //      }
   
   response.setMimeType("text/html; charset=utf-8");
@@ -123,6 +125,76 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
     return;
   }//if( request.tooLarge() )
 
+  auto app = WApplication::instance();
+  if( !app )
+  {
+    cerr << "Uploaded file to a non Wt-Sesssion - bailing" << endl;
+    response.setStatus( 403 ); //Forbidden
+    return;
+  }//if( !app )
+  
+  
+#if( BUILD_AS_ELECTRON_APP )
+  // See FileUploadFcn in InterSpec.js
+  const string isFilePath = request.headerValue("Is-File-Path");
+  
+  if( (isFilePath == "1") || (isFilePath == "true") || (isFilePath == "yes") )
+  {
+    try
+    {
+      // We'll make sure this is the primary electron instance making this request, jic
+      if( !InterSpecApp::isPrimaryWindowInstance() )
+        throw runtime_error( "Opening via full path only allowed for primary instance" );
+      
+      // We'll also double check the request is from this computer (which should already be ensured
+      //  by checking the primary instance, but jic)
+      const string clientAddress = request.clientAddress();  //'127.0.0.1'
+      //const string &clientAddress = wApp->environment().clientAddress();
+      if( clientAddress.find("127.0.0.1") == std::string::npos )
+        throw runtime_error( "Opening via full path only allowed from localhost" );
+
+      
+      std::istreambuf_iterator<char> eos;
+      string body(std::istreambuf_iterator<char>(request.in()), eos);
+      
+      Json::Object result;
+      Json::parse( body, result );
+      if( !result.contains("fullpath") )
+        throw std::runtime_error( "Body JSON did not contain a 'fullpath' entry." );
+      
+      const WString wfullpath = result.get("fullpath");
+      const std::string fullpath = wfullpath.toUTF8();
+      
+      {// begin test if can read file
+#ifdef _WIN32
+        const std::wstring wname = SpecUtils::convert_from_utf8_to_utf16( fullpath );
+        std::ifstream file( wname.c_str() );
+#else
+        std::ifstream file( fullpath.c_str() );
+#endif
+        if( !file.good() )
+          throw std::runtime_error( "Could not read '" + fullpath + "'" );
+      }// end test if can read file
+      
+      cout << "Will open spectrum file using path='" << fullpath << "'" << endl;
+      
+      WApplication::UpdateLock lock( app );
+
+      m_fileDrop.emit( SpecUtils::filename(fullpath), fullpath );
+      
+      app->triggerUpdate();
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to parse fullpath POST request: " << e.what() << " - returning status 406.\n";
+      
+      response.setStatus( 406 );
+      return;
+    }//try / catch to figure out how to interpret
+    
+    return;
+  }//if( (fullpath == "1") || (fullpath == "true") || (fullpath == "yes") )
+#endif  //BUILD_AS_ELECTRON_APP
+  
   const int datalen = request.contentLength();
 
   if( datalen )
@@ -134,12 +206,14 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
 #else
     ofstream spool_file( temp_name.c_str(), ios::binary|ios::out );
 #endif
-
+    
     if( spool_file.is_open() )
     {
       spool_file << request.in().rdbuf();
       spool_file.close();
       const string userName = request.headerValue( "X-File-Name" );
+      
+      cerr << "\n\n\nuserName = '" << userName << "'\n\n" << endl;
       
       auto app = WApplication::instance();
       WApplication::UpdateLock lock( app );
@@ -147,9 +221,7 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       if( lock )
       {
         m_spooledFiles.push_back( temp_name );
-        if( m_fileDrop )
-          m_fileDrop->emit( userName, temp_name );
-      
+        m_fileDrop.emit( userName, temp_name );
         app->triggerUpdate();
       }else
       {

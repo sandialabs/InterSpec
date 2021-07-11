@@ -29,6 +29,7 @@ ValidationError = function (message, fileName, lineNumber) {
   Object.setPrototypeOf(instance, Object.getPrototypeOf(this));
   return instance;
 };
+
 ValidationError.prototype = Object.create(Error.prototype, {
   constructor: {
     value: Error,
@@ -214,7 +215,7 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
 
-  // minimum selection width option. Default value taken from D3SpectrumChart
+  // minimum selection width option. Currently only applies to "zoom" selection. Default value copied from D3SpectrumChart
   if (typeof this.options.minSelectionWidth !== "number")
     this.options.minSelectionWidth = 8;
 
@@ -233,16 +234,22 @@ D3TimeChart = function (elem, options) {
     background: {
       modifierKey: { altKey: true },
     },
+    secondary: {
+      modifierKey: { metaKey: true },
+    },
+    remove: {
+      modifierKey: { ctrlKey: true },
+    },
     zoom: {
-      modifierKey: { ctrlKey: true, rightClick: true },
+      modifierKey: { rightClick: true },
     },
   };
 
   // defines margin dimensions used in rendering of chart.
   this.margin = {
     top: 5,
-    right: 60,
-    bottom: 50,
+    right: 60, /* This gets overridden in formatDataFromRaw based on if there is neutrons or not */
+    bottom: 50, /* overridden in reinitializeChart based on compact x-axis or not */
     left: 60,
   };
 
@@ -259,18 +266,18 @@ D3TimeChart = function (elem, options) {
   this.UserInteractionModeEnum = Object.freeze({
     DEFAULT: 0,
     ZOOM: 1,
+    PAN: 2,
     SELECTFOREGROUND: 3,
     SELECTBACKGROUND: 4,
     SELECTSECONDARY: 5,
-    REMOVEFOREGROUND: 6,
-    REMOVEBACKGROUND: 7,
-    REMOVESECONDARY: 8,
   });
 
   // colors used for highlight rectangles for various selection types.
   this.HIGHLIGHT_COLORS = Object.freeze({
     foreground: "rgb(255, 255, 0)",
     background: "rgb(0, 255, 255)",
+    secondary: "rgb(0, 128, 0)",
+    remove: "rgb(255, 0, 0)",
     // zoom: "rgb(102,102,102)",
   });
 
@@ -286,7 +293,7 @@ D3TimeChart = function (elem, options) {
       sampleNumberToIndexMap: null,
       unzoomedCompressionIndex: 0,
     },
-    selection: null, // maybe would have been better to have named this "zoom": stores data related to zoom selection (e.g. data domain of magnified area, corresponding compression index to use for plotting this magnified data)
+    selection: null, // maybe would have been better to have named this "zoom": stores data related to zoom selection (e.g. x data domain of magnified area, corresponding compression index to use for plotting this magnified data). IMPORTANT NOTE: set to null when zoomed all the way out.
     regions: null,
     brush: new BrushX(),
     height: null,
@@ -298,6 +305,8 @@ D3TimeChart = function (elem, options) {
   this.verticalGridG = this.svg.append("g").attr("class", "grid xgrid");
   this.horizontalLeftGridG = this.svg.append("g").attr("class", "grid ygrid");
   this.horizontalRightGridG = this.svg.append("g").attr("class", "grid ygrid");
+  this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
+
   this.linesG = this.svg.append("g").attr("class", "lines");
   this.axisBottomG = this.svg.append("g").attr("class", "axis xaxis");
   this.axisLeftG = this.svg.append("g").attr("class", "axis yaxis");
@@ -311,7 +320,7 @@ D3TimeChart = function (elem, options) {
   this.highlightText = this.rectG.append("text").attr("class", "chartLineText");
   this.highlightRect = this.rectG.append("rect").attr("class", "selection");
   this.rect = this.rectG.append("rect"); //rectangle spanning the interactable area on plot area
-  this.bottomAxisRect = this.rectG.append("rect"); // rectangle spanning additional interactable area on bottom axis area
+  this.bottomAxisRect = this.rectG.append("rect").attr("class", "panbox"); // rectangle spanning additional interactable area on bottom axis area
 
   this.mouseInfoOptions = {
     padding: { top: 2, right: 6, bottom: 5, left: 6 },
@@ -330,19 +339,37 @@ D3TimeChart = function (elem, options) {
     .attr("x", this.margin.left + 20)
     .attr("y", this.margin.top + this.mouseInfoOptions.padding.top);
 
-  this.occupancyLinesG = this.svg.append("g").attr("class", "occupancy_lines");
-
   /** MISC MEMBERS */
   this.cancelSelectionSignalEmitted = false;
   this.shiftKeyHeld = false;
+  this.ctrlKeyHeld = false;
   this.usingAddSelectionMode = false;
+  this.usingRemoveSelectionMode = false;
   this.highlightModifier = null; // holds the key pressed in conjunction with a highlight gesture to modify the action
   this.draggedForward = false;
 
+  // held key modifiers
+  this.keysHeld = {};
+
   /** GLOBAL LISTENERS */
-  // listeners to support esc canceling of highlighting and arrow-key panning
+  // listeners to support esc canceling of highlighting, held key modifiers, and arrow-key panning
   document.addEventListener("keydown", function (evt) {
     evt = evt || window.event;
+    // record the held unmodified BASE key (no shift key modified) -- this only works so far for alphabetical characters. We need this because otherwise, have observed it leads to some strange behavior when using key combinations.
+    if (
+      evt.shiftKey &&
+      evt.key.length === 1 &&
+      evt.key >= "A" &&
+      evt.key <= "Z"
+    ) {
+      // convert uppercase char to lowercase
+      var unmodifiedEventKey = String.fromCharCode(evt.key.charCodeAt() + 32);
+      self.keysHeld[unmodifiedEventKey] = true;
+    } else {
+      self.keysHeld[evt.key] = true;
+    }
+
+    // special handling for other keys
     if (evt.key === "Escape") {
       self.cancelSelectionSignalEmitted = true;
       d3.select("body").style("cursor", "auto");
@@ -351,6 +378,22 @@ D3TimeChart = function (elem, options) {
       self.shiftSelection(-1);
     } else if (evt.key === "ArrowRight") {
       self.shiftSelection(1);
+    }
+  });
+
+  document.addEventListener("keyup", function (evt) {
+    evt = evt || window.event;
+    if (
+      evt.shiftKey &&
+      evt.key.length === 1 &&
+      evt.key >= "A" &&
+      evt.key <= "Z"
+    ) {
+      // convert uppercase char to lowercase
+      var unmodifiedEventKey = String.fromCharCode(evt.key.charCodeAt() + 32);
+      delete self.keysHeld[unmodifiedEventKey];
+    } else {
+      delete self.keysHeld[evt.key];
     }
   });
 };
@@ -442,7 +485,7 @@ D3TimeChart.prototype.handleResize = function () {
   // ...
   // Make sure to update the C++ code of the changed plotting size.
   try {
-    // console.log("Resized!");
+    // console.log( "Resized! New size={" + this.chart.clientWidth + "," + this.chart.clientHeight + "}" );
     this.state.height = this.chart.clientHeight;
     this.state.width = this.chart.clientWidth;
 
@@ -498,9 +541,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
         }
       }
     } // if (plotWidth < nPoints)
-    // console.log(this.state.data.formatted);
     this.state.data.unzoomedCompressionIndex = compressionIndex;
   }
+  // console.log(this.state.data.formatted)
 
   // set dimensions of svg element and plot
   this.svg.attr("width", this.state.width).attr("height", this.state.height);
@@ -522,16 +565,15 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   // add a clipPath: everything outside of this area will not be drawn
   var clip = this.svg.select("#clip_th");
-  var clipBottomAxis = this.svg.select("#clip_bottom_axis_th");
 
   if (!clip.empty()) {
     // update if already exists
     clip
       .select("rect")
       .attr("width", plotWidth)
-      .attr("height", plotHeight)
+      .attr("height", plotHeight + 1) // add 1 to accommodate extra pixel of line path
       .attr("x", this.margin.left)
-      .attr("y", this.margin.top);
+      .attr("y", this.margin.top - 1);
   } else {
     // else create new
     this.svg
@@ -540,9 +582,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       .attr("id", "clip_th")
       .append("svg:rect")
       .attr("width", plotWidth)
-      .attr("height", plotHeight)
+      .attr("height", plotHeight + 1)
       .attr("x", this.margin.left)
-      .attr("y", this.margin.top);
+      .attr("y", this.margin.top - 1);
   }
 
   this.linesG.attr("clip-path", "url(#clip_th)");
@@ -560,38 +602,37 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     );
   }
 
-  // get scales
-  var domains = this.state.selection
-    ? {
-        x: this.state.selection.domain,
-        yGamma:
-          this.state.data.formatted[this.state.selection.compressionIndex]
-            .domains.yGamma,
-        yNeutron:
-          this.state.data.formatted[this.state.selection.compressionIndex]
-            .domains.yNeutron,
-      }
-    : this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
-        .domains;
-
-  var scales = this.getScales(domains);
+  // get scales to use
+  var brush = this.state.brush;
 
   var compressionIndex = this.state.selection
     ? this.state.selection.compressionIndex
     : this.state.data.unzoomedCompressionIndex;
 
-  var brush = this.state.brush;
-
-  // set scale of brush
-  brush.setScale(scales.xScale);
-
+  if (this.state.selection) {
+    // use only data in view
+    var xDomain = this.state.selection.domain;
+    var yDomains = this.getYDomainsInRange(xDomain, compressionIndex);
+    var fullDomain = {
+      x: xDomain,
+      yGamma: yDomains.yGammaDomain,
+      yNeutron: yDomains.yNeutronDomain,
+    };
+    var scales = this.getScales(fullDomain);
+    brush.setScale(scales.xScale);
+  } else {
+    // use all data
+    var fullDomain = this.state.data.formatted[compressionIndex].domains;
+    var scales = this.getScales(fullDomain);
+    brush.setScale(scales.xScale);
+  }
   // DEFINE HANDLERS AND LISTENERS
-  // TODO: To add additional touch functionality, add analogous touch gestures (to right click, alt key, ctrl key-- to perform zoom and background selection)
 
   /**
-   * Handler for the initiation of a selection gesture.
-   */
-  var startSelection = () => {
+   * Callback for handling the initiation of a selection gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
+   */ 
+  var startSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
@@ -607,49 +648,57 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     // console.log(coords);
     brush.setStart(coords[0]);
     d3.select("body").style("cursor", "move");
-    // console.log(d3.event.sourceEvent);
 
-    // TODO: add analogous touch gestures to add additional touch functionality
+    // add analogous touch gestures (based on ui-selected interaction mode) to add additional touch functionality
     var TOUCH_ANALOGOUS_SHIFT = this.usingAddSelectionMode === true;
+    var TOUCH_ANALOGOUS_CTRL = this.usingRemoveSelectionMode === true;
+
     var TOUCH_ANALOGOUS_RIGHTCLICK =
       this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
-    var TOUCH_ANALOGOUS_ALTKEY =
+    var TOUCH_ANALOGOUS_ALTKEYCLICK =
       this.userInteractionMode ===
       this.UserInteractionModeEnum.SELECTBACKGROUND;
-    var TOUCH_ANALOGOUS_CTRLCLICK =
-      this.userInteractionMode === this.UserInteractionModeEnum.ZOOM;
+    var TOUCH_ANALOGOUS_METAKEYCLICK =
+      this.userInteractionMode === this.UserInteractionModeEnum.SELECTSECONDARY;
 
     this.shiftKeyHeld =
       TOUCH_ANALOGOUS_SHIFT ||
       (d3.event.sourceEvent && d3.event.sourceEvent.shiftKey);
 
+    this.ctrlKeyHeld =
+      TOUCH_ANALOGOUS_CTRL ||
+      (d3.event.sourceEvent && d3.event.sourceEvent.ctrlKey);
+
     if (
+      TOUCH_ANALOGOUS_ALTKEYCLICK ||
+      (d3.event.type == "dragstart" &&
+        window.MouseEvent &&
+        d3.event.sourceEvent instanceof MouseEvent &&
+        (d3.event.sourceEvent.altKey || this.keysHeld["b"]))
+    ) {
+      // 'b' for background
+      this.highlightModifier = "altKey";
+      this.mouseDownHighlight(coords[0], "altKey");
+    } else if (
+      TOUCH_ANALOGOUS_METAKEYCLICK ||
+      (d3.event.type == "dragstart" &&
+        window.MouseEvent &&
+        d3.event.sourceEvent instanceof MouseEvent &&
+        this.keysHeld["s"])
+    ) {
+      // 's' for secondary. Avoid using physical meta key as shortcut due to inconsistencies between platforms and browsers.
+      this.highlightModifier = "metaKey";
+      this.mouseDownHighlight(coords[0], "metaKey");
+    } else if (
       TOUCH_ANALOGOUS_RIGHTCLICK ||
       (d3.event.type == "dragstart" &&
         window.MouseEvent &&
         d3.event.sourceEvent instanceof MouseEvent &&
-        d3.event.sourceEvent.button == 2)
+        d3.event.sourceEvent.button === 2 &&
+        d3.event.sourceEvent.ctrlKey === false) // ctrlKey needed to be false, since in FireFox ctrlKey + click triggers button == 2 also (i.e. right-click)
     ) {
       this.highlightModifier = "rightClick";
       this.mouseDownHighlight(coords[0], "rightClick");
-    } else if (
-      TOUCH_ANALOGOUS_ALTKEY ||
-      (d3.event.type == "dragstart" &&
-        window.MouseEvent &&
-        d3.event.sourceEvent instanceof MouseEvent &&
-        d3.event.sourceEvent.altKey)
-    ) {
-      this.highlightModifier = "altKey";
-      this.mouseDownHighlight(coords[0], "altKey");
-    } else if (
-      TOUCH_ANALOGOUS_CTRLCLICK ||
-      (d3.event.type == "dragstart" &&
-        window.MouseEvent &&
-        d3.event.sourceEvent instanceof MouseEvent &&
-        d3.event.sourceEvent.ctrlKey)
-    ) {
-      this.highlightModifier = "ctrlKey";
-      this.mouseDownHighlight(coords[0], "ctrlKey");
     } else {
       this.highlightModifier = "none";
       this.mouseDownHighlight(coords[0], "none");
@@ -657,9 +706,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   };
 
   /**
-   * Handler for the progression of a selection gesture.
+   * Callback for handling the progression of a selection gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
    */
-  var moveSelection = () => {
+  var moveSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
       d3.event.stopPropagation();
@@ -698,9 +748,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   };
 
   /**
-   * Handler for the termination of a selection gesture.
+   * Callback for handling the termination of a selection gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
    */
-
   var endSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
@@ -731,19 +781,45 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
             // unnecessary check, but added to make it clear that if you wanted to add extra functionality to "simple gesture" mode, then you should handle things differently.
             // handle foreground or background selection
 
-            var keyModifierMap = {
-              altKey: 0x4,
-              shiftKey: 0x1,
-              none: 0x0,
-            };
-            this.WtEmit(
-              this.chart.id,
-              { name: "timedragged" },
-              this.state.data.formatted[0].sampleNumbers[lIdx],
-              this.state.data.formatted[0].sampleNumbers[rIdx],
-              keyModifierMap[this.highlightModifier] |
-                (keyModifierMap["shiftKey"] & this.shiftKeyHeld) // bitwise OR with the shift key modifier if held, 0 otherwise.
-            );
+            // only enable highlighting if brush forward, for more alignment with expected behavior
+            if (brush.getStart() <= brush.getEnd()) {
+              // Defined from docs on Wt::KeyboardModifier
+              var keyModifierMap = {
+                altKey: 0x4,
+                ctrlKey: 0x2,
+                metaKey: 0x8,
+                shiftKey: 0x1,
+                none: 0x0,
+              };
+
+              if (this.shiftKeyHeld) {
+                this.WtEmit(
+                  this.chart.id,
+                  { name: "timedragged" },
+                  this.state.data.formatted[0].sampleNumbers[lIdx],
+                  this.state.data.formatted[0].sampleNumbers[rIdx],
+                  keyModifierMap[this.highlightModifier] |
+                    keyModifierMap["shiftKey"]
+                );
+              } else if (this.ctrlKeyHeld) {
+                this.WtEmit(
+                  this.chart.id,
+                  { name: "timedragged" },
+                  this.state.data.formatted[0].sampleNumbers[lIdx],
+                  this.state.data.formatted[0].sampleNumbers[rIdx],
+                  keyModifierMap[this.highlightModifier] |
+                    keyModifierMap["ctrlKey"]
+                );
+              } else {
+                this.WtEmit(
+                  this.chart.id,
+                  { name: "timedragged" },
+                  this.state.data.formatted[0].sampleNumbers[lIdx],
+                  this.state.data.formatted[0].sampleNumbers[rIdx],
+                  keyModifierMap[this.highlightModifier]
+                );
+              }
+            }
           }
         }
       }
@@ -753,13 +829,14 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     brush.clear();
     this.highlightModifier = null;
     this.shiftKeyHeld = false;
+    this.ctrlKeyHeld = false;
   };
 
   // touch drag behavior
   this.rect
-    .on("touchstart", startSelection)
-    .on("touchmove", moveSelection)
-    .on("touchend", endSelection);
+    .on("touchstart", () => startSelection({ touch: true }))
+    .on("touchmove", () => moveSelection({ touch: true }))
+    .on("touchend", () => endSelection({ touch: true }));
 
   // mouse drag behavior
   var selectionDrag = d3.behavior
@@ -774,6 +851,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   var newSelection = null;
   var newScale = brush.getScale();
 
+  /**
+   * Callback for handling the initiation of a panning gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
+   */
   var startPanDragSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
@@ -791,6 +872,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     d3.select("body").style("cursor", "ew-resize");
   };
 
+  /**
+   * Callback for handling the progression of a panning gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
+   */
   var movePanDragSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
@@ -813,6 +898,10 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     }
   };
 
+  /**
+   * Callback for handling the termination of a panning gesture (for both mouse and touch).
+   * @param {*} options : an object that defines certain options. For example, pass { touch: true } to execute touch codepath
+   */
   var endPanDragSelection = (options) => {
     if (options && options.touch) {
       d3.event.preventDefault();
@@ -842,6 +931,16 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   this.bottomAxisRect.call(panDrag);
 
+  // Special behavior for PAN interaction mode, which allows panning by dragging on the main interaction area of the chart
+  if (this.userInteractionMode === this.UserInteractionModeEnum.PAN) {
+    this.rect
+      .on("touchstart", () => startPanDragSelection({ touch: true }))
+      .on("touchmove", () => movePanDragSelection({ touch: true }))
+      .on("touchend", () => endPanDragSelection({ touch: true }));
+
+    this.rect.call(panDrag);
+  }
+
   this.bottomAxisRect
     .on("mouseover", () => {
       d3.select("body").style("cursor", "ew-resize");
@@ -857,6 +956,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
   };
 
   // Finally, initialization finished-- update chart
+  this.updateFilterInfo();
   this.updateChart(scales, compressionIndex, options);
 };
 
@@ -929,12 +1029,12 @@ D3TimeChart.prototype.updateChart = function (
       this.hideToolTip();
     });
 
-  // plot data
+  /** PLOT DATA */
   for (var detName in this.state.data.formatted[compressionIndex].detectors) {
     var counts =
       this.state.data.formatted[compressionIndex].detectors[detName].counts;
 
-    // only use visible range if zoomed in, otherwise use full range.
+    // only use visible range if zoomed in, otherwise use full range. This is an optimization which is helpful for avoiding wasteful out-of-view data rendering.
     var lIdx = this.findDataIndex(chartDomain[0], compressionIndex);
     var rIdx = this.findDataIndex(chartDomain[1], compressionIndex);
     counts = counts.slice(lIdx * 2, (rIdx + 1) * 2);
@@ -996,7 +1096,7 @@ D3TimeChart.prototype.updateChart = function (
     }
   }
 
-  // update highlight region rendering
+  /** UPDATE HIGHLIGHT REGIONS RENDERING */
   if (this.state.regions && this.state.data.sampleNumberToIndexMap) {
     // console.log(this.state.regions);
     var chart = this;
@@ -1033,8 +1133,8 @@ D3TimeChart.prototype.updateChart = function (
     });
   }
 
-  // plot axes and labels
-
+  /** PLOT AXES AND LABELS */
+  // Below is a way to create major and minor axis ticks on the x-axis. Somewhat experimental, but seems to work. Still may need some refinement for more dynamic behavior.
   var tickCount = 20;
 
   do {
@@ -1073,8 +1173,8 @@ D3TimeChart.prototype.updateChart = function (
       .attr("id", "th_x-axis")
       .call(xAxis);
 
-    // check whether there is any possibility for axis text overlap
-    // if yes, then re-define axes with reduced (half) the current tick count
+    // check whether there is any possibility for axis text overlap. (Checks using only the final two tick labels because those would generally signal the potential for overlap)
+    // if yes, then re-define axes with **reduced** (half) the current tick count
     var NUMBER_OF_TICKS_BETWEEN_MAJOR_TICKS = 5; // set this to the number of ticks between major ticks. Helps you get the next visible tick.
 
     var renderedTickCount = this.axisBottomG.selectAll("g.tick").size();
@@ -1099,6 +1199,10 @@ D3TimeChart.prototype.updateChart = function (
       .getBoundingClientRect();
   } while (secondToLastVisibleTickBound.right > lastVisibleTickBound.left);
 
+  // update interactable x-axis area
+  this.bottomAxisRect.attr("height", this.axisBottomG.node().getBBox().height);
+
+  /** DEFINE AND ADD ZOOM INDICATOR TO X-AXIS */
   var xAxisArrowDefs = this.axisBottomG.select("#arrow_defs");
 
   if (xAxisArrowDefs.empty()) {
@@ -1148,6 +1252,7 @@ D3TimeChart.prototype.updateChart = function (
     axisBottomPath.attr("marker-start", null);
   }
 
+  /** ADD X-AXIS TITLES */
   var axisLabelX = this.svg.select("#th_label_x");
 
   if (axisLabelX.empty()) {
@@ -1160,7 +1265,7 @@ D3TimeChart.prototype.updateChart = function (
       .text(this.options.xtitle);
   } // if (!axisLabelX.empty())
 
-  // compute axis label translation to use
+  // compute axis label translation to use depending on if compact option used or not
   var axisLabelXTranslation = this.options.compactXAxis
     ? "translate(" +
       (this.margin.left +
@@ -1184,6 +1289,7 @@ D3TimeChart.prototype.updateChart = function (
 
   axisLabelX.attr("transform", axisLabelXTranslation);
 
+  /** FORMAT X-AXIS TICK LABELS */
   var xLabelBoundingRect = axisLabelX.node().getBoundingClientRect();
 
   var USE_COMPACT_X_AXIS = this.options.compactXAxis;
@@ -1204,6 +1310,18 @@ D3TimeChart.prototype.updateChart = function (
       tickText.attr("visibility", "visible");
     }
   });
+
+  // format minor axis labels x-axis
+  axisBottomTicks.each(function (d, i) {
+    var tickText = d3.select(this).select("text");
+    var tickLine = d3.select(this).select("line");
+    if (!xTicksGenerated[i].isMajor) {
+      tickText.attr("visibility", "hidden");
+      tickLine.attr("y2", 4);
+    }
+  });
+
+  // account for chart displacement due to background/lead-in, and hide any ticks related to it
 
   var dataBackgroundDuration = this.state.data.backgroundDuration;
   var firstTick = this.axisBottomG.select("g.tick:first-child");
@@ -1227,6 +1345,7 @@ D3TimeChart.prototype.updateChart = function (
     }); // axisBottomTicks.each()
   } // if (dataBackgroundDuration != null)
 
+  /** ADD OCCUPANCY STATUS LINES */
   if (this.state.data.raw.occupancies) {
     var occupancies = this.state.data.raw.occupancies;
     if (
@@ -1330,17 +1449,7 @@ D3TimeChart.prototype.updateChart = function (
     this.occupancyLinesG.selectAll(".occupancy_line_group").remove();
   } // if (this.state.data.raw.occupancies)
 
-  // format minor axis labels x-axis
-  axisBottomTicks.each(function (d, i) {
-    var tickText = d3.select(this).select("text");
-    var tickLine = d3.select(this).select("line");
-    if (!xTicksGenerated[i].isMajor) {
-      tickText.attr("visibility", "hidden");
-      tickLine.attr("y2", 4);
-    }
-  });
-
-  // add grid lines
+  /** ADD X-AXIS GRID */
   if (this.options.gridx) {
     this.verticalGridG
       .attr(
@@ -1363,6 +1472,7 @@ D3TimeChart.prototype.updateChart = function (
     this.verticalGridG.selectAll("*").remove();
   }
 
+  /** ADD Y-AXIS COMPONENTS */
   if (HAS_GAMMA) {
     var yAxisLeft = d3.svg
       .axis()
@@ -1387,6 +1497,7 @@ D3TimeChart.prototype.updateChart = function (
         this.horizontalLeftGridG.selectAll("g.tick");
       horizontalLeftGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
+        // special handling for grid lines would be added here. (e.g. classifying grid lines as minor or major)
       });
     } else {
       this.horizontalLeftGridG.selectAll("*").remove();
@@ -1402,7 +1513,7 @@ D3TimeChart.prototype.updateChart = function (
           Math.pow(2, compressionIndex) +
           " Samples";
 
-    // if already drawn, just update
+    // if title already drawn, just update
     if (!axisLabelY1.empty()) {
       // reposition
       axisLabelY1
@@ -1466,6 +1577,7 @@ D3TimeChart.prototype.updateChart = function (
         this.horizontalRightGridG.selectAll("g.tick");
       horizontalRightGridLines.each(function (d, i) {
         var tickLine = d3.select(this).select("line");
+        // special handling for grid lines would be added here. (e.g. classifying grid lines as minor or major)
       });
     } else {
       this.horizontalRightGridG.selectAll("*").remove();
@@ -1480,7 +1592,7 @@ D3TimeChart.prototype.updateChart = function (
           Math.pow(2, compressionIndex) +
           " Samples";
 
-    // if already drawn, just update
+    // if title already drawn, just update
     if (!axisLabelY2.empty()) {
       // reposition
       axisLabelY2
@@ -1518,8 +1630,83 @@ D3TimeChart.prototype.updateChart = function (
     } // if (!axisLabelY2.empty())
   } else {
     this.axisRightG.selectAll("*").remove();
+    this.horizontalRightGridG.selectAll("*").remove();
     this.svg.select("#th_label_y2").remove();
   } // if (HAS_NEUTRON)
+};
+
+/**
+ * Handles updating the text and positioning of the applied energy filter display
+ */
+D3TimeChart.prototype.updateFilterInfo = function () {
+  /* If there is a gamma energy range sum applied, make some text to notify user of this */
+  if (this.state.data && this.state.data.raw) {
+    const haveLowFilter =
+      typeof this.state.data.raw.filterLowerEnergy === "number";
+    const haveHighFilter =
+      typeof this.state.data.raw.filterUpperEnergy === "number";
+
+    if (haveLowFilter || haveHighFilter) {
+      if (!this.filterInfo) {
+        this.filterInfo = this.svg.append("g").attr("class", "mouseInfo");
+
+        this.filterInfoBox = this.filterInfo
+          .append("rect")
+          .attr("class", "mouseInfoBox")
+          .attr("height", "2.25em")
+          .attr("y", "-2em");
+
+        this.filterInfoTxt = this.filterInfo
+          .append("text")
+          .attr("dy", "-0.25em");
+      }
+
+      let txt = "";
+      if (haveLowFilter && haveHighFilter) {
+        txt =
+          "Gammas summed from " +
+          this.state.data.raw.filterLowerEnergy +
+          " keV to " +
+          this.state.data.raw.filterUpperEnergy +
+          " keV";
+      } else if (haveLowFilter) {
+        txt =
+          "Gammas summed above " +
+          this.state.data.raw.filterLowerEnergy +
+          " keV";
+      } else if (haveHighFilter) {
+        txt =
+          "Gammas summed below " +
+          this.state.data.raw.filterUpperEnergy +
+          " keV";
+      }
+
+      let xmmsglen = this.filterInfoTxt.text(txt).node().getBBox().width;
+
+      let ymmsglen = this.filterInfoTxt.node().getBBox().height;
+
+      /* Add extra 40px to keep from overlapping the show-filters button when filters are closed. */
+      let rightOffset =
+        this.axisRightG.node().getBBox().width + this.margin.right + 40;
+
+      let topOffset = ymmsglen + this.margin.top;
+
+      this.filterInfo.attr(
+        "transform",
+        "translate(" + (this.state.width - rightOffset) + ", " + topOffset + ")"
+      );
+
+      this.filterInfoTxt.attr("dx", -xmmsglen);
+
+      /*Resize the box to match the text size */
+      this.filterInfoBox.attr("width", xmmsglen + 10).attr("x", -xmmsglen - 5);
+    } else if (this.filterInfo) {
+      this.filterInfo.remove();
+      this.filterInfo = null;
+      this.filterInfoBox = null;
+      this.filterInfoTxt = null;
+    }
+  }
 };
 
 // HELPERS, CALLBACKS, AND EVENT HANDLERS //
@@ -1547,6 +1734,9 @@ D3TimeChart.prototype.updateChart = function (
  *                  ],
  *
  *    occupancies: [{...}, {...}]
+ *
+ * ... any additional fields. See D3TimeChart.cpp for updated object schema.
+ *
  * }
  *
  * @param {Object} rawData: data Object passed from Wt
@@ -1903,13 +2093,56 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
     }
   }
 
-  var gammaInterval = yMaxGamma > 0 ? [0, yMaxGamma] : undefined;
-  var yNeutronInterval = yMaxNeutron > 0 ? [0, yMaxNeutron] : undefined;
-
   return {
     x: [xMin, xMax],
-    yGamma: gammaInterval,
-    yNeutron: yNeutronInterval,
+    yGamma: [0, yMaxGamma],
+    yNeutron: [0, yMaxNeutron],
+  };
+};
+
+/**
+ * Gets the minimum and maximum y-values corresponding to the given x-domain and compression index
+ * @param {*} xDomain : Array of x-domain: i.e. [leftEndPoint, rightEndPoint]
+ * @param {*} compressionIndex : index into the formatted data array
+ * @returns Object of y-domains for the gamma and neutron data
+ */
+D3TimeChart.prototype.getYDomainsInRange = function (
+  xDomain,
+  compressionIndex
+) {
+  // conditions: lIdx <= rIdx. xDomain defined. compressionIndex is defined
+  var compIdx =
+    compressionIndex != null
+      ? compressionIndex
+      : this.state.data.unzoomedCompressionIndex;
+
+  // get the indices of the data from the xDomain
+  var lIdx = this.findDataIndex(xDomain[0], compIdx);
+  var rIdx = this.findDataIndex(xDomain[1], compIdx);
+
+  var gammaLow = Number.MAX_SAFE_INTEGER;
+  var gammaHigh = Number.MIN_SAFE_INTEGER;
+  var neutronLow = Number.MAX_SAFE_INTEGER;
+  var neutronHigh = Number.MIN_SAFE_INTEGER;
+
+  var data = this.state.data.formatted[compIdx];
+
+  // get the max's and min's over all detectors
+  for (var detName in data.detectors) {
+    var countsData = data.detectors[detName].counts;
+    for (var i = lIdx; i <= rIdx; i++) {
+      var gammaCPS = countsData[2 * i].gammaCPS;
+      var neutronCPS = countsData[2 * i].neutronCPS;
+      if (gammaCPS < gammaLow) gammaLow = gammaCPS;
+      if (gammaCPS > gammaHigh) gammaHigh = gammaCPS;
+      if (neutronCPS < neutronLow) neutronLow = neutronCPS;
+      if (neutronCPS > neutronHigh) neutronHigh = neutronCPS;
+    }
+  }
+
+  return {
+    yGammaDomain: [gammaLow, gammaHigh],
+    yNeutronDomain: [neutronLow, neutronHigh],
   };
 };
 
@@ -1964,9 +2197,11 @@ D3TimeChart.prototype.getRealTimeIntervals = function (realTimes, sourceTypes) {
     if (sourceTypes && i === 0 && sourceTypes[i] === 2) {
       // center so background is not started at 0
       // to reduce long lead-in for plotting, replace with a smaller value inside realTimeIntervals and then record the true backgroundDuration in this.state for future reference:
+      var meanIntervalTime = this.getMeanIntervalTime(realTimes, sourceTypes);
+
       var leadTime = Math.max(
         -realTimes[i],
-        -Math.floor(realTimes.length * 0.12)
+        -meanIntervalTime * realTimes.length * 0.12
       );
       this.state.data.backgroundDuration = realTimes[i];
       realTimeIntervals[i] = [leadTime, 0];
@@ -2035,10 +2270,12 @@ D3TimeChart.prototype.shiftSelection = function (n) {
     // update selection, update brush scale, update chart
     this.state.selection.domain = domain;
 
+    var yDomains = this.getYDomainsInRange(domain, compressionIndex);
+
     var fullDomain = {
       x: domain,
-      yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-      yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
+      yGamma: yDomains.yGammaDomain,
+      yNeutron: yDomains.yNeutronDomain,
     };
     var scale = this.getScales(fullDomain);
     this.state.brush.setScale(scale.xScale);
@@ -2091,8 +2328,8 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var zoomStepSize =
     0.001 * Math.exp(2, this.state.data.unzoomedCompressionIndex);
 
-  let newLeftExtent;
-  let newRightExtent;
+  var newLeftExtent = null;
+  var newRightExtent = null;
 
   if (Math.abs(deltaY) >= Math.abs(deltaX)) {
     // if scroll vertical, zoom
@@ -2108,7 +2345,7 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
     );
   } else {
     // if scroll horizontal, pan
-    let panStepSize =
+    var panStepSize =
       deltaX *
       0.1 *
       this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
@@ -2142,15 +2379,6 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
 
   var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
 
-  // obtain new scales, update brush, update selection
-  var scales = this.getScales({
-    x: [newLeftExtent, newRightExtent],
-    yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-    yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-  });
-
-  brush.setScale(scales.xScale);
-
   if (
     this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
       .x[0] === newLeftExtent &&
@@ -2165,6 +2393,24 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
       compressionIndex: compressionIndex,
     };
   }
+
+  if (this.state.selection) {
+    // use only data in view
+    var xDomain = [newLeftExtent, newRightExtent];
+    var yDomains = this.getYDomainsInRange(xDomain, compressionIndex);
+    var fullDomain = {
+      x: xDomain,
+      yGamma: yDomains.yGammaDomain,
+      yNeutron: yDomains.yNeutronDomain,
+    };
+  } else {
+    // use all data
+    var fullDomain =
+      this.state.data.formatted[this.state.data.unzoomedCompressionIndex]
+        .domains;
+  }
+  var scales = this.getScales(fullDomain);
+  brush.setScale(scales.xScale);
 
   // update chart
   this.updateChart(scales, compressionIndex);
@@ -2237,12 +2483,17 @@ D3TimeChart.prototype.handleBrushZoom = function () {
         Math.log2(Math.ceil(nPoints / plotWidth))
       );
 
-      // calculate new scale. Update brush
-      var scales = this.getScales({
+      // calculate new scale. Update brush and selection. Update chart
+      var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
+
+      var fullDomain = {
         x: newExtent,
-        yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-        yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-      });
+        yGamma: yDomains.yGammaDomain,
+        yNeutron: yDomains.yNeutronDomain,
+      };
+
+      var scales = this.getScales(fullDomain);
+
       this.state.selection = {
         domain: newExtent,
         compressionIndex: compressionIndex,
@@ -2297,13 +2548,20 @@ D3TimeChart.prototype.handleBrushZoom = function () {
       compressionIndex: compressionIndex,
     };
 
-    var scales = this.getScales({
-      x: this.state.selection.domain,
-      yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-      yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-    });
+    // update scales, update brush, and update chart
+    var yDomains = this.getYDomainsInRange(
+      this.state.selection.domain,
+      compressionIndex
+    );
 
-    // update brush scale
+    var fullDomain = {
+      x: this.state.selection.domain,
+      yGamma: yDomains.yGammaDomain,
+      yNeutron: yDomains.yNeutronDomain,
+    };
+
+    var scales = this.getScales(fullDomain);
+
     brush.setScale(scales.xScale);
     this.updateChart(scales, compressionIndex);
   }
@@ -2326,15 +2584,19 @@ D3TimeChart.prototype.handleDragForwardZoom = function () {
 
     //re-render the chart at default position if needed (prior to any drag-back zoomout occuring)
     if (this.state.selection) {
-      var scales = this.getScales({
-        x: this.state.selection.domain,
-        yGamma:
-          this.state.data.formatted[this.state.selection.compressionIndex]
-            .domains.yGamma,
-        yNeutron:
-          this.state.data.formatted[this.state.selection.compressionIndex]
-            .domains.yNeutron,
-      });
+      var xDomain = this.state.selection.domain;
+      var yDomains = this.getYDomainsInRange(
+        xDomain,
+        this.state.selection.compressionIndex
+      );
+
+      var fullDomain = {
+        x: xDomain,
+        yGamma: yDomains.yGammaDomain,
+        yNeutron: yDomains.yNeutronDomain,
+      };
+
+      var scales = this.getScales(fullDomain);
 
       this.updateChart(scales, this.state.selection.compressionIndex);
     }
@@ -2398,11 +2660,15 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
 
   var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
 
-  var scales = this.getScales({
+  var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
+
+  var fullDomain = {
     x: newExtent,
-    yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-    yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-  });
+    yGamma: yDomains.yGammaDomain,
+    yNeutron: yDomains.yNeutronDomain,
+  };
+
+  var scales = this.getScales(fullDomain);
 
   this.updateChart(scales, compressionIndex);
 };
@@ -2419,14 +2685,29 @@ D3TimeChart.prototype.mouseDownHighlight = function (mouseX, modifier) {
   } else {
     var foreground = this.highlightOptions.foreground;
     var background = this.highlightOptions.background;
+    var secondary = this.highlightOptions.secondary;
     var zoom = this.highlightOptions.zoom;
 
-    if (foreground && modifier in foreground.modifierKey) {
+    if (this.ctrlKeyHeld && !this.shiftKeyHeld) {
+      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.remove);
+      var spectrumType = "";
+      if (foreground && modifier in foreground.modifierKey) {
+        spectrumType = " foreground";
+      } else if (background && modifier in background.modifierKey) {
+        spectrumType = " background";
+      } else if (secondary && modifier in secondary.modifierKey) {
+        spectrumType = " secondary";
+      }
+      this.highlightText.text("Remove" + spectrumType);
+    } else if (foreground && modifier in foreground.modifierKey) {
       this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.foreground);
       this.highlightText.text("Select foreground");
     } else if (background && modifier in background.modifierKey) {
       this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.background);
       this.highlightText.text("Select background");
+    } else if (secondary && modifier in secondary.modifierKey) {
+      this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.secondary);
+      this.highlightText.text("Select secondary");
     } else if (zoom && modifier in zoom.modifierKey) {
       this.highlightRect.classed("leftbuttonzoombox", true);
       // this.highlightRect.attr("fill", this.HIGHLIGHT_COLORS.zoom);
@@ -2519,11 +2800,15 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
   var newExtent = [newLeftExtent, newRightExtent];
 
   // update chart
-  var scales = this.getScales({
+  var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
+
+  var fullDomain = {
     x: newExtent,
-    yGamma: this.state.data.formatted[compressionIndex].domains.yGamma,
-    yNeutron: this.state.data.formatted[compressionIndex].domains.yNeutron,
-  });
+    yGamma: yDomains.yGammaDomain,
+    yNeutron: yDomains.yNeutronDomain,
+  };
+
+  var scales = this.getScales(fullDomain);
 
   this.updateChart(scales, compressionIndex);
 
@@ -2538,14 +2823,14 @@ D3TimeChart.prototype.handleBrushPanSelection = function () {
 };
 
 /**
- * Handles showing tooltip.
+ * Handles showing mouse-hover tooltip.
  */
 D3TimeChart.prototype.showToolTip = function () {
   this.mouseInfoG.style("visibility", "visible");
 };
 
 /**
- * Handler to update tooltip display.
+ * Handler to update mouse-hover tooltip display.
  * @param {Number} time : real time of measurement (x-axis)
  * @param {Object[]} data : Array of data objects, where each object at minimum has fields: {detName, gammaCPS}. Optional fields: neutronCPS
  * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
@@ -2555,14 +2840,14 @@ D3TimeChart.prototype.updateToolTip = function (time, data, optargs) {
 };
 
 /**
- * Handler to hide tooltip.
+ * Handler to hide mouse-hover tooltip.
  */
 D3TimeChart.prototype.hideToolTip = function () {
   this.mouseInfoG.style("visibility", "hidden");
 };
 
 /**
- * Handler to create tooltip string from data.
+ * Handler to create mouse-hover tooltip string from data.
  * @param {Number} time : real time of measurement (x-axis)
  * @param {Object[]} data : Array of data objects, where each object at minimum has fields: {detName, gammaCPS}. Optional fields: neutronCPS
  * @param {Object} optargs : Object of optional keyword arguments. Accepted properties include: startTimeStamp, sourceType
@@ -2721,6 +3006,7 @@ D3TimeChart.prototype.compress = function (data, n) {
   var HAS_OCCUPANCY_DATA = false;
   var HAS_SOURCE_TYPE_DATA = false;
   var HAS_START_TIME_DATA = false;
+  var HAS_GPS_COORD_DATA = false;
 
   // Add optional fields:
   if (data.hasOwnProperty("neutronCounts")) {
@@ -2744,6 +3030,11 @@ D3TimeChart.prototype.compress = function (data, n) {
     out.startTimeOffset = data.startTimeOffset;
     out.startTimes = [];
     HAS_START_TIME_DATA = true;
+  }
+
+  if (data.hasOwnProperty("gpsCoordinates")) {
+    out.gpsCoordinates = [];
+    HAS_GPS_COORD_DATA = true;
   }
 
   // iterate over array with window of size n
@@ -2775,6 +3066,10 @@ D3TimeChart.prototype.compress = function (data, n) {
     }
     if (HAS_SOURCE_TYPE_DATA) {
       out.sourceTypes[outIdx] = data.sourceTypes[i];
+    }
+    if (HAS_GPS_COORD_DATA) {
+      // use GPS coordinate at the start of the compressed interval
+      out.gpsCoordinates[outIdx] = data.gpsCoordinates[i];
     }
     var j = 0;
     while (j < n && i + j < length) {
@@ -3092,34 +3387,40 @@ D3TimeChart.prototype.generateTicks = function (
   return tickArray;
 };
 
-// Unimplemented
+/**
+ * Handles setting x-axis title
+ * @param {*} title : string for the new title
+ */
 D3TimeChart.prototype.setXAxisTitle = function (title) {
   this.options.xtitle = title;
-  
+
   var axisLabelX = this.svg.select("#th_label_x");
-  
+
   //redraw x-title
   if (axisLabelX.empty()) {
-    if( this.state.data.formatted )
-      this.reinitializeChart();
-  }else{
+    if (this.state.data.formatted) this.reinitializeChart();
+  } else {
     axisLabelX.text(title);
-  }  
+  }
 };
 
-// Unimplemented
+/**
+ * Handles setting left-side y-axis title
+ * @param {*} title : string for the new title
+ */
 D3TimeChart.prototype.setY1AxisTitle = function (title) {
   this.options.y1title = title;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
   //redraw y1-title (e.g., gamma CPS axis title)
 };
 
-// Unimplemented
-D3TimeChart.prototype.setY2AxisTitle = function () {
+/**
+ * Handles setting right-side y-axis title
+ * @param {*} title : string for the new title
+ */
+D3TimeChart.prototype.setY2AxisTitle = function (title) {
   this.options.y2title = title;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
   //redraw y2-title (e.g., neutron CPS axis title)
 };
 
@@ -3130,21 +3431,26 @@ D3TimeChart.prototype.setY2AxisTitle = function () {
 D3TimeChart.prototype.setCompactXAxis = function (compact) {
   //Make x-zis title comapact or not
   this.options.compactXAxis = compact;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
 };
 
+/**
+ * Handles display of x-grid
+ * @param {*} show : boolean denoting whether or not the grid is displayed
+ */
 D3TimeChart.prototype.setGridX = function (show) {
   this.options.gridx = show;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
   //add/remove horizantal grid lines
 };
 
+/**
+ * Handles display of y-grid
+ * @param {*} show : boolean denoting whether or not the grid is displayed
+ */
 D3TimeChart.prototype.setGridY = function (show) {
   this.options.gridy = show;
-  if( this.state.data.formatted )
-    this.reinitializeChart();
+  if (this.state.data.formatted) this.reinitializeChart();
   //add/remove vertical grid lines
 };
 
@@ -3163,17 +3469,25 @@ D3TimeChart.prototype.setXAxisZoomSamples = function (firstsample, lastsample) {
   );
 };
 
+/**
+ * Handles setting/enabling specific interaction modes for the time chart, disabling others.
+ * @param {*} mode : string denoting the mode to set
+ */
 D3TimeChart.prototype.setUserInteractionMode = function (mode) {
   // This is just a stub function at the moment.
   console.log("Will set user interaction mode to " + mode);
 
   this.usingAddSelectionMode = false;
+  this.usingRemoveSelectionMode = false;
+
+  var plotHeight = this.state.height - this.margin.top - this.margin.bottom;
 
   if (mode === "Default") {
     this.userInteractionMode = this.UserInteractionModeEnum.DEFAULT;
   } else if (mode === "Zoom") {
     this.userInteractionMode = this.UserInteractionModeEnum.ZOOM;
   } else if (mode === "Pan") {
+    this.userInteractionMode = this.UserInteractionModeEnum.PAN;
   } else if (mode === "SelectForeground") {
     this.userInteractionMode = this.UserInteractionModeEnum.SELECTFOREGROUND;
   } else if (mode === "SelectBackground") {
@@ -3190,9 +3504,16 @@ D3TimeChart.prototype.setUserInteractionMode = function (mode) {
     this.userInteractionMode = this.UserInteractionModeEnum.SELECTSECONDARY;
     this.usingAddSelectionMode = true;
   } else if (mode === "RemoveForeground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTFOREGROUND;
+    this.usingRemoveSelectionMode = true;
   } else if (mode === "RemoveBackground") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTBACKGROUND;
+    this.usingRemoveSelectionMode = true;
   } else if (mode === "RemoveSecondary") {
+    this.userInteractionMode = this.UserInteractionModeEnum.SELECTSECONDARY;
+    this.usingRemoveSelectionMode = true;
   } else {
     console.log("Invalid option passed to setUserInteractionMode");
   }
+  this.reinitializeChart();
 };

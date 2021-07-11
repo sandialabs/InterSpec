@@ -202,25 +202,14 @@ double peak_width_chi2( double predicted_sigma, const PeakDef &peak )
 
 
 double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
-                           const size_t num_gamma_channels,
                            const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                            const bool highres,
                            const int sqrtEqnOrder,
                            std::vector<float> &answer,
                            std::vector<float> &uncerts )
 {
   if( !peaks || peaks->empty() )
     throw runtime_error( "MakeDrfFit::performResolutionFit(...): no input peaks" );
-  
-  bool highres;
-  if( num_gamma_channels )
-  {
-    highres = (num_gamma_channels > HIGH_RES_NUM_CHANNELS);
-  }else
-  {
-    const size_t index = peaks->size() / 2;
-    const double ratio = (*peaks)[index]->fwhm() / (*peaks)[index]->mean();
-    highres = (ratio < 0.03); //whatever, this is JIC anyway
-  }//if( !!meas ) / else
   
   bool sqrtSeriesLLS = false;
   double a_initial, b_initial, c_initial, d_initial;
@@ -311,10 +300,11 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
         double chi2 = MakeDrfFit::fit_fwhm_least_linear_squares( *peaks, sqrtEqnOrder, answer, uncerts );
         
         assert( answer.size() == static_cast<int>(sqrtEqnOrder) );
-        cout << "MakeDrfFit::fit_fwhm_least_linear_squares got {";
-        for( size_t i = 0; i < answer.size(); ++i )
-          cout << answer[i] << "+-" << uncerts[i] << ", ";
-        cout << "}.  Chi2=" << chi2 << endl;
+        
+        //cout << "MakeDrfFit::fit_fwhm_least_linear_squares got {";
+        //for( size_t i = 0; i < answer.size(); ++i )
+        //  cout << answer[i] << "+-" << uncerts[i] << ", ";
+        //cout << "}.  Chi2=" << chi2 << endl;
         
         sqrtSeriesLLS = true;
       }catch( std::exception &e )
@@ -468,14 +458,14 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
   
   const double final_chi2 = fitness.DoEval( fitParams.Params() );
   
-  cout << "FWHM final chi2=" << final_chi2 << endl;
+  //cout << "FWHM final chi2=" << final_chi2 << endl;
   if( sqrtSeriesLLS )
   {
     const double pre_chi2 = fitness.DoEval( vector<double>( begin(answer), end(answer) ) );
-    cout << "FWHM LLS chi2=" << pre_chi2 << endl;
+    //cout << "FWHM LLS chi2=" << pre_chi2 << endl;
     if( pre_chi2 < final_chi2 )
     {
-      cout << "Least Linear chi2 better than from Minuit, using that" << endl;
+      //cout << "Least Linear chi2 better than from Minuit, using that" << endl;
       return pre_chi2;
     }
   }

@@ -793,12 +793,26 @@ void PeakEdit::refreshPeakInfo()
       case PeakEdit::OffsetPolynomial0: case PeakEdit::OffsetPolynomial1:
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
       {
+        const int coefnum = (t - PeakEdit::OffsetPolynomial0);
         const PeakContinuum::OffsetType type = continuum->type();
         
-        const int coefnum = t - PeakEdit::OffsetPolynomial0;
-        const bool hide = ( (type==PeakContinuum::External)
-                            || (coefnum>=type)
-                            || ((type == PeakContinuum::LinearStep) && (coefnum > 1)) );
+        bool hide = true;
+        switch( type )
+        {
+          case PeakContinuum::NoOffset:   case PeakContinuum::External:
+            hide = true;
+            break;
+            
+          case PeakContinuum::Constant:   case PeakContinuum::Linear:
+          case PeakContinuum::Quadratic:  case PeakContinuum::Cubic:
+            hide = (coefnum >= type);
+            break;
+            
+          case PeakContinuum::FlatStep:   case PeakContinuum::LinearStep:
+          case PeakContinuum::BiLinearStep:
+            hide = (coefnum >= (2 + (type - PeakContinuum::FlatStep)));
+            break;
+        }//switch( type )
         
         row->setHidden( hide );
         
@@ -1415,7 +1429,7 @@ void PeakEdit::contnuumTypeChanged()
     break;
     
     case PeakContinuum::Linear:
-    case PeakContinuum::LinearStep:
+    case PeakContinuum::FlatStep:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial1)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial2)->setHidden( true );
@@ -1424,6 +1438,7 @@ void PeakEdit::contnuumTypeChanged()
     break;
   
     case PeakContinuum::Quadratic:
+    case PeakContinuum::LinearStep:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial1)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial2)->setHidden( false );
@@ -1432,6 +1447,7 @@ void PeakEdit::contnuumTypeChanged()
     break;
     
     case PeakContinuum::Cubic:
+    case PeakContinuum::BiLinearStep:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial1)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial2)->setHidden( false );
@@ -1534,7 +1550,9 @@ void PeakEdit::skewTypeChanged()
                 contArea = continuum->offset_integral( lowe, upe, nullptr );
                 break;
                 
+              case PeakContinuum::FlatStep:
               case PeakContinuum::LinearStep:
+              case PeakContinuum::BiLinearStep:
               {
                 std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
                 contArea = continuum->offset_integral( lowe, upe, data );
@@ -1836,397 +1854,399 @@ void PeakEdit::apply()
   PeakDef revertPeak = *m_peakModel->peak( m_peakIndex ); //used to restore peak if catches an exception.
     
   try
-    {
-  std::shared_ptr<PeakContinuum> continuum = m_currentPeak.continuum();
-  
-  const PeakContinuum::OffsetType offset = PeakContinuum::OffsetType(m_continuumType->currentIndex());
-  if( offset != continuum->type() )
   {
-    continuum->setType( offset );
-  
-    switch( offset )
-    {
-      case PeakContinuum::NoOffset:
-        break;
-        
-      case PeakContinuum::External:
-      {
-        if( !!continuum->externalContinuum() )
-          break;
-       
-        if( !!m_peakModel->peaks() )
-        {
-          for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
-          {
-            std::shared_ptr<const PeakContinuum> thiscont = p->continuum();
-            if( !!thiscont->externalContinuum() )
-            {
-              continuum->setExternalContinuum( thiscont->externalContinuum() );
-              break;
-            }
-          }//for( const PeakModel::PeakShrdPtr &p : *peaks )
-        }//if( !!peaks && !continuum->externalContinuum() )
-        
-        if( !continuum->externalContinuum() )
-        {
-          std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-          std::shared_ptr<Measurement> background = estimateContinuum( data );
-          continuum->setExternalContinuum( background );
-        }//if( !continuum->externalContinuum() )
-        
-        break;
-      }//case PeakContinuum::External:
-        
-      case PeakContinuum::Constant:
-      case PeakContinuum::Linear:
-      case PeakContinuum::Quadratic:
-      case PeakContinuum::Cubic:
-      case PeakContinuum::LinearStep:
-        break;
-    }//switch( offset )
-  }//if( offset != m_currentPeak.offsetType() )
-  
-  
-  
-  const PeakDef::SkewType skewType = PeakDef::SkewType( m_skewType->currentIndex() );
-  if( skewType != m_currentPeak.skewType() )
-  {
-    cerr << "PeakEdit::apply(): handle skew type change better" << endl;
+    std::shared_ptr<PeakContinuum> continuum = m_currentPeak.continuum();
     
-    switch( skewType )
+    const PeakContinuum::OffsetType offset = PeakContinuum::OffsetType(m_continuumType->currentIndex());
+    if( offset != continuum->type() )
     {
-      case PeakDef::NoSkew:
-        m_currentPeak.setSkewType( skewType );
-      break;
+      continuum->setType( offset );
       
-      case PeakDef::LandauSkew:
-        m_currentPeak.setSkewType( skewType );
-      break;
-    }//switch( skewType )
-  }//if( skewType != m_currentPeak.skewType() )
-  
-  
-  for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
-  {
-    if( m_valIsDirty[t] )
-    {
-      if( m_values[t]->validate() != WValidator::Valid )
-        throw runtime_error( "Value for '"
-                             + string(rowLabel(t)) + "' is not a valid number" );
-     
-      double val = 0.0;
-      string valtxt = m_values[t]->text().narrow();
-      
-//      if( valtxt..size() && (sscanf( valtxt.c_str(), "%lf", &val ) != 1) )
-//        throw runtime_error( "Error converting " + valtxt + " to float" );
-      if( !(stringstream(valtxt) >> val) && !valtxt.empty() )
-        throw runtime_error( "Error converting " + valtxt + " to float" );
-      
-      switch( t )
+      switch( offset )
       {
-        case PeakEdit::GaussAmplitude:
-          if( val < 0.0 )
-            val = -val;
-          m_currentPeak.setPeakArea( val );
-        break;
-          
-        case PeakEdit::Sigma:
-          val /= 2.3548201; //note: purposfull fall-through
-          if( val < 0.0 )
-            val = -val;
-        case PeakEdit::Mean:
-        case PeakEdit::LandauAmplitude:
-        case PeakEdit::LandauMode:
-        case PeakEdit::LandauSigma:
-          m_currentPeak.set_coefficient( val, PeakDef::CoefficientType(static_cast<int>(t)) );
-        break;
-          
-        case PeakEdit::OffsetPolynomial0:
-        case PeakEdit::OffsetPolynomial1:
-        case PeakEdit::OffsetPolynomial2:
-        case PeakEdit::OffsetPolynomial3:
-        case PeakEdit::OffsetPolynomial4:
-          continuum->setPolynomialCoef( t-OffsetPolynomial0, val );
-          if( m_currentPeak.type()==PeakDef::DataDefined )
-            setAmplitudeForDataDefinedPeak();
-        break;
-        
-        case PeakEdit::RangeStartEnergy:
-        case PeakEdit::RangeEndEnergy:
-        {
-          double start(0.0), end(0.0);
-          string starttxt = m_values[PeakEdit::RangeStartEnergy]->text().narrow();
-          string endtxt = m_values[PeakEdit::RangeEndEnergy]->text().narrow();
-          if( !(stringstream(starttxt) >> start) && !starttxt.empty() )
-            throw runtime_error( "Error converting " + starttxt + " to float" );
-          if( !(stringstream(endtxt) >> end) && !endtxt.empty() )
-            throw runtime_error( "Error converting " + endtxt + " to float" );
-          
-          continuum->setRange( start, end );
-  
-          if( m_currentPeak.type() == PeakDef::DataDefined )
-            setAmplitudeForDataDefinedPeak();
-          
+        case PeakContinuum::NoOffset:
           break;
-        }//case RangeStartEnergy/RangeEndEnergy
           
-        case PeakEdit::PeakColor:
+        case PeakContinuum::External:
         {
-          const WColor newColor = m_color->color();
-          m_currentPeak.setLineColor( newColor );
+          if( !!continuum->externalContinuum() )
+            break;
           
-          if( m_applyColorForAllNuc->isVisible() && m_applyColorForAllNuc->isChecked() )
+          if( !!m_peakModel->peaks() )
           {
-            m_applyColorForAllNuc->setUnChecked();
-            
-            std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
-            if( peaks )
+            for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
             {
-              for( const auto &p : *peaks )
+              std::shared_ptr<const PeakContinuum> thiscont = p->continuum();
+              if( !!thiscont->externalContinuum() )
               {
-                if( p->parentNuclide()==m_currentPeak.parentNuclide()
-                    && p->xrayElement()==m_currentPeak.xrayElement()
-                    && p->reaction()==m_currentPeak.reaction()
-                    && p->lineColor()!=newColor )
-                {
-                  Wt::WModelIndex peakindex = m_peakModel->indexOfPeak( p );
-                  if( peakindex.isValid() )
-                  {
-                    Wt::WModelIndex index = m_peakModel->index( peakindex.row(), PeakModel::kPeakLineColor );
-                    m_peakModel->setData( index, WString(newColor.isDefault() ? "none" : newColor.cssText(false)) );
-                  }
-                }//if( this is the same nuclide/element/reaction )
-              }//for( const auto &p : *peaks )
-            }//if( peaks )
-          }//if( m_applyColorForAllNuc->isChecked() )
+                continuum->setExternalContinuum( thiscont->externalContinuum() );
+                break;
+              }
+            }//for( const PeakModel::PeakShrdPtr &p : *peaks )
+          }//if( !!peaks && !continuum->externalContinuum() )
+          
+          if( !continuum->externalContinuum() )
+          {
+            std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+            std::shared_ptr<Measurement> background = estimateContinuum( data );
+            continuum->setExternalContinuum( background );
+          }//if( !continuum->externalContinuum() )
           
           break;
-        }//case PeakEdit::PeakColor:
+        }//case PeakContinuum::External:
           
-        case PeakEdit::Chi2DOF:
-        case PeakEdit::NumPeakPars:
+        case PeakContinuum::Constant:
+        case PeakContinuum::Linear:
+        case PeakContinuum::Quadratic:
+        case PeakContinuum::Cubic:
+        case PeakContinuum::FlatStep:
+        case PeakContinuum::LinearStep:
+        case PeakContinuum::BiLinearStep:
           break;
-      }//case( t )
-    }//if( m_valIsDirty[t] )
+      }//switch( offset )
+    }//if( offset != m_currentPeak.offsetType() )
     
-    if( m_uncertIsDirty[t] )
-    {
-      double val = 0.0;
-      
-      if( m_uncertainties[t]->validate() != WValidator::Valid )
-        throw runtime_error( "Uncertainty for '"
-                            + string(rowLabel(t)) + "' is not a valid number" );
-      
-      string valtxt = m_uncertainties[t]->text().narrow();
-      if( !(stringstream(valtxt) >> val) && !valtxt.empty() )
-        throw runtime_error( "Error converting " + valtxt + " to float" );
-
-      if( val < 0.0 )
-      {
-        val = -val;
-        //THis will be propogated to the GUI by refreshPeakInfo();
-//        char uncertTxt[16];
-//        snprintf( uncertTxt, sizeof(uncertTxt), "%.4f", val );
-//        m_uncertainties[t]->setText( uncertTxt );
-        
-        
-        
-      }//if( val < 0.0 )
-      
-      switch( t )
-      {
-        case PeakEdit::GaussAmplitude:
-          m_currentPeak.setPeakAreaUncert( val );
-        break;
-          
-        case PeakEdit::Sigma:
-          val /= 2.3548201; //note: purposfull fall-through
-        case PeakEdit::Mean:
-        case PeakEdit::LandauAmplitude:
-        case PeakEdit::LandauMode:
-        case PeakEdit::LandauSigma:
-          m_currentPeak.set_uncertainty( val, PeakDef::CoefficientType(static_cast<int>(t)) );
-        break;
-          
-        case PeakEdit::OffsetPolynomial0:
-        case PeakEdit::OffsetPolynomial1:
-        case PeakEdit::OffsetPolynomial2:
-        case PeakEdit::OffsetPolynomial3:
-        case PeakEdit::OffsetPolynomial4:
-          continuum->setPolynomialUncert( t-OffsetPolynomial0, val );
-        break;
-          
-        case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
-        case PeakEdit::Chi2DOF:          case PeakEdit::PeakColor:
-        case PeakEdit::NumPeakPars:
-        break;
-      }//case( t )
-    }//if( m_uncertIsDirty[t] )
-  }//for( PeakPars t )
-  
-  //We have to set peak type after setingin continuum parameters incase user
-  //  changes a continuum type/polynomial-coefficent AND peak type
-  if( m_peakType->currentIndex() != m_currentPeak.type() )
-  {
-    m_currentPeak.m_type = PeakDef::DefintionType(m_peakType->currentIndex());
     
-    switch( m_peakType->currentIndex() )
+    
+    const PeakDef::SkewType skewType = PeakDef::SkewType( m_skewType->currentIndex() );
+    if( skewType != m_currentPeak.skewType() )
     {
-      case PeakDef::GaussianDefined:
-        break;
-        
-      case PeakDef::DataDefined:
+      cerr << "PeakEdit::apply(): handle skew type change better" << endl;
+      
+      switch( skewType )
       {
-        if( !continuum->energyRangeDefined() )
+        case PeakDef::NoSkew:
+          m_currentPeak.setSkewType( skewType );
+          break;
+          
+        case PeakDef::LandauSkew:
+          m_currentPeak.setSkewType( skewType );
+          break;
+      }//switch( skewType )
+    }//if( skewType != m_currentPeak.skewType() )
+    
+    
+    for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
+    {
+      if( m_valIsDirty[t] )
+      {
+        if( m_values[t]->validate() != WValidator::Valid )
+          throw runtime_error( "Value for '"
+                              + string(rowLabel(t)) + "' is not a valid number" );
+        
+        double val = 0.0;
+        string valtxt = m_values[t]->text().narrow();
+        
+        //      if( valtxt..size() && (sscanf( valtxt.c_str(), "%lf", &val ) != 1) )
+        //        throw runtime_error( "Error converting " + valtxt + " to float" );
+        if( !(stringstream(valtxt) >> val) && !valtxt.empty() )
+          throw runtime_error( "Error converting " + valtxt + " to float" );
+        
+        switch( t )
         {
-          std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-          double lowe, highe;
-          findROIEnergyLimits( lowe, highe, m_currentPeak, data );
-          continuum->setRange( lowe, highe );
-        }//if( !m_currentPeak.xRangeDefined() )
-        
-        const double middle = 0.5*(m_currentPeak.lowerX() + m_currentPeak.upperX() );
-        m_currentPeak.set_coefficient( middle, PeakDef::Mean );
-        m_currentPeak.set_uncertainty( 0.0, PeakDef::Mean );
-        
-        setAmplitudeForDataDefinedPeak();
-        
-        break;
-      }//case PeakDef::DataDefined:
-    }//switch( m_peakType->currentIndex() )
-  }//if( m_peakType->currentIndex() != m_currentPeak.type() )
-  
-  
-  m_currentPeak.setUserLabel( m_userLabel->text().toUTF8() );
-  
-  if( nuclideInfoIsDirty() )
-  {
-    string nuctxt = m_nuclide->text().narrow();
-    
-    PeakDef::SourceGammaType srcType;
-    PeakDef::gammaTypeFromUserInput( nuctxt, srcType );
-    
-    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    const SandiaDecay::Nuclide *nuc = db->nuclide( nuctxt );
-    
-    double energy;
-    string currentTrans = m_photoPeakEnergy->currentText().narrow();
-    PeakDef::SourceGammaType photopeakSourceType;
-    PeakDef::gammaTypeFromUserInput( currentTrans, photopeakSourceType );
-    
-    switch( photopeakSourceType )
-    {
-      case PeakDef::NormalGamma:
-      case PeakDef::AnnihilationGamma:
-      case PeakDef::XrayGamma:
-        break;
-        
-      case PeakDef::SingleEscapeGamma: case PeakDef::DoubleEscapeGamma:
-        srcType = photopeakSourceType;
-      break;
-    }//switch( photopeakSourceType )
-    
-    stringstream dblstrm( currentTrans );
-    
-    if( !(dblstrm >> energy) )
-    {
-      //Shouldnt ever make it here
-      cerr << "Missread '" << currentTrans << "' as " << energy << endl;
-      energy = -1.0;
-    }
-    
-    if( nuc )
-    {
-      if( energy < 0.0 )
-        nuc = NULL;
+          case PeakEdit::GaussAmplitude:
+            if( val < 0.0 )
+              val = -val;
+            m_currentPeak.setPeakArea( val );
+            break;
+            
+          case PeakEdit::Sigma:
+            val /= 2.3548201; //note: purposfull fall-through
+            if( val < 0.0 )
+              val = -val;
+          case PeakEdit::Mean:
+          case PeakEdit::LandauAmplitude:
+          case PeakEdit::LandauMode:
+          case PeakEdit::LandauSigma:
+            m_currentPeak.set_coefficient( val, PeakDef::CoefficientType(static_cast<int>(t)) );
+            break;
+            
+          case PeakEdit::OffsetPolynomial0:
+          case PeakEdit::OffsetPolynomial1:
+          case PeakEdit::OffsetPolynomial2:
+          case PeakEdit::OffsetPolynomial3:
+          case PeakEdit::OffsetPolynomial4:
+            continuum->setPolynomialCoef( t-OffsetPolynomial0, val );
+            if( m_currentPeak.type()==PeakDef::DataDefined )
+              setAmplitudeForDataDefinedPeak();
+            break;
+            
+          case PeakEdit::RangeStartEnergy:
+          case PeakEdit::RangeEndEnergy:
+          {
+            double start(0.0), end(0.0);
+            string starttxt = m_values[PeakEdit::RangeStartEnergy]->text().narrow();
+            string endtxt = m_values[PeakEdit::RangeEndEnergy]->text().narrow();
+            if( !(stringstream(starttxt) >> start) && !starttxt.empty() )
+              throw runtime_error( "Error converting " + starttxt + " to float" );
+            if( !(stringstream(endtxt) >> end) && !endtxt.empty() )
+              throw runtime_error( "Error converting " + endtxt + " to float" );
+            
+            continuum->setRange( start, end );
+            
+            if( m_currentPeak.type() == PeakDef::DataDefined )
+              setAmplitudeForDataDefinedPeak();
+            
+            break;
+          }//case RangeStartEnergy/RangeEndEnergy
+            
+          case PeakEdit::PeakColor:
+          {
+            const WColor newColor = m_color->color();
+            m_currentPeak.setLineColor( newColor );
+            
+            if( m_applyColorForAllNuc->isVisible() && m_applyColorForAllNuc->isChecked() )
+            {
+              m_applyColorForAllNuc->setUnChecked();
+              
+              std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
+              if( peaks )
+              {
+                for( const auto &p : *peaks )
+                {
+                  if( p->parentNuclide()==m_currentPeak.parentNuclide()
+                     && p->xrayElement()==m_currentPeak.xrayElement()
+                     && p->reaction()==m_currentPeak.reaction()
+                     && p->lineColor()!=newColor )
+                  {
+                    Wt::WModelIndex peakindex = m_peakModel->indexOfPeak( p );
+                    if( peakindex.isValid() )
+                    {
+                      Wt::WModelIndex index = m_peakModel->index( peakindex.row(), PeakModel::kPeakLineColor );
+                      m_peakModel->setData( index, WString(newColor.isDefault() ? "none" : newColor.cssText(false)) );
+                    }
+                  }//if( this is the same nuclide/element/reaction )
+                }//for( const auto &p : *peaks )
+              }//if( peaks )
+            }//if( m_applyColorForAllNuc->isChecked() )
+            
+            break;
+          }//case PeakEdit::PeakColor:
+            
+          case PeakEdit::Chi2DOF:
+          case PeakEdit::NumPeakPars:
+            break;
+        }//case( t )
+      }//if( m_valIsDirty[t] )
       
-      size_t transition_index = 0;
-      const SandiaDecay::Transition *transition = NULL;
-
-      switch( srcType )
+      if( m_uncertIsDirty[t] )
       {
-        case PeakDef::NormalGamma:       break;
-        case PeakDef::AnnihilationGamma: break;
-        case PeakDef::SingleEscapeGamma: energy += 510.99891;     break;
-        case PeakDef::DoubleEscapeGamma: energy += 2.0*510.99891; break;
-        case PeakDef::XrayGamma:         break;
-      }//switch( sourceGammaType )
+        double val = 0.0;
+        
+        if( m_uncertainties[t]->validate() != WValidator::Valid )
+          throw runtime_error( "Uncertainty for '"
+                              + string(rowLabel(t)) + "' is not a valid number" );
+        
+        string valtxt = m_uncertainties[t]->text().narrow();
+        if( !(stringstream(valtxt) >> val) && !valtxt.empty() )
+          throw runtime_error( "Error converting " + valtxt + " to float" );
+        
+        if( val < 0.0 )
+        {
+          val = -val;
+          //THis will be propogated to the GUI by refreshPeakInfo();
+          //        char uncertTxt[16];
+          //        snprintf( uncertTxt, sizeof(uncertTxt), "%.4f", val );
+          //        m_uncertainties[t]->setText( uncertTxt );
+          
+          
+          
+        }//if( val < 0.0 )
+        
+        switch( t )
+        {
+          case PeakEdit::GaussAmplitude:
+            m_currentPeak.setPeakAreaUncert( val );
+            break;
+            
+          case PeakEdit::Sigma:
+            val /= 2.3548201; //note: purposfull fall-through
+          case PeakEdit::Mean:
+          case PeakEdit::LandauAmplitude:
+          case PeakEdit::LandauMode:
+          case PeakEdit::LandauSigma:
+            m_currentPeak.set_uncertainty( val, PeakDef::CoefficientType(static_cast<int>(t)) );
+            break;
+            
+          case PeakEdit::OffsetPolynomial0:
+          case PeakEdit::OffsetPolynomial1:
+          case PeakEdit::OffsetPolynomial2:
+          case PeakEdit::OffsetPolynomial3:
+          case PeakEdit::OffsetPolynomial4:
+            continuum->setPolynomialUncert( t-OffsetPolynomial0, val );
+            break;
+            
+          case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
+          case PeakEdit::Chi2DOF:          case PeakEdit::PeakColor:
+          case PeakEdit::NumPeakPars:
+            break;
+        }//case( t )
+      }//if( m_uncertIsDirty[t] )
+    }//for( PeakPars t )
+    
+    //We have to set peak type after setingin continuum parameters incase user
+    //  changes a continuum type/polynomial-coefficent AND peak type
+    if( m_peakType->currentIndex() != m_currentPeak.type() )
+    {
+      m_currentPeak.m_type = PeakDef::DefintionType(m_peakType->currentIndex());
       
-      const bool xrayOnly = (srcType == PeakDef::XrayGamma);
+      switch( m_peakType->currentIndex() )
+      {
+        case PeakDef::GaussianDefined:
+          break;
+          
+        case PeakDef::DataDefined:
+        {
+          if( !continuum->energyRangeDefined() )
+          {
+            std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+            double lowe, highe;
+            findROIEnergyLimits( lowe, highe, m_currentPeak, data );
+            continuum->setRange( lowe, highe );
+          }//if( !m_currentPeak.xRangeDefined() )
+          
+          const double middle = 0.5*(m_currentPeak.lowerX() + m_currentPeak.upperX() );
+          m_currentPeak.set_coefficient( middle, PeakDef::Mean );
+          m_currentPeak.set_uncertainty( 0.0, PeakDef::Mean );
+          
+          setAmplitudeForDataDefinedPeak();
+          
+          break;
+        }//case PeakDef::DataDefined:
+      }//switch( m_peakType->currentIndex() )
+    }//if( m_peakType->currentIndex() != m_currentPeak.type() )
+    
+    
+    m_currentPeak.setUserLabel( m_userLabel->text().toUTF8() );
+    
+    if( nuclideInfoIsDirty() )
+    {
+      string nuctxt = m_nuclide->text().narrow();
       
-      PeakDef::SourceGammaType sourceGammaType;
-      PeakDef::findNearestPhotopeak( nuc, energy, 0.0, xrayOnly,
-                                transition, transition_index, sourceGammaType );
+      PeakDef::SourceGammaType srcType;
+      PeakDef::gammaTypeFromUserInput( nuctxt, srcType );
       
-      switch( srcType )
+      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+      const SandiaDecay::Nuclide *nuc = db->nuclide( nuctxt );
+      
+      double energy;
+      string currentTrans = m_photoPeakEnergy->currentText().narrow();
+      PeakDef::SourceGammaType photopeakSourceType;
+      PeakDef::gammaTypeFromUserInput( currentTrans, photopeakSourceType );
+      
+      switch( photopeakSourceType )
       {
         case PeakDef::NormalGamma:
         case PeakDef::AnnihilationGamma:
         case PeakDef::XrayGamma:
           break;
           
-        case PeakDef::SingleEscapeGamma:
-        case PeakDef::DoubleEscapeGamma:
-          sourceGammaType = srcType;
+        case PeakDef::SingleEscapeGamma: case PeakDef::DoubleEscapeGamma:
+          srcType = photopeakSourceType;
           break;
-      }//switch( sourceGammaType )
+      }//switch( photopeakSourceType )
       
-      m_currentPeak.setNuclearTransition( nuc, transition,
-                                         static_cast<int>(transition_index),
-                                         sourceGammaType );
-    }else if( !nuc )
-    {
-      m_currentPeak.setNuclearTransition( NULL, NULL, -1, PeakDef::NormalGamma );
-      //try for an xray
-      if( nuctxt.find_first_of( "0123456789" ) == string::npos )
+      stringstream dblstrm( currentTrans );
+      
+      if( !(dblstrm >> energy) )
       {
-        SpecUtils::ireplace_all( nuctxt, "xray", "" );
-        SpecUtils::ireplace_all( nuctxt, "x-ray", "" );
-        SpecUtils::trim( nuctxt );
-        const SandiaDecay::Element *el = db->element( nuctxt );
-        const SandiaDecay::EnergyIntensityPair *nearpair
-                       = PeakDef::findNearestXray( el, energy );
-
-        if( nearpair )
-        {
-          m_currentPeak.setXray( el, nearpair->energy );
-        }else
-        {
-          //Try for a reaction
-          const ReactionGamma *rctndb = ReactionGammaServer::database();
-          vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-          try
-          {
-            rctndb->gammas( nuctxt, possible_rctns );
-          }catch(...){}
-          
-          //XXX - just taking first reaction, however there may be multiple
-          const ReactionGamma::Reaction *rctn = NULL;
-          if( possible_rctns.size() )
-            rctn = possible_rctns[0].reaction;
-          
-          if( rctn )
-          {
-            double nearestE = -999.9;
-            for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
-              if( fabs(eip.energy-energy) < fabs(nearestE-energy) )
-                nearestE = eip.energy;
-            m_currentPeak.setReaction( rctn, static_cast<float>(nearestE), srcType );
-          }else
-            m_currentPeak.setReaction( NULL, 0.0f, PeakDef::NormalGamma );
-        }//if( near ) / else (try for a reaction )
-      }//if( nuctxt.find_first_of( "0123456789" ) == string::npos )
-    }//if( nuc ) / else
-  }//if( nuclideInfoIsDirty() )
-  
-  m_blockInfoRefresh = true;
-  m_peakModel->removePeak( m_peakIndex );
-  m_peakIndex = m_viewer->addPeak( m_currentPeak, false );
-  m_currentPeak = *m_peakModel->peak( m_peakIndex );
-  m_blockInfoRefresh = false;
-  
-  refreshPeakInfo();
+        //Shouldnt ever make it here
+        cerr << "Missread '" << currentTrans << "' as " << energy << endl;
+        energy = -1.0;
+      }
+      
+      if( nuc )
+      {
+        if( energy < 0.0 )
+          nuc = NULL;
         
+        size_t transition_index = 0;
+        const SandiaDecay::Transition *transition = NULL;
+        
+        switch( srcType )
+        {
+          case PeakDef::NormalGamma:       break;
+          case PeakDef::AnnihilationGamma: break;
+          case PeakDef::SingleEscapeGamma: energy += 510.99891;     break;
+          case PeakDef::DoubleEscapeGamma: energy += 2.0*510.99891; break;
+          case PeakDef::XrayGamma:         break;
+        }//switch( sourceGammaType )
+        
+        const bool xrayOnly = (srcType == PeakDef::XrayGamma);
+        
+        PeakDef::SourceGammaType sourceGammaType;
+        PeakDef::findNearestPhotopeak( nuc, energy, 0.0, xrayOnly,
+                                      transition, transition_index, sourceGammaType );
+        
+        switch( srcType )
+        {
+          case PeakDef::NormalGamma:
+          case PeakDef::AnnihilationGamma:
+          case PeakDef::XrayGamma:
+            break;
+            
+          case PeakDef::SingleEscapeGamma:
+          case PeakDef::DoubleEscapeGamma:
+            sourceGammaType = srcType;
+            break;
+        }//switch( sourceGammaType )
+        
+        m_currentPeak.setNuclearTransition( nuc, transition,
+                                           static_cast<int>(transition_index),
+                                           sourceGammaType );
+      }else if( !nuc )
+      {
+        m_currentPeak.setNuclearTransition( NULL, NULL, -1, PeakDef::NormalGamma );
+        //try for an xray
+        if( nuctxt.find_first_of( "0123456789" ) == string::npos )
+        {
+          SpecUtils::ireplace_all( nuctxt, "xray", "" );
+          SpecUtils::ireplace_all( nuctxt, "x-ray", "" );
+          SpecUtils::trim( nuctxt );
+          const SandiaDecay::Element *el = db->element( nuctxt );
+          const SandiaDecay::EnergyIntensityPair *nearpair
+          = PeakDef::findNearestXray( el, energy );
+          
+          if( nearpair )
+          {
+            m_currentPeak.setXray( el, nearpair->energy );
+          }else
+          {
+            //Try for a reaction
+            const ReactionGamma *rctndb = ReactionGammaServer::database();
+            vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+            try
+            {
+              rctndb->gammas( nuctxt, possible_rctns );
+            }catch(...){}
+            
+            //XXX - just taking first reaction, however there may be multiple
+            const ReactionGamma::Reaction *rctn = NULL;
+            if( possible_rctns.size() )
+              rctn = possible_rctns[0].reaction;
+            
+            if( rctn )
+            {
+              double nearestE = -999.9;
+              for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
+                if( fabs(eip.energy-energy) < fabs(nearestE-energy) )
+                  nearestE = eip.energy;
+              m_currentPeak.setReaction( rctn, static_cast<float>(nearestE), srcType );
+            }else
+              m_currentPeak.setReaction( NULL, 0.0f, PeakDef::NormalGamma );
+          }//if( near ) / else (try for a reaction )
+        }//if( nuctxt.find_first_of( "0123456789" ) == string::npos )
+      }//if( nuc ) / else
+    }//if( nuclideInfoIsDirty() )
+    
+    m_blockInfoRefresh = true;
+    m_peakModel->removePeak( m_peakIndex );
+    m_peakIndex = m_viewer->addPeak( m_currentPeak, false );
+    m_currentPeak = *m_peakModel->peak( m_peakIndex );
+    m_blockInfoRefresh = false;
+    
+    refreshPeakInfo();
+    
   }catch ( std::exception &e)
   {
     if( m_peakIndex.isValid() )

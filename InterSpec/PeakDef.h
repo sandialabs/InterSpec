@@ -66,17 +66,62 @@ struct PeakContinuum
 {
   enum OffsetType : int
   {
+    /** The gaussian will sit on top of y=0.
+     No parameters.
+     */
     NoOffset,
-    Constant = 1,  //purposely set to be the size of the expected num paramters
+    
+    /** The gaussian sits on top of a flat, constant y-offset.
+     One parameter - the number of counts in the continuum per keV.  E.g., to get counts in a channel, multiply the continuum parameter
+     value by the channel width, in keV.
+     
+     Note: This, and the other polynomial enums, have a value equal to the expected number of parameters to describe them
+     */
+    Constant = 1,
+    
+    /** The gaussian sits on top of a straight, but sloped line.
+     Two parameters.
+     The density of continuum counts (e.g., counts/keV) is given by dy = par[0] + (energy - ref_energy)*par[1], where 'ref_energy' is
+     usually the mean of the first peak in the ROI.  A 'ref_energy' is used, instead of absolute energy, for numerical stability.
+     To get the counts in a channel you must integrate the density, e.g.,
+       y_chan = par[0]*(E_1 - E_0) + par[1]*(E_1^2 - E_0^2 + 2*ref_energy*(E_0 - E_1))
+               where E_0 and E_1 is the lower and upper energies of the channel respectively.
+     */
     Linear,
+    
+    /** Similar to #OffsetType::Linear, but a polynomial with three parameters. */
     Quadratic,
+    
+    /** Similar to #OffsetType::Linear, but a polynomial with four parameters. */
     Cubic,
+    
+    /** Two parameters; first gives offset as #OffsetType::Constant, with the second parameter giving change in dy (density of counts
+     per keV) between the left and right side of the ROI - the change in count density varies across the ROI as the fraction of data in the
+     ROI up to that point (if that makes any sense).
+     */
+    FlatStep,
+    
     LinearStep,
+    
+    BiLinearStep,
+    
+    /** A continuum is determined algorithmically for the entire spectrum; not recommended to use. */
     External
   };//enum OffsetType
   
   /** Text appropriate for use as a label for the continuum type in the gui. */
   static const char *offset_type_label( const OffsetType type );
+  
+  /** Returns string to be used for XML or JSON identification of continuum type. */
+  static const char *offset_type_str( const OffsetType type );
+  
+  /** Throws exception if string does not match a string returned by #offset_type_str.
+   @param str String to be tested.  Must not be a null pointer, but string does not need to be null terminated.
+   @param len The length of the string to be tested.
+   
+   Throws exception if an invalid string.
+   */
+  static OffsetType str_to_offset_type_str( const char * const str, const size_t len );
   
   PeakContinuum();
   
@@ -112,7 +157,7 @@ struct PeakContinuum
   //setPolynomialUncert: analagous to setPolynomialCoef(...), but for uncert.
   bool setPolynomialUncert( size_t polyCoef, double val );
   
-  double referenceEnergy() const { return m_refernceEnergy; }
+  double referenceEnergy() const { return m_referenceEnergy; }
   const std::vector<double> &parameters() const { return m_values; }
   const std::vector<double> &unertainties() const { return m_uncertainties; }
   std::vector<bool> fitForParameter() const { return m_fitForValue; }
@@ -126,7 +171,7 @@ struct PeakContinuum
   
   //calc_linear_continuum_eqn: sets this to be a Linear OffsetType continuum,
   //  and the range to be from x0 to x1, with the resulting linear polynomial
-  //  relative to m_refernceEnergy == x0
+  //  relative to m_referenceEnergy == x0
   //  nSideBinToAverage is the number of bins on each side of x0_bin and x1_bin
   //  that should be used to find data y-hieght for that respective side of
   //  continuum
@@ -139,17 +184,19 @@ struct PeakContinuum
   //  the contonuum density will be returned.  If globally defined continuum,
   //  then the integral will be returned, using linear interpolation for
   //  ranges not exactly on the bin edges.
-  //  If LinearStep, then data histogram is necassary
+  //  If FlatStep, then data histogram is necassary
   double offset_integral( const double x0, const double x1,
                           const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
   
-  //defined: returns true if a _valid_ polynomial or external continuum type
-  bool defined() const;
+  /** Returns true if a _valid_ polynomial, step, or external continuum type.
+   Where valid polynomial and step continuums means any of the coefficients are non zero, not that they actually make sense.
+   */
+  bool parametersProbablySet() const;
   
   //energyRangeDefined: returns if an energy range has explicitely been set
   bool energyRangeDefined() const;
   
-  /** Returns true if Constant, Linear, Quadratic, Cubic, or LinearStep: */
+  /** Returns true if Constant, Linear, Quadratic, Cubic, or FlatStep: */
   bool isPolynomial() const;
   
   double lowerEnergy() const { return m_lowerEnergy; }
@@ -177,8 +224,9 @@ struct PeakContinuum
   
   //translate_offset_polynomial: if you want the exact same polynomial
   //  line, but would like it with reference to a different energy,
-  //  use this funtion.
-  //XXX - Currently only supports constant and linear polynomials.
+  //  use this function.
+  //  TODO: Does NOT support Quadratic, Cubic, or External continuum types 
+  //  TODO: Currently untested
   static void translate_offset_polynomial( double *new_coefs,
                                            const double *old_coefs,
                                            OffsetType type,
@@ -209,14 +257,14 @@ protected:
   //  m_lowerEnergy==m_upperEnergy, then will be considered undefined as well.
   double m_lowerEnergy, m_upperEnergy;
   
-  //m_refernceEnergy: the energy polynomials are evaluated relative to. Ex.
-  //  continuum_density = m_values[0] + (energy - m_refernceEnergy)*m_values[1];
-  double m_refernceEnergy;
+  //m_referenceEnergy: the energy polynomials are evaluated relative to. Ex.
+  //  continuum_density = m_values[0] + (energy - m_referenceEnergy)*m_values[1];
+  double m_referenceEnergy;
   
   //m_values, m_uncertainties: the polynomial coefficients and their
   //  uncertainties.  The polynomial is actually a density per keV of the
   //  continuum, so needs to be integrated over the width of the bin.  Also,
-  //  the energy is relative to m_refernceEnergy. E.g. at the m_refernceEnergy
+  //  the energy is relative to m_referenceEnergy. E.g. at the m_referenceEnergy
   //  the continuum will have a density of m_values[0]
   std::vector<double> m_values, m_uncertainties;
   std::vector<bool> m_fitForValue;

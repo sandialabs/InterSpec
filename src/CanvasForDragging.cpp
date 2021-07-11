@@ -339,7 +339,7 @@ CanvasForDragging::CanvasForDragging( Wt::Chart::WAbstractChart *parent,
   //  be other things that should be redrawn (and that will happen now only once
   //  the mouse is moved)
   string js = "function(self, w, h, layout){Wt.WT.DrawGammaLines('c" + id() + "', true);}";
-  setJavaScriptMember( "wtResize", js );
+  setJavaScriptMember( WT_RESIZE_JS, js );
 }//CanvasForDragging constructos
 
 

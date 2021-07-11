@@ -56,11 +56,11 @@ const char *iconUrl( const WarningWidget::WarningMsgLevel level )
 {
   switch( level )
   {
-    case WarningWidget::WarningMsgLevel::WarningMsgInfo:     return "InterSpec_resources/images/information.png";
-    case WarningWidget::WarningMsgLevel::WarningMsgLow:      return "InterSpec_resources/images/bullet_error.png";
-    case WarningWidget::WarningMsgLevel::WarningMsgMedium:   return "InterSpec_resources/images/error.png";
-    case WarningWidget::WarningMsgLevel::WarningMsgHigh:     return "InterSpec_resources/images/exclamation.png";
-    case WarningWidget::WarningMsgLevel::WarningMsgSave:     return "InterSpec_resources/images/disk.png";
+    case WarningWidget::WarningMsgLevel::WarningMsgInfo:     return "InterSpec_resources/images/information.svg";
+    case WarningWidget::WarningMsgLevel::WarningMsgLow:      return "InterSpec_resources/images/caution.svg";
+    case WarningWidget::WarningMsgLevel::WarningMsgMedium:   return "InterSpec_resources/images/error.svg";
+    case WarningWidget::WarningMsgLevel::WarningMsgHigh:     return "InterSpec_resources/images/exclamation.svg";
+    case WarningWidget::WarningMsgLevel::WarningMsgSave:     return "InterSpec_resources/images/disk.svg";
     case WarningWidget::WarningMsgLevel::WarningMsgShowRiid: return "InterSpec_resources/images/search_results.svg";
     case WarningWidget::WarningMsgLevel::NumWarningMsgType:  return "";
   }//switch( WarningMsgLevel(level) )
@@ -235,22 +235,22 @@ void WarningWidget::createContent()
     Wt::Dbo::ptr<InterSpecUser> m_user = m_hostViewer->m_user;
     
     
-    WImage* image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/information.png"));
+    WImage* image = new Wt::WImage(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgInfo) ));
     image->setMaximumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
     image->setMinimumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
     m_layout->addWidget(image,1,2, AlignCenter);
 
-    image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/bullet_error.png"));
+    image = new Wt::WImage(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgLow) ));
     image->setMaximumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
     image->setMinimumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
     m_layout->addWidget(image,1,3, AlignCenter);
     
-    image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/error.png"));
+    image = new Wt::WImage(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgMedium) ));
     image->setMaximumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
     image->setMinimumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
     m_layout->addWidget(image,1,4, AlignCenter);
     
-    image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/exclamation.png"));
+    image = new Wt::WImage(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgHigh) ));
     image->setMaximumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
     image->setMinimumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
     m_layout->addWidget(image,1,5, AlignCenter);
@@ -265,8 +265,7 @@ void WarningWidget::createContent()
     m_description = new WText(desc);
     m_description->setWordWrap(true);
     m_layout->addWidget(desc,1,0, 4,1);
-    WLabel* label = new WLabel("Record log types:");
-    label->setImage(new WImage( "InterSpec_resources/images/database_edit.png", this ));
+    WLabel *label = new WLabel("Record log types:");
     m_layout->addWidget(label,3,1, AlignRight);
     
     int i = 2;
@@ -285,7 +284,6 @@ void WarningWidget::createContent()
     }//for( loop over
     
     label = new WLabel("Show popup notification types:");
-    label->setImage(new WImage( "InterSpec_resources/images/note.png", this ));
     
     m_layout->addWidget(label,4,1, AlignRight);
     
@@ -384,7 +382,7 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
   //Create popup notifications
   strm << "var target = $('.qtip.jgrowl:visible:last'); $(document.body).qtip({ \
       content: { \
-        title:  '<img style=\"vertical-align: middle;\" src=\\'" << string(iconUrl(level)) << "\\'/>&nbsp;&nbsp;" << header << "', \
+        title:  '<img style=\"vertical-align: middle; width: 16px;\" src=\\'" << string(iconUrl(level)) << "\\'/>&nbsp;&nbsp;" << header << "', \
         text:   "<< val <<", \
         button: true \
       }, \
@@ -448,15 +446,16 @@ void WarningWidget::addMessage( Wt::WString msg, Wt::WString src, int ilevel )
   {
     m_totalMessages++; //only count if logging
     
-    vector<WStandardItem*> message;
-    Wt::WStandardItem * msgItem = new Wt::WStandardItem(std::to_string(m_totalMessages));
+    vector<WStandardItem* > message;
+    Wt::WStandardItem *msgItem = new Wt::WStandardItem(std::to_string(m_totalMessages));
     message.push_back(msgItem);
     
-    msgItem = new Wt::WStandardItem( string(iconUrl(level)), WarningWidget::description(level));
+    msgItem = new Wt::WStandardItem( WarningWidget::description(level) );
     message.push_back(msgItem);
     
     msgItem = new Wt::WStandardItem(msg);
     message.push_back(msgItem);
+    
     msgItem = new Wt::WStandardItem(src);
     message.push_back(msgItem);
     

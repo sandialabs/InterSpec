@@ -6,7 +6,10 @@
 #include <vector>
 #include <utility>
 
+#include <boost/optional.hpp>
+
 #include <Wt/WServer>
+#include <Wt/WPushButton>
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
 #include <Wt/WStringStream>
@@ -65,6 +68,7 @@ class D3TimeChartFilters : public WContainerWidget
   
   NativeFloatSpinBox *m_lowerEnergy;
   NativeFloatSpinBox *m_upperEnergy;
+  WPushButton *m_clearEnergyFilterBtn;
   
 public:
   D3TimeChartFilters( D3TimeChart *parent )
@@ -74,7 +78,8 @@ public:
       m_specTypeDiv( nullptr ),
       m_specTypeSelect( nullptr ),
       m_lowerEnergy( nullptr ),
-      m_upperEnergy( nullptr )
+      m_upperEnergy( nullptr ),
+      m_clearEnergyFilterBtn( nullptr )
   {
     assert( parent );
     
@@ -87,10 +92,11 @@ public:
     
     
     WTabWidget *tabs = new WTabWidget( this );
+    tabs->addStyleClass( "D3TimeFiltersTab" );
     
     WContainerWidget *interact = new WContainerWidget();
+    interact->addStyleClass( "D3TimeInteractTab" );
     tabs->addTab(interact, "Interact"); //Returns a
-    
     
     WStackedWidget *instructionsStack = new WStackedWidget();
     instructionsStack->addStyleClass( "D3TimeInteractInst" );
@@ -115,10 +121,8 @@ public:
           instructions = new WText( "Left mouse: select<br />"
                                     "&nbsp;&nbsp;&nbsp;&nbsp;no modifiers: foreground<br />"
                                     "&nbsp;&nbsp;&nbsp;&nbsp;Option-key: background<br />"
-                                    "&nbsp;&nbsp;&nbsp;&nbsp;???-key: secondary<br />"
                                     "&nbsp;&nbsp;&nbsp;&nbsp;shift-key: add times<br />"
-                                    "&nbsp;&nbsp;&nbsp;&nbsp;???-key: remove times<br />"
-                                    "&nbsp;&nbsp;&nbsp;&nbsp;control-key: zoom in/out<br />"
+                                    "&nbsp;&nbsp;&nbsp;&nbsp;Ctrl-key: remove times<br />"
                                     "Right mouse: zoom in/out<br />"
                                     "Wheel: zoom and left/right<br />" );
           item = m_interactModeMenu->addItem( "Normal", instructions );
@@ -190,9 +194,15 @@ public:
     
     
     WContainerWidget *filterContents = new WContainerWidget();
+    filterContents->addStyleClass( "D3TimeFilterTab" );
     WMenuItem *filterTabItem = tabs->addTab(filterContents, "Filter");
     
+    title = new WText( "Lower energy limit:", filterContents );
+    title->addStyleClass( "D3TimeInteractModeText" );
     m_lowerEnergy = new NativeFloatSpinBox( filterContents );
+    
+    title = new WText( "Upper energy limit:", filterContents );
+    title->addStyleClass( "D3TimeInteractModeText" );
     m_upperEnergy = new NativeFloatSpinBox( filterContents );
     
     m_lowerEnergy->setSpinnerHidden( true );
@@ -204,11 +214,19 @@ public:
     m_lowerEnergy->setText( "" );
     m_upperEnergy->setText( "" );
     
-    m_lowerEnergy->setInline( false );
-    m_upperEnergy->setInline( false );
+    //m_lowerEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChanged );
+    //m_upperEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChanged );
     
-    m_lowerEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChanged );
-    m_upperEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChanged );
+    m_lowerEnergy->valueChanged().connect( m_parentChart, &D3TimeChart::userChangedEnergyRangeFilterCallback );
+    m_lowerEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChangedCallback );
+    m_upperEnergy->valueChanged().connect( m_parentChart, &D3TimeChart::userChangedEnergyRangeFilterCallback );
+    m_upperEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChangedCallback );
+    
+    
+    m_clearEnergyFilterBtn = new WPushButton( "Clear Energies", filterContents );
+    m_clearEnergyFilterBtn->addStyleClass( "D3TimeFilterClear" );
+    m_clearEnergyFilterBtn->clicked().connect( this, &D3TimeChartFilters::clearFilterEnergiesCallback );
+    m_clearEnergyFilterBtn->hide();
   }//D3TimeChartFilters
   
   
@@ -317,39 +335,72 @@ public:
     return D3TimeChart::UserInteractionMode::Default;
   }//D3TimeChart::UserInteractionMode interactionMode()
   
+  void clearFilterEnergiesCallback()
+  {
+    m_clearEnergyFilterBtn->hide();
+    
+    if( m_lowerEnergy->text().empty() && m_upperEnergy->text().empty() )
+      return;
+    
+    m_lowerEnergy->setText( "" );
+    m_upperEnergy->setText( "" );
+    
+    m_parentChart->userChangedEnergyRangeFilterCallback();
+  }
+  
   void resetFilterEnergies()
   {
     m_lowerEnergy->setText( "" );
     m_upperEnergy->setText( "" );
+    m_clearEnergyFilterBtn->hide();
   }
   
-  void energyFilterChanged()
+  
+  void energyFilterChangedCallback()
   {
-    float lowerEnergy = -std::numeric_limits<float>::infinity();
-    float upperEnergy = std::numeric_limits<float>::infinity();
+    if( !m_lowerEnergy->text().empty() && !m_upperEnergy->text().empty() )
+    {
+      if( fabs(m_lowerEnergy->value() - m_upperEnergy->value()) < 0.1 )
+      {
+        m_lowerEnergy->setText( "" );
+        m_upperEnergy->setText( "" );
+        
+        auto interspec = InterSpec::instance();
+        const char *msg = "Energy sum range must be larger than 0.1 keV.";
+        if( interspec )
+          interspec->logMessage( msg, "", 3 );
+      }//
+    }//if( both lower and upper energies are specified )
     
-    if( !m_lowerEnergy->text().empty() )
-      lowerEnergy = m_lowerEnergy->value();
+    const bool emptyInput = (m_lowerEnergy->text().empty() && m_upperEnergy->text().empty());
+    //m_clearEnergyFilterBtn->setEnabled( notEmpty );
+    m_clearEnergyFilterBtn->setHidden( emptyInput );
     
-    if( !m_upperEnergy->text().empty() )
-      upperEnergy = m_upperEnergy->value();
-    
-    if( lowerEnergy > upperEnergy )
-      std::swap( lowerEnergy, upperEnergy );
-    
-    m_parentChart->userChangedEnergyRangeFilter( lowerEnergy, upperEnergy );
+    //const auto ranges = energyRangeFilters();
+    //m_parentChart->userChangedEnergyRangeFilterCallback( ranges.first, ranges.second );
   }//void energyFilterChanged()
   
+  
+  pair<boost::optional<float>,boost::optional<float>> energyRangeFilters() const
+  {
+    pair<boost::optional<float>,boost::optional<float>> answer;
+    if( !m_lowerEnergy->text().empty() )
+      answer.first = m_lowerEnergy->value();
+    
+    if( !m_upperEnergy->text().empty() )
+      answer.second = m_upperEnergy->value();
+    
+    if( answer.first && answer.second && ((*answer.first) > (*answer.second)) )
+      std::swap( answer.first, answer.second );
+    
+    return answer;
+  }//energyRangeFilters()
 };//class D3TimeChartOptions
 
 
 D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
   m_renderFlags( 0 ),
-  m_layoutWidth( 0 ),
-  m_layoutHeight( 0 ),
-  m_chartWidthPx( 0.0 ),
-  m_chartHeightPx( 0.0 ),
   m_compactXAxis( false ),
   m_showVerticalLines( false ),
   m_showHorizontalLines( false ),
@@ -361,11 +412,10 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_y2AxisTitle( "Neutron CPS"),
   m_chartClicked( this ),
   m_chartDragged( this ),
-  m_chartResized( this ),
   m_displayedXRangeChange( this ),
+  //m_energyRangeFilterChanged( this ),
   m_chartClickedJS( nullptr ),
   m_chartDraggedJS( nullptr ),
-  m_chartResizedJS( nullptr ),
   m_displayedXRangeChangeJS( nullptr ),
   m_jsgraph( jsRef() + ".chart" ),
   m_chart( nullptr ),
@@ -382,7 +432,6 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_chartMarginColor( 0x00, 0x00, 0x00 ),
   m_chartBackgroundColor( 0x00, 0x00, 0x00 )
 {
-  setLayoutSizeAware( true );
   addStyleClass( "D3TimeChartParent" );
     
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
@@ -414,6 +463,12 @@ D3TimeChart::~D3TimeChart()
 
 void D3TimeChart::defineJavaScript()
 {
+  //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<svg width=\"400\" height=\"75\" style=\"box-sizing: border-box; \"><rect width=\"300\" height=\"75\" style=\"fill:rgb(0,0,255);stroke-width:3;stroke:rgb(0,0,0)\" /></svg>' ); console.log( 'Added rect' );" );
+  
+  //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<div style=\"box-sizing: border-box; position: absolute; border: 1px solid blue; width: 100px; height: 75px;\" />' );" );
+  //cerr << "\n\nFor debugging - skipping D3TimeChart::defineJavaScript(...) - you need to fix this\n\n";
+  //return;
+  
   string options = "{";
   options += "xtitle: '" + (m_compactXAxis ? m_compactXAxisTitle : m_xAxisTitle) + "'";
   options += ", y1title: '" + m_y1AxisTitle + "'";
@@ -425,21 +480,31 @@ void D3TimeChart::defineJavaScript()
   options += "}";
   
   setJavaScriptMember( "chart", "new D3TimeChart(" + m_chart->jsRef() + "," + options + ");");
-  setJavaScriptMember( "wtResize",
-                       "function(self, w, h, layout){"
-                       " setTimeout( function(){" + m_jsgraph + ".handleResize();},0); "
-                       "}" );
+  
+  //setJavaScriptMember( WT_RESIZE_JS,
+  //                     "function(self, w, h, layout){"
+  //                     " setTimeout( function(){" + m_jsgraph + ".handleResize();},0); "
+  //                     "}" );
+  
+  setJavaScriptMember( "resizeObserver",
+    "new ResizeObserver(entries => {"
+      "for (let entry of entries) {"
+        "if( entry.target && (entry.target.id === '" + m_chart->id() + "') )"
+          + m_jsgraph + ".handleResize();"
+      "}"
+    "});"
+  );
+  
+  callJavaScriptMember( "resizeObserver.observe", m_chart->jsRef() );
   
   if( !m_chartClickedJS )
   {
     m_chartClickedJS.reset( new Wt::JSignal<int,int>(m_chart, "timeclicked", false) );
     m_chartDraggedJS.reset( new Wt::JSignal<int,int,int>(m_chart, "timedragged", false) );
-    m_chartResizedJS.reset( new Wt::JSignal<double,double>(m_chart, "timeresized", false ) );
     m_displayedXRangeChangeJS.reset( new Wt::JSignal<int,int,int>(m_chart,"timerangechange",false) );
     
     m_chartClickedJS->connect( this, &D3TimeChart::chartClickedCallback );
     m_chartDraggedJS->connect( this, &D3TimeChart::chartDraggedCallback );
-    m_chartResizedJS->connect( this, &D3TimeChart::chartResizedCallback );
     m_displayedXRangeChangeJS->connect( this, &D3TimeChart::displayedXRangeChangeCallback );
   }//if( !m_xRangeChangedJS )
   
@@ -452,6 +517,9 @@ void D3TimeChart::defineJavaScript()
 
 void D3TimeChart::doJavaScript( const std::string& js )
 {
+  //cerr << "\n\nFor debugging - skipping D3TimeChart::doJavaScript(...) - you need to fix this\n\n";
+  //return;
+  
   if( isRendered() )
     WContainerWidget::doJavaScript( js );
   else
@@ -468,7 +536,14 @@ void D3TimeChart::setData( std::shared_ptr<const SpecUtils::SpecFile> data )
   }//if( !m_highlights.empty() )
   
   if( m_spec != data )
+  {
+    // Reset energy range summed whenever we load a new file.
+    if( m_options )
+      m_options->resetFilterEnergies();
+    
+    // Schedule updating data to client
     scheduleRenderAll();
+  }//if( this is a different spectrum file )
   
   m_spec = data;
 }//void setData(...)
@@ -594,6 +669,14 @@ void D3TimeChart::setDataToClient()
   const set<int> &sample_numbers = m_spec->sample_numbers();
   const vector<string> &detNames = m_spec->detector_names();
 
+  boost::optional<float> lowerEnergy, upperEnergy;
+  if( m_options )
+  {
+    const auto energyRange = m_options->energyRangeFilters();
+    lowerEnergy = energyRange.first;
+    upperEnergy = energyRange.second;
+  }//if( m_options )
+  
 #define Q_DBL_NaN std::numeric_limits<double>::quiet_NaN()
   
   for( const int sample_num : sample_numbers )
@@ -644,7 +727,33 @@ void D3TimeChart::setDataToClient()
       if( m->source_type() != SpecUtils::SourceType::Unknown )
         sourcetype = m->source_type();
       
-      gammaCounts[detName].push_back( m->gamma_count_sum() );
+      if( lowerEnergy || upperEnergy )
+      {
+        const float specMinEnergy = m->gamma_energy_min();
+        const float specMaxEnergy = m->gamma_energy_max();
+        
+        double gamma_sum = m->gamma_count_sum();
+        
+        if( (!lowerEnergy || (lowerEnergy.get() < specMinEnergy) )
+           && (!upperEnergy || (upperEnergy.get() > specMaxEnergy)) )
+        {
+          // gamma_sum = m->gamma_count_sum();
+        }else if( lowerEnergy && upperEnergy )
+        {
+          gamma_sum = m->gamma_integral(*lowerEnergy, *upperEnergy);
+        }else if( lowerEnergy )
+        {
+          gamma_sum = m->gamma_integral(*lowerEnergy, specMaxEnergy + 1000);
+        }else if( upperEnergy )
+        {
+          gamma_sum = m->gamma_integral( specMinEnergy - 1000, *upperEnergy);
+        }
+        
+        gammaCounts[detName].push_back( gamma_sum );
+      }else
+      {
+        gammaCounts[detName].push_back( m->gamma_count_sum() );
+      }
       neutronCounts[detName].push_back( m->neutron_counts_sum() );
       liveTimes[detName].push_back( m->live_time() );
       
@@ -747,7 +856,10 @@ void D3TimeChart::setDataToClient()
   if( anyStartTimeKnown )
   {
     //doubles have 53 bits of integer precision - should be fine
-    js << ",\n\t\"startTimeOffset\": " << startTimesOffset;
+    // long long int should be at least 64 bits, and otherwise int64_t may not be supported
+    // by WStringStream.
+    assert( static_cast<long long>(startTimesOffset) == (startTimesOffset) );
+    js << ",\n\t\"startTimeOffset\": " << static_cast<long long>(startTimesOffset);
     js << ",\n\t\"startTimes\": ";
     for( size_t i = 0; i < startTimes.size(); ++i )
     {
@@ -755,7 +867,7 @@ void D3TimeChart::setDataToClient()
       if( startTimes[i] == std::numeric_limits<int64_t>::min() )
         js << "null";
       else
-        js << startTimes[i];
+        js << static_cast<long long>(startTimes[i]);
     }
     js << "]";
   }//if( anyStartTimeKnown )
@@ -773,8 +885,12 @@ void D3TimeChart::setDataToClient()
     js << "]";
   }//if( !allUnknownSourceType )
   
+  if( lowerEnergy )
+    js << ",\n\t\"filterLowerEnergy\": " << static_cast<double>(*lowerEnergy);
   
-  
+  if( upperEnergy )
+    js << ",\n\t\"filterUpperEnergy\": " << static_cast<double>(*upperEnergy);
+    
   if( haveAnyGps )
   {
     js << ",\n\t\"gpsCoordinates\": ";
@@ -980,6 +1096,7 @@ void D3TimeChart::setDataToClient()
 void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
                                            const SpecUtils::SpectrumType type )
 {
+  const size_t npre = m_highlights.size();
   m_highlights.erase( std::remove_if( begin(m_highlights), end(m_highlights),
     [type](const D3TimeChart::HighlightRegion &region) -> bool {
       return (region.type == type);
@@ -987,7 +1104,8 @@ void D3TimeChart::setHighlightedIntervals( const std::set<int> &sample_numbers,
  
   if( sample_numbers.empty() )
   {
-    scheduleHighlightRegionRender();
+    if( npre != m_highlights.size() )
+      scheduleHighlightRegionRender();
     return;
   }
   
@@ -1077,16 +1195,16 @@ Wt::Signal<int,int,Wt::WFlags<Wt::KeyboardModifier>> &D3TimeChart::chartDragged(
 }
 
 
-Wt::Signal<double,double> &D3TimeChart::chartResized()
-{
-  return m_chartResized;
-}
-
-
 Wt::Signal<int,int,int> &D3TimeChart::displayedXRangeChange()
 {
   return m_displayedXRangeChange;
 }
+
+
+//Wt::Signal<boost::optional<float>,boost::optional<float>> &D3TimeChart::energyRangeFilterChanged()
+//{
+//  return m_energyRangeFilterChanged;
+//}
 
 
 vector<pair<int,int>> D3TimeChart::sampleNumberRangesWithOccupancyStatus(
@@ -1344,25 +1462,26 @@ void D3TimeChart::setY2AxisTitle( const std::string &title )
 }//void setY2AxisTitle( const std::string &title )
 
 
-void D3TimeChart::layoutSizeChanged ( int width, int height )
-{
-  m_layoutWidth = width;
-  m_layoutHeight = height;
-}//void layoutSizeChanged ( int width, int height )
-
-
 void D3TimeChart::showFilters( const bool show )
 {
-  if( m_showOptionsIcon->isHidden() == show )
+  if( !m_options || !m_showOptionsIcon || (m_showOptionsIcon->isHidden() == show) )
     return;
   
   m_showOptionsIcon->setHidden( show );
   m_options->setHidden( !show );
   
   if( !show )
-    m_options->resetFilterEnergies();
+  {
+    //I'm not the fence if we should remove the filters when hiding the filter widget...
+    //const auto filterRange = m_options->energyRangeFilters();
+    //if( filterRange.first || filterRange.second )
+    //{
+    //  m_options->resetFilterEnergies();
+    //  scheduleRenderAll();
+    //}
+  }//if( !show )
   
-  doJavaScript( "setTimeout( function(){" + m_jsgraph + ".handleResize();},0); " );
+  //doJavaScript( "setTimeout( function(){" + m_jsgraph + ".handleResize();},0); " );
   
   const auto mode = show ? m_options->interactionMode() : UserInteractionMode::Default;
   setUserInteractionMode( mode );
@@ -1392,38 +1511,22 @@ void D3TimeChart::setUserInteractionMode( const UserInteractionMode mode )
 }//void setUserInteractionMode( const UserInteractionMode mode )
 
 
-void D3TimeChart::userChangedEnergyRangeFilter( const float lowerEnergy, const float upperEnergy )
+//void D3TimeChart::userChangedEnergyRangeFilterCallback( const boost::optional<float> lowerEnergy,
+//                                                const boost::optional<float> upperEnergy )
+void D3TimeChart::userChangedEnergyRangeFilterCallback()
 {
-  //blah blah blah
+  //m_energyRangeFilterChanged.emit( lowerEnergy, upperEnergy );
   
-  // Also, refacter .VerticalNavMenu and .InteractMenu into {.HeavyMenu,.LightMenu} and {VerticalNavMenu, HorizantalMenu}
-  //Also rename LinearStep to FlatStep, add a LinearStep with three coefficients, and a BiLinearStep with four.
-  
-}//void userChangedEnergyRangeFilter( const float lowerEnergy, const float upperEnergy )
+  scheduleRenderAll();
+}//void userChangedEnergyRangeFilterCallback( const float lowerEnergy, const float upperEnergy )
 
 
-int D3TimeChart::layoutWidth() const
-{
-  return m_layoutWidth;
-}
-
-
-int D3TimeChart::layoutHeight() const
-{
-  return m_layoutHeight;
-}
-
-
-double D3TimeChart::chartWidthInPixels() const
-{
-  return m_chartWidthPx;
-}
-
-
-double D3TimeChart::chartHeightInPixels() const
-{
-  return m_chartHeightPx;
-}
+//pair<boost::optional<float>,boost::optional<float>> D3TimeChart::energyRangeFilters()
+//{
+//  if( m_options )
+//    return m_options->energyRangeFilters();
+//  return pair<boost::optional<float>,boost::optional<float>>();
+//}
 
 
 void D3TimeChart::setCompactAxis( const bool compact )
@@ -1526,12 +1629,6 @@ void D3TimeChart::chartDraggedCallback( int first_sample_number, int last_sample
 {
   m_chartDragged.emit( first_sample_number, last_sample_number, Wt::WFlags<Wt::KeyboardModifier>(Wt::KeyboardModifier(modifier_keys)) );
 }//chartDraggedCallback(...)
-
-
-void D3TimeChart::chartResizedCallback( double chart_width_px, double chart_height_px )
-{
-  m_chartResized.emit( chart_width_px, chart_height_px );
-}//chartResizedCallback(...)
 
 
 void D3TimeChart::displayedXRangeChangeCallback( int first_sample_number, int last_sample_number, int samples_per_channel )

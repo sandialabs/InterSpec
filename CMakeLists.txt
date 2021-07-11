@@ -2,7 +2,7 @@
 # excpet iOS, Android, and Electron, InterSpecExe
 
 cmake_policy(SET CMP0048 NEW)
-project(InterSpec VERSION 1.0.7)
+project(InterSpec VERSION 1.0.8)
 
 cmake_minimum_required(VERSION 3.1.0 FATAL_ERROR)
 set(CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE)
@@ -158,6 +158,11 @@ option(USE_GOOGLE_MAP "Use google maps widget" ON)
 option(
     DECAY_CHART_ADD_IMAGE_DOWNLOAD_LINK
     "Include support for downloading images of the displayed page"
+    OFF
+)
+option(
+    USE_CSS_FLEX_LAYOUT
+    "Use CSS Flex/Grid Layout in-place of Wts layouts were possible (work in progress)"
     OFF
 )
 
@@ -484,6 +489,7 @@ set(sources
     src/CanvasForDragging.cpp
     src/SpecMeas.cpp
     src/PeakFit.cpp
+    src/PeakFitUtils.cpp
     src/PeakDef.cpp
     src/SpectraFileModel.cpp
     src/AuxWindow.cpp
@@ -568,6 +574,7 @@ set(headers
     InterSpec/CanvasForDragging.h
     InterSpec/SpecMeas.h
     InterSpec/PeakFit.h
+    InterSpec/PeakFitUtils.h
     InterSpec/PeakDef.h
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h
@@ -893,6 +900,7 @@ elseif(BUILD_AS_OSX_APP)
         GLOB_RECURSE INTERSPEC_RES_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/*"
     )
+    list( APPEND INTERSPEC_RES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.html )
     file(
         GLOB_RECURSE EXAMPLE_RES_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/example_spectra/*"
@@ -1032,7 +1040,7 @@ elseif(BUILD_AS_OSX_APP)
 
     #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate cooresponding value in Xcode
     #math(EXPR MACOS_BUNDLE_VERSION_NUMBER "100*(${PROJECT_VERSION_MAJOR}-1) + 10*${PROJECT_VERSION_MINOR} + ${PROJECT_VERSION_PATCH}" )
-    set(MACOS_BUNDLE_VERSION_NUMBER 8)
+    set(MACOS_BUNDLE_VERSION_NUMBER 10)
 
     set_target_properties(
         InterSpecExe

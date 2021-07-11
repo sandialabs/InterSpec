@@ -97,10 +97,9 @@ public:
   
   void setPeakModel( PeakModel *model );
   
-  void setData( std::shared_ptr<const SpecUtils::Measurement> data_hist,
-                bool keep_curent_xrange );
-  void setSecondData( std::shared_ptr<const SpecUtils::Measurement> hist, bool ownAxis );
-  void setBackground( std::shared_ptr<const SpecUtils::Measurement> background );
+  void setData( std::shared_ptr<SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
+  void setSecondData( std::shared_ptr<SpecUtils::Measurement> hist, const bool ownAxis );
+  void setBackground( std::shared_ptr<SpecUtils::Measurement> background );
 
 
   // These 8 functions retrieve the corresponding info from the model.

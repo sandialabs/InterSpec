@@ -62,9 +62,8 @@ This InterSpec Software was developed with funds from the Science and Technology
   spectroscopy community.  The primary developers of
   <b>InterSpec</b>
   are:
-  <i>Ethan Chan</i>, <i>William Johnson</i>, and <i>Christian Morte</i>, with
-  extensive additional support provided by <i>Noel Nachtigal</i> and
-  <i>Edward Walsh</i>.
+  <i>Ethan Chan</i>, <i>William Johnson</i>, <i>David Ka-Ming Lee</i>, and <i>Christian Morte</i>,
+  with extensive additional support provided by <i>Noel Nachtigal</i> and <i>Edward Walsh</i>.
 </div>
 <br />
 <div>
@@ -168,16 +167,9 @@ This InterSpec Software was developed with funds from the Science and Technology
       </div>
     </li>
 
-    <li><b><a href="http://www.famfamfam.com/lab/icons/silk/" target="_blank">FamFamFam Silk</a> 1.3:</b> free icon set.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>Silk</b> provides many of the colorful icons used through <b>InterSpec</b>.
-        <b>Silk</b> is licensed under the <a href="https://creativecommons.org/licenses/by/2.5/" target="_blank">Creative Commons 2.5 License</a>.
-      </div>
-    </li>
-
     <li><b><a href="https://d3js.org/" target="_blank">d3.js</a>:</b> a JavaScript charting library.
       <div style="margin-left: 1em; font-size: small;">
-        <b>d3.js</b> is potentially included when exporting spectrum files as HTML files.
+        <b>d3.js</b> powers rendering and interactions of the spectrum chart, gross-count time chart, and decay tool.
         <b>d3.js</b> is licensed under the <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a>.
       </div>
     </li>
@@ -205,6 +197,26 @@ This InterSpec Software was developed with funds from the Science and Technology
       </div>
     </li>
 
+    <li><b><a href="https://github.com/que-etc/resize-observer-polyfill" target="_blank">resize-observer-polyfill</a>:</b> A polyfill for the Resize Observer API.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>resize-observer-polyfill</b> is used to support the JavaScript <code>ResizeObserver</code> functionality for older browsers that do not natively support API.
+        <b>resize-observer-polyfill</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
+      </div>
+    </li>
+    <li><b><a href="https://zlib.net" target="_blank">zlib</a>:</b> A Massively Spiffy Yet Delicately Unobtrusive Compression Library.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>zlib</b> is used to open user uploaded zip files that contain spectrum files.
+        <b>zlib</b> is <a href="https://zlib.net/zlib_license.html" target="_blank">ZLIB licensed</a> library.
+      </div>
+    </li>
+
+
+    <li><b><a href="https://github.com/libharu/libharu" target="_blank">libHaru</a>:</b> free PDF library.
+      <div style="margin-left: 1em; font-size: small;">
+        <b>libHaru</b> is used for the macOS build to help provide the <em>Quick Look</em> preview of spectrum files inside the <em>Finder</em>.
+        <b>libHaru</b> is <a href="https://zlib.net/zlib_license.html" target="_blank">ZLIB licensed</a> library.
+      </div>
+    </li>
 
     <li>In addition to the many libraries used within <b>InterSpec</b>, many open-source, or publicly available tools
         and resources are used to develop <b>InterSpec</b> including, but not limited to:

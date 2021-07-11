@@ -64,6 +64,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/DetectorEdit.h"
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/InterSpecApp.h"
@@ -1838,6 +1839,8 @@ void MakeDrf::handleSourcesUpdates()
   vector< std::shared_ptr<const PeakDef> > peaks;
   vector<MakeDrfFit::DetEffDataPoint> effpoints;
   
+  bool highres = false;
+  
   bool detDiamInvalid = false;
   double diameter = 2.54*PhysicalUnits::cm;
   try
@@ -1896,6 +1899,8 @@ void MakeDrf::handleSourcesUpdates()
           auto m = meas->measurement( samplenum, det );
           if( m && m->num_gamma_channels() > 7 )
           {
+            highres = (highres || PeakFitUtils::is_high_res(m));
+            
             minenergy = std::min( m->gamma_energy_min(), minenergy );
             maxenergy = std::max( m->gamma_energy_max(), maxenergy );
           }
@@ -2222,8 +2227,9 @@ void MakeDrf::handleSourcesUpdates()
   m_effOptionGroup->setHidden( datapoints.empty() );
   m_fwhmOptionGroup->setHidden( datapoints.empty() );
   
+  
   fitEffEqn( effpoints );
-  fitFwhmEqn( peaks, numchan );
+  fitFwhmEqn( peaks, highres );
 }//void handleSourcesUpdates()
 
 
@@ -2299,7 +2305,7 @@ void MakeDrf::peakPreviewShown( DrfPeak *peak )
 
 
 void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
-                          const size_t num_gamma_channels )
+                          const bool isHighResolution )
 {
   ++m_fwhmFitId;
   
@@ -2338,7 +2344,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
   
   const string thisid = id();
   
-  auto worker = [sessionId,fnctnlForm,peaks,num_gamma_channels,sqrtEqnOrder,updater,thisid]() {
+  auto worker = [sessionId,fnctnlForm,peaks,isHighResolution,sqrtEqnOrder,updater,thisid]() {
     try
     {
       auto peakdequ = std::make_shared<std::deque< std::shared_ptr<const PeakDef> > >( peaks.begin(), peaks.end() );
@@ -2346,7 +2352,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
       //Takes between 5 and 500ms for a HPGe detector
       const double start_time = SpecUtils::get_wall_time();
       vector<float> fwhm_coefs, fwhm_coefs_uncert;
-      const double chi2 = MakeDrfFit::performResolutionFit( peakdequ, num_gamma_channels, fnctnlForm, sqrtEqnOrder, fwhm_coefs, fwhm_coefs_uncert );
+      const double chi2 = MakeDrfFit::performResolutionFit( peakdequ, fnctnlForm, isHighResolution, sqrtEqnOrder, fwhm_coefs, fwhm_coefs_uncert );
     
       const double end_time = SpecUtils::get_wall_time();
     

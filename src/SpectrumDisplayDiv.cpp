@@ -118,7 +118,7 @@ SpectrumDisplayDiv::SpectrumDisplayDiv( WContainerWidget *parent )
       }
   });
   
-  setJavaScriptMember( "wtResize", js );
+  setJavaScriptMember( WT_RESIZE_JS, js );
 //#endif
   
 #else
@@ -142,7 +142,7 @@ SpectrumDisplayDiv::SpectrumDisplayDiv( WContainerWidget *parent )
   ""     "if(probNode){try{probNode.style.overflowY='hidden';}catch(e){};}"
   ""   "}"
   "" "}";
-  setJavaScriptMember( "wtResize", js );
+  setJavaScriptMember( WT_RESIZE_JS, js );
 #endif
 
 //  setPlotAreaPadding( 80, 2, 10, 42 );
@@ -706,8 +706,7 @@ void SpectrumDisplayDiv::guessAndUpdateDisplayRebinFactor()
 }//void guessAndUpdateDisplayRebinFactor()
 
 
-void SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist,
-                                  bool keep_curent_xrange )
+void SpectrumDisplayDiv::setData( std::shared_ptr<Measurement> data_hist, const bool keep_curent_xrange )
 {
   if( m_autoAdjustDisplayBinnning )
   {
@@ -863,7 +862,7 @@ float SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType spec
 }//double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
 
 
-void SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> background )
+void SpectrumDisplayDiv::setBackground( std::shared_ptr<Measurement> background )
 {
   const bool hadBackground = !!(m_model->getBackground());
 
@@ -888,7 +887,7 @@ void SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> backg
 }//void SpectrumDisplayDiv::setBackground(...);
 
 
-void SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> hist, bool ownAxis )
+void SpectrumDisplayDiv::setSecondData( std::shared_ptr<Measurement> hist, const bool ownAxis )
 {
   const bool alreadyHad = !!(m_model->getSecondData());
 
