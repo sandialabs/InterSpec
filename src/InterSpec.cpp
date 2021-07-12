@@ -545,14 +545,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
 #if( USE_SPECTRUM_CHART_D3 )
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
-  
-  m_peakModel->dataChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsRemoved().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsInserted().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->layoutChanged().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->modelReset().connect( m_spectrum, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  
-  m_timeSeries = new D3TimeChart();
 #else
   m_spectrum   = new SpectrumDisplayDiv();
   m_spectrum->setPlotAreaPadding( 80, 2, 10, 44 );

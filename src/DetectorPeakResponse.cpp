@@ -1528,7 +1528,7 @@ double DetectorPeakResponse::fractionalSolidAngle( const double detDiam,
   const double omega = 0.5 * ( 1.0 - (1.0/sqrt(1.0+beta)) - ((3.0/8.0)*alpha*beta/pow(1.0+beta,2.5))
                        + alpha*alpha*F1 - alpha*alpha*alpha*F2 );
 
-  return static_cast<float>( omega );
+  return omega;
 }//float DetectorPeakResponse::fractionalSolidAngle(...)
 
 

@@ -322,7 +322,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
     "<div>Age can be specified using a combination of time units, "
     "similar to '<b>5.3y 8d 22m</b>'.</div>"
     "<div>"
-    "Acceptible time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
+    "Acceptable time units: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, "
     "<b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, or "
     "you can specify time period by <b>hh:mm:ss</b>. "
     "</div>"
