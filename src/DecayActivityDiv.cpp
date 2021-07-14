@@ -1170,7 +1170,8 @@ namespace
         
         for( size_t row = 0; row < m_numRows; ++row )
         {
-          const double time_now = m_timeSpan * row / numerator;
+          // If you are only requesting one row, make it the full time span time, not t=0.
+          const double time_now = m_timeSpan * ((m_numRows > 1) ? row : 1u) / numerator;
           
           response.out() << (time_now/time_unit);
           
