@@ -104,6 +104,8 @@ public:
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
+  void initChi2Chart();
+  
   void roiDraggedCallback( double new_roi_lower_energy,
                    double new_roi_upper_energy,
                    double new_roi_lower_px,
@@ -141,9 +143,12 @@ protected:
   ShieldingSelect *m_shieldingSelect;
   
   Wt::WLineEdit *m_displayActivity;
+  
+  /** Holds m_chi2Chart, m_bestChi2Act, and m_upperLimit. */
   Wt::WContainerWidget *m_results;
-  Wt::Chart::WCartesianChart *m_chi2Chart;
-  Wt::WStandardItemModel *m_chi2Model;
+  
+  /** Holds the D3.js based MdaChi2Chart */
+  Wt::WContainerWidget *m_chi2Chart;
   Wt::WText *m_bestChi2Act;
   Wt::WText *m_upperLimit;
   

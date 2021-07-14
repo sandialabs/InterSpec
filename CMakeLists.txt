@@ -1449,6 +1449,7 @@ list(
     APPEND
     OTHER_SUPPORT_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DetectionConfidenceTool.js
 )
 
 FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml)

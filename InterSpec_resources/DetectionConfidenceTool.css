@@ -1,8 +1,82 @@
 
+.DetectionConfidenceWindowContent
+{
+  display: flex;
+  flex-direction: column;
+}
+
 .DetectionConfidenceTool
 {
+  display: flex;
+  flex-direction: column;
   
+  height: 100%;
+  width: 100%;
+  /*
+  grid->setColumnStretch( 0, 1 );
+  grid->setRowStretch( grid->rowCount() - 1, 10 );
+  grid->setRowResizable( 0, true );
+  grid->setContentsMargins( 0, 0, 0, 0 );
+   */
 }
+
+.DetectionConfidenceTool .MdaCharts
+{
+  height: 200px;
+  
+  /* flex: 1 1 auto; */
+  
+  display: flex;
+  flex-direction: row;
+}
+
+
+.DetectionConfidenceTool .UserInputTable
+{
+}
+
+.DetectionConfidenceTool .MdaResults
+{
+  display: flex;
+  flex-direction: column;
+  
+  overflow: hidden;
+  /* flex: 1 3 auto; */
+  width: 25%;
+}
+
+.MdaCharts .MdaChi2Chart
+{
+  overflow: hidden;
+  flex: 1 1 auto;
+}
+
+.MdaCharts .SpectrumDisplayDiv
+{
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.DetectionConfidenceTool .MdaResults .MdaResultTxt
+{
+  /* this is m_bestChi2Act text, and m_upperLimit text */
+  display: block;
+}
+
+
+.DetectionConfidenceTool .MdaErrMsg
+{
+  /* grid->addWidget( m_errorMsg, 3, 0, 1, 2 ); */
+}
+
+
+.DetectionConfidenceTool .MdaPeaks
+{
+  flex: 2 1 auto;
+  
+  /* grid->addWidget( m_peaks, 4, 0, 1, 2 ); */
+}
+
 
 .DetectionConfidenceTool .UserInputTable td
 {

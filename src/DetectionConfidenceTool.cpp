@@ -36,7 +36,6 @@
 #include <Wt/WCheckBox>
 #include <Wt/WLineEdit>
 #include <Wt/WTableCell>
-#include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WRegExpValidator>
@@ -364,8 +363,9 @@ DetectionConfidenceWindow::DetectionConfidenceWindow( InterSpec *viewer,
   rejectWhenEscapePressed( true );
   
   m_tool = new DetectionConfidenceTool( viewer, materialDB, materialSuggest );
-  stretcher()->addWidget( m_tool, 0, 0 );
-  //contents()->addWidget( m_tool );
+  WContainerWidget *content = contents();
+  content->addStyleClass( "DetectionConfidenceWindowContent" );
+  content->addWidget( m_tool );
   
   AuxWindow::addHelpInFooter( footer(), "detection-confidence-tool" );
   
@@ -412,9 +412,20 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
     m_distanceEdit( nullptr ),
     m_materialDB( materialDB ),
     m_materialSuggest( materialSuggest ),
-    m_shieldingSelect( nullptr )
+    m_shieldingSelect( nullptr ),
+    m_displayActivity( nullptr ),
+    m_results( nullptr ),
+    m_chi2Chart( nullptr ),
+    m_bestChi2Act( nullptr ),
+    m_upperLimit( nullptr ),
+    m_errorMsg( nullptr )
 {
   /** \TODO:
+   -[] Make test cases that will quickly iterate through, to test things
+   -[] Allow user to choose activity limit, or distance limit
+   -[] Make a "by eye" equivalent CL
+   -[] All adding in a scale factor, so if soectrum is of 30 minutes, allow making limit for 30 second spectra
+   -[] Make the Chi2 plot a D3 based plot
    -[x] Put the Chi2 chart to the right of the spectrum, when it should exist
    -[ ] Give the user a choice about using continuum fixed at null hypothesis
    -[ ] Allow combining ROI with neghboring peaks
@@ -432,20 +443,28 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
    If lower confidence is above zero, assume there is a peak
    
    */
-  wApp->useStyleSheet( "InterSpec_resources/DetectionConfidenceTool.css" );
+  WApplication * const app = wApp;
+  
+  app->useStyleSheet( "InterSpec_resources/DetectionConfidenceTool.css" );
+  app->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
+  app->require( "InterSpec_resources/DetectionConfidenceTool.js" );
   
   addStyleClass( "DetectionConfidenceTool" );
+  
   
   //new WLabel( "DetectionConfidenceTool", this );
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
   const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
+  
+  // Container to hold and m_chart and m_results (which itself holds m_chi2Chart,  m_bestChi2Act,
+  //  and m_upperLimit).
+  WContainerWidget *upperCharts = new WContainerWidget( this );
+  upperCharts->addStyleClass( "MdaCharts" );
+  
 
+  m_chart = new D3SpectrumDisplayDiv( upperCharts );
   
-  WGridLayout *grid = new WGridLayout();
-  setLayout( grid );
-  
-  m_chart = new D3SpectrumDisplayDiv();
-  
+  /*
   //const int screenW = viewer->renderedWidth();
   const int screenH = viewer->renderedHeight();
   //const int width = ((screenW < 906) ? screenW : 0.75*screenW ); // maybe cap width off at 1800 px?
@@ -454,6 +473,7 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   //m_chart->resize( WLength::Auto, WLength(300,WLength::Unit::Pixel) );
   cout << "height-->" << 1.0*height << endl;
   m_chart->setMinimumSize( WLength::Auto, WLength( std::max(200.0,0.4*height),WLength::Unit::Pixel) );
+  */
   
   /** \TODO: Right now the user can drag the ROI around, and if the peak amplitude becaomes
              insignificant or under an area of 5, then the old peak is used, just with ROI range
@@ -487,27 +507,24 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   m_peakModel = new PeakModel( this );
   m_chart->setPeakModel( m_peakModel );
   
-  grid->addWidget( m_chart, 0, 0 );
   
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
   
   
-  WTable *inputTable = new WTable();
+  WTable *inputTable = new WTable( this );
   inputTable->addStyleClass( "UserInputTable" );
-  grid->addWidget( inputTable, 1, 0, 1, 2, AlignLeft );
+  
   
   WTableCell *cell = inputTable->elementAt(0, 0);
   WLabel *label = new WLabel( "Distance:", cell );
   label->setMinimumSize( labelWidth, WLength::Auto );
-  //grid->addWidget( label, 1, 0 );
   
   cell = inputTable->elementAt(0, 1);
   m_distanceEdit = new WLineEdit( "100 cm", cell );
   //m_distanceEdit->setTextSize( 5 );
   m_distanceEdit->setValidator( distValidator );
   m_distanceEdit->setMinimumSize( fieldWidth, WLength::Auto );
-  //grid->addWidget( m_distanceEdit, 1, 1, AlignLeft );
   label->setBuddy( m_distanceEdit );
   m_distanceEdit->changed().connect( this, &DetectionConfidenceTool::handleInputChange );
   m_distanceEdit->enterPressed().connect( this, &DetectionConfidenceTool::handleInputChange );
@@ -515,7 +532,6 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   cell = inputTable->elementAt(1, 0);
   label = new WLabel( "Nuclide:", cell );
   label->setMinimumSize( labelWidth, WLength::Auto );
-  //grid->addWidget( label, 2, 0 );
   
   cell = inputTable->elementAt(1, 1);
   m_nuclideEdit = new WLineEdit( "", cell );
@@ -524,8 +540,6 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   m_nuclideEdit->setAutoComplete( false );
   m_nuclideEdit->changed().connect( boost::bind( &DetectionConfidenceTool::handleNuclideChange, this ) );
   label->setBuddy( m_nuclideEdit );
-  //grid->addWidget( m_nuclideEdit, 2, 1, AlignLeft );
-  
 
   
   string replacerJs, matcherJs;
@@ -558,8 +572,7 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   cell = inputTable->elementAt(0, 3);
   cell->setRowSpan( 2 );
   cell->addWidget( m_detectorDisplay );
-  
-  //grid->addWidget( m_detectorDisplay, 3, 0, 1, 2, Wt::AlignLeft );
+
   
   cell = inputTable->elementAt(0, 4);
   label = new WLabel( "Peaks disp. act.:", cell );
@@ -584,7 +597,6 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   cell = inputTable->elementAt(0,2);
   cell->addWidget( m_shieldingSelect );
   cell->setRowSpan( 2 );
-  //grid->addWidget( m_shieldingSelect, 4, 0, 1, 2, Wt::AlignLeft );
   
   const auto primaryMeas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   auto spec = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
@@ -600,124 +612,29 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
     m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()} );
     m_chart->setData( ourspec, false );
   }//if( spec )
-  
 
-  
-  m_results = new WContainerWidget();
+  m_results = new WContainerWidget( upperCharts );
   m_results->addStyleClass( "MdaResults" );
-  m_results->hide();
-  WGridLayout *resultLayout = new WGridLayout( m_results );
-  resultLayout->setVerticalSpacing( 0 );
-  resultLayout->setHorizontalSpacing( 0 );
-  resultLayout->setContentsMargins( 0, 0, 0, 0 );
   
+  m_chi2Chart = new WContainerWidget( m_results );
+  m_chi2Chart->addStyleClass( "MdaChi2Chart" );
   
-  grid->addWidget( m_results, 0, 1 );
-  
-  ///////////////////////////////////////////////////////////////////////
-  // \TODO: put shart stuff, especially theme, into its own function(s)
-  m_chi2Chart = new Wt::Chart::WCartesianChart();
-  resultLayout->addWidget( m_chi2Chart, 0, 0 );
-  m_chi2Chart->setBackground(Wt::WColor(220, 220, 220));
-  m_chi2Chart->setType(Wt::Chart::ScatterPlot);
-  m_chi2Model = new WStandardItemModel( m_chart );
-  m_chi2Chart->setModel( m_chi2Model );
-  m_chi2Chart->setType( Chart::ScatterPlot );
-  m_chi2Chart->setXSeriesColumn(0);
-        
-  if( theme )
-  {
-    if( !theme->spectrumChartText.isDefault() )
-    {
-      WPen txtpen(theme->spectrumChartText);
-      m_chi2Chart->setTextPen( txtpen );
-      m_chi2Chart->axis(Chart::XAxis).setTextPen( txtpen );
-      m_chi2Chart->axis(Chart::YAxis).setTextPen( txtpen );
-    }
-        
-    if( theme->spectrumChartBackground.isDefault() )
-      m_chi2Chart->setBackground( Wt::NoBrush );
-    else
-      m_chi2Chart->setBackground( WBrush(theme->spectrumChartBackground) );
-        
-        
-    if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
-    {
-      //theme->spectrumChartBackground
-    }else if( !theme->spectrumChartMargins.isDefault() )
-    {
-      //theme->spectrumChartMargins
-    }
-        
-    if( !theme->spectrumAxisLines.isDefault() )
-    {
-      WPen defpen = m_chi2Chart->axis(Chart::XAxis).pen();
-      defpen.setColor( theme->spectrumAxisLines );
-      m_chi2Chart->axis(Chart::XAxis).setPen( defpen );
-      m_chi2Chart->axis(Chart::YAxis).setPen( defpen );
-    }
-  }//if( theme )
-      
-  m_chi2Chart->setPlotAreaPadding(45, Wt::Bottom);
-  m_chi2Chart->setPlotAreaPadding(45, Wt::Left);
-  m_chi2Chart->setPlotAreaPadding(0, Wt::Right);
-  m_chi2Chart->setPlotAreaPadding(0, Wt::Top);
-  //m_chi2Chart->axis(Wt::Chart::XAxis).setTitleOffset( 10 );  //Wt 3.3.4 doesnt use this for WCartesianChart
-  //m_chi2Chart->axis(Wt::Chart::YAxis).setTitleOffset( 10 );
-  //m_chi2Chart->setAutoLayoutEnabled( true );
-  
-  m_chi2Chart->axis(Wt::Chart::XAxis).setTitle("Activity (" MU_CHARACTER "Ci)");
-  
-#define CHI_CHARACTER "\xCF\x87"
-#define SQ_CHARACTER "\xC2\xB2"
-  m_chi2Chart->axis(Wt::Chart::YAxis).setTitle( WString::fromUTF8( CHI_CHARACTER SQ_CHARACTER ) );
-  
-#if( WT_VERSION >= 0x3030400 )
-  m_chi2Chart->axis(Wt::Chart::YAxis).setTitleOrientation( Wt::Vertical );
-#endif
-  
-  WFont titlefont( WFont::GenericFamily::SansSerif );
-  titlefont.setSize( WFont::Size::XSmall );
-  m_chi2Chart->axis(Wt::Chart::XAxis).setTitleFont(titlefont);
-  m_chi2Chart->axis(Wt::Chart::YAxis).setTitleFont(titlefont);
-  
-  
-  
-      
-  m_chi2Chart->setLegendEnabled( false );
-  //m_chi2Chart->setHeight( WLength( std::max(250.0,0.35*height),WLength::Unit::Pixel) );
-  //m_chi2Chart->setWidth( 0.5*width );
   //////////////////////////////////////////////////////////////////////
-  m_bestChi2Act = new WText( "&nbsp;" );
-  //m_bestChi2Act->setInline( false );
+  m_bestChi2Act = new WText( "&nbsp;", m_results );
+  m_bestChi2Act->setInline( false );
   m_bestChi2Act->addStyleClass( "MdaResultTxt" );
-  resultLayout->addWidget( m_bestChi2Act, 1, 0 );
-  
-  
-  m_upperLimit = new WText( "&nbsp;" );
-  //m_upperLimit->setInline( false );
+    
+  m_upperLimit = new WText( "&nbsp;", m_results );
+  m_upperLimit->setInline( false );
   m_upperLimit->addStyleClass( "MdaResultTxt" );
-  resultLayout->addWidget( m_upperLimit, 2, 0 );
-  resultLayout->setRowStretch( 0, 1 );
   
   
-  m_errorMsg = new WText("&nbsp;");
+  m_errorMsg = new WText("&nbsp;", this );
   m_errorMsg->addStyleClass( "MdaErrMsg" );
-  grid->addWidget( m_errorMsg, 3, 0, 1, 2 /*, AlignCenter | AlignMiddle */ );
   m_errorMsg->hide();
   
-  m_peaks = new WContainerWidget();
-  grid->addWidget( m_peaks, 4, 0, 1, 2 );
+  m_peaks = new WContainerWidget( this );
   m_peaks->addStyleClass( "MdaPeaks" );
-  
-  grid->setColumnStretch( 0, 1 );
-  grid->setRowStretch( grid->rowCount() - 1, 10 );
-  grid->setRowResizable( 0, true );
-  grid->setContentsMargins( 0, 0, 0, 0 );
-  
-  //grid->setColumnStretch( 1, 1 );
-  //grid->setColumnStretch( 1, 1 );
-  //grid->setRowStretch( 0, 1 );
   
   
   ReferencePhotopeakDisplay *reflines = viewer->referenceLinesWidget();
@@ -751,10 +668,12 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
     }//if( shielding )
   }//if( reflines )
   
+  initChi2Chart();
   handleNuclideChange();  //JIC we picked up the one from RefLines
   handleInputChange();
 }//DetectionConfidenceTool constructor
   
+
   
 DetectionConfidenceTool::~DetectionConfidenceTool()
 {
@@ -773,6 +692,25 @@ void DetectionConfidenceTool::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   WContainerWidget::render( flags );
 }//render( flags )
+
+
+void DetectionConfidenceTool::initChi2Chart()
+{
+  m_chi2Chart->setJavaScriptMember( "chart", "new MdaChi2Chart(" + m_chi2Chart->jsRef() + ", {});");
+  const string jsgraph = m_chi2Chart->jsRef() + ".chart";
+  
+  m_chi2Chart->setJavaScriptMember( "resizeObserver",
+    "new ResizeObserver(entries => {"
+      "for (let entry of entries) {"
+        "if( entry.target && (entry.target.id === '" + m_chi2Chart->id() + "') )"
+          + jsgraph + ".redraw();"
+        "}"
+      "});"
+  );
+  
+  m_chi2Chart->callJavaScriptMember( "resizeObserver.observe", m_chi2Chart->jsRef() );
+}
+
 
 
 void DetectionConfidenceTool::roiDraggedCallback( double new_roi_lower_energy,
@@ -846,8 +784,7 @@ void DetectionConfidenceTool::handleInputChange()
   
   
   m_peaks->clear();
-  m_chi2Model->clear();
-  m_results->hide();
+  m_chi2Chart->hide();
   m_errorMsg->setText( "&nbsp;" );
   m_errorMsg->hide();
   
@@ -1022,7 +959,7 @@ void DetectionConfidenceTool::doCalc()
   
   if( !nused )
   {
-    m_results->hide();
+    m_chi2Chart->hide();
     if( m_errorMsg->isHidden() || m_errorMsg->text().empty() )
     {
       m_errorMsg->setText( "No peaks are selected" );
@@ -1208,8 +1145,7 @@ void DetectionConfidenceTool::doCalc()
   {
     m_bestChi2Act->setText( "" );
     m_upperLimit->setText( "" );
-    m_chi2Model->removeRows( 0, m_chi2Model->rowCount() );
-    m_results->hide();
+    m_chi2Chart->hide();
     m_errorMsg->setText( "Error calculating Chi2: " + string(e.what()) );
     m_errorMsg->show();
     return;
@@ -1242,16 +1178,15 @@ void DetectionConfidenceTool::doCalc()
   {
     //display lower limit to user...
   }
-  
+
+
   
   const bool useCurries = true;
   const double avrgAct = 0.5*(chi2s.front().first + chi2s.back().first);
   const auto &units = PhysicalUnits::bestActivityUnitHtml( avrgAct, useCurries );
   
-  m_chi2Model->insertColumn( 0 );
-  m_chi2Model->insertColumn( 1 );
-  m_chi2Model->insertRows(0, static_cast<int>(chi2s.size()) );
-  
+  string datajson = "{\n\t\"data\": [";
+
   double minchi2 = std::numeric_limits<double>::infinity();
   double maxchi2 = -std::numeric_limits<double>::infinity();
   
@@ -1259,9 +1194,11 @@ void DetectionConfidenceTool::doCalc()
   {
     minchi2 = std::min( minchi2, chi2s[i].second );
     maxchi2 = std::max( maxchi2, chi2s[i].second );
-    m_chi2Model->setData( static_cast<int>(i), 0, (chi2s[i].first / units.second) );
-    m_chi2Model->setData( static_cast<int>(i), 1, chi2s[i].second );
+    datajson += string(i ? "," : "")
+                + "{\"x\": " + std::to_string( (chi2s[i].first / units.second) )
+                + ", \"y\": " + std::to_string( chi2s[i].second ) + "}";
   }
+  datajson += "]";
   
   
   double chi2range = maxchi2 - minchi2;
@@ -1272,36 +1209,45 @@ void DetectionConfidenceTool::doCalc()
     chi2range = 0;
   }
   
+  //datajson += ",\n\t\"xunits\": \"" + units.first + "\"";
+  
+  datajson += ",\n\t\"xtitle\": \"";
   if( units.first == "&mu;Ci" )  /// \TODO: fix PhysicalUnits::bestActivityUnitHtml(..) to just us u character
-    m_chi2Chart->axis(Wt::Chart::XAxis).setTitle("Activity (" MU_CHARACTER "Ci)");
+    datajson += "Activity (" MU_CHARACTER "Ci)\"";
   else
-    m_chi2Chart->axis(Wt::Chart::XAxis).setTitle("Activity (" + units.first + ")");
-  
-  m_chi2Model->setHeaderData(0, WString("Activity") );
-  
-  m_chi2Chart->setXSeriesColumn(0);
-  Wt::Chart::WDataSeries series(1, Wt::Chart::LineSeries,Wt::Chart::YAxis);
-  //series.setPen( WPen(m_chartFwhmLineColor) );
-  m_chi2Chart->addSeries(series);
-  
-  //m_chi2Chart->axis(Wt::Chart::YAxis).setRoundLimits( Chart::AxisValue::MinimumValue | Chart::AxisValue::MaximumValue );
-  //m_chi2Chart->axis(Wt::Chart::YAxis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
-  m_chi2Chart->axis(Wt::Chart::YAxis).setRange( minchi2 - 0.1*chi2range, maxchi2 + 0.1*chi2range );
+    datajson += "Activity (" + units.first + ")\"";
+
+  datajson += ",\n\t\"ytitle\": \"\xCF\x87\xC2\xB2\""; //chi^2
   
   double xstart = (chi2s.front().first/units.second);
   double xend = (chi2s.front().first/units.second);
   //Blah blah blah, coarse labels to be round numbers
   //const double initialrange = xend - xstart;
-  //const double n = std::pow(10, std::floor(std::log10(initialrange/10)));
   
-  m_chi2Chart->axis(Wt::Chart::XAxis).setRange( xstart, xend );
-  //m_chi2Chart->axis(Wt::Chart::XAxis).setAutoLimits( Chart::MaximumValue );
-  //m_chi2Chart->axis(Wt::Chart::XAxis).setRoundLimits( Chart::AxisValue::MinimumValue | Chart::AxisValue::MaximumValue );
-
+  //datajson += ",\n\t\"xrange\": [" + std::to_string(xstart) + ", " + std::to_string(xend) + "]";
+  //datajson += ",\n\t\"yrange\": [" + std::to_string(minchi2 - 0.1*chi2range) + ", " + std::to_string(maxchi2 + 0.1*chi2range) + "]";
+    
+  // TODO: draw line at upperLimit.
   
-  // \TODO: draw line at upperLimit.
   
-  m_results->show();
+  std::shared_ptr<const ColorTheme> theme = m_interspec ? m_interspec->getColorTheme() : nullptr;
+  if( theme )
+  {
+    auto csstxt = []( const Wt::WColor &c, const char * defcolor ) -> string {
+      return "\"" + (c.isDefault() ? string(defcolor) : c.cssText()) + "\"";
+    };
+     
+    datajson += ",\n\t\"lineColor\": " + csstxt(theme->foregroundLine, "black");
+    //datajson += ",\n\t\"axisColor\": " + csstxt(theme->spectrumAxisLines, "black");  //should be taken care of by CSS from D3SpectrumChart
+    datajson += ",\n\t\"chartBackgroundColor\": " + csstxt(theme->spectrumChartBackground, "rgba(0,0,0,0)");
+    //datajson += ",\n\t\"textColor\": " + csstxt(theme->spectrumChartText, "black"); //should be taken care of by CSS from D3SpectrumChart
+  }//if( theme )
+  
+  datajson += "\n}";
+  
+  const string jsgraph = m_chi2Chart->jsRef() + ".chart";
+  m_chi2Chart->doJavaScript( jsgraph + ".setData(" + datajson + ")" );
+  m_chi2Chart->show();
   
   m_displayActivity->setText( WString::fromUTF8(upperLimitActStr) );
   updateShownPeaks();
