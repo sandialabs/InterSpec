@@ -4277,15 +4277,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 
   Wt::WPushButton *addItemMenubutton = new WPushButton( " " );
   m_addItemMenu = new PopupDivMenu( addItemMenubutton, PopupDivMenu::TransientMenu );
-  if( m_specViewer->isMobile() )
-  {
-     m_addItemMenu->addPhoneBackItem( NULL );
-     addItemMenubutton->clicked().connect( m_addItemMenu, &PopupDivMenu::showMobile );
-  } //mobile
-  else
-  {
-      m_addItemMenu->setButton( addItemMenubutton );
-  } //not mobile
+  
   addItemMenubutton->setStyleClass( "ShiledingSourceOptionsBtn" );
   addItemMenubutton->addStyleClass( "GearIcon" );
 

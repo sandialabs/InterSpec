@@ -207,6 +207,8 @@ public:
   void parentMouseWentOver();
   void undoParentHoveredOver();
   
+  bool isMobile() const;
+  
 protected:
   void desktopDoHide();
 
