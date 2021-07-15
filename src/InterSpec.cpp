@@ -658,8 +658,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
    
     //hamburger
     PopupDivMenu *popup = new PopupDivMenu( m_mobileMenuButton, PopupDivMenu::AppLevelMenu );
-    popup->addPhoneBackItem( nullptr );
-    
     m_mobileMenuButton->removeStyleClass( "Wt-btn" );
     menuWidget = popup;
     
@@ -991,16 +989,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->shiftAltKeyDragged().connect( this, &InterSpec::handleShiftAltDrag );
 
 //  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, _1) );
-  m_rightClickMenu = new PopupDivMenu( m_mobileMenuButton, PopupDivMenu::TransientMenu );
-  m_rightClickMenu->setPositionScheme( Wt::Absolute );
-  m_rightClickMenu->addStyleClass( " Wt-popupmenu Wt-outset" );
+  m_rightClickMenu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
   m_rightClickMenu->aboutToHide().connect( this, &InterSpec::rightClickMenuClosed );
   
-  if( isMobile() )
+  if( m_rightClickMenu->isMobile() )
   {
-    PopupDivMenuItem *item = m_rightClickMenu->addPhoneBackItem( NULL );
-    item->triggered().connect( boost::bind(&PopupDivMenu::setHidden, m_rightClickMenu, true, WAnimation()) );
-  }//if( isPhone() || isTablet() )
+    m_rightClickMenu->addPhoneBackItem( nullptr );
+  }else
+  {
+    m_rightClickMenu->setPositionScheme( Wt::Absolute );
+    m_rightClickMenu->addStyleClass( " Wt-popupmenu Wt-outset" );
+  }
   
   for( RightClickItems i = RightClickItems(0);
        i < kNumRightClickItems; i = RightClickItems(i+1) )
@@ -2613,7 +2612,7 @@ void InterSpec::handleRightClick( double energy, double counts,
     }//switch( i )
   }//for( loop over right click menu items )
   
-  if( isMobile() )
+  if( m_rightClickMenu->isMobile() )
     m_rightClickMenu->showMobile();
   else
     m_rightClickMenu->popup( WPoint(pageX,pageY) );
@@ -10270,10 +10269,7 @@ void InterSpec::userAskedToFitPeaksInRange( double x0, double x1,
   menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
   menu->setPositionScheme( Wt::Absolute );
   
-  PopupDivMenuItem *item = 0;
-  if( isMobile() )
-    item = menu->addPhoneBackItem( NULL );
-//  item->triggered().connect( boost::bind( &deleteMenu, menu ) );
+  PopupDivMenuItem *item = nullptr;
   
   item = menu->addMenuItem( "Single Peak" );
 //  item->triggered().connect( boost::bind( &InterSpec::findPeakFromUserRange, this, x0, x1 ) );

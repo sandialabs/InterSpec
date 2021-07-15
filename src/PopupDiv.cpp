@@ -135,7 +135,7 @@ WT_DECLARE_WT_MEMBER
    }, 500 );
  });
 
-WT_DECLARE_WT_MEMBER(HideOverlay, Wt::JavaScriptFunction, "HideOverlay", function()
+WT_DECLARE_WT_MEMBER(SetupHideOverlay, Wt::JavaScriptFunction, "SetupHideOverlay", function()
 {
   function hideverything(e)
   {
@@ -152,21 +152,8 @@ WT_DECLARE_WT_MEMBER(HideOverlay, Wt::JavaScriptFunction, "HideOverlay", functio
         //Scroll back to the top of the menu
         jel.scrollTop(0);
         
-        //I cant actually tell the differnce in smoothness between my version
-        //  and jQueries version.
         var a = -jel.width() - 10;
         jel.animate({left: a+'px'}, {queue: false, duration: 255}, "linear", function(){jel.hide();});
-        
-//        var w = jel.width(), t0 = (new Date()).valueOf();
-//        ( function slideout()
-//          {
-//            var t = (new Date()).valueOf();
-//            var pos = -w*((t-t0)/250);
-//            el.style['left'] = pos + 'px';
-//            if( pos>-w )
-//              setTimeout(slideout,1);
-//            else jel.hidde();
-//          })()
       });
           
       $('.mobilePopupMenuOverlay').hide();
@@ -668,7 +655,7 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
   {
     addStyleClass( "PopupDivMenuPhone" );
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "ShowPhone", wtjsShowPhone);
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "HideOverlay", wtjsHideOverlay);
+    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "SetupHideOverlay", wtjsSetupHideOverlay);
     
     // Note: need to call this to reset the menus when a submenu is
     //  selected/hidden.  No need to call triggered(), as it will be hidden too.
@@ -702,48 +689,47 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
   }//if( useNativeMenu )
 #endif
   
-  if( menuParent )
+  if( m_mobile)
   {
-    if( m_mobile)
+    if( menuParent )
     {
-      switch( m_type )
-      {
-        case AppLevelMenu:
-          menuParent->clicked().connect( this, &PopupDivMenu::showMobile );
-          break;
-          
-        case TransientMenu:
-          menuParent->setMenu( this );
-          break;
-      }//switch( m_type )
-    }else
-    {
+      addPhoneBackItem( nullptr );
+      menuParent->clicked().connect( this, &PopupDivMenu::showMobile );
+    }//if( menuParent )
+  }else if( menuParent )
+  {
 #if(USE_OSX_NATIVE_MENU)
-      if( useNativeMenu && (menutype == AppLevelMenu) )
-      {
-        const string buttontxt = menuParent->text().toUTF8();
-        if( buttontxt.length() )
-          m_nsmenu = addOsxMenu( this, buttontxt.c_str() );
-      } //AppLevelMenu
+    if( useNativeMenu && (menutype == AppLevelMenu) )
+    {
+      const string buttontxt = menuParent->text().toUTF8();
+      if( buttontxt.length() )
+        m_nsmenu = addOsxMenu( this, buttontxt.c_str() );
+    } //AppLevelMenu
 #endif
       
 #if( USING_ELECTRON_NATIVE_MENU )
-      if( useNativeMenu && (menutype == AppLevelMenu) )
-      {
-        //Here we are adding a menu at the topof the window.  "InterSpec", "View", "Tools", "Help"
-        //In Js, we should find the menu, and get a reference to it.
-        //app->doJavaScript( "console.log('Adding PopupDivMenu id=" + id() + " parentTxt=" + menuParent->text().toUTF8() + "');" );
-        app->doJavaScript( "Wt.WT.FindElectronMenu('" + menuParent->text().toUTF8() + "', '" + id() + "');" );
-        m_hasElectronCounterpart = true;
-      }
+    if( useNativeMenu && (menutype == AppLevelMenu) )
+    {
+      //Here we are adding a menu at the topof the window.  "InterSpec", "View", "Tools", "Help"
+      //In Js, we should find the menu, and get a reference to it.
+      //app->doJavaScript( "console.log('Adding PopupDivMenu id=" + id() + " parentTxt=" + menuParent->text().toUTF8() + "');" );
+      app->doJavaScript( "Wt.WT.FindElectronMenu('" + menuParent->text().toUTF8() + "', '" + id() + "');" );
+      m_hasElectronCounterpart = true;
+    }
 #endif
       
-      if( !useNativeMenu && (menutype == AppLevelMenu) )
-        setupDesktopMenuStuff();
-      else
-        menuParent->setMenu( this );
-    } //if( m_mobile) / else
-  }else //if( menuParent )
+    if( !useNativeMenu && (menutype == AppLevelMenu) )
+    {
+      setupDesktopMenuStuff();
+    }else
+    {
+      menuParent->setMenu( this );
+        
+      const string js = "function(){Wt.WT.BringAboveDialogs('" + id() + "');"
+                            "Wt.WT.AdjustTopPos('" + menuParent->id() + "');}";
+      menuParent->clicked().connect( js );
+    }
+  }else //if( m_mobile) / else if( menuParent )
   {
 #if( USING_ELECTRON_NATIVE_MENU )
     if( m_hasElectronCounterpart && (menutype == AppLevelMenu) )
@@ -941,17 +927,16 @@ void PopupDivMenu::setHidden( bool hidden, const Wt::WAnimation &animation )
 
 void PopupDivMenu::showMobile()
 {
-  //Note/Hack: This is needed to check if clicked or mouseover.  If clicked,
-  //  calling popup() will somehow cause the popupmenu to not show.
-  //  I know, weird huh.
   if( m_menuParent )
     popup( m_menuParent, Wt::Vertical );
-
+  else
+    popup( {0,0} );
+  
   if( m_mobile )
   {
     doJavaScript("$('.mobilePopupMenuOverlay').show();");
     doJavaScript( "Wt.WT.ShowPhone('" + id() + "');" );
-    doJavaScript( "Wt.WT.HideOverlay();" );
+    doJavaScript( "Wt.WT.SetupHideOverlay();" );
   }//if( m_mobile )
 }//void doShow()
 
@@ -1008,6 +993,10 @@ void PopupDivMenu::undoParentHoveredOver()
 }//void undoParentHoveredOver()
 
 
+bool PopupDivMenu::isMobile() const
+{
+  return m_mobile;
+}
 
 void PopupDivMenu::setupDesktopMenuStuff()
 {
@@ -1307,7 +1296,7 @@ PopupDivMenuItem *PopupDivMenu::addPhoneBackItem( PopupDivMenu *parent )
 PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
                                               const std::string &iconPath )
 {
-  PopupDivMenu *menu = new PopupDivMenu( 0, m_type );
+  PopupDivMenu *menu = new PopupDivMenu( nullptr, m_type );
   
   if( m_mobile )
   {
