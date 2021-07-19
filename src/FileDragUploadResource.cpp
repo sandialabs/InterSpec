@@ -47,11 +47,14 @@
 #include <Wt/Chart/WAbstractChart>
 
 
-#include "InterSpec/InterSpecApp.h"
 #include "SpecUtils/Filesystem.h"
-#if( !ANDROID && !IOS )
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/FileDragUploadResource.h"
+
+#ifdef _WIN32
+#include "SpecUtils/StringAlgo.h"
 #endif
+
 
 using namespace Wt;
 using namespace std;
