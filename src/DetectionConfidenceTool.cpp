@@ -420,30 +420,37 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
     m_upperLimit( nullptr ),
     m_errorMsg( nullptr )
 {
-  /** \TODO:
-   -[] Make test cases that will quickly iterate through, to test things
-   -[] Allow user to choose activity limit, or distance limit
-   -[] Make a "by eye" equivalent CL
-   -[] All adding in a scale factor, so if soectrum is of 30 minutes, allow making limit for 30 second spectra
-   -[] Make the Chi2 plot a D3 based plot
-   -[x] Put the Chi2 chart to the right of the spectrum, when it should exist
-   -[ ] Give the user a choice about using continuum fixed at null hypothesis
-   -[ ] Allow combining ROI with neghboring peaks
-   -[x] Make it so when user change ROI on chart, it updates the text input
-   -[ ] Allow minor gamma-lines overlapping with primary gamma lines to contribute to peak area
-   -[ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like mayebe have each peak be a WPanel or something
-   -[ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
-   -[ ] Allow users to select CL, not just 95%
-   -[ ] Add in allowing to age nuclide (didnt I generalize inputting a nuclide somewhere?  Hopefully just re-use that)
-   -[x] Default fill in reference lines/shielding/age as user has in Reference Photopeak tool
+  /** TODO:
+   - [ ] Make test cases that will quickly iterate through, to test things
+   - [ ] Allow user to choose activity limit, or distance limit
+   - [ ] Make a "by eye" equivalent CL
+   - [ ] All adding in a scale factor, so if spectrum is of 30 minutes, allow making limit for 30 second spectra
+   - [x] Make the Chi2 plot a D3 based plot
+   - [x] Put the Chi2 chart to the right of the spectrum, when it should exist
+   - [ ] Give the user a choice about using continuum fixed at null hypothesis
+   - [ ] Allow combining ROI with neghboring peaks
+   - [x] Make it so when user change ROI on chart, it updates the text input
+   - [ ] Allow minor gamma-lines overlapping with primary gamma lines to contribute to peak area
+   - [ ] Allow user to pick Currie limit ranges, and improve clarity of this stuff, like maybe have each peak be a WPanel or something
+   - [ ] For each row show plot of current peak in that row
+   - [ ] Have the energy rows fold down to show more information, similar to Steves tool, for each energy
+   - [ ] Allow users to select CL, not just 95%
+   - [ ] Add in allowing to age nuclide (didnt I generalize inputting a nuclide somewhere?  Hopefully just re-use that)
+   - [ ] Allow users to double click on the spectrum to add a peak to the limit, or similarly for erasing a peak
+   - [ ] If user clicks on a result row, have chart zoom to that general region
+   - [x] Default fill in reference lines/shielding/age as user has in Reference PhotoPeak tool
+   - [ ] Have an explicit option for including attenuation in air
+   
+  
+   Add in options for "limit live time", Distance/Activity, Confidence Limit to use, nuclide age
    
    
    To calculate the Currie
    For each Peak, fit the most likely area, and and its limits.
    If lower confidence is above zero, assume there is a peak
-   
    */
   WApplication * const app = wApp;
+  assert( app );
   
   app->useStyleSheet( "InterSpec_resources/DetectionConfidenceTool.css" );
   app->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
@@ -615,6 +622,7 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
 
   m_results = new WContainerWidget( upperCharts );
   m_results->addStyleClass( "MdaResults" );
+  m_results->hide();
   
   m_chi2Chart = new WContainerWidget( m_results );
   m_chi2Chart->addStyleClass( "MdaChi2Chart" );
@@ -784,7 +792,7 @@ void DetectionConfidenceTool::handleInputChange()
   
   
   m_peaks->clear();
-  m_chi2Chart->hide();
+  m_results->hide();
   m_errorMsg->setText( "&nbsp;" );
   m_errorMsg->hide();
   
@@ -959,7 +967,7 @@ void DetectionConfidenceTool::doCalc()
   
   if( !nused )
   {
-    m_chi2Chart->hide();
+    m_results->hide();
     if( m_errorMsg->isHidden() || m_errorMsg->text().empty() )
     {
       m_errorMsg->setText( "No peaks are selected" );
@@ -1145,7 +1153,7 @@ void DetectionConfidenceTool::doCalc()
   {
     m_bestChi2Act->setText( "" );
     m_upperLimit->setText( "" );
-    m_chi2Chart->hide();
+    m_results->hide();
     m_errorMsg->setText( "Error calculating Chi2: " + string(e.what()) );
     m_errorMsg->show();
     return;
@@ -1245,9 +1253,10 @@ void DetectionConfidenceTool::doCalc()
   
   datajson += "\n}";
   
+  m_results->show();
+  
   const string jsgraph = m_chi2Chart->jsRef() + ".chart";
   m_chi2Chart->doJavaScript( jsgraph + ".setData(" + datajson + ")" );
-  m_chi2Chart->show();
   
   m_displayActivity->setText( WString::fromUTF8(upperLimitActStr) );
   updateShownPeaks();
