@@ -532,7 +532,8 @@ set(sources
     src/MakeDrfFit.cpp
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
-    src/DetectionConfidenceTool.cpp
+    src/DetectionLimitCalc.cpp
+    src/DetectionLimitTool.cpp
     src/EnergyCalTool.cpp
     src/EnergyCal.cpp
     src/EnergyCalGraphical.cpp
@@ -617,7 +618,8 @@ set(headers
     InterSpec/MakeDrfFit.h
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h
-    InterSpec/DetectionConfidenceTool.h
+    InterSpec/DetectionLimitCalc.h
+    InterSpec/DetectionLimitTool.h
     InterSpec/EnergyCalTool.h
     InterSpec/EnergyCal.h
     InterSpec/EnergyCalGraphical.h
@@ -1449,7 +1451,7 @@ list(
     APPEND
     OTHER_SUPPORT_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DecayChainChart.js
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DetectionConfidenceTool.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/DetectionLimitTool.js
 )
 
 FILE(GLOB HELP_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/*help.xml)

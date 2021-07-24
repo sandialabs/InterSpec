@@ -762,7 +762,7 @@ protected:
   void createUnitsConverterTool();
   void createFluxTool();
   void createDecayInfoWindow();
-  void createDetectionConfidenceTool();
+  void createDetectionLimitTool();
   void deleteDecayInfoWindow();
   void createFileParameterWindow();
   

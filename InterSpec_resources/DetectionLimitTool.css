@@ -1,11 +1,11 @@
 
-.DetectionConfidenceWindowContent
+.DetectionLimitWindowContent
 {
   display: flex;
   flex-direction: column;
 }
 
-.DetectionConfidenceTool
+.DetectionLimitTool
 {
   display: flex;
   flex-direction: column;
@@ -20,7 +20,7 @@
    */
 }
 
-.DetectionConfidenceTool .MdaCharts
+.DetectionLimitTool .MdaCharts
 {
   height: 200px;
   
@@ -31,11 +31,11 @@
 }
 
 
-.DetectionConfidenceTool .UserInputTable
+.DetectionLimitTool .UserInputTable
 {
 }
 
-.DetectionConfidenceTool .MdaResults
+.DetectionLimitTool .MdaResults
 {
   display: flex;
   flex-direction: column;
@@ -57,20 +57,20 @@
   overflow: hidden;
 }
 
-.DetectionConfidenceTool .MdaResults .MdaResultTxt
+.DetectionLimitTool .MdaResults .MdaResultTxt
 {
   /* this is m_bestChi2Act text, and m_upperLimit text */
   display: block;
 }
 
 
-.DetectionConfidenceTool .MdaErrMsg
+.DetectionLimitTool .MdaErrMsg
 {
   /* grid->addWidget( m_errorMsg, 3, 0, 1, 2 ); */
 }
 
 
-.DetectionConfidenceTool .MdaPeaks
+.DetectionLimitTool .MdaPeaks
 {
   flex: 2 1 auto;
   
@@ -78,14 +78,14 @@
 }
 
 
-.DetectionConfidenceTool .UserInputTable td
+.DetectionLimitTool .UserInputTable td
 {
   padding-top:5px;
   padding-bottom:5px;
   padding-right:10px;
 }
 
-.DetectionConfidenceTool .UserInputTable td:first-child
+.DetectionLimitTool .UserInputTable td:first-child
 {
   padding-left:15px;
 }

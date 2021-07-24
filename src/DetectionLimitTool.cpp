@@ -79,6 +79,8 @@
 #include "SpecUtils/D3SpectrumExport.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
+#include "InterSpec/DetectionLimitTool.h"
+#include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -87,7 +89,6 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
-#include "InterSpec/DetectionConfidenceTool.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 using namespace std;
@@ -350,7 +351,7 @@ public:
 
 
 
-DetectionConfidenceWindow::DetectionConfidenceWindow( InterSpec *viewer,
+DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
                                                      MaterialDB *materialDB,
                                                      WSuggestionPopup *materialSuggest )
 : AuxWindow( "Detection Confidence Tool",
@@ -362,9 +363,9 @@ DetectionConfidenceWindow::DetectionConfidenceWindow( InterSpec *viewer,
   assert( viewer );
   rejectWhenEscapePressed( true );
   
-  m_tool = new DetectionConfidenceTool( viewer, materialDB, materialSuggest );
+  m_tool = new DetectionLimitTool( viewer, materialDB, materialSuggest );
   WContainerWidget *content = contents();
-  content->addStyleClass( "DetectionConfidenceWindowContent" );
+  content->addStyleClass( "DetectionLimitWindowContent" );
   content->addWidget( m_tool );
   
   AuxWindow::addHelpInFooter( footer(), "detection-confidence-tool" );
@@ -386,17 +387,17 @@ DetectionConfidenceWindow::DetectionConfidenceWindow( InterSpec *viewer,
   
   resizeToFitOnScreen();
   centerWindowHeavyHanded();
-}//DetectionConfidenceWindow(...) constrctor
+}//DetectionLimitWindow(...) constrctor
 
 
-DetectionConfidenceWindow::~DetectionConfidenceWindow()
+DetectionLimitWindow::~DetectionLimitWindow()
 {
 }
 
 
 
 
-DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
+DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
                                                   MaterialDB *materialDB,
                                                   Wt::WSuggestionPopup *materialSuggest,
                                                   WContainerWidget *parent )
@@ -452,14 +453,14 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   WApplication * const app = wApp;
   assert( app );
   
-  app->useStyleSheet( "InterSpec_resources/DetectionConfidenceTool.css" );
+  app->useStyleSheet( "InterSpec_resources/DetectionLimitTool.css" );
   app->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
-  app->require( "InterSpec_resources/DetectionConfidenceTool.js" );
+  app->require( "InterSpec_resources/DetectionLimitTool.js" );
   
-  addStyleClass( "DetectionConfidenceTool" );
+  addStyleClass( "DetectionLimitTool" );
   
   
-  //new WLabel( "DetectionConfidenceTool", this );
+  //new WLabel( "DetectionLimitTool", this );
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
   const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
   
@@ -488,7 +489,7 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
              adjust the ROI, and re-due our fit - we should probably do something more intuitive
              so the user knows whats going on.
    */
-  m_chart->roiDragUpdate().connect( boost::bind( &DetectionConfidenceTool::roiDraggedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+  m_chart->roiDragUpdate().connect( boost::bind( &DetectionLimitTool::roiDraggedCallback, this, _1, _2, _3, _4, _5, _6 ) );
   
   m_chart->setCompactAxis( true );
   m_chart->setXAxisTitle( "Energy (keV)" );
@@ -533,8 +534,8 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   m_distanceEdit->setValidator( distValidator );
   m_distanceEdit->setMinimumSize( fieldWidth, WLength::Auto );
   label->setBuddy( m_distanceEdit );
-  m_distanceEdit->changed().connect( this, &DetectionConfidenceTool::handleInputChange );
-  m_distanceEdit->enterPressed().connect( this, &DetectionConfidenceTool::handleInputChange );
+  m_distanceEdit->changed().connect( this, &DetectionLimitTool::handleInputChange );
+  m_distanceEdit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
   
   cell = inputTable->elementAt(1, 0);
   label = new WLabel( "Nuclide:", cell );
@@ -545,7 +546,7 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   m_nuclideEdit->setMargin( 1 );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
   m_nuclideEdit->setAutoComplete( false );
-  m_nuclideEdit->changed().connect( boost::bind( &DetectionConfidenceTool::handleNuclideChange, this ) );
+  m_nuclideEdit->changed().connect( boost::bind( &DetectionLimitTool::handleNuclideChange, this ) );
   label->setBuddy( m_nuclideEdit );
 
   
@@ -573,8 +574,8 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   
   SpectraFileModel *specFileModel = viewer->fileManager()->model();
   m_detectorDisplay = new DetectorDisplay( viewer, specFileModel );
-  viewer->detectorChanged().connect( boost::bind( &DetectionConfidenceTool::handleInputChange, this ) );
-  viewer->detectorModified().connect( boost::bind( &DetectionConfidenceTool::handleInputChange, this ) );
+  viewer->detectorChanged().connect( boost::bind( &DetectionLimitTool::handleInputChange, this ) );
+  viewer->detectorModified().connect( boost::bind( &DetectionLimitTool::handleInputChange, this ) );
   
   cell = inputTable->elementAt(0, 3);
   cell->setRowSpan( 2 );
@@ -590,15 +591,15 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   m_displayActivity->setValidator( actvalidator );
   m_displayActivity->setTextSize( 10 );
   m_displayActivity->setText( "0 uCi" );
-  m_displayActivity->enterPressed().connect( this, &DetectionConfidenceTool::updateShownPeaks );
-  m_displayActivity->changed().connect( this, &DetectionConfidenceTool::updateShownPeaks );
+  m_displayActivity->enterPressed().connect( this, &DetectionLimitTool::updateShownPeaks );
+  m_displayActivity->changed().connect( this, &DetectionLimitTool::updateShownPeaks );
   
   
   
   m_shieldingSelect = new ShieldingSelect( m_materialDB, NULL, m_materialSuggest, false );
   m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
-  m_shieldingSelect->materialChanged().connect( this, &DetectionConfidenceTool::handleInputChange );
-  m_shieldingSelect->materialModified().connect( this, &DetectionConfidenceTool::handleInputChange );
+  m_shieldingSelect->materialChanged().connect( this, &DetectionLimitTool::handleInputChange );
+  m_shieldingSelect->materialModified().connect( this, &DetectionLimitTool::handleInputChange );
   m_shieldingSelect->setMinimumSize( WLength(250), WLength::Auto );
   
   cell = inputTable->elementAt(0,2);
@@ -679,16 +680,16 @@ DetectionConfidenceTool::DetectionConfidenceTool( InterSpec *viewer,
   initChi2Chart();
   handleNuclideChange();  //JIC we picked up the one from RefLines
   handleInputChange();
-}//DetectionConfidenceTool constructor
+}//DetectionLimitTool constructor
   
 
   
-DetectionConfidenceTool::~DetectionConfidenceTool()
+DetectionLimitTool::~DetectionLimitTool()
 {
 }
 
 
-void DetectionConfidenceTool::render( Wt::WFlags<Wt::RenderFlag> flags )
+void DetectionLimitTool::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
   //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
@@ -702,7 +703,7 @@ void DetectionConfidenceTool::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//render( flags )
 
 
-void DetectionConfidenceTool::initChi2Chart()
+void DetectionLimitTool::initChi2Chart()
 {
   m_chi2Chart->setJavaScriptMember( "chart", "new MdaChi2Chart(" + m_chi2Chart->jsRef() + ", {});");
   const string jsgraph = m_chi2Chart->jsRef() + ".chart";
@@ -721,7 +722,7 @@ void DetectionConfidenceTool::initChi2Chart()
 
 
 
-void DetectionConfidenceTool::roiDraggedCallback( double new_roi_lower_energy,
+void DetectionLimitTool::roiDraggedCallback( double new_roi_lower_energy,
                                                   double new_roi_upper_energy,
                                                   double new_roi_lower_px,
                                                   double new_roi_upper_px,
@@ -766,7 +767,7 @@ void DetectionConfidenceTool::roiDraggedCallback( double new_roi_lower_energy,
   cerr << "Failed to find a ROI that started at " << new_roi_lower_energy <<  " keV" << endl;
 }//void roiDraggedCallback(...)
 
-void DetectionConfidenceTool::handleNuclideChange()
+void DetectionLimitTool::handleNuclideChange()
 {
   const string isotxt = m_nuclideEdit->text().toUTF8();
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -780,7 +781,7 @@ void DetectionConfidenceTool::handleNuclideChange()
 }//void handleNuclideChange()
 
 
-void DetectionConfidenceTool::handleInputChange()
+void DetectionLimitTool::handleInputChange()
 {
   vector<tuple<float,bool,float,float>> oldvalues;
   for( auto w : m_peaks->children() )
@@ -930,21 +931,21 @@ void DetectionConfidenceTool::handleInputChange()
     
     auto row = new MdaPeakRow( energy, countsPerBq, distance, roi_start, roi_end, spec, drf, m_peaks );
     row->m_use->setChecked(use);
-    row->m_changed.connect( this, &DetectionConfidenceTool::scheduleCalcUpdate );
+    row->m_changed.connect( this, &DetectionLimitTool::scheduleCalcUpdate );
   }//for( const auto &line : lines )
   
   scheduleCalcUpdate();
 }//void handleInputChange()
 
 
-void DetectionConfidenceTool::scheduleCalcUpdate()
+void DetectionLimitTool::scheduleCalcUpdate()
 {
   m_needsUpdate = true;
   scheduleRender();
 }//void scheduleCalcUpdate()
 
 
-void DetectionConfidenceTool::doCalc()
+void DetectionLimitTool::doCalc()
 {
   //m_simpleMda
   double minSearchActivity = std::numeric_limits<double>::infinity(), maxSearchActivity = 0.0;
@@ -1263,7 +1264,7 @@ void DetectionConfidenceTool::doCalc()
 }//void doCalc()
 
 
-void DetectionConfidenceTool::updateShownPeaks()
+void DetectionLimitTool::updateShownPeaks()
 {
   m_peakModel->removeAllPeaks();
   
@@ -1284,10 +1285,10 @@ void DetectionConfidenceTool::updateShownPeaks()
   m_peakModel->setPeaks( peaks );
     
   cout << "Done in updateShownPeaks()" << endl;
-}//void DetectionConfidenceTool::updateShownPeaks()
+}//void DetectionLimitTool::updateShownPeaks()
 
 
-void DetectionConfidenceTool::computeForAcivity( const double activity,
+void DetectionLimitTool::computeForAcivity( const double activity,
                                                  std::vector<PeakDef> &peaks,
                                                  double &chi2, int &numDOF )
 {
@@ -1425,10 +1426,10 @@ void DetectionConfidenceTool::computeForAcivity( const double activity,
   }
   
   peaks.swap( fitPeaks );
-}//void DetectionConfidenceTool::computeForAcivity(...)
+}//void DetectionLimitTool::computeForAcivity(...)
 
 
-void DetectionConfidenceTool::setRefLinesAndGetLineInfo()
+void DetectionLimitTool::setRefLinesAndGetLineInfo()
 {
   // \TODO: this function is essentually the same as #ReferencePhotopeakDisplay::updateDisplayChange
   //        and given its un-cleaness, it may be worth refactoring.
@@ -1788,7 +1789,7 @@ void DetectionConfidenceTool::setRefLinesAndGetLineInfo()
 
 
 
-void DetectionConfidenceTool::do_development()
+void DetectionLimitTool::do_development()
 {
   auto specfile = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
   if( !specfile )

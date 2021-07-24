@@ -1,5 +1,5 @@
-#ifndef DetectionConfidenceTool_h
-#define DetectionConfidenceTool_h
+#ifndef DetectionLimitTool_h
+#define DetectionLimitTool_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
  
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
@@ -53,7 +53,7 @@ class MaterialDB;
 class ShieldingSelect;
 class DetectorDisplay;
 class D3SpectrumDisplayDiv;
-class DetectionConfidenceTool;
+class DetectionLimitTool;
 
 namespace SandiaDecay
 {
@@ -72,28 +72,28 @@ namespace Wt
   }
 }//namespace Wt
 
-class DetectionConfidenceWindow : public AuxWindow
+class DetectionLimitWindow : public AuxWindow
 {
 public:
-  DetectionConfidenceWindow( InterSpec *viewer,
+  DetectionLimitWindow( InterSpec *viewer,
                              MaterialDB *materialDB,
                              Wt::WSuggestionPopup *materialSuggest );
-  virtual ~DetectionConfidenceWindow();
+  virtual ~DetectionLimitWindow();
   
 protected:
-  DetectionConfidenceTool *m_tool;
-};//class DetectionConfidenceWindow
+  DetectionLimitTool *m_tool;
+};//class DetectionLimitWindow
 
 
-class DetectionConfidenceTool : public Wt::WContainerWidget
+class DetectionLimitTool : public Wt::WContainerWidget
 {
 public:
-  DetectionConfidenceTool( InterSpec *viewer,
+  DetectionLimitTool( InterSpec *viewer,
                           MaterialDB *materialDB,
                           Wt::WSuggestionPopup *materialSuggest,
                           Wt::WContainerWidget *parent = 0 );
   
-  virtual ~DetectionConfidenceTool();
+  virtual ~DetectionLimitTool();
   
   void do_development();
   
@@ -156,10 +156,10 @@ protected:
   
   std::shared_ptr<SpecMeas> m_our_meas;
   Wt::WContainerWidget *m_peaks;
-};//class DetectionConfidenceTool
+};//class DetectionLimitTool
 
 
 
 
 
-#endif //DetectionConfidenceTool_h
+#endif //DetectionLimitTool_h

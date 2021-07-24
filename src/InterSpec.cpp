@@ -136,6 +136,7 @@
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/CanvasForDragging.h"
+#include "InterSpec/DetectionLimitTool.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/SpectrumDisplayDiv.h"
@@ -148,7 +149,6 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
-#include "InterSpec/DetectionConfidenceTool.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/EnergyCalPreserveWindow.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
@@ -7369,9 +7369,9 @@ void InterSpec::createDecayInfoWindow()
 }//void createDecayInfoWindow()
 
 
-void InterSpec::createDetectionConfidenceTool()
+void InterSpec::createDetectionLimitTool()
 {
-  new DetectionConfidenceWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+  new DetectionLimitWindow( this, m_materialDB.get(), m_shieldingSuggestion );
 }
 
 
@@ -7684,7 +7684,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 
   item = popup->addMenuItem( "Detection Confidence Tool" );
   HelpSystem::attachToolTipOn( item, "Provides an upper activity estimate for nuclides" , showToolTips );
-  item->triggered().connect( this, &InterSpec::createDetectionConfidenceTool );
+  item->triggered().connect( this, &InterSpec::createDetectionLimitTool );
   
   item = popup->addMenuItem( "Detector Response Select" );
   HelpSystem::attachToolTipOn( item,"Allows user to change the detector response function.", showToolTips );
