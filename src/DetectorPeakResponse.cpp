@@ -759,12 +759,11 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
         const auto value = SpecUtils::xml_first_node( target, "value" );
         const string val_str = SpecUtils::xml_value_str( value );
         
-        if( val_str.empty() )
-          throw runtime_error( "Missing <" + name + "> node." );
-        
         float val;
+        //will fail if val_str empty (which we want), but will parse strings like " 19.2 as", which
+        //  maybe its debatable if we want this behavior, but I dont think this matters much.
         if( !(stringstream(val_str) >> val) )
-          throw runtime_error( "Node <" + name + "> missing." );
+          throw runtime_error( "Missing <" + name + "> node." );
         return val;
       };//get_float_value lambda
       
