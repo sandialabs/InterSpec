@@ -41,6 +41,7 @@
 #include <boost/functional/hash.hpp>
 
 #include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_utils.hpp"
 
 #include "mpParser.h"
 
@@ -52,6 +53,7 @@
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -737,38 +739,103 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   m_resolutionForm = kGadrasResolutionFcn;
   m_resolutionCoeffs.resize( 3, 0.0 );
 
+  
+  // First decide if old style Detector.dat, or the newer XML Detector.dat
+  const istream::pos_type orig_pos = detDatFile.tellg();
+  
   string line;
-  while( SpecUtils::safe_get_line( detDatFile, line ) )
+  if( !SpecUtils::safe_get_line( detDatFile, line ) )
+    throw std::runtime_error( "Couldnt read first line of Detector.dat" );
+  
+  const bool is_xml = (line.find("xml") != string::npos);
+  
+  if( is_xml )
   {
-    vector<string> parts;
-    SpecUtils::trim( line );
-    if( line.empty() || !isdigit(line[0]) )
-      continue;
-
-    SpecUtils::split( parts, line, " \t" );
-    
     try
     {
-      const int parnum = std::stoi( parts.at(0) );
-      const float value = static_cast<float>( std::stod( parts.at(1) ) );
-//      const int value2 = std::stoi( parts.at(2) );
-//      const string descrip = parts.at(3);
-      switch( parnum )
-      {
-        case 6:  m_resolutionCoeffs[0] = value; break;
-        case 7:  m_resolutionCoeffs[1] = value; break;
-        case 8:  m_resolutionCoeffs[2] = value; break;
-        case 11: detWidth = value;              break;
-        case 12: heightToWidth = value;         break;
-        case 62: lowerEnergy = value;           break;  //template error / min energy, keV
-        case 63: upperEnergy = value;           break;  //chi-square / max energy, keV
-      }//switch( parnum )
-    }catch(...)
+      // A helper function to grab float values from Detector.dat xml.
+      auto get_float_value = []( const rapidxml::xml_node<char> * const parent, const string &name ) -> float {
+        const auto target = parent->first_node( name.c_str(), name.size() );
+        const auto value = SpecUtils::xml_first_node( target, "value" );
+        const string val_str = SpecUtils::xml_value_str( value );
+        
+        if( val_str.empty() )
+          throw runtime_error( "Missing <" + name + "> node." );
+        
+        float val;
+        if( !(stringstream(val_str) >> val) )
+          throw runtime_error( "Node <" + name + "> missing." );
+        return val;
+      };//get_float_value lambda
+      
+      
+      detDatFile.seekg(orig_pos); //probably not really needed
+      rapidxml::file<char> input_file( detDatFile );
+      
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
+      
+      const auto gamma_detector = doc.first_node( "gamma_detector" );
+      if( !gamma_detector )
+        throw runtime_error( "Missing <gamma_detector> node." );
+      
+      lowerEnergy = get_float_value( gamma_detector, "weight_range_lower" );  //template error / min energy, keV
+      upperEnergy = get_float_value( gamma_detector, "weight_range_upper" );  //chi-square / max energy, keV
+      
+      const auto dimensions = XML_FIRST_NODE( gamma_detector, "dimensions" );
+      if( !dimensions )
+        throw runtime_error( "Missing <dimensions> node." );
+      
+      detWidth = get_float_value( dimensions, "width" );
+      heightToWidth = get_float_value( dimensions, "height_to_width_ratio" );
+      
+      const auto peak_shape = XML_FIRST_NODE( gamma_detector, "peak_shape" );
+      if( !peak_shape )
+        throw runtime_error( "Missing <peak_shape> node." );
+      
+      m_resolutionCoeffs[0] = get_float_value( peak_shape, "fwhm_offset" );
+      m_resolutionCoeffs[1] = get_float_value( peak_shape, "fwhm_at_661keV" );
+      m_resolutionCoeffs[2] = get_float_value( peak_shape, "fwhm_power" );
+    }catch( std::exception &e )
     {
-      cerr << "\nError reading line \"" << line << "\"" << endl;
-      continue;
-    }
-  }//while( SpecUtils::safe_get_line( detDatFile, line ) )
+      throw std::runtime_error( "Failed to read XML Detector.dat: " + std::string(e.what()) );
+    }//try / catch
+  }else
+  {
+    
+    do  //We've already got the first line
+    {
+      vector<string> parts;
+      SpecUtils::trim( line );
+      if( line.empty() || !isdigit(line[0]) )
+        continue;
+      
+      SpecUtils::split( parts, line, " \t" );
+      
+      try
+      {
+        const int parnum = std::stoi( parts.at(0) );
+        const float value = static_cast<float>( std::stod( parts.at(1) ) );
+        //      const int value2 = std::stoi( parts.at(2) );
+        //      const string descrip = parts.at(3);
+        switch( parnum )
+        {
+          case 6:  m_resolutionCoeffs[0] = value; break;
+          case 7:  m_resolutionCoeffs[1] = value; break;
+          case 8:  m_resolutionCoeffs[2] = value; break;
+          case 11: detWidth = value;              break;
+          case 12: heightToWidth = value;         break;
+          case 62: lowerEnergy = value;           break;  //template error / min energy, keV
+          case 63: upperEnergy = value;           break;  //chi-square / max energy, keV
+        }//switch( parnum )
+      }catch(...)
+      {
+        cerr << "\nError reading line \"" << line << "\"" << endl;
+        continue;
+      }
+    }while( SpecUtils::safe_get_line( detDatFile, line ) );
+  }//if( is_xml ) / else
+  
   
   if( detWidth<=0.0 || heightToWidth<=0.0 )
     throw runtime_error( "Couldnt find detector dimensions in the Detector.dat file" );
