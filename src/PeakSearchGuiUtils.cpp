@@ -2660,7 +2660,8 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       const double stat_threshold  = 0.0;
       const double hypothesis_threshold = 0.0;
       
-      const bool isRefit = true; // I think this should help keep peak means from wandering as much
+      // Classifying this as a re-fit will keep the means and widths, from wandering too much.
+      const bool isRefit = true;
       
       outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                    hypothesis_threshold, inputPeak, data,
@@ -2669,7 +2670,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       if( outputPeak.empty() )
       {
         WStringStream msg;
-        msg << "Niavely changing the continuum type to "
+        msg << "Naively changing the continuum type to "
         << string(PeakContinuum::offset_type_label(type))
         << " caused the peak to become insignificant.<br />"
         "Please use the <b>Peak Editor</b> to make this change.";
