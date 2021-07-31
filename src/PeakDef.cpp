@@ -2663,7 +2663,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         
 			answer << "," << q << "xray" << q
         << ":{"
-             << q << "name" << q << ":" << q << p.xrayElement() << q << ","
+             << q << "name" << q << ":" << q << p.xrayElement()->name << q << ","
              << q << "energy" << q << ":" << energy
              << srcTypeJSON( p.sourceGammaType() )
         << "}";
