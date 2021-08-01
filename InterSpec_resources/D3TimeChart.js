@@ -214,6 +214,8 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.gridy !== "boolean") this.options.gridy = false;
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
+  if (typeof this.options.dontRebin !== "boolean")
+    this.options.dontRebin = false;
 
   // minimum selection width option. Currently only applies to "zoom" selection. Default value copied from D3SpectrumChart
   if (typeof this.options.minSelectionWidth !== "number")
@@ -528,9 +530,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   // impose lower plotWidth limit on compression calculations
   if (plotWidth > 10) {
-    var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+    var compressionIndex = this.options.dontRebin ? 0 : Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
     if (plotWidth < nPoints) {
-      var i = 1;
       for (var i = 1; i <= compressionIndex; i++) {
         // only compress if data doesn't already exist before
         if (this.state.data.formatted[i] == null) {
@@ -541,7 +542,8 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
         }
       }
     } // if (plotWidth < nPoints)
-    this.state.data.unzoomedCompressionIndex = compressionIndex;
+    
+    this.state.data.unzoomedCompressionIndex = this.options.dontRebin ? 0 : compressionIndex;
   }
   // console.log(this.state.data.formatted)
 
@@ -597,9 +599,9 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     var rightIndex = this.findDataIndex(this.state.selection.domain[1], 0);
     var nPointsSelection = rightIndex - leftIndex + 1;
 
-    this.state.selection.compressionIndex = Math.ceil(
-      Math.log2(Math.ceil(nPointsSelection / plotWidth))
-    );
+    this.state.selection.compressionIndex = this.options.dontRebin
+                                  ? 0
+                                  : Math.ceil( Math.log2(Math.ceil(nPointsSelection / plotWidth)));
   }
 
   // get scales to use
@@ -2377,7 +2379,7 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var nPoints = rightIndex - leftIndex + 1;
   var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
-  var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+  var compressionIndex = this.options.dontRebin ? 0 : Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
 
   if (
     this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
@@ -2479,9 +2481,9 @@ D3TimeChart.prototype.handleBrushZoom = function () {
       var nPoints = rightIndex - leftIndex + 1;
       var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
-      var compressionIndex = Math.ceil(
-        Math.log2(Math.ceil(nPoints / plotWidth))
-      );
+      var compressionIndex = this.options.dontRebin
+                               ? 0
+                               : Math.ceil( Math.log2(Math.ceil(nPoints / plotWidth)) );
 
       // calculate new scale. Update brush and selection. Update chart
       var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
@@ -2518,8 +2520,10 @@ D3TimeChart.prototype.handleBrushZoom = function () {
     var nPoints = rightIndex - leftIndex + 1;
     var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
-    var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
-
+    var compressionIndex = this.options.dontRebin
+                             ? 0
+                             : Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+    
     // set lower limit on extent size to 2 interval lengths
     var minExtentLeft = Math.max(
       brush.getCenter() -
@@ -2658,8 +2662,10 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
   var nPoints = rightDataIndex - leftDataIndex + 1;
   var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
-  var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
-
+  var compressionIndex = this.options.dontRebin
+                           ? 0
+                           : Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+  
   var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
 
   var fullDomain = {
@@ -2910,6 +2916,10 @@ D3TimeChart.prototype.setMouseInfoText = function (time, data, optargs) {
       }
       s += "<\n>";
     }
+
+    // TODO: add in gpsCoordinates to optargs or data[i] and display here
+    // TODO: make it so CPS are not scaled to number of pixels, as an option
+
   }
 
   var data = s.split("<\n>").filter(Boolean); // filter to remove empty strings
@@ -3453,6 +3463,19 @@ D3TimeChart.prototype.setGridY = function (show) {
   if (this.state.data.formatted) this.reinitializeChart();
   //add/remove vertical grid lines
 };
+
+
+/**
+ * Handles setting if you want to combine time-samples when there are more
+ * time samples than pixels on the chart.
+ * @param {*} dontRebin : boolean denoting whether or not the combine time-samples
+ */
+D3TimeChart.prototype.setDontRebin = function (dontRebin) {
+  this.options.dontRebin = dontRebin;
+  if (this.state.data.formatted) this.reinitializeChart();
+};
+
+
 
 // Unimplemented
 D3TimeChart.prototype.setXAxisZoomSamples = function (firstsample, lastsample) {

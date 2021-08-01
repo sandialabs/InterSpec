@@ -9,6 +9,7 @@
 #include <boost/optional.hpp>
 
 #include <Wt/WServer>
+#include <Wt/WCheckBox>
 #include <Wt/WPushButton>
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
@@ -69,6 +70,7 @@ class D3TimeChartFilters : public WContainerWidget
   NativeFloatSpinBox *m_lowerEnergy;
   NativeFloatSpinBox *m_upperEnergy;
   WPushButton *m_clearEnergyFilterBtn;
+  WCheckBox *m_dontRebin;
   
 public:
   D3TimeChartFilters( D3TimeChart *parent )
@@ -79,7 +81,8 @@ public:
       m_specTypeSelect( nullptr ),
       m_lowerEnergy( nullptr ),
       m_upperEnergy( nullptr ),
-      m_clearEnergyFilterBtn( nullptr )
+      m_clearEnergyFilterBtn( nullptr ),
+      m_dontRebin( nullptr )
   {
     assert( parent );
     
@@ -227,6 +230,14 @@ public:
     m_clearEnergyFilterBtn->addStyleClass( "D3TimeFilterClear" );
     m_clearEnergyFilterBtn->clicked().connect( this, &D3TimeChartFilters::clearFilterEnergiesCallback );
     m_clearEnergyFilterBtn->hide();
+    m_clearEnergyFilterBtn->setHiddenKeepsGeometry( true );
+    
+    
+    m_dontRebin = new WCheckBox( "Don't rebin", filterContents );
+    m_dontRebin->addStyleClass( "D3TimeDontRebin" );
+    m_dontRebin->setToolTip( "Disable combining time samples on the chart when there are more time samples than pixels." );
+    m_dontRebin->checked().connect( this, &D3TimeChartFilters::dontRebinChanged );
+    m_dontRebin->unChecked().connect( this, &D3TimeChartFilters::dontRebinChanged );
   }//D3TimeChartFilters
   
   
@@ -395,6 +406,13 @@ public:
     
     return answer;
   }//energyRangeFilters()
+  
+  
+  void dontRebinChanged()
+  {
+    const bool dontRebin = m_dontRebin->isChecked();
+    m_parentChart->setDontRebin( dontRebin );
+  }
 };//class D3TimeChartOptions
 
 
@@ -404,6 +422,7 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_compactXAxis( false ),
   m_showVerticalLines( false ),
   m_showHorizontalLines( false ),
+  m_dontRebin( false ),
   m_spec( nullptr ),
   m_highlights(),
   m_xAxisTitle( "Time of Measurement (seconds)"),
@@ -476,7 +495,8 @@ void D3TimeChart::defineJavaScript()
   options += ", compactXAxis: " + jsbool(m_compactXAxis);
   options += ", gridx: " + jsbool(m_showVerticalLines);
   options += ", gridy: " + jsbool(m_showHorizontalLines);
-  options += ", chartLineWidth: 1.0";  //ToDo: Let this be specified in C+
+  options += ", chartLineWidth: 1.0";  //ToDo: Let this be specified in C++
+  options += ", dontRebin: false"; 
   options += "}";
   
   setJavaScriptMember( "chart", "new D3TimeChart(" + m_chart->jsRef() + "," + options + ");");
@@ -1582,6 +1602,18 @@ bool D3TimeChart::horizontalLinesShowing() const
   return m_showHorizontalLines;
 }
 
+
+void D3TimeChart::setDontRebin( const bool dontRebin )
+{
+  m_dontRebin = dontRebin;
+  doJavaScript( m_jsgraph + ".setDontRebin(" + jsbool(dontRebin) +  ");" );
+}
+
+
+bool D3TimeChart::dontRebin() const
+{
+  return m_dontRebin;
+}
 
 void D3TimeChart::setXAxisRangeSamples( const int min_sample_num, const int max_sample_num )
 {
