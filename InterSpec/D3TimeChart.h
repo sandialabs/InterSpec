@@ -142,6 +142,9 @@ public:
   bool verticalLinesShowing() const;
   bool horizontalLinesShowing() const;
   
+  void setDontRebin( const bool dontRebin );
+  bool dontRebin() const;
+  
   void setXAxisRangeSamples( const int min_sample_num, const int max_sample_num );
   
   /** Returns the current user-entered gamma energy range that should be summed to create this gross count chart. */
@@ -241,7 +244,7 @@ protected:
   bool m_compactXAxis;
   bool m_showVerticalLines;
   bool m_showHorizontalLines;
-  
+  bool m_dontRebin;
   
   std::shared_ptr<const SpecUtils::SpecFile> m_spec;
   
