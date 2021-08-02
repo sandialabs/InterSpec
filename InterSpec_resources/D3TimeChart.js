@@ -1960,8 +1960,10 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
       for (var i = 0; i < nSamples; i++) {
         if( dontRebin ) {
           
-          if( !det.minCps || det.minCps.length < 1 ){
-            console.log( 'hmm, maybe det isnt right for i=', i, ' of ', nSamples, ' det=', det );
+          if( !det.minCps || det.minCps.length < i || !det.maxCps || det.maxCps.length < i ){
+            // TODO: I think this can be removed - left in just for debug
+            console.log( 'hmm, we seem to be missing min/max gamma CPS for i=', i, ' of ', nSamples,
+              ' det=', det, ' (bad things are about to happen)' );
           }
           
           // push line segment start
@@ -1991,6 +1993,13 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
       // data is already present for this detector, so only set gamma CPS for each data point.
       for (var i = 0; i < nSamples; i++) {
         if( dontRebin ) {
+          
+          if( !det.minCps || det.minCps.length < i || !det.maxCps || det.maxCps.length < i ){
+            // TODO: I think this can be removed - left in just for debug
+            console.log( 'hmm, we seem to be missing min/max neutron CPS for i=', i, ' of ', nSamples,
+              ' det=', det, ' (bad things are about to happen)' );
+          }
+          
           detectors[det.detName].counts[2 * i].setGammaCPS( det.minCps[i] );
           detectors[det.detName].counts[2 * i + 1].setGammaCPS( det.maxCps[i] );
         } else {
@@ -2034,6 +2043,12 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
         for (var i = 0; i < nSamples; i++) {
           
           if( dontRebin && (Number(rawData.compression) > 1) ) {
+            
+            if( !det.minCps || det.minCps.length < i || !det.maxCps || det.maxCps.length < i ){
+              // TODO: I think this can be removed - left in just for debug
+              console.log( 'Missing min/max neutron CPS for i=', i, ' of ', nSamples, ' det=', det );
+            }
+            
             detectors[det.detName].counts.push(
               new DataPoint(realTimeIntervals[i][0], null, det.minCps[i])
             );
@@ -2066,6 +2081,12 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
         // data is already present for this detector, so only set neutron CPS for each data point.
         for (var i = 0; i < nSamples; i++) {
           if( dontRebin && (Number(rawData.compression) > 1) ) {
+            
+            if( !det.minCps || det.minCps.length < i || !det.maxCps || det.maxCps.length < i ){
+              // TODO: I think this can be removed - left in just for debug
+              console.log( 'Missing min/max neutron CPS for i=', i, ' of ', nSamples, ' det=', det, ' when adding to det' );
+            }
+            
             detectors[det.detName].counts[2 * i].setNeutronCPS( det.minCps[i] );
             detectors[det.detName].counts[2 * i + 1].setNeutronCPS( det.maxCps[i] );
             
@@ -3070,6 +3091,11 @@ D3TimeChart.prototype.isOccupiedSample = function (sampleNumber, occupancies) {
  * @returns the compressed data in the same JSON format as the raw (input) data passed by Wt.
  */
 D3TimeChart.prototype.compress = function (data, n) {
+  
+  // If option is to not rebin counts, then we will still compress the time samples, but we will
+  //  also calculate min/max CPS for each compressed time interval, which is what will be plotted
+  var dontRebin = this.options.dontRebin; //TODO: could add requirement of (n > 1) too, but I didnt test
+  
   // Create output array template
   var out = {
     gammaCounts: [],
@@ -3178,9 +3204,11 @@ D3TimeChart.prototype.compress = function (data, n) {
             )
           ) {
             detectorsAccumulator[detector.detName].gammaCounts = [];
-            // TODO: we only need to calc min/max gammas and neutrons if compression is greater than 1, and this.options.dontRebin is true
-            detectorsAccumulator[detector.detName].minGammaCps = [];
-            detectorsAccumulator[detector.detName].maxGammaCps = [];
+            
+            if( dontRebin ){
+              detectorsAccumulator[detector.detName].minGammaCps = [];
+              detectorsAccumulator[detector.detName].maxGammaCps = [];
+            }
           } // if (!detectorsAccumulator[detector.detName].hasOwnProperty("gammaCounts"))
           
           if (
@@ -3222,23 +3250,24 @@ D3TimeChart.prototype.compress = function (data, n) {
             detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] += detector.liveTimes[i + j];
           }// (detector.hasOwnProperty("liveTimes"))
           
-          var cps = detector.counts[i + j] / dt;
-          if ( detectorsAccumulator[detector.detName].minGammaCps[outIdx] == null ) {
-            detectorsAccumulator[detector.detName].minGammaCps[outIdx] = cps;
-          } else {
-            detectorsAccumulator[detector.detName].minGammaCps[outIdx] = Math.min(
+          if( dontRebin ) {
+            var cps = detector.counts[i + j] / dt;
+            if ( detectorsAccumulator[detector.detName].minGammaCps[outIdx] == null ) {
+              detectorsAccumulator[detector.detName].minGammaCps[outIdx] = cps;
+            } else {
+              detectorsAccumulator[detector.detName].minGammaCps[outIdx] = Math.min(
               cps, detectorsAccumulator[detector.detName].minGammaCps[outIdx]
-            );
-          }
-          
-          if ( detectorsAccumulator[detector.detName].maxGammaCps[outIdx] == null ) {
-            detectorsAccumulator[detector.detName].maxGammaCps[outIdx] = cps;
-          } else {
-            detectorsAccumulator[detector.detName].maxGammaCps[outIdx] = Math.max(
+              );
+            }
+            
+            if ( detectorsAccumulator[detector.detName].maxGammaCps[outIdx] == null ) {
+              detectorsAccumulator[detector.detName].maxGammaCps[outIdx] = cps;
+            } else {
+              detectorsAccumulator[detector.detName].maxGammaCps[outIdx] = Math.max(
               cps, detectorsAccumulator[detector.detName].maxGammaCps[outIdx]
-            );
-          }
-          
+              );
+            }
+          }// if ( dontRebin )
         });
 
         // do same with neutronCounts
@@ -3257,8 +3286,11 @@ D3TimeChart.prototype.compress = function (data, n) {
               )
             ) {
               detectorsAccumulator[detector.detName].neutronCounts = [];
-              detectorsAccumulator[detector.detName].minNeutronCps = [];
-              detectorsAccumulator[detector.detName].maxNeutronCps = [];
+              
+              if( dontRebin ){
+                detectorsAccumulator[detector.detName].minNeutronCps = [];
+                detectorsAccumulator[detector.detName].maxNeutronCps = [];
+              }
             }
 
             if (
@@ -3309,23 +3341,25 @@ D3TimeChart.prototype.compress = function (data, n) {
                 detector.liveTimes[i + j];
             }
             
-            var cps = detector.counts[i + j] / dt;
-            if ( detectorsAccumulator[detector.detName].minNeutronCps[outIdx] == null ) {
-              detectorsAccumulator[detector.detName].minNeutronCps[outIdx] = cps;
-            } else {
-              detectorsAccumulator[detector.detName].minNeutronCps[outIdx] = Math.min(
+            if( dontRebin ){
+              var cps = detector.counts[i + j] / dt;
+              if ( detectorsAccumulator[detector.detName].minNeutronCps[outIdx] == null ) {
+                detectorsAccumulator[detector.detName].minNeutronCps[outIdx] = cps;
+              } else {
+                detectorsAccumulator[detector.detName].minNeutronCps[outIdx] = Math.min(
                 cps, detectorsAccumulator[detector.detName].minNeutronCps[outIdx]
-              );
-            }
-            
-            if ( detectorsAccumulator[detector.detName].maxNeutronCps[outIdx] == null ) {
-              detectorsAccumulator[detector.detName].maxNeutronCps[outIdx] = cps;
-            } else {
-              detectorsAccumulator[detector.detName].maxNeutronCps[outIdx] = Math.max(
+                );
+              }
+              
+              if ( detectorsAccumulator[detector.detName].maxNeutronCps[outIdx] == null ) {
+                detectorsAccumulator[detector.detName].maxNeutronCps[outIdx] = cps;
+              } else {
+                detectorsAccumulator[detector.detName].maxNeutronCps[outIdx] = Math.max(
                 cps, detectorsAccumulator[detector.detName].maxNeutronCps[outIdx]
-              );
-            }
-          });
+                );
+              }
+            } // if ( dontRebin )
+          }); // data.neutronCounts.forEach( ... )
         } // if (data.hasOwnProperty("neutronCounts"))
 
         // add to sampleNumbers. For ES5 compatibility, using object to mimic behavior of a set:
@@ -3357,10 +3391,14 @@ D3TimeChart.prototype.compress = function (data, n) {
     var gammaCount = {
       detName: detName,
       color: detectorsAccumulator[detName].gammaColor,
-      counts: detectorsAccumulator[detName].gammaCounts,
-      minCps: detectorsAccumulator[detName].minGammaCps,
-      maxCps: detectorsAccumulator[detName].maxGammaCps,
+      counts: detectorsAccumulator[detName].gammaCounts
     };
+    
+    if ( dontRebin ) {
+      gammaCount.minCps = detectorsAccumulator[detName].minGammaCps;
+      gammaCount.maxCps = detectorsAccumulator[detName].maxGammaCps;
+    }
+    
     // optional fields:
     if (detectorsAccumulator[detName].hasOwnProperty("gammaLiveTimes")) {
       gammaCount.liveTimes = detectorsAccumulator[detName].gammaLiveTimes;
@@ -3373,11 +3411,14 @@ D3TimeChart.prototype.compress = function (data, n) {
       var neutronCount = {
         detName: detName,
         color: detectorsAccumulator[detName].neutronColor,
-        counts: detectorsAccumulator[detName].neutronCounts,
-        minCps: detectorsAccumulator[detName].minNeutronCps,
-        maxCps: detectorsAccumulator[detName].maxNeutronCps,
+        counts: detectorsAccumulator[detName].neutronCounts
       };
 
+      if ( dontRebin ) {
+        neutronCount.minCps = detectorsAccumulator[detName].minNeutronCps;
+        neutronCount.maxCps = detectorsAccumulator[detName].maxNeutronCps;
+      }
+      
       if (detectorsAccumulator[detName].hasOwnProperty("neutronLiveTimes")) {
         neutronCount.liveTimes = detectorsAccumulator[detName].neutronLiveTimes;
       }
