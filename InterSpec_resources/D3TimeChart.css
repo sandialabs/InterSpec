@@ -98,11 +98,16 @@
   cursor: pointer;
 }
 
+.ShowD3TimeChartFilters.HasNeutrons {
+  right: 60px;
+}
+
 .D3TimeChartFilters .closeicon-wtdefault {
   position: absolute;
   right: 5px;
   margin-top: 5px;
 }
+
 
 .D3TimeChartFilters > div > .Wt-stack {
   height: 100%;
@@ -129,12 +134,12 @@
 }
 
 .D3TimeFilterClear {
-  margin-top: 5px;
+  margin-top: 2px;
   margin-left: auto;
   margin-right: auto;
 }
 
-.D3TimeDontRebin {
+.D3TimeDontRebin, .D3TimeHideNuetrons {
   margin-top: 5px;
 }
 

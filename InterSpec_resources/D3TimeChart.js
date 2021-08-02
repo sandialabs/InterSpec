@@ -214,9 +214,18 @@ D3TimeChart = function (elem, options) {
   if (typeof this.options.gridy !== "boolean") this.options.gridy = false;
   if (typeof this.options.chartLineWidth !== "number")
     this.options.chartLineWidth = 1;
+    
+  /* The dontRebin option makes it so when there are more time samples than pixels, instead of
+   averaging multiple time samples together, instead the min and max counts from that interval are
+   plotted (min on left of each time sample, max on right).
+   */
   if (typeof this.options.dontRebin !== "boolean")
     this.options.dontRebin = false;
 
+  /* If neutronsHidden is true, then neutrons wont be plotted. */
+  if (typeof this.options.neutronsHidden !== "boolean")
+    this.options.neutronsHidden = false;
+  
   // minimum selection width option. Currently only applies to "zoom" selection. Default value copied from D3SpectrumChart
   if (typeof this.options.minSelectionWidth !== "number")
     this.options.minSelectionWidth = 8;
@@ -1082,7 +1091,7 @@ D3TimeChart.prototype.updateChart = function (
         .attr("d", lineGamma);
     } // if (!pathGamma.empty())
 
-    if (meta.isNeutronDetector) {
+    if (meta.isNeutronDetector ) {
       HAS_NEUTRON = true;
 
       var lineNeutron = d3.svg
@@ -1098,8 +1107,12 @@ D3TimeChart.prototype.updateChart = function (
 
       // if already drawn, just update
       if (!pathNeutron.empty()) {
-        pathNeutron.datum(counts).attr("d", lineNeutron);
-      } else {
+        if( this.options.neutronsHidden ) {
+          pathNeutron.remove();
+        } else {
+          pathNeutron.datum(counts).attr("d", lineNeutron);
+        }
+      } else if( !this.options.neutronsHidden ) {
         this.linesG
           .append("path")
           .attr("class", "line det_" + detName + "_n")
@@ -1564,7 +1577,7 @@ D3TimeChart.prototype.updateChart = function (
     // format minor axis labels:
   } // if (HAS_GAMMA)
 
-  if (HAS_NEUTRON) {
+  if (HAS_NEUTRON && !this.options.neutronsHidden ) {
     var yAxisRight = d3.svg
       .axis()
       .scale(yScaleNeutron)
@@ -1642,7 +1655,8 @@ D3TimeChart.prototype.updateChart = function (
             ") rotate(90)"
         )
         .style("text-anchor", "middle")
-        .text(axisLabelY2Text);
+        .text(axisLabelY2Text)
+        .attr("font-size", "0.9em");
     } // if (!axisLabelY2.empty())
   } else {
     this.axisRightG.selectAll("*").remove();
@@ -2078,7 +2092,7 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
     }); // rawData.neutronCounts.forEach
   } // if (rawData.hasOwnProperty("neutronCounts"))
 
-  if (!HAS_NEUTRON) {
+  if (!HAS_NEUTRON || this.options.neutronsHidden) {
     // set margin
     this.margin.right = 10;
   } else {
@@ -3583,6 +3597,18 @@ D3TimeChart.prototype.setDontRebin = function (dontRebin) {
   if( this.state.data.raw )
     this.setData( this.state.data.raw );
 };
+
+
+D3TimeChart.prototype.setNeutronsHidden = function (hide) {
+  hide = !!hide;  // make sure its a boolean
+  if( this.options.neutronsHidden === hide )  //dont waste time if we dont need to
+    return;
+  
+  this.options.neutronsHidden = hide;
+  if( this.state.data.raw )
+    this.setData( this.state.data.raw );
+};
+
 
 
 
