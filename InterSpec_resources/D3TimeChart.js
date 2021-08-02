@@ -530,7 +530,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
 
   // impose lower plotWidth limit on compression calculations
   if (plotWidth > 10) {
-    var compressionIndex = this.options.dontRebin ? 0 : Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+    var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
     if (plotWidth < nPoints) {
       for (var i = 1; i <= compressionIndex; i++) {
         // only compress if data doesn't already exist before
@@ -543,7 +543,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
       }
     } // if (plotWidth < nPoints)
     
-    this.state.data.unzoomedCompressionIndex = this.options.dontRebin ? 0 : compressionIndex;
+    this.state.data.unzoomedCompressionIndex = compressionIndex;
   }
   // console.log(this.state.data.formatted)
 
@@ -599,9 +599,7 @@ D3TimeChart.prototype.reinitializeChart = function (options) {
     var rightIndex = this.findDataIndex(this.state.selection.domain[1], 0);
     var nPointsSelection = rightIndex - leftIndex + 1;
 
-    this.state.selection.compressionIndex = this.options.dontRebin
-                                  ? 0
-                                  : Math.ceil( Math.log2(Math.ceil(nPointsSelection / plotWidth)));
+    this.state.selection.compressionIndex = Math.ceil( Math.log2(Math.ceil(nPointsSelection / plotWidth)));
   }
 
   // get scales to use
@@ -973,6 +971,7 @@ D3TimeChart.prototype.updateChart = function (
   compressionIndex,
   options
 ) {
+  var dontRebin = (this.options.dontRebin && (Number(compressionIndex) > 0));
   var xScale = scales.xScale;
   var yScaleGamma = scales.yScaleGamma;
   var yScaleNeutron = scales.yScaleNeutron;
@@ -994,35 +993,50 @@ D3TimeChart.prototype.updateChart = function (
       var x = xScale.invert(d3.mouse(this.rect.node())[0]);
 
       var idx = this.findDataIndex(x, compressionIndex);
+      var formatted = this.state.data.formatted[compressionIndex];
+      
+      var startTimeStamp = formatted.startTimeStamps ? formatted.startTimeStamps[idx] : null;
+        
+      var sourceType = formatted.sourceTypes ? formatted.sourceTypes[idx] : null;
 
-      var startTimeStamp = this.state.data.formatted[compressionIndex]
-        .startTimeStamps
-        ? this.state.data.formatted[compressionIndex].startTimeStamps[idx]
-        : null;
+      var sampleNumber = formatted.sampleNumbers[idx];
 
-      var sourceType = this.state.data.formatted[compressionIndex].sourceTypes
-        ? this.state.data.formatted[compressionIndex].sourceTypes[idx]
-        : null;
-
-      var sampleNumber =
-        this.state.data.formatted[compressionIndex].sampleNumbers[idx];
-
+      var gps = formatted.gpsCoordinates ? formatted.gpsCoordinates[idx] : null;
+        
       var tooltipData = [];
-      for (var detName in this.state.data.formatted[compressionIndex]
-        .detectors) {
-        var y =
-          this.state.data.formatted[compressionIndex].detectors[detName].counts[
-            idx * 2
-          ];
-
-        tooltipData.push({
+      var detectors = this.state.data.formatted[compressionIndex].detectors;
+      for (var detName in detectors) {
+        var counts = detectors[detName].counts;
+        if( !counts || counts.length < (idx * 2) ) {
+          continue;
+        }
+        
+        var y = counts[idx * 2];
+        
+        var d = {
           detName: detName,
-          gammaCPS: y.gammaCPS,
-          neutronCPS: y.neutronCPS,
+          gammaCPS: [y.gammaCPS],
+          neutronCPS: [y.neutronCPS],
           startTimeStamp: startTimeStamp,
           sourceType: sourceType,
           sampleNumber: sampleNumber,
-        });
+        };
+        
+        if( dontRebin && ((idx*2 + 1) < counts.length) ) {
+          if( idx === 0 || (counts[idx * 2 + 1] >= y.gammaCPS) ) {
+            d.gammaCPS.push( counts[idx * 2 + 1].gammaCPS );
+            d.neutronCPS.push( counts[idx * 2 + 1].neutronCPS );
+          } else {
+            d.gammaCPS.push( counts[idx * 2 - 1].gammaCPS );
+            d.neutronCPS.push( counts[idx * 2 - 1].neutronCPS );
+          }
+        }
+        
+        if( gps ) {
+          d.gps = gps;
+        }
+        
+        tooltipData.push( d );
       }
       var optargs = { sourceType: sourceType, startTimeStamp: startTimeStamp };
       this.updateToolTip(x, tooltipData, optargs);
@@ -1508,7 +1522,7 @@ D3TimeChart.prototype.updateChart = function (
     var axisLabelY1 = this.svg.select("#th_label_y1");
 
     var axisLabelY1Text =
-      compressionIndex == 0
+      ((compressionIndex == 0) || this.options.dontRebin)
         ? this.options.y1title
         : this.options.y1title +
           " per " +
@@ -1587,7 +1601,7 @@ D3TimeChart.prototype.updateChart = function (
 
     var axisLabelY2 = this.svg.select("#th_label_y2");
     var axisLabelY2Text =
-      compressionIndex == 0
+      ((compressionIndex == 0) || this.options.dontRebin)
         ? this.options.y2title
         : this.options.y2title +
           " per " +
@@ -1867,6 +1881,7 @@ D3TimeChart.prototype.isValidRawData = function (rawData) {
 D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
   var nSamples = rawData.sampleNumbers.length;
   var detectors = {};
+  var dontRebin = (this.options.dontRebin && (Number(rawData.compression) > 1));
 
   // get array of realTimes for intervals
   var realTimeIntervals = this.getRealTimeIntervals(
@@ -1929,30 +1944,48 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
       detectors[det.detName].counts = [];
 
       for (var i = 0; i < nSamples; i++) {
-        // use livetimes for cps if available; realtimes otherwise
-        var cps = det.liveTimes
-          ? det.counts[i] / det.liveTimes[i]
-          : det.counts[i] / data.realTimes[i];
+        if( dontRebin ) {
+          
+          if( !det.minCps || det.minCps.length < 1 ){
+            console.log( 'hmm, maybe det isnt right for i=', i, ' of ', nSamples, ' det=', det );
+          }
+          
+          // push line segment start
+          detectors[det.detName].counts.push(
+            new DataPoint(realTimeIntervals[i][0], det.minCps[i], null)
+          );
+          // push line segment end
+          detectors[det.detName].counts.push(
+            new DataPoint(realTimeIntervals[i][1], det.maxCps[i], null)
+          );
+        } else {
+          // use livetimes for cps if available; realtimes otherwise
+          var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
+          var cps = det.counts[i] / dt;
 
-        // push line segment start
-        detectors[det.detName].counts.push(
-          new DataPoint(realTimeIntervals[i][0], cps, null)
-        );
-        // push line segment end
-        detectors[det.detName].counts.push(
-          new DataPoint(realTimeIntervals[i][1], cps, null)
-        );
+          // push line segment start
+          detectors[det.detName].counts.push(
+            new DataPoint(realTimeIntervals[i][0], cps, null)
+          );
+          // push line segment end
+          detectors[det.detName].counts.push(
+            new DataPoint(realTimeIntervals[i][1], cps, null)
+          );
+        }
       }
     } else {
       // data is already present for this detector, so only set gamma CPS for each data point.
       for (var i = 0; i < nSamples; i++) {
-        // use livetimes for cps if available; realtimes otherwise
-        var cps = det.liveTimes
-          ? det.counts[i] / det.liveTimes[i]
-          : det.counts[i] / data.realTimes[i];
-        detectors[det.detName].counts[2 * i].setGammaCPS(cps);
-        detectors[det.detName].counts[2 * i + 1].setGammaCPS(cps);
-
+        if( dontRebin ) {
+          detectors[det.detName].counts[2 * i].setGammaCPS( det.minCps[i] );
+          detectors[det.detName].counts[2 * i + 1].setGammaCPS( det.maxCps[i] );
+        } else {
+          // use livetimes for cps if available; realtimes otherwise
+          var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
+          var cps = det.counts[i] / dt;
+          detectors[det.detName].counts[2 * i].setGammaCPS(cps);
+          detectors[det.detName].counts[2 * i + 1].setGammaCPS(cps);
+        }
         // if cps > 0 ever, then is a gamma
         if (!detectors[det.detName].meta.isGammaDetector && cps > 0) {
           detectors[det.detName].meta.isGammaDetector = true;
@@ -1985,18 +2018,30 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
         detectors[det.detName].counts = [];
 
         for (var i = 0; i < nSamples; i++) {
-          // use livetimes for cps if available; realtimes otherwise
-          var cps = det.liveTimes
-            ? det.counts[i] / det.liveTimes[i]
-            : det.counts[i] / data.realTimes[i];
-
-          //push line segment start
-          detectors[det.detName].counts.push(
-            new DataPoint(realTimeIntervals[i][0], null, cps)
-          );
-          detectors[det.detName].counts.push(
-            new DataPoint(realTimeIntervals[i][1], null, cps)
-          );
+          
+          if( dontRebin && (Number(rawData.compression) > 1) ) {
+            detectors[det.detName].counts.push(
+              new DataPoint(realTimeIntervals[i][0], null, det.minCps[i])
+            );
+            //push line segment end
+            detectors[det.detName].counts.push(
+              new DataPoint(realTimeIntervals[i][1], null, det.maxCps[i])
+            );
+          } else {
+            // use livetimes for cps if available; realtimes otherwise
+            var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
+            
+            var cps = det.counts[i] / dt;
+            
+            //push line segment start
+            detectors[det.detName].counts.push(
+              new DataPoint(realTimeIntervals[i][0], null, cps)
+            );
+            //push line segment end
+            detectors[det.detName].counts.push(
+              new DataPoint(realTimeIntervals[i][1], null, cps)
+            );
+          }
 
           if (!detectors[det.detName].meta.isNeutronDetector && cps > 0) {
             detectors[det.detName].meta.isNeutronDetector = true;
@@ -2006,19 +2051,29 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
       } else {
         // data is already present for this detector, so only set neutron CPS for each data point.
         for (var i = 0; i < nSamples; i++) {
-          // use livetimes for cps if available; realtimes otherwise
-          var cps = det.liveTimes
-            ? det.counts[i] / det.liveTimes[i]
-            : det.counts[i] / data.realTimes[i];
-          detectors[det.detName].counts[2 * i].setNeutronCPS(cps);
-          detectors[det.detName].counts[2 * i + 1].setNeutronCPS(cps);
-
-          // if cps > 0 ever, then is a neutrondetector
-          if (!detectors[det.detName].meta.isNeutronDetector && cps > 0) {
-            detectors[det.detName].meta.isNeutronDetector = true;
-            HAS_NEUTRON = true;
-          }
-        }
+          if( dontRebin && (Number(rawData.compression) > 1) ) {
+            detectors[det.detName].counts[2 * i].setNeutronCPS( det.minCps[i] );
+            detectors[det.detName].counts[2 * i + 1].setNeutronCPS( det.maxCps[i] );
+            
+            // if cps > 0 ever, then is a neutrondetector
+            if (!detectors[det.detName].meta.isNeutronDetector && det.maxCps[i] > 0) {
+              detectors[det.detName].meta.isNeutronDetector = true;
+              HAS_NEUTRON = true;
+            }
+          } else {
+            // use livetimes for cps if available; realtimes otherwise
+            var dt = det.liveTimes ? det.liveTimes[i] : data.realTimes[i];
+            var cps = det.counts[i] / dt;
+            detectors[det.detName].counts[2 * i].setNeutronCPS(cps);
+            detectors[det.detName].counts[2 * i + 1].setNeutronCPS(cps);
+            
+            // if cps > 0 ever, then is a neutrondetector
+            if (!detectors[det.detName].meta.isNeutronDetector && cps > 0) {
+              detectors[det.detName].meta.isNeutronDetector = true;
+              HAS_NEUTRON = true;
+            }
+          } // if( dontRebin && (Number(rawData.compression) > 1) ) / else
+        } // for (var i = 0; i < nSamples; i++)
       } // if (!detectors[det.detName].hasOwnProperty("counts"))
     }); // rawData.neutronCounts.forEach
   } // if (rawData.hasOwnProperty("neutronCounts"))
@@ -2049,11 +2104,13 @@ D3TimeChart.prototype.formatDataFromRaw = function (rawData) {
  * @param {Object} rawData: data in same format as the raw data sent from Wt
  */
 D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
+  var dontRebin = (this.options.dontRebin && (Number(rawData.compression) > 1));
+  
   var realTimeIntervals = this.getRealTimeIntervals(
     rawData.realTimes,
     rawData.sourceTypes
   );
-
+  
   var xMin = d3.min(realTimeIntervals, function (d) {
     return d[0];
   });
@@ -2069,13 +2126,9 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
 
   for (var i = 0; i < rawData.gammaCounts.length; i++) {
     for (var j = 0; j < nSamples; j++) {
-      var cps = rawData.gammaCounts[i].liveTimes
-        ? rawData.gammaCounts[i].counts[j] / rawData.gammaCounts[i].liveTimes[j]
-        : rawData.gammaCounts[i].counts[j] / rawData.realTimes[j];
-
-      if (cps > yMaxGamma) {
-        yMaxGamma = cps;
-      }
+      var dt = rawData.gammaCounts[i].liveTimes ? rawData.gammaCounts[i].liveTimes[j] : rawData.realTimes[j];
+      var cps = dontRebin ? rawData.gammaCounts[i].maxCps[j] : (rawData.gammaCounts[i].counts[j] / dt);
+      yMaxGamma = Math.max(yMaxGamma, cps );
     }
   }
 
@@ -2083,14 +2136,9 @@ D3TimeChart.prototype.getDomainsFromRaw = function (rawData) {
   if (rawData.hasOwnProperty("neutronCounts")) {
     for (var i = 0; i < rawData.neutronCounts.length; i++) {
       for (var j = 0; j < nSamples; j++) {
-        var cps = rawData.neutronCounts[i].liveTimes
-          ? rawData.neutronCounts[i].counts[j] /
-            rawData.neutronCounts[i].liveTimes[j]
-          : rawData.neutronCounts[i].counts[j] / rawData.realTimes[j];
-
-        if (cps > yMaxNeutron) {
-          yMaxNeutron = cps;
-        }
+        var dt = rawData.neutronCounts[i].liveTimes ? rawData.neutronCounts[i].liveTimes[j] : rawData.realTimes[j];
+        var cps = dontRebin ? rawData.neutronCounts[i].maxCps[j] : (rawData.neutronCounts[i].counts[j] / dt);
+        yMaxNeutron = Math.max( yMaxNeutron, cps );
       }
     }
   }
@@ -2379,7 +2427,7 @@ D3TimeChart.prototype.handleMouseWheel = function (deltaX, deltaY, mouseX) {
   var nPoints = rightIndex - leftIndex + 1;
   var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
-  var compressionIndex = this.options.dontRebin ? 0 : Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+  var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
 
   if (
     this.state.data.formatted[this.state.data.unzoomedCompressionIndex].domains
@@ -2481,9 +2529,7 @@ D3TimeChart.prototype.handleBrushZoom = function () {
       var nPoints = rightIndex - leftIndex + 1;
       var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
-      var compressionIndex = this.options.dontRebin
-                               ? 0
-                               : Math.ceil( Math.log2(Math.ceil(nPoints / plotWidth)) );
+      var compressionIndex = Math.ceil( Math.log2(Math.ceil(nPoints / plotWidth)) );
 
       // calculate new scale. Update brush and selection. Update chart
       var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
@@ -2520,9 +2566,7 @@ D3TimeChart.prototype.handleBrushZoom = function () {
     var nPoints = rightIndex - leftIndex + 1;
     var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
-    var compressionIndex = this.options.dontRebin
-                             ? 0
-                             : Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+    var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
     
     // set lower limit on extent size to 2 interval lengths
     var minExtentLeft = Math.max(
@@ -2662,9 +2706,7 @@ D3TimeChart.prototype.handleDragBackZoom = function () {
   var nPoints = rightDataIndex - leftDataIndex + 1;
   var plotWidth = this.state.width - this.margin.left - this.margin.right;
 
-  var compressionIndex = this.options.dontRebin
-                           ? 0
-                           : Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
+  var compressionIndex = Math.ceil(Math.log2(Math.ceil(nPoints / plotWidth)));
   
   var yDomains = this.getYDomainsInRange(newExtent, compressionIndex);
 
@@ -2900,26 +2942,35 @@ D3TimeChart.prototype.setMouseInfoText = function (time, data, optargs) {
     }
     s += "<\n>";
 
-    s += "G CPS: " + data[i].gammaCPS.toPrecision(6);
+    s += "G CPS: " + data[i].gammaCPS[0].toPrecision(6);
+    
+    if( data[i].gammaCPS.length > 1 ) {
+      s += " - " + data[i].gammaCPS[1].toPrecision(6);
+    }
 
     if (data[i].detName.length > 0) {
       s += " (" + data[i].detName + ")";
     }
     s += "<\n>";
 
-    if (data[i].neutronCPS != null) {
+    if (data[i].neutronCPS[0] != null) {
       // cps of 0 is still valid to display
-      s += "N CPS: " + data[i].neutronCPS.toPrecision(3);
+      s += "N CPS: " + data[i].neutronCPS[0].toPrecision(3);
+      
+      if (data[i].neutronCPS.length > 1) {
+        s += " - " + data[i].neutronCPS[1].toPrecision(3);
+      }
 
       if (data[i].detName.length > 0) {
         s += " (" + data[i].detName + ")";
       }
       s += "<\n>";
     }
-
-    // TODO: add in gpsCoordinates to optargs or data[i] and display here
-    // TODO: make it so CPS are not scaled to number of pixels, as an option
-
+    
+    if (data[i].gps) {
+      // It would be nice to include a link to show on a map, but I dont think we can do that in SVG...
+      s += "GPS: " + data[i].gps[0].toPrecision(7) + ", " + data[i].gps[1].toPrecision(7) + "<\n>";
+    }
   }
 
   var data = s.split("<\n>").filter(Boolean); // filter to remove empty strings
@@ -3010,6 +3061,7 @@ D3TimeChart.prototype.compress = function (data, n) {
     gammaCounts: [],
     realTimes: [],
     sampleNumbers: [],
+    compression: n
   };
 
   // init flags
@@ -3112,8 +3164,11 @@ D3TimeChart.prototype.compress = function (data, n) {
             )
           ) {
             detectorsAccumulator[detector.detName].gammaCounts = [];
+            // TODO: we only need to calc min/max gammas and neutrons if compression is greater than 1, and this.options.dontRebin is true
+            detectorsAccumulator[detector.detName].minGammaCps = [];
+            detectorsAccumulator[detector.detName].maxGammaCps = [];
           } // if (!detectorsAccumulator[detector.detName].hasOwnProperty("gammaCounts"))
-
+          
           if (
             !detectorsAccumulator[detector.detName].hasOwnProperty("gammaColor")
           ) {
@@ -3137,18 +3192,39 @@ D3TimeChart.prototype.compress = function (data, n) {
           } // if (detectorsAccumulator[detector.detName].gammaCounts[outIdx] == null)
           detectorsAccumulator[detector.detName].gammaCounts[outIdx] +=
             detector.counts[i + j];
-
+          
+          // We want to get the live/real time time of interval i+j so we can calc append max/min
+          //  cps.  We'll start of with realtime, but if livetime is available, we'll use that
+          var dt = data.realTimes[i + j];
+          
           // if have liveTimes, it will also begin accumulating, so add to it the i + jth livetime.
           if (detector.hasOwnProperty("liveTimes")) {
-            if (
-              detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] ==
-              null
-            ) {
+            dt = detector.liveTimes[i + j];
+            
+            if ( detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] == null ) {
               detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] = 0;
             } // if (detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] == null)
-            detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] +=
-              detector.liveTimes[i + j];
-          } // (detector.hasOwnProperty("liveTimes"))
+            
+            detectorsAccumulator[detector.detName].gammaLiveTimes[outIdx] += detector.liveTimes[i + j];
+          }// (detector.hasOwnProperty("liveTimes"))
+          
+          var cps = detector.counts[i + j] / dt;
+          if ( detectorsAccumulator[detector.detName].minGammaCps[outIdx] == null ) {
+            detectorsAccumulator[detector.detName].minGammaCps[outIdx] = cps;
+          } else {
+            detectorsAccumulator[detector.detName].minGammaCps[outIdx] = Math.min(
+              cps, detectorsAccumulator[detector.detName].minGammaCps[outIdx]
+            );
+          }
+          
+          if ( detectorsAccumulator[detector.detName].maxGammaCps[outIdx] == null ) {
+            detectorsAccumulator[detector.detName].maxGammaCps[outIdx] = cps;
+          } else {
+            detectorsAccumulator[detector.detName].maxGammaCps[outIdx] = Math.max(
+              cps, detectorsAccumulator[detector.detName].maxGammaCps[outIdx]
+            );
+          }
+          
         });
 
         // do same with neutronCounts
@@ -3167,6 +3243,8 @@ D3TimeChart.prototype.compress = function (data, n) {
               )
             ) {
               detectorsAccumulator[detector.detName].neutronCounts = [];
+              detectorsAccumulator[detector.detName].minNeutronCps = [];
+              detectorsAccumulator[detector.detName].maxNeutronCps = [];
             }
 
             if (
@@ -3197,8 +3275,13 @@ D3TimeChart.prototype.compress = function (data, n) {
             detectorsAccumulator[detector.detName].neutronCounts[outIdx] +=
               detector.counts[i + j];
 
+            // We want to get the live/real time time of interval i+j so we can calc append max/min
+            //  cps.  We'll start of with realtime, but if livetime is available, we'll use that
+            var dt = data.realTimes[i + j];
+              
             // if have liveTimes, it will also begin accumulating, so add to it the i + jth livetime.
             if (detector.hasOwnProperty("liveTimes")) {
+              dt = detector.liveTimes[i + j];
               if (
                 detectorsAccumulator[detector.detName].neutronLiveTimes[
                   outIdx
@@ -3210,6 +3293,23 @@ D3TimeChart.prototype.compress = function (data, n) {
               }
               detectorsAccumulator[detector.detName].neutronLiveTimes[outIdx] +=
                 detector.liveTimes[i + j];
+            }
+            
+            var cps = detector.counts[i + j] / dt;
+            if ( detectorsAccumulator[detector.detName].minNeutronCps[outIdx] == null ) {
+              detectorsAccumulator[detector.detName].minNeutronCps[outIdx] = cps;
+            } else {
+              detectorsAccumulator[detector.detName].minNeutronCps[outIdx] = Math.min(
+                cps, detectorsAccumulator[detector.detName].minNeutronCps[outIdx]
+              );
+            }
+            
+            if ( detectorsAccumulator[detector.detName].maxNeutronCps[outIdx] == null ) {
+              detectorsAccumulator[detector.detName].maxNeutronCps[outIdx] = cps;
+            } else {
+              detectorsAccumulator[detector.detName].maxNeutronCps[outIdx] = Math.max(
+                cps, detectorsAccumulator[detector.detName].maxNeutronCps[outIdx]
+              );
             }
           });
         } // if (data.hasOwnProperty("neutronCounts"))
@@ -3244,6 +3344,8 @@ D3TimeChart.prototype.compress = function (data, n) {
       detName: detName,
       color: detectorsAccumulator[detName].gammaColor,
       counts: detectorsAccumulator[detName].gammaCounts,
+      minCps: detectorsAccumulator[detName].minGammaCps,
+      maxCps: detectorsAccumulator[detName].maxGammaCps,
     };
     // optional fields:
     if (detectorsAccumulator[detName].hasOwnProperty("gammaLiveTimes")) {
@@ -3258,6 +3360,8 @@ D3TimeChart.prototype.compress = function (data, n) {
         detName: detName,
         color: detectorsAccumulator[detName].neutronColor,
         counts: detectorsAccumulator[detName].neutronCounts,
+        minCps: detectorsAccumulator[detName].minNeutronCps,
+        maxCps: detectorsAccumulator[detName].maxNeutronCps,
       };
 
       if (detectorsAccumulator[detName].hasOwnProperty("neutronLiveTimes")) {
@@ -3471,8 +3575,13 @@ D3TimeChart.prototype.setGridY = function (show) {
  * @param {*} dontRebin : boolean denoting whether or not the combine time-samples
  */
 D3TimeChart.prototype.setDontRebin = function (dontRebin) {
+  dontRebin = !!dontRebin;  // make sure its a boolean
+  if( this.options.dontRebin === dontRebin )  //dont waste time if we dont need to
+    return;
+  
   this.options.dontRebin = dontRebin;
-  if (this.state.data.formatted) this.reinitializeChart();
+  if( this.state.data.raw )
+    this.setData( this.state.data.raw );
 };
 
 
