@@ -1481,6 +1481,15 @@ void GadrasDirectory::initDetectors()
       m_detectorSelect->enable();
     }
     
+    std::sort( begin(m_responses), end(m_responses),
+               []( const shared_ptr<DetectorPeakResponse> &lhs,
+                   const shared_ptr<DetectorPeakResponse> &rhs ) -> bool {
+     if( !lhs || !rhs )
+       return false;
+      return lhs->name() < rhs->name();
+    } );
+    
+    
     for( const auto drf : m_responses )
       m_detectorSelect->addItem( drf->name() );
     m_detectorSelect->setCurrentIndex( 0 );
