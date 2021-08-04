@@ -2313,7 +2313,7 @@ D3TimeChart.prototype.getMeanIntervalTime = function (realTimes, sourceTypes) {
   var n = 0;
   var acc = 0;
   for (var i = 0; i < realTimes.length; i++) {
-    if (sourceTypes[i] == 3) {
+    if (!sourceTypes || (sourceTypes[i] == 3)) {
       acc += realTimes[i];
       n += 1;
     }
