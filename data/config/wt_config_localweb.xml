@@ -514,6 +514,18 @@
 	  <meta name="robots" content="noindex" />
 	</meta-headers>
 
+    <!-- 
+	Wt 3.3.4 only supports <meta> entries in meta-headers, so the <link ... > wont make it to the app.  
+	Newer versions of Wt support putting preload links into its <head-matter> tag,
+
+	<head-matter user-agent=".*">
+	  <meta name="keywords" content="InterSpec,SpecUtils,..." />
+	  <meta name="description" content="Peak based analysis...." />
+      <link rel="preload" href="/InterSpec_resources/InterSpec.css" as="style" />
+	  ....
+    </head-matter>
+	-->
+
 	<!-- Runtime Properties
 
            These properties may be used to adapt applications to their

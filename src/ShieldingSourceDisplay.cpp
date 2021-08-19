@@ -101,6 +101,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "SandiaDecay/SandiaDecay.h"
+#include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -4498,7 +4499,10 @@ if (m_specViewer->isSupportFile())
   
   lineDiv = new WContainerWidget(  );
   optionsLayout->addWidget( lineDiv, 4, 0 );
-  m_showChiOnChart = new WCheckBox( "Show Chi Graphic", lineDiv );
+  
+  m_showChiOnChart = new SwitchCheckbox( "Rel.", "&chi;", lineDiv );
+  //m_showChiOnChart->setAttributeValue( "style", "position: absolute; bottom: 10px; left: 10px" );
+  
   m_showChiOnChart->setChecked();
   tooltip = "Show the Chi of each peak for the current model on the chart, or"
             " the relative peak area multiple between current model and observed peak.";
