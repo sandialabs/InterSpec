@@ -1,0 +1,114 @@
+
+/* All of this styling is based on tutorial from (20210819):
+   https://css-tricks.com/custom-styling-form-inputs-with-modern-css-features/
+   but adapted to work with Wt.
+ */
+
+
+.SwitchCheckbox {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: center;
+  align-items: center;
+}
+
+
+@supports(-webkit-appearance: none) or (-moz-appearance: none) or (-appearance: none) {
+  
+  .SwitchCheckbox > input {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    -appearance: none;
+    
+    width: 38px;
+    height: 21px;
+    border-radius: 11px;
+    
+    outline: none;
+    display: inline-block;
+    vertical-align: top;
+    position: relative;
+    margin: 0;
+    margin-left: 6px;
+    margin-right: 6px;
+    cursor: pointer;
+    
+    /*
+     I like the following colors, but to fit into the general InterSpec color scheme right now, we wont use them
+     --active: #275EFE;
+     --border: #BBC1E1;
+     --active-inner: #fff;
+     --focus: 2px rgba(39, 94, 254, .25);
+     --border-hover: #275EFE;
+     */
+    
+    --active: #888888;
+    --border: rgba(136, 136, 136, 1);
+    --active-inner: #fff;
+    --focus: 2px rgba(225, 225, 225, .25);
+    --border-hover: #e1e1e1;
+    --background: #fff;
+    --disabled: #F6F8FF;
+    --disabled-inner: #E1E6F9;
+    --focus: 2px rgba(39, 94, 254, .25);
+    
+    border: 1px solid var(--bc, var(--border));
+    
+    background: var(--b, var(--background));
+    transition: background 0.3s, border-color 0.3s, box-shadow 0.2s;
+  }
+  
+  /* Change position when checked  */
+  .SwitchCheckbox > input:checked {
+    --x: 17px;
+    --d-o: .3s;
+    --d-t: .6s;
+    --d-t-e: cubic-bezier(.2, .85, .32, 1.2);
+  }
+
+  /* If we are using as an on/off checkbox, also change the colors. */
+  .SwitchCheckbox > input.onoff:checked {
+    --b: var(--active);
+    --bc: var(--active);
+    --ab: var(--active-inner);
+  }
+  
+  
+  /* Apply another border color on hover if not checked & not disabled */
+  .SwitchCheckbox > input.onoff:not(:checked):not(:disabled):hover,
+    .SwitchCheckbox > input.twoopt:not(:disabled):hover,
+  {
+    --bc: var(--border-hover);
+  }
+  
+  .SwitchCheckbox > input:focus {
+    box-shadow: 0 0 0 var(--focus);
+  }
+  
+  
+  .SwitchCheckbox > input:after {
+    content: "";
+    display: block;
+    width: 15px;
+    height: 15px;
+    left: 2px;
+    top: 2px;
+    position: absolute;
+    border-radius: 50%;
+    background: var(--ab, var(--border));
+    transform: translateX(var(--x, 0));
+    transition: transform var(--d-t, 0.3s) var(--d-t-e, ease), opacity var(--d-o, 0.2s);
+  }
+  
+} /* supports appearance: none */
+
+
+
+
+
+
+
+
+
+
+

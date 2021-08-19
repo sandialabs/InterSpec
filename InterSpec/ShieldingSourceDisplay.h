@@ -51,6 +51,7 @@ class PeakModel;
 class AuxWindow;
 class MaterialDB;
 class PopupDivMenu;
+class SwitchCheckbox;
 class DetectorDisplay;
 class PopupDivMenuItem;
 class DetectorPeakResponse;
@@ -1009,7 +1010,7 @@ protected:
   Wt::WCheckBox *m_multiIsoPerPeak;
   Wt::WCheckBox *m_backgroundPeakSub;
   Wt::WCheckBox *m_sameIsotopesAge;
-  Wt::WCheckBox *m_showChiOnChart;
+  SwitchCheckbox *m_showChiOnChart;
   Wt::WContainerWidget *m_optionsDiv;
   
   PopupDivMenuItem *m_showLog;

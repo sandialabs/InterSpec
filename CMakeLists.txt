@@ -532,6 +532,7 @@ set(sources
     src/MakeDrfFit.cpp
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
+    src/SwitchCheckbox.cpp
     src/EnergyCalTool.cpp
     src/EnergyCal.cpp
     src/EnergyCalGraphical.cpp
@@ -616,6 +617,7 @@ set(headers
     InterSpec/MakeDrfFit.h
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h
+    InterSpec/SwitchCheckbox.h
     InterSpec/EnergyCalTool.h
     InterSpec/EnergyCal.h
     InterSpec/EnergyCalGraphical.h
