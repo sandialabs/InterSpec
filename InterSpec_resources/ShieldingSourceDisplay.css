@@ -135,6 +135,8 @@
   background-position: 3px center;
   background-repeat: no-repeat;
   padding-left: 21px;  /* width of the image plus a little extra padding */
+  background-color: rgba(0,0,0,0);
+  border: none;
 }
 
 
